@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **VS Code's headline takes clicks on its words only,** as Plasma's: the empty space right of *1 chat needs you* is the stage's, so a double-click there gives Talpy a cookie (the whole line opened the chat and took no double-click) (VS Code).
 - **With *Reduce Animation* on, the big Talpy's light rests as on Plasma:** while a chat needs you his stage is lit as at rest, and the night's stars shine at half; GNOME lit it at the pulse's brightest and the stars at 90% (GNOME).
 - **Pushed down, Talpy is yours until you let go:** a chat starting (his yawn) or the usage and context reminders no longer play something else under your hand, his mood's look waits until he's back up, and pushed as he spots a new cookie he no longer jumps out after it under your hand: he goes after it once you let go (Plasma and VS Code).
 - **VS Code's big Talpy as Plasma's:** his headline's tooltip says *Open fix parser* over the chat's host and state (*lab · Waiting · 3m*), not the host alone; asking the system for less motion (or no longer) while the view is open calms him (or lets him dig about again) and his stars at once, as Plasma and GNOME follow the setting (he went on as when the view opened); and with less motion asked for the pets are still shown from their pictures, not drawn anew 30 times a second (VS Code).

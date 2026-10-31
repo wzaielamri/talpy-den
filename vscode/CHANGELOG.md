@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The headline takes clicks on its words only,** as in Plasma: a
+  double-click beside them gives Talpy a cookie.
 - **Pushed down, Talpy is yours until you let go:** a chat starting or
   a reminder no longer plays something else under your hand, and pushed
   as he spots a new cookie he goes after it only once you let go.

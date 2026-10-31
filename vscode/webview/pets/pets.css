@@ -113,7 +113,11 @@
   max-width: calc(100% - var(--cs-gu, 16px) * 1.6);
 }
 
+/* (as wide as its words, as the widget's: a click or a double-click (a
+   cookie) beside them is the stage's) */
 .cs-hero-headline {
+  align-self: flex-start;
+  max-width: 100%;
   font-size: var(--cs-gu, 16px);
   font-weight: 600;
   line-height: 1.3;
