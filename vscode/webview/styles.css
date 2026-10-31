@@ -793,10 +793,12 @@ button:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* (one grid for all the folders: the numbers' column as wide as the widest,
+   so every bar's track is as long) */
 .stats-projects {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: minmax(0, 7em) minmax(2em, 1fr) auto;
+  gap: 2px 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -804,8 +806,8 @@ button:focus-visible {
 
 .stats-project {
   display: grid;
-  grid-template-columns: minmax(0, 7em) minmax(2em, 1fr) auto;
-  gap: 6px;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
 }
 
@@ -830,6 +832,7 @@ button:focus-visible {
 
 .stats-project-numbers {
   white-space: nowrap;
+  text-align: right;
 }
 
 .no-sessions {

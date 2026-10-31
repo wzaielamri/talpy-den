@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **An account's last days: every folder's bar as long:** the numbers after
+  each bar stand in one column as wide as the widest, right-aligned, so
+  every bar's track ends at the same place; no *· 0 prompts* for a folder
+  without any.
+- **The account's CLAUDE.md has Plasma's icon:** two sliders, not a gear.
 - **Go on at … and Keep going work for a chat in a git worktree** (such as
   one Claude made itself, in `.claude/worktrees/…`): Claude trusts a
   worktree when it trusts the repository it belongs to, but Talpy Den

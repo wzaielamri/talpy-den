@@ -15,10 +15,21 @@ Rectangle {
     readonly property var projects: stats ? stats.projects.slice(0, 5) : []
     readonly property real maxDay: Math.max(1, ...days.map(d => d.total))
     readonly property real maxProject: Math.max(1, ...projects.map(p => p.total))
+    // (the folders' numbers in one column as wide as the widest, so every bar's track is as long)
+    readonly property real numbersWidth: Math.ceil(Math.max(0, ...projects.map(p => numbersMetrics.advanceWidth(numbersOf(p)))))
     readonly property color muted: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.35)
     readonly property color track: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
 
     implicitHeight: column.implicitHeight + Kirigami.Units.smallSpacing * 3
+
+    function numbersOf(project) {
+        return root.formatTokens(project.total) + (project.prompts ? " · " + i18np("%1 prompt", "%1 prompts", project.prompts) : "")
+    }
+
+    FontMetrics {
+        id: numbersMetrics
+        font: Kirigami.Theme.smallFont
+    }
     radius: Kirigami.Units.cornerRadius
     color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.05)
 
@@ -145,8 +156,9 @@ Rectangle {
                 }
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText
-                    text: root.formatTokens(projectRow.project.total)
-                          + (projectRow.project.prompts ? " · " + i18np("%1 prompt", "%1 prompts", projectRow.project.prompts) : "")
+                    Layout.preferredWidth: panel.numbersWidth + 1
+                    horizontalAlignment: Text.AlignRight
+                    text: panel.numbersOf(projectRow.project)
                     font: Kirigami.Theme.smallFont
                     opacity: 0.7
                 }

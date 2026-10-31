@@ -32,7 +32,8 @@ export function StatsPanel({ stats: s }: { stats: UsageStats }) {
                 <span style={{ width: `${(100 * p.total) / busiest}%` }} />
               </span>
               <span class="stats-project-numbers muted">
-                {formatTokens(p.total)} · {plural(p.prompts, "%1 prompt", "%1 prompts")}
+                {formatTokens(p.total)}
+                {p.prompts ? ` · ${plural(p.prompts, "%1 prompt", "%1 prompts")}` : ""}
               </span>
             </li>
           ))}
