@@ -4,7 +4,7 @@
 
 | Where | What it does |
 |---|---|
-| Panel icon | Left-click opens the popup, middle-click refreshes. Right-click: *Refresh*, *Show Hidden Chats Again (N)* (and *… Plans …*, *… Memories …*, *… Projects Again (N)*, each while something of that kind is hidden), *Go to the Chat That Needs You* (when one does), *Open Usage Page on claude.ai*, the *Default Account* (with two accounts or more), and the settings. |
+| Panel icon | Left-click opens the popup, middle-click refreshes. Right-click: *Refresh*, *Show Hidden Chats Again (N)* (and *… Plans …*, *… Memories …*, *… Projects Again (N)*, each while something of that kind is hidden), *Go to the Chat That Needs You* (when one does), *Play with Talpy* and *Playful Talpy* (with the pet on), *Open Usage Page on claude.ai*, the *Default Account* (with two accounts or more), and the settings. |
 | The popup's top row | The tabs, then Focus and Find a chat (on the first tab), SSH hosts, Refresh, and the gear: the settings (in the system tray, the tray's own heading has that button). |
 | The big Talpy | Click its headline (*… needs you*) to go to that chat. Click it to pet it (four quick clicks: he laughs, *Let's play!*, and a game starts; *Play with Talpy* in the right-click menu, or VS Code's **⋯** menu, too), double-click to make it dance, drag it out of its burrow (it hangs on for a second), or push it down into it (a drag that starts downward: it hangs on and pushes back, sinking a little, until you push on and it gives in; let go before that and it springs back up; back up or sideways, you pull it out instead). Double-click its stage a little away from it for a cookie: it runs after it as you drag the cookie around (let go and it floats down; pick it up again any time), and eats it. With *Playful Talpy* off (settings, or the right-click menu; in VS Code the view's **⋯** menu), Talpy only shows what your chats do: no tricks or props, no jokes, no cookie. |
 | A chat's name | Jumps to the chat: its terminal tab, its VS Code window, or a terminal attached to the background job. |
@@ -66,6 +66,7 @@ Right-click Talpy Den's icon → **Configure Talpy Den…**, or the gear at the 
 | Keyboard shortcut | goes to the chat | Goes to the chat that needs you (else opens the popup); the key itself is set on the Keyboard Shortcuts page |
 | Icon | on | Blink while a chat needs you (until you open the popup), pulse when one finishes |
 | Pet | on | Talpy in the popup and in notifications |
+| Playful Talpy | on | His tricks and props, jokes, cookies and games; off, he only shows what your chats do (his moods, his lamp and quiet moves). Also in the right-click menu |
 | Open plans and runs in | Okular if installed, else your browser | Plans and subagent runs (Markdown): in Okular, your browser (a page Talpy Den makes), VS Code's Markdown preview (with the Talpy Den extension for VS Code 1.13 or newer), or your app for Markdown files |
 | Chat pets per account | 5 | 0 keeps only the big Talpy |
 | Popup | on | Token totals |

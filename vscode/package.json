@@ -274,7 +274,7 @@
         {
           "command": "talpyDen.nextChat",
           "when": "view == talpyDen.view && talpyDen.needsYou",
-          "group": "0_go@1"
+          "group": "1_view@6"
         },
         {
           "command": "talpyDen.openInEditor",
@@ -314,17 +314,17 @@
         {
           "command": "talpyDen.playWithTalpy",
           "when": "view == talpyDen.view && config.talpyDen.showPet && config.talpyDen.playfulTalpy",
-          "group": "1_view@6"
+          "group": "1_view@7"
         },
         {
           "command": "talpyDen.playfulOff",
           "when": "view == talpyDen.view && config.talpyDen.showPet && config.talpyDen.playfulTalpy",
-          "group": "1_view@7"
+          "group": "1_view@8"
         },
         {
           "command": "talpyDen.playfulOn",
           "when": "view == talpyDen.view && config.talpyDen.showPet && !config.talpyDen.playfulTalpy",
-          "group": "1_view@7"
+          "group": "1_view@8"
         },
         {
           "command": "talpyDen.accounts",

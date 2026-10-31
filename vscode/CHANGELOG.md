@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **The view's ⋯ menu in Plasma's order:** *Go to the Chat That Needs
+  You* comes after the *Show Hidden … Again* entries, before *Play with
+  Talpy* (it stood first, on its own).
 - **A chat waiting on its plan notifies *… has a plan ready*** with the
   plan's title, as on Plasma, also when Talpy Den can't answer it (it
   said *… asks for a permission*).

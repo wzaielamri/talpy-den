@@ -1205,7 +1205,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._undismissItem = this.menu.addAction('Show Hidden Chats Again',
             () => this.showHiddenChats(), Icons.gnome.showHidden);
-        this.menu.addAction('Open usage page on claude.ai', () => {
+        this.menu.addAction('Open Usage Page on claude.ai', () => {
             Gio.AppInfo.launch_default_for_uri(USAGE_PAGE, global.create_app_launch_context(0, -1));
         }, Icons.gnome.web);
 
