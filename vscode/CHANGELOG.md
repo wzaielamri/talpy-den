@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Go on at … and Keep going work for a chat in a git worktree** (such as
+  one Claude made itself, in `.claude/worktrees/…`): Claude trusts a
+  worktree when it trusts the repository it belongs to, but Talpy Den
+  looked only at the worktree's own folder and said *Claude doesn't trust
+  …, and a background chat can't ask*. A background chat or a queued task
+  started in a worktree is fine now too.
 - **Colored where the color says something, as in Plasma:** an icon
   itself (never its button's or tag's box): Cancel's ×, Deny and Delete…
   red; Allow, Always allow, Reviewed and passed tests green; a warning

@@ -435,6 +435,37 @@ class RowTests(Fixture):
         write(w / ".claude.json", data)
         self.assertFalse(cs.folder_trusted(profile, str(self.home), self.home))
 
+    def test_a_worktree_is_trusted_when_its_repository_is(self):
+        # Claude keeps a worktree's trust under the repository it belongs to
+        # (a chat that went on in one of its own, .claude/worktrees/x): its
+        # .git is a file naming .git/worktrees/x there, which names it back
+        w = self.home / ".claude-work"
+        repo = self.home / "repos/app"
+        tree = repo / ".claude/worktrees/round"
+        gitdir = repo / ".git/worktrees/round"
+        gitdir.mkdir(parents=True)
+        (tree / "sub").mkdir(parents=True)
+        (tree / ".git").write_text(f"gitdir: {gitdir}\n")
+        (gitdir / "commondir").write_text("../..\n")
+        (gitdir / "gitdir").write_text(f"{tree / '.git'}\n")
+        data = json.loads((w / ".claude.json").read_text())
+        data["projects"] = {str(self.home / "notes"): {"hasTrustDialogAccepted": True}}
+        write(w / ".claude.json", data)
+        profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
+        self.assertFalse(cs.folder_trusted(profile, str(tree), self.home))
+        data["projects"][str(repo)] = {"hasTrustDialogAccepted": True}
+        write(w / ".claude.json", data)
+        self.assertTrue(cs.folder_trusted(profile, str(tree), self.home))
+        self.assertTrue(cs.folder_trusted(profile, str(tree / "sub"), self.home))
+        self.assertEqual(cs.main_repository(repo), repo)              # (the repository itself)
+        # not one that only says so: its git folder doesn't name it back
+        (gitdir / "gitdir").write_text(f"{self.home / 'elsewhere/.git'}\n")
+        self.assertFalse(cs.folder_trusted(profile, str(tree), self.home))
+        # a relative gitdir, as git writes with worktree.useRelativePaths
+        (gitdir / "gitdir").write_text("../../../.claude/worktrees/round/.git\n")
+        (tree / ".git").write_text("gitdir: ../../../.git/worktrees/round\n")
+        self.assertTrue(cs.folder_trusted(profile, str(tree), self.home))
+
 
 class FindTests(Fixture):
     def setUp(self):

@@ -5017,11 +5017,33 @@ def git_root(folder):
     return None
 
 
+def main_repository(root):
+    """The folder Claude keeps a git repository's settings and trust under:
+    for a worktree of another repository (its .git a file naming a folder in
+    that one's .git/worktrees, which names it back) that repository's, else
+    root itself."""
+    try:
+        text = (root / ".git").read_text(encoding="utf-8", errors="replace").strip()
+        if not text.startswith("gitdir:"):
+            return root
+        gitdir = Path(os.path.normpath(root / text[7:].strip()))
+        common = Path(os.path.normpath(gitdir / (gitdir / "commondir").read_text(encoding="utf-8").strip()))
+        back = Path(os.path.normpath(gitdir / (gitdir / "gitdir").read_text(encoding="utf-8").strip()))
+        if gitdir.parent != common / "worktrees" or back.resolve() != root.resolve() / ".git":
+            return root
+        return common.parent if common.name == ".git" else common
+    except OSError:   # (a repository's own .git is a folder: IsADirectoryError)
+        return root
+
+
 def folder_trusted(profile, folder, home=None, trusted=None):
     """Has Claude's trust question been answered yes for folder, or (as
     Claude looks) for a folder above it, within its git repository if it's in
-    one? Claude never saves it for the home folder, so it asks there every
-    time. trusted: trusted_folders(profile), if read already."""
+    one, or for the repository a worktree belongs to (Claude asks once for a
+    repository and its worktrees: a chat that went on in one of its own, in
+    .claude/worktrees, is trusted there)? Claude never saves it for the home
+    folder, so it asks there every time. trusted: trusted_folders(profile),
+    if read already."""
     trusted = trusted_folders(profile, home) if trusted is None else trusted
     if not trusted or not isinstance(folder, str) or not folder.startswith("/"):
         return False
@@ -5029,6 +5051,8 @@ def folder_trusted(profile, folder, home=None, trusted=None):
     if path == (home or Path.home()):
         return False
     root = git_root(path)
+    if root is not None and root != (home or Path.home()) and str(main_repository(root)) in trusted:
+        return True
     for q in (path, *path.parents):
         if str(q) in trusted:
             return True
