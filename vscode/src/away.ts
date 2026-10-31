@@ -14,7 +14,7 @@ import type { Group, Session } from "./shared/types";
 import type { Changes, PetEvent } from "./transitions";
 
 const MARK_EVERY_MS = 15000; // a window in use notes it this often
-const LISTED = 3; // chats named per line, then "+N more"
+const LISTED = 4; // chats named per line, then "+N" (as Plasma's and GNOME's summary)
 
 export interface Digest {
   away: number; // how long, ms
@@ -33,7 +33,7 @@ interface Happened {
 
 function names(list: string[]): string {
   const more = list.length - LISTED;
-  return list.slice(0, LISTED).join(", ") + (more > 0 ? ` +${more} more` : "");
+  return list.slice(0, LISTED).join(", ") + (more > 0 ? ` +${more}` : "");
 }
 
 // The digest of an absence, or null when nothing happened that you'd want to hear about
@@ -55,8 +55,11 @@ export function digestOf(away: number, happened: Happened[], resets: string[], g
     return null;
   const parts: string[] = [];
   if (waiting.length) {
-    const shown = waiting.map((w) => `${w.session.name} (waiting ${duration(now - (w.session.since ?? now))})`);
-    parts.push(`Needs you: ${names(shown)}`);
+    // (a line each for the first three, with its host, as Plasma's)
+    for (const w of waiting.slice(0, 3))
+      parts.push(`Needs you: ${w.session.name}${w.host ? ` · ${w.host}` : ""} (waiting ${duration(now - (w.session.since ?? now))})`);
+    const rest = waiting.length - 3;
+    if (rest > 0) parts.push(`+${rest} more ${rest === 1 ? "needs" : "need"} you`);
   }
   if (finished.length) parts.push(`Finished: ${names(finished)}`);
   if (failed.length) parts.push(`Failed: ${names(failed)}`);

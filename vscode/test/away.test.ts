@@ -74,7 +74,7 @@ test("long lists are cut short", () => {
   away.leave(NOW);
   const g = groups([{ state: "idle" }]);
   away.note({ finished: ["a", "b", "c", "d", "e"].map((name, i) => ({ id: `c${i}`, session: { ...g[0].sessions[0], name }, took: MIN, at: NOW + MIN, stop: "" as const })) }, [], NOW);
-  assert.deepEqual(away.back(NOW + 10 * MIN, 0, g, 5 * MIN)!.lines, ["Finished: a, b, c +2 more"]);
+  assert.deepEqual(away.back(NOW + 10 * MIN, 0, g, 5 * MIN)!.lines, ["Finished: a, b, c, d +1"]);
 });
 
 test("while you're away, finished chats wait for the digest; chats that need you still notify", async () => {

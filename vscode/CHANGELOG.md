@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **The *While you were away* summary as Plasma's:** a line for each of
+  the first three chats that need you, with its SSH host, then *+2 more
+  need you*; four names to a line before *+N*.
 - **The side-by-side switches are icons, as in Plasma:** a change's
   corner shows the side-by-side or one-after-the-other icon (not ◫ / ☰),
   and the Review's **Side by side** is an icon toggle.
