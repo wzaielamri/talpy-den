@@ -122,6 +122,7 @@ PlasmaExtras.Representation {
                 text: root.shownHosts.length > 0 ? String(root.shownHosts.length) : ""
                 display: root.shownHosts.length > 0 ? PlasmaComponents3.AbstractButton.TextBesideIcon
                                                     : PlasmaComponents3.AbstractButton.IconOnly
+                Accessible.name: i18n("SSH hosts")   // (its text is only the count)
                 onClicked: root.openHostsMenu(hostsButton)
 
                 PlasmaCore.ToolTipArea {
@@ -135,6 +136,8 @@ PlasmaExtras.Representation {
             }
             PlasmaComponents3.ToolButton {
                 icon.name: Icons.plasma.refresh
+                display: PlasmaComponents3.AbstractButton.IconOnly
+                text: i18n("Refresh")
                 onClicked: {
                     root.refresh()
                     root.fetchUsage()   // (the plan usage too, when it's over a minute old)
