@@ -933,12 +933,16 @@ def set_history(cache_root, keep):
         cache = load_cache(cache_root)
         files = cache["files"]
         gone = [k for k, rec in files.items() if isinstance(rec, dict) and rec.get("gone")]
+        # (in chats, as history_status counts them for the question before:
+        # one moved to another folder isn't deleted)
+        here = {rec.get("chat") for rec in files.values() if isinstance(rec, dict) and not rec.get("gone")}
+        chats = len({files[k].get("chat") for k in gone} - here)
         for k in gone:
             del files[k]
         if gone:
             cs.write_json_atomic(cache_path(cache_root), cache)
         return True, "The Recap keeps only what Claude still has" + (
-            " (it forgot %d deleted transcripts)" % len(gone) if gone else "")
+            " (it forgot %d deleted %s)" % (chats, "chat" if chats == 1 else "chats") if chats else "")
 
 
 def forget_history(cache_root):

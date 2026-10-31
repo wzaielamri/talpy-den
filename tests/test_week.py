@@ -495,7 +495,9 @@ class HistoryTests(Home):
     def test_off_it_keeps_only_what_claude_has(self):
         self.deleted.unlink()
         self.worked()
-        self.assertEqual(week.set_history(self.cache_root, False)[0], True)
+        # (it says how many chats it forgot, as the question before counted them)
+        self.assertEqual(week.set_history(self.cache_root, False),
+                         (True, "The Recap keeps only what Claude still has (it forgot 1 deleted chat)"))
         self.assertEqual(self.worked(), [("chat-a", 60_000)])
         self.assertFalse(week.history_status(self.cache_root)["keep"])
         self.assertTrue(week.set_history(self.cache_root, True)[0])
