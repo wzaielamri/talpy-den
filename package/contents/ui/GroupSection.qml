@@ -277,7 +277,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.smallSpacing
         Layout.rightMargin: Kirigami.Units.smallSpacing
-        spacing: Kirigami.Units.smallSpacing / 2
+        spacing: Kirigami.Units.smallSpacing   // (the gap after a fold's arrow, as a project's in the Projects tab and the Recap)
 
         Kirigami.Icon {
             visible: section.hasStats
