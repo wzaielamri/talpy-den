@@ -23,7 +23,7 @@ export interface Game {
     readonly on: boolean;
     readonly holes: GameHole[];
     readonly state: string;
-    start(now: number): void;
+    start(now: number, wake?: boolean): void;
     tick(now: number): void;
     hit(): boolean;
     stop(): void;

@@ -89,6 +89,34 @@ class PeekabooTests(unittest.TestCase):
         for name in ("missed", "caught"):
             self.assertLess(self.r[name]["changed"], 60)
 
+    def test_its_on_from_the_click_that_starts_it(self):
+        # (a 5th quick click while he still laughed cut the laugh short, and
+        # the game never came: it starts at once now, his laugh its first move,
+        # and the clicks after it are the game's)
+        out = run_node("""
+import { pickGame } from %s;
+const t = new Talpy({});
+let now = 1000;
+t.tick(now);
+const g = pickGame(t, { stage: () => ({ width: 400, ground: 90, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: 370 }),
+                        px: () => 200, moveTo() {}, say() {}, changed() {} });
+g.start(now);
+const first = { on: g.on, body: t.st.body, eyes: t.st.eyes };
+now += 200; t.tick(now); g.tick(now);
+const hit = g.hit();
+for (let i = 0; i < 300; i++) { now += 16; t.tick(now); g.tick(now); }
+const t2 = new Talpy({});
+t2.tick(1000);
+const g2 = pickGame(t2, { stage: () => ({ width: 400, ground: 90, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: 370 }),
+                          px: () => 200, moveTo() {}, say() {}, changed() {} });
+g2.start(1000, true);
+console.log(JSON.stringify({ first, hit, after: g.state, on: g.on, woken: t2.st.mouth }));""" % json.dumps(str(TALPY / "games.mjs")))
+        self.assertEqual(out["first"], {"on": True, "body": "shake", "eyes": "squint"})   # (laughing)
+        self.assertTrue(out["hit"])                     # the next click: the game's, nothing cut short
+        self.assertTrue(out["on"])
+        self.assertIn(out["after"], ("down", "up", "ducked"))
+        self.assertEqual(out["woken"], "yawn")          # (woken up for it from the menu: he yawns first)
+
     def test_he_gets_quicker_each_round(self):
         out = run_node("""
 import { pickGame } from %s;
@@ -117,10 +145,11 @@ class HostTests(unittest.TestCase):
     def test_not_while_he_sleeps_and_never_while_a_chat_needs_you(self):
         for text in (self.pet, self.ts):
             wants = text[text.index("wantsToPlay(fromMenu"):]
-            wants = wants[:wants.index("startGame() {") if "startGame() {" in wants else wants.index("startGame(): void")]
+            wants = wants[:re.search(r"(function |private )startGame\(wake", wants).start()]
             self.assertRegex(wants, r'mood === "needs"\)? ?\{?\s*\n?\s*(this\.talpy\.)?react\("sign"\)')   # he points at the chat
             self.assertRegex(wants, r'!(root|world)\.playful')                                         # Playful off: only the tickle
-            self.assertRegex(wants, r'mood === "done" && fromMenu')                                    # asleep: the menu wakes him
+            self.assertRegex(wants, r'mood === "done" && !fromMenu')                                   # asleep: clicks don't
+            self.assertRegex(wants, r'startGame\((this\.)?mood === "done"\)')                         # the menu wakes him
         # (a click while he sleeps stays grumpy: petIt's sleepy branch comes before the clicks are counted)
         for text in (self.pet, self.ts):
             pet_it = text[text.index("petIt()"):] if "function petIt" not in text else text[text.index("function petIt"):]

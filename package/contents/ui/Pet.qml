@@ -328,18 +328,15 @@ Item {
             say(petLine())
             return true
         }
-        const go = () => {
-            say(i18n("Let's play!"))
-            react("laugh", ok => { if (ok) pet.startGame() })
-        }
-        if (mood === "done" && fromMenu)
-            react("yawn", ok => { if (ok) go() })
-        else
-            go()
+        if (mood === "done" && !fromMenu)
+            return false
+        // (on at once, his laugh its first move: the clicks after this one are the game's)
+        say(i18n("Let's play!"))
+        startGame(mood === "done")
         return true
     }
 
-    function startGame() {
+    function startGame(wake) {
         if (gameOn || !playing || mood === "needs" || !root.playful || cookieOn || held || tugging || pushing)
             return
         stride.stop()
@@ -353,7 +350,7 @@ Item {
                                                 : i18n("That was fun!")),
             changed: () => pet.gameMoved()
         })
-        playGame.start(talpy.now)
+        playGame.start(talpy.now, !!wake)
     }
 
     // Over at once: Esc, a click outside the stage, a chat that needs you, the stage out of sight

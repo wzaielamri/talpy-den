@@ -749,16 +749,14 @@ export class Pet {
       this.say(this.petLine());
       return true;
     }
-    const go = (): void => {
-      this.say("Let's play!");
-      this.talpy.react("laugh", (ok) => ok && this.startGame());
-    };
-    if (this.mood === "done" && fromMenu) this.talpy.react("yawn", (ok) => ok && go());
-    else go();
+    if (this.mood === "done" && !fromMenu) return false;
+    // (on at once, his laugh its first move: the clicks after this one are the game's)
+    this.say("Let's play!");
+    this.startGame(this.mood === "done");
     return true;
   }
 
-  private startGame(): void {
+  private startGame(wake = false): void {
     if (this.destroyed || this.play?.on || !this.stage.live || this.mood === "needs" || !world.playful || this.cookieOn || this.held
       || this.tugging || this.pushing) return;
     const s = this.stage;
@@ -772,7 +770,7 @@ export class Pet {
       say: (what) => this.say(what === "got" ? ["You got me!", "Hehe, found me!", "Again!"][Math.floor(Math.random() * 3)] : "That was fun!"),
       changed: () => this.gameMoved(),
     });
-    this.play.start(s.clock.now());
+    this.play.start(s.clock.now(), wake);
   }
 
   // Over at once: Esc, a click outside the stage, a chat that needs you, the stage out of sight

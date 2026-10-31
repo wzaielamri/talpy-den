@@ -7,7 +7,7 @@
 // opens (drawHole in talpy.mjs: holes, each {x, open}, stage px and 0 to 1)
 // under Talpy, and moves Talpy where it says.
 //
-//   const game = pickGame(talpy, host); game.start(now)
+//   const game = pickGame(talpy, host); game.start(now, wake) (he laughs first; wake: woken, he yawns)
 //   every tick while game.on: game.tick(now), after talpy.tick(now)
 //   a click on Talpy: game.hit() (true: the game took it)
 //   game.stop(): over now (Talpy comes up where he is)
@@ -19,6 +19,8 @@
 //   changed(): what shows changed (on, the holes) }
 //
 // Plain ES2017 (see paths.mjs).
+
+import { ACTIONS } from './actions.mjs';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const int = (a, b) => Math.floor(rnd(a, b + 1));
@@ -55,7 +57,9 @@ export class Peekaboo {
         this.brain = true;       // (his own doings, back once it's over)
     }
 
-    start(now) {
+    // (it's on from the click that starts it: the next clicks are the game's,
+    // also while he still laughs, or yawns when he was woken up for it)
+    start(now, wake) {
         const s = this.host.stage(), t = this.talpy;
         const lo = s.minX, hi = Math.max(s.minX, s.maxX);
         const xs = [lo + (hi - lo) * 0.12, lo + (hi - lo) * 0.5, lo + (hi - lo) * 0.88];
@@ -77,8 +81,10 @@ export class Peekaboo {
         this.brain = t.brainOn;
         t.brainOn = false;
         t.cancel();
-        t.play({ steps: () => [{ depth: 'hidden', eyes: 'closed', mouth: 'smile', plume: '', t: OPEN_MS + 200 }] }, null, false);
-        this.set('open', OPEN_MS + 250);
+        const opening = ACTIONS[wake ? 'yawn' : 'laugh'].steps(t.words);
+        const openingMs = opening.reduce((ms, step) => ms + (step.t || 600), 0);
+        t.play({ steps: () => opening.concat([{ depth: 'hidden', eyes: 'closed', mouth: 'smile', plume: '', t: OPEN_MS + 200 }]) }, null, false);
+        this.set('open', openingMs + OPEN_MS + 250);
         this.host.changed();
     }
 
