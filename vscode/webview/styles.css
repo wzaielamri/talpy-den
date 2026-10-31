@@ -2724,7 +2724,7 @@ body.vscode-high-contrast:not(.vscode-high-contrast-light) .cv {
   top: 2px;
   right: 4px;
   display: none;
-  padding: 0 6px;
+  padding: 2px 4px;
   border: 1px solid var(--cs-border);
   border-radius: 4px;
   background: var(--cs-bg);
@@ -2733,7 +2733,13 @@ body.vscode-high-contrast:not(.vscode-high-contrast-light) .cv {
 }
 
 .cv:hover > .cv-switch {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+}
+
+.cv-switch .icon {
+  width: 1em;
+  height: 1em;
 }
 
 .pane-tool-diff {

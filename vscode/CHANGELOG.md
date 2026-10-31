@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **The side-by-side switches are icons, as in Plasma:** a change's
+  corner shows the side-by-side or one-after-the-other icon (not ◫ / ☰),
+  and the Review's **Side by side** is an icon toggle.
 - **The settings in Plasma's order:** checks, folders, notifications, the
   chat tab, dictation, the weekly recap and the summary when you're back,
   sounds, the usage cap, the lists, SSH hosts, the status bar, Talpy, the

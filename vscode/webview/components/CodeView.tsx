@@ -9,6 +9,7 @@ import type { ComponentChildren } from "preact";
 import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { changed, diffRows, highlight, language, pairs, readLines, splitRows, type DiffRow } from "../../vendor/codeview.mjs";
 import type { PaneItem } from "../../src/shared/pane";
+import { I, Icon } from "../util/icons";
 
 const TAB = "    ";
 
@@ -93,9 +94,10 @@ export function Diff({ lines, path = "", max = 0, split = false, onSplit }: {
   return (
     <div class={`cv${sideBySide ? " cv-split" : ""}`} ref={ref}>
       {onSplit && twoSided ? (
-        <button type="button" class="cv-switch" title={split ? "One after the other" : "Side by side (before | after)"}
+        <button type="button" class="cv-switch" aria-label={split ? "One after the other" : "Side by side"}
+          title={split ? "One after the other: changes as removed and added lines, one after the other." : "Side by side: changes as before | after, where the tab is wide enough."}
           onClick={(e) => { e.stopPropagation(); onSplit(!split); }}>
-          {split ? "☰" : "◫"}
+          <Icon name={split ? I.aboveBelow : I.sideBySide} />
         </button>
       ) : null}
       {sideBySide

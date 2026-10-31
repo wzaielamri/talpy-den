@@ -7,7 +7,7 @@
 import type { JSX } from "preact";
 import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -26,6 +26,19 @@ const shapes: Record<IconName, JSX.Element> = {
   ),
   stop: <rect x="3.75" y="3.75" width="8.5" height="8.5" rx="1.5" fill="currentColor" />,
   close: <path d="M4 4l8 8M12 4l-8 8" />,
+  // a change side by side (before | after), or one after the other
+  columns: (
+    <>
+      <rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.25" />
+      <path d="M8 2.75v10.5" />
+    </>
+  ),
+  rows: (
+    <>
+      <rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.25" />
+      <path d="M2.25 8h11.5" />
+    </>
+  ),
   share: (
     <>
       <circle cx="11.75" cy="3.75" r="1.75" />

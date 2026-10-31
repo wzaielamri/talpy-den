@@ -814,11 +814,9 @@ function ChatApp() {
                     {plural(review.files.length, "file")} changed since the chat started +{sums[0]} −{sums[1]}
                   </strong>
                   {tests ? <TestsTag tests={tests} /> : null}
-                  <button type="button" class={`btn secondary small${split ? " on" : ""}`} aria-pressed={split}
-                    title="Each change as before | after where the tab is wide enough; else removed and added lines one after the other"
-                    onClick={() => sideBySide(!split)}>
-                    Side by side
-                  </button>
+                  <IconButton icon={I.sideBySide} label="Side by side" pressed={split}
+                    title="Side by side: each change as before | after, where the tab is wide enough; else removed and added lines one after the other."
+                    onClick={() => sideBySide(!split)} />
                 </div>
                 {review.files.map((f) => (
                   <div key={f.path} class="review-file">

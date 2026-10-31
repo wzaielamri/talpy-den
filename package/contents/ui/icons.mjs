@@ -73,8 +73,8 @@ const TABLE = {
     peekClosed:      ['arrow-down',                    'chevron',    'pan-down-symbolic'],
     zoomIn:          ['zoom-in',                       'zoomIn',     'zoom-in-symbolic'],
     zoomOut:         ['zoom-out',                      'zoomOut',    'zoom-out-symbolic'],
-    sideBySide:      ['view-split-left-right',         null,         'view-dual-symbolic'],
-    aboveBelow:      ['view-split-top-bottom',         null,         'view-paged-symbolic'],
+    sideBySide:      ['view-split-left-right',         'columns',    'view-dual-symbolic'],
+    aboveBelow:      ['view-split-top-bottom',         'rows',       'view-paged-symbolic'],
     focus:           ['view-filter',                   'filter',     'view-filter-symbolic'],             // Focus view
     showAll:         ['view-list-details',             'filter',     'view-list-symbolic'],               // out of Focus view
     search:          ['edit-find',                     'search',     'edit-find-symbolic'],

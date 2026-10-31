@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **VS Code's side-by-side switches are icons, as Plasma's:** the switch in a change's corner shows the side-by-side or the one-after-the-other icon (it showed the characters ◫ and ☰), and the Review's **Side by side** is an icon toggle with a tooltip, as in Plasma's pane (it was a text button); the icon table has VS Code shapes for both now (VS Code).
 - **VS Code's settings in the order of Plasma's settings page**, each with a place of its own (several shared one, so VS Code sorted those by name), and its *Chat Pets* says *0: only the big Talpy* as Plasma's and GNOME's (it said *0 = none*, though the big Talpy stays) (VS Code).
 - **The menus list the same things in the same order:** VS Code's **⋯** menu has *Go to the Chat That Needs You* after the *Show Hidden … Again* entries and before *Play with Talpy*, as Plasma's right-click menu (it stood first, on its own); GNOME's menu says *Open Usage Page on claude.ai*, as the others; the usage docs list *Play with Talpy* and *Playful Talpy* among the right-click menu's entries and the settings (GNOME and VS Code).
 - **A chat that needs you notifies what it asks on GNOME too:** *… asks for a permission* with the command (or *Change* and the file), *… asks you* with Claude's questions, *… has a plan ready* with the plan's title, as on Plasma (GNOME always said *… needs your input*); and in VS Code a plan Talpy Den can't answer says *… has a plan ready*, not *… asks for a permission* (GNOME and VS Code).
