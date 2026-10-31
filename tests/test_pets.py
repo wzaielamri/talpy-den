@@ -271,6 +271,21 @@ console.log(JSON.stringify({ scoot: length('scoot'), dig: length('dig'),
         self.assertIn("order: out.length", section)
         self.assertIn("shownChats.slice().sort((a, b) => a.order - b.order)", strip)
 
+    def test_a_new_pet_waits_while_another_digs_away(self):
+        # none tunnels over a pet that waves goodbye or digs up where it still
+        # stands; once it's gone the others move up and the new one comes
+        strip = (ROOT / "ui/PetStrip.qml").read_text()
+        stage = (ROOT.parent.parent / "vscode/webview/pets/stage.ts").read_text()
+        gnome = (ROOT.parent.parent / "gnome/extension/ui/pets.js").read_text()
+        self.assertLess(strip.index("if (petModel.get(i).leaving)"), strip.index("petModel.append({ petKey: c.key"))
+        self.assertLess(stage.index("if (!this.pets.some((p) => p.leaving)) {"), stage.index("this.pets.push(new Pet(this, c.key"))
+        chats = gnome[gnome.index("    setChats(chats) {"):]
+        self.assertLess(chats.index("if (!this._anyLeaving) {"), chats.index("this.order = "))
+        self.assertLess(chats.index("if (!this._anyLeaving) {"), chats.index("new Pet(this, c.key"))
+        self.assertIn("this.setChats(this.chats);", gnome[gnome.index("    removePet(key) {"):][:900])
+        # (and the tooltip of +N says 1 more chat, as Plasma's i18np)
+        self.assertIn("L.plural(this.hidden, '%1 more chat', '%1 more chats')", gnome)
+
     def test_whatever_is_in_the_burrow_has_its_hole_around_it(self):
         # A new pet sank first while its hole shrank away, jumping out of the
         # burrow closed the hole under it, digging in after a drop began in a

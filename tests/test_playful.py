@@ -110,6 +110,9 @@ class HostTests(unittest.TestCase):
         self.assertIn("'playful-talpy'", (ROOT / "gnome/extension/prefs.js").read_text())
         pets = (ROOT / "gnome/extension/ui/pets.js").read_text()
         self.assertIn("playful: stage.pets.playful", pets)
+        # no Hi! or holiday greeting when it's off (the setting is the director's: a stage has none of its own)
+        greet = pets[pets.index("    _greet() {"):]
+        self.assertIn("!this.pets.playful)", greet[:greet.index("\n    }\n")])
         self.assertIn("changed::playful-talpy", (ROOT / "gnome/extension/indicator.js").read_text())
 
 

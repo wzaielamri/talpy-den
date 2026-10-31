@@ -210,10 +210,12 @@ class Pet {
                 pressed = null;
                 if (!mine || this.gone)
                     return Clutter.EVENT_STOP;
-                if (this._clickCount === 2 && this.lone)
-                    this.dance();
-                else
+                // (the second click of a double click: the hero dances, a
+                // chat's pet does nothing, as on Plasma: it opened its chat once)
+                if (this._clickCount !== 2)
                     this.clicked();
+                else if (this.lone)
+                    this.dance();
                 return Clutter.EVENT_STOP;
             });
             if (!this.lone) {
@@ -717,7 +719,7 @@ class Stage {
             this.actor.add_child(this.floor);
             this.more = new St.Label({style_class: 'claude-small claude-dim claude-stage-more', visible: false});
             this.actor.add_child(this.more);
-            this.ctx.tips.add(this.more, () => [L.fmt('%1 more chats', this.hidden),
+            this.ctx.tips.add(this.more, () => [L.plural(this.hidden, '%1 more chat', '%1 more chats'),
                 L.fmt('Up to %1 pets per account, the chats that need you or work first; the list shows them all.',
                     this.pets.maxPets)]);
         }
@@ -786,24 +788,37 @@ class Stage {
             if (c)
                 pet.setChat(c.session, (c.session.name || '').trim());
         }
-        // spots: in the order of the chats in the list, left to right
-        this.order = shown.slice().sort((a, b) => a.order - b.order).map(c => c.key);
-        for (const c of shown) {
-            if (this.list.has(c.key))
-                continue;
-            this.colors[c.key] = this._freeColor(c.key);
-            const pet = new Pet(this, c.key, {tint: PALETTE[this.colors[c.key]], label: (c.session.name || '').trim(),
-                host: c.host});
-            this.list.set(c.key, pet);
-            this.actor.insert_child_below(pet.actor, this.bubble);
-            pet.setChat(c.session);
-            this._enter(pet);
+        // While a pet digs away the others stay where they are and a new
+        // chat's pet waits: none tunnels over it or digs up where it still
+        // stands (removePet comes back here once it's gone)
+        if (!this._anyLeaving) {
+            // spots: in the order of the chats in the list, left to right
+            this.order = shown.slice().sort((a, b) => a.order - b.order).map(c => c.key);
+            for (const c of shown) {
+                if (this.list.has(c.key))
+                    continue;
+                this.colors[c.key] = this._freeColor(c.key);
+                const pet = new Pet(this, c.key, {tint: PALETTE[this.colors[c.key]], label: (c.session.name || '').trim(),
+                    host: c.host});
+                this.list.set(c.key, pet);
+                this.actor.insert_child_below(pet.actor, this.bubble);
+                pet.setChat(c.session);
+                this._enter(pet);
+            }
         }
         if (this.more) {
             this.more.text = L.fmt('+%1', this.hidden);
             this.more.visible = this.hidden > 0;
         }
         this.layout();
+    }
+
+    get _anyLeaving() {
+        for (const pet of this.list.values()) {
+            if (pet.leaving)
+                return true;
+        }
+        return false;
     }
 
     _enter(pet) {
@@ -824,6 +839,8 @@ class Stage {
         pet.destroy();
         if (!this.hero && this.list.size === 0 && this.chats.length === 0)
             this.pets.ctx.rerender();   // the stage folds away
+        else if (!this.hero && !this._anyLeaving)
+            this.setChats(this.chats);   // (the last one gone: the others move up, a new chat's pet comes)
     }
 
     get colorsByPet() {
@@ -1059,7 +1076,7 @@ class Stage {
     _greet() {
         const hero = this.list.get('');
         const mood = this.pets.mood;
-        if (!hero || mood === 'done' || mood === 'loading' || !this.playful)
+        if (!hero || mood === 'done' || mood === 'loading' || !this.pets.playful)
             return;
         const text = holidayGreeting();
         if (text) {
