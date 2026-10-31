@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Pushed down, Talpy is yours until you let go:** a chat starting or
+  a reminder no longer plays something else under your hand, and pushed
+  as he spots a new cookie he goes after it only once you let go.
 - **The big Talpy as in Plasma:** his headline's tooltip says *Open fix
   parser* over the chat's host and state (*lab · Waiting · 3m*); asking
   the system for less motion (or no longer) while the view is open calms

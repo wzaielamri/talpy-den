@@ -1089,6 +1089,30 @@ console.log(JSON.stringify({ placed, states, said, flavours, flavour, holes, eat
         self.assertLess(r["px"], 80)
         self.assertEqual((r["depth"], r["hole"]), ("half", 1))
 
+    def test_pushed_down_as_it_spots_one_it_stays_yours_till_you_let_go(self):
+        # (a push sets no run: the game took that for a look cut short and
+        # sent it after the cookie under your hand; and nothing else reacts
+        # meanwhile, a chat starting or a reminder)
+        r = run_node(COOKIE_STAGE + """
+game.place(40, 30);
+run(100);
+const spotting = game.state;
+const pushed = t.push();
+game.picked();
+run(600);
+const during = { chasing: t.chasing, busy: t.busy, run: t.run !== null };
+t.react('mindblown');
+t.setMood('working');
+const after = { run: t.run !== null, pushing: t.pushing, eyes: t.st.eyes };
+t.pushed(false, ok => { if (ok) game.landed(); });
+run(5000, () => t.chasing);
+console.log(JSON.stringify({ spotting, pushed, during, after, chasing: t.chasing }));""")
+        self.assertEqual(r["spotting"], "spot")
+        self.assertTrue(r["pushed"])
+        self.assertEqual(r["during"], {"chasing": False, "busy": True, "run": False})
+        self.assertEqual(r["after"], {"run": False, "pushing": True, "eyes": "squint"})   # (still pushed, as it looked)
+        self.assertTrue(r["chasing"])                                                     # let go: after it
+
     def test_a_double_click_on_it_or_right_beside_it_pets_it_instead(self):
         r = run_node(COOKIE_STAGE + """
 console.log(JSON.stringify([game.place(px + 10, H - 20), game.place(px - bw * 0.5, H - 30), game.on, said]));""")

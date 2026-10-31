@@ -269,7 +269,8 @@ export class CookieGame {
         }
         // a look at it (or a landing) cut short by something else: it goes after it all the same
         const t = this.talpy;
-        if (c && !this.chasing && (this.state === 'spot' || this.state === 'held') && t.run === null && !t.held && !t.tugging)
+        if (c && !this.chasing && (this.state === 'spot' || this.state === 'held') && t.run === null && !t.held && !t.tugging
+            && !t.pushing)
             this.go();
         if (this.chasing && c)
             this.follow(dt, c);

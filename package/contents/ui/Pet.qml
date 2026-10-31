@@ -755,7 +755,7 @@ Item {
         running: pet.playing && pet.contextFullText !== "" && (pet.mood === "working" || pet.mood === "agents") && !pet.leaving && !pet.cookieOn
         triggeredOnStart: true
         onTriggered: {
-            if (!pet.held && pet.talpy && !pet.talpy.run) {
+            if (!pet.held && pet.talpy && !pet.talpy.busy) {
                 pet.react("contextFull")
                 pet.say(pet.contextFullText)
             }
@@ -769,7 +769,7 @@ Item {
         running: pet.playing && pet.isMain && root.highUsageText !== "" && pet.mood !== "done" && !pet.leaving && !pet.cookieOn
         triggeredOnStart: true
         onTriggered: {
-            if (pet.held || !pet.talpy || pet.talpy.run)
+            if (pet.held || !pet.talpy || pet.talpy.busy)
                 return
             pet.react(root.maxFiveHour >= 100 ? "battery" : "mindblown")
             pet.say(root.highUsageText)

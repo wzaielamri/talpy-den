@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Pushed down, Talpy is yours until you let go:** a chat starting (his yawn) or the usage and context reminders no longer play something else under your hand, his mood's look waits until he's back up, and pushed as he spots a new cookie he no longer jumps out after it under your hand: he goes after it once you let go (Plasma and VS Code).
 - **VS Code's big Talpy as Plasma's:** his headline's tooltip says *Open fix parser* over the chat's host and state (*lab · Waiting · 3m*), not the host alone; asking the system for less motion (or no longer) while the view is open calms him (or lets him dig about again) and his stars at once, as Plasma and GNOME follow the setting (he went on as when the view opened); and with less motion asked for the pets are still shown from their pictures, not drawn anew 30 times a second (VS Code).
 - **A chat pet's name tag has its pet's tooltip** (the chat, its state, *Click to open this chat*), as in VS Code and GNOME, and a pet's speech bubble shows a chat's name as typed: a name with something like `<b>` in it was read as markup (Plasma).
 - **Peekaboo takes every click on Talpy:** a click soon after the one before (a double click) counts as a click on him, so you catch him up a moment after a click that came as he was only just coming up; it was taken for a dance, which does nothing during a game, and lost (Plasma and VS Code).

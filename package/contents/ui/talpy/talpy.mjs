@@ -386,8 +386,8 @@ export class Talpy {
         this.lastAuto = '';
         if (this.held)
             return;
-        if (this.chasing)
-            return;
+        if (this.chasing || this.pushing)
+            return;   // (it looks so once it's back: pushed() ends on its base)
         if (!this.run || this.run.auto)
             this.cancel();
         if (!this.run)
@@ -411,9 +411,10 @@ export class Talpy {
         }
     }
 
-    // An action now: a reaction to you or to an event (done(true) when it ran to the end)
+    // An action now: a reaction to you or to an event (done(true) when it ran
+    // to the end); not while you have it (held, pulled at, pushed down)
     react(name, done) {
-        if (this.held || this.tugging || this.chasing || !ACTIONS[name]) {
+        if (this.held || this.tugging || this.pushing || this.chasing || !ACTIONS[name]) {
             if (done)
                 done(false);
             return;
@@ -422,7 +423,7 @@ export class Talpy {
     }
 
     get busy() {
-        return this.run !== null || this.held || this.tugging || this.chasing;
+        return this.run !== null || this.held || this.tugging || this.pushing || this.chasing;
     }
 
     // Its burrow is open or opening under it (a host swinging it puts it
