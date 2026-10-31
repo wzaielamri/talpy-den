@@ -355,6 +355,16 @@ PlasmaComponents3.ScrollView {
                         readonly property int plansShown: Math.min(plans.length, root.pageSize * root.pagesShown(pageKey + "|plans"))
                         readonly property var memories: project.memories || []
                         readonly property int memoriesShown: Math.min(memories.length, root.pageSize * root.pagesShown(pageKey + "|memories"))
+                        // the lines' folder column (one for its chats, plans and memories, so their
+                        // times line up), only when a line that shows is in a folder below the
+                        // project's: empty on every line, it took room their names were cut short for
+                        readonly property real folderWidth: {
+                            const p = project.path
+                            const below = chats.slice(0, chatsShown).some(c => root.folderIn(c.cwd, p, c.cwdShort || "~") !== "")
+                                          || plans.slice(0, plansShown).some(x => root.folderIn(x.cwd, p, x.cwdShort || "") !== "")
+                                          || memories.slice(0, memoriesShown).some(m => m.type === "account" || root.folderIn(m.folder, p, m.folderShort || "") !== "")
+                            return below ? view.folderWidth : 0
+                        }
                         spacing: Kirigami.Units.smallSpacing
 
                         // What goes on there now
@@ -397,7 +407,7 @@ PlasmaComponents3.ScrollView {
                                 group: root.groupOfProfile(chat.profileDir)
                                 accountTag: inside.tagged ? chat.account || "" : ""
                                 project: inside.project.path
-                                folderWidth: view.folderWidth
+                                folderWidth: inside.folderWidth
                             }
                         }
                         MoreButton {
@@ -446,7 +456,7 @@ PlasmaComponents3.ScrollView {
                                         group: root.groupOfProfile(plan.profileDir)
                                         accountTag: inside.tagged ? plan.account || "" : ""
                                         project: inside.project.path
-                                        folderWidth: view.folderWidth
+                                        folderWidth: inside.folderWidth
                                     }
                                 }
                                 MoreButton {
@@ -470,7 +480,7 @@ PlasmaComponents3.ScrollView {
                                         memory: inside.memories[index] || root.emptyMemory
                                         accountTag: inside.tagged ? memory.account || "" : ""
                                         project: inside.project.path
-                                        folderWidth: view.folderWidth
+                                        folderWidth: inside.folderWidth
                                     }
                                 }
                                 MoreButton {

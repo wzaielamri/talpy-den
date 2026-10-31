@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **An opened project's chats, plans and memories show their names whole** where there's room: the folder column after them only takes its room while one of the lines shown is in a folder below the project's (it was always there, empty on most projects, and the names were cut short beside it) (Plasma).
 - **The Accounts settings as the popup:** the default account has the popup's plain *Default* tag (it was a bold green *default*), and *Log out?* / *Remove?* has a plain **Cancel**, as every other question (its red × made both buttons look like they take something away) (Plasma).
 - **Find a chat's results line up:** each line's folder and how long ago stand in two right-aligned columns of one width, as in Recent chats under them (one label as wide as its text put them, and the account tags, at a different place on every line), and a memory found says how long ago it changed (Plasma).
 - **A confirmation's button carries the icon of the one that asked:** *Delete* under a chat, plan or memory has the red trash of **Delete…**, a queued task's *Cancel it* the red × (in VS Code too), and the chat pane's *Undo* and *Undo all* the undo arrow, as the settings' *Delete* and the Permissions tab's *Revoke* and *Allow* have theirs; they were bare (Plasma and VS Code).
