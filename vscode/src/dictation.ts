@@ -78,6 +78,6 @@ async function modelAction(m: Model): Promise<Item | undefined> {
                  busy: `Downloading the ${m.name} speech model…` });
   if (m.installed && !m.used) items.push({ label: "$(check) Use it", run: ["--use-model", m.name] });
   if (m.installed && m.deletable) items.push({ label: "$(trash) Delete it", description: "download it again any time", run: ["--delete-model", m.name] });
-  if (m.installed && !m.deletable) items.push({ label: "whisper.cpp's own model", description: "in whisper.cpp's folder: not the extension's to delete" });
+  if (m.installed && !m.deletable) items.push({ label: "whisper.cpp's own model", description: "in whisper.cpp's folder: not Talpy Den's to delete" });
   return vscode.window.showQuickPick(items, { title: `The ${m.name} model · ${m.mb} MB`, placeHolder: m.note });
 }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The login hints say Talpy Den never sees your login,** as everywhere
+  else (they said *the extension*).
 - **The SSH hosts button has the server icon in the view's title bar
   too,** as in the editor tab and on each host's head (it was a screen),
   and an SSH host's *Log in…* in its error is a link, as an account's.

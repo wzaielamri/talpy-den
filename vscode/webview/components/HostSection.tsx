@@ -84,7 +84,7 @@ export function HostSection({ host: h, groups }: { host: HostState; groups: Grou
               <button
                 type="button"
                 class="link"
-                title={`Opens a terminal where ssh asks for ${h.name}'s password (or passphrase, one-time code, new host key): the extension never sees it. The checks then go through the connection that login opened, until 30 minutes after their last check, until you log out, or until you disconnect.`}
+                title={`Opens a terminal where ssh asks for ${h.name}'s password (or passphrase, one-time code, new host key): Talpy Den never sees it. The checks then go through the connection that login opened, until 30 minutes after their last check, until you log out, or until you disconnect.`}
                 onClick={() => post({ type: "loginHost", host: h.name })}
               >
                 Log in…
