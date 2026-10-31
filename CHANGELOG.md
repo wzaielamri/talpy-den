@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A confirmation's button carries the icon of the one that asked:** *Delete* under a chat, plan or memory has the red trash of **Delete…**, a queued task's *Cancel it* the red × (in VS Code too), and the chat pane's *Undo* and *Undo all* the undo arrow, as the settings' *Delete* and the Permissions tab's *Revoke* and *Allow* have theirs; they were bare (Plasma and VS Code).
 - **The popup's tabs alike in Plasma:** the Permissions tab's *Show 8 more* looks as every other *Show N more* (the skip-down icon, small, under the lines; it was a bare text button), the Projects tab reads its first time with a spinner beside *Reading your chats by project…*, as the Recap and the Permissions tab do, and the Talpy Den tab's *No Claude Code chats yet* has the chats icon, as the other tabs' empty states have their own (it had the About icon) (Plasma).
 - **The Recap's bars lie on a track,** as an account's busiest folders do on the Talpy Den tab and as VS Code's and GNOME's Recap bars do: in *Where Claude worked* and *At API prices* a faint track shows where all of it would end, and the bars have round ends (Plasma).
 - **VS Code's headline takes clicks on its words only,** as Plasma's: the empty space right of *1 chat needs you* is the stage's, so a double-click there gives Talpy a cookie (the whole line opened the chat and took no double-click) (VS Code).

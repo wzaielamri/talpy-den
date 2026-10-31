@@ -33,6 +33,7 @@ Loader {
             Layout.fillWidth: true
             text: ask.asked.question
             confirmText: i18n("Delete")
+            confirmIcon: "delete"
             onConfirmed: root.confirmDelete()
             onCancelled: root.deleteAsk = root.noDeleteAsk
         }

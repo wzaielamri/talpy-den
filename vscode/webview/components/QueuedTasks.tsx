@@ -82,7 +82,7 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
         <div class="confirm queued-ask">
           <span>{t.afterTurn ? `Cancel your message to “${t.name || "the chat"}”? It isn't sent, and its text is gone.`
             : "Cancel this task? It doesn't start, and what you wrote for it is gone."}</span>
-          <button type="button" class="btn small" onClick={() => { ask(false); post({ type: "unqueue", id: t.id }); }}>Cancel it</button>
+          <button type="button" class="btn small" onClick={() => { ask(false); post({ type: "unqueue", id: t.id }); }}><Icon name={I.cancel} tone={T.cancel} />Cancel it</button>
           <button type="button" class="btn secondary small" onClick={() => ask(false)}>Keep it</button>
         </div>
       ) : null}

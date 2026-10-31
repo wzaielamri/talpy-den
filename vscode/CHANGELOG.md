@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A queued task's *Cancel it* has the red ×** of the button that
+  asked, as in Plasma.
 - **The headline takes clicks on its words only,** as in Plasma: a
   double-click beside them gives Talpy a cookie.
 - **Pushed down, Talpy is yours until you let go:** a chat starting or

@@ -530,6 +530,7 @@ ColumnLayout {
                 text: queuedLine.task.afterTurn ? i18n("Cancel your message to “%1”? It isn't sent, and its text is gone.", queuedLine.task.name || i18n("the chat"))
                                                 : i18n("Cancel this task? It doesn't start, and what you wrote for it is gone.")
                 confirmText: i18n("Cancel it")
+                confirmIcon: "cancel"
                 cancelText: i18n("Keep it")
                 onConfirmed: {
                     root.unqueueAsk = ""
