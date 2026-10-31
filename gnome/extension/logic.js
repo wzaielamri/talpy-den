@@ -157,6 +157,18 @@ export function askId(s) {
     return p.toolUse ? `tool:${p.toolUse}` : '';
 }
 
+// What a waiting chat asks, for its notification: [title, text] (s.permission
+// set; main.qml: askText): a plan ready, Claude's questions, or a permission
+// with its command or the file it changes
+export function askText(s) {
+    const p = s.permission;
+    if (p.plan)
+        return [fmt('%1 has a plan ready', s.name), p.plan.title || 'Approve it to start, or keep planning.'];
+    if (p.questions && p.questions.length)
+        return [fmt('%1 asks you', s.name), p.questions.map(q => q.question).join('\n')];
+    return [fmt('%1 asks for a permission', s.name), p.command || (p.file ? fmt('Change %1', p.file) : p.line || '')];
+}
+
 // The 5-hour usage that goes next to the panel icon: this computer's default
 // account (listed first; VS Code's Claude and plain claude run on it), else
 // the account with an active session, else the one with the freshest numbers.
@@ -516,10 +528,11 @@ export class Tracker {
                     this.lastWaitingAlert[sid] = {at: nowMs, ask: askId(s)};
                     out.pets.push({kind: 'waiting', text: fmt('%1 needs you!', s.name), key: petKeyOf(s, host)});
                     if (settings.notifyWaiting) {
+                        const asks = s.permission ? askText(s) : [fmt('%1 needs your input', s.name), s.detail || reasonText(s.reason)];
                         out.notify.push({
                             key: sid, session: s, kind: 'waiting', host,
-                            title: fmt('%1 needs your input', s.name),
-                            body: `${s.detail || reasonText(s.reason)}\n${s.cwdShort}${where}`,
+                            title: asks[0],
+                            body: `${asks[1]}\n${s.cwdShort}${where}`,
                             icon: 'warning',   // (a meaning of ui/icons.js: notifier.js)
                         });
                         sound('waiting');

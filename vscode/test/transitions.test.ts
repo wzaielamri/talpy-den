@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { demoState } from "../src/shared/demo";
 import type { Group, SessionState } from "../src/shared/types";
-import { TransitionTracker } from "../src/transitions";
+import { askText, askTitle, TransitionTracker } from "../src/transitions";
 
 const NOW = 1_800_000_000_000;
 const OPTS = { notifyWaiting: true, notifyDone: true, notifyDoneMinSeconds: 30 };
@@ -140,4 +140,13 @@ test("a chat keeps its notifications while its row changes, and a chat listed tw
   const twice = [{ ...g, sessions: [row("waiting", "live", NOW), row("idle", "job", NOW)] }];
   t.track("", twice, NOW + 4000, undefined, OPTS);
   assert.deepEqual(t.track("", twice, NOW + 70000, undefined, OPTS).notices, [], "not an alert every minute");
+});
+
+test("a chat waiting on its plan says so, as Plasma's notification", () => {
+  const g = demoState(NOW).status!.groups[0];
+  const s = { ...g.sessions[0], name: "Fix the parser", permission: { answer: "", line: "ExitPlanMode", command: "", plan: { title: "Speed up", text: "", file: "", cut: false } } };
+  assert.equal(askTitle(s as never), "Fix the parser has a plan ready");
+  assert.equal(askText(s as never), "Speed up");
+  const untitled = { ...s, permission: { ...s.permission, plan: { ...s.permission.plan, title: "" } } };
+  assert.equal(askText(untitled as never), "Approve it to start, or keep planning.");
 });

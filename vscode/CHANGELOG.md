@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A chat waiting on its plan notifies *… has a plan ready*** with the
+  plan's title, as on Plasma, also when Talpy Den can't answer it (it
+  said *… asks for a permission*).
 - **The chat tab's buttons as in Plasma:** a picture in your reply is
   taken out with the red × icon; while you dictate only the stop icon is
   red, not the whole button and its box; a reply waiting for the turn to

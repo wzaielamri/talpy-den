@@ -152,6 +152,19 @@ test('short turns and repeated waiting stay quiet', () => {
     eq(out.notify.length, 0, 'second alert within a minute');
 });
 
+test("a waiting chat's notification says what it asks, as Plasma's", () => {
+    const s = (permission) => ({name: 'fix', permission});
+    eq(L.askText(s({command: 'make deploy', line: 'Bash: make deploy'})), ['fix asks for a permission', 'make deploy']);
+    eq(L.askText(s({file: '/x/a.py', line: 'Edit: a.py'})), ['fix asks for a permission', 'Change /x/a.py']);
+    eq(L.askText(s({questions: [{question: 'Which one?'}, {question: 'And?'}]})), ['fix asks you', 'Which one?\nAnd?']);
+    eq(L.askText(s({plan: {title: 'Plan: speed up'}})), ['fix has a plan ready', 'Plan: speed up']);
+    eq(L.askText(s({plan: {title: ''}})), ['fix has a plan ready', 'Approve it to start, or keep planning.']);
+    const t = new L.Tracker();
+    t.track('', [group([session('a', 'working')])], T, '', settings);
+    const out = t.track('', [group([session('a', 'waiting', {permission: {command: 'ls', line: 'Bash: ls'}})])], T + 1000, '', settings);
+    eq(out.notify.map(n => [n.title, n.body.split('\n')[0]]), [['chat a asks for a permission', 'ls']]);
+});
+
 test('the next permission prompt within a minute is told', () => {
     const t = new L.Tracker();
     const asks = (request, toolUse = null) => ({permission: {answer: request ? 'hook' : '', request, toolUse}});

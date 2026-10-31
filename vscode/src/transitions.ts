@@ -57,12 +57,14 @@ const SOUND_RANK: Record<SoundKind, number> = { "": 0, done: 1, failed: 2, waiti
 export function askText(s: Session): string {
   const p = s.permission;
   if (!p) return "";
+  if (p.plan) return p.plan.title || "Approve it to start, or keep planning.";
   const questions = p.questions ?? [];
   return questions.length ? questions.map((q) => q.question).join(" ") : p.command || (p.file ? `Change ${p.file}` : p.line);
 }
 
-// The title of its notification
+// The title of its notification (as Plasma's askText)
 export function askTitle(s: Session): string {
+  if (s.permission?.plan) return `${s.name} has a plan ready`;
   return s.permission?.questions?.length ? `${s.name} asks you` : `${s.name} asks for a permission`;
 }
 const WAITING_QUIET_MS = 60000;
