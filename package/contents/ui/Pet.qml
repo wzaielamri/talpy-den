@@ -435,35 +435,45 @@ Item {
     }
 
     // A drag that starts downward (within 45° of straight down) while it's in
-    // its burrow pushes it in (talpy.push): it squashes and sinks as far as
-    // your hand goes, with a dirt puff; with less motion it's down at once.
-    // False: it isn't in its burrow, and the drag picks it up as before.
+    // its burrow pushes it in (talpy.push): it squashes, grabs the rim and
+    // pushes back, sinking a little as your hand goes, with a dirt puff and a
+    // word; with less motion it's down at once. False: it isn't in its
+    // burrow, and the drag picks it up as before.
     function push() {
         stopGame()
-        if (!talpy || !talpy.push())
+        if (!talpy || !talpy.push(root.lessMotion))
             return false
         pushing = true
         stride.stop()
         if (game)
             game.picked()   // (it stops seeing to its cookie meanwhile)
-        if (root.lessMotion)
-            talpy.pushTo(64)
+        say([i18n("Hey!"), i18n("Nooo!"), i18n("No pushing!")][Math.floor(Math.random() * 3)])
         return true
     }
 
-    // (as far down as your hand, p, went since the drag began)
+    // Your hand, p, moved on: as far down as it went since the drag began, it
+    // sinks (less the further you push) until it gives in and ducks all the
+    // way; back up past where you began, or off to a side, you pull it out
+    // instead, up from where it is (the tug)
     function pushToward(p) {
-        if (talpy && !root.lessMotion)
-            talpy.pushTo((p.y - grab.pressedAt.y) / unit)
+        const dx = p.x - grab.pressedAt.x, dy = p.y - grab.pressedAt.y
+        if (!(dy > 0 && Math.abs(dx) <= dy) && Math.hypot(dx, dy) > gu * 0.5) {
+            pushing = false
+            pull()
+            return
+        }
+        if (talpy && talpy.pushTo(dy / unit))
+            say(i18n("Okay, okay!"))
     }
 
-    // Let go: it stays down a moment, then peeks out (hey!, or a giggle) and is
-    // back to its mood; a chat that needs you: it pops straight up with its sign
+    // Let go: given in, it stays down a moment, then peeks out (hey!, or a
+    // giggle) and is back to its mood; not yet, it springs back up, boing; a
+    // chat that needs you: it pops straight up with its sign
     function pushed() {
         pushing = false
         if (!talpy)
             return
-        talpy.pushed(mood === "needs", ok => {
+        const how = talpy.pushed(mood === "needs", ok => {
             if (!ok)
                 return
             if (pet.leaving)
@@ -473,6 +483,8 @@ Item {
             else if (pet.game)
                 pet.game.landed()
         })
+        if (how === "boing")
+            say(i18n("Hmpf!"))
     }
 
     // (it leans towards your hand, p, as it hangs on)
@@ -980,7 +992,7 @@ Item {
                 if (!(p.y - pressedAt.y > 0 && Math.abs(p.x - pressedAt.x) <= p.y - pressedAt.y && pet.push()))
                     pet.pull()
                 else
-                    pet.pushToward(p)
+                    pet.pushToward(p)   // (then up or sideways: pulled out after all)
             } else if (dragging && pet.pushing) {
                 pet.pushToward(p)
             } else if (dragging && pet.held) {

@@ -425,18 +425,24 @@ export const TUG = {
         { depth: 'half', eyes: 'happy', mouth: 'smile', t: 500 }]
 };
 
-// Pushed down into its burrow (Talpy.push): it squashes (body 'push') and
-// sinks as far as your hand goes, with a dirt puff; let go, it stays down a
-// moment, then peeks out, hey! or a giggle, and is back to its mood (back);
-// with a chat that needs you it pops straight back up (needs)
+// Pushed down into its burrow (Talpy.push): it squashes (body 'push'), grabs
+// the rim and pushes back, with a dirt puff (start); pushed on, it gives in
+// and ducks all the way (give). Let go: given in, it stays down a moment,
+// then peeks out, hey! or a giggle, and is back to its mood (back); not yet,
+// it springs back up past where it was, boing, and settles (boing); with a
+// chat that needs you it pops straight back up (needs)
 export const PUSH = {
-    start: () => ({ eyes: 'squint', mouth: 'o', plume: 'droop', body: 'push', fx: dirt(6, 12) }),
+    start: () => ({ eyes: 'squint', mouth: 'wavy', arms: 'rim', plume: 'wild', body: 'push', fx: dirt(6, 12) }),
+    give: () => ({ eyes: 'closed', mouth: 'o', plume: 'droop', body: 'push', fx: dirt(4, 8) }),
     back: w => [
         { depth: 'hidden', eyes: 'closed', mouth: 'small', body: '', plume: '', t: rnd(1000, 1600) },
         { depth: 'peek', eyes: 'open', mouth: 'small', look: [-1.6, 0], t: 650 },
         { depth: 'peek', look: [1.6, 0], t: 550 },
         { depth: 'half', eyes: 'happy', mouth: 'open', plume: 'flick',
           fx: [['text', 15, 24, { text: w(chance(0.5) ? 'hey!' : 'hihi'), size: 6.5, dx: -3, dy: -8, dur: 1.4 }]], t: 900 }],
+    boing: () => [
+        { depth: 'high', body: 'jolt', eyes: 'wide', mouth: 'open', plume: 'flick', fx: dirt(3, 6), t: 420 },
+        { eyes: 'squint', mouth: 'smile', plume: 'bob', t: 650 }],
     needs: () => [
         { depth: 'hidden', body: '', t: 120 },
         { depth: 'high', body: 'jolt', eyes: 'wide', mouth: 'open', plume: 'up', fx: dirt(6), t: 450 }]

@@ -331,9 +331,10 @@ test("a stage hidden while Talpy goes after a cookie draws him once and lets the
 });
 
 // A drag that starts downward (within 45°) while he's in his burrow pushes him
-// in, drawn live meanwhile; let go, he's on his way back; up or sideways is the
-// tug of old
-test("a drag that starts downward pushes the hero into his burrow; sideways pulls him", () => {
+// in, drawn live meanwhile: he hangs on and sinks a little, and says so; let
+// go, he's on his way back; back up past where you began, or sideways, is the
+// tug, up from where he was pushed to
+test("a drag that starts downward pushes the hero into his burrow; up or sideways pulls him", () => {
   const t = load();
   const stage: Any = new t.Stage(new FakeEl("div"), true, "hero", { open() {} });
   t.resize[0]([{ contentRect: { width: 400, height: 96 } }]);
@@ -343,25 +344,51 @@ test("a drag that starts downward pushes the hero into his burrow; sideways pull
     contextFullText: "", maxFiveHour: 0, agentsRunning: 0, waiting: null,
   });
   const hero = stage.pets[0];
+  hero.talpy.brainOn = false; // (no trick of his own between the drags)
   const g = hero.grab;
+  const said: string[] = [];
+  hero.say = (text: string) => void said.push(text);
   const at = (x: number, y: number) => ({ button: 0, pointerId: 1, clientX: x, clientY: y, preventDefault() {} });
+  const settle = () => {
+    for (let i = 0; i < 30; i++) hero.talpy.tick(hero.talpy.now + 16);
+  };
   const from = hero.talpy.v.depth;
   g.listeners.pointerdown[0](at(100, 40));
   g.listeners.pointermove[0](at(106, 60)); // down, a little to the right
   assert.equal(hero.pushing, true);
   assert.equal(hero.held, false);
+  assert.ok(["Hey!", "Nooo!", "No pushing!"].includes(said[0]), "he says so");
+  settle();
   assert.ok(hero.talpy.v.depth > from, "it sinks as your hand goes");
   stage.loop();
   assert.equal(hero.film.on, false); // (drawn live while pushed)
   g.listeners.pointermove[0](at(106, 90));
+  settle();
   const deeper = hero.talpy.v.depth;
-  assert.ok(deeper > from + 10);
+  assert.ok(deeper > from + 2 && deeper < from + 50 / (stage.box / 64), "it hangs on: less than your hand went");
   g.listeners.pointerup[0](at(106, 90));
   assert.equal(hero.pushing, false);
   assert.equal(hero.talpy.pushing, false);
   assert.ok(hero.talpy.run, "it's on its way back up");
+  assert.equal(said[said.length - 1], "Hmpf!"); // (it sprang back: it hadn't given in)
   hero.talpy.cancel();
   hero.talpy.apply({});
+  settle();
+  // pushed on far enough, it gives in
+  g.listeners.pointerdown[0](at(100, 20));
+  g.listeners.pointermove[0](at(100, 30));
+  g.listeners.pointermove[0](at(100, 20 + 70 * (stage.box / 64)));
+  assert.equal(hero.talpy.gaveIn, true);
+  assert.equal(said[said.length - 1], "Okay, okay!");
+  // then back up past where you began: pulled out after all, from down there
+  g.listeners.pointermove[0](at(100, 10));
+  assert.equal(hero.pushing, false);
+  assert.equal(hero.talpy.pushing, false);
+  assert.ok(hero.tugging, "the tug, up from where it was");
+  g.listeners.pointerup[0](at(100, 10));
+  hero.talpy.cancel();
+  hero.talpy.apply({});
+  settle();
   g.listeners.pointerdown[0](at(100, 40));
   g.listeners.pointermove[0](at(130, 45)); // sideways: the tug, as before
   assert.equal(hero.pushing, false);

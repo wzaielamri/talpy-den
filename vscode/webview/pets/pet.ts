@@ -589,37 +589,50 @@ export class Pet {
   }
 
   // A drag that starts downward (within 45° of straight down) while it's in
-  // its burrow pushes it in (talpy.push): it squashes and sinks as far as your
-  // hand goes, with a dirt puff; with less motion it's down at once. False:
-  // it isn't in its burrow, and the drag picks it up as before.
+  // its burrow pushes it in (talpy.push): it squashes, grabs the rim and
+  // pushes back, sinking a little as your hand goes, with a dirt puff and a
+  // word; with less motion it's down at once. False: it isn't in its burrow,
+  // and the drag picks it up as before.
   private push(): boolean {
     this.stopGame();
-    if (!this.talpy.push()) return false;
+    if (!this.talpy.push(reducedMotion())) return false;
     this.pushing = true;
     this.stride.stop();
     this.game?.picked(); // (it stops seeing to its cookie meanwhile)
-    if (reducedMotion()) this.talpy.pushTo(64);
+    this.say(["Hey!", "Nooo!", "No pushing!"][Math.floor(Math.random() * 3)]);
     this.changed();
     return true;
   }
 
-  // (as far down as your hand, p, went since the drag began)
+  // Your hand, p, moved on: as far down as it went since the drag began, it
+  // sinks (less the further you push) until it gives in and ducks all the
+  // way; back up past where you began, or off to a side, you pull it out
+  // instead, up from where it is (the tug)
   private pushToward(p: { x: number; y: number }): void {
-    if (!this.pressedAt || reducedMotion()) return;
-    this.talpy.pushTo((p.y - this.pressedAt.y) / (this.stage.box / 64));
+    if (!this.pressedAt) return;
+    const dx = p.x - this.pressedAt.x,
+      dy = p.y - this.pressedAt.y;
+    if (!(dy > 0 && Math.abs(dx) <= dy) && Math.hypot(dx, dy) > this.stage.gu * 0.5) {
+      this.pushing = false;
+      this.pull();
+      return;
+    }
+    if (this.talpy.pushTo(dy / (this.stage.box / 64))) this.say("Okay, okay!");
     this.changed();
   }
 
-  // Let go: it stays down a moment, then peeks out (hey!, or a giggle) and is
-  // back to its mood; a chat that needs you: it pops straight up with its sign
+  // Let go: given in, it stays down a moment, then peeks out (hey!, or a
+  // giggle) and is back to its mood; not yet, it springs back up, boing; a
+  // chat that needs you: it pops straight up with its sign
   private pushed(): void {
     this.pushing = false;
-    this.talpy.pushed(this.mood === "needs", (ok) => {
+    const how = this.talpy.pushed(this.mood === "needs", (ok) => {
       if (!ok || this.destroyed) return;
       if (this.leaving) this.goAway(); // its chat left meanwhile: now it goes
       else if (this.mood === "needs") this.talpy.react("sign");
       else this.game?.landed();
     });
+    if (how === "boing") this.say("Hmpf!");
     this.changed();
   }
 
