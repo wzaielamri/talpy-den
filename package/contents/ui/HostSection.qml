@@ -118,7 +118,7 @@ ColumnLayout {
         PlasmaComponents3.ToolButton {
             icon.name: Icons.plasma.hide
             display: PlasmaComponents3.AbstractButton.IconOnly
-            text: i18n("Hide %1", hostSection.host)
+            text: i18n("Stop showing %1", hostSection.host)
             onClicked: root.toggleHost(hostSection.host)
             PlasmaCore.ToolTipArea {
                 textFormat: Text.PlainText
