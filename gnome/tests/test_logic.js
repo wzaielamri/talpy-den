@@ -768,6 +768,12 @@ test('trend lines, what Claude did, where the money went, the prompts you answer
     const many = Array.from({length: 11}, (_, i) => ({...grant, id: String(i)}));
     eq([L.weekGrantedShown(many, false).length, L.weekGrantedShown(many, true).length], [L.WEEK_GRANTED_FEW, 11]);
     eq(L.weekGrantedIntro([]), 'Nothing lets chats on this computer skip a permission prompt: they ask you each time.');
+    // each line's kind as an icon, as Plasma's
+    eq([{kind: 'trust', value: '/h'}, {kind: 'flag', value: 'x'}, {kind: 'mode', value: 'acceptEdits'}, {kind: 'allow', value: 'WebSearch'},
+        {kind: 'allow', value: 'Bash(ls *)'}, {kind: 'allow', value: 'Read'}].map(L.permsGrantMeaning),
+    ['trusted', 'warning', 'edit', 'webAccess', 'terminal', 'allowed']);
+    eq([rule, {kind: 'edits', value: '/h/app'}, {kind: 'allow', value: 'WebFetch(domain:x.org)'}, {kind: 'allow', value: 'Bash(git status *)'}]
+        .map(L.permsRuleMeaning), ['folder', 'edit', 'webAccess', 'terminal']);
     const w = {key: 'five_hour', resetsAt: 10 * HOUR, points: [[HOUR, 5]]};
     eq(L.weekWindowSpan(w), [5 * HOUR, 10 * HOUR]);
     eq(L.weekResetText(10 * HOUR, 9 * HOUR), `resets ${new Date(10 * HOUR).getHours().toString().padStart(2, '0')}:00`);

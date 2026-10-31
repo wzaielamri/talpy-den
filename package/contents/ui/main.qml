@@ -3833,6 +3833,7 @@ PlasmoidItem {
     property string ruleHost: ""     // where the last one was: an SSH host, or "" (this computer)
     property string ruleMessage: ""  // what the last one did
     property bool ruleRevoked: false // (the last one revoked a permission you gave: its message goes there)
+    property bool ruleFailed: false  // (the last one changed nothing: its message is an error)
 
     onPermsShownChanged: {
         if (permsShown)
@@ -3935,6 +3936,7 @@ PlasmoidItem {
                 root.ruleBusy = ""
                 ruleStale.stop()
                 const result = root.helperResult(data)
+                root.ruleFailed = !result.ok
                 root.ruleMessage = result.ok ? result.message || "" : i18n("Nothing changed: %1", result.message || i18n("no answer"))
             }
             root.permsAgain = true   // (a read on its way may have read the file before)

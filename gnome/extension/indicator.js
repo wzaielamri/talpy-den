@@ -74,11 +74,12 @@ class TalpyDenIndicator extends PanelMenu.Button {
         // (asking: the rule whose Allow asks first; ruleBusy, ruleMessage: one
         // being written, what it did; rules: suggest rules (the recap-rules
         // setting); revoking: the permission you gave whose Revoke asks first;
-        // ruleRevoked: the message is a revoke's; allGranted: all those
+        // ruleRevoked: the message is a revoke's; ruleFailed: it says why
+        // nothing changed (red); allGranted: all those
         // permissions shown, not the first few)
         // (asking, revoking, ruleBusy: host|id; ruleHost: where the last one was; allGranted: by host)
         this.perms = {data: null, error: '', busy: false, asking: '', ruleBusy: '', ruleMessage: '', ruleHost: '',
-            rules: this._settings.get_boolean('recap-rules'), revoking: '', ruleRevoked: false, allGranted: {}};
+            rules: this._settings.get_boolean('recap-rules'), revoking: '', ruleRevoked: false, ruleFailed: false, allGranted: {}};
         this._weekAsked = 0;
         this._permsAgain = false;     // read the permissions again once the read on its way is in (a rule changed meanwhile)
         // Turns that ended while the menu was closed (row key -> "done"), for
@@ -1348,6 +1349,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         if (this._destroyed)
             return;
         this.perms.ruleBusy = '';
+        this.perms.ruleFailed = !result.ok;
         this.perms.ruleMessage = result.ok ? result.message || '' : L.fmt('Nothing changed: %1', result.message || 'no answer');
         this._permsAgain = true;   // (a read on its way may have read the file before)
         this.loadPerms();
@@ -1376,6 +1378,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         if (this._destroyed)
             return;
         this.perms.ruleBusy = '';
+        this.perms.ruleFailed = !result.ok;
         this.perms.ruleMessage = result.ok ? result.message || '' : L.fmt('Nothing changed: %1', result.message || 'no answer');
         this._permsAgain = true;   // (a read on its way may have read the file before)
         this.loadPerms();

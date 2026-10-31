@@ -8,7 +8,7 @@ import { demoPerms, demoState, demoWeek } from "../src/shared/demo";
 import type { WeekDay } from "../src/shared/types";
 import {
   coldText, currencyOf, dayTip, deltaText, factsText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
-  weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro,
+  weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
   dateText, periodWaiting, rowDay, shortDay,
 } from "../src/shared/week";
 import { ViewHost } from "../src/view";
@@ -159,6 +159,9 @@ test("a permission you gave is revoked only by an id of week.py's list", () => {
   const g = demoPerms(NOW).granted[1];
   assert.equal(grantMeta(g), "chats started in date-parser · ~/projects/date-parser/.claude/settings.local.json");
   assert.equal(grantedIntro([]), "Nothing lets chats on this computer skip a permission prompt: they ask you each time.");
+  // a rule it suggests has its kind's icon, as Plasma's
+  assert.deepEqual([{ kind: "dir", value: "/h/lib" }, { kind: "edits", value: "/h/app" }, { kind: "allow", value: "WebFetch(domain:x.org)" },
+    { kind: "allow", value: "Bash(git status *)" }].map(ruleMeaning), ["folder", "edit", "webAccess", "terminal"]);
 });
 
 function setup() {

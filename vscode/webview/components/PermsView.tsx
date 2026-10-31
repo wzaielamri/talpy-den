@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { PermsData, WeekGrant, WeekRule } from "../../src/shared/types";
-import { GRANTED_FEW, grantedIntro, grantMeaning, grantMeta, promptsText, ruleMeta } from "../../src/shared/week";
+import { GRANTED_FEW, grantedIntro, grantMeaning, grantMeta, promptsText, ruleMeaning, ruleMeta } from "../../src/shared/week";
 import { I, Icon, T } from "../util/icons";
 import { post } from "../env";
 import { useViewVisible } from "../util/petStage";
@@ -20,6 +20,9 @@ export function PermsView({ rules }: { rules: boolean }) {
   const visible = useViewVisible();
   const answer = useStore(permsAnswer);
   const [busy, setBusy] = useState(true); // asked, and its answer hasn't come
+  // the change being written (host|id): one settings write at a time, every
+  // section's buttons wait for it (as Plasma's)
+  const [change, setChange] = useState("");
 
   function ask() {
     setBusy(true);
@@ -48,8 +51,8 @@ export function PermsView({ rules }: { rules: boolean }) {
           {[{ host: "", ok: true, error: "", prompts: data.prompts, granted: data.granted }, ...(data.hosts ?? [])].map((src) =>
             src.ok ? (
               <div key={src.host} class="week">
-                <Granted granted={src.granted ?? []} host={src.host} reload={ask} />
-                <Prompts prompts={src.prompts ?? null} host={src.host} rules={rules} reload={ask} />
+                <Granted granted={src.granted ?? []} host={src.host} reload={ask} change={change} setChange={setChange} />
+                <Prompts prompts={src.prompts ?? null} host={src.host} rules={rules} reload={ask} change={change} setChange={setChange} />
               </div>
             ) : (
               <div key={src.host} class="msg error" role="alert">Couldn't read the permissions on {src.host}: {src.error || "no answer"}</div>
@@ -66,26 +69,27 @@ export function PermsView({ rules }: { rules: boolean }) {
 // The permission prompts you answered, and the rules that would have let
 // the most of them through (written only when you allow one; the settings
 // can leave them out)
-function Prompts({ prompts: p, host, rules: suggest, reload }: {
+function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, setChange }: {
   prompts: PermsData["prompts"] | null; host: string; rules: boolean; reload: () => void;
+  change: string; setChange: (key: string) => void;
 }) {
   const ruleAnswer = useStore(weekRuleAnswer);
   const [asking, setAsking] = useState("");
-  const [busy, setBusy] = useState("");
   const seen = useRef(ruleAnswer); // (one from before the tab showed is old news)
   useEffect(() => {
     if (!ruleAnswer || ruleAnswer === seen.current) return;
     seen.current = ruleAnswer;
     if (ruleAnswer.host !== host) return; // (the section it's for reads them all again, once)
-    setBusy("");
+    setChange("");
     reload();
   }, [ruleAnswer]);
   if (!p) return null;
   const rules = suggest ? p.rules : [];
+  const busy = !!busyKey;
 
   function change(rule: WeekRule, allow: boolean) {
     setAsking("");
-    setBusy(rule.id);
+    setChange(`${host}|${rule.id}`);
     post(allow
       ? { type: "weekRule", allow: true, kind: rule.kind, value: rule.value, project: rule.project, id: "", host }
       : { type: "weekRule", allow: false, kind: "", value: "", project: "", id: rule.id, host });
@@ -105,6 +109,7 @@ function Prompts({ prompts: p, host, rules: suggest, reload }: {
       <ul class="week-rules">
         {rules.map((r) => (
           <li key={r.id} class="week-rule">
+            <Icon name={I[ruleMeaning(r)]} class="week-rule-icon" />
             <span class="week-rule-text">
               <span>{r.title}</span>
               <span class="small muted">{ruleMeta(r)}</span>
@@ -112,19 +117,19 @@ function Prompts({ prompts: p, host, rules: suggest, reload }: {
                 <span class="week-rule-ask">
                   <span class="small">This {r.change}.</span>
                   <span class="week-rule-buttons">
-                    <button type="button" class="chip on" onClick={() => change(r, true)}>Allow</button>
+                    <button type="button" class="chip" disabled={busy} onClick={() => change(r, true)}><Icon name={I.allow} tone={T.allow} />Allow</button>
                     <button type="button" class="chip" onClick={() => setAsking("")}>Cancel</button>
                   </span>
                 </span>
               ) : null}
             </span>
-            {busy === r.id ? <span class="small muted">…</span>
+            {busyKey === `${host}|${r.id}` ? <span class="spinner" role="status" aria-label="Writing it…" />
               : r.state === "allowed" ? <span class="small muted">Allowed now</span>
               : r.state === "added" ? (
-                <button type="button" class="chip" disabled={!!busy} onClick={() => change(r, false)}
-                  title="You allowed it here: Undo removes it from the file it went into, as it was before.">Undo</button>
+                <button type="button" class="chip" disabled={busy} onClick={() => change(r, false)}
+                  title={"Take this rule back\nYou allowed it here: Undo removes it from the file it went into, as it was before."}>Undo</button>
               ) : asking !== r.id ? (
-                <button type="button" class="chip" disabled={!!busy} onClick={() => setAsking(r.id)}>Allow…</button>
+                <button type="button" class="chip" disabled={busy} onClick={() => setAsking(r.id)}>Allow…</button>
               ) : null}
           </li>
         ))}
@@ -138,23 +143,25 @@ function Prompts({ prompts: p, host, rules: suggest, reload }: {
 
 // The permissions you gave: every rule and mode that lets chats on this
 // computer go without asking, each to revoke (it asks first)
-function Granted({ granted, host, reload }: { granted: WeekGrant[]; host: string; reload: () => void }) {
+function Granted({ granted, host, reload, change: busyKey, setChange }: {
+  granted: WeekGrant[]; host: string; reload: () => void; change: string; setChange: (key: string) => void;
+}) {
   const answer = useStore(weekRevokeAnswer);
   const [asking, setAsking] = useState("");
-  const [busy, setBusy] = useState("");
   const [all, setAll] = useState(false);
   const seen = useRef(answer); // (as in Prompts)
   useEffect(() => {
     if (!answer || answer === seen.current) return;
     seen.current = answer;
     if (answer.host !== host) return;
-    setBusy("");
+    setChange("");
     reload();
   }, [answer]);
+  const busy = !!busyKey;
 
   function revoke(g: WeekGrant) {
     setAsking("");
-    setBusy(g.id);
+    setChange(`${host}|${g.id}`);
     post({ type: "weekRevoke", id: g.id, host });
   }
 
@@ -174,18 +181,18 @@ function Granted({ granted, host, reload }: { granted: WeekGrant[]; host: string
                 <span class="week-rule-ask">
                   <span class="small">This {g.change}.</span>
                   <span class="week-rule-buttons">
-                    <button type="button" class="chip on" onClick={() => revoke(g)}>Revoke</button>
+                    <button type="button" class="chip" disabled={busy} onClick={() => revoke(g)}><Icon name={I.cancel} tone={T.cancel} />Revoke</button>
                     <button type="button" class="chip" onClick={() => setAsking("")}>Cancel</button>
                   </span>
                 </span>
               ) : null}
             </span>
-            {busy === g.id ? <span class="small muted">…</span>
+            {busyKey === `${host}|${g.id}` ? <span class="spinner" role="status" aria-label="Writing it…" />
               : g.shared ? (
-                g.managed ? <span class="small muted" title="Set by your administrator (/etc/claude-code): it can't be changed here.">Administrator's</span>
-                : <span class="small muted" title="This folder's .claude/settings.json is shared with whoever uses its repository: change it there.">In git</span>
+                g.managed ? <span class="small muted" title={"Set by your administrator\nIt's in /etc/claude-code: it can't be changed here."}>Administrator's</span>
+                : <span class="small muted" title={"Shared through git\nThis folder's .claude/settings.json is shared with whoever uses its repository: change it there."}>In git</span>
               ) : asking !== g.id ? (
-                <button type="button" class="chip" disabled={!!busy} onClick={() => setAsking(g.id)}>Revoke…</button>
+                <button type="button" class="chip" disabled={busy} onClick={() => setAsking(g.id)}>Revoke…</button>
               ) : null}
           </li>
         ))}

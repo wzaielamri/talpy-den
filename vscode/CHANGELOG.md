@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The Permissions tab as in Plasma:** a suggested rule has its kind's
+  icon; **Revoke** and **Allow** are plain buttons with a red × and a
+  green check (not filled blue); one change is written at a time (a
+  **Revoke** and an **Allow** at once could rewrite the same settings file
+  and lose one), with a spinner while it is; **Undo**, *In git* and
+  *Administrator's* have Plasma's tooltips; a refused **Allow** says *Not
+  a rule the Permissions tab offers*.
 - ***Not logged in* has the logged-out account icon,** as in Plasma.
 - **The chat list as in Plasma:** a chat's task progress is a small green
   bar and *3/5* at the start of the line under its folder, not a tag by

@@ -2478,6 +2478,22 @@ body.vscode-high-contrast .top.scrolled {
   gap: 6px;
 }
 
+/* Allow and Revoke: plain, their icon green or red (as Plasma's buttons) */
+.week-rule-buttons .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.week-rule-buttons .chip .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.week-rule > .spinner {
+  margin: 3px 4px 0;
+}
+
 .week-section .error {
   color: var(--cs-failed);
 }

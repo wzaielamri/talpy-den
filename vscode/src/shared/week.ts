@@ -359,6 +359,12 @@ export function grantMeaning(g: { kind: string; value: string }): "trusted" | "m
   return g.value.startsWith("Bash") ? "terminal" : "allowed";
 }
 
+// A rule it suggests for the prompts you answered, as an icon (as Plasma's):
+// a folder to read, edits in the chats' folder, the web, a command
+export function ruleMeaning(r: { kind: string; value: string }): "folder" | "edit" | "webAccess" | "terminal" {
+  return r.kind === "dir" ? "folder" : r.kind === "edits" ? "edit" : r.value.startsWith("WebFetch") ? "webAccess" : "terminal";
+}
+
 export function grantedIntro(granted: WeekGrant[], host = ""): string {
   if (!granted.length) return `Nothing lets chats on ${host || "this computer"} skip a permission prompt: they ask you each time.`;
   return host

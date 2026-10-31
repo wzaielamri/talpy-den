@@ -38,22 +38,30 @@ PlasmaComponents3.ScrollView {
     contentHeight: sheet.implicitHeight
     PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
 
-    // A permission you gave: a trusted folder, an MCP server, a loosened
-    // check, a folder to read, a mode, a command, the web
-    function grantIcon(g) {
+    // A permission you gave, as an icon's meaning: a trusted folder, an MCP
+    // server, a loosened check, a folder to read, a mode, a command, the web
+    function grantMeaning(g) {
         if (g.kind === "trust")
-            return Icons.plasma.trusted
+            return "trusted"
         if (g.kind === "mcp")
-            return Icons.plasma.mcp
+            return "mcp"
         if (g.kind === "flag")
-            return Icons.plasma.warning
+            return "warning"
         if (g.kind === "dir")
-            return Icons.plasma.folder
+            return "folder"
         if (g.kind === "mode")
-            return g.value === "acceptEdits" ? Icons.plasma.edit : Icons.plasma.warning
+            return g.value === "acceptEdits" ? "edit" : "warning"
         if (g.value.indexOf("WebFetch") === 0 || g.value === "WebSearch")
-            return Icons.plasma.webAccess
-        return g.value.indexOf("Bash") === 0 ? Icons.plasma.terminal : Icons.plasma.allowed
+            return "webAccess"
+        return g.value.indexOf("Bash") === 0 ? "terminal" : "allowed"
+    }
+    // A rule it suggests: a folder to read, edits, the web, a command
+    function ruleMeaning(r) {
+        return r.kind === "dir" ? "folder" : r.kind === "edits" ? "edit" : r.value.indexOf("WebFetch") === 0 ? "webAccess" : "terminal"
+    }
+    // (colored where the color says something, unless Breeze colors it itself)
+    function meaningColor(m) {
+        return Icons.COLORED.indexOf(m) >= 0 ? "transparent" : Icons.color(m, Kirigami.Theme)
     }
 
     // 3h 05m, 45m
@@ -177,7 +185,8 @@ PlasmaComponents3.ScrollView {
                                 Layout.alignment: Qt.AlignTop
                                 Layout.preferredWidth: Kirigami.Units.iconSizes.small
                                 Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                                source: view.grantIcon(grantRow.grant)
+                                source: Icons.plasma[view.grantMeaning(grantRow.grant)]
+                                color: view.meaningColor(view.grantMeaning(grantRow.grant))
                                 opacity: 0.8
                             }
                             ColumnLayout {
@@ -276,6 +285,7 @@ PlasmaComponents3.ScrollView {
                     visible: root.ruleMessage !== "" && root.ruleRevoked && root.ruleHost === origin.host
                     wrapMode: Text.Wrap
                     font: Kirigami.Theme.smallFont
+                    color: root.ruleFailed ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                     text: root.ruleMessage
                 }
             }
@@ -345,8 +355,7 @@ PlasmaComponents3.ScrollView {
                                 Layout.alignment: Qt.AlignTop
                                 Layout.preferredWidth: Kirigami.Units.iconSizes.small
                                 Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                                source: ruleRow.rule.kind === "dir" ? Icons.plasma.folder : ruleRow.rule.kind === "edits" ? Icons.plasma.edit
-                                      : ruleRow.rule.value.indexOf("WebFetch") === 0 ? Icons.plasma.webAccess : Icons.plasma.terminal
+                                source: Icons.plasma[view.ruleMeaning(ruleRow.rule)]
                                 opacity: 0.8
                             }
                             ColumnLayout {
@@ -451,6 +460,7 @@ PlasmaComponents3.ScrollView {
                     visible: root.ruleMessage !== "" && !root.ruleRevoked && root.ruleHost === origin.host
                     wrapMode: Text.Wrap
                     font: Kirigami.Theme.smallFont
+                    color: root.ruleFailed ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                     text: root.ruleMessage
                 }
             }

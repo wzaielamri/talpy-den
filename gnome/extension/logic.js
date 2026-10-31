@@ -1706,6 +1706,30 @@ export function weekGrantMeta(g) {
     return `${g.place} · ${g.where}`;
 }
 
+// A permission you gave, as an icon's meaning (icons.mjs; as Plasma's
+// PermsView): a trusted folder, an MCP server, a loosened check, a folder to
+// read, a mode, the web, a command, else a check
+export function permsGrantMeaning(g) {
+    if (g.kind === 'trust')
+        return 'trusted';
+    if (g.kind === 'mcp')
+        return 'mcp';
+    if (g.kind === 'flag')
+        return 'warning';
+    if (g.kind === 'dir')
+        return 'folder';
+    if (g.kind === 'mode')
+        return g.value === 'acceptEdits' ? 'edit' : 'warning';
+    if (g.value.startsWith('WebFetch') || g.value === 'WebSearch')
+        return 'webAccess';
+    return g.value.startsWith('Bash') ? 'terminal' : 'allowed';
+}
+
+// A rule it suggests: a folder to read, edits, the web, a command
+export function permsRuleMeaning(r) {
+    return r.kind === 'dir' ? 'folder' : r.kind === 'edits' ? 'edit' : r.value.startsWith('WebFetch') ? 'webAccess' : 'terminal';
+}
+
 // week.py's arguments for the Permissions tab (with the extra Claude
 // folders, as the others)
 export function permsArgs(configDirArgs, shownHosts = [], remote = {}) {

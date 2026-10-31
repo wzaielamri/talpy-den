@@ -1731,7 +1731,7 @@ def take_out(perms, key, value):
 
 def allow_rule(home, cache_root, kind, value, project):
     """(ok, message, id): the rule goes into project's settings.local.json,
-    and is noted to undo it. Only a rule the Recap tab would offer: for a
+    and is noted to undo it. Only a rule the Permissions tab would offer: for a
     folder a chat of yours started in, of a kind and shape it offers."""
     project = os.path.normpath(project) if isinstance(project, str) and project.startswith("/") else ""
     if not project or not os.path.isdir(project) or private_place(project, home):
@@ -1746,7 +1746,7 @@ def allow_rule(home, cache_root, kind, value, project):
     else:
         ok = kind == "allow" and isinstance(value, str) and bool(BASH_RULE.match(value) or FETCH_RULE.match(value))
     if not ok:
-        return False, "Not a rule the Recap tab offers", None
+        return False, "Not a rule the Permissions tab offers", None
     path = settings_paths(project)[0]
     data = cs.read_json(path) if path.exists() else {}
     if not isinstance(data, dict):
@@ -1898,7 +1898,7 @@ def granted_rules(home, folders, profiles, added=()):
     .mcp.json server, "trust": a trusted folder), "value", "folder" (for
     what .claude.json keeps per folder), "title", "place", "file", "where"
     (the file, from ~), "shared" (through git or the administrator's: not
-    changed here), "managed" (the administrator's), "added" (by the Recap's Allow), "change" (what revoking
+    changed here), "managed" (the administrator's), "added" (by the Permissions tab's Allow), "change" (what revoking
     it does)}]."""
     out, seen = [], set()
 
@@ -1989,7 +1989,7 @@ def granted_rules(home, folders, profiles, added=()):
 
 
 def added_note(added, real, kind, value):
-    """The note of the Recap's Allow that put this rule there, if it did."""
+    """The note of the Permissions tab's Allow that put this rule there, if it did."""
     for a in added:
         if os.path.realpath(str(a.get("file") or "")) != real:
             continue
@@ -2021,7 +2021,7 @@ def permissions(cache, profiles, now_ms, home, added=()):
 
 def revoke_rule(home, cache_root, profiles, rid):
     """(ok, message): takes a rule or mode of granted_rules out of its file
-    (one the Recap's Allow put there as Undo does: as it was before)."""
+    (one the Permissions tab's Allow put there as Undo does: as it was before)."""
     added = load_added(cache_root)
     rules = granted_rules(home, rule_folders(home, load_cache(cache_root), profiles), profiles, added)
     g = next((g for g in rules if g["id"] == rid), None)
