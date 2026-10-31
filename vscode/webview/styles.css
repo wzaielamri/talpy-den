@@ -2216,21 +2216,32 @@ body.vscode-high-contrast .top.scrolled {
 
 .week-bar-value {
   white-space: nowrap;
+  text-align: right;
 }
 
+/* name | folder | hours · cost: one grid for a list's lines, so their
+   folders and numbers are right-aligned columns as wide as the widest (the
+   folder's at most 12em); short of room the folder gives way, the name
+   tells the chats apart */
 .week-chats {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) fit-content(12em) max-content;
+  column-gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* name | folder | hours · cost; short of room the folder gives way faster
-   than the name, which tells the chats apart */
+.week-chats > li {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
 .week-chat {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: baseline;
   width: 100%;
   padding: 3px 4px;
@@ -2258,17 +2269,12 @@ body.vscode-high-contrast .top.scrolled {
   white-space: nowrap;
 }
 
-.week-chat-name {
-  flex: 1 1 auto;
-}
-
-.week-chat-folder {
-  flex: 0 2 auto;
-  max-width: 12em;
+.week-chat-folder,
+.week-chat-value {
+  text-align: right;
 }
 
 .week-chat-value {
-  flex: none;
   white-space: nowrap;
 }
 
@@ -2285,6 +2291,12 @@ body.vscode-high-contrast .top.scrolled {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+}
+
+.week-tip-icon {
+  flex: none;
+  margin-top: 1px;
+  opacity: 0.8;
 }
 
 .week-tip-text {

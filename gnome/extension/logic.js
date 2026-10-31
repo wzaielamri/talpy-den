@@ -1413,17 +1413,28 @@ export function weekDayLabel(day) {
     return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
-// "Sat 24": a timeline row's day
-// Where a day's row (start to end: its local midnights) has its 6, 12 and 18
-// o'clock lines, as parts of the row: by that day's own wall clock, so on a
-// day the clocks change (23 or 25 hours) they're where those hours were, as
-// everything else the row draws is
-export function weekQuarterMarks(d) {
-    const span = Math.max(1, d.end - d.start);
-    const day = new Date(d.start);
-    return [6, 12, 18].map(h => (new Date(day.getFullYear(), day.getMonth(), day.getDate(), h).getTime() - d.start) / span);
+// Where a moment is on its day's row (start to end: its local midnights),
+// 0 to 1, by that day's own wall clock, as Plasma's and VS Code's: on a day
+// the clocks change (23 or 25 hours) 18:00 is still at 3/4, under the 18 over
+// the rows (the hour that comes twice drawn twice in one place, the one it
+// skips not at all)
+export function weekDayPlace(d, ms) {
+    if (ms <= d.start)
+        return 0;
+    if (ms >= d.end)
+        return 1;
+    const t = new Date(ms);
+    return (t.getHours() + (t.getMinutes() + (t.getSeconds() + t.getMilliseconds() / 1000) / 60) / 60) / 24;
 }
 
+// and back: the moment at a place of its row
+export function weekDayMoment(d, place) {
+    const s = new Date(d.start);
+    const ms = new Date(s.getFullYear(), s.getMonth(), s.getDate(), 0, 0, 0, Math.round(Math.max(0, Math.min(1, place)) * 86400000)).getTime();
+    return Math.max(d.start, Math.min(d.end, ms));
+}
+
+// "Sat 24": a timeline row's day
 export function weekRowDay(day, weeks = false) {
     const d = dayDate(day);
     return weeks ? shortDay(day) : `${WEEKDAYS[d.getDay()]} ${d.getDate()}`;
@@ -1475,7 +1486,7 @@ export function weekDeltaText(now, before, kind, cur = USD) {
     const abs = Math.abs(d);
     if (kind === 'time' ? abs < 60000 : kind === 'money' ? abs < 0.01 : d === 0)
         return 'same as before';
-    return (d > 0 ? '+' : '−') + (kind === 'time' ? hoursText(abs) : kind === 'money' ? moneyText(abs, cur) : String(abs));
+    return (d > 0 ? '+' : '−') + (kind === 'time' ? hoursText(abs) : kind === 'money' ? moneyText(abs, cur) : grouped(abs));
 }
 
 // One number over the 5 weeks up to these days, these last (null: older than what's kept)
@@ -1487,7 +1498,7 @@ export function weekTiles(recap) {
     const s = recap.sum;
     const p = previousOf(recap);
     const cur = weekCurrency(recap);
-    const shown = (v, kind) => (kind === 'time' ? hoursText(v) : kind === 'money' ? moneyText(v, cur) : String(v));
+    const shown = (v, kind) => (kind === 'time' ? hoursText(v) : kind === 'money' ? moneyText(v, cur) : grouped(v));
     const day = recap.span === 'day';
     const before = (v, kind) => (p ? `\n${day ? 'The day before' : 'The 7 days before'}: ${shown(v, kind)}` : '');
     const weeks = (key, kind) => {
@@ -1505,7 +1516,7 @@ export function weekTiles(recap) {
             tip: "Claude's own count of its turns (its “Worked for …”), all chats added up: chats working at the same time each " +
                 `count. On the clock it worked ${hoursText(s.busyMs)}, and it waited ${hoursText(s.waitMs)} for your answers.` +
                 before(p ? p.workedMs : 0, 'time') + weeks('workedMs', 'time')},
-        {label: 'Prompts', value: String(s.prompts), delta: weekDeltaText(s.prompts, p ? p.prompts : null, 'count'),
+        {label: 'Prompts', value: grouped(s.prompts), delta: weekDeltaText(s.prompts, p ? p.prompts : null, 'count'),
             trend: weekTrend(recap, 'prompts'),
             tip: `${plural(s.chats, 'In %1 chat', 'In %1 chats')} · ${plural(s.turns, "%1 turn of Claude's", "%1 turns of Claude's")}` +
                 before(p ? p.prompts : 0, 'count') + weeks('prompts', 'count')},
@@ -1558,7 +1569,8 @@ export function weekDayTip(d, cur = USD) {
     return [to ? `${date.getDate()} ${MONTHS_LONG[date.getMonth()]} – ${to.getDate()} ${MONTHS_LONG[to.getMonth()]}`
         : `${WEEKDAYS_LONG[date.getDay()]} ${date.getDate()} ${MONTHS_LONG[date.getMonth()]}`,
         `You: ${hoursText(d.youMs)} · Claude worked ${hoursText(d.workedMs)} (on the clock ${hoursText(d.busyMs)}) · ` +
-        `it waited ${hoursText(d.waitMs)} for you\n${plural(d.prompts, '%1 prompt', '%1 prompts')} · ${moneyText(d.cost, cur)} at API prices` +
+        `it waited ${hoursText(d.waitMs)} for you\n${plural(d.prompts, '%1 prompt', '%1 prompts')} · ${formatTokens(d.tokenTotal || 0)} tokens · ` +
+        `${moneyText(d.cost, cur)} at API prices` +
         (d.chats && d.chats.length ? '\nClick for its chats' : '')];
 }
 
@@ -1571,8 +1583,16 @@ export function weekCacheText(recap) {
         `it saved ${moneyText(recap.cacheSaved, weekCurrency(recap))}. Claude wrote ${formatTokens(t.output)} tokens.`;
 }
 
+// A model's part of the whole: "<1%", ">99%" (not a rounded "100%" beside
+// another's "<1%"), as statsModelsText
 export function weekShareText(share) {
-    return share < 0.01 ? '<1%' : `${Math.round(share * 100)}%`;
+    return share <= 0 ? '0%' : share < 0.01 ? '<1%' : share > 0.99 && share < 1 ? '>99%' : `${Math.round(share * 100)}%`;
+}
+
+// A tip's icon (icons.mjs meanings, as Plasma's): the time chats waited for
+// you, usage limits, else a tip of Claude Code's /usage
+export function weekTipMeaning(key) {
+    return key === 'waits' ? 'tipWaits' : key === 'limits' ? 'tipLimits' : 'tip';
 }
 
 // What Claude did, in a line: its tool calls, commands, edits, subagents

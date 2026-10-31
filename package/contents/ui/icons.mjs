@@ -101,6 +101,9 @@ const TABLE = {
     terminal:        ['utilities-terminal',            'terminal',   'utilities-terminal-symbolic'],
     phone:           ['smartphone',                    null,         'phone-symbolic'],
     recap:           ['view-statistics',               'chart',      'org.gnome.Settings-usage-symbolic'],
+    tipWaits:        ['chronometer',                   'clock',      'alarm-symbolic'],                   // the Recap's tip about the time chats waited for you
+    tipLimits:       ['speedometer',                   'gauge',      'power-profile-performance-symbolic'], // the Recap's tip about usage limits
+    tip:             ['help-hint',                     'lightbulb',  'dialog-information-symbolic'],      // the Recap's other tips (Claude Code's /usage)
     permissions:     ['object-locked',                 'shield',     'security-medium-symbolic'],
     away:            ['view-history',                  'clock',      'document-open-recent-symbolic'],    // while you were away
     info:            ['help-about',                    null,         'help-about-symbolic'],

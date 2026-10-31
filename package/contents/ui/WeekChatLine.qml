@@ -4,7 +4,9 @@ import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 
 // A chat in the Recap tab's lists (WeekView.qml): its name, where (or when),
-// and its numbers. Click it to bring the chat up.
+// and its numbers, the last two right-aligned in columns as wide as the
+// list's widest (whereWidth, numbersWidth; -1: its own). Click it to bring
+// the chat up.
 PlasmaComponents3.ItemDelegate {
     id: line
 
@@ -12,6 +14,8 @@ PlasmaComponents3.ItemDelegate {
     property string where: (chat.host ? chat.host + ": " : "") + (chat.folder || "")
     property string numbers: ""
     property real indent: 0
+    property real whereWidth: -1
+    property real numbersWidth: -1
 
     Layout.fillWidth: true
     leftPadding: Kirigami.Units.smallSpacing + indent
@@ -32,8 +36,10 @@ PlasmaComponents3.ItemDelegate {
         }
         PlasmaComponents3.Label {
             textFormat: Text.PlainText
+            Layout.preferredWidth: line.whereWidth
             Layout.maximumWidth: Kirigami.Units.gridUnit * 7
-            visible: text !== ""
+            visible: text !== "" || line.whereWidth > 1
+            horizontalAlignment: Text.AlignRight
             text: line.where
             elide: Text.ElideMiddle
             font: Kirigami.Theme.smallFont
@@ -41,6 +47,8 @@ PlasmaComponents3.ItemDelegate {
         }
         PlasmaComponents3.Label {
             textFormat: Text.PlainText
+            Layout.preferredWidth: line.numbersWidth
+            horizontalAlignment: Text.AlignRight
             text: line.numbers
             font: Kirigami.Theme.smallFont
             opacity: 0.8

@@ -9,6 +9,7 @@ import type { WeekDay } from "../src/shared/types";
 import {
   coldText, currencyOf, dayTip, deltaText, factsText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
+  shareText, tipMeaning,
   dateText, periodWaiting, rowDay, shortDay,
 } from "../src/shared/week";
 import { ViewHost } from "../src/view";
@@ -356,4 +357,13 @@ test("a day the clock changes on draws its times by its own clock: 18:00 under t
     if (was === undefined) delete process.env.TZ;
     else process.env.TZ = was;
   }
+});
+
+test("a model's share, a tip's icon and Overall's row tooltip say it as Plasma's", () => {
+  assert.deepEqual([0, 0.004, 0.42, 0.996, 1].map(shareText), ["0%", "<1%", "42%", ">99%", "100%"]);
+  assert.deepEqual(["waits", "limits", "clear"].map(tipMeaning), ["tipWaits", "tipLimits", "tip"]);
+  const row = { day: "2026-10-19", to: "2026-10-25", start: 0, end: 1, you: [], work: [], wait: [], limits: [], youMs: 0, workedMs: 0,
+    busyMs: 0, waitMs: 0, prompts: 1, cost: 0, tokenTotal: 0, chats: [] };
+  assert.match(dayTip(row as never), /^19 October – 25 October\n/);
+  assert.match(dayTip(row as never), /\n1 prompt · /);
 });

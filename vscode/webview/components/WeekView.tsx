@@ -1,6 +1,7 @@
 import { drawCard } from "../util/card";
 import { Fragment, type JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { plural } from "../../src/shared/model";
 import type { WeekChat, WeekDay, WeekPlanWindow, WeekRecap, WeekSpan } from "../../src/shared/types";
 import {
   cacheText,
@@ -20,6 +21,7 @@ import {
   type RecapSection,
   rowDay,
   shareText,
+  tipMeaning,
   toolsText,
   weekTiles,
   workText,
@@ -72,7 +74,10 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
   useEffect(() => {
     if (mine) setBusy(false);
   }, [mine]);
-  const recap: WeekRecap | null = mine?.recap ?? answer?.recap ?? null; // (the days before, dimmed, while these come)
+  // (the days read before: dimmed while these come, under the error when a read fails)
+  const kept = useRef<WeekRecap | null>(null);
+  if (answer?.recap) kept.current = answer.recap;
+  const recap: WeekRecap | null = mine?.recap ?? kept.current;
   const error = mine?.error ?? "";
   const s = recap?.sum;
   const hasData = !!s && (s.workedMs > 0 || s.prompts > 0 || s.cost > 0);
@@ -125,7 +130,8 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
             <Icon name={I.next} />
           </button>
         ) : null}
-        <button type="button" class="icon-btn" title="Read again" aria-label="Read again" onClick={ask}>
+        <button type="button" class="icon-btn" title={"Read again\nThese days read again from your chats now."} aria-label="Read again"
+          disabled={busy} onClick={ask}>
           <Icon name={I.refresh} />
         </button>
         <button type="button" class="icon-btn" title="Share as a picture: these days as a card with Talpy, to save or copy"
@@ -154,10 +160,13 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
       ) : null}
       {error ? <div class="msg error" role="alert">Couldn't read your week: {error}</div> : null}
       {recap && !hasData ? (
-        <div class="empty muted">
-          {recap.span === "day" ? "No Claude on this day: none of your chats here (or on the SSH hosts shown) has a prompt or a reply on it."
-            : recap.span === "all" ? "No Claude yet: none of your chats here (or on the SSH hosts shown) has a prompt or a reply."
-              : "No Claude in these days: none of your chats here (or on the SSH hosts shown) has a prompt or a reply in them."}
+        <div class="empty">
+          <div class="empty-title">{recap.span === "day" ? "No Claude on this day" : recap.span === "all" ? "No Claude yet" : "No Claude in these days"}</div>
+          <div class="muted">
+            {recap.span === "day" ? "None of your chats here (or on the SSH hosts shown) has a prompt or a reply on this day."
+              : recap.span === "all" ? "None of your chats here (or on the SSH hosts shown) has a prompt or a reply yet."
+                : "None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these 7 days."}
+          </div>
         </div>
       ) : null}
 
@@ -350,7 +359,7 @@ function Plan({ recap }: { recap: WeekRecap }) {
       <ul class="week-bars week-plan">
         {plans.flatMap((p) =>
           p.windows.map((w) => (
-            <li key={p.account + w.key} title={`${w.label}: ${Math.round(w.pct)}% used\nHow this window of your plan filled up, from its start (on the left) to when it resets (on the right), as the extension saw it.`}>
+            <li key={p.account + w.key} title={`${w.label}: ${Math.round(w.pct)}% used\nHow this window of your plan filled up, from its start (on the left) to when it resets (on the right), as Talpy Den saw it.`}>
               <span class="week-bar-name">{(plans.length > 1 ? p.name + " · " : "") + w.label}</span>
               <FillChart w={w} now={recap.generatedAt} />
               <span class={"week-bar-value small" + (w.pct >= 90 ? " over" : " muted")}>
@@ -394,7 +403,7 @@ function Projects({ recap }: { recap: WeekRecap }) {
           return [
             <li key={key} class={"opens" + (shown ? " open" : "")} {...opens(shown, () => (p.host ? setOpen(shown ? "" : key) : showProject(p.path)))}
               title={`${p.host ? p.host + ": " : ""}${p.path}\nClaude worked ${hoursText(p.workedMs)} · ${moneyText(p.cost, cur)} at API prices\n` +
-                `${p.prompts} prompts · ${p.chatCount ?? chats.length} chats\n` +
+                `${plural(p.prompts, "%1 prompt", "%1 prompts")} · ${plural(p.chatCount ?? chats.length, "%1 chat", "%1 chats")}\n` +
                 (p.host ? "Click for its chats." : "Click to open it in the Projects tab: its chats, plans and memories.")}>
               <span class="week-bar-name">
                 <Icon name={I.folded} class={shown ? "turn" : ""} />
@@ -494,7 +503,7 @@ function Models({ recap }: { recap: WeekRecap }) {
       <h2>At API prices</h2>
       <ul class="week-bars">
         {recap.models.map((m) => (
-          <li key={m.model} title={`${m.model}: ${moneyText(m.cost, cur)} · ${m.requests} requests`}>
+          <li key={m.model} title={`${m.model}: ${moneyText(m.cost, cur)} · ${plural(m.requests, "%1 request", "%1 requests")}`}>
             <span class="week-bar-name">{m.model}</span>
             <span class="week-bar-meter"><span style={{ width: `${100 * m.share}%` }} /></span>
             <span class="week-bar-value small muted">{moneyText(m.cost, cur)} · {shareText(m.share)}</span>
@@ -517,6 +526,7 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
       <ul class="week-tips">
         {recap.tips.map((t) => (
           <li key={t.key} class="week-tip">
+            <Icon name={I[tipMeaning(t.key)]} class="week-tip-icon" />
             <span class="week-tip-text">
               <span class="week-tip-title">{t.title}</span>
               {t.detail ? <span class="small muted">{t.detail}</span> : null}

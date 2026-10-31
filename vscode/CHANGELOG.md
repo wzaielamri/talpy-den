@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **The Recap as in Plasma:** a failed read says why above the days read
+  before, which stay (the error showed alone); **Read again** is greyed
+  while it reads; every tip in *What could use less of your plan* has its
+  icon; an empty Recap says *No Claude in these days* as a title; the chat
+  lists' folders and numbers stand in right-aligned columns of one width,
+  and the numbers after the bars are right-aligned; a model's share says
+  *>99%*, not a rounded *100%* beside *<1%*; the *Prompts* tile groups its
+  thousands; tooltips say *1 prompt · 1 chat*, *1 request*, *as Talpy Den
+  saw it* and *19 October – 25 October*.
 - **A suggested rule an account in one of `talpyDen.extraConfigDirs`
   already allows says *Allowed now*,** not **Allow…**.
 - **The Projects tab as in Plasma:** an empty tab says *No projects yet*

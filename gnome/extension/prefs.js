@@ -9,6 +9,7 @@ import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/ex
 import * as Icons from './ui/icons.js';
 
 // The Recap tab's currencies (those of the European Central Bank's reference rates)
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const CURRENCIES = [['USD', 'US dollars'], ['EUR', 'Euros'], ['GBP', 'Pounds sterling'], ['CHF', 'Swiss francs'], ['JPY', 'Japanese yen'],
     ['CNY', 'Chinese yuan'], ['INR', 'Indian rupees'], ['CAD', 'Canadian dollars'], ['AUD', 'Australian dollars'],
     ['NZD', 'New Zealand dollars'], ['SEK', 'Swedish kronor'], ['NOK', 'Norwegian kroner'], ['DKK', 'Danish kroner'],
@@ -452,7 +453,11 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             setKeep(st.keep);
             keep.sensitive = true;
             deletedChats = st.deletedChats || 0;
-            saved.subtitle = st.since ? `Kept since ${st.since}, with ${st.deletedChats} chats Claude has deleted · ${st.sizeKB} KB` : 'Nothing kept yet';
+            // ("Kept since 1 Sep 2026, with 1 chat Claude has deleted · 12 KB", as Plasma's)
+            const since = st.since ? new Date(`${st.since}T00:00`) : null;
+            const n = st.deletedChats || 0;
+            saved.subtitle = since ? `Kept since ${since.getDate()} ${MONTHS[since.getMonth()]} ${since.getFullYear()}, with ${n} ${n === 1 ? 'chat' : 'chats'} ` +
+                `Claude has deleted · ${st.sizeKB} KB` : 'Nothing kept yet.';
             forget.sensitive = !!st.since;
         };
         const said = result => window.add_toast(new Adw.Toast({title: GLib.markup_escape_text(result.message || '', -1), timeout: 5}));

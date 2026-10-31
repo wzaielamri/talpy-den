@@ -66,6 +66,11 @@ export function buildWeekView(ctx) {
     after.opacity = after.reactive ? 255 : 90;
     after.visible = week.span !== 'all';
     period.add_child(after);
+    const again = iconButton(Icons.gnome.refresh, () => ctx.loadWeek());
+    ctx.tips.add(again, ['Read again', 'These days read again from your chats now.']);
+    again.reactive = again.can_focus = !week.busy;   // (after its tooltip: greyed out while it reads)
+    again.opacity = again.reactive ? 255 : 90;
+    period.add_child(again);
     view.add_child(period);
 
     if (recap && recap.accounts.length > 1) {
@@ -85,11 +90,15 @@ export function buildWeekView(ctx) {
         view.add_child(paragraph(L.fmt("Couldn't read your week: %1", week.error), 'claude-fg-bad'));
     const s = recap ? recap.sum : null;
     const hasData = !!s && (s.workedMs > 0 || s.prompts > 0 || s.cost > 0);
-    if (recap && !hasData)
-        view.add_child(paragraph(recap.span === 'day' ? 'No Claude on this day: none of your chats here (or on the SSH hosts shown) has a prompt or a reply on it.'
-            : recap.span === 'all' ? 'No Claude yet: none of your chats here (or on the SSH hosts shown) has a prompt or a reply.'
-                : 'No Claude in these days: none of your chats here (or on the SSH hosts shown) has a prompt or a reply in them.',
-            'claude-dim claude-week-note'));
+    if (recap && !hasData) {
+        const empty = column('claude-week-note', {x_expand: true});
+        empty.add_child(paragraph(recap.span === 'day' ? 'No Claude on this day' : recap.span === 'all' ? 'No Claude yet' : 'No Claude in these days',
+            'claude-strong'));
+        empty.add_child(paragraph(recap.span === 'day' ? 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply on this day.'
+            : recap.span === 'all' ? 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply yet.'
+                : 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these 7 days.', 'claude-dim'));
+        view.add_child(empty);
+    }
     if (!hasData)
         return view;
     const cur = L.weekCurrency(recap);
@@ -134,7 +143,7 @@ export function buildWeekView(ctx) {
     }
     const models = buildBars(ctx, 'At API prices', recap.models.map(m => ({
         name: m.model, share: m.share, value: `${L.moneyText(m.cost, cur)} · ${L.weekShareText(m.share)}`, color: 'none',
-        tip: `${m.model}: ${L.moneyText(m.cost, cur)} · ${m.requests} requests`,
+        tip: `${m.model}: ${L.moneyText(m.cost, cur)} · ${L.plural(m.requests, '%1 request', '%1 requests')}`,
     })));
     const cache = L.weekCacheText(recap);
     if (cache)
@@ -164,10 +173,14 @@ function trendBars(values) {
 function chatLine(ctx, c, cur, where = null, sub = false) {
     const line = box('claude-week-chat', {x_expand: true});
     line.add_child(label(c.name, sub ? 'claude-small' : '', {x_expand: true}));
+    // (its folder and numbers: right-aligned columns of one width in every list, as Plasma's)
     const place = where !== null ? where : (c.host ? `${c.host}: ` : '') + c.folder;
-    if (place)
-        line.add_child(label(place, 'claude-small claude-dim claude-week-folder'));
-    line.add_child(label(`${L.hoursText(c.workedMs)} · ${L.moneyText(c.cost, cur)}`, 'claude-small claude-dim'));
+    if (place) {
+        const folder = label(place, 'claude-small claude-dim claude-week-folder');
+        folder.clutter_text.ellipsize = 2;   // Pango.EllipsizeMode.MIDDLE
+        line.add_child(folder);
+    }
+    line.add_child(label(`${L.hoursText(c.workedMs)} · ${L.moneyText(c.cost, cur)}`, 'claude-small claude-dim claude-week-chat-numbers'));
     const opens = !c.host && !!c.chatId;
     const button = new St.Button({style_class: `${opens ? 'claude-row-button' : ''}${sub ? ' claude-week-sub' : ''}`, child: line,
         x_expand: true, can_focus: opens, reactive: opens});
@@ -239,7 +252,7 @@ function buildTimeline(ctx, recap, cur) {
             }
             a._week.hoverX = lx;
             a.queue_repaint();
-            readout.text = L.weekHoverText(d, d.start + (lx / width) * span, recap.generatedAt, span / width);
+            readout.text = L.weekHoverText(d, L.weekDayMoment(d, lx / width), recap.generatedAt, span / width);
             readout.remove_style_class_name('claude-dim');
             return Clutter.EVENT_PROPAGATE;
         });
@@ -303,14 +316,13 @@ function paintDay(area, now) {
     const {day: d, today} = area._week;
     const [cr, w, h, scale] = scaled(area);
     const hoverX = area._week.hoverX / scale;   // (in real pixels: where the pointer is on the actor)
-    const span = Math.max(1, d.end - d.start);
-    const x = ms => Math.max(0, Math.min(w, (ms - d.start) / span * w));
+    const x = ms => w * L.weekDayPlace(d, ms);   // (by the day's own clock: under the hours over the rows)
     const bar = (a, b, top, height) => {
         cr.rectangle(x(a), top, Math.max(1, x(b) - x(a)), height);
         cr.fill();
     };
     cr.setSourceRGBA(...GRID);
-    for (const q of L.weekQuarterMarks(d)) {   // (by the day's clock: a 25-hour day's are off the quarters)
+    for (const q of [0.25, 0.5, 0.75]) {   // (6, 12 and 18 o'clock)
         cr.rectangle(Math.round(w * q), 0, 1, h);
         cr.fill();
     }
@@ -421,7 +433,8 @@ function buildProjects(ctx, recap, cur) {
         button.connect('clicked', () => ctx.weekUnfold(key));
         ctx.tips.add(button, [(p.host ? `${p.host}: ` : '') + p.path,
             `Claude worked ${L.hoursText(p.workedMs)} · ${L.moneyText(p.cost, cur)} at API prices\n` +
-            `${p.prompts} prompts · ${p.chatCount !== undefined ? p.chatCount : chats.length} chats\n\nClick for its chats.`]);
+            `${L.plural(p.prompts, '%1 prompt', '%1 prompts')} · ${L.plural(p.chatCount !== undefined ? p.chatCount : chats.length, '%1 chat', '%1 chats')}` +
+            '\n\nClick for its chats.']);
         section.add_child(button);
         if (open) {
             for (const c of chats)
@@ -460,6 +473,8 @@ function buildTips(ctx, recap) {
         section.add_child(paragraph('Nothing stands out: no habit takes a tenth of the usage shown.', 'claude-dim'));
     for (const t of recap.tips) {
         const line = box('claude-week-tip', {x_expand: true});
+        line.add_child(new St.Icon({icon_name: Icons.gnome[L.weekTipMeaning(t.key)], style_class: 'claude-button-icon claude-dim',
+            y_align: Clutter.ActorAlign.START}));
         const text = column('', {x_expand: true});
         text.add_child(paragraph(t.title, ''));
         if (t.detail)

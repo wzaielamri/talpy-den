@@ -79,6 +79,12 @@ export function shortDay(day: string): string {
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
+// "19 October"
+function monthDay(day: string): string {
+  const d = localDate(day);
+  return `${d.getDate()} ${MONTHS_LONG[d.getMonth()]}`;
+}
+
 export function longDay(day: string): string {
   const d = localDate(day);
   return `${WEEKDAYS_LONG[d.getDay()]} ${d.getDate()} ${MONTHS_LONG[d.getMonth()]}`;
@@ -135,7 +141,7 @@ type Kind = "time" | "money" | "tokens" | "count";
 
 // A number of the tiles, in its own unit
 function amountText(v: number, kind: Kind, cur: Currency): string {
-  return kind === "time" ? hoursText(v) : kind === "money" ? moneyText(v, cur) : kind === "tokens" ? shortCount(v) : String(v);
+  return kind === "time" ? hoursText(v) : kind === "money" ? moneyText(v, cur) : kind === "tokens" ? shortCount(v) : count(v);
 }
 
 // The Recap's sections under its tiles, top to bottom (the same in every
@@ -194,7 +200,7 @@ export function weekTiles(recap: WeekRecap): WeekTile[] {
     },
     {
       label: "Prompts",
-      value: String(s.prompts),
+      value: count(s.prompts),
       delta: deltaText(s.prompts, p ? p.prompts : null, "count"),
       tip: `${plural(s.chats, "In %1 chat", "In %1 chats")} · ${plural(s.turns, "%1 turn of Claude's", "%1 turns of Claude's")}` +
         before(p ? p.prompts : 0, "count") + weeks("prompts", "count"),
@@ -256,7 +262,7 @@ export function hoverText(d: WeekDay, ms: number, now: number, px: number): stri
 
 export function dayTip(d: WeekDay, cur: Currency = USD): string {
   return (
-    `${d.to ? `${shortDay(d.day)} – ${shortDay(d.to)}` : longDay(d.day)}\nYou: ${hoursText(d.youMs)} · Claude worked ${hoursText(d.workedMs)} (on the clock ${hoursText(d.busyMs)}) · ` +
+    `${d.to ? `${monthDay(d.day)} – ${monthDay(d.to)}` : longDay(d.day)}\nYou: ${hoursText(d.youMs)} · Claude worked ${hoursText(d.workedMs)} (on the clock ${hoursText(d.busyMs)}) · ` +
     `it waited ${hoursText(d.waitMs)} for you\n${plural(d.prompts, "%1 prompt", "%1 prompts")} · ${shortCount(d.tokenTotal)} tokens · ${moneyText(d.cost, cur)} at API prices` +
     (d.chats?.length ? "\nClick for its chats" : "")
   );
@@ -279,8 +285,16 @@ function count(n: number): string {
   return (n || 0).toLocaleString("en-US");
 }
 
+// A model's part of the whole: "<1%", ">99%" (not a rounded "100%" beside
+// another's "<1%"), as sharePercent
 export function shareText(share: number): string {
-  return share < 0.01 ? "<1%" : `${Math.round(share * 100)}%`;
+  return share <= 0 ? "0%" : share < 0.01 ? "<1%" : share > 0.99 && share < 1 ? ">99%" : `${Math.round(share * 100)}%`;
+}
+
+// A tip's icon (icons.mjs meanings, as Plasma's): the time chats waited for
+// you, usage limits, else a tip of Claude Code's /usage
+export function tipMeaning(key: string): "tipWaits" | "tipLimits" | "tip" {
+  return key === "waits" ? "tipWaits" : key === "limits" ? "tipLimits" : "tip";
 }
 
 // What Claude did, in a line: its tool calls, commands, edits, subagents

@@ -116,6 +116,30 @@ PlasmaComponents3.ScrollView {
         return Number(n || 0).toLocaleString(Qt.locale(), "f", 0)
     }
 
+    // A model's part of the whole: "<1%", ">99%" (not a rounded "100%"
+    // beside another's "<1%"), as an account's models on the Chats tab
+    function shareText(share) {
+        return share <= 0 ? "0%" : share < 0.01 ? "<1%" : share > 0.99 && share < 1 ? ">99%" : Math.round(share * 100) + "%"
+    }
+
+    // What a list's lines say at their end, and the room the widest takes
+    // (the column every line of the list gets: their bars or names all as
+    // long, the numbers right-aligned)
+    function numbersOf(row) {
+        return hours(row.workedMs) + " · " + money(row.cost)
+    }
+    function modelNumbers(m) {
+        return money(m.cost) + " · " + shareText(m.share)
+    }
+    function whereOf(chat) {
+        return (chat.host ? chat.host + ": " : "") + (chat.folder || "")
+    }
+    function widest(texts) {
+        return Math.ceil(Math.max(0, ...texts.map(t => smallMetrics.advanceWidth(t)))) + 1
+    }
+    readonly property real projectNumbersWidth: widest(projects.map(numbersOf))
+    readonly property real modelNumbersWidth: widest(models.map(modelNumbers))
+
     // 412.3M, 8.1k
     function tokens(n) {
         return root.formatTokens(n || 0)
@@ -123,7 +147,7 @@ PlasmaComponents3.ScrollView {
 
     // A number of the tiles, in its own unit
     function shown(value, kind) {
-        return kind === "time" ? hours(value) : kind === "money" ? money(value) : kind === "tokens" ? tokens(value) : String(value)
+        return kind === "time" ? hours(value) : kind === "money" ? money(value) : kind === "tokens" ? tokens(value) : count(value)
     }
 
     // Wed 14:05
@@ -188,7 +212,7 @@ PlasmaComponents3.ScrollView {
           tip: i18n("Claude's own count of its turns (its “Worked for …”), all chats added up: chats working at the same time each count. On the clock it worked %1, and it waited %2 for your answers.",
                     hours(sum.busyMs), hours(sum.waitMs)) + beforeText(previous ? previous.workedMs : 0, "time")
                + trendText("workedMs", "time") },
-        { label: i18n("Prompts"), key: "prompts", value: String(sum.prompts),
+        { label: i18n("Prompts"), key: "prompts", value: count(sum.prompts),
           delta: deltaText(sum.prompts, previous ? previous.prompts : 0, "count"),
           tip: i18np("In %1 chat", "In %1 chats", sum.chats) + " · " + i18np("%1 turn of Claude's", "%1 turns of Claude's", sum.turns)
                + beforeText(previous ? previous.prompts : 0, "count") + trendText("prompts", "count") },
@@ -308,7 +332,7 @@ PlasmaComponents3.ScrollView {
     property real timelineWidth: 0
 
     function tipIcon(key) {
-        return key === "waits" ? "chronometer" : key === "limits" ? "speedometer" : "help-hint"
+        return key === "waits" ? Icons.plasma.tipWaits : key === "limits" ? Icons.plasma.tipLimits : Icons.plasma.tip
     }
 
     FontMetrics {
@@ -905,12 +929,18 @@ PlasmaComponents3.ScrollView {
 
                     // the day's chats, unfolded with a click on its row
                     Repeater {
-                        model: dayRow.open ? dayRow.day.chats.length : 0
+                        id: dayChats
+                        readonly property var list: dayRow.open ? dayRow.day.chats : []
+                        readonly property real whereWidth: Math.min(view.gu * 7, view.widest(list.map(view.whereOf)))
+                        readonly property real numbersWidth: view.widest(list.map(view.numbersOf))
+                        model: list.length
                         delegate: WeekChatLine {
                             required property int index
-                            chat: dayRow.day.chats[index] || view.emptyChat
+                            chat: dayChats.list[index] || view.emptyChat
                             indent: view.dayWidth
-                            numbers: view.hours(chat.workedMs) + " · " + view.money(chat.cost)
+                            numbers: view.numbersOf(chat)
+                            whereWidth: dayChats.whereWidth
+                            numbersWidth: dayChats.numbersWidth
                         }
                     }
                 }
@@ -1035,6 +1065,7 @@ PlasmaComponents3.ScrollView {
                             PlasmaComponents3.Label {
                                 textFormat: Text.PlainText
                                 Layout.preferredWidth: planSection.textWidth
+                                horizontalAlignment: Text.AlignRight
                                 text: view.planText(planRow.win)
                                 font: Kirigami.Theme.smallFont
                                 color: planRow.win.pct >= 90 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
@@ -1223,7 +1254,9 @@ PlasmaComponents3.ScrollView {
                             }
                             PlasmaComponents3.Label {
                                 textFormat: Text.PlainText
-                                text: view.hours(projectRow.project.workedMs) + " · " + view.money(projectRow.project.cost)
+                                Layout.preferredWidth: view.projectNumbersWidth
+                                horizontalAlignment: Text.AlignRight
+                                text: view.numbersOf(projectRow.project)
                                 font: Kirigami.Theme.smallFont
                                 opacity: 0.8
                             }
@@ -1252,13 +1285,17 @@ PlasmaComponents3.ScrollView {
                         }
                     }
                     Repeater {
-                        model: projectRow.open ? projectRow.project.chats.length : 0
+                        id: projectChats
+                        readonly property var list: projectRow.open ? projectRow.project.chats : []
+                        readonly property real numbersWidth: view.widest(list.map(view.numbersOf))
+                        model: list.length
                         delegate: WeekChatLine {
                             required property int index
-                            chat: projectRow.project.chats[index] || view.emptyChat
+                            chat: projectChats.list[index] || view.emptyChat
                             where: ""
                             indent: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
-                            numbers: view.hours(chat.workedMs) + " · " + view.money(chat.cost)
+                            numbers: view.numbersOf(chat)
+                            numbersWidth: projectChats.numbersWidth
                         }
                     }
                     PlasmaComponents3.Label {
@@ -1277,9 +1314,12 @@ PlasmaComponents3.ScrollView {
 
         // The chats Claude worked on most: click one to bring it up
         ColumnLayout {
+            id: topChats
             Layout.fillWidth: true
             visible: view.hasData && view.chats.length > 0
             spacing: 0
+            readonly property real whereWidth: Math.min(view.gu * 7, view.widest(view.chats.map(view.whereOf)))
+            readonly property real numbersWidth: view.widest(view.chats.map(view.numbersOf))
 
             SectionTitle {
                 text: i18n("Chats it worked on most")
@@ -1290,7 +1330,9 @@ PlasmaComponents3.ScrollView {
                 delegate: WeekChatLine {
                     required property int index
                     chat: view.chats[index] || view.emptyChat
-                    numbers: view.hours(chat.workedMs) + " · " + view.money(chat.cost)
+                    numbers: view.numbersOf(chat)
+                    whereWidth: topChats.whereWidth
+                    numbersWidth: topChats.numbersWidth
                 }
             }
         }
@@ -1332,8 +1374,9 @@ PlasmaComponents3.ScrollView {
                     }
                     PlasmaComponents3.Label {
                         textFormat: Text.PlainText
-                        text: view.money(modelRow.entry.cost) + " · "
-                              + (modelRow.entry.share < 0.01 ? "<1%" : Math.round(modelRow.entry.share * 100) + "%")
+                        Layout.preferredWidth: view.modelNumbersWidth
+                        horizontalAlignment: Text.AlignRight
+                        text: view.modelNumbers(modelRow.entry)
                         font: Kirigami.Theme.smallFont
                         opacity: 0.8
                     }
