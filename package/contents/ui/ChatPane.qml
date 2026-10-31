@@ -2165,7 +2165,7 @@ Window {
                             enabled: replyBox.text.trim() !== "" && !pane.sending
                             icon.name: Icons.plasma.later
                             text: i18n("Send when this turn ends")
-                            onClicked: pane.send(pane.route === "terminal" ? "background" : "auto", true)
+                            onClicked: pane.send(pane.route === "terminal" || pane.askHow ? "background" : "auto", true)
 
                             TipArea {
                                 textFormat: Text.PlainText
@@ -2175,7 +2175,9 @@ Window {
                             }
                         }
                         PlasmaComponents3.Button {
-                            enabled: replyBox.text.trim() !== "" && !pane.sending && !(pane.route === "terminal" && pane.busy)
+                            // (a terminal that takes no text, known or just found out: not while
+                            // Claude works there, it would quit mid-turn; Send when this turn ends)
+                            enabled: replyBox.text.trim() !== "" && !pane.sending && !((pane.route === "terminal" || pane.askHow) && pane.busy)
                                      && !(pane.permission && pane.route === "tmux")
                             icon.name: Icons.plasma.send
                             text: pane.sending ? i18n("Sending…") : pane.route === "terminal" || pane.askHow ? i18n("Send, go on in the background") : i18n("Send")

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A reply to a terminal that turned out to take no text goes as the window's buttons say in Plasma's chat pane too:** once it asked *Copy and open its tab* or *Send, go on in the background*, **Send when this turn ends** queues it to go on in the background (it queued it to be typed in, which that terminal can't take), and **Send, go on in the background** waits while Claude works there, as for a terminal known to take no text and as in VS Code (Plasma).
 - **VS Code's *While you were away* summary reads as Plasma's and GNOME's:** a line for each of the first three chats that need you, with its SSH host, then *+2 more need you*, and four names to a line before *+N* (it named them all in one line without their hosts, and three before *+N more*) (VS Code).
 - **VS Code's side-by-side switches are icons, as Plasma's:** the switch in a change's corner shows the side-by-side or the one-after-the-other icon (it showed the characters ◫ and ☰), and the Review's **Side by side** is an icon toggle with a tooltip, as in Plasma's pane (it was a text button); the icon table has VS Code shapes for both now (VS Code).
 - **VS Code's settings in the order of Plasma's settings page**, each with a place of its own (several shared one, so VS Code sorted those by name), and its *Chat Pets* says *0: only the big Talpy* as Plasma's and GNOME's (it said *0 = none*, though the big Talpy stays) (VS Code).
