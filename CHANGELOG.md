@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The popup's tabs alike in Plasma:** the Permissions tab's *Show 8 more* looks as every other *Show N more* (the skip-down icon, small, under the lines; it was a bare text button), the Projects tab reads its first time with a spinner beside *Reading your chats by project…*, as the Recap and the Permissions tab do, and the Talpy Den tab's *No Claude Code chats yet* has the chats icon, as the other tabs' empty states have their own (it had the About icon) (Plasma).
 - **The Recap's bars lie on a track,** as an account's busiest folders do on the Talpy Den tab and as VS Code's and GNOME's Recap bars do: in *Where Claude worked* and *At API prices* a faint track shows where all of it would end, and the bars have round ends (Plasma).
 - **VS Code's headline takes clicks on its words only,** as Plasma's: the empty space right of *1 chat needs you* is the stage's, so a double-click there gives Talpy a cookie (the whole line opened the chat and took no double-click) (VS Code).
 - **With *Reduce Animation* on, the big Talpy's light rests as on Plasma:** while a chat needs you his stage is lit as at rest, and the night's stars shine at half; GNOME lit it at the pulse's brightest and the stars at 90% (GNOME).

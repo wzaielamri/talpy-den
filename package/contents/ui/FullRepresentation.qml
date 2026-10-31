@@ -387,7 +387,7 @@ PlasmaExtras.Representation {
                         Layout.fillWidth: true
                         Layout.margins: Kirigami.Units.gridUnit
                         visible: root.status !== null && root.groups.length === 0 && root.shownHosts.length === 0
-                        iconName: Icons.plasma.info
+                        iconName: Icons.plasma.chats   // (the tab's, as the Projects and Recap tabs' have theirs)
                         text: i18n("No Claude Code chats yet")
                         explanation: i18n("Your Claude Code chats show up here once you start claude in a terminal or open Claude in VS Code. Talpy Den looks in ~/.claude and ~/.claude-*; other folders go in its settings (Extra config dirs).")
                     }

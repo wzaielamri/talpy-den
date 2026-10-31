@@ -93,13 +93,25 @@ PlasmaComponents3.ScrollView {
         width: view.availableWidth
         spacing: Kirigami.Units.largeSpacing
 
-        PlasmaComponents3.Label {
-            textFormat: Text.PlainText
+        // (read the first time: as the Recap's and the Permissions tab's)
+        RowLayout {
             Layout.fillWidth: true
             Layout.margins: Kirigami.Units.smallSpacing
             visible: root.projectsBusy && view.projects.length === 0
-            text: i18n("Reading your chats by project…")
-            opacity: 0.7
+            spacing: Kirigami.Units.smallSpacing
+
+            PlasmaComponents3.BusyIndicator {
+                implicitWidth: Kirigami.Units.iconSizes.medium
+                implicitHeight: Kirigami.Units.iconSizes.medium
+                running: parent.visible
+            }
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: i18n("Reading your chats by project…")
+                opacity: 0.8
+            }
         }
         PlasmaComponents3.Label {
             textFormat: Text.PlainText

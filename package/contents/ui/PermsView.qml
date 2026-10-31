@@ -274,8 +274,15 @@ PlasmaComponents3.ScrollView {
                         }
                     }
                 }
+                // (as the other lists' Show N more, MoreButton.qml: under the lines' text)
                 PlasmaComponents3.ToolButton {
                     visible: !origin.allGranted && origin.granted.length > view.grantedFew
+                    Layout.leftMargin: Kirigami.Units.iconSizes.small
+                    flat: true
+                    icon.name: Icons.plasma.more
+                    icon.width: Kirigami.Units.iconSizes.small
+                    icon.height: Kirigami.Units.iconSizes.small
+                    font: Kirigami.Theme.smallFont
                     text: i18np("Show %1 more", "Show %1 more", origin.granted.length - view.grantedFew)
                     onClicked: view.allGranted = Object.assign({}, view.allGranted, { [origin.host]: true })
                 }
