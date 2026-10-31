@@ -482,23 +482,9 @@ button:focus-visible {
   cursor: pointer;
 }
 
-.tag.clickable:hover,
-.tag[aria-pressed="true"] {
+/* (a tag that's on, as the Agents tag with its tree open, has no fill: as Plasma's) */
+.tag.clickable:hover {
   background: var(--cs-hover);
-}
-
-/* A task list's progress: the tag fills up as tasks get done */
-.tag.progress,
-.tag.progress.clickable:hover,
-.tag.progress[aria-pressed="true"] {
-  background:
-    linear-gradient(to right, color-mix(in srgb, var(--cs-working) 30%, transparent) var(--fill), transparent var(--fill)),
-    var(--tag-under, transparent);
-}
-
-.tag.progress.clickable:hover,
-.tag.progress[aria-pressed="true"] {
-  --tag-under: var(--cs-hover);
 }
 
 .badge {
