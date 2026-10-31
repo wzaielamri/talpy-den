@@ -31,7 +31,7 @@ function play(hitEvery, stopAt) {
     const g = pickGame(t, host);
     g.start(now);
     const brainDuring = t.brainOn;
-    let ups = 0, last = '', downHits = 0, maxOpen = 0, holes = 0;
+    let ups = 0, last = '', downHits = 0, maxOpen = 0, holes = 0, downRise = 0, deepest = 0;
     while (g.on && now < 60000) {
         now += 16;
         t.tick(now);
@@ -42,11 +42,16 @@ function play(hitEvery, stopAt) {
         if (g.state !== last && g.state === 'up') ups++;
         last = g.state;
         if (g.state === 'down' && g.hit()) downHits++;    // (a click while he's down: the game's, nothing happens)
+        if (g.state === 'down') {   // (how far back up he came meanwhile)
+            deepest = Math.max(deepest, t.v.depth);
+            downRise = Math.max(downRise, deepest - t.v.depth);
+        } else
+            deepest = 0;
         if (g.state === 'up' && hitEvery && now - g.since > 500 && ups %% hitEvery === 0) g.hit();
         if (stopAt && now - 1000 > stopAt) g.stop();
     }
     return { ms: now - 1000, rounds: g.round, ups, said, xs: xs.size, brainDuring, brainAfter: t.brainOn, holes, maxOpen,
-             holesAfter: g.holes.length, changed, downRounds: g.round };
+             holesAfter: g.holes.length, changed, downRounds: g.round, downRise };
 }
 console.log(JSON.stringify({ games: GAMES, missed: play(0), caught: play(1), some: play(3), stopped: play(0, 3000) }));
 """ % json.dumps(str(TALPY / "games.mjs"))
@@ -73,6 +78,13 @@ class PeekabooTests(unittest.TestCase):
         self.assertGreaterEqual(self.r["missed"]["xs"], 2)
         self.assertEqual(self.r["caught"]["said"].count("got"), self.r["caught"]["rounds"])
         self.assertEqual(self.r["missed"]["said"].count("got"), 0)   # (clicks while he's down catch nothing)
+
+    def test_between_pops_he_stays_down_till_hes_up_in_the_next_hole(self):
+        # (caught or ducked, he stays down while he tunnels to the next hole: his
+        # own pose ending brought him back up in the same hole first)
+        for name in ("missed", "caught", "some"):
+            with self.subTest(name):
+                self.assertLess(self.r[name]["downRise"], 0.5)   # (on his way down, or down: never back up)
 
     def test_he_does_nothing_of_his_own_meanwhile_and_is_back_after(self):
         for name in ("missed", "stopped"):

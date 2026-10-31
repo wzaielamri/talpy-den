@@ -36,6 +36,9 @@ export function pickGame(talpy, host) {
 const OPEN_MS = 320;         // holes open (and close) that long
 const POP_MS = 450;          // he takes that long to pop up (talpy.mjs DEPTH easing)
 const MAX_MS = 26000;        // the game's over by then, whatever the rounds
+// (a pose of his the game holds until it moves him on: Talpy's own end of a
+// pose would bring him back up in the hole he's in, before he's off to the next)
+const HOLD = 60000;
 
 // Peekaboo holes: three holes open on the stage and he pops out of one at
 // random; click him before he ducks. He's quicker each round, and after a few
@@ -110,6 +113,10 @@ export class Peekaboo {
             this.setOpen(p);
         else if (this.state === 'close')
             this.setOpen(1 - p);
+        // (down between pops he stays down: a pose of his that ends would bring
+        // him back up in the hole he's in, before he's off to the next)
+        if (!t.run && (this.state === 'open' || this.state === 'caught' || this.state === 'ducked' || this.state === 'down'))
+            t.play({ steps: () => [{ depth: 'hidden', eyes: 'closed', mouth: 'smile', plume: '', t: HOLD }] }, null, false);
         if (now < this.until)
             return;
         switch (this.state) {
@@ -131,13 +138,13 @@ export class Peekaboo {
             this.host.moveTo(this.holes[next].x);
             const up = this.upMs();
             t.play({ steps: () => [{ depth: 'high', eyes: 'happy', mouth: 'open', plume: 'flick', look: [Math.random() < 0.5 ? -1.4 : 1.4, -0.4],
-                                     t: POP_MS + up }] }, null, false);
+                                     t: HOLD }] }, null, false);
             this.set('up', POP_MS + up);
             return;
         }
-        case 'up':   // too slow: he ducks, giggling
+        case 'up':   // too slow: he ducks, giggling, and stays down till he's up in the next hole
             t.play({ steps: w => [{ depth: 'hidden', eyes: 'squint', mouth: 'smile',
-                                    fx: [['text', 30, 30, { text: w('hihi'), size: 6, dy: -8, dur: 1 }]], t: 420 }] }, null, false);
+                                    fx: [['text', 30, 30, { text: w('hihi'), size: 6, dy: -8, dur: 1 }]], t: HOLD }] }, null, false);
             this.round += 1;
             this.set('ducked', 420);
             return;
@@ -158,7 +165,7 @@ export class Peekaboo {
             return true;   // (down, or only just coming up: nothing, and no petting meanwhile)
         this.talpy.play({ steps: () => [
             { depth: 'high', eyes: 'wide', mouth: 'o', plume: 'up', body: 'jolt', fx: [['sparkle', 32, 18, { dy: -10 }], ['sparkle', 22, 22, { dy: -8, delay: 0.1 }]], t: 380 },
-            { depth: 'hidden', eyes: 'happy', mouth: 'open', t: 360 }] }, null, false);
+            { depth: 'hidden', eyes: 'happy', mouth: 'open', t: HOLD }] }, null, false);   // (down till he's up in the next hole)
         this.host.say('got');
         this.round += 1;
         this.set('caught', 740);
