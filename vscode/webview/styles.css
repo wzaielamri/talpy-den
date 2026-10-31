@@ -3469,10 +3469,14 @@ body.vscode-high-contrast-light .pane {
   background: color-mix(in srgb, var(--cs-bg) 85%, transparent);
   line-height: 1;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.pane-picture-x:hover {
-  color: var(--cs-failed);
+.pane-picture-x .icon {
+  width: 0.9em;
+  height: 0.9em;
 }
 
 .pane-offer img {
@@ -3724,9 +3728,9 @@ body.vscode-high-contrast-light .pane {
   margin-right: auto;
 }
 
-.pane-mic.on {
+/* (recording: only the stop icon is red, as Plasma's; the button's box and text stay plain) */
+.pane-mic.on .icon {
   color: var(--vscode-errorForeground, #f85149);
-  background: color-mix(in srgb, var(--vscode-errorForeground, #f85149) 15%, transparent);
 }
 
 .pane-mic span {

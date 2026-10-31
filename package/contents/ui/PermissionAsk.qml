@@ -292,9 +292,8 @@ ColumnLayout {
                 ask.cancelDeny()
             }
         }
-        PlasmaComponents3.ToolButton {
-            icon.name: Icons.plasma.undo
-            display: PlasmaComponents3.AbstractButton.IconOnly
+        // (a plain Cancel, as every confirm line's: the undo arrow is a file's Undo)
+        PlasmaComponents3.Button {
             text: i18n("Cancel")
             onClicked: ask.cancelDeny()
         }

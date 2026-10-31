@@ -641,7 +641,7 @@ function ChatApp() {
           {chat?.queued ? (
             <div class="pane-queued">
               <span>Sent when this turn ends: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}</span>
-              <button type="button" class="btn secondary small" onClick={() => post({ type: "unqueue" })}>Cancel</button>
+              <button type="button" class="btn secondary small" onClick={() => post({ type: "unqueue" })}><Icon name={I.cancel} tone={T.cancel} />Cancel</button>
             </div>
           ) : null}
           {offered.items.length ? (
@@ -719,8 +719,9 @@ function ChatApp() {
               {picturesIn(text).map((path) => (
                 <span key={path} class="pane-picture" title={`A picture for Claude\n${chat?.host ? `${path}, on ${chat.host}` : path}`}>
                   {thumbs[path] ? <img src={thumbs[path]} alt="" /> : <span class="pane-picture-name">{path.split("/").pop()}</span>}
-                  <button type="button" class="pane-picture-x" title="Take it out of your reply" onClick={() => setText((t) => withoutPicture(t, path))}>
-                    ×
+                  <button type="button" class="pane-picture-x" title="Take it out of your reply" aria-label="Take it out of your reply"
+                    onClick={() => setText((t) => withoutPicture(t, path))}>
+                    <Icon name={I.cancel} tone={T.cancel} />
                   </button>
                 </span>
               ))}
@@ -784,7 +785,7 @@ function ChatApp() {
                 title="Kept, and sent once Claude's turn is over."
                 onClick={() => send(terminal ? "background" : "auto", true)}
               >
-                Send when this turn ends
+                <Icon name={I.later} />Send when this turn ends
               </button>
             ) : null}
             <button
@@ -793,7 +794,7 @@ function ChatApp() {
               disabled={!text.trim() || sending || (terminal && !!chat?.busy) || (!!chat?.permission && chat.route === "tmux")}
               onClick={() => send(terminal ? "background" : "auto", false)}
             >
-              {sending ? "Sending…" : terminal ? "Send, go on in the background" : "Send"}
+              <Icon name={I.send} />{sending ? "Sending…" : terminal ? "Send, go on in the background" : "Send"}
             </button>
           </div>
         </>

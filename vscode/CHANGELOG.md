@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The chat tab's buttons as in Plasma:** a picture in your reply is
+  taken out with the red × icon; while you dictate only the stop icon is
+  red, not the whole button and its box; a reply waiting for the turn to
+  end has a red × by its **Cancel**; **Send when this turn ends** and
+  **Send** have their icons; a plan's **Approve, accept edits** is bold;
+  under a prompt Talpy Den can't answer it says *to answer it here*.
 - **The Recap as in Plasma:** a failed read says why above the days read
   before, which stay (the error showed alone); **Read again** is greyed
   while it reads; every tip in *What could use less of your plan* has its

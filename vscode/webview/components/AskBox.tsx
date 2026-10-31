@@ -53,7 +53,7 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
         <div class="ask-buttons">
           <button type="button" class="btn secondary" disabled={busy} onClick={() => onAnswer("approve-edits", "")}
             title="It starts on the plan and changes files without asking for the rest of this chat (accept edits mode); commands still ask.">
-            <Icon name={I.always} tone={T.always} />Approve, accept edits
+            <Icon name={I.always} tone={T.always} /><strong>Approve, accept edits</strong>
           </button>
           <button type="button" class="btn secondary" disabled={busy} onClick={() => onAnswer("approve", "")}
             title="It starts on the plan and asks before each change, as “Yes, manually approve edits” in its dialog.">
@@ -117,8 +117,8 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
           {plan
             ? "Approve it in the chat, or run “Talpy Den: Answer Permission Prompts from Talpy Den…” (it takes plans too) to approve it here."
             : questions.length
-            ? "Answer it in the chat, or run “Talpy Den: Answer Permission Prompts from Talpy Den…” (it answers Claude's questions too) to answer them here."
-            : "Answer it in the chat, or run “Talpy Den: Answer Permission Prompts from Talpy Den…” to answer them here."}
+            ? "Answer it in the chat, or run “Talpy Den: Answer Permission Prompts from Talpy Den…” (it answers Claude's questions too) to answer it here."
+            : "Answer it in the chat, or run “Talpy Den: Answer Permission Prompts from Talpy Den…” to answer it here."}
         </div>
       ) : null}
     </div>
