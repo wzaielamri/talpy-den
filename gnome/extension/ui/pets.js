@@ -977,15 +977,11 @@ class Stage {
         }
         if (!this.live)
             return;
-        const calm = this.pets.reducedMotion;   // (lit, but no pulsing or twinkling)
-        if (this._heroMood === 'needs' && calm) {
-            this.glow.opacity = 255;
-        } else if (this._heroMood === 'needs') {
+        if (this.pets.reducedMotion)
+            return;   // (lit as at rest, the stars at half: no pulsing or twinkling, as on Plasma)
+        if (this._heroMood === 'needs') {
             this.glow.ease({opacity: 255, duration: 900, mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
                 repeatCount: -1, autoReverse: true});
-        } else if (this._heroMood === 'done' && calm) {
-            for (const star of this.stars)
-                star.opacity = 230;
         } else if (this._heroMood === 'done') {
             this.stars.forEach((star, i) => star.ease({opacity: 230, duration: 900 + 260 * i,
                 mode: Clutter.AnimationMode.EASE_IN_OUT_SINE, repeatCount: -1, autoReverse: true}));
