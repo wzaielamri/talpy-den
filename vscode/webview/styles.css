@@ -1138,6 +1138,13 @@ button:focus-visible {
   height: 5px;
 }
 
+/* as wide as "ctx 100%", right-aligned: every row's bar ends at one place */
+.ctx-pct {
+  min-width: 7.2ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .session-detail {
   overflow: hidden;
   text-overflow: ellipsis;

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The chats' context bars line up:** *ctx 9%* takes the room of *ctx
+  100%*, so every row's bar ends at one place.
 - **The login hints say Talpy Den never sees your login,** as everywhere
   else (they said *the extension*).
 - **The SSH hosts button has the server icon in the view's title bar

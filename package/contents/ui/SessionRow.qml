@@ -786,6 +786,15 @@ RowLayout {
                 text: i18nc("context window fill", "ctx %1%", Math.round(row.session.context || 0))
                 opacity: 0.7
                 font: Kirigami.Theme.smallFont
+                // (as wide as "ctx 100%", right-aligned: every row's bar ends at one place)
+                Layout.minimumWidth: ctxWidth.width
+                horizontalAlignment: Text.AlignRight
+
+                TextMetrics {
+                    id: ctxWidth
+                    font: Kirigami.Theme.smallFont
+                    text: i18nc("context window fill", "ctx %1%", 100)
+                }
             }
         }
 

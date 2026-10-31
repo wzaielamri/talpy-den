@@ -246,7 +246,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
               >
                 <span style={{ width: `${Math.min(100, Math.max(0, s.context))}%` }} />
               </span>
-              <span class="muted nowrap" title="How full the chat's context window is">
+              <span class="muted nowrap ctx-pct" title="How full the chat's context window is">
                 ctx {Math.round(s.context)}%
               </span>
             </>
