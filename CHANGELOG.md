@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The settings say *Keep finished background chats*,** as the rest of Talpy Den calls them (they said *background jobs*) (Plasma and GNOME).
 - **The chat pane's *Open its window* tooltip says a chat that isn't open reopens as the *Terminal | VS Code* switch of Recent chats says,** as it does and as VS Code's tooltip says; it said it reopens in a terminal (Plasma).
 - **A reply to a terminal that turned out to take no text goes as the window's buttons say in Plasma's chat pane too:** once it asked *Copy and open its tab* or *Send, go on in the background*, **Send when this turn ends** queues it to go on in the background (it queued it to be typed in, which that terminal can't take), and **Send, go on in the background** waits while Claude works there, as for a terminal known to take no text and as in VS Code (Plasma).
 - **VS Code's *While you were away* summary reads as Plasma's and GNOME's:** a line for each of the first three chats that need you, with its SSH host, then *+2 more need you*, and four names to a line before *+N* (it named them all in one line without their hosts, and three before *+N more*) (VS Code).

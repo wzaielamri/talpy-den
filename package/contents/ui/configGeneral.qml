@@ -798,7 +798,7 @@ KCM.SimpleKCM {
 
         QQC2.SpinBox {
             id: keepDoneHours
-            Kirigami.FormData.label: i18n("Keep finished background jobs (h):")
+            Kirigami.FormData.label: i18n("Keep finished background chats (h):")
             from: 0
             to: 168
         }

@@ -82,7 +82,7 @@
       <default>once</default>
     </entry>
     <entry name="keepDoneHours" type="Int">
-      <label>Keep finished background jobs listed for this many hours (0 = hide them)</label>
+      <label>Keep finished background chats listed for this many hours (0 = hide them)</label>
       <default>24</default>
       <min>0</min>
       <max>168</max>

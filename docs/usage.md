@@ -7,7 +7,7 @@
 | Panel icon | Left-click opens the popup, middle-click refreshes. Right-click: *Refresh*, *Show Hidden Chats Again (N)* (and *… Plans …*, *… Memories …*, *… Projects Again (N)*, each while something of that kind is hidden), *Go to the Chat That Needs You* (when one does), *Play with Talpy* and *Playful Talpy* (with the pet on), *Open Usage Page on claude.ai*, the *Default Account* (with two accounts or more), and the settings. |
 | The popup's top row | The tabs, then Focus and Find a chat (on the first tab), SSH hosts, Refresh, and the gear: the settings (in the system tray, the tray's own heading has that button). |
 | The big Talpy | Click its headline (*… needs you*) to go to that chat. Click it to pet it (four quick clicks: he laughs, *Let's play!*, and a game starts; *Play with Talpy* in the right-click menu, or VS Code's **⋯** menu, too), double-click to make it dance, drag it out of its burrow (it hangs on for a second), or push it down into it (a drag that starts downward: it hangs on and pushes back, sinking a little, until you push on and it gives in; let go before that and it springs back up; back up or sideways, you pull it out instead). Double-click its stage a little away from it for a cookie: it runs after it as you drag the cookie around (let go and it floats down; pick it up again any time), and eats it. With *Playful Talpy* off (settings, or the right-click menu; in VS Code the view's **⋯** menu), Talpy only shows what your chats do: no tricks or props, no jokes, no cookie. |
-| A chat's name | Jumps to the chat: its terminal tab, its VS Code window, or a terminal attached to the background job. |
+| A chat's name | Jumps to the chat: its terminal tab, its VS Code window, or a terminal attached to the background chat. |
 | The line under a chat | Unfolds your last prompt, Claude's reply, the chat's tasks, and buttons that compare what it changed (all of it, or its last turn). |
 | **±3** next to a chat | Compares the files the chat changed in VS Code. |
 | An account's token line | Unfolds its last 14 days: tokens per day, chats, prompts, busiest folders and models. |
@@ -57,7 +57,7 @@ Right-click Talpy Den's icon → **Configure Talpy Den…**, or the gear at the 
 | Phone | off | Meanwhile, send chats that need you (and, if you like, ones that finish) to your phone with KDE Connect: every paired phone that's reachable, or the one you pick; *Send a test* tries it |
 | Sound | on, 70% | Sounds for needs input / finished / failed or stopped (a usage limit or an expired login stopped a chat): from your sound theme, a file, or none |
 | Usage cap | off (90% when on) | Once an account's 5-hour or weekly window reaches it, the account's chats at work on this computer are stopped, once in that window (in tmux and VS Code's Claude the turn is interrupted and the chat stays open); queued tasks wait for the reset, and chats that keep going go on then. Chats you start or answer yourself afterwards aren't stopped again |
-| Keep finished background jobs | 24 h | 0 hides them right away |
+| Keep finished background chats | 24 h | 0 hides them right away |
 | Recent chats per account | 5 | How many show at a time in *Recent chats*, *★ Starred chats* and *★ Starred plans* and a project's lists (**Show N more** for more); 0 hides *Recent chats* |
 | Check SSH hosts every | 30 s | |
 | Plan usage on SSH hosts | once per account | An account on this computer and a host (or on two hosts) shows its plan usage where it's listed first, with the newest numbers of them all; or on every host, or on none |

@@ -68,7 +68,7 @@
     <key name="keep-done-hours" type="i">
       <default>24</default>
       <range min="0" max="168"/>
-      <summary>Keep finished background jobs listed for this many hours (0 = hide them)</summary>
+      <summary>Keep finished background chats listed for this many hours (0 = hide them)</summary>
     </key>
     <key name="usage-refresh-minutes" type="i">
       <default>5</default>
