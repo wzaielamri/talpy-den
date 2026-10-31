@@ -23,6 +23,8 @@ export function PermsView({ rules }: { rules: boolean }) {
   // the change being written (host|id): one settings write at a time, every
   // section's buttons wait for it (as Plasma's)
   const [change, setChange] = useState("");
+  // which kind of change was the last: only its message shows (as Plasma's one message)
+  const [last, setLast] = useState<"rule" | "revoke" | "">("");
 
   function ask() {
     setBusy(true);
@@ -40,7 +42,10 @@ export function PermsView({ rules }: { rules: boolean }) {
     if (answer) setBusy(false);
   }, [answer]);
 
-  const data = answer?.data ?? null;
+  // (a read that failed says why above what was read before, as Plasma's)
+  const lastData = useRef<PermsData | null>(null);
+  if (answer?.data) lastData.current = answer.data;
+  const data = answer?.data ?? lastData.current;
   return (
     <div class={"week" + (busy && data ? " busy" : "")}>
       {busy && !data && !answer?.error ? <div class="muted">Reading your settings and the chats of the last 7 days.</div> : null}
@@ -51,8 +56,10 @@ export function PermsView({ rules }: { rules: boolean }) {
           {[{ host: "", ok: true, error: "", prompts: data.prompts, granted: data.granted }, ...(data.hosts ?? [])].map((src) =>
             src.ok ? (
               <div key={src.host} class="week">
-                <Granted granted={src.granted ?? []} host={src.host} reload={ask} change={change} setChange={setChange} />
-                <Prompts prompts={src.prompts ?? null} host={src.host} rules={rules} reload={ask} change={change} setChange={setChange} />
+                <Granted granted={src.granted ?? []} host={src.host} reload={ask} change={change}
+                  setChange={(key) => { setChange(key); if (key) setLast("revoke"); }} said={last === "revoke"} />
+                <Prompts prompts={src.prompts ?? null} host={src.host} rules={rules} reload={ask} change={change}
+                  setChange={(key) => { setChange(key); if (key) setLast("rule"); }} said={last === "rule"} />
               </div>
             ) : (
               <div key={src.host} class="msg error" role="alert">Couldn't read the permissions on {src.host}: {src.error || "no answer"}</div>
@@ -69,9 +76,9 @@ export function PermsView({ rules }: { rules: boolean }) {
 // The permission prompts you answered, and the rules that would have let
 // the most of them through (written only when you allow one; the settings
 // can leave them out)
-function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, setChange }: {
+function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, setChange, said }: {
   prompts: PermsData["prompts"] | null; host: string; rules: boolean; reload: () => void;
-  change: string; setChange: (key: string) => void;
+  change: string; setChange: (key: string) => void; said: boolean;
 }) {
   const ruleAnswer = useStore(weekRuleAnswer);
   const [asking, setAsking] = useState("");
@@ -134,7 +141,7 @@ function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, se
           </li>
         ))}
       </ul>
-      {ruleAnswer?.message && ruleAnswer.host === host ? (
+      {said && ruleAnswer?.message && ruleAnswer.host === host ? (
         <div class={"small" + (ruleAnswer.ok ? "" : " error")} role="status">{ruleAnswer.ok ? ruleAnswer.message : `Nothing changed: ${ruleAnswer.message}`}</div>
       ) : null}
     </section>
@@ -143,8 +150,8 @@ function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, se
 
 // The permissions you gave: every rule and mode that lets chats on this
 // computer go without asking, each to revoke (it asks first)
-function Granted({ granted, host, reload, change: busyKey, setChange }: {
-  granted: WeekGrant[]; host: string; reload: () => void; change: string; setChange: (key: string) => void;
+function Granted({ granted, host, reload, change: busyKey, setChange, said }: {
+  granted: WeekGrant[]; host: string; reload: () => void; change: string; setChange: (key: string) => void; said: boolean;
 }) {
   const answer = useStore(weekRevokeAnswer);
   const [asking, setAsking] = useState("");
@@ -200,7 +207,7 @@ function Granted({ granted, host, reload, change: busyKey, setChange }: {
       {!all && granted.length > GRANTED_FEW ? (
         <button type="button" class="chip" onClick={() => setAll(true)}>Show {granted.length - GRANTED_FEW} more</button>
       ) : null}
-      {answer?.message && answer.host === host ? (
+      {said && answer?.message && answer.host === host ? (
         <div class={"small" + (answer.ok ? "" : " error")} role="status">{answer.ok ? answer.message : `Nothing changed: ${answer.message}`}</div>
       ) : null}
     </section>

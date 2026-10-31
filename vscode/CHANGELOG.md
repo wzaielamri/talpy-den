@@ -15,7 +15,8 @@
   **Revoke** and an **Allow** at once could rewrite the same settings file
   and lose one), with a spinner while it is; **Undo**, *In git* and
   *Administrator's* have Plasma's tooltips; a refused **Allow** says *Not
-  a rule the Permissions tab offers*.
+  a rule the Permissions tab offers*; only the last change's message shows;
+  a read that failed says why above what was read before, which stays.
 - ***Not logged in* has the logged-out account icon,** as in Plasma.
 - **The chat list as in Plasma:** a chat's task progress is a small green
   bar and *3/5* at the start of the line under its folder, not a tag by
