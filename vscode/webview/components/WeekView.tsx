@@ -35,6 +35,7 @@ import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
 import { weekAnswer } from "../util/stores";
 import { showProject } from "../util/ui";
+import { Reading } from "./Reading";
 
 const REFRESH_MS = 10 * 60000; // while the tab is in sight
 
@@ -154,9 +155,7 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
       ) : null}
 
       {busy && !recap && !error ? (
-        <div class="empty muted">
-          Reading your chats of these days. The first time takes a few seconds; after that only what's new is read.
-        </div>
+        <Reading text="Reading your chats of these days. The first time takes a few seconds; after that only what's new is read." />
       ) : null}
       {error ? <div class="msg error" role="alert">Couldn't read your week: {error}</div> : null}
       {recap && !hasData ? (

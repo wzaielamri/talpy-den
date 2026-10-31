@@ -152,6 +152,14 @@ code {
   gap: 8px;
 }
 
+/* A tab's first read: a spinner beside what it reads (Reading.tsx) */
+.reading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 6px;
+}
+
 .empty-title {
   margin: 0;
   font-size: 1.15em;
@@ -487,17 +495,6 @@ button:focus-visible {
   background: var(--cs-hover);
 }
 
-.badge {
-  flex: none;
-  padding: 0 6px;
-  border-radius: 9px;
-  background: var(--cs-tag-bg);
-  color: var(--cs-tag-fg);
-  font-size: 0.8em;
-  line-height: 1.6;
-  white-space: nowrap;
-}
-
 /* ---------------------------------------------------------------------------
    Bars: plan usage and context fill, colored by how full they are */
 
@@ -696,7 +693,7 @@ button:focus-visible {
 .stats-toggle {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   width: 100%;
   min-width: 0;
   padding: 0;
@@ -714,8 +711,8 @@ button:focus-visible {
 
 .stats-toggle .icon {
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   color: var(--cs-muted);
   transition: transform 120ms;
 }
@@ -1424,9 +1421,9 @@ button:focus-visible {
 }
 
 .agent-line .icon {
-  width: 12px;
-  height: 12px;
-  margin-top: calc((1.4em - 12px) / 2);
+  width: 16px;
+  height: 16px;
+  margin-top: calc((1.4em - 16px) / 2);
   color: var(--cs-muted);
   transition: transform 120ms;
 }
@@ -1560,7 +1557,7 @@ button:focus-visible {
 .recent-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   padding: 1px 4px 1px 0;
   border: none;
   border-radius: 4px;
@@ -1574,8 +1571,8 @@ button:focus-visible {
 }
 
 .recent-toggle .icon {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   transition: transform 120ms;
 }
 
@@ -1653,6 +1650,11 @@ button:focus-visible {
   text-align: right;
 }
 
+/* (an opened project whose lines shown are all in its own folder: no column) */
+.recent-list.no-folders .recent-folder {
+  display: none;
+}
+
 .recent-ago {
   flex: none;
   width: 6.4em;
@@ -1694,11 +1696,6 @@ button:focus-visible {
 .more-button:hover {
   color: var(--cs-fg);
   background: var(--cs-hover);
-}
-
-.more-button .icon {
-  width: 12px;
-  height: 12px;
 }
 
 /* An account's CLAUDE.md: its own line, under its lists */
@@ -1788,10 +1785,6 @@ body.vscode-high-contrast .recent-item:hover {
 
 body.vscode-high-contrast .meter {
   box-shadow: inset 0 0 0 1px var(--vscode-contrastBorder, transparent);
-}
-
-body.vscode-high-contrast .badge {
-  border: 1px solid var(--vscode-contrastBorder, transparent);
 }
 
 body.vscode-high-contrast .tag {
@@ -2393,10 +2386,10 @@ body.vscode-high-contrast .top.scrolled {
 
 .week-bar-name .icon {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 2px;
-  vertical-align: -2px;
+  width: 16px;
+  height: 16px;
+  margin: 0 2px 0 -4px; /* (the chevron's own margin: the name where it was) */
+  vertical-align: -4px;
   opacity: 0.6;
 }
 
@@ -2484,7 +2477,7 @@ body.vscode-high-contrast .top.scrolled {
   overflow-wrap: anywhere;
 }
 
-.week-rule > .chip,
+.week-rule > .btn,
 .week-rule > span:last-child {
   flex: none;
 }
@@ -2501,16 +2494,11 @@ body.vscode-high-contrast .top.scrolled {
   gap: 6px;
 }
 
-/* Allow and Revoke: plain, their icon green or red (as Plasma's buttons) */
-.week-rule-buttons .chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.week-rule-buttons .chip .icon {
-  width: 14px;
-  height: 14px;
+/* Show N more under the permissions you gave: under the lines' text, past
+   their kind icon (16 px and the 8 px gap; the button's own 4 px padding) */
+.week-section > .more-button {
+  align-self: flex-start;
+  margin-left: 20px;
 }
 
 .week-rule > .spinner {
@@ -3610,11 +3598,6 @@ body.vscode-high-contrast-light .pane {
 /* ---------------------------------------------------------------------------
    The focus view (FocusView.tsx): what needs you, then a line a working chat */
 
-.icon-btn.on {
-  color: var(--vscode-focusBorder, #0078d4);
-  background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 18%, transparent);
-}
-
 .focus {
   display: flex;
   flex-direction: column;
@@ -3693,18 +3676,11 @@ body.vscode-high-contrast-light .pane {
   border-top: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--cs-fg) 15%, transparent));
 }
 
+/* (a plain button, .btn.secondary, in the middle) */
 .focus-all {
   display: flex;
   align-items: center;
-  gap: 4px;
   margin: 8px auto 0;
-  padding: 3px 12px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 2px;
-  background: var(--vscode-button-secondaryBackground, color-mix(in srgb, var(--cs-fg) 12%, transparent));
-  color: var(--vscode-button-secondaryForeground, inherit);
-  font: inherit;
-  cursor: pointer;
 }
 
 /* A plan to approve (AskBox.tsx): its start in a row, all of it in the chat tab */
@@ -3736,7 +3712,7 @@ body.vscode-high-contrast-light .pane {
 
 /* (recording: only the stop icon is red, as Plasma's; the button's box and text stay plain) */
 .pane-mic.on .icon {
-  color: var(--vscode-errorForeground, #f85149);
+  color: var(--cs-failed);
 }
 
 .pane-mic span {

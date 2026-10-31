@@ -550,14 +550,12 @@ function ChatApp() {
           <IconButton icon={I.zoomIn} label="Larger text" title="Larger text (Ctrl+wheel)" disabled={scale >= TEXT_SCALES[TEXT_SCALES.length - 1] - 0.001} onClick={() => zoom(1)} />
         </span>
         {chat?.canMove ? (
-          <button
-            type="button"
-            class="btn secondary small"
-            title="Go on with it in a Claude Code panel: Claude quits in its terminal (the terminal stays open) and the chat reopens in a Claude Code panel. Asks first; a chat that's working or waiting for you is stopped only once you say so."
+          <IconButton
+            icon={I.moveTo}
+            label="Move to a Claude Code panel…"
+            title={"Move to a Claude Code panel…\nGo on with this chat in a Claude Code panel: Claude quits in its terminal (the terminal stays open) and the chat reopens in a Claude Code panel. Asks first; a chat that's working or waiting for you is stopped only once you say so."}
             onClick={() => post({ type: "moveToClaudeCode" })}
-          >
-            Move to Claude Code
-          </button>
+          />
         ) : null}
         <IconButton
           icon={I.openWindow}
@@ -731,7 +729,7 @@ function ChatApp() {
             <div class="confirm pane-offer">
               <img src={offer.url} alt="" />
               <span>Copy this picture to {chat?.host}? Claude there can only open it there.</span>
-              <button type="button" class="btn small" onClick={() => { savePicture(offer); setOffer(null); }}>Copy</button>
+              <button type="button" class="btn secondary small" onClick={() => { savePicture(offer); setOffer(null); }}>Copy</button>
               <button type="button" class="btn secondary small" onClick={() => setOffer(null)}>Cancel</button>
             </div>
           ) : null}
@@ -838,15 +836,14 @@ function ChatApp() {
                         </button>
                       ) : null}
                       {!f.unknown ? (
-                        <button type="button" class="btn secondary small" title="Asks first. Puts it back as it was before this chat." onClick={() => setUndoAsk(f.path)}>
-                          Undo
-                        </button>
+                        <IconButton icon={I.undo} label="Undo this file" title={"Undo this file\nAsks first. Puts it back as it was before this chat."}
+                          onClick={() => setUndoAsk(f.path)} />
                       ) : null}
                     </div>
                     {undoAsk === f.path ? (
                       <div class="confirm">
                         <span>{f.created ? `Delete ${f.label} for good? The chat made it; what you changed in it since is lost too.` : `Put ${f.label} back as it was before this chat? Later changes to it are lost too.`}</span>
-                        <button type="button" class="btn small" onClick={() => { setUndoAsk(""); post({ type: "undo", path: f.path }); }}>Undo</button>
+                        <button type="button" class="btn secondary small" onClick={() => { setUndoAsk(""); post({ type: "undo", path: f.path }); }}><Icon name={I.undo} />Undo</button>
                         <button type="button" class="btn secondary small" onClick={() => setUndoAsk("")}>Cancel</button>
                       </div>
                     ) : null}
@@ -890,16 +887,17 @@ function ChatApp() {
           {undoAsk === "*" ? (
             <div class="confirm">
               <span>Put all of them back as they were before this chat? Files it made are deleted for good; later changes to them are lost too.</span>
-              <button type="button" class="btn small" onClick={() => { setUndoAsk(""); post({ type: "undo", path: "*" }); }}>Undo all</button>
+              <button type="button" class="btn secondary small" onClick={() => { setUndoAsk(""); post({ type: "undo", path: "*" }); }}><Icon name={I.undo} />Undo all</button>
               <button type="button" class="btn secondary small" onClick={() => setUndoAsk("")}>Cancel</button>
             </div>
           ) : null}
           <div class="pane-buttons">
-            <button type="button" class="btn secondary" onClick={() => { setReviewLoading(true); post({ type: "review" }); }}>Compare again</button>
+            <IconButton icon={I.refresh} label="Compare again"
+              onClick={() => { setReviewLoading(true); post({ type: "review" }); }} />
             <span class="spacer" />
-            <button type="button" class="btn secondary" disabled={!review?.files.length} onClick={() => setUndoAsk("*")}>Undo all…</button>
+            <button type="button" class="btn secondary" disabled={!review?.files.length} onClick={() => setUndoAsk("*")}><Icon name={I.undo} />Undo all…</button>
             <button type="button" class="btn secondary" disabled={!review?.files.length || !review.repos.length} onClick={() => setCommitOpen(!commitOpen)}>
-              Commit these files…
+              <Icon name={I.commit} />Commit these files…
             </button>
             <button
               type="button"

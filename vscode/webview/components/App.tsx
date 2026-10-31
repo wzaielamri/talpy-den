@@ -28,6 +28,7 @@ import { HeroStage } from "./HeroStage";
 import { HostSection } from "./HostSection";
 import { Messages } from "./Messages";
 import { PermsView } from "./PermsView";
+import { Reading } from "./Reading";
 import { WeekView } from "./WeekView";
 
 const appClass = "app" + (editorTab ? " tab" : "");
@@ -91,7 +92,9 @@ export function App() {
   if (!state)
     return (
       <div class={appClass}>
-        <div class="empty muted">Looking for your chats…</div>
+        <div class="content">
+          <Reading text="Looking for your chats…" />
+        </div>
       </div>
     );
 
@@ -152,7 +155,7 @@ export function App() {
         ) : (
         <main key="chats" {...tabIn}>
           <Messages state={state} />
-          {!state.status && !state.errorText ? <div class="empty muted">Looking for your chats…</div> : null}
+          {!state.status && !state.errorText ? <Reading text="Looking for your chats…" /> : null}
           {focus && state.status ? (
             <Guarded what="the focus view">
               <FocusView groups={groups} />

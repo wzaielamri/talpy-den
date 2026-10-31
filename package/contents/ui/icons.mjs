@@ -40,7 +40,7 @@ const TABLE = {
     send:            ['document-send',                 'send',       'document-send-symbolic'],
     copy:            ['edit-copy',                     null,         'edit-copy-symbolic'],
     save:            ['document-save',                 null,         'document-save-symbolic'],
-    undo:            ['edit-undo',                     null,         'edit-undo-symbolic'],
+    undo:            ['edit-undo',                     'undo',       'edit-undo-symbolic'],
     refresh:         ['view-refresh',                  'refresh',    'view-refresh-symbolic'],
     openWindow:      ['window',                        'window',     'window-new-symbolic'],              // its window, terminal or tab; reopen a recent chat
     openPane:        ['dialog-messages',               'chat',       'chat-bubbles-symbolic'],            // the chat pane
@@ -51,7 +51,7 @@ const TABLE = {
     deny:            ['dialog-cancel',                 'deny',       'action-unavailable-symbolic'],
     reviewed:        ['dialog-ok',                     'check',      'object-select-symbolic'],
     markReviewed:    ['view-task',                     'task',       'view-list-bullet-symbolic'],
-    commit:          ['vcs-commit',                    null,         'emblem-ok-symbolic'],
+    commit:          ['vcs-commit',                    'commit',     'emblem-ok-symbolic'],
     signIn:          ['go-next',                       null,         'go-next-symbolic'],
     signOut:         ['system-log-out',                'logout',     'system-log-out-symbolic'],          // an account, an SSH host's connection
     addAccount:      ['list-add-user',                 'user',       'contact-new-symbolic'],

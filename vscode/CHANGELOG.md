@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- **The view's tabs alike:** each tab's first read shows a spinner beside
+  what it reads, as Plasma's; a failed read of the Permissions tab is the
+  red error box of the other tabs (it was plain text), and its *Show 8
+  more* looks as every other *Show N more*.
+- **One look for a button with words:** the Permissions tab's *Revoke…*,
+  *Allow…* and *Undo* and a question's buttons are VS Code's plain
+  buttons, as the chat tab's (they were pills, as the Recap's switches),
+  and a question's do-it button is no longer filled blue (a queued task's
+  *Cancel it*, the Review's *Undo* and *Undo all*, a picture's *Copy*), as
+  in Plasma.
+- **The Review's buttons have their icons, as in Plasma:** *Compare again*
+  is the refresh button, a file's undo arrow is *Undo this file*, and
+  *Undo all…*, *Commit these files…* and the questions' *Undo* and *Undo
+  all* carry theirs.
+- **Focus, when on, is framed as every other toggle that's on** (it was
+  blue), and dictating no longer tints the microphone button blue: only
+  its stop icon is red.
+- **An SSH host's *this window* is an outlined tag,** as every other label
+  (it was a filled pill).
+- **The chat tab's *Move to a Claude Code panel…* is the → button of its
+  row** (it was a text button, *Move to Claude Code*).
+- **An opened project's names show whole where there's room:** the folder
+  column takes its room only while a line shown is in a folder below the
+  project's, as in Plasma.
+- **Every fold arrow is one size, and *Show N more*'s icon,** as in
+  Plasma: the token line's, Recent and Starred chats', the Recap's and a
+  subagent's were smaller.
 - **A queued task's *Cancel it* has the red ×** of the button that
   asked, as in Plasma.
 - **The headline takes clicks on its words only,** as in Plasma: a

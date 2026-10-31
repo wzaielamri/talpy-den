@@ -6,6 +6,7 @@ import { I, Icon } from "../util/icons";
 import { useView } from "./context";
 import { GroupSection } from "./GroupSection";
 import { IconButton } from "./IconButton";
+import { Tag } from "./Tag";
 
 // An SSH host you picked: its accounts, chats and recent chats. Its last good
 // answer is kept when a check fails: shown dimmed, under the error.
@@ -35,9 +36,7 @@ export function HostSection({ host: h, groups }: { host: HostState; groups: Grou
         </h2>
         {machine ? <span class="host-machine small muted">{machine}</span> : null}
         {h.current ? (
-          <span class="badge" title="The host this VS Code window is connected to">
-            this window
-          </span>
+          <Tag text="this window" title="The host this VS Code window is connected to" />
         ) : null}
         <span class="spacer" />
         {h.loading ? <span class="spinner" role="status" aria-label={`Checking ${h.name}…`} /> : null}

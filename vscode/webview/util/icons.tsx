@@ -7,7 +7,7 @@
 import type { JSX } from "preact";
 import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -220,6 +220,15 @@ const shapes: Record<IconName, JSX.Element> = {
   note: <path d="M3.25 2.25h6.5l3 3v8.5h-9.5zM9.75 2.25v3h3M5.5 8.25h5M5.5 11h5" />,
   more: <path d="M8 2.5v7M4.75 6.5L8 9.75l3.25-3.25M3 13.25h10" />,
   trash: <path d="M2.75 4.25h10.5M6.25 4.25v-1.5h3.5v1.5M4 4.25l.75 9.25h6.5l.75-9.25M6.75 6.75v4.5M9.25 6.75v4.5" />,
+  // a change taken back: an arrow that turns back (Undo, as Plasma's edit-undo)
+  undo: <path d="M5.5 3.25L2.75 6l2.75 2.75M3 6h6.25a3.75 3.75 0 0 1 0 7.5H6.5" />,
+  // a commit: a dot on a line (as Plasma's vcs-commit)
+  commit: (
+    <>
+      <circle cx="8" cy="8" r="2.75" />
+      <path d="M1.75 8h3.5M10.75 8h3.5" />
+    </>
+  ),
 };
 
 // The icon of each meaning (only those VS Code has a button or mark for are

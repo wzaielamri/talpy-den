@@ -59,7 +59,7 @@ export function Header(props: {
           label={focus ? "Show everything" : "Focus"}
           title={focus ? "Show everything: back to every account, chat, pet and usage bar."
             : "Focus: only what needs you, the chats that finished a turn you haven't looked at yet, and one line for each chat at work."}
-          class={focus ? "on" : ""}
+          pressed={focus}
           onClick={() => setFocus(!focus)}
         />
       ) : null}

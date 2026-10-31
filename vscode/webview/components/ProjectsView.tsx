@@ -11,7 +11,7 @@
 
 import { useEffect, useRef } from "preact/hooks";
 import type { Group, ProjectRow, Session } from "../../src/shared/types";
-import { duration, groupOfProfile, listedChats, openChatsByProject, pagedTitle, pageSizeOf, projectLists, stateText } from "../../src/shared/model";
+import { duration, folderIn, groupOfProfile, listedChats, openChatsByProject, pagedTitle, pageSizeOf, projectLists, stateText } from "../../src/shared/model";
 import { post } from "../env";
 import { hideHint } from "../util/chat";
 import { I, Icon } from "../util/icons";
@@ -25,6 +25,7 @@ import { FocusLine } from "./FocusView";
 import { MemoryLine } from "./MemoryLine";
 import { MoreButton } from "./MoreButton";
 import { PlanLine } from "./PlanLine";
+import { Reading } from "./Reading";
 import { RecentLine, reopenOf, type Reopen } from "./RecentLine";
 
 export function ProjectsView() {
@@ -49,7 +50,7 @@ export function ProjectsView() {
     if (visible && hidden < hiddenBefore.current) post({ type: "projects" });
     hiddenBefore.current = hidden;
   }, [hidden]);
-  if (!answer) return <div class="empty muted">Reading your chats by project…</div>;
+  if (!answer) return <Reading text="Reading your chats by project…" />;
   const projects = answer.data?.projects ?? [];
   // (a read that failed says why, above the projects read before it, as Plasma's)
   const error = answer.error ? <div class="msg error" role="alert">Couldn't read your projects: {answer.error}</div> : null;
@@ -147,6 +148,14 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
   const tag = (account: string) => (lists.tagged ? account : undefined);
   // (its plans and memories a frame after its chats: the project opens at once)
   const rest = useAfterFrame();
+  // (the folder column takes room only while a line shown is in a folder
+  // below the project's, one for the three lists so their times line up, as Plasma's)
+  const belowProject = [
+    ...lists.chats.slice(0, lists.chatsShown).map((c) => folderIn(c.cwd, p.path, c.cwdShort || "~")),
+    ...(rest ? lists.plans.slice(0, lists.plansShown).map((x) => folderIn(x.cwd, p.path, x.cwdShort)) : []),
+    ...(rest ? lists.memories.slice(0, lists.memoriesShown).map((m) => (m.type === "account" ? "every folder" : folderIn(m.folder, p.path, m.folderShort))) : []),
+  ].some((f) => !!f);
+  const listClass = "recent-list" + (belowProject ? "" : " no-folders");
   return (
     <div class="project-details">
       {/* what goes on there now: the focus view's lines (as Plasma's) */}
@@ -158,7 +167,7 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
       {lists.chats.length ? (
         <>
           <div class="project-list small">{pagedTitle("Chats", lists.chatsShown, lists.chats.length)}</div>
-          <ul class="recent-list">
+          <ul class={listClass}>
             {lists.chats.slice(0, lists.chatsShown).map((c) => {
               const g = groupOf(c.profileDir);
               return g ? <RecentLine key={c.key} chat={c} group={g} how={howOf(g)} project={p.path} accountTag={tag(c.account)} /> : null;
@@ -170,7 +179,7 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
       {rest && lists.plans.length ? (
         <>
           <div class="project-list small">{pagedTitle("Plans", lists.plansShown, lists.plans.length)}</div>
-          <ul class="recent-list">
+          <ul class={listClass}>
             {lists.plans.slice(0, lists.plansShown).map((x) => {
               const g = groupOf(x.profileDir);
               return g ? <PlanLine key={x.key} plan={x} group={g} project={p.path} accountTag={tag(x.account)} /> : null;
@@ -182,7 +191,7 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
       {rest && lists.memories.length ? (
         <>
           <div class="project-list small">{pagedTitle("Memories", lists.memoriesShown, lists.memories.length)}</div>
-          <ul class="recent-list">
+          <ul class={listClass}>
             {lists.memories.slice(0, lists.memoriesShown).map((m) => {
               const g = groupOf(m.profileDir);
               return g ? <MemoryLine key={m.key} memory={m} group={g} project={p.path} accountTag={tag(m.account)} /> : null;

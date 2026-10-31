@@ -39,7 +39,7 @@ export function FocusView({ groups }: { groups: Group[] }) {
       <div class="focus-rest muted">
         {rest.length ? <div>Also: {rest.join(" · ")}</div> : null}
         {lists.usage.length ? <div class="small">5-hour usage: {lists.usage.map((u) => `${u.name} ${Math.round(u.pct)}%`).join(" · ")}</div> : null}
-        <button type="button" class="focus-all" onClick={() => setFocus(false)}>
+        <button type="button" class="btn secondary focus-all" onClick={() => setFocus(false)}>
           <Icon name={I.showAll} />
           Show everything
         </button>

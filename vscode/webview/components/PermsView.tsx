@@ -6,6 +6,8 @@ import { post } from "../env";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
 import { permsAnswer, weekRevokeAnswer, weekRuleAnswer } from "../util/stores";
+import { MoreButton } from "./MoreButton";
+import { Reading } from "./Reading";
 
 const REFRESH_MS = 10 * 60000; // while the tab is in sight
 
@@ -52,8 +54,8 @@ export function PermsView({ rules }: { rules: boolean }) {
   const data = answer?.data ?? lastData.current;
   return (
     <div class={"week" + (busy && data ? " busy" : "")}>
-      {busy && !data && !answer?.error ? <div class="muted">Reading your settings and the chats of the last 7 days.</div> : null}
-      {answer?.error ? <div class="error">Couldn't read your permissions: {answer.error}</div> : null}
+      {busy && !data && !answer?.error ? <Reading text="Reading your settings and the chats of the last 7 days." /> : null}
+      {answer?.error ? <div class="msg error" role="alert">Couldn't read your permissions: {answer.error}</div> : null}
       {data ? (
         <>
           {/* this computer's, then each SSH host's shown (as listed there) */}
@@ -128,8 +130,8 @@ function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, se
                 <span class="week-rule-ask">
                   <span class="small">This {r.change}.</span>
                   <span class="week-rule-buttons">
-                    <button type="button" class="chip" disabled={busy} onClick={() => change(r, true)}><Icon name={I.allow} tone={T.allow} />Allow</button>
-                    <button type="button" class="chip" onClick={() => setAsking("")}>Cancel</button>
+                    <button type="button" class="btn secondary small" disabled={busy} onClick={() => change(r, true)}><Icon name={I.allow} tone={T.allow} />Allow</button>
+                    <button type="button" class="btn secondary small" onClick={() => setAsking("")}>Cancel</button>
                   </span>
                 </span>
               ) : null}
@@ -137,10 +139,10 @@ function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, se
             {busyKey === `${host}|${r.id}` ? <span class="spinner" role="status" aria-label="Writing it…" />
               : r.state === "allowed" ? <span class="small muted">Allowed now</span>
               : r.state === "added" ? (
-                <button type="button" class="chip" disabled={busy} onClick={() => change(r, false)}
+                <button type="button" class="btn secondary small" disabled={busy} onClick={() => change(r, false)}
                   title={"Take this rule back\nYou allowed it here: Undo removes it from the file it went into, as it was before."}>Undo</button>
               ) : asking !== r.id ? (
-                <button type="button" class="chip" disabled={busy} onClick={() => setAsking(r.id)}>Allow…</button>
+                <button type="button" class="btn secondary small" disabled={busy} onClick={() => setAsking(r.id)}>Allow…</button>
               ) : null}
           </li>
         ))}
@@ -192,8 +194,8 @@ function Granted({ granted, host, reload, change: busyKey, setChange, said }: {
                 <span class="week-rule-ask">
                   <span class="small">This {g.change}.</span>
                   <span class="week-rule-buttons">
-                    <button type="button" class="chip" disabled={busy} onClick={() => revoke(g)}><Icon name={I.cancel} tone={T.cancel} />Revoke</button>
-                    <button type="button" class="chip" onClick={() => setAsking("")}>Cancel</button>
+                    <button type="button" class="btn secondary small" disabled={busy} onClick={() => revoke(g)}><Icon name={I.cancel} tone={T.cancel} />Revoke</button>
+                    <button type="button" class="btn secondary small" onClick={() => setAsking("")}>Cancel</button>
                   </span>
                 </span>
               ) : null}
@@ -203,13 +205,13 @@ function Granted({ granted, host, reload, change: busyKey, setChange, said }: {
                 g.managed ? <span class="small muted" title={"Set by your administrator\nIt's in /etc/claude-code: it can't be changed here."}>Administrator's</span>
                 : <span class="small muted" title={"Shared through git\nThis folder's .claude/settings.json is shared with whoever uses its repository: change it there."}>In git</span>
               ) : asking !== g.id ? (
-                <button type="button" class="chip" disabled={busy} onClick={() => setAsking(g.id)}>Revoke…</button>
+                <button type="button" class="btn secondary small" disabled={busy} onClick={() => setAsking(g.id)}>Revoke…</button>
               ) : null}
           </li>
         ))}
       </ul>
       {!all && granted.length > GRANTED_FEW ? (
-        <button type="button" class="chip" onClick={() => setAll(true)}>Show {granted.length - GRANTED_FEW} more</button>
+        <MoreButton shown={GRANTED_FEW} count={granted.length} size={granted.length} title={`${GRANTED_FEW} of ${granted.length} show.`} onClick={() => setAll(true)} />
       ) : null}
       {said && answer?.message && answer.host === host ? (
         <div class={"small" + (answer.ok ? "" : " error")} role="status">{answer.ok ? answer.message : `Nothing changed: ${answer.message}`}</div>
