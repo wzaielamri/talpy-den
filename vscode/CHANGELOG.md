@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The settings in Plasma's order:** checks, folders, notifications, the
+  chat tab, dictation, the weekly recap and the summary when you're back,
+  sounds, the usage cap, the lists, SSH hosts, the status bar, Talpy, the
+  Recap, then new chats; several shared a place, so VS Code sorted them by
+  name (*Chat Text Scale*, *Click Opens Pane*, *Diff Side By Side*, *Open
+  In*…). *Chat Pets* says *0: only the big Talpy*, as he stays (it said
+  *0 = none*).
 - **The view's ⋯ menu in Plasma's order:** *Go to the Chat That Needs
   You* comes after the *Show Hidden … Again* entries, before *Play with
   Talpy* (it stood first, on its own).

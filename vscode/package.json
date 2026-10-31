@@ -401,13 +401,13 @@
           },
           "default": [],
           "markdownDescription": "SSH hosts (names from `~/.ssh/config`) whose Claude Code chats are shown too. Use **Talpy Den: Show Claude on SSH Hosts…** to pick them. Needs key-based login (the check never asks for a password) and `python3` 3.7+ on the host; nothing is installed there.",
-          "order": 1
+          "order": 25
         },
         "talpyDen.includeCurrentRemote": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "In a Remote-SSH window, also show the chats of the host the window is connected to.",
-          "order": 2
+          "order": 26
         },
         "talpyDen.remotePollSeconds": {
           "type": "integer",
@@ -415,7 +415,7 @@
           "minimum": 10,
           "maximum": 600,
           "markdownDescription": "How often SSH hosts are checked, in seconds.",
-          "order": 3
+          "order": 27
         },
         "talpyDen.sshUsage": {
           "type": "string",
@@ -431,7 +431,7 @@
           ],
           "default": "once",
           "markdownDescription": "Plan usage on SSH hosts' accounts.",
-          "order": 3
+          "order": 28
         },
         "talpyDen.pollInterval": {
           "type": "integer",
@@ -439,7 +439,7 @@
           "minimum": 1000,
           "maximum": 60000,
           "markdownDescription": "While a chat works, how often this computer's chats are checked while the view is open, in milliseconds: how often a working chat's line (what it's doing) is brought up to date (every 10 s while the view is hidden, 6 s at most often in a window that isn't focused). **No effect with Live Mode… on:** a working chat's steps show as they happen then, and it's checked every 6 s. A chat that starts, ends, starts working, asks for something or finishes its turn is checked the moment it does, either way.",
-          "order": 4
+          "order": 1
         },
         "talpyDen.idlePollInterval": {
           "type": "integer",
@@ -447,7 +447,7 @@
           "minimum": 1000,
           "maximum": 300000,
           "markdownDescription": "While no chat works, how often this computer's chats are checked, in milliseconds: for what changes while no chat does anything (plan usage and its forecast, a usage limit resetting, a queued task coming due, a Claude that crashed). Without Live Mode, never more often than `#talpyDen.pollInterval#`. A chat that changes is checked at once anyway.",
-          "order": 5
+          "order": 2
         },
         "talpyDen.extraConfigDirs": {
           "scope": "machine",
@@ -457,19 +457,19 @@
           },
           "default": [],
           "markdownDescription": "More Claude Code config folders to read. `~/.claude`, every `~/.claude-*` folder and `$CLAUDE_CONFIG_DIR` are found without this.",
-          "order": 5
+          "order": 3
         },
         "talpyDen.clickOpensPane": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "A click on a chat opens it in an editor tab: its conversation as it goes, a box to reply, what it asks for (Allow / Deny), and what it changed (Undo, Commit, Mark reviewed). Off: a click opens the chat itself, as `#talpyDen.openIn#` says (the tab is then a button beside it).",
-          "order": 5
+          "order": 7
         },
         "talpyDen.diffSideBySide": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Show a change in a chat's tab side by side (before | after) where the tab is wide enough, else removed and added lines one after the other. The switch in a change's corner sets it too.",
-          "order": 6
+          "order": 10
         },
         "talpyDen.chatTextScale": {
           "type": "number",
@@ -477,13 +477,13 @@
           "minimum": 0.8,
           "maximum": 2,
           "markdownDescription": "Text size in a chat's tab, times VS Code's font size. The tab's A− / A+ buttons and Ctrl+wheel change it.",
-          "order": 6
+          "order": 11
         },
         "talpyDen.dictateLanguage": {
           "type": "string",
           "default": "auto",
           "markdownDescription": "The language you dictate replies in, as a code (`en`, `de`, `fr`…), or `auto` to let whisper tell. Dictating (the microphone in a chat's tab) runs on this computer: the first click offers to set it up (faster-whisper, no sudo), and **Talpy Den: Dictation Models…** downloads, deletes or picks the speech model. What you say never leaves the computer.",
-          "order": 7
+          "order": 12
         },
         "talpyDen.openIn": {
           "type": "string",
@@ -497,7 +497,7 @@
           ],
           "default": "vscode",
           "markdownDescription": "Where chats open when you click them.",
-          "order": 6
+          "order": 8
         },
         "talpyDen.reopenIn": {
           "type": "string",
@@ -511,19 +511,19 @@
           ],
           "default": "terminal",
           "markdownDescription": "Where chats that aren't running reopen: the **Terminal | Claude Code panel** switch above Recent chats. It holds for those, a chat's tab (**Open its window**), its row and Find a Chat. Without a `claude` command they reopen in Claude Code.",
-          "order": 7
+          "order": 9
         },
         "talpyDen.notifyWaiting": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Notify when a chat needs your input. (If Talpy Den runs on Plasma or GNOME too, turn this off in one of them.)",
-          "order": 10
+          "order": 4
         },
         "talpyDen.notifyDone": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Notify when a chat finishes a turn that took at least `#talpyDen.notifyDoneMinSeconds#` seconds.",
-          "order": 11
+          "order": 5
         },
         "talpyDen.notifyDoneMinSeconds": {
           "type": "integer",
@@ -531,13 +531,13 @@
           "minimum": 0,
           "maximum": 3600,
           "markdownDescription": "Shortest turn, in seconds, that gets a \"finished\" notification.",
-          "order": 12
+          "order": 6
         },
         "talpyDen.notifySound": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Play a sound with notifications (Linux: PipeWire, PulseAudio or ALSA; nothing plays while Do Not Disturb is on).",
-          "order": 13
+          "order": 16
         },
         "talpyDen.soundVolume": {
           "type": "integer",
@@ -545,31 +545,31 @@
           "minimum": 0,
           "maximum": 100,
           "markdownDescription": "Notification sound volume, in percent.",
-          "order": 14
+          "order": 17
         },
         "talpyDen.soundWaiting": {
           "type": "string",
           "default": "message-new-instant",
           "markdownDescription": "Sound when a chat needs you: sound-theme names (comma-separated, the first one found plays) or a sound file.",
-          "order": 15
+          "order": 18
         },
         "talpyDen.soundDone": {
           "type": "string",
           "default": "outcome-success,complete",
           "markdownDescription": "Sound when a chat finishes.",
-          "order": 16
+          "order": 19
         },
         "talpyDen.soundFailed": {
           "type": "string",
           "default": "dialog-error",
           "markdownDescription": "Sound when a chat fails, or a usage limit or an expired login stops it.",
-          "order": 17
+          "order": 20
         },
         "talpyDen.awayDigest": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "When you come back to VS Code after `#talpyDen.awayMinutes#` minutes or more, one notification sums up what happened meanwhile (chats that finished, failed or need you, limits that reset). While you're away, notifications of finished chats wait for it.",
-          "order": 18
+          "order": 14
         },
         "talpyDen.awayMinutes": {
           "type": "integer",
@@ -577,39 +577,39 @@
           "minimum": 1,
           "maximum": 240,
           "markdownDescription": "How long, in minutes, no VS Code window has to be in use to count as away (`#talpyDen.awayDigest#`).",
-          "order": 19
+          "order": 15
         },
         "talpyDen.showPet": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Show Talpy, the animated pet.",
-          "order": 20
+          "order": 30
         },
         "talpyDen.playfulTalpy": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Playful Talpy: his tricks and props, jokes, cookies and games. Off, he only shows what your chats do: his moods, his lamp and quiet moves (looking around, typing, thinking, sleeping). Notifications and the badge stay as they are.",
-          "order": 20.5
+          "order": 31
         },
         "talpyDen.chatPets": {
           "type": "integer",
           "default": 5,
           "minimum": 0,
           "maximum": 8,
-          "markdownDescription": "Pets per account, one for each running chat (0 = none).",
-          "order": 21
+          "markdownDescription": "Pets for each account's chats, one for each running chat, at most this many (0: only the big Talpy).",
+          "order": 32
         },
         "talpyDen.showTokens": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Show today's and this week's token totals per account.",
-          "order": 22
+          "order": 33
         },
         "talpyDen.showUsageInStatusBar": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Show the 5-hour plan usage next to the status bar item.",
-          "order": 23
+          "order": 29
         },
         "talpyDen.recentChats": {
           "type": "integer",
@@ -625,7 +625,7 @@
           "minimum": 0,
           "maximum": 168,
           "markdownDescription": "Keep finished background chats listed for this many hours (0 = drop them right away).",
-          "order": 25
+          "order": 23
         },
         "talpyDen.usageCap": {
           "type": "integer",
@@ -633,7 +633,7 @@
           "minimum": 0,
           "maximum": 100,
           "markdownDescription": "A usage cap, in percent (0 = none): once one of an account's plan windows (5 hours, a week) reaches it, the account's chats at work on this computer are stopped, once in that window (in tmux and in a Claude Code panel the turn is interrupted, the chat stays open). Queued tasks wait until the window resets, and chats that keep going go on then. Chats you start or answer yourself afterwards aren't stopped again.",
-          "order": 31
+          "order": 21
         },
         "talpyDen.usageRefreshMinutes": {
           "type": "integer",
@@ -641,7 +641,7 @@
           "minimum": 0,
           "maximum": 60,
           "markdownDescription": "Claude's own VS Code panel runs no status line, so its chats don't bring an account's plan usage up to date. While one of an account's chats works and its numbers are this many minutes old, Claude Code fetches them, as its `/usage` does (no tokens, no chat saved), at most this often; also on SSH hosts. 0: never.",
-          "order": 31
+          "order": 22
         },
         "talpyDen.newChatModel": {
           "type": "string",
@@ -661,7 +661,7 @@
           ],
           "default": "opus",
           "markdownDescription": "The model new chats in a terminal or in the background start with (`claude --model`; **New Chat…** changes it). Not for a Claude Code panel: that has its own model setting.",
-          "order": 32
+          "order": 37
         },
         "talpyDen.newChatEffort": {
           "type": "string",
@@ -683,7 +683,7 @@
           ],
           "default": "xhigh",
           "markdownDescription": "The reasoning effort new chats in a terminal or in the background start with (`claude --effort`; **New Chat…** changes it).",
-          "order": 33
+          "order": 38
         },
         "talpyDen.recapCurrency": {
           "type": "string",
@@ -691,26 +691,26 @@
           "enumItemLabels": ["US dollars (USD)", "Euros (EUR)", "Pounds sterling (GBP)", "Swiss francs (CHF)", "Japanese yen (JPY)", "Chinese yuan (CNY)", "Indian rupees (INR)", "Canadian dollars (CAD)", "Australian dollars (AUD)", "New Zealand dollars (NZD)", "Swedish kronor (SEK)", "Norwegian kroner (NOK)", "Danish kroner (DKK)", "Polish złoty (PLN)", "Czech koruny (CZK)", "Hungarian forints (HUF)", "Romanian lei (RON)", "Icelandic krónur (ISK)", "Turkish lira (TRY)", "Brazilian reais (BRL)", "Mexican pesos (MXN)", "South African rand (ZAR)", "South Korean won (KRW)", "Singapore dollars (SGD)", "Hong Kong dollars (HKD)", "Israeli shekels (ILS)", "Indonesian rupiah (IDR)", "Malaysian ringgit (MYR)", "Philippine pesos (PHP)", "Thai baht (THB)"],
           "default": "USD",
           "markdownDescription": "The currency of the Recap tab's amounts. Claude's API prices are in US dollars; for another currency the Recap tab downloads the European Central Bank's reference rates of the day from ecb.europa.eu, at most every 6 hours and only while the tab is open (offline it uses the last rates it has). Nothing about your chats is sent.",
-          "order": 35
+          "order": 34
         },
         "talpyDen.recapHistory": {
           "type": "boolean",
           "default": true,
           "scope": "machine",
           "markdownDescription": "Claude Code deletes chats after 30 days (its `cleanupPeriodDays` setting). The Recap tab's **Overall** keeps their numbers past that, in `~/.cache/talpy-den`: times, tokens, costs, folders and chat names. Off, it keeps only what Claude still has. One choice for Talpy Den here and on Plasma or GNOME. **Talpy Den: Delete the Recap's Saved History…** deletes it.",
-          "order": 36
+          "order": 35
         },
         "talpyDen.mondayRecap": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "On Mondays (from 9 o'clock, or the first time VS Code runs after that), a notification sums up the last 7 days; **Open the Recap** shows them. It comes once a week, here or on Plasma.",
-          "order": 37
+          "order": 13
         },
         "talpyDen.recapRules": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "The Permissions tab suggests rules that would have let the permission prompts you answered go without asking, each with an **Allow…** button. Off, it only counts the prompts, and there's nothing to allow by mistake. Either way it lists the permissions you gave, to revoke them.",
-          "order": 37
+          "order": 36
         },
         "talpyDen.newChatMode": {
           "type": "string",
@@ -734,14 +734,14 @@
           ],
           "default": "",
           "markdownDescription": "The permission mode new chats in a terminal or in the background start in (`claude --permission-mode`; **New Chat…** changes it, Shift+Tab in the chat too). A background chat can start in auto mode or bypass permissions only once you turned that on in a terminal.",
-          "order": 34
+          "order": 39
         },
         "talpyDen.pythonPath": {
           "scope": "machine",
           "type": "string",
           "default": "python3",
           "markdownDescription": "Python 3.7+ used to read Claude Code's files on this computer.",
-          "order": 30
+          "order": 40
         }
       }
     }
