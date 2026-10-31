@@ -29,9 +29,12 @@ meta["KPlugin"]["Id"] = "org.wzaielamri.talpyden.rendertest"
 json.dump(meta, open(f"{pkg}/metadata.json", "w"), indent=2)
 full = f"{pkg}/contents/ui/FullRepresentation.qml"
 s = open(full).read()
-# plasmawindowed shows the popup inline, without the panel popup's frame
+# plasmawindowed shows the popup inline, without the panel popup's frame; and
+# without a frame to reach into, the content's negative padding (out to the
+# frame's inner edge, collapseMarginsHint) cut 6 px off its left and right
 s = s.replace("    collapseMarginsHint: true\n",
-              "    collapseMarginsHint: true\n    background: Rectangle { color: Kirigami.Theme.backgroundColor }\n", 1)
+              "    collapseMarginsHint: true\n    background: Rectangle { color: Kirigami.Theme.backgroundColor }\n"
+              "    leftPadding: 0\n    rightPadding: 0\n", 1)
 only = os.environ.get("ONLY_GROUP")
 if only:
     s = s.replace("model: root.groups.length", f"model: root.groups.filter(g => g.name === {only!r}).length")
