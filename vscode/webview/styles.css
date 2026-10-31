@@ -338,6 +338,11 @@ code {
 
 .msg.digest .link {
   margin-top: 2px;
+}
+
+/* a message's action (the summary's Open, an SSH host's Log in… in its
+   error) in the link colour, as an account's Log in… and Set up… */
+.msg .link {
   color: var(--cs-link);
 }
 

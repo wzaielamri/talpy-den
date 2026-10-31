@@ -76,7 +76,7 @@
         "command": "talpyDen.pickHosts",
         "title": "Show Claude on SSH Hosts…",
         "category": "Talpy Den",
-        "icon": "$(remote-explorer)"
+        "icon": "$(server)"
       },
       {
         "command": "talpyDen.openInEditor",

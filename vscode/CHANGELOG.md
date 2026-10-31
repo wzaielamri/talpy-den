@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **The SSH hosts button has the server icon in the view's title bar
+  too,** as in the editor tab and on each host's head (it was a screen),
+  and an SSH host's *Log in…* in its error is a link, as an account's.
 - **Every button's tooltip says its name, then what it does,** as
   *Delete this chat…* and *Hide this chat* did: *Star this chat*, *Keep
   going until it's done*, *Continue on another account…*, a plan's and a
