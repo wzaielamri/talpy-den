@@ -958,7 +958,17 @@ Item {
         MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
+            hoverEnabled: true
             onClicked: pet.clicked()
+
+            // (the same as its pet's, see the grab area)
+            PlasmaCore.ToolTipArea {
+                textFormat: Text.PlainText
+                anchors.fill: parent
+                active: pet.lastChat !== null
+                mainText: pet.lastChat ? (pet.host ? pet.host + ": " : "") + pet.lastChat.name : ""
+                subText: pet.lastChat ? root.stateText(pet.lastChat) + "\n" + i18n("Click to open this chat") : ""
+            }
         }
     }
 

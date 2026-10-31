@@ -521,6 +521,7 @@ Item {
 
         PlasmaComponents3.Label {
             id: bubble
+            textFormat: Text.PlainText   // (chat names in it: as typed)
             anchors.centerIn: parent
             width: Math.min(implicitWidth, strip.width - Kirigami.Units.largeSpacing)
             elide: Text.ElideRight

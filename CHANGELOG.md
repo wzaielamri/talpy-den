@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A chat pet's name tag has its pet's tooltip** (the chat, its state, *Click to open this chat*), as in VS Code and GNOME, and a pet's speech bubble shows a chat's name as typed: a name with something like `<b>` in it was read as markup (Plasma).
 - **Peekaboo takes every click on Talpy:** a click soon after the one before (a double click) counts as a click on him, so you catch him up a moment after a click that came as he was only just coming up; it was taken for a dance, which does nothing during a game, and lost (Plasma and VS Code).
 - **GNOME's pets as Plasma's:** opening the popup, the big Talpy says *Hi!* now and then again (or *Boo! Happy Halloween!* and the other holiday greetings), as with *Playful Talpy* on everywhere: he never did on GNOME; a double click on a chat's pet opens its chat once (it opened it twice, which for a chat without a window could start two terminals); a new chat's pet waits while another one waves goodbye, as on Plasma and VS Code, instead of digging up in its spot while the others tunnel over it; and *+1*'s tooltip says *1 more chat* (GNOME).
 - **The settings say *Keep finished background chats*,** as the rest of Talpy Den calls them (they said *background jobs*) (Plasma and GNOME).
