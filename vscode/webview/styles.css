@@ -3920,9 +3920,13 @@ body.vscode-high-contrast-light .pane {
 }
 
 .project-recap {
+  display: -webkit-box;
   margin: 2px 0;
+  overflow: hidden;
   font-style: italic;
   opacity: 0.85;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4; /* (as Plasma's: 4 lines at most) */
 }
 
 /* an opened project's Chats, Plans and Memories: small titles, as an account's folds */

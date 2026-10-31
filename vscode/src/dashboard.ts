@@ -765,13 +765,13 @@ export class Dashboard implements vscode.Disposable {
     else void vscode.window.showWarningMessage(`Talpy Den: nothing was deleted: ${message}`);
   }
 
-  // The Permissions tab: the permissions you gave and the prompts of the
-  // last 7 days (this computer's)
-  // (kept: a click on one of its chats, plans or memories is found in it)
+  // The Projects tab's projects (kept: a click on one of its chats, plans
+  // or memories is found in it); a read that failed says why, with the ones
+  // read last (as Plasma keeps them)
   async projects(): Promise<{ data?: ProjectsData; error?: string }> {
     const answer = this.demoPhase !== null ? { data: demoProjects(Date.now()) } : await this.backend.projects(configDirArgs());
     if (answer.data) this.projectsData = answer.data;
-    return answer;
+    return answer.data ? answer : { data: this.projectsData ?? undefined, error: answer.error };
   }
 
   projectsRead(): ProjectsData | null {

@@ -926,7 +926,7 @@ export type WebviewMessage =
   | { type: "perms" } // the Permissions tab wants what it shows
   | { type: "projects"; shown?: boolean } // the Projects tab wants its projects (week.py --projects); shown false: it's gone
   | { type: "recentMore"; groupId: string; host?: string; count: number } // an account's first count recent chats, past the status
-  | { type: "newChatIn"; path: string; profileDir: string } // + of a project: a new chat there, on the account of its newest chat
+  | { type: "newChatIn"; path: string; short?: string; profileDir: string } // + of a project: a new chat there, on the account of its newest chat (short: its folder from ~, week.py's)
   | { type: "copy"; text: string }; // a tip's command, to the clipboard
 
 // extension -> webview

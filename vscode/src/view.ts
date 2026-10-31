@@ -454,8 +454,10 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         // (a folder the projects list named, on an account of this computer's)
         const state = this.dash.state();
         const group = state.status?.groups.find((g) => (g.profileKeys ?? []).includes(m.profileDir)) ?? state.status?.groups[0];
+        // (its folder as week.py says it, from your home wherever that is)
+        const short = typeof m.short === "string" && m.short && m.short.length < 4096 ? m.short : m.path.replace(/^\/home\/[^/]+/, "~");
         if (group && typeof m.path === "string" && m.path.startsWith("/"))
-          void this.actions.newChat(group.id, undefined, undefined, undefined, { path: m.path, short: m.path.replace(/^\/home\/[^/]+/, "~") });
+          void this.actions.newChat(group.id, undefined, undefined, undefined, { path: m.path, short });
         break;
       }
       case "perms":

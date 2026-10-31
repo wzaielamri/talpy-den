@@ -50,7 +50,8 @@ export function FocusView({ groups }: { groups: Group[] }) {
 
 // One chat: its pet's color, a dot, its name, what it does now (or that it
 // finished), how long; a click opens it (as a click on its name does)
-function FocusLine({ item, finished = false }: { item: FocusItem; finished?: boolean }) {
+// (also an opened project's open chats: ProjectsView, as Plasma's FocusLine)
+export function FocusLine({ item, finished = false }: { item: FocusItem; finished?: boolean }) {
   const view = useView();
   const s = item.session,
     host = item.group.host;
@@ -64,7 +65,7 @@ function FocusLine({ item, finished = false }: { item: FocusItem; finished?: boo
     <button type="button" class={"focus-line" + (finished ? " finished" : "")} data-row={rowKeyOf(s, host)}
       title={`${s.name}\n${what}\nClick to open this chat`} onClick={() => post({ type: "open", chat: chatRefOf(s, host) })}>
       <span class="pet-bar" style={{ background: color || "transparent" }} aria-hidden="true" />
-      <span class="focus-dot" aria-hidden="true" />
+      <span class={"focus-dot" + (finished ? "" : ` st-${s.state}`)} aria-hidden="true" />
       <span class="focus-name">{(host ? host + ": " : "") + s.name}</span>
       <span class="focus-what">{what}</span>
       {/* (with no step known, the state's text says how long itself) */}

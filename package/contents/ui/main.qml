@@ -3746,10 +3746,16 @@ PlasmoidItem {
     property bool projectsBusy: false
     readonly property bool projectsShown: popupTab === "projects" && dashboardShown && !coveredByWindow
     onProjectsShownChanged: if (projectsShown) loadProjects()
+    property bool projectsAgain: false  // read again once the read on its way is in (it may have read before a change)
     function loadProjects() {
+        const cmd = "python3 -I " + shellQuote(codeDir + "week.py") + " --projects" + configDirArgs
+        if (projectsReader.has(cmd)) {   // (the same command isn't run twice at once)
+            projectsAgain = true
+            return
+        }
         projectsBusy = true
-        projectsReader.connectSource("python3 -I " + shellQuote(codeDir + "week.py") + " --projects"
-                                     + (weekCurrency !== "USD" ? " --currency " + shellQuote(weekCurrency) : "") + configDirArgs)
+        projectsAgain = false
+        projectsReader.connectSource(cmd)
     }
     Exec {
         id: projectsReader
@@ -3761,8 +3767,10 @@ PlasmoidItem {
                 root.projectsData = r
                 root.projectsError = ""
             } else {
-                root.projectsError = r.error || r.message || i18n("Couldn't read your projects")
+                root.projectsError = i18n("Couldn't read your projects: %1", r.error || r.message || i18n("no answer"))
             }
+            if (root.projectsAgain)
+                root.loadProjects()
         }
     }
     Timer {
@@ -3771,9 +3779,10 @@ PlasmoidItem {
         running: root.projectsShown
         onTriggered: root.loadProjects()
     }
-    // New chat here: the new-chat box of the account its newest chat is on, with that folder first
+    // New chat here: the new-chat box of the account its newest chat is on (else its plans' or memories'), with
+    // that folder first
     function newChatInProject(project) {
-        const newest = project.chats.length ? project.chats[0] : null
+        const newest = project.chats[0] || (project.plans || [])[0] || (project.memories || [])[0] || null
         const g = groups.find(x => newest && (x.profileKeys || []).indexOf(newest.profileDir) >= 0) || groups[0]
         if (!g)
             return

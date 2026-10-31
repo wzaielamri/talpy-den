@@ -1,6 +1,6 @@
 // The Projects tab: each project (a chat's git repository, else its folder),
 // newest first, folded: its name, when Claude last worked there, a dot for
-// each of its open chats, + for a new chat there, × to hide it. Opened (its
+// each of its open chats, a button for a new chat there and one to hide it. Opened (its
 // lines are made then): its open chats now, Claude's last recap of it, its
 // chats, plans and memories, each a page at a time (as Recent chats), each
 // line as under an account, with the account it's on when the project is on
@@ -11,10 +11,9 @@
 
 import { useEffect, useRef } from "preact/hooks";
 import type { Group, ProjectRow, Session } from "../../src/shared/types";
-import { doingText, duration, groupOfProfile, listedChats, openChatsByProject, pagedTitle, pageSizeOf, petKeyOf, projectLists, stateText } from "../../src/shared/model";
+import { duration, groupOfProfile, listedChats, openChatsByProject, pagedTitle, pageSizeOf, projectLists, stateText } from "../../src/shared/model";
 import { post } from "../env";
-import { pets } from "../pets";
-import { chatRefOf, hideHint } from "../util/chat";
+import { hideHint } from "../util/chat";
 import { I, Icon } from "../util/icons";
 import { useAfterFrame } from "../util/lazy";
 import { useViewVisible } from "../util/petStage";
@@ -22,6 +21,7 @@ import { useStore } from "../util/store";
 import { projectsAnswer } from "../util/stores";
 import { pages, pagesShown, projectListKey, projectToShow, showMore, toggleProject, uiState } from "../util/ui";
 import { useView } from "./context";
+import { FocusLine } from "./FocusView";
 import { MemoryLine } from "./MemoryLine";
 import { MoreButton } from "./MoreButton";
 import { PlanLine } from "./PlanLine";
@@ -41,10 +41,26 @@ export function ProjectsView() {
     return () => clearInterval(t);
   }, [visible]);
   useEffect(() => () => post({ type: "projects", shown: false }), []);
+  // Shown again (Show Hidden Projects, Plans or Memories Again): read again,
+  // as a hide from here is (Plasma reads again after either)
+  const hidden = (view.status?.hiddenProjects ?? 0) + (view.status?.hiddenPlans ?? 0) + (view.status?.hiddenMemories ?? 0);
+  const hiddenBefore = useRef(hidden);
+  useEffect(() => {
+    if (visible && hidden < hiddenBefore.current) post({ type: "projects" });
+    hiddenBefore.current = hidden;
+  }, [hidden]);
   if (!answer) return <div class="empty muted">Reading your chats by project…</div>;
-  if (answer.error) return <div class="msg error" role="alert">Couldn't read your projects: {answer.error}</div>;
   const projects = answer.data?.projects ?? [];
-  if (!projects.length) return <div class="empty muted">No projects yet: a project is a folder (or the git repository it's in) where you chatted with Claude.</div>;
+  // (a read that failed says why, above the projects read before it, as Plasma's)
+  const error = answer.error ? <div class="msg error" role="alert">Couldn't read your projects: {answer.error}</div> : null;
+  if (!projects.length) {
+    return error ?? (
+      <div class="empty">
+        <p class="empty-title">No projects yet</p>
+        <p class="muted">A project is a folder (or the git repository it's in) where you chatted with Claude.</p>
+      </div>
+    );
+  }
   const groups = view.status?.groups ?? [];
   const now = Date.now();
   // (each open chat in its closest project only; one you hid counts, so its chats show in no other)
@@ -52,6 +68,7 @@ export function ProjectsView() {
     groups.flatMap((g) => g.sessions));
   return (
     <div class="projects">
+      {error}
       {projects.map((p) => (
         <Project key={p.path} p={p} open={!!ui.projects[p.path]} now={now} here={(p.path && open.get(p.path)) || []} />
       ))}
@@ -96,7 +113,7 @@ function Project({ p, open, here, now }: { p: ProjectRow; open: boolean; here: S
         {unfiled ? null : (
           <span class="project-actions">
             <button type="button" class="icon-btn" title={`New chat here\n${p.short}`} aria-label="New chat here"
-              onClick={() => post({ type: "newChatIn", path: p.path, profileDir })}>
+              onClick={() => post({ type: "newChatIn", path: p.path, short: p.short, profileDir })}>
               <Icon name={I.newChat} />
             </button>
             <button type="button" class="icon-btn" title={`Hide this project\n${hideHint("projects")}`} aria-label="Hide this project"
@@ -106,14 +123,14 @@ function Project({ p, open, here, now }: { p: ProjectRow; open: boolean; here: S
           </span>
         )}
       </div>
-      {open ? <ProjectDetails p={p} here={here} now={now} /> : null}
+      {open ? <ProjectDetails p={p} here={here} /> : null}
     </section>
   );
 }
 
 // An opened project: its open chats now, Claude's last recap of it, then its
 // chats (not the ones listed as running chats), plans and memories
-function ProjectDetails({ p, here, now }: { p: ProjectRow; here: Session[]; now: number }) {
+function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
   const view = useView();
   const shownPages = useStore(pages);
   const size = pageSizeOf(view.settings.recentChats);
@@ -132,19 +149,10 @@ function ProjectDetails({ p, here, now }: { p: ProjectRow; here: Session[]; now:
   const rest = useAfterFrame();
   return (
     <div class="project-details">
+      {/* what goes on there now: the focus view's lines (as Plasma's) */}
       {here.map((s) => {
-        // (what a working chat does, as in the focus view; else how it stands, as its row says)
-        const doing = s.state === "working" ? doingText(s, null) : "";
-        return (
-          <button key={s.key} type="button" class="focus-line" title={`${s.name}\n${doing || stateText(s, now)}\nClick to open this chat`}
-            onClick={() => post({ type: "open", chat: chatRefOf(s) })}>
-            <span class="pet-bar" style={{ background: pets.petColor(petKeyOf(s)) || "transparent" }} aria-hidden="true" />
-            <span class={`focus-dot st-${s.state}`} aria-hidden="true" />
-            <span class="focus-name">{s.name}</span>
-            <span class="focus-what">{doing || stateText(s, now)}</span>
-            <span class="focus-time small muted">{doing && s.since ? duration(now - s.since) : ""}</span>
-          </button>
-        );
+        const g = groups.find((x) => x.sessions.includes(s));
+        return g ? <FocusLine key={s.key} item={{ key: s.key, session: s, group: g }} /> : null;
       })}
       {p.recap?.text ? <p class="project-recap">“{p.recap.text}”</p> : null}
       {lists.chats.length ? (

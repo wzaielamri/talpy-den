@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The Projects tab as in Plasma:** an empty tab says *No projects yet*
+  as a title; a read that failed says why above the projects read before,
+  which stay; **Show Hidden Projects Again** (and *Plans*, *Memories*)
+  reads the tab again at once; an opened project's open chats are the
+  Focus view's lines, with each one's latest step; Claude's last recap of a
+  project shows 4 lines at most; **New chat here** names the folder from
+  your home wherever that is.
 - **The Permissions tab as in Plasma:** a suggested rule has its kind's
   icon; **Revoke** and **Allow** are plain buttons with a red × and a
   green check (not filled blue); one change is written at a time (a

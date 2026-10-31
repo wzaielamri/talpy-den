@@ -12,17 +12,17 @@
 | **±3** next to a chat | Compares the files the chat changed in VS Code. |
 | An account's token line | Unfolds its last 14 days: tokens per day, chats, prompts, busiest folders and models. |
 | Talpy Den's keyboard shortcut | Goes to the chat that needs you, else opens the popup (set the key in the settings, on the Keyboard Shortcuts page). |
-| Hovering a chat | ■ stops or interrupts a chat (it asks first; for a chat that keeps going, also whether to turn that off), × hides a finished one, the trash button deletes it to the Trash (it asks first), and the share button shares a chat with your other accounts. The buttons also show while the chat's name or one of them has the keyboard's focus (Tab gets there), and on a touch screen when you press and hold the row. |
+| Hovering a chat | ■ stops or interrupts a chat (it asks first; for a chat that keeps going, also whether to turn that off), the hide button (a struck-out eye) hides a finished one, the trash button deletes it to the Trash (it asks first), and the share button shares a chat with your other accounts. The buttons also show while the chat's name or one of them has the keyboard's focus (Tab gets there), and on a touch screen when you press and hold the row. |
 | A chat's pet | Opens its chat. |
 | The speech bubble with a plus next to an account (**New chat**) | A field for what Claude should do (optional), then the account's recent folders and **Choose folder…** (an SSH host's: its home folder instead). Click one for a new chat there: in a terminal, in VS Code (the switch at the top of the list) or, with a task and **In the background**, as a background chat. |
 | *Recent chats* | Unfolds the account's older conversations, newest first, a page at a time (as many as the *Recent chats* setting; **Show N more** under them for more, and the title says how many of all show: *Recent chats (5 of 23)*; folded again, it starts over). Click one to reopen it, in a terminal or in VS Code (the switch at the top of the list). Hovering one, the trash button deletes it (it asks first). |
 | *★ Starred chats*, *★ Starred plans* | The chats and plans of the account you starred, however old, newest first, a page at a time as *Recent chats*. |
-| A plan (under *★ Starred plans*, or in its project in the **Projects** tab) | Click it to open it. Hovering one: ▶ carries it out in a new chat, ◀ goes back to the chat that made it, the share button shares it with your other accounts, × hides it and the trash button deletes it (it asks first). |
+| A plan (under *★ Starred plans*, or in its project in the **Projects** tab) | Click it to open it. Hovering one: ▶ carries it out in a new chat, ◀ goes back to the chat that made it, the share button shares it with your other accounts, the hide button hides it and the trash button deletes it (it asks first). |
 | **Plan ↗** next to a chat | Opens the plan that chat wrote, to read. |
 | **✎** next to it, or in a plan's row | Opens the plan's Markdown file to change it (your text editor; VS Code if the settings open plans there). |
 | **↩ Send to Claude** next to a chat | You changed its plan: sends your changes to the chat, which revises the plan. |
 | The account's `CLAUDE.md` (its last line: *Your instructions for every chat on this account*) | Click it to read it, ✎ to change it. |
-| A memory (in its project in the **Projects** tab) | What Claude remembers: click one to read it, ✎ to change it, × to hide it, the trash button to delete it (it asks first). |
+| A memory (in its project in the **Projects** tab) | What Claude remembers: click one to read it, ✎ to change it, the hide button to hide it, the trash button to delete it (it asks first). |
 | **Continue on …** under a chat | A usage limit stopped it: continues it on that account, which has room left. |
 | **Go on at …** under a chat | A usage limit stopped it: it goes on by itself in the background once the limit resets (click again to cancel). In *Recent chats*, its **Limit** tag does the same. |
 | **☆** next to a chat, a recent chat or a plan | Stars it: the account lists it under *★ Starred chats* or *★ Starred plans*, however old it is. **★** unstars it. |
@@ -34,7 +34,7 @@
 | Magnifier at the top | Finds a chat by the words in its name, folder or your prompts, and project folders, plans and memories with those words. |
 | SSH hosts button at the top | Picks the SSH hosts to show. |
 | The eye button next to an SSH host's name | Shows that host's hidden chats, plans, memories or projects again. |
-| A project in the **Projects** tab | Click it to open it: its open chats, Claude's last recap of it, its chats, plans and memories, a page at a time. The speech bubble starts a new chat there; × hides it from the tab (nothing is deleted); right-click → *Show Hidden Projects Again (N)* brings it back. |
+| A project in the **Projects** tab | Click it to open it: its open chats, Claude's last recap of it, its chats, plans and memories, a page at a time. The speech bubble starts a new chat there; the hide button (a struck-out eye) hides it from the tab (nothing is deleted); right-click → *Show Hidden Projects Again (N)* brings it back. |
 | A project in the Recap's *Where Claude worked* | Opens it in the **Projects** tab. |
 | **Log in…** at an account | An account that isn't logged in (a new one, or one you logged out of): a terminal opens with Claude's own login. |
 
