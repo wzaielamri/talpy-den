@@ -242,6 +242,8 @@
 .claude-week-folder { width: 8em; text-align: right; }
 .claude-week-chat-numbers { min-width: 9em; text-align: right; }
 .claude-week-tip { spacing: 8px; }
+.claude-week-tip-pct { min-width: 2.6em; text-align: right; }
+.claude-week-tip-command { min-width: 8em; }
 .claude-week-trend { spacing: 2px; height: 12px; margin-top: 3px; }
 .claude-week-trend-bar { width: 7px; border-radius: 1px; background-color: rgba(154, 153, 150, 0.85); }
 .claude-week-trend-now { background-color: #3584e4; }

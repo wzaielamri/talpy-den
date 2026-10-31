@@ -7,7 +7,8 @@
   while it reads; every tip in *What could use less of your plan* has its
   icon; an empty Recap says *No Claude in these days* as a title; the chat
   lists' folders and numbers stand in right-aligned columns of one width,
-  and the numbers after the bars are right-aligned; a model's share says
+  and the numbers after the bars are right-aligned, as the tips' shares
+  and commands; *Chat by chat*'s times start under the lanes; a model's share says
   *>99%*, not a rounded *100%* beside *<1%*; the *Prompts* tile groups its
   thousands; tooltips say *1 prompt · 1 chat*, *1 request*, *as Talpy Den
   saw it* and *19 October – 25 October*.

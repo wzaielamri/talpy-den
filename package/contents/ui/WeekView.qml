@@ -1404,10 +1404,21 @@ PlasmaComponents3.ScrollView {
         // What would use less of your plan (Claude Code's /usage rules), and
         // what coming back to chats whose cache had expired cost
         ColumnLayout {
+            id: tipsBox
             Layout.fillWidth: true
             visible: view.hasData
             spacing: Kirigami.Units.smallSpacing
+            // (the commands in one column as wide as the widest, "Copied"
+            // too: the shares before them line up; monospace, so the longest)
+            readonly property real commandWidth: view.tips.some(t => t.command) ? commandProbe.implicitWidth : 0
 
+            PlasmaComponents3.ToolButton {
+                id: commandProbe
+                visible: false
+                font.family: "monospace"
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                text: view.tips.map(t => t.command || "").concat([i18n("Copied")]).reduce((a, b) => b.length > a.length ? b : a, "")
+            }
             SectionTitle {
                 text: i18n("What could use less of your plan")
             }
@@ -1470,8 +1481,13 @@ PlasmaComponents3.ScrollView {
                             subText: i18n("Of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. A request can count for several of these.")
                         }
                     }
+                    Item {   // (no command: its room, so the share stands where the others do)
+                        visible: tipRow.tip.command === "" && tipsBox.commandWidth > 0
+                        Layout.preferredWidth: tipsBox.commandWidth
+                    }
                     PlasmaComponents3.ToolButton {
                         Layout.alignment: Qt.AlignTop
+                        Layout.preferredWidth: tipsBox.commandWidth
                         visible: tipRow.tip.command !== ""
                         text: view.copied === tipRow.tip.command && tipRow.tip.command ? i18n("Copied") : tipRow.tip.command
                         font.family: "monospace"

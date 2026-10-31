@@ -2278,19 +2278,31 @@ body.vscode-high-contrast .top.scrolled {
   white-space: nowrap;
 }
 
+/* icon | the tip | its share | its command: one grid, so the shares and
+   commands stand in columns (an empty cell where a tip has none) */
 .week-tips {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 6px 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .week-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: start;
+}
+
+.week-tip-pct {
+  grid-column: 3;
+  text-align: right;
+}
+
+.week-tip > .chip {
+  grid-column: 4;
 }
 
 .week-tip-icon {
@@ -2301,7 +2313,6 @@ body.vscode-high-contrast .top.scrolled {
 
 .week-tip-text {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
 }
@@ -3769,7 +3780,7 @@ body.vscode-high-contrast-light .pane {
 
 .week-lanes li {
   display: grid;
-  grid-template-columns: minmax(6em, 12em) 1fr;
+  grid-template-columns: 12em minmax(0, 1fr);
   gap: 6px;
   align-items: center;
   margin: 2px 0;
@@ -3840,7 +3851,7 @@ body.vscode-high-contrast-light .pane {
 .week-lanes-times {
   display: flex;
   justify-content: space-between;
-  margin-left: calc(min(12em, 30%) + 6px);
+  margin-left: calc(12em + 6px); /* (under the lanes: their names' column) */
 }
 
 /* The Recap's card to share (WeekView.tsx ShareCard) */

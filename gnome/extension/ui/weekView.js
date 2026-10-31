@@ -480,18 +480,23 @@ function buildTips(ctx, recap) {
         if (t.detail)
             text.add_child(paragraph(t.detail, 'claude-small claude-dim'));
         line.add_child(text);
-        if (t.pct !== null && t.pct !== undefined) {
-            const pct = label(`${t.pct}%`, 'claude-small', {y_align: Clutter.ActorAlign.START});
+        // (its share and command in columns of one width, empty where it has
+        // none, so the shares line up, as Plasma's)
+        const hasPct = t.pct !== null && t.pct !== undefined;
+        const pct = label(hasPct ? `${t.pct}%` : '', 'claude-small claude-week-tip-pct', {y_align: Clutter.ActorAlign.START});
+        if (hasPct) {
             ctx.tips.add(pct, [`${t.pct}% of the usage shown`, "Of the usage of these days, as Claude Code's /usage weighs it " +
                 "toward your plan's limits. A request can count for several of these."]);
-            line.add_child(pct);
         }
+        line.add_child(pct);
         if (t.command) {
             const copy = textButton(ctx.week.copied === t.command ? 'Copied' : t.command, () => ctx.copyText(t.command),
-                'claude-chip claude-chip-code');
+                'claude-chip claude-chip-code claude-week-tip-command');
             copy.y_align = Clutter.ActorAlign.START;
             ctx.tips.add(copy, [`Copy ${t.command}`, 'Type it in a chat of yours.']);
             line.add_child(copy);
+        } else if (recap.tips.some(o => o.command)) {
+            line.add_child(new St.Widget({style_class: 'claude-week-tip-command'}));
         }
         section.add_child(line);
     }
