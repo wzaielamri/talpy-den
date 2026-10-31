@@ -158,7 +158,8 @@ ColumnLayout {
                     readonly property var project: block.projects[index] || ({ folder: "", folderShort: "", chats: 0, lastActive: 0, account: "", groupId: "" })
                     icon: Icons.plasma.project
                     text: project.folderShort || project.folder
-                    detail: i18np("%1 chat", "%1 chats", project.chats) + " · " + root.ago(root.now - project.lastActive)
+                    folder: i18np("%1 chat", "%1 chats", project.chats)
+                    ago: root.ago(root.now - project.lastActive)
                     account: root.hostGroups(block.host).length > 1 ? project.profile : ""
                     tipTitle: project.folder
                     tip: i18n("Click to start a new chat in this folder on %1: its new-chat box opens with this folder first.", project.account)
@@ -182,7 +183,7 @@ ColumnLayout {
                     readonly property var plan: block.plans[index] || ({ slug: "", title: "", profileDir: "", updatedAt: 0, account: "" })
                     icon: Icons.plasma.plan
                     text: plan.title
-                    detail: root.ago(root.now - plan.updatedAt)
+                    ago: root.ago(root.now - plan.updatedAt)
                     account: root.hostGroups(block.host).length > 1 ? plan.profile : ""
                     tipTitle: plan.title
                     tip: i18n("A plan on %1. Click to read it.", plan.account)
@@ -206,7 +207,8 @@ ColumnLayout {
                     readonly property var memory: block.memories[index] || ({ name: "", description: "", type: "", path: "", folderShort: "", updatedAt: 0, account: "" })
                     icon: root.memoryIcon(memory.type)
                     text: memory.description || memory.name
-                    detail: memory.folderShort || i18n("every folder")
+                    folder: memory.folderShort || i18n("every folder")
+                    ago: memory.updatedAt ? root.ago(root.now - memory.updatedAt) : ""
                     account: root.hostGroups(block.host).length > 1 ? memory.profile : ""
                     tipTitle: memory.name
                     tip: !block.host ? i18n("A memory on %1. Click to read it.", memory.account)
@@ -238,6 +240,7 @@ ColumnLayout {
 
                     Layout.fillWidth: true
                     Layout.leftMargin: Kirigami.Units.gridUnit
+                    Layout.rightMargin: Kirigami.Units.smallSpacing
                     spacing: 0
 
                     RowLayout {
@@ -296,14 +299,9 @@ ColumnLayout {
                             tooltipTitle: hit.chat.account
                             tooltip: i18n("The account it's on")
                         }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            text: i18nc("found chat: folder · how long ago", "%1 · %2", hit.chat.cwdShort || "~",
-                                        root.ago(root.now - hit.chat.lastActive))
-                            opacity: 0.6
-                            font: Kirigami.Theme.smallFont
-                            elide: Text.ElideLeft
-                            Layout.maximumWidth: Kirigami.Units.gridUnit * 11
+                        FoundEnd {
+                            folder: hit.chat.cwdShort || "~"
+                            ago: root.ago(root.now - hit.chat.lastActive)
                         }
                     }
                     PlasmaComponents3.Label {
