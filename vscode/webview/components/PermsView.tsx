@@ -25,6 +25,10 @@ export function PermsView({ rules }: { rules: boolean }) {
   const [change, setChange] = useState("");
   // which kind of change was the last: only its message shows (as Plasma's one message)
   const [last, setLast] = useState<"rule" | "revoke" | "">("");
+  // (any answer ends it: also one for a host whose section went meanwhile)
+  const ruleAnswer = useStore(weekRuleAnswer);
+  const revokeAnswer = useStore(weekRevokeAnswer);
+  useEffect(() => setChange(""), [ruleAnswer, revokeAnswer]);
 
   function ask() {
     setBusy(true);
