@@ -109,7 +109,7 @@ const TABLE = {
     memoryFeedback:  ['dialog-messages',               'chat',       'chat-bubbles-symbolic'],
     memoryProject:   ['folder-documents',              'folder',     'folder-documents-symbolic'],
     memoryReference: ['bookmarks',                     'bookmark',   'user-bookmarks-symbolic'],
-    memoryAccount:   ['configure',                     'gear',       'emblem-system-symbolic'],           // the account's CLAUDE.md
+    memoryAccount:   ['configure',                     'sliders',    'emblem-system-symbolic'],           // the account's CLAUDE.md (Breeze's configure: two sliders)
     memoryNote:      ['note',                          'note',       'text-x-generic-symbolic'],
     trusted:         ['folder-locked',                 'folderLock', 'folder-symbolic'],                  // permissions: a trusted folder
     mcp:             ['network-connect',               'plug',       'network-transmit-receive-symbolic'], // an MCP server

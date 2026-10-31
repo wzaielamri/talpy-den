@@ -7,7 +7,7 @@
 import type { JSX } from "preact";
 import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -161,6 +161,14 @@ const shapes: Record<IconName, JSX.Element> = {
     <>
       <path d="M12.72 6.69l1.61.36v1.9l-1.61.36-.46 1.1.88 1.4-1.33 1.33-1.4-.88-1.1.46-.36 1.61h-1.9l-.36-1.61-1.1-.46-1.4.88-1.33-1.33.88-1.4-.46-1.1-1.61-.36v-1.9l1.61-.36.46-1.1-.88-1.4 1.33-1.33 1.4.88 1.1-.46.36-1.61h1.9l.36 1.61 1.1.46 1.4-.88 1.33 1.33-.88 1.4z" />
       <circle cx="8" cy="8" r="2" />
+    </>
+  ),
+  // (Breeze's configure, as Plasma shows it at this size: two sliders, the upper knob filled, the lower a ring)
+  sliders: (
+    <>
+      <path d="M2.5 4.5h11M2.5 11.5h.25M7.25 11.5h6.25" />
+      <circle cx="10" cy="4.5" r="2" fill="currentColor" />
+      <circle cx="5" cy="11.5" r="1.6" />
     </>
   ),
   chart: <path d="M2.5 13.5h11M4.5 11V8M8 11V3.5M11.5 11V6" />,
