@@ -135,7 +135,7 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
           disabled={busy} onClick={ask}>
           <Icon name={I.refresh} />
         </button>
-        <button type="button" class="icon-btn" title="Share as a picture: these days as a card with Talpy, to save or copy"
+        <button type="button" class="icon-btn" title={"Share as a picture\nThese days as a card with Talpy, to save or copy."}
           aria-label="Share as a picture" disabled={!(recap && hasData)} onClick={() => setSharing(true)}>
           <Icon name={I.share} />
         </button>

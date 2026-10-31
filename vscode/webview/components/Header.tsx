@@ -57,8 +57,8 @@ export function Header(props: {
         <IconButton
           icon={I.focus}
           label={focus ? "Show everything" : "Focus"}
-          title={focus ? "Show everything: back to every account, chat, pet and usage bar."
-            : "Focus: only what needs you, the chats that finished a turn you haven't looked at yet, and one line for each chat at work."}
+          title={focus ? "Show everything\nBack to every account, chat, pet and usage bar."
+            : "Focus\nOnly what needs you, the chats that finished a turn you haven't looked at yet, and one line for each chat at work."}
           pressed={focus}
           onClick={() => setFocus(!focus)}
         />
@@ -68,7 +68,7 @@ export function Header(props: {
           <IconButton
             icon={I.search}
             label="Find a chat…"
-            title="Find a chat: every chat with all the words you type in its name, its folder or your prompts, here and on the SSH hosts shown."
+            title={"Find a chat…\nEvery chat with all the words you type in its name, its folder or your prompts, here and on the SSH hosts shown."}
             onClick={() => post({ type: "findChat" })}
           />
           <IconButton
@@ -76,8 +76,8 @@ export function Header(props: {
             label="SSH hosts…"
             title={
               hosts.length
-                ? `SSH hosts: showing Claude on ${hosts.map((h) => h.name).join(", ")}. Click to pick hosts from ~/.ssh/config.`
-                : "SSH hosts: show the Claude chats of your SSH hosts (from ~/.ssh/config) here too."
+                ? `SSH hosts…\nShowing Claude on ${hosts.map((h) => h.name).join(", ")}. Click to pick hosts from ~/.ssh/config.`
+                : "SSH hosts…\nShow the Claude chats of your SSH hosts (from ~/.ssh/config) here too."
             }
             class={hosts.length ? "with-count" : ""}
             onClick={() => post({ type: "pickHosts" })}
@@ -85,7 +85,7 @@ export function Header(props: {
             {hosts.length ? <span class="count">{hosts.length}</span> : null}
           </IconButton>
           <IconButton icon={I.refresh} label="Refresh" onClick={() => post({ type: "refresh" })} />
-          <IconButton icon={I.settings} label="Settings" title="Talpy Den's settings, in VS Code's Settings editor." onClick={() => post({ type: "openSettings" })} />
+          <IconButton icon={I.settings} label="Settings" title={"Settings\nTalpy Den's settings, in VS Code's Settings editor."} onClick={() => post({ type: "openSettings" })} />
         </div>
       ) : null}
     </header>

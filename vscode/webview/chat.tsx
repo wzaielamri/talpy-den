@@ -560,7 +560,7 @@ function ChatApp() {
         <IconButton
           icon={I.openWindow}
           label="Open its window"
-          title="Open its window: the terminal or Claude Code panel the chat runs in; a chat that isn't open reopens, in a terminal or a Claude Code panel as the switch of Recent chats says."
+          title={"Open its window\nThe terminal or Claude Code panel the chat runs in; a chat that isn't open reopens, in a terminal or a Claude Code panel as the switch of Recent chats says."}
           onClick={() => post({ type: "openWindow" })}
         />
       </div>

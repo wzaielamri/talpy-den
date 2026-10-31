@@ -65,8 +65,8 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
               label="Start it now"
               title={
                 t.scheduled
-                  ? "Start it now, in the background, without waiting for its time."
-                  : "Start it now, in the background, without waiting for the limit to reset. While the limit lasts, Claude stops again at once."
+                  ? "Start it now\nIn the background, without waiting for its time."
+                  : "Start it now\nIn the background, without waiting for the limit to reset. While the limit lasts, Claude stops again at once."
               }
               onClick={() => post({ type: "startQueued", id: t.id })}
             />

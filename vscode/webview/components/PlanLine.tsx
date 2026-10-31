@@ -72,8 +72,8 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
           {p.starred ? null : (
             <IconButton
               icon={I.star}
-              label="Star"
-              title="Star this plan: it stays listed under its account's ★ Starred plans, however old it is."
+              label="Star this plan"
+              title={"Star this plan\nIt stays listed under its account's ★ Starred plans, however old it is."}
               onClick={() => post({ type: "star", ...ref(p.key), on: true })}
             />
           )}
@@ -81,7 +81,7 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
             <IconButton
               icon={I.edit}
               label="Edit the plan"
-              title="Edit the plan: its Markdown file opens in an editor tab. What you change there is the plan."
+              title={"Edit the plan\nIts Markdown file opens in an editor tab. What you change there is the plan."}
               onClick={() => post({ type: "openPlan", ...ref(p.key), edit: true })}
             />
           )}
@@ -91,9 +91,9 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
               label="Send your feedback to Claude"
               disabled={!p.chatId}
               title={
-                !p.chatId ? "The chat that made it isn't here any more, so there's no chat to send your feedback to."
+                "Send your feedback to Claude\n" + (!p.chatId ? "The chat that made it isn't here any more, so there's no chat to send your feedback to."
                   : (p.edited ? "You changed this plan since Claude wrote it. " : "") +
-                    "Send what you changed in it, and your comments on its lines (the + next to a line, in its file), to the chat that made it: Claude revises the plan, in plan mode."
+                    "Send what you changed in it, and your comments on its lines (the + next to a line, in its file), to the chat that made it: Claude revises the plan, in plan mode.")
               }
               onClick={() => post({ type: "sendPlanFeedback", ...ref(p.key) })}
             />
@@ -101,7 +101,7 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
           <IconButton
             icon={I.startNow}
             label="Carry it out…"
-            title="Carry it out in a new chat: the plan is the chat's first message, with what you add; in a terminal, in the background or in a Claude Code panel, in the plan's folder or another one."
+            title={"Carry it out…\nIn a new chat: the plan is the chat's first message, with what you add; in a terminal, in the background or in a Claude Code panel, in the plan's folder or another one."}
             onClick={() => post({ type: "carryOutPlan", ...ref(p.key) })}
           />
           <IconButton
@@ -109,15 +109,15 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
             label="Continue the chat that made it"
             disabled={!p.chatId}
             title={p.chatId
-              ? "Continue the chat that made it, to change the plan with Claude: it comes up, or reopens (in a terminal or a Claude Code panel, as the switch of Recent chats says)."
-              : "The chat that made it isn't here any more."}
+              ? "Continue the chat that made it\nTo change the plan with Claude: it comes up, or reopens (in a terminal or a Claude Code panel, as the switch of Recent chats says)."
+              : "Continue the chat that made it\nThe chat that made it isn't here any more."}
             onClick={() => post({ type: "continuePlanChat", ...ref(p.key) })}
           />
           {share ? (
             <IconButton
               icon={I.share}
               label="Share this plan…"
-              title="Share this plan with your other accounts: one file on each of them, so a change shows on all of them. Sharing a chat shares its plan too."
+              title={"Share this plan…\nWith your other accounts: one file on each of them, so a change shows on all of them. Sharing a chat shares its plan too."}
               onClick={() => post({ type: "sharePlan", ...ref(p.key) })}
             />
           ) : null}

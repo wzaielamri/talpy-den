@@ -154,13 +154,13 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
       {woken ? (
         <div class="row-actions">
           {paneFirst && canOpen ? (
-            <IconButton icon={I.openWindow} label="Reopen this chat" title={reopen} onClick={reopenIt} />
+            <IconButton icon={I.openWindow} label="Reopen this chat" title={`Reopen this chat\n${reopen}`} onClick={reopenIt} />
           ) : null}
           {c.starred ? null : (
             <IconButton
               icon={I.star}
-              label="Star"
-              title="Star this chat: it stays listed under its account's ★ Starred chats, however old it is."
+              label="Star this chat"
+              title={"Star this chat\nIt stays listed under its account's ★ Starred chats, however old it is."}
               onClick={() => post({ type: "star", chat, on: true })}
             />
           )}

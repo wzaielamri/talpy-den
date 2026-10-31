@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Every button's tooltip says its name, then what it does,** as
+  *Delete this chat…* and *Hide this chat* did: *Star this chat*, *Keep
+  going until it's done*, *Continue on another account…*, a plan's and a
+  memory's buttons, an SSH host's, *Focus*, the Recap's *Share as a
+  picture* and others ran it into one line after a colon.
 - **The view's tabs alike:** each tab's first read shows a spinner beside
   what it reads, as Plasma's; a failed read of the Permissions tab is the
   red error box of the other tabs (it was plain text), and its *Show 8

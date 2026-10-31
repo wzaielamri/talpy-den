@@ -62,7 +62,7 @@ export function canShareRecent(status: Status | null | undefined): boolean {
 }
 
 export function shareTitle(host?: string): string {
-  return `Continue on another account: share this chat with your other accounts${host ? ` on ${host}` : ""} and pick it up there, or keep it on one account only.`;
+  return `Continue on another account…\nShare this chat with your other accounts${host ? ` on ${host}` : ""} and pick it up there, or keep it on one account only.`;
 }
 
 // Removing only hides a finished row, also one whose process is still there,

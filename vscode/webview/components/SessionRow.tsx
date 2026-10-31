@@ -359,22 +359,22 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           <IconButton
             icon={paneFirst ? I.openWindow : I.openPane}
             label={paneFirst ? "Open its window" : "Open in a tab"}
-            title={paneFirst ? openHint(s, host, reopenInCode) : "Open this chat in a tab: its conversation as it goes, a box to reply, and what it changed."}
+            title={paneFirst ? openHint(s, host, reopenInCode) : "Open in a tab\nIts conversation as it goes, a box to reply, and what it changed."}
             onClick={() => post(paneFirst ? { type: "openWindow", chat } : { type: "openPane", chat })}
           />
           {move ? (
             <IconButton
               icon={I.moveTo}
               label="Move to a Claude Code panel…"
-              title="Go on with this chat in a Claude Code panel: Claude quits in its terminal (the terminal stays open) and the chat reopens in a Claude Code panel. Asks first; a chat that's working or waiting for you is stopped only once you say so."
+              title={"Move to a Claude Code panel…\nGo on with this chat in a Claude Code panel: Claude quits in its terminal (the terminal stays open) and the chat reopens in a Claude Code panel. Asks first; a chat that's working or waiting for you is stopped only once you say so."}
               onClick={() => post({ type: "moveToClaudeCode", chat })}
             />
           ) : null}
           {s.starred ? null : (
             <IconButton
               icon={I.star}
-              label="Star"
-              title="Star this chat: once it isn't listed here any more, a starred chat stays under ★ Starred chats, however old it is."
+              label="Star this chat"
+              title={"Star this chat\nOnce it isn't listed here any more, a starred chat stays under ★ Starred chats, however old it is."}
               onClick={() => post({ type: "star", chat, on: true })}
             />
           )}
@@ -382,7 +382,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
             <IconButton
               icon={I.keepGoing}
               label="Keep going after usage limits"
-              title="Keep going until it's done: when a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, in the permission mode it had, and again after each later one, until a turn of it ends by itself. Claude here quits first then (its terminal stays open)."
+              title={"Keep going until it's done\nWhen a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, in the permission mode it had, and again after each later one, until a turn of it ends by itself. Claude here quits first then (its terminal stays open)."}
               onClick={() => post({ type: "keepGoing", chat, on: true })}
             />
           ) : null}
@@ -409,10 +409,10 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
                 label={hasTurn(s) ? "Interrupt or stop this chat…" : "Stop this chat…"}
                 title={
                   s.entrypoint === "claude-vscode"
-                    ? "Stop this chat. Asks first; its Claude Code panel shows it as interrupted and goes on with your next message."
+                    ? "Stop this chat…\nAsks first; its Claude Code panel shows it as interrupted and goes on with your next message."
                     : hasTurn(s)
-                      ? "Interrupt or stop this chat. Asks first. Interrupting is like Ctrl+C or the stop button of a Claude Code panel (where it runs in a terminal of this window, or in tmux): its subagents stop too and the chat stays open. Stopping cuts off the current step, Claude quits and its terminal stays open."
-                      : "Stop this chat. Asks first; Claude quits and its terminal stays open. The chat is kept and shows under Recent chats."
+                      ? "Interrupt or stop this chat…\nAsks first. Interrupting is like Ctrl+C or the stop button of a Claude Code panel (where it runs in a terminal of this window, or in tmux): its subagents stop too and the chat stays open. Stopping cuts off the current step, Claude quits and its terminal stays open."
+                      : "Stop this chat…\nAsks first; Claude quits and its terminal stays open. The chat is kept and shows under Recent chats."
                 }
                 onClick={() => post({ type: "stop", chat })}
               />
@@ -420,7 +420,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
               <IconButton
                 icon={I.stop}
                 label="Stop this background chat…"
-                title="Stop this background chat. Asks first; the conversation is kept and claude attach resumes it."
+                title={"Stop this background chat…\nAsks first; the conversation is kept and claude attach resumes it."}
                 onClick={() => post({ type: "stop", chat })}
               />
             )

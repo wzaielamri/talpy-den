@@ -45,7 +45,7 @@ export function HostSection({ host: h, groups }: { host: HostState; groups: Grou
           <IconButton
             icon={I.showHidden}
             label="Show hidden ones again…"
-            title={`Show hidden ones again: the chats, plans or memories of ${h.name} you hid (${hidden})`}
+            title={`Show hidden ones again…\nThe chats, plans or memories of ${h.name} you hid (${hidden})`}
             onClick={() => post({ type: "showHidden", host: h.name })}
           />
         ) : null}
@@ -53,21 +53,21 @@ export function HostSection({ host: h, groups }: { host: HostState; groups: Grou
           <IconButton
             icon={I.signOut}
             label={`Disconnect from ${h.name}`}
-            title={`Disconnect from ${h.name}: closes the connection you logged in with. To check ${h.name} again, log in again.`}
+            title={`Disconnect from ${h.name}\nCloses the connection you logged in with. To check ${h.name} again, log in again.`}
             onClick={() => post({ type: "disconnectHost", host: h.name })}
           />
         ) : null}
         <IconButton
           icon={I.refresh}
           label={`Refresh ${h.name}`}
-          title={`Refresh ${h.name}` + (updated ? ` (${updated})` : "")}
+          title={`Refresh ${h.name}` + (updated ? `\n${updated[0].toUpperCase() + updated.slice(1)}.` : "")}
           onClick={() => post({ type: "refresh", host: h.name })}
         />
         {!h.current ? (
           <IconButton
             icon={I.hide}
             label={`Stop showing ${h.name}`}
-            title={`Stop showing ${h.name}. Pick it again with the SSH hosts button.`}
+            title={`Stop showing ${h.name}\nPick it again with the SSH hosts button.`}
             onClick={() => post({ type: "hideHost", host: h.name })}
           />
         ) : null}

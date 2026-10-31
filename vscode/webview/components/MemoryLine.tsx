@@ -57,14 +57,14 @@ export function MemoryLine({ memory: m, group, project, accountTag }: { memory: 
             <IconButton
               icon={I.edit}
               label="Edit your instructions"
-              title="Edit your instructions: its CLAUDE.md opens in an editor tab. Claude reads it in every new chat on this account."
+              title={"Edit your instructions\nIts CLAUDE.md opens in an editor tab. Claude reads it in every new chat on this account."}
               onClick={() => post(ref(true))}
             />
           ) : (
             <IconButton
               icon={I.edit}
               label="Edit this memory"
-              title="Edit this memory: its file opens in an editor tab. What you change there is what Claude remembers; it reads it in new chats in that folder."
+              title={"Edit this memory\nIts file opens in an editor tab. What you change there is what Claude remembers; it reads it in new chats in that folder."}
               onClick={() => post(ref(true))}
             />
           )}
