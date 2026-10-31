@@ -1115,7 +1115,7 @@ Window {
                         textFormat: Text.PlainText
                         anchors.fill: parent
                         mainText: i18n("Open its window")
-                        subText: i18n("The terminal or VS Code tab the chat runs in; a chat that isn't open reopens in a terminal.")
+                        subText: i18n("The terminal or VS Code tab the chat runs in; a chat that isn't open reopens in a terminal or in VS Code, as the Terminal | VS Code switch of Recent chats says.")
                     }
                 }
             }
