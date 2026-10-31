@@ -555,7 +555,11 @@ export class Pet {
   }
 
   private dance(): void {
-    if (this.play?.on) return; // (the game's: its clicks are)
+    // (a click soon after the last is a double click: the game's, as every click on him)
+    if (this.play?.on) {
+      this.play.hit();
+      return;
+    }
     if (this.cookieOn) {
       this.say("Cookie first!");
       return;

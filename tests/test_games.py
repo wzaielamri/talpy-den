@@ -184,6 +184,15 @@ class HostTests(unittest.TestCase):
         self.assertIn("this.stage.root.contains(e.target as Node)", self.ts)
         self.assertIn("if (!world.playful) p.stopGame()", (ROOT / "vscode/webview/pets/stage.ts").read_text())
 
+    def test_a_quick_second_click_is_the_games_too(self):
+        # (a click soon after the one before comes as a double click: he'd
+        # dance, but while a game is on it's a click on him, caught or not)
+        for text in (self.pet, self.ts):
+            dance = text[text.index("dance()"):] if "function dance()" not in text else text[text.index("function dance()"):]
+            dance = dance[:dance.index("Cookie first!")]
+            self.assertRegex(dance, r"if \((gameOn|this\.play\?\.on)\) \{")
+            self.assertRegex(dance, r"(playGame|this\.play)\.hit\(\)")
+
     def test_its_only_ticked_and_drawn_while_on(self):
         self.assertIn("enabled: pet.gameOn && pet.playing", self.pet)
         self.assertIn("model: pet.gameOn ? 3 : 0", self.pet)

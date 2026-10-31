@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Peekaboo takes every click on Talpy:** a click soon after the one
+  before counts as a click on him (it was taken for a double click, a
+  dance, and lost).
 - **The *While you were away* summary as Plasma's:** a line for each of
   the first three chats that need you, with its SSH host, then *+2 more
   need you*; four names to a line before *+N*.

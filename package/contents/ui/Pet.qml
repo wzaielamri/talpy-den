@@ -400,8 +400,10 @@ Item {
     }
 
     function dance() {
-        if (gameOn)
-            return   // (the game's: its clicks are)
+        if (gameOn) {
+            playGame.hit()   // (a click soon after the last is a double click: the game's, as every click on him)
+            return
+        }
         if (cookieOn) {
             say(i18n("Cookie first!"))
             return
