@@ -28,6 +28,11 @@ export function reducedMotion(): boolean {
   return motionQuery?.matches ?? false;
 }
 
+// The system asks for less motion, or no longer does
+export function onReducedMotionChange(fn: () => void): void {
+  motionQuery?.addEventListener?.("change", fn);
+}
+
 export class Clock {
   private base = 0; // clock time when last paused
   private since = -1; // performance.now() when resumed; -1 while paused

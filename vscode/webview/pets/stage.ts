@@ -24,7 +24,7 @@ import type { AccountInput, HeroInput, PetStage, StageCallbacks, StageChat } fro
 import type { ChatRef, Counts } from "../../src/shared/types";
 import { PALETTE, allPetColors, freeColor, setPetColors } from "./colors";
 import { BOX, FLOOR } from "../../vendor/talpy/talpy.mjs";
-import { Clock, Timer, Tween, cssEase, reducedMotion, type Animator } from "./motion";
+import { Clock, Timer, Tween, cssEase, onReducedMotionChange, reducedMotion, type Animator } from "./motion";
 import { Pet, SMALL } from "./pet";
 
 export const allStages = new Set<Stage>();
@@ -67,6 +67,13 @@ function pageVisible(): boolean {
 
 document.addEventListener("visibilitychange", () => {
   for (const s of allStages) s.applyLive();
+});
+
+// Less motion asked for (or no longer) while the view is open: the hero keeps
+// still (or digs about again) and the stars stop twinkling (or start), at
+// once, as the widget's bindings and GNOME follow the setting
+onReducedMotionChange(() => {
+  for (const s of allStages) s.motionChanged();
 });
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, parent?: HTMLElement): HTMLElementTagNameMap[K] {
@@ -243,6 +250,11 @@ export class Stage implements PetStage, Animator {
   }
 
   // ------------------------------------------------------------ PetStage
+
+  motionChanged(): void {
+    for (const p of this.pets) p.motionChanged();
+    this.updateStars();
+  }
 
   playfulChanged(): void {
     for (const p of this.pets) {
@@ -485,8 +497,9 @@ export class Stage implements PetStage, Animator {
     const calling = input.waiting;
     h.classList.toggle("cs-calling", mood === "needs");
     h.classList.toggle("cs-clickable", !!calling);
-    // "1 chat needs you": click to go there
-    const title = calling ? `Open ${calling.name}${calling.host ? `\n${calling.host}` : ""}` : "";
+    // "1 chat needs you": click to go there (its tooltip: Open fix parser, then lab · Waiting · 3m)
+    const where = [calling?.host, input.waitingState].filter(Boolean).join(" · ");
+    const title = calling ? `Open ${calling.name}${where ? `\n${where}` : ""}` : "";
     if (h.title !== title) h.title = title;
     if (calling) {
       h.setAttribute("role", "button");

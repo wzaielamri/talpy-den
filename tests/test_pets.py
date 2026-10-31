@@ -1595,6 +1595,13 @@ class SeveralCopiesTests(unittest.TestCase):
         self.assertIn("if (root.lessMotion) {", dig)
         self.assertIn("night && !reducedMotion()", stage_ts)
         self.assertIn("!root.lessMotion ? strip.twinkle(", strip)
+        # as the setting changes, not only when the view opens (Plasma's binding,
+        # GNOME's notify::enable-animations); and less motion doesn't draw them
+        # live (each picture costs): the film stays on, as Plasma's
+        self.assertIn("onReducedMotionChange(() => {", stage_ts)
+        self.assertIn("this.talpy.travels = this.lone && !reducedMotion();", pet_ts)
+        film = pet_ts[pet_ts.index("f.on = "):][:200]
+        self.assertNotIn("reducedMotion", film[:film.index(";")])
 
     def test_looping_animations_stop_under_a_window(self):
         # Every repeating timer and endless animation of the pets runs only

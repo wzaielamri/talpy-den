@@ -8,6 +8,7 @@ import {
   highUsageText,
   maxFiveHour,
   overallState,
+  stateText,
 } from "../../src/shared/model";
 import { Component, type ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -107,6 +108,7 @@ export function App() {
     maxFiveHour: maxFiveHour(groups),
     agentsRunning: agentsRunning(groups),
     waiting: waiting ? chatRefOf(waiting.session, waiting.group.host) : null,
+    waitingState: waiting ? stateText(waiting.session, Date.now()) : "",
   };
   const local = state.status ? state.status.groups : [];
   // the plan usage bars' label column: one width in every account (the widest

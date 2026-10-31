@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The big Talpy as in Plasma:** his headline's tooltip says *Open fix
+  parser* over the chat's host and state (*lab · Waiting · 3m*); asking
+  the system for less motion (or no longer) while the view is open calms
+  him (or lets him dig about again) at once, not when the view opens
+  next; and with less motion the pets are still shown from their
+  pictures, not drawn anew 30 times a second.
 - **Peekaboo takes every click on Talpy:** a click soon after the one
   before counts as a click on him (it was taken for a double click, a
   dance, and lost).

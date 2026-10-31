@@ -22,6 +22,7 @@ export interface HeroInput {
   maxFiveHour: number; // highest 5-hour usage %: at 100 the hero is out of steam
   agentsRunning: number; // agentsRunning(): the subagents at work (mood agents: "Juggling 3 agents!")
   waiting: ChatRef | null; // the chat that needs you (clicking the headline opens it)
+  waitingState?: string; // its state ("Waiting · 3m"), for the headline's tooltip
 }
 
 export interface AccountInput {

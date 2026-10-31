@@ -431,6 +431,12 @@ export class Pet {
     }
   }
 
+  // (less motion asked for, or no longer: the hero digs about by himself or not)
+  motionChanged(): void {
+    this.talpy.travels = this.lone && !reducedMotion();
+    this.changed();
+  }
+
   themeChanged(): void {
     this.talpy.setTheme(this.stage.theme());
     this.film.reset(); // (the pictures are drawn again)
@@ -1104,10 +1110,11 @@ export class Pet {
   // As a film (vendor/talpy/films.mjs): a picture of a move drawn once and
   // shown again round after round, a new pose on its way through pictures in
   // between (the hero: live until it has settled), a big move live. Drawn
-  // live while you hold it, until it has landed.
+  // live while you hold it, until it has landed (less motion changes none
+  // of that: the pets just do less, as in the widget).
   private draw(now: number): void {
     const f = this.film;
-    f.on = !this.landing && !this.tugging && !this.pushing && !this.game?.chasing && !reducedMotion();
+    f.on = !this.landing && !this.tugging && !this.pushing && !this.game?.chasing;
     let changed = f.tick(now);
     if (this.paintSheets()) changed = true; // (drawn at once: shown at once)
     if (changed) this.compose();
