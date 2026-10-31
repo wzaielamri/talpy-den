@@ -62,6 +62,8 @@
 .claude-tokens { padding: 0 4px; }
 .claude-indent { padding-left: 14px; }
 .claude-side { max-width: 13em; }
+.claude-recent-folder { width: 8em; text-align: right; }
+.claude-recent-ago { width: 6.4em; text-align: right; }
 .claude-small { font-size: 0.85em; }
 .claude-strong { font-weight: bold; }
 .claude-dim { color: rgba(154, 153, 150, 1); }

@@ -107,7 +107,8 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
       {/* Not logged in to an account (a new one, or logged out): Claude's own login, in a terminal */}
       {g.loggedOut ? (
         <div class="logged-out small">
-          <span class="muted">Not logged in.</span>
+          <Icon name={I.accountOut} />
+          <span class="muted">Not logged in</span>
           {g.loginCommand ? (
             <>
               {" "}

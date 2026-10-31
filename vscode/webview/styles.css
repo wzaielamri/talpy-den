@@ -688,6 +688,10 @@ button:focus-visible {
 }
 
 .logged-out {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   margin: 4px 0 2px;
 }
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- ***Not logged in* has the logged-out account icon,** as in Plasma.
 - **The chat list as in Plasma:** a chat's task progress is a small green
   bar and *3/5* at the start of the line under its folder, not a tag by
   its name; what a waiting chat needs is orange; *Continue on …* has its

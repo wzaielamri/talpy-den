@@ -383,10 +383,12 @@ function buildRecentLine(ctx, group, chat, remoteHost) {
         ctx.tips.add(mark, ['Starred', L.starHint(true)]);
         line.add_child(mark);
     }
-    const when = label(L.fmt('%1 · %2', chat.cwdShort || '~', L.ago(ctx.now - chat.lastActive)),
-        'claude-small claude-dim claude-side');
-    when.clutter_text.ellipsize = 1;   // Pango.EllipsizeMode.START
-    line.add_child(when);
+    // its folder and how long ago: two columns of one width in every list, so
+    // the folders and times line up (as Plasma's and VS Code's)
+    const folder = label(chat.cwdShort || '~', 'claude-small claude-dim claude-recent-folder');
+    folder.clutter_text.ellipsize = 2;   // Pango.EllipsizeMode.MIDDLE
+    line.add_child(folder);
+    line.add_child(label(L.ago(ctx.now - chat.lastActive), 'claude-small claude-dim claude-recent-ago'));
     const hoverButtons = [];
     // star it: it stays listed under ★ Starred chats (a starred one has its ★)
     if (!chat.starred) {
