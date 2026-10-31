@@ -1626,14 +1626,17 @@ def in_settings(data, kind, value):
     return isinstance(rules, list) and value in rules
 
 
-def rule_state(kind, value, project, home, added, accounts=None):
+def rule_state(kind, value, project, home, added, accounts=None, profiles=None):
     """"added" (by this tab: it can be undone), "allowed" (your settings
     already let it through) or "new". accounts: the profile folders whose
-    chats asked (Claude reads its own folder's settings.json only; None: any)."""
+    chats asked (Claude reads its own folder's settings.json only; None: any);
+    profiles: the accounts here, the extra Claude folders' too (None: the
+    usual ones)."""
     rid = rule_id(kind, value, project)
     if any(a.get("id") == rid for a in added):
         return "added"
-    files = settings_paths(project) + [p.real / "settings.json" for p in cs.discover_profiles(home)
+    profiles = cs.discover_profiles(home) if profiles is None else profiles
+    files = settings_paths(project) + [p.real / "settings.json" for p in profiles
                                        if accounts is None or p.key in accounts]
     return "allowed" if any(in_settings(cs.read_json(f), kind, value) for f in files) else "new"
 
@@ -1659,7 +1662,7 @@ def rule_change(kind, value, project, home):
     return "adds %s to permissions.allow in %s" % (value, path)
 
 
-def permission_prompts(chats, lo, hi, home, added=()):
+def permission_prompts(chats, lo, hi, home, added=(), profiles=None):
     """The permission prompts you answered in [lo, hi): how many, how long
     Claude waited on them (prompts at once count their time once), by tool,
     and the rules that would have let the most of them through (this
@@ -1691,7 +1694,7 @@ def permission_prompts(chats, lo, hi, home, added=()):
     for r in top:
         accounts = r.pop("accounts")
         r["id"] = rule_id(r["kind"], r["value"], r["project"])
-        r["state"] = rule_state(r["kind"], r["value"], r["project"], home, added, accounts or None)
+        r["state"] = rule_state(r["kind"], r["value"], r["project"], home, added, accounts or None, profiles)
         r["title"] = rule_title(r["kind"], r["value"], r["project"], home)
         r["change"] = rule_change(r["kind"], r["value"], r["project"], home)
     return {"answered": answered, "refused": refused, "waitMs": int(covered(waits)),
@@ -2015,7 +2018,7 @@ def permissions(cache, profiles, now_ms, home, added=()):
     lo, hi = days[0][1], min(days[-1][2], now_ms)
     chats = [dict(c, id=cid, host="", key="|" + cid) for cid, c in chats_between(cache, profiles, lo, days[-1][2], home).items()]
     return {"ok": True, "generatedAt": now_ms, "from": days[0][0], "to": days[-1][0],
-            "prompts": permission_prompts(chats, lo, hi, home, added),
+            "prompts": permission_prompts(chats, lo, hi, home, added, profiles),
             "granted": granted_rules(home, rule_folders(home, cache, profiles), profiles, added)}
 
 

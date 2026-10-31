@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A suggested rule an account in one of `talpyDen.extraConfigDirs`
+  already allows says *Allowed now*,** not **Allow…**.
 - **The Projects tab as in Plasma:** an empty tab says *No projects yet*
   as a title; a read that failed says why above the projects read before,
   which stay; **Show Hidden Projects Again** (and *Plans*, *Memories*)

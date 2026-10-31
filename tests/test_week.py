@@ -872,6 +872,22 @@ class PromptTests(Projects):
         states = {r["value"]: r["state"] for r in self.recap()["prompts"]["rules"]}
         self.assertEqual(states["Bash(git status *)"], "allowed")
 
+    def test_a_rule_an_extra_claude_folders_settings_have(self):
+        # an account in a Claude folder of the settings (--config-dir): its own settings.json counts too
+        extra = self.home / "other-claude"
+        (extra / "projects").mkdir(parents=True)
+        cs.write_json_atomic(extra / "settings.json", {"permissions": {"allow": ["Bash(git status *)"]}})
+        t0, tr = self.t0, Transcript(str(self.app))
+        tr.prompt(t0).reply(t0 + 1000, "a", tools=[("T1", "Bash", {"command": "git status"})])
+        tr.result(t0 + 61_000, "T1", source="user_temporary")
+        (extra / "projects/-w").mkdir()
+        (extra / "projects/-w/chat-x.jsonl").write_text(tr.text())
+        profiles = cs.discover_profiles(self.home, [str(extra)])
+        cache = {"files": {}}
+        week.scan(profiles, cache, self.now)
+        p = week.permissions(cache, profiles, self.now, self.home)
+        self.assertEqual({r["value"]: r["state"] for r in p["prompts"]["rules"]}["Bash(git status *)"], "allowed")
+
     def test_allow_and_undo(self):
         self.asked()
         week.updated_cache(self.cache_root, self.profiles(), self.now)
