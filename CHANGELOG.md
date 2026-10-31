@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The Recap's bars lie on a track,** as an account's busiest folders do on the Talpy Den tab and as VS Code's and GNOME's Recap bars do: in *Where Claude worked* and *At API prices* a faint track shows where all of it would end, and the bars have round ends (Plasma).
 - **VS Code's headline takes clicks on its words only,** as Plasma's: the empty space right of *1 chat needs you* is the stage's, so a double-click there gives Talpy a cookie (the whole line opened the chat and took no double-click) (VS Code).
 - **With *Reduce Animation* on, the big Talpy's light rests as on Plasma:** while a chat needs you his stage is lit as at rest, and the night's stars shine at half; GNOME lit it at the pulse's brightest and the stars at 90% (GNOME).
 - **Pushed down, Talpy is yours until you let go:** a chat starting (his yawn) or the usage and context reminders no longer play something else under your hand, his mood's look waits until he's back up, and pushed as he spots a new cookie he no longer jumps out after it under your hand: he goes after it once you let go (Plasma and VS Code).

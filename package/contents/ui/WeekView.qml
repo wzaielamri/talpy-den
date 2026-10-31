@@ -51,6 +51,7 @@ PlasmaComponents3.ScrollView {
     readonly property color ink: Kirigami.Theme.textColor
     readonly property color grid: Qt.rgba(ink.r, ink.g, ink.b, 0.12)
     readonly property color youColor: Qt.rgba(ink.r, ink.g, ink.b, 0.45)
+    readonly property color track: Qt.rgba(ink.r, ink.g, ink.b, 0.15)   // (a bar's, as an account's busiest folders')
     readonly property color workColor: Kirigami.Theme.focusColor
     readonly property color waitColor: Kirigami.Theme.neutralTextColor
     readonly property color limitColor: Kirigami.Theme.negativeTextColor
@@ -1240,14 +1241,16 @@ PlasmaComponents3.ScrollView {
                                 elide: Text.ElideMiddle
                                 font.bold: projectRow.open
                             }
-                            Item {
+                            Rectangle {   // (its track: where all of it would end)
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: Math.round(view.gu * 0.4)
+                                radius: height / 2
+                                color: view.track
 
                                 Rectangle {
                                     width: Math.max(2, parent.width * projectRow.project.workedMs / view.maxProject)
                                     height: parent.height
-                                    radius: Math.min(2, height / 2)
+                                    radius: height / 2
                                     color: view.workColor
                                     opacity: 0.8
                                 }
@@ -1361,14 +1364,16 @@ PlasmaComponents3.ScrollView {
                         text: modelRow.entry.model
                         elide: Text.ElideRight
                     }
-                    Item {
+                    Rectangle {   // (its track: where all of it would end)
                         Layout.fillWidth: true
                         Layout.preferredHeight: Math.round(view.gu * 0.4)
+                        radius: height / 2
+                        color: view.track
 
                         Rectangle {
                             width: Math.max(2, parent.width * modelRow.entry.share)
                             height: parent.height
-                            radius: Math.min(2, height / 2)
+                            radius: height / 2
                             color: view.youColor
                         }
                     }
