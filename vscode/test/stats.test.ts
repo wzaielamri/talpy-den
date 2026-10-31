@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { demoState } from "../src/shared/demo";
-import { dayLabel, dayTitle, hasPeek, labeledBar, modelShares, recapText, recapTitle, sharePercent, statsSummary, weekdayShort } from "../src/shared/model";
+import { dayLabel, dayTitle, hasPeek, modelShares, recapText, recapTitle, sharePercent, statsSummary, weekdayLetter, weekdayShort } from "../src/shared/model";
 import type { ChatStats, StatsDay, UsageStats } from "../src/shared/types";
 
 const NOW = new Date(2026, 9, 18, 15, 0).getTime();
@@ -13,16 +13,18 @@ test("days read as local weekdays and dates", () => {
   assert.equal(dayLabel("2026-10-15"), "Thu 15 Oct");
 });
 
-test("every other bar is labeled, today always", () => {
-  assert.deepEqual([0, 1, 2, 3, 4].map((i) => labeledBar(i, 5)), [true, false, true, false, true]);
-  assert.deepEqual([0, 1, 2, 3].map((i) => labeledBar(i, 4)), [false, true, false, true]);
+test("every bar has its weekday's letter", () => {
+  assert.equal(weekdayLetter("2026-10-18"), "S");
+  assert.equal(weekdayLetter("2026-10-15"), "T");
 });
 
-test("shares: whole percents, under one percent shown as such", () => {
+test("shares: whole percents, under one percent and over 99 shown as such", () => {
   assert.equal(sharePercent(99, 100), "99%");
+  assert.equal(sharePercent(997, 1000), ">99%");
+  assert.equal(sharePercent(100, 100), "100%");
   assert.equal(sharePercent(1, 1000), "<1%");
   assert.equal(sharePercent(0, 100), "0%");
-  assert.equal(modelShares([{ model: "Opus 5.5", total: 9970 }, { model: "Sonnet 5.5", total: 30 }]), "Opus 5.5 100% · Sonnet 5.5 <1%");
+  assert.equal(modelShares([{ model: "Opus 5.5", total: 9970 }, { model: "Sonnet 5.5", total: 30 }]), "Opus 5.5 >99% · Sonnet 5.5 <1%");
 });
 
 test("a day's bar and the summary say it in words", () => {

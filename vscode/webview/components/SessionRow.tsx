@@ -63,6 +63,18 @@ function lineTitle(kind: string): string {
             : "";
 }
 
+// A chat's task progress, at the start of its step line: a small green bar and done/total
+function TaskProgress({ done, total }: { done: number; total: number }) {
+  return (
+    <span class="task-progress">
+      <span class="meter task-meter" aria-hidden="true">
+        <span style={{ width: `${total ? Math.round((100 * Math.min(done, total)) / total) : 0}%` }} />
+      </span>
+      <span class="muted">{done}/{total}</span>
+    </span>
+  );
+}
+
 // One chat: state, name (click to open), tags, folder, model, context fill,
 // what it's doing or needs or said last (click it for more), and its
 // subagents. With `host`, the chat is on that SSH host.
@@ -129,7 +141,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
             <button
               type="button"
               class="star-mark"
-              title="Starred: once it isn't listed here any more, it stays under Recent chats → Starred. Click to unstar it."
+              title="Starred: once it isn't listed here any more, it stays under ★ Starred chats. Click to unstar it."
               onClick={() => post({ type: "star", chat, on: false })}
             >
               <Icon name={I.starred} tone={T.starred} />
@@ -148,16 +160,6 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
               pressed={showAgents}
               title={`Subagents: ${agents.done} done, ${agents.running} running, ${agents.stopped} stopped${agents.failed ? `, ${agents.failed} failed` : ""}. Click to ${showAgents ? "hide" : "show"} what each one is doing.`}
               onClick={() => toggleAgents(rowKey)}
-            />
-          ) : null}
-          {tasks ? (
-            <Tag
-              text={`${tasks.done}/${tasks.total}`}
-              fill={tasks.total ? tasks.done / tasks.total : 0}
-              active={!!tasks.current}
-              pressed={showPeek}
-              title={`${tasksTitle(tasks)}\n\nClick to ${showPeek ? "hide" : "show"} the chat's tasks and last exchange.`}
-              onClick={() => togglePeek(rowKey)}
             />
           ) : null}
           {s.overlaps?.length ? (
@@ -251,20 +253,23 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           ) : null}
         </div>
 
-        {line ? (
+        {/* what it does, needs or said last, after its task progress (a small bar and done/total, as Plasma's) */}
+        {line || tasks ? (
           canPeek ? (
             <button
               type="button"
-              class={`session-detail small peek-line pk-${line.kind}`}
+              class={`session-detail small peek-line pk-${line ? line.kind : "tasks"}`}
               aria-expanded={showPeek}
-              title={`${lineTitle(line.kind)}${line.text}\n\nClick to ${showPeek ? "hide" : "show"} your last prompt and Claude's reply${tasks ? ", the tasks" : ""}${changes ? " and the changed files" : ""}.`}
+              title={`${line ? lineTitle(line.kind) + line.text + "\n\n" : ""}${tasks ? tasksTitle(tasks) + "\n\n" : ""}Click to ${showPeek ? "hide" : "show"} your last prompt and Claude's reply${tasks ? ", the tasks" : ""}${changes ? " and the changed files" : ""}.`}
               onClick={() => togglePeek(rowKey)}
             >
-              {line.text}
+              {tasks ? <TaskProgress done={tasks.done} total={tasks.total} /> : null}
+              {line ? line.text : null}
             </button>
           ) : (
-            <div class={`session-detail small pk-${line.kind}`} title={lineTitle(line.kind) + line.text}>
-              {line.text}
+            <div class={`session-detail small pk-${line ? line.kind : "tasks"}`} title={(line ? lineTitle(line.kind) + line.text : "") + (tasks ? (line ? "\n\n" : "") + tasksTitle(tasks) : "")}>
+              {tasks ? <TaskProgress done={tasks.done} total={tasks.total} /> : null}
+              {line ? line.text : null}
             </div>
           )
         ) : null}
@@ -272,9 +277,10 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
         {handover || goOn || goingOn || kept ? (
           <div class="handover small">
             {handover ? (
-            <button
-              type="button"
-              class="link"
+            <IconButton
+              icon={I.continueOn}
+              class="text-btn"
+              label={`Continue on ${handover.title}`}
               title={
                 (handover.pct !== null
                   ? `${handover.title} has used ${Math.round(handover.pct)}% of its ${handover.label} limit.`
@@ -288,7 +294,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
               onClick={() => post({ type: "handOver", chat, profile: handover.shareProfile })}
             >
               Continue on {handover.title}
-            </button>
+            </IconButton>
             ) : null}
             {goingOn ? (
               <IconButton
@@ -368,7 +374,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
             <IconButton
               icon={I.star}
               label="Star"
-              title="Star this chat: once it isn't listed here any more, it stays under Recent chats → Starred, however old it is."
+              title="Star this chat: once it isn't listed here any more, a starred chat stays under ★ Starred chats, however old it is."
               onClick={() => post({ type: "star", chat, on: true })}
             />
           )}

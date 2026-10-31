@@ -1,5 +1,5 @@
 import { useRef } from "preact/hooks";
-import { formatTokens, planUsageText, stateText, tokensText } from "../../src/shared/model";
+import { fetchingUsage, formatTokens, planUsageText, stateText, tokensText } from "../../src/shared/model";
 import type { Group, TokenTotals, Tokens } from "../../src/shared/types";
 import { post } from "../env";
 import { fiveHourOf, groupKeyOf, sharedRef, stageChats } from "../util/chat";
@@ -66,8 +66,8 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
   return (
     <section class="group" aria-label={(host ? host + ": " : "") + g.title}>
       <div class="group-head">
+        {/* (a host's name is in its section's head: not again before each of its accounts) */}
         <h3 class="group-title" title={(host ? host + ": " : "") + g.title}>
-          {host ? <span class="group-host muted">{host}: </span> : null}
           {g.title}
         </h3>
         {g.defaultHere && accounts > 1 ? (
@@ -85,10 +85,11 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
           icon={I.newChat}
           label={`New chat on ${g.title}`}
           title={
+            `New chat on ${g.title}\n` +
             (host
-              ? `New chat on ${g.title}: opens a terminal with a new Claude chat on this account on ${host} (over ssh), in the folder you pick.`
-              : `New chat on ${g.title}: opens a terminal with a new Claude chat on this account, in the folder you pick.`) +
-            " Type a task first and the chat starts with it, also in the background."
+              ? `Lists this account's folders on ${host}: start a new Claude chat in one, in a terminal (over ssh), in the background or later.`
+              : "Lists this account's recent folders: start a new Claude chat in one, in a terminal, in a Claude Code panel, in the background or later.") +
+            " Write a task first and the chat starts with it, also in the background."
           }
           onClick={() => post(host ? { type: "newChat", groupId: g.id, host } : { type: "newChat", groupId: g.id })}
         />
@@ -140,7 +141,7 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
       ) : (
         <div class="no-usage small muted">
           <span title="Plan limits come from Claude Code's status line. They update whenever a chat of this account gets a reply.">
-            No plan usage yet: shows after this account's next reply.
+            {fetchingUsage(null, now, g.usageFetchAt) ? "Fetching the plan usage…" : "No plan usage yet: shows after this account's next reply"}
           </span>
           {!host ? (
             <>
@@ -165,7 +166,7 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
             type="button"
             class="tokens small stats-toggle"
             aria-expanded={statsOpen}
-            title={`${tokenTitle(tokens)}\n\nClick to ${statsOpen ? "hide" : "show"} the last ${stats.days.length} days.`}
+            title={`${tokenTitle(tokens)}\n\n${statsOpen ? "Click to fold the last days up again." : "Click for the last days: tokens per day, your busiest folders and models."}`}
             onClick={() => toggleStats(key)}
           >
             <Icon name={I.folded} class={statsOpen ? "open" : ""} />

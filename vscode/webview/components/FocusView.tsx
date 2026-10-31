@@ -5,6 +5,7 @@ import { pets } from "../pets";
 import { rowKeyOf } from "../util/chat";
 import { useLiveView } from "../util/stores";
 import { setFocus } from "../util/ui";
+import { I, Icon } from "../util/icons";
 import { useView } from "./context";
 import { SessionRow } from "./SessionRow";
 import type { FocusItem } from "../../src/shared/model";
@@ -38,7 +39,10 @@ export function FocusView({ groups }: { groups: Group[] }) {
       <div class="focus-rest muted">
         {rest.length ? <div>Also: {rest.join(" · ")}</div> : null}
         {lists.usage.length ? <div class="small">5-hour usage: {lists.usage.map((u) => `${u.name} ${Math.round(u.pct)}%`).join(" · ")}</div> : null}
-        <button type="button" class="focus-all" onClick={() => setFocus(false)}>Show everything</button>
+        <button type="button" class="focus-all" onClick={() => setFocus(false)}>
+          <Icon name={I.showAll} />
+          Show everything
+        </button>
       </div>
     </section>
   );
@@ -51,9 +55,10 @@ function FocusLine({ item, finished = false }: { item: FocusItem; finished?: boo
   const s = item.session,
     host = item.group.host;
   const live = useLiveView(s.sessionId, !finished && !host && !!s.pid);
+  const doing = finished ? "" : doingText(s, liveMatch(s, live));
   const what = finished
     ? s.reason === "failed" ? "Failed: look at what happened" : "Finished: results to look at"
-    : doingText(s, liveMatch(s, live)) || stateText(s, view.now);
+    : doing || stateText(s, view.now);
   const color = pets.petColor(petKeyOf(s, host));
   return (
     <button type="button" class={"focus-line" + (finished ? " finished" : "")} data-row={rowKeyOf(s, host)}
@@ -62,7 +67,8 @@ function FocusLine({ item, finished = false }: { item: FocusItem; finished?: boo
       <span class="focus-dot" aria-hidden="true" />
       <span class="focus-name">{(host ? host + ": " : "") + s.name}</span>
       <span class="focus-what">{what}</span>
-      {!finished && s.since ? <span class="focus-time small muted">{duration(view.now - s.since)}</span> : null}
+      {/* (with no step known, the state's text says how long itself) */}
+      {doing && s.since ? <span class="focus-time small muted">{duration(view.now - s.since)}</span> : null}
     </button>
   );
 }

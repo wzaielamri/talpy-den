@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The chat list as in Plasma:** a chat's task progress is a small green
+  bar and *3/5* at the start of the line under its folder, not a tag by
+  its name; what a waiting chat needs is orange; *Continue on …* has its
+  icon; a chat's star says it stays under **★ Starred chats** (not
+  *Recent chats → Starred*); a queued task that didn't start says only
+  that; an SSH host's accounts don't repeat the host's name; *Fetching
+  the plan usage…* while a fetch is on its way; every one of the last
+  days' bars has its weekday's letter, today's bold, and a model's share
+  reads *>99%*, not *100%* beside *<1%*; *No Claude Code config on this
+  computer* when only SSH hosts have chats; the Focus view's *Show
+  everything* has its icon and a working chat's time shows once.
 - **An account's last days: every folder's bar as long:** the numbers after
   each bar stand in one column as wide as the widest, right-aligned, so
   every bar's track ends at the same place; no *· 0 prompts* for a folder

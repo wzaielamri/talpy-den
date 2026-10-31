@@ -1,8 +1,8 @@
-import { dayTitle, formatTokens, labeledBar, modelShares, plural, statsSummary, weekdayShort } from "../../src/shared/model";
+import { dayTitle, formatTokens, modelShares, plural, statsSummary, weekdayLetter } from "../../src/shared/model";
 import type { UsageStats } from "../../src/shared/types";
 
 // An account's last days, unfolded from its token line: tokens per day as
-// bars (today's in the accent color), the totals, the busiest folders and
+// bars (today's in the accent color, its weekday's letter bold), the totals, the busiest folders and
 // the models used
 export function StatsPanel({ stats: s }: { stats: UsageStats }) {
   const peak = Math.max(1, ...s.days.map((d) => d.total));
@@ -17,8 +17,8 @@ export function StatsPanel({ stats: s }: { stats: UsageStats }) {
             <div class="stats-bar-area">
               {d.total ? <div class="stats-bar" style={{ height: `${Math.max(4, (100 * d.total) / peak)}%` }} /> : null}
             </div>
-            {/* A no-break space: a plain one leaves the line empty, and that day's bar area grows into it */}
-            <span class="stats-weekday muted">{labeledBar(i, s.days.length) ? (i === last ? "today" : weekdayShort(d.day)) : "\u00a0"}</span>
+            {/* its weekday's letter, today's bold (as Plasma's and GNOME's) */}
+            <span class="stats-weekday muted">{weekdayLetter(d.day)}</span>
           </div>
         ))}
       </div>

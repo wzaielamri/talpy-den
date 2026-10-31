@@ -40,13 +40,14 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
     : t.scheduled
       ? `Starts in the background in ${folder}, at ${startText(t.startAt, view.now)}: the time you picked.`
       : `Waits for the usage limit, then starts in the background in ${folder}, at ${startText(t.startAt, view.now)}.`;
+  // (its folder only with when it starts, as Plasma's)
   const when = t.error
     ? "didn't start"
     : t.due || t.startAt <= view.now
       ? "starting…"
       : t.startAt - view.now > 12 * 3600_000
-        ? `starts ${startText(t.startAt, view.now)}`
-        : `starts in ${duration(t.startAt - view.now)}`;
+        ? `${t.folderShort || "~"} · starts ${startText(t.startAt, view.now)}`
+        : `${t.folderShort || "~"} · starts in ${duration(t.startAt - view.now)}`;
   return (
     <li class={"queued-item" + (t.error ? " failed" : "")}>
       <div class="recent-item queued-line" {...wake}>
@@ -55,7 +56,7 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
           {what.split("\n")[0]}
         </span>
         <span class="queued-when small nowrap" title={t.error || undefined}>
-          {t.folderShort || "~"} · {when}
+          {when}
         </span>
         {woken || asking ? (
           <div class={"row-actions" + (asking ? " shown" : "")}>

@@ -161,6 +161,10 @@ export function App() {
               <GroupSection group={g} accounts={local.length} />
             </Guarded>
           ))}
+          {/* No account here, but SSH hosts shown: one quiet line where this computer's accounts go */}
+          {!focus && state.status && local.length === 0 && state.hosts.length > 0 ? (
+            <div class="no-sessions muted">No Claude Code config on this computer</div>
+          ) : null}
           {(focus ? [] : state.hosts).map((h) => (
             <Guarded key={h.name} what={h.name}>
               {/* its last answer, also when the last check failed (dimmed): allGroups leaves that one out */}
@@ -169,9 +173,11 @@ export function App() {
           ))}
           {state.status && groups.length === 0 && state.hosts.length === 0 ? (
             <div class="empty">
+              <p class="empty-title">No Claude Code chats yet</p>
               <p>
                 Your Claude Code chats show up here once you start <code>claude</code> in a terminal or open
-                Claude in VS Code.
+                Claude in VS Code. Talpy Den looks in ~/.claude and ~/.claude-*; other folders go in its settings
+                (Extra Config Dirs).
               </p>
               <p class="muted">
                 {editorTab

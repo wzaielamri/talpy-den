@@ -152,6 +152,12 @@ code {
   gap: 8px;
 }
 
+.empty-title {
+  margin: 0;
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
 /* ---------------------------------------------------------------------------
    Header: the ✳ in the overall state's color, and the summary */
 
@@ -789,6 +795,12 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.stats-day.today .stats-weekday {
+  font-weight: 700;
+  color: inherit;
+  opacity: 0.9;
+}
+
 .stats-sum {
   overflow-wrap: anywhere;
 }
@@ -1164,6 +1176,31 @@ button:focus-visible {
 .pk-activity {
   color: var(--cs-working);
   opacity: 1;
+}
+
+/* what a waiting chat needs: orange, as its state */
+.pk-needs {
+  color: var(--cs-waiting);
+  opacity: 1;
+}
+
+/* its task progress before the step: a small green bar and done/total */
+.task-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.task-meter {
+  display: inline-block;
+  width: calc(var(--cs-gu) * 2.5);
+  height: 4px;
+}
+
+.task-meter > span {
+  background: var(--cs-idle);
 }
 
 .pk-reply {
@@ -1778,11 +1815,10 @@ body.vscode-high-contrast .top.scrolled {
 }
 
 /* ---------------------------------------------------------------------------
-   A narrow sidebar: leave out what's said elsewhere (the host's name is in
-   its head; when it was checked is in its refresh button's tooltip) */
+   A narrow sidebar: leave out what's said elsewhere (when a host was checked
+   is in its refresh button's tooltip) */
 
 @container cs (max-width: 300px) {
-  .group-host,
   .host-updated {
     display: none;
   }
@@ -3619,7 +3655,9 @@ body.vscode-high-contrast-light .pane {
 }
 
 .focus-all {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin: 8px auto 0;
   padding: 3px 12px;
   border: 1px solid var(--vscode-button-border, transparent);

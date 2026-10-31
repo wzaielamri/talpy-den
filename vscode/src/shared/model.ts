@@ -1166,17 +1166,23 @@ export function weekdayShort(day: string): string {
   return WEEKDAYS[localDate(day).getDay()];
 }
 
+// Under a day's bar: its weekday's letter ("T"), on every bar, as Plasma's and GNOME's
+export function weekdayLetter(day: string): string {
+  return weekdayShort(day)[0];
+}
+
 // "Tue 15 Oct"
 export function dayLabel(day: string): string {
   const d = localDate(day);
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
-// A part of a whole as a percentage: "99%", "<1%"
+// A part of a whole as a percentage: "99%", "<1%", ">99%" (not a rounded
+// "100%" beside another part's "<1%"), as Plasma's
 export function sharePercent(part: number, whole: number): string {
   if (whole <= 0 || part <= 0) return "0%";
   const pct = (100 * part) / whole;
-  return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+  return pct < 1 ? "<1%" : pct > 99 && pct < 100 ? ">99%" : `${Math.round(pct)}%`;
 }
 
 // A bar's tooltip: "Tue 15 Oct: 446.8M tokens (1.7M out) · 6 chats · 73 prompts"
@@ -1204,11 +1210,7 @@ export function modelShares(models: UsageStats["models"]): string {
   return models.map((m) => `${m.model} ${sharePercent(m.total, whole)}`).join(" · ");
 }
 
-// Bars that get a weekday under them: every other one, counted back from
-// today (the last), so today always has its label
-export function labeledBar(index: number, count: number): boolean {
-  return (count - 1 - index) % 2 === 0;
-}
+
 
 // The recap under a chat's peek: "3 prompts · worked 51m · 278 tool calls
 // (Bash 236, Read 23, Write 5) · 85.3M tokens (249.0k out) · $12.40 at API prices"
