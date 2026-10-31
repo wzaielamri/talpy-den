@@ -348,8 +348,8 @@ export function testsText(review: Review | null | undefined): { text: string; ti
   const run = review.tests;
   if (!run) return { text: "Not tested", title: "Claude ran no test command (pytest, npm test, cargo test, …) after it last changed a file.", ok: null };
   return run.ok
-    ? { text: "Tests ✓", title: `Tests passed after its last edit: ${run.command}`, ok: true }
-    : { text: "Tests ✗", title: `Tests failed after its last edit: ${run.command}`, ok: false };
+    ? { text: "Tests", title: `Tests passed after its last edit: ${run.command}`, ok: true }
+    : { text: "Tests", title: `Tests failed after its last edit: ${run.command}`, ok: false };
 }
 
 // How a reply reaches the chat, in a sentence

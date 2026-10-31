@@ -556,6 +556,7 @@ KCM.SimpleKCM {
                         visible: !modelData.installed || modelData.deletable
                         enabled: page.dictationBusy === ""
                         icon.name: modelData.installed ? Icons.plasma.erase : Icons.plasma.download
+                        icon.color: modelData.installed ? Icons.color("erase", Kirigami.Theme) : "transparent"
                         text: modelData.installed ? i18n("Delete") : i18n("Download")
                         onClicked: page.runDictate([modelData.installed ? "--delete-model" : "--get-model", modelData.name])
                         QQC2.ToolTip.visible: hovered
@@ -588,6 +589,7 @@ KCM.SimpleKCM {
                 visible: !page.removeAsking
                 enabled: page.dictationBusy === ""
                 icon.name: Icons.plasma.erase
+                icon.color: Icons.color("erase", Kirigami.Theme)
                 text: i18n("Remove faster-whisper…")
                 onClicked: page.removeAsking = true
             }
@@ -600,6 +602,7 @@ KCM.SimpleKCM {
             QQC2.Button {
                 visible: page.removeAsking
                 icon.name: Icons.plasma.erase
+                icon.color: Icons.color("erase", Kirigami.Theme)
                 text: i18n("Delete")
                 onClicked: {
                     page.removeAsking = false
@@ -967,6 +970,7 @@ KCM.SimpleKCM {
             }
             QQC2.Button {
                 icon.name: Icons.plasma.erase
+                icon.color: Icons.color("erase", Kirigami.Theme)
                 text: i18n("Stop Keeping It")
                 onClicked: {
                     page.historyOffAsking = false
@@ -999,6 +1003,7 @@ KCM.SimpleKCM {
                 visible: !page.forgetAsking
                 enabled: page.history !== null && !!page.history.since
                 icon.name: Icons.plasma.erase
+                icon.color: Icons.color("erase", Kirigami.Theme)
                 text: i18n("Delete Saved History…")
                 onClicked: page.forgetAsking = true
             }
@@ -1011,6 +1016,7 @@ KCM.SimpleKCM {
             QQC2.Button {
                 visible: page.forgetAsking
                 icon.name: Icons.plasma.erase
+                icon.color: Icons.color("erase", Kirigami.Theme)
                 text: i18n("Delete")
                 onClicked: {
                     page.forgetAsking = false

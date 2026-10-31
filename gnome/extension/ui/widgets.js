@@ -92,11 +92,21 @@ export function link(text, onClick, styleClass = '') {
 }
 
 // Small outlined label, e.g. the profile or "VS Code" next to a session name
-export function tag(text, active = false) {
-    return new St.Label({
-        text, style_class: `claude-tag${active ? ' claude-tag-active' : ''}`,
+export function tag(text, active = false, icon = '') {
+    if (!icon) {
+        return new St.Label({
+            text, style_class: `claude-tag${active ? ' claude-tag-active' : ''}`,
+            y_align: Clutter.ActorAlign.CENTER, reactive: true, track_hover: true,
+        });
+    }
+    // (an icon before its words, as Plasma's and VS Code's tags have)
+    const t = new St.BoxLayout({
+        style_class: `claude-tag claude-tag-with-icon${active ? ' claude-tag-active' : ''}`,
         y_align: Clutter.ActorAlign.CENTER, reactive: true, track_hover: true,
     });
+    t.add_child(new St.Icon({icon_name: icon, style_class: 'claude-tag-icon'}));
+    t.add_child(new St.Label({text, y_align: Clutter.ActorAlign.CENTER}));
+    return t;
 }
 
 // A chat's first line: its name, its tags and, at the end of the line, its

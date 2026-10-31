@@ -109,10 +109,12 @@ ColumnLayout {
                 }
             }
         }
-        PlasmaComponents3.Label {
-            textFormat: Text.PlainText
+Kirigami.Icon {
+            source: Icons.plasma.share
             visible: recentLine.chat.shared
-            text: "⇄"
+            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+            Layout.preferredHeight: Layout.preferredWidth
+            Layout.alignment: Qt.AlignVCenter
             opacity: 0.6
         }
         Loader {   // (made only where there is one: in a project on several accounts)
@@ -321,6 +323,7 @@ ColumnLayout {
                 PlasmaComponents3.ToolButton {
                     // to the Trash, after a question (DeleteAsk under the line)
                     icon.name: Icons.plasma.delete
+                    icon.color: Icons.color("delete", Kirigami.Theme)
                     display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Delete…")
                     Layout.preferredHeight: recentButtons.buttonSize

@@ -325,7 +325,8 @@ function openInSwitch(ctx, group, host, resuming) {
 
 function buildSharedLine(ctx, chat, remoteHost) {
     const line = box('claude-line claude-indent', {x_expand: true});
-    line.add_child(label('⇄', `claude-fg-${L.stateClass(chat.state)}`));
+    line.add_child(new St.Icon({icon_name: Icons.gnome.share, style_class: `claude-button-icon claude-fg-${L.stateClass(chat.state)}`,
+        y_align: Clutter.ActorAlign.CENTER}));
     const name = link(chat.name, () => (remoteHost ? ctx.remoteOpen(remoteHost, chat.openCommand)
         : ctx.jumpTo(chat.sessionId, chat.profileDir)), 'claude-dim');
     name.x_expand = true;
@@ -376,10 +377,10 @@ function buildRecentLine(ctx, group, chat, remoteHost) {
         (chat.shared ? `\n${L.fmt('Shared between accounts; last used on %1.', chat.profile)}` : '')]);
     line.add_child(name);
     if (chat.shared)
-        line.add_child(label('⇄', 'claude-dim'));
+        line.add_child(new St.Icon({icon_name: Icons.gnome.share, style_class: 'claude-button-icon claude-dim', y_align: Clutter.ActorAlign.CENTER}));
     // starred: a ★ (click: unstar it)
     if (chat.starred) {
-        const mark = textButton('★', () => ctx.setStar(chat.sessionId, remoteHost, false), 'claude-star-mark');
+        const mark = iconButton(Icons.gnome.starred, () => ctx.setStar(chat.sessionId, remoteHost, false), 'claude-icon-button claude-star-mark');
         mark.y_align = Clutter.ActorAlign.CENTER;
         ctx.tips.add(mark, ['Starred', L.starHint(true)]);
         line.add_child(mark);
@@ -407,7 +408,8 @@ function buildRecentLine(ctx, group, chat, remoteHost) {
     }
     // to the Trash, after a question (under the line)
     const asksDelete = ctx.ui.deleteAsk?.key === rowKey;
-    const del = iconButton(Icons.gnome.delete, () => ctx.askDelete(rowKey, chat.sessionId, chat.profileDir, remoteHost));
+    const del = iconButton(Icons.gnome.delete, () => ctx.askDelete(rowKey, chat.sessionId, chat.profileDir, remoteHost),
+        'claude-icon-button claude-tone-negative');   // (red, as a cancel's ×: icons.mjs TONES)
     ctx.tips.add(del, ['Delete this chat…', L.DELETE_HINT]);
     if (!asksDelete)
         hoverButtons.push(del);

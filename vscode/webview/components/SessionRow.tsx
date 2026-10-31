@@ -38,11 +38,11 @@ import { toggleAgents, togglePeek, uiState } from "../util/ui";
 import { AgentTree } from "./AgentTree";
 import { AskBox, askKey } from "./AskBox";
 import { useView } from "./context";
-import { I } from "../util/icons";
+import { I, Icon, T } from "../util/icons";
 import { Elided } from "./Elided";
 import { IconButton } from "./IconButton";
 import { PeekPanel } from "./PeekPanel";
-import { Tag } from "./Tag";
+import { Tag, TestsTag } from "./Tag";
 
 // The color class of a chat's state; a failed chat stands out from done ones
 export function stateClass(state: string, reason: string): string {
@@ -132,7 +132,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
               title="Starred: once it isn't listed here any more, it stays under Recent chats → Starred. Click to unstar it."
               onClick={() => post({ type: "star", chat, on: false })}
             >
-              ★
+              <Icon name={I.starred} tone={T.starred} />
             </button>
           ) : null}
           {showProfile && s.profile ? <Tag text={s.profile} title="The Claude profile (config folder) this chat runs in" /> : null}
@@ -140,7 +140,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           {isBackground(s) && attachedTag(s.attached) ? (
             <Tag text={attachedTag(s.attached)!.tag} title={attachedTag(s.attached)!.title} />
           ) : null}
-          {s.shared ? <Tag text={s.shared.forkOf ? "⇄ Shared copy" : "⇄ Shared"} title={sharedTagTitle(s)} /> : null}
+          {s.shared ? <Tag icon={I.share} text={s.shared.forkOf ? "Shared copy" : "Shared"} title={sharedTagTitle(s)} /> : null}
           {agents ? (
             <Tag
               text={`Agents ${agents.done}/${agents.total}`}
@@ -174,21 +174,24 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           ) : null}
           {s.plan ? (
             <Tag
-              text="Plan ↗"
+              icon={I.plan}
+              text="Plan"
               title={`${s.plan.title}\nThe plan this chat made. Click to read it in the Markdown preview${host && host !== view.hosts.find((h) => h.current)?.name ? ` (a copy, fetched from ${host})` : " (its Open Source button edits it)"}.`}
               onClick={() => post({ type: "openPlan", chat })}
             />
           ) : null}
           {s.plan && (!host || host === view.hosts.find((h) => h.current)?.name) ? (
             <Tag
-              text="✎"
+              icon={I.edit}
+              text=""
               title={`Edit the plan: its Markdown file opens in an editor tab. What you change there is the plan.`}
               onClick={() => post({ type: "openPlan", chat, edit: true })}
             />
           ) : null}
           {s.plan?.edited && !host ? (
             <Tag
-              text="↩ Send to Claude"
+              icon={I.send}
+              text="Send to Claude"
               active
               title={
                 "You changed this plan since Claude wrote it. Click to send what you changed (and your comments on it) to this chat: Claude revises the plan, in plan mode.\n\n" +
@@ -212,7 +215,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
               onClick={() => post({ type: "openPane", chat, tab: "review" })}
             />
           ) : null}
-          {toReview && tests ? <Tag text={tests.text} title={tests.title} active={tests.ok === true} warning={tests.ok === false} /> : null}
+          {toReview && tests ? <TestsTag tests={tests} /> : null}
           <span class="state-text" title={stateText(s, now) + (resetsAt ? `\n${resetAtText(resetsAt, now)}` : "")}>
             {stateText(s, now)}
           </span>
@@ -386,7 +389,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
             />
           ) : null}
           {remove ? (
-            <IconButton icon={I.delete} label="Delete this chat…" title={`Delete this chat…\n${deleteHint("chat")}`}
+            <IconButton icon={I.delete} tone={T.delete} label="Delete this chat…" title={`Delete this chat…\n${deleteHint("chat")}`}
               onClick={() => post({ type: "delete", kind: "chat", chat })} />
           ) : null}
           {remove ? (

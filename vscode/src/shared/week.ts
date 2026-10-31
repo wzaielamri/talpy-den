@@ -346,6 +346,19 @@ export function promptsText(p: WeekRecap["prompts"] | undefined): string {
 // The permissions you gave: the first few, until you ask for all
 export const GRANTED_FEW = 8;
 
+// A permission's kind, as an icon (icons.mjs meanings, as Plasma's PermsView
+// grantIcon): a trusted folder, an MCP server, a loosened check, a folder to
+// read, a mode, the web, a command
+export function grantMeaning(g: { kind: string; value: string }): "trusted" | "mcp" | "warning" | "folder" | "edit" | "webAccess" | "terminal" | "allowed" {
+  if (g.kind === "trust") return "trusted";
+  if (g.kind === "mcp") return "mcp";
+  if (g.kind === "flag") return "warning";
+  if (g.kind === "dir") return "folder";
+  if (g.kind === "mode") return g.value === "acceptEdits" ? "edit" : "warning";
+  if (g.value.startsWith("WebFetch") || g.value === "WebSearch") return "webAccess";
+  return g.value.startsWith("Bash") ? "terminal" : "allowed";
+}
+
 export function grantedIntro(granted: WeekGrant[], host = ""): string {
   if (!granted.length) return `Nothing lets chats on ${host || "this computer"} skip a permission prompt: they ask you each time.`;
   return host

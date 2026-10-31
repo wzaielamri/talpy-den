@@ -73,7 +73,7 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
             : 'Shown in a terminal too: claude attach.'));
     }
     if (s.shared)
-        tags.push(tips.add(tag(s.shared.forkOf ? '⇄ Shared copy' : '⇄ Shared'), () => sharedTooltip(s)));
+        tags.push(tips.add(tag(s.shared.forkOf ? 'Shared copy' : 'Shared', false, Icons.gnome.share), () => sharedTooltip(s)));
     if (agents) {
         const t = tag(L.fmt('Agents %1/%2', agents.done, agents.total), agents.running > 0);
         t.add_style_class_name('claude-clickable');
@@ -126,8 +126,8 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
     const asksDelete = ctx.ui.deleteAsk?.key === rowKey;
     if (s.state === 'done' && (s.chatId || s.sessionId)) {
         // Delete a finished chat: to the Trash, after a question (under the row)
-        const del = iconButton(Icons.gnome.delete,
-            () => ctx.askDelete(rowKey, s.chatId || s.sessionId, s.profileDir, remoteHost));
+        const del = iconButton(Icons.gnome.delete,   // (red, as a cancel's ×: icons.mjs TONES)
+            () => ctx.askDelete(rowKey, s.chatId || s.sessionId, s.profileDir, remoteHost), 'claude-icon-button claude-tone-negative');
         tips.add(del, ['Delete this chat…', L.DELETE_HINT]);
         if (!asksDelete)
             hoverButtons.push(del);

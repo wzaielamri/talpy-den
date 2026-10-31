@@ -22,8 +22,8 @@ import { useWoken } from "../util/lazy";
 import { useView } from "./context";
 import { Elided } from "./Elided";
 import { IconButton } from "./IconButton";
-import { Tag } from "./Tag";
-import { I } from "../util/icons";
+import { Tag, TestsTag } from "./Tag";
+import { I, Icon, T } from "../util/icons";
 
 // Where an account's chats that no Claude has open reopen: in a terminal,
 // or in a Claude Code panel (the switch above Recent chats, kept in
@@ -97,8 +97,8 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
         {c.name}
       </button>
       {c.shared ? (
-        <span class="muted" title="Shared between accounts">
-          ⇄
+        <span class="shared-mark" title="Shared between accounts">
+          <Icon name={I.share} />
         </span>
       ) : null}
       {goingOn ? (
@@ -142,11 +142,11 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
           onClick={() => post({ type: "openPane", chat, tab: "review" })}
         />
       ) : null}
-      {toReview && tests ? <Tag text={tests.text} title={tests.title} active={tests.ok === true} warning={tests.ok === false} /> : null}
+      {toReview && tests ? <TestsTag tests={tests} /> : null}
       {accountTag ? <Tag text={accountTag} /> : null}
       {c.starred ? (
         <button type="button" class="star-mark" title="A starred chat stays listed under its account's ★ Starred chats, however old it is. Click to unstar it." onClick={() => post({ type: "star", chat, on: false })}>
-          ★
+          <Icon name={I.starred} tone={T.starred} />
         </button>
       ) : null}
       {folder ? <Elided text={folder} class="recent-folder small muted" title={c.cwd} /> : <span class="recent-folder" title={c.cwd} />}
@@ -172,7 +172,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
               onClick={() => post({ type: "share", chat })}
             />
           ) : null}
-          <IconButton icon={I.delete} label="Delete this chat…" title={`Delete this chat…\n${deleteHint("chat")}`}
+          <IconButton icon={I.delete} tone={T.delete} label="Delete this chat…" title={`Delete this chat…\n${deleteHint("chat")}`}
             onClick={() => post({ type: "delete", kind: "chat", chat })} />
         </div>
       ) : null}

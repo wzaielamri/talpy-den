@@ -1154,7 +1154,8 @@ Window {
                 Tag {
                     readonly property var info: pane.row ? pane.row.shared : null
                     visible: !!info
-                    text: info && info.forkOf ? i18n("⇄ Shared copy") : i18n("⇄ Shared")
+                    icon: Icons.plasma.share
+                    text: info && info.forkOf ? i18n("Shared copy") : i18n("Shared")
                     tooltipTitle: info && info.forkOf ? i18n("Copy of a shared chat") : i18n("Shared chat")
                     tooltip: !info ? "" : info.forkOf
                              ? i18n("A copy of a chat shared between the %1 profiles: Claude forked it into a chat of its own on %2, so new messages here are only on %2.",
@@ -1172,7 +1173,8 @@ Window {
                 }
                 Tag {
                     visible: !!pane.row && !!pane.row.plan
-                    text: i18nc("a chat's plan, click to open it", "Plan ↗")
+                    icon: Icons.plasma.plan
+                    text: i18nc("a chat's plan, click to open it", "Plan")
                     clickable: true
                     onClicked: root.openPlan(pane.row.plan.slug, pane.profileDir, pane.host)
                     tooltipTitle: pane.row && pane.row.plan ? pane.row.plan.title : ""
@@ -1835,6 +1837,7 @@ Window {
                     }
                     PlasmaComponents3.ToolButton {
                         icon.name: Icons.plasma.cancel
+                        icon.color: Icons.color("cancel", Kirigami.Theme)
                         text: i18n("Cancel")
                         onClicked: root.unqueue(pane.queued)
                     }
@@ -2109,6 +2112,7 @@ Window {
                         PlasmaComponents3.ToolButton {
                             visible: pane.dictating === "recording"
                             icon.name: Icons.plasma.cancel
+                            icon.color: Icons.color("cancel", Kirigami.Theme)
                             display: PlasmaComponents3.AbstractButton.IconOnly
                             text: i18n("Stop, don't write it down")
                             onClicked: pane.cancelDictation()
@@ -2261,10 +2265,10 @@ Window {
                                 Layout.fillWidth: true
                                 spacing: Kirigami.Units.smallSpacing
 
-                                PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
-                                    text: fileItem.unfolded ? "▾" : "▸"
-                                    font.pointSize: pane.pt
+                                Kirigami.Icon {
+                                    source: fileItem.unfolded ? Icons.plasma.unfolded : Icons.plasma.folded
+                                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                                    Layout.preferredHeight: Layout.preferredWidth
                                     opacity: 0.6
                                 }
                                 PlasmaComponents3.Label {
@@ -2440,6 +2444,7 @@ Window {
                     // (by the mark itself: while the chat works it isn't "to review", nor reviewed)
                     readonly property bool marked: !!pane.row && !!pane.row.review && root.reviewSeen(pane.row, pane.host)
                     icon.name: marked ? Icons.plasma.reviewed : Icons.plasma.markReviewed
+                    icon.color: marked ? Icons.color("reviewed", Kirigami.Theme) : "transparent"
                     text: marked ? i18n("Reviewed") : i18n("Mark reviewed")
                     checkable: false
                     onClicked: pane.run("reviewed", "--reviewed " + root.shellQuote(pane.chatId) + (marked ? " --off" : "")

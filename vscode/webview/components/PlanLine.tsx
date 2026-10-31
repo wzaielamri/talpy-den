@@ -2,7 +2,7 @@ import { ago, folderIn, machineStatus, shareAccounts } from "../../src/shared/mo
 import type { Group, PlanItem } from "../../src/shared/types";
 import { post } from "../env";
 import { deleteHint, hideHint } from "../util/chat";
-import { I, Icon } from "../util/icons";
+import { I, Icon, T } from "../util/icons";
 import { useWoken } from "../util/lazy";
 import { useView } from "./context";
 import { Elided } from "./Elided";
@@ -46,13 +46,14 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
         {p.title}
       </button>
       {p.shared ? (
-        <span class="muted" title="Shared with your other accounts">
-          ⇄
+        <span class="shared-mark" title="Shared with your other accounts">
+          <Icon name={I.share} />
         </span>
       ) : null}
       {p.edited && p.chatId && !host ? (
         <Tag
-          text="↩ Send"
+          icon={I.send}
+          text="Send"
           active
           title="You changed this plan since Claude wrote it. Click to send what you changed (and your comments on it) to the chat that made it: Claude revises the plan, in plan mode."
           onClick={() => post({ type: "sendPlanFeedback", ...ref(p.key) })}
@@ -61,7 +62,7 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
       {accountTag ? <Tag text={accountTag} /> : null}
       {p.starred ? (
         <button type="button" class="star-mark" title="A starred plan stays listed under its account's ★ Starred plans, however old it is. Click to unstar it." onClick={() => post({ type: "star", ...ref(p.key), on: false })}>
-          ★
+          <Icon name={I.starred} tone={T.starred} />
         </button>
       ) : null}
       {folder ? <Elided text={folder} class="recent-folder small muted" title={p.cwd} /> : <span class="recent-folder" title={p.cwd || undefined} />}
@@ -120,7 +121,7 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
               onClick={() => post({ type: "sharePlan", ...ref(p.key) })}
             />
           ) : null}
-          <IconButton icon={I.delete} label="Delete this plan…" title={`Delete this plan…\n${deleteHint("plan")}`}
+          <IconButton icon={I.delete} tone={T.delete} label="Delete this plan…" title={`Delete this plan…\n${deleteHint("plan")}`}
             onClick={() => post({ type: "delete", kind: "plan", groupId: group.id, ...(host ? { host } : {}), id: p.key })} />
           <IconButton icon={I.hide} label="Hide this plan" title={`Hide this plan\n${hideHint("plans", host)}`}
             onClick={() => post({ type: "hide", kind: "plans", groupId: group.id, ...(host ? { host } : {}), id: p.key })} />

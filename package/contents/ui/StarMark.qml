@@ -1,18 +1,24 @@
 import QtQuick
-import org.kde.plasma.components as PlasmaComponents3
+import QtQuick.Layouts
 import org.kde.plasma.core as PlasmaCore
+import org.kde.kirigami as Kirigami
+import "icons.mjs" as Icons
 
-// The ★ after a starred chat's or plan's name, as in the VS Code extension
-// (a click unstars it; its row's hover buttons star one that isn't)
-PlasmaComponents3.Label {
+// The star after a starred chat's or plan's name, yellow, as in the VS Code
+// extension (a click unstars it; its row's hover buttons star one that isn't)
+Kirigami.Icon {
     id: mark
 
     property string tooltip
     signal clicked()
 
-    textFormat: Text.PlainText
-    text: "★"
-    color: "#e0a800"
+    source: Icons.plasma.starred
+    color: Icons.color("starred", Kirigami.Theme)
+    implicitWidth: Kirigami.Units.iconSizes.small
+    implicitHeight: implicitWidth
+    Layout.preferredWidth: implicitWidth
+    Layout.preferredHeight: implicitHeight
+    Layout.alignment: Qt.AlignVCenter
     opacity: markMouse.containsMouse ? 0.7 : 1
 
     PlasmaCore.ToolTipArea {

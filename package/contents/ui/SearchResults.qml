@@ -281,10 +281,12 @@ ColumnLayout {
                                 }
                             }
                         }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
+                        Kirigami.Icon {
+                            source: Icons.plasma.share
                             visible: hit.chat.shared
-                            text: "⇄"
+                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                            Layout.preferredHeight: Layout.preferredWidth
+                            Layout.alignment: Qt.AlignVCenter
                             opacity: 0.6
                         }
                         Tag {

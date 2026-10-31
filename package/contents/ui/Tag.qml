@@ -9,6 +9,7 @@ Rectangle {
 
     property alias text: label.text
     property string icon: ""        // an icon before the text (one of icons.mjs), as big as the buttons'
+    property string tone: ""        // the meaning whose color the icon takes (icons.mjs TONES: failed red, done green…)
     property string tooltip
     property string tooltipTitle: label.text
     property bool active: false     // outlined in the highlight colour
@@ -33,9 +34,10 @@ Rectangle {
         height: width
         anchors.verticalCenter: parent.verticalCenter
         x: label.text !== "" ? Kirigami.Units.smallSpacing : (parent.width - width) / 2
-        // (a plain icon takes the warning's color, as its text; a warning's own icon stays as it is)
-        color: tag.warning && tag.icon !== Icons.plasma.warning ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-        opacity: tag.warning ? 1 : 0.8
+        // (its tone's color; else a plain icon takes the warning's color, as its text; a warning's own icon stays as it is)
+        color: tag.tone !== "" ? Icons.color(tag.tone, Kirigami.Theme)
+             : tag.warning && tag.icon !== Icons.plasma.warning ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+        opacity: tag.warning || tag.tone !== "" ? 1 : 0.8
     }
     PlasmaComponents3.Label {
         id: label

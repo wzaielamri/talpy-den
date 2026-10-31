@@ -413,7 +413,8 @@ RowLayout {
                                 // Chat shared across profiles (hard-linked transcript)
                                 readonly property var info: row.session.shared
                                 visible: !!info
-                                text: info && info.forkOf ? i18n("⇄ Shared copy") : i18n("⇄ Shared")
+                                icon: Icons.plasma.share
+                                text: info && info.forkOf ? i18n("Shared copy") : i18n("Shared")
                                 tooltipTitle: info && info.forkOf ? i18n("Copy of a shared chat") : i18n("Shared chat")
                                 tooltip: !info ? ""
                                          : info.forkOf
@@ -462,7 +463,8 @@ RowLayout {
                             Tag {
                                 // the plan it made (talpy_den.py: plan_of)
                                 visible: !!row.session.plan
-                                text: i18nc("a chat's plan, click to open it", "Plan ↗")
+                                icon: Icons.plasma.plan
+                                text: i18nc("a chat's plan, click to open it", "Plan")
                                 clickable: true
                                 onClicked: root.openPlan(row.session.plan.slug, row.session.profileDir, row.remoteHost)
                                 tooltipTitle: row.session.plan ? row.session.plan.title : ""
@@ -472,7 +474,8 @@ RowLayout {
                             Tag {
                                 // its file itself, to change it (an SSH host's: in VS Code, over Remote-SSH)
                                 visible: !!row.session.plan && (!row.remoteHost || root.vscodeInstalled)
-                                text: "✎"
+                                icon: Icons.plasma.edit
+                                text: ""
                                 clickable: true
                                 onClicked: root.editPlan({ slug: row.session.plan.slug, path: row.session.plan.path,
                                                            profileDir: row.session.profileDir }, row.remoteHost)
@@ -480,12 +483,13 @@ RowLayout {
                                 tooltip: (row.remoteHost
                                           ? i18n("Opens its Markdown file on %1 in VS Code (Remote - SSH). What you change there is the plan.", row.remoteHost)
                                           : i18n("Opens its Markdown file in your text editor (VS Code, if the settings open plans there). What you change there is the plan."))
-                                         + (row.remoteHost ? "" : " " + i18n("Then send your changes to this chat (↩ send to Claude): Claude revises the plan."))
+                                         + (row.remoteHost ? "" : " " + i18n("Then send your changes to this chat (Send to Claude): Claude revises the plan."))
                             }
                             Tag {
                                 // you changed its plan since the chat last did anything (talpy_den.py: plan_edited)
                                 visible: !!row.session.plan && !!row.session.plan.edited && !row.remoteHost && !!row.session.chatId
-                                text: i18nc("send your changes to the plan to the chat", "↩ Send to Claude")
+                                icon: Icons.plasma.send
+                                text: i18nc("send your changes to the plan to the chat", "Send to Claude")
                                 active: true
                                 clickable: true
                                 onClicked: root.sendPlanFeedback(row.session.plan.slug, row.session.profileDir, row.session.chatId)
@@ -659,6 +663,7 @@ RowLayout {
                         // Delete a finished chat: to the Trash, after a question (DeleteAsk under the row)
                         visible: row.session.state === "done" && !!(row.session.chatId || row.session.sessionId)
                         icon.name: Icons.plasma.delete
+                        icon.color: Icons.color("delete", Kirigami.Theme)
                         display: PlasmaComponents3.AbstractButton.IconOnly
                         text: i18n("Delete…")
                         Layout.preferredHeight: rowButtons.buttonSize
@@ -887,8 +892,17 @@ RowLayout {
                 PlasmaComponents3.ToolButton {
                     visible: row.goOnAt > 0 || row.goingOn !== null
                     icon.name: Icons.plasma.goOnAt
-                    // (it goes on then: framed, as a toggle that's on, in plain colors; a click cancels it)
-                    flat: row.goingOn === null
+                    // (it goes on then: framed, as a toggle that's on, as VS Code's: a thin
+                    // border and a faint tint of the text's color, no fill of its own; a click cancels it)
+                    Rectangle {
+                        visible: row.goingOn !== null
+                        anchors.fill: parent
+                        z: -0.5
+                        radius: Kirigami.Units.cornerRadius
+                        color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.08)
+                        border.width: 1
+                        border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
+                    }
                     text: row.goingOn ? i18n("Goes on at %1", root.startText(row.goingOn.startAt))
                                       : i18n("Go on at %1", root.startText(row.goOnAt))
                     font: Kirigami.Theme.smallFont
@@ -1178,7 +1192,7 @@ RowLayout {
                                         font: Kirigami.Theme.smallFont
                                     }
                                     Kirigami.Icon {
-                                        source: agentRow.open ? Icons.plasma.peekOpen : Icons.plasma.peekClosed
+                                        source: agentRow.open ? Icons.plasma.unfolded : Icons.plasma.folded
                                         Layout.preferredWidth: Kirigami.Units.iconSizes.small
                                         Layout.preferredHeight: Layout.preferredWidth
                                         opacity: agentMouse.containsMouse ? 0.9 : 0.4

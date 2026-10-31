@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { PermsData, WeekGrant, WeekRule } from "../../src/shared/types";
-import { GRANTED_FEW, grantedIntro, grantMeta, promptsText, ruleMeta } from "../../src/shared/week";
+import { GRANTED_FEW, grantedIntro, grantMeaning, grantMeta, promptsText, ruleMeta } from "../../src/shared/week";
+import { I, Icon, T } from "../util/icons";
 import { post } from "../env";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
@@ -165,6 +166,7 @@ function Granted({ granted, host, reload }: { granted: WeekGrant[]; host: string
       <ul class="week-rules">
         {shown.map((g) => (
           <li key={g.id} class="week-rule">
+            <Icon name={I[grantMeaning(g)]} tone={T[grantMeaning(g)]} class="week-rule-icon" />
             <span class="week-rule-text">
               <span>{g.title}</span>
               <span class="small muted">{grantMeta(g)}</span>

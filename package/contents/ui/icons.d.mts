@@ -108,4 +108,7 @@ export const vscode: Readonly<Record<Meaning, string | null>>;
 export const gnome: Readonly<Record<Meaning, string>>;
 export const meanings: readonly Meaning[];
 export const COLORED: readonly Meaning[];
+export type Tone = "negative" | "positive" | "neutral" | "star";
+export const TONES: Readonly<Partial<Record<Meaning, Tone>>>;
+export const STAR: string;
 export function memoryMeaning(type: string): Meaning;

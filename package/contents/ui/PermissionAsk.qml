@@ -179,6 +179,7 @@ ColumnLayout {
         PlasmaComponents3.Button {
             enabled: !ask.busy
             icon.name: Icons.plasma.deny
+            icon.color: Icons.color("deny", Kirigami.Theme)
             text: i18n("Decline…")
             onClicked: ask.denyWithNote()
         }
@@ -194,6 +195,7 @@ ColumnLayout {
         PlasmaComponents3.Button {
             enabled: !ask.busy
             icon.name: Icons.plasma.always
+            icon.color: Icons.color("always", Kirigami.Theme)
             text: i18n("Approve, accept edits")
             font.bold: true
             onClicked: ask.answered("approve-edits", "", null)
@@ -208,6 +210,7 @@ ColumnLayout {
         PlasmaComponents3.Button {
             enabled: !ask.busy
             icon.name: Icons.plasma.allow
+            icon.color: Icons.color("allow", Kirigami.Theme)
             text: i18n("Approve")
             onClicked: ask.answered("approve", "", null)
 
@@ -233,6 +236,7 @@ ColumnLayout {
         PlasmaComponents3.Button {
             enabled: !ask.busy
             icon.name: Icons.plasma.allow
+            icon.color: Icons.color("allow", Kirigami.Theme)
             text: i18n("Allow once")
             onClicked: ask.answered("allow", "", null)
         }
@@ -240,6 +244,7 @@ ColumnLayout {
             visible: ask.permission && (ask.permission.answer === "keys" || ask.permission.always !== "")
             enabled: !ask.busy
             icon.name: Icons.plasma.always
+            icon.color: Icons.color("always", Kirigami.Theme)
             text: i18n("Always allow")
             onClicked: ask.answered("always", "", null)
 
@@ -256,6 +261,7 @@ ColumnLayout {
         PlasmaComponents3.Button {
             enabled: !ask.busy
             icon.name: Icons.plasma.deny
+            icon.color: Icons.color("deny", Kirigami.Theme)
             text: i18n("Deny…")
             onClicked: ask.denyWithNote()
         }
@@ -279,6 +285,7 @@ ColumnLayout {
             id: denyButton
             enabled: !ask.busy
             icon.name: ask.plan ? Icons.plasma.edit : Icons.plasma.deny
+            icon.color: ask.plan ? "transparent" : Icons.color("deny", Kirigami.Theme)
             text: ask.plan ? i18n("Keep planning") : ask.asksQuestions ? i18n("Decline") : i18n("Deny")
             onClicked: {
                 ask.answered(ask.plan ? "keep" : "deny", noteField.text.trim(), null)

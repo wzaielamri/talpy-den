@@ -159,6 +159,7 @@ ColumnLayout {
                     // to the Trash, after a question (DeleteAsk under the line); not the account's CLAUDE.md
                     visible: memoryLine.memory.type !== "account"
                     icon.name: Icons.plasma.delete
+                    icon.color: Icons.color("delete", Kirigami.Theme)
                     display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Delete…")
                     Layout.preferredHeight: memoryButtons.buttonSize

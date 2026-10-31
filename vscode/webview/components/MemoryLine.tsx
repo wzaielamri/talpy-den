@@ -2,7 +2,7 @@ import { ago, folderIn } from "../../src/shared/model";
 import type { Group, Memory } from "../../src/shared/types";
 import { post } from "../env";
 import { deleteHint, hideHint } from "../util/chat";
-import { I, Icon, memoryIcon } from "../util/icons";
+import { I, Icon, T, memoryIcon } from "../util/icons";
 import { useWoken } from "../util/lazy";
 import { useView } from "./context";
 import { Elided } from "./Elided";
@@ -69,7 +69,7 @@ export function MemoryLine({ memory: m, group, project, accountTag }: { memory: 
             />
           )}
           {account ? null : (
-            <IconButton icon={I.delete} label="Delete this memory…" title={`Delete this memory…\n${deleteHint("memory")}`}
+            <IconButton icon={I.delete} tone={T.delete} label="Delete this memory…" title={`Delete this memory…\n${deleteHint("memory")}`}
               onClick={() => post({ type: "delete", kind: "memory", groupId: group.id, ...(host ? { host } : {}), id: m.key })} />
           )}
           {account ? null : (

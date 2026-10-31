@@ -2,7 +2,7 @@ import { useState } from "preact/hooks";
 import { duration, keptChat, queuedFor, queuedWhat, startText } from "../../src/shared/model";
 import type { Group, QueuedTask } from "../../src/shared/types";
 import { post } from "../env";
-import { Icon, I } from "../util/icons";
+import { Icon, I, T } from "../util/icons";
 import { useWoken } from "../util/lazy";
 import { useView } from "./context";
 import { IconButton } from "./IconButton";
@@ -69,7 +69,7 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
               }
               onClick={() => post({ type: "startQueued", id: t.id })}
             />
-            <IconButton icon={I.cancel} label="Cancel it"
+            <IconButton icon={I.cancel} tone={T.cancel} label="Cancel it"
               title={"Cancel it\nIt doesn't start." + (kept ? " It stops keeping going after usage limits too." : "")
                 + (wrote ? " It asks first: what you wrote for it is gone with it." : "")}
               onClick={() => (wrote ? ask(!asking) : post({ type: "unqueue", id: t.id }))} />

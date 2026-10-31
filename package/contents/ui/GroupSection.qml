@@ -497,6 +497,7 @@ ColumnLayout {
                             readonly property bool kept: !!queuedLine.task.chat && !queuedLine.task.afterTurn && !queuedLine.task.host
                                                          && root.keptChat(queuedLine.task.chat) !== null
                             icon.name: Icons.plasma.cancel
+                            icon.color: Icons.color("cancel", Kirigami.Theme)
                             display: PlasmaComponents3.AbstractButton.IconOnly
                             text: i18n("Cancel it")
                             Layout.preferredHeight: queuedButtons.buttonSize
@@ -566,10 +567,12 @@ ColumnLayout {
             Layout.rightMargin: Kirigami.Units.smallSpacing
             spacing: Kirigami.Units.smallSpacing
 
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                text: "⇄"
+            Kirigami.Icon {
+                source: Icons.plasma.share
                 color: root.stateColor(sharedLine.chat.state)
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Layout.preferredWidth
+                Layout.alignment: Qt.AlignVCenter
             }
             PlasmaComponents3.Label {
                 id: sharedName

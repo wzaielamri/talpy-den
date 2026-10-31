@@ -249,6 +249,7 @@ PlasmaComponents3.ScrollView {
 
                                 PlasmaComponents3.Button {
                                     icon.name: Icons.plasma.cancel
+                                    icon.color: Icons.color("cancel", Kirigami.Theme)
                                     text: i18n("Revoke")
                                     enabled: root.ruleBusy === ""   // (one settings write at a time)
                                     onClicked: {
@@ -428,6 +429,7 @@ PlasmaComponents3.ScrollView {
 
                                 PlasmaComponents3.Button {
                                     icon.name: Icons.plasma.allow
+                                    icon.color: Icons.color("allow", Kirigami.Theme)
                                     text: i18n("Allow")
                                     enabled: root.ruleBusy === ""   // (one settings write at a time)
                                     onClicked: {

@@ -212,7 +212,7 @@ test("a chat waiting for a permission is told with its question, once more when 
 
 test("the tests badge, a queued reply and how a reply goes", () => {
   assert.equal(testsText({ editedAt: 1, tests: null })!.text, "Not tested");
-  assert.equal(testsText({ editedAt: 1, tests: { command: "npm test", ok: true, at: 2 } })!.text, "Tests ✓");
+  assert.deepEqual(testsText({ editedAt: 1, tests: { command: "npm test", ok: true, at: 2 } }), { text: "Tests", ok: true, title: "Tests passed after its last edit: npm test" });
   assert.equal(testsText({ editedAt: 1, tests: { command: "npm test", ok: false, at: 2 } })!.ok, false);
   assert.equal(testsText(null), null);
   const status = { ...demoState(NOW).status!, queue: [{ id: "q1", afterTurn: true, chat: "c1", host: "" } as never] };

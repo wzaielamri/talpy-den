@@ -81,10 +81,12 @@ ColumnLayout {
                 }
             }
         }
-        PlasmaComponents3.Label {
-            textFormat: Text.PlainText
+Kirigami.Icon {
+            source: Icons.plasma.share
             visible: planLine.plan.shared
-            text: "⇄"
+            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+            Layout.preferredHeight: Layout.preferredWidth
+            Layout.alignment: Qt.AlignVCenter
             opacity: 0.6
         }
         Loader {   // (made only where there is one: in a project on several accounts)
@@ -100,7 +102,8 @@ ColumnLayout {
             visible: active && !!item && item.visible
             sourceComponent: Tag {
                 visible: !!planLine.plan.edited && !!planLine.plan.chatId && !planLine.remoteHost
-                text: i18nc("send your changes to the plan to the chat", "↩ Send")
+                icon: Icons.plasma.send
+                text: i18nc("send your changes to the plan to the chat", "Send")
                 active: true
                 clickable: true
                 tooltipTitle: i18n("Send your changes to Claude")
@@ -284,6 +287,7 @@ ColumnLayout {
                 PlasmaComponents3.ToolButton {
                     // to the Trash, after a question (DeleteAsk under the line)
                     icon.name: Icons.plasma.delete
+                    icon.color: Icons.color("delete", Kirigami.Theme)
                     display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Delete…")
                     Layout.preferredHeight: planButtons.buttonSize

@@ -380,13 +380,38 @@ code {
   height: 16px;
 }
 
-/* Only what says something is wrong is colored (icons.mjs) */
-.icon.icon-warning {
+/* Icons colored where the color says something (icons.mjs TONES): the
+   icon itself, never its button's or tag's box; every other icon is plain */
+.icon.tone-negative {
+  color: var(--cs-failed);
+}
+
+.icon.tone-positive {
+  color: var(--cs-idle);
+}
+
+.icon.tone-neutral {
   color: var(--cs-waiting);
 }
 
-.icon.icon-error {
-  color: var(--cs-failed);
+.icon.tone-star {
+  color: var(--vscode-charts-yellow, #e0a800);
+  fill: currentColor;
+}
+
+/* A button with its words beside its icon (Allow once, Deny…, Reviewed) */
+.btn .icon {
+  display: inline-block;
+  margin: 0 4px 0 -2px;
+  vertical-align: -3px;
+}
+
+/* the ⇄ of a chat or plan shared with your other accounts: the share icon */
+.shared-mark {
+  display: inline-flex;
+  flex: none;
+  align-self: center;
+  opacity: 0.6;
 }
 
 .link {
@@ -443,7 +468,7 @@ button:focus-visible {
   padding: 0 4px 0 2px;
 }
 
-.tag.warning .icon:not(.icon-warning):not(.icon-error) {
+.tag.warning .icon:not([class*="tone-"]) {
   color: inherit; /* (a plain icon in the warning's color, as its text) */
 }
 
@@ -1472,7 +1497,9 @@ button:focus-visible {
 }
 
 .shared-glyph {
+  display: inline-flex;
   flex: none;
+  align-self: center;
   color: var(--st);
 }
 
@@ -1608,11 +1635,12 @@ button:focus-visible {
 
 /* A chat or plan you starred: its star, always shown (click: unstarred) */
 .star-mark {
+  display: inline-flex;
   flex: none;
-  padding: 0 2px;
+  align-self: center;
+  padding: 0;
   border: 0;
   background: none;
-  color: var(--vscode-charts-yellow, #cca700);
   font: inherit;
   line-height: 1;
   cursor: pointer;
@@ -3416,8 +3444,12 @@ body.vscode-high-contrast-light .pane {
 
 .pane-fold {
   flex: none;
-  width: 1.1em;
   color: var(--cs-muted);
+  transition: transform 0.15s;
+}
+
+.pane-fold.open {
+  transform: rotate(90deg);
 }
 
 .pane-tool-text {
@@ -3871,11 +3903,11 @@ body.vscode-high-contrast-light .pane {
   padding-top: 2px;
 }
 
-/* a plan's or a memory's kind, before its name (as in Plasma) */
+/* a plan's or a memory's kind, before its name (as in Plasma: 16 px) */
 .recent-item > .line-icon {
   flex: none;
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   align-self: center;
   opacity: 0.7;
 }
@@ -3905,4 +3937,12 @@ body.vscode-high-contrast-light .pane {
 
 .queued-item > .queued-ask {
   margin-left: calc(16px + 6px);
+}
+
+/* A permission you gave: its kind as an icon before it (as in Plasma) */
+.week-rule-icon {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 2px;
+  opacity: 0.8;
 }

@@ -310,11 +310,13 @@ KCM.SimpleKCM {
                             Kirigami.Action {
                                 text: page.confirm.startsWith("remove:") ? i18n("Remove") : i18n("Log out")
                                 icon.name: page.confirm.startsWith("remove:") ? Icons.plasma.delete : Icons.plasma.signOut
+                                icon.color: page.confirm.startsWith("remove:") ? Icons.color("delete", Kirigami.Theme) : "transparent"
                                 onTriggered: page.act([page.confirm.startsWith("remove:") ? "--remove" : "--logout", card.account.key], card.account.key)
                             },
                             Kirigami.Action {
                                 text: i18n("Cancel")
                                 icon.name: Icons.plasma.cancel
+                                icon.color: Icons.color("cancel", Kirigami.Theme)
                                 onTriggered: page.confirm = ""
                             }
                         ]
@@ -359,6 +361,7 @@ KCM.SimpleKCM {
                         QQC2.Button {
                             text: i18n("Remove…")
                             icon.name: Icons.plasma.delete
+                            icon.color: Icons.color("delete", Kirigami.Theme)
                             enabled: page.busy === "" && !card.account.notRemovable
                             onClicked: page.confirm = "remove:" + card.account.key
                             QQC2.ToolTip.visible: hovered

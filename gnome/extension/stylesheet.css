@@ -93,7 +93,13 @@
 .claude-recent { padding-left: 14px; }
 .claude-more { margin-left: 14px; }   /* ("Show N more" under a list) */
 .claude-more .claude-button-icon { icon-size: 12px; }
-.claude-star-mark { color: #e0a800; padding: 0 3px; border-radius: 4px; }   /* (a starred chat's ★: click to unstar) */
+.claude-star-mark { color: #e0a800; padding: 0 3px; border-radius: 4px; }   /* (a starred chat's star, yellow: click to unstar) */
+.claude-star-mark .claude-button-icon { color: #e0a800; }
+/* icons colored where the color says something (icons.mjs TONES): the icon, never its button */
+.claude-tone-negative .claude-button-icon { color: #e8443a; }
+.claude-tone-positive .claude-button-icon { color: #33b86c; }
+.claude-tag-with-icon { spacing: 3px; }
+.claude-tag-icon { icon-size: 16px; }
 .claude-star-mark:hover, .claude-star-mark:focus { background-color: rgba(127, 127, 127, 0.2); }
 .claude-peek-line { border-radius: 4px; }
 .claude-peek-line:hover { background-color: rgba(127, 127, 127, 0.15); }

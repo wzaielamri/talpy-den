@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Colored where the color says something, as in Plasma:** an icon
+  itself (never its button's or tag's box): Cancel's ×, Deny and Delete…
+  red; Allow, Always allow, Reviewed and passed tests green; a warning
+  orange; the star yellow; every other icon plain. *⇄*, *Plan ↗*, *✎*,
+  *↩ Send to Claude*, *★*, *Tests ✓/✗* and the review's folds are icons
+  now. The chat tab's *A− A+* and *Open its window* are icon buttons, its
+  permission buttons have icons and none is filled blue, a plan's and a
+  memory's kind icon is 16 px, the Permissions tab has an icon for each
+  kind of permission, and the **⋯** menu has *Go to the Chat That Needs
+  You* while one does.
 - **Games with the big Talpy:** four quick clicks on him and he laughs,
   says *Let's play!*, and a game starts (*Play with Talpy* in the view's
   **⋯** menu too). Peekaboo holes: three holes open and he pops out of one

@@ -272,6 +272,11 @@
           "group": "navigation@4"
         },
         {
+          "command": "talpyDen.nextChat",
+          "when": "view == talpyDen.view && talpyDen.needsYou",
+          "group": "0_go@1"
+        },
+        {
           "command": "talpyDen.openInEditor",
           "when": "view == talpyDen.view",
           "group": "1_view@1"

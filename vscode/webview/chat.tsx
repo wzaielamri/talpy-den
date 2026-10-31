@@ -13,9 +13,9 @@ import type { Answers, Decision, Session } from "../src/shared/types";
 import { modeHint, modeText } from "../src/shared/model";
 import { sharedTagTitle } from "./util/chat";
 import { IconButton } from "./components/IconButton";
-import { Tag } from "./components/Tag";
+import { Tag, TestsTag } from "./components/Tag";
 import { TalpyIcon } from "./components/TalpyIcon";
-import { I, Icon } from "./util/icons";
+import { I, Icon, T } from "./util/icons";
 import { Markdown } from "./util/markdown";
 
 declare global {
@@ -546,12 +546,8 @@ function ChatApp() {
         {chat?.host ? <Tag text={chat.host} title={`This chat runs on the SSH host ${chat.host}.`} /> : null}
         <span class={`pane-state st-${chat?.state ?? "done"}`}>{chat?.stateText ?? ""}</span>
         <span class="pane-sizes">
-          <button type="button" class="pane-size" title="Smaller text (Ctrl+wheel)" disabled={scale <= TEXT_SCALES[0] + 0.001} onClick={() => zoom(-1)}>
-            A−
-          </button>
-          <button type="button" class="pane-size big" title="Larger text (Ctrl+wheel)" disabled={scale >= TEXT_SCALES[TEXT_SCALES.length - 1] - 0.001} onClick={() => zoom(1)}>
-            A+
-          </button>
+          <IconButton icon={I.zoomOut} label="Smaller text" title="Smaller text (Ctrl+wheel)" disabled={scale <= TEXT_SCALES[0] + 0.001} onClick={() => zoom(-1)} />
+          <IconButton icon={I.zoomIn} label="Larger text" title="Larger text (Ctrl+wheel)" disabled={scale >= TEXT_SCALES[TEXT_SCALES.length - 1] - 0.001} onClick={() => zoom(1)} />
         </span>
         {chat?.canMove ? (
           <button
@@ -563,14 +559,12 @@ function ChatApp() {
             Move to Claude Code
           </button>
         ) : null}
-        <button
-          type="button"
-          class="btn secondary small"
-          title="The terminal or Claude Code panel the chat runs in; a chat that isn't open reopens, in a terminal or a Claude Code panel as the switch of Recent chats says."
+        <IconButton
+          icon={I.openWindow}
+          label="Open its window"
+          title="Open its window: the terminal or Claude Code panel the chat runs in; a chat that isn't open reopens, in a terminal or a Claude Code panel as the switch of Recent chats says."
           onClick={() => post({ type: "openWindow" })}
-        >
-          Open its window
-        </button>
+        />
       </div>
       <div class="pane-folder">
         {chat ? <Tag {...(({ tag, title }) => ({ text: tag, title }))(whereTag(chat.where, chat.terminalApp))} /> : null}
@@ -579,7 +573,7 @@ function ChatApp() {
         ) : null}
         {/* what its row in the list says of it too: shared, its permission mode, its plan, its subagents */}
         {chat?.shared ? (
-          <Tag text={chat.shared.forkOf ? "⇄ Shared copy" : "⇄ Shared"}
+          <Tag icon={I.share} text={chat.shared.forkOf ? "Shared copy" : "Shared"}
             title={sharedTagTitle({ shared: chat.shared, profile: chat.profile } as Session)} />
         ) : null}
         {chat && modeText(chat.mode) ? (
@@ -587,7 +581,7 @@ function ChatApp() {
             title={`Permission mode: ${modeText(chat.mode)}\n${modeHint(chat.mode)}`} />
         ) : null}
         {chat?.plan ? (
-          <Tag text="Plan ↗" title={`${chat.plan.title}\nThe plan this chat made. Click to read it.`} onClick={() => post({ type: "openPlan" })} />
+          <Tag icon={I.plan} text="Plan" title={`${chat.plan.title}\nThe plan this chat made. Click to read it.`} onClick={() => post({ type: "openPlan" })} />
         ) : null}
         {chat?.agents && chat.agents.total > 0 ? (
           <Tag text={`Agents ${chat.agents.done}/${chat.agents.total}`} active={chat.agents.running > 0}
@@ -770,7 +764,7 @@ function ChatApp() {
               {dictating === "" || dictating === "starting" ? null : <span>{micText}</span>}
             </button>
             {dictating === "recording" ? (
-              <IconButton icon={I.cancel} label="Stop, don't write it down" onClick={() => post({ type: "dictate", action: "cancel" })} />
+              <IconButton icon={I.cancel} tone={T.cancel} label="Stop, don't write it down" onClick={() => post({ type: "dictate", action: "cancel" })} />
             ) : null}
             <IconButton icon={I.attach} class="pane-attach" label="Attach files…"
               title={chat?.host ? `Attach pictures (copied to ${chat.host})` : "Attach files: a picture goes in as one, another file is named for Claude to read. You can drop them on the tab too (hold Shift from the Explorer)."}
@@ -818,7 +812,7 @@ function ChatApp() {
                   <strong>
                     {plural(review.files.length, "file")} changed since the chat started +{sums[0]} −{sums[1]}
                   </strong>
-                  {tests ? <Tag text={tests.text} title={tests.title} active={tests.ok === true} warning={tests.ok === false} /> : null}
+                  {tests ? <TestsTag tests={tests} /> : null}
                   <button type="button" class={`btn secondary small${split ? " on" : ""}`} aria-pressed={split}
                     title="Each change as before | after where the tab is wide enough; else removed and added lines one after the other"
                     onClick={() => sideBySide(!split)}>
@@ -829,7 +823,7 @@ function ChatApp() {
                   <div key={f.path} class="review-file">
                     <div class="review-line">
                       <button type="button" class="pane-tool-line" aria-expanded={!!openFiles[f.path]} onClick={() => setOpenFiles({ ...openFiles, [f.path]: !openFiles[f.path] })}>
-                        <span class="pane-fold">{openFiles[f.path] ? "▾" : "▸"}</span>
+                        <Icon name={I.folded} class={"pane-fold" + (openFiles[f.path] ? " open" : "")} />
                         <span class="pane-tool-text mono">
                           {f.label}
                           {f.created ? " (new)" : ""}
@@ -914,7 +908,8 @@ function ChatApp() {
               title={marked ? "Click to mark it not reviewed." : "Its row stops saying “to review”, until it changes files again."}
               onClick={() => post({ type: "reviewed", on: !marked })}
             >
-              {marked ? "Reviewed ✓" : "Mark reviewed"}
+              {marked ? <Icon name={I.reviewed} tone={T.reviewed} /> : <Icon name={I.markReviewed} />}
+              {marked ? "Reviewed" : "Mark reviewed"}
             </button>
           </div>
         </>

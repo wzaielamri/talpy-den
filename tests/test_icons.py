@@ -136,14 +136,49 @@ class UseTests(unittest.TestCase):
                     found.append(f"{f.name}:{n} {word}")
         self.assertEqual(found, [])
 
-    def test_vscode_buttons_have_icons_not_characters(self):
-        # (a clock, check or arrows typed as text are smaller than the buttons' icons)
+    def test_buttons_tags_and_marks_have_icons_not_characters(self):
+        # (a clock, check, arrows, ⇄, ↗, ✎, ↩ or ★ typed as text are smaller than
+        # the buttons' icons; the task list's ✓ ▸ ○ and a step's ▸ stay text)
+        glyphs = re.compile(r"[⏱✓✗↻⚠⇄↗✎↩★▾]")
         found = []
-        for f in sorted((WEBVIEW / "components").glob("*.tsx")):
+        files = sorted(list((WEBVIEW / "components").glob("*.tsx")) + [WEBVIEW / "chat.tsx"] + list(UI.glob("*.qml"))
+                       + list(GNOME.glob("ui/*.js")))
+        for f in files:
             for n, line in enumerate(f.read_text().splitlines(), 1):
-                if re.search(r"[⏱✓↻⚠]", line) and not line.strip().startswith("//"):
-                    found.append(f"{f.name}:{n}")
+                code = line.strip()
+                if code.startswith("//") or not glyphs.search(code):
+                    continue
+                if re.search(r"(title|tooltip|subText|mainText|aria-label)\b|[Ss]tarred|starHint", code):
+                    continue   # (words about them, in tooltips and the Starred folds' titles)
+                if 'status === "completed" ? "✓ "' in code:
+                    continue   # (the task list: ✓ done, ▸ the one it's on, ○ to do)
+                found.append(f"{f.name}:{n}: {code[:80]}")
         self.assertEqual(found, [])
+
+    @unittest.skipUnless(shutil.which("node"), "needs node")
+    def test_colored_icons_say_something_and_are_colored_everywhere(self):
+        tones = json.loads(subprocess.run(["node", "--input-type=module", "-e",
+            "import { TONES } from %s; console.log(JSON.stringify(TONES));" % json.dumps((UI / "icons.mjs").as_uri())],
+            capture_output=True, text=True, check=True).stdout)
+        self.assertEqual({m for m, t in tones.items() if t == "negative"}, {"cancel", "deny", "delete", "erase", "error", "failed"})
+        self.assertEqual({m for m, t in tones.items() if t == "positive"}, {"done", "reviewed", "allow", "always", "allowed"})
+        self.assertEqual(tones["starred"], "star")
+        self.assertNotIn("hide", tones)       # (most icons stay plain)
+        # Plasma: every button with such an icon colors it (the icon, not the button)
+        missing = []
+        for qml in sorted(UI.glob("*.qml")):
+            lines = qml.read_text().splitlines()
+            for n, line in enumerate(lines):
+                m = re.search(r"icon\.name: Icons\.plasma\.(cancel|delete|erase|deny|allow|always)$", line.strip())
+                if m and 'icon.color: Icons.color("%s"' % m.group(1) not in lines[n + 1]:
+                    missing.append(f"{qml.name}:{n + 1}")
+        self.assertEqual(missing, [])
+        # VS Code: its delete and cancel buttons too
+        for f in sorted(list((WEBVIEW / "components").glob("*.tsx")) + [WEBVIEW / "chat.tsx"]):
+            for n, line in enumerate(f.read_text().splitlines(), 1):
+                m = re.search(r"icon=\{I\.(cancel|delete)\}", line)
+                if m:
+                    self.assertIn("tone={T.%s}" % m.group(1), line, f"{f.name}:{n}")
 
 
 if __name__ == "__main__":

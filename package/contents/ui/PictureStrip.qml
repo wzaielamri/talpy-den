@@ -85,6 +85,7 @@ Flow {
                 anchors.top: parent.top
                 anchors.right: parent.right
                 icon.name: Icons.plasma.cancel
+                icon.color: Icons.color("cancel", Kirigami.Theme)
                 display: PlasmaComponents3.AbstractButton.IconOnly
                 text: strip.removeText
                 implicitWidth: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing * 2

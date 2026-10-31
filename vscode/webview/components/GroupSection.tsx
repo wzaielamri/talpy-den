@@ -193,7 +193,7 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
       {(g.sharedHere ?? []).map((p) => (
         <div key={p.key} class="shared-line">
           <span class={`shared-glyph ${stateClass(p.state, p.reason)}`} aria-hidden="true">
-            ⇄
+            <Icon name={I.share} />
           </span>
           <button
             type="button"

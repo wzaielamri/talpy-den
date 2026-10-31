@@ -5,9 +5,9 @@
 // components ask for a meaning, I.cancel, never for a shape by its name.
 
 import type { JSX } from "preact";
-import { memoryMeaning, vscode, type Meaning } from "../../vendor/icons.mjs";
+import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -81,6 +81,53 @@ const shapes: Record<IconName, JSX.Element> = {
       <path d="M2.75 13.25l10.5-10.5" />
     </>
   ),
+  window: (
+    <>
+      <rect x="2.25" y="3" width="11.5" height="10" rx="1.25" />
+      <path d="M2.25 5.75h11.5" />
+    </>
+  ),
+  zoomIn: (
+    <>
+      <circle cx="7" cy="7" r="4.25" />
+      <path d="M10.2 10.2l3.3 3.3M5 7h4M7 5v4" />
+    </>
+  ),
+  zoomOut: (
+    <>
+      <circle cx="7" cy="7" r="4.25" />
+      <path d="M10.2 10.2l3.3 3.3M5 7h4" />
+    </>
+  ),
+  check: <path d="M3 8.5l3 3 7-7" />,
+  checkAll: <path d="M1.75 8.75l2.75 2.75 6.25-6.5M7.5 11.25l.25.25 6.5-6.75" />,
+  // (a circle struck through: no, as Breeze's dialog-cancel)
+  deny: (
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M4.1 11.9l7.8-7.8" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="8" cy="8" r="5.75" />
+      <path d="M2.25 8h11.5M8 2.25c-2.1 2.2-2.1 9.3 0 11.5M8 2.25c2.1 2.2 2.1 9.3 0 11.5" />
+    </>
+  ),
+  terminal: (
+    <>
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.25" />
+      <path d="M4.5 6.25l2 1.75-2 1.75M8 10.25h3.5" />
+    </>
+  ),
+  folderLock: (
+    <>
+      <path d="M8 13H3c-.55 0-1-.45-1-1V4c0-.55.45-1 1-1h3.5l1.5 1.75h5c.55 0 1 .45 1 1V8" />
+      <rect x="9.5" y="10.25" width="4.5" height="3.5" rx="0.6" />
+      <path d="M10.5 10.25v-1a1.25 1.25 0 0 1 2.5 0v1" />
+    </>
+  ),
+  plug: <path d="M6 2.5v3M10 2.5v3M4.25 5.5h7.5v2.25a3.75 3.75 0 0 1-7.5 0zM8 11.5v2.5" />,
   clock: (
     <>
       <circle cx="8" cy="8" r="5.75" />
@@ -156,16 +203,21 @@ const shapes: Record<IconName, JSX.Element> = {
 // asked for: tests/test_icons.py)
 export const I = vscode as Readonly<Record<Meaning, IconName>>;
 
+// The icons colored where the color says something (icons.mjs TONES: cancel
+// and delete red, done and allow green, a star yellow…); undefined: plain
+export const T = TONES as Readonly<Partial<Record<Meaning, Tone>>>;
+
 // A memory's icon by its kind, as Plasma's: a note about you, feedback, a
 // project, a reference, the account's CLAUDE.md, else a note
 export function memoryIcon(type: string): IconName {
   return I[memoryMeaning(type)];
 }
 
-export function Icon({ name, class: cls }: { name: IconName; class?: string }) {
+export function Icon({ name, class: cls, tone }: { name: IconName; class?: string; tone?: Tone }) {
+  const t = tone ?? (name === "warning" ? "neutral" : name === "error" ? "negative" : undefined);
   return (
     <svg
-      class={"icon" + (name === "warning" ? " icon-warning" : name === "error" ? " icon-error" : "") + (cls ? " " + cls : "")}
+      class={"icon" + (t ? ` tone-${t}` : "") + (cls ? " " + cls : "")}
       viewBox="0 0 16 16"
       width="16"
       height="16"

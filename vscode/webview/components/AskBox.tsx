@@ -4,6 +4,7 @@
 
 import { useState } from "preact/hooks";
 import type { Answers, Decision, PermissionAsk, Question } from "../../src/shared/types";
+import { I, Icon, T } from "../util/icons";
 import { Markdown } from "../util/markdown";
 import { Diff } from "./CodeView";
 
@@ -50,15 +51,15 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
       ) : null}
       {canAnswer && !denying && plan ? (
         <div class="ask-buttons">
-          <button type="button" class="btn" disabled={busy} onClick={() => onAnswer("approve-edits", "")}
+          <button type="button" class="btn secondary" disabled={busy} onClick={() => onAnswer("approve-edits", "")}
             title="It starts on the plan and changes files without asking for the rest of this chat (accept edits mode); commands still ask.">
-            Approve, accept edits
+            <Icon name={I.always} tone={T.always} />Approve, accept edits
           </button>
           <button type="button" class="btn secondary" disabled={busy} onClick={() => onAnswer("approve", "")}
             title="It starts on the plan and asks before each change, as “Yes, manually approve edits” in its dialog.">
-            Approve
+            <Icon name={I.allow} tone={T.allow} />Approve
           </button>
-          <button type="button" class="btn secondary" disabled={busy} onClick={() => setDenying(true)}>Keep planning…</button>
+          <button type="button" class="btn secondary" disabled={busy} onClick={() => setDenying(true)}><Icon name={I.edit} />Keep planning…</button>
         </div>
       ) : null}
       {ask.diff.length ? <Diff lines={ask.diff} max={max} path={ask.file} /> : null}
@@ -75,7 +76,7 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
       ) : null}
       {canAnswer && !denying && !questions.length && !plan ? (
         <div class="ask-buttons">
-          <button type="button" class="btn" disabled={busy} onClick={() => onAnswer("allow", "")}>Allow once</button>
+          <button type="button" class="btn secondary" disabled={busy} onClick={() => onAnswer("allow", "")}><Icon name={I.allow} tone={T.allow} />Allow once</button>
           {ask.answer === "keys" || ask.always ? (
             <button
               type="button"
@@ -85,10 +86,10 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
                 : `From now on, without asking: ${ask.always}. Saved in the project's .claude/settings.local.json, as Claude's own “don't ask again” does.`}
               onClick={() => onAnswer("always", "")}
             >
-              Always allow
+              <Icon name={I.always} tone={T.always} />Always allow
             </button>
           ) : null}
-          <button type="button" class="btn secondary" disabled={busy} onClick={() => setDenying(true)}>Deny…</button>
+          <button type="button" class="btn secondary" disabled={busy} onClick={() => setDenying(true)}><Icon name={I.deny} tone={T.deny} />Deny…</button>
         </div>
       ) : null}
       {canAnswer && denying ? (
@@ -107,7 +108,7 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
               }
             }}
           />
-          <button type="button" class="btn" disabled={busy} onClick={deny}>{plan ? "Keep planning" : questions.length ? "Decline" : "Deny"}</button>
+          <button type="button" class="btn secondary" disabled={busy} onClick={deny}>{plan ? <Icon name={I.edit} /> : <Icon name={I.deny} tone={T.deny} />}{plan ? "Keep planning" : questions.length ? "Decline" : "Deny"}</button>
           <button type="button" class="btn secondary" onClick={() => setDenying(false)}>Cancel</button>
         </div>
       ) : null}
@@ -200,8 +201,8 @@ function QuestionForm({ questions, enabled, buttons, compact, onSend, onDecline 
       ))}
       {buttons ? (
         <div class="ask-buttons">
-          <button type="button" class="btn" disabled={!enabled || !complete} onClick={() => onSend(answers())}>Send answers</button>
-          <button type="button" class="btn secondary" disabled={!enabled} onClick={onDecline}>Decline…</button>
+          <button type="button" class="btn secondary" disabled={!enabled || !complete} onClick={() => onSend(answers())}><Icon name={I.send} />Send answers</button>
+          <button type="button" class="btn secondary" disabled={!enabled} onClick={onDecline}><Icon name={I.deny} tone={T.deny} />Decline…</button>
         </div>
       ) : null}
     </div>
