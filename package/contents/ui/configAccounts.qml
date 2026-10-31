@@ -252,13 +252,24 @@ KCM.SimpleKCM {
                             text: card.account.label
                             font.bold: true
                         }
-                        QQC2.Label {
-                            textFormat: Text.PlainText
+                        // (the popup's Default tag, Tag.qml: outlined, plain)
+                        Rectangle {
                             visible: card.account.default
-                            text: i18n("default")
-                            font.bold: true
-                            font.pointSize: Kirigami.Theme.smallFont.pointSize
-                            color: Kirigami.Theme.positiveTextColor
+                            implicitWidth: defaultLabel.implicitWidth + Kirigami.Units.smallSpacing * 2
+                            implicitHeight: defaultLabel.implicitHeight
+                            radius: Kirigami.Units.cornerRadius
+                            color: "transparent"
+                            border.width: 1
+                            border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
+
+                            QQC2.Label {
+                                id: defaultLabel
+                                anchors.centerIn: parent
+                                textFormat: Text.PlainText
+                                text: i18n("Default")
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.8
+                            }
                         }
                         QQC2.Label {
                             textFormat: Text.PlainText
@@ -314,9 +325,7 @@ KCM.SimpleKCM {
                                 onTriggered: page.act([page.confirm.startsWith("remove:") ? "--remove" : "--logout", card.account.key], card.account.key)
                             },
                             Kirigami.Action {
-                                text: i18n("Cancel")
-                                icon.name: Icons.plasma.cancel
-                                icon.color: Icons.color("cancel", Kirigami.Theme)
+                                text: i18n("Cancel")   // (plain, as every confirmation's: the red × cancels a task, a reply…)
                                 onTriggered: page.confirm = ""
                             }
                         ]

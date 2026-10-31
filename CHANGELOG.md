@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The Accounts settings as the popup:** the default account has the popup's plain *Default* tag (it was a bold green *default*), and *Log out?* / *Remove?* has a plain **Cancel**, as every other question (its red × made both buttons look like they take something away) (Plasma).
 - **Find a chat's results line up:** each line's folder and how long ago stand in two right-aligned columns of one width, as in Recent chats under them (one label as wide as its text put them, and the account tags, at a different place on every line), and a memory found says how long ago it changed (Plasma).
 - **A confirmation's button carries the icon of the one that asked:** *Delete* under a chat, plan or memory has the red trash of **Delete…**, a queued task's *Cancel it* the red × (in VS Code too), and the chat pane's *Undo* and *Undo all* the undo arrow, as the settings' *Delete* and the Permissions tab's *Revoke* and *Allow* have theirs; they were bare (Plasma and VS Code).
 - **The popup's tabs alike in Plasma:** the Permissions tab's *Show 8 more* looks as every other *Show N more* (the skip-down icon, small, under the lines; it was a bare text button), the Projects tab reads its first time with a spinner beside *Reading your chats by project…*, as the Recap and the Permissions tab do, and the Talpy Den tab's *No Claude Code chats yet* has the chats icon, as the other tabs' empty states have their own (it had the About icon) (Plasma).
