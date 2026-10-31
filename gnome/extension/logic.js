@@ -9,7 +9,7 @@ export function fmt(text, ...args) {
     return text.replace(/%(\d)/g, (m, i) => (args[i - 1] !== undefined ? String(args[i - 1]) : m));
 }
 
-function plural(n, one, many) {
+export function plural(n, one, many) {
     return fmt(n === 1 ? one : many, n);
 }
 
@@ -977,20 +977,22 @@ export function peekLine(s) {
     const peek = s.peek || null;
     const activity = (peek && peek.activity) || (s.tasks && s.tasks.current) || '';
     const reply = peek && peek.replyLine ? fmt('Claude: %1', peek.replyLine) : '';
+    // (kind: its color, as Plasma's: working the working color, waiting
+    // orange, what stopped it red, the rest dim)
     if (s.state === 'waiting') {
         if (s.detail)
-            return {text: s.detail, title: 'What it needs', full: s.detail};
-        return activity ? {text: `▸ ${activity}`, title: 'What it needs', full: activity} : null;
+            return {text: s.detail, title: 'What it needs', full: s.detail, kind: 'needs'};
+        return activity ? {text: activity, title: 'What it needs', full: activity, kind: 'needs'} : null;
     }
     if (s.state === 'working')
-        return activity ? {text: `▸ ${activity}`, title: 'Working on', full: activity} : null;
+        return activity ? {text: `▸ ${activity}`, title: 'Working on', full: activity, kind: 'activity'} : null;
     if (s.stopped) {
         const text = stopText(s.stopped);
-        return {text, title: 'What stopped it', full: text};
+        return {text, title: 'What stopped it', full: text, kind: s.stopped.over ? 'reply' : 'stopped'};
     }
     if (s.state === 'done' && s.detail)
-        return {text: s.detail, title: 'Result', full: s.detail};
-    return reply ? {text: reply, title: "Claude's last reply", full: peek.reply || peek.replyLine} : null;
+        return {text: s.detail, title: 'Result', full: s.detail, kind: 'result'};
+    return reply ? {text: reply, title: "Claude's last reply", full: peek.reply || peek.replyLine, kind: 'reply'} : null;
 }
 
 // The line under a chat that a usage limit or an expired login stopped: what to do
@@ -1302,14 +1304,15 @@ export function statsProjectText(p) {
     return parts.join(' · ');
 }
 
-// "Opus 5.5 99% · Sonnet 5.5 <1%"
+// "Opus 5.5 >99% · Sonnet 5.5 <1%": under one percent "<1%", between 99 and
+// 100 ">99%" (not a rounded "100%" beside another's "<1%"), as Plasma's
 export function statsModelsText(stats) {
     const all = stats.models.reduce((n, m) => n + m.total, 0);
     if (!all)
         return '';
     return stats.models.map(m => {
         const pct = 100 * m.total / all;
-        return `${m.model} ${pct > 0 && pct < 0.5 ? '<1' : Math.round(pct)}%`;
+        return `${m.model} ${pct <= 0 ? '0%' : pct < 1 ? '<1%' : pct > 99 && pct < 100 ? '>99%' : `${Math.round(pct)}%`}`;
     }).join(' · ');
 }
 

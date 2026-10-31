@@ -85,16 +85,6 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
             agents.done, agents.running, agents.stopped, agents.failed ? L.fmt(', %1 failed', agents.failed) : '',
             showAgents ? 'hide' : 'show')]));
     }
-    if (tasks) {
-        // its task list (TaskCreate), done/total; outlined while it's on one
-        const t = tag(L.fmt('Tasks %1/%2', tasks.done, tasks.total), tasks.items.some(i => i.status === 'in_progress'));
-        t.add_style_class_name('claude-clickable');
-        t.connect('button-release-event', () => {
-            ctx.togglePeek(rowKey);
-            return Clutter.EVENT_STOP;
-        });
-        tags.push(tips.add(t, () => L.tasksTooltip(tasks, showPeek)));
-    }
     if (s.changes) {
         // the files it changed: compared in VS Code (chats on this computer)
         const t = tag(L.changesTag(s.changes));
@@ -172,19 +162,33 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
     }
     body.add_child(line2);
 
-    // What it needs, is doing, or said last; click for more
+    // What it needs, is doing, or said last, after its task progress (a
+    // small green bar and done/total, as Plasma's); click for more
     const peekLine = L.peekLine(s);
-    if (peekLine) {
-        const text = label(peekLine.text, 'claude-detail claude-small', {x_expand: true});
-        let line = text;
+    if (peekLine || tasks) {
+        const content = box('claude-line', {x_expand: true});
+        if (tasks) {
+            const bar = meter(100 * tasks.done / Math.max(1, tasks.total), 'ok', 'claude-meter claude-task-meter');
+            bar.x_expand = false;
+            content.add_child(bar);
+            content.add_child(label(L.fmt('%1/%2', tasks.done, tasks.total), 'claude-small claude-dim'));
+        }
+        if (peekLine)
+            content.add_child(label(peekLine.text, `claude-small ${PEEK_COLORS[peekLine.kind] || 'claude-detail'}`, {x_expand: true}));
+        let line = content;
         if (canPeek) {
-            line = new St.Button({style_class: 'claude-link claude-peek-line', can_focus: true, child: text,
+            line = new St.Button({style_class: 'claude-link claude-peek-line', can_focus: true, child: content,
                 x_expand: true, x_align: Clutter.ActorAlign.FILL});
             line.connect('clicked', () => ctx.togglePeek(rowKey));
         }
-        tips.add(line, () => [peekLine.title, canPeek
-            ? `${L.clampText(peekLine.full, 8, 500)}\n\n${L.fmt('Click to %1 the last exchange.', showPeek ? 'hide' : 'show')}`
-            : peekLine.full]);
+        tips.add(line, () => {
+            const [tasksTitle, tasksText] = tasks ? L.tasksTooltip(tasks, showPeek) : ['', ''];
+            if (!peekLine)
+                return [tasksTitle, tasksText];
+            const text = canPeek ? L.clampText(peekLine.full, 8, 500) : peekLine.full;
+            return [peekLine.title, (tasks ? `${text}\n\n${tasksTitle}\n${tasksText}` : text)
+                + (canPeek && !tasks ? `\n\n${L.fmt('Click to %1 the last exchange.', showPeek ? 'hide' : 'show')}` : '')];
+        });
         body.add_child(line);
     } else if (canPeek) {
         const more = link(showPeek ? 'Hide details' : 'Details', () => ctx.togglePeek(rowKey), 'claude-detail claude-small');
@@ -232,6 +236,9 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
     }
     return row;
 }
+
+// A step line's color by its kind (logic.js peekLine), as Plasma's
+const PEEK_COLORS = {activity: 'claude-fg-working', needs: 'claude-fg-waiting', stopped: 'claude-fg-bad'};
 
 function sharedTooltip(s) {
     const info = s.shared;

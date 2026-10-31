@@ -58,7 +58,7 @@
 .claude-usage { spacing: 6px; }
 .claude-usage-label { width: 5em; }
 .claude-usage-pct { width: 2.8em; text-align: right; font-feature-settings: "tnum"; }
-.claude-usage-detail { width: 7.5em; }
+.claude-usage-detail { width: 7.5em; text-align: right; }
 .claude-tokens { padding: 0 4px; }
 .claude-indent { padding-left: 14px; }
 .claude-side { max-width: 13em; }
@@ -71,6 +71,7 @@
 .claude-meter { height: 7px; border-radius: 4px; background-color: rgba(127, 127, 127, 0.25); }
 .claude-meter-fill { border-radius: 4px; }
 .claude-context-meter { width: 40px; height: 5px; }
+.claude-task-meter { width: 40px; height: 4px; }
 .claude-meter-tick { background-color: rgba(127, 127, 127, 0.95); border-radius: 1px; }
 .claude-forecast { padding-left: 5.4em; }
 

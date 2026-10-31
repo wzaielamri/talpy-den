@@ -231,7 +231,7 @@ test('what stopped a chat, on the line under its folder', () => {
     eq(L.peekLine(session('a', 'idle', {peek, stopped: {kind: 'limit', text: 'resets 4am', over: true}})).text,
         'The limit it hit has reset: open it and tell Claude to go on.');
     eq(L.peekLine(session('a', 'idle', {peek, stopped: {kind: 'limit', text: 'resets 4am'}})),
-        {text: 'resets 4am', title: 'What stopped it', full: 'resets 4am'});
+        {text: 'resets 4am', title: 'What stopped it', full: 'resets 4am', kind: 'stopped'});
     eq(L.peekLine(session('a', 'idle', {peek})).title, "Claude's last reply");
 });
 
@@ -399,7 +399,9 @@ test('peek line: what it needs, is doing, or said last', () => {
     eq(L.peekLine(session('a', 'working', {peek: {...peek, activity: ''}, tasks: {current: 'Testing the parser'}})).text,
         '▸ Testing the parser', 'the current task when there is no step');
     eq(L.peekLine(session('a', 'waiting', {peek, detail: 'approve Bash: rm -rf build'})).text, 'approve Bash: rm -rf build');
-    eq(L.peekLine(session('a', 'waiting', {peek})).text, '▸ Bash: pytest -x', 'the pending tool call');
+    eq(L.peekLine(session('a', 'waiting', {peek})).text, 'Bash: pytest -x', 'the pending tool call, as Plasma says it');
+    eq(L.peekLine(session('a', 'waiting', {peek})).kind, 'needs');
+    eq(L.peekLine(session('a', 'working', {peek})).kind, 'activity');
     const idle = L.peekLine(session('a', 'idle', {peek: {...peek, activity: ''}}));
     eq([idle.text, idle.full], ['Claude: Fixed.', 'Fixed.\nDetails']);
     eq(L.peekLine(session('a', 'done', {peek, detail: 'All tests pass'})).text, 'All tests pass', 'a result stays');
@@ -562,7 +564,8 @@ test('account stats', () => {
     eq(L.statsDayLetter('2026-10-18'), 'S');
     eq(L.statsBarHeights(stats, 48), [0, 2, 48, 0], 'zero days have no bar, small ones a sliver');
     eq(stats.projects.map(L.statsProjectText), ['669.8M · 146 prompts', '1 prompt']);
-    eq(L.statsModelsText(stats), 'Opus 5.5 100% · Sonnet 5.5 <1%');
+    eq(L.statsModelsText(stats), 'Opus 5.5 >99% · Sonnet 5.5 <1%');
+    eq(L.statsModelsText({...stats, models: [{model: 'Opus 5.5', total: 996}, {model: 'Haiku', total: 4}]}), 'Opus 5.5 >99% · Haiku <1%');
     eq(L.statsModelsText({...stats, models: []}), '');
     // what's drawn, not the exact numbers: a few more tokens in a day don't rebuild the popup
     const more = {...stats, days: stats.days.map((d, i) => (i === 2 ? {...d, total: d.total + 1000} : d))};

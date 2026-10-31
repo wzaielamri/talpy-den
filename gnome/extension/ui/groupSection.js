@@ -88,7 +88,7 @@ export function buildGroupSection(ctx, group, {last = false, remoteHost = '', ac
         limits.add_child(bar);
         const warning = L.forecastWarning(w, ctx.now);
         if (warning) {
-            const line = label(warning, `claude-forecast claude-small claude-fg-${L.usageClass(Math.max(70, w.pct))}`, {x_expand: true});
+            const line = label(warning, 'claude-forecast claude-small claude-fg-waiting', {x_expand: true});   // (orange, as Plasma's and VS Code's)
             if (forecastTip)
                 tips.add(line, forecastTip);
             limits.add_child(line);
@@ -111,7 +111,7 @@ export function buildGroupSection(ctx, group, {last = false, remoteHost = '', ac
                 'claude-text-button claude-tokens claude-expander', statsOpen ? Icons.gnome.unfolded : Icons.gnome.folded)
             : label(L.tokensText(group.tokens), 'claude-tokens', {x_expand: true});
         tips.add(tokens, () => ["Tokens (this machine's transcripts only)", L.tokensTooltip(group.tokens)
-            + (group.stats ? `\n\n${L.fmt('Click to %1 the last %2 days.', statsOpen ? 'hide' : 'show', group.stats.days.length)}` : '')]);
+            + (group.stats ? `\n\n${statsOpen ? 'Click to fold the last days up again.' : 'Click for the last days: tokens per day, your busiest folders and models.'}` : '')]);
         section.add_child(tokens);
         if (statsOpen)
             section.add_child(buildStats(ctx, group.stats));
@@ -200,7 +200,6 @@ const STATS_BAR_PX = 48;
 
 function buildStats(ctx, stats) {
     const wrap = column('claude-stats claude-indent', {x_expand: true});
-    wrap.add_child(label(L.fmt('Last %1 days', stats.days.length), 'claude-small claude-strong'));
     const chart = box('claude-stats-chart', {x_expand: true});
     const scale = scaleFactor();
     const heights = L.statsBarHeights(stats, STATS_BAR_PX * scale);
@@ -225,15 +224,14 @@ function buildStats(ctx, stats) {
 
     const projects = stats.projects.slice(0, 5);
     if (projects.length) {
-        wrap.add_child(label('Busiest folders', 'claude-small claude-strong'));
         const top = Math.max(1, ...projects.map(p => p.total));
         for (const p of projects) {
             const line = box('claude-stats-project', {x_expand: true});
             line.add_child(label(p.name, 'claude-small claude-stats-name'));
             line.add_child(meter(100 * p.total / top, 'working', 'claude-meter claude-stats-meter'));
             line.add_child(label(L.statsProjectText(p), 'claude-small claude-dim claude-stats-numbers'));
-            ctx.tips.add(line, [p.path, L.fmt('%1 tokens (%2 out) in %3 days', L.formatTokens(p.total),
-                L.formatTokens(p.output), stats.days.length)]);
+            ctx.tips.add(line, [p.path, L.fmt('%1 tokens (%2 out) · %3', L.formatTokens(p.total),
+                L.formatTokens(p.output), L.plural(p.prompts, '%1 prompt', '%1 prompts'))]);
             wrap.add_child(line);
         }
     }
@@ -460,7 +458,9 @@ export function buildHostSection(ctx, host) {
     section.add_child(head);
 
     if (info.error) {
-        const err = stale ? L.fmt('%1 Showing what it said %2 ago.', info.error, L.duration(ctx.now - info.updatedAt))
+        // (an error may end without a full stop: "…Connection timed out Showing what it said…")
+        const err = stale ? L.fmt('%1 Showing what it said %2 ago.', /[.!?]$/.test(info.error) ? info.error : `${info.error}.`,
+            L.duration(ctx.now - info.updatedAt))
             : info.error;
         const l = label(err, 'claude-fg-bad claude-indent', {x_expand: true});
         l.clutter_text.line_wrap = true;
