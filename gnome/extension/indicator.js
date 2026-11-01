@@ -21,7 +21,7 @@ import {buildGroupSection, buildHostSection} from './ui/groupSection.js';
 import {TalpyIcon} from './ui/talpyIcon.js';
 import {buildPermsView} from './ui/permsView.js';
 import {buildWeekView} from './ui/weekView.js';
-import {box, column, iconButton, label, paragraph, scaleFactor, textButton, Tooltips} from './ui/widgets.js';
+import {box, column, emptyState, iconButton, label, paragraph, scaleFactor, textButton, Tooltips} from './ui/widgets.js';
 import * as Icons from './ui/icons.js';
 
 const USAGE_PAGE = 'https://claude.ai/settings/usage';
@@ -1485,10 +1485,8 @@ class TalpyDenIndicator extends PanelMenu.Button {
         for (const host of hosts)
             this._list.add_child(buildHostSection(this, host));
         if (this._status !== null && this.groups.length === 0 && hosts.length === 0) {
-            const empty = column('claude-placeholder', {x_expand: true});
-            empty.add_child(label('No Claude Code chats yet', 'claude-group-title'));
-            empty.add_child(paragraph("Your Claude Code chats show up here once you start claude in a terminal or open Claude in VS Code. Talpy Den looks in ~/.claude and ~/.claude-*; other folders go in its settings (Extra config folders).", 'claude-dim'));
-            this._list.add_child(empty);
+            this._list.add_child(emptyState('chats', 'No Claude Code chats yet',   // (the tab's icon, as the Recap's has its own)
+                "Your Claude Code chats show up here once you start claude in a terminal or open Claude in VS Code. Talpy Den looks in ~/.claude and ~/.claude-*; other folders go in its settings (Extra config folders)."));
         }
         this._pets.pruneStages();
         if (scrolled > 0) {

@@ -90,7 +90,7 @@ const TABLE = {
     chooseFile:      ['document-open',                 null,         'document-open-symbolic'],
     vscodeApp:       ['vscode',                        null,         'text-editor-symbolic'],             // VS Code's own icon (GNOME: if it has none)
     // ---- things
-    chats:           ['dialog-messages',               'chat',       'chat-bubbles-symbolic'],            // the Talpy Den tab
+    chats:           ['dialog-messages',               'chat',       'user-available-symbolic'],          // the Talpy Den tab (GNOME: a speech bubble Adwaita and Yaru have)
     account:         ['user-identity',                 'user',       'avatar-default-symbolic'],
     accountOut:      ['im-user-offline',               'user',       'avatar-default-symbolic'],          // not signed in
     host:            ['network-server',                'server',     'network-server-symbolic'],
@@ -101,7 +101,7 @@ const TABLE = {
     home:            ['user-home',                     'folder',     'user-home-symbolic'],
     terminal:        ['utilities-terminal',            'terminal',   'utilities-terminal-symbolic'],
     phone:           ['smartphone',                    null,         'phone-symbolic'],
-    recap:           ['view-statistics',               'chart',      'org.gnome.Settings-usage-symbolic'],
+    recap:           ['view-statistics',               'chart',      'x-office-presentation-symbolic'],   // (GNOME: a board with a chart; Settings' usage icon isn't in Adwaita or Yaru)
     tipWaits:        ['chronometer',                   'clock',      'alarm-symbolic'],                   // the Recap's tip about the time chats waited for you
     tipLimits:       ['speedometer',                   'gauge',      'power-profile-performance-symbolic'], // the Recap's tip about usage limits
     tip:             ['help-hint',                     'lightbulb',  'dialog-information-symbolic'],      // the Recap's other tips (Claude Code's /usage)

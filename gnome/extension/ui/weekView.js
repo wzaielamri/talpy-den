@@ -10,7 +10,7 @@ import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 
 import * as L from '../logic.js';
-import {box, column, iconButton, label, meter, paragraph, scaleFactor, textButton} from './widgets.js';
+import {box, column, emptyState, iconButton, label, meter, paragraph, scaleFactor, textButton} from './widgets.js';
 import * as Icons from './icons.js';
 
 // (in the display's units: the Cairo drawings are scaled, see scaled())
@@ -91,13 +91,11 @@ export function buildWeekView(ctx) {
     const s = recap ? recap.sum : null;
     const hasData = !!s && (s.workedMs > 0 || s.prompts > 0 || s.cost > 0);
     if (recap && !hasData) {
-        const empty = column('claude-week-note', {x_expand: true});
-        empty.add_child(paragraph(recap.span === 'day' ? 'No Claude on this day' : recap.span === 'all' ? 'No Claude yet' : 'No Claude in these days',
-            'claude-strong'));
-        empty.add_child(paragraph(recap.span === 'day' ? 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply on this day.'
-            : recap.span === 'all' ? 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply yet.'
-                : 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these 7 days.', 'claude-dim'));
-        view.add_child(empty);
+        view.add_child(emptyState('recap',
+            recap.span === 'day' ? 'No Claude on this day' : recap.span === 'all' ? 'No Claude yet' : 'No Claude in these days',
+            recap.span === 'day' ? 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply on this day.'
+                : recap.span === 'all' ? 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply yet.'
+                    : 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these 7 days.'));
     }
     if (!hasData)
         return view;

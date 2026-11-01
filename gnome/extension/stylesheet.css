@@ -47,7 +47,9 @@
 }
 .claude-scroll { padding: 0 4px; }
 .claude-list { spacing: 6px; padding: 0 4px; }
-.claude-placeholder { padding: 16px; spacing: 6px; }
+.claude-placeholder { padding: 16px; spacing: 6px; }   /* (a tab with nothing to show: widgets.js emptyState) */
+.claude-placeholder-icon { icon-size: 48px; color: rgba(154, 153, 150, 0.7); }
+.claude-placeholder-text { text-align: center; }
 
 .claude-group { spacing: 3px; padding: 4px 0; }
 .claude-group-head { spacing: 6px; padding: 0 4px; }
@@ -91,7 +93,7 @@
 .claude-agent { spacing: 6px; }
 .claude-agent-button { padding: 1px 2px; border-radius: 6px; }
 .claude-agent-button:hover, .claude-agent-button:focus { background-color: rgba(127, 127, 127, 0.15); }
-.claude-agent-chevron { icon-size: 12px; color: rgba(154, 153, 150, 1); }
+.claude-agent-chevron { icon-size: 16px; color: rgba(154, 153, 150, 1); }   /* (every fold arrow 16 px, as Plasma's and VS Code's) */
 .claude-agent-detail { margin-top: 1px; margin-bottom: 3px; }
 .claude-recent { padding-left: 14px; }
 .claude-more { margin-left: 14px; }   /* ("Show N more" under a list) */
@@ -250,5 +252,5 @@
 .claude-week-trend-now { background-color: #3584e4; }
 .claude-week-swatch-limit { width: 2px; height: 12px; background-color: #e01b24; }
 .claude-week-sub { padding-left: 4.2em; }
-.claude-week-fold { icon-size: 12px; }
+.claude-week-fold { icon-size: 16px; }
 .claude-week-more { padding-left: 22px; }

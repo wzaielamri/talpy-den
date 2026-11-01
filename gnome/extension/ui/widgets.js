@@ -308,6 +308,17 @@ export function dot(colorClass, styleClass = 'claude-dot') {
     return new St.Widget({style_class: `${styleClass} claude-bg-${colorClass}`, y_align: Clutter.ActorAlign.CENTER});
 }
 
+// A tab with nothing to show: its icon, a title and what to do, centered
+// (as Plasma's PlaceholderMessage), one look in every tab
+export function emptyState(meaning, title, text) {
+    const empty = column('claude-placeholder', {x_expand: true});
+    empty.add_child(new St.Icon({icon_name: Icons.gnome[meaning], style_class: 'claude-placeholder-icon',
+        x_align: Clutter.ActorAlign.CENTER}));
+    empty.add_child(paragraph(title, 'claude-group-title claude-placeholder-text'));
+    empty.add_child(paragraph(text, 'claude-dim claude-placeholder-text'));
+    return empty;
+}
+
 export function separator() {
     return new St.Widget({style_class: 'claude-separator', x_expand: true});
 }
