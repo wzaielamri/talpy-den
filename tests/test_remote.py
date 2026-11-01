@@ -872,6 +872,39 @@ class HostTaskTests(TwoAccountHost):
                          (True, "The plan is only on work now. Removed from main."))
         self.assertFalse(self.plan.exists())
 
+    def test_a_plan_moves_into_its_project_there(self):
+        chat = "dddddddd-1111-2222-3333-444444444444"
+        transcript = self.fake_home / ".claude/projects/-srv-app" / f"{chat}.jsonl"
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text(json.dumps({"type": "user", "cwd": str(self.folder), "sessionId": chat, "slug": "calm-red-owl",
+                                          "message": {"role": "user", "content": "plan it"}}) + "\n")
+        os.utime(self.plan, (time.time() - 600, time.time() - 600))
+        here = Path(os.environ["XDG_CACHE_HOME"]) / "talpy-den"
+        cs.change_stars(here, "plans", "calm-red-owl", "lab")   # (an SSH host's stars are kept here)
+        (self.folder / ".claude/plans").mkdir(parents=True)
+        (self.folder / ".claude/plans/calm-red-owl.md").write_text("# Another plan\n")
+        asked = remote.move_plan("lab", "calm-red-owl", ".claude", describe=True)
+        self.assertTrue(asked["ok"], asked)
+        self.assertEqual((asked["default"], asked["exists"], asked["free"], asked["setting"]),
+                         (str(self.folder), True, "calm-red-owl-2", ""))
+        self.assertTrue(self.plan.is_file())   # (asking moves nothing)
+        moved = remote.move_plan("lab", "calm-red-owl", ".claude", if_exists="keep")
+        self.assertEqual((moved["ok"], moved["slug"]), (True, "calm-red-owl-2"), moved)
+        self.assertFalse(self.plan.exists())
+        self.assertEqual((self.folder / ".claude/plans/calm-red-owl-2.md").read_text(), "# Calm plan\n\n1. Do it\n")
+        self.assertEqual(json.loads((self.folder / ".claude/settings.local.json").read_text()),
+                         {"plansDirectory": ".claude/plans"})
+        self.assertIn("calm-red-owl-2", cs.starred_of(cs.load_stars(here), "lab")["plans"])
+        self.assertEqual(self.calls()[-1][1].split(" --remote ")[1],
+                         "--move-plan calm-red-owl --profile .claude --if-exists keep")
+        # listed there in its project, and back again
+        group = next(g for g in remote.status("lab", tokens=False)["result"]["groups"] if g["chatProfile"] == ".claude")
+        self.assertEqual([(p["slug"], p["inProject"], p["cwd"]) for p in group["plans"]],
+                         [("calm-red-owl", True, str(self.folder)), ("calm-red-owl-2", True, str(self.folder))])
+        back = remote.move_plan("lab", "calm-red-owl-2", ".claude", back=True)
+        self.assertTrue(back["ok"], back)
+        self.assertTrue((self.fake_home / ".claude/plans/calm-red-owl-2.md").is_file())
+
     def test_its_plans_are_listed(self):
         group = next(g for g in remote.status("lab", tokens=False)["result"]["groups"] if g["chatProfile"] == ".claude")
         (plan,) = group["plans"]

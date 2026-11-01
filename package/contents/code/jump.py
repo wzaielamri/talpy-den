@@ -19,6 +19,9 @@ a new chat (used by the Talpy Den widget).
     python3 -I jump.py --show-hidden KIND        (show the hidden ones of KIND again)
     python3 -I jump.py --delete-chat CHAT_ID | --delete-plan SLUG [--profile PROFILE] [--describe]
     python3 -I jump.py --delete-memory KEY [--describe]
+    python3 -I jump.py --move-plan SLUG [--profile PROFILE] [--into FOLDER | --back] [--no-setting]
+                       [--if-exists keep|replace] [--describe]   (a plan into its project's plans folder, or
+                                                  back into the account's; --describe: what it would do)
                                                  (to the Trash, from every account that has it;
                                                   --describe: the question to ask first, and what goes)
     python3 -I jump.py --resume SESSION_ID --profile PROFILE    (reopen a chat there)
@@ -2618,6 +2621,25 @@ def undismiss_all(home, extra_dirs, _session_id=None):
     return cs.show_hidden(cs.cache_dir(home), "chats")
 
 
+def move_plan(home, extra_dirs, slug, profile_dir=None, into=None, back=False, setting=True, if_exists=None,
+              describe=False):
+    """Move a plan into a project's plans folder, or back into an account's
+    (sharing.move_plan), or (describe) say what that would do; a starred one
+    stays starred under the name it gets (keep both): (ok, message, the
+    rest of its answer)."""
+    answer = sharing.move_plan(cs.discover_profiles(home, extra_dirs), home, slug, profile_dir, into, back, setting,
+                               if_exists, describe)
+    if answer["ok"] and not describe:
+        follow_plan_star(cs.cache_dir(home), slug, answer.get("slug") or slug)
+    return answer.pop("ok"), answer.pop("message"), answer
+
+
+def follow_plan_star(cache_root, slug, new_slug, host=""):
+    """A starred plan moved under another name (keep both) is starred under it too."""
+    if new_slug != slug and slug in cs.starred_of(cs.load_stars(cache_root), host)["plans"]:
+        cs.change_stars(cache_root, "plans", new_slug, host, on=True)
+
+
 def delete_item(home, extra_dirs, kind, item, profile_dir=None, describe=False):
     """Delete a chat, a plan or a memory (kind chat, plan, memory) to the
     Trash, or (describe) say what would go (sharing.delete): (ok, message,
@@ -2656,6 +2678,8 @@ USAGE = ("usage: jump.py [--stop [--busy] | --interrupt] SESSION_ID [--profile P
          "       jump.py --hide chats|plans|memories|projects ID | --show-hidden chats|plans|memories|projects\n"
          "       jump.py --delete-chat CHAT_ID | --delete-plan SLUG [--profile PROFILE] [--describe]\n"
          "       jump.py --delete-memory KEY [--describe]   (to the Trash; --describe: the question to ask first)\n"
+         "       jump.py --move-plan SLUG [--profile PROFILE] [--into FOLDER | --back] [--no-setting]\n"
+         "               [--if-exists keep|replace] [--describe]\n"
          "       jump.py --star-plan|--unstar-plan SLUG [--host HOST]\n"
          "       jump.py --requeue TASK_ID --at MS   (it waits on until MS)\n"
          "       jump.py --share SESSION_ID\n"
@@ -2708,6 +2732,7 @@ def main(argv=None):
     start_now = False
     feedback_plan, comments, extra_out, hide_kind, describe = None, [], {}, None, False
     keep_off_chat = None
+    into, back, setting, if_exists = None, False, True, None
     while args:
         arg = args.pop(0)
         if arg == "--config-dir" and args:
@@ -2834,6 +2859,16 @@ def main(argv=None):
             action, hide_kind, session_id = arg, args.pop(0), "-"
         elif arg in ("--delete-chat", "--delete-plan", "--delete-memory") and args:
             action, session_id = arg, args.pop(0)  # the chat, the plan's slug or the memory's key
+        elif arg == "--move-plan" and args:
+            action, session_id = move_plan, args.pop(0)  # the plan's slug
+        elif arg == "--into" and args:
+            into = args.pop(0)
+        elif arg == "--back":
+            back = True
+        elif arg == "--no-setting":
+            setting = False
+        elif arg == "--if-exists" and args and args[0] in sharing.IF_EXISTS:
+            if_exists = args.pop(0)
         elif arg == "--describe":
             describe = True
         elif arg in ("--remote-vscode", "--remote-terminal", "--remote-new-vscode", "--remote-resume-vscode",
@@ -2883,7 +2918,9 @@ def main(argv=None):
         sys.exit(USAGE)
     if not open_it and action is not show_agent_run:
         sys.exit(USAGE)
-    if describe and action not in ("--delete-chat", "--delete-plan", "--delete-memory"):
+    if describe and action not in ("--delete-chat", "--delete-plan", "--delete-memory", move_plan):
+        sys.exit(USAGE)
+    if (into is not None or back or not setting or if_exists is not None) and action is not move_plan or (into and back):
         sys.exit(USAGE)
     if keep_off_chat is not None and action is not stop:
         sys.exit(USAGE)
@@ -2930,6 +2967,9 @@ def main(argv=None):
         elif action in ("--delete-chat", "--delete-plan", "--delete-memory"):
             ok, message, extra_out = delete_item(Path.home(), extra, action[len("--delete-"):], session_id, profile_dir,
                                                  describe)
+        elif action is move_plan:
+            ok, message, extra_out = move_plan(Path.home(), extra, session_id, profile_dir, into, back, setting,
+                                               if_exists, describe)
         elif action == "--hide":
             ok, message = cs.hide_item(cs.cache_dir(Path.home()), hide_kind, session_id)
         elif action == "--show-hidden":

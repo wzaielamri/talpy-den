@@ -33,6 +33,8 @@ profiles:
     --delete-chat CHAT_ID | --delete-plan SLUG [--profile PROFILE] | --delete-memory KEY [--describe]
                                           to the Trash (--describe: the question to ask first),
                                           with accounts.py loaded too (remote.delete)
+    --move-plan SLUG [--profile PROFILE] [--into FOLDER | --back] [--no-setting] [--if-exists keep|replace]
+                [--describe]              a plan into its project's plans folder, or back (move_plan)
     [--config-dir DIR]... [--remote]      extra Claude config dirs; the JSON after a marker line
 """
 
@@ -41,6 +43,7 @@ import os
 import re
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import talpy_den as cs
@@ -472,6 +475,277 @@ def share_chat_plan(profiles, chat_id, into):
             return
 
 
+# ---------------------------------------------------------------- moving a plan into its project
+#
+# Move to project (jump.py --move-plan; on an SSH host remote.py runs this
+# file there) puts an account's plan into a project's own plans folder: the
+# folder the project's plansDirectory names for the plan's account (as
+# Claude reads it), else <project>/.claude/plans, under the same name, so
+# the chat that made it finds it there by its slug once the project names
+# that folder. When it names none, the move can add "plansDirectory":
+# ".claude/plans" to the project's .claude/settings.local.json (the one
+# Claude reads for it; its other keys stay; .claude/settings.json is never
+# touched). Move back puts a plan of a project's folder into an account's
+# plans/. Never over another file of that name: keep both (the one that
+# moves gets a free name) or replace (the other goes to the Trash). Every
+# account's link to it goes with it (a plan in a project's folder is every
+# account's); its noted project, the chat that made it and whether it's
+# hidden follow it; stars are the asking computer's (jump.py, remote.py).
+
+IF_EXISTS = ("keep", "replace")
+MOVE_CHOICES = 40  # the projects offered, newest first
+
+
+def free_slug(folder, slug):
+    """A name for a plan in folder that no file there has: slug-2, slug-3, …"""
+    n = 2
+    while True:
+        name = f"{slug[:120]}-{n}"
+        if not os.path.lexists(os.path.join(folder, name + ".md")):
+            return name
+        n += 1
+
+
+def git_shows(folder, path):
+    """Would path show up in git in folder's repository (not ignored)? None
+    when folder isn't in one (or there's no git)."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", folder, "check-ignore", "-q", "--", path], stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {0: False, 1: True}.get(r.returncode)
+
+
+def add_plans_setting(path):
+    """Put "plansDirectory": ".claude/plans" into a project's
+    settings.local.json (made if it isn't there), its other keys as they
+    were; ValueError when it isn't a JSON object (then it's left as it is)."""
+    real = os.path.realpath(path)
+    data, there = {}, os.path.isfile(real)
+    if there:
+        with open(real, encoding="utf-8") as f:
+            text = f.read()
+        try:
+            data = json.loads(text) if text.strip() else {}
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            raise ValueError(f"{os.path.basename(path)} isn't a JSON object: left it as it is")
+    data[cs.PLANS_SETTING] = cs.PROJECT_PLANS_DIR
+    os.makedirs(os.path.dirname(real), exist_ok=True)
+    tmp = os.path.join(os.path.dirname(real), f".{os.path.basename(real)}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        if there:
+            shutil.copymode(real, tmp)
+        os.replace(tmp, real)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def place(src, dest):
+    """src's file at dest too (dest mustn't be there: FileExistsError), as a
+    link, or a copy on another disk."""
+    try:
+        os.link(str(src), str(dest))
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        pass
+    tmp = os.path.join(os.path.dirname(str(dest)), f".{os.path.basename(str(dest))}.{os.getpid()}.tmp")
+    try:
+        shutil.copy2(str(src), tmp)
+        os.link(tmp, str(dest))
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def move_ctx(profiles, home):
+    root = cs.cache_dir(home)
+    return cs.Context(home=home, profiles=profiles, plan_dirs=cs.PlanDirs(root / "plan-dirs.json", save=False),
+                      plan_projects=cs.PlanProjects(root, save=False))
+
+
+def plan_origin(profiles, ctx, slug):
+    """{"project": the folder the chat that made a plan started in, "cwd",
+    "chat", "profile"} as noted (cs.PlanProjects), else from that chat
+    (the newest with its slug); {} when there's none."""
+    noted = ctx.plan_projects.get(slug)
+    if noted:
+        return dict(noted, project=noted.get("project") or noted.get("cwd") or "")
+    p, transcript = cs.plan_chat(profiles, slug)
+    if transcript is None:
+        return {}
+    start = cs.first_cwd(transcript)
+    return {"project": start, "cwd": start, "chat": transcript.stem, "profile": p.key}
+
+
+def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True, if_exists=None, describe=False):
+    """Move a plan of the profile name (else the only one) into the project
+    folder's plans folder (folder None: the chat's own), or (back) a plan of
+    a project's folder into the account name's plans/; or (describe) say
+    what that would do. {"ok", "message", "question", "title", "slug" (its
+    name once moved), "back", "project", "projectShort", "target",
+    "targetShort", "setting" (where the project's plansDirectory comes
+    from: "local", "project", "user"; "": none, so the move can add one,
+    setting: it does), "settingsFile", "git" (it would show up in git
+    there; None: no repository), "exists" (another plan of that name is
+    there: if_exists says keep both or replace), "free" (keep both's name),
+    "account", "lost" (back: the project's chats look for it in the
+    project's folder), "choices" [{"path", "short"}] and "default" (the
+    projects to pick from)}."""
+    out = {"ok": False, "message": "", "question": "", "title": "", "slug": slug, "back": back, "project": "",
+           "projectShort": "", "target": "", "targetShort": "", "setting": "", "settingsFile": "", "git": None,
+           "exists": False, "free": "", "account": "", "lost": False, "choices": [], "default": ""}
+    if not cs.PLAN_SLUG.match(slug or ""):
+        return dict(out, message=f"Not a plan name: {slug}")
+    owner = named(profiles, name) if name else None
+    if name and owner is None:
+        return dict(out, message=f"No Claude profile called {name}")
+    if if_exists is not None and if_exists not in IF_EXISTS:
+        return dict(out, message=f"Keep both or replace, not {if_exists}")
+    ctx = move_ctx(profiles, home)
+    short = lambda p: cs.short_folder(str(p), home)  # noqa: E731
+    accounts = set()
+    for p in profiles:
+        try:
+            st = os.stat(str(p.real / "plans"))
+            accounts.add((st.st_dev, st.st_ino))
+        except OSError:
+            pass
+    if back:
+        src, project = cs.project_plan_of(ctx, slug)
+        if src is None:
+            return dict(out, message="That plan isn't in a project's folder any more")
+        if owner is None:
+            key = cs.project_plan_owner(ctx, slug, project)
+            owner = next((p for p in profiles if p.key == key), profiles[0])
+        dest_dir = str(owner.path / "plans")
+        where, value = cs.project_settings(ctx, project, owner)
+        out["lost"] = bool(value is not None and cs.plans_dir_in(project, value))
+        folder = project
+    else:
+        have = plan_copies(profiles, slug)
+        src = next((path for p, path in have if owner is not None and p.real == owner.real), None) \
+            if owner is not None else (have[0][1] if have and all(same(path, have[0][1]) for _, path in have) else None)
+        if src is None:
+            if not have:
+                return dict(out, message="That plan isn't in an account's plans any more")
+            return dict(out, message=(f"{owner.label} doesn't have this plan" if owner is not None else
+                                      "Several accounts have a different plan of that name: say which account's goes"))
+        owner = owner or next(p for p, path in have if same(path, src))
+        starts = cs.start_folders(ctx)
+        choices = sorted((f for f in starts if os.path.isdir(f) and os.path.normpath(f) != os.path.normpath(str(home))),
+                         key=lambda f: -starts[f][0])[:MOVE_CHOICES]
+        default = plan_origin(profiles, ctx, slug).get("project") or ""
+        default = default if default and os.path.isdir(default) else ""
+        if default:  # (the chat's own first)
+            choices = [default] + [f for f in choices if f != default]
+        out["choices"] = [{"path": f, "short": short(f)} for f in choices]
+        out["default"] = default
+        folder = folder or default
+        out["title"], out["account"] = cs.plan_title(src) or slug, owner.label
+        if not folder:
+            return dict(out, ok=bool(describe), message="" if describe else "Pick the project it goes to",
+                        question=f"Move “{out['title']}” to which project?")
+        folder = os.path.normpath(folder)
+        if not os.path.isabs(folder) or not os.path.isdir(folder):
+            return dict(out, message=f"{short(folder)} isn't a folder here")
+        where, value = cs.project_settings(ctx, folder, owner)
+        named_dir = cs.plans_dir_in(folder, value) if value is not None else None
+        dest_dir = named_dir or os.path.join(folder, cs.PROJECT_PLANS_DIR)
+        out["setting"] = where if named_dir else ""
+        out["settingsFile"] = short(cs.local_settings_file(ctx, folder))
+    dest = os.path.join(dest_dir, slug + ".md")
+    try:
+        st = os.stat(dest_dir)
+        if not back and (st.st_dev, st.st_ino) in accounts:
+            return dict(out, message=f"{short(dest_dir)} is an account's own plans folder")
+    except OSError:
+        pass
+    out.update(title=cs.plan_title(src) or slug, account=owner.label, project=folder, projectShort=short(folder),
+               target=dest, targetShort=short(dest))
+    if same(dest, src):
+        return dict(out, message="It's there already")
+    out["exists"] = os.path.lexists(dest)
+    out["free"] = free_slug(dest_dir, slug) if out["exists"] else ""
+    if not back:
+        out["git"] = git_shows(folder, dest)
+    if back:
+        question = f"Move “{out['title']}” back to {owner.label}?"
+        if out["lost"]:
+            question += f" Claude's chats in {out['projectShort']} look for plans in its folder: they won't find it there."
+    else:
+        question = f"Move “{out['title']}” to {out['projectShort']}? It goes to {out['targetShort']}."
+        if out["git"]:
+            question += " It would show up in git there."
+        if not out["setting"]:
+            question += (f" With “Keep this project's new plans there too”, {out['settingsFile']} names that folder;"
+                         " without it, Claude's chats there won't find the plan by its name.")
+    if out["exists"]:
+        question += f" There's another plan called {slug} there: keep both ({out['free']}), or replace it?"
+    out["question"] = question
+    if describe:
+        return dict(out, ok=True, message=question)
+    if out["exists"] and if_exists is None:
+        return dict(out, message=f"There's another plan called {slug} there: keep both, or replace it?")
+    new_slug = out["free"] if out["exists"] and if_exists == "keep" else slug
+    dest = os.path.join(dest_dir, new_slug + ".md")
+    # (every account's link to it goes once it's there: it's in one place then)
+    links = [src] if back else [path for _p, path in plan_copies(profiles, slug) if same(path, src)]
+    added = False
+    try:
+        if not back and not out["setting"] and setting:
+            add_plans_setting(cs.local_settings_file(ctx, folder))
+            added = True
+        os.makedirs(dest_dir, exist_ok=True)
+        if out["exists"] and if_exists == "replace":
+            ok, why = to_trash([Path(dest)], home)
+            if not ok:
+                return dict(out, message=why)
+        place(src, dest)
+    except FileExistsError:
+        return dict(out, message=f"Another plan called {new_slug} came there meanwhile: nothing moved")
+    except (OSError, ValueError) as exc:
+        return dict(out, message=f"Couldn't move it: {getattr(exc, 'strerror', None) or exc}")
+    try:
+        for path in links:
+            os.unlink(str(path))
+    except OSError as exc:
+        return dict(out, ok=True, slug=new_slug, message=f"Moved it, but a copy stayed: {exc.strerror or exc}")
+    note_move(ctx, home, slug, new_slug, folder, owner)
+    message = (f"Moved the plan back to {owner.label}" if back else
+               f"Moved the plan to {short(dest_dir)}" + (f"; {out['settingsFile']} keeps the project's new plans there"
+                                                         if added else ""))
+    return dict(out, ok=True, slug=new_slug, target=dest, targetShort=short(dest), message=message)
+
+
+def note_move(ctx, home, slug, new_slug, folder, owner):
+    """The moved plan keeps its project and its chat; a hidden one stays
+    hidden under its new name."""
+    root = cs.cache_dir(home)
+    noted = plan_origin(ctx.profiles, ctx, slug)
+    entry = {"cwd": noted.get("cwd") or folder, "project": folder, "chat": noted.get("chat") or "",
+             "profile": noted.get("profile") or owner.key, "at": int(time.time() * 1000)}
+    try:
+        cs.change_plan_projects(root, put={new_slug: entry})
+        if new_slug != slug and slug in cs.load_hidden(root)["plans"]:
+            cs.change_hidden(root, "plans", add=new_slug)
+    except OSError:
+        pass
+
+
 # ---------------------------------------------------------------- what the buttons do
 
 
@@ -856,6 +1130,8 @@ USAGE = ("usage: sharing.py (--share CHAT_ID | --continue CHAT_ID [--end-first] 
          "       sharing.py (--share-plan SLUG [--to PROFILE] | --unshare-plan SLUG) [--profile PROFILE]\n"
          "       sharing.py (--delete-chat CHAT_ID | --delete-plan SLUG) [--profile PROFILE] [--describe]\n"
          "       sharing.py --delete-memory KEY [--describe]\n"
+         "       sharing.py --move-plan SLUG [--profile PROFILE] [--into FOLDER | --back] [--no-setting]\n"
+         "                  [--if-exists keep|replace] [--describe]\n"
          "                  [--config-dir DIR]... [--remote]   (--continue, --unshare and --unshare-plan need --profile)")
 
 
@@ -864,14 +1140,22 @@ def main(argv=None):
     --continue, "command"."""
     args = sys.argv[1:] if argv is None else list(argv)
     action, chat_id, name, extra, remote, end_first, to = None, None, None, [], False, False, None
-    describe = False
+    describe, into, back, setting, if_exists = False, None, False, True, None
     while args:
         arg = args.pop(0)
         if arg in ("--share", "--continue", "--unshare", "--share-plan", "--unshare-plan", "--delete-chat",
-                   "--delete-plan", "--delete-memory") and args and action is None:
+                   "--delete-plan", "--delete-memory", "--move-plan") and args and action is None:
             action, chat_id = arg, args.pop(0)
         elif arg == "--describe":
             describe = True
+        elif arg == "--into" and args:
+            into = args.pop(0)
+        elif arg == "--back":
+            back = True
+        elif arg == "--no-setting":
+            setting = False
+        elif arg == "--if-exists" and args:
+            if_exists = args.pop(0)
         elif arg == "--profile" and args:
             name = args.pop(0)
         elif arg == "--to" and args:
@@ -885,8 +1169,10 @@ def main(argv=None):
         else:
             sys.exit(USAGE)
     deleting = action is not None and action.startswith("--delete-")
-    if action is None or (action not in ("--share", "--share-plan") and not deleting and not name) \
-            or (describe and not deleting):
+    moving = action == "--move-plan"
+    if action is None or (action not in ("--share", "--share-plan") and not deleting and not moving and not name) \
+            or (describe and not deleting and not moving) \
+            or ((into is not None or back or not setting or if_exists is not None) and not moving) or (into and back):
         sys.exit(USAGE)
     home, command, more = Path.home(), None, {}
     try:
@@ -899,6 +1185,9 @@ def main(argv=None):
             ok, message = plan_sharing(profiles, chat_id, name, action == "--share-plan", to, home)
         elif deleting:
             more = delete(profiles, action[len("--delete-"):], chat_id, name, root, home, describe)
+            ok, message = more.pop("ok"), more.pop("message")
+        elif moving:
+            more = move_plan(profiles, home, chat_id, name, into, back, setting, if_exists, describe)
             ok, message = more.pop("ok"), more.pop("message")
         else:
             # A click: the login shell may be asked where claude is

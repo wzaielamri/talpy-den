@@ -2,7 +2,9 @@
 plansDirectory setting (the account's, a project's, its local one), each plan
 listed once, the project a plan keeps once its chat is gone, and plans whose
 project isn't known."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import stat
@@ -10,6 +12,7 @@ import sys
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.dont_write_bytecode = True  # keep __pycache__ out of the plasmoid package
 CODE = Path(__file__).resolve().parent.parent / "package/contents/code"
@@ -265,6 +268,150 @@ class CacheTests(ProjectPlanFixture):
         cs.change_plan_projects(self.cache, put={"moved-plan": {"cwd": str(web), "project": str(web), "chat": "",
                                                                 "profile": ".claude-work", "at": int(time.time() * 1000)}})
         self.assertEqual([p[0] for p in self.listed("work")], ["new-plan", "moved-plan"])
+
+
+class MoveTests(ProjectPlanFixture):
+    """Move to project… and Move back (sharing.move_plan through jump.py)."""
+
+    def setUp(self):
+        super().setUp()
+        self.chat(".claude-work", self.app, CHAT_A, "calm-red-owl")
+        self.src = self.plan(self.home / ".claude-work/plans/calm-red-owl.md", "The plan")
+        self.cache_root = cs.cache_dir(self.home)   # (what the actions use)
+
+    def move(self, *args):
+        with mock.patch.object(jump.Path, "home", return_value=self.home), \
+                mock.patch.object(sys, "argv", ["jump.py", "--move-plan", "calm-red-owl", "--profile", ".claude-work", *args]), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            jump.main()
+        return json.loads(out.getvalue())
+
+    def test_asking_moves_nothing(self):
+        asked = self.move("--describe")
+        self.assertEqual({k: asked[k] for k in ("ok", "project", "default", "target", "setting", "exists", "account", "slug")},
+                         {"ok": True, "project": str(self.app), "default": str(self.app), "slug": "calm-red-owl",
+                          "target": str(self.app / ".claude/plans/calm-red-owl.md"), "setting": "", "exists": False,
+                          "account": "work"})
+        self.assertEqual(asked["choices"][0], {"path": str(self.app), "short": "~/repos/app"})
+        self.assertIn("without it, Claude's chats there won't find the plan by its name", asked["question"])
+        # (a drop on a project only asks: nothing moves until Move)
+        self.assertTrue(self.src.is_file())
+        self.assertFalse((self.app / ".claude").exists())
+
+    def test_into_the_project_with_its_setting_kept_beside_the_others(self):
+        write(self.app / ".claude/settings.local.json", {"permissions": {"allow": ["Bash(ls)"]}, "model": "opus"})
+        write(self.app / ".claude/settings.json", {"model": "sonnet"})
+        before = (self.app / ".claude/settings.json").read_text()
+        moved = self.move()
+        self.assertTrue(moved["ok"], moved)
+        self.assertFalse(self.src.exists())
+        self.assertEqual((self.app / ".claude/plans/calm-red-owl.md").read_text(), "# The plan\n\nSteps.\n")
+        self.assertEqual(json.loads((self.app / ".claude/settings.local.json").read_text()),
+                         {"permissions": {"allow": ["Bash(ls)"]}, "model": "opus", "plansDirectory": ".claude/plans"})
+        self.assertEqual((self.app / ".claude/settings.json").read_text(), before)   # (never touched)
+        # listed in its project now, with its chat, under the same account
+        plan = self.plans("work")[0]
+        self.assertEqual((plan["slug"], plan["inProject"], plan["cwd"], plan["chatId"], plan["path"]),
+                         ("calm-red-owl", True, str(self.app), CHAT_A, str(self.app / ".claude/plans/calm-red-owl.md")))
+        self.assertEqual(cs.load_plan_projects(self.cache_root)["calm-red-owl"]["project"], str(self.app))
+
+    def test_without_the_setting_it_says_claude_wont_find_it(self):
+        moved = self.move("--no-setting")
+        self.assertTrue(moved["ok"], moved)
+        self.assertFalse((self.app / ".claude/settings.local.json").exists())
+        self.assertTrue((self.app / ".claude/plans/calm-red-owl.md").is_file())
+        # the project's own plansDirectory: there, and nothing to add
+        write(self.app / ".claude/settings.json", {"plansDirectory": "docs/plans"})
+        src = self.plan(self.home / ".claude-work/plans/calm-red-owl.md", "Again")
+        asked = self.move("--describe")
+        self.assertEqual((asked["setting"], asked["target"]), ("project", str(self.app / "docs/plans/calm-red-owl.md")))
+        self.assertNotIn("won't find", asked["question"])
+        self.assertTrue(self.move()["ok"])
+        self.assertFalse(src.exists())
+        self.assertFalse((self.app / ".claude/settings.local.json").exists())
+
+    def test_never_over_another_plan_of_that_name(self):
+        other = self.plan(self.app / ".claude/plans/calm-red-owl.md", "Another one")
+        cs.change_stars(self.cache_root, "plans", "calm-red-owl")
+        cs.change_hidden(self.cache_root, "plans", add="calm-red-owl")
+        asked = self.move("--describe")
+        self.assertEqual((asked["exists"], asked["free"]), (True, "calm-red-owl-2"))
+        self.assertIn("keep both (calm-red-owl-2), or replace it?", asked["question"])
+        refused = self.move()
+        self.assertFalse(refused["ok"])
+        self.assertTrue(self.src.is_file())
+        self.assertEqual(other.read_text(), "# Another one\n\nSteps.\n")
+        # keep both: it gets a free name, its star, its hiding, its project and its chat with it
+        kept = self.move("--if-exists", "keep")
+        self.assertEqual((kept["ok"], kept["slug"]), (True, "calm-red-owl-2"))
+        self.assertEqual(other.read_text(), "# Another one\n\nSteps.\n")
+        self.assertEqual((self.app / ".claude/plans/calm-red-owl-2.md").read_text(), "# The plan\n\nSteps.\n")
+        self.assertIn("calm-red-owl-2", cs.starred_of(cs.load_stars(self.cache_root))["plans"])
+        self.assertIn("calm-red-owl-2", cs.load_hidden(self.cache_root)["plans"])
+        noted = cs.load_plan_projects(self.cache_root)["calm-red-owl-2"]
+        self.assertEqual((noted["project"], noted["chat"]), (str(self.app), CHAT_A))
+
+    def test_replacing_puts_the_other_in_the_trash(self):
+        self.plan(self.app / ".claude/plans/calm-red-owl.md", "Another one")
+        replaced = self.move("--if-exists", "replace")
+        self.assertTrue(replaced["ok"], replaced)
+        self.assertEqual((self.app / ".claude/plans/calm-red-owl.md").read_text(), "# The plan\n\nSteps.\n")
+        self.assertEqual((self.home / ".local/share/Trash/files/calm-red-owl.md").read_text(), "# Another one\n\nSteps.\n")
+
+    def test_git_says_whether_it_would_show_up(self):
+        import shutil
+        import subprocess
+        if not shutil.which("git"):
+            self.skipTest("no git")
+        shutil.rmtree(self.app / ".git")
+        self.assertIsNone(self.move("--describe")["git"])   # (not a repository)
+        subprocess.run(["git", "init", "-q", str(self.app)], check=True)
+        asked = self.move("--describe")
+        self.assertTrue(asked["git"])
+        self.assertIn("It would show up in git there.", asked["question"])
+        write(self.app / ".gitignore", ".claude/plans/\n")
+        asked = self.move("--describe")
+        self.assertIs(asked["git"], False)
+        self.assertNotIn("git", asked["question"])
+
+    def test_a_shared_plan_leaves_every_account(self):
+        (self.home / ".claude-personal/plans").mkdir(parents=True)
+        os.link(self.src, self.home / ".claude-personal/plans/calm-red-owl.md")
+        self.assertTrue(self.move()["ok"])
+        self.assertFalse((self.home / ".claude-personal/plans/calm-red-owl.md").exists())
+        self.assertEqual([p["slug"] for p in self.plans("personal")], [])
+
+    def test_into_a_project_picked_and_back(self):
+        web = self.home / "repos/web"
+        web.mkdir(parents=True)
+        self.chat(".claude-personal", web, CHAT_B, ago=60)
+        asked = self.move("--describe")
+        self.assertEqual([c["short"] for c in asked["choices"]], ["~/repos/app", "~/repos/web"])
+        self.assertTrue(self.move("--into", str(web), "--no-setting")["ok"])
+        moved = web / ".claude/plans/calm-red-owl.md"
+        self.assertTrue(moved.is_file())
+        self.assertFalse(self.move("--into", str(self.home / "nowhere"))["ok"])
+        back = self.move("--back", "--describe")
+        self.assertEqual((back["ok"], back["account"], back["lost"]), (True, "work", False))
+        self.assertEqual(back["question"], "Move “The plan” back to work?")
+        self.assertTrue(self.move("--back")["ok"])
+        self.assertFalse(moved.exists())
+        self.assertTrue(self.src.is_file())
+        # (where the project names its plans folder, the chats there won't find it back on the account)
+        write(self.app / ".claude/settings.local.json", {"plansDirectory": ".claude/plans"})
+        self.assertTrue(self.move()["ok"])
+        back = self.move("--back", "--describe")
+        self.assertTrue(back["lost"])
+        self.assertIn("they won't find it there", back["question"])
+
+    def test_wrong_asks(self):
+        self.assertFalse(self.move("--into", "relative/folder")["ok"])
+        with self.assertRaises(SystemExit):
+            self.move("--into", str(self.app), "--back")
+        with mock.patch.object(sys, "argv", ["jump.py", "--into", str(self.app), "--delete-plan", "x"]), \
+                self.assertRaises(SystemExit):
+            jump.main()
+        self.assertTrue(self.src.is_file())
 
 
 if __name__ == "__main__":

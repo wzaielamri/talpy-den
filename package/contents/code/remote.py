@@ -37,6 +37,9 @@
     python3 -I remote.py --plan HOST SLUG [PROFILE] [--no-open]   a plan there, as a Markdown file here
     python3 -I remote.py --share-plan HOST SLUG PROFILE [TO]      share a plan with every account there (or TO)
     python3 -I remote.py --unshare-plan HOST SLUG PROFILE         keep a shared plan only on PROFILE there
+    python3 -I remote.py --move-plan HOST SLUG PROFILE [--into FOLDER | --back] [--no-setting]
+                         [--if-exists keep|replace] [--describe]  a plan there into its project's plans folder,
+                                                    or back into the account's (--describe: what it would do)
     python3 -I remote.py --login HOST               a terminal where you log in to HOST for the widget
     python3 -I remote.py --disconnect HOST          close the connection you logged in with
     python3 -I remote.py --vscode-account HOST CONFIG_DIR|-   VS Code's Claude on HOST runs on that account
@@ -939,6 +942,21 @@ def plan_sharing(host, slug, profile, share_it, to=None):
     return answer["ok"], answer["message"]
 
 
+def move_plan(host, slug, profile, into=None, back=False, setting=True, if_exists=None, describe=False):
+    """Move a plan of host into a project's plans folder there, or back into
+    the account's (sharing.move_plan there), or (describe) say what that
+    would do: its answer. A starred one (the stars are kept here) stays
+    starred under the name it gets."""
+    args = ["--move-plan", slug, "--profile", profile] + (["--into", into] if into else []) \
+        + (["--back"] if back else []) + ([] if setting else ["--no-setting"]) \
+        + (["--if-exists", if_exists] if if_exists else []) + (["--describe"] if describe else [])
+    answer = host_answer(host, args, "sharing.py", also=("accounts.py",))
+    if answer["ok"] and not describe and isinstance(answer.get("slug"), str) and cs.PLAN_SLUG.match(answer["slug"]):
+        import jump
+        jump.follow_plan_star(cs.cache_dir(Path.home()), slug, answer["slug"], host)
+    return answer
+
+
 def task(host, profile, folder, text="", plan=None, plan_profile=None, background=False, open_it=True,
          model=None, effort=None, mode=None):
     """A new chat on host's profile in folder there, with a task (and that
@@ -1316,6 +1334,23 @@ def main(argv=None):
         elif action == "--plan" and len([a for a in args if a != "--no-open"]) in (2, 3):
             ok, message, path = open_plan(*[a for a in args if a != "--no-open"], open_it="--no-open" not in args)
             out = {"ok": ok, "message": message, **({"file": path} if path else {})}
+        elif action == "--move-plan" and len(args) >= 3:
+            host, slug, profile, rest, kw = args[0], args[1], args[2], args[3:], {}
+            while rest:
+                arg = rest.pop(0)
+                if arg == "--into" and rest and "back" not in kw:
+                    kw["into"] = rest.pop(0)
+                elif arg == "--back" and "into" not in kw:
+                    kw["back"] = True
+                elif arg == "--no-setting":
+                    kw["setting"] = False
+                elif arg == "--if-exists" and rest:
+                    kw["if_exists"] = rest.pop(0)
+                elif arg == "--describe":
+                    kw["describe"] = True
+                else:
+                    sys.exit(USAGE)
+            out = move_plan(host, slug, profile, **kw)
         elif action in ("--share-plan", "--unshare-plan") and len(args) in (3, 4):
             ok, message = plan_sharing(args[0], args[1], args[2], action == "--share-plan",
                                        args[3] if len(args) == 4 else None)
