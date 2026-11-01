@@ -7,6 +7,7 @@ import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 import * as Icons from './ui/icons.js';
+import {containerOf, hostLabel} from './logic.js';
 
 // The Recap tab's currencies (those of the European Central Bank's reference rates)
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -143,9 +144,15 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             "The Permissions tab offers rules that would have let them go without asking, each with an Allow… button. Off, it only counts the prompts, and there's nothing to allow by mistake. Either way it lists the permissions you gave, to revoke them."));
 
         // ---- Hosts
-        group(category('Hosts', 'host'), 'SSH hosts',
-            "Pick SSH hosts with the SSH hosts button at the top of the popup. They need key-based login (Talpy Den can't type a password) and python3 on the host; nothing gets installed there.")
+        const hostsPage = category('Hosts', 'host');
+        group(hostsPage, 'SSH hosts',
+            "Pick SSH hosts and containers with the hosts button at the top of the popup. They need key-based login (Talpy Den can't type a password) and python3 on the host; nothing gets installed there.")
             .add(spin('remote-poll-seconds', 'Check SSH hosts every', 'seconds', 10, 600, 10));
+        const containers = group(hostsPage, 'Containers',
+            "Docker, Podman and nerdctl containers, here and on the SSH hosts shown, are in the hosts picker. One you pick shows like a host; Talpy Den works in it with the engine's exec, and it needs python3 there. Off, Talpy Den never runs docker, podman or nerdctl.");
+        containers.add(toggle('show-containers', 'Show containers'));
+        containers.add(needs(spin('container-days', 'List containers active in the last', 'days (0: only the running ones)', 0, 365, 1),
+            'show-containers'));
 
         // ---- Advanced: how often Talpy Den checks, extra Claude folders
         const advanced = category('Advanced', 'advanced');
@@ -170,9 +177,11 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         const state = {accounts: [], loaded: false, canCheck: true, linked: false, busy: '', confirm: '', rows: [], closed: false,
             host: '', loadedAt: 0};
         // whose accounts: this computer's, or an SSH host's picked in the popup
-        const hosts = settings.get_strv('ssh-hosts').map(h => h.trim()).filter(h => h);
+        // (the picked containers too, unless Show containers is off)
+        const hosts = settings.get_strv('ssh-hosts').map(h => h.trim())
+            .filter(h => h && (settings.get_boolean('show-containers') || !containerOf(h)));
         const where = new Adw.ComboRow({title: 'On', subtitle: 'A host\'s accounts go over ssh: nothing is installed there, and its logins open in a terminal here, where you paste the code Claude gives you.',
-            model: Gtk.StringList.new(['This computer', ...hosts])});
+            model: Gtk.StringList.new(['This computer', ...hosts.map(h => hostLabel(h))])});
         if (hosts.length) {
             const on = new Adw.PreferencesGroup();
             on.add(where);
@@ -333,7 +342,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
 
         where.connect('notify::selected', () => {
             state.host = where.selected > 0 ? hosts[where.selected - 1] : '';
-            list.title = state.host ? esc(`Accounts on ${state.host}`) : 'Accounts on this computer';
+            list.title = state.host ? esc(`Accounts on ${hostLabel(state.host)}`) : 'Accounts on this computer';
             state.accounts = [];
             state.loaded = false;
             state.confirm = '';
@@ -394,7 +403,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             // (an SSH host's folder goes to that host's Trash; in orange, its
             // buttons beside it, as every question)
             row.subtitle = `<span foreground="${QUESTION}">${esc(removing && state.host
-                ? `Remove ${a.label} on ${state.host}? It logs out, then moves ${a.folder} to the Trash of ${state.host} with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.`
+                ? `Remove ${a.label} on ${hostLabel(state.host)}? It logs out, then moves ${a.folder} to the Trash of ${hostLabel(state.host)} with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.`
                 : removing
                     ? `Remove ${a.label}? It logs out, then moves ${a.folder} to the Trash with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.`
                     : `Log out of ${a.label}? Claude deletes its login; its chats and history stay, and Log in… signs it in again (also with another account).`)}</span>`;

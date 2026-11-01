@@ -54,6 +54,9 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this._actionError = '';
         this._actionInfo = '';
         this._sshHosts = [];          // ~/.ssh/config's hosts (remote.py --hosts)
+        this._containersHere = [];    // this computer's containers (remote.py --hosts)
+        this._containerNotes = [];    // an engine here that couldn't list its containers, and why
+        this._hostContainers = {};    // SSH host -> {containers, notes, at} or {error} (remote.py --containers)
         this.remote = {};             // host -> {loading, ok, error, result, updatedAt}
         this._remotePolling = new Set();
         this._polling = false;
@@ -100,6 +103,8 @@ class TalpyDenIndicator extends PanelMenu.Button {
                 this._settings.connect(`changed::${key}`, () => this._restartPollTimer())),
             this._settings.connect('changed::remote-poll-seconds', () => this._restartRemoteTimer()),
             this._settings.connect('changed::ssh-hosts', () => this._onHostsChanged()),
+            this._settings.connect('changed::show-containers', () => this._onShowContainers()),
+            this._settings.connect('changed::container-days', () => this.reloadHosts()),
             ...['extra-config-dirs', 'keep-done-hours', 'recent-chats', 'show-tokens', 'usage-refresh-minutes'].map(key =>
                 this._settings.connect(`changed::${key}`, () => this.refreshAll())),
             ...['show-usage-in-panel', 'show-pet', 'chat-pets'].map(key =>
@@ -136,8 +141,24 @@ class TalpyDenIndicator extends PanelMenu.Button {
         return L.usageOwners(this.groups, this.shownHosts.map(h => [h, this.remote[h]?.result?.groups || []]));
     }
 
-    get shownHosts() {
+    // The SSH hosts and containers you picked (with Show containers off, the
+    // containers stay picked but aren't shown, and no engine is asked anything)
+    get pickedHosts() {
         return this._settings.get_strv('ssh-hosts').map(h => h.trim()).filter(h => h.length);
+    }
+
+    get shownHosts() {
+        const containers = this._settings.get_boolean('show-containers');
+        return this.pickedHosts.filter(h => containers || !L.containerOf(h));
+    }
+
+    // A container as its last listing had it ({engine, name, image, running, activeAt, folderShort, …}), or null
+    containerInfo(id) {
+        const c = L.containerOf(id);
+        if (!c)
+            return null;
+        const list = c.host ? (this._hostContainers[c.host] || {}).containers || [] : this._containersHere;
+        return list.find(x => x.id === id) || null;
     }
 
     // Everything on the dashboard: this computer's accounts, then the hosts'
@@ -217,8 +238,11 @@ class TalpyDenIndicator extends PanelMenu.Button {
     _restartRemoteTimer() {
         this._clearTimer('remote');
         this._timers.remote = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, this.remotePollSeconds, () => {
-            for (const host of this.shownHosts)
-                this.pollHost(host);
+            for (const host of this.shownHosts) {
+                // (a container that's stopped, or gone, isn't checked until Start or Refresh)
+                if (!this.remote[host]?.stopped && !this.remote[host]?.gone)
+                    this.pollHost(host);
+            }
             return GLib.SOURCE_CONTINUE;
         });
     }
@@ -882,16 +906,80 @@ class TalpyDenIndicator extends PanelMenu.Button {
 
     // ---------------------------------------------------------------- SSH hosts
 
+    // --container-days, --picked: the containers listed (the picked ones always), or no containers at all
+    get _containerArgs() {
+        if (!this._settings.get_boolean('show-containers'))
+            return ['--no-containers'];
+        const picked = this.pickedHosts.filter(h => L.containerOf(h));
+        return ['--container-days', String(Math.max(0, this._settings.get_int('container-days'))),
+            ...picked.length ? ['--picked', picked.join(',')] : []];
+    }
+
+    // ~/.ssh/config's hosts and this computer's containers (at start, when
+    // the picker opens, on Reload), with the SSH hosts' container lists as
+    // they were last fetched (shown until they're fetched again)
     async _loadHosts() {
-        const result = await this._helper('remote.py', ['--hosts']);
+        const result = await this._helper('remote.py', ['--hosts', ...this._containerArgs]);
         if (!this._destroyed && result.ok) {
-            this._sshHosts = result.hosts;
+            this._sshHosts = result.hosts || [];
+            this._containersHere = result.containers || [];
+            this._containerNotes = result.notes || [];
+            const kept = result.hostContainers || {};
+            for (const host of Object.keys(kept)) {
+                if (!(host in this._hostContainers))
+                    this._hostContainers[host] = kept[host];
+            }
             this._render();
         }
     }
 
+    // An SSH host's containers (remote.py --containers there): fetched once
+    // it's connected (its first check that works after start or after
+    // failing) and on Reload, never on a timer
+    async loadHostContainers(host) {
+        if (!this._settings.get_boolean('show-containers') || L.containerOf(host))
+            return;
+        const result = await this._helper('remote.py', ['--containers', host, ...this._containerArgs]);
+        if (this._destroyed)
+            return;
+        this._hostContainers = Object.assign({}, this._hostContainers, {
+            [host]: result.ok ? {containers: result.containers || [], notes: result.notes || [], at: result.at || Date.now()}
+                : Object.assign({}, this._hostContainers[host] || {}, {error: result.error || result.message || ''}),
+        });
+        this._render();
+    }
+
+    // The SSH hosts shown whose last check worked: their containers are in the picker
+    get connectedHosts() {
+        return this.shownHosts.filter(h => !L.containerOf(h) && this.remote[h] && this.remote[h].ok);
+    }
+
+    // Reload in the picker: ~/.ssh/config, this computer's containers and every connected host's
+    reloadHosts() {
+        this._loadHosts();
+        for (const host of this.connectedHosts)
+            this.loadHostContainers(host);
+    }
+
+    _onShowContainers() {
+        if (this._settings.get_boolean('show-containers')) {
+            this.reloadHosts();
+        } else {
+            this._containersHere = [];
+            this._containerNotes = [];
+            this._hostContainers = {};
+        }
+        this._onHostsChanged();
+    }
+
+    // A stopped container started (remote.py --start); it's checked once that's done
+    startContainer(host) {
+        this._setRemote(host, {loading: true});
+        this._remoteAction('start', host, ['--start', host]);
+    }
+
     toggleHost(host) {
-        const list = this.shownHosts;
+        const list = this.pickedHosts;
         const i = list.indexOf(host);
         if (i >= 0)
             list.splice(i, 1);
@@ -930,10 +1018,13 @@ class TalpyDenIndicator extends PanelMenu.Button {
         if (this._destroyed || out.cancelled || !this.shownHosts.includes(host))
             return;   // unpicked while its check was running
         const answer = L.helperResult(out.stdout, out.stderr);
+        if (answer.ok && answer.result && !this.remote[host]?.ok && !L.containerOf(host))
+            this.loadHostContainers(host);   // (it's connected: its containers go in the picker)
         if (answer.ok && answer.result) {
             // on this computer's clock: the host's may be off
             const result = L.toLocalClock(answer.result, Date.now() - (answer.result.generatedAt || Date.now()));
-            this._setRemote(host, {loading: false, ok: true, error: '', result, updatedAt: Date.now()});
+            this._setRemote(host, {loading: false, ok: true, error: '', result, updatedAt: Date.now(),
+                stopped: false, gone: false});
             try {
                 this._track(`ssh:${host}`, result.groups, result.generatedAt, host);
             } catch (e) {
@@ -941,7 +1032,8 @@ class TalpyDenIndicator extends PanelMenu.Button {
             }
         } else {
             // keep the last answer to show (dimmed) with the error
-            this._setRemote(host, {loading: false, ok: false, error: answer.error || answer.message || 'no answer'});
+            this._setRemote(host, {loading: false, ok: false, error: answer.error || answer.message || 'no answer',
+                stopped: !!answer.stopped, gone: !!answer.gone});
         }
     }
 
@@ -978,7 +1070,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
                 : kind === 'stop' ? L.fmt("Couldn't stop the chat: %1", result.message) : result.message);
             this._oops();
             if (!this.menu.isOpen) {   // e.g. from a notification or the hotkey: say so
-                this._notifier.notify({key: 'remote-error', kind: 'error', title: L.fmt("That didn't work on %1", host),
+                this._notifier.notify({key: 'remote-error', kind: 'error', title: L.fmt("That didn't work on %1", L.hostLabel(host)),
                     body: this._actionError, icon: Icons.gnome.error, session: null},
                 this._settings.get_boolean('show-pet'), ind => ind.showChats());
             }
@@ -1006,7 +1098,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
     remoteOpen(host, command) {
         this.ui.openMenu = null;
         if (!command) {
-            this._showError(L.fmt("This chat runs in a terminal on %1; Talpy Den can't bring it here.", host));
+            this._showError(L.fmt("This chat runs in a terminal on %1; Talpy Den can't bring it here.", L.hostLabel(host)));
             return;
         }
         this._remoteAction('open', host, ['--open', host, command]);
@@ -1171,9 +1263,15 @@ class TalpyDenIndicator extends PanelMenu.Button {
             this._loadHosts();   // in case ~/.ssh/config changed
             this._toggleMenu('hosts', '');
         });
-        this.tips.add(hostsButton, () => ['SSH hosts', this.shownHosts.length > 0
-            ? L.fmt('Showing Claude on %1. Click to pick hosts from ~/.ssh/config.', this.shownHosts.join(', '))
-            : 'Show the Claude chats of your SSH hosts (from ~/.ssh/config) here too.']);
+        this.tips.add(hostsButton, () => {
+            const containers = this._settings.get_boolean('show-containers');
+            const shown = this.shownHosts;
+            return [containers ? 'Show Claude on SSH hosts and in containers' : 'Show Claude on SSH hosts', shown.length > 0
+                ? containers ? L.fmt('Showing Claude on %1. Click to pick hosts from ~/.ssh/config and containers.', shown.map(h => L.hostLabel(h)).join(', '))
+                    : L.fmt('Showing Claude on %1. Click to pick hosts from ~/.ssh/config.', shown.join(', '))
+                : containers ? 'Show the Claude chats of your SSH hosts (from ~/.ssh/config) and of your Docker, Podman or nerdctl containers here too.'
+                    : 'Show the Claude chats of your SSH hosts (from ~/.ssh/config) here too.'];
+        });
         header.add_child(hostsButton);
         header.add_child(this.tips.add(iconButton(Icons.gnome.refresh, () => {
             this.refreshAll();
@@ -1430,7 +1528,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         const shown = chats ? [this._status ? {...this._status, generatedAt: 0} : null, remote]
             : [c, overall, this._status?.dismissed || 0];
         const signature = JSON.stringify([shown, this._errorText,
-            this._sshHosts, this.ui, this._actionError, this._actionInfo, Math.floor(this.now / 60000),
+            this._sshHosts, this._containersHere, this._containerNotes, this._hostContainers, this.ui, this._actionError, this._actionInfo, Math.floor(this.now / 60000),
             this.ui.tab === 'week' ? [this.week.span, this.week.back, this.week.account, this.week.busy, this.week.error, this.week.copied,
                 this.week.open, this.week.recap ? this.week.recap.generatedAt : 0] : null,
             this.ui.tab === 'perms' ? {...this.perms, data: this.perms.data ? this.perms.data.generatedAt : 0} : null,
@@ -1501,26 +1599,43 @@ class TalpyDenIndicator extends PanelMenu.Button {
         }
     }
 
+    // The hosts picker: ~/.ssh/config's hosts, this computer's containers
+    // and each connected SSH host's (L.containerPlaces). It shows the last
+    // lists at once; this computer's is read again as it opens.
     _buildHostsPicker() {
         const menu = column('claude-inline-menu', {x_expand: true});
-        menu.add_child(label('Show Claude on SSH hosts', 'claude-menu-title'));
-        const shown = this.shownHosts;
+        const containers = this._settings.get_boolean('show-containers');
+        menu.add_child(label('SSH hosts', 'claude-menu-title'));
+        const picked = this.pickedHosts;
+        const hosts = picked.filter(h => !L.containerOf(h));
         for (const h of this._sshHosts) {
             const target = (h.user ? `${h.user}@` : '') + (h.hostname || h.name) + (h.jump ? ` via ${h.jump}` : '');
-            const on = shown.includes(h.name);
+            const on = picked.includes(h.name);
             menu.add_child(textButton(target !== h.name ? `${h.name}  (${target})` : h.name,
                 () => this.toggleHost(h.name), 'claude-menu-item',
                 on ? Icons.gnome.ticked : Icons.gnome.host));
         }
         // picked hosts that aren't in ~/.ssh/config (any more)
-        for (const host of shown) {
+        for (const host of hosts) {
             if (!this._sshHosts.some(h => h.name === host))
                 menu.add_child(textButton(host, () => this.toggleHost(host), 'claude-menu-item', Icons.gnome.ticked));
         }
-        if (this._sshHosts.length === 0 && shown.length === 0)
+        if (this._sshHosts.length === 0 && hosts.length === 0)
             menu.add_child(label('No hosts in ~/.ssh/config', 'claude-dim claude-indent'));
-        menu.add_child(textButton('Reload ~/.ssh/config', () => this._loadHosts(), 'claude-menu-item',
-            Icons.gnome.refresh));
+        if (containers) {
+            const places = L.containerPlaces(this._containersHere, this._containerNotes, this._hostContainers,
+                this.connectedHosts, picked, Math.max(0, this._settings.get_int('container-days')), Date.now());
+            for (const place of places) {
+                menu.add_child(label(place.title, 'claude-menu-title'));
+                for (const item of place.items) {
+                    menu.add_child(textButton(item.text, () => this.toggleHost(item.id), 'claude-menu-item',
+                        item.checked ? Icons.gnome.ticked : Icons.gnome.container));
+                }
+                for (const note of place.notes.concat(place.empty ? [place.empty] : []))
+                    menu.add_child(label(note, 'claude-dim claude-indent'));
+            }
+        }
+        menu.add_child(textButton('Reload', () => this.reloadHosts(), 'claude-menu-item', Icons.gnome.refresh));
         return menu;
     }
 

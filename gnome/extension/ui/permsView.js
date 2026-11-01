@@ -40,7 +40,7 @@ export function buildPermsView(ctx) {
     // this computer's, then each SSH host's shown (as listed there)
     for (const src of [{host: '', ok: true, prompts: data.prompts, granted: data.granted}, ...(data.hosts || [])]) {
         if (src.ok === false) {
-            view.add_child(paragraph(L.fmt("Couldn't read the permissions on %1: %2", src.host, src.error || 'no answer'), 'claude-fg-bad'));
+            view.add_child(paragraph(L.fmt("Couldn't read the permissions on %1: %2", L.hostLabel(src.host), src.error || 'no answer'), 'claude-fg-bad'));
             continue;
         }
         view.add_child(buildGranted(ctx, src, src.host));
@@ -57,7 +57,7 @@ function buildGranted(ctx, data, host) {
     const section = column('claude-week-section', {x_expand: true});
     const granted = data.granted || [];
     const week = ctx.perms;
-    section.add_child(heading(host ? `Permissions you gave on ${host}` : 'Permissions you gave'));
+    section.add_child(heading(host ? `Permissions you gave on ${L.hostLabel(host)}` : 'Permissions you gave'));
     section.add_child(paragraph(L.weekGrantedIntro(granted, host), 'claude-small claude-dim'));
     for (const g of L.weekGrantedShown(granted, !!week.allGranted[host])) {
         const line = box('claude-week-tip', {x_expand: true});
@@ -104,9 +104,9 @@ function buildPrompts(ctx, data, host) {
     if (!p)
         return section;
     const week = ctx.perms;
-    section.add_child(heading(host ? `Permission prompts on ${host}, last 7 days` : 'Permission prompts, last 7 days'));
+    section.add_child(heading(host ? `Permission prompts on ${L.hostLabel(host)}, last 7 days` : 'Permission prompts, last 7 days'));
     section.add_child(paragraph(p.answered ? L.weekPromptsText(p)
-        : `You answered no permission prompts on ${host || 'this computer'} in the last 7 days.`, ''));
+        : `You answered no permission prompts on ${host ? L.hostLabel(host) : 'this computer'} in the last 7 days.`, ''));
     if (p.byTool.length)
         section.add_child(paragraph(`For: ${p.byTool.map(([tool, n]) => `${tool} ${n}`).join(' · ')}`, 'claude-small claude-dim'));
     const rules = week.rules ? p.rules : [];   // (the settings can leave them out)

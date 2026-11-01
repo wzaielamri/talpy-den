@@ -795,6 +795,36 @@ test('trend lines, what Claude did, where the money went, the prompts you answer
     eq(L.weekPlanText({...w, pct: 0, resetsAt: null, reset: true, points: []}, 11 * HOUR), '0% · reset');
 });
 
+test('containers: ids, labels, picker lines and sections', () => {
+    eq(L.containerOf('podman:web'), {engine: 'podman', name: 'web', host: ''});
+    eq(L.containerOf('docker:api@user@lab'), {engine: 'docker', name: 'api', host: 'user@lab'});
+    eq([L.containerOf('lab'), L.containerOf('podman:-x'), L.containerOf('lxc:x')], [null, null, null]);
+    eq([L.hostLabel('podman:web'), L.hostLabel('docker:api@lab'), L.hostLabel('lab')], ['web', 'api on lab', 'lab']);
+    const now = 10 * 86400000;
+    const web = {id: 'podman:web', engine: 'podman', name: 'web', image: 'ubuntu:22.04', running: true, activeAt: now - 5000};
+    const old = {id: 'podman:old', engine: 'podman', name: 'old', image: 'node:20', running: false, activeAt: now - 3 * 86400000,
+        sharesHome: true};
+    const dev = {id: 'docker:shop@lab', engine: 'docker', name: 'shop', image: 'vsc-shop', running: false, activeAt: now - 3600000,
+        folderShort: '~/shop'};
+    eq(L.containerLine(web, now), 'web  (podman · ubuntu:22.04)');
+    eq(L.containerLine(old, now), 'old  (podman · node:20 · stopped 3 days ago · shares your home folder)');
+    eq(L.containerLine(dev, now), 'shop  (~/shop · stopped 1h 0m ago)');
+    eq(L.containerDetail('docker:shop@lab', dev), '~/shop · on lab');
+    eq(L.containerDetail('podman:web', web), 'podman · ubuntu:22.04');
+    eq(L.containerDetail('podman:gone', null), 'podman');
+    const places = L.containerPlaces([web, old], [{engine: 'docker', message: "Docker isn't running."}],
+        {lab: {containers: [dev]}, far: {containers: []}}, ['lab'], ['podman:web', 'podman:gone', 'docker:x@far'], 30, now);
+    eq(places.map(p => p.title), ['Containers on this computer', 'Containers on lab', 'Containers on far']);
+    eq(places[0].items.map(i => [i.id, i.checked]), [['podman:web', true], ['podman:old', false], ['podman:gone', true]]);
+    eq(places[0].notes, ["Docker isn't running."]);
+    eq(places[1].items.map(i => i.id), ['docker:shop@lab']);
+    eq(places[2].items.map(i => i.text), ['x']);   // (not connected: only the one you picked, to unpick it)
+    eq(L.containerPlaces([], [], {}, [], [], 30, now)[0].empty, 'No containers active in the last 30 days');
+    eq(L.containerPlaces([], [], {}, [], [], 0, now)[0].empty, 'No running containers');
+    eq(L.openHint({kind: 'chat', openCommand: 'x'}, 'podman:web@lab'), 'Reopen this chat in web on lab in a terminal');
+    eq(L.groupLabel({host: 'podman:web', name: 'work · Team'}), 'web: work · Team');
+});
+
 print(`${count - failures}/${count} passed`);
 if (failures)
     System.exit(1);

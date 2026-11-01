@@ -564,7 +564,7 @@ class FrontEndTests(unittest.TestCase):
 
     def test_the_same_ids_everywhere(self):
         self.assertEqual(JS_CONTAINER, "/" + remote.CONTAINER.pattern + "/")
-        for path in ("package/contents/ui/main.qml", "package/contents/ui/configAccounts.qml"):
+        for path in ("package/contents/ui/main.qml", "package/contents/ui/configAccounts.qml", "gnome/extension/logic.js"):
             self.assertIn(JS_CONTAINER, (REPO / path).read_text(), path)
 
     def test_the_settings_are_shared(self):
@@ -576,6 +576,11 @@ class FrontEndTests(unittest.TestCase):
             self.assertIn(f'"{key}"', main.split("readonly property var sharedKeys", 1)[1].split("]", 1)[0])
             self.assertIn(f"cfg_{key}", page)
         self.assertEqual((cs.config_defaults()["showContainers"], cs.config_defaults()["containerDays"]), (True, 30))
+        schema = (REPO / "gnome/extension/schemas/org.gnome.shell.extensions.talpy-den.gschema.xml").read_text()
+        prefs = (REPO / "gnome/extension/prefs.js").read_text()
+        for key in ("show-containers", "container-days"):
+            self.assertIn(f'<key name="{key}"', schema)
+            self.assertIn(f"'{key}'", prefs)
 
 
 def test_unwrap(command):

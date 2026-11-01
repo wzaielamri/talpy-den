@@ -220,7 +220,7 @@ class Pet {
             });
             if (!this.lone) {
                 stage.ctx.tips.add(area, () => this.lastChat
-                    ? [(this.host ? `${this.host}: ` : '') + this.lastChat.name,
+                    ? [(this.host ? `${L.hostLabel(this.host)}: ` : '') + this.lastChat.name,
                         `${L.stateText(this.lastChat, stage.ctx.now)}\nClick to open this chat`] : '');
             }
         }

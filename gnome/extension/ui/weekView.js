@@ -168,7 +168,7 @@ function chatLine(ctx, c, cur, where = null, sub = false) {
     const line = box('claude-week-chat', {x_expand: true});
     line.add_child(label(c.name, sub ? 'claude-small' : '', {x_expand: true}));
     // (its folder and numbers: right-aligned columns of one width in every list, as Plasma's)
-    const place = where !== null ? where : (c.host ? `${c.host}: ` : '') + c.folder;
+    const place = where !== null ? where : (c.host ? `${L.hostLabel(c.host)}: ` : '') + c.folder;
     if (place) {
         const folder = label(place, 'claude-small claude-dim claude-week-folder');
         folder.clutter_text.ellipsize = 2;   // Pango.EllipsizeMode.MIDDLE
@@ -182,7 +182,7 @@ function chatLine(ctx, c, cur, where = null, sub = false) {
         if (opens)   // (its tooltip makes every row reactive)
             ctx.openChatById(c.chatId, c.profileDir);
     });
-    ctx.tips.add(button, c.host ? `${c.name} on ${c.host}: its row under ${c.host} opens it` : `Open “${c.name}”`);
+    ctx.tips.add(button, c.host ? `${c.name} on ${L.hostLabel(c.host)}: its row under ${L.hostLabel(c.host)} opens it` : `Open “${c.name}”`);
     return button;
 }
 
@@ -420,12 +420,12 @@ function buildProjects(ctx, recap, cur) {
         const chats = Array.isArray(p.chats) ? p.chats : [];
         const line = box('claude-stats-project', {x_expand: true});
         line.add_child(new St.Icon({icon_name: open ? Icons.gnome.unfolded : Icons.gnome.folded, style_class: 'claude-week-fold'}));
-        line.add_child(label((p.host ? `${p.host}: ` : '') + p.name, `claude-small claude-week-name${open ? ' claude-strong' : ''}`));
+        line.add_child(label((p.host ? `${L.hostLabel(p.host)}: ` : '') + p.name, `claude-small claude-week-name${open ? ' claude-strong' : ''}`));
         line.add_child(meter(100 * p.workedMs / most, 'working', 'claude-meter claude-stats-meter'));
         line.add_child(label(`${L.hoursText(p.workedMs)} · ${L.moneyText(p.cost, cur)}`, 'claude-small claude-dim claude-stats-numbers'));
         const button = new St.Button({style_class: 'claude-row-button', child: line, x_expand: true, can_focus: true, reactive: true});
         button.connect('clicked', () => ctx.weekUnfold(key));
-        ctx.tips.add(button, [(p.host ? `${p.host}: ` : '') + p.path,
+        ctx.tips.add(button, [(p.host ? `${L.hostLabel(p.host)}: ` : '') + p.path,
             `Claude worked ${L.hoursText(p.workedMs)} · ${L.moneyText(p.cost, cur)} at API prices\n` +
             `${L.plural(p.prompts, '%1 prompt', '%1 prompts')} · ${L.plural(p.chatCount !== undefined ? p.chatCount : chats.length, '%1 chat', '%1 chats')}` +
             '\n\nClick for its chats.']);

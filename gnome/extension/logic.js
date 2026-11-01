@@ -13,6 +13,77 @@ export function plural(n, one, many) {
     return fmt(n === 1 ? one : many, n);
 }
 
+// ---- containers: docker:NAME, podman:NAME, nerdctl:NAME (this computer's),
+// ENGINE:NAME@HOST (on the SSH host HOST), picked and shown like SSH hosts
+// (remote.py's ids)
+
+// {engine, name, host} of a container's id ('' host: this computer's), or null for an SSH host
+export function containerOf(id) {
+    const m = /^(docker|podman|nerdctl):([A-Za-z0-9][A-Za-z0-9_.-]*)(?:@(.+))?$/.exec(id || '');
+    return m ? {engine: m[1], name: m[2], host: m[3] || ''} : null;
+}
+
+// How an SSH host or a container is named: lab, web, or web on lab
+export function hostLabel(id) {
+    const c = containerOf(id);
+    return !c ? id : c.host ? fmt('%1 on %2', c.name, c.host) : c.name;
+}
+
+// "stopped 3 days ago", "stopped 5h 10m ago", "stopped"
+export function containerStopped(c, now) {
+    const age = c && c.activeAt ? Math.max(0, now - c.activeAt) : -1;
+    return age < 0 ? 'stopped' : age >= 2 * 86400000 ? plural(Math.floor(age / 86400000), 'stopped %1 day ago', 'stopped %1 days ago')
+        : fmt('stopped %1 ago', duration(age));
+}
+
+// A container's line in the hosts picker: "web  (podman · ubuntu:22.04 · stopped 3 days ago)"
+export function containerLine(c, now) {
+    const parts = [c.folderShort ? c.folderShort : c.engine + (c.image ? ` · ${c.image}` : '')];
+    if (!c.running)
+        parts.push(containerStopped(c, now));
+    if (c.sharesHome)
+        parts.push('shares your home folder');
+    return `${c.name}  (${parts.join(' · ')})`;
+}
+
+// A picked container's header line: "podman · ubuntu:22.04", or its dev container's folder (· on lab)
+export function containerDetail(id, info) {
+    const c = containerOf(id);
+    const parts = [info && info.folderShort ? info.folderShort : c.engine + (info && info.image ? ` · ${info.image}` : '')];
+    if (c.host)
+        parts.push(fmt('on %1', c.host));
+    return parts.join(' · ');
+}
+
+// The hosts picker's container sections: this computer's, then each
+// connected SSH host's (and a host's whose container you picked); a picked
+// container that isn't listed is still there, to unpick it.
+// [{host, title, items: [{text, id, checked}], notes: [text], empty: text|''}]
+export function containerPlaces(here, notes, hostContainers, connected, picked, days, now) {
+    const none = days > 0 ? plural(days, 'No containers active in the last day', 'No containers active in the last %1 days')
+        : 'No running containers';
+    const pickedOf = host => picked.filter(id => (containerOf(id) || {host: null}).host === host);
+    const hosts = connected.concat(picked.map(id => (containerOf(id) || {}).host || '')
+        .filter((h, i, all) => h && all.indexOf(h) === i && !connected.includes(h)));
+    const places = [{host: '', title: 'Containers on this computer', list: here, notes}];
+    for (const host of hosts) {
+        const kept = connected.includes(host) ? hostContainers[host] || {} : {};
+        places.push({host, title: fmt('Containers on %1', host), list: kept.containers || [],
+            notes: (kept.notes || []).concat(kept.error ? [{message: kept.error}] : [])});
+    }
+    return places.map(place => {
+        const listed = place.list.filter(c => c && c.id);
+        const items = listed.map(c => ({text: containerLine(c, now), id: c.id, checked: picked.includes(c.id)}));
+        for (const id of pickedOf(place.host)) {
+            if (!listed.some(c => c.id === id))
+                items.push({text: containerOf(id).name, id, checked: true});
+        }
+        const messages = place.notes.map(n => n.message);
+        return {host: place.host, title: place.title, items, notes: messages,
+            empty: items.length || messages.length ? '' : none};
+    });
+}
+
 // What stopped a chat's turn before it was through, while that holds:
 // "limit" (a usage limit, until it resets) or "login" (it expired), else ""
 export function stopOf(s) {
@@ -192,7 +263,7 @@ export function panelWindow(groups) {
 
 // "work · Team", or "lab: work · Team" for an SSH host's account
 export function groupLabel(g) {
-    return g.host ? fmt('%1: %2', g.host, g.name) : g.name;
+    return g.host ? fmt('%1: %2', hostLabel(g.host), g.name) : g.name;
 }
 
 export function tooltipText(status, errorText, groups, shownHosts, remote) {
@@ -202,12 +273,12 @@ export function tooltipText(status, errorText, groups, shownHosts, remote) {
     for (const g of groups) {
         if (!g.limits)
             continue;
-        lines.push(`${g.host ? `${g.host}: ` : ''}${g.title}: ${
+        lines.push(`${g.host ? `${hostLabel(g.host)}: ` : ''}${g.title}: ${
             g.limits.windows.map(w => `${w.label} ${Math.round(w.pct)}%`).join(' · ')}`);
     }
     for (const host of shownHosts) {
         if (remote[host] && remote[host].error)
-            lines.push(fmt('%1: not reachable', host));
+            lines.push(fmt('%1: not reachable', hostLabel(host)));
     }
     return lines.join('\n');
 }
@@ -338,6 +409,16 @@ export function tokensTooltip(t) {
 
 // The hint on a session's name: what clicking it does
 export function openHint(session, remoteHost) {
+    if (containerOf(remoteHost)) {
+        const name = hostLabel(remoteHost);
+        if (session.entrypoint === 'claude-vscode' && !session.openCommand)
+            return fmt('Show this conversation in VS Code (connected to %1)', name);
+        if (!session.openCommand)
+            return fmt('Switch to the terminal open in %1', name);
+        if (session.kind === 'chat')
+            return fmt('Reopen this chat in %1 in a terminal', name);
+        return fmt('Open this background chat in %1 in a terminal', name);
+    }
     if (remoteHost) {
         if (session.entrypoint === 'claude-vscode' && !session.openCommand)
             return fmt('Show this conversation in VS Code (connected to %1)', remoteHost);
@@ -362,7 +443,7 @@ export function openHint(session, remoteHost) {
 // and its Delete… (Plasma's words)
 export function hideHint(host) {
     return `Only hides it here; nothing is deleted. It comes back if the chat runs again. ${host
-        ? fmt("The eye button next to %1's name brings it back.", host)
+        ? fmt("The eye button next to %1's name brings it back.", hostLabel(host))
         : 'Show Hidden Chats Again, at the bottom of this menu, brings it back.'}`;
 }
 
@@ -691,7 +772,7 @@ function limitResetNotice(source, g, freed, host) {
     const names = freed.slice(0, 4).map(s => s.name).join(', ') + (freed.length > 4 ? ` +${freed.length - 4}` : '');
     return {
         key: `${source ? `${source}|` : ''}limit-reset:${g.id}`, session: freed[0], kind: 'reset', host,
-        title: fmt('%1: the usage limit reset', host ? fmt('%1: %2', host, g.name) : g.name),
+        title: fmt('%1: the usage limit reset', host ? fmt('%1: %2', hostLabel(host), g.name) : g.name),
         body: freed.length === 1 ? fmt('%1 can go on.', names) : fmt('%1 chats can go on: %2', freed.length, names),
         icon: 'done',
     };
@@ -947,34 +1028,39 @@ export function openInVscode(group, vscodeInstalled, cliHere, preferVscode) {
 // resuming: for the recent chats' switch (they reopen) instead of new chats'
 export function terminalHint(host, cliHere, resuming = false) {
     if (!cliHere) {
-        return host ? fmt("Claude Code's claude command isn't installed on %1: it isn't on PATH there, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.", host)
+        return containerOf(host) ? fmt("Claude Code's claude command isn't installed in %1: it isn't on PATH there, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.", hostLabel(host))
+            : host ? fmt("Claude Code's claude command isn't installed on %1: it isn't on PATH there, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.", host)
             : "Claude Code's claude command isn't installed here: it isn't on PATH, in ~/.local/bin, npm's or nvm's folders, nor on your login shell's PATH.";
     }
     if (resuming) {
-        return host ? fmt('Reopens the chat on %1 in a terminal (ssh, claude --resume).', host)
+        return containerOf(host) ? fmt('Reopens the chat in %1 in a terminal (claude --resume, in the container).', hostLabel(host))
+            : host ? fmt('Reopens the chat on %1 in a terminal (ssh, claude --resume).', host)
             : 'Reopens the chat in a terminal (claude --resume).';
     }
-    return host ? fmt('A terminal opens with Claude on %1 (ssh) in the folder you click.', host)
+    return containerOf(host) ? fmt('A terminal opens with Claude in %1 in the folder you click.', hostLabel(host))
+        : host ? fmt('A terminal opens with Claude on %1 (ssh) in the folder you click.', host)
         : 'A terminal opens with Claude in the folder you click.';
 }
 
 // VS Code's Claude extension runs on one account (status.vscode.on; an SSH
 // host's: its ~/.claude), so its button only works there
 export function vscodeHint(group, host, status, resuming = false) {
+    const how = containerOf(host) ? 'Dev Containers' : 'Remote-SSH';
+    const name = hostLabel(host);
     if (!(status && status.vscode && status.vscode.installed === true)) {
-        return host ? fmt("VS Code would connect to %1 (Remote-SSH), but it isn't installed on this computer.", host)
+        return host ? fmt("VS Code would connect to %1 (%2), but it isn't installed on this computer.", name, how)
             : "VS Code isn't installed on this computer.";
     }
     if (group.vscodeHere && resuming) {
-        return host ? fmt("Opens VS Code connected to %1 (Remote-SSH) in the chat's folder, and the chat in its Claude Code panel.", host)
+        return host ? fmt("Opens VS Code connected to %1 (%2) in the chat's folder, and the chat in its Claude Code panel.", name, how)
             : "Opens the chat's folder in VS Code, and the chat in its Claude Code panel.";
     }
     if (group.vscodeHere) {
-        return host ? fmt('Opens VS Code connected to %1 (Remote-SSH) with a new chat in its Claude Code panel.', host)
+        return host ? fmt('Opens VS Code connected to %1 (%2) with a new chat in its Claude Code panel.', name, how)
             : 'Opens the folder in VS Code with a new chat in its Claude Code panel.';
     }
     if (host)
-        return fmt("VS Code's Claude on %1 runs on another account (the host's ~/.claude).", host);
+        return fmt("VS Code's Claude on %1 runs on another account (the host's ~/.claude).", name);
     const on = status.vscode.on;
     return on ? fmt("VS Code's Claude runs on %1, not %2: switch its profile to use this account there.", on, group.title)
         : "VS Code's Claude doesn't run on this account.";
@@ -1068,7 +1154,7 @@ export function changesTooltip(changes, remoteHost, vscodeInstalled = true) {
         lines.push(fmt('… and %1 more', changes.count - changes.files.length));
     lines.push('');
     lines.push(remoteHost
-        ? fmt('On %1: comparing them works for chats on this computer.', remoteHost)
+        ? fmt('On %1: comparing them works for chats on this computer.', hostLabel(remoteHost))
         : !vscodeInstalled ? 'Install VS Code to compare them side by side.'
             : 'Click to compare them with how they were before the chat, side by side in VS Code.');
     return [plural(changes.count, '%1 file changed', '%1 files changed'), lines.join('\n')];
@@ -1111,7 +1197,8 @@ export function agentTooltip(a, open) {
 
 export function agentRunTooltip(remoteHost) {
     const text = "Its task, every step with the start of each result, and its report, as a Markdown file in your app for those. Claude Code itself can't open a subagent from outside.";
-    return ['Open the whole run', remoteHost ? `${text}\n${fmt('Fetched from %1 over ssh.', remoteHost)}` : text];
+    return ['Open the whole run', remoteHost ? `${text}\n${containerOf(remoteHost) ? fmt('Fetched from %1.', hostLabel(remoteHost))
+        : fmt('Fetched from %1 over ssh.', remoteHost)}` : text];
 }
 
 // The helper that saves a subagent's whole run as Markdown and opens it
@@ -1228,7 +1315,7 @@ export function awayDigest(away, groups, now, minMinutes) {
     if (!(awayMs >= minMinutes * 60000))
         return null;
     const before = away.snapshot.sessions;
-    const named = (s, host) => (host ? fmt('%1 (%2)', s.name, host) : s.name);
+    const named = (s, host) => (host ? fmt('%1 (%2)', s.name, hostLabel(host)) : s.name);
     const finished = [], failed = [], stopped = [], limited = [], loggedOut = [], resets = [];
     for (const g of groups) {
         for (const s of g.sessions) {

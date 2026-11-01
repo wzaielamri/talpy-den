@@ -26,9 +26,9 @@ export function buildGroupSection(ctx, group, {last = false, remoteHost = '', ac
     // The default account: listed first, VS Code's Claude and plain claude run on it
     if (group.defaultHere && accounts > 1) {
         const mark = tag('Default');
-        tips.add(mark, [remoteHost ? L.fmt('The default account on %1', remoteHost) : 'The default account',
+        tips.add(mark, [remoteHost ? L.fmt('The default account on %1', L.hostLabel(remoteHost)) : 'The default account',
             (remoteHost
-                ? L.fmt("Listed first; VS Code's Claude on %1 (its VS Code server) and plain claude there run on it.", remoteHost)
+                ? L.fmt("Listed first; VS Code's Claude on %1 (its VS Code server) and plain claude there run on it.", L.hostLabel(remoteHost))
                 : "Listed first, its 5-hour usage is in the top bar, and VS Code's Claude and plain claude run on it.")
             + ' Change it in the settings: Accounts, Make Default.']);
         head.add_child(mark);
@@ -38,7 +38,7 @@ export function buildGroupSection(ctx, group, {last = false, remoteHost = '', ac
     const bubble = new Gio.FileIcon({file: Gio.File.new_for_path(GLib.build_filenamev([ctx.iconsDir, 'chat-new-symbolic.svg']))});
     const add = iconButton(bubble, () => ctx.toggleNewChat(groupKey));
     tips.add(add, [L.fmt('New chat on %1', group.title), remoteHost
-        ? L.fmt("Lists this account's folders on %1: start a new Claude chat in one, in a terminal (over ssh) or in VS Code.", remoteHost)
+        ? L.fmt("Lists this account's folders on %1: start a new Claude chat in one, in a terminal (over ssh) or in VS Code.", L.hostLabel(remoteHost))
         : "Lists this account's recent folders: start a new Claude chat in one, in a terminal or in VS Code."]);
     head.add_child(add);
     head.add_child(new St.Widget({x_expand: true}));
@@ -63,7 +63,7 @@ export function buildGroupSection(ctx, group, {last = false, remoteHost = '', ac
         if (!remoteHost || group.loginCommand) {
             const login = textButton('Log in…', () => ctx.logIn(group, remoteHost), 'claude-text-button claude-login-button');
             tips.add(login, [L.fmt('Log in to %1', group.title), remoteHost
-                ? L.fmt("Opens a terminal with Claude's own login on %1 (over ssh): open the address it shows in your browser, sign in, and paste the code you get back.", remoteHost)
+                ? L.fmt("Opens a terminal with Claude's own login on %1 (over ssh): open the address it shows in your browser, sign in, and paste the code you get back.", L.hostLabel(remoteHost))
                 : "Opens a terminal with Claude's own login (claude auth login): sign in in your browser with the account for this folder. Talpy Den never sees the login."]);
             row.add_child(login);
         }
@@ -247,7 +247,7 @@ function buildStats(ctx, stats) {
 // which runs on one account only (greyed out on the others).
 function buildNewChatMenu(ctx, group, host) {
     const menu = column('claude-inline-menu', {x_expand: true});
-    menu.add_child(label(L.fmt('New chat on %1 in…', host ? L.fmt('%1 on %2', group.title, host) : group.title),
+    menu.add_child(label(L.fmt('New chat on %1 in…', host ? L.fmt('%1 on %2', group.title, L.hostLabel(host)) : group.title),
         'claude-menu-title'));
     const inVscode = ctx.openInVscode(group, host);
     const terminalHere = ctx.cliHere(host);
@@ -425,23 +425,30 @@ function buildRecentLine(ctx, group, chat, remoteHost) {
     return wrap;
 }
 
-// An SSH host you picked (port of HostSection.qml): its accounts, fetched by
-// remote.py over ssh. Its last answer stays (dimmed) when a check fails.
+// An SSH host or a container you picked (port of HostSection.qml): its
+// accounts, fetched by remote.py over ssh or with the container engine's
+// exec. Its last answer stays (dimmed) when a check fails. A stopped
+// container says so, with Start (it isn't checked until Start or Refresh).
 export function buildHostSection(ctx, host) {
     const tips = ctx.tips;
     const info = ctx.remote[host] || {loading: true, ok: false, error: '', result: null, updatedAt: 0};
     const owners = ctx.usageOwners;
     const groups = (info.result ? info.result.groups : []).map(g => L.withUsage(g, host, owners));
     const stale = !!info.error && info.result !== null;
+    const container = L.containerOf(host);
+    const name = L.hostLabel(host);
+    const stopped = !!info.stopped && !info.loading;
     const section = column('claude-host', {x_expand: true});
     const rule = separator();   // (set off from this computer's accounts, and from the host before)
     rule.add_style_class_name('claude-host-rule');
     section.add_child(rule);
 
     const head = box('claude-group-head', {x_expand: true});
-    head.add_child(new St.Icon({icon_name: Icons.gnome.host, style_class: 'claude-button-icon'}));
-    head.add_child(label(host, 'claude-host-title'));
-    const real = info.result && info.result.host && info.result.host.split('.')[0] !== host ? info.result.host : '';
+    head.add_child(new St.Icon({icon_name: container ? Icons.gnome.container : Icons.gnome.host, style_class: 'claude-button-icon'}));
+    head.add_child(label(container ? container.name : host, 'claude-host-title'));
+    // the machine's own name, when the ssh alias differs; a container's engine and image (· on its host)
+    const real = container ? L.containerDetail(host, ctx.containerInfo(host))
+        : info.result && info.result.host && info.result.host.split('.')[0] !== host ? info.result.host : '';
     if (real)
         head.add_child(label(real, 'claude-small claude-dim'));
     head.add_child(new St.Widget({x_expand: true}));
@@ -454,12 +461,24 @@ export function buildHostSection(ctx, host) {
             L.fmt('Show Hidden Chats Again (%1)', info.result.dismissed)));
     }
     head.add_child(tips.add(iconButton(Icons.gnome.refresh, () => ctx.pollHost(host)),
-        [L.fmt('Refresh %1', host), L.fmt("Checked every %1 seconds while it's shown.", ctx.remotePollSeconds)]));
+        [L.fmt('Refresh %1', name), stopped ? "Not checked while it's stopped: Refresh checks it once."
+            : L.fmt("Checked every %1 seconds while it's shown.", ctx.remotePollSeconds)]));
     head.add_child(tips.add(iconButton(Icons.gnome.hide, () => ctx.toggleHost(host)),
-        [L.fmt('Stop showing %1', host), 'Pick it again with the SSH hosts button at the top.']));
+        [L.fmt('Stop showing %1', name), 'Pick it again with the hosts button at the top.']));
     section.add_child(head);
 
-    if (info.error) {
+    if (stopped) {
+        // a stopped container: Start (remote.py --start), then it's checked
+        const line = box('claude-indent', {x_expand: true});
+        const l = label(L.fmt('%1 is stopped.', name) + (stale ? ` ${L.fmt('Showing what it said %1 ago.', L.duration(ctx.now - info.updatedAt))}` : ''),
+            '', {x_expand: true});
+        l.clutter_text.line_wrap = true;
+        l.clutter_text.ellipsize = 0;
+        line.add_child(l);
+        line.add_child(tips.add(textButton('Start', () => ctx.startContainer(host), 'claude-text-button claude-login-button', Icons.gnome.startNow),
+            [L.fmt('Start %1', name), L.fmt('Starts the container (%1 start), then shows its chats.', container.engine)]));
+        section.add_child(line);
+    } else if (info.error) {
         // (an error may end without a full stop: "…Connection timed out Showing what it said…")
         const err = stale ? L.fmt('%1 Showing what it said %2 ago.', /[.!?]$/.test(info.error) ? info.error : `${info.error}.`,
             L.duration(ctx.now - info.updatedAt))
@@ -476,6 +495,7 @@ export function buildHostSection(ctx, host) {
         section.add_child(s);
     });
     if (info.ok && groups.length === 0)
-        section.add_child(label('No Claude Code config on this host (~/.claude, ~/.claude-*)', 'claude-dim claude-indent'));
+        section.add_child(label(container ? 'No Claude Code config in this container (~/.claude, ~/.claude-*)'
+            : 'No Claude Code config on this host (~/.claude, ~/.claude-*)', 'claude-dim claude-indent'));
     return section;
 }

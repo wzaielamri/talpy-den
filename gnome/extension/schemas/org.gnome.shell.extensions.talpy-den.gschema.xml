@@ -60,6 +60,15 @@
       <default>[]</default>
       <summary>SSH hosts (from ~/.ssh/config) shown in the popup, one per entry</summary>
     </key>
+    <key name="show-containers" type="b">
+      <default>true</default>
+      <summary>Show Docker, Podman and nerdctl containers in the hosts picker (off: no container engine is asked anything)</summary>
+    </key>
+    <key name="container-days" type="i">
+      <default>30</default>
+      <range min="0" max="365"/>
+      <summary>The hosts picker lists running containers and those active in this many days (0 = only running ones)</summary>
+    </key>
     <key name="remote-poll-seconds" type="i">
       <default>30</default>
       <range min="10" max="600"/>
