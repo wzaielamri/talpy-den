@@ -24,6 +24,8 @@ export const settings = {
   pollInterval: () => num("pollInterval", 2000, 1000, 60000),
   idlePollInterval: () => num("idlePollInterval", 20000, 1000, 300000),
   remotePollSeconds: () => num("remotePollSeconds", 30, 10, 600),
+  showContainers: () => cfg().get<boolean>("showContainers", true) !== false,
+  containerDays: () => num("containerDays", 30, 0, 365),
   sshHosts: () => [...new Set((cfg().get<string[]>("sshHosts", []) ?? []).map((h) => String(h).trim()).filter(Boolean))], // (a host twice would be two rows)
   includeCurrentRemote: () => cfg().get<boolean>("includeCurrentRemote", true),
   clickOpensPane: () => cfg().get<boolean>("clickOpensPane", true) !== false,
@@ -97,6 +99,7 @@ export function viewSettings(): ViewSettings {
     recapCurrency: settings.recapCurrency(),
     recapRules: settings.recapRules(),
     clickOpensPane: settings.clickOpensPane(),
+    showContainers: settings.showContainers(),
   };
 }
 

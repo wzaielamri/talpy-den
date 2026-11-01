@@ -570,6 +570,34 @@ export interface HostState {
   // Log in… opens a terminal where ssh asks for it (remote.py --login-here)
   login?: boolean;
   loggedIn?: boolean; // the checks go through a connection you logged in with: Disconnect closes it
+  // A container's: stopped (Start; it isn't checked until Start or Refresh),
+  // gone, and its engine and image or dev container folder (· on its host)
+  stopped?: boolean;
+  gone?: boolean;
+  detail?: string;
+}
+
+// A Docker, Podman or nerdctl container as remote.py lists it (--hosts, --containers)
+export interface ContainerInfo {
+  id: string; // docker:NAME, podman:NAME, nerdctl:NAME; ENGINE:NAME@HOST on an SSH host
+  engine: string;
+  name: string;
+  image: string;
+  state: string;
+  running: boolean;
+  activeAt: number | null; // started, stopped or made last
+  folder: string; // its dev container's project folder (VS Code's Dev Containers)
+  folderShort: string;
+  devcontainer: boolean;
+  sharesHome: boolean; // your home folder is mounted in it (Toolbox, Distrobox…)
+  cid?: string; // the engine's id of it
+  host?: string;
+}
+
+// An engine that couldn't list its containers, and why ("Docker isn't running.")
+export interface ContainerNote {
+  engine?: string;
+  message: string;
 }
 
 export interface ViewSettings {
@@ -582,6 +610,7 @@ export interface ViewSettings {
   recapCurrency?: string; // the Recap tab's amounts: "USD", "EUR", …
   recapRules?: boolean; // the Recap tab suggests rules for the permission prompts you answered
   clickOpensPane?: boolean; // a click on a chat opens its tab (else the chat itself)
+  showContainers?: boolean; // containers are in the hosts picker (talpyDen.showContainers)
 }
 
 export type ReopenIn = "terminal" | "claudeCode";
@@ -919,6 +948,7 @@ export type WebviewMessage =
   | { type: "keepGoing"; chat: ChatRef; on: boolean } // keep going after each usage limit (or not any more)
   | { type: "star"; chat?: ChatRef; groupId?: string; host?: string; plan?: string; on: boolean } // a chat or an account's plan: starred, or not any more
   | { type: "loginHost"; host: string }
+  | { type: "startContainer"; host: string }
   | { type: "disconnectHost"; host: string }
   | { type: "login"; groupId: string; host?: string }
   | { type: "refresh"; host?: string }

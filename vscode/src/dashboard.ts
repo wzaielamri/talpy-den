@@ -9,16 +9,16 @@
 
 import * as vscode from "vscode";
 import { AwayWatch } from "./away";
-import type { Backend } from "./backend";
+import type { Backend, HostContainers, SshHost } from "./backend";
 import { claudePanelAvailable, localPanelProfileKey } from "./claudePanel";
 import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSettings } from "./config";
 import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";
-import { currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
+import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
 import { demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
-import { allGroups, chatsNeedingYou, findProjectChat, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { allGroups, containerDetail, containerOf, chatsNeedingYou, findProjectChat, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef } from "./notify";
-import type { ChatRef, ClaudeCodeInfo, DigestCard, Group, HostState, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
+import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
 
@@ -33,6 +33,13 @@ export class Dashboard implements vscode.Disposable {
   private status: Status | null = null;
   private errorText = "";
   private hosts = new Map<string, HostState>();
+  // ~/.ssh/config's hosts and the containers for the hosts picker: this
+  // computer's (at start, as the picker opens, on Reload) and each connected
+  // SSH host's (once it connects, on Reload), never on a timer
+  sshHostList: SshHost[] = [];
+  containersHere: ContainerInfo[] = [];
+  containerNotes: ContainerNote[] = [];
+  hostContainers: Record<string, HostContainers> = {};
   private actionError = "";
   private actionInfo = "";
   private messageTimers: { error?: NodeJS.Timeout; info?: NodeJS.Timeout } = {};
@@ -138,6 +145,10 @@ export class Dashboard implements vscode.Disposable {
   private windowHostOff = false;
   private windowHostNow(): string | undefined {
     const authority = currentRemoteAuthority(vscode);
+    // a Dev Containers window: its container (named as its listing names it)
+    const container = containerFromAuthority(authority, [...this.containersHere, ...Object.values(this.hostContainers).flatMap((h) => h.containers ?? [])],
+      vscode.workspace.getConfiguration("dev.containers").get<string>("dockerPath", "docker"));
+    if (container !== undefined) return container || undefined;
     const host = hostFromAuthority(authority);
     const port = portFromAuthority(authority);
     const sshTo = host && port ? sshPort(host) : undefined;
@@ -174,6 +185,7 @@ export class Dashboard implements vscode.Disposable {
     this.live.start();
     this.scheduleLocal(0);
     this.scheduleHosts(0);
+    void this.loadHosts(); // (the picker's lists, once; a Dev Containers window's container)
   }
 
   // Whether chats are followed as they change (their session files): the checks in between are rarer then
@@ -252,6 +264,7 @@ export class Dashboard implements vscode.Disposable {
     return {
       local: JSON.stringify([settings.python(), configDirArgs(), status, settings.usageCap()]),
       hosts: JSON.stringify([settings.python(), status, this.shownHosts()]),
+      containers: JSON.stringify([settings.showContainers(), settings.containerDays()]),
       localPace: JSON.stringify([settings.pollInterval(), settings.idlePollInterval()]),
       hostPace: String(settings.remotePollSeconds()),
     };
@@ -268,6 +281,14 @@ export class Dashboard implements vscode.Disposable {
     else if (now.localPace !== was.localPace) this.scheduleLocal(); // (the next check at the new pace)
     if (now.hosts !== was.hosts) this.scheduleHosts(0);
     else if (now.hostPace !== was.hostPace) this.scheduleHosts();
+    if (now.containers !== was.containers) {
+      if (!settings.showContainers()) {
+        this.containersHere = [];
+        this.containerNotes = [];
+        this.hostContainers = {};
+      }
+      void this.reloadHosts();
+    }
   }
 
   // The hosts to check: the window's own host first, then the picked ones
@@ -280,8 +301,11 @@ export class Dashboard implements vscode.Disposable {
     });
   }
 
+  // The SSH hosts and containers picked (with Show containers off, the
+  // containers stay picked but aren't shown, and no engine is asked anything)
   shownHosts(): string[] {
-    const list = settings.sshHosts();
+    const containers = settings.showContainers();
+    const list = settings.sshHosts().filter((h) => containers || !containerOf(h));
     if (this.windowHost && !this.windowHostOff && settings.includeCurrentRemote() && !list.includes(this.windowHost)) list.unshift(this.windowHost);
     return list;
   }
@@ -299,6 +323,8 @@ export class Dashboard implements vscode.Disposable {
       if (h) h.current = name === this.windowHost;
       else
         this.hosts.set(name, { name, loading: false, ok: false, error: "", result: null, updatedAt: 0, current: name === this.windowHost });
+      const now = this.hosts.get(name)!;
+      if (containerOf(name)) now.detail = containerDetail(name, this.containerInfo(name));
     }
     this.emit();
   }
@@ -315,7 +341,11 @@ export class Dashboard implements vscode.Disposable {
     clearTimeout(this.hostTimer);
     const wait = delay ?? settings.remotePollSeconds() * 1000;
     this.hostTimer = setTimeout(() => {
-      for (const host of this.shownHosts()) void this.pollHost(host);
+      for (const host of this.shownHosts()) {
+        // (a container that's stopped, or gone, isn't checked until Start or Refresh)
+        const h = this.hosts.get(host);
+        if (!h?.stopped && !h?.gone) void this.pollHost(host);
+      }
       this.scheduleHosts();
     }, wait);
   }
@@ -389,6 +419,76 @@ export class Dashboard implements vscode.Disposable {
 
   // (changed: something was done there while a check ran, which may have
   // read it before: it checks again once that's done)
+  // --container-days, --picked: the containers listed (the picked ones always), or no containers at all
+  containerArgs(): string[] {
+    if (!settings.showContainers()) return ["--no-containers"];
+    const picked = settings.sshHosts().filter((h) => containerOf(h));
+    return ["--container-days", String(settings.containerDays()), ...(picked.length ? ["--picked", picked.join(",")] : [])];
+  }
+
+  // ~/.ssh/config's hosts and this computer's containers, with the SSH
+  // hosts' container lists as last fetched (shown until they're fetched again)
+  async loadHosts(): Promise<void> {
+    if (this.demo || this.disposed) return;
+    let list: Awaited<ReturnType<Backend["hostList"]>>;
+    try {
+      list = await this.backend.hostList(this.containerArgs());
+    } catch (e) {
+      this.log.warn(`The hosts and containers couldn't be listed: ${(e as Error).message}`);
+      return;
+    }
+    if (!list || this.disposed) return;
+    this.sshHostList = list.hosts;
+    this.containersHere = list.containers;
+    this.containerNotes = list.notes;
+    for (const [host, kept] of Object.entries(list.hostContainers)) if (!(host in this.hostContainers)) this.hostContainers[host] = kept;
+    this.containersChanged();
+  }
+
+  // An SSH host's containers (remote.py --containers there)
+  async loadHostContainers(host: string): Promise<void> {
+    if (!settings.showContainers() || containerOf(host) || this.demo) return;
+    let answer: HostContainers;
+    try {
+      answer = await this.backend.hostContainers(host, this.containerArgs());
+    } catch (e) {
+      this.log.warn(`${host}'s containers couldn't be listed: ${(e as Error).message}`);
+      return;
+    }
+    if (this.disposed) return;
+    this.hostContainers = { ...this.hostContainers, [host]: answer.error ? { ...(this.hostContainers[host] ?? {}), error: answer.error } : answer };
+    this.containersChanged();
+  }
+
+  // Reload in the picker: ~/.ssh/config, this computer's containers and every connected host's
+  async reloadHosts(): Promise<void> {
+    await Promise.all([this.loadHosts(), ...this.connectedHosts().map((h) => this.loadHostContainers(h))]);
+  }
+
+  // The SSH hosts shown whose last check worked: their containers are in the picker
+  connectedHosts(): string[] {
+    return this.shownHosts().filter((h) => !containerOf(h) && !!this.hosts.get(h)?.ok);
+  }
+
+  // A container as its last listing had it, or null
+  containerInfo(id: string): ContainerInfo | null {
+    const c = containerOf(id);
+    if (!c) return null;
+    const list = c.host ? this.hostContainers[c.host]?.containers ?? [] : this.containersHere;
+    return list.find((x) => x.id === id) ?? null;
+  }
+
+  // A new list: the containers' header lines, and a Dev Containers window's own container
+  private containersChanged(): void {
+    const host = this.windowHostNow();
+    if (host !== this.windowHost) {
+      this.windowHost = host;
+      this.polledWith = { ...this.polledWith, hosts: this.pollSettings().hosts };
+      this.syncHosts();
+      this.scheduleHosts(0);
+    } else this.syncHosts();
+  }
+
   async pollHost(host: string, changed = false): Promise<void> {
     if (this.hostBusy.has(host) && changed) this.hostAgain.add(host);
     if (this.hostBusy.has(host) || this.demo || this.disposed) return;
@@ -402,6 +502,7 @@ export class Dashboard implements vscode.Disposable {
       const answer = await this.backend.hostStatus(host, statusArgs());
       const now = this.hosts.get(host);
       if (!now) return; // unpicked while it was being checked
+      if (answer.ok && answer.result && !now.ok && !containerOf(host)) void this.loadHostContainers(host); // (it's connected: its containers go in the picker)
       if (answer.ok && answer.result) {
         // on this computer's clock: the host's may be off
         const result = toLocalClock(answer.result, Date.now() - (answer.result.generatedAt || Date.now()));
@@ -414,12 +515,12 @@ export class Dashboard implements vscode.Disposable {
           this.tracker.overlaps("ssh:" + host, result.groups, host, opts),
         );
         const resets = this.tracker.resets("ssh:" + host, result.groups);
-        Object.assign(now, { loading: false, ok: true, error: "", result, updatedAt: Date.now(), login: false, loggedIn: !!answer.loggedIn });
+        Object.assign(now, { loading: false, ok: true, error: "", result, updatedAt: Date.now(), login: false, loggedIn: !!answer.loggedIn, stopped: false, gone: false });
         this.hostAnswered.set(host, asked);
         this.react(changes, resets);
       } else {
         // keep the last answer to show (dimmed) with the error
-        Object.assign(now, { loading: false, ok: false, error: answer.error || "no answer", login: !!answer.login, loggedIn: false });
+        Object.assign(now, { loading: false, ok: false, error: answer.error || "no answer", login: !!answer.login, loggedIn: false, stopped: !!answer.stopped, gone: !!answer.gone });
         this.log.warn(`${host}: ${now.error}`);
       }
     } finally {

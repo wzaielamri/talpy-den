@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { duration, keptChat, machineStatus, queuedFor, queuedWhat, startText } from "../../src/shared/model";
+import { duration, hostLabel, keptChat, machineStatus, queuedFor, queuedWhat, startText } from "../../src/shared/model";
 import type { Group, QueuedTask } from "../../src/shared/types";
 import { post } from "../env";
 import { Icon, I, T } from "../util/icons";
@@ -35,7 +35,7 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
   // (what you wrote for it is asked about first: it's gone with it; a kept chat's go-on stops it keeping going)
   const wrote = !t.chat || !!t.afterTurn;
   const kept = !!t.chat && !t.afterTurn && !t.host && keptChat(view.status, t.chat) !== null;
-  const folder = (t.host ? `${t.host}:` : "") + (t.folder || "~");
+  const folder = (t.host ? `${hostLabel(t.host)}:` : "") + (t.folder || "~");
   const how = t.waits && !t.error
     ? `${t.waits}.`
     : t.chat

@@ -74,7 +74,7 @@
       },
       {
         "command": "talpyDen.pickHosts",
-        "title": "Show Claude on SSH Hosts…",
+        "title": "Show Claude on SSH Hosts and Containers…",
         "category": "Talpy Den",
         "icon": "$(server)"
       },
@@ -715,7 +715,7 @@
                 "type": "string"
               },
               "default": [],
-              "markdownDescription": "SSH hosts (names from `~/.ssh/config`) whose Claude Code chats are shown too. Use **Talpy Den: Show Claude on SSH Hosts…** to pick them. Needs key-based login (the check never asks for a password) and `python3` 3.7+ on the host; nothing is installed there.",
+              "markdownDescription": "SSH hosts (names from `~/.ssh/config`) whose Claude Code chats are shown too. Use **Talpy Den: Show Claude on SSH Hosts and Containers…** to pick them (and containers: `docker:NAME`, `podman:NAME`, `nerdctl:NAME`, or `ENGINE:NAME@HOST` for one on an SSH host). Needs key-based login (the check never asks for a password) and `python3` 3.7+ on the host; nothing is installed there.",
               "order": 1
             },
             "talpyDen.includeCurrentRemote": {
@@ -747,6 +747,20 @@
               "default": "once",
               "markdownDescription": "Plan usage on SSH hosts' accounts.",
               "order": 4
+            },
+            "talpyDen.showContainers": {
+              "type": "boolean",
+              "default": true,
+              "markdownDescription": "Show Docker, Podman and nerdctl containers (here and on the SSH hosts shown) in **Talpy Den: Show Claude on SSH Hosts and Containers…**. One you pick shows like a host: Talpy Den works in it with the engine's exec, and it needs `python3` there. Off, Talpy Den never runs `docker`, `podman` or `nerdctl`.",
+              "order": 5
+            },
+            "talpyDen.containerDays": {
+              "type": "integer",
+              "default": 30,
+              "minimum": 0,
+              "maximum": 365,
+              "markdownDescription": "The containers listed: the running ones and those started or stopped in the last this many days (0: only the running ones). One you picked is always listed.",
+              "order": 6
             }
         }
       },

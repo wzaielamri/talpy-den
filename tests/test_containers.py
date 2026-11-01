@@ -564,7 +564,8 @@ class FrontEndTests(unittest.TestCase):
 
     def test_the_same_ids_everywhere(self):
         self.assertEqual(JS_CONTAINER, "/" + remote.CONTAINER.pattern + "/")
-        for path in ("package/contents/ui/main.qml", "package/contents/ui/configAccounts.qml", "gnome/extension/logic.js"):
+        for path in ("package/contents/ui/main.qml", "package/contents/ui/configAccounts.qml", "gnome/extension/logic.js",
+                     "vscode/src/shared/model.ts"):
             self.assertIn(JS_CONTAINER, (REPO / path).read_text(), path)
 
     def test_the_settings_are_shared(self):
@@ -581,6 +582,9 @@ class FrontEndTests(unittest.TestCase):
         for key in ("show-containers", "container-days"):
             self.assertIn(f'<key name="{key}"', schema)
             self.assertIn(f"'{key}'", prefs)
+        package = json.loads((REPO / "vscode/package.json").read_text())
+        hosts = next(c for c in package["contributes"]["configuration"] if c["title"] == "Hosts")["properties"]
+        self.assertEqual((hosts["talpyDen.showContainers"]["default"], hosts["talpyDen.containerDays"]["default"]), (True, 30))
 
 
 def test_unwrap(command):

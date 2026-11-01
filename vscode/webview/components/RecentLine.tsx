@@ -1,19 +1,4 @@
-import {
-  ago,
-  goOnAt,
-  claudeCodeHere,
-  claudeCodeReopenHint,
-  cliInstalled,
-  folderIn,
-  keptChat,
-  keptTitle,
-  machineStatus,
-  queuedChat,
-  reopensInClaudeCode,
-  startText,
-  stopText,
-  terminalReopenHint,
-} from "../../src/shared/model";
+import { ago, claudeCodeHere, claudeCodeReopenHint, cliInstalled, folderIn, goOnAt, hostLabel, keptChat, keptTitle, machineStatus, queuedChat, reopensInClaudeCode, startText, stopText, terminalReopenHint } from "../../src/shared/model";
 import { reviewPending, testsText } from "../../src/shared/pane";
 import type { Group, RecentChat, ViewState } from "../../src/shared/types";
 import { post } from "../env";
@@ -90,7 +75,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
           (paneFirst
             ? "Click to open it in a tab: its conversation, a box to reply, and what it changed." + (canOpen ? `\nThe reopen button (on hover): ${reopen}` : "")
             : reopen) +
-          (c.cwd ? `\nFolder: ${group.host ? `${group.host}:` : ""}${c.cwd}` : "") +
+          (c.cwd ? `\nFolder: ${group.host ? `${hostLabel(group.host)}:` : ""}${c.cwd}` : "") +
           (c.shared ? `\nShared between accounts; last used on ${c.profile}.` : "") +
           (c.stopped ? `\n\n${stopText(c.stopped)}` : "") +
           (c.recap?.text ? `\n\nRecap: ${c.recap.text}` : "")

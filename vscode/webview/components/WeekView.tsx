@@ -1,7 +1,7 @@
 import { drawCard } from "../util/card";
 import { Fragment, type JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { plural } from "../../src/shared/model";
+import { hostLabel, plural } from "../../src/shared/model";
 import type { WeekChat, WeekDay, WeekPlanWindow, WeekRecap, WeekSpan } from "../../src/shared/types";
 import {
   cacheText,
@@ -249,10 +249,10 @@ function ChatLine({ c, cur, where, sub }: { c: WeekChat; cur: Currency; where?: 
   return (
     <li>
       <button type="button" class={"week-chat" + (sub ? " sub" : "")} disabled={!!c.host || !c.chatId}
-        title={c.host ? `${c.name} on ${c.host}: its row under ${c.host} opens it` : `Open “${c.name}”`}
+        title={c.host ? `${c.name} on ${hostLabel(c.host)}: its row under ${hostLabel(c.host)} opens it` : `Open “${c.name}”`}
         onClick={() => post({ type: "openWeekChat", chatId: c.chatId, profileDir: c.profileDir, name: c.name, cwd: c.cwd })}>
         <span class="week-chat-name">{c.name}</span>
-        <span class="week-chat-folder small muted">{where ?? (c.host ? c.host + ": " : "") + c.folder}</span>
+        <span class="week-chat-folder small muted">{where ?? (c.host ? hostLabel(c.host) + ": " : "") + c.folder}</span>
         <span class="week-chat-value small muted">{hoursText(c.workedMs)} · {moneyText(c.cost, cur)}</span>
       </button>
     </li>
@@ -400,12 +400,12 @@ function Projects({ recap }: { recap: WeekRecap }) {
           const chats = Array.isArray(p.chats) ? p.chats : [];
           return [
             <li key={key} class={"opens" + (shown ? " open" : "")} {...opens(shown, () => (p.host ? setOpen(shown ? "" : key) : showProject(p.path)))}
-              title={`${p.host ? p.host + ": " : ""}${p.path}\nClaude worked ${hoursText(p.workedMs)} · ${moneyText(p.cost, cur)} at API prices\n` +
+              title={`${p.host ? hostLabel(p.host) + ": " : ""}${p.path}\nClaude worked ${hoursText(p.workedMs)} · ${moneyText(p.cost, cur)} at API prices\n` +
                 `${plural(p.prompts, "%1 prompt", "%1 prompts")} · ${plural(p.chatCount ?? chats.length, "%1 chat", "%1 chats")}\n` +
                 (p.host ? "Click for its chats." : "Click to open it in the Projects tab: its chats, plans and memories.")}>
               <span class="week-bar-name">
                 <Icon name={I.folded} class={shown ? "turn" : ""} />
-                {(p.host ? p.host + ": " : "") + p.name}
+                {(p.host ? hostLabel(p.host) + ": " : "") + p.name}
               </span>
               <span class="week-bar-meter work"><span style={{ width: `${(100 * p.workedMs) / most}%` }} /></span>
               <span class="week-bar-value small muted">{hoursText(p.workedMs)} · {moneyText(p.cost, cur)}</span>
@@ -448,9 +448,9 @@ function Lanes({ recap }: { recap: WeekRecap }) {
         {lanes.map((l) => (
           <li key={l.key}>
             <button type="button" class="week-lane-name small" disabled={!!l.host || !l.id}
-              title={l.host ? `${l.name} on ${l.host}` : `Open “${l.name}”`}
+              title={l.host ? `${l.name} on ${hostLabel(l.host)}` : `Open “${l.name}”`}
               onClick={() => post({ type: "openWeekChat", chatId: l.id, profileDir: l.profileDir ?? "", name: l.name, cwd: "" })}>
-              {(l.host ? l.host + ": " : "") + l.name}
+              {(l.host ? hostLabel(l.host) + ": " : "") + l.name}
             </button>
             <span class="week-lane" title={`${l.name}\nClaude worked ${hoursText(l.workedMs)}, waited for you ${hoursText(l.waitedMs)}${l.project ? `\n${l.project}` : ""}`}>
               {l.parts.map(([a, b, k], i) => (

@@ -130,6 +130,7 @@ export function App() {
             answered={!!state.status || groups.length > 0}
             unavailable={!state.status && !!state.errorText}
             heroShown={state.settings.showPet}
+            containers={state.settings.showContainers !== false}
           />
           {state.settings.showPet && !week && !perms && !projectsTab ? <HeroStage input={hero} groups={groups} /> : null}
         </div>

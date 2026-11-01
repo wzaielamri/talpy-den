@@ -411,3 +411,29 @@ test("the Projects tab's chats, plans and memories are found by key, on the acco
   assert.equal(findProjectMemory(data, state.status, 5), null);
   assert.equal(groupOfProfile(state.status, ".claude")?.id, state.status!.groups[0].id);
 });
+
+test("containers: ids, labels, the picker's lines and sections", async () => {
+  const { containerOf, containerDescription, containerDetail, containerPlaces, hostLabel, hostWhere } = await import("../src/shared/model");
+  assert.deepEqual(containerOf("podman:web"), { engine: "podman", name: "web", host: "" });
+  assert.deepEqual(containerOf("docker:api@user@lab"), { engine: "docker", name: "api", host: "user@lab" });
+  assert.deepEqual([containerOf("lab"), containerOf("podman:-x"), containerOf("lxc:x")], [null, null, null]);
+  assert.deepEqual([hostLabel("podman:web"), hostLabel("docker:api@lab"), hostLabel("lab")], ["web", "api on lab", "lab"]);
+  assert.deepEqual([hostWhere("podman:web"), hostWhere("lab")], ["in web", "on lab"]);
+  const now = 10 * 86400000;
+  const base = { state: "", folder: "", folderShort: "", devcontainer: false, sharesHome: false };
+  const web = { ...base, id: "podman:web", engine: "podman", name: "web", image: "ubuntu:22.04", running: true, activeAt: now - 5000 };
+  const old = { ...base, id: "podman:old", engine: "podman", name: "old", image: "node:20", running: false, activeAt: now - 3 * 86400000, sharesHome: true };
+  const dev = { ...base, id: "docker:shop@lab", engine: "docker", name: "shop", image: "vsc-shop", running: false, activeAt: now - 3600000, folderShort: "~/shop" };
+  assert.equal(containerDescription(web, now), "podman · ubuntu:22.04");
+  assert.equal(containerDescription(old, now), "podman · node:20 · stopped 3 days ago · shares your home folder");
+  assert.equal(containerDetail("docker:shop@lab", dev), "~/shop · on lab");
+  assert.equal(containerDetail("podman:gone", null), "podman");
+  const places = containerPlaces([web, old], [{ engine: "docker", message: "Docker isn't running." }],
+    { lab: { containers: [dev] }, far: { containers: [] } }, ["lab"], ["podman:web", "podman:gone", "docker:x@far"], 30, now);
+  assert.deepEqual(places.map((p) => p.title), ["Containers on this computer", "Containers on lab", "Containers on far"]);
+  assert.deepEqual(places[0].items.map((i) => [i.id, i.picked]), [["podman:web", true], ["podman:old", false], ["podman:gone", true]]);
+  assert.deepEqual(places[0].notes, ["Docker isn't running."]);
+  assert.deepEqual(places[2].items.map((i) => i.label), ["x"]); // (not connected: only the one you picked, to unpick it)
+  assert.equal(containerPlaces([], [], {}, [], [], 30, now)[0].empty, "No containers active in the last 30 days");
+  assert.equal(containerPlaces([], [], {}, [], [], 0, now)[0].empty, "No running containers");
+});

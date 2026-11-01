@@ -1,5 +1,5 @@
 import { useRef } from "preact/hooks";
-import { fetchingUsage, formatTokens, planUsageText, stateText, tokensText } from "../../src/shared/model";
+import { fetchingUsage, formatTokens, hostLabel, planUsageText, stateText, tokensText } from "../../src/shared/model";
 import type { Group, TokenTotals, Tokens } from "../../src/shared/types";
 import { post } from "../env";
 import { fiveHourOf, groupKeyOf, sharedRef, stageChats } from "../util/chat";
@@ -75,7 +75,7 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
             text="Default"
             title={
               (host
-                ? `The default account on ${host}: listed first; Claude Code there (its VS Code server) and plain claude there run on it.`
+                ? `The default account on ${hostLabel(host)}: listed first; Claude Code there (its VS Code server) and plain claude there run on it.`
                 : "The default account: listed first, its usage is in the status bar, and VS Code's Claude and plain claude run on it.") +
               " Change it with Claude Accounts → Make Default, or the account item in the status bar."
             }
@@ -87,7 +87,7 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
           title={
             `New chat on ${g.title}\n` +
             (host
-              ? `Lists this account's folders on ${host}: start a new Claude chat in one, in a terminal (over ssh), in the background or later.`
+              ? `Lists this account's folders on ${hostLabel(host)}: start a new Claude chat in one, in a terminal (over ssh), in the background or later.`
               : "Lists this account's recent folders: start a new Claude chat in one, in a terminal, in a Claude Code panel, in the background or later.") +
             " Write a task first and the chat starts with it, also in the background."
           }

@@ -2,7 +2,7 @@
 // extension does the work (open, stop, share, menus); the webview only says
 // which chat, as a ChatRef.
 
-import { canEndChat, HIDDEN_NOUNS, type HiddenKind, petKeyOf, shareAccounts } from "../../src/shared/model";
+import { canEndChat, HIDDEN_NOUNS, type HiddenKind, petKeyOf, shareAccounts, containerOf, hostLabel } from "../../src/shared/model";
 import type { ChatRef, Group, RecentChat, Session, SharedPointer, Status } from "../../src/shared/types";
 import type { StageChat } from "../pets/api";
 
@@ -84,7 +84,14 @@ export function isBackground(s: Session): boolean {
 // inCode: a chat no Claude has open reopens in a Claude Code panel (the switch
 // of Recent chats)
 export function openHint(s: Session, host?: string, inCode = false): string {
-  if (s.kind === "chat" && inCode) return host ? `Reopen this chat in a Claude Code panel (VS Code connected to ${host})` : "Reopen this chat in a Claude Code panel";
+  if (s.kind === "chat" && inCode) return host ? `Reopen this chat in a Claude Code panel (VS Code connected to ${hostLabel(host)})` : "Reopen this chat in a Claude Code panel";
+  if (containerOf(host)) {
+    const name = hostLabel(host!);
+    if (s.entrypoint === "claude-vscode" && !s.openCommand) return `Show this conversation in VS Code (connected to ${name})`;
+    if (!s.openCommand) return `Switch to the terminal open in ${name}`;
+    if (s.kind === "chat") return `Reopen this chat in ${name} in a terminal`;
+    return `Open this background chat in ${name} in a terminal`;
+  }
   if (host) {
     if (s.entrypoint === "claude-vscode" && !s.openCommand) return `Show this conversation in VS Code (connected to ${host})`;
     if (!s.openCommand) return `Switch to the terminal with the ssh connection to ${host}`;

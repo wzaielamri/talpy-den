@@ -30,7 +30,10 @@ import {
   chatRefOf,
   claudeCodeHere,
   cliInstalled,
+  containerOf,
+  containerPlaces,
   groupLabel,
+  hostLabel,
   hasTurn,
   HIDDEN_NOUNS,
   hiddenCount,
@@ -1302,31 +1305,88 @@ export class Actions {
     this.refresh(host);
   }
 
+  // The hosts picker: ~/.ssh/config's hosts, this computer's containers and
+  // each connected SSH host's (the running ones and those active in the
+  // last containerDays days; a picked one always, so it can be unpicked).
+  // It shows the last lists at once; this computer's is read again as it
+  // opens, and Reload reads every connected host's too.
   async pickHosts(): Promise<void> {
-    const known = await this.backend.sshHosts();
-    const picked = settings.sshHosts();
-    const current = this.dash.currentHost;
-    type Item = vscode.QuickPickItem & { host: string };
-    const items: Item[] = known.map((h) => {
-      const target = (h.user ? h.user + "@" : "") + (h.hostname || h.name) + (h.jump ? ` via ${h.jump}` : "");
-      return {
-        label: h.name,
-        description: [target !== h.name ? target : "", h.name === current ? "this window's host" : ""].filter(Boolean).join(" · "),
-        picked: picked.includes(h.name),
-        host: h.name,
-      };
+    type Item = vscode.QuickPickItem & { host?: string };
+    const qp = vscode.window.createQuickPick<Item>();
+    qp.canSelectMany = true;
+    qp.matchOnDescription = true;
+    const containers = settings.showContainers();
+    qp.title = containers ? "Show Claude on SSH hosts and in containers" : "Show Claude on SSH hosts";
+    qp.placeholder = "Key-based login and python3 needed there; nothing is installed";
+    const reload: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("refresh"), tooltip: "Reload" };
+    qp.buttons = [reload];
+    let chosen = new Set(settings.sshHosts());
+    const build = () => {
+      const current = this.dash.currentHost;
+      const items: Item[] = [{ label: "SSH hosts", kind: vscode.QuickPickItemKind.Separator }];
+      const known = this.dash.sshHostList;
+      for (const h of known) {
+        const target = (h.user ? h.user + "@" : "") + (h.hostname || h.name) + (h.jump ? ` via ${h.jump}` : "");
+        items.push({
+          label: h.name,
+          iconPath: new vscode.ThemeIcon("server"),
+          description: [target !== h.name ? target : "", h.name === current ? "this window's host" : ""].filter(Boolean).join(" · "),
+          host: h.name,
+        });
+      }
+      for (const h of chosen) if (!containerOf(h) && !known.some((k) => k.name === h)) items.push({ label: h, description: "not in ~/.ssh/config", host: h });
+      if (items.length === 1) items.push({ label: "No hosts in ~/.ssh/config", description: "add a Host entry there, then pick it here" });
+      if (containers) {
+        const places = containerPlaces(this.dash.containersHere, this.dash.containerNotes, this.dash.hostContainers,
+          this.dash.connectedHosts(), [...chosen], settings.containerDays(), Date.now());
+        for (const place of places) {
+          items.push({ label: place.title, kind: vscode.QuickPickItemKind.Separator });
+          for (const c of place.items) {
+            items.push({ label: c.label, iconPath: new vscode.ThemeIcon("package"), description: [c.description, c.id === current ? "this window's container" : ""].filter(Boolean).join(" · "), host: c.id });
+          }
+          for (const note of [...place.notes, ...(place.empty ? [place.empty] : [])]) items.push({ label: note, description: "" });
+        }
+      }
+      qp.items = items;
+      qp.selectedItems = items.filter((i) => i.host && chosen.has(i.host));
+    };
+    build();
+    qp.onDidChangeSelection((sel) => {
+      // (what's listed is picked or not; a picked one that isn't listed stays as it was)
+      const listed = new Set(qp.items.map((i) => i.host).filter((h): h is string => !!h));
+      chosen = new Set([...[...chosen].filter((h) => !listed.has(h)), ...sel.map((i) => i.host).filter((h): h is string => !!h)]);
     });
-    for (const h of picked) if (!known.some((k) => k.name === h)) items.push({ label: h, description: "not in ~/.ssh/config", picked: true, host: h });
-    if (!items.length) {
-      void vscode.window.showInformationMessage("No hosts in ~/.ssh/config. Add a Host entry there, then pick it here.");
-      return;
-    }
-    const chosen = await vscode.window.showQuickPick(items, {
-      canPickMany: true,
-      placeHolder: "Show Claude on these SSH hosts (key-based login and python3 needed there; nothing is installed)",
+    qp.onDidTriggerButton(async (b) => {
+      if (b !== reload) return;
+      qp.busy = true;
+      await this.dash.reloadHosts();
+      qp.busy = false;
+      build();
     });
-    if (!chosen) return;
-    await setSshHosts(chosen.map((c) => c.host));
+    const done = new Promise<boolean>((resolve) => {
+      qp.onDidAccept(() => resolve(true));
+      qp.onDidHide(() => resolve(false));
+    });
+    qp.busy = true;
+    qp.show();
+    void this.dash.loadHosts().then(() => {
+      qp.busy = false;
+      build();
+    });
+    const accepted = await done;
+    qp.dispose();
+    if (!accepted) return;
+    const keep = settings.sshHosts();
+    // (in the order they were picked: the ones kept first, then the new ones)
+    await setSshHosts([...keep.filter((h) => chosen.has(h)), ...[...chosen].filter((h) => !keep.includes(h))]);
+  }
+
+  // A stopped container started (remote.py --start); it's checked once that's done
+  async startContainer(host: string): Promise<void> {
+    if (this.demoOnly()) return;
+    const answer = await this.backend.action("remote.py", ["--start", host], 70000);
+    if (this.report(answer, `Couldn't start ${hostLabel(host)}`)) this.dash.setActionInfo(answer.message);
+    this.refresh(host);
   }
 
   // ---------------------------------------------------------------- the chat that needs you

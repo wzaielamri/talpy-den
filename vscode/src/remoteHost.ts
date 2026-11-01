@@ -1,4 +1,5 @@
-// Which SSH host this VS Code window is connected to (Remote-SSH), if any.
+// Which SSH host this VS Code window is connected to (Remote-SSH), or which
+// container (Dev Containers: attached-container, dev-container), if any.
 // The extension itself always runs on this computer ("extensionKind": ["ui"]),
 // so it reaches that host with its own ssh, like any other picked host.
 
@@ -63,14 +64,59 @@ function withPort(authority: string | undefined): string | undefined {
 // The authority of whatever this window has open: a folder, a workspace file,
 // or an editor (hostFromAuthority: its host).
 export function currentRemoteAuthority(vscode: typeof import("vscode")): string | undefined {
-  if (vscode.env.remoteName !== "ssh-remote") return undefined;
+  const remote = vscode.env.remoteName;
+  if (remote !== "ssh-remote" && remote !== "attached-container" && remote !== "dev-container") return undefined;
   const uris = [
     ...(vscode.workspace.workspaceFolders ?? []).map((f) => f.uri),
     ...(vscode.workspace.workspaceFile ? [vscode.workspace.workspaceFile] : []),
     ...vscode.window.visibleTextEditors.map((e) => e.document.uri),
   ];
-  for (const uri of uris) if (uri.scheme === "vscode-remote" && hostFromAuthority(uri.authority)) return uri.authority;
+  for (const uri of uris) {
+    if (uri.scheme !== "vscode-remote") continue;
+    if (remote === "ssh-remote" ? hostFromAuthority(uri.authority) : uri.authority.startsWith(remote + "+")) return uri.authority;
+  }
   return undefined;
+}
+
+// The container a Dev Containers window is in, as remote.py names it
+// (engine:NAME, engine:NAME@HOST through Remote-SSH): its authority names it
+// (attached-container: {"containerName": "/NAME"} in hex JSON, or its id),
+// or its project folder does (dev-container: {"hostPath": …}), looked up in
+// the containers listed (known). "" for a container window it can't name
+// (not listed yet); undefined for a window that isn't in a container.
+// dockerPath: Dev Containers' engine setting, for one not listed.
+export function containerFromAuthority(
+  authority: string | undefined,
+  known: { id: string; engine: string; name: string; folder?: string; cid?: string; host?: string }[],
+  dockerPath = "docker",
+): string | undefined {
+  const m = /^(attached-container|dev-container)\+([0-9a-fA-F]+)(?:@(.+))?$/.exec(authority ?? "");
+  if (!m) return undefined;
+  const host = m[3] ? hostFromAuthority(m[3]) : "";
+  if (m[3] && !host) return ""; // (through something else than Remote-SSH: WSL, a tunnel)
+  let config: Record<string, unknown> | string;
+  try {
+    const text = Buffer.from(m[2], "hex").toString("utf8");
+    config = text.startsWith("{") ? JSON.parse(text) : text;
+  } catch {
+    return "";
+  }
+  const here = known.filter((c) => (c.host ?? "") === host);
+  let found: (typeof known)[number] | undefined;
+  let name = "";
+  if (typeof config === "string") {
+    found = here.find((c) => c.cid === config || (c.cid ?? "").startsWith(config as string)); // (an id)
+  } else if (m[1] === "attached-container" && typeof config.containerName === "string") {
+    name = config.containerName.replace(/^\//, "");
+    found = here.find((c) => c.name === name);
+  } else if (typeof config.hostPath === "string") {
+    found = here.find((c) => c.folder === config.hostPath); // (its project folder: the dev container made for it)
+  }
+  if (found) return found.id;
+  if (!name || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) return "";
+  const base = dockerPath.split("/").pop() ?? "docker";
+  const engine = base === "podman" || base === "nerdctl" ? base : "docker";
+  return `${engine}:${name}` + (host ? `@${host}` : "");
 }
 
 // A file of the host this window is connected to, as the window names it.

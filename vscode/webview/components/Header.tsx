@@ -1,4 +1,4 @@
-import { summaryText, tooltipLines } from "../../src/shared/model";
+import { hostLabel, summaryText, tooltipLines } from "../../src/shared/model";
 import type { Counts, Group, HostState, Overall } from "../../src/shared/types";
 import { editorTab, post } from "../env";
 import { useViewVisible } from "../util/petStage";
@@ -26,10 +26,12 @@ export function Header(props: {
   answered: boolean; // this computer's status came, or a host's
   unavailable: boolean; // no status, and the reason is known
   heroShown: boolean;
+  containers?: boolean; // containers are in the hosts picker
 }) {
   const visible = useViewVisible();
   const { tab, focus } = useStore(uiState);
   const { overall, counts, groups, hosts } = props;
+  const containers = props.containers !== false;
   // "No chats running" only once something answered; until then the list
   // says it's looking
   const summary = props.answered ? summaryText(counts) : props.unavailable ? "Status unavailable" : "";
@@ -73,11 +75,15 @@ export function Header(props: {
           />
           <IconButton
             icon={I.host}
-            label="SSH hosts…"
+            label={containers ? "SSH hosts and containers…" : "SSH hosts…"}
             title={
-              hosts.length
-                ? `SSH hosts…\nShowing Claude on ${hosts.map((h) => h.name).join(", ")}. Click to pick hosts from ~/.ssh/config.`
-                : "SSH hosts…\nShow the Claude chats of your SSH hosts (from ~/.ssh/config) here too."
+              containers
+                ? hosts.length
+                  ? `Show Claude on SSH hosts and in containers…\nShowing Claude on ${hosts.map((h) => hostLabel(h.name)).join(", ")}. Click to pick hosts from ~/.ssh/config and containers.`
+                  : "Show Claude on SSH hosts and in containers…\nShow the Claude chats of your SSH hosts (from ~/.ssh/config) and of your Docker, Podman or nerdctl containers here too."
+                : hosts.length
+                  ? `SSH hosts…\nShowing Claude on ${hosts.map((h) => h.name).join(", ")}. Click to pick hosts from ~/.ssh/config.`
+                  : "SSH hosts…\nShow the Claude chats of your SSH hosts (from ~/.ssh/config) here too."
             }
             class={hosts.length ? "with-count" : ""}
             onClick={() => post({ type: "pickHosts" })}

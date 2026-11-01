@@ -1,7 +1,7 @@
 // The dashboard's derived values, shared by the extension (status bar,
 // notifications) and the webview. Ported from the widget's main.qml.
 
-import type { Agent, ChangeSummary, ChatRef, ChatStats, ClaudeCodeInfo, Counts, Group, HostState, KeptChat, Limits, LimitWindow, LiveView, Memory, Overall, Overlap, PlanItem, ProjectRow, ProjectsData, QueuedTask, RecentChat, ReopenIn, Session, SharedPointer, SshUsage, StatsDay, Status, Stop, TaskProgress, Tokens, UsageStats, ViewState } from "./types";
+import type { Agent, ChangeSummary, ChatRef, ChatStats, ClaudeCodeInfo, ContainerInfo, ContainerNote, Counts, Group, HostState, KeptChat, Limits, LimitWindow, LiveView, Memory, Overall, Overlap, PlanItem, ProjectRow, ProjectsData, QueuedTask, RecentChat, ReopenIn, Session, SharedPointer, SshUsage, StatsDay, Status, Stop, TaskProgress, Tokens, UsageStats, ViewState } from "./types";
 
 // This computer's accounts and the hosts', for the counts, the badge and
 // what needs you. A host whose last check failed still shows what it said
@@ -187,7 +187,8 @@ export function canMoveToClaudeCode(s: { kind?: string; pid?: number | null; sta
 // The recent chats' switch: what each half does, or why it's greyed out
 export function terminalReopenHint(host: string | undefined, cliHere: boolean): string {
   if (!cliHere)
-    return `Claude Code's claude command isn't installed ${host ? `on ${host}` : "here"}: it isn't on PATH, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.`;
+    return `Claude Code's claude command isn't installed ${host ? hostWhere(host) : "here"}: it isn't on PATH, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.`;
+  if (containerOf(host)) return `Reopens the chat in ${hostLabel(host!)} in a terminal (claude --resume, in the container).`;
   return host ? `Reopens the chat on ${host} in a terminal (ssh, claude --resume).` : "Reopens the chat in a terminal (claude --resume).";
 }
 
@@ -195,8 +196,8 @@ export function claudeCodeReopenHint(g: Pick<Group, "host" | "vscodeHere" | "pro
   if (!info.available) return "The Claude Code extension isn't installed or enabled in this window.";
   if (g.host)
     return g.vscodeHere
-      ? `Opens the chat in a Claude Code panel, in a VS Code window connected to ${g.host} (Remote-SSH) on the chat's folder.`
-      : `Claude Code on ${g.host} runs on another account: a new chat in its Claude Code chat tab on this one switches it, in a window connected to ${g.host}.`;
+      ? `Opens the chat in a Claude Code panel, in a VS Code window connected to ${hostLabel(g.host)} (${containerOf(g.host) ? "Dev Containers" : "Remote-SSH"}) on the chat's folder.`
+      : `Claude Code ${hostWhere(g.host)} runs on another account: a new chat in its Claude Code chat tab on this one switches it, in a window connected to ${hostLabel(g.host)}.`;
   if (!claudeCodeHere(g, info)) {
     const on = groups.find((o) => !o.host && !!info.profileKey && (o.profileKeys ?? []).includes(info.profileKey));
     return `Claude Code runs on ${on ? on.title : info.profileKey || "another account"}, not ${g.title}: switch it with “Talpy Den: Default Claude Account…” (or the account in the status bar) to reopen this account's chats there.`;
@@ -276,6 +277,84 @@ export function overallState(groups: Group[], counts: Counts): Overall {
 
 export function plural(n: number, one: string, many: string): string {
   return (n === 1 ? one : many).replace("%1", String(n));
+}
+
+// ---- containers: docker:NAME, podman:NAME, nerdctl:NAME (this computer's),
+// ENGINE:NAME@HOST (on the SSH host HOST), picked and shown like SSH hosts
+// (remote.py's ids)
+
+export const CONTAINER_ID = /^(docker|podman|nerdctl):([A-Za-z0-9][A-Za-z0-9_.-]*)(?:@(.+))?$/;
+
+// {engine, name, host} of a container's id ("" host: this computer's), or null for an SSH host
+export function containerOf(id: string | undefined): { engine: string; name: string; host: string } | null {
+  const m = CONTAINER_ID.exec(id ?? "");
+  return m ? { engine: m[1], name: m[2], host: m[3] ?? "" } : null;
+}
+
+// How an SSH host or a container is named: lab, web, or web on lab
+export function hostLabel(id: string): string {
+  const c = containerOf(id);
+  return !c ? id : c.host ? `${c.name} on ${c.host}` : c.name;
+}
+
+// on lab, in web, in web on lab
+export function hostWhere(id: string): string {
+  return containerOf(id) ? `in ${hostLabel(id)}` : `on ${id}`;
+}
+
+// "stopped 3 days ago", "stopped 5h 10m ago", "stopped"
+export function containerStopped(c: Pick<ContainerInfo, "activeAt">, now: number): string {
+  const age = c.activeAt ? Math.max(0, now - c.activeAt) : -1;
+  return age < 0 ? "stopped" : age >= 2 * 86400000 ? plural(Math.floor(age / 86400000), "stopped %1 day ago", "stopped %1 days ago")
+    : `stopped ${duration(age)} ago`;
+}
+
+// What the hosts picker says of a container: "podman · ubuntu:22.04 · stopped 3 days ago"
+export function containerDescription(c: ContainerInfo, now: number): string {
+  const parts = [c.folderShort ? c.folderShort : c.engine + (c.image ? ` · ${c.image}` : "")];
+  if (!c.running) parts.push(containerStopped(c, now));
+  if (c.sharesHome) parts.push("shares your home folder");
+  return parts.join(" · ");
+}
+
+// A picked container's header line: "podman · ubuntu:22.04", or its dev container's folder (· on lab)
+export function containerDetail(id: string, info: ContainerInfo | null | undefined): string {
+  const c = containerOf(id);
+  if (!c) return "";
+  const parts = [info?.folderShort ? info.folderShort : c.engine + (info?.image ? ` · ${info.image}` : "")];
+  if (c.host) parts.push(`on ${c.host}`);
+  return parts.join(" · ");
+}
+
+// The hosts picker's container sections: this computer's, then each
+// connected SSH host's (and a host's whose container you picked); a picked
+// container that isn't listed is still there, to unpick it
+export function containerPlaces(
+  here: ContainerInfo[],
+  notes: ContainerNote[],
+  hostContainers: Record<string, { containers?: ContainerInfo[]; notes?: ContainerNote[]; error?: string }>,
+  connected: string[],
+  picked: string[],
+  days: number,
+  now: number,
+): { host: string; title: string; items: { id: string; label: string; description: string; picked: boolean }[]; notes: string[]; empty: string }[] {
+  const none = days > 0 ? plural(days, "No containers active in the last day", "No containers active in the last %1 days") : "No running containers";
+  const pickedOf = (host: string) => picked.filter((id) => containerOf(id)?.host === host);
+  const hosts = connected.concat(
+    picked.map((id) => containerOf(id)?.host ?? "").filter((h, i, all) => h && all.indexOf(h) === i && !connected.includes(h)),
+  );
+  const places = [{ host: "", title: "Containers on this computer", list: here, notes }];
+  for (const host of hosts) {
+    const kept = connected.includes(host) ? hostContainers[host] ?? {} : {};
+    places.push({ host, title: `Containers on ${host}`, list: kept.containers ?? [], notes: [...(kept.notes ?? []), ...(kept.error ? [{ message: kept.error }] : [])] });
+  }
+  return places.map((place) => {
+    const listed = place.list.filter((c) => c && c.id);
+    const items = listed.map((c) => ({ id: c.id, label: c.name, description: containerDescription(c, now), picked: picked.includes(c.id) }));
+    for (const id of pickedOf(place.host)) if (!listed.some((c) => c.id === id)) items.push({ id, label: containerOf(id)!.name, description: "", picked: true });
+    const messages = place.notes.map((n) => n.message);
+    return { host: place.host, title: place.title, items, notes: messages, empty: items.length || messages.length ? "" : none };
+  });
 }
 
 // The hero's headline: the most important thing on the dashboard
@@ -1280,7 +1359,7 @@ export function agentsNow(agents: { done: number; total: number; tree: Agent[] }
 export function agentRunTitle(host?: string): string {
   return (
     "Its task, every step with the start of each result, and its report, as Markdown. Claude Code itself can't open a subagent from outside." +
-    (host ? ` Fetched from ${host} over ssh.` : "")
+    (host ? (containerOf(host) ? ` Fetched from ${hostLabel(host)}.` : ` Fetched from ${host} over ssh.`) : "")
   );
 }
 

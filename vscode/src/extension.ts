@@ -52,7 +52,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let actions: Actions | undefined;
   const notifier = new Notifier(backend, (chat) => void actions?.open(chat));
   const dash = new Dashboard(backend, notifier, log);
-  const terminals = new Terminals((host, since) => dash.hostCheckedSince(host, since));
+  const terminals = new Terminals((host, since) => dash.hostCheckedSince(host, since), (host, command) => backend.attachLine(host, command));
   const statusBar = new StatusBar(); // (first: the main status bar item)
   const account = new AccountSwitch(dash, backend);
   const answerOldest = async (decision: "allow" | "deny"): Promise<void> => {

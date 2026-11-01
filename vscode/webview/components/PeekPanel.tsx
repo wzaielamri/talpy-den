@@ -1,4 +1,4 @@
-import { plural, recapText, recapTitle, taskMark } from "../../src/shared/model";
+import { hostLabel, plural, recapText, recapTitle, taskMark } from "../../src/shared/model";
 import type { ChatRef, Session } from "../../src/shared/types";
 import { post } from "../env";
 import { useView } from "./context";
@@ -12,7 +12,7 @@ export function PeekPanel({ session: s, host, chat }: { session: Session; host?:
   const changes = s.changes;
   const stats = s.stats;
   const now = useView().now;
-  const elsewhere = host ? `Its files are on ${host}: compare them there.` : "";
+  const elsewhere = host ? `Its files are on ${hostLabel(host)}: compare them there.` : "";
   return (
     <div class="peek small">
       {peek?.recap?.text ? (

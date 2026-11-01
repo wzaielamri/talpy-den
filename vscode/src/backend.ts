@@ -6,7 +6,8 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isComparison, type Comparison } from "./changes";
-import type { ProjectsData, FoundChat, FoundMemory, FoundPlan, FoundProject, PermsData, Status, WeekRecap } from "./shared/types";
+import { shellQuote } from "./shared/model";
+import type { ContainerInfo, ContainerNote, ProjectsData, FoundChat, FoundMemory, FoundPlan, FoundProject, PermsData, Status, WeekRecap } from "./shared/types";
 
 export const REMOTE_MARK = "@@talpy-den@@";
 const KILL_GRACE_MS = 3000;
@@ -26,6 +27,21 @@ export interface SshHost {
   user: string;
   port: string;
   jump: string;
+}
+
+// An SSH host's containers as it listed them last, or why it couldn't
+export interface HostContainers {
+  containers?: ContainerInfo[];
+  notes?: ContainerNote[];
+  at?: number;
+  error?: string;
+}
+
+export interface HostList {
+  hosts: SshHost[];
+  containers: ContainerInfo[];
+  notes: ContainerNote[];
+  hostContainers: Record<string, HostContainers>;
 }
 
 // What the search found: chats, and the project folders, plans and memories with the words
@@ -187,19 +203,48 @@ export class Backend {
     await this.json(["talpy_den.py", "--fetch-usage", ...args], 30000);
   }
 
-  // The hosts with a name of their own in ~/.ssh/config
+  // The hosts with a name of their own in ~/.ssh/config, this computer's
+  // containers (containerArgs: --container-days, --picked, or
+  // --no-containers) and the SSH hosts' container lists as last fetched
+  async hostList(containerArgs: string[]): Promise<HostList | null> {
+    const r = await this.json(["remote.py", "--hosts", ...containerArgs], 15000);
+    if (!r || !r.ok) return null;
+    return {
+      hosts: Array.isArray(r.hosts) ? (r.hosts as SshHost[]) : [],
+      containers: Array.isArray(r.containers) ? (r.containers as ContainerInfo[]) : [],
+      notes: Array.isArray(r.notes) ? (r.notes as ContainerNote[]) : [],
+      hostContainers: r.hostContainers && typeof r.hostContainers === "object" ? (r.hostContainers as Record<string, HostContainers>) : {},
+    };
+  }
+
   async sshHosts(): Promise<SshHost[]> {
-    const r = await this.json(["remote.py", "--hosts"], 15000);
-    return r && r.ok && Array.isArray(r.hosts) ? (r.hosts as SshHost[]) : [];
+    return (await this.hostList(["--no-containers"]))?.hosts ?? [];
+  }
+
+  // An SSH host's containers, listed there (remote.py --containers)
+  async hostContainers(host: string, containerArgs: string[]): Promise<HostContainers> {
+    const r = await this.json(["remote.py", "--containers", host, ...containerArgs], 70000);
+    if (!r || !r.ok) return { error: String(r?.error || r?.message || "no answer") };
+    return {
+      containers: Array.isArray(r.containers) ? (r.containers as ContainerInfo[]) : [],
+      notes: Array.isArray(r.notes) ? (r.notes as ContainerNote[]) : [],
+      at: typeof r.at === "number" ? r.at : Date.now(),
+    };
+  }
+
+  // A terminal's command line for a command in a container (remote.py --attach)
+  attachLine(host: string, command: string): string {
+    return [this.python(), "-I", this.script("remote.py"), "--attach", host, command].map(shellQuote).join(" ");
   }
 
   // login: the host wants a password (or a passphrase, a code, its host key
-  // confirmed); loggedIn: the check went through a connection you logged in with
-  async hostStatus(host: string, args: string[]): Promise<{ ok: boolean; result?: Status; error?: string; login?: boolean; loggedIn?: boolean }> {
+  // confirmed); loggedIn: the check went through a connection you logged in with;
+  // a container's: stopped (Start), gone
+  async hostStatus(host: string, args: string[]): Promise<{ ok: boolean; result?: Status; error?: string; login?: boolean; loggedIn?: boolean; stopped?: boolean; gone?: boolean }> {
     const r = await this.json(["remote.py", "--status", host, ...args], 70000);
     if (!r) return { ok: false, error: `${host}: no answer from the SSH helper` };
     if (r.ok && r.result) return { ok: true, result: r.result as Status, loggedIn: !!r.loggedIn };
-    return { ok: false, error: String(r.error || r.message || "no answer"), login: !!r.login };
+    return { ok: false, error: String(r.error || r.message || "no answer"), login: !!r.login, stopped: !!r.stopped, gone: !!r.gone };
   }
 
   // The chats with every word of query (talpy_den.py --find; an SSH

@@ -1,3 +1,4 @@
+import { hostLabel } from "../../src/shared/model";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { PermsData, WeekGrant, WeekRule } from "../../src/shared/types";
 import { GRANTED_FEW, grantedIntro, grantMeaning, grantMeta, promptsText, ruleMeaning, ruleMeta } from "../../src/shared/week";
@@ -69,7 +70,7 @@ export function PermsView({ rules }: { rules: boolean }) {
                   setChange={(key) => { setChange(key); if (key) setLast("rule"); }} said={last === "rule"} />
               </div>
             ) : (
-              <div key={src.host} class="msg error" role="alert">Couldn't read the permissions on {src.host}: {src.error || "no answer"}</div>
+              <div key={src.host} class="msg error" role="alert">Couldn't read the permissions on {hostLabel(src.host)}: {src.error || "no answer"}</div>
             ))}
           <div class="week-foot small muted">
             Read from your settings and the chats on this computer{data.hosts?.length ? " and on the SSH hosts shown" : ""}, without using any tokens.

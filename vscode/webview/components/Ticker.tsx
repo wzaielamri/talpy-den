@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { chatRefOf, tickerItems, TickerTurns, type TickerItem } from "../../src/shared/model";
+import { chatRefOf, hostLabel, type TickerItem, tickerItems, TickerTurns } from "../../src/shared/model";
 import type { Group } from "../../src/shared/types";
 import { post } from "../env";
 import { useStore } from "../util/store";
@@ -35,10 +35,10 @@ export function Ticker({ groups }: { groups: Group[] }) {
       type="button"
       class="ticker"
       key={item.key}
-      title={`${item.host ? item.host + ": " : ""}${item.name}\n${item.text}\n\nClick to open it in a tab.`}
+      title={`${item.host ? hostLabel(item.host) + ": " : ""}${item.name}\n${item.text}\n\nClick to open it in a tab.`}
       onClick={() => post({ type: "openPane", chat: chatRefOf(item.session, item.host) })}
     >
-      {several ? <span class="ticker-name">{item.host ? `${item.host}: ` : ""}{item.name}</span> : null}
+      {several ? <span class="ticker-name">{item.host ? `${hostLabel(item.host)}: ` : ""}{item.name}</span> : null}
       <span class="ticker-text">▸ {item.text}</span>
     </button>
   );

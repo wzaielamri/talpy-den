@@ -1,5 +1,7 @@
 // VS Code terminals for chats: on this computer, on the host this window is
-// connected to (Remote-SSH), or on another host through ssh -t. The extension
+// connected to (Remote-SSH) or in its container (Dev Containers), on another
+// host through ssh -t, or in another container (remote.py --attach: the
+// engine's exec, over ssh -t for one on an SSH host). The extension
 // runs on this computer even in a Remote-SSH window ("extensionKind": ["ui"]):
 // a terminal created with a file: cwd runs here, one without a cwd runs on
 // the window's host.
@@ -8,7 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { shellQuote } from "./shared/model";
+import { containerOf, shellQuote } from "./shared/model";
 import { controlOptions } from "./sshControl";
 
 export type Place = { kind: "local" } | { kind: "windowHost" } | { kind: "ssh"; host: string };
@@ -122,7 +124,11 @@ export class Terminals implements vscode.Disposable {
 
   // checkedSince: whether a check of the host that started at since or later
   // has answered (the dashboard's)
-  constructor(private checkedSince: (host: string, since: number) => boolean = () => false) {
+  // attachLine: the command line that runs a command in a container (Backend.attachLine)
+  constructor(
+    private checkedSince: (host: string, since: number) => boolean = () => false,
+    private attachLine?: (host: string, command: string) => string,
+  ) {
     this.subscription = vscode.window.onDidCloseTerminal((t) => {
       for (const [k, v] of this.byKey) if (v === t) this.byKey.delete(k);
     });
@@ -183,7 +189,9 @@ export class Terminals implements vscode.Disposable {
         return existing;
       }
     }
-    const line = place.kind === "ssh" ? sshCommand(place.host, command) : command;
+    const line = place.kind !== "ssh" ? command
+      : containerOf(place.host) && this.attachLine ? this.attachLine(place.host, command)
+      : sshCommand(place.host, command);
     // Ctrl+C belongs to Claude, not to the wrapper; the shell stays afterwards.
     const script = `trap : INT; ${line}; exec "\${SHELL:-/bin/sh}"`;
     const options: vscode.TerminalOptions = {

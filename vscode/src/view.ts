@@ -441,6 +441,9 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       case "pickHosts":
         void this.actions.pickHosts();
         break;
+      case "startContainer":
+        if (text(m.host)) void this.actions.startContainer(m.host);
+        break;
       case "setupUsageBars":
         void vscode.commands.executeCommand("talpyDen.setupUsageBars");
         break;
