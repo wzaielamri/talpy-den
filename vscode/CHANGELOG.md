@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- ***Open in Editor Tab* opens the view again after you closed its tab:**
+  closing it stopped before Talpy Den forgot the tab, so the next *Open
+  in Editor Tab* tried to bring back the closed one and nothing opened.
 - **One Refresh: the view's Refresh reads the tab shown again,** the
   Recap (the days shown), Permissions or Projects, as when the tab opens,
   and the Recap's own *Read again* (↻) beside its days is gone; Refresh

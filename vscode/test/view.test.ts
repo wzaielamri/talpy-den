@@ -67,9 +67,14 @@ test("the badge is on the hidden tree from startup, on the view once it's there,
   host.setBadge(0, 2);
   assert.deepEqual(tree.badge, { value: 2, tooltip: "2 chats finished" });
   let dispose = () => {};
+  let disposed = false;
+  const page = { options: {}, html: "", postMessage: async () => true, onDidReceiveMessage: () => ({ dispose() {} }), asWebviewUri: (u: unknown) => u, cspSource: "" };
   const view = {
     badge: undefined as unknown,
-    webview: { options: {}, html: "", postMessage: async () => true, onDidReceiveMessage: () => ({ dispose() {} }), asWebviewUri: (u: unknown) => u, cspSource: "" },
+    get webview() {
+      if (disposed) throw new Error("Webview is disposed"); // (as VS Code's, from its onDidDispose on)
+      return page;
+    },
     visible: false, onDidChangeVisibility: () => ({}), onDidDispose: (f: () => void) => ((dispose = f), {}),
   };
   host.resolveWebviewView(view as never);
@@ -78,6 +83,7 @@ test("the badge is on the hidden tree from startup, on the view once it's there,
   host.setBadge(1, 2);
   assert.deepEqual(view.badge, { value: 1, tooltip: "1 chat needs you" });
   assert.equal(tree.badge, undefined);
+  disposed = true;
   dispose();
   assert.deepEqual(tree.badge, { value: 1, tooltip: "1 chat needs you" });
   host.setBadge(0, 0);
@@ -147,6 +153,27 @@ test("Refresh checks the chats and the plan usage and has every page read its ta
   host.refresh(); // (talpyDen.refresh: the view's title bar, the Command Palette)
   assert.deepEqual(calls, ["refreshAll", "fetchUsage"]);
   assert.deepEqual(readAgain(), [2, 2]);
+});
+
+// Closing the editor tab: VS Code refuses its panel's webview from then on
+// (the stub's too), so the view forgets the tab without asking for it, and
+// Open in Editor Tab opens a new one (it revealed the closed one, which
+// throws)
+test("a closed editor tab is forgotten, and Open in Editor Tab opens a new one", () => {
+  const dash = {
+    onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }),
+    state: () => demoState(NOW), setVisible() {}, refreshAll() {}, fetchUsage: async () => undefined,
+  };
+  const host = new ViewHost(vscode.Uri.file("/ext") as never, dash as never, {} as never);
+  host.openInEditor();
+  const first = recorded.panels.at(-1)!;
+  first.dispose();
+  host.openInEditor();
+  const second = recorded.panels.at(-1)!;
+  assert.notEqual(second, first, "a new tab");
+  host.refresh();
+  assert.deepEqual((second.sent as { type: string }[]).filter((m) => m.type === "readAgain"), [{ type: "readAgain" }]);
+  second.dispose();
 });
 
 test("a chat the page names is the extension's own row, not what the page says about it", () => {

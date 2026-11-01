@@ -59,7 +59,8 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     this.showBadge();
-    this.setUp(view.webview, false);
+    const webview = view.webview; // (a disposed view's throws: onDidDispose)
+    this.setUp(webview, false);
     let visible = view.visible;
     if (visible) this.visibleCount++;
     view.onDidChangeVisibility(() => {
@@ -70,8 +71,8 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
     });
     view.onDidDispose(() => {
       if (visible) this.visibleCount--;
-      this.webviews.delete(view.webview);
-      this.projectsShown.delete(view.webview);
+      this.webviews.delete(webview);
+      this.projectsShown.delete(webview);
       this.view = undefined;
       this.showBadge();
       this.dash.setVisible(this.visibleCount > 0);
@@ -91,7 +92,8 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
     });
     panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "media", "talpy.svg");
     this.panel = panel;
-    this.setUp(panel.webview, true);
+    const webview = panel.webview; // (a closed panel's throws: onDidDispose)
+    this.setUp(webview, true);
     let visible = panel.visible;
     if (visible) this.visibleCount++;
     panel.onDidChangeViewState(() => {
@@ -102,8 +104,8 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
     });
     panel.onDidDispose(() => {
       if (visible) this.visibleCount--;
-      this.webviews.delete(panel.webview);
-      this.projectsShown.delete(panel.webview);
+      this.webviews.delete(webview);
+      this.projectsShown.delete(webview);
       this.panel = undefined;
       this.dash.setVisible(this.visibleCount > 0);
     });

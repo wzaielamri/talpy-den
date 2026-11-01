@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **_Open in Editor Tab_ opens the view again after you closed its tab:** closing it stopped before Talpy Den forgot the tab (it asked the closed tab for its page, which VS Code refuses), so the next *Open in Editor Tab* tried to bring back the closed one and nothing opened; the sidebar view, once gone, likewise kept the Activity Bar badge from going back to where it shows from startup (VS Code).
 - **One Refresh: the Recap's own *Read again* (↻) beside its days is gone,** and the popup's Refresh reads the tab shown again, as when the tab opens: the Recap (the days shown), Permissions or Projects. The Recap had two refreshes, its ↻ and the top row's; in VS Code the view's Refresh (its title bar's, the Command Palette's, an editor tab's) only checked the chats and the plan usage, so a tab waited up to 10 minutes or till it was opened again (Plasma, GNOME and VS Code).
 - **A chat's Continue on…, Goes on at and Keeps going stand at the right end of their line in VS Code too,** as in Plasma; they started at the left (VS Code).
 - **A kept chat shows Keeps going while it works, as in VS Code:** its line with the tag showed only when the chat had a step or tasks to show, so a kept chat at work with neither showed no sign it keeps going (Plasma).
