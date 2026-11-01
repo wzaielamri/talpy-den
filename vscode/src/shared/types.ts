@@ -170,6 +170,11 @@ export interface PlanItem extends ChatPlan {
   cwdShort: string;
   openCommand?: string | null; // --remote: reopens that chat there
   starred?: boolean; // you starred it (older backends leave it out)
+  // In its project's own plans folder (Claude's plansDirectory, or its
+  // .claude/plans), not the account's: every account has it, so it isn't
+  // shared; cwd is that project. Older backends leave it out.
+  inProject?: boolean;
+  projectFolder?: string; // the folder the chat that made it started in ("": not known)
 }
 
 // One of Claude's memories on an account (talpy_den.py: account_memories):

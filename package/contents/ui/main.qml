@@ -46,6 +46,7 @@ PlasmoidItem {
     readonly property var emptyFound: ({ key: "", sessionId: "", name: "", cwd: "", cwdShort: "", lastActive: 0, profile: "",
                                          profileDir: "", groupId: "", account: "", shared: false, match: "", openCommand: "" })
     readonly property var emptyPlan: ({ key: "", slug: "", title: "", path: "", profileDir: "", profile: "", updatedAt: 0,
+                                        inProject: false, projectFolder: "",
                                         shared: false, chatId: null, chatProfileDir: null, cwd: "", cwdShort: "", edited: false,
                                         openCommand: null, starred: false })
     readonly property var emptyRecent: ({ key: "", sessionId: "", name: "", cwd: "", cwdShort: "", lastActive: 0, profileDir: "",
@@ -2987,6 +2988,8 @@ PlasmoidItem {
                                : a.kind === "chat" && accounts
                                ? i18n("Delete “%1” on %2? It goes to the Trash with its subagents and checkpoints; the Recap keeps its numbers.", name, accounts)
                                : a.kind === "plan" && accounts ? i18n("Delete the plan “%1” on %2? It goes to the Trash.", name, accounts)
+                               : a.kind === "plan" && result.folder   // (one in its project's plans folder)
+                               ? i18n("Delete the plan “%1” from %2? It goes to the Trash.", name, result.folder)
                                : a.kind === "memory" && a.folder
                                ? i18n("Delete the memory “%1”? It goes to the Trash, and Claude stops reading it in new chats in %2.", name, a.folder)
                                : result.question || ""

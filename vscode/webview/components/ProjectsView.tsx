@@ -184,7 +184,7 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
           <ul class={listClass}>
             {lists.plans.slice(0, lists.plansShown).map((x) => {
               const g = groupOf(x.profileDir);
-              return g ? <PlanLine key={x.key} plan={x} group={g} project={p.path} accountTag={tag(x.account)} /> : null;
+              return g ? <PlanLine key={x.key} plan={x} group={g} project={p.path} accountTag={tag(x.account)} chatGoneCard={!p.path} /> : null;
             })}
           </ul>
           <MoreButton shown={lists.plansShown} count={lists.plans.length} size={size} onClick={() => showMore(projectListKey(p.path, "plans"))} />

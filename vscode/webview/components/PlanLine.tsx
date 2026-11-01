@@ -11,18 +11,22 @@ import { IconButton } from "./IconButton";
 import { Tag } from "./Tag";
 
 // One of an account's plans (<config>/plans, what its chats wrote in plan
-// mode; ★ Starred plans, a project's plans): it opens in the Markdown
-// preview (an SSH host's: a copy, unless this window is connected to it); on
-// hover, star it, edit it, send your feedback, carry it out in a new chat
-// (▶), go back to the chat that made it (◀), share it with the machine's
-// other accounts, delete it, hide it. In a project (project: its folder) the
-// folder says only the part below the project's, and accountTag the account
-// it's on when the project is on several.
-export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanItem; group: Group; project?: string; accountTag?: string }) {
+// mode, or its project's own plans folder: p.inProject; ★ Starred plans, a
+// project's plans): it opens in the Markdown preview (an SSH host's: a
+// copy, unless this window is connected to it); on hover, star it, edit it,
+// send your feedback, carry it out in a new chat (▶), go back to the chat
+// that made it (◀), share it with the machine's other accounts (not one in
+// a project's folder: every account has it), delete it, hide it. In a
+// project (project: its folder) the folder says only the part below the
+// project's, and accountTag the account it's on when the project is on
+// several. One whose project isn't known says "chat gone" there, as the
+// Projects tab's card of plans whose chat is gone (chatGoneCard: in it).
+export function PlanLine({ plan: p, group, project, accountTag, chatGoneCard }:
+  { plan: PlanItem; group: Group; project?: string; accountTag?: string; chatGoneCard?: boolean }) {
   const view = useView();
   const [woken, wake] = useWoken(); // (its buttons: made the first time they show)
   const host = group.host;
-  const share = shareAccounts(machineStatus(view, host)).length >= 2;
+  const share = shareAccounts(machineStatus(view, host)).length >= 2 && !p.inProject;
   const copy = !!host && host !== view.hosts.find((h) => h.current)?.name;
   const ref = (plan: string) => (host ? { groupId: group.id, host, plan } : { groupId: group.id, plan });
   // (in a project: only the part of its folder below the project's)
@@ -42,6 +46,7 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
             : "Click to read it in the Markdown preview. Its Open Source button edits it: what you change there is the plan.") +
           (p.cwd ? `\nFolder: ${host ? `${host}:` : ""}${p.cwd}` : "") +
           (p.shared ? "\nShared with your other accounts." : "") +
+          (p.inProject ? "\nIn its project's plans folder: every account has it." : "") +
           (p.chatId ? "" : "\nThe chat that made it isn't here any more.")
         }
         onClick={() => post({ type: "openPlan", ...ref(p.key) })}
@@ -63,7 +68,12 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
         />
       ) : null}
       {accountTag ? <Tag text={accountTag} /> : null}
-      {folder ? <Elided text={folder} class="recent-folder small muted" title={p.cwd} /> : <span class="recent-folder" title={p.cwd || undefined} />}
+      {folder ? <Elided text={folder} class="recent-folder small muted" title={p.cwd} />
+        : !p.cwd && !chatGoneCard ? (
+          <span class="recent-folder small muted" title={"Its chat is gone\nThe chat that made it went before Talpy Den saw it, so its project isn't known. The Projects tab lists it under Plans whose chat is gone."}>
+            chat gone
+          </span>
+        ) : <span class="recent-folder" title={p.cwd || undefined} />}
       {/* starred: its ★ right before the time (every line keeps its room, so the times line up); hidden while its buttons show */}
       {p.starred ? (
         <button type="button" class="star-mark" tabIndex={-1} title="A starred plan stays listed under its account's ★ Starred plans, however old it is. Click to unstar it." onClick={() => post({ type: "star", ...ref(p.key), on: false })}>

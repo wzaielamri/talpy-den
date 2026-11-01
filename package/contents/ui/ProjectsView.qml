@@ -446,6 +446,7 @@ PlasmaComponents3.ScrollView {
                                         group: root.groupOfProfile(plan.profileDir)
                                         accountTag: inside.tagged ? plan.account || "" : ""
                                         project: inside.project.path
+                                        chatGoneCard: inside.project.path === ""
                                         folderWidth: inside.folderWidth
                                     }
                                 }

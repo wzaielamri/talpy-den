@@ -6,11 +6,15 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import "icons.mjs" as Icons
 
-// A plan a chat in plan mode wrote (<config>/plans): click to read it; on
-// hover (or Tab, or a finger's hold) its buttons: star, edit, send your
-// changes to its chat, carry it out in a new chat, continue the chat that
-// made it, share, delete, hide. Under an account's ★ Starred plans and in
-// its project (ProjectsView.qml).
+// A plan a chat in plan mode wrote (<config>/plans, or its project's own
+// plans folder: plan.inProject): click to read it; on hover (or Tab, or a
+// finger's hold) its buttons: star, edit, send your changes to its chat,
+// carry it out in a new chat, continue the chat that made it, share (not
+// one in a project's folder: every account has it), delete, hide. Under an
+// account's ★ Starred plans and in its project (ProjectsView.qml). A plan
+// whose project isn't known (its chat went before Talpy Den saw it) says
+// "chat gone" where its folder would be, as the Projects tab's card of
+// plans whose chat is gone (chatGoneCard: in that card, it needn't).
 ColumnLayout {
     id: planLine
 
@@ -19,6 +23,7 @@ ColumnLayout {
     property string remoteHost: ""
     property string accountTag: ""   // (in a project on several accounts: the one it's on)
     property string project: ""   // (in a project: its folder; the line's folder says only the part below it)
+    property bool chatGoneCard: false   // (in the Projects tab's card of plans whose chat is gone)
     property real folderWidth: Kirigami.Units.gridUnit * 8
     readonly property real endWidth: root.endWidth(folderWidth)
     readonly property string composerKey: (planLine.remoteHost ? planLine.remoteHost + "|" : "") + plan.key
@@ -66,6 +71,7 @@ ColumnLayout {
                          + (!planLine.remoteHost || root.vscodeInstalled ? " " + i18n("To change it, the edit button next to it opens its file.") : "")
                          + (planLine.plan.cwd ? "\n" + i18n("Folder: %1", (planLine.remoteHost ? root.hostLabel(planLine.remoteHost) + ":" : "") + planLine.plan.cwd) : "")
                          + (planLine.plan.shared ? "\n" + i18n("Shared with your other accounts.") : "")
+                         + (planLine.plan.inProject ? "\n" + i18n("In its project's plans folder: every account has it.") : "")
                          + (planLine.plan.chatId ? "" : "\n" + i18n("The chat that made it isn't here any more."))
 
                 MouseArea {
@@ -127,16 +133,19 @@ Kirigami.Icon {
                     Layout.preferredWidth: planLine.folderWidth
                     horizontalAlignment: Text.AlignRight
                     textFormat: Text.PlainText
-                    text: root.folderIn(planLine.plan.cwd, planLine.project, planLine.plan.cwdShort || "")
+                    text: planLine.plan.cwd ? root.folderIn(planLine.plan.cwd, planLine.project, planLine.plan.cwdShort || "")
+                          : planLine.chatGoneCard ? ""
+                          : i18nc("a plan whose chat is gone, so its project isn't known (where its folder would be)", "chat gone")
                     opacity: 0.6
                     font: Kirigami.Theme.smallFont
                     elide: Text.ElideMiddle
                     PlasmaCore.ToolTipArea {   // (the whole folder: the line may be cut short)
                         textFormat: Text.PlainText
                         anchors.fill: parent
-                        active: !!planLine.plan.cwd
-                        mainText: i18n("Folder")
-                        subText: (planLine.remoteHost ? root.hostLabel(planLine.remoteHost) + ":" : "") + planLine.plan.cwd
+                        active: !!planLine.plan.cwd || !planLine.chatGoneCard
+                        mainText: planLine.plan.cwd ? i18n("Folder") : i18n("Its chat is gone")
+                        subText: planLine.plan.cwd ? (planLine.remoteHost ? root.hostLabel(planLine.remoteHost) + ":" : "") + planLine.plan.cwd
+                                 : i18n("The chat that made it went before Talpy Den saw it, so its project isn't known. The Projects tab lists it under Plans whose chat is gone.")
                     }
                 }
                 // starred: a ★ (click: unstar it), hidden while the buttons show (their star unstars it)
@@ -247,7 +256,8 @@ Kirigami.Icon {
                 }
                 HoverButton {
                     id: planShare
-                    visible: root.shareAccountsOf(planLine.remoteHost).length >= 2
+                    // (not one in a project's own folder: every account has it there)
+                    visible: root.shareAccountsOf(planLine.remoteHost).length >= 2 && !planLine.plan.inProject
                     icon.name: Icons.plasma.share
                     text: i18n("Share it with another account…")
                     onClicked: root.openPlanMenu(planShare, planLine.plan, planLine.remoteHost)
