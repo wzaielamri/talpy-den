@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **A chat Claude moved to the background goes on there, never as its old
+  self again:** closing a chat's terminal makes Claude move it to the
+  background under a new id, with a copy of its history; at the reset,
+  its go-on resumed the old id, so two copies of one conversation worked
+  at once. Keep going, the queued go-on, the chat's row, its star and its
+  name now follow it to the new id, and the old id isn't listed apart.
+- **A chat that keeps going stays listed until it's done or Keep going is
+  off,** with its *Limit*, *Keeps going* and *Goes on at*, also once its
+  terminal is closed; it vanished from its account's list.
+- **A queued go-on names the chat as it's called now,** not as it was
+  called when it was queued.
 - ***Start it now* on a go-on that waits for its chat's background
   commands ends them at once** and goes on, and says so: its answer names
   what it ended, as a notification and a line in `go-on.log`, as when its

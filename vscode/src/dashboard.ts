@@ -16,7 +16,7 @@ import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";
 import { currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
 import { demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
-import { allGroups, chatsNeedingYou, findProjectChat, keptChat, limitReset, liveFromRows, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { allGroups, chatsNeedingYou, findProjectChat, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef } from "./notify";
 import type { ChatRef, ClaudeCodeInfo, DigestCard, Group, HostState, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
@@ -483,7 +483,7 @@ export class Dashboard implements vscode.Disposable {
     this.emit();
     try {
       const answer = await this.backend.action("jump.py", ["--start-queued", t.id, ...(now ? ["--now"] : []), ...configDirArgs()], 120000);
-      const what = queuedWhat(t).split("\n")[0];
+      const what = queuedWhat(t, machineStatus(this.state(), t.host)).split("\n")[0];
       if (t.afterTurn) {
         // your reply, sent as the chat's turn ended
         if (answer.ok && answer.message && settings.notifyDone() && this.notifier.isLeader() && !this.visible)

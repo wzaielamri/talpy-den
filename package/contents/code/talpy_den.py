@@ -2962,7 +2962,9 @@ class LinkCache:
       when the chat moves on to another session) and where its last finished
       reply is, which tells whether the chat moved on (Claude's own rule);
     - for each other transcript: the uuid of its first entry, and whether a
-      shared transcript holds that entry (then it's a copy of that chat).
+      shared transcript holds that entry (then it's a copy of that chat);
+    - for each transcript: the chat it continues, when Claude moved that one
+      to the background under a new id (moved_from).
     """
 
     VERSION = 2
@@ -2972,7 +2974,7 @@ class LinkCache:
         data = read_json(path)
         ok = isinstance(data, dict) and data.get("version") == self.VERSION
         self.old = data if ok else {}
-        self.data = {"version": self.VERSION, "transcripts": {}, "firstUuid": {}, "holds": {}, "chats": {}}
+        self.data = {"version": self.VERSION, "transcripts": {}, "firstUuid": {}, "holds": {}, "chats": {}, "moved": {}}
         self.changed = not ok
 
     def _keep(self, section, key, value):
@@ -3070,6 +3072,55 @@ class LinkCache:
         self._keep("holds", key, found)
         return found
 
+    def moved_from(self, path, st=None):
+        """The chat this transcript continues, or "": closing a chat's terminal
+        makes Claude move it to the background under a new id, its transcript
+        a copy of the chat's history whose entries keep the old id in
+        `session_id` (snake case; `sessionId` is the new one). The copy is at
+        its top: the first entry with a `session_id` names another chat, and
+        the last such entry before its own entries the chat it moved from
+        (a chat moved twice carries both). Read once (and then only what
+        was added while it's all copied entries): no `session_id` in its
+        first MOVED_HEAD_LINES lines, or its own first, isn't a moved chat."""
+        try:
+            st = path.stat() if st is None else st
+        except OSError:
+            return ""
+        key = file_key(st)
+        rec = self.data["moved"].get(key) or self.old.get("moved", {}).get(key)
+        if not (isinstance(rec, dict) and isinstance(rec.get("size"), int) and rec["size"] <= st.st_size
+                and isinstance(rec.get("from"), str)):
+            rec = {"size": 0, "lines": 0, "from": "", "done": False}
+        if not rec.get("done") and rec["size"] < st.st_size:
+            rec = dict(rec)
+            own = path.stem
+            try:
+                with open(path, "rb") as f:
+                    f.seek(rec["size"])
+                    for line in f:
+                        if not line.endswith(b"\n"):
+                            break  # (never a half-written last line)
+                        rec["size"] += len(line)
+                        rec["lines"] += 1
+                        if b'"session_id"' in line:
+                            try:
+                                e = json.loads(line)
+                            except ValueError:
+                                e = None
+                            sid = e.get("session_id") if isinstance(e, dict) else None
+                            if valid_id(sid) and sid == own:
+                                rec["done"] = True  # its own entries begin (or it never moved)
+                            elif valid_id(sid):
+                                rec["from"] = sid
+                        if not rec["done"] and not rec["from"] and rec["lines"] >= MOVED_HEAD_LINES:
+                            rec["done"] = True  # (no copied entries at its top)
+                        if rec["done"]:
+                            break
+            except OSError:
+                pass
+        self._keep("moved", key, rec)
+        return rec["from"]
+
     def chat_info(self, path, st):
         """(name, cwd, has messages) of a transcript, read again only when it grew."""
         key = file_key(st)
@@ -3082,13 +3133,81 @@ class LinkCache:
         return name, cwd, messages
 
     def save(self):
-        sections = ("transcripts", "firstUuid", "holds", "chats")
+        sections = ("transcripts", "firstUuid", "holds", "chats", "moved")
         kept = keep_unused(self.old, self.data, sections, time.time())
         if self.changed or kept or any(set(self.data[s]) != set(self.old.get(s, {})) for s in sections):
             try:
                 write_json_atomic(self.path, self.data)
             except OSError:
                 pass
+
+
+MOVED_HEAD_LINES = 400  # a moved chat's copied entries are at its top (LinkCache.moved_from)
+MOVED_SCAN_DAYS = 14  # transcripts changed this long ago aren't read for it (chat_moves)
+
+
+def chat_moves(ctx):
+    """{chat id: the id it moved to}, of the chats Claude moved to the
+    background under a new id (LinkCache.moved_from), the newest move of
+    each; read from the transcripts changed in the last MOVED_SCAN_DAYS,
+    once per check."""
+    found = getattr(ctx, "moves", None)
+    if found is not None:
+        return found
+    moves = {}
+    since = ctx.now_ms / 1000 - MOVED_SCAN_DAYS * 86400
+    for t, _p, f, st in all_transcripts(ctx):  # (newest first)
+        if t < since:
+            break
+        old = ctx.links.moved_from(f, st)
+        if old and old != f.stem and old not in moves:
+            moves[old] = f.stem
+    ctx.moves = moves
+    return moves
+
+
+def moved_chat(chat, moves):
+    """The id a chat goes on under now: where it moved to, and on (chat_moves)."""
+    seen = {chat}
+    while chat in moves and moves[chat] not in seen:
+        chat = moves[chat]
+        seen.add(chat)
+    return chat
+
+
+def continuation(home, extra_dirs, profile_key, chat):
+    """The id a chat of this computer goes on under now (moved_chat), read
+    from the transcripts in its folder (and links.json, where the status
+    checks keep what they read of them), or chat itself."""
+    profiles = discover_profiles(home, extra_dirs)
+    profile = next((p for p in profiles if matches_profile(p, profile_key)), None) if profile_key else None
+    folders = []
+    for p in ([profile] if profile is not None else []) + profiles:
+        path = transcript_path(p, chat)
+        if path is not None and path.parent not in folders:
+            folders.append(path.parent)
+    if not folders:
+        return chat
+    links = LinkCache(cache_dir(home) / "links.json")
+    since = time.time() - MOVED_SCAN_DAYS * 86400
+    moves, found = {}, []
+    for folder in folders:
+        try:
+            files = list(folder.glob("*.jsonl"))
+        except OSError:
+            continue
+        for f in files:
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            if valid_id(f.stem) and st.st_mtime >= since:
+                found.append((st.st_mtime, f, st))
+    for _, f, st in sorted(found, key=lambda c: -c[0]):
+        old = links.moved_from(f, st)
+        if old and old != f.stem and old not in moves:
+            moves[old] = f.stem
+    return moved_chat(chat, moves)
 
 
 def finished_reply(e):
@@ -3368,6 +3487,50 @@ def place_chats(groups, ctx):
             moved["shared"].pop("stoppedCopies", None)
         note_stopped([(None, moved)], entries)
         group_of[home.key]["sessions"].append(moved)
+
+
+def follow_moved(groups, ctx):
+    """A chat Claude moved to the background under a new id (chat_moves) is
+    that one now: a row of its old id with no process isn't listed (a
+    process still on the old id is a chat at work, and stays), nor is the
+    old id among the recent chats."""
+    moves = chat_moves(ctx)
+    if not moves:
+        return
+    for g in groups:
+        g["sessions"] = [s for s in g["sessions"] if s["pid"] is not None or chat_id(s) not in moves]
+    ctx.moved_on = set(getattr(ctx, "moved_on", None) or ()) | set(moves)
+
+
+def list_kept(groups, ctx, kept):
+    """A chat that keeps going (kept: keep.json's entries) stays listed until
+    it's let go, with or without a process, as a background one: one whose
+    terminal was closed has no row of its own, so it gets one (kind "chat",
+    under the id it goes on under now), with what stopped it."""
+    moves = chat_moves(ctx)
+    listed = {i for g in groups for s in g["sessions"] for i in (s["sessionId"], s.get("chatId"), s.get("jobSessionId")) if i}
+    group_of = {key: g for g in groups for key in g["profileKeys"]}
+    for k in kept:
+        chat = moved_chat(k["chat"], moves)
+        if chat in listed:
+            continue
+        mine = [p for p in ctx.profiles if matches_profile(p, k["profile"])]
+        profile, path = next(((p, transcript_path(p, chat)) for p in mine + ctx.profiles
+                              if p.key in group_of and transcript_path(p, chat) is not None), (None, None))
+        if path is None:
+            continue
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        name, cwd, _ = ctx.links.chat_info(path, st)
+        cwd = cwd or (k.get("folder") if isinstance(k.get("folder"), str) else "")
+        row = make_session(profile, ctx.home, sid=chat, pid=None, name=clean_text(name or k.get("name") or "", 80),
+                           cwd=cwd, kind="chat", entrypoint="", state="done", reason="", waiting_for="", detail="",
+                           since=int(st.st_mtime * 1000), started_at=None)
+        row["key"] = f"{profile.key}/{chat}/chat"
+        group_of[profile.key]["sessions"].append(finish_row(row, None, None, profile, ctx, alive=False))
+        listed.add(chat)
 
 
 def link_shared_elsewhere(groups):
@@ -3777,15 +3940,18 @@ def load_queue(cache_root):
     return [t for t in tasks if isinstance(t, dict) and valid_id(t.get("id"))] if isinstance(tasks, list) else []
 
 
-def change_queue(cache_root, add=None, take=None, put_back=None, once=False):
+def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edit=None):
     """Change queue.json under a lock: add a task (once: unless a go-on of
     the same chat is queued already), take one out by its id (returned), or
-    put one back (e.g. with the error it got). The task taken out, or None."""
+    put one back (e.g. with the error it got); edit(tasks) changes the
+    tasks in place and says whether it did. The task taken out, or None."""
     private_dir(cache_root)
     with open(cache_root / "queue.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         tasks = load_queue(cache_root)
         taken = None
+        if edit is not None and edit(tasks):
+            write_json_atomic(cache_root / "queue.json", {"tasks": tasks})
         if take is not None:
             taken = next((t for t in tasks if t["id"] == take), None)
             tasks = [t for t in tasks if t["id"] != take]
@@ -3949,10 +4115,45 @@ def went_on_undone(cache_root, chat_id, noted, was):
     change_keep(cache_root, change)
 
 
-def kept_chats(cache_root):
-    """The chats that keep going, as the status lists them."""
-    return [{f: k.get(f) for f in ("chat", "profile", "name", "since", "wentOnAt", "tries", "note", "error")}
+def kept_chats(cache_root, moves=None):
+    """The chats that keep going, as the status lists them (each under the
+    id it goes on under now: moves, chat_moves)."""
+    return [dict({f: k.get(f) for f in ("chat", "profile", "name", "since", "wentOnAt", "tries", "note", "error")},
+                 chat=moved_chat(k["chat"], moves or {}))
             for k in load_keep(cache_root)["chats"]]
+
+
+def keep_moved(cache_root, old, new):
+    """A chat that keeps going goes on under a new id (Claude moved it to
+    the background): keep.json follows it (once, if both are kept)."""
+    def change(data):
+        k = next((k for k in data["chats"] if k["chat"] == old), None)
+        if k is None or old == new:
+            return False
+        if any(x["chat"] == new for x in data["chats"]):
+            data["chats"].remove(k)
+        else:
+            k["chat"] = new
+        return True
+    change_keep(cache_root, change)
+
+
+def follow_queue(cache_root, moves, names):
+    """This computer's queued go-ons follow their chats: one Claude moved
+    to the background goes on under its new id (moves), and each is named
+    as its chat is now (names: {chat id: name})."""
+    def edit(tasks):
+        changed = False
+        for t in tasks:
+            if not t.get("chat") or t.get("host"):
+                continue
+            chat = moved_chat(t["chat"], moves)
+            name = clean_text(names.get(chat) or "", 80) or t.get("name") or ""
+            if (chat, name) != (t["chat"], t.get("name") or ""):
+                t["chat"], t["name"] = chat, name
+                changed = True
+        return changed
+    change_queue(cache_root, edit=edit)
 
 
 def last_turn(path):
@@ -4085,18 +4286,24 @@ def note_caps(groups, cap, now_ms):
             if w else None
 
 
-def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0):
+def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=None):
     """Look after the chats that keep going, and stop the chats at work at
     the usage cap (see above). groups: this computer's accounts, as the
-    status lists them. Nothing when another copy is at it right now."""
+    status lists them. moves: the chats Claude moved to the background
+    under a new id (chat_moves): a kept chat and its queued go-on follow
+    it there, and each keeps the name its chat has now. Nothing when
+    another copy is at it right now."""
+    moves = moves or {}
     profiles = discover_profiles(home, extra_dirs)
-    queued = {t.get("chat") for t in load_queue(cache_root) if t.get("chat") and not t.get("host")}
     rows = {}
     for g in groups:
         for s in g.get("sessions", []):
             for i in (s.get("sessionId"), s.get("chatId")):
                 if i and (i not in rows or s.get("pid") is not None):
                     rows[i] = s
+    names = {i: s["name"] for i, s in rows.items() if isinstance(s.get("name"), str) and s["name"].strip()}
+    follow_queue(cache_root, moves, names)
+    queued = {t.get("chat") for t in load_queue(cache_root) if t.get("chat") and not t.get("host")}
     adds, stops = [], []
 
     def change(data):
@@ -4120,6 +4327,15 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0):
                             k["cappedUntil"] = w["resetsAt"]
         for k in list(data["chats"]):
             before = dict(k)
+            chat = moved_chat(k["chat"], moves)
+            if chat != k["chat"]:  # (Claude moved it to the background under a new id: it keeps going there)
+                if any(x is not k and x["chat"] == chat for x in data["chats"]):
+                    data["chats"].remove(k)
+                    changed = True
+                    continue
+                k["chat"] = chat
+            if names.get(chat) and names[chat] != k.get("name"):
+                k["name"] = clean_text(names[chat], 80)  # (as it's called now)
             profile = next((p for p in profiles if matches_profile(p, k["profile"])), None)
             path = transcript_path(profile, k["chat"]) if profile is not None else None
             g = next((g for g in groups if k["profile"] in (g.get("profileKeys") or [])), None)
@@ -5498,6 +5714,12 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     profile = next((p for p in profiles if matches_profile(p, profile_key)), None)
     if profile is None:
         return {"ok": False, "message": f"No Claude profile called {profile_key}"}
+    # (Claude moved it to the background under a new id: it goes on there, never as the old id
+    # again, which would be a second copy of the conversation at work)
+    now_id = continuation(home, extra_dirs, profile.key, chat_id)
+    moved, chat_id = now_id != chat_id, now_id
+    if moved:
+        profile = next((p for p in [profile] + profiles if transcript_path(p, chat_id) is not None), profile)
     path = transcript_path(profile, chat_id)
     if path is None:
         return {"ok": False, "message": "That chat isn't on this account any more"}
@@ -5505,6 +5727,9 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     limited = (peek.get("stopped") or {}).get("kind") == "limit"
     if not force and not limited:
         return {"ok": True, "message": ""}
+    if moved and not limited and any(
+            e.get("sessionId") == chat_id and session_state(e) in ("working", "waiting") for e, _, _ in live_entries_all(profiles)):
+        return {"ok": True, "message": ""}  # (where it moved to, it's at work: nothing to do)
     # (its newest entries name none: a chat in the Claude Code panel names it at its first prompt only)
     mode = peek.get("mode") or scan_mode(path, file_size(path))
     if not (isinstance(folder, str) and os.path.isdir(folder)):
@@ -7471,6 +7696,14 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
     except Exception as exc:
         errors.append(f"shared chats: {exc}")
     try:
+        follow_moved(groups, ctx)
+    except Exception as exc:
+        errors.append(f"chats moved to the background: {exc}")
+    try:
+        list_kept(groups, ctx, load_keep(cache_root)["chats"])
+    except Exception as exc:
+        errors.append(f"chats that keep going: {exc}")
+    try:
         note_attached(groups, profiles)
     except Exception as exc:
         errors.append(f"background chats in terminals: {exc}")
@@ -7516,6 +7749,11 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
     try:
         if starred is None:
             starred = starred_of(load_stars(cache_root))
+            # (a starred chat Claude moved to the background under a new id: the star follows it)
+            for old in [c for c in starred["chats"] if c in chat_moves(ctx)]:
+                change_stars(cache_root, "chats", moved_chat(old, ctx.moves), on=True)
+                change_stars(cache_root, "chats", old, on=False)
+        starred = dict(starred, chats={moved_chat(c, chat_moves(ctx)) for c in starred["chats"]})
     except Exception as exc:
         errors.append(f"starred chats and plans: {exc}")
         starred = {kind: set() for kind in STAR_KINDS}
@@ -7584,6 +7822,8 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
         "overall": overall,
         "queue": queue,  # tasks waiting for a usage limit to reset (queued_tasks)
         "keep": [],  # the chats that keep going (kept_chats, after look_after_kept)
+        # {chat id: the id it goes on under}: chats Claude moved to the background under a new id (chat_moves)
+        "moved": {old: moved_chat(old, ctx.moves) for old in getattr(ctx, "moves", None) or {}},
         "counts": counts,
         "groups": groups,
         "dismissed": dismissed_rows,  # (the finished chats you hid: Show Hidden Chats Again)
@@ -8404,8 +8644,8 @@ def main(argv=None):
                 try:
                     if keep_going or result.get("notifier") is True:
                         look_after_kept(home, cache_root, config_dirs, result["groups"], int(time.time() * 1000),
-                                        usage_cap)
-                    result["keep"] = kept_chats(cache_root)
+                                        usage_cap, result.get("moved"))
+                    result["keep"] = kept_chats(cache_root, result.get("moved"))
                 except Exception as exc:
                     result["errors"].append(f"chats that keep going: {exc}")
             if remote:

@@ -2905,8 +2905,10 @@ PlasmoidItem {
     }
 
     // What a queued task does, in a line
+    // (a chat's go-on names the chat as its row is called now, else as queued)
     function queuedWhat(t) {
-        return t.chat ? i18n("Go on with “%1”", t.name || t.chat.slice(0, 8))
+        const row = t.chat ? listedRow(t.chat, "", t.host || "") : null
+        return t.chat ? i18n("Go on with “%1”", (row && row.name) || t.name || t.chat.slice(0, 8))
              : t.planTitle ? i18n("Carry out “%1”", t.planTitle) + (t.prompt ? ": " + t.prompt : "")
              : t.prompt
     }

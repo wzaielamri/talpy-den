@@ -1307,6 +1307,148 @@ def api_error(text, ts):
     return e
 
 
+class MovedChatTests(TaskFixture):
+    """Closing a chat's terminal makes Claude (2.1.316) move it to the
+    background under a NEW id, its transcript a copy of the history whose
+    entries keep the old id in `session_id` (snake case). At the reset, the
+    go-on resumed the old id: two copies of one conversation at work
+    (2026-11-01). The chat goes on under the new id: keep going, its queued
+    go-on, its row, its star and its name follow it."""
+
+    OLD = ContinueAfterResetTests.SID
+    NEW = "5def6803-dbca-4a13-8ca4-4331fb6ce1f4"
+    queue, cache_root = QueueTests.queue, QueueTests.cache_root
+
+    def setUp(self):
+        super().setUp()
+        t = self.now - 600
+        self.project = self.home / ".claude-work/projects/-repos-app"
+        attach = lambda sid, ts: {"type": "attachment", "uuid": "a-" + str(ts), "timestamp": iso(ts), "sessionId": sid,
+                                  "session_id": sid, "attachment": {"type": "date"}}
+        stop = limit_error("You've hit your session limit · resets 10:40am (Europe/Berlin)", t + 2)
+        write(self.project / f"{self.OLD}.jsonl",
+              lines({"type": "ai-title", "aiTitle": "talpy-den-64", "sessionId": self.OLD},
+                    prompt("fix it", t, cwd=str(self.folder), sessionId=self.OLD, uuid="u1"), attach(self.OLD, t + 1),
+                    dict(stop, sessionId=self.OLD, uuid="u2")))
+        # the copy: its entries' sessionId is the new id, the copied attachments keep the old one
+        copy = lambda e: dict(e, sessionId=self.NEW)
+        write(self.project / f"{self.NEW}.jsonl",
+              lines({"type": "ai-title", "aiTitle": "shared creature code tug", "sessionId": self.NEW},
+                    copy(prompt("fix it", t, cwd=str(self.folder), uuid="u1")), copy(attach(self.OLD, t + 1)),
+                    copy(dict(stop, uuid="u2"))))
+        os.utime(self.project / f"{self.OLD}.jsonl", (t + 2, t + 2))
+
+    def status(self):
+        return cs.collect(self.home, self.cache_root(), with_tokens=False, now=self.now)
+
+    def rows(self, status):
+        return [s for g in status["groups"] for s in g["sessions"]]
+
+    def test_a_moved_transcript_names_the_chat_it_continues_read_once(self):
+        links = cs.LinkCache(self.cache_root() / "links.json")
+        new, old = self.project / f"{self.NEW}.jsonl", self.project / f"{self.OLD}.jsonl"
+        self.assertEqual((links.moved_from(new), links.moved_from(old)), (self.OLD, ""))
+        # its own entries after the copy: still the chat it moved from, and what's added isn't read
+        with open(new, "a") as f:
+            f.write(json.dumps({"type": "attachment", "sessionId": self.NEW, "session_id": self.NEW}) + "\n")
+        self.assertEqual(links.moved_from(new), self.OLD)
+        links.save()
+        again = cs.LinkCache(self.cache_root() / "links.json")
+        with open(new, "a") as f:
+            f.write(json.dumps({"type": "attachment", "sessionId": self.NEW, "session_id": self.OLD}) + "\n")
+        with mock.patch("builtins.open", side_effect=AssertionError("read again")):
+            self.assertEqual(again.moved_from(new), self.OLD)
+        # moved twice: the copy carries both ids, the last before its own is the one it moved from
+        newer = "7de0b1f3-0000-4000-8000-000000000001"
+        write(self.project / f"{newer}.jsonl", lines(
+            {"type": "attachment", "sessionId": newer, "session_id": self.OLD},
+            {"type": "attachment", "sessionId": newer, "session_id": self.NEW},
+            {"type": "attachment", "sessionId": newer, "session_id": newer}))
+        self.assertEqual(links.moved_from(self.project / f"{newer}.jsonl"), self.NEW)
+        # a chat whose own entries come first isn't a moved one, whatever it quotes later
+        quoted = "9c6c239a-0000-4000-8000-000000000002"
+        write(self.project / f"{quoted}.jsonl", lines(
+            {"type": "attachment", "sessionId": quoted, "session_id": quoted},
+            {"type": "attachment", "sessionId": quoted, "session_id": self.OLD}))
+        self.assertEqual(links.moved_from(self.project / f"{quoted}.jsonl"), "")
+        cs_moves = {self.OLD: self.NEW, self.NEW: newer}
+        self.assertEqual(cs.moved_chat(self.OLD, cs_moves), newer)
+        self.assertEqual(cs.moved_chat(newer, {newer: self.OLD, self.OLD: newer}), self.OLD)  # (no loop)
+
+    def test_the_go_on_goes_on_with_the_new_id_never_the_old(self):
+        cs.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
+        at = int(time.time() * 1000) - 1000
+        self.assertTrue(self.queue("--queue-continue", self.OLD, "--profile", ".claude-work", "--at", str(at),
+                                   "--name", "talpy-den-64")["ok"])
+        (task,) = cs.load_queue(self.cache_root())
+        answer = self.queue("--start-queued", task["id"])
+        self.assertEqual(answer, {"ok": True, "message": "Went on in the background on work (1a2b3c4d)"})
+        self.assertEqual(self.calls()[0]["argv"], ["--bg", "--resume", self.NEW, cs.CONTINUE_PROMPT])
+        (kept,) = cs.kept_chats(self.cache_root())
+        self.assertEqual(kept["chat"], self.NEW)
+        self.assertIsNotNone(kept["wentOnAt"])
+
+    def test_nothing_to_do_when_the_new_one_is_at_work(self):
+        write(self.home / ".claude-work/sessions/50.json", session(self.NEW, kind="bg", status="busy", cwd=str(self.folder)))
+        write(self.project / f"{self.NEW}.jsonl", (self.project / f"{self.NEW}.jsonl").read_text()
+              + lines(prompt("continue", self.now - 60, sessionId=self.NEW, uuid="u3")))
+        answer = cs.continue_chat(self.home, [], ".claude-work", self.OLD, None, "", str(self.bin / "claude"), force=True)
+        self.assertEqual(answer, {"ok": True, "message": ""})
+        self.assertEqual(self.calls(), [])
+
+    def test_its_row_star_keep_and_queued_go_on_follow_it(self):
+        cs.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
+        cs.change_stars(self.cache_root(), "chats", self.OLD)
+        at = int(time.time() * 1000) + 3600_000
+        self.assertTrue(self.queue("--queue-continue", self.OLD, "--profile", ".claude-work", "--at", str(at),
+                                   "--name", "talpy-den-64")["ok"])
+        status = self.status()
+        self.assertEqual(status["moved"], {self.OLD: self.NEW})
+        # one row, the new id's: a kept chat with no process stays listed, with what stopped it
+        (row,) = [s for s in self.rows(status) if self.OLD in (s["sessionId"], s["chatId"]) or s["chatId"] == self.NEW]
+        self.assertEqual((row["chatId"], row["kind"], row["pid"], row["name"]), (self.NEW, "chat", None, "shared creature code tug"))
+        self.assertEqual(row["stopped"]["kind"], "limit")
+        self.assertTrue(row["starred"])
+        self.assertNotIn(self.OLD, [r["sessionId"] for g in status["groups"] for r in g["recent"]])
+        self.assertEqual(cs.starred_of(cs.load_stars(self.cache_root()))["chats"], {self.NEW})
+        # the keep engine moves keep.json and the queue over, named as it's called now
+        cs.look_after_kept(self.home, self.cache_root(), [], status["groups"], int(self.now * 1000), 0, status["moved"])
+        (kept,) = cs.kept_chats(self.cache_root())
+        self.assertEqual((kept["chat"], kept["name"]), (self.NEW, "shared creature code tug"))
+        (task,) = cs.load_queue(self.cache_root())
+        self.assertEqual((task["chat"], task["name"]), (self.NEW, "shared creature code tug"))
+
+
+class KeptChatListedTests(TaskFixture):
+    """A kept chat whose terminal was closed vanished from its account's
+    list, its Keeps going and Goes on at with it, while its go-on waited
+    in the queue (2026-11-01): it stays listed until it's let go."""
+
+    SID = ContinueAfterResetTests.SID
+    cache_root = QueueTests.cache_root
+    stopped_chat = ContinueAfterResetTests.stopped_chat
+
+    def test_listed_while_kept_with_its_limit(self):
+        self.stopped_chat()
+        status = lambda: cs.collect(self.home, self.cache_root(), with_tokens=False, now=self.now)
+        listed = lambda st: [s for g in st["groups"] for s in g["sessions"] if s["chatId"] == self.SID]
+        self.assertEqual(listed(status()), [], "not kept: a closed chat is a recent one")
+        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        (row,) = listed(status())
+        self.assertEqual((row["key"], row["kind"], row["pid"], row["state"], row["cwd"]),
+                         (f".claude-work/{self.SID}/chat", "chat", None, "done", str(self.folder)))
+        self.assertEqual(row["stopped"]["kind"], "limit")
+        self.assertEqual(row["reply"], "background")
+        # its live row when it runs again: listed once
+        write(self.home / ".claude-work/sessions/50.json", session(self.SID, cwd=str(self.folder)))
+        (row,) = listed(status())
+        self.assertIsNotNone(row["pid"])
+        # Keep going off: a recent chat again
+        (self.home / ".claude-work/sessions/50.json").unlink()
+        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, on=False)
+        self.assertEqual(listed(status()), [])
+
+
 class GoOnWaitsTests(TaskFixture):
     """A chat a usage limit stopped that still runs commands in the
     background (a server it started) looks at work: its go-on waits for

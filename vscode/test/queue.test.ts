@@ -43,6 +43,11 @@ test("a chat a usage limit stopped can go on by itself after the reset", () => {
     planProfile: null, planTitle: "", startAt: NOW, createdAt: NOW, error: "", due: false, chat: "c1", name: "Fix it",
   };
   assert.equal(queuedWhat(t), "Go on with “Fix it”");
+  // named as the chat is called now: its row's name, else as queued
+  const g = demoState(NOW).status!.groups[0];
+  const renamed = { ...g.sessions[0], chatId: "c1", sessionId: "c1-own", name: "Shared creature code tug" };
+  assert.equal(queuedWhat(t, { groups: [{ ...g, sessions: [renamed] }] }), "Go on with “Shared creature code tug”");
+  assert.equal(queuedWhat(t, { groups: [{ ...g, sessions: [] }] }), "Go on with “Fix it”");
   assert.equal(queuedChat({ queue: [t] } as never, "c1", "lab"), t);
   assert.equal(queuedChat({ queue: [t] } as never, "c1"), null); // (that's the host's chat)
   assert.equal(queuedChat({ queue: [{ ...t, chat: null }] } as never, "c1", "lab"), null);

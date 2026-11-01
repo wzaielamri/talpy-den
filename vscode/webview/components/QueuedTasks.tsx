@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { duration, keptChat, queuedFor, queuedWhat, startText } from "../../src/shared/model";
+import { duration, keptChat, machineStatus, queuedFor, queuedWhat, startText } from "../../src/shared/model";
 import type { Group, QueuedTask } from "../../src/shared/types";
 import { post } from "../env";
 import { Icon, I, T } from "../util/icons";
@@ -31,7 +31,7 @@ export function QueuedTasks({ group }: { group: Group }) {
 function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolean; ask: (on: boolean) => void }) {
   const view = useView();
   const [woken, wake] = useWoken(); // (its buttons: made the first time they show)
-  const what = queuedWhat(t);
+  const what = queuedWhat(t, machineStatus(view, t.host));
   // (what you wrote for it is asked about first: it's gone with it; a kept chat's go-on stops it keeping going)
   const wrote = !t.chat || !!t.afterTurn;
   const kept = !!t.chat && !t.afterTurn && !t.host && keptChat(view.status, t.chat) !== null;

@@ -758,9 +758,24 @@ export function queuedChat(status: Status | null, chatId: string, host?: string)
   return (status?.queue ?? []).find((t) => !!t.chat && t.chat === chatId && (t.host || "") === (host || "")) ?? null;
 }
 
-// What a queued task does, in a line
-export function queuedWhat(t: QueuedTask): string {
-  return t.chat ? `Go on with “${t.name || t.chat.slice(0, 8)}”` : t.planTitle ? `Carry out “${t.planTitle}”${t.prompt ? `: ${t.prompt}` : ""}` : t.prompt;
+// What a queued task does, in a line; a chat's go-on names the chat as it's
+// called now (its row's name in the status of its machine), else as queued
+export function queuedWhat(t: QueuedTask, status?: Pick<Status, "groups"> | null): string {
+  const name = (t.chat ? chatNameNow(status, t.chat) : "") || t.name;
+  return t.chat ? `Go on with “${name || t.chat.slice(0, 8)}”` : t.planTitle ? `Carry out “${t.planTitle}”${t.prompt ? `: ${t.prompt}` : ""}` : t.prompt;
+}
+
+// A chat's name as its row (or its line in Recent chats) has it now, or ""
+export function chatNameNow(status: Pick<Status, "groups"> | null | undefined, chatId: string): string {
+  for (const g of status?.groups ?? []) {
+    const s = g.sessions.find((x) => x.chatId === chatId || x.sessionId === chatId);
+    if (s?.name) return s.name;
+  }
+  for (const g of status?.groups ?? []) {
+    const r = (g.recent ?? []).find((x) => x.sessionId === chatId);
+    if (r?.name) return r.name;
+  }
+  return "";
 }
 
 export function clockText(ms: number): string {
