@@ -133,7 +133,7 @@ PlasmaComponents3.ScrollView {
         return money(m.cost) + " · " + shareText(m.share)
     }
     function whereOf(chat) {
-        return (chat.host ? chat.host + ": " : "") + (chat.folder || "")
+        return (chat.host ? root.hostLabel(chat.host) + ": " : "") + (chat.folder || "")
     }
     function widest(texts) {
         return Math.ceil(Math.max(0, ...texts.map(t => smallMetrics.advanceWidth(t)))) + 1
@@ -1119,7 +1119,7 @@ PlasmaComponents3.ScrollView {
                     PlasmaComponents3.Label {
                         textFormat: Text.PlainText
                         Layout.preferredWidth: lanesBox.nameWidth
-                        text: (laneRow.lane.host ? laneRow.lane.host + ": " : "") + laneRow.lane.name
+                        text: (laneRow.lane.host ? root.hostLabel(laneRow.lane.host) + ": " : "") + laneRow.lane.name
                         elide: Text.ElideRight
                         font: Kirigami.Theme.smallFont
 
@@ -1224,7 +1224,7 @@ PlasmaComponents3.ScrollView {
                             PlasmaComponents3.Label {
                                 textFormat: Text.PlainText
                                 Layout.preferredWidth: view.gu * 6
-                                text: (projectRow.project.host ? projectRow.project.host + ": " : "") + projectRow.project.name
+                                text: (projectRow.project.host ? root.hostLabel(projectRow.project.host) + ": " : "") + projectRow.project.name
                                 elide: Text.ElideMiddle
                                 font.bold: projectRow.open
                             }
@@ -1264,7 +1264,7 @@ PlasmaComponents3.ScrollView {
                             PlasmaCore.ToolTipArea {
                                 textFormat: Text.PlainText
                                 anchors.fill: parent
-                                mainText: (projectRow.project.host ? projectRow.project.host + ": " : "") + projectRow.project.path
+                                mainText: (projectRow.project.host ? root.hostLabel(projectRow.project.host) + ": " : "") + projectRow.project.path
                                 subText: i18n("Claude worked %1 · %2 at API prices", view.hours(projectRow.project.workedMs),
                                               view.money(projectRow.project.cost))
                                          + "\n" + i18np("%1 prompt", "%1 prompts", projectRow.project.prompts)
@@ -1532,7 +1532,7 @@ PlasmaComponents3.ScrollView {
                     return ""
                 const failed = view.recap.sources.filter(s => !s.ok)
                 // (the hosts whose chats it was read from: not one left out or that couldn't be read)
-                const hosts = view.recap.sources.filter(s => s.host && s.ok).map(s => s.host)
+                const hosts = view.recap.sources.filter(s => s.host && s.ok).map(s => root.hostLabel(s.host))
                 let text = i18n("Read from the chats on this computer%1, without using any tokens. Prices: Claude's API list prices of %2%3.",
                                 hosts.length ? i18n(" and on %1", hosts.join(", ")) : "",
                                 Qt.locale().toString(view.date(view.recap.prices.asOf), "d MMM yyyy"),
@@ -1546,7 +1546,7 @@ PlasmaComponents3.ScrollView {
                                         Qt.locale().toString(view.date(cur.date), "d MMM yyyy"),
                                         Number(cur.rate).toLocaleString(Qt.locale(), "f", 4))
                 for (const s of failed)
-                    text += "\n" + i18n("%1 couldn't be read: %2", s.host, s.error)
+                    text += "\n" + i18n("%1 couldn't be read: %2", root.hostLabel(s.host), s.error)
                 return text
             }
         }

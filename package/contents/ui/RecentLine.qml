@@ -85,12 +85,12 @@ ColumnLayout {
                 mainText: recentLine.chat.name
                 subText: (Plasmoid.configuration.clickOpensPane
                           ? i18n("Click to open it beside the popup: its conversation, a box to reply, and what it changed.")
-                            + (recentLine.canOpen ? "\n" + i18n("The reopen button (on hover): %1", recentLine.inVscode ? root.vscodeHint(recentLine.group, recentLine.remoteHost, true)
+                            + (recentLine.canOpen ? "\n" + i18n("The reopen button (on hover): %1", recentLine.inVscode ? root.vscodeHint(recentLine.group, root.hostLabel(recentLine.remoteHost), true)
                                                                                                                          : root.terminalHint(recentLine.remoteHost, true)) : "")
                           : recentLine.canOpen ? (recentLine.inVscode ? root.vscodeHint(recentLine.group, recentLine.remoteHost, true)
                                                                         : root.terminalHint(recentLine.remoteHost, true))
                           : root.terminalHint(recentLine.remoteHost, true) + "\n" + root.vscodeHint(recentLine.group, recentLine.remoteHost, true))
-                         + (recentLine.chat.cwd ? "\n" + i18n("Folder: %1", (recentLine.remoteHost ? recentLine.remoteHost + ":" : "") + recentLine.chat.cwd) : "")
+                         + (recentLine.chat.cwd ? "\n" + i18n("Folder: %1", (recentLine.remoteHost ? root.hostLabel(recentLine.remoteHost) + ":" : "") + recentLine.chat.cwd) : "")
                          + (recentLine.chat.shared ? "\n" + i18n("Shared between accounts; last used on %1.", recentLine.chat.profile) : "")
                          + (recentLine.chat.stopped ? "\n\n" + root.stopText(recentLine.chat.stopped) : "")
                          + (recentLine.chat.recap ? "\n\n" + i18n("Recap: %1", recentLine.chat.recap.text) : "")
@@ -229,7 +229,7 @@ Kirigami.Icon {
                         anchors.fill: parent
                         active: !!recentLine.chat.cwd
                         mainText: i18n("Folder")
-                        subText: (recentLine.remoteHost ? recentLine.remoteHost + ":" : "") + recentLine.chat.cwd
+                        subText: (recentLine.remoteHost ? root.hostLabel(recentLine.remoteHost) + ":" : "") + recentLine.chat.cwd
                     }
                 }
                 // starred: a ★ (click: unstar it), hidden while the buttons show (their star unstars it)

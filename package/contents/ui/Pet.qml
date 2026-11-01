@@ -996,7 +996,7 @@ Item {
                 textFormat: Text.PlainText
                 anchors.fill: parent
                 active: pet.lastChat !== null
-                mainText: pet.lastChat ? (pet.host ? pet.host + ": " : "") + pet.lastChat.name : ""
+                mainText: pet.lastChat ? (pet.host ? root.hostLabel(pet.host) + ": " : "") + pet.lastChat.name : ""
                 subText: pet.lastChat ? root.stateText(pet.lastChat) + "\n" + i18n("Click to open this chat") : ""
             }
         }
@@ -1074,7 +1074,7 @@ Item {
             textFormat: Text.PlainText
             anchors.fill: parent
             active: !pet.lone && !pet.held && pet.lastChat !== null
-            mainText: pet.lastChat ? (pet.host ? pet.host + ": " : "") + pet.lastChat.name : ""
+            mainText: pet.lastChat ? (pet.host ? root.hostLabel(pet.host) + ": " : "") + pet.lastChat.name : ""
             subText: pet.lastChat ? root.stateText(pet.lastChat) + "\n" + i18n("Click to open this chat") : ""
         }
     }

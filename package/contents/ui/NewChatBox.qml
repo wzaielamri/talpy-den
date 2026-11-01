@@ -88,7 +88,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.smallSpacing
             text: {
-                const where = box.remoteHost ? i18nc("account on ssh host", "%1 on %2", box.group.title, box.remoteHost) : box.group.title
+                const where = box.remoteHost ? i18nc("account on ssh host", "%1 on %2", box.group.title, root.hostLabel(box.remoteHost)) : box.group.title
                 return box.plan ? i18n("Carry out “%1” on %2, in…", box.plan.title, where) : i18n("New chat on %1 in…", where)
             }
             font.bold: true
@@ -141,7 +141,7 @@ Rectangle {
                     subText: (box.plan ? i18n("The chat starts with the plan as its first message, and what you add here.")
                                        : i18n("With a task, the chat starts with it as its first message. Without one, it opens empty."))
                              + " " + i18n("Then click the folder it's for (Ctrl+Enter: the first one).")
-                             + "\n\n" + (box.remoteHost ? i18n("Ctrl+V pastes a picture too: Claude gets it with the task, once you let Talpy Den copy it to %1.", box.remoteHost)
+                             + "\n\n" + (box.remoteHost ? i18n("Ctrl+V pastes a picture too: Claude gets it with the task, once you let Talpy Den copy it to %1.", root.hostLabel(box.remoteHost))
                                                          : i18n("Ctrl+V pastes a picture too: Claude gets it with the task."))
                 }
             }
@@ -176,7 +176,7 @@ Rectangle {
             }
             ConfirmLine {
                 Layout.fillWidth: true
-                text: i18n("Copy this picture to %1? Claude there can only open it there.", box.remoteHost)
+                text: i18n("Copy this picture to %1? Claude there can only open it there.", root.hostLabel(box.remoteHost))
                 confirmText: i18n("Copy")
                 onConfirmed: root.copyPicture()
                 onCancelled: root.pictureOffer = null
@@ -186,7 +186,7 @@ Rectangle {
             Layout.leftMargin: Kirigami.Units.smallSpacing
             visible: !!box.remoteHost && root.pictureCopyingTo === box.remoteHost && root.pictureCopyTarget === "task"
             textFormat: Text.PlainText
-            text: i18n("Copying the picture to %1…", box.remoteHost)
+            text: i18n("Copying the picture to %1…", root.hostLabel(box.remoteHost))
             opacity: 0.7
         }
 

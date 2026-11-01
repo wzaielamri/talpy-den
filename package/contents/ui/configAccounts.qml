@@ -21,7 +21,19 @@ ConfigPage {
 
     // whose accounts: this computer's (""), or an SSH host's picked in the popup
     property string host: ""
-    readonly property var hosts: Plasmoid.configuration.sshHosts.split(",").map(h => h.trim()).filter(h => h.length)
+    // (the picked containers too, unless Show containers is off)
+    readonly property var hosts: Plasmoid.configuration.sshHosts.split(",").map(h => h.trim())
+        .filter(h => h.length && (Plasmoid.configuration.showContainers || !containerOf(h)))
+
+    // {engine, name, host} of a container's id (docker:web, podman:web@lab), or null; its name as shown
+    function containerOf(id) {
+        const m = /^(docker|podman|nerdctl):([A-Za-z0-9][A-Za-z0-9_.-]*)(?:@(.+))?$/.exec(id || "")
+        return m ? { engine: m[1], name: m[2], host: m[3] || "" } : null
+    }
+    function hostLabel(id) {
+        const c = containerOf(id)
+        return !c ? id : c.host ? i18nc("a container on an SSH host", "%1 on %2", c.name, c.host) : c.name
+    }
     property var pending: ({})        // command -> the machine it's for
 
     property var accounts: []
@@ -181,7 +193,7 @@ ConfigPage {
             Kirigami.Heading {
                 level: 3
                 textFormat: Text.PlainText
-                text: page.host ? i18n("Accounts on %1", page.host) : i18n("Accounts on this computer")
+                text: page.host ? i18n("Accounts on %1", page.hostLabel(page.host)) : i18n("Accounts on this computer")
             }
             Item { Layout.fillWidth: true }
             QQC2.Label {
@@ -190,7 +202,7 @@ ConfigPage {
             }
             QQC2.ComboBox {
                 visible: page.hosts.length > 0
-                model: [i18n("This computer")].concat(page.hosts)
+                model: [i18n("This computer")].concat(page.hosts.map(h => page.hostLabel(h)))
                 onActivated: page.pick(currentIndex === 0 ? "" : page.hosts[currentIndex - 1])
             }
         }
@@ -200,7 +212,9 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
-            text: (page.host ? i18n("On %1, over ssh: nothing is installed there, and its logins open in a terminal here, where you paste the code Claude gives you.", page.host) + " " : "")
+            text: (page.host ? (page.containerOf(page.host)
+                                ? i18n("In %1: nothing is installed there, and its logins open in a terminal here, where you paste the code Claude gives you.", page.hostLabel(page.host))
+                                : i18n("On %1, over ssh: nothing is installed there, and its logins open in a terminal here, where you paste the code Claude gives you.", page.host)) + " " : "")
                   + i18n("Each account is a Claude folder (~/.claude, ~/.claude-NAME) with a login, history and chats of its own. The default account is listed first and its usage is in the panel: VS Code's Claude runs on it, and plain claude too where ~/.claude is a link. A chat started with the + next to an account in the popup runs on that account.")
         }
 
@@ -322,7 +336,7 @@ ConfigPage {
                             wrapMode: Text.Wrap
                             color: Kirigami.Theme.neutralTextColor
                             text: page.confirm.startsWith("remove:")
-                                  ? (page.host ? i18n("Remove %1 on %3? It logs out, then moves %2 to the Trash of %3 with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.", card.account.label, card.account.folder, page.host)
+                                  ? (page.host ? i18n("Remove %1 on %3? It logs out, then moves %2 to the Trash of %3 with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.", card.account.label, card.account.folder, page.hostLabel(page.host))
                                                : i18n("Remove %1? It logs out, then moves %2 to the Trash with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.", card.account.label, card.account.folder))
                                   : i18n("Log out of %1? Claude deletes its login; its chats and history stay, and Log in… signs it in again (also with another account).", card.account.label)
                         }

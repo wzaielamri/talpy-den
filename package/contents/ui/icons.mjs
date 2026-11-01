@@ -100,6 +100,7 @@ const TABLE = {
     account:         ['user-identity',                 'user',       'avatar-default-symbolic'],
     accountOut:      ['im-user-offline',               'user',       'avatar-default-symbolic'],          // not signed in
     host:            ['network-server',                'server',     'network-server-symbolic'],
+    container:       ['container-symbolic.svg',        'box',        'package-x-generic-symbolic'],       // a Docker, Podman or nerdctl container (Breeze has no plain box)
     computer:        ['computer',                      'server',     'computer-symbolic'],
     plan:            ['view-task',                     'task',       'view-list-bullet-symbolic'],
     project:         ['folder',                        'folder',     'folder-symbolic'],

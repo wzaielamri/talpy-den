@@ -555,6 +555,29 @@ class JumpByIdTests(FakeEngines):
             jump.proc_cmdline = old
 
 
+REPO = CODE.parent.parent.parent
+JS_CONTAINER = "/^(docker|podman|nerdctl):([A-Za-z0-9][A-Za-z0-9_.-]*)(?:@(.+))?$/"
+
+
+class FrontEndTests(unittest.TestCase):
+    """The front ends name containers as remote.py does, and share the two settings."""
+
+    def test_the_same_ids_everywhere(self):
+        self.assertEqual(JS_CONTAINER, "/" + remote.CONTAINER.pattern + "/")
+        for path in ("package/contents/ui/main.qml", "package/contents/ui/configAccounts.qml"):
+            self.assertIn(JS_CONTAINER, (REPO / path).read_text(), path)
+
+    def test_the_settings_are_shared(self):
+        main = (REPO / "package/contents/ui/main.qml").read_text()
+        xml = (REPO / "package/contents/config/main.xml").read_text()
+        page = (REPO / "package/contents/ui/configHosts.qml").read_text()
+        for key in ("showContainers", "containerDays"):
+            self.assertIn(f'<entry name="{key}"', xml)
+            self.assertIn(f'"{key}"', main.split("readonly property var sharedKeys", 1)[1].split("]", 1)[0])
+            self.assertIn(f"cfg_{key}", page)
+        self.assertEqual((cs.config_defaults()["showContainers"], cs.config_defaults()["containerDays"]), (True, 30))
+
+
 def test_unwrap(command):
     from test_remote import unwrapped
     return unwrapped(command)

@@ -61,10 +61,10 @@ ColumnLayout {
                 width: planName.contentWidth
                 height: parent.height
                 mainText: planLine.plan.title
-                subText: (planLine.remoteHost ? i18n("Click to read it: a copy, fetched from %1.", planLine.remoteHost)
+                subText: (planLine.remoteHost ? i18n("Click to read it: a copy, fetched from %1.", root.hostLabel(planLine.remoteHost))
                                              : i18n("Click to read it, rendered."))
                          + (!planLine.remoteHost || root.vscodeInstalled ? " " + i18n("To change it, the edit button next to it opens its file.") : "")
-                         + (planLine.plan.cwd ? "\n" + i18n("Folder: %1", (planLine.remoteHost ? planLine.remoteHost + ":" : "") + planLine.plan.cwd) : "")
+                         + (planLine.plan.cwd ? "\n" + i18n("Folder: %1", (planLine.remoteHost ? root.hostLabel(planLine.remoteHost) + ":" : "") + planLine.plan.cwd) : "")
                          + (planLine.plan.shared ? "\n" + i18n("Shared with your other accounts.") : "")
                          + (planLine.plan.chatId ? "" : "\n" + i18n("The chat that made it isn't here any more."))
 
@@ -136,7 +136,7 @@ Kirigami.Icon {
                         anchors.fill: parent
                         active: !!planLine.plan.cwd
                         mainText: i18n("Folder")
-                        subText: (planLine.remoteHost ? planLine.remoteHost + ":" : "") + planLine.plan.cwd
+                        subText: (planLine.remoteHost ? root.hostLabel(planLine.remoteHost) + ":" : "") + planLine.plan.cwd
                     }
                 }
                 // starred: a ★ (click: unstar it), hidden while the buttons show (their star unstars it)
@@ -204,7 +204,7 @@ Kirigami.Icon {
                         anchors.fill: parent
                         mainText: i18n("Edit the plan")
                         subText: planLine.remoteHost
-                                 ? i18n("Opens its Markdown file on %1 in VS Code (Remote - SSH). What you change there is the plan.", planLine.remoteHost)
+                                 ? i18n("Opens its Markdown file on %1 in VS Code (Remote - SSH). What you change there is the plan.", root.hostLabel(planLine.remoteHost))
                                  : i18n("Opens its Markdown file in your text editor (VS Code, if the settings open plans there). What you change there is the plan.")
                     }
                 }

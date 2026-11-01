@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- A container (Docker, Podman, nerdctl): a box. Breeze has no plain one-color box. In the theme's text color: Plasma reads the ColorScheme-Text stylesheet -->
+  <defs>
+    <style type="text/css" id="current-color-scheme">.ColorScheme-Text { color:#232629; }</style>
+  </defs>
+  <path class="ColorScheme-Text" style="fill:currentColor" d="M8 1 15 4.5 15 11.5 8 15 1 11.5 1 4.5zM2 5.31 2 10.88 7.5 13.63 7.5 8.06zM8.5 8.06 8.5 13.63 14 10.88 14 5.31zM8 2.12 2.62 4.81 8 7.5 13.38 4.81z"/>
+</svg>

@@ -1693,7 +1693,7 @@ class SeveralCopiesTests(unittest.TestCase):
         # (Plasma merged identical checks that started at the same moment,
         # which held only while the copies' timers kept in step)
         main = (ROOT / "ui/main.qml").read_text()
-        self.assertIn('Hub.want(instanceId, "ssh:" + host, next[host], interval, false)', main)
+        self.assertIn('Hub.want(instanceId, "ssh:" + host, next[host], idle ? 86400000 : interval, false)', main)
         self.assertNotIn("remotePoller", main)
         self.assertNotRegex(main, r'connectSource\([^)]*--status')
 

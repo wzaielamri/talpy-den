@@ -1067,7 +1067,7 @@ Window {
                 PlasmaComponents3.Label {
                     anchors.centerIn: parent
                     textFormat: Text.PlainText
-                    text: pane.host ? i18n("Drop a picture: it's copied to %1 for your reply", pane.host)
+                    text: pane.host ? i18n("Drop a picture: it's copied to %1 for your reply", root.hostLabel(pane.host))
                                     : i18n("Drop to add it to your reply")
                     font.pointSize: pane.pt * 1.2
                 }
@@ -1100,8 +1100,9 @@ Window {
                 }
                 Tag {
                     visible: pane.host !== ""
-                    text: pane.host
-                    tooltip: i18n("This chat runs on the SSH host %1.", pane.host)
+                    text: root.hostLabel(pane.host)
+                    tooltip: root.isContainer(pane.host) ? i18n("This chat runs in the container %1.", root.hostLabel(pane.host))
+                                                         : i18n("This chat runs on the SSH host %1.", pane.host)
                 }
                 // what it's doing, in its state's color
                 Rectangle {
@@ -1211,7 +1212,7 @@ Window {
                     clickable: true
                     onClicked: root.openPlan(pane.row.plan.slug, pane.profileDir, pane.host)
                     tooltipTitle: pane.row && pane.row.plan ? pane.row.plan.title : ""
-                    tooltip: pane.host ? i18n("The plan this chat made. Click to read it: a copy, fetched from %1.", pane.host)
+                    tooltip: pane.host ? i18n("The plan this chat made. Click to read it: a copy, fetched from %1.", root.hostLabel(pane.host))
                                        : i18n("The plan this chat made. Click to read it, rendered.")
                 }
                 // (click: what each one is doing, in the strip under the header)
@@ -1230,7 +1231,7 @@ Window {
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText
                     Layout.fillWidth: true
-                    text: (pane.host ? pane.host + ":" : "") + (pane.row ? pane.row.cwdShort || pane.row.cwd || "" : pane.chat.cwd || "")
+                    text: (pane.host ? root.hostLabel(pane.host) + ":" : "") + (pane.row ? pane.row.cwdShort || pane.row.cwd || "" : pane.chat.cwd || "")
                     font.family: pane.monoFamily
                     font.pointSize: pane.pt * 0.85
                     color: pane.mutedColor
@@ -2061,7 +2062,7 @@ Window {
                     }
                     ConfirmLine {
                         Layout.fillWidth: true
-                        text: i18n("Copy this picture to %1? Claude there can only open it there.", pane.host)
+                        text: i18n("Copy this picture to %1? Claude there can only open it there.", root.hostLabel(pane.host))
                         confirmText: i18n("Copy")
                         onConfirmed: root.copyPicture()
                         onCancelled: root.pictureOffer = null
@@ -2070,7 +2071,7 @@ Window {
                 PlasmaComponents3.Label {
                     visible: !!pane.host && root.pictureCopyingTo === pane.host && root.pictureCopyTarget === "pane"
                     textFormat: Text.PlainText
-                    text: i18n("Copying the picture to %1…", pane.host)
+                    text: i18n("Copying the picture to %1…", root.hostLabel(pane.host))
                     color: pane.mutedColor
                 }
                 // Nothing to write it down with: dictation is set up once you say so
@@ -2161,7 +2162,7 @@ Window {
                                 textFormat: Text.PlainText
                                 anchors.fill: parent
                                 mainText: i18n("Attach files…")
-                                subText: pane.host ? i18n("Pick pictures for your reply (copied to %1 once you say so).", pane.host)
+                                subText: pane.host ? i18n("Pick pictures for your reply (copied to %1 once you say so).", root.hostLabel(pane.host))
                                                    : i18n("Pick files for your reply: a picture goes in as one, another file is named for Claude to read. You can drop them on the pane too.")
                             }
                         }

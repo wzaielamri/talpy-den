@@ -72,7 +72,7 @@ Flow {
                 textFormat: Text.PlainText
                 anchors.fill: parent
                 mainText: i18n("A picture for Claude")
-                subText: strip.host ? i18n("%1, on %2", picture.modelData, strip.host) : picture.modelData
+                subText: strip.host ? i18n("%1, on %2", picture.modelData, root.hostLabel(strip.host)) : picture.modelData
             }
             Rectangle {   // (the × shows on any picture)
                 anchors.fill: remove

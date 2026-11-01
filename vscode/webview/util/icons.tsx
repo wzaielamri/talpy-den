@@ -7,7 +7,7 @@
 import type { JSX } from "preact";
 import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -61,6 +61,12 @@ const shapes: Record<IconName, JSX.Element> = {
     <>
       <path d="M6.5 2.75H3.75c-.55 0-1 .45-1 1v8.5c0 .55.45 1 1 1H6.5" />
       <path d="M10 5l3 3-3 3M13 8H6.5" />
+    </>
+  ),
+  box: (
+    <>
+      <path d="M8 1.75l5.75 3v6.5L8 14.25l-5.75-3v-6.5z" />
+      <path d="M2.25 4.75L8 7.75l5.75-3M8 7.75v6.5" />
     </>
   ),
   server: (

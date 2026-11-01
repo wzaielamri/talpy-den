@@ -113,7 +113,7 @@ Item {
             textFormat: Text.PlainText
             Layout.maximumWidth: ticker.width * 0.4
             visible: ticker.items.length > 1 || (ticker.shown !== null && ticker.shown.host !== "")
-            text: ticker.shown ? (ticker.shown.host ? ticker.shown.host + ": " : "") + ticker.shown.name : ""
+            text: ticker.shown ? (ticker.shown.host ? root.hostLabel(ticker.shown.host) + ": " : "") + ticker.shown.name : ""
             font: Kirigami.Theme.smallFont
             elide: Text.ElideRight
             opacity: 0.65

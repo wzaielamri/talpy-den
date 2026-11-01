@@ -73,6 +73,16 @@
       <min>10</min>
       <max>600</max>
     </entry>
+    <entry name="showContainers" type="Bool">
+      <label>Show Docker, Podman and nerdctl containers in the hosts picker (off: no container engine is asked anything)</label>
+      <default>true</default>
+    </entry>
+    <entry name="containerDays" type="Int">
+      <label>The hosts picker lists running containers and those active in this many days (0 = only running ones)</label>
+      <default>30</default>
+      <min>0</min>
+      <max>365</max>
+    </entry>
     <entry name="markdownApp" type="String">
       <label>Where plans and subagent runs open: auto (Okular if installed, else your browser), okular, browser, vscode, default</label>
       <default>auto</default>

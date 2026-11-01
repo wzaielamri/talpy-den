@@ -122,15 +122,17 @@ PlasmaExtras.Representation {
                 text: root.shownHosts.length > 0 ? String(root.shownHosts.length) : ""
                 display: root.shownHosts.length > 0 ? PlasmaComponents3.AbstractButton.TextBesideIcon
                                                     : PlasmaComponents3.AbstractButton.IconOnly
-                Accessible.name: i18n("SSH hosts")   // (its text is only the count)
+                Accessible.name: root.showContainers ? i18n("SSH hosts and containers") : i18n("SSH hosts")   // (its text is only the count)
                 onClicked: root.openHostsMenu(hostsButton)
 
                 PlasmaCore.ToolTipArea {
                     textFormat: Text.PlainText
                     anchors.fill: parent
-                    mainText: i18n("SSH hosts")
+                    mainText: root.showContainers ? i18n("Show Claude on SSH hosts and in containers") : i18n("Show Claude on SSH hosts")
                     subText: root.shownHosts.length > 0
-                             ? i18n("Showing Claude on %1. Click to pick hosts from ~/.ssh/config.", root.shownHosts.join(", "))
+                             ? (root.showContainers ? i18n("Showing Claude on %1. Click to pick hosts from ~/.ssh/config and containers.", root.shownHosts.map(h => root.hostLabel(h)).join(", "))
+                                                    : i18n("Showing Claude on %1. Click to pick hosts from ~/.ssh/config.", root.shownHosts.join(", ")))
+                             : root.showContainers ? i18n("Show the Claude chats of your SSH hosts (from ~/.ssh/config) and of your Docker, Podman or nerdctl containers here too.")
                              : i18n("Show the Claude chats of your SSH hosts (from ~/.ssh/config) here too.")
                 }
             }

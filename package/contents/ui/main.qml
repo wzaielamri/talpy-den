@@ -134,11 +134,61 @@ PlasmoidItem {
         return Object.assign({}, group, { limits: owner.limits, limitsFrom: owner.from })
     }
 
-    // SSH hosts (remote.py): the ones in ~/.ssh/config, the ones you picked,
-    // and what each answered ({loading, ok, error, result, updatedAt}).
+    // SSH hosts and containers (remote.py): the hosts in ~/.ssh/config, the
+    // containers here and on the SSH hosts shown, the ones you picked, and
+    // what each answered ({loading, ok, error, result, updatedAt; a
+    // container's: stopped, gone}). A container is docker:NAME, podman:NAME
+    // or nerdctl:NAME (here), ENGINE:NAME@HOST (on the SSH host HOST): picked,
+    // it's listed, checked and shown like a host. With Show containers off
+    // the picked ones stay picked but aren't shown, and no engine is asked
+    // anything.
     property var sshHosts: []
-    readonly property var shownHosts: Plasmoid.configuration.sshHosts.split(",").map(h => h.trim()).filter(h => h.length)
+    property var containersHere: []      // this computer's (remote.py --hosts)
+    property var containerNotes: []      // an engine here that couldn't list its containers, and why
+    property var hostContainers: ({})    // SSH host -> {containers, notes, at} or {error} (remote.py --containers)
+    readonly property bool showContainers: Plasmoid.configuration.showContainers
+    readonly property var pickedHosts: Plasmoid.configuration.sshHosts.split(",").map(h => h.trim()).filter(h => h.length)
+    readonly property var shownHosts: pickedHosts.filter(h => showContainers || !isContainer(h))
     property var remote: ({})
+
+    // {engine, name, host} of a container's id ("" host: this computer's), or null for an SSH host
+    function containerOf(id) {
+        const m = /^(docker|podman|nerdctl):([A-Za-z0-9][A-Za-z0-9_.-]*)(?:@(.+))?$/.exec(id || "")
+        return m ? { engine: m[1], name: m[2], host: m[3] || "" } : null
+    }
+
+    function isContainer(id) {
+        return containerOf(id) !== null
+    }
+
+    // How an SSH host or a container is named: lab, web, or web on lab
+    function hostLabel(id) {
+        const c = containerOf(id)
+        return !c ? id : c.host ? i18nc("a container on an SSH host", "%1 on %2", c.name, c.host) : c.name
+    }
+
+    function hostIcon(id) {
+        return isContainer(id) ? iconDir + Icons.plasma.container : Icons.plasma.host
+    }
+
+    // A container as its last listing had it ({engine, name, image, running, activeAt, folderShort, …}), or null
+    function containerInfo(id) {
+        const c = containerOf(id)
+        if (!c)
+            return null
+        const list = c.host ? ((hostContainers[c.host] || {}).containers || []) : containersHere
+        return list.find(x => x.id === id) || null
+    }
+
+    // "podman · ubuntu:22.04", or its dev container's project folder; (on lab)
+    function containerDetail(id, withHost) {
+        const c = containerOf(id)
+        const info = containerInfo(id)
+        const parts = [info && info.folderShort ? info.folderShort : c.engine + (info && info.image ? " · " + info.image : "")]
+        if (withHost && c.host)
+            parts.push(i18nc("a container's SSH host", "on %1", c.host))
+        return parts.join(" · ")
+    }
     // The accounts of the hosts that answered, each marked with its host. A
     // host whose last check failed still shows what it said before (dimmed,
     // HostSection.qml), but that doesn't count here: no badge or shortcut
@@ -447,7 +497,7 @@ PlasmoidItem {
     property bool inTray: (Plasmoid.containmentDisplayHints & PlasmaCore.Types.ContainmentDrawsPlasmoidHeading) !== 0
     readonly property var sharedKeys: ["pollInterval", "idlePollInterval", "extraConfigDirs", "notifyWaiting", "notifyDone",
         "notifyDoneMinSeconds", "notifySound", "soundVolume", "soundWaiting", "soundDone", "soundFailed", "recentChats",
-        "sshHosts", "remotePollSeconds", "sshUsage", "keepDoneHours", "showUsageInPanel", "showPet", "playful", "chatPets", "showTokens",
+        "sshHosts", "remotePollSeconds", "sshUsage", "showContainers", "containerDays", "keepDoneHours", "showUsageInPanel", "showPet", "playful", "chatPets", "showTokens",
         "newChatInVscode", "iconBlink", "awayDigest", "awayMinutes", "phoneWhileAway", "phoneFinished", "phoneDevice",
         "markdownApp", "newChatModel", "newChatEffort", "newChatMode", "usageCap", "usageRefreshMinutes", "recapRules", "clickOpensPane",
         "mondayRecap", "recapCurrency", "diffSideBySide", "paneTextPercent", "dictateLanguage"]
@@ -658,7 +708,7 @@ PlasmoidItem {
         }
         const list = all => all.slice(0, 4).join(", ") + (all.length > 4 ? " " + i18nc("and more", "+%1", all.length - 4) : "")
         for (const c of waiting.slice(0, 3))
-            lines.push(i18n("Needs you: %1 (waiting %2)", c.session.name + (c.host ? " · " + c.host : ""),
+            lines.push(i18n("Needs you: %1 (waiting %2)", c.session.name + (c.host ? " · " + hostLabel(c.host) : ""),
                             duration(Date.now() - (c.session.since || Date.now()))))
         if (waiting.length > 3)
             lines.push(i18np("+%1 more needs you", "+%1 more need you", waiting.length - 3))
@@ -1269,7 +1319,7 @@ PlasmoidItem {
         for (const g of allGroups) {
             const five = g.limits ? g.limits.windows.find(w => w.key === "five_hour") : null
             if (five)
-                usage.push(i18nc("an account's 5-hour usage", "%1 %2%", (g.host ? g.host + ": " : "") + g.title, Math.round(five.pct)))
+                usage.push(i18nc("an account's 5-hour usage", "%1 %2%", (g.host ? hostLabel(g.host) + ": " : "") + g.title, Math.round(five.pct)))
             for (const s of g.sessions) {
                 const key = petKeyOf(s, g.host || "")
                 if (key in seen)
@@ -1364,7 +1414,7 @@ PlasmoidItem {
 
     function celebrateResets(source, groupList) {
         const next = Object.assign({}, lastWindows)
-        const where = source ? " · " + source.slice("ssh:".length) : ""   // (a host's groups don't carry their host)
+        const where = source ? " · " + hostLabel(source.slice("ssh:".length)) : ""   // (a host's groups don't carry their host)
         for (const g of groupList) {
             for (const w of (g.limits ? g.limits.windows : [])) {
                 const key = source + "|" + g.id + "/" + w.key
@@ -1380,7 +1430,7 @@ PlasmoidItem {
 
     // "work · Team", or "lab: work · Team" for an SSH host's account
     function groupLabel(g) {
-        return g.host ? i18nc("ssh host: account", "%1: %2", g.host, g.name) : g.name
+        return g.host ? i18nc("ssh host: account", "%1: %2", hostLabel(g.host), g.name) : g.name
     }
 
     // Rows are tracked by account and chat (petKeyOf), not the chat id alone:
@@ -1905,29 +1955,34 @@ PlasmoidItem {
     // resuming: for the recent chats' switch (they reopen) instead of new chats'
     function terminalHint(host, resuming) {
         if (!cliHere(host))
-            return host ? i18n("Claude Code's claude command isn't installed on %1: it isn't on PATH there, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.", host)
+            return isContainer(host) ? i18n("Claude Code's claude command isn't installed in %1: it isn't on PATH there, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.", hostLabel(host))
+                 : host ? i18n("Claude Code's claude command isn't installed on %1: it isn't on PATH there, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.", host)
                         : i18n("Claude Code's claude command isn't installed here: it isn't on PATH, in ~/.local/bin, npm's or nvm's folders, nor on your login shell's PATH.")
         if (resuming)
-            return host ? i18n("Reopens the chat on %1 in a terminal (ssh, claude --resume).", host)
+            return isContainer(host) ? i18n("Reopens the chat in %1 in a terminal (claude --resume, in the container).", hostLabel(host))
+                 : host ? i18n("Reopens the chat on %1 in a terminal (ssh, claude --resume).", host)
                         : i18n("Reopens the chat in a terminal (claude --resume).")
-        return host ? i18n("A terminal opens with Claude on %1 (ssh) in the folder you click.", host)
+        return isContainer(host) ? i18n("A terminal opens with Claude in %1 in the folder you click.", hostLabel(host))
+             : host ? i18n("A terminal opens with Claude on %1 (ssh) in the folder you click.", host)
                     : i18n("A terminal opens with Claude in the folder you click.")
     }
 
     function vscodeHint(group, host, resuming) {
+        const how = isContainer(host) ? i18nc("how VS Code connects to a container", "Dev Containers") : "Remote-SSH"
+        const name = hostLabel(host)
         if (!vscodeInstalled)
-            return host ? i18n("VS Code would connect to %1 (Remote-SSH), but it isn't installed on this computer.", host)
+            return host ? i18n("VS Code would connect to %1 (%2), but it isn't installed on this computer.", name, how)
                         : i18n("VS Code isn't installed on this computer.")
         if (group.vscodeHere && resuming)
-            return host ? i18n("Opens VS Code connected to %1 (Remote-SSH) in the chat's folder, and the chat in its Claude Code panel.", host)
+            return host ? i18n("Opens VS Code connected to %1 (%2) in the chat's folder, and the chat in its Claude Code panel.", name, how)
                         : i18n("Opens the chat's folder in VS Code, and the chat in its Claude Code panel.")
         if (group.vscodeHere)
-            return host ? i18n("Opens VS Code connected to %1 (Remote-SSH) with a new chat in its Claude Code panel.", host)
+            return host ? i18n("Opens VS Code connected to %1 (%2) with a new chat in its Claude Code panel.", name, how)
                         : i18n("Opens the folder in VS Code with a new chat in its Claude Code panel.")
         if (host && !resuming && vscodeSwitches(group, host))
-            return i18n("Opens VS Code connected to %1 (Remote-SSH) with a new chat in its Claude Code panel. VS Code's Claude on %1 switches to %2 for it, and stays on it.", host, group.title)
+            return i18n("Opens VS Code connected to %1 (%3) with a new chat in its Claude Code panel. VS Code's Claude there switches to %2 for it, and stays on it.", name, group.title, how)
         if (host)
-            return i18n("VS Code's Claude on %1 runs on another account: a new chat in VS Code on this one switches it.", host)
+            return i18n("VS Code's Claude on %1 runs on another account: a new chat in VS Code on this one switches it.", name)
         const on = status && status.vscode ? status.vscode.on : null
         return on ? i18n("VS Code's Claude runs on %1, not %2: switch its profile to use this account there.", on, group.title)
                   : i18n("VS Code's Claude doesn't run on this account.")
@@ -2033,19 +2088,96 @@ PlasmoidItem {
 
     // ---------------------------------------------------------------- SSH hosts
 
-    // ~/.ssh/config's hosts (loaded at start and whenever the menu opens)
+    // ~/.ssh/config's hosts and this computer's containers (loaded at start,
+    // whenever the menu opens, and on Reload), with the SSH hosts'
+    // container lists as they were last fetched (shown until they're fetched again)
     Exec {
         id: hostLister
         onNewData: (source, data) => {
             disconnectSource(source)
             const result = root.helperResult(data)
-            if (result.ok)
-                root.sshHosts = result.hosts
+            if (!result.ok)
+                return
+            root.sshHosts = result.hosts || []
+            root.containersHere = result.containers || []
+            root.containerNotes = result.notes || []
+            const kept = result.hostContainers || {}
+            const next = Object.assign({}, root.hostContainers)
+            for (const host in kept)
+                if (!(host in next))
+                    next[host] = kept[host]
+            root.hostContainers = next
+            root.refreshHostsMenu()
         }
     }
 
+    // --container-days, --picked: the containers listed (the picked ones always), or no containers at all
+    function containerArgs() {
+        if (!showContainers)
+            return " --no-containers"
+        const picked = pickedHosts.filter(isContainer)
+        return " --container-days " + Math.max(0, Plasmoid.configuration.containerDays)
+               + (picked.length ? " --picked " + shellQuote(picked.join(",")) : "")
+    }
+
     function loadHosts() {
-        hostLister.connectSource("python3 -I " + shellQuote(codeDir + "remote.py") + " --hosts # " + Date.now())
+        hostLister.connectSource("python3 -I " + shellQuote(codeDir + "remote.py") + " --hosts" + containerArgs() + " # " + Date.now())
+    }
+
+    // An SSH host's containers (remote.py --containers there): fetched once
+    // it's connected (its first check that works after start, after failing,
+    // or after you logged in) and on Reload, never on a timer
+    Exec {
+        id: containerLister
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            const host = root.containerListHosts[source]
+            delete root.containerListHosts[source]
+            if (!host)
+                return
+            const result = root.helperResult(data)
+            root.hostContainers = Object.assign({}, root.hostContainers, {
+                [host]: result.ok ? { containers: result.containers || [], notes: result.notes || [], at: result.at || Date.now() }
+                                  : Object.assign({}, root.hostContainers[host] || {}, { error: result.error || result.message || "" })
+            })
+            root.refreshHostsMenu()
+        }
+    }
+    property var containerListHosts: ({})   // command -> its host
+
+    function loadHostContainers(host) {
+        if (!showContainers || isContainer(host))
+            return
+        const cmd = "python3 -I " + shellQuote(codeDir + "remote.py") + " --containers " + shellQuote(host)
+                    + containerArgs() + " # " + Date.now()
+        containerListHosts[cmd] = host
+        containerLister.connectSource(cmd)
+    }
+
+    // The SSH hosts shown whose last check worked: their containers are in the picker
+    function connectedHosts() {
+        return shownHosts.filter(h => !isContainer(h) && remote[h] && remote[h].ok)
+    }
+
+    // Reload in the picker: ~/.ssh/config, this computer's containers and every connected host's
+    function reloadHosts() {
+        loadHosts()
+        for (const host of connectedHosts())
+            loadHostContainers(host)
+    }
+
+    property bool hostsReady: false   // (Component.onCompleted ran: the setting changing at start isn't a change)
+
+    onShowContainersChanged: {
+        if (!hostsReady)
+            return
+        if (showContainers) {
+            reloadHosts()
+        } else {
+            containersHere = []
+            containerNotes = []
+            hostContainers = ({})
+        }
     }
 
     Component.onCompleted: {
@@ -2054,6 +2186,7 @@ PlasmoidItem {
         Hub.placed(instanceId, !shownInPlace)
         Hub.wantLive(instanceId, liveCommand)
         wantHosts()
+        hostsReady = true
     }
 
     // Status of the hosts you picked: polled less often than this computer,
@@ -2064,12 +2197,15 @@ PlasmoidItem {
         Plasmoid.configuration.usageRefreshMinutes])
     onHostWishChanged: wantHosts()
 
+    // (a container that's stopped, or isn't there any more, isn't checked
+    // until you press Start or Refresh: a day is as good as never)
     function wantHosts() {
         const next = {}
         const interval = Math.max(10, Plasmoid.configuration.remotePollSeconds) * 1000
         for (const host of shownHosts) {
             next[host] = hostCommand(host)
-            Hub.want(instanceId, "ssh:" + host, next[host], interval, false)
+            const idle = remote[host] && (remote[host].stopped || remote[host].gone)
+            Hub.want(instanceId, "ssh:" + host, next[host], idle ? 86400000 : interval, false)
         }
         for (const host in wantedHosts)
             if (!(host in next))
@@ -2188,6 +2324,11 @@ PlasmoidItem {
         if (shownHosts.indexOf(host) < 0)
             return  // unticked while its check was running
         const answer = helperResult(data)
+        const was = remote[host] || {}
+        if (answer.ok && answer.result && !was.ok && !isContainer(host))
+            loadHostContainers(host)   // (it's connected: its containers go in the picker)
+        if (!!answer.stopped !== !!was.stopped || !!answer.gone !== !!was.gone)
+            Qt.callLater(wantHosts)   // (a stopped container isn't checked until Start or Refresh)
         if (answer.ok && answer.result) {
             const offset = Date.now() - (answer.result.generatedAt || Date.now())
             const result = toLocalClock(answer.result, offset)
@@ -2198,13 +2339,15 @@ PlasmoidItem {
             // clockOffset: what its times were moved by (0: not moved), for
             // the ones left on its clock (reviewPending)
             setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(),
-                              login: false, loggedIn: !!answer.loggedIn, clockOffset: result === answer.result ? 0 : offset })
+                              login: false, loggedIn: !!answer.loggedIn, clockOffset: result === answer.result ? 0 : offset,
+                              stopped: false, gone: false, paused: false })
             if (status)
                 startDueTasks(status.queue || [])   // (a reply waiting for the end of a turn there: it ended)
         } else {
             // keep the last answer to show (dimmed) with the error
             setRemote(host, { loading: false, ok: false, error: answer.error || answer.message || i18n("no answer"),
-                              login: !!answer.login, loggedIn: false })
+                              login: !!answer.login, loggedIn: false, stopped: !!answer.stopped, gone: !!answer.gone,
+                              paused: !!answer.paused })
         }
     }
 
@@ -2220,6 +2363,12 @@ PlasmoidItem {
 
     function disconnectHost(host) {
         remoteAction("disconnect", host, "--disconnect " + shellQuote(host))
+    }
+
+    // A stopped container started (remote.py --start); it's checked once that's done
+    function startContainer(host) {
+        setRemote(host, { loading: true })
+        remoteAction("start", host, "--start " + shellQuote(host))
     }
 
     property var loginWaits: ({})   // host -> until when it's checked often
@@ -2242,7 +2391,7 @@ PlasmoidItem {
     }
 
     function toggleHost(host) {
-        const list = shownHosts.slice()
+        const list = pickedHosts.slice()
         const i = list.indexOf(host)
         if (i >= 0)
             list.splice(i, 1)
@@ -2260,7 +2409,7 @@ PlasmoidItem {
         PlasmaExtras.MenuItem {
             property string host
             property bool reload: false
-            onClicked: reload ? root.loadHosts() : root.toggleHost(host)
+            onClicked: reload ? root.reloadHosts() : root.toggleHost(host)
         }
     }
 
@@ -2296,31 +2445,105 @@ PlasmoidItem {
         PlasmaExtras.MenuItem {}
     }
 
+    // The hosts picker: ~/.ssh/config's hosts, this computer's containers
+    // and each connected SSH host's (running ones, and those active in the
+    // last containerDays days; a picked one always, so it can be unpicked).
+    // It shows the last lists at once; this computer's is read again as it
+    // opens (fast), and the menu takes the new list if it's still open.
     function openHostsMenu(button) {
-        loadHosts()  // for next time, in case ~/.ssh/config changed
-        hostsMenu.clearMenuItems()
-        const items = [hostItem.createObject(hostsMenu, { section: true, text: i18n("Show Claude on SSH hosts") })]
+        loadHosts()
+        hostsMenuShown = ""
+        fillHostsMenu()
+        hostsMenu.visualParent = button
+        hostsMenu.openRelative()
+    }
+
+    property string hostsMenuShown: ""   // what the open menu lists (JSON), to refill it only on a change
+
+    function refreshHostsMenu() {
+        if (hostsMenu.status === PlasmaExtras.Menu.Open || hostsMenu.status === PlasmaExtras.Menu.Opening)
+            fillHostsMenu()
+    }
+
+    // "podman · ubuntu:22.04 · stopped 3 days ago" for a container's line in the picker
+    function containerLine(c) {
+        const parts = [c.folderShort ? c.folderShort : c.engine + (c.image ? " · " + c.image : "")]
+        if (!c.running)
+            parts.push(containerStopped(c))
+        if (c.sharesHome)
+            parts.push(i18n("shares your home folder"))
+        return c.name + "  (" + parts.join(" · ") + ")"
+    }
+
+    // "stopped 3 days ago", "stopped 5h 10m ago", "stopped"
+    function containerStopped(c) {
+        const age = c && c.activeAt ? Math.max(0, now - c.activeAt) : -1
+        return age < 0 ? i18n("stopped") : age >= 2 * 86400000 ? i18np("stopped %1 day ago", "stopped %1 days ago", Math.floor(age / 86400000))
+             : i18n("stopped %1 ago", duration(age))
+    }
+
+    function hostsMenuModel() {
+        const items = [{ section: true, text: i18n("SSH hosts") }]
         for (const h of sshHosts) {
             const target = (h.user ? h.user + "@" : "") + (h.hostname || h.name) + (h.jump ? " " + i18nc("ssh through a jump host", "via %1", h.jump) : "")
-            items.push(hostItem.createObject(hostsMenu, {
-                text: target !== h.name ? h.name + "  (" + target + ")" : h.name,
-                icon: Icons.plasma.host, checkable: true, checked: shownHosts.indexOf(h.name) >= 0, host: h.name
-            }))
+            items.push({ text: target !== h.name ? h.name + "  (" + target + ")" : h.name, icon: Icons.plasma.host,
+                         checkable: true, checked: pickedHosts.indexOf(h.name) >= 0, host: h.name })
         }
         // picked hosts that aren't in ~/.ssh/config (any more)
-        for (const host of shownHosts)
-            if (!sshHosts.some(h => h.name === host))
-                items.push(hostItem.createObject(hostsMenu, { text: host, icon: Icons.plasma.host, checkable: true,
-                                                              checked: true, host: host }))
+        for (const host of pickedHosts)
+            if (!isContainer(host) && !sshHosts.some(h => h.name === host))
+                items.push({ text: host, icon: Icons.plasma.host, checkable: true, checked: true, host: host })
         if (items.length === 1)
-            items.push(hostItem.createObject(hostsMenu, { text: i18n("No hosts in ~/.ssh/config"), enabled: false }))
-        items.push(hostItem.createObject(hostsMenu, { separator: true }))
-        items.push(hostItem.createObject(hostsMenu, { text: i18n("Reload ~/.ssh/config"), icon: Icons.plasma.refresh, reload: true }))
+            items.push({ text: i18n("No hosts in ~/.ssh/config"), enabled: false })
+        if (showContainers) {
+            const days = Math.max(0, Plasmoid.configuration.containerDays)
+            const none = days > 0 ? i18np("No containers active in the last day", "No containers active in the last %1 days", days)
+                                  : i18n("No running containers")
+            const places = [{ host: "", title: i18n("Containers on this computer"), list: containersHere, notes: containerNotes }]
+            // (the connected hosts', and a host's whose container you picked)
+            const connected = connectedHosts()
+            const hosts = connected.concat(pickedHosts.map(id => (containerOf(id) || {}).host || "")
+                                                      .filter((h, i, all) => h && all.indexOf(h) === i && connected.indexOf(h) < 0))
+            for (const host of hosts) {
+                const kept = connected.indexOf(host) >= 0 ? hostContainers[host] || {} : {}
+                places.push({ host: host, title: i18n("Containers on %1", host), list: kept.containers || [],
+                              notes: (kept.notes || []).concat(kept.error ? [{ message: kept.error }] : []) })
+            }
+            for (const place of places) {
+                items.push({ section: true, text: place.title })
+                const listed = place.list.filter(c => c && c.id)
+                for (const c of listed)
+                    items.push({ text: containerLine(c), icon: iconDir + Icons.plasma.container, checkable: true,
+                                 checked: pickedHosts.indexOf(c.id) >= 0, host: c.id })
+                // picked ones not listed (gone, or not listed yet)
+                for (const id of pickedHosts)
+                    if ((containerOf(id) || { host: null }).host === place.host && !listed.some(c => c.id === id))
+                        items.push({ text: containerOf(id).name, icon: iconDir + Icons.plasma.container, checkable: true,
+                                     checked: true, host: id })
+                for (const note of place.notes)
+                    items.push({ text: note.message, enabled: false })
+                if (!listed.length && !place.notes.length && !pickedHosts.some(id => (containerOf(id) || { host: null }).host === place.host))
+                    items.push({ text: none, enabled: false })
+            }
+        }
+        items.push({ separator: true })
+        items.push({ text: i18n("Reload"), icon: Icons.plasma.refresh, reload: true })
+        return items
+    }
+
+    function fillHostsMenu() {
+        const model = hostsMenuModel()
+        const shown = JSON.stringify(model)
+        if (shown === hostsMenuShown)
+            return
+        hostsMenuShown = shown
+        hostsMenu.clearMenuItems()
+        for (const old of hostItems)
+            old.destroy()
+        const items = model.map(spec => hostItem.createObject(hostsMenu, spec))
         for (const item of items)
             hostsMenu.addMenuItem(item)
         hostItems = items
-        hostsMenu.visualParent = button
-        hostsMenu.openRelative()
     }
 
     // Actions on an SSH host: open a session in a local terminal (ssh -t),
@@ -2353,7 +2576,7 @@ PlasmoidItem {
                 actionErrorTimer.restart()
                 root.petEvent("oops", i18n("Hmm, that didn't work."), "")
                 if (!root.dashboardShown)   // e.g. from a notification or the shortcut: say so
-                    root.notify("remote-error", null, "error", i18n("That didn't work on %1", host || i18n("the host")),
+                    root.notify("remote-error", null, "error", i18n("That didn't work on %1", host ? hostLabel(host) : i18n("the host")),
                                 root.actionError, "dialog-error")
             }
             if (what !== "open" && what !== "run" && what !== "plan" && host)
@@ -2392,7 +2615,7 @@ PlasmoidItem {
 
     function remoteOpen(host, command) {
         if (!command) {
-            actionError = i18n("This chat runs in a terminal on %1; Talpy Den can't bring it here.", host)
+            actionError = i18n("This chat runs in a terminal on %1; Talpy Den can't bring it here.", hostLabel(host))
             actionErrorTimer.restart()
             return
         }
@@ -2427,7 +2650,8 @@ PlasmoidItem {
     }
 
     function shareHint(host) {
-        return host ? i18n("Share this chat with your other accounts on %1 and pick it up there (in a terminal, over ssh), or keep it on one account only.", host)
+        return isContainer(host) ? i18n("Share this chat with your other accounts in %1 and pick it up there (in a terminal), or keep it on one account only.", hostLabel(host))
+             : host ? i18n("Share this chat with your other accounts on %1 and pick it up there (in a terminal, over ssh), or keep it on one account only.", host)
                     : i18n("Share this chat with your other accounts and pick it up there, or keep it on one account only.")
     }
 
@@ -2465,7 +2689,7 @@ PlasmoidItem {
         const host = chat.host || ""
         const accounts = shareAccountsOf(host)
         const here = accounts.find(g => g.profileKeys.indexOf(chat.profileDir) >= 0) || null
-        const items = [shareItem.createObject(shareMenu, { section: true, text: host ? i18nc("chat name on host", "%1 on %2", chat.name, host) : chat.name })]
+        const items = [shareItem.createObject(shareMenu, { section: true, text: host ? i18nc("chat name on host", "%1 on %2", chat.name, hostLabel(host)) : chat.name })]
         for (const g of accounts) {
             if (g === here)
                 continue
@@ -2662,7 +2886,7 @@ PlasmoidItem {
 
     // The × and Delete… buttons' tooltips
     function hideHint(kind, host) {
-        const back = host ? i18n("The eye button next to %1's name brings it back.", host)
+        const back = host ? i18n("The eye button next to %1's name brings it back.", hostLabel(host))
                    : kind === "chats" ? i18n("Right-click → Show Hidden Chats Again brings it back.")
                    : kind === "plans" ? i18n("Right-click → Show Hidden Plans Again brings it back.")
                    : kind === "memories" ? i18n("Right-click → Show Hidden Memories Again brings it back.")
@@ -2819,7 +3043,7 @@ PlasmoidItem {
             }
             if (!freed.length)
                 continue
-            const where = host ? i18nc("ssh host: account", "%1: %2", host, g.name) : g.name
+            const where = host ? i18nc("ssh host: account", "%1: %2", hostLabel(host), g.name) : g.name
             for (const s of freed)
                 petEvent("reset", i18n("%1 can go on!", s.name), petKeyOf(s, host))
             if (!root.notifier || !Plasmoid.configuration.notifyDone || holdingBack())
@@ -4466,7 +4690,7 @@ PlasmoidItem {
             const result = root.helperResult(data)
             if (result.ok && result.picture === false) {   // (a file, named where it is)
                 if (paste.host) {
-                    root.actionError = i18n("Only pictures go to %1's chat (copied there): that file is on this computer", paste.host)
+                    root.actionError = i18n("Only pictures go to %1's chat (copied there): that file is on this computer", hostLabel(paste.host))
                     actionErrorTimer.restart()
                     if (paste.target === "pane")
                         root.paneNote(root.actionError)
@@ -4648,12 +4872,12 @@ PlasmoidItem {
         for (const g of allGroups) {
             if (!g.limits)
                 continue
-            lines.push((g.host ? g.host + ": " : "") + g.title + ": "
+            lines.push((g.host ? hostLabel(g.host) + ": " : "") + g.title + ": "
                        + g.limits.windows.map(w => w.label + " " + Math.round(w.pct) + "%").join(" · "))
         }
         for (const host of shownHosts)
             if (remote[host] && remote[host].error)
-                lines.push(i18n("%1: not reachable", host))
+                lines.push(i18n("%1: not reachable", hostLabel(host)))
         return lines.join("\n")
     }
 }

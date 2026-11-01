@@ -94,9 +94,9 @@ ColumnLayout {
             id: defaultTag
             visible: !!section.group.defaultHere && section.accounts > 1
             text: i18n("Default")
-            tooltipTitle: section.remoteHost ? i18n("The default account on %1", section.remoteHost) : i18n("The default account")
+            tooltipTitle: section.remoteHost ? i18n("The default account on %1", root.hostLabel(section.remoteHost)) : i18n("The default account")
             tooltip: (section.remoteHost
-                      ? i18n("Listed first; VS Code's Claude on %1 (its VS Code server) and plain claude there run on it.", section.remoteHost)
+                      ? i18n("Listed first; VS Code's Claude on %1 (its VS Code server) and plain claude there run on it.", root.hostLabel(section.remoteHost))
                       : i18n("Listed first, its 5-hour usage is next to the panel icon, and VS Code's Claude and plain claude run on it."))
                      + " " + i18n("Change it in Talpy Den's settings: Accounts, Make Default.")
         }
@@ -122,7 +122,7 @@ ColumnLayout {
                 anchors.fill: parent
                 mainText: i18n("New chat on %1", section.group.title)
                 subText: (section.remoteHost
-                          ? i18n("Lists this account's folders on %1: start a new Claude chat in one, in a terminal (over ssh) or in VS Code.", section.remoteHost)
+                          ? i18n("Lists this account's folders on %1: start a new Claude chat in one, in a terminal (over ssh) or in VS Code.", root.hostLabel(section.remoteHost))
                           : i18n("Lists this account's recent folders: start a new Claude chat in one, in a terminal or in VS Code."))
                          + " " + i18n("Write a task first and the chat starts with it, also in the background.")
             }
@@ -211,7 +211,7 @@ ColumnLayout {
                 anchors.fill: parent
                 mainText: i18n("Log in to %1", section.group.title)
                 subText: section.remoteHost
-                         ? i18n("Opens a terminal with Claude's own login on %1 (over ssh): open the address it shows in your browser, sign in, and paste the code you get back.", section.remoteHost)
+                         ? i18n("Opens a terminal with Claude's own login on %1 (over ssh): open the address it shows in your browser, sign in, and paste the code you get back.", root.hostLabel(section.remoteHost))
                          : i18n("Opens a terminal with Claude's own login (claude auth login): sign in in your browser with the account for this folder. Talpy Den never sees the login.")
             }
             onClicked: root.logIn(section.group, section.remoteHost)
@@ -385,7 +385,7 @@ ColumnLayout {
                                         || ({ id: "", prompt: "", planTitle: "", folder: "", folderShort: "", startAt: 0, error: "", due: false,
                                               chat: null, name: "", waits: "" })
             readonly property string what: root.queuedWhat(task)
-            readonly property string folder: (task.host ? task.host + ":" : "") + (task.folder || "~")
+            readonly property string folder: (task.host ? root.hostLabel(task.host) + ":" : "") + (task.folder || "~")
 
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.smallSpacing

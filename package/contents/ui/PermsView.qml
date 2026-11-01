@@ -142,7 +142,7 @@ PlasmaComponents3.ScrollView {
                     visible: origin.src.ok === false
                     wrapMode: Text.Wrap
                     color: Kirigami.Theme.negativeTextColor
-                    text: i18n("Couldn't read the permissions on %1: %2", origin.host, origin.src.error || i18n("no answer"))
+                    text: i18n("Couldn't read the permissions on %1: %2", root.hostLabel(origin.host), origin.src.error || i18n("no answer"))
                 }
 
             // The permissions you gave: every rule and mode that lets chats on
@@ -153,7 +153,7 @@ PlasmaComponents3.ScrollView {
                 spacing: Math.round(view.gu * 0.2)
 
                 SectionTitle {
-                    text: origin.host ? i18n("Permissions you gave on %1", origin.host) : i18n("Permissions you gave")
+                    text: origin.host ? i18n("Permissions you gave on %1", root.hostLabel(origin.host)) : i18n("Permissions you gave")
                 }
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText
@@ -162,9 +162,9 @@ PlasmaComponents3.ScrollView {
                     font: Kirigami.Theme.smallFont
                     opacity: 0.7
                     text: origin.granted.length
-                          ? (origin.host ? i18n("What lets chats on %1 go without asking you, as listed there: its settings, its trusted folders, and the .claude settings of the folders Claude ran in. Revoke takes one out of its file on %1.", origin.host)
+                          ? (origin.host ? i18n("What lets chats on %1 go without asking you, as listed there: its settings, its trusted folders, and the .claude settings of the folders Claude ran in. Revoke takes one out of its file on %1.", root.hostLabel(origin.host))
                          : i18n("What lets chats on this computer go without asking you: your settings and your administrator's, the folders you trusted, the .claude settings of the folders Claude ran in, and what you approved in them. Revoke takes one out of its file."))
-                          : origin.host ? i18n("Nothing lets chats on %1 skip a permission prompt: they ask you each time.", origin.host)
+                          : origin.host ? i18n("Nothing lets chats on %1 skip a permission prompt: they ask you each time.", root.hostLabel(origin.host))
                       : i18n("Nothing lets chats on this computer skip a permission prompt: they ask you each time.")
                 }
                 Repeater {
@@ -287,7 +287,7 @@ PlasmaComponents3.ScrollView {
                 spacing: Math.round(view.gu * 0.2)
 
                 SectionTitle {
-                    text: origin.host ? i18n("Permission prompts on %1, last 7 days", origin.host) : i18n("Permission prompts, last 7 days")
+                    text: origin.host ? i18n("Permission prompts on %1, last 7 days", root.hostLabel(origin.host)) : i18n("Permission prompts, last 7 days")
                 }
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText
@@ -298,7 +298,7 @@ PlasmaComponents3.ScrollView {
                         if (!p)
                             return ""
                         if (!p.answered)
-                            return origin.host ? i18n("You answered no permission prompts on %1 in the last 7 days.", origin.host)
+                            return origin.host ? i18n("You answered no permission prompts on %1 in the last 7 days.", root.hostLabel(origin.host))
                                       : i18n("You answered no permission prompts on this computer in the last 7 days.")
                         let text = p.refused ? i18np("You answered %1 permission prompt and refused %2 of them.", "You answered %1 permission prompts and refused %2 of them.", p.answered, p.refused)
                                              : i18np("You answered %1 permission prompt.", "You answered %1 permission prompts.", p.answered)

@@ -4,6 +4,7 @@
 
 export type Meaning =
   | "cancel"
+  | "container"
   | "close"
   | "hide"
   | "showHidden"

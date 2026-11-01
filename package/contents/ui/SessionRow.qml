@@ -164,7 +164,14 @@ RowLayout {
     readonly property var goingOn: goOnAt || stopped ? root.queuedChat(session.chatId, remoteHost) : null
     // it keeps going until it's done: after each usage limit, it goes on by itself (root.keptChat)
     readonly property var kept: remoteHost ? null : root.keptChat(session.chatId || session.sessionId)
-    readonly property string openHint: remoteHost
+    readonly property bool inContainer: root.isContainer(remoteHost)
+    readonly property string openHint: inContainer
+                                       ? (session.entrypoint === "claude-vscode" && !session.openCommand
+                                          ? i18n("Show this conversation in VS Code (connected to %1)", root.hostLabel(remoteHost))
+                                          : !session.openCommand ? i18n("Switch to the terminal open in %1", root.hostLabel(remoteHost))
+                                          : session.kind === "chat" ? i18n("Reopen this chat in %1 in a terminal", root.hostLabel(remoteHost))
+                                          : i18n("Open this background chat in %1 in a terminal", root.hostLabel(remoteHost)))
+                                       : remoteHost
                                        ? (session.entrypoint === "claude-vscode" && !session.openCommand
                                           ? i18n("Show this conversation in VS Code (connected to %1)", remoteHost)
                                           : !session.openCommand ? i18n("Switch to the terminal with the ssh connection to %1", remoteHost)
@@ -469,7 +476,7 @@ RowLayout {
                                 clickable: true
                                 onClicked: root.openPlan(row.session.plan.slug, row.session.profileDir, row.remoteHost)
                                 tooltipTitle: row.session.plan ? row.session.plan.title : ""
-                                tooltip: row.remoteHost ? i18n("The plan this chat made. Click to read it: a copy, fetched from %1.", row.remoteHost)
+                                tooltip: row.remoteHost ? i18n("The plan this chat made. Click to read it: a copy, fetched from %1.", root.hostLabel(row.remoteHost))
                                                         : i18n("The plan this chat made. Click to read it, rendered.")
                             }
                             Tag {
@@ -482,7 +489,7 @@ RowLayout {
                                                            profileDir: row.session.profileDir }, row.remoteHost)
                                 tooltipTitle: i18n("Edit the plan")
                                 tooltip: (row.remoteHost
-                                          ? i18n("Opens its Markdown file on %1 in VS Code (Remote - SSH). What you change there is the plan.", row.remoteHost)
+                                          ? i18n("Opens its Markdown file on %1 in VS Code (Remote - SSH). What you change there is the plan.", root.hostLabel(row.remoteHost))
                                           : i18n("Opens its Markdown file in your text editor (VS Code, if the settings open plans there). What you change there is the plan."))
                                          + (row.remoteHost ? "" : " " + i18n("Then send your changes to this chat (Send to Claude): Claude revises the plan."))
                             }
@@ -507,7 +514,7 @@ RowLayout {
                                 tooltip: !row.changes ? ""
                                          : row.changes.files.join("\n")
                                            + (row.changes.count > row.changes.files.length ? "\n" + i18n("…and %1 more", row.changes.count - row.changes.files.length) : "")
-                                           + "\n\n" + (row.remoteHost ? i18n("The files are on %1.", row.remoteHost)
+                                           + "\n\n" + (row.remoteHost ? i18n("The files are on %1.", root.hostLabel(row.remoteHost))
                                                       : !root.vscodeInstalled ? i18n("Install VS Code to compare them side by side.")
                                                       : i18n("Click to compare them in VS Code: what they were before the chat, and now."))
                             }
@@ -744,7 +751,7 @@ RowLayout {
                     height: parent.height
                     active: !!row.session.cwd
                     mainText: i18n("Folder")
-                    subText: (row.remoteHost ? row.remoteHost + ":" : "") + row.session.cwd
+                    subText: (row.remoteHost ? root.hostLabel(row.remoteHost) + ":" : "") + row.session.cwd
                 }
             }
             PlasmaComponents3.Label {

@@ -372,7 +372,7 @@ Item {
                     anchors.fill: parent
                     active: strip.callingChat !== null
                     mainText: strip.callingChat ? i18n("Open %1", strip.callingChat.session.name) : ""
-                    subText: strip.callingChat ? (strip.callingChat.host ? strip.callingChat.host + " · " : "")
+                    subText: strip.callingChat ? (strip.callingChat.host ? root.hostLabel(strip.callingChat.host) + " · " : "")
                                                  + root.stateText(strip.callingChat.session) : ""
                 }
             }

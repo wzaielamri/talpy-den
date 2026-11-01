@@ -6,9 +6,11 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import "icons.mjs" as Icons
 
-// An SSH host you picked: its Claude accounts, sessions and recent chats,
-// fetched by remote.py (ssh). The host's own answer is kept when a poll
-// fails: it's shown dimmed, under the error.
+// An SSH host or a container you picked: its Claude accounts, sessions and
+// recent chats, fetched by remote.py (ssh, or the container engine's exec).
+// The host's own answer is kept when a poll fails: it's shown dimmed, under
+// the error. A stopped container says so, with Start (it isn't checked
+// until you press Start or Refresh).
 ColumnLayout {
     id: hostSection
 
@@ -16,6 +18,11 @@ ColumnLayout {
     readonly property var info: root.remote[host] || ({ loading: true, ok: false, error: "", result: null, updatedAt: 0 })
     readonly property var hostGroups: info.result ? info.result.groups.map(g => root.withUsage(g, host)) : []
     readonly property bool stale: !!info.error && info.result !== null
+    readonly property var container: root.containerOf(host)
+    readonly property string label: root.hostLabel(host)
+    // (a container on an SSH host logs in and disconnects through its host)
+    readonly property string sshHost: container ? container.host : host
+    readonly property bool stopped: !!info.stopped && !info.loading
 
     spacing: Kirigami.Units.smallSpacing
 
@@ -33,7 +40,7 @@ ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
         Kirigami.Icon {
-            source: Icons.plasma.host
+            source: root.hostIcon(hostSection.host)
             Layout.preferredWidth: Kirigami.Units.iconSizes.small
             Layout.preferredHeight: Kirigami.Units.iconSizes.small
         }
@@ -41,20 +48,21 @@ ColumnLayout {
             textFormat: Text.PlainText
             level: 1   // (above its accounts' titles)
             font.weight: Font.Bold
-            text: hostSection.host
+            text: hostSection.container ? hostSection.container.name : hostSection.host
             elide: Text.ElideRight
             Layout.maximumWidth: hostSection.width / 2
         }
         PlasmaComponents3.Label {
             textFormat: Text.PlainText
-            // the machine's own name, when the ssh alias differs
+            // the machine's own name, when the ssh alias differs; a container's engine and image (· on its host)
             visible: text !== ""
-            text: hostSection.info.result && hostSection.info.result.host
+            text: hostSection.container ? root.containerDetail(hostSection.host, true)
+                  : hostSection.info.result && hostSection.info.result.host
                   && hostSection.info.result.host.split(".")[0] !== hostSection.host ? hostSection.info.result.host : ""
             opacity: 0.6
             font: Kirigami.Theme.smallFont
             elide: Text.ElideRight
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 6
+            Layout.maximumWidth: Kirigami.Units.gridUnit * (hostSection.container ? 9 : 6)
         }
         Item {
             Layout.fillWidth: true
@@ -94,37 +102,38 @@ ColumnLayout {
             icon.name: Icons.plasma.signOut
             visible: !!hostSection.info.loggedIn
             display: PlasmaComponents3.AbstractButton.IconOnly
-            text: i18n("Disconnect from %1", hostSection.host)
+            text: i18n("Disconnect from %1", hostSection.sshHost)
             onClicked: root.disconnectHost(hostSection.host)
             PlasmaCore.ToolTipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: i18n("Disconnect from %1", hostSection.host)
-                subText: i18n("Closes the connection you logged in with: to check %1 again, Talpy Den asks you to log in.", hostSection.host)
+                mainText: i18n("Disconnect from %1", hostSection.sshHost)
+                subText: i18n("Closes the connection you logged in with: to check %1 again, Talpy Den asks you to log in.", hostSection.label)
             }
         }
         PlasmaComponents3.ToolButton {
             icon.name: Icons.plasma.refresh
             display: PlasmaComponents3.AbstractButton.IconOnly
-            text: i18n("Refresh %1", hostSection.host)
+            text: i18n("Refresh %1", hostSection.label)
             onClicked: root.pollHost(hostSection.host)
             PlasmaCore.ToolTipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: i18n("Refresh %1", hostSection.host)
-                subText: i18n("Checked every %1 seconds while it's shown.", Math.max(10, Plasmoid.configuration.remotePollSeconds))
+                mainText: i18n("Refresh %1", hostSection.label)
+                subText: hostSection.stopped ? i18n("Not checked while it's stopped: Refresh checks it once.")
+                       : i18n("Checked every %1 seconds while it's shown.", Math.max(10, Plasmoid.configuration.remotePollSeconds))
             }
         }
         PlasmaComponents3.ToolButton {
             icon.name: Icons.plasma.hide
             display: PlasmaComponents3.AbstractButton.IconOnly
-            text: i18n("Stop showing %1", hostSection.host)
+            text: i18n("Stop showing %1", hostSection.label)
             onClicked: root.toggleHost(hostSection.host)
             PlasmaCore.ToolTipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: i18n("Stop showing %1", hostSection.host)
-                subText: i18n("Pick it again with the SSH hosts button at the top.")
+                mainText: i18n("Stop showing %1", hostSection.label)
+                subText: i18n("Pick it again with the hosts button at the top.")
             }
         }
     }
@@ -141,8 +150,8 @@ ColumnLayout {
         PlasmaComponents3.Label {
             textFormat: Text.PlainText
             Layout.fillWidth: true
-            text: (hostSection.host in root.loginWaits ? i18n("Log in to %1 in the terminal that opened.", hostSection.host)
-                   : i18n("%1 wants you to log in: a password, a passphrase or a code, or its host key confirmed.", hostSection.host))
+            text: (hostSection.host in root.loginWaits ? i18n("Log in to %1 in the terminal that opened.", hostSection.sshHost)
+                   : i18n("%1 wants you to log in: a password, a passphrase or a code, or its host key confirmed.", hostSection.sshHost))
                   + (hostSection.stale ? " " + i18n("Showing what it said %1 ago.", root.duration(root.now - hostSection.info.updatedAt)) : "")
             color: Kirigami.Theme.negativeTextColor
             wrapMode: Text.Wrap
@@ -154,15 +163,43 @@ ColumnLayout {
             PlasmaCore.ToolTipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: i18n("Log in to %1", hostSection.host)
+                mainText: i18n("Log in to %1", hostSection.sshHost)
                 subText: i18n("Opens a terminal where ssh asks for what it needs. It goes to ssh only: Talpy Den never sees it and keeps nothing. The checks then use that connection until 30 minutes after they stop, until you log out, or until you disconnect.")
+            }
+        }
+    }
+
+    // A stopped container: Start (remote.py --start), then it's checked
+    RowLayout {
+        visible: hostSection.stopped
+        Layout.fillWidth: true
+        Layout.leftMargin: Kirigami.Units.smallSpacing
+        Layout.rightMargin: Kirigami.Units.smallSpacing
+        spacing: Kirigami.Units.smallSpacing
+
+        PlasmaComponents3.Label {
+            textFormat: Text.PlainText
+            Layout.fillWidth: true
+            text: i18n("%1 is stopped.", hostSection.label)
+                  + (hostSection.stale ? " " + i18n("Showing what it said %1 ago.", root.duration(root.now - hostSection.info.updatedAt)) : "")
+            wrapMode: Text.Wrap
+        }
+        PlasmaComponents3.Button {
+            icon.name: Icons.plasma.startNow
+            text: i18n("Start")
+            onClicked: root.startContainer(hostSection.host)
+            PlasmaCore.ToolTipArea {
+                textFormat: Text.PlainText
+                anchors.fill: parent
+                mainText: i18n("Start %1", hostSection.label)
+                subText: i18n("Starts the container (%1 start), then shows its chats.", hostSection.container ? hostSection.container.engine : "")
             }
         }
     }
 
     PlasmaComponents3.Label {
         textFormat: Text.PlainText
-        visible: !!hostSection.info.error && !hostSection.info.login
+        visible: !!hostSection.info.error && !hostSection.info.login && !hostSection.stopped
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.smallSpacing
         Layout.rightMargin: Kirigami.Units.smallSpacing
@@ -193,7 +230,8 @@ ColumnLayout {
         visible: hostSection.info.ok && hostSection.hostGroups.length === 0
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.smallSpacing
-        text: i18n("No Claude Code config on this host (~/.claude, ~/.claude-*)")
+        text: hostSection.container ? i18n("No Claude Code config in this container (~/.claude, ~/.claude-*)")
+                                    : i18n("No Claude Code config on this host (~/.claude, ~/.claude-*)")
         opacity: 0.6
         wrapMode: Text.Wrap
     }

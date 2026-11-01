@@ -48,7 +48,7 @@ Item {
             id: nameLabel
             textFormat: Text.PlainText
             Layout.maximumWidth: Kirigami.Units.gridUnit * 10
-            text: (line.item && line.item.host ? line.item.host + ": " : "") + line.s.name
+            text: (line.item && line.item.host ? root.hostLabel(line.item.host) + ": " : "") + line.s.name
             font.weight: Font.DemiBold
             elide: Text.ElideRight
         }

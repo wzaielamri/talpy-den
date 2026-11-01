@@ -70,7 +70,7 @@ ColumnLayout {
                             opacity: sourceMouse.containsMouse ? 0.9 : 0.6
                         }
                         Kirigami.Icon {
-                            source: block.host ? Icons.plasma.host : Icons.plasma.computer
+                            source: block.host ? root.hostIcon(block.host) : Icons.plasma.computer
                             Layout.preferredWidth: Kirigami.Units.iconSizes.small
                             Layout.preferredHeight: Layout.preferredWidth
                         }
@@ -78,7 +78,7 @@ ColumnLayout {
                             id: sourceLabel
                             textFormat: Text.PlainText
                             Layout.fillWidth: true
-                            text: (block.host || i18n("This computer"))
+                            text: (block.host ? root.hostLabel(block.host) : i18n("This computer"))
                                   + (block.answer.busy ? "" : " · " + i18np("%1 chat", "%1 chats", block.answer.results.length)
                                                                + (block.answer.more ? "+" : "")
                                                                + (block.projects.length ? ", " + i18np("%1 folder", "%1 folders", block.projects.length) : "")
@@ -212,8 +212,8 @@ ColumnLayout {
                     account: root.hostGroups(block.host).length > 1 ? memory.profile : ""
                     tipTitle: memory.name
                     tip: !block.host ? i18n("A memory on %1. Click to read it.", memory.account)
-                         : root.vscodeInstalled ? i18n("A memory on %1. Click to open its file on %2 in VS Code (Remote - SSH).", memory.account, block.host)
-                         : i18n("A memory on %1. Needs VS Code (Remote - SSH) to open a memory on %2.", memory.account, block.host)
+                         : root.vscodeInstalled ? i18n("A memory on %1. Click to open its file on %2 in VS Code (Remote - SSH).", memory.account, root.hostLabel(block.host))
+                         : i18n("A memory on %1. Needs VS Code (Remote - SSH) to open a memory on %2.", memory.account, root.hostLabel(block.host))
                     enabled: !block.host || root.vscodeInstalled
                     onActivated: root.openMemory(memory, block.host, false)
                 }

@@ -202,7 +202,8 @@ ColumnLayout {
                                 anchors.fill: parent
                                 mainText: i18n("Everything it did")
                                 subText: i18n("Its task, every step with the start of each result, and its report, as a Markdown file in your app for those. Claude Code itself can't open a subagent from outside.")
-                                         + (tree.remoteHost ? " " + i18n("Fetched from %1 over ssh.", tree.remoteHost) : "")
+                                         + (tree.remoteHost ? " " + (root.isContainer(tree.remoteHost) ? i18n("Fetched from %1.", root.hostLabel(tree.remoteHost))
+                                                                                       : i18n("Fetched from %1 over ssh.", tree.remoteHost)) : "")
                             }
                         }
                     }

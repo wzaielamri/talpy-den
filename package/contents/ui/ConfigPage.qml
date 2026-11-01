@@ -68,6 +68,10 @@ KCM.SimpleKCM {
     property var cfg_sshHostsDefault
     property var cfg_remotePollSeconds
     property var cfg_remotePollSecondsDefault
+    property var cfg_showContainers
+    property var cfg_showContainersDefault
+    property var cfg_containerDays
+    property var cfg_containerDaysDefault
     property var cfg_markdownApp
     property var cfg_markdownAppDefault
     property var cfg_sshUsage

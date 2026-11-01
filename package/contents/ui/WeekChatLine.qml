@@ -11,7 +11,7 @@ PlasmaComponents3.ItemDelegate {
     id: line
 
     property var chat: ({ name: "", chatId: "", host: "", profileDir: "", folder: "", cwd: "" })
-    property string where: (chat.host ? chat.host + ": " : "") + (chat.folder || "")
+    property string where: (chat.host ? root.hostLabel(chat.host) + ": " : "") + (chat.folder || "")
     property string numbers: ""
     property real indent: 0
     property real whereWidth: -1
