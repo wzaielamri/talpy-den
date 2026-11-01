@@ -615,6 +615,29 @@ def gather(pairs):
     return labels, paths
 
 
+def chat_jobs(profiles, chat_id):
+    """The background-job folders of a chat: [(profile, jobs/<id>, its
+    state.json)] of each job that ran it (its sessionId) or took it over
+    (its resumeSessionId)."""
+    found = []
+    for p in profiles:
+        for d in cs.job_dirs(p):
+            job = cs.read_json(d / "state.json")
+            if not isinstance(job, dict):
+                continue
+            if chat_id in (job.get("sessionId"), job.get("resumeSessionId")) \
+                    or (d.name == chat_id[:8] and not cs.valid_id(job.get("sessionId"))):
+                found.append((p, d, job))
+    return found
+
+
+def job_at_work(profiles, jobs):
+    """The label of the profile where one of these jobs (chat_jobs) isn't
+    finished, or has a process, or None."""
+    live = {e.get("jobId") for e, _, _ in cs.live_entries_all(profiles)}
+    return next((p.label for p, d, job in jobs if d.name in live or not cs.job_finished(job)), None)
+
+
 def chat_to_delete(profiles, chat_id, name, root):
     """The copy of a chat that goes (the one the profile name has, else the
     only one), from every profile that shares it: (its accounts, the paths
@@ -641,6 +664,8 @@ def chat_to_delete(profiles, chat_id, name, root):
         return None, f"Unexpected project folder {key}; left the chat as it is", None
     sharers = [p for p, _ in chat]
     pairs = list(chat) + [(p, in_profile(p, key, chat_id, part)) for p in sharers for part in FOLDERS]
+    # (its finished background chat's folder too: else its record stays listed, with nothing to show)
+    pairs += [(None, d) for _, d, _ in chat_jobs(sharers, chat_id)]
     store = store_paths(sharers, key, chat_id, root)
     if store[TRANSCRIPT].is_file() and same(store[TRANSCRIPT], path):
         pairs.append((None, store[TRANSCRIPT]))  # (the store's own link to it)
@@ -760,7 +785,9 @@ def delete(profiles, kind, item, name, root, home, describe=False):
     profile whose copy), or (describe) say what would go: {"ok", "message",
     and with describe "question", "name", "accounts", "open"}. The question
     is the one to ask; "open" names the account a session has the chat open
-    on (it isn't deleted then: ok is false, the message says why)."""
+    on (it isn't deleted then: ok is false, the message says why), as does
+    a background job of the chat that isn't finished."""
+    at_work = None
     if kind == "memory":
         p, path = memory_to_delete(profiles, item)
         if p is None:
@@ -785,9 +812,12 @@ def delete(profiles, kind, item, name, root, home, describe=False):
         except OSError:
             title = item[:8]
         busy = open_in(profiles, item)
+        at_work = None if busy else job_at_work(profiles, chat_jobs(profiles, item))
         question = (f"Delete “{title}” on {and_list(labels)}? It goes to the Trash with its subagents and "
                     "checkpoints; the Recap keeps its numbers.")
     why = f"It's open on {busy}. Exit it there first." if busy else ""
+    if at_work:
+        why = f"It runs in the background on {at_work}. Stop it first."
     if describe:
         return {"ok": not why, "message": why or question, "question": question, "name": title, "accounts": labels,
                 "open": busy or ""}

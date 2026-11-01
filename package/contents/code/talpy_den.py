@@ -734,6 +734,9 @@ def parked_row(profile, home, ctx, d, job, roster):
         detail=clean_text(job.get("needs") if state == "waiting" else job.get("detail") if state == "done" else ""),
         since=to_ms(job.get("updatedAt")), started_at=to_ms(job.get("createdAt")))
     row = finish_row(row, job, d.name, profile, ctx, alive=False)
+    if state == "done" and job.get("linkScanPath") and not any(
+            transcript_path(p, i) is not None for p in ctx.profiles for i in dict.fromkeys((row["chatId"], row["sessionId"]))):
+        return None  # (a finished one whose chat had a transcript and it's gone, deleted say: nothing to show)
     return None if handed_over(profile, row["chatId"], ctx.profiles) else row
 
 

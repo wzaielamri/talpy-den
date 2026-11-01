@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Deleting a finished background chat takes its background folder to
+  the Trash too,** restorable with it, and the list drops it at once; its
+  row stayed as *Done · Not open*. One still running in the background
+  isn't deleted.
 - **A chat Claude moved to the background goes on there, never as its old
   self again:** closing a chat's terminal makes Claude move it to the
   background under a new id, with a copy of its history; at the reset,

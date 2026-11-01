@@ -2379,6 +2379,33 @@ class DeleteTests(Fixture):
                           cs.load_queue(self.cache)), ([], {}, [], []))
         self.assertEqual(self.delete("chat", "chat9")["message"], "That chat isn't there any more")
 
+    def test_a_finished_background_chat_goes_with_its_job_folder(self):
+        # Delete… of a finished background chat left jobs/<id[:8]>/, so its
+        # row stayed as Done · Not open (2026-11-01)
+        sid = "aaaaaaaa-1111-4222-8333-444444444444"
+        t = self.now - 600
+        write(self.w / f"projects/-p/{sid}.jsonl", lines(prompt("fix it", t), reply("Fixed.", t + 5)))
+        job = {"sessionId": sid, "state": "done", "tempo": "idle", "cwd": "/p", "name": "Fix it",
+               "createdAt": iso(t), "updatedAt": iso(t + 5), "linkScanPath": str(self.w / f"projects/-p/{sid}.jsonl")}
+        write(self.w / f"jobs/{sid[:8]}/state.json", job)
+        write(self.w / "jobs/bbbbbbbb/state.json", dict(job, sessionId="bbbbbbbb-0000-4000-8000-000000000000"))
+        listed = lambda: [s["sessionId"] for g in self.collect(with_tokens=False)["groups"] for s in g["sessions"]]
+        self.assertIn(sid, listed())
+        # while it isn't finished, it isn't deleted
+        write(self.w / f"jobs/{sid[:8]}/state.json", dict(job, state="working", tempo="active"))
+        asked = self.delete("chat", sid, describe=True)
+        self.assertEqual((asked["ok"], asked["message"]), (False, "It runs in the background on work. Stop it first."))
+        self.assertFalse(self.delete("chat", sid)["ok"])
+        write(self.w / f"jobs/{sid[:8]}/state.json", job)
+        self.assertEqual(self.delete("chat", sid)["message"], "Moved to the Trash")
+        self.assertFalse(os.path.lexists(self.w / f"jobs/{sid[:8]}"))
+        self.assertTrue((self.w / "jobs/bbbbbbbb/state.json").is_file())
+        self.assertIn(sid[:8], self.trashed())  # (restorable with it)
+        self.assertNotIn(sid, listed())
+        # a finished job whose chat is gone (deleted before) isn't listed either
+        write(self.w / f"jobs/{sid[:8]}/state.json", job)
+        self.assertNotIn(sid, listed())
+
     def test_a_chat_open_in_a_session_stays(self):
         write(self.w / "projects/-tmp-proj-busy/busy.jsonl", lines(prompt("go", self.now - 60)))
         asked = self.delete("chat", "busy", describe=True)
