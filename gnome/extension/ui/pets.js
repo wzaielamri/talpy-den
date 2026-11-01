@@ -680,6 +680,9 @@ class Stage {
             this.gone = true;
             this.timers.stopAll();
         });
+        // (an account's stage: moved in the list, it may have come into sight or gone out of it)
+        if (!hero)
+            this.actor.connect('notify::allocation', () => pets.queueLiveCheck());
         this.actor.connect('motion-event', (a, event) => {
             const [x, y] = event.get_coords();
             const [ok, lx] = this.actor.transform_stage_point(x, y);
@@ -1103,6 +1106,10 @@ export class Pets {
         this.mood = 'loading';
         this.accentRgb = [53, 132, 228];   // "working" blue (stylesheet.css)
         this._active = false;   // the popup shows the chats (setActive)
+        this._list = null;        // the popup's list and its scroll position (watchScroll)
+        this._adjustment = null;
+        this._adjustmentIds = [];
+        this._liveCheck = 0;
         // Less motion asked for (Settings → Accessibility → Reduce Animation):
         // the pets calm down, as VS Code's do: no wandering digs (a pet is just
         // moved to its new spot), no twinkling stars or pulsing light
@@ -1187,7 +1194,7 @@ export class Pets {
         if (!stage) {
             stage = new Stage(this, groupKey, false);
             this._stages.set(groupKey, stage);
-            stage.setLive(this._active);
+            this.queueLiveCheck();   // (live once it shows in the list: _syncLive)
         }
         stage.chats = chats;
         stage.setChats(chats);
@@ -1248,11 +1255,64 @@ export class Pets {
     setActive(open) {
         this._active = open;
         this.hero.setLive(open && this.heroShown);
-        for (const stage of this._stages.values())
-            stage.setLive(open);
+        this._syncLive();
+        this.queueLiveCheck();   // (again once the popup is laid out)
+    }
+
+    // The popup's list scrolls (indicator.js gives its adjustment): an
+    // account's stage scrolled out of sight holds still, as Plasma's and VS
+    // Code's, and acts out what it missed (its last minute) once it's back
+    watchScroll(list, adjustment) {
+        this._list = list;
+        this._adjustment = adjustment;
+        this._adjustmentIds = ['notify::value', 'changed'].map(signal => adjustment.connect(signal, () => this.queueLiveCheck()));
+    }
+
+    // Whether any of the stage shows in the list's scrolled-to part (by the
+    // layout: its place in the list against the scroll position)
+    _inView(stage) {
+        const adj = this._adjustment;
+        if (!adj || !this._list)
+            return true;
+        let y = 0, actor = stage.actor;
+        while (actor && actor !== this._list) {
+            y += actor.get_allocation_box().y1;
+            actor = actor.get_parent();
+        }
+        if (!actor)
+            return false;   // (not in the list: another tab shows)
+        const height = stage.actor.get_allocation_box().get_height();
+        if (adj.page_size <= 0 || height <= 0)
+            return true;    // (not laid out yet)
+        return y + height > adj.value && y < adj.value + adj.page_size;
+    }
+
+    _syncLive() {
+        for (const stage of this._stages.values()) {
+            const live = this._active && this._inView(stage);
+            if (stage.live !== live)
+                stage.setLive(live);
+        }
+    }
+
+    // After the scroll or the layout changed (once, when the shell is idle)
+    queueLiveCheck() {
+        if (this._liveCheck)
+            return;
+        this._liveCheck = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._liveCheck = 0;
+            this._syncLive();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     destroy() {
+        if (this._liveCheck)
+            GLib.source_remove(this._liveCheck);
+        this._liveCheck = 0;
+        for (const id of this._adjustmentIds)
+            this._adjustment.disconnect(id);
+        this._adjustmentIds = [];
         this._themeContext.disconnect(this._scaleChanged);
         this._shellSettings.disconnect(this._motionChanged);
         for (const stage of this._stages.values())

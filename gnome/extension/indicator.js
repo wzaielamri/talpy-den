@@ -93,6 +93,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this._buildPanel();
         this._buildMenu();
         this._pets = new Pets(this);
+        this._pets.watchScroll(this._list, this._scroll.vadjustment);   // (stages out of sight hold still)
 
         this._settingsIds = [
             ...['poll-interval', 'idle-poll-interval'].map(key =>

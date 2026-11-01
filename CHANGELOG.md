@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **GNOME's account stages hold still while scrolled out of the popup,** as Plasma's and VS Code's: their pets stop moving (no timer ticks for them) and, scrolled back, act out what happened meanwhile if it's from the last minute; they kept acting it all out unseen (GNOME).
 - **Every question before an action reads one way:** an orange line with its buttons beside it, the one that does it with the icon of the button that asked, as *Delete?* and *Cancel this task?*: the Permissions tab's *Revoke?* and *Allow?* (small plain text with the buttons under it before), the settings' *Delete Saved History?*, *Stop keeping the history?* and *Delete faster-whisper?* (plain text) and the Accounts page's *Log out?* and *Remove?* (a framed box); only a chat's *Stop?*, with its several choices, keeps the box (Plasma and VS Code).
 - **VS Code's *Open in:* switch has its icons, as Plasma's and GNOME's:** the terminal on *Terminal*, the chat on *Claude Code panel* (VS Code).
 - **The chats' context bars line up:** a row's *ctx 9%* takes the room of *ctx 100%*, right-aligned, so every row's bar ends at one place; each label as wide as its text put the bars at a different place on every row (Plasma and VS Code).
