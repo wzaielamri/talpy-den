@@ -9,7 +9,7 @@ import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 
 import * as L from '../logic.js';
-import {box, column, dot, iconButton, label, link, meter, nameLine, paragraph, showOnHover, tag, textButton} from './widgets.js';
+import {box, column, confirmLine, dot, iconButton, label, link, meter, nameLine, paragraph, showOnHover, tag, textButton} from './widgets.js';
 import * as Icons from './icons.js';
 
 export function buildSessionRow(ctx, session, {showProfile = false, remoteHost = ''} = {}) {
@@ -371,7 +371,8 @@ function buildAgentDetail(ctx, s, a, remoteHost, indent) {
     return detail;
 }
 
-// A question with buttons, e.g. "Stop “fix parser”? …" [Stop] [Cancel]
+// Stop's question, with its choices, in a frame: "Stop “fix parser”? …"
+// [Interrupt] [Stop] [Cancel] (every other question is a line: confirmLine)
 export function confirmBox(text, buttons) {
     const c = column('claude-confirm', {x_expand: true});
     c.add_child(paragraph(text, 'claude-small'));
@@ -389,18 +390,15 @@ export function buildDeleteAsk(ctx) {
     const a = ctx.ui.deleteAsk;
     if (a.busy)
         return label('Looking at what it would delete…', 'claude-small claude-dim');
-    if (a.question) {
-        return confirmBox(a.question, [
-            ['Delete', '', () => ctx.confirmDelete()],
-            ['Cancel', '', () => ctx.cancelDelete()],
-        ]);
-    }
-    const c = column('claude-confirm', {x_expand: true});
-    c.add_child(paragraph(a.message, 'claude-small claude-fg-bad'));
-    const row = box('claude-confirm-buttons');
-    row.add_child(textButton('OK', () => ctx.cancelDelete(), 'claude-text-button claude-confirm-button'));
-    c.add_child(row);
-    return c;
+    if (a.question)   // (Delete with the red trash of the button that asked)
+        return confirmLine(a.question, 'Delete', 'delete', () => ctx.confirmDelete(), () => ctx.cancelDelete());
+    // why not: in red, its OK beside it (as Plasma's DeleteAsk)
+    const line = box('claude-question', {x_expand: true});
+    line.add_child(paragraph(a.message, 'claude-fg-bad', {y_align: Clutter.ActorAlign.CENTER}));
+    const ok = textButton('OK', () => ctx.cancelDelete(), 'claude-text-button claude-confirm-button');
+    ok.y_align = Clutter.ActorAlign.CENTER;
+    line.add_child(ok);
+    return line;
 }
 
 // Share a chat with your other accounts, continue it on one of them, or
@@ -430,9 +428,7 @@ export function buildShareMenu(ctx, chat, rowKey) {
 // Asks before a shared chat is kept on one account only (the others lose it)
 export function buildKeepOnly(ctx) {
     const c = ctx.ui.shareConfirm;
-    return confirmBox(L.fmt("Keep “%1” only on %2? It leaves the chat lists of %3; the conversation stays on %2. It can't be open in Claude meanwhile.",
-        c.name, c.account, c.others), [
-        [L.fmt('Keep only on %1', c.account), '', () => ctx.confirmKeepOnly()],   // (no ×: it doesn't close the question)
-        ['Cancel', '', () => ctx.cancelKeepOnly()],
-    ]);
+    // (with the arrow of the Keep only on … that asked)
+    return confirmLine(L.fmt("Keep “%1” only on %2? It leaves the chat lists of %3; the conversation stays on %2. It can't be open in Claude meanwhile.",
+        c.name, c.account, c.others), L.fmt('Keep only on %1', c.account), 'moveTo', () => ctx.confirmKeepOnly(), () => ctx.cancelKeepOnly());
 }

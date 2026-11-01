@@ -11,7 +11,7 @@ import St from 'gi://St';
 import * as L from '../logic.js';
 import * as Icons from './icons.js';
 import {heading} from './weekView.js';
-import {box, column, label, paragraph, textButton} from './widgets.js';
+import {box, column, confirmLine, label, meaningButton, paragraph, textButton} from './widgets.js';
 
 // A line's kind as an icon (as Plasma's PermsView): plain and dim, but a
 // command you allowed green and a loosened check orange (icons.mjs TONES)
@@ -22,13 +22,8 @@ function kindIcon(meaning) {
         y_align: Clutter.ActorAlign.START});
 }
 
-// Revoke's and Allow's confirm buttons: plain, their icon red or green; not
-// while another change is written (one settings write at a time)
-function confirmButton(text, meaning, onClick, busy) {
-    const b = textButton(text, onClick, `claude-chip claude-tone-${meaning === 'cancel' ? 'negative' : 'positive'}`, Icons.gnome[meaning]);
-    b.reactive = !busy;
-    return b;
-}
+// The tab's buttons: the popup's plain ones (as Compare changes, Stop…)
+const BUTTON = 'claude-text-button claude-confirm-button';
 
 export function buildPermsView(ctx) {
     const perms = ctx.perms;
@@ -70,12 +65,9 @@ function buildGranted(ctx, data, host) {
         const text = column('', {x_expand: true});
         text.add_child(paragraph(g.title, ''));
         text.add_child(paragraph(L.weekGrantMeta(g), 'claude-small claude-dim'));
-        if (week.revoking === L.permsKey(host, g.id)) {
-            text.add_child(paragraph(`This ${g.change}.`, 'claude-small'));
-            const buttons = box('claude-week-accounts');
-            buttons.add_child(confirmButton('Revoke', 'cancel', () => ctx.revokeGrant(g, host), !!week.ruleBusy));
-            buttons.add_child(textButton('Cancel', () => ctx.permsRevokeAsk(''), 'claude-chip'));
-            text.add_child(buttons);
+        if (week.revoking === L.permsKey(host, g.id)) {   // (one settings write at a time)
+            text.add_child(confirmLine(`This ${g.change}.`, 'Revoke', 'cancel', () => ctx.revokeGrant(g, host),
+                () => ctx.permsRevokeAsk(''), {enabled: !week.ruleBusy}));
         }
         line.add_child(text);
         if (week.ruleBusy === L.permsKey(host, g.id)) {
@@ -86,16 +78,19 @@ function buildGranted(ctx, data, host) {
                 : ['Shared through git', "This folder's .claude/settings.json is shared with whoever uses its repository: change it there."]);
             line.add_child(git);
         } else if (week.revoking !== L.permsKey(host, g.id)) {
-            const revoke = textButton('Revoke…', () => ctx.permsRevokeAsk(L.permsKey(host, g.id)), 'claude-chip');
+            const revoke = textButton('Revoke…', () => ctx.permsRevokeAsk(L.permsKey(host, g.id)), BUTTON);
             revoke.y_align = Clutter.ActorAlign.START;
             revoke.reactive = !week.ruleBusy;
             line.add_child(revoke);
         }
         section.add_child(line);
     }
+    // (as the other lists' Show N more: small, with its icon, under the lines' text)
     const more = granted.length - L.WEEK_GRANTED_FEW;
-    if (!week.allGranted[host] && more > 0)
-        section.add_child(textButton(`Show ${more} more`, () => ctx.permsShowAllGranted(host), 'claude-chip'));
+    if (!week.allGranted[host] && more > 0) {
+        section.add_child(textButton(`Show ${more} more`, () => ctx.permsShowAllGranted(host),
+            'claude-text-button claude-small claude-more claude-perms-more', Icons.gnome.more));
+    }
     if (week.ruleMessage && week.ruleRevoked && week.ruleHost === host)
         section.add_child(paragraph(week.ruleMessage, `claude-small${week.ruleFailed ? ' claude-fg-bad' : ''}`));
     return section;
@@ -126,11 +121,8 @@ function buildPrompts(ctx, data, host) {
         text.add_child(paragraph(r.title, ''));
         text.add_child(paragraph(L.weekRuleMeta(r), 'claude-small claude-dim'));
         if (week.asking === L.permsKey(host, r.id)) {
-            text.add_child(paragraph(`This ${r.change}.`, 'claude-small'));
-            const buttons = box('claude-week-accounts');
-            buttons.add_child(confirmButton('Allow', 'allow', () => ctx.changeRule(r, true, host), !!week.ruleBusy));
-            buttons.add_child(textButton('Cancel', () => ctx.permsAsk(''), 'claude-chip'));
-            text.add_child(buttons);
+            text.add_child(confirmLine(`This ${r.change}.`, 'Allow', 'allow', () => ctx.changeRule(r, true, host),
+                () => ctx.permsAsk(''), {enabled: !week.ruleBusy}));
         }
         line.add_child(text);
         if (week.ruleBusy === L.permsKey(host, r.id)) {
@@ -138,13 +130,13 @@ function buildPrompts(ctx, data, host) {
         } else if (r.state === 'allowed') {
             line.add_child(label('Allowed now', 'claude-small claude-dim', {y_align: Clutter.ActorAlign.START}));
         } else if (r.state === 'added') {
-            const undo = textButton('Undo', () => ctx.changeRule(r, false, host), 'claude-chip', Icons.gnome.undo);
+            const undo = meaningButton('Undo', 'undo', () => ctx.changeRule(r, false, host));
             undo.y_align = Clutter.ActorAlign.START;
             ctx.tips.add(undo, ['Take this rule back', 'You allowed it here: Undo removes it from the file it went into, as it was before.']);
             undo.reactive = !week.ruleBusy;   // (after its tooltip, which makes it reactive: one change at a time)
             line.add_child(undo);
         } else if (week.asking !== L.permsKey(host, r.id)) {
-            const allow = textButton('Allow…', () => ctx.permsAsk(L.permsKey(host, r.id)), 'claude-chip');
+            const allow = textButton('Allow…', () => ctx.permsAsk(L.permsKey(host, r.id)), BUTTON);
             allow.y_align = Clutter.ActorAlign.START;
             allow.reactive = !week.ruleBusy;
             line.add_child(allow);

@@ -1,8 +1,7 @@
 // Stand-ins for the settings window on GNOME 43/44 (libadwaita 1.2, GTK
 // 4.8): the ExtensionPreferences base class, Adw.SpinRow and Adw.SwitchRow
-// (libadwaita 1.4), Adw.AlertDialog (libadwaita 1.5) and Gtk.FileDialog
-// (GTK 4.10), each with just the parts prefs.js uses. Legacy imports, like
-// compat43.js.
+// (libadwaita 1.4) and Gtk.FileDialog (GTK 4.10), each with just the parts
+// prefs.js uses. Legacy imports, like compat43.js.
 
 const {Adw, GObject, Gtk} = imports.gi;
 const ExtensionUtils = imports.misc.extensionUtils;
@@ -117,46 +116,5 @@ var FileDialog = class FileDialog {
         if (!this._file)
             throw new Error('Dismissed by user');
         return this._file;
-    }
-};
-
-// Adw.AlertDialog's add_response(), set_response_appearance() and
-// choose()/choose_finish(), on Adw.MessageDialog (libadwaita 1.2 has no
-// choose() yet: its response signal says which button closed it)
-var AlertDialog = class AlertDialog {
-    constructor({heading = '', body = ''} = {}) {
-        this._heading = heading;
-        this._body = body;
-        this._responses = [];     // [id, label]
-        this._appearances = [];   // [id, Adw.ResponseAppearance]
-        this._response = 'close';
-    }
-
-    add_response(id, label) {
-        this._responses.push([id, label]);
-    }
-
-    set_response_appearance(id, appearance) {
-        this._appearances.push([id, appearance]);
-    }
-
-    choose(parent, cancellable, callback) {
-        const dialog = new Adw.MessageDialog({heading: this._heading, body: this._body,
-            transient_for: parent, modal: true});
-        for (const [id, label] of this._responses)
-            dialog.add_response(id, label);
-        for (const [id, appearance] of this._appearances)
-            dialog.set_response_appearance(id, appearance);
-        openDialogs.add(dialog);
-        dialog.connect('response', (d, response) => {
-            this._response = response;
-            openDialogs.delete(dialog);
-            callback(this, null);
-        });
-        dialog.present();
-    }
-
-    choose_finish() {
-        return this._response;
     }
 };

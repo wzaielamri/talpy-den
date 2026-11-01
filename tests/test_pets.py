@@ -1430,12 +1430,15 @@ class PlainTextTests(unittest.TestCase):
         self.assertEqual(missing, [])
 
     def test_inline_messages_escape_what_they_quote(self):
-        for name in ("SessionRow.qml", "KeepOnlyMessage.qml"):
+        for name in ("SessionRow.qml",):
             text = (ROOT / "ui" / name).read_text()
             block = text[text.index("Kirigami.InlineMessage {"):]
             block = block[:block.index("actions:")]
             self.assertIn('"<span>"', block, name)
             self.assertNotRegex(block, r"[^(]row\.session\.name\)|shareConfirm\.name,", name)
+        # (the keep-only question is a ConfirmLine: its label is plain text)
+        self.assertIn("textFormat: Text.PlainText", (ROOT / "ui/ConfirmLine.qml").read_text())
+        self.assertIn("sourceComponent: ConfirmLine {", (ROOT / "ui/KeepOnlyMessage.qml").read_text())
 
 
 class SeveralCopiesTests(unittest.TestCase):

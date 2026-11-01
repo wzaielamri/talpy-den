@@ -10,7 +10,7 @@
     <key name="idle-poll-interval" type="i">
       <default>20000</default>
       <range min="1000" max="300000"/>
-      <summary>Milliseconds between status checks while nothing runs and the menu is closed</summary>
+      <summary>Milliseconds between status checks while nothing runs and the popup is closed</summary>
       <description>Never more often than poll-interval.</description>
     </key>
     <key name="extra-config-dirs" type="s">
@@ -104,12 +104,12 @@
     <key name="next-chat-shortcut" type="as">
       <default><![CDATA[['<Super><Shift>c']]]></default>
       <summary>Keyboard shortcut to the chat that needs you</summary>
-      <description>Waiting chats first (the one waiting longest), then finished turns you haven't seen; pressed again soon after, the next one. With none, the menu opens or closes. Empty: no shortcut.</description>
+      <description>Waiting chats first (the one waiting longest), then finished turns you haven't seen; pressed again soon after, the next one. With none, the popup opens or closes. Empty: no shortcut.</description>
     </key>
     <key name="away-digest" type="b">
       <default>true</default>
       <summary>A summary when you come back</summary>
-      <description>After the screen was locked: the chats that finished, failed or need you, at the top of the menu until you've seen it, and as one notification while notify-waiting or notify-done is on.</description>
+      <description>After the screen was locked: the chats that finished, failed or need you, at the top of the popup until you've seen it, and as one notification while notify-waiting or notify-done is on.</description>
     </key>
     <key name="away-minutes" type="i">
       <default>5</default>

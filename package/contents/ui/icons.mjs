@@ -33,6 +33,7 @@ const TABLE = {
     keepGoing:       ['media-playlist-repeat',         'repeat',     'media-playlist-repeat-symbolic'],
     star:            ['non-starred-symbolic',          'star',       'non-starred-symbolic'],
     starred:         ['starred-symbolic',              'starFull',   'starred-symbolic'],
+    makeDefault:     ['starred-symbolic',              'starFull',   'starred-symbolic'],                 // an account's Make Default (plain: not a starred chat's yellow)
     share:           ['document-share',                'share',      'emblem-shared-symbolic'],           // share or continue on another account
     continueOn:      ['system-switch-user',            'move',       'system-switch-user-symbolic'],      // continue on the account with room left
     moveTo:          ['go-next',                       'move',       'go-next-symbolic'],                 // keep only on, move a chat to Claude Code

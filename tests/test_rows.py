@@ -191,7 +191,7 @@ class RowButtonsTests(unittest.TestCase):
         self.assertIn("active: hover.shown || hover.made", ui["HoverButtons.qml"])
         self.assertRegex(ui["DeleteAsk.qml"], r"\nLoader \{[^}]*active: itemKey !== \"\" && asked\.key === itemKey")
         self.assertRegex(ui["KeepOnlyMessage.qml"], r"\nLoader \{[^}]*active: shown")
-        self.assertIn("visible: false", ui["KeepOnlyMessage.qml"])   # (made hidden, then shown: it fades in)
+        self.assertIn("sourceComponent: ConfirmLine {", ui["KeepOnlyMessage.qml"])   # (a question as every one)
         self.assertIn("active: tip.inPane", ui["TipArea.qml"])
         self.assertIn("sourceComponent: NewChatBox {\n            visible: false", ui["PlanLine.qml"])
         for name in ("RecentLine.qml", "SessionRow.qml"):

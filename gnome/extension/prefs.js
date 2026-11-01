@@ -19,6 +19,25 @@ const CURRENCIES = [['USD', 'US dollars'], ['EUR', 'Euros'], ['GBP', 'Pounds ste
     ['ILS', 'Israeli shekels'], ['IDR', 'Indonesian rupiah'], ['MYR', 'Malaysian ringgit'], ['PHP', 'Philippine pesos'],
     ['THB', 'Thai baht']];
 
+// A question's color: the popup's orange (stylesheet.css claude-fg-waiting)
+const QUESTION = '#f57900';
+
+// A button with its icon (a meaning of the icon table, icons.mjs) before its
+// words, plain: the icon red or green where the color says something (TONES),
+// never the button
+function iconTextButton(label, meaning, onClick, tip = '') {
+    const content = new Gtk.Box({spacing: 6, halign: Gtk.Align.CENTER});
+    const tone = Icons.TONES[meaning];
+    content.append(new Gtk.Image({icon_name: Icons.gnome[meaning],
+        css_classes: tone === 'negative' ? ['error'] : tone === 'positive' ? ['success'] : []}));
+    content.append(new Gtk.Label({label, use_underline: false}));
+    const b = new Gtk.Button({child: content, valign: Gtk.Align.CENTER});
+    if (tip)
+        b.tooltip_text = tip;
+    b.connect('clicked', onClick);
+    return b;
+}
+
 // Sounds from the sound theme (comma separated: the first one found plays)
 const SOUNDS = [
     ['Message', 'message-new-instant'],
@@ -61,7 +80,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             description: '~/.claude and ~/.claude-* are found automatically.'});
         sessions.add(spin('poll-interval', 'Check every', 'milliseconds', 1000, 60000, 500));
         sessions.add(spin('idle-poll-interval', '…while nothing runs',
-            'milliseconds, while no chat runs and the menu is closed', 1000, 300000, 1000));
+            'milliseconds, while no chat runs and the popup is closed', 1000, 300000, 1000));
         const dirs = new Adw.EntryRow({title: 'Extra config folders (comma separated)', show_apply_button: true,
             text: settings.get_string('extra-config-dirs')});
         dirs.connect('apply', () => settings.set_string('extra-config-dirs', dirs.text));
@@ -77,13 +96,13 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         notify.add(spin('notify-done-min-seconds', '…if the turn took at least',
             'seconds; also picks which finished turns the shortcut goes to, notifications on or off', 0, 3600, 10));
         notify.add(toggle('away-digest', 'A summary when you come back',
-            'after the screen was locked: what finished, failed or needs you, at the top of the menu, and as one notification while the ones above are on'));
+            'after the screen was locked: what finished, failed or needs you, at the top of the popup, and as one notification while the ones above are on'));
         notify.add(needs(spin('away-minutes', '…if you were away at least', 'minutes', 1, 240, 1), 'away-digest'));
         page.add(notify);
 
         // (a group's description is Pango markup: < is &lt;)
         const keys = new Adw.PreferencesGroup({title: 'Keyboard shortcut',
-            description: "Goes to the chat that needs you: the one waiting longest, then a finished turn you haven't seen. Press it again soon after for the next one. With none, it opens the menu. E.g. &lt;Super&gt;&lt;Shift&gt;c; empty for none."});
+            description: "Goes to the chat that needs you: the one waiting longest, then a finished turn you haven't seen. Press it again soon after for the next one. With none, it opens the popup. E.g. &lt;Super&gt;&lt;Shift&gt;c; empty for none."});
         keys.add(this._shortcutRow(settings, 'next-chat-shortcut', 'Go to the chat that needs you'));
         page.add(keys);
 
@@ -158,7 +177,11 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         commandRow.activatable_widget = commandSwitch;
         add.add(commandRow);
         const addRow = new Adw.ActionRow({title: ''});
-        const addButton = new Gtk.Button({label: 'Add and Log In…', valign: Gtk.Align.CENTER, css_classes: ['suggested-action']});
+        const addButton = iconTextButton('Add and Log In…', 'addAccount', () => {
+            const share = shareKeys[shareRow.selected];
+            act(['--add', nameRow.text.trim(), ...share ? ['--share-from', share] : [],
+                ...commandSwitch.active ? ['--command'] : []], 'add');
+        });
         addRow.add_suffix(addButton);
         add.add(addRow);
         page.add(add);
@@ -289,12 +312,6 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         };
         state.render = render;
 
-        addButton.connect('clicked', () => {
-            const share = shareKeys[shareRow.selected];
-            act(['--add', nameRow.text.trim(), ...share ? ['--share-from', share] : [],
-                ...commandSwitch.active ? ['--command'] : []], 'add');
-        });
-
         where.connect('notify::selected', () => {
             state.host = where.selected > 0 ? hosts[where.selected - 1] : '';
             list.title = state.host ? esc(`Accounts on ${state.host}`) : 'Accounts on this computer';
@@ -342,49 +359,53 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         if (a.chats > 0)
             parts.push(a.chats === 1 ? '1 chat running' : `${a.chats} chats running`);
         const row = new Adw.ActionRow({title: esc(a.label), subtitle: esc(parts.join(' · '))});
-        const button = (label, onClick, css = [], tip = '') => {
-            const b = new Gtk.Button({label, valign: Gtk.Align.CENTER, css_classes: css, tooltip_text: tip});
+        // (each with its icon, as Plasma's; a question's do-it button with the asking one's)
+        const button = (label, meaning, onClick, tip = '') => {
+            const b = meaning ? iconTextButton(label, meaning, onClick, tip)
+                : new Gtk.Button({label, valign: Gtk.Align.CENTER, tooltip_text: tip});
+            if (!meaning)
+                b.connect('clicked', onClick);
             b.sensitive = !state.busy;
-            b.connect('clicked', onClick);
             row.add_suffix(b);
             return b;
         };
         const rerender = () => state.render();
         if (state.confirm === `remove:${a.key}` || state.confirm === `logout:${a.key}`) {
             const removing = state.confirm.startsWith('remove:');
-            // (an SSH host's folder goes to that host's Trash)
-            row.subtitle = esc(removing && state.host
+            // (an SSH host's folder goes to that host's Trash; in orange, its
+            // buttons beside it, as every question)
+            row.subtitle = `<span foreground="${QUESTION}">${esc(removing && state.host
                 ? `Remove ${a.label} on ${state.host}? It logs out, then moves ${a.folder} to the Trash of ${state.host} with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.`
                 : removing
                     ? `Remove ${a.label}? It logs out, then moves ${a.folder} to the Trash with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.`
-                    : `Log out of ${a.label}? Claude deletes its login; its chats and history stay, and Log in… signs it in again (also with another account).`);
-            button(removing ? 'Remove' : 'Log out', () => act([removing ? '--remove' : '--logout', a.key], a.key),
-                [removing ? 'destructive-action' : 'suggested-action']);
-            button('Cancel', () => {
+                    : `Log out of ${a.label}? Claude deletes its login; its chats and history stay, and Log in… signs it in again (also with another account).`)}</span>`;
+            row.add_css_class('property');   // (the question at full strength, the account's name over it)
+            button(removing ? 'Remove' : 'Log out', removing ? 'delete' : 'signOut', () => act([removing ? '--remove' : '--logout', a.key], a.key));
+            button('Cancel', '', () => {
                 state.confirm = '';
                 rerender();
             });
             return row;
         }
         if (state.canDefault && state.accounts.length > 1 && a.loggedIn && (!a.default || (state.linked && !a.main))) {
-            button('Make Default', () => act(['--default', a.key], a.key), [], state.linked
+            button('Make Default', 'makeDefault', () => act(['--default', a.key], a.key), state.linked
                 ? "Lists it first and shows its usage in the top bar; VS Code's Claude and plain claude (~/.claude) run on it. Not while a chat runs through ~/.claude: it would go on on this account."
                 : "Lists it first and shows its usage in the top bar; VS Code's Claude runs on it. Plain claude stays on ~/.claude, a folder.");
         }
         if (!a.loggedIn) {
-            button('Log in…', () => act(['--login', a.key], a.key), [],
+            button('Log in…', 'signIn', () => act(['--login', a.key], a.key),
                 "Opens a terminal with Claude's own login (claude auth login): sign in in your browser with the account for this folder.");
         } else {
-            const out = button('Log out…', () => {
+            const out = button('Log out…', 'signOut', () => {
                 state.confirm = `logout:${a.key}`;
                 rerender();
-            }, [], a.chats > 0 ? "Close its chats first: they'd lose the login." : "Claude deletes this account's login (claude auth logout).");
+            }, a.chats > 0 ? "Close its chats first: they'd lose the login." : "Claude deletes this account's login (claude auth logout).");
             out.sensitive = !state.busy && a.chats === 0;
         }
-        const remove = button('Remove…', () => {
+        const remove = button('Remove…', 'delete', () => {
             state.confirm = `remove:${a.key}`;
             rerender();
-        }, [], a.notRemovable || 'Logs out and moves the folder to the Trash.');
+        }, a.notRemovable || 'Logs out and moves the folder to the Trash.');
         remove.sensitive = !state.busy && !a.notRemovable;
         if (a.commandName) {
             const check = new Gtk.CheckButton({label: a.commandName, active: !!a.command, valign: Gtk.Align.CENTER,
@@ -436,9 +457,31 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             }
         });
         const keep = new Adw.SwitchRow({title: "Keep a history beyond Claude's 30 days", sensitive: false});
-        const forget = new Gtk.Button({label: 'Delete…', valign: Gtk.Align.CENTER, css_classes: ['destructive-action'], sensitive: false});
+        const forget = iconTextButton('Delete…', 'erase', () => forgetAsk.show(true));
+        forget.sensitive = false;
         const saved = new Adw.ActionRow({title: 'Saved history'});
         saved.add_suffix(forget);
+        // A question under the setting that asked (as every question: in
+        // orange, its buttons beside it; the one that does it with the eraser)
+        const question = (confirm, onYes, onNo = () => {}) => {
+            const row = new Adw.ActionRow({visible: false});
+            const yes = iconTextButton(confirm, 'erase', () => {
+                row.visible = false;
+                onYes();
+            });
+            const no = new Gtk.Button({label: 'Cancel', valign: Gtk.Align.CENTER});
+            no.connect('clicked', () => {
+                row.visible = false;
+                onNo();
+            });
+            row.add_suffix(yes);
+            row.add_suffix(no);
+            return {row, show(on, text = '') {
+                if (text)
+                    row.title = `<span foreground="${QUESTION}">${GLib.markup_escape_text(text, -1)}</span>`;
+                row.visible = on;
+            }};
+        };
         let syncing = false;
         let deletedChats = 0;   // (in the history: off forgets them, so it asks first)
         const setKeep = on => {
@@ -461,45 +504,37 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             forget.sensitive = !!st.since;
         };
         const said = result => window.add_toast(new Adw.Toast({title: GLib.markup_escape_text(result.message || '', -1), timeout: 5}));
+        // the numbers of the chats Claude has deleted go for good: asked first
+        const offAsk = question('Stop Keeping It', async () => {
+            said(await week(['--history', 'off']));
+            sync();
+        }, () => setKeep(true));   // (kept on)
+        const forgetAsk = question('Delete', async () => {
+            said(await week(['--forget']));
+            sync();
+        });
+        forgetAsk.show(false, "Delete the Recap's saved history? It starts again from the chats Claude still has.");
         keep.connect('notify::active', async () => {
             if (syncing)
                 return;
-            if (!keep.active && deletedChats > 0) {
-                // the numbers of the chats Claude has deleted go for good: asked first
-                const dialog = new Adw.AlertDialog({heading: 'Stop keeping the history?',
-                    body: deletedChats === 1 ? 'The Recap forgets the numbers of the 1 chat Claude has deleted, for good.'
-                        : `The Recap forgets the numbers of the ${deletedChats} chats Claude has deleted, for good.`});
-                dialog.add_response('cancel', 'Cancel');
-                dialog.add_response('off', 'Stop Keeping It');
-                dialog.set_response_appearance('off', Adw.ResponseAppearance.DESTRUCTIVE);
-                dialog.choose(window, null, async (d, res) => {
-                    if (d.choose_finish(res) !== 'off') {
-                        setKeep(true);   // (kept on)
-                        return;
-                    }
-                    said(await week(['--history', 'off']));
-                    sync();
-                });
+            if (keep.active && offAsk.row.visible) {   // (switched back on while it asked: nothing changes)
+                offAsk.show(false);
                 return;
             }
+            if (!keep.active && deletedChats > 0) {
+                offAsk.show(true, deletedChats === 1
+                    ? 'Stop keeping the history? The Recap forgets the numbers of the 1 chat Claude has deleted, for good.'
+                    : `Stop keeping the history? The Recap forgets the numbers of the ${deletedChats} chats Claude has deleted, for good.`);
+                return;
+            }
+            offAsk.show(false);
             said(await week(['--history', keep.active ? 'on' : 'off']));
             sync();
         });
-        forget.connect('clicked', () => {
-            const dialog = new Adw.AlertDialog({heading: 'Delete the saved history?',
-                body: 'The Recap starts again from the chats Claude still has.'});
-            dialog.add_response('cancel', 'Cancel');
-            dialog.add_response('delete', 'Delete');
-            dialog.set_response_appearance('delete', Adw.ResponseAppearance.DESTRUCTIVE);
-            dialog.choose(window, null, async (d, res) => {
-                if (d.choose_finish(res) !== 'delete')
-                    return;
-                said(await week(['--forget']));
-                sync();
-            });
-        });
         group.add(keep);
+        group.add(offAsk.row);
         group.add(saved);
+        group.add(forgetAsk.row);
         sync();
         return group;
     }

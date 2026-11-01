@@ -8,6 +8,8 @@ import Pango from 'gi://Pango';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+import * as Icons from './icons.js';
+
 // The display's scale: CSS lengths follow it, sizes given in code (an actor's
 // height, Cairo's units) are in real pixels and must be multiplied by it
 export function scaleFactor() {
@@ -78,6 +80,31 @@ export function textButton(text, onClick, styleClass = 'claude-text-button', ico
     const b = new St.Button({style_class: styleClass, can_focus: true, child: content, x_align: Clutter.ActorAlign.START});
     b.connect('clicked', () => onClick(b));
     return b;
+}
+
+// A button whose icon is a meaning of the icon table (icons.mjs), colored
+// where the color says something (TONES: the icon, never the button)
+export function meaningButton(text, meaning, onClick, styleClass = 'claude-text-button claude-confirm-button') {
+    const tone = meaning ? Icons.TONES[meaning] : '';
+    return textButton(text, onClick, `${styleClass}${tone === 'negative' || tone === 'positive' ? ` claude-tone-${tone}` : ''}`,
+        meaning ? Icons.gnome[meaning] : '');
+}
+
+// "Do this?" in orange with a button that does it and one that doesn't
+// beside it, as every question before an action (Plasma's ConfirmLine): the
+// one that does it carries the icon of the button that asked (meaning).
+// enabled: false while another change is written (one at a time)
+export function confirmLine(text, confirmText, meaning, onConfirm, onCancel, {cancelText = 'Cancel', enabled = true} = {}) {
+    const line = box('claude-question', {x_expand: true});
+    line.add_child(paragraph(text, 'claude-fg-waiting', {y_align: Clutter.ActorAlign.CENTER}));
+    const yes = meaningButton(confirmText, meaning, onConfirm);
+    yes.y_align = Clutter.ActorAlign.CENTER;
+    yes.reactive = yes.can_focus = enabled;
+    line.add_child(yes);
+    const no = textButton(cancelText, onCancel, 'claude-text-button claude-confirm-button');
+    no.y_align = Clutter.ActorAlign.CENTER;
+    line.add_child(no);
+    return line;
 }
 
 // Clickable text (a session's name, a recent chat): underlined on hover

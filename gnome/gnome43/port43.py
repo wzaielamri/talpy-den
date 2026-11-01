@@ -34,7 +34,6 @@ PATCHES = [
     # libadwaita 1.2 and GTK 4.8
     ("prefs.js", "Adw.SpinRow.new_with_range(", "Compat.SpinRow.new_with_range(", 1),
     ("prefs.js", "new Adw.SwitchRow(", "new Compat.SwitchRow(", 2),
-    ("prefs.js", "new Adw.AlertDialog(", "new Compat.AlertDialog(", 2),
     ("prefs.js", "new Gtk.FileDialog(", "new Compat.FileDialog(", 1),
 ]
 

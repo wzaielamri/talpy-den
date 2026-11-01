@@ -347,7 +347,7 @@ KCM.SimpleKCM {
                             visible: page.canDefault && page.accounts.length > 1 && card.account.loggedIn
                                      && (!card.account.default || (page.linked && !card.account.main))
                             text: i18n("Make Default")
-                            icon.name: Icons.plasma.starred
+                            icon.name: Icons.plasma.makeDefault
                             enabled: page.busy === ""
                             onClicked: page.act(["--default", card.account.key], card.account.key)
                             QQC2.ToolTip.visible: hovered

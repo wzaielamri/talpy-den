@@ -95,7 +95,7 @@
 .claude-agent-detail { margin-top: 1px; margin-bottom: 3px; }
 .claude-recent { padding-left: 14px; }
 .claude-more { margin-left: 14px; }   /* ("Show N more" under a list) */
-.claude-more .claude-button-icon { icon-size: 12px; }
+.claude-perms-more { margin-left: 18px; }   /* (under the Permissions lines' text) */
 .claude-star-mark { color: #e0a800; padding: 0 3px; border-radius: 4px; }   /* (a starred chat's star, yellow: click to unstar) */
 .claude-star-mark .claude-button-icon { color: #e0a800; }
 /* icons colored where the color says something (icons.mjs TONES): the icon, never its button */
@@ -139,7 +139,7 @@
 .claude-row-button { border-radius: 6px; }   /* (the Recap's chats and folders) */
 .claude-row-button:hover, .claude-row-button:focus { background-color: rgba(127, 127, 127, 0.15); }
 
-/* Inline menus (new chat, SSH hosts, share) and questions (stop, keep only) */
+/* Inline menus (new chat, SSH hosts, share), and Stop's question with its choices */
 .claude-inline-menu {
     margin: 2px 4px 4px;
     padding: 6px;
@@ -163,6 +163,7 @@
     background-color: rgba(245, 121, 0, 0.1);
 }
 .claude-confirm-buttons { spacing: 6px; }
+.claude-question { spacing: 6px; padding: 2px 0; }   /* (a question with its buttons beside it: widgets.js confirmLine) */
 .claude-confirm-button { background-color: rgba(127, 127, 127, 0.2); }
 
 /* (the shell's .dash-label is a one-line pill: a tip's lines go left, in a box) */
