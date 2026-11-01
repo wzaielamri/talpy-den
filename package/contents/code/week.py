@@ -2438,7 +2438,8 @@ def project_items(home, cache_root, profiles, now_ms):
     the ids of the chats whose transcript is here, "paths": {chat id: its
     transcript}}, with the context read (its caches: save them)."""
     ctx = cs.Context(home=home, profiles=profiles, now_ms=now_ms, links=cs.LinkCache(cache_root / "links.json"),
-                     slugs=cs.SlugCache(cache_root / "plans.json"), chats=cs.ChatCache(cache_root / "chats.json"))
+                     slugs=cs.SlugCache(cache_root / "plans.json"), chats=cs.ChatCache(cache_root / "chats.json"),
+                     plan_dirs=cs.PlanDirs(cache_root / "plan-dirs.json"), plan_projects=cs.PlanProjects(cache_root))
     starred = cs.starred_of(cs.load_stars(cache_root))
     hidden = cs.load_hidden(cache_root)
     names, plans, memories, seen = {}, [], [], set()
@@ -2614,7 +2615,7 @@ def main(argv=None):
             hidden_paths = [p["path"] for p in rows if p["path"] in hidden]   # (an open chat there is theirs, not shown elsewhere)
             rows = [p for p in rows if p["path"] not in hidden]
             project_recaps(rows, ctx, items["paths"])
-            for saved in (ctx.links, ctx.slugs, ctx.chats):
+            for saved in (ctx.links, ctx.slugs, ctx.chats, ctx.plan_dirs, ctx.plan_projects):
                 saved.save()
             result = {"ok": True, "generatedAt": now_ms, "projects": rows, "hidden": len(hidden_paths), "hiddenPaths": hidden_paths}
         except Exception as exc:

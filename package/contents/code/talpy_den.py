@@ -126,11 +126,13 @@ def private_dir(path):
         os.chmod(path, 0o700)
 
 
-def write_json_atomic(path, data):
+def write_json_atomic(path, data, private=False):
+    """Write path in one go (a new file, renamed over it); private: only you can read it, whatever the umask."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
+        with (os.fdopen(os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8")
+              if private else open(tmp, "w", encoding="utf-8")) as f:
             json.dump(data, f, separators=(",", ":"))
         os.replace(tmp, path)
     except BaseException:
@@ -764,7 +766,7 @@ def finish_row(row, job, job_id, profile, ctx, alive):
             if rec.get("ultra") and not row["peek"].get("ultracode"):
                 row["peek"] = dict(row["peek"], ultracode=True)
         peek = row["peek"] or {}
-        row["plan"] = plan_of(profile, peek.get("slug"))
+        row["plan"] = plan_of(profile, peek.get("slug"), ctx)
         went_on = (CONTINUE_PROMPT[:30], RETRY_PROMPT[:30])
         if row["name"].startswith(went_on) and path is not None and getattr(ctx, "links", None) is not None:
             # a chat that went on by itself is named after that message: its own name instead
@@ -4433,17 +4435,21 @@ def plan_title(path):
     return ""
 
 
-def plan_of(profile, slug):
-    """{"slug", "title", "path", "updatedAt"} of the plan a chat made on this
-    profile, or None."""
-    path = plan_path(profile, slug)
+def plan_of(profile, slug, ctx=None):
+    """{"slug", "title", "path", "updatedAt", "inProject"} of the plan a chat
+    made on this profile (with ctx: else the one in a project's plans
+    folder: project_plan_of), or None."""
+    path, folder = plan_path(profile, slug), None
+    if path is not None and not path.is_file() and ctx is not None:
+        path, folder = project_plan_of(ctx, slug)
     try:
         st = path.stat() if path is not None else None
     except OSError:
         st = None
     if st is None or not path.is_file():
         return None
-    return {"slug": slug, "title": plan_title(path) or slug, "path": str(path), "updatedAt": int(st.st_mtime * 1000)}
+    return {"slug": slug, "title": plan_title(path) or slug, "path": str(path), "updatedAt": int(st.st_mtime * 1000),
+            "inProject": folder is not None}
 
 
 def plan_edited(plan_ms, transcript_mtime):
@@ -4550,10 +4556,15 @@ def all_transcripts(ctx):
 def account_plans(group, ctx, limit=PLANS_LISTED, starred=frozenset(), hidden=frozenset(), left_out=None):
     """The plans of an account's profiles, newest first: [{"key", "slug",
     "title", "path", "profileDir", "profile", "updatedAt", "shared", "chatId",
-    "cwd", "cwdShort", "starred"}], the chat being the one that made it
-    (where it's still there; None else). The first limit of them, then the
-    starred ones (slugs in starred) that are older. The ones you hid (slugs
-    in hidden) are left out, their slugs added to the set left_out."""
+    "cwd", "cwdShort", "starred", "inProject", "projectFolder"}], the chat
+    being the one that made it (where it's still there; None else), cwd its
+    folder (else the one noted while it was there; "": no project known),
+    projectFolder the folder that chat started in. With the plans in the
+    projects' plans folders listed under this account (project_plan_owner):
+    inProject, their project's folder as cwd, not shared (every account
+    reads them). The first limit of them, then the starred ones (slugs in
+    starred) that are older. The ones you hid (slugs in hidden) are left
+    out, their slugs added to the set left_out."""
     by_key = {p.key: p for p in ctx.profiles}
     found, seen = [], set()
     for key in group["profileKeys"]:
@@ -4570,16 +4581,22 @@ def account_plans(group, ctx, limit=PLANS_LISTED, starred=frozenset(), hidden=fr
             if not PLAN_SLUG.match(f.stem) or not f.is_file() or (st.st_dev, st.st_ino) in seen:
                 continue
             seen.add((st.st_dev, st.st_ino))
-            found.append((st.st_mtime, p, f, st))
+            found.append((st.st_mtime, p, f, st, None))
+    keys = set(group["profileKeys"])
+    link_project_plans(ctx, None if limit > 0 else set(starred))
+    for t, folder, f, st in project_plan_files(ctx):
+        owner = project_plan_owner(ctx, f.stem, folder)
+        if owner in keys and owner in by_key:
+            found.append((t, by_key[owner], f, st, folder))
     found.sort(key=lambda c: -c[0])
     if left_out is not None:
         left_out.update(c[2].stem for c in found if c[2].stem in hidden)
     found = [c for c in found if c[2].stem not in hidden]
     found = [c for i, c in enumerate(found) if i < limit or c[2].stem in starred]
     plans = []
-    for t, p, f, st in found:
+    for t, p, f, st, folder in found:
         plans.append({
-            "key": f"{p.key}/{f.stem}/plan",
+            "key": f"{p.key}/{f.stem}/project/plan" if folder else f"{p.key}/{f.stem}/plan",
             "slug": f.stem,
             "title": plan_title(f) or f.stem,
             "path": str(f),
@@ -4587,13 +4604,18 @@ def account_plans(group, ctx, limit=PLANS_LISTED, starred=frozenset(), hidden=fr
             "profile": p.label,
             "updatedAt": int(t * 1000),
             # linked into another profile's plans too (sharing.py)
-            "shared": st.st_nlink > 1 and any(q.real != p.real and same_file(plan_path(q, f.stem), st)
-                                              for q in ctx.profiles),
+            "shared": folder is None and st.st_nlink > 1
+                      and any(q.real != p.real and same_file(plan_path(q, f.stem), st) for q in ctx.profiles),
             "chatId": None, "chatProfileDir": None, "cwd": "", "cwdShort": "", "edited": False,
             "starred": f.stem in starred,
+            "inProject": folder is not None,  # (in a project's plans folder: every account reads it)
+            "projectFolder": folder or "",
         })
     if plans:
         find_plan_chats(plans, ctx)
+    for pl in plans:
+        if pl["inProject"]:  # (its project is where it is)
+            pl["cwd"], pl["cwdShort"] = pl["projectFolder"], short_path(pl["projectFolder"], ctx.home)
     return plans
 
 
@@ -4613,6 +4635,7 @@ def find_plan_chats(plans, ctx):
     slugs = getattr(ctx, "slugs", None)
     if slugs is None:
         return
+    noted, dirs = plan_projects_of(ctx), getattr(ctx, "plan_dirs", None)
     wanted = {pl["slug"]: pl for pl in plans}
     oldest = min(pl["updatedAt"] for pl in plans) / 1000 - 60
     for t, p, f, st in all_transcripts(ctx):
@@ -4623,9 +4646,506 @@ def find_plan_chats(plans, ctx):
         if pl is None:
             continue
         _, cwd, _ = ctx.links.chat_info(f, st)
+        start = dirs.start_folder(f"{p.key}/{f.parent.name}", f) if dirs is not None else ""
         pl["chatId"], pl["chatProfileDir"] = f.stem, p.key
         pl["cwd"], pl["cwdShort"] = cwd, short_path(cwd, ctx.home) if cwd else ""
+        pl["projectFolder"] = start or cwd
         pl["edited"] = plan_edited(pl["updatedAt"], t)
+        noted.note(slug, cwd, start or cwd, f.stem, p.key)  # (it keeps its project once the chat is gone)
+    # The ones whose chat wasn't found: the folder noted while it was there,
+    # and that chat if it's still there (a plan moved under another name)
+    by_id = None
+    for pl in wanted.values():
+        e = noted.get(pl["slug"])
+        if e is None:
+            continue
+        pl["cwd"], pl["cwdShort"] = e["cwd"], short_path(e["cwd"], ctx.home)
+        pl["projectFolder"] = e.get("project") or e["cwd"]
+        if valid_id(e.get("chat")):
+            if by_id is None:
+                by_id = {f.stem: (t, p) for t, p, f, _st in reversed(all_transcripts(ctx))}
+            t, p = by_id.get(e["chat"], (None, None))
+            if p is not None:
+                pl["chatId"], pl["chatProfileDir"] = e["chat"], p.key
+                pl["edited"] = plan_edited(pl["updatedAt"], t)
+
+
+# ---------------------------------------------------------------- plans in projects
+#
+# Claude writes a plan to <cfg>/plans/<slug>.md unless the setting
+# plansDirectory names a folder inside the project (relative to the folder
+# the chat started in; one that leads out of it counts as none). It takes
+# the setting from the project's .claude/settings.local.json (in a git
+# repository, the one in the repository's main folder: Claude reads it
+# there), else the project's .claude/settings.json, else the account's
+# settings.json (then it's for every project). Talpy Den lists the plans in
+# that folder of each project chats started in, and in the project's
+# .claude/plans (where Move to project puts a plan when the project names no
+# folder), each once: under the account whose chat made it, else the one
+# with the newest chat there, with the project's folder. What it read of
+# each project (the folder each projects/ folder is for, its git
+# repository, its settings, its plan folders) is kept in plan-dirs.json:
+# Claude writes a plan while a chat runs, so a check looks again at the
+# projects with a chat in the last hour (and one a plan was just noted or
+# moved to), the others every 10 minutes; it lists the plan folders that
+# are there each time.
+#
+# A plan keeps its project once its chat is deleted: the folder of the chat
+# that made it is noted the first time they're matched (plan-projects.json).
+
+PLANS_SETTING = "plansDirectory"
+PROJECT_PLANS_DIR = os.path.join(".claude", "plans")  # (Move to project, where the project names no folder)
+LOCAL_SETTINGS = os.path.join(".claude", "settings.local.json")
+PROJECT_SETTINGS = os.path.join(".claude", "settings.json")
+PLAN_DIRS_CHECK_S = 3600  # the folder a plansDirectory value names is looked up again after this long
+PROJECT_RECHECK_S = 600  # a project with no chat lately: its settings and folders are looked at again after this long
+PROJECT_ACTIVE_S = 3600  # one with a chat this recent: at each check
+START_FOLDER_BYTES = 262144
+
+
+def inside(path, folder):
+    """Is path folder or inside it (both normalised)?"""
+    return path == folder or path.startswith(folder.rstrip("/") + "/")
+
+
+def plans_dir_in(project, value):
+    """The folder (absolute) a plansDirectory value names for the project
+    folder, or None where Claude takes the account's plans/ instead: empty,
+    not text, a backslash in it, or out of the project, also through a link
+    (Claude's own check: the nearest part of it that is there, followed,
+    stays inside the project)."""
+    if not isinstance(value, str) or not value or "\\" in value or not project.startswith("/"):
+        return None
+    root = os.path.normpath(project)
+    target = os.path.normpath(os.path.join(root, value))
+    if not inside(target, root):
+        return None
+    real_root = os.path.realpath(root)
+    there = target
+    while not os.path.exists(there):
+        up = os.path.dirname(there)
+        if up == there:
+            return None
+        there = up
+    return target if inside(os.path.realpath(there), real_root) else None
+
+
+def canonical_git_root(folder):
+    """The main folder of the git repository folder is in (of a worktree:
+    its repository's), or "" outside one."""
+    d = os.path.normpath(folder)
+    while True:
+        git = os.path.join(d, ".git")
+        if os.path.isdir(git):
+            return d
+        if os.path.isfile(git):
+            try:
+                with open(git, encoding="utf-8") as f:
+                    line = f.read(4096).strip()
+                gitdir = os.path.join(d, line[len("gitdir:"):].strip()) if line.startswith("gitdir:") else ""
+                with open(os.path.join(gitdir, "commondir"), encoding="utf-8") as f:
+                    common = os.path.normpath(os.path.join(gitdir, f.read(4096).strip()))
+            except (OSError, ValueError):
+                return d  # (a submodule, or a worktree whose repository went)
+            return os.path.dirname(common) if os.path.basename(common) == ".git" else d
+        up = os.path.dirname(d)
+        if up == d:
+            return ""
+        d = up
+
+
+def first_cwd(path):
+    """The folder a chat started in: its transcript's first cwd (in its first 256 KB), or ''."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(START_FOLDER_BYTES)
+    except OSError:
+        return ""
+    for line in head.splitlines():
+        if b'"cwd"' not in line:
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        cwd = e.get("cwd") if isinstance(e, dict) else None
+        if isinstance(cwd, str) and cwd.startswith("/"):
+            return cwd
+    return ""
+
+
+class PlanDirs:
+    """What the checks learned about the projects' plan folders, kept in
+    plan-dirs.json: the folder each projects/<name> folder is for (its
+    chats' first cwd), each project's plan folders (project_dirs), the
+    folders its plansDirectory values name (looked up again after
+    PLAN_DIRS_CHECK_S), and plansDirectory of each settings file (read
+    again once the file changed). save=False: read it, never write it (the
+    actions)."""
+
+    VERSION = 1
+    SECTIONS = ("folders", "dirs", "settings", "projects")
+
+    def __init__(self, path, save=True):
+        self.path, self.saving = path, save
+        data = read_json(path)
+        ok = isinstance(data, dict) and data.get("version") == self.VERSION \
+            and all(isinstance(data.get(s), dict) for s in self.SECTIONS)
+        self.old = data if ok else {}
+        self.data = {"version": self.VERSION, **{s: {} for s in self.SECTIONS}}
+        self.changed = not ok
+        self.users = {}  # (a profile's own settings.json: read once per check)
+
+    def _get(self, section, key):
+        value = self.data[section].get(key)
+        return self.old.get(section, {}).get(key) if value is None else value
+
+    def _keep(self, section, key, value):
+        if self.old.get(section, {}).get(key) != value:
+            self.changed = True
+        self.data[section][key] = value
+
+    def start_folder(self, key, transcript):
+        """The folder projects/<name> is for (key: "<profile key>/<name>"), from one of its transcripts."""
+        cached = self._get("folders", key)
+        folder = cached if isinstance(cached, str) and cached else first_cwd(transcript)
+        if folder:
+            self._keep("folders", key, folder)
+        return folder
+
+    def _checked(self, section, key, now, look):
+        cached = self._get(section, key)
+        if isinstance(cached, list) and len(cached) == 2 and isinstance(cached[0], str) \
+                and isinstance(cached[1], (int, float)) and 0 <= now - cached[1] < PLAN_DIRS_CHECK_S:
+            self._keep(section, key, cached)
+            return cached[0]
+        found = look()
+        self._keep(section, key, [found, int(now)])
+        return found
+
+    def project_dirs(self, folder, now, again, look):
+        """A project's plan folders (look(): project_plan_dirs), as last
+        looked up unless that's PROJECT_RECHECK_S old, or again."""
+        cached = self._get("projects", folder)
+        ok = isinstance(cached, list) and len(cached) == 2 and isinstance(cached[0], list) \
+            and all(isinstance(d, str) for d in cached[0]) and isinstance(cached[1], (int, float))
+        if ok and not again and 0 <= now - cached[1] < PROJECT_RECHECK_S:
+            self._keep("projects", folder, cached)
+            return cached[0]
+        found = look()
+        # (the same as before: kept as it was, so a project at work doesn't make each check write the file)
+        self._keep("projects", folder, cached if ok and again and cached[0] == found else [found, int(now)])
+        return found
+
+    def plans_dir(self, folder, value, now):
+        """plans_dir_in(folder, value), or None."""
+        if not isinstance(value, str) or not value:
+            return None
+        return self._checked("dirs", f"{folder}\n{value}", now, lambda: plans_dir_in(folder, value) or "") or None
+
+    def setting(self, path):
+        """(whether it's there, its value) of plansDirectory in a settings file."""
+        try:
+            st = os.stat(path)
+        except OSError:
+            return False, None
+        stamp = [st.st_mtime_ns, st.st_size]
+        cached = self._get("settings", path)
+        if not (isinstance(cached, list) and len(cached) == 4 and cached[:2] == stamp):
+            data = read_json(Path(path))
+            there = isinstance(data, dict) and PLANS_SETTING in data
+            value = data[PLANS_SETTING] if there and isinstance(data[PLANS_SETTING], str) else None
+            cached = stamp + [there, value]
+        self._keep("settings", path, cached)
+        return bool(cached[2]), cached[3] if isinstance(cached[3], str) else None
+
+    def user_setting(self, profile):
+        if profile.key not in self.users:
+            self.users[profile.key] = self.setting(str(profile.path / "settings.json"))
+        return self.users[profile.key]
+
+    def save(self):
+        if not self.saving:
+            return
+        kept = keep_unused(self.old, self.data, self.SECTIONS, time.time())
+        if self.changed or kept or any(set(self.data[s]) != set(self.old.get(s, {})) for s in self.SECTIONS):
+            try:
+                write_json_atomic(self.path, self.data, private=True)
+            except OSError:
+                pass
+
+
+def plan_dirs_of(ctx):
+    """The context's PlanDirs (one that's only read, where it has none)."""
+    dirs = getattr(ctx, "plan_dirs", None)
+    if dirs is None:
+        dirs = ctx.plan_dirs = PlanDirs(cache_dir(ctx.home) / "plan-dirs.json", save=False)
+    return dirs
+
+
+def folder_settings(ctx, folder, has_claude=None):
+    """[(where it comes from: "local" or "project", its value)] of the
+    plansDirectory a project folder's own settings set, the one Claude takes
+    first: its settings.local.json (in a git repository's main folder: Claude
+    reads it there), its settings.json. has_claude False: the folder has no
+    .claude (its own files aren't looked for)."""
+    dirs = plan_dirs_of(ctx)
+    if has_claude is None:
+        has_claude = os.path.isdir(os.path.join(folder, ".claude"))
+    root = canonical_git_root(folder)
+    base = root if root and root != os.path.normpath(str(ctx.home)) else folder
+    out = []
+    if has_claude or base != folder:
+        there, value = dirs.setting(os.path.join(base, LOCAL_SETTINGS))
+        if there:
+            out.append(("local", value))
+    if has_claude:
+        there, value = dirs.setting(os.path.join(folder, PROJECT_SETTINGS))
+        if there:
+            out.append(("project", value))
+    return out
+
+
+def project_settings(ctx, folder, profile):
+    """(where it comes from: "local", "project", "user" or "", its value) of
+    plansDirectory for the account's chats in the project folder, as Claude
+    reads it: the project's settings.local.json, else its settings.json,
+    else the account's own."""
+    own = folder_settings(ctx, folder)
+    if own:
+        return own[0]
+    there, value = plan_dirs_of(ctx).user_setting(profile)
+    return ("user", value) if there else ("", None)
+
+
+def local_settings_file(ctx, folder):
+    """The project's .claude/settings.local.json that Claude reads (in a git
+    repository: the one in its main folder)."""
+    root = canonical_git_root(folder)
+    return os.path.join(root if root and root != os.path.normpath(str(ctx.home)) else folder, LOCAL_SETTINGS)
+
+
+def project_plan_dirs(ctx, folder, keys=None):
+    """[plans folder] of a project: where its plansDirectory puts the plans
+    of the chats there of each account (of the profile keys; None: all),
+    and its .claude/plans (not the home folder's: there it's ~/.claude's
+    own). A project without a .claude costs a stat, or two in a git
+    repository's subfolder."""
+    dirs, now = plan_dirs_of(ctx), time.time()
+    try:
+        os.stat(os.path.join(folder, ".claude"))
+        has_claude = True
+    except OSError:
+        has_claude = False
+    own = folder_settings(ctx, folder, has_claude)
+    values = [own[0][1]] if own else [v for there, v in (dirs.user_setting(p) for p in ctx.profiles
+                                                          if keys is None or p.key in keys) if there]
+    out = []
+    for value in values:
+        d = dirs.plans_dir(folder, value, now)
+        if d and d not in out:
+            out.append(d)
+    if has_claude and os.path.normpath(folder) != os.path.normpath(str(ctx.home)):
+        d = os.path.join(folder, PROJECT_PLANS_DIR)
+        if d not in out:
+            out.append(d)
+    return out
+
+
+def start_folders(ctx):
+    """{folder: (when its newest chat changed, that chat's profile, the
+    profile keys of its chats)} of the folders chats started in, but
+    Claude's own and Talpy Den's (once per check)."""
+    found = getattr(ctx, "start_folders", None)
+    if found is not None:
+        return found
+    dirs, newest = plan_dirs_of(ctx), {}
+    for t, p, f, _st in all_transcripts(ctx):  # (newest first)
+        path = str(f)
+        folder = path[:path.rfind("/")]
+        key = (p.key, folder)
+        if key not in newest:
+            newest[key] = (t, p, f, folder[folder.rfind("/") + 1:])
+    skip = list(getattr(ctx, "own_folders", None) or own_folders(ctx.profiles))
+    if getattr(ctx, "usage_check", None):
+        skip.append(ctx.usage_check)
+    found = {}
+    for (key, _d), (t, p, f, name) in newest.items():
+        folder = dirs.start_folder(f"{key}/{name}", f)
+        if not folder or any(inside(folder, s) for s in skip):
+            continue
+        if folder not in found:
+            found[folder] = (t, p, {p.key})
+        else:
+            keys = found[folder][2] | {p.key}
+            found[folder] = (t, p, keys) if t > found[folder][0] else found[folder][:2] + (keys,)
+    ctx.start_folders = found
+    return found
+
+
+def project_plan_files(ctx):
+    """[(mtime, project folder, path, stat)] of the plans in the projects'
+    plan folders (project_plan_dirs), newest first, each file once; never
+    an account's own plans/ (once per check)."""
+    found = getattr(ctx, "project_plan_files", None)
+    if found is not None:
+        return found
+    found, dirs_seen, seen, accounts = [], set(), set(), set()
+    for p in ctx.profiles:
+        try:
+            st = os.stat(str(p.real / "plans"))
+            accounts.add((st.st_dev, st.st_ino))
+        except OSError:
+            pass
+    dirs, now = plan_dirs_of(ctx), time.time()
+    noted = {}  # (a project a plan was noted for or moved to lately: looked at again)
+    for e in list(plan_projects_of(ctx).plans.values()) + list(plan_projects_of(ctx).new.values()):
+        if isinstance(e.get("at"), (int, float)) and e["at"] / 1000 > noted.get(e.get("project"), 0):
+            noted[e.get("project")] = e["at"] / 1000
+    for folder, (t, _p, keys) in sorted(start_folders(ctx).items()):  # (a project before the ones inside it)
+        again = t >= now - PROJECT_ACTIVE_S or noted.get(folder, 0) >= now - PROJECT_RECHECK_S
+        for d in dirs.project_dirs(folder, now, again, lambda: project_plan_dirs(ctx, folder, keys)):
+            if d in dirs_seen:
+                continue
+            dirs_seen.add(d)
+            try:
+                st = os.stat(d)
+                if (st.st_dev, st.st_ino) in accounts:
+                    continue
+                entries = list(os.scandir(d))
+            except OSError:
+                continue
+            for e in entries:
+                if not e.name.endswith(".md") or not PLAN_SLUG.match(e.name[:-3]):
+                    continue
+                try:
+                    st = e.stat()
+                except OSError:
+                    continue
+                if not stat_is_file(st) or (st.st_dev, st.st_ino) in seen:
+                    continue
+                seen.add((st.st_dev, st.st_ino))
+                found.append((st.st_mtime, folder, Path(e.path), st))
+    found.sort(key=lambda c: -c[0])
+    ctx.project_plan_files = found
+    return found
+
+
+def stat_is_file(st):
+    return st.st_mode & 0o170000 == 0o100000  # (stat.S_ISREG)
+
+
+def project_plan_of(ctx, slug, folder=None):
+    """(path, project folder) of the newest plan called slug in a project's
+    plans folder (in folder's, if one is there), or (None, None)."""
+    hits = [(f, d) for _t, d, f, _st in project_plan_files(ctx) if f.stem == slug]
+    return next(((f, d) for f, d in hits if d == folder), hits[0] if hits else (None, None))
+
+
+def project_plan_owner(ctx, slug, folder):
+    """The profile key a project's plan is listed under: of the chat that
+    made it (as noted), else of the newest chat in the project."""
+    keys = {p.key for p in ctx.profiles}
+    noted = plan_projects_of(ctx).get(slug)
+    if noted and noted.get("profile") in keys:
+        return noted["profile"]
+    _t, p, _keys = start_folders(ctx).get(folder, (0, None, ()))
+    return p.key if p is not None else ctx.profiles[0].key
+
+
+class PlanProjects:
+    """The folder of the chat that made each plan, noted when they're
+    matched (plan-projects.json, changed under a lock: every copy of Talpy
+    Den writes it), so a plan keeps its project once its chat is deleted:
+    {slug: {"cwd": the chat's folder, "project": the folder it started in,
+    "chat": its id, "profile": its profile key, "at": when}}."""
+
+    FILE = "plan-projects.json"
+
+    def __init__(self, cache_root, save=True):
+        self.root, self.saving = cache_root, save
+        self.plans = load_plan_projects(cache_root)
+        self.new = {}
+
+    def get(self, slug):
+        return self.new.get(slug) or self.plans.get(slug)
+
+    def note(self, slug, cwd, project, chat, profile):
+        if not cwd:
+            return
+        entry = {"cwd": cwd, "project": project or cwd, "chat": chat or "", "profile": profile or ""}
+        old = self.get(slug)
+        if old is None or any(old.get(k) != v for k, v in entry.items()):
+            self.new[slug] = dict(entry, at=int(time.time() * 1000))
+
+    def save(self):
+        if self.new and self.saving:
+            try:
+                change_plan_projects(self.root, put=self.new)
+            except OSError:
+                pass
+        self.plans.update(self.new)
+        self.new = {}
+
+
+def plan_projects_of(ctx):
+    found = getattr(ctx, "plan_projects", None)
+    if found is None:
+        found = ctx.plan_projects = PlanProjects(cache_dir(ctx.home), save=False)
+    return found
+
+
+def load_plan_projects(cache_root):
+    data = read_json(cache_root / PlanProjects.FILE)
+    plans = data.get("plans") if isinstance(data, dict) else None
+    if not isinstance(plans, dict):
+        return {}
+    return {s: e for s, e in plans.items() if isinstance(s, str) and PLAN_SLUG.match(s) and isinstance(e, dict)
+            and isinstance(e.get("cwd"), str) and e["cwd"].startswith("/")}
+
+
+def change_plan_projects(cache_root, put=None, forget=(), rename=None):
+    """Note plans' projects (put: {slug: entry}), forget some, or carry one
+    over to another name (rename: (old, new)), under a lock."""
+    private_dir(cache_root)
+    with open(cache_root / "plan-projects.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        plans = load_plan_projects(cache_root)
+        before = dict(plans)
+        plans.update(put or {})
+        for slug in forget:
+            plans.pop(slug, None)
+        if rename and rename[0] in plans:
+            plans[rename[1]] = plans.pop(rename[0])
+        if plans != before:
+            write_json_atomic(cache_root / PlanProjects.FILE, {"plans": plans}, private=True)
+
+
+def link_project_plans(ctx, wanted=None):
+    """Match the projects' plans (of the slugs wanted; None: all) that have
+    no noted project to the chats that made them, once per check: then each
+    is listed under its chat's account (project_plan_owner)."""
+    done = getattr(ctx, "project_plans_linked", None)
+    if done is None:
+        done = ctx.project_plans_linked = set()
+    noted = plan_projects_of(ctx)
+    todo = [{"slug": f.stem, "updatedAt": int(t * 1000), "chatId": None}
+            for t, _d, f, _st in project_plan_files(ctx)
+            if f.stem not in done and (wanted is None or f.stem in wanted) and noted.get(f.stem) is None]
+    done.update(pl["slug"] for pl in todo)
+    if todo:
+        find_plan_chats(todo, ctx)
+
+
+def find_project_plan(profiles, slug, home, cache_root=None):
+    """(path, project folder) of a plan in a project's plans folder, for an
+    action (the caches only read), or (None, None)."""
+    if not (isinstance(slug, str) and PLAN_SLUG.match(slug)) or home is None:
+        return None, None
+    root = cache_dir(home) if cache_root is None else cache_root
+    ctx = Context(home=home, profiles=profiles, plan_dirs=PlanDirs(root / "plan-dirs.json", save=False),
+                  plan_projects=PlanProjects(root, save=False))
+    return project_plan_of(ctx, slug)
 
 
 # ---------------------------------------------------------------- memories
@@ -4854,7 +5374,7 @@ def claude_plan(transcript, slug):
     """The plan <slug>.md as Claude last wrote it, from its transcript; None
     when that can't be told (no full version, or an edit that doesn't fit)."""
     text, pending = None, {}
-    name_end = f"/plans/{slug}.md"
+    name_end = f"/{slug}.md"  # (in <cfg>/plans, or a project's plansDirectory)
     try:
         with open(transcript, encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -5022,7 +5542,8 @@ def find_chats(home, cache_root, extra_dirs, query, limit=FIND_LIMIT):
     if not words:
         return {"ok": True, "results": [], "more": False}
     profiles = discover_profiles(home, extra_dirs)
-    ctx = Context(home=home, profiles=profiles, links=LinkCache(cache_root / "links.json"))
+    ctx = Context(home=home, profiles=profiles, links=LinkCache(cache_root / "links.json"),
+                  plan_dirs=PlanDirs(cache_root / "plan-dirs.json"), plan_projects=PlanProjects(cache_root, save=False))
     prompts, used = {}, {}
     for p in profiles:
         for e in history_all(p):
@@ -5080,6 +5601,7 @@ def find_chats(home, cache_root, extra_dirs, query, limit=FIND_LIMIT):
     found = {"ok": True, "results": results, "more": more, "generatedAt": int(time.time() * 1000),
              **find_more(ctx, words, accounts)}
     ctx.links.save()
+    ctx.plan_dirs.save()
     return found
 
 
@@ -5122,26 +5644,31 @@ def find_more(ctx, words, accounts):
             folders[cwd]["chats"] += 1
     projects = [e for e in folders.values() if e is not None][:FIND_MORE_LIMIT]
 
-    plans, seen = [], set()
+    plans, seen, by_key = [], set(), {p.key: p for p in ctx.profiles}
+    files = []
     for p in ctx.profiles:
         try:
-            files = list(p.path.glob("plans/*.md"))
+            files += [(p, f, None) for f in p.path.glob("plans/*.md")]
         except OSError:
             continue
-        for f in files:
-            try:
-                st = f.stat()
-            except OSError:
-                continue
-            if not PLAN_SLUG.match(f.stem) or (st.st_dev, st.st_ino) in seen:
-                continue
-            seen.add((st.st_dev, st.st_ino))
-            title = plan_title(f) or f.stem
-            if has(title, body(f)):
-                gid, account = accounts.get(p.key, ("", p.label))
-                plans.append({"key": f"{p.key}/{f.stem}/plan", "slug": f.stem, "title": title, "path": str(f),
-                              "profileDir": p.key, "profile": p.label, "groupId": gid, "account": account,
-                              "updatedAt": int(st.st_mtime * 1000)})
+    # (a project's: under the account its chat was on, else its newest chat's)
+    files += [(by_key.get(project_plan_owner(ctx, f.stem, d)), f, d) for _t, d, f, _st in project_plan_files(ctx)]
+    for p, f, folder in files:
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        if p is None or not PLAN_SLUG.match(f.stem) or (st.st_dev, st.st_ino) in seen:
+            continue
+        seen.add((st.st_dev, st.st_ino))
+        title = plan_title(f) or f.stem
+        if has(title, body(f)):
+            gid, account = accounts.get(p.key, ("", p.label))
+            plans.append({"key": f"{p.key}/{f.stem}/project/plan" if folder else f"{p.key}/{f.stem}/plan",
+                          "slug": f.stem, "title": title, "path": str(f),
+                          "profileDir": p.key, "profile": p.label, "groupId": gid, "account": account,
+                          "updatedAt": int(st.st_mtime * 1000), "inProject": folder is not None,
+                          "cwd": folder or "", "cwdShort": short_path(folder, ctx.home) if folder else ""})
     plans.sort(key=lambda x: -x["updatedAt"])
 
     memories = []
@@ -5446,16 +5973,17 @@ SHORT_ID = re.compile(r"\b([0-9a-f]{8})\b")
 ONE_WORD = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 
 
-def find_plan(profiles, slug, profile_key=None):
+def find_plan(profiles, slug, profile_key=None, home=None):
     """The plan file <cfg>/plans/<slug>.md (on the profile profile_key, else
-    any), or None."""
+    any), else (with home) the one called slug in a project's plans folder
+    (find_project_plan), or None."""
     for p in profiles:
         if profile_key and not matches_profile(p, profile_key):
             continue
         path = plan_path(p, slug)
         if path is not None and path.is_file():
             return path
-    return None
+    return find_project_plan(profiles, slug, home)[0] if home is not None else None
 
 
 def task_prompt(text, plan=None, home=None, fits=None):
@@ -5588,7 +6116,7 @@ def run_task(home, extra_dirs, background, folder, profile_key, text, plan_slug=
     options = chat_options(model, effort, mode) + picture_options(home, text)
     plan = None
     if plan_slug:
-        plan = find_plan(profiles, plan_slug, plan_profile)
+        plan = find_plan(profiles, plan_slug, plan_profile, home)
         if plan is None:
             return {"ok": False, "message": "That plan isn't there any more"}
     prompt = task_prompt(text, plan, home)
@@ -5780,7 +6308,7 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
 def plan_markdown(home, extra_dirs, slug, profile_key=None):
     """{"ok", "title", "markdown", "path"} of a plan (--plan-text, for an SSH
     host's plan opened here)."""
-    path = find_plan(discover_profiles(home, extra_dirs), slug, profile_key)
+    path = find_plan(discover_profiles(home, extra_dirs), slug, profile_key, home)
     if path is None:
         return {"ok": False, "message": "That plan isn't there any more"}
     with open(path, "rb") as f:
@@ -7547,6 +8075,8 @@ def forget_deleted(cache_root, kind, item_id, host=""):
         change_dismissed(cache_root, forget=[item_id])
     else:
         change_hidden(cache_root, kind, forget=[item_id])
+    if kind == "plans":
+        change_plan_projects(cache_root, forget=[item_id])
 
 
 # ---------------------------------------------------------------- main
@@ -7586,6 +8116,7 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
         agents=AgentCache(cache_root / "agents.json"), links=LinkCache(cache_root / "links.json"),
         chats=ChatCache(cache_root / "chats.json"), slugs=SlugCache(cache_root / "plans.json"), changed={},
         tests=TestsCache(cache_root / "tests.json"),
+        plan_dirs=PlanDirs(cache_root / "plan-dirs.json"), plan_projects=PlanProjects(cache_root),
         own_folders=own_folders(profiles),
         prompts={real: last_prompts(entries) for real, entries in histories.items()},
         errors=errors, unknown={}, usage_check=str(cache_root / USAGE_CHECK_DIR),
@@ -7797,6 +8328,8 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
     ctx.chats.save()
     ctx.slugs.save()
     ctx.tests.save()
+    ctx.plan_dirs.save()
+    ctx.plan_projects.save()
     if forget:
         try:
             change_dismissed(cache_root, forget=forget)

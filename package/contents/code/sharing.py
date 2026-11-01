@@ -554,11 +554,15 @@ def keep_only_on(profiles, chat_id, name, root):
     return keep_only(profiles, chat_id, keep, root)
 
 
-def plan_sharing(profiles, slug, name, share_it, to=None):
+def plan_sharing(profiles, slug, name, share_it, to=None, home=None):
     """--share-plan (from the profile name's copy, with every profile or only
-    to) and --unshare-plan (keep it on name only): (ok, message)."""
+    to) and --unshare-plan (keep it on name only): (ok, message). A plan in
+    a project's folder (with home: looked for) isn't shared: every account
+    reads it there."""
     if not cs.PLAN_SLUG.match(slug or ""):
         return False, f"Not a plan name: {slug}"
+    if home is not None and not plan_copies(profiles, slug) and cs.find_project_plan(profiles, slug, home)[0]:
+        return False, "This plan is in its project's folder: every account has it there"
     source = named(profiles, name) if name else None
     if name and source is None:
         return False, f"No Claude profile called {name}"
@@ -676,12 +680,19 @@ def chat_to_delete(profiles, chat_id, name, root):
     return labels, paths, path
 
 
-def plan_to_delete(profiles, slug, name):
+def plan_to_delete(profiles, slug, name, home=None):
     """A plan that goes (the profile name's, else the only one), from every
-    profile it's linked into: (its accounts, its paths, the file), or (None, why not, None)."""
+    profile it's linked into: (its accounts, its paths, the file), or (None,
+    why not, None). With home, one in a project's plans folder too, when
+    the profile name (else any) has none of that name: ([], [its path], it)."""
     if not cs.PLAN_SLUG.match(slug or ""):
         return None, f"Not a plan name: {slug}", None
     have = plan_copies(profiles, slug)
+    owner = named(profiles, name) if name else None
+    if home is not None and not any(owner is None or p.real == owner.real for p, _ in have):
+        path, _folder = cs.find_project_plan(profiles, slug, home)
+        if path is not None:
+            return [], [path], path
     if not have:
         return None, "That plan isn't there any more", None
     if name:
@@ -798,11 +809,12 @@ def delete(profiles, kind, item, name, root, home, describe=False):
                     f"chats in {cs.short_path(folder, home)}.")
         labels, paths, busy = [p.label], [path], None
     elif kind == "plan":
-        labels, paths, src = plan_to_delete(profiles, item, name)
+        labels, paths, src = plan_to_delete(profiles, item, name, home)
         if labels is None:
             return {"ok": False, "message": paths}
         title, busy = cs.plan_title(src) or item, None
-        question = f"Delete the plan “{title}” on {and_list(labels)}? It goes to the Trash."
+        question = (f"Delete the plan “{title}” on {and_list(labels)}? It goes to the Trash." if labels else
+                    f"Delete the plan “{title}” from {cs.short_folder(str(src.parent), home)}? It goes to the Trash.")
     else:
         labels, paths, src = chat_to_delete(profiles, item, name, root)
         if labels is None:
@@ -819,8 +831,9 @@ def delete(profiles, kind, item, name, root, home, describe=False):
     if at_work:
         why = f"It runs in the background on {at_work}. Stop it first."
     if describe:
+        # ("folder": a project's plans folder the plan is in, as the question names it)
         return {"ok": not why, "message": why or question, "question": question, "name": title, "accounts": labels,
-                "open": busy or ""}
+                "open": busy or "", "folder": cs.short_folder(str(src.parent), home) if kind == "plan" and not labels else ""}
     if why:
         return {"ok": False, "message": why}
     if kind == "chat":
@@ -883,7 +896,7 @@ def main(argv=None):
         elif action == "--unshare":
             ok, message = keep_only_on(profiles, chat_id, name, root)
         elif action in ("--share-plan", "--unshare-plan"):
-            ok, message = plan_sharing(profiles, chat_id, name, action == "--share-plan", to)
+            ok, message = plan_sharing(profiles, chat_id, name, action == "--share-plan", to, home)
         elif deleting:
             more = delete(profiles, action[len("--delete-"):], chat_id, name, root, home, describe)
             ok, message = more.pop("ok"), more.pop("message")

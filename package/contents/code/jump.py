@@ -1252,7 +1252,7 @@ class Task:
         talpy_den.task_prompt); ValueError if its plan is gone."""
         path = None
         if self.plan:
-            path = cs.find_plan(profiles, self.plan, self.plan_profile)
+            path = cs.find_plan(profiles, self.plan, self.plan_profile, home)
             if path is None:
                 raise ValueError("That plan isn't there any more")
         return cs.task_prompt(self.text, path, home, fits)
@@ -1538,7 +1538,7 @@ def queue_task(home, extra_dirs, dirname, folder, task, start_at, host="", accou
             return False, (f"Claude doesn't trust {cs.short_folder(folder, home)} yet, and a background chat can't ask: "
                            "start a chat there in a terminal once, or pick a project folder")
         if task.plan:
-            path = cs.find_plan(profiles, task.plan, task.plan_profile)
+            path = cs.find_plan(profiles, task.plan, task.plan_profile, home)
             if path is None:
                 return False, "That plan isn't there any more"
             plan_title = cs.plan_title(path)
@@ -2455,7 +2455,7 @@ def continue_command(home, extra_dirs, session_id, profile_dir, end_first=False)
 def open_plan(home, extra_dirs, slug, profile_dir=None):
     """Open a plan file (open_markdown: rendered to read; with your own app
     for Markdown, a change you make there is the plan's)."""
-    path = cs.find_plan(cs.discover_profiles(home, extra_dirs), slug, profile_dir)
+    path = cs.find_plan(cs.discover_profiles(home, extra_dirs), slug, profile_dir, home)
     if path is None:
         return False, "That plan isn't there any more"
     ok, why = open_markdown(path, home)
@@ -2466,7 +2466,7 @@ def open_plan(home, extra_dirs, slug, profile_dir=None):
 
 def edit_plan(home, extra_dirs, slug, profile_dir=None):
     """Open a plan's Markdown file itself, to change it (edit_markdown)."""
-    path = cs.find_plan(cs.discover_profiles(home, extra_dirs), slug, profile_dir)
+    path = cs.find_plan(cs.discover_profiles(home, extra_dirs), slug, profile_dir, home)
     if path is None:
         return False, "That plan isn't there any more"
     ok, why = edit_markdown(path, home)
@@ -2510,7 +2510,7 @@ def send_plan_feedback(home, extra_dirs, slug, profile_dir, chat_id, comments=()
     it goes to the clipboard and the chat comes up, to paste it there (with
     print_command, the caller does both). (ok, message, extra): extra's
     "how" is "resumed", "typed" or "clipboard", with "text" and "copied"."""
-    plan = cs.find_plan(cs.discover_profiles(home, extra_dirs), slug, profile_dir)
+    plan = cs.find_plan(cs.discover_profiles(home, extra_dirs), slug, profile_dir, home)
     if plan is None:
         return False, "That plan isn't there any more", {}
     chat_profile, transcript = (find_chat(home, extra_dirs, chat_id) if chat_id != "-"
@@ -2589,12 +2589,12 @@ def copy_to_clipboard(text):
 
 def share_plan(home, extra_dirs, slug, profile_dir=None, to=None):
     """Share a plan (from profile_dir's copy) with every profile, or only with to."""
-    return sharing.plan_sharing(cs.discover_profiles(home, extra_dirs), slug, profile_dir, True, to)
+    return sharing.plan_sharing(cs.discover_profiles(home, extra_dirs), slug, profile_dir, True, to, home)
 
 
 def unshare_plan(home, extra_dirs, slug, profile_dir):
     """Keep a shared plan on profile_dir only."""
-    return sharing.plan_sharing(cs.discover_profiles(home, extra_dirs), slug, profile_dir, False)
+    return sharing.plan_sharing(cs.discover_profiles(home, extra_dirs), slug, profile_dir, False, home=home)
 
 
 def share(home, extra_dirs, session_id, profile_dir=None):
