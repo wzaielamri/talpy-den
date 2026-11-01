@@ -87,6 +87,12 @@ const TABLE = {
     playful:         ['games-config-options',          'play',       'applications-games-symbolic'],      // Playful Talpy (a toggle)
     ticked:          ['dialog-ok',                     null,         'object-select-symbolic'],           // a menu's ticked item (GNOME)
     accounts:        ['system-users',                  'user',       'system-users-symbolic'],
+    // (the settings' categories: General is settings, Chats chats, Recap recap,
+    // Hosts host, Accounts accounts; VS Code's Settings editor shows no icons)
+    notifications:   ['notifications',                 null,         'preferences-system-notifications-symbolic'],
+    usageLimits:     ['speedometer',                   null,         'power-profile-performance-symbolic'],
+    pet:             ['animal',                        null,         'emoji-nature-symbolic'],            // Talpy, the pet
+    advanced:        ['tools',                         null,         'preferences-other-symbolic'],
     chooseFile:      ['document-open',                 null,         'document-open-symbolic'],
     vscodeApp:       ['vscode',                        null,         'text-editor-symbolic'],             // VS Code's own icon (GNOME: if it has none)
     // ---- things

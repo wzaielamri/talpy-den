@@ -10,6 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent / "package/contents"
 PETS = ROOT / "pets"
 TALPY = ROOT / "ui/talpy"
+# The settings' categories (every front end, this order) and Plasma's page for each
+CATEGORIES = ["General", "Chats", "Notifications", "Usage & limits", "Talpy", "Recap", "Hosts", "Advanced"]
+SETTINGS_PAGES = ["configGeneral.qml", "configChats.qml", "configNotifications.qml", "configUsage.qml", "configTalpy.qml",
+                  "configRecap.qml", "configHosts.qml", "configAdvanced.qml"]
 
 
 def quoted(text):
@@ -1619,7 +1623,7 @@ class PlainTextTests(unittest.TestCase):
     def test_every_label_and_tooltip_is_plain_text(self):
         missing = []
         for path in sorted((ROOT / "ui").glob("*.qml")):
-            if path.name == "configGeneral.qml":  # fixed texts only
+            if path.name in SETTINGS_PAGES:  # fixed texts only
                 continue
             lines = path.read_text().split("\n")
             for i, line in enumerate(lines):
@@ -1960,7 +1964,8 @@ class SettingsPageTests(unittest.TestCase):
                                  (ROOT / "config/main.xml").read_text()))
         gnome = dict(re.findall(r'<key name="([\w-]+)" type="i">\s*<default>(\d+)<',
                                 (repo / "gnome/extension/schemas/org.gnome.shell.extensions.talpy-den.gschema.xml").read_text()))
-        code = json.loads((repo / "vscode/package.json").read_text())["contributes"]["configuration"]["properties"]
+        code = {k: v for c in json.loads((repo / "vscode/package.json").read_text())["contributes"]["configuration"]
+                for k, v in c["properties"].items()}
         for key, gkey in (("pollInterval", "poll-interval"), ("idlePollInterval", "idle-poll-interval")):
             self.assertEqual({int(plasma[key]), int(gnome[gkey]), code["talpyDen." + key]["default"]}, {int(plasma[key])}, key)
 
@@ -1986,22 +1991,49 @@ class SettingsPageTests(unittest.TestCase):
                                      f"{path.name}:{i + 1}: a closable message box bound to visible")
 
     def test_every_cfg_property_matches_a_setting_of_its_type(self):
-        # Plasma writes every cfg_ property of the page back on Apply (and
-        # passes the defaults in): one without a setting of its type in
-        # main.xml, or a setting without one, is lost or mangled
+        # Plasma writes every cfg_ property of the page shown back on Apply
+        # (and passes every setting and its default to each page): one without
+        # a setting of its type in main.xml, or a setting on no page, is lost
+        # or mangled, and one on two pages is written back by both
         kinds = dict(re.findall(r'<entry name="(\w+)" type="(\w+)"', (ROOT / "config/main.xml").read_text()))
-        page = (ROOT / "ui/configGeneral.qml").read_text()
-        controls = {m.group(2): m.group(1) for m in re.finditer(r"(\S+) \{\n\s+id: (\w+)\n", page)}
         of_control = {"QQC2.SpinBox": "Int", "QQC2.Slider": "Int", "QQC2.CheckBox": "Bool", "QQC2.TextField": "String",
                       "SoundChooser": "String"}
         of_type = {"string": "String", "bool": "Bool", "int": "Int"}
-        found, defaults = {}, {}
-        for m in re.finditer(r"property alias cfg_(\w+): (\w+)\.\w+", page):
-            found[m.group(1)] = of_control[controls[m.group(2)]]
-        for m in re.finditer(r"property (string|bool|int) cfg_(\w+)", page):
-            (defaults if m.group(2).endswith("Default") and m.group(2)[:-7] in kinds else found)[m.group(2)] = of_type[m.group(1)]
+        found, defaults, where = {}, {}, {}
+        for name in SETTINGS_PAGES:
+            page = (ROOT / "ui" / name).read_text()
+            controls = {m.group(2): m.group(1) for m in re.finditer(r"(\S+) \{\n\s+id: (\w+)\n", page)}
+            own, own_defaults = {}, {}
+            for m in re.finditer(r"property alias cfg_(\w+): (\w+)\.\w+", page):
+                own[m.group(1)] = of_control[controls[m.group(2)]]
+            for m in re.finditer(r"property (string|bool|int) cfg_(\w+)", page):
+                (own_defaults if m.group(2).endswith("Default") and m.group(2)[:-7] in kinds else own)[m.group(2)] = of_type[m.group(1)]
+            for key in own:
+                self.assertNotIn(key, where, f"cfg_{key} on {where.get(key)} and {name}")
+                where[key] = name
+            # (each page declares the defaults of its own settings, no others)
+            self.assertEqual({k + "Default": v for k, v in own.items() if k in kinds}, own_defaults, name)
+            found.update(own)
+            defaults.update(own_defaults)
         self.assertEqual(found, kinds)
         self.assertEqual({k + "Default": v for k, v in kinds.items()}, defaults)
+
+    def test_the_settings_pages_are_the_categories_in_their_order(self):
+        # The same categories in the same order in Plasma, VS Code and GNOME;
+        # Plasma's Accounts page after them
+        config = (ROOT / "config/config.qml").read_text()
+        names = re.findall(r'name: i18n\("([^"]+)"\)', config)
+        self.assertEqual(names, CATEGORIES + ["Accounts"])
+        sources = re.findall(r'source: "(\w+\.qml)"', config)
+        self.assertEqual(sorted(sources), sorted(p.name for p in (ROOT / "ui").glob("config*.qml")))
+        for icon in re.findall(r"icon: (.+)", config):
+            self.assertRegex(icon, r"^Icons\.plasma\.\w+$")   # (from the icon table, as every icon)
+        vscode = json.loads((ROOT.parent.parent / "vscode/package.json").read_text())["contributes"]["configuration"]
+        self.assertEqual([c["title"] for c in sorted(vscode, key=lambda c: c["order"])], CATEGORIES)
+        prefs = (ROOT.parent.parent / "gnome/extension/prefs.js").read_text()
+        self.assertEqual(re.findall(r"category\('([^']+)'", prefs), CATEGORIES)
+        self.assertIn("new Adw.PreferencesPage({title: 'Accounts'", prefs)
+        self.assertLess(prefs.rindex("category('Advanced'"), prefs.index("window.add(this._accountsPage("))
 
     def test_the_settings_pages_call_the_helpers_with_flags_they_have(self):
         # A flag a helper doesn't know ends in its usage text, never an answer:
@@ -2021,7 +2053,7 @@ class SettingsPageTests(unittest.TestCase):
         host_actions = re.search(r"ACCOUNT_ACTIONS = \((.*?)\)", (code / "remote.py").read_text(), re.S).group(1)
         for flag in sorted(actions):
             self.assertIn(f'"{flag}"', host_actions, flag)
-        general = (ROOT / "ui/configGeneral.qml").read_text()
+        general = "".join((ROOT / "ui" / name).read_text() for name in SETTINGS_PAGES)
         for flag in sorted(set(re.findall(r"--[a-z-]+", general))):
             self.assertTrue(any(f'"{flag}"' in main_of(name) for name in ("jump.py", "notify_sound.py", "week.py", "pane.py",
                                                                          "dictate.py")),

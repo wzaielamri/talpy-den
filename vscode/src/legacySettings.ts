@@ -43,9 +43,15 @@ export async function carryOverSettings(
   return copied;
 }
 
-/** The names (after "talpyDen.") of the settings the extension has. */
-export function settingNames(manifest: { contributes?: { configuration?: { properties?: Record<string, unknown> } } }): string[] {
-  const properties = manifest.contributes?.configuration?.properties ?? {};
+type SettingsSection = { properties?: Record<string, unknown> };
+
+/** The names (after "talpyDen.") of the settings the extension has: in its
+ *  one section, or in each of its categories (contributes.configuration as a
+ *  list, which the Settings editor shows as Talpy Den › General, › Chats…). */
+export function settingNames(manifest: { contributes?: { configuration?: SettingsSection | SettingsSection[] } }): string[] {
+  const configuration = manifest.contributes?.configuration;
+  const sections = Array.isArray(configuration) ? configuration : configuration ? [configuration] : [];
+  const properties = Object.assign({}, ...sections.map((s) => s.properties ?? {}));
   return Object.keys(properties)
     .filter((k) => k.startsWith("talpyDen."))
     .map((k) => k.slice("talpyDen.".length));

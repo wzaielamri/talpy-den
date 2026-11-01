@@ -77,7 +77,7 @@ class HostTests(unittest.TestCase):
         action = main[main.index('text: i18n("Playful Talpy")') - 200:]
         self.assertIn("checkable: true", action[:600])
         self.assertIn("checked: Plasmoid.configuration.playful", action[:600])
-        self.assertIn("cfg_playful: playful.checked", (UI / "configGeneral.qml").read_text())
+        self.assertIn("cfg_playful: playful.checked", (UI / "configTalpy.qml").read_text())
 
     def test_plasma_pets_drop_jokes_greetings_and_the_cookie(self):
         pet = (UI / "Pet.qml").read_text()

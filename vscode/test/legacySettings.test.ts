@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import { carryOverSettings, type Inspected, type SettingsScope, settingNames } from "../src/legacySettings";
 
@@ -39,4 +41,24 @@ test("setting names come from the manifest", () => {
   const manifest = { contributes: { configuration: { properties: { "talpyDen.a": {}, "talpyDen.b": {}, "other.c": {} } } } };
   assert.deepEqual(settingNames(manifest), ["a", "b"]);
   assert.deepEqual(settingNames({}), []);
+});
+
+test("setting names come from every category of the manifest", () => {
+  const manifest = {
+    contributes: {
+      configuration: [
+        { title: "General", properties: { "talpyDen.a": {} } },
+        { title: "Chats", properties: { "talpyDen.b": {}, "other.c": {} } },
+        { title: "Empty" },
+      ],
+    },
+  };
+  assert.deepEqual(settingNames(manifest), ["a", "b"]);
+});
+
+test("the extension's own manifest names every setting it has", () => {
+  const manifest = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf8"));
+  const names = settingNames(manifest);
+  assert.ok(names.length >= 40, String(names.length));
+  for (const name of ["pollInterval", "openIn", "sshHosts", "playfulTalpy", "pythonPath"]) assert.ok(names.includes(name), name);
 });

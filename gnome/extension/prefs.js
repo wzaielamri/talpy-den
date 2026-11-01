@@ -56,9 +56,19 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
         window._claudeSettings = settings;   // lives as long as the window
-        window.set_default_size(620, 760);
-        const page = new Adw.PreferencesPage({title: 'Talpy Den', icon_name: Icons.gnome.settings});
-        window.add(page);
+        window.set_default_size(880, 760);   // (wide enough for the nine pages' names in its switcher)
+        // One page per category, as Plasma's settings pages and VS Code's
+        // Settings editor (Talpy Den › General, › Chats…), then Accounts
+        const category = (title, meaning) => {
+            const page = new Adw.PreferencesPage({title, icon_name: Icons.gnome[meaning]});
+            window.add(page);
+            return page;
+        };
+        const group = (page, title = '', description = '') => {
+            const g = new Adw.PreferencesGroup({title, description});
+            page.add(g);
+            return g;
+        };
 
         const spin = (key, title, subtitle, min, max, step) => {
             const row = Adw.SpinRow.new_with_range(min, max, step);
@@ -76,68 +86,77 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             return row;
         };
 
-        const sessions = new Adw.PreferencesGroup({title: 'Chats',
-            description: '~/.claude and ~/.claude-* are found automatically.'});
-        sessions.add(spin('poll-interval', 'Check every', 'milliseconds', 1000, 60000, 500));
-        sessions.add(spin('idle-poll-interval', '…while nothing runs',
-            'milliseconds, while no chat runs and the popup is closed', 1000, 300000, 1000));
-        const dirs = new Adw.EntryRow({title: 'Extra config folders (comma separated)', show_apply_button: true,
-            text: settings.get_string('extra-config-dirs')});
-        dirs.connect('apply', () => settings.set_string('extra-config-dirs', dirs.text));
-        sessions.add(dirs);
-        sessions.add(spin('keep-done-hours', 'Keep finished background chats', 'hours; 0 hides them right away', 0, 168, 1));
-        sessions.add(spin('recent-chats', 'Recent chats per account',
+        // ---- General: the chat list, the top bar
+        const general = category('General', 'settings');
+        const list = group(general, 'Chat list');
+        list.add(spin('recent-chats', 'Recent chats per account',
             'How many show at a time (Show N more for the next ones), also under ★ Starred chats; 0 hides Recent chats', 0, 20, 1));
-        page.add(sessions);
+        list.add(spin('keep-done-hours', 'Keep finished background chats', 'hours; 0 hides them right away', 0, 168, 1));
+        list.add(toggle('show-tokens', 'Show token totals', 'from local transcripts'));
+        group(general, 'Top bar').add(toggle('show-usage-in-panel', 'Show 5-hour usage next to the icon'));
 
-        const notify = new Adw.PreferencesGroup({title: 'Notifications'});
-        notify.add(toggle('notify-waiting', 'When a chat needs input', 'a permission prompt or a question'));
-        notify.add(toggle('notify-done', 'When a chat finishes its turn'));
-        notify.add(spin('notify-done-min-seconds', '…if the turn took at least',
+        // ---- Chats (where they open is the popup's Terminal | VS Code switch)
+        const chats = category('Chats', 'chats');
+        group(chats, 'Open in',
+            'New and recent chats open in a terminal or in VS Code: the Terminal | VS Code switch at the top of their lists picks it.');
+
+        // ---- Notifications: when, sounds, while you're away, the shortcut
+        const notifications = category('Notifications', 'notifications');
+        const when = group(notifications, 'When to notify');
+        when.add(toggle('notify-waiting', 'When a chat needs input', 'a permission prompt or a question'));
+        when.add(toggle('notify-done', 'When a chat finishes its turn'));
+        when.add(spin('notify-done-min-seconds', '…if the turn took at least',
             'seconds; also picks which finished turns the shortcut goes to, notifications on or off', 0, 3600, 10));
-        notify.add(toggle('away-digest', 'A summary when you come back',
-            'after the screen was locked: what finished, failed or needs you, at the top of the popup, and as one notification while the ones above are on'));
-        notify.add(needs(spin('away-minutes', '…if you were away at least', 'minutes', 1, 240, 1), 'away-digest'));
-        page.add(notify);
-
-        // (a group's description is Pango markup: < is &lt;)
-        const keys = new Adw.PreferencesGroup({title: 'Keyboard shortcut',
-            description: "Goes to the chat that needs you: the one waiting longest, then a finished turn you haven't seen. Press it again soon after for the next one. With none, it opens the popup. E.g. &lt;Super&gt;&lt;Shift&gt;c; empty for none."});
-        keys.add(this._shortcutRow(settings, 'next-chat-shortcut', 'Go to the chat that needs you'));
-        page.add(keys);
-
-        const sounds = new Adw.PreferencesGroup({title: 'Sounds',
-            description: "Sounds come from your sound theme. They stay quiet while Do Not Disturb is on."});
+        const sounds = group(notifications, 'Sounds', 'Sounds come from your sound theme. They stay quiet while Do Not Disturb is on.');
         sounds.add(toggle('notify-sound', 'Play a sound with these notifications'));
         sounds.add(needs(spin('sound-volume', 'Volume', 'percent', 0, 100, 5), 'notify-sound'));
         sounds.add(needs(this._soundRow(window, settings, 'sound-waiting', 'Needs input'), 'notify-sound'));
         sounds.add(needs(this._soundRow(window, settings, 'sound-done', 'Finished'), 'notify-sound'));
         sounds.add(needs(this._soundRow(window, settings, 'sound-failed', 'Failed or stopped'), 'notify-sound'));
-        page.add(sounds);
+        const away = group(notifications, "While you're away");
+        away.add(toggle('away-digest', 'A summary when you come back',
+            'after the screen was locked: what finished, failed or needs you, at the top of the popup, and as one notification while the ones above are on'));
+        away.add(needs(spin('away-minutes', '…if you were away at least', 'minutes', 1, 240, 1), 'away-digest'));
+        // (a group's description is Pango markup: < is &lt;)
+        group(notifications, 'Keyboard shortcut',
+            "Goes to the chat that needs you: the one waiting longest, then a finished turn you haven't seen. Press it again soon after for the next one. With none, it opens the popup. E.g. &lt;Super&gt;&lt;Shift&gt;c; empty for none.")
+            .add(this._shortcutRow(settings, 'next-chat-shortcut', 'Go to the chat that needs you'));
 
-        const ssh = new Adw.PreferencesGroup({title: 'SSH hosts',
-            description: "Pick SSH hosts with the SSH hosts button at the top of the popup. They need key-based login (Talpy Den can't type a password) and python3 on the host; nothing gets installed there."});
-        ssh.add(spin('remote-poll-seconds', 'Check SSH hosts every', 'seconds', 10, 600, 10));
-        page.add(ssh);
-
-        const look = new Adw.PreferencesGroup({title: 'Panel and popup'});
-        look.add(toggle('show-usage-in-panel', 'Show 5-hour usage next to the icon'));
-        look.add(spin('usage-refresh-minutes', 'Fetch plan usage older than',
+        // ---- Usage & limits
+        group(category('Usage & limits', 'usageLimits')).add(spin('usage-refresh-minutes', 'Fetch plan usage older than',
             "minutes; VS Code's Claude Code panel runs no status line, so while one of an account's chats works, Claude Code fetches its usage this old (as /usage does: no tokens, no chat saved), at most this often; 0 never",
             0, 60, 1));
-        look.add(toggle('show-pet', 'Show Talpy, the pet', 'in the popup and in notifications'));
-        look.add(needs(toggle('playful-talpy', 'Playful Talpy',
+
+        // ---- Talpy
+        const pet = group(category('Talpy', 'pet'));
+        pet.add(toggle('show-pet', 'Show Talpy, the pet', 'in the popup and in notifications'));
+        pet.add(needs(toggle('playful-talpy', 'Playful Talpy',
             'his tricks and props and jokes; off, he only shows what your chats do (moods, lamp, quiet moves)'), 'show-pet'));
-        look.add(needs(spin('chat-pets', 'Chat pets per account, at most', '0 keeps only the big Talpy', 0, 8, 1),
+        pet.add(needs(spin('chat-pets', 'Chat pets per account, at most', '0 keeps only the big Talpy', 0, 8, 1),
             'show-pet'));
-        look.add(toggle('show-tokens', 'Show token totals', 'from local transcripts'));
-        look.add(this._currencyRow(settings));
-        page.add(look);
-        page.add(this._historyGroup(window));
-        const perms = new Adw.PreferencesGroup({title: 'Permissions'});
-        perms.add(toggle('recap-rules', 'Suggest rules for the permission prompts you answered',
+
+        // ---- Recap: its currency, its kept history, the suggested rules
+        const recap = category('Recap', 'recap');
+        group(recap).add(this._currencyRow(settings));
+        recap.add(this._historyGroup(window));
+        group(recap, 'Suggested rules').add(toggle('recap-rules', 'Suggest rules for the permission prompts you answered',
             "The Permissions tab offers rules that would have let them go without asking, each with an Allow… button. Off, it only counts the prompts, and there's nothing to allow by mistake. Either way it lists the permissions you gave, to revoke them."));
-        page.add(perms);
+
+        // ---- Hosts
+        group(category('Hosts', 'host'), 'SSH hosts',
+            "Pick SSH hosts with the SSH hosts button at the top of the popup. They need key-based login (Talpy Den can't type a password) and python3 on the host; nothing gets installed there.")
+            .add(spin('remote-poll-seconds', 'Check SSH hosts every', 'seconds', 10, 600, 10));
+
+        // ---- Advanced: how often Talpy Den checks, extra Claude folders
+        const advanced = category('Advanced', 'advanced');
+        const checks = group(advanced, 'Checks');
+        checks.add(spin('poll-interval', 'Check every', 'milliseconds', 1000, 60000, 500));
+        checks.add(spin('idle-poll-interval', '…while nothing runs',
+            'milliseconds, while no chat runs and the popup is closed', 1000, 300000, 1000));
+        const dirs = new Adw.EntryRow({title: 'Extra config folders (comma separated)', show_apply_button: true,
+            text: settings.get_string('extra-config-dirs')});
+        dirs.connect('apply', () => settings.set_string('extra-config-dirs', dirs.text));
+        group(advanced, 'Claude folders', '~/.claude and ~/.claude-* are found automatically.').add(dirs);
 
         window.add(this._accountsPage(window, settings));
     }
@@ -439,7 +458,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
     // --forget): one choice for every copy of the widget and the VS Code
     // extension, kept next to their cache, so it changes at once
     _historyGroup(window) {
-        const group = new Adw.PreferencesGroup({title: 'Recap history',
+        const group = new Adw.PreferencesGroup({title: 'History',
             description: "Claude Code deletes chats after 30 days (its cleanupPeriodDays setting). The Recap's Overall keeps their numbers past that, in ~/.cache/talpy-den: times, tokens, costs, folders and chat names. Off, it keeps only what Claude still has. This changes at once, for the VS Code extension too."});
         const week = args => new Promise(resolve => {
             try {

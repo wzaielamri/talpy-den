@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The settings in categories:** the Settings editor lists them under
+  *Talpy Den › General*, *› Chats*, *› Notifications*, *› Usage & limits*,
+  *› Talpy*, *› Recap*, *› Hosts* and *› Advanced*, as Talpy Den's
+  settings on Plasma and GNOME; every setting keeps its name and value.
+  They were one long list.
 - **A chat's go-on waits for the commands it runs in the background,
   then ends them:** a chat a usage limit stopped that still runs a
   command it started in the background (a server, say) looks at work, so
