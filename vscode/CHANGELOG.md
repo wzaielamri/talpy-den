@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- ***Start it now* on a go-on that waits for its chat's background
+  commands ends them at once** and goes on, and says so: its answer names
+  what it ended, as a notification and a line in `go-on.log`, as when its
+  15 minutes run out; it waited on.
 - **A project's dots take its chats' row colours:** in the Projects tab
   (and the Focus view's lines), a chat a usage limit stopped (or one that
   failed) is a red dot, as its row; two chats at *Limit* showed as green

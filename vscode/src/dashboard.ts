@@ -476,12 +476,13 @@ export class Dashboard implements vscode.Disposable {
 
   private starting = new Set<string>();
 
-  async startQueued(t: QueuedTask): Promise<void> {
+  // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so)
+  async startQueued(t: QueuedTask, now = false): Promise<void> {
     if (this.starting.has(t.id)) return;
     this.starting.add(t.id);
     this.emit();
     try {
-      const answer = await this.backend.action("jump.py", ["--start-queued", t.id, ...configDirArgs()], 120000);
+      const answer = await this.backend.action("jump.py", ["--start-queued", t.id, ...(now ? ["--now"] : []), ...configDirArgs()], 120000);
       const what = queuedWhat(t).split("\n")[0];
       if (t.afterTurn) {
         // your reply, sent as the chat's turn ended

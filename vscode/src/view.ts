@@ -364,7 +364,7 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       case "startQueued": {
         // (a task of this computer's queue, as the extension knows it)
         const t = this.dash.state().status?.queue?.find((q) => q.id === m.id);
-        if (t && !this.actions.demoOnly()) void this.dash.startQueued(t);
+        if (t && !this.actions.demoOnly()) void this.dash.startQueued(t, m.now === true);
         break;
       }
       case "openOverlap": {

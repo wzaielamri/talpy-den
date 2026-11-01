@@ -3048,9 +3048,10 @@ PlasmoidItem {
         stopper.connectSource(cmd)
     }
 
-    function startQueued(t) {
+    // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so)
+    function startQueued(t, now) {
         startingTasks = Object.assign({}, startingTasks, { [t.id]: Date.now() })
-        const cmd = "python3 -I " + shellQuote(codeDir + "jump.py") + " --start-queued " + shellQuote(t.id) + configDirArgs
+        const cmd = "python3 -I " + shellQuote(codeDir + "jump.py") + " --start-queued " + shellQuote(t.id) + (now ? " --now" : "") + configDirArgs
                     + " # " + Date.now()
         queueRuns[cmd] = t
         queueRunner.connectSource(cmd)

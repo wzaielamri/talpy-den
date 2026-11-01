@@ -912,7 +912,7 @@ export type WebviewMessage =
   | { type: "continuePlanChat"; groupId: string; host?: string; plan: string }
   | { type: "sharePlan"; groupId: string; host?: string; plan: string }
   | { type: "findChat" }
-  | { type: "startQueued"; id: string }
+  | { type: "startQueued"; id: string; now?: boolean }
   | { type: "openOverlap"; chat: ChatRef } // the first other chat changing the same files
   | { type: "unqueue"; id: string }
   | { type: "queueContinue"; chat: ChatRef; keep?: boolean } // go on by itself once the limit resets (keep: and after later limits)

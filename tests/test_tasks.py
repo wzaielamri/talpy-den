@@ -1382,6 +1382,45 @@ class GoOnWaitsTests(TaskFixture):
         self.assertEqual(len(self.log_lines()), 2)
         self.assertTrue(self.log_lines()[1].endswith(answer["message"]))
 
+    def test_start_it_now_ends_what_it_waits_for_at_once_and_says_so(self):
+        # "yes end it and say that" (2026-11-01): Start it now on a go-on
+        # that waits for its chat's background commands doesn't wait on
+        (task,) = cs.load_queue(self.cache_root())
+        self.assertTrue(self.queue("--start-queued", task["id"])["waits"])
+        ended = []
+
+        def end(home, entry, profile, claude=None):
+            ended.append(entry["jobId"])
+            self.session_file.unlink()
+            return True, "Stopped"
+        with mock.patch.object(cs, "end_background_work", side_effect=end):
+            answer = self.queue("--start-queued", task["id"], "--now")
+        self.assertEqual(ended, [self.SID[:8]])
+        self.assertEqual(answer, {"ok": True, "message": "“Fix it” started now: it ended its background command "
+                                                         "“python3 -m http.server 8000” and went on in the background on "
+                                                         "work (1a2b3c4d)",
+                                  "ended": ["python3 -m http.server 8000"], "notify": True})
+        self.assertEqual(cs.load_queue(self.cache_root()), [])
+        self.assertTrue(self.log_lines()[-1].endswith(answer["message"]))
+        # an SSH host's: it asks the host to end them at once (its clock may be behind)
+        self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude", "--at", str(self.at), "--cwd",
+                                   "/srv/app", "--host", "lab", "--name", "Lab chat")["ok"])
+        (lab,) = cs.load_queue(self.cache_root())
+        import remote
+        with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": "Went on"}) as ask:
+            self.queue("--start-queued", lab["id"], "--now")
+        self.assertEqual(ask.call_args[0][1][-2:], ["--ends-at", "1"])
+        # the queued line's Start it now asks for it, in both front ends (the go-on at its time doesn't)
+        repo = Path(__file__).resolve().parent.parent
+        self.assertIn("onClicked: root.startQueued(queuedLine.task, true)",
+                      (repo / "package/contents/ui/GroupSection.qml").read_text())
+        main = (repo / "package/contents/ui/main.qml").read_text()
+        self.assertIn('(now ? " --now" : "")', main)
+        self.assertIn("            startQueued(t)\n", main)
+        self.assertIn('post({ type: "startQueued", id: t.id, now: true })',
+                      (repo / "vscode/webview/components/QueuedTasks.tsx").read_text())
+        self.assertIn('...(now ? ["--now"] : [])', (repo / "vscode/src/dashboard.ts").read_text())
+
     def test_a_go_on_with_nothing_in_the_background_is_as_ever(self):
         self.session_file.unlink()
         (task,) = cs.load_queue(self.cache_root())

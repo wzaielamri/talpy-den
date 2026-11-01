@@ -483,14 +483,16 @@ ColumnLayout {
                             icon.width: Kirigami.Units.iconSizes.small
                             icon.height: Kirigami.Units.iconSizes.small
                             Layout.alignment: Qt.AlignTop
-                            onClicked: root.startQueued(queuedLine.task)
+                            onClicked: root.startQueued(queuedLine.task, true)
 
                             PlasmaCore.ToolTipArea {
                                 textFormat: Text.PlainText
                                 anchors.fill: parent
                                 mainText: i18n("Start it now")
                                 subText: queuedLine.task.scheduled ? i18n("In the background, without waiting for its time.")
+                                         : queuedLine.task.waits ? i18n("Ends the commands it waits for at once and goes on in the background.")
                                          : i18n("In the background, without waiting for the limit to reset. While the limit lasts, Claude stops again at once.")
+                                           + (queuedLine.task.chat ? " " + i18n("Commands it still runs in the background are ended first.") : "")
                             }
                         }
                         PlasmaComponents3.ToolButton {

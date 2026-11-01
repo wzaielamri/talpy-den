@@ -71,9 +71,12 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
               title={
                 t.scheduled
                   ? "Start it now\nIn the background, without waiting for its time."
-                  : "Start it now\nIn the background, without waiting for the limit to reset. While the limit lasts, Claude stops again at once."
+                  : t.waits
+                    ? "Start it now\nEnds the commands it waits for at once and goes on in the background."
+                    : "Start it now\nIn the background, without waiting for the limit to reset. While the limit lasts, Claude stops again at once."
+                    + (t.chat ? " Commands it still runs in the background are ended first." : "")
               }
-              onClick={() => post({ type: "startQueued", id: t.id })}
+              onClick={() => post({ type: "startQueued", id: t.id, now: true })}
             />
             <IconButton icon={I.cancel} tone={T.cancel} label="Cancel it"
               title={"Cancel it\nIt doesn't start." + (kept ? " It stops keeping going after usage limits too." : "")

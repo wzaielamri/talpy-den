@@ -1489,14 +1489,16 @@ def go_on_waits(cache_root, entry, answer, due, now_ms, out):
     return True, message
 
 
-def start_queued(home, extra_dirs, task_id, out=None):
+def start_queued(home, extra_dirs, task_id, out=None, now=False):
     """Start a queued task now, in the background: (ok, message). It's taken
     out of the queue first, so of several copies of the widget only one
     starts it (the others get an empty message, as does a chat that went on
     already); one that fails to start goes back with the error, until you
     start or cancel it. A chat's go-on that waits for its background
     commands (go_on_waits) goes back too, and out (a dict) gets "waits" and
-    "notify"; one that ended them to go on gets "ended" and "notify"."""
+    "notify"; one that ended them to go on gets "ended" and "notify".
+    now (Start it now, --now): a chat's go-on doesn't wait for its
+    background commands, it ends them at once (and says so)."""
     out = {} if out is None else out
     cache_root = cs.cache_dir(home)
     entry = cs.change_queue(cache_root, take=task_id)
@@ -1505,6 +1507,8 @@ def start_queued(home, extra_dirs, task_id, out=None):
     now_ms = int(time.time() * 1000)
     # (its go-on's time, kept while it waits: it ends what keeps the chat busy this long after it)
     due = entry.get("dueAt") or min(entry.get("startAt") or now_ms, now_ms)
+    # (started now by you: what keeps it busy ends at once; 1, not now: an SSH host's clock may be behind)
+    ends_at = 1 if now else due + cs.GO_ON_WAIT_MS
     answer = {}
     task = Task(entry.get("prompt") or "", entry.get("plan"), entry.get("planProfile"), entry.get("model"),
                 entry.get("effort"), entry.get("mode"))
@@ -1527,7 +1531,7 @@ def start_queued(home, extra_dirs, task_id, out=None):
         elif entry.get("chat") and entry.get("host"):
             import remote
             answer = remote.continue_chat(entry["host"], entry["profile"], entry["chat"], entry.get("folder") or "",
-                                          task.text, ends_at=due + cs.GO_ON_WAIT_MS)
+                                          task.text, ends_at=ends_at)
             if answer.get("waits"):
                 return go_on_waits(cache_root, entry, answer, due, now_ms, out)
             ok, message = bool(answer.get("ok")), answer.get("message") or ""
@@ -1537,7 +1541,7 @@ def start_queued(home, extra_dirs, task_id, out=None):
             was = cs.note_went_on(cache_root, entry["chat"], now_ms)
             answer = (cs.continue_chat(home, extra_dirs, entry["profile"], entry["chat"], entry.get("folder"), task.text,
                                        claude, prefix=scope_prefix("claude"), force=entry.get("why") in ("retry", "cap"),
-                                       ends_at=due + cs.GO_ON_WAIT_MS)
+                                       ends_at=ends_at)
                       if claude else {"ok": False, "message": NO_CLAUDE})
             ok, message = bool(answer.get("ok")), answer.get("message") or ""
             if answer.get("waits") or (ok and not message):
@@ -1563,7 +1567,8 @@ def start_queued(home, extra_dirs, task_id, out=None):
         return True, ""  # it went on already: nothing to start
     elif entry.get("chat") and "ended" in answer:  # (it waited for its background commands, then ended them)
         what, _ = background_named(answer.get("ended") or [])
-        message = (f"“{entry.get('name') or entry['chat'][:8]}” ended {what} and "
+        message = (f"“{entry.get('name') or entry['chat'][:8]}” "
+                   + ("started now: it ended " if now else "ended ") + what + " and "
                    + (message[0].lower() + message[1:] if message.startswith("Went on") else "went on: " + message))
         cs.log_go_on(cache_root, message + (f" · {entry['host']}" if entry.get("host") else ""))
         out.update(ended=answer.get("ended") or [], notify=True)
@@ -2439,7 +2444,8 @@ USAGE = ("usage: jump.py [--stop [--busy] | --interrupt] SESSION_ID [--profile P
          "       jump.py --keep-going CHAT_ID --profile PROFILE [--cwd FOLDER] [--name NAME] | --keep-off CHAT_ID\n"
          "       jump.py --stop SESSION_ID [--profile PROFILE] [--busy] --and-keep-off CHAT_ID   (and Keep going off)\n"
          "               (a chat goes on by itself after each usage limit, until it's done)\n"
-         "       jump.py --unqueue|--start-queued TASK_ID\n"
+         "       jump.py --unqueue|--start-queued TASK_ID [--now]\n"
+         "               (--now: Start it now; a chat's go-on ends the background commands it waits for at once)\n"
          "       jump.py --star|--unstar CHAT_ID [--host HOST]   (starred: listed under the account's Starred)\n"
          "       jump.py --hide chats|plans|memories|projects ID | --show-hidden chats|plans|memories|projects\n"
          "       jump.py --delete-chat CHAT_ID | --delete-plan SLUG [--profile PROFILE] [--describe]\n"
@@ -2493,6 +2499,7 @@ def main(argv=None):
     agent_id, open_it, run_file, account, vscode_terminal = None, True, None, None, None
     task, background, end_first, to = Task(), False, False, None
     start_at, queue_host, account_title, scheduled, keep = None, "", "", False, False
+    start_now = False
     feedback_plan, comments, extra_out, hide_kind, describe = None, [], {}, None, False
     keep_off_chat = None
     while args:
@@ -2525,6 +2532,8 @@ def main(argv=None):
             action, session_id = arg, args.pop(0)  # the chat, or the plan's slug
         elif arg in ("--unqueue", "--start-queued") and args:
             action, session_id = (unqueue if arg == "--unqueue" else start_queued), args.pop(0)  # the task's id
+        elif arg == "--now":
+            start_now = True  # (with --start-queued: Start it now ends what a chat's go-on waits for at once)
         elif arg == "--at" and args and args[0].isdigit():
             start_at = int(args.pop(0))
         elif arg == "--scheduled":
@@ -2702,7 +2711,7 @@ def main(argv=None):
         elif action is keep_off:
             ok, message = keep_off(Path.home(), extra, session_id)
         elif action is start_queued:
-            ok, message = start_queued(Path.home(), extra, session_id, extra_out)
+            ok, message = start_queued(Path.home(), extra, session_id, extra_out, now=start_now)
         elif action is unqueue:
             ok, message = unqueue(Path.home(), extra, session_id)
         elif action is requeue:
