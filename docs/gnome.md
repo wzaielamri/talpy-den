@@ -4,7 +4,7 @@ The same dashboard as a GNOME Shell extension: Talpy in the top bar, the popup w
 
 **Requirements:** GNOME Shell 49 or 50 (Ubuntu 26.04 LTS has 50), or 43 or 44 (Debian 12; [see below](#gnome-shell-43-and-44)), python3, jq (`sudo apt install jq`); zenity for *Choose folder…* (Ubuntu has it).
 
-**Install:** `./install.sh` (it picks GNOME by itself in a GNOME session; `--gnome` to be sure), then log out and back in: GNOME loads new extension code only at login. Settings: the gear at the right end of the popup's top row. Update the same way (`git pull`, `./install.sh`, log out and in); `./install.sh --uninstall` removes it.
+**Install:** `./install.sh` (it picks GNOME by itself in a GNOME session; `--gnome` to be sure), then log out and back in: GNOME loads new extension code only at login. Settings: the gear at the right end of the popup's top row; its pages are the categories of Plasma's and VS Code's settings (*General*, *Chats*, *Notifications*, *Usage & limits*, *Talpy*, *Recap*, *Hosts*, *Advanced*), with the settings GNOME has, then *Accounts*. Update the same way (`git pull`, `./install.sh`, log out and in); `./install.sh --uninstall` removes it.
 
 **What's different from Plasma:**
 

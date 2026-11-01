@@ -40,41 +40,88 @@
 
 ## Settings
 
-Right-click Talpy Den's icon → **Configure Talpy Den…**, or the gear at the end of the popup's top row.
+Right-click Talpy Den's icon → **Configure Talpy Den…**, or the gear at the end of the popup's top row. The settings come in pages, the same categories in the same order as VS Code's and GNOME's settings: *General*, *Chats*, *Notifications*, *Usage & limits*, *Talpy*, *Recap*, *Hosts* and *Advanced*, then *Accounts* (below) and Plasma's own *Keyboard Shortcuts*.
+
+### General
+
+The chat list, then the panel icon.
+
+| Setting | Default | |
+|---|---|---|
+| Recent chats per account | 5 | How many show at a time in *Recent chats*, *★ Starred chats* and *★ Starred plans* and a project's lists (**Show N more** for more); 0 hides *Recent chats* |
+| Keep finished background chats | 24 h | 0 hides them right away |
+| Tokens | on | Token totals |
+| Usage | on | The default account's 5-hour usage next to the icon |
+| Icon | on | Blink while a chat needs you (until you open the popup), pulse when one finishes |
+
+### Chats
+
+Where chats open, new chats, permission prompts, the chat window.
+
+| Setting | Default | |
+|---|---|---|
+| A click on a chat opens it beside the popup | on | Off: in its terminal or VS Code tab. Where new and recent chats open, a terminal or VS Code, is the *Terminal \| VS Code* switch at the top of their lists; the model, effort and permission mode a new chat starts with are picked in its new-chat box |
+| Answer permission prompts from Talpy Den | off | The hook that lets rows, the pane and notifications answer permission prompts and Claude's questions (see [Features](features.md)); changes Claude's settings at once |
+| Keyboard answers | off | Two global shortcuts that answer the chat that has waited longest for a permission, from anywhere: **Meta+Alt+Y** allows it once (a plan: approves it), **Meta+Alt+N** denies it (a plan: keeps planning). They take *Answer permission prompts from Talpy Den*; pick other keys in System Settings → Shortcuts → Talpy Den |
+| Dictation language | auto | The language you dictate in (`en`, `de`, `fr`…), or auto to let whisper tell; below it, set up dictation, download, delete or pick a speech model, or remove faster-whisper |
+
+### Notifications
+
+When to notify, sounds, while you're away, the keyboard shortcut.
+
+| Setting | Default | |
+|---|---|---|
+| Notify | both on | When a chat needs input, and when it finishes a turn… |
+| …if the turn took at least | 30 s | …that ran at least this long |
+| Sound | on, 70% | Sounds for needs input / finished / failed or stopped (a usage limit or an expired login stopped a chat): from your sound theme, a file, or none |
+| While you're away | on, 5 min | Once the screen has been locked this long, one notification sums it all up when you're back |
+| Phone | off | Meanwhile, send chats that need you (and, if you like, ones that finish) to your phone with KDE Connect: every paired phone that's reachable, or the one you pick; *Send a test* tries it |
+| Keyboard shortcut | goes to the chat | Goes to the chat that needs you (else opens the popup); the key itself is set on the Keyboard Shortcuts page |
+
+### Usage & limits
+
+| Setting | Default | |
+|---|---|---|
+| Usage cap | off (90% when on) | Once an account's 5-hour or weekly window reaches it, the account's chats at work on this computer are stopped, once in that window (in tmux and VS Code's Claude the turn is interrupted and the chat stays open); queued tasks wait for the reset, and chats that keep going go on then. Chats you start or answer yourself afterwards aren't stopped again |
+| Fetch plan usage older than | 5 min | VS Code's Claude Code panel runs no status line, so its chats don't bring plan usage up to date: while one of an account's chats works and its numbers are this old, Claude Code fetches them (`claude -p /usage`, as `/usage` does: no tokens, no chat saved), at most this often; on SSH hosts too. 0: never |
+
+### Talpy
+
+| Setting | Default | |
+|---|---|---|
+| Pet | on | Talpy in the popup and in notifications |
+| Playful Talpy | on | His tricks and props, jokes, cookies and games; off, he only shows what your chats do (his moods, his lamp and quiet moves), and a game or a cookie that's out ends at once. Also in the right-click menu |
+| Chat pets per account | 5 | 0 keeps only the big Talpy |
+
+### Recap
+
+| Setting | Default | |
+|---|---|---|
+| Monday recap | on | On Mondays, sum up the last 7 days in a notification (it opens the Recap) |
+| Amounts in | US dollars | The Recap tab's amounts: US dollars (Claude's API prices), or another currency at the European Central Bank's rate of the day |
+| Keep a history beyond Claude's 30 days | on | The Recap's **Overall** keeps the numbers of chats Claude Code has deleted. Unticking it asks first when the history holds such chats, since their numbers go for good; **Delete Saved History…** starts it again |
+| Suggest rules for the permission prompts you answered | on | The Permissions tab offers rules that would have let those prompts through, each with **Allow…**; off, it only counts the prompts |
+
+### Hosts
+
+SSH hosts are picked with the SSH hosts button at the top of the popup.
+
+| Setting | Default | |
+|---|---|---|
+| Check SSH hosts every | 30 s | |
+| Plan usage on SSH hosts | once per account | An account on this computer and a host (or on two hosts) shows its plan usage where it's listed first, with the newest numbers of them all; or on every host, or on none |
+
+### Advanced
+
+How often Talpy Den checks, extra Claude folders, where plans open.
 
 | Setting | Default | |
 |---|---|---|
 | While a chat works, check every | 2000 ms | How often a working chat's line (what it's doing) is brought up to date; greyed out with live mode on, whose steps show as they happen (a working chat is checked every 6 s then) |
 | While no chat works, check every | 20000 ms | For what changes while no chat does anything: plan usage and its forecast, a usage limit resetting, a queued task coming due, a Claude that crashed. A chat that starts, ends, starts working, asks for something or finishes its turn shows at once either way |
-| Extra config dirs | – | Claude config folders besides `~/.claude` and `~/.claude-*` |
-| Chats | click opens the pane | A click on a chat opens it beside the popup (off: in its terminal or VS Code tab) |
-| Answer permission prompts from Talpy Den | off | The hook that lets rows, the pane and notifications answer permission prompts and Claude's questions (see [Features](features.md)); changes Claude's settings at once |
-| Keyboard answers | off | Two global shortcuts that answer the chat that has waited longest for a permission, from anywhere: **Meta+Alt+Y** allows it once (a plan: approves it), **Meta+Alt+N** denies it (a plan: keeps planning). They take *Answer permission prompts from Talpy Den*; pick other keys in System Settings → Shortcuts → Talpy Den |
 | Live mode | off | A hook that notes each step of each chat as it happens (Claude doesn't wait for it), so rows, the pane and the line under the big Talpy follow every tool call; changes Claude's settings at once |
-| Notify | both on | When a chat needs input, and when it finishes a turn… |
-| …if the turn took at least | 30 s | …that ran at least this long |
-| While you're away | on, 5 min | Once the screen has been locked this long, one notification sums it all up when you're back |
-| Phone | off | Meanwhile, send chats that need you (and, if you like, ones that finish) to your phone with KDE Connect: every paired phone that's reachable, or the one you pick; *Send a test* tries it |
-| Sound | on, 70% | Sounds for needs input / finished / failed or stopped (a usage limit or an expired login stopped a chat): from your sound theme, a file, or none |
-| Usage cap | off (90% when on) | Once an account's 5-hour or weekly window reaches it, the account's chats at work on this computer are stopped, once in that window (in tmux and VS Code's Claude the turn is interrupted and the chat stays open); queued tasks wait for the reset, and chats that keep going go on then. Chats you start or answer yourself afterwards aren't stopped again |
-| Keep finished background chats | 24 h | 0 hides them right away |
-| Recent chats per account | 5 | How many show at a time in *Recent chats*, *★ Starred chats* and *★ Starred plans* and a project's lists (**Show N more** for more); 0 hides *Recent chats* |
-| Check SSH hosts every | 30 s | |
-| Plan usage on SSH hosts | once per account | An account on this computer and a host (or on two hosts) shows its plan usage where it's listed first, with the newest numbers of them all; or on every host, or on none |
-| Fetch plan usage older than | 5 min | VS Code's Claude Code panel runs no status line, so its chats don't bring plan usage up to date: while one of an account's chats works and its numbers are this old, Claude Code fetches them (`claude -p /usage`, as `/usage` does: no tokens, no chat saved), at most this often; on SSH hosts too. 0: never |
-| Panel | on | The default account's 5-hour usage next to the icon |
-| Keyboard shortcut | goes to the chat | Goes to the chat that needs you (else opens the popup); the key itself is set on the Keyboard Shortcuts page |
-| Icon | on | Blink while a chat needs you (until you open the popup), pulse when one finishes |
-| Pet | on | Talpy in the popup and in notifications |
-| Playful Talpy | on | His tricks and props, jokes, cookies and games; off, he only shows what your chats do (his moods, his lamp and quiet moves), and a game or a cookie that's out ends at once. Also in the right-click menu |
+| Extra config dirs | – | Claude config folders besides `~/.claude` and `~/.claude-*` |
 | Open plans and runs in | Okular if installed, else your browser | Plans and subagent runs (Markdown): in Okular, your browser (a page Talpy Den makes), VS Code's Markdown preview (with the Talpy Den extension for VS Code 1.13 or newer), or your app for Markdown files |
-| Chat pets per account | 5 | 0 keeps only the big Talpy |
-| Popup | on | Token totals |
-| Monday recap | on | On Mondays, sum up the last 7 days in a notification (it opens the Recap) |
-| Dictation language | auto | The language you dictate in (`en`, `de`, `fr`…), or auto to let whisper tell; below it, set up dictation, download, delete or pick a speech model, or remove faster-whisper |
-| Recap amounts in | US dollars | The Recap tab's amounts: US dollars (Claude's API prices), or another currency at the European Central Bank's rate of the day |
-| Keep a history beyond Claude's 30 days | on | The Recap's **Overall** keeps the numbers of chats Claude Code has deleted. Unticking it asks first when the history holds such chats, since their numbers go for good; **Delete Saved History…** starts it again |
-| Suggest rules for the permission prompts you answered | on | The Permissions tab offers rules that would have let those prompts through, each with **Allow…**; off, it only counts the prompts |
 
 ## Accounts
 

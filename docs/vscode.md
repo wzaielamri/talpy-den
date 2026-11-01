@@ -120,7 +120,58 @@ code --install-extension talpy-den-*.vsix
 
 ## Settings
 
-The gear at the end of the view's title bar opens VS Code's Settings editor at these.
+The gear at the end of the view's title bar opens VS Code's Settings editor at these, in categories under *Talpy Den*, the same and in the same order as Talpy Den's settings on Plasma and GNOME.
+
+### General
+
+| Setting | Default | |
+|---|---|---|
+| `talpyDen.recentChats`, `keepDoneHours`, `showTokens`, `showUsageInStatusBar` | | What the view shows: recent chats per account, how long finished background chats stay, token totals, the 5-hour usage in the status bar |
+
+### Chats
+
+| Setting | Default | |
+|---|---|---|
+| `talpyDen.openIn` | `vscode` | `system`: open chats in your desktop's terminal app instead |
+| `talpyDen.reopenIn` | `terminal` | `claudeCode`: reopen chats that aren't running in a Claude Code panel (the switch above Recent chats) |
+| `talpyDen.clickOpensPane` | `true` | A click on a chat opens its tab (conversation, reply, permission prompt, review); `false`: the chat itself |
+| `talpyDen.newChatModel` / `newChatEffort` / `newChatMode` | `opus` / `xhigh` / Claude's default | The model, reasoning effort and permission mode new chats in a terminal or the background start with (`claude --model`, `--effort`, `--permission-mode`; **New Chat…**'s ⚙ line sets them). A Claude Code panel has its own |
+| `talpyDen.diffSideBySide` | `true` | A change in a chat's tab shows side by side (before \| after) where the tab is wide enough, else removed and added lines one after the other (the switch in a change's corner sets it too) |
+| `talpyDen.chatTextScale` | `1.15` | Text size in a chat's tab, times VS Code's font size (the tab's **A−** / **A+** and Ctrl+wheel set it) |
+| `talpyDen.dictateLanguage` | `auto` | The language you dictate replies in (`en`, `de`, `fr`…), or `auto` to let whisper tell |
+
+### Notifications
+
+| Setting | Default | |
+|---|---|---|
+| `talpyDen.notifyWaiting` / `notifyDone` | `true` | Notifications; turn them off here if Talpy Den on Plasma or GNOME notifies too |
+| `talpyDen.notifyDoneMinSeconds` | `30` | Shortest turn that gets a "finished" notification |
+| `talpyDen.notifySound`, `soundVolume`, `soundWaiting`, `soundDone`, `soundFailed` | | Sounds (sound-theme names or files) |
+| `talpyDen.awayDigest` / `awayMinutes` | `true` / `5` | The "while you were away" summary, after this many minutes without using VS Code (with notifications off, only its card in the view) |
+
+### Usage & limits
+
+| Setting | Default | |
+|---|---|---|
+| `talpyDen.usageCap` | `0` | A usage cap in percent (`0`: none): once one of an account's plan windows reaches it, the account's chats at work on this computer are stopped, once in that window (see *A usage cap* above) |
+| `talpyDen.usageRefreshMinutes` | `5` | Claude's own VS Code panel runs no status line: while one of an account's chats works and its plan usage is this many minutes old, Claude Code fetches it (`claude -p /usage`: no tokens, no chat saved), at most this often; on SSH hosts too. `0`: never |
+
+### Talpy
+
+| Setting | Default | |
+|---|---|---|
+| `talpyDen.showPet` / `playfulTalpy` / `chatPets` | `true` / `true` / `5` | Talpy; his tricks and props, jokes, cookies and games (off: he only shows what your chats do); pets per account (`0`: only the big Talpy) |
+
+### Recap
+
+| Setting | Default | |
+|---|---|---|
+| `talpyDen.mondayRecap` | `true` | On Mondays, a notification sums up the last 7 days and opens the Recap (once a week, here or on Plasma) |
+| `talpyDen.recapCurrency` | `USD` | The Recap tab's amounts: US dollars (Claude's API prices), or another currency at the European Central Bank's rate of the day |
+| `talpyDen.recapHistory` | `true` | The Recap keeps the numbers of chats Claude Code has deleted (after 30 days), so **Overall** keeps growing; unticking it asks first when the history holds such chats, since their numbers go for good; **Delete the Recap's Saved History…** starts it again |
+| `talpyDen.recapRules` | `true` | The Permissions tab suggests rules for the permission prompts you answered, each with **Allow…**; off, it only counts the prompts |
+
+### Hosts
 
 | Setting | Default | |
 |---|---|---|
@@ -128,28 +179,14 @@ The gear at the end of the view's title bar opens VS Code's Settings editor at t
 | `talpyDen.includeCurrentRemote` | `true` | Also show the Remote-SSH window's host |
 | `talpyDen.remotePollSeconds` | `30` | How often hosts are checked |
 | `talpyDen.sshUsage` | `once` | Plan usage on hosts' accounts: an account on this computer and a host (or two hosts) shows it once, where it's listed first, with the newest numbers; `all`: under every copy; `none`: on no host |
-| `talpyDen.usageRefreshMinutes` | `5` | Claude's own VS Code panel runs no status line: while one of an account's chats works and its plan usage is this many minutes old, Claude Code fetches it (`claude -p /usage`: no tokens, no chat saved), at most this often; on SSH hosts too. `0`: never |
+
+### Advanced
+
+| Setting | Default | |
+|---|---|---|
 | `talpyDen.pollInterval` | `2000` | While a chat works, ms between checks of this computer while the view is open: how often a working chat's line is brought up to date (10 s when hidden, 6 s when the window isn't focused). No effect with Live Mode on: its steps show as they happen, and a working chat is checked every 6 s |
 | `talpyDen.idlePollInterval` | `20000` | While no chat works, ms between checks: plan usage and its forecast, a usage limit resetting, a queued task coming due, a Claude that crashed. A chat that starts, ends, starts working, asks for something or finishes its turn is checked at once either way |
 | `talpyDen.extraConfigDirs` | `[]` | More Claude Code config folders |
-| `talpyDen.clickOpensPane` | `true` | A click on a chat opens its tab (conversation, reply, permission prompt, review); `false`: the chat itself |
-| `talpyDen.diffSideBySide` | `true` | A change in a chat's tab shows side by side (before \| after) where the tab is wide enough, else removed and added lines one after the other (the switch in a change's corner sets it too) |
-| `talpyDen.chatTextScale` | `1.15` | Text size in a chat's tab, times VS Code's font size (the tab's **A−** / **A+** and Ctrl+wheel set it) |
-| `talpyDen.openIn` | `vscode` | `system`: open chats in your desktop's terminal app instead |
-| `talpyDen.reopenIn` | `terminal` | `claudeCode`: reopen chats that aren't running in a Claude Code panel (the switch above Recent chats) |
-| `talpyDen.notifyWaiting` / `notifyDone` | `true` | Notifications; turn them off here if Talpy Den on Plasma or GNOME notifies too |
-| `talpyDen.notifyDoneMinSeconds` | `30` | Shortest turn that gets a "finished" notification |
-| `talpyDen.awayDigest` / `awayMinutes` | `true` / `5` | The "while you were away" summary, after this many minutes without using VS Code (with notifications off, only its card in the view) |
-| `talpyDen.notifySound`, `soundVolume`, `soundWaiting`, `soundDone`, `soundFailed` | | Sounds (sound-theme names or files) |
-| `talpyDen.showPet` / `chatPets` | `true` / `5` | Talpy, and pets per account |
-| `talpyDen.showTokens`, `showUsageInStatusBar`, `recentChats`, `keepDoneHours` | | What the view shows |
-| `talpyDen.usageCap` | `0` | A usage cap in percent (`0`: none): once one of an account's plan windows reaches it, the account's chats at work on this computer are stopped, once in that window (see *A usage cap* above) |
-| `talpyDen.newChatModel` / `newChatEffort` / `newChatMode` | `opus` / `xhigh` / Claude's default | The model, reasoning effort and permission mode new chats in a terminal or the background start with (`claude --model`, `--effort`, `--permission-mode`; **New Chat…**'s ⚙ line sets them). A Claude Code panel has its own |
-| `talpyDen.recapCurrency` | `USD` | The Recap tab's amounts: US dollars (Claude's API prices), or another currency at the European Central Bank's rate of the day |
-| `talpyDen.recapHistory` | `true` | The Recap keeps the numbers of chats Claude Code has deleted (after 30 days), so **Overall** keeps growing; unticking it asks first when the history holds such chats, since their numbers go for good; **Delete the Recap's Saved History…** starts it again |
-| `talpyDen.mondayRecap` | `true` | On Mondays, a notification sums up the last 7 days and opens the Recap (once a week, here or on Plasma) |
-| `talpyDen.dictateLanguage` | `auto` | The language you dictate replies in (`en`, `de`, `fr`…), or `auto` to let whisper tell |
-| `talpyDen.recapRules` | `true` | The Permissions tab suggests rules for the permission prompts you answered, each with **Allow…**; off, it only counts the prompts |
 | `talpyDen.pythonPath` | `python3` | Python on this computer |
 
 ## Commands
