@@ -308,6 +308,31 @@ export function drawCookie(ctx, flavour) {
     ctx.restore();
 }
 
+// The cookie vanishing where it is (CookieGame.stop), p from 0 to 1: it
+// shrinks away into a puff of dust that swells and fades, a few crumbs
+// flying off; drawn as drawCookie (its middle at the origin, 5.6 its radius),
+// reaching about three times as far
+const PUFF_DUST = ['#b5a48b', '#9e8c72', '#c7b8a2'];
+export function drawPuff(ctx, p, flavour) {
+    p = clamp01(p);
+    const s = 1 - p / 0.3;
+    if (s > 0) {
+        ctx.save();
+        ctx.scale(s, s);
+        drawCookie(ctx, flavour);
+        ctx.restore();
+    }
+    const out = 1 - (1 - p) * (1 - p), dust = 0.8 * (1 - p) * Math.min(1, p / 0.12);
+    for (let i = 0; i < 7; i++) {
+        const a = 0.4 + i * 2 * Math.PI / 7, d = 1.5 + 8 * out, r = (2.4 + 0.8 * (i % 3)) * (0.5 + 0.9 * out);
+        art.ellipse(ctx, Math.cos(a) * d, Math.sin(a) * d * 0.75 - 3 * out, r, r * 0.9, PUFF_DUST[i % 3], dust);
+    }
+    for (let i = 0; i < 5; i++) {
+        const a = 1.1 + i * 2 * Math.PI / 5, d = 3 + 11 * out;
+        art.ellipse(ctx, Math.cos(a) * d, Math.sin(a) * d * 0.7 + 6 * p * p, 0.9, 0.7, '#8a6a4f', 1 - p);
+    }
+}
+
 // ---------------------------------------------------------------- the creature
 
 export class Talpy {
@@ -678,6 +703,13 @@ export class Talpy {
         }
         if (look)
             this.st.look = look;
+    }
+
+    // The cookie it's after or eating is gone (CookieGame.stop): it digs in
+    // where it is
+    cookieGone(done) {
+        this.chasing = false;
+        this.play({ steps: COOKIE.gone }, done, false);
     }
 
     // It has it: eats it (flavour: see FLAVOURS in actions.mjs; caught: out

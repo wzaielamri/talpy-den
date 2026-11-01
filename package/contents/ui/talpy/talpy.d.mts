@@ -20,6 +20,8 @@ export function drawHole(ctx: unknown, hole: number): void;   // an empty hole i
 export function drawHoleSide(ctx: unknown, part: "back" | "front", left: boolean): void;
 // a cookie (the one it eats) of a flavour (cookie.mjs: Cookie.flavour), 5.6 box units round, centred at the context's origin
 export function drawCookie(ctx: unknown, flavour?: string): void;
+// the cookie vanishing (CookieGame.puff), p 0 to 1: drawn as drawCookie, reaching about three times as far
+export function drawPuff(ctx: unknown, p: number, flavour?: string): void;
 
 // A film's picture of it (Talpy.still), see films.mjs
 export interface Still {
@@ -82,6 +84,7 @@ export class Talpy {
     chase(): number;   // how much of its hole it leaves behind, as setHeld
     chaseAs(pose: "out" | "run" | "stand" | "beg" | "leap" | "reach" | "pout", look?: [number, number]): void;
     eat(flavour: string, caught: boolean, done?: ((ok: boolean) => void) | null): void;
+    cookieGone(done?: ((ok: boolean) => void) | null): void;   // it digs in where it is (CookieGame.stop)
     tick(now: number): void;
     draw(ctx: unknown, withoutParticles?: boolean): void;
     drawParticles(ctx: unknown, now: number): void;

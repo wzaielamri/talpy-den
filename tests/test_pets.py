@@ -1481,6 +1481,89 @@ console.log(JSON.stringify({ ends, picked }));""")
             self.assertRegex(landed, r"game\??\.landed\(\)")
             self.assertRegex(landed, r"game(\?\.| !== null && game\.)cookie")
 
+    def test_playful_off_while_it_runs_after_one_the_cookie_vanishes_and_it_digs_in_where_it_is(self):
+        # stop(): the cookie gone at once, a puff where it was for a moment
+        # (then the game is off), Talpy digs in where he is (the hole he left
+        # closes), and nothing more: no eating, no words
+        r = run_node(COOKIE_STAGE + """
+t.brainOn = false;   // (nothing of its own after)
+game.place(40, 70);
+run(4000, () => game.state === 'chase' && t.chased === 'run');
+const where = { x: Math.round(game.cookie.x), y: Math.round(game.cookie.y), r: game.cookie.r };
+const at = Math.round(px);
+game.stop();
+const puff = game.puff && { x: Math.round(game.puff.x), y: Math.round(game.puff.y), r: game.puff.r, p: game.puff.p };
+const right = { cookie: game.cookie, state: game.state, chasing: game.chasing, talpy: t.chasing, on: game.on, holes: holes.slice() };
+let grown = 0;
+run(200);
+grown = game.puff ? game.puff.p : -1;
+run(400);
+const after = { puff: game.puff, on: game.on };
+run(3000);
+console.log(JSON.stringify({ where, puff, right, grown, after, moved: Math.abs(Math.round(px) - at), said, eaten,
+                             depth: t.st.depth, hole: t.v.hole, run: !!t.run }));""")
+        self.assertEqual(r["puff"], dict(r["where"], p=0))   # (where it was, as big)
+        self.assertEqual(r["right"], {"cookie": None, "state": "", "chasing": False, "talpy": False, "on": True,
+                                      "holes": ["leave 1", "fill"]})   # (the hole it left closes as it digs in here)
+        self.assertGreater(r["grown"], 0.3)
+        self.assertLess(r["grown"], 0.6)
+        self.assertEqual(r["after"], {"puff": None, "on": False})   # a puff for a moment, then the game's off
+        self.assertLess(r["moved"], 2)                               # (where it is)
+        self.assertEqual((r["said"], r["eaten"]), (["spot"], 0))
+        self.assertEqual((r["depth"], r["hole"]), ("half", 1))   # back in its burrow, to its mood
+
+    def test_playful_off_as_it_spots_one_or_eats_one_or_you_hold_it(self):
+        # spotting it from its burrow: it's back to its mood there, never
+        # after it; eating it: the cookie in its hands puffs away and it digs
+        # in; held: yours till you let go, then it digs in where it lands
+        r = run_node(COOKIE_STAGE + """
+t.brainOn = false;   // (nothing of its own after)
+const out = {};
+game.place(40, 70);
+run(200);
+game.stop();
+run(3000);
+out.spot = { states: states.slice(-3), chasing: t.chasing, depth: t.st.depth, on: game.on, holes: holes.slice() };
+game.place(px + 6 * gu, 70);
+run(20000, () => game.state === 'eat' && t.st.bite === '2');
+const hands = { x: Math.round(px), y: Math.round(H - gu * 0.55 - 9.6 * unit) };
+game.stop();
+out.eat = { puff: game.puff && { x: Math.round(game.puff.x), y: Math.round(game.puff.y) }, hands, state: game.state, prop: t.st.prop };
+run(3000);
+out.eat.after = { eaten, depth: t.st.depth, on: game.on, prop: t.st.prop };
+game.place(40, 70);
+run(4000, () => game.state === 'chase' && t.chased === 'run');
+t.setHeld(true);
+game.picked();
+game.stop();
+out.held = { held: t.held, cookie: game.cookie, state: game.state, puff: !!game.puff };
+t.land(0, () => {}, game.cookie !== null);   // (as the hosts put it down)
+run(3000);
+out.landed = { depth: t.st.depth, hole: t.v.hole, on: game.on };
+console.log(JSON.stringify(out));""")
+        self.assertEqual(r["spot"]["chasing"], False)
+        self.assertNotIn("chase:out", r["spot"]["states"])
+        self.assertEqual((r["spot"]["depth"], r["spot"]["on"], r["spot"]["holes"]), ("half", False, []))
+        self.assertEqual(r["eat"]["puff"], r["eat"]["hands"])   # (the one in its hands)
+        self.assertEqual((r["eat"]["state"], r["eat"]["prop"]), ("", ""))
+        self.assertEqual(r["eat"]["after"], {"eaten": 1, "depth": "half", "on": False, "prop": ""})
+        self.assertEqual(r["held"], {"held": True, "cookie": None, "state": "", "puff": True})
+        self.assertEqual(r["landed"], {"depth": "half", "hole": 1, "on": False})
+
+    def test_both_hosts_end_the_cookie_when_playful_talpy_goes_off(self):
+        pet = (ROOT / "ui/Pet.qml").read_text()
+        ts = (ROOT.parent.parent / "vscode/webview/pets/pet.ts").read_text()
+        stage = (ROOT.parent.parent / "vscode/webview/pets/stage.ts").read_text()
+        self.assertRegex(pet, r"function onPlayfulChanged\(\) \{\n\s+if \(root\.playful\)\n\s+return\n\s+pet\.stopGame\(\)\n"
+                              r"\s+if \(pet\.game\)\n\s+pet\.game\.stop\(\)")
+        self.assertRegex(stage, r"if \(world\.playful\) continue;\n\s+p\.stopGame\(\);\n\s+p\.stopCookie\(\);")
+        self.assertIn("this.game?.stop();", ts)
+        # the puff drawn where the game says, as it goes
+        self.assertIn("T.drawPuff(ctx, p, flavour)", pet)
+        self.assertIn("puff.p = f.p", pet)
+        self.assertIn("drawPuff(ctx, f.p, f.flavour);", ts)
+        self.assertIn("const f = this.game?.puff ?? null", ts)
+
     def test_the_game_runs_only_with_a_cookie(self):
         # (an add-on: nothing more each frame unless a cookie is out or eaten)
         pet = (ROOT / "ui/Pet.qml").read_text()

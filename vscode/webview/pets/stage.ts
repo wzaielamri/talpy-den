@@ -259,7 +259,9 @@ export class Stage implements PetStage, Animator {
   playfulChanged(): void {
     for (const p of this.pets) {
       p.talpy.setPlayful(world.playful);
-      if (!world.playful) p.stopGame();
+      if (world.playful) continue;
+      p.stopGame();
+      p.stopCookie(); // (a cookie out vanishes in a puff, and he digs in where he is)
     }
   }
 

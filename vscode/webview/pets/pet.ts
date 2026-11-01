@@ -23,7 +23,7 @@ import { stateText } from "../../src/shared/model";
 import { CookieGame, type CookieWords } from "../../vendor/talpy/cookie.mjs";
 import { Films } from "../../vendor/talpy/films.mjs";
 import { pickGame, type Game } from "../../vendor/talpy/games.mjs";
-import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide } from "../../vendor/talpy/talpy.mjs";
+import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide, drawPuff } from "../../vendor/talpy/talpy.mjs";
 import type { StageChat } from "./api";
 import { PALETTE, textOn } from "./colors";
 import { Spring, Timer, Tween, ease, reducedMotion } from "./motion";
@@ -154,6 +154,7 @@ export class Pet {
   // once and moved about (grab it: it follows), its shadow on the floor
   private readonly game: CookieGame | null = null;
   private readonly cookie: HTMLCanvasElement | null = null;
+  private readonly puff: HTMLCanvasElement | null = null; // (the cookie vanishing: Playful Talpy turned off)
   private readonly cookieShadow: HTMLDivElement | null = null;
   private cookieOn = false;
   // A game with the hero (vendor/talpy/games.mjs): four quick clicks, or Play
@@ -262,6 +263,9 @@ export class Pet {
       this.cookie = this.canvas();
       this.cookie.className = "cs-cookie";
       this.cookie.hidden = true;
+      this.puff = this.canvas();
+      this.puff.className = "cs-cookie-puff";
+      this.puff.hidden = true;
     }
     if (!this.lone) {
       this.tag = div("cs-pet-tag");
@@ -272,7 +276,7 @@ export class Pet {
     // (the hole and the cookie's shadow first: under the pet; the cookie last:
     // over it, so it shows whole as the pet gets there, and pressed first)
     stage.petLayer.append(this.leftHole, ...(this.cookieShadow ? [this.cookieShadow] : []), this.sheets,
-      ...(this.tag ? [this.tag] : []), this.grab, ...(this.cookie ? [this.cookie] : []));
+      ...(this.tag ? [this.tag] : []), this.grab, ...(this.cookie ? [this.cookie] : []), ...(this.puff ? [this.puff] : []));
     this.listen();
     this.describe();
 
@@ -820,6 +824,12 @@ export class Pet {
     if (this.play?.on) this.play.stop();
   }
 
+  // Playful Talpy turned off: a cookie out vanishes in a puff, and he digs in
+  // where he is (vendor/talpy/cookie.mjs stop)
+  stopCookie(): void {
+    this.game?.stop();
+  }
+
   private gameMoved(): void {
     const on = this.play?.on ?? false;
     if (on && !this.playListening) {
@@ -936,7 +946,34 @@ export class Pet {
 
   // Where the cookie is: its canvas painted once (again at another size or
   // zoom), then only moved
+  // The cookie vanishing in a puff where it was, painted as it swells and fades
+  private renderPuff(): void {
+    const f = this.game?.puff ?? null,
+      el = this.puff!;
+    if (!f) {
+      if (!el.hidden) el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    const k = devicePixelRatio || 1,
+      size = Math.ceil(f.r * 6);
+    if (el.width !== Math.round(size * k)) {
+      el.width = el.height = Math.round(size * k);
+      el.style.width = el.style.height = `${size}px`;
+    }
+    const ctx = el.getContext("2d");
+    if (ctx) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, el.width, el.height);
+      ctx.setTransform((k * f.r) / 5.6, 0, 0, (k * f.r) / 5.6, (k * size) / 2, (k * size) / 2);
+      drawPuff(ctx, f.p, f.flavour);
+    }
+    const r1 = (v: number) => Math.round(v * 10) / 10;
+    this.put(el, "puff", "transform", `translate(${r1(f.x - size / 2)}px, ${r1(f.y - size / 2)}px)`);
+  }
+
   private renderCookie(): void {
+    this.renderPuff();
     const c = this.game?.cookie ?? null,
       el = this.cookie!,
       shadow = this.cookieShadow!;

@@ -376,6 +376,12 @@ const digIn = () => [
     { body: 'spin', eyes: 'squint', fx: dirt(10), t: 700 },
     { eyes: 'happy', t: 400 }];
 export const COOKIE = {
+    // Gone (Playful Talpy turned off as it's after it or eats it): a blink
+    // where it was, and it digs in where it is
+    gone: () => [
+        { depth: 'out', hole: 1, eyes: 'wide', mouth: 'o', plume: '', t: 350 },
+        { body: 'spin', eyes: 'squint', fx: dirt(10), t: 700 },
+        { t: 300 }],
     // It sees it (look: towards it); asleep, it sniffs and wakes up first
     spot: (look, sleepy) => w => [
         ...(sleepy ? [{ depth: 'low', eyes: 'closed', mouth: 'small', plume: 'flick',

@@ -260,7 +260,8 @@
 /* The cookie you gave the hero (grab it: it follows; over the hero, so it
    shows whole as the hero gets there), its shadow on the floor */
 .cs-cookie,
-.cs-cookie-shadow {
+.cs-cookie-shadow,
+.cs-cookie-puff {
   position: absolute;
   left: 0;
   top: 0;
@@ -282,8 +283,13 @@
   background: rgb(20 25 45 / 20%);
 }
 
+.cs-cookie-puff {
+  pointer-events: none;
+}
+
 .cs-cookie[hidden],
-.cs-cookie-shadow[hidden] {
+.cs-cookie-shadow[hidden],
+.cs-cookie-puff[hidden] {
   display: none;
 }
 

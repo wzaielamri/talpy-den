@@ -389,8 +389,11 @@ Item {
             }
         }
         function onPlayfulChanged() {
-            if (!root.playful)
-                pet.stopGame()
+            if (root.playful)
+                return
+            pet.stopGame()
+            if (pet.game)
+                pet.game.stop()   // (a cookie out vanishes in a puff, and he digs in where he is)
         }
     }
     Shortcut {
@@ -664,6 +667,15 @@ Item {
     function cookieChanged() {
         cookieOn = game.on
         chasing = game.chasing
+        const f = game.puff
+        puff.shown = f !== null
+        if (f) {
+            puff.r = f.r
+            puff.flavour = f.flavour
+            puff.cx = f.x
+            puff.cy = f.y
+            puff.p = f.p
+        }
         const c = game.cookie
         cookie.shown = c !== null
         if (!c)
@@ -1116,6 +1128,33 @@ Item {
             }
             onReleased: pet.game.drop()
             onCanceled: pet.game.drop()
+        }
+    }
+
+    // The cookie vanishing in a puff where it was (Playful Talpy turned off:
+    // talpy/cookie.mjs stop), painted as it swells and fades
+    Canvas {
+        id: puff
+        property bool shown: false
+        property real r: pet.unit * 7
+        property string flavour: ""
+        property real cx: 0
+        property real cy: 0
+        property real p: 0
+        visible: shown && !pet.departed
+        width: Math.ceil(r * 6)
+        height: width
+        x: cx - width / 2
+        y: cy - height / 2
+        renderStrategy: Canvas.Cooperative
+        onPChanged: requestPaint()
+        onWidthChanged: requestPaint()
+        onPaint: {
+            const ctx = getContext("2d")
+            ctx.reset()
+            ctx.translate(width / 2, height / 2)
+            ctx.scale(r / 5.6, r / 5.6)
+            T.drawPuff(ctx, p, flavour)
         }
     }
 }

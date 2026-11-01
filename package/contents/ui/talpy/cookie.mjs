@@ -21,6 +21,8 @@
 //   every tick while game.on: game.tick(now), after talpy.tick(now)
 //   you pulled at Talpy or picked it up: game.picked(); it's down again (landed, or back
 //     in its burrow): game.landed()
+//   Playful Talpy turned off: game.stop() (the cookie vanishes in a puff: draw drawPuff in
+//     talpy.mjs where `puff` says while it's there)
 //
 // host: {
 //   stage(): { width, ground, unit (px a box unit), bodyWidth, bodyHeight, minX, maxX },
@@ -46,6 +48,9 @@ const G = 350;               // how fast it falls (box units/s²): a light one,
 const AIR_S = 0.7;           // the air holding it back (it falls at most G × AIR_S)
 const BOUNCE = 0.45;         // how much of its speed it bounces back with off the floor,
 const SETTLE = 28;           // and slower than that (box units/s) it just stays down
+const PUFF_MS = 450;         // stopped: the cookie vanishes in a puff that long
+const HANDS = 9.6;           // (one it eats: its middle that high over the floor, box units, and
+const HELD_R = 5.6;          // that big)
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const outBack = p => {
@@ -79,6 +84,9 @@ export class CookieGame {
         this.dragAt = 0;
         this.holeLeft = false;   // a hole it left shows: filled once it digs in again
         this.lastFlavour = '';   // (of the one it just had: its words)
+        // { x, y (its middle, stage px), r, flavour, at, p (0 to 1) }: the cookie vanishing in a puff
+        // where it was (stop), drawn by the host with drawPuff; null: none
+        this.puff = null;
     }
 
     // Where a cookie can be: over the floor, on the stage, never where Talpy
@@ -216,6 +224,42 @@ export class CookieGame {
         this.host.changed();
     }
 
+    // Playful Talpy turned off: the cookie out, or the one it's eating, vanishes
+    // in a puff where it is (puff, for PUFF_MS), and Talpy, after it on its
+    // feet or eating, digs in where he is, as a game ends at once; looking at
+    // it from his burrow, he's back to his mood; yours (held, pulled at,
+    // pushed down), he digs in once you let go (game.cookie is null: land()
+    // doesn't stay out). Digging in after one eaten, he goes on.
+    stop() {
+        const t = this.talpy;
+        if (!this.on || (this.state === 'eat' && t.st.hole !== '0'))
+            return;
+        const c = this.cookie, g = this.host.stage(), was = this.state, out = this.chasing || was === 'eat';
+        let puff = null;
+        if (c)
+            puff = { x: c.x, y: c.y, r: c.r * Math.max(0.3, c.scale), flavour: c.flavour };
+        else if (was === 'eat' && t.st.prop === 'cookie')   // (in its hands)
+            puff = { x: this.host.px(), y: g.ground - HANDS * g.unit, r: HELD_R * g.unit, flavour: this.lastFlavour };
+        this.cookie = null;
+        this.grip = null;
+        this.state = '';
+        this.chasing = false;
+        this.v = 0;
+        if (out) {
+            t.cookieGone();
+            if (this.holeLeft) {   // (it digs in here: the hole it left closes)
+                this.holeLeft = false;
+                this.host.fillHole();
+            }
+        } else if (was === 'spot') {
+            t.cancel();
+            t.apply({});
+        }
+        this.puff = puff ? Object.assign(puff, { at: this.now, p: 0 }) : null;
+        this.on = this.puff !== null;
+        this.host.changed();
+    }
+
     // ------------------------------------------------------------ Talpy
 
     // Out of its burrow and after it (out already: on its feet at once)
@@ -238,6 +282,13 @@ export class CookieGame {
         const dt = this.last ? clamp(now - this.last, 0, 100) / 1000 : 0;
         this.last = this.now = now;
         const c = this.cookie;
+        if (this.puff) {
+            this.puff.p = clamp((now - this.puff.at) / PUFF_MS, 0, 1);
+            if (this.puff.p >= 1) {
+                this.puff = null;
+                this.on = c !== null || this.state !== '';
+            }
+        }
         if (c) {
             // it pops up, and swings as you move it (or it flies)
             const g = this.host.stage();

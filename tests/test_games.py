@@ -182,7 +182,7 @@ class HostTests(unittest.TestCase):
         self.assertRegex(self.ts, r"if \(!this\.stage\.live\) \{\s*\n\s*this\.stopGame\(\)")
         self.assertIn('e.key === "Escape"', self.ts)
         self.assertIn("this.stage.root.contains(e.target as Node)", self.ts)
-        self.assertIn("if (!world.playful) p.stopGame()", (ROOT / "vscode/webview/pets/stage.ts").read_text())
+        self.assertRegex((ROOT / "vscode/webview/pets/stage.ts").read_text(), r"if \(world\.playful\) continue;\n\s+p\.stopGame\(\);")
 
     def test_a_quick_second_click_is_the_games_too(self):
         # (a click soon after the one before comes as a double click: he'd

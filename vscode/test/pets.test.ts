@@ -501,6 +501,24 @@ test("with Playful Talpy off the hero takes no cookie and tells no jokes", () =>
   t.setPlayfulAll(true);
   assert.equal(hero.talpy.playful, true);
   assert.ok(hero.placeCookie(40, 30));
+  stage.loop();
+  assert.equal(hero.cookie.hidden, false);
+  // turned off with a cookie out: it vanishes in a puff where it was, and the
+  // game ends once the puff has gone
+  const { x, y } = hero.game.cookie;
+  t.setPlayfulAll(false);
+  assert.equal(hero.game.cookie, null);
+  assert.ok(hero.game.puff, "a puff where it was");
+  assert.deepEqual([hero.game.puff.x, hero.game.puff.y], [x, y]);
+  assert.equal(hero.game.state, "");
+  stage.loop();
+  assert.equal(hero.cookie.hidden, true);
+  assert.equal(hero.puff.hidden, false);
+  for (let i = 0; i < 40; i++) hero.game.tick(hero.game.now + 16);
+  assert.equal(hero.game.puff, null);
+  assert.equal(hero.game.on, false);
+  stage.loop();
+  assert.equal(hero.puff.hidden, true);
   stage.destroy();
 });
 

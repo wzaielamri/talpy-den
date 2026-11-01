@@ -38,9 +38,19 @@ export interface Cookie {
     flavour: string;  // choc double sprinkles ginger mint jam oat white (actions.mjs FLAVOURS)
 }
 
+// the cookie vanishing in a puff where it was (stop): draw drawPuff(ctx, p, flavour) there, at its size
+export interface CookiePuff {
+    x: number;        // its middle, stage px
+    y: number;
+    r: number;        // its radius, px
+    flavour: string;
+    p: number;        // 0 to 1
+}
+
 export class CookieGame {
     constructor(talpy: Talpy, host: CookieHost);
     readonly cookie: Cookie | null;
+    readonly puff: CookiePuff | null;
     readonly on: boolean;        // something goes on: tick it
     readonly chasing: boolean;   // Talpy is on its feet after it: draw it live
     place(x: number, y: number): boolean;
@@ -49,5 +59,6 @@ export class CookieGame {
     drop(): void;
     picked(): void;
     landed(): void;
+    stop(): void;   // Playful Talpy turned off: the cookie vanishes in a puff (puff), Talpy digs in where he is
     tick(now: number): void;
 }

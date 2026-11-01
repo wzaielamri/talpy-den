@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Turning Playful Talpy off ends a cookie too:** one that's out (or the
+  one he's eating) vanishes in a puff of dust where it is, and Talpy digs
+  in where he is, as a game ends at once; he went on running after it and
+  eating it.
 - **Every question reads one way:** the Permissions tab's *Revoke?* and
   *Allow?* are an orange line with their buttons beside it, as a queued
   task's *Cancel this task?* and the Review's *Undo?* (they were small
