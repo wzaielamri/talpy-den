@@ -232,6 +232,13 @@ export class Backend {
     };
   }
 
+  // Each host's and container's last answer, kept from its last check (remote.py --last)
+  async lastAnswers(hosts: string[]): Promise<Record<string, { at: number; offset: number; answer: { ok: boolean; result?: Status } }>> {
+    if (!hosts.length) return {};
+    const r = await this.json(["remote.py", "--last", ...hosts], 15000);
+    return r && r.ok && r.last && typeof r.last === "object" ? r.last : {};
+  }
+
   // A terminal's command line for a command in a container (remote.py --attach)
   attachLine(host: string, command: string): string {
     return [this.python(), "-I", this.script("remote.py"), "--attach", host, command].map(shellQuote).join(" ");

@@ -131,7 +131,7 @@ export function remoteGroups(shownHosts, remote, owners = null) {
     const out = [];
     for (const host of shownHosts) {
         const r = remote[host];
-        if (r && r.result && !r.error) {
+        if (r && r.result && !r.error && !r.cached) {   // (its answer kept from before this start: shown, not counted)
             for (const g of r.result.groups)
                 out.push(Object.assign({}, owners ? withUsage(g, host, owners) : g, {host}));
         }

@@ -191,13 +191,14 @@ PlasmoidItem {
     }
     // The accounts of the hosts that answered, each marked with its host. A
     // host whose last check failed still shows what it said before (dimmed,
-    // HostSection.qml), but that doesn't count here: no badge or shortcut
-    // for a chat you can't reach.
+    // HostSection.qml), and at start what it said last time until its first
+    // check answers, but that doesn't count here: no badge or shortcut for a
+    // chat you can't reach.
     readonly property var remoteGroups: {
         const out = []
         for (const host of shownHosts) {
             const r = remote[host]
-            if (r && r.result && !r.error)
+            if (r && r.result && !r.error && !r.cached)
                 for (const g of r.result.groups)
                     out.push(Object.assign({}, withUsage(g, host), { host: host }))
         }
@@ -2180,7 +2181,33 @@ PlasmoidItem {
         }
     }
 
+    // Each host's and container's last answer (remote.py --last, kept from
+    // its last check): shown at once, dimmed with how old it is, until its
+    // first check here answers
+    Exec {
+        id: lastLoader
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            const result = root.helperResult(data)
+            for (const host in (result.ok ? result.last || {} : {})) {
+                const kept = result.last[host]
+                const info = root.remote[host]
+                if (!kept.answer || !kept.answer.result || (info && (info.ok || info.result || info.error)))
+                    continue   // (it answered meanwhile)
+                root.setRemote(host, { result: root.toLocalClock(kept.answer.result, kept.offset || 0), updatedAt: kept.at || 0,
+                                       cached: true })
+            }
+        }
+    }
+
+    function loadLastAnswers() {
+        if (shownHosts.length)
+            lastLoader.connectSource("python3 -I " + shellQuote(codeDir + "remote.py") + " --last "
+                                     + shownHosts.map(shellQuote).join(" ") + " # " + Date.now())
+    }
+
     Component.onCompleted: {
+        loadLastAnswers()
         loadHosts()
         Hub.want(instanceId, "status", command, checkInterval, true)
         Hub.placed(instanceId, !shownInPlace)
@@ -2340,14 +2367,14 @@ PlasmoidItem {
             // the ones left on its clock (reviewPending)
             setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(),
                               login: false, loggedIn: !!answer.loggedIn, clockOffset: result === answer.result ? 0 : offset,
-                              stopped: false, gone: false, paused: false })
+                              stopped: false, gone: false, paused: false, cached: false })
             if (status)
                 startDueTasks(status.queue || [])   // (a reply waiting for the end of a turn there: it ended)
         } else {
             // keep the last answer to show (dimmed) with the error
             setRemote(host, { loading: false, ok: false, error: answer.error || answer.message || i18n("no answer"),
                               login: !!answer.login, loggedIn: false, stopped: !!answer.stopped, gone: !!answer.gone,
-                              paused: !!answer.paused })
+                              paused: !!answer.paused, cached: false })
         }
     }
 

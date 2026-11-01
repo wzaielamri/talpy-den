@@ -17,7 +17,8 @@ ColumnLayout {
     property string host
     readonly property var info: root.remote[host] || ({ loading: true, ok: false, error: "", result: null, updatedAt: 0 })
     readonly property var hostGroups: info.result ? info.result.groups.map(g => root.withUsage(g, host)) : []
-    readonly property bool stale: !!info.error && info.result !== null
+    // (its last answer: after a check that failed, or kept from before this start until the first check answers)
+    readonly property bool stale: (!!info.error || !!info.cached) && info.result !== null
     readonly property var container: root.containerOf(host)
     readonly property string label: root.hostLabel(host)
     // (a container on an SSH host logs in and disconnects through its host)

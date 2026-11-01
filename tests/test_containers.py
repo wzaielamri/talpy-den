@@ -455,6 +455,27 @@ class HostContainerTests(FakeEngines):
         self.assertEqual(self.calls()[-1], ["lab", "docker start off"])
 
 
+class LastAnswerTests(FakeEngines):
+    def test_the_last_answer_is_kept_for_the_next_start(self):
+        self.engine("podman")
+        self.put({"box": self.container("box"), "off": self.container("off", "exited")})
+        self.chat_in("box")
+        self.assertEqual(remote.last_answers(["podman:box", "lab"]), {})
+        self.assertTrue(remote.status("podman:box", tokens=False)["ok"])
+        self.assertTrue(remote.status("lab", tokens=False)["ok"])
+        self.assertFalse(remote.status("podman:off")["ok"])  # (only answers that worked)
+        last = remote.last_answers(["podman:box", "lab", "podman:off", "nowhere"])
+        self.assertEqual(sorted(last), ["lab", "podman:box"])
+        self.assertEqual(last["podman:box"]["answer"]["result"]["groups"][0]["sessions"][0]["name"], "work in the box")
+        self.assertLess(abs(last["lab"]["offset"]), 5000)
+        path = cs.cache_dir(Path.home()) / "hosts/podman:box.json"
+        self.assertEqual(oct(path.stat().st_mode & 0o777), "0o600")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            remote.main(["--last", "lab"])
+        self.assertEqual(list(json.loads(out.getvalue())["last"]), ["lab"])
+
+
 class AttachTests(FakeEngines):
     def attach(self, ident, command="claude --resume x"):
         ran, out = [], io.StringIO()

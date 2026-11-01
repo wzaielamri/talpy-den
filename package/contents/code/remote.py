@@ -7,6 +7,7 @@
                                                     the picked ones always) and the hosts' last lists
     python3 -I remote.py --containers HOST [--container-days N] [--picked IDS]   an SSH host's containers
     python3 -I remote.py --start CONTAINER          start a stopped container
+    python3 -I remote.py --last HOST...             each one's last answer (kept by --status), for the next start
     python3 -I remote.py --attach CONTAINER COMMAND (in a terminal) COMMAND in the container, in this terminal
     python3 -I remote.py --status HOST [--done-hours H] [--recent N] [--plans N] [--memories N] [--no-tokens]
                                      [--usage-refresh N]
@@ -682,8 +683,47 @@ def status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, 
         return {"ok": False, "host": host, "error": f"{p.label} sent an answer Talpy Den can't read.", "elapsedMs": elapsed}
     if not result.get("ok"):
         return {"ok": False, "host": host, "error": f"{p.label}: {result.get('error') or 'status failed'}", "elapsedMs": elapsed}
-    return {"ok": True, "host": host, "result": result, "elapsedMs": elapsed,
-            "loggedIn": p.host is not None and logged_in(p.host)}
+    out = {"ok": True, "host": host, "result": result, "elapsedMs": elapsed,
+           "loggedIn": p.host is not None and logged_in(p.host)}
+    remember_answer(host, out)
+    return out
+
+
+# Each host's and container's last answer, kept for the next start: the
+# widget shows it at once (dimmed, "updated 3 min ago") while its first check
+# runs. In Talpy Den's cache folder, private to you (its chats are in it).
+ANSWERS_DIR = "hosts"
+
+
+def answer_file(host):
+    return cs.cache_dir(Path.home()) / ANSWERS_DIR / (check_host(host) + ".json")
+
+
+def remember_answer(host, out):
+    """Keep host's answer (and how far its clock is from this one's) for --last."""
+    try:
+        path = answer_file(host)
+        cs.private_dir(path.parent)
+        result = out.get("result") or {}
+        offset = int(time.time() * 1000) - (result.get("generatedAt") or int(time.time() * 1000))
+        cs.write_json_atomic(path, {"at": int(time.time() * 1000), "offset": offset, "answer": out})
+        os.chmod(str(path), 0o600)
+    except (OSError, ValueError, TypeError):
+        pass
+
+
+def last_answers(hosts):
+    """The last answer kept for each of hosts that has one:
+    {host: {"at": when, "offset": its clock's distance from this one's (ms), "answer": as --status gave it}}."""
+    out = {}
+    for host in hosts:
+        try:
+            saved = cs.read_json(answer_file(host))
+        except ValueError:
+            continue
+        if isinstance(saved, dict) and isinstance(saved.get("answer"), dict) and saved["answer"].get("ok"):
+            out[host] = {"at": saved.get("at") or 0, "offset": saved.get("offset") or 0, "answer": saved["answer"]}
+    return out
 
 
 def cant_run(p, exc):
@@ -1213,6 +1253,8 @@ def main(argv=None):
             if not kw.pop("containers"):
                 sys.exit(USAGE)
             out = host_containers(args[0], **kw)
+        elif action == "--last":
+            out = {"ok": True, "last": last_answers(args)}
         elif action == "--attach" and len(args) == 2:  # (in the terminal open_remote opens)
             sys.exit(attach(*args))
         elif action == "--start" and len(args) == 1:

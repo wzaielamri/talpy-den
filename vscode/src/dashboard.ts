@@ -186,6 +186,26 @@ export class Dashboard implements vscode.Disposable {
     this.scheduleLocal(0);
     this.scheduleHosts(0);
     void this.loadHosts(); // (the picker's lists, once; a Dev Containers window's container)
+    void this.loadLastAnswers();
+  }
+
+  // Each host's and container's last answer (remote.py --last, kept from its
+  // last check): shown at once, dimmed with how old it is, until its first
+  // check here answers
+  private async loadLastAnswers(): Promise<void> {
+    let last: Awaited<ReturnType<Backend["lastAnswers"]>>;
+    try {
+      last = await this.backend.lastAnswers(this.shownHosts());
+    } catch {
+      return;
+    }
+    if (this.disposed) return;
+    for (const [name, kept] of Object.entries(last)) {
+      const h = this.hosts.get(name);
+      if (!h || h.ok || h.result || h.error || !kept.answer?.result) continue; // (it answered meanwhile)
+      Object.assign(h, { result: toLocalClock(kept.answer.result, kept.offset || 0), updatedAt: kept.at || 0, cached: true });
+    }
+    this.emit();
   }
 
   // Whether chats are followed as they change (their session files): the checks in between are rarer then
@@ -515,12 +535,12 @@ export class Dashboard implements vscode.Disposable {
           this.tracker.overlaps("ssh:" + host, result.groups, host, opts),
         );
         const resets = this.tracker.resets("ssh:" + host, result.groups);
-        Object.assign(now, { loading: false, ok: true, error: "", result, updatedAt: Date.now(), login: false, loggedIn: !!answer.loggedIn, stopped: false, gone: false });
+        Object.assign(now, { loading: false, ok: true, error: "", result, updatedAt: Date.now(), login: false, loggedIn: !!answer.loggedIn, stopped: false, gone: false, cached: false });
         this.hostAnswered.set(host, asked);
         this.react(changes, resets);
       } else {
         // keep the last answer to show (dimmed) with the error
-        Object.assign(now, { loading: false, ok: false, error: answer.error || "no answer", login: !!answer.login, loggedIn: false, stopped: !!answer.stopped, gone: !!answer.gone });
+        Object.assign(now, { loading: false, ok: false, error: answer.error || "no answer", login: !!answer.login, loggedIn: false, stopped: !!answer.stopped, gone: !!answer.gone, cached: false });
         this.log.warn(`${host}: ${now.error}`);
       }
     } finally {

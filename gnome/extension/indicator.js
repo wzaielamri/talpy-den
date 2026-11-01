@@ -121,6 +121,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         ];
         this._restartPollTimer();
         this._restartRemoteTimer();
+        this._loadLastAnswers();
         this._loadHosts();
         for (const host of this.shownHosts)
             this.pollHost(host);   // (now, not a check interval later)
@@ -906,6 +907,24 @@ class TalpyDenIndicator extends PanelMenu.Button {
 
     // ---------------------------------------------------------------- SSH hosts
 
+    // Each host's and container's last answer (remote.py --last, kept from
+    // its last check): shown at once, dimmed with how old it is, until its
+    // first check here answers
+    async _loadLastAnswers() {
+        const hosts = this.shownHosts;
+        if (!hosts.length)
+            return;
+        const result = await this._helper('remote.py', ['--last', ...hosts]);
+        if (this._destroyed || !result.ok)
+            return;
+        for (const [host, kept] of Object.entries(result.last || {})) {
+            const info = this.remote[host];
+            if (!kept.answer?.result || (info && (info.ok || info.result || info.error)))
+                continue;   // (it answered meanwhile)
+            this._setRemote(host, {result: L.toLocalClock(kept.answer.result, kept.offset || 0), updatedAt: kept.at || 0, cached: true});
+        }
+    }
+
     // --container-days, --picked: the containers listed (the picked ones always), or no containers at all
     get _containerArgs() {
         if (!this._settings.get_boolean('show-containers'))
@@ -1024,7 +1043,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
             // on this computer's clock: the host's may be off
             const result = L.toLocalClock(answer.result, Date.now() - (answer.result.generatedAt || Date.now()));
             this._setRemote(host, {loading: false, ok: true, error: '', result, updatedAt: Date.now(),
-                stopped: false, gone: false});
+                stopped: false, gone: false, cached: false});
             try {
                 this._track(`ssh:${host}`, result.groups, result.generatedAt, host);
             } catch (e) {
@@ -1033,7 +1052,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         } else {
             // keep the last answer to show (dimmed) with the error
             this._setRemote(host, {loading: false, ok: false, error: answer.error || answer.message || 'no answer',
-                stopped: !!answer.stopped, gone: !!answer.gone});
+                stopped: !!answer.stopped, gone: !!answer.gone, cached: false});
         }
     }
 

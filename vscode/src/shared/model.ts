@@ -5,11 +5,12 @@ import type { Agent, ChangeSummary, ChatRef, ChatStats, ClaudeCodeInfo, Containe
 
 // This computer's accounts and the hosts', for the counts, the badge and
 // what needs you. A host whose last check failed still shows what it said
-// before (dimmed), but that doesn't count here: you can't reach its chats.
+// before (dimmed), and at start what it said last time until its first check
+// answers, but that doesn't count here: you can't reach its chats.
 export function allGroups(status: Status | null, hosts: HostState[]): Group[] {
   const out: Group[] = status ? status.groups.slice() : [];
   for (const h of hosts) {
-    if (h.result && !h.error) for (const g of h.result.groups) out.push({ ...g, host: h.name });
+    if (h.result && !h.error && !h.cached) for (const g of h.result.groups) out.push({ ...g, host: h.name });
   }
   return out;
 }

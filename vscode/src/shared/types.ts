@@ -575,6 +575,7 @@ export interface HostState {
   stopped?: boolean;
   gone?: boolean;
   detail?: string;
+  cached?: boolean; // result is its last answer before this start (remote.py --last), until its first check answers
 }
 
 // A Docker, Podman or nerdctl container as remote.py lists it (--hosts, --containers)

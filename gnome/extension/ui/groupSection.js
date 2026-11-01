@@ -434,7 +434,8 @@ export function buildHostSection(ctx, host) {
     const info = ctx.remote[host] || {loading: true, ok: false, error: '', result: null, updatedAt: 0};
     const owners = ctx.usageOwners;
     const groups = (info.result ? info.result.groups : []).map(g => L.withUsage(g, host, owners));
-    const stale = !!info.error && info.result !== null;
+    // (its last answer: after a check that failed, or kept from before this start until the first check answers)
+    const stale = (!!info.error || !!info.cached) && info.result !== null;
     const container = L.containerOf(host);
     const name = L.hostLabel(host);
     const stopped = !!info.stopped && !info.loading;
