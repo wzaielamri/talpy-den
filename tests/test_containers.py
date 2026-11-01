@@ -503,6 +503,58 @@ class AttachTests(FakeEngines):
         self.assertEqual(words[1:], ["-I", str(CODE / "remote.py"), "--attach", "podman:shop", "claude --resume x"])
 
 
+class JumpTests(unittest.TestCase):
+    def setUp(self):
+        import jump
+        self.jump = jump
+
+    def test_exec_lines(self):
+        t = self.jump.container_target
+        self.assertEqual(t(["podman", "exec", "-it", "-e", "TERM", "-e", "COLORTERM", "-u", "vscode", "web", "sh", "-c", "x"]), "web")
+        self.assertEqual(t(["/usr/bin/docker", "exec", "-i", "--user=node", "-w", "/w", "--env-file", "f", "--", "abc123", "sh"]),
+                         "abc123")
+        self.assertEqual(t(["docker", "--context", "lab", "container", "exec", "-d", "web", "true"]), "web")
+        self.assertEqual(t(["nerdctl", "-n", "k8s.io", "exec", "-it", "box", "bash"]), "box")
+        for other in (["docker", "ps"], ["docker", "run", "-it", "web"], ["ssh", "exec", "web"], ["podman", "exec"], []):
+            self.assertIsNone(t(other), other)
+
+    def test_an_ssh_line_that_execs_there(self):
+        line = remote.exec_line(remote.place("podman:gpu@lab"), "cd '/w x' 2>/dev/null; claude --resume a", "vscode", tty=True)
+        self.assertEqual(self.jump.ssh_target(line), "lab")
+        inner = shlex.split(self.jump.ssh_remote_command(line))
+        self.assertEqual(self.jump.container_target(inner), "gpu")
+        self.assertEqual(inner[-1], "cd '/w x' 2>/dev/null; claude --resume a")
+
+    def test_vscode_addresses(self):
+        authority = self.jump.container_authority("docker:shop")
+        self.assertTrue(authority.startswith("attached-container+"))
+        self.assertEqual(json.loads(bytes.fromhex(authority.split("+", 1)[1]).decode()), {"containerName": "/shop"})
+        self.assertTrue(self.jump.container_authority("podman:shop@lab").endswith("@ssh-remote+lab"))
+        self.assertEqual(self.jump.remote_folder_uri("lab", "/srv/a b"), "vscode-remote://ssh-remote+lab/srv/a%20b")
+        self.assertEqual(self.jump.remote_folder_uri("docker:shop", "/w"), f"vscode-remote://{authority}/w")
+        self.assertEqual((self.jump.remote_caption("lab"), self.jump.remote_caption("docker:shop@lab")), ("[SSH: lab]", "(shop)"))
+        self.assertEqual(self.jump.remote_authority("lab"), "ssh-remote+lab")
+
+
+class JumpByIdTests(FakeEngines):
+    def test_dev_containers_exec_by_id(self):
+        import jump
+        self.engine("docker")
+        cid = "ab" * 32
+        self.put({"shop": self.container("shop", id=cid)})
+        remote.containers_here(30)  # (the listing keeps each one's id)
+        p, names = jump.container_names("docker:shop")
+        self.assertEqual(names, {"shop", cid, cid[:12]})
+        me = os.getpid()
+        old = jump.proc_cmdline
+        jump.proc_cmdline = lambda pid: ["docker", "exec", "-i", cid, "/bin/sh"] if pid == me else []
+        try:
+            self.assertTrue(jump.runs_in_container(me, p, names))
+            self.assertFalse(jump.runs_in_container(me, *jump.container_names("docker:other")))
+        finally:
+            jump.proc_cmdline = old
+
+
 def test_unwrap(command):
     from test_remote import unwrapped
     return unwrapped(command)

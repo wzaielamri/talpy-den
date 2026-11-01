@@ -638,7 +638,10 @@ def typed_in_vscode(ssh, main):
 def vscode_connected_to(host):
     """(VS Code's main processes with a window connected to host, the caption
     of that window): Remote-SSH's ssh to it runs under them, and its title
-    says "[SSH: <name>]" with the name that ssh went to (alias or HostName)."""
+    says "[SSH: <name>]" with the name that ssh went to (alias or HostName).
+    A container's: the Dev Containers window attached to it (vscode_in_container)."""
+    if is_container(host):
+        return vscode_in_container(host)
     names = host_names(host)
     children = process_children()
     mains, caption = [], f"[SSH: {host}]"
@@ -664,17 +667,17 @@ def jump_remote_vscode(host, session_id, folder=""):
         raise_window(mains, caption, require=True, prefer=os.path.basename(folder.rstrip("/")))
         time.sleep(0.3)  # let VS Code see its window focused, so the link opens there
         subprocess.Popen([opener, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        return True, f"Opened the conversation in VS Code ({host})"
+        return True, f"Opened the conversation in VS Code ({remote_label(host)})"
     code = next((shutil.which(n) for n in VSCODE_NAMES if shutil.which(n)), None)
     if not code:
-        return False, f"This chat runs in VS Code on {host}, and VS Code isn't installed here"
+        return False, f"This chat runs in VS Code {remote_where(host)}, and VS Code isn't installed here"
     remote_folder = remote_folder_uri(host, folder) if folder.startswith("/") else None
-    args = [code, "--folder-uri", remote_folder] if remote_folder else [code, "--remote", f"ssh-remote+{host}"]
+    args = [code, "--folder-uri", remote_folder] if remote_folder else [code, "--remote", remote_authority(host)]
     start_app(args)
     # the link once the window has connected (VS Code passes it to the extension there)
     subprocess.Popen(["bash", "-c", f"sleep 10; exec {shlex.quote(opener)} {shlex.quote(url)}"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    return True, f"Opening VS Code on {host}; the chat shows once it's connected"
+    return True, f"Opening VS Code {remote_where(host)}; the chat shows once it's connected"
 
 
 def jump_remote_vscode_terminal(host, terminal, folder=""):
@@ -683,7 +686,7 @@ def jump_remote_vscode_terminal(host, terminal, folder=""):
     window, then have the Talpy Den extension bring the terminal up."""
     mains, caption = vscode_connected_to(host)
     if not mains:
-        return False, f"This chat runs in a VS Code terminal on {host}, and no VS Code window here is connected to it"
+        return False, f"This chat runs in a VS Code terminal {remote_where(host)}, and no VS Code window here is connected to it"
     if not raise_window(mains, caption, require=True, prefer=os.path.basename(folder.rstrip("/"))):
         return False, f"Couldn't raise the VS Code window ({raise_hint()})"
     if show_vscode_terminal(proc_name(mains[0]), terminal, host):
@@ -697,6 +700,8 @@ def jump_remote_terminal(host, name="", vscode_terminal=None, folder=""):
     that runs it there (vscode_terminal: the process that terminal started)."""
     if vscode_terminal:
         return jump_remote_vscode_terminal(host, vscode_terminal, folder)
+    if is_container(host):
+        return jump_container_terminal(host, name)
     names = host_names(host)
     children = process_children()
     best, best_score = None, -1
@@ -716,6 +721,175 @@ def jump_remote_terminal(host, name="", vscode_terminal=None, folder=""):
     if not show_konsole_tab(*best):
         return False, f"Couldn't raise the terminal window ({raise_hint()})"
     return True, f"Switched to the terminal with the ssh connection to {host}"
+
+
+# ---------------------------------------------------------------- chats in containers
+#
+# A container (remote.py's ENGINE:NAME, ENGINE:NAME@HOST) shows its running
+# chats where they run here: the terminal tab whose command execs into it
+# (remote.py --attach becomes the engine's exec; one on an SSH host is an
+# ssh to that host running the exec there), or the VS Code window of VS
+# Code's Dev Containers attached to it (its extension host runs the
+# engine's exec into it, by its id).
+
+CONTAINER_ENGINES = ("docker", "podman", "nerdctl")
+EXEC_VALUE_OPTIONS = {"-u", "--user", "-e", "--env", "-w", "--workdir", "--detach-keys", "--env-file"}
+ENGINE_VALUE_OPTIONS = {"-H", "--host", "-c", "--context", "--config", "-l", "--log-level", "--url",
+                        "--connection", "--namespace", "-n", "--root", "--runroot"}
+
+
+def container_target(argv):
+    """The container (its name or id) an engine's exec command line runs
+    in, or None: `docker exec -it -u vscode -e TERM web sh -c …` -> "web"."""
+    if not argv or os.path.basename(argv[0]) not in CONTAINER_ENGINES:
+        return None
+    i = 1
+    while i < len(argv) and argv[i].startswith("-"):  # (the engine's own options: --context x, -H host)
+        i += 2 if argv[i] in ENGINE_VALUE_OPTIONS else 1
+    if i < len(argv) and argv[i] == "container":
+        i += 1
+    if i >= len(argv) or argv[i] != "exec":
+        return None
+    i += 1
+    while i < len(argv):
+        a = argv[i]
+        if a == "--":
+            i += 1
+            break
+        if not a.startswith("-") or a == "-":
+            break
+        i += 2 if a in EXEC_VALUE_OPTIONS else 1  # (--user=x, -it: one word)
+    return argv[i] if i < len(argv) else None
+
+
+def unposix(command):
+    """A command as talpy_den.posix() wrapped it for a login shell (sh -c
+    '…', or the printf of it), unwrapped: what sh runs."""
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return command
+    if words[:2] != ["sh", "-c"] or len(words) != 3:
+        return command
+    escaped = re.fullmatch(r'eval "\$\(printf "(.*)"\)"', words[2], re.DOTALL)
+    if escaped is None:
+        return words[2]
+    return re.sub(rb"\\([0-7]{3})", lambda m: bytes([int(m.group(1), 8)]), escaped.group(1).encode()).decode(
+        errors="replace")
+
+
+def ssh_remote_command(argv):
+    """The command an ssh command line runs on its host (its words after the
+    host), unwrapped (unposix), or ""."""
+    if ssh_target(argv) is None:
+        return ""
+    takes_value = set("BbcDEeFIiJLlmOoPpQRSWw")
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        if a == "--":
+            i += 1
+            break
+        if a.startswith("-") and len(a) > 1:
+            for n, letter in enumerate(a[1:], 1):
+                if letter in takes_value:
+                    if n == len(a) - 1:
+                        i += 1
+                    break
+            i += 1
+            continue
+        break
+    return unposix(" ".join(argv[i + 1:]))
+
+
+def container_names(ident):
+    """(the place of a container id, the names it goes by in an exec: its
+    name, its id and short id when known from its last listing)."""
+    import remote
+    p = remote.place(ident)
+    names = {p.name}
+    saved = cs.read_json(remote.containers_file())
+    users = saved.get("users") if isinstance(saved, dict) and isinstance(saved.get("users"), dict) else {}
+    known = users.get(ident)
+    cid = known.get("cid") if isinstance(known, dict) else None
+    if isinstance(cid, str) and re.fullmatch(r"[0-9a-f]{12,64}", cid):
+        names.update({cid, cid[:12]})
+    return p, names
+
+
+def runs_in_container(pid, p, names, children=None):
+    """Whether process pid (or one under it) execs into the container: here,
+    or (one on an SSH host) over ssh to its host."""
+    procs = [pid, *descendants(pid, children)] if children is not None else [pid]
+    for proc in procs:
+        argv = proc_cmdline(proc)
+        if p.host is None:
+            if container_target(argv) in names:
+                return True
+        elif proc_name(proc) == "ssh" and ssh_target(argv) in host_names(p.host):
+            try:
+                inner = shlex.split(ssh_remote_command(argv))
+            except ValueError:
+                continue
+            if container_target(inner) in names:
+                return True
+    return False
+
+
+def jump_container_terminal(ident, name=""):
+    """Switch to the terminal tab here running a chat in the container
+    ident (the one whose title has the chat's name, if several)."""
+    p, names = container_names(ident)
+    children = process_children()
+    best, best_score = None, -1
+    for k in konsole_pids():
+        for session, shell, _fg, title in konsole_tabs(k):
+            if not isinstance(shell, int) or not runs_in_container(shell, p, names, children):
+                continue
+            score = 1 + (10 if name and name in (title or "") else 0)
+            if score > best_score:
+                best, best_score = (k, session), score
+    if best is None:
+        return False, (f"This chat runs in a terminal in {p.label}, but no terminal here is open in it "
+                       f"(it may run in tmux there, or in a terminal of its own)")
+    if not show_konsole_tab(*best):
+        return False, f"Couldn't raise the terminal window ({raise_hint()})"
+    return True, f"Switched to the terminal in {p.label}"
+
+
+def vscode_in_container(ident):
+    """(VS Code's main processes with a Dev Containers window attached to
+    the container ident, the caption its title has): its extension host runs
+    the engine's exec into it. One on an SSH host is the window's there, out
+    of sight: its title says the container's name."""
+    p, names = container_names(ident)
+    children = process_children()
+    mains = []
+    if p.host is None:
+        mains = [main for main in vscode_main_pids()
+                 if any(container_target(proc_cmdline(pid)) in names for pid in descendants(main, children))]
+    return mains, f"({p.name})"
+
+
+def container_authority(ident):
+    """VS Code's address of a container (Dev Containers' attached-container:
+    the container's name in hex JSON; one on an SSH host: through it)."""
+    import remote
+    p = remote.place(ident)
+    config = json.dumps({"containerName": "/" + p.name}, separators=(",", ":")).encode().hex()
+    return f"attached-container+{config}" + (f"@ssh-remote+{p.host}" if p.host else "")
+
+
+def container_folder_uri(ident, folder):
+    return f"vscode-remote://{container_authority(ident)}{urllib.parse.quote(folder)}"
+
+
+def is_container(ident):
+    import remote
+    try:
+        return remote.place(ident).container
+    except ValueError:
+        return False
 
 
 def jump_vscode(entry):
@@ -837,9 +1011,33 @@ def start_app(args, cwd=None):
 
 
 def remote_folder_uri(host, folder):
-    """VS Code's address of a folder on an SSH host (# ? % and spaces in a
-    folder name would end or change it)."""
-    return f"vscode-remote://ssh-remote+{host}{urllib.parse.quote(folder)}"
+    """VS Code's address of a folder on an SSH host or in a container (# ? %
+    and spaces in a folder name would end or change it)."""
+    return f"vscode-remote://{remote_authority(host)}{urllib.parse.quote(folder)}"
+
+
+def remote_authority(host):
+    """VS Code's remote of an SSH host (Remote-SSH) or a container (Dev Containers)."""
+    return container_authority(host) if is_container(host) else f"ssh-remote+{host}"
+
+
+def remote_caption(host):
+    """What the title of a VS Code window connected to host has."""
+    if is_container(host):
+        import remote
+        return f"({remote.place(host).name})"
+    return f"[SSH: {host}]"
+
+
+def remote_label(host):
+    import remote
+    return remote.label(host)
+
+
+def remote_where(host):
+    """on HOST, in foo (a container), in foo on HOST."""
+    import remote
+    return remote.where(host)
 
 
 def open_terminal(cwd, command):
@@ -1730,15 +1928,15 @@ def remote_vscode(host, folder, link, what):
     home folder, then the link in its Claude extension once connected."""
     code, _ = cs.vscode_app()
     if code is None:
-        return False, f"VS Code isn't installed here, so it can't connect to {host}"
+        return False, f"VS Code isn't installed here, so it can't connect to {remote_label(host)}"
     if not shutil.which("xdg-open"):
         return False, "xdg-open is missing; can't hand the chat to VS Code"
     if folder.startswith("/"):
         start_app([code, "--folder-uri", remote_folder_uri(host, folder)])
     else:
-        start_app([code, "--remote", f"ssh-remote+{host}"])
-    later(lambda: open_vscode_chat(f"[SSH: {host}]", 10, prefer=os.path.basename(folder.rstrip("/")), link=link))
-    return True, f"Opening VS Code on {host}; {what} once it's connected"
+        start_app([code, "--remote", remote_authority(host)])
+    later(lambda: open_vscode_chat(remote_caption(host), 10, prefer=os.path.basename(folder.rstrip("/")), link=link))
+    return True, f"Opening VS Code {remote_where(host)}; {what} once it's connected"
 
 
 def new_chat_remote_vscode(host, folder="", account=None, task=NO_TASK):
@@ -2286,15 +2484,18 @@ def open_memory(home, extra_dirs, path, edit=False):
 
 
 def edit_remote_file(host, path):
-    """Open a file of an SSH host in VS Code (Remote-SSH), to change it."""
+    """Open a file of an SSH host (Remote-SSH) or a container (Dev
+    Containers) in VS Code, to change it."""
+    import remote
+    container = is_container(host)
     code, _ = cs.vscode_app()
     if code is None:
-        return False, "Changing a file of an SSH host needs VS Code (with Remote - SSH)"
+        return False, ("Changing a file in a container needs VS Code (with Dev Containers)" if container
+                       else "Changing a file of an SSH host needs VS Code (with Remote - SSH)")
     if not path.startswith("/"):
-        return False, f"Not a path on {host}: {path}"
-    import remote
+        return False, f"Not a path {remote_where(host)}: {path}"
     start_app([code, "--file-uri", remote_folder_uri(remote.check_host(host), path)])
-    return True, f"Opened {path} on {host} in VS Code"
+    return True, f"Opened {path} {remote_where(host)} in VS Code"
 
 
 # ---------------------------------------------------------------- feedback on a plan
