@@ -7,24 +7,16 @@ import org.kde.plasma.plasmoid
 
 // Settings, Hosts: the SSH hosts' checks and their accounts' plan usage
 // (the hosts themselves are picked in the popup).
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
-    // Plasma writes back every cfg_ property of the page on Apply. This one is
-    // set in the popup, not here: take what it is now, so applying this page
-    // doesn't put back what it was when it opened.
-    function saveConfig() {
-        cfg_sshHosts = Plasmoid.configuration.sshHosts
-    }
-
-    property string cfg_sshHosts   // set with the SSH hosts button in the popup
+    // (cfg_sshHosts: set with the SSH hosts button in the popup, ConfigPage's)
     property alias cfg_remotePollSeconds: remotePollSeconds.value
     property string cfg_sshUsage
 
     // Plasma passes every setting and its default to each page: declaring the
     // defaults of this page's settings avoids "SimpleKCM does not have a
     // property called cfg_…Default" warnings for them.
-    property string cfg_sshHostsDefault
     property int cfg_remotePollSecondsDefault
     property string cfg_sshUsageDefault
 

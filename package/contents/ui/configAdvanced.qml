@@ -7,7 +7,7 @@ import "hub"
 
 // Settings, Advanced: how often Talpy Den checks and live mode, extra
 // Claude folders, and where plans and subagent runs open.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
     property alias cfg_pollInterval: pollInterval.value

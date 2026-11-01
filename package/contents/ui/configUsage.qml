@@ -6,7 +6,7 @@ import org.kde.kcmutils as KCM
 
 // Settings, Usage & limits: the usage cap, and how old plan usage may get
 // before Claude Code fetches it.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
     property int cfg_usageCap

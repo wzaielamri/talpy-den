@@ -12,7 +12,7 @@ import "icons.mjs" as Icons
 // Claude's own login, in a terminal, signs in), log in or out, remove one,
 // make one the default, and its claude-NAME command. Nothing here is a
 // setting, so there's nothing to apply.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
     readonly property string codeDir: decodeURIComponent(Qt.resolvedUrl("../code/").toString().replace(/^file:\/\//, ""))

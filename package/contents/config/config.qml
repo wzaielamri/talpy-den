@@ -27,7 +27,7 @@ ConfigModel {
     }
     ConfigCategory {
         name: i18n("Talpy")
-        icon: Icons.plasma.pet
+        icon: Qt.resolvedUrl("../icons/" + Icons.plasma.pet)   // (his own picture)
         source: "configTalpy.qml"
     }
     ConfigCategory {

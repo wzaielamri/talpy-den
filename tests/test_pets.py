@@ -2015,8 +2015,11 @@ class SettingsPageTests(unittest.TestCase):
             self.assertEqual({k + "Default": v for k, v in own.items() if k in kinds}, own_defaults, name)
             found.update(own)
             defaults.update(own_defaults)
-        self.assertEqual(found, kinds)
-        self.assertEqual({k + "Default": v for k, v in kinds.items()}, defaults)
+        # (the ones set in the popup are ConfigPage's on every page: it puts them back as they are now on Apply)
+        popup = {"focusView", "sshHosts", "newChatInVscode", "newChatModel", "newChatEffort", "newChatMode",
+                 "diffSideBySide", "paneTextPercent"}
+        self.assertEqual(found, {k: v for k, v in kinds.items() if k not in popup})
+        self.assertEqual({k + "Default": v for k, v in kinds.items() if k not in popup}, defaults)
 
     def test_the_settings_pages_are_the_categories_in_their_order(self):
         # The same categories in the same order in Plasma, VS Code and GNOME;
@@ -2027,7 +2030,28 @@ class SettingsPageTests(unittest.TestCase):
         sources = re.findall(r'source: "(\w+\.qml)"', config)
         self.assertEqual(sorted(sources), sorted(p.name for p in (ROOT / "ui").glob("config*.qml")))
         for icon in re.findall(r"icon: (.+)", config):
-            self.assertRegex(icon, r"^Icons\.plasma\.\w+$")   # (from the icon table, as every icon)
+            # (from the icon table, as every icon; Talpy's page his own picture, a file of the package's icons/)
+            self.assertRegex(icon, r'^(Icons\.plasma\.\w+|Qt\.resolvedUrl\("\.\./icons/" \+ Icons\.plasma\.\w+\)   // .*)$')
+        self.assertIn('icon: Qt.resolvedUrl("../icons/" + Icons.plasma.pet)', config)
+        # (a copy of his picture: the same file)
+        self.assertEqual((ROOT / "icons/talpy.svg").read_bytes(), (ROOT / "pets/talpy.svg").read_bytes())
+
+    def test_every_settings_page_takes_every_setting_without_a_warning(self):
+        # Plasma hands every page cfg_<key> and cfg_<key>Default for every
+        # setting: each page logged 70-80 "Setting initial properties failed"
+        # for the other pages' ones (2026-11-01). ConfigPage declares them all
+        # (and on Apply puts back the ones a page didn't change as they are now)
+        keys = re.findall(r'<entry name="(\w+)" type="\w+"', (ROOT / "config/main.xml").read_text())
+        base = (ROOT / "ui/ConfigPage.qml").read_text()
+        self.assertIn("\nKCM.SimpleKCM {\n", base)
+        self.assertEqual(re.findall(r"\n    property var cfg_(\w+)(?=\n)", base),
+                         [k for key in keys for k in (key, key + "Default")])
+        self.assertIn("configPage[name] = config[key]", base)
+        for name in SETTINGS_PAGES + ["configAccounts.qml"]:
+            page = (ROOT / "ui" / name).read_text()
+            self.assertIn("\nConfigPage {\n", page, name)
+            self.assertNotIn("KCM.SimpleKCM {", page, name)
+            self.assertNotIn("function saveConfig()", page, name)   # (it would hide ConfigPage's)
         vscode = json.loads((ROOT.parent.parent / "vscode/package.json").read_text())["contributes"]["configuration"]
         self.assertEqual([c["title"] for c in sorted(vscode, key=lambda c: c["order"])], CATEGORIES)
         prefs = (ROOT.parent.parent / "gnome/extension/prefs.js").read_text()

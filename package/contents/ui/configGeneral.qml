@@ -7,20 +7,13 @@ import org.kde.plasma.plasmoid
 
 // Settings, General: the chat list (how many recent chats, how long finished
 // background chats stay, the token line) and the panel icon.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
-
-    // Plasma writes back every cfg_ property of the page on Apply. This one is
-    // set in the popup, not here: take what it is now, so applying this page
-    // doesn't put back what it was when it opened.
-    function saveConfig() {
-        cfg_focusView = Plasmoid.configuration.focusView
-    }
 
     property alias cfg_recentChats: recentChats.value
     property alias cfg_keepDoneHours: keepDoneHours.value
     property alias cfg_showTokens: showTokens.checked
-    property bool cfg_focusView   // set with the Focus button in the popup's header
+    // (cfg_focusView: set with the Focus button in the popup's header, ConfigPage's)
     property alias cfg_showUsageInPanel: showUsage.checked
     property alias cfg_iconBlink: iconBlink.checked
 
@@ -30,7 +23,6 @@ KCM.SimpleKCM {
     property int cfg_recentChatsDefault
     property int cfg_keepDoneHoursDefault
     property bool cfg_showTokensDefault
-    property bool cfg_focusViewDefault
     property bool cfg_showUsageInPanelDefault
     property bool cfg_iconBlinkDefault
 

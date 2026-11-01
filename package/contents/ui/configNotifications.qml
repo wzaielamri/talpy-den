@@ -8,7 +8,7 @@ import "icons.mjs" as Icons
 
 // Settings, Notifications: when a chat notifies, its sounds, what happens
 // while you're away (one summary, your phone), and the keyboard shortcut.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
     property alias cfg_notifyWaiting: notifyWaiting.checked

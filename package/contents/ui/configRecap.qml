@@ -8,7 +8,7 @@ import "icons.mjs" as Icons
 
 // Settings, Recap: the Monday recap, the Recap's currency, its kept history,
 // and the Permissions tab's suggested rules.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
     property alias cfg_mondayRecap: mondayRecap.checked

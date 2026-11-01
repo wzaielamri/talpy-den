@@ -10,40 +10,19 @@ import "icons.mjs" as Icons
 // Settings, Chats: where a click opens them, what new chats start with (set
 // in the popup), answering permission prompts from Talpy Den, and the chat
 // pane's dictation.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
-    // Plasma writes back every cfg_ property of the page on Apply. These are
-    // set in the popup, not here: take what they are now, so applying this
-    // page doesn't put back what they were when it opened.
-    function saveConfig() {
-        cfg_newChatInVscode = Plasmoid.configuration.newChatInVscode
-        cfg_newChatModel = Plasmoid.configuration.newChatModel
-        cfg_newChatEffort = Plasmoid.configuration.newChatEffort
-        cfg_newChatMode = Plasmoid.configuration.newChatMode
-        cfg_diffSideBySide = Plasmoid.configuration.diffSideBySide
-        cfg_paneTextPercent = Plasmoid.configuration.paneTextPercent
-    }
-
     property alias cfg_clickOpensPane: clickOpensPane.checked
-    property bool cfg_newChatInVscode   // set with the Terminal | VS Code switch in the popup
-    property string cfg_newChatModel   // these three in the popup's new-chat box
-    property string cfg_newChatEffort
-    property string cfg_newChatMode
-    property bool cfg_diffSideBySide   // set with the chat pane's side-by-side button
-    property int cfg_paneTextPercent   // set with A− / A+ in the chat pane
+    // (cfg_newChatInVscode, cfg_newChatModel, cfg_newChatEffort, cfg_newChatMode, set in the
+    // popup's new-chat box, and cfg_diffSideBySide, cfg_paneTextPercent, set in the chat pane:
+    // ConfigPage's, which puts them back as they are now on Apply)
     property alias cfg_dictateLanguage: dictateLanguage.text
 
     // Plasma passes every setting and its default to each page: declaring the
     // defaults of this page's settings avoids "SimpleKCM does not have a
     // property called cfg_…Default" warnings for them.
     property bool cfg_clickOpensPaneDefault
-    property bool cfg_newChatInVscodeDefault
-    property string cfg_newChatModelDefault
-    property string cfg_newChatEffortDefault
-    property string cfg_newChatModeDefault
-    property bool cfg_diffSideBySideDefault
-    property int cfg_paneTextPercentDefault
     property string cfg_dictateLanguageDefault
 
     readonly property string codeDir: decodeURIComponent(Qt.resolvedUrl("../code/").toString().replace(/^file:\/\//, ""))

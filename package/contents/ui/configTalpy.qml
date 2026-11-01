@@ -5,7 +5,7 @@ import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
 
 // Settings, Talpy: the pet, Playful Talpy, and the chats' pets.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
     property alias cfg_showPet: showPet.checked
