@@ -34,7 +34,7 @@ import { pets } from "../pets";
 import { canRemove, canShare, canStop, chatRefOf, deleteHint, hideHint, isBackground, openHint, rowKeyOf, sharedTagTitle, shareTitle } from "../util/chat";
 import { useStore } from "../util/store";
 import { useLiveView } from "../util/stores";
-import { toggleAgents, togglePeek, uiState } from "../util/ui";
+import { toggleAgentDetail, toggleAgents, togglePeek, uiState } from "../util/ui";
 import { askDelete, DeleteAsk } from "./DeleteAsk";
 import { AgentTree } from "./AgentTree";
 import { AskBox, askKey } from "./AskBox";
@@ -360,7 +360,10 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
 
         {showPeek ? <PeekPanel session={s} host={host} chat={chat} /> : null}
 
-        {showAgents && agents ? <AgentTree tree={agents.tree} now={now} rowKey={rowKey} chat={chat} host={host} /> : null}
+        {showAgents && agents ? (
+          <AgentTree tree={agents.tree} now={now} rowKey={rowKey} host={host} opened={ui.agentDetail} onToggle={toggleAgentDetail}
+            onOpenRun={(agentId) => post({ type: "openAgentRun", chat, agentId })} />
+        ) : null}
 
         {remove ? <DeleteAsk itemKey={`chat|${rowKey}`} /> : null}
       </div>

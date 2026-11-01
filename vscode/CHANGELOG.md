@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **The chat tab's *Agents 1/3* tag shows what each subagent is doing:**
+  a click unfolds them in the strip under the header, as under the chat's
+  row in the view: the running ones first, each with its kind, its model,
+  how long it has run or how it ended, and what it does now; a click on one
+  shows its task, its last steps and its report, with *Open the whole run*.
+  The strip's own line still unfolds its tasks and subagents together, and
+  a chat with subagents but no task list has the strip now too. A long list
+  scrolls.
 - **A starred chat's or plan's ★ stands right before its time,** at the
   line's right end: it stood before the folder, so on a project's lines it
   floated between the name and the time. Every line keeps its room, so the

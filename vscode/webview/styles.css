@@ -958,9 +958,10 @@ button:focus-visible {
   pointer-events: auto;
 }
 
-/* A chat's tasks in its tab, under the header (chat.tsx TaskStrip): folded,
-   a progress bar and "3/7 · what it's on"; unfolded, the tasks and its
-   subagents (as in Plasma's chat window) */
+/* A chat's tasks and subagents in its tab, under the header (chat.tsx
+   TaskStrip): folded, a progress bar and "3/7 · what it's on" (or its
+   subagents: "Agents 1/3 · …"); unfolded, the tasks and its subagents as
+   under its row (AgentTree.tsx), as in Plasma's chat window */
 .pane-tasks {
   margin: 2px 0 0;
 }
@@ -1017,21 +1018,28 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+/* (a long list scrolls: the conversation keeps most of the tab) */
 .pane-tasks-list {
+  max-height: 40vh;
   margin: 0 0 2px calc(16px + 6px);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.pane-tasks-items {
+  margin: 0;
   padding: 0;
   list-style: none;
   font-size: 0.85em;
 }
 
-.pane-tasks-list > li {
+.pane-tasks-items > li {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.pane-task.done,
-.pane-agent:not(.running) {
+.pane-task.done {
   opacity: 0.6;
 }
 
@@ -1039,15 +1047,8 @@ button:focus-visible {
   font-weight: 600;
 }
 
-.pane-agent:first-of-type.pane-agent,
-.pane-task + .pane-agent {
+.pane-tasks-items + .agents {
   margin-top: 4px;
-}
-
-.pane-agent .focus-dot {
-  display: inline-block;
-  margin-right: 6px;
-  vertical-align: middle;
 }
 
 /* Continue on another account, under a chat a usage limit stopped */

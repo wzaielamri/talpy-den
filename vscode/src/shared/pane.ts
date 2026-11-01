@@ -166,6 +166,7 @@ export type PaneMessage =
   | { type: "reviewed"; on: boolean }
   | { type: "openWindow" }
   | { type: "openPlan" } // the plan it made
+  | { type: "openAgentRun"; agentId: string } // a subagent's whole run, in the Markdown preview (its strip)
   | { type: "moveToClaudeCode" } // Claude quits in its terminal, the chat reopens in a Claude Code panel (asks first)
   | { type: "copy"; text: string } // a code block of a reply, to the clipboard
   | { type: "textSize"; scale: number } // A− / A+: talpyDen.chatTextScale

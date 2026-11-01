@@ -39,18 +39,50 @@ Window {
     // Chat (your messages and Claude's replies), Steps (its tool calls too)
     // and Review; its screen is in its window (Open its window)
     property string tab: "chat"
-    // its task list (when it has one, the row's): a strip under the header, folded (tasksOpen: unfolded)
+    // its task list (when it has one, the row's) and its subagents: a strip under the header,
+    // folded; unfolded, its tasks (tasksOpen) and its subagents (agentsOpen: the header's
+    // Agents tag unfolds only them, as a row's Agents tag in the popup)
     readonly property var tasks: row && row.tasks && row.tasks.total > 0 ? row.tasks : null
+    readonly property var agents: row && row.agents && row.agents.total > 0 ? row.agents : null
     property bool tasksOpen: false
+    property bool agentsOpen: false
     readonly property string nextTask: {
         for (const t of tasks ? tasks.items : [])
             if (t.status !== "completed")
                 return t.subject
         return ""
     }
-    // (its subagents, the running ones first, when the strip is unfolded)
-    readonly property var taskAgents: !tasksOpen || !row || !row.agents ? []
-        : row.agents.tree.filter(a => a.status === "running").concat(row.agents.tree.filter(a => a.status !== "running"))
+    // (its subagents, while they're unfolded: the running ones first, each after the
+    // one that started it, as in the status's tree)
+    readonly property var stripAgents: {
+        if (!agentsOpen || !agents)
+            return []
+        const started = []   // (each of the chat's own subagents, with the ones it started)
+        for (const a of agents.tree)
+            if (a.depth === 0 || !started.length)
+                started.push([a])
+            else
+                started[started.length - 1].push(a)
+        const busy = list => list.some(a => a.status === "running")
+        return [].concat(...started.filter(busy), ...started.filter(list => !busy(list)))
+    }
+    // without a task list, the strip's line says what its subagents do
+    readonly property string agentsNow: {
+        if (tasks || !agents)
+            return ""
+        const running = agents.tree.filter(a => a.status === "running")
+        if (running.length === 1)
+            return (running[0].description || running[0].type) + (running[0].activity ? ": " + running[0].activity : "")
+        return running.length > 1 ? i18np("%1 running", "%1 running", running.length)
+             : agents.done >= agents.total ? i18n("all done") : i18n("none running")
+    }
+
+    // the strip's line: all of it unfolds, or folds
+    function toggleStrip() {
+        const open = !tasksOpen && !agentsOpen
+        tasksOpen = open && tasks !== null
+        agentsOpen = open && agents !== null
+    }
     readonly property bool conversationTab: tab === "chat" || tab === "steps"
     // Where it runs (the tag under its name): "background" (a background
     // session), "closed" (no process: a reply goes
@@ -207,6 +239,7 @@ Window {
 
     function reset() {
         tasksOpen = false
+        agentsOpen = false
         offers = null
         offersAt = 0
         suggestions = []
@@ -1181,14 +1214,18 @@ Window {
                     tooltip: pane.host ? i18n("The plan this chat made. Click to read it: a copy, fetched from %1.", pane.host)
                                        : i18n("The plan this chat made. Click to read it, rendered.")
                 }
+                // (click: what each one is doing, in the strip under the header)
                 Tag {
-                    readonly property var agents: pane.row && pane.row.agents ? pane.row.agents : null
-                    visible: agents !== null && agents.total > 0
+                    readonly property var agents: pane.agents
+                    visible: agents !== null
                     text: agents ? i18nc("subagents finished/total", "Agents %1/%2", agents.done, agents.total) : ""
                     active: agents !== null && agents.running > 0
+                    clickable: true
+                    onClicked: pane.agentsOpen = !pane.agentsOpen
                     tooltipTitle: i18n("Subagents")
                     tooltip: !agents ? "" : i18n("%1 done, %2 running, %3 stopped", agents.done, agents.running, agents.stopped)
-                                            + (agents.failed ? i18n(", %1 failed", agents.failed) : "")
+                                            + (agents.failed ? i18n(", %1 failed", agents.failed) : "") + ". "
+                                            + i18n("Click to %1 what each one is doing.", pane.agentsOpen ? i18n("hide") : i18n("show"))
                 }
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText
@@ -1201,11 +1238,13 @@ Window {
                 }
             }
 
-            // Its tasks, when it has a task list: a progress bar and "3/7 · what it's on", folded; unfolded,
-            // the tasks (✓ done, ▸ the one it's on, ○ to do) and its subagents with what each does now, made
-            // only then (the window opens as quickly)
+            // Its tasks, when it has a task list: a progress bar and "3/7 · what it's on", folded (without
+            // one, its subagents: "Agents 1/3 · what the running one does"); unfolded, the tasks (✓ done,
+            // ▸ the one it's on, ○ to do) and its subagents as under its row in the popup (AgentTree.qml:
+            // what each does now, the running ones first; click one for more), made only then (the
+            // window opens as quickly). The header's Agents tag unfolds only its subagents.
             ColumnLayout {
-                visible: pane.tasks !== null
+                visible: pane.tasks !== null || pane.agents !== null
                 Layout.fillWidth: true
                 spacing: 0
 
@@ -1216,9 +1255,9 @@ Window {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     activeFocusOnTab: true
-                    onClicked: pane.tasksOpen = !pane.tasksOpen
-                    Keys.onReturnPressed: pane.tasksOpen = !pane.tasksOpen
-                    Keys.onSpacePressed: pane.tasksOpen = !pane.tasksOpen
+                    onClicked: pane.toggleStrip()
+                    Keys.onReturnPressed: pane.toggleStrip()
+                    Keys.onSpacePressed: pane.toggleStrip()
                     Accessible.role: Accessible.Button
                     Accessible.name: tasksText.text
 
@@ -1230,7 +1269,7 @@ Window {
                         spacing: Kirigami.Units.smallSpacing
 
                         Kirigami.Icon {
-                            source: pane.tasksOpen ? Icons.plasma.unfolded : Icons.plasma.folded
+                            source: pane.tasksOpen || pane.agentsOpen ? Icons.plasma.unfolded : Icons.plasma.folded
                             Layout.preferredWidth: Kirigami.Units.iconSizes.small
                             Layout.preferredHeight: Layout.preferredWidth
                             opacity: 0.7
@@ -1242,7 +1281,8 @@ Window {
                             color: pane.mix(pane.textColor, 0.15)
 
                             Rectangle {
-                                width: parent.width * (pane.tasks ? pane.tasks.done / Math.max(1, pane.tasks.total) : 0)
+                                width: parent.width * (pane.tasks ? pane.tasks.done / Math.max(1, pane.tasks.total)
+                                                       : pane.agents ? pane.agents.done / Math.max(1, pane.agents.total) : 0)
                                 height: parent.height
                                 radius: parent.radius
                                 color: Kirigami.Theme.positiveTextColor
@@ -1252,9 +1292,10 @@ Window {
                             id: tasksText
                             Layout.fillWidth: true
                             textFormat: Text.PlainText
-                            text: !pane.tasks ? ""
-                                  : i18nc("tasks done/total · the one it's on", "%1/%2 · %3", pane.tasks.done, pane.tasks.total,
-                                          pane.tasks.current || (pane.tasks.done >= pane.tasks.total ? i18n("all done") : i18n("next: %1", pane.nextTask)))
+                            text: pane.tasks ? i18nc("tasks done/total · the one it's on", "%1/%2 · %3", pane.tasks.done, pane.tasks.total,
+                                                     pane.tasks.current || (pane.tasks.done >= pane.tasks.total ? i18n("all done") : i18n("next: %1", pane.nextTask)))
+                                  : pane.agents ? i18nc("subagents finished/total · what they do", "Agents %1/%2 · %3", pane.agents.done, pane.agents.total, pane.agentsNow)
+                                  : ""
                             font.pointSize: pane.pt * 0.9
                             font.underline: tasksFold.containsMouse || tasksFold.activeFocus
                             elide: Text.ElideRight
@@ -1262,55 +1303,48 @@ Window {
                     }
                 }
                 Loader {
-                    active: pane.tasksOpen && pane.tasks !== null
+                    active: (pane.tasksOpen && pane.tasks !== null) || (pane.agentsOpen && pane.agents !== null)
                     visible: active
                     Layout.fillWidth: true
                     Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
-                    sourceComponent: ColumnLayout {
-                        spacing: 0
-                        Repeater {
-                            model: pane.tasks ? pane.tasks.items.length : 0
-                            delegate: PlasmaComponents3.Label {
-                                required property int index
-                                readonly property var task: (pane.tasks && pane.tasks.items[index]) || root.emptyTask
-                                Layout.fillWidth: true
-                                text: (task.status === "completed" ? "✓ " : task.status === "in_progress" ? "▸ " : "○ ") + task.subject
-                                textFormat: Text.PlainText
-                                elide: Text.ElideRight
-                                opacity: task.status === "completed" ? 0.6 : 0.9
-                                font.pointSize: pane.pt * 0.85
-                                font.bold: task.status === "in_progress"
-                            }
-                        }
-                        // its subagents: what each does now (the ones still running first)
-                        Repeater {
-                            model: pane.taskAgents.length
-                            delegate: RowLayout {
-                                required property int index
-                                readonly property var agent: pane.taskAgents[index] || ({ status: "", description: "", type: "", activity: "" })
-                                Layout.fillWidth: true
-                                Layout.topMargin: index === 0 ? Kirigami.Units.smallSpacing : 0
-                                spacing: Kirigami.Units.smallSpacing
-                                Rectangle {
-                                    Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 0.4)
-                                    Layout.preferredHeight: Layout.preferredWidth
-                                    radius: width / 2
-                                    // (as the row's subagents: SessionRow.qml)
-                                    color: agent.status === "running" ? Kirigami.Theme.focusColor
-                                         : agent.status === "done" ? Kirigami.Theme.positiveTextColor
-                                         : agent.status === "failed" ? Kirigami.Theme.negativeTextColor : pane.mix(pane.textColor, 0.35)
-                                }
-                                PlasmaComponents3.Label {
+                    // (a long list scrolls: the conversation keeps most of the window)
+                    Layout.maximumHeight: Math.round(pane.height * 0.4)
+                    sourceComponent: Flickable {
+                        id: stripFlick
+                        implicitHeight: stripList.implicitHeight
+                        contentHeight: stripList.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        PlasmaComponents3.ScrollBar.vertical: PlasmaComponents3.ScrollBar {}
+
+                        ColumnLayout {
+                            id: stripList
+                            width: stripFlick.width
+                            spacing: 0
+                            Repeater {
+                                model: pane.tasksOpen && pane.tasks ? pane.tasks.items.length : 0
+                                delegate: PlasmaComponents3.Label {
+                                    required property int index
+                                    readonly property var task: (pane.tasks && pane.tasks.items[index]) || root.emptyTask
                                     Layout.fillWidth: true
+                                    text: (task.status === "completed" ? "✓ " : task.status === "in_progress" ? "▸ " : "○ ") + task.subject
                                     textFormat: Text.PlainText
-                                    text: (agent.description || agent.type)
-                                          + (agent.status === "running" ? (agent.activity ? ": " + agent.activity : "")
-                                             : " · " + (agent.status === "done" ? i18n("done") : agent.status === "failed" ? i18n("failed")
-                                                        : i18n("stopped")))
                                     elide: Text.ElideRight
-                                    opacity: agent.status === "running" ? 0.9 : 0.6
+                                    opacity: task.status === "completed" ? 0.6 : 0.9
                                     font.pointSize: pane.pt * 0.85
+                                    font.bold: task.status === "in_progress"
                                 }
+                            }
+                            // its subagents, as under its row in the popup
+                            AgentTree {
+                                Layout.fillWidth: true
+                                Layout.topMargin: pane.tasksOpen && pane.tasks ? Kirigami.Units.smallSpacing : 0
+                                visible: pane.agentsOpen && pane.agents !== null
+                                agents: pane.stripAgents
+                                rowKey: "pane|" + pane.host + "|" + pane.chatId   // (its agents' details: unfolded here, not under its row)
+                                session: pane.row || ({})
+                                remoteHost: pane.host
+                                pointSize: pane.pt * 0.85
                             }
                         }
                     }

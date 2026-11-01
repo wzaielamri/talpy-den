@@ -7,10 +7,11 @@
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { attachedTag, whereTag, droppedPaths, fileMention, picturesIn, PICTURE_TYPES, routeHint, shownAsk, suggestFor, type Offers, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { AgentTree } from "./components/AgentTree";
 import { AskBox, askKey } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
 import type { Answers, Decision, Session } from "../src/shared/types";
-import { modeHint, modeText } from "../src/shared/model";
+import { agentsNow, agentsRunningFirst, modeHint, modeText } from "../src/shared/model";
 import { sharedTagTitle } from "./util/chat";
 import { IconButton } from "./components/IconButton";
 import { Tag, TestsTag } from "./components/Tag";
@@ -75,37 +76,54 @@ function ToolLine({ item, open, onToggle, asking, going, gap, split, onSplit }: 
 
 // More room before your prompt (a new turn) than between the steps of a turn
 // Its tasks, when it has a task list: a progress bar and "3/7 · what it's on",
-// folded; unfolded, the tasks (✓ done, ▸ the one it's on, ○ to do) and its
-// subagents with what each does now, the running ones first (made only then)
-function TaskStrip({ tasks, agents }: { tasks: NonNullable<PaneChat["tasks"]>; agents: PaneChat["agents"] }) {
-  const [open, setOpen] = useState(false);
-  const next = tasks.items.find((t) => t.status !== "completed")?.subject ?? "";
-  const now = tasks.current || (tasks.done >= tasks.total ? "all done" : `next: ${next}`);
-  const tree = open && agents ? [...agents.tree.filter((a) => a.status === "running"), ...agents.tree.filter((a) => a.status !== "running")] : [];
+// folded (without one, its subagents: "Agents 1/3 · what the running one
+// does"); unfolded, the tasks (✓ done, ▸ the one it's on, ○ to do) and its
+// subagents as under its row (AgentTree.tsx: what each does now, the running
+// ones first; click one for more), made only then. Its line unfolds or folds
+// all of it; the header's Agents tag unfolds only its subagents (open.agents).
+export interface StripOpen {
+  tasks: boolean;
+  agents: boolean;
+}
+
+function TaskStrip({ tasks, agents, open, setOpen, host }: {
+  tasks: PaneChat["tasks"]; agents: PaneChat["agents"]; open: StripOpen; setOpen: (open: StripOpen) => void; host: string;
+}) {
+  const [details, setDetails] = useState<Record<string, boolean>>({}); // (a subagent unfolded: its task, steps and report)
+  const unfolded = (open.tasks && !!tasks) || (open.agents && !!agents);
+  const next = tasks?.items.find((t) => t.status !== "completed")?.subject ?? "";
+  const done = tasks ? tasks.done : agents?.done ?? 0;
+  const total = tasks ? tasks.total : agents?.total ?? 0;
+  const line = tasks ? `${tasks.done}/${tasks.total} · ${tasks.current || (tasks.done >= tasks.total ? "all done" : `next: ${next}`)}`
+    : agents ? `Agents ${agents.done}/${agents.total} · ${agentsNow(agents)}` : "";
   return (
     <div class="pane-tasks">
-      <button type="button" class="pane-tasks-line" aria-expanded={open} onClick={() => setOpen(!open)}
-        title={open ? "Fold its tasks" : "Its tasks and subagents"}>
-        <Icon name={I.folded} class={"chevron" + (open ? " open" : "")} />
+      <button type="button" class="pane-tasks-line" aria-expanded={unfolded}
+        onClick={() => setOpen(unfolded ? { tasks: false, agents: false } : { tasks: !!tasks, agents: !!agents })}
+        title={unfolded ? "Fold it" : tasks ? "Its tasks and subagents" : "What each of its subagents is doing"}>
+        <Icon name={I.folded} class={"chevron" + (unfolded ? " open" : "")} />
         <span class="pane-tasks-bar" aria-hidden="true">
-          <span style={{ width: `${Math.round((tasks.done / Math.max(1, tasks.total)) * 100)}%` }} />
+          <span style={{ width: `${Math.round((done / Math.max(1, total)) * 100)}%` }} />
         </span>
-        <span class="pane-tasks-now">{tasks.done}/{tasks.total} · {now}</span>
+        <span class="pane-tasks-now">{line}</span>
       </button>
-      {open ? (
-        <ul class="pane-tasks-list">
-          {tasks.items.map((t, i) => (
-            <li key={i} class={"pane-task " + (t.status === "completed" ? "done" : t.status === "in_progress" ? "now" : "todo")}>
-              {(t.status === "completed" ? "✓ " : t.status === "in_progress" ? "▸ " : "○ ") + t.subject}
-            </li>
-          ))}
-          {tree.map((a) => (
-            <li key={a.id} class={"pane-agent " + a.status}>
-              <span class={`focus-dot st-${a.status === "running" ? "working" : a.status === "done" ? "done" : a.status === "failed" ? "failed" : "stopped"}`} aria-hidden="true" />
-              {(a.description || a.type) + (a.status === "running" ? (a.activity ? `: ${a.activity}` : "") : ` · ${a.status}`)}
-            </li>
-          ))}
-        </ul>
+      {unfolded ? (
+        <div class="pane-tasks-list">
+          {open.tasks && tasks ? (
+            <ul class="pane-tasks-items">
+              {tasks.items.map((t, i) => (
+                <li key={i} class={"pane-task " + (t.status === "completed" ? "done" : t.status === "in_progress" ? "now" : "todo")}>
+                  {(t.status === "completed" ? "✓ " : t.status === "in_progress" ? "▸ " : "○ ") + t.subject}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {open.agents && agents ? (
+            <AgentTree tree={agentsRunningFirst(agents.tree)} now={Date.now()} rowKey="pane" host={host || undefined} opened={details}
+              onToggle={(key) => setDetails((was) => ({ ...was, [key]: !was[key] }))}
+              onOpenRun={(agentId) => post({ type: "openAgentRun", agentId })} />
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -126,6 +144,10 @@ function ChatApp() {
   const [loadError, setLoadError] = useState("");
   const [loadMissing, setLoadMissing] = useState(false); // (no transcript: it hasn't started yet, or it's gone: a note, not an error)
   const [tab, setTab] = useState<Tab>(config.tab);
+  // the strip under the header (TaskStrip): what of it is unfolded, folded again for another chat
+  const [stripOf, setStripOf] = useState<StripOpen & { chatId: string }>({ chatId: "", tasks: false, agents: false });
+  const strip: StripOpen = chat && stripOf.chatId === chat.chatId ? stripOf : { tasks: false, agents: false };
+  const setStrip = (open: StripOpen) => setStripOf({ chatId: chat?.chatId ?? "", ...open });
   const conversation = tab === "chat" || tab === "steps";
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [text, setText] = useState("");
@@ -582,13 +604,17 @@ function ChatApp() {
           <Tag icon={I.plan} text="Plan" title={`${chat.plan.title}\nThe plan this chat made. Click to read it.`} onClick={() => post({ type: "openPlan" })} />
         ) : null}
         {chat?.agents && chat.agents.total > 0 ? (
-          <Tag text={`Agents ${chat.agents.done}/${chat.agents.total}`} active={chat.agents.running > 0}
+          <Tag text={`Agents ${chat.agents.done}/${chat.agents.total}`} active={chat.agents.running > 0} pressed={strip.agents}
             title={`Subagents\n${chat.agents.done} done, ${chat.agents.running} running, ${chat.agents.stopped} stopped` +
-              (chat.agents.failed ? `, ${chat.agents.failed} failed` : "")} />
+              (chat.agents.failed ? `, ${chat.agents.failed} failed` : "") + `. Click to ${strip.agents ? "hide" : "show"} what each one is doing.`}
+            onClick={() => setStrip({ ...strip, agents: !strip.agents })} />
         ) : null}
         <span class="pane-path">{(chat?.host ? chat.host + ":" : "") + (chat?.cwd ?? "")}</span>
       </div>
-      {chat?.tasks ? <TaskStrip key={chat.chatId} tasks={chat.tasks} agents={chat.agents} /> : null}
+      {chat?.tasks || (chat?.agents && chat.agents.total > 0) ? (
+        <TaskStrip key={chat.chatId} tasks={chat.tasks} agents={chat.agents && chat.agents.total > 0 ? chat.agents : null} open={strip}
+          setOpen={setStrip} host={chat.host} />
+      ) : null}
       <div class="pane-tabs" role="tablist">
         {(["chat", "steps"] as const).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} class={tab === t ? "on" : ""} onClick={() => showTab(t)}>

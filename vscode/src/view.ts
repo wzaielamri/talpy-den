@@ -5,6 +5,7 @@
 import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import type { Actions } from "./actions";
+import { AGENT_ID } from "./agentRun";
 import type { ChatPanes } from "./chatPane";
 import { setReopenIn, settings } from "./config";
 import type { Dashboard } from "./dashboard";
@@ -14,7 +15,6 @@ import { permsHost, weekAsked, weekRevokeAsked, weekRuleAsked } from "./shared/w
 import type { ChatRef, Group, HostMessage, Memory, PlanItem, WebviewMessage } from "./shared/types";
 import { isDecision } from "./shared/types";
 
-const AGENT_ID = /^[A-Za-z0-9_-]{1,100}$/;
 const CHAT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const PROFILE_DIR = /^[A-Za-z0-9._-]{1,100}$/;
 const TIP_COMMAND = /^\/[a-z][a-z-]{0,30}( [a-z0-9-]{1,30})?$/; // what a Recap tab tip suggests, e.g. "/effort xhigh"

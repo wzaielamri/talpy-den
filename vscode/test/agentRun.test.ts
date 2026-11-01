@@ -8,11 +8,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import * as vscode from "vscode";
-import { agentRunArgs, agentRunsRoot, isAgentRunFile, openAgentRunFile } from "../src/agentRun";
+import { AGENT_ID, agentRunArgs, agentRunsRoot, isAgentRunFile, openAgentRunFile } from "../src/agentRun";
 import { Backend } from "../src/backend";
 import { cacheDir } from "../src/config";
 import { planFileOf } from "../src/planReview";
 import { windowHostFile } from "../src/remoteHost";
+import { agentsNow, agentsRunningFirst } from "../src/shared/model";
+import type { Agent } from "../src/shared/types";
 
 test("the run is saved by jump.py here and by remote.py for an SSH host", () => {
   const chat = { sessionId: "s1", chatId: "c1", profileDir: ".claude-work" };
@@ -132,4 +134,31 @@ test("the vendored backend saves a subagent's run where it's opened from", async
   } finally {
     fs.rmSync(home, { recursive: true });
   }
+});
+
+function agent(id: string, status: string, depth = 0, extra: Partial<Agent> = {}): Agent {
+  return { id, parent: null, depth, type: "Explore", description: `agent ${id}`, status, activity: "", started: null, updated: null, ...extra };
+}
+
+test("a chat tab's strip lists the running subagents first, each with the ones it started", () => {
+  // (the status's tree: depth-first, oldest first; b started b1 and b2, c started c1)
+  const tree = [agent("a", "done"), agent("b", "done"), agent("b1", "running", 1), agent("b2", "done", 2), agent("c", "stopped"),
+    agent("c1", "done", 1), agent("d", "running")];
+  assert.deepEqual(agentsRunningFirst(tree).map((a) => a.id), ["b", "b1", "b2", "d", "a", "c", "c1"]);
+  assert.deepEqual(agentsRunningFirst([]), []);
+  assert.deepEqual(agentsRunningFirst([agent("x", "done", 1), agent("y", "running")]).map((a) => a.id), ["y", "x"]);   // (a tree cut short)
+});
+
+test("without a task list, the strip's line says what the subagents do", () => {
+  const one = [agent("a", "done"), agent("b", "running", 0, { activity: "Reading src/view.ts" })];
+  assert.equal(agentsNow({ done: 1, total: 2, tree: one }), "agent b: Reading src/view.ts");
+  assert.equal(agentsNow({ done: 1, total: 2, tree: [agent("a", "done"), agent("b", "running", 0, { description: "" })] }), "Explore");
+  assert.equal(agentsNow({ done: 0, total: 2, tree: [agent("a", "running"), agent("b", "running")] }), "2 running");
+  assert.equal(agentsNow({ done: 2, total: 2, tree: [agent("a", "done"), agent("b", "done")] }), "all done");
+  assert.equal(agentsNow({ done: 1, total: 2, tree: [agent("a", "done"), agent("b", "stopped")] }), "none running");
+});
+
+test("a subagent's run is asked for only by an id the backend could have given", () => {
+  for (const id of ["a1b2c3", "agent_x-1"]) assert.ok(AGENT_ID.test(id), id);
+  for (const id of ["", "../x", "a b", "a;rm", "x".repeat(101)]) assert.ok(!AGENT_ID.test(id), id);
 });

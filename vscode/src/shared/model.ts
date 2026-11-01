@@ -1256,6 +1256,26 @@ export function agentSummary(a: Pick<Agent, "toolCalls" | "tokens">): string {
   return parts.join(" · ");
 }
 
+// A chat's subagents in its chat tab's strip: the running ones first, each of
+// the chat's own with the ones it started (the status's tree stays a tree)
+export function agentsRunningFirst(tree: Agent[]): Agent[] {
+  const started: Agent[][] = [];
+  for (const a of tree) {
+    if (a.depth === 0 || !started.length) started.push([a]);
+    else started[started.length - 1].push(a);
+  }
+  const busy = (list: Agent[]) => list.some((a) => a.status === "running");
+  return [...started.filter(busy), ...started.filter((list) => !busy(list))].flat();
+}
+
+// What a chat's subagents do, for its strip's line when it has no task list:
+// the running one's description and what it does, else how many run, else how they ended
+export function agentsNow(agents: { done: number; total: number; tree: Agent[] }): string {
+  const running = agents.tree.filter((a) => a.status === "running");
+  if (running.length === 1) return (running[0].description || running[0].type) + (running[0].activity ? `: ${running[0].activity}` : "");
+  return running.length > 1 ? `${running.length} running` : agents.done >= agents.total ? "all done" : "none running";
+}
+
 // The tooltip of "Open the whole run"
 export function agentRunTitle(host?: string): string {
   return (

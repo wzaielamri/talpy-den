@@ -62,15 +62,18 @@ const chat: PaneChat = {
   shared: params.get("shared") === "1" ? { profiles: ["work", "personal"], forkOf: null } as unknown as PaneChat["shared"] : null,
   mode: "auto",
   plan: { title: "Fix the week numbers" },
-  agents: {
-    running: 1, done: 2, stopped: 0, total: 3,
+  // (?agents=0: none)
+  agents: params.get("agents") === "0" ? null : {
+    running: 2, done: 2, stopped: 0, total: 4,
     tree: [
       { id: "a1", parent: null, depth: 0, type: "Explore", description: "Find where weeks are computed", status: "done", activity: "", started: now - 380_000, updated: now - 330_000 },
-      { id: "a2", parent: null, depth: 0, type: "general-purpose", description: "Check the other date helpers", status: "running", activity: "Grep: weeksInYear", started: now - 200_000, updated: now - 5_000 },
+      { id: "a2", parent: null, depth: 0, type: "general-purpose", description: "Check the other date helpers", status: "running", activity: "Grep: weeksInYear", started: now - 200_000, updated: now - 5_000,
+        model: "Sonnet 5.5", task: "Check whether the other date helpers in src/dates.ts cap weeks at 52 too.", steps: ["Read: dates.ts", "Grep: weeksInYear"], toolCalls: 6, tokens: 41_200 },
+      { id: "a4", parent: "a2", depth: 1, type: "Explore", description: "Read the calendar module", status: "running", activity: "Read: calendar.ts", started: now - 60_000, updated: now - 3_000 },
       { id: "a3", parent: null, depth: 0, type: "Explore", description: "Look for week tests", status: "done", activity: "", started: now - 380_000, updated: now - 300_000 },
     ],
   },
-  // ?tasks=0: no task list (no strip); ?tasks=open: the strip unfolded
+  // ?tasks=0: no task list (the strip shows its subagents); ?tasks=open: the strip unfolded
   tasks: params.get("tasks") === "0" ? null : {
     done: 2, total: 4, current: "Running the parser tests",
     items: [
@@ -118,6 +121,15 @@ const review: ReviewAnswer = {
   editedAt: now - 60_000,
   repos: ["/home/alice/projects/webapp"],
 };
+
+// ?tasks=open: the strip unfolded (its line clicked); ?agents=open: only its
+// subagents (the header's Agents tag clicked), the first running one's details too
+const unfold = params.get("tasks") === "open" ? ".pane-tasks-line" : params.get("agents") === "open" ? ".pane-folder button.tag[aria-pressed]" : "";
+if (unfold)
+  setTimeout(() => {
+    document.querySelector<HTMLButtonElement>(unfold)?.click();
+    if (params.get("agents") === "open") setTimeout(() => document.querySelector<HTMLButtonElement>(".ag-running .agent-head")?.click(), 100);
+  }, 700);
 
 // ?open=1: every tool call unfolded (clicked once the conversation shows)
 if (params.get("open") === "1")

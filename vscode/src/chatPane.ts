@@ -14,6 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Actions } from "./actions";
+import { AGENT_ID } from "./agentRun";
 import type { Backend } from "./backend";
 import { openComparison } from "./changes";
 import { cacheDir, configDirArgs } from "./config";
@@ -487,6 +488,9 @@ class Pane implements vscode.Disposable {
         if (session?.plan) void this.owner.ext.actions.openPlan({ ...session.plan, profileDir: this.chat.profileDir }, this.host || undefined, false);
         break;
       }
+      case "openAgentRun":
+        if (typeof m.agentId === "string" && AGENT_ID.test(m.agentId)) await actions.openAgentRun(this.chat, m.agentId);
+        break;
       case "openWindow":
         await actions.open(this.chat);
         break;
