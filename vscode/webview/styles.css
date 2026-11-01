@@ -1051,9 +1051,11 @@ button:focus-visible {
 }
 
 /* Continue on another account, under a chat a usage limit stopped */
+/* (at the line's right end, as Plasma puts them at the end of the step line) */
 .handover {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0 12px;
   margin-top: 1px;
 }

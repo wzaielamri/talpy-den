@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A chat's Continue on…, Goes on at and Keeps going stand at the right end of their line in VS Code too,** as in Plasma; they started at the left (VS Code).
 - **A kept chat shows Keeps going while it works, as in VS Code:** its line with the tag showed only when the chat had a step or tasks to show, so a kept chat at work with neither showed no sign it keeps going (Plasma).
 - **Plasma's settings pages take every setting without a warning, and the Talpy page has Talpy's own picture as its icon:** each page logged 70-80 *Setting initial properties failed* for the other pages' settings, which every page now declares (one base page); on Apply a page puts back the settings set in the popup (Focus, the new-chat box, SSH hosts, the chat pane's side by side and text size) as they are then, not as they were when it opened; the Talpy page's icon was Breeze's lion head (Plasma).
 - **Deleting a finished background chat takes its background folder to the Trash too,** restorable with it, and the list drops it at once: its transcript went but its record stayed, so its row stayed as *Done · Not open*; a finished background chat whose transcript is gone isn't listed, and one still running in the background isn't deleted (*It runs in the background on …. Stop it first.*) (Plasma, GNOME and VS Code).

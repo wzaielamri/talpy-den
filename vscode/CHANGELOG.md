@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A chat's Continue on…, Goes on at and Keeps going stand at the right end
+  of their line,** as in Plasma; they started at the left.
 - **Deleting a finished background chat takes its background folder to
   the Trash too,** restorable with it, and the list drops it at once; its
   row stayed as *Done · Not open*. One still running in the background

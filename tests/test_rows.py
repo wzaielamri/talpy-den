@@ -187,6 +187,10 @@ class RowButtonsTests(unittest.TestCase):
             self.assertIn(part, visible)
         tsx = (repo / "vscode/webview/components/SessionRow.tsx").read_text()
         self.assertIn("{handover || goOn || goingOn || kept ? (", tsx)
+        # and at the line's right end in both, as Plasma's step line puts them after its text
+        css = (repo / "vscode/webview/styles.css").read_text()
+        rule = css[css.index(".handover {"):]
+        self.assertIn("justify-content: flex-end;", rule[:rule.index("}")])
 
     def test_delete_asks_on_its_line_everywhere(self):
         # Delete… under a chat, a plan or a memory asks on the line itself, as Plasma's DeleteAsk:
