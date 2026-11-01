@@ -35,6 +35,7 @@ import { canRemove, canShare, canStop, chatRefOf, deleteHint, hideHint, isBackgr
 import { useStore } from "../util/store";
 import { useLiveView } from "../util/stores";
 import { toggleAgents, togglePeek, uiState } from "../util/ui";
+import { askDelete, DeleteAsk } from "./DeleteAsk";
 import { AgentTree } from "./AgentTree";
 import { AskBox, askKey } from "./AskBox";
 import { useView } from "./context";
@@ -351,6 +352,8 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
         {showPeek ? <PeekPanel session={s} host={host} chat={chat} /> : null}
 
         {showAgents && agents ? <AgentTree tree={agents.tree} now={now} rowKey={rowKey} chat={chat} host={host} /> : null}
+
+        {remove ? <DeleteAsk itemKey={`chat|${rowKey}`} /> : null}
       </div>
 
       {
@@ -396,7 +399,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           ) : null}
           {remove ? (
             <IconButton icon={I.delete} tone={T.delete} label="Delete this chat…" title={`Delete this chat…\n${deleteHint("chat")}`}
-              onClick={() => post({ type: "delete", kind: "chat", chat })} />
+              onClick={() => askDelete(`chat|${rowKey}`, { kind: "chat", chat })} />
           ) : null}
           {remove ? (
             <IconButton icon={I.hide} label="Hide this chat" title={`Hide this chat\n${hideHint("chats", host)}`}

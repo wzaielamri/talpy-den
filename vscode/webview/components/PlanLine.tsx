@@ -5,6 +5,7 @@ import { deleteHint, hideHint } from "../util/chat";
 import { I, Icon, T } from "../util/icons";
 import { useWoken } from "../util/lazy";
 import { useView } from "./context";
+import { askDelete, DeleteAsk } from "./DeleteAsk";
 import { Elided } from "./Elided";
 import { IconButton } from "./IconButton";
 import { Tag } from "./Tag";
@@ -26,7 +27,9 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
   const ref = (plan: string) => (host ? { groupId: group.id, host, plan } : { groupId: group.id, plan });
   // (in a project: only the part of its folder below the project's)
   const folder = project !== undefined ? folderIn(p.cwd, project, p.cwdShort) : p.cwdShort;
+  const askKey = `plan|${host ?? ""}|${group.id}|${p.key}`; // (Delete?'s line)
   return (
+    <>
     <li class="recent-item" {...wake}>
       <Icon name={I.plan} class="line-icon" />
       <button
@@ -122,11 +125,13 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
             />
           ) : null}
           <IconButton icon={I.delete} tone={T.delete} label="Delete this plan…" title={`Delete this plan…\n${deleteHint("plan")}`}
-            onClick={() => post({ type: "delete", kind: "plan", groupId: group.id, ...(host ? { host } : {}), id: p.key })} />
+            onClick={() => askDelete(askKey, { kind: "plan", groupId: group.id, ...(host ? { host } : {}), id: p.key })} />
           <IconButton icon={I.hide} label="Hide this plan" title={`Hide this plan\n${hideHint("plans", host)}`}
             onClick={() => post({ type: "hide", kind: "plans", groupId: group.id, ...(host ? { host } : {}), id: p.key })} />
         </div>
       ) : null}
     </li>
+    {woken ? <DeleteAsk itemKey={askKey} li /> : null}
+    </>
   );
 }

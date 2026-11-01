@@ -2515,6 +2515,29 @@ body.vscode-high-contrast .top.scrolled {
   color: var(--cs-failed);
 }
 
+/* Delete?: under the line that asks (DeleteAsk), as every question (.confirm);
+   why it can't be deleted in red, OK beside it */
+.delete-ask-item {
+  list-style: none;
+  padding: 0 0 2px;
+}
+
+.delete-ask {
+  margin: 2px 0 4px;
+}
+
+.delete-ask-no {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.delete-ask-no .error {
+  flex: 1 1 14em;
+  color: var(--cs-failed);
+}
+
 /* ---------------------------------------------------------------------------
    The chat tab (webview/chat.tsx) and what a waiting chat asks (AskBox, also
    in its row): VS Code's own button and input colors. */

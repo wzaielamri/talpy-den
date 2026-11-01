@@ -5,6 +5,7 @@ import { deleteHint, hideHint } from "../util/chat";
 import { I, Icon, T, memoryIcon } from "../util/icons";
 import { useWoken } from "../util/lazy";
 import { useView } from "./context";
+import { askDelete, DeleteAsk } from "./DeleteAsk";
 import { Elided } from "./Elided";
 import { IconButton } from "./IconButton";
 import { Tag } from "./Tag";
@@ -26,7 +27,9 @@ export function MemoryLine({ memory: m, group, project, accountTag }: { memory: 
   const ref = (edit?: boolean) => ({ type: "openMemory" as const, groupId: group.id, memory: m.key, ...(host ? { host } : {}), ...(edit ? { edit } : {}) });
   // (in a project: only the part of its folder below the project's)
   const folder = account ? "every folder" : project !== undefined ? folderIn(m.folder, project, m.folderShort) : m.folderShort || m.folder;
+  const askKey = `memory|${host ?? ""}|${group.id}|${m.key}`; // (Delete?'s line)
   return (
+    <>
     <li class={"recent-item" + (elsewhere ? " unavailable" : "")} {...wake}>
       <Icon name={memoryIcon(m.type)} class="line-icon" />
       <button
@@ -70,7 +73,7 @@ export function MemoryLine({ memory: m, group, project, accountTag }: { memory: 
           )}
           {account ? null : (
             <IconButton icon={I.delete} tone={T.delete} label="Delete this memory…" title={`Delete this memory…\n${deleteHint("memory")}`}
-              onClick={() => post({ type: "delete", kind: "memory", groupId: group.id, ...(host ? { host } : {}), id: m.key })} />
+              onClick={() => askDelete(askKey, { kind: "memory", groupId: group.id, ...(host ? { host } : {}), id: m.key })} />
           )}
           {account ? null : (
             <IconButton icon={I.hide} label="Hide this memory" title={`Hide this memory\n${hideHint("memories", host)}`}
@@ -79,5 +82,7 @@ export function MemoryLine({ memory: m, group, project, accountTag }: { memory: 
         </div>
       ) : null}
     </li>
+    {woken && !account ? <DeleteAsk itemKey={askKey} li /> : null}
+    </>
   );
 }

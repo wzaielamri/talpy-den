@@ -20,6 +20,7 @@ import { post } from "../env";
 import { canShareRecent, deleteHint, recentRef, shareTitle } from "../util/chat";
 import { useWoken } from "../util/lazy";
 import { useView } from "./context";
+import { askDelete, DeleteAsk } from "./DeleteAsk";
 import { Elided } from "./Elided";
 import { IconButton } from "./IconButton";
 import { Tag, TestsTag } from "./Tag";
@@ -76,7 +77,9 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
   const tests = testsText(c.review);
   // (in a project: only the part of its folder below the project's)
   const folder = project !== undefined ? folderIn(c.cwd, project, c.cwdShort || "~") : c.cwdShort || "~";
+  const askKey = `chat|${group.host ?? ""}|${c.profileDir}/${c.sessionId}`; // (Delete?'s line: the same chat in two lists asks once)
   return (
+    <>
     <li class={"recent-item" + (canOpen || paneFirst ? "" : " unavailable")} {...wake}>
       <button
         type="button"
@@ -173,9 +176,11 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
             />
           ) : null}
           <IconButton icon={I.delete} tone={T.delete} label="Delete this chat…" title={`Delete this chat…\n${deleteHint("chat")}`}
-            onClick={() => post({ type: "delete", kind: "chat", chat })} />
+            onClick={() => askDelete(askKey, { kind: "chat", chat })} />
         </div>
       ) : null}
     </li>
+    {woken ? <DeleteAsk itemKey={askKey} li /> : null}
+    </>
   );
 }

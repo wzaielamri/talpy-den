@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **VS Code's *Delete…* asks on the line, as Plasma's and every other question:** under the chat, plan or memory, *Looking at what it would delete…*, then the question in orange with **Delete** (the red trash) and **Cancel** beside it, or why it can't be deleted in red with **OK**; it asked in a pop-up dialog in the middle of the window (VS Code).
 - **Plasma's *Keeps going* tag says why it's red,** as VS Code's: *Keeps going (gave up)* when going on failed, *Keeps going (can't go on now)* when it can't for the moment (the tooltip says more); it read *Keeps going* either way (Plasma).
 - **Turning Playful Talpy off ends a cookie too:** one that's out (or the one he's eating) vanishes in a puff of dust where it is, and Talpy digs in where he is, as a game ends at once; he went on running after it and eating it (Plasma and VS Code).
 - **GNOME's popup alike in its own parts:** every fold arrow and the *Show N more* icon at 16 px (a subagent's arrow, the Recap's *Where Claude worked* rows and *Show N more* were 12 px), and the Talpy Den tab's and the Recap's empty states one look, their tab's icon over the title and what to do, as Plasma's (one was in the accounts' title size, the other in plain bold, neither with an icon); the icon table's GNOME icons for the chats and the Recap are ones Adwaita and Yaru have: the Recap's drew the Settings gear (GNOME).

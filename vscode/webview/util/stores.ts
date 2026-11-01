@@ -1,6 +1,6 @@
 // What the extension last sent, and whether anyone can see the view.
 
-import type { HostMessage, LiveView, ViewState } from "../../src/shared/types";
+import type { DeleteTarget, HostMessage, LiveView, ViewState } from "../../src/shared/types";
 import { useEffect, useState } from "preact/hooks";
 import { createStore } from "./store";
 
@@ -49,3 +49,15 @@ export function useLiveView(sessionId: string, on: boolean): LiveView | undefine
   }, [sessionId, on]);
   return current;
 }
+
+// The question under a line once its Delete… is clicked, one at a time (as
+// Plasma's): busy while the extension looks at what it would delete, then the
+// question, or why it can't be deleted (message)
+export interface DeleteAsk {
+  key: string; // the line's
+  what: DeleteTarget;
+  busy: boolean;
+  question: string;
+  message: string;
+}
+export const deleteAsk = createStore<DeleteAsk | null>(null);

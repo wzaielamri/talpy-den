@@ -205,6 +205,23 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       ?? (m.host ? null : findProjectPlan(this.dash.projectsRead(), state.status, m.plan));
   }
 
+  // What a Delete names, as the extension knows it: a chat by its id,
+  // profile and machine, an account's plan or memory by its key (an account's
+  // CLAUDE.md is never deleted from here)
+  private deleteTarget(m: { kind?: unknown; groupId?: unknown; host?: unknown; id?: unknown }, chat: ChatRef | null):
+    { kind: "chat" | "plan" | "memory"; id: string; profileDir: string; host?: string } | null {
+    if (m.kind === "chat") return chat ? { kind: "chat", id: chat.chatId || chat.sessionId, profileDir: chat.profileDir, host: chat.host } : null;
+    if (m.kind === "plan") {
+      const found = this.planOf({ groupId: m.groupId, host: m.host, plan: m.id });
+      return found ? { kind: "plan", id: found.plan.slug, profileDir: found.plan.profileDir, host: found.group.host } : null;
+    }
+    if (m.kind === "memory") {
+      const found = this.memoryOf({ groupId: m.groupId, host: m.host, memory: m.id });
+      return found && found.memory.type !== "account" ? { kind: "memory", id: found.memory.key, profileDir: "", host: found.group.host } : null;
+    }
+    return null;
+  }
+
   private receive(webview: vscode.Webview, raw: unknown): void {
     if (!raw || typeof raw !== "object" || typeof (raw as { type?: unknown }).type !== "string") return;
     const m = raw as WebviewMessage;
@@ -265,16 +282,21 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         break;
       }
       case "delete": {
-        // (a chat, or an account's plan or memory: by its id, profile and machine)
-        const done = () => this.projectsChanged();
-        if (m.kind === "chat" && chat) void this.actions.delete("chat", chat.chatId || chat.sessionId, chat.profileDir, chat.host).then(done);
-        else if (m.kind === "plan") {
-          const found = this.planOf({ groupId: m.groupId, host: m.host, plan: m.id });
-          if (found) void this.actions.delete("plan", found.plan.slug, found.plan.profileDir, found.group.host).then(done);
-        } else if (m.kind === "memory") {
-          const found = this.memoryOf({ groupId: m.groupId, host: m.host, memory: m.id });
-          if (found && found.memory.type !== "account") void this.actions.delete("memory", found.memory.key, "", found.group.host).then(done);
-        }
+        // (the line asked first)
+        const what = this.deleteTarget(m, chat);
+        if (what) void this.actions.delete(what.kind, what.id, what.profileDir, what.host).then(() => this.projectsChanged());
+        break;
+      }
+      case "deleteDescribe": {
+        // what Delete would do, for the question on the line
+        const what = this.deleteTarget(m, chat), key = text(m.key);
+        if (!key) break;
+        const answer = what ? this.actions.describeDelete(what.kind, what.id, what.profileDir, what.host)
+          : Promise.resolve({ ok: false, question: "", message: "It can't be deleted." });
+        void answer.then(
+          (a) => webview.postMessage({ type: "deleteAsk", key, ...a } satisfies HostMessage),
+          () => webview.postMessage({ type: "deleteAsk", key, ok: false, question: "", message: "It can't be deleted." } satisfies HostMessage),
+        );
         break;
       }
       case "share":

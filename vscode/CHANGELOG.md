@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- ***Delete…* asks on the line, as every other question:** under the
+  chat, plan or memory, *Looking at what it would delete…*, then the
+  question in orange with **Delete** (the red trash) and **Cancel** beside
+  it, or why it can't be deleted in red with **OK**; it asked in a pop-up
+  dialog in the middle of the window.
 - **Turning Playful Talpy off ends a cookie too:** one that's out (or the
   one he's eating) vanishes in a puff of dust where it is, and Talpy digs
   in where he is, as a game ends at once; he went on running after it and

@@ -4,6 +4,7 @@ import { gotRecentMore, setTab } from "./util/ui";
 import { render } from "preact";
 import type { HostMessage } from "../src/shared/types";
 import { App } from "./components/App";
+import { gotDeleteAsk } from "./components/DeleteAsk";
 import { isDark, post } from "./env";
 import { pets } from "./pets";
 import { hostVisible, liveViews, pageVisible, permsAnswer, projectsAnswer, petColorsVersion, viewState, weekAnswer, weekRevokeAnswer, weekRuleAnswer } from "./util/stores";
@@ -49,6 +50,9 @@ window.addEventListener("message", (event: MessageEvent) => {
       break;
     case "projects":
       projectsAnswer.set(msg);
+      break;
+    case "deleteAsk":
+      gotDeleteAsk(msg.key, msg.ok, msg.question, msg.message);
       break;
   }
 });

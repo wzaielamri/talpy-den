@@ -175,6 +175,30 @@ class RowButtonsTests(unittest.TestCase):
         tsx = (repo / "vscode/webview/components/SessionRow.tsx").read_text()
         self.assertIn('"Keeps going" + (kept.error ? " (gave up)" : kept.note ? " (can\'t go on now)" : "")', tsx)
 
+    def test_delete_asks_on_its_line_everywhere(self):
+        # Delete… under a chat, a plan or a memory asks on the line itself, as Plasma's DeleteAsk:
+        # what it's looking at, then the question in orange with Delete (the red trash) and Cancel
+        # beside it, or why it can't be deleted in red with OK; VS Code asked in a modal dialog
+        repo = UI.parent.parent.parent
+        plasma = (UI / "DeleteAsk.qml").read_text()
+        for words in ('i18n("Looking at what it would delete…")', 'confirmText: i18n("Delete")', 'confirmIcon: "delete"', 'i18n("OK")'):
+            self.assertIn(words, plasma)
+        comp = repo / "vscode/webview/components"
+        ask = (comp / "DeleteAsk.tsx").read_text()
+        self.assertIn("Looking at what it would delete…", ask)
+        self.assertIn('<div class="confirm delete-ask">', ask)
+        self.assertRegex(ask, r'<Icon name=\{I\.delete\} tone=\{T\.delete\} />Delete\n')
+        self.assertIn('onClick={close}>Cancel</button>', ask)
+        self.assertIn('onClick={close}>OK</button>', ask)
+        self.assertIn('post({ type: "deleteDescribe", key, ...what })', ask)
+        for name, kind in (("SessionRow.tsx", "chat"), ("RecentLine.tsx", "chat"), ("PlanLine.tsx", "plan"), ("MemoryLine.tsx", "memory")):
+            text = (comp / name).read_text()
+            self.assertRegex(text, r'onClick=\{\(\) => askDelete\([^,]+, \{ kind: "%s"' % kind, name)
+            self.assertIn("<DeleteAsk itemKey=", text, name)
+            self.assertNotIn('post({ type: "delete"', text, name)
+        actions = (repo / "vscode/src/actions.ts").read_text()
+        self.assertNotIn('{ modal: true }, "Delete"', actions)
+
     def test_a_projects_dots_stand_top_right_and_its_buttons_cover_its_folder_line(self):
         # (the buttons kept their room after the dots on the name's line, so the
         # dots stood a few buttons in from the edge)

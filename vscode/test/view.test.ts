@@ -164,6 +164,11 @@ test("a project's chat, plan and memory are found in what the Projects tab last 
   assert.deepEqual(got[1].args, ["plans", "quiet-amber-heron", undefined]);
   assert.deepEqual([(got[2].args[0] as { key: string }).key, got[2].args[2]], ["demo-mem-1", true]);
   assert.deepEqual(got[3].args, ["memory", "demo-mem-2", "", undefined]);
+  // (Delete?'s question on the line: what it would delete, asked the same way)
+  receive({ type: "deleteDescribe", key: "memory||g|demo-mem-2", kind: "memory", groupId: g.id, id: "demo-mem-2" });
+  receive({ type: "deleteDescribe", kind: "memory", groupId: g.id, id: "demo-mem-2" }); // (no line to answer: nothing)
+  const asked = calls.splice(0);
+  assert.deepEqual(asked.map((c) => [c.name, ...c.args]), [["describeDelete", "memory", "demo-mem-2", "", undefined]]);
   // (an SSH host's are never looked for there, nor what it doesn't list)
   receive({ type: "openPlan", groupId: g.id, host: state.hosts[0]?.name ?? "box", plan: "demo-plan-1" });
   receive({ type: "open", chat: { host: state.hosts[0]?.name ?? "box", key: ".claude/demo-6/project" } });

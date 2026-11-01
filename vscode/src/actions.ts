@@ -462,25 +462,28 @@ export class Actions {
   }
 
   // Delete a chat, a plan or a memory to the Trash (an SSH host's to that
-  // host's), after a question that says what goes and on which accounts (the
-  // backend's --describe), or why it can't
-  async delete(kind: "chat" | "plan" | "memory", id: string, profileDir: string, host?: string): Promise<void> {
-    if (this.demoOnly()) return;
-    const args = (describe: boolean) => [
+  // host's). The view asks first, on its line: describeDelete says what goes
+  // and on which accounts (the backend's --describe), or why it can't
+  private deleteRun(kind: "chat" | "plan" | "memory", id: string, profileDir: string, host: string | undefined, describe: boolean): Promise<Answer> {
+    return this.backend.action(host ? "remote.py" : "jump.py", [
       ...(host ? [`--delete-${kind}`, host, id, ...(profileDir && kind !== "memory" ? [profileDir] : [])]
         : [`--delete-${kind}`, id, ...(profileDir && kind !== "memory" ? ["--profile", profileDir] : [])]),
       ...(describe ? ["--describe"] : []),
       ...(host ? [] : configDirArgs()),
-    ];
-    const run = (describe: boolean) => this.backend.action(host ? "remote.py" : "jump.py", args(describe));
-    const ask = await run(true);
-    if (!ask.ok) {
-      void vscode.window.showWarningMessage(ask.message || "It can't be deleted");
-      return;
-    }
-    const ok = await vscode.window.showWarningMessage(ask.question || ask.message, { modal: true }, "Delete");
-    if (ok !== "Delete") return;
-    const answer = await run(false);
+    ]);
+  }
+
+  // The question before Delete (ok), or why it can't be deleted (not ok)
+  async describeDelete(kind: "chat" | "plan" | "memory", id: string, profileDir: string, host?: string): Promise<{ ok: boolean; question: string; message: string }> {
+    if (this.dash.demo) return { ok: false, question: "", message: "Demo mode: these chats are made up. Run “Talpy Den: Toggle Demo Data” to go back." };
+    const ask = await this.deleteRun(kind, id, profileDir, host, true);
+    return ask.ok ? { ok: true, question: ask.question || ask.message || "Delete it? It goes to the Trash.", message: "" }
+      : { ok: false, question: "", message: ask.message || "It can't be deleted." };
+  }
+
+  async delete(kind: "chat" | "plan" | "memory", id: string, profileDir: string, host?: string): Promise<void> {
+    if (this.demoOnly()) return;
+    const answer = await this.deleteRun(kind, id, profileDir, host, false);
     if (this.report(answer, "Couldn't delete it")) this.dash.setActionInfo(answer.message || "Moved to the Trash");
     this.refresh(host);
   }

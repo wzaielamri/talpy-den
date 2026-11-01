@@ -874,6 +874,9 @@ export function isDecision(d: unknown): d is Decision {
   return typeof d === "string" && (DECISIONS as readonly string[]).includes(d);
 }
 
+// A chat, or an account's plan or memory (by its key, as the extension knows it), to delete
+export type DeleteTarget = { kind: "chat" | "plan" | "memory"; chat?: ChatRef; groupId?: string; host?: string; id?: string };
+
 // webview -> extension
 export type WebviewMessage =
   | { type: "ready" }
@@ -888,7 +891,8 @@ export type WebviewMessage =
   | { type: "stop"; chat: ChatRef }
   | { type: "dismiss"; chat: ChatRef }
   | { type: "hide"; kind: "plans" | "memories" | "projects"; groupId?: string; host?: string; id: string } // id: the plan's or memory's key, a project's folder
-  | { type: "delete"; kind: "chat" | "plan" | "memory"; chat?: ChatRef; groupId?: string; host?: string; id?: string } // asks first (to the Trash)
+  | ({ type: "delete" } & DeleteTarget) // to the Trash (the line asked first: deleteDescribe)
+  | ({ type: "deleteDescribe"; key: string } & DeleteTarget) // what Delete would do, for the question on the line (key: the line's)
   | { type: "share"; chat: ChatRef }
   | { type: "compareChanges"; chat: ChatRef; turn: boolean }
   | { type: "openAgentRun"; chat: ChatRef; agentId: string }
@@ -941,5 +945,6 @@ export type HostMessage =
   | { type: "weekRule"; id: string; host: string; ok: boolean; message: string }
   | { type: "weekRevoke"; id: string; host: string; ok: boolean; message: string }
   | { type: "perms"; data: PermsData | null; error: string }
+  | { type: "deleteAsk"; key: string; ok: boolean; question: string; message: string } // (deleteDescribe's answer: the question, or why it can't)
   | { type: "projects"; data: ProjectsData | null; error: string }
   | { type: "recentMore"; groupId: string; host?: string; recent: RecentChat[]; asked: number }; // (none: the check failed)
