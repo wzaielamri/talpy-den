@@ -14,6 +14,7 @@ RowLayout {
     property alias text: question.text
     property string confirmText: i18n("Yes")
     property string confirmIcon: ""
+    property bool confirmEnabled: true   // (e.g. while another change is being written)
     property string cancelText: i18n("Cancel")
     signal confirmed()
     signal cancelled()
@@ -31,6 +32,7 @@ RowLayout {
         text: confirm.confirmText
         icon.name: confirm.confirmIcon ? Icons.plasma[confirm.confirmIcon] : ""
         icon.color: confirm.confirmIcon ? Icons.color(confirm.confirmIcon, Kirigami.Theme) : "transparent"
+        enabled: confirm.confirmEnabled
         onClicked: confirm.confirmed()
     }
     PlasmaComponents3.Button {

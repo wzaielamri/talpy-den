@@ -239,38 +239,20 @@ PlasmaComponents3.ScrollView {
                                 running: visible
                             }
                         }
-                        // Revoke asks first, saying what changes where
-                        ColumnLayout {
+                        // Revoke asks first, saying what changes where (as every question: ConfirmLine)
+                        ConfirmLine {
                             Layout.fillWidth: true
                             Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
                             visible: grantRow.asking
-                            spacing: Kirigami.Units.smallSpacing
-
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.fillWidth: true
-                                wrapMode: Text.Wrap
-                                font: Kirigami.Theme.smallFont
-                                text: i18n("This %1.", grantRow.grant.change)
+                            text: i18n("This %1.", grantRow.grant.change)
+                            confirmText: i18n("Revoke")
+                            confirmIcon: "cancel"
+                            confirmEnabled: root.ruleBusy === ""   // (one settings write at a time)
+                            onConfirmed: {
+                                view.confirmGrant = ""
+                                root.revokeGrant(grantRow.grant, origin.host)
                             }
-                            RowLayout {
-                                spacing: Kirigami.Units.smallSpacing
-
-                                PlasmaComponents3.Button {
-                                    icon.name: Icons.plasma.cancel
-                                    icon.color: Icons.color("cancel", Kirigami.Theme)
-                                    text: i18n("Revoke")
-                                    enabled: root.ruleBusy === ""   // (one settings write at a time)
-                                    onClicked: {
-                                        view.confirmGrant = ""
-                                        root.revokeGrant(grantRow.grant, origin.host)
-                                    }
-                                }
-                                PlasmaComponents3.Button {
-                                    text: i18n("Cancel")
-                                    onClicked: view.confirmGrant = ""
-                                }
-                            }
+                            onCancelled: view.confirmGrant = ""
                         }
                     }
                 }
@@ -426,38 +408,20 @@ PlasmaComponents3.ScrollView {
                                 running: visible
                             }
                         }
-                        // Allow asks first, saying what changes where
-                        ColumnLayout {
+                        // Allow asks first, saying what changes where (as every question: ConfirmLine)
+                        ConfirmLine {
                             Layout.fillWidth: true
                             Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
                             visible: ruleRow.asking
-                            spacing: Kirigami.Units.smallSpacing
-
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.fillWidth: true
-                                wrapMode: Text.Wrap
-                                font: Kirigami.Theme.smallFont
-                                text: i18n("This %1.", ruleRow.rule.change)
+                            text: i18n("This %1.", ruleRow.rule.change)
+                            confirmText: i18n("Allow")
+                            confirmIcon: "allow"
+                            confirmEnabled: root.ruleBusy === ""   // (one settings write at a time)
+                            onConfirmed: {
+                                view.confirmRule = ""
+                                root.changeRule(ruleRow.rule, true, origin.host)
                             }
-                            RowLayout {
-                                spacing: Kirigami.Units.smallSpacing
-
-                                PlasmaComponents3.Button {
-                                    icon.name: Icons.plasma.allow
-                                    icon.color: Icons.color("allow", Kirigami.Theme)
-                                    text: i18n("Allow")
-                                    enabled: root.ruleBusy === ""   // (one settings write at a time)
-                                    onClicked: {
-                                        view.confirmRule = ""
-                                        root.changeRule(ruleRow.rule, true, origin.host)
-                                    }
-                                }
-                                PlasmaComponents3.Button {
-                                    text: i18n("Cancel")
-                                    onClicked: view.confirmRule = ""
-                                }
-                            }
+                            onCancelled: view.confirmRule = ""
                         }
                     }
                 }

@@ -308,27 +308,34 @@ KCM.SimpleKCM {
                         opacity: card.account.loggedIn ? 1 : 0.8
                     }
 
-                    // Asks first: logging out, removing
-                    Kirigami.InlineMessage {
+                    // Asks first: logging out, removing (as every question: in the
+                    // neutral colour, its buttons beside it; the one that does it
+                    // with the icon of the button that asked)
+                    RowLayout {
                         Layout.fillWidth: true
                         visible: card.asking
-                        type: page.confirm.startsWith("remove:") ? Kirigami.MessageType.Warning : Kirigami.MessageType.Information
-                        text: page.confirm.startsWith("remove:")
-                              ? (page.host ? i18n("Remove %1 on %3? It logs out, then moves %2 to the Trash of %3 with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.", card.account.label, card.account.folder, page.host)
-                                           : i18n("Remove %1? It logs out, then moves %2 to the Trash with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.", card.account.label, card.account.folder))
-                              : i18n("Log out of %1? Claude deletes its login; its chats and history stay, and Log in… signs it in again (also with another account).", card.account.label)
-                        actions: [
-                            Kirigami.Action {
-                                text: page.confirm.startsWith("remove:") ? i18n("Remove") : i18n("Log out")
-                                icon.name: page.confirm.startsWith("remove:") ? Icons.plasma.delete : Icons.plasma.signOut
-                                icon.color: page.confirm.startsWith("remove:") ? Icons.color("delete", Kirigami.Theme) : "transparent"
-                                onTriggered: page.act([page.confirm.startsWith("remove:") ? "--remove" : "--logout", card.account.key], card.account.key)
-                            },
-                            Kirigami.Action {
-                                text: i18n("Cancel")   // (plain, as every confirmation's: the red × cancels a task, a reply…)
-                                onTriggered: page.confirm = ""
-                            }
-                        ]
+                        spacing: Kirigami.Units.smallSpacing
+
+                        QQC2.Label {
+                            Layout.fillWidth: true
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                            color: Kirigami.Theme.neutralTextColor
+                            text: page.confirm.startsWith("remove:")
+                                  ? (page.host ? i18n("Remove %1 on %3? It logs out, then moves %2 to the Trash of %3 with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.", card.account.label, card.account.folder, page.host)
+                                               : i18n("Remove %1? It logs out, then moves %2 to the Trash with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.", card.account.label, card.account.folder))
+                                  : i18n("Log out of %1? Claude deletes its login; its chats and history stay, and Log in… signs it in again (also with another account).", card.account.label)
+                        }
+                        QQC2.Button {
+                            text: page.confirm.startsWith("remove:") ? i18n("Remove") : i18n("Log out")
+                            icon.name: page.confirm.startsWith("remove:") ? Icons.plasma.delete : Icons.plasma.signOut
+                            icon.color: page.confirm.startsWith("remove:") ? Icons.color("delete", Kirigami.Theme) : "transparent"
+                            onClicked: page.act([page.confirm.startsWith("remove:") ? "--remove" : "--logout", card.account.key], card.account.key)
+                        }
+                        QQC2.Button {
+                            text: i18n("Cancel")   // (plain, as every confirmation's: the red × cancels a task, a reply…)
+                            onClicked: page.confirm = ""
+                        }
                     }
 
                     Flow {

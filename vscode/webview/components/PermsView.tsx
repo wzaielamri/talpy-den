@@ -127,12 +127,10 @@ function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, se
               <span>{r.title}</span>
               <span class="small muted">{ruleMeta(r)}</span>
               {asking === r.id ? (
-                <span class="week-rule-ask">
-                  <span class="small">This {r.change}.</span>
-                  <span class="week-rule-buttons">
-                    <button type="button" class="btn secondary small" disabled={busy} onClick={() => change(r, true)}><Icon name={I.allow} tone={T.allow} />Allow</button>
-                    <button type="button" class="btn secondary small" onClick={() => setAsking("")}>Cancel</button>
-                  </span>
+                <span class="confirm week-rule-ask">
+                  <span>This {r.change}.</span>
+                  <button type="button" class="btn secondary small" disabled={busy} onClick={() => change(r, true)}><Icon name={I.allow} tone={T.allow} />Allow</button>
+                  <button type="button" class="btn secondary small" onClick={() => setAsking("")}>Cancel</button>
                 </span>
               ) : null}
             </span>
@@ -140,7 +138,7 @@ function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, se
               : r.state === "allowed" ? <span class="small muted">Allowed now</span>
               : r.state === "added" ? (
                 <button type="button" class="btn secondary small" disabled={busy} onClick={() => change(r, false)}
-                  title={"Take this rule back\nYou allowed it here: Undo removes it from the file it went into, as it was before."}>Undo</button>
+                  title={"Take this rule back\nYou allowed it here: Undo removes it from the file it went into, as it was before."}><Icon name={I.undo} />Undo</button>
               ) : asking !== r.id ? (
                 <button type="button" class="btn secondary small" disabled={busy} onClick={() => setAsking(r.id)}>Allow…</button>
               ) : null}
@@ -191,12 +189,10 @@ function Granted({ granted, host, reload, change: busyKey, setChange, said }: {
               <span>{g.title}</span>
               <span class="small muted">{grantMeta(g)}</span>
               {asking === g.id ? (
-                <span class="week-rule-ask">
-                  <span class="small">This {g.change}.</span>
-                  <span class="week-rule-buttons">
-                    <button type="button" class="btn secondary small" disabled={busy} onClick={() => revoke(g)}><Icon name={I.cancel} tone={T.cancel} />Revoke</button>
-                    <button type="button" class="btn secondary small" onClick={() => setAsking("")}>Cancel</button>
-                  </span>
+                <span class="confirm week-rule-ask">
+                  <span>This {g.change}.</span>
+                  <button type="button" class="btn secondary small" disabled={busy} onClick={() => revoke(g)}><Icon name={I.cancel} tone={T.cancel} />Revoke</button>
+                  <button type="button" class="btn secondary small" onClick={() => setAsking("")}>Cancel</button>
                 </span>
               ) : null}
             </span>

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Every question before an action reads one way:** an orange line with its buttons beside it, the one that does it with the icon of the button that asked, as *Delete?* and *Cancel this task?*: the Permissions tab's *Revoke?* and *Allow?* (small plain text with the buttons under it before), the settings' *Delete Saved History?*, *Stop keeping the history?* and *Delete faster-whisper?* (plain text) and the Accounts page's *Log out?* and *Remove?* (a framed box); only a chat's *Stop?*, with its several choices, keeps the box (Plasma and VS Code).
+- **VS Code's *Open in:* switch has its icons, as Plasma's and GNOME's:** the terminal on *Terminal*, the chat on *Claude Code panel* (VS Code).
 - **The chats' context bars line up:** a row's *ctx 9%* takes the room of *ctx 100%*, right-aligned, so every row's bar ends at one place; each label as wide as its text put the bars at a different place on every row (Plasma and VS Code).
 - **The docs name a plan's and a memory's buttons as they are:** hiding is the struck-out eye (× is Cancel), a chat's plan has a **Plan** tag with the plan icon and a pencil to edit it, not *Plan ↗* and ✎; and VS Code's SSH hosts button has the server icon in the view's title bar as in the editor tab and on each host's head, and a host's *Log in…* in its error is a link (Plasma, GNOME and VS Code).
 - **VS Code's button tooltips say the button's name, then what it does on the next line,** as Plasma's main and sub text and as its *Delete this chat…* did; *Star this chat*, *Keep going until it's done*, *Continue on another account…*, a plan's, a memory's and an SSH host's buttons, *Focus* and the Recap's *Share as a picture* ran it into one line after a colon (VS Code).

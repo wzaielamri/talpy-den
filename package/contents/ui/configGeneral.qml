@@ -597,6 +597,7 @@ KCM.SimpleKCM {
                 visible: page.removeAsking
                 Layout.maximumWidth: Kirigami.Units.gridUnit * 14
                 wrapMode: Text.Wrap
+                color: Kirigami.Theme.neutralTextColor   // (a question: as every one, ConfirmLine)
                 text: i18n("Delete faster-whisper and its speech models? Dictating needs setting up again then.")
             }
             QQC2.Button {
@@ -964,6 +965,7 @@ KCM.SimpleKCM {
             QQC2.Label {
                 Layout.maximumWidth: Kirigami.Units.gridUnit * 14
                 wrapMode: Text.Wrap
+                color: Kirigami.Theme.neutralTextColor   // (a question: as every one, ConfirmLine)
                 text: i18np("Stop keeping the history? The Recap forgets the numbers of the %1 chat Claude has deleted, for good.",
                             "Stop keeping the history? The Recap forgets the numbers of the %1 chats Claude has deleted, for good.",
                             page.history ? page.history.deletedChats : 0)
@@ -1011,6 +1013,7 @@ KCM.SimpleKCM {
                 visible: page.forgetAsking
                 Layout.maximumWidth: Kirigami.Units.gridUnit * 14
                 wrapMode: Text.Wrap
+                color: Kirigami.Theme.neutralTextColor   // (a question: as every one, ConfirmLine)
                 text: i18n("Delete the Recap's saved history? It starts again from the chats Claude still has.")
             }
             QQC2.Button {

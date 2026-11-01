@@ -3,7 +3,7 @@ import { pagedTitle, pageSizeOf, recentPage } from "../../src/shared/model";
 import type { Group, ReopenIn } from "../../src/shared/types";
 import { post } from "../env";
 import { groupKeyOf } from "../util/chat";
-import { I, Icon } from "../util/icons";
+import { I, Icon, type IconName } from "../util/icons";
 import { useStore } from "../util/store";
 import { askRecentMore, pages, pagesShown, recentMore, showMore, toggleRecent, toggleStarred, uiState } from "../util/ui";
 import { useView } from "./context";
@@ -97,15 +97,16 @@ export function RecentChats({ group }: { group: Group }) {
 
 // Where an account's chats reopen: Terminal | Claude Code panel
 function OpenIn({ how }: { how: Reopen }) {
-  const half = (where: ReopenIn, text: string, available: boolean, checked: boolean, title: string) => (
+  const half = (where: ReopenIn, icon: IconName, text: string, available: boolean, checked: boolean, title: string) => (
     <button
       type="button"
-      class={"tag open-in-half" + (available ? " clickable" : " unavailable")}
+      class={"tag with-icon open-in-half" + (available ? " clickable" : " unavailable")}
       aria-pressed={checked}
       aria-disabled={!available}
       title={title}
       onClick={() => available && post({ type: "setReopenIn", where })}
     >
+      <Icon name={icon} />
       {text}
     </button>
   );
@@ -114,8 +115,8 @@ function OpenIn({ how }: { how: Reopen }) {
     <>
       <div class="open-in small" role="group" aria-label="Where recent chats reopen">
         <span class="muted">Open in:</span>
-        {half("terminal", "Terminal", cliHere, cliHere && !inCode, (cliHere ? "Reopen chats in a terminal\n" : "No claude command\n") + terminalHint)}
-        {half("claudeCode", "Claude Code panel", codeHere, inCode, (codeHere ? "Reopen chats in a Claude Code panel\n" : "Not here\n") + codeHint)}
+        {half("terminal", I.terminal, "Terminal", cliHere, cliHere && !inCode, (cliHere ? "Reopen chats in a terminal\n" : "No claude command\n") + terminalHint)}
+        {half("claudeCode", I.openPane, "Claude Code panel", codeHere, inCode, (codeHere ? "Reopen chats in a Claude Code panel\n" : "Not here\n") + codeHint)}
       </div>
       {!cliHere && !codeHere ? <div class="open-in-why small muted">{`${terminalHint} ${codeHint}`}</div> : null}
     </>

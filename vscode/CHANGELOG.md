@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Every question reads one way:** the Permissions tab's *Revoke?* and
+  *Allow?* are an orange line with their buttons beside it, as a queued
+  task's *Cancel this task?* and the Review's *Undo?* (they were small
+  plain text with the buttons under it); its *Undo* has the undo arrow.
+- ***Open in:* has its icons, as in Plasma:** the terminal on
+  *Terminal*, the chat on *Claude Code panel*.
 - **The chats' context bars line up:** *ctx 9%* takes the room of *ctx
   100%*, so every row's bar ends at one place.
 - **The login hints say Talpy Den never sees your login,** as everywhere

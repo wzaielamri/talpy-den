@@ -2494,16 +2494,10 @@ body.vscode-high-contrast .top.scrolled {
   flex: none;
 }
 
-.week-rule-ask {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.week-rule-buttons {
-  display: flex;
-  gap: 6px;
+/* Revoke? / Allow?: as every question (.confirm), the question in orange,
+   its buttons beside it */
+.confirm.week-rule-ask {
+  margin: 4px 0 0;
 }
 
 /* Show N more under the permissions you gave: under the lines' text, past
