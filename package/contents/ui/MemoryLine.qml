@@ -19,7 +19,7 @@ ColumnLayout {
     property string accountTag: ""   // (in a project on several accounts: the one it's on)
     property string project: ""   // (in a project: its folder; the line's folder says only the part below it)
     property real folderWidth: Kirigami.Units.gridUnit * 8
-    readonly property real endWidth: folderWidth + Kirigami.Units.smallSpacing + root.agoWidth
+    readonly property real endWidth: root.endWidth(folderWidth)
     // an SSH host's opens in VS Code (Remote-SSH), to change it
     readonly property bool canOpen: !memoryLine.remoteHost || root.vscodeInstalled
     readonly property string itemKey: memory.key ? (memoryLine.remoteHost ? memoryLine.remoteHost + "|" : "") + memory.key : ""
@@ -113,6 +113,9 @@ ColumnLayout {
                     opacity: 0.6
                     font: Kirigami.Theme.smallFont
                     elide: Text.ElideMiddle
+                }
+                Item {   // (a starred chat's or plan's ★ stands here: its room, so the times line up)
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
                 }
                 PlasmaComponents3.Label {
                     Layout.preferredWidth: root.agoWidth

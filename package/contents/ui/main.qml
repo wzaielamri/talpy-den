@@ -113,6 +113,11 @@ PlasmoidItem {
     readonly property real usageResetWidth: Math.ceil(usageSmallFm.advanceWidth(i18n("resets in %1", "23h 59m")))
     // how long ago, at the end of a recent chat's, a plan's or a memory's line: room for "23h 59m ago"
     readonly property real agoWidth: Math.ceil(usageSmallFm.advanceWidth(ago((23 * 60 + 59) * 60000)))
+    // such a line's end, in columns: its folder (folderWidth), a starred one's ★ right before
+    // the time (StarMark.qml: its room on every line) and how long ago, so they line up
+    function endWidth(folderWidth) {
+        return folderWidth + Kirigami.Units.iconSizes.small + agoWidth + 2 * Kirigami.Units.smallSpacing
+    }
 
     // group as shown on host's section ("" here): limitsHidden when its usage
     // shows elsewhere (or no host's does), with the account's numbers all the

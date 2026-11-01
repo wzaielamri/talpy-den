@@ -162,8 +162,11 @@
         document.body.style.width = (Number(params.get("width")) || 360) + "px";
         if (params.get("hover") === "1") {
           const style = document.createElement("style");
-          style.textContent = ".row-actions { opacity: 1 !important; }";
+          // (and a starred line's ★ hidden under them, as on hover)
+          style.textContent = ".row-actions { opacity: 1 !important; } .recent-item > .star-mark { visibility: hidden !important; }";
           document.head.appendChild(style);
+          // (a line makes its buttons the first time the pointer comes: every line's, once it's drawn)
+          setTimeout(() => document.querySelectorAll(".recent-item").forEach((li) => li.dispatchEvent(new PointerEvent("pointerenter"))), 1500);
         }
       })();
     </script>

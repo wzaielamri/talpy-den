@@ -1685,7 +1685,7 @@ button:focus-visible {
   top: 0;
 }
 
-/* A chat or plan you starred: its star, always shown (click: unstarred) */
+/* A chat or plan you starred: its star (click: unstarred) */
 .star-mark {
   display: inline-flex;
   flex: none;
@@ -1696,6 +1696,19 @@ button:focus-visible {
   font: inherit;
   line-height: 1;
   cursor: pointer;
+}
+
+/* at a recent chat's or a plan's end it stands right before the time, and
+   every line keeps its room (a memory's too), so the times line up; it hides
+   while the line's buttons show, their star in its stead */
+.recent-item > .star-mark {
+  width: 16px;
+  justify-content: center;
+}
+
+.recent-item:hover > .star-mark,
+.recent-item:has(:focus-visible) > .star-mark {
+  visibility: hidden;
 }
 
 /* "Show N more" under a list shown a page at a time (MoreButton.tsx) */

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **A starred chat's or plan's ★ stands right before its time,** at the
+  line's right end: it stood before the folder, so on a project's lines it
+  floated between the name and the time. Every line keeps its room, so the
+  times line up; while the line's buttons show it hides, and their star,
+  yellow on a starred one, unstars it.
 - ***Open in Editor Tab* opens the view again after you closed its tab:**
   closing it stopped before Talpy Den forgot the tab, so the next *Open
   in Editor Tab* tried to bring back the closed one and nothing opened.

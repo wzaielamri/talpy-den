@@ -53,6 +53,7 @@ export function MemoryLine({ memory: m, group, project, accountTag }: { memory: 
       ) : (
         <span class="recent-folder" title={m.folder || undefined} />
       )}
+      <span class="star-mark" aria-hidden="true" />{/* (a starred chat's or plan's ★ stands here: its room, so the times line up) */}
       <span class="recent-ago small muted nowrap">{ago(view.now - m.updatedAt)}</span>
       {woken ? (
         <div class="row-actions">

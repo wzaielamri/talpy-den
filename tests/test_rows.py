@@ -296,5 +296,112 @@ class RowButtonsTests(unittest.TestCase):
         self.assertIn("root.showProject(projectRow.project.path)", (UI / "WeekView.qml").read_text())
 
 
+STAR = """import QtQuick
+import QtQuick.Layouts
+import "%s"
+Item {
+    id: root
+    width: 300; height: 40
+    property bool buttonsShown: false
+    RowLayout {
+        StarMark { id: on; objectName: "on"; starred: true; hidden: root.buttonsShown }
+        StarMark { id: off; objectName: "off"; starred: false }
+    }
+    function report() {
+        const icon = m => m.children[0].item
+        return [on.implicitWidth, off.implicitWidth, icon(on) !== null && icon(on).visible !== false && on.children[0].visible,
+                icon(off) === null].join(" ")
+    }
+}
+"""
+
+STAR_SCRIPT = """import sys
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQuick import QQuickView
+from PySide6.QtTest import QTest
+app = QGuiApplication(sys.argv)
+view = QQuickView(); view.setSource(QUrl.fromLocalFile(sys.argv[1]))
+if view.status() != QQuickView.Ready:
+    sys.exit(str([e.toString() for e in view.errors()]))
+r = view.rootObject()
+view.show(); QTest.qWaitForWindowExposed(view); QTest.qWait(50)
+from PySide6.QtCore import QMetaObject, Q_RETURN_ARG, Q_ARG
+def report():
+    return QMetaObject.invokeMethod(r, "report", Q_RETURN_ARG("QVariant"))
+print(repr(report()))
+r.setProperty("buttonsShown", True); QTest.qWait(50)
+print(repr(report()))
+"""
+
+
+class StarMarkTests(unittest.TestCase):
+    """The ★ of a starred chat or plan stands right before the time at its
+    line's end, every line keeping its room so the times line up, and hides
+    while the line's buttons show (hover, Tab, a finger's hold), their star
+    button unstarring it, as in VS Code (2026-11-01)"""
+
+    def test_it_stands_right_before_the_time_and_hides_under_the_buttons(self):
+        for name, line, buttons, starred in (("RecentLine.qml", "recentLine", "recentButtons", "recentLine.chat.starred"),
+                                             ("PlanLine.qml", "planLine", "planButtons", "planLine.plan.starred")):
+            with self.subTest(name):
+                qml = (UI / name).read_text()
+                end = qml[qml.index("CoveredEnd {"):qml.index("HoverButtons {")]
+                star = end.index("StarMark {")
+                self.assertLess(end.index("horizontalAlignment: Text.AlignRight"), star)   # (after its folder)
+                self.assertLess(star, end.index("Layout.preferredWidth: root.agoWidth"))   # (before the time)
+                self.assertEqual(qml.count("StarMark {"), 1)                               # (nowhere else on the line)
+                self.assertIn("starred: !!%s" % starred, end)                              # (its room on every line)
+                self.assertIn("hidden: %s.shown" % buttons, end)                           # (hover, Tab and a hold)
+                self.assertIn("readonly property real endWidth: root.endWidth(folderWidth)", qml)
+                # the buttons' star stars it, or (yellow) unstars it
+                toggle = qml[qml.index("icon.name: %s ? Icons.plasma.starred : Icons.plasma.star" % starred):]
+                toggle = toggle[:toggle.index("PlasmaCore.ToolTipArea")]
+                self.assertIn('Icons.color(%s ? "starred" : "star", Kirigami.Theme)' % starred, toggle)
+                self.assertRegex(toggle, r"root\.setStar\([^)]*, !%s\)" % re.escape(starred))
+                self.assertNotIn("visible: !%s" % starred, qml)
+        main = (UI / "main.qml").read_text()
+        self.assertIn("return folderWidth + Kirigami.Units.iconSizes.small + agoWidth + 2 * Kirigami.Units.smallSpacing", main)
+        # lines without a star keep its room: a memory's (in a project's lists) and what Find a chat found
+        memory = (UI / "MemoryLine.qml").read_text()
+        self.assertIn("readonly property real endWidth: root.endWidth(folderWidth)", memory)
+        for name, text in (("MemoryLine.qml", memory), ("FoundEnd.qml", (UI / "FoundEnd.qml").read_text())):
+            room = text.index("Layout.preferredWidth: Kirigami.Units.iconSizes.small\n")
+            self.assertLess(room, text.index("Layout.preferredWidth: root.agoWidth"), name)
+        self.assertIn("starred: !!row.session.starred", (UI / "SessionRow.qml").read_text())   # (a running chat's: after its name)
+
+    def test_vscode_puts_it_right_before_the_time_too(self):
+        components = Path(__file__).resolve().parent.parent / "vscode/webview/components"
+        for name, item in (("RecentLine.tsx", "c"), ("PlanLine.tsx", "p")):
+            with self.subTest(name):
+                tsx = (components / name).read_text()
+                folder, star, ago = (tsx.index('class="recent-folder'), tsx.index('class="star-mark"'), tsx.index('class="recent-ago'))
+                self.assertLess(folder, star)
+                self.assertLess(star, ago)
+                self.assertIn(': <span class="star-mark" aria-hidden="true" />}', tsx)   # (its room on every line)
+                self.assertIn("tabIndex={-1}", tsx)   # (the buttons' star has the keyboard)
+                self.assertIn("icon={%s.starred ? I.starred : I.star}" % item, tsx)
+                self.assertIn("tone={%s.starred ? T.starred : undefined}" % item, tsx)
+                self.assertIn("on: !%s.starred" % item, tsx)
+                self.assertNotIn("{%s.starred ? null : (" % item, tsx)
+        memory = (components / "MemoryLine.tsx").read_text()
+        self.assertLess(memory.index('<span class="star-mark" aria-hidden="true" />'), memory.index('class="recent-ago'))
+        css = (components.parent / "styles.css").read_text()
+        self.assertRegex(css, r"\.recent-item > \.star-mark \{\s+width: 16px;")
+        self.assertRegex(css, r"\.recent-item:hover > \.star-mark,\s+\.recent-item:has\(:focus-visible\) > \.star-mark \{\s+visibility: hidden;")
+
+    @NEEDS_PLASMA_QML
+    def test_a_line_without_a_star_keeps_its_room_and_makes_nothing_in_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            qml = Path(tmp) / "star.qml"
+            qml.write_text(STAR % UI.as_uri())
+            out = subprocess.run(["python3", "-c", STAR_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
+                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+        steps = [eval(line) for line in out.stdout.split("\n") if line]
+        self.assertEqual(steps, ["16 16 true true",      # starred: shown; not: as wide, nothing made
+                                 "16 16 false true"],    # the buttons show: hidden, its room kept
+                         out.stderr[-2000:])
+
+
 if __name__ == "__main__":
     unittest.main()

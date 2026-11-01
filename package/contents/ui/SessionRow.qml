@@ -378,7 +378,8 @@ RowLayout {
 
                             // starred: a ★ (click: unstar it)
                             StarMark {
-                                visible: !!row.session.starred
+                                starred: !!row.session.starred
+                                visible: starred
                                 tooltip: i18n("Once it isn't listed here any more, it stays under ★ Starred chats. Click to unstar it.")
                                 onClicked: root.setStar("chats", row.session.chatId || row.session.sessionId, row.remoteHost, false)
                             }

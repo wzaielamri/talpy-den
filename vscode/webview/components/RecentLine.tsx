@@ -147,26 +147,28 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
       ) : null}
       {toReview && tests ? <TestsTag tests={tests} /> : null}
       {accountTag ? <Tag text={accountTag} /> : null}
+      {folder ? <Elided text={folder} class="recent-folder small muted" title={c.cwd} /> : <span class="recent-folder" title={c.cwd} />}
+      {/* starred: its ★ right before the time (every line keeps its room, so the times line up); hidden while its buttons show */}
       {c.starred ? (
-        <button type="button" class="star-mark" title="A starred chat stays listed under its account's ★ Starred chats, however old it is. Click to unstar it." onClick={() => post({ type: "star", chat, on: false })}>
+        <button type="button" class="star-mark" tabIndex={-1} title="A starred chat stays listed under its account's ★ Starred chats, however old it is. Click to unstar it." onClick={() => post({ type: "star", chat, on: false })}>
           <Icon name={I.starred} tone={T.starred} />
         </button>
-      ) : null}
-      {folder ? <Elided text={folder} class="recent-folder small muted" title={c.cwd} /> : <span class="recent-folder" title={c.cwd} />}
+      ) : <span class="star-mark" aria-hidden="true" />}
       <span class="recent-ago small muted nowrap">{ago(view.now - c.lastActive)}</span>
       {woken ? (
         <div class="row-actions">
           {paneFirst && canOpen ? (
             <IconButton icon={I.openWindow} label="Reopen this chat" title={`Reopen this chat\n${reopen}`} onClick={reopenIt} />
           ) : null}
-          {c.starred ? null : (
-            <IconButton
-              icon={I.star}
-              label="Star this chat"
-              title={"Star this chat\nIt stays listed under its account's ★ Starred chats, however old it is."}
-              onClick={() => post({ type: "star", chat, on: true })}
-            />
-          )}
+          {/* (a starred one's yellow ★ unstars it: the line's own ★ hides while these show) */}
+          <IconButton
+            icon={c.starred ? I.starred : I.star}
+            tone={c.starred ? T.starred : undefined}
+            label={c.starred ? "Unstar this chat" : "Star this chat"}
+            title={c.starred ? "Unstar this chat\nA starred chat stays listed under its account's ★ Starred chats, however old it is. Click to unstar it."
+              : "Star this chat\nIt stays listed under its account's ★ Starred chats, however old it is."}
+            onClick={() => post({ type: "star", chat, on: !c.starred })}
+          />
           {share ? (
             <IconButton
               icon={I.share}

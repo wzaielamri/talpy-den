@@ -63,23 +63,25 @@ export function PlanLine({ plan: p, group, project, accountTag }: { plan: PlanIt
         />
       ) : null}
       {accountTag ? <Tag text={accountTag} /> : null}
+      {folder ? <Elided text={folder} class="recent-folder small muted" title={p.cwd} /> : <span class="recent-folder" title={p.cwd || undefined} />}
+      {/* starred: its ★ right before the time (every line keeps its room, so the times line up); hidden while its buttons show */}
       {p.starred ? (
-        <button type="button" class="star-mark" title="A starred plan stays listed under its account's ★ Starred plans, however old it is. Click to unstar it." onClick={() => post({ type: "star", ...ref(p.key), on: false })}>
+        <button type="button" class="star-mark" tabIndex={-1} title="A starred plan stays listed under its account's ★ Starred plans, however old it is. Click to unstar it." onClick={() => post({ type: "star", ...ref(p.key), on: false })}>
           <Icon name={I.starred} tone={T.starred} />
         </button>
-      ) : null}
-      {folder ? <Elided text={folder} class="recent-folder small muted" title={p.cwd} /> : <span class="recent-folder" title={p.cwd || undefined} />}
+      ) : <span class="star-mark" aria-hidden="true" />}
       <span class="recent-ago small muted nowrap">{ago(view.now - p.updatedAt)}</span>
       {woken ? (
         <div class="row-actions">
-          {p.starred ? null : (
-            <IconButton
-              icon={I.star}
-              label="Star this plan"
-              title={"Star this plan\nIt stays listed under its account's ★ Starred plans, however old it is."}
-              onClick={() => post({ type: "star", ...ref(p.key), on: true })}
-            />
-          )}
+          {/* (a starred one's yellow ★ unstars it: the line's own ★ hides while these show) */}
+          <IconButton
+            icon={p.starred ? I.starred : I.star}
+            tone={p.starred ? T.starred : undefined}
+            label={p.starred ? "Unstar this plan" : "Star this plan"}
+            title={p.starred ? "Unstar this plan\nA starred plan stays listed under its account's ★ Starred plans, however old it is. Click to unstar it."
+              : "Star this plan\nIt stays listed under its account's ★ Starred plans, however old it is."}
+            onClick={() => post({ type: "star", ...ref(p.key), on: !p.starred })}
+          />
           {copy ? null : (
             <IconButton
               icon={I.edit}

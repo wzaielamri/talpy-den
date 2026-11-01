@@ -20,7 +20,7 @@ ColumnLayout {
     property string accountTag: ""   // (in a project on several accounts: the one it's on)
     property string project: ""   // (in a project: its folder; the line's folder says only the part below it)
     property real folderWidth: Kirigami.Units.gridUnit * 8
-    readonly property real endWidth: folderWidth + Kirigami.Units.smallSpacing + root.agoWidth
+    readonly property real endWidth: root.endWidth(folderWidth)
     readonly property string composerKey: (planLine.remoteHost ? planLine.remoteHost + "|" : "") + plan.key
 
     Layout.fillWidth: true
@@ -111,13 +111,7 @@ Kirigami.Icon {
                 onClicked: root.sendPlanFeedback(planLine.plan.slug, planLine.plan.profileDir, planLine.plan.chatId)
             }
         }
-        // starred: a ★ (click: unstar it)
-        StarMark {
-            visible: !!planLine.plan.starred
-            tooltip: root.starHint("plans", false) + " " + root.starHint("plans", true)
-            onClicked: root.setStar("plans", planLine.plan.slug, planLine.remoteHost, false)
-        }
-        // its folder and how long ago, at the line's end
+        // its folder, a starred one's ★ and how long ago, at the line's end
         CoveredEnd {
             id: planEnd
             covered: planButtons.covering
@@ -145,6 +139,13 @@ Kirigami.Icon {
                         subText: (planLine.remoteHost ? planLine.remoteHost + ":" : "") + planLine.plan.cwd
                     }
                 }
+                // starred: a ★ (click: unstar it), hidden while the buttons show (their star unstars it)
+                StarMark {
+                    starred: !!planLine.plan.starred
+                    hidden: planButtons.shown
+                    tooltip: root.starHint("plans", false) + " " + root.starHint("plans", true)
+                    onClicked: root.setStar("plans", planLine.plan.slug, planLine.remoteHost, false)
+                }
                 PlasmaComponents3.Label {
                     Layout.preferredWidth: root.agoWidth
                     horizontalAlignment: Text.AlignRight
@@ -167,22 +168,23 @@ Kirigami.Icon {
                 spacing: 0
 
                 PlasmaComponents3.ToolButton {
-                    // star it: it stays listed under Starred (a starred one has its ★)
-                    visible: !planLine.plan.starred
-                    icon.name: Icons.plasma.star
+                    // star it: it stays listed under Starred; a starred one's yellow ★ (its
+                    // line's ★ hides while the buttons show) unstars it
+                    icon.name: planLine.plan.starred ? Icons.plasma.starred : Icons.plasma.star
+                    icon.color: Icons.color(planLine.plan.starred ? "starred" : "star", Kirigami.Theme)
                     display: PlasmaComponents3.AbstractButton.IconOnly
-                    text: i18n("Star")
+                    text: planLine.plan.starred ? i18n("Unstar") : i18n("Star")
                     Layout.preferredHeight: planButtons.buttonSize
                     icon.width: Kirigami.Units.iconSizes.small
                     icon.height: Kirigami.Units.iconSizes.small
                     Layout.preferredWidth: planButtons.buttonWidth
-                    onClicked: root.setStar("plans", planLine.plan.slug, planLine.remoteHost, true)
+                    onClicked: root.setStar("plans", planLine.plan.slug, planLine.remoteHost, !planLine.plan.starred)
 
                     PlasmaCore.ToolTipArea {
                         textFormat: Text.PlainText
                         anchors.fill: parent
-                        mainText: i18n("Star this plan")
-                        subText: root.starHint("plans", false)
+                        mainText: planLine.plan.starred ? i18n("Unstar this plan") : i18n("Star this plan")
+                        subText: root.starHint("plans", false) + (planLine.plan.starred ? " " + root.starHint("plans", true) : "")
                     }
                 }
                 // the plan's Markdown file itself, to change it (an SSH host's: in VS Code, over Remote-SSH)

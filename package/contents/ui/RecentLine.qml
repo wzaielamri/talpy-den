@@ -23,7 +23,7 @@ ColumnLayout {
     // the folder and how long ago at the line's end: columns of one width in
     // every list, so what's before them lines up, and the folders and times too
     property real folderWidth: Kirigami.Units.gridUnit * 8
-    readonly property real endWidth: folderWidth + Kirigami.Units.smallSpacing + root.agoWidth
+    readonly property real endWidth: root.endWidth(folderWidth)
     // where it reopens: as the Terminal | VS Code switch of the account's chats says (OpenInSwitch.qml)
     readonly property bool inVscode: root.openInVscode(group, remoteHost, true)
     readonly property bool terminalHere: root.cliHere(remoteHost)
@@ -204,13 +204,7 @@ Kirigami.Icon {
                 review: root.reviewPending(recentLine.chat, recentLine.remoteHost) ? recentLine.chat.review : null
             }
         }
-        // starred: a ★ (click: unstar it)
-        StarMark {
-            visible: !!recentLine.chat.starred
-            tooltip: root.starHint("chats", false) + " " + root.starHint("chats", true)
-            onClicked: root.setStar("chats", recentLine.chat.sessionId, recentLine.remoteHost, false)
-        }
-        // its folder and how long ago, at the line's end
+        // its folder, a starred one's ★ and how long ago, at the line's end
         CoveredEnd {
             id: recentEnd
             covered: recentButtons.covering
@@ -237,6 +231,13 @@ Kirigami.Icon {
                         mainText: i18n("Folder")
                         subText: (recentLine.remoteHost ? recentLine.remoteHost + ":" : "") + recentLine.chat.cwd
                     }
+                }
+                // starred: a ★ (click: unstar it), hidden while the buttons show (their star unstars it)
+                StarMark {
+                    starred: !!recentLine.chat.starred
+                    hidden: recentButtons.shown
+                    tooltip: root.starHint("chats", false) + " " + root.starHint("chats", true)
+                    onClicked: root.setStar("chats", recentLine.chat.sessionId, recentLine.remoteHost, false)
                 }
                 PlasmaComponents3.Label {
                     Layout.preferredWidth: root.agoWidth
@@ -280,22 +281,23 @@ Kirigami.Icon {
                     }
                 }
                 PlasmaComponents3.ToolButton {
-                    // star it: it stays listed under Starred (a starred one has its ★)
-                    visible: !recentLine.chat.starred
-                    icon.name: Icons.plasma.star
+                    // star it: it stays listed under Starred; a starred one's yellow ★ (its
+                    // line's ★ hides while the buttons show) unstars it
+                    icon.name: recentLine.chat.starred ? Icons.plasma.starred : Icons.plasma.star
+                    icon.color: Icons.color(recentLine.chat.starred ? "starred" : "star", Kirigami.Theme)
                     display: PlasmaComponents3.AbstractButton.IconOnly
-                    text: i18n("Star")
+                    text: recentLine.chat.starred ? i18n("Unstar") : i18n("Star")
                     Layout.preferredHeight: recentButtons.buttonSize
                     icon.width: Kirigami.Units.iconSizes.small
                     icon.height: Kirigami.Units.iconSizes.small
                     Layout.preferredWidth: recentButtons.buttonWidth
-                    onClicked: root.setStar("chats", recentLine.chat.sessionId, recentLine.remoteHost, true)
+                    onClicked: root.setStar("chats", recentLine.chat.sessionId, recentLine.remoteHost, !recentLine.chat.starred)
 
                     PlasmaCore.ToolTipArea {
                         textFormat: Text.PlainText
                         anchors.fill: parent
-                        mainText: i18n("Star this chat")
-                        subText: root.starHint("chats", false)
+                        mainText: recentLine.chat.starred ? i18n("Unstar this chat") : i18n("Star this chat")
+                        subText: root.starHint("chats", false) + (recentLine.chat.starred ? " " + root.starHint("chats", true) : "")
                     }
                 }
                 PlasmaComponents3.ToolButton {
