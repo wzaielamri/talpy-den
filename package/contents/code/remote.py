@@ -632,14 +632,17 @@ def put_image(host, path):
     return {"ok": False, "message": f"{host} sent an answer Talpy Den can't read." if ok else message}
 
 
-def continue_chat(host, profile, chat_id, folder="", text=""):
+def continue_chat(host, profile, chat_id, folder="", text="", ends_at=None):
     """Go on with host's chat a usage limit stopped, in the background there
-    (talpy_den.continue_chat): {"ok", "message", "id"}."""
+    (talpy_den.continue_chat; ends_at: how long it waits for the chat's
+    background commands): {"ok", "message", "id"} (or "waits", "ended")."""
     args = ["--continue-chat", chat_id, "--profile", profile]
     if folder:
         args += ["--folder", folder]
     if text:
         args += ["--prompt", text]
+    if ends_at is not None:
+        args += ["--ends-at", str(int(ends_at))]
     return host_answer(host, args)
 
 

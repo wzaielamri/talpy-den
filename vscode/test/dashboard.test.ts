@@ -107,6 +107,39 @@ test("a reply after a chat's turn waits for its account's usage limit to reset, 
   }
 });
 
+// A chat's go-on that waits for its background commands says so once, as it
+// starts waiting, and once it ends them and goes on; a normal go-on, or one
+// that waits on, is told as before (by the Done setting) or not at all
+test("a go-on that waits for a chat's background commands is told once, and when it ends them", async () => {
+  const vscode = (await import("vscode")) as unknown as typeof import("./vscode-stub");
+  const window = vscode.window as unknown as Record<string, unknown>;
+  const was = { warning: window.showWarningMessage, info: window.showInformationMessage };
+  const shown: string[] = [];
+  window.showWarningMessage = async (m: string) => (shown.push(`warning: ${m}`), undefined);
+  window.showInformationMessage = async (m: string) => (shown.push(`info: ${m}`), undefined);
+  const answers: Record<string, unknown>[] = [];
+  const backend = { action: async () => answers.shift(), status: async () => ({ status: null }) } as unknown as Backend;
+  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const task = { id: "q3", chat: "e3de1242", name: "Fix it", host: "", profile: ".claude-work", account: "work", prompt: "" } as never;
+  const waits = "Waits for its background command “npm run dev” to finish before it goes on; at 01:55 it ends it";
+  try {
+    answers.push({ ok: true, message: "“Fix it” waits for its background command “npm run dev” to finish before it goes on; at 01:55 it ends it", waits, notify: true });
+    await dash.startQueued(task);
+    assert.deepEqual(shown, ["warning: “Fix it” waits for its background command “npm run dev” to finish before it goes on; at 01:55 it ends it"]);
+    assert.equal(dash.state().actionError, "");
+    answers.push({ ok: true, message: "…", waits, notify: false }); // (a minute later: it waits on)
+    await dash.startQueued(task);
+    assert.equal(shown.length, 1, "told once");
+    answers.push({ ok: true, message: "“Fix it” ended its background command “npm run dev” and went on in the background on work (1a2b3c4d)", ended: ["npm run dev"], notify: true });
+    await dash.startQueued(task);
+    assert.deepEqual(shown.slice(1), ["info: “Fix it” ended its background command “npm run dev” and went on in the background on work (1a2b3c4d)"]);
+  } finally {
+    Object.assign(window, { showWarningMessage: was.warning, showInformationMessage: was.info });
+    dash.dispose();
+  }
+});
+
 function withFiveHour(pct: number): Status {
   const status = structuredClone(demoState(NOW).status!);
   const windows = status.groups[0].limits!.windows;

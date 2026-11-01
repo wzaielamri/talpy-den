@@ -26,7 +26,8 @@ export function QueuedTasks({ group }: { group: Group }) {
 
 // One queued task, a line as a recent chat's: its mark, what it is, and at its
 // end its folder and when it starts; Start now and Cancel show on hover (or
-// Tab, or a finger's hold), over that end. A failed one says why under it.
+// Tab, or a finger's hold), over that end. A failed one says why under it, a
+// chat's go-on that waits for the chat's background commands until when.
 function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolean; ask: (on: boolean) => void }) {
   const view = useView();
   const [woken, wake] = useWoken(); // (its buttons: made the first time they show)
@@ -35,7 +36,9 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
   const wrote = !t.chat || !!t.afterTurn;
   const kept = !!t.chat && !t.afterTurn && !t.host && keptChat(view.status, t.chat) !== null;
   const folder = (t.host ? `${t.host}:` : "") + (t.folder || "~");
-  const how = t.chat
+  const how = t.waits && !t.error
+    ? `${t.waits}.`
+    : t.chat
     ? `The chat goes on in the background in ${folder}, at ${startText(t.startAt, view.now)}, telling Claude that the limit has reset. A Claude that still has it open (in a terminal, or in the background) quits first; if it went on before then, nothing happens.`
     : t.scheduled
       ? `Starts in the background in ${folder}, at ${startText(t.startAt, view.now)}: the time you picked.`
@@ -43,7 +46,9 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
   // (its folder only with when it starts, as Plasma's)
   const when = t.error
     ? "didn't start"
-    : t.due || t.startAt <= view.now
+    : t.waits
+      ? "waits"
+      : t.due || t.startAt <= view.now
       ? "starting…"
       : t.startAt - view.now > 12 * 3600_000
         ? `${t.folderShort || "~"} · starts ${startText(t.startAt, view.now)}`
@@ -78,6 +83,8 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
         ) : null}
       </div>
       {t.error ? <div class="queued-error small">{t.error}</div> : null}
+      {/* (a chat's go-on that waits for its background commands: until when, then it ends them) */}
+      {!t.error && t.waits ? <div class="queued-note small">{t.waits}</div> : null}
       {asking ? (
         <div class="confirm queued-ask">
           <span>{t.afterTurn ? `Cancel your message to “${t.name || "the chat"}”? It isn't sent, and its text is gone.`

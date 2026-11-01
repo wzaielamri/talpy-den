@@ -302,11 +302,14 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
                 icon={I.goOnAt}
                 class="text-btn"
                 pressed
-                label={`Goes on at ${startText(goingOn.startAt, now)}`}
-                title={`Goes on by itself at ${startText(goingOn.startAt, now)}, in the background, telling Claude that the limit has reset.${ending} If it went on before then, nothing happens.\n\nClick to cancel it${kept ? ": then it doesn't keep going either" : ""}.`}
+                label={goingOn.waits && !goingOn.error ? "Waits to go on" : `Goes on at ${startText(goingOn.startAt, now)}`}
+                title={goingOn.waits && !goingOn.error
+                  // (one that waits for its background commands: until when, then it ends them)
+                  ? `Waits to go on\n${goingOn.waits}.\n\nClick to cancel it${kept ? ": then it doesn't keep going either" : ""}.`
+                  : `Goes on by itself at ${startText(goingOn.startAt, now)}, in the background, telling Claude that the limit has reset.${ending} If it went on before then, nothing happens.\n\nClick to cancel it${kept ? ": then it doesn't keep going either" : ""}.`}
                 onClick={() => post({ type: "unqueue", id: goingOn.id })}
               >
-                Goes on at {startText(goingOn.startAt, now)}
+                {goingOn.waits && !goingOn.error ? "Waits to go on" : `Goes on at ${startText(goingOn.startAt, now)}`}
               </IconButton>
             ) : goOn ? (
               <IconButton

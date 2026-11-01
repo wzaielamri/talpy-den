@@ -3080,9 +3080,26 @@ PlasmoidItem {
                 if (root.notifier && Plasmoid.configuration.notifyDone && !root.holdingBack() && !root.dashboardShown)
                     root.notify("queued|" + t.id, null, "started", i18n("Sent to %1", t.name || i18n("the chat")),
                                 t.prompt + "\n" + result.message, "document-send", "")
+            } else if (result.waits !== undefined && t) {
+                // a chat's go-on waits for its background commands (its line
+                // says so): told once, as it starts waiting
+                if (result.notify) {
+                    root.actionInfo = result.message
+                    actionInfoTimer.restart()
+                    if (root.notifier && !root.dashboardShown)
+                        root.notify("queued|" + t.id, null, "limit", i18n("“%1” waits to go on", t.name || t.chat.slice(0, 8)),
+                                    result.message, "chronometer", "")
+                }
             } else if (result.ok && result.message && t) {   // ("": another copy started it)
                 root.petEvent("reset", i18n("Started: %1", what), "")
-                if (root.notifier && Plasmoid.configuration.notifyDone && !root.holdingBack())
+                if (result.ended !== undefined) {
+                    // (it ended the background commands it waited for: told whatever the settings, as it began to wait)
+                    root.actionInfo = result.message
+                    actionInfoTimer.restart()
+                    if (root.notifier && !root.dashboardShown)
+                        root.notify("queued|" + t.id, null, "started", i18n("“%1” went on", t.name || t.chat.slice(0, 8)),
+                                    result.message, "media-playback-start", "")
+                } else if (root.notifier && Plasmoid.configuration.notifyDone && !root.holdingBack())
                     root.notify("queued|" + t.id, null, "started", i18n("Started on %1: %2", t.account, what),
                                 result.message + (t.host ? " · " + t.host : ""), "media-playback-start", "")
             } else if (!result.ok && t && t.afterTurn) {   // (your reply, as VS Code says it)

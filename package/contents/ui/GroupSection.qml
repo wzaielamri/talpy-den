@@ -383,7 +383,7 @@ ColumnLayout {
             required property int index
             readonly property var task: section.queued[index]
                                         || ({ id: "", prompt: "", planTitle: "", folder: "", folderShort: "", startAt: 0, error: "", due: false,
-                                              chat: null, name: "" })
+                                              chat: null, name: "", waits: "" })
             readonly property string what: root.queuedWhat(task)
             readonly property string folder: (task.host ? task.host + ":" : "") + (task.folder || "~")
 
@@ -426,7 +426,8 @@ ColumnLayout {
                         mainText: queuedLine.task.scheduled ? i18n("Starts later") : queuedLine.task.chat ? i18n("Goes on after the usage limit")
                                                             : i18n("Waits for the usage limit")
                         subText: queuedLine.what + "\n\n"
-                                 + (queuedLine.task.chat
+                                 + (queuedLine.task.waits && !queuedLine.task.error ? queuedLine.task.waits + "."
+                                    : queuedLine.task.chat
                                     ? i18n("The chat goes on in the background in %1, at %2, telling Claude that the limit has reset. A Claude that still has it open (in a terminal, or in the background) quits first; if it went on before then, nothing happens.",
                                            queuedLine.folder, root.startText(queuedLine.task.startAt))
                                     : i18n("Starts in the background in %1, at %2.", queuedLine.folder, root.startText(queuedLine.task.startAt)))
@@ -449,6 +450,7 @@ ColumnLayout {
                         horizontalAlignment: Text.AlignRight
                         textFormat: Text.PlainText
                         text: queuedLine.task.error ? i18n("didn't start")
+                              : queuedLine.task.waits ? i18nc("a chat's go-on waits for its background commands", "waits")
                               : queuedLine.task.due || queuedLine.task.startAt <= root.now ? i18n("starting…")
                               : queuedLine.task.startAt - root.now > 12 * 3600000
                               ? i18nc("queued task: folder, when it starts", "%1 · starts %2", queuedLine.task.folderShort || "~",
@@ -545,6 +547,17 @@ ColumnLayout {
                 visible: queuedLine.task.error !== ""
                 text: queuedLine.task.error
                 color: Kirigami.Theme.negativeTextColor
+                wrapMode: Text.Wrap
+                font: Kirigami.Theme.smallFont
+            }
+            // (a chat's go-on that waits for its background commands: until when, then it ends them)
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                visible: !queuedLine.task.error && !!queuedLine.task.waits
+                text: queuedLine.task.waits || ""
+                opacity: 0.6
                 wrapMode: Text.Wrap
                 font: Kirigami.Theme.smallFont
             }

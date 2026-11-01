@@ -1443,6 +1443,8 @@ def requeue(home, extra_dirs, task_id, start_at):
     entry = cs.change_queue(cache_root, take=task_id)
     if entry is None:
         return True, ""
+    # (a go-on that waited for its chat's background commands waits for the limit now: from its new time on)
+    entry = {k: v for k, v in entry.items() if k not in ("dueAt", "waits")}
     cs.change_queue(cache_root, put_back=dict(entry, startAt=start_at, error=""))
     return True, f"It waits for the usage limit: it starts {start_time(start_at)}"
 
@@ -1457,16 +1459,53 @@ def unqueue(home, extra_dirs, task_id):
     return True, "Cancelled the queued task" if taken else "It isn't queued any more"
 
 
-def start_queued(home, extra_dirs, task_id):
+def background_named(commands):
+    """A chat's background commands in words: “npm run dev” and “tail -f
+    log” (and 2 more), or its background work when none could be named."""
+    if not commands:
+        return "its background work", "it"
+    named = [f"“{c}”" for c in commands[:3]]
+    more = len(commands) - len(named)
+    words = (", ".join(named[:-1]) + " and " + named[-1]) if len(named) > 1 and not more else ", ".join(named)
+    if more:
+        words += f" and {more} more"
+    return f"its background command{'s' if len(commands) > 1 else ''} {words}", "them" if len(commands) > 1 else "it"
+
+
+def go_on_waits(cache_root, entry, answer, due, now_ms, out):
+    """A chat's go-on waits for its background commands (cs.continue_chat's
+    "waits" answer): back in the queue, tried again in a minute, saying so
+    ("waits": the queue shows it, no error). The first time it's said
+    ("notify": a notification) and logged (cs.log_go_on)."""
+    what, it = background_named(answer.get("commands") or [])
+    ends = answer.get("endsAt") or due + cs.GO_ON_WAIT_MS
+    note = f"Waits for {what} to finish before it goes on; {start_time(ends)} it ends {it}"
+    first = not entry.get("waits")
+    cs.change_queue(cache_root, put_back=dict(entry, startAt=now_ms + 60_000, dueAt=due, waits=note, error=""))
+    message = f"“{entry.get('name') or entry['chat'][:8]}” " + note[0].lower() + note[1:]
+    if first:
+        cs.log_go_on(cache_root, message + (f" · {entry['host']}" if entry.get("host") else ""))
+    out.update(waits=note, notify=first)
+    return True, message
+
+
+def start_queued(home, extra_dirs, task_id, out=None):
     """Start a queued task now, in the background: (ok, message). It's taken
     out of the queue first, so of several copies of the widget only one
     starts it (the others get an empty message, as does a chat that went on
     already); one that fails to start goes back with the error, until you
-    start or cancel it."""
+    start or cancel it. A chat's go-on that waits for its background
+    commands (go_on_waits) goes back too, and out (a dict) gets "waits" and
+    "notify"; one that ended them to go on gets "ended" and "notify"."""
+    out = {} if out is None else out
     cache_root = cs.cache_dir(home)
     entry = cs.change_queue(cache_root, take=task_id)
     if entry is None:
         return True, ""
+    now_ms = int(time.time() * 1000)
+    # (its go-on's time, kept while it waits: it ends what keeps the chat busy this long after it)
+    due = entry.get("dueAt") or min(entry.get("startAt") or now_ms, now_ms)
+    answer = {}
     task = Task(entry.get("prompt") or "", entry.get("plan"), entry.get("planProfile"), entry.get("model"),
                 entry.get("effort"), entry.get("mode"))
     try:
@@ -1488,16 +1527,26 @@ def start_queued(home, extra_dirs, task_id):
         elif entry.get("chat") and entry.get("host"):
             import remote
             answer = remote.continue_chat(entry["host"], entry["profile"], entry["chat"], entry.get("folder") or "",
-                                          task.text)
+                                          task.text, ends_at=due + cs.GO_ON_WAIT_MS)
+            if answer.get("waits"):
+                return go_on_waits(cache_root, entry, answer, due, now_ms, out)
             ok, message = bool(answer.get("ok")), answer.get("message") or ""
         elif entry.get("chat"):
             claude = claude_path(home)
             # (before it starts: a status meanwhile mustn't queue it again, see keep_going)
-            cs.note_went_on(cache_root, entry["chat"])
+            was = cs.note_went_on(cache_root, entry["chat"], now_ms)
             answer = (cs.continue_chat(home, extra_dirs, entry["profile"], entry["chat"], entry.get("folder"), task.text,
-                                       claude, prefix=scope_prefix("claude"), force=entry.get("why") in ("retry", "cap"))
+                                       claude, prefix=scope_prefix("claude"), force=entry.get("why") in ("retry", "cap"),
+                                       ends_at=due + cs.GO_ON_WAIT_MS)
                       if claude else {"ok": False, "message": NO_CLAUDE})
             ok, message = bool(answer.get("ok")), answer.get("message") or ""
+            if answer.get("waits") or (ok and not message):
+                # (it didn't go on: it waits, back in the queue, or went on by itself already; a
+                # go-on noted would count as one that didn't take, and be tried again)
+                waits = go_on_waits(cache_root, entry, answer, due, now_ms, out) if answer.get("waits") else None
+                cs.went_on_undone(cache_root, entry["chat"], now_ms, was)
+                if waits:
+                    return waits
         elif entry.get("host"):
             import remote
             answer = remote.task(entry["host"], entry["profile"], entry.get("folder") or "~", task.text, task.plan,
@@ -1512,6 +1561,12 @@ def start_queued(home, extra_dirs, task_id):
         cs.change_queue(cache_root, put_back=dict(entry, error=message or "It didn't start"))
     elif entry.get("chat") and not message:
         return True, ""  # it went on already: nothing to start
+    elif entry.get("chat") and "ended" in answer:  # (it waited for its background commands, then ended them)
+        what, _ = background_named(answer.get("ended") or [])
+        message = (f"“{entry.get('name') or entry['chat'][:8]}” ended {what} and "
+                   + (message[0].lower() + message[1:] if message.startswith("Went on") else "went on: " + message))
+        cs.log_go_on(cache_root, message + (f" · {entry['host']}" if entry.get("host") else ""))
+        out.update(ended=answer.get("ended") or [], notify=True)
     return ok, message or "Started"
 
 
@@ -2646,8 +2701,10 @@ def main(argv=None):
             ok, message = keep_going(Path.home(), extra, session_id, profile_dir, folder, name_arg)
         elif action is keep_off:
             ok, message = keep_off(Path.home(), extra, session_id)
-        elif action in (unqueue, start_queued):
-            ok, message = action(Path.home(), extra, session_id)
+        elif action is start_queued:
+            ok, message = start_queued(Path.home(), extra, session_id, extra_out)
+        elif action is unqueue:
+            ok, message = unqueue(Path.home(), extra, session_id)
         elif action is requeue:
             ok, message = requeue(Path.home(), extra, session_id, start_at)
         elif action in ("--star", "--unstar", "--star-plan", "--unstar-plan"):

@@ -488,10 +488,21 @@ export class Dashboard implements vscode.Disposable {
         if (answer.ok && answer.message && settings.notifyDone() && this.notifier.isLeader() && !this.visible)
           void vscode.window.showInformationMessage(`Sent to ${t.name || "the chat"}: ${t.prompt} — ${answer.message}`);
         else if (!answer.ok) this.setActionError(`Couldn't send your reply to ${t.name || "the chat"}: ${answer.message}`);
+      } else if (answer.waits !== undefined) {
+        // a chat's go-on waits for its background commands (the queue says
+        // so): told once, as it starts waiting, as the widget does
+        if (answer.notify) {
+          this.setActionInfo(answer.message);
+          if (this.notifier.isLeader() && !this.visible) void vscode.window.showWarningMessage(answer.message);
+        }
       } else if (answer.ok && answer.message) {
         // ("": another window, or the widget, started it)
         this.petEvent("reset", `Started: ${what}`);
-        if (settings.notifyDone() && this.notifier.isLeader())
+        if (answer.ended !== undefined) {
+          // (it ended the background commands it waited for: told whatever the settings, as it began to wait)
+          this.setActionInfo(answer.message);
+          if (this.notifier.isLeader() && !this.visible) void vscode.window.showInformationMessage(answer.message);
+        } else if (settings.notifyDone() && this.notifier.isLeader())
           void vscode.window.showInformationMessage(`Started on ${t.account}: ${what} — ${answer.message}${t.host ? ` · ${t.host}` : ""}`);
       } else if (!answer.ok) {
         this.setActionError(`Couldn't start the queued task: ${answer.message}`);

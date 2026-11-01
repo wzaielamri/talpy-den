@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **A chat's go-on waits for the commands it runs in the background,
+  then ends them:** a chat a usage limit stopped that still runs a
+  command it started in the background (a server, say) looks at work, so
+  at the reset its go-on was refused (*Couldn't start the queued task:
+  It's at work again*). Now its queued line says *waits*, with which
+  command and until when; it goes on once they finish, or 15 minutes
+  after its time ends them and goes on. A notification says so as it
+  starts waiting and as it ends them, and
+  `~/.cache/talpy-den/go-on.log` keeps a dated line of each.
 - ***Delete…* asks on the line, as every other question:** under the
   chat, plan or memory, *Looking at what it would delete…*, then the
   question in orange with **Delete** (the red trash) and **Cancel** beside

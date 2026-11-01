@@ -1283,7 +1283,9 @@ class ContinueAfterResetTests(TaskFixture):
         import remote
         with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": "Went on in the background on work (1a2b3c4d)"}) as ask:
             self.assertEqual(self.queue("--start-queued", task["id"])["message"], "Went on in the background on work (1a2b3c4d)")
-        ask.assert_called_once_with("lab", ["--continue-chat", self.SID, "--profile", ".claude", "--folder", "/srv/app"])
+        _, args = ask.call_args[0]
+        self.assertEqual(args[:6], ["--continue-chat", self.SID, "--profile", ".claude", "--folder", "/srv/app"])
+        self.assertEqual(args[6:7], ["--ends-at"])  # (its background commands are waited for until then: GoOnWaitsTests)
 
     def test_queue_in_a_folder_picked_in_the_dialog(self):
         at = str(int((time.time() + 3600) * 1000))
@@ -1303,6 +1305,169 @@ def api_error(text, ts):
     e = limit_error(text, ts)
     e["error"] = "server_error"
     return e
+
+
+class GoOnWaitsTests(TaskFixture):
+    """A chat a usage limit stopped that still runs commands in the
+    background (a server it started) looks at work: its go-on waits for
+    them, and ends them GO_ON_WAIT_MS after its time; said and logged only
+    then."""
+
+    SID = ContinueAfterResetTests.SID
+    queue, cache_root = QueueTests.queue, QueueTests.cache_root
+    stopped_chat = ContinueAfterResetTests.stopped_chat
+
+    def setUp(self):
+        super().setUp()
+        self.stopped_chat()
+        self.session_file = self.home / ".claude-work/sessions/50.json"
+        write(self.session_file, session(self.SID, kind="bg", status="busy", jobId=self.SID[:8]))
+        write(self.home / f".claude-work/jobs/{self.SID[:8]}/state.json", {
+            "sessionId": self.SID, "state": "working", "fan": [
+                {"id": "b1", "kind": "shell", "label": "python3 -m http.server 8000", "startedAt": 1},
+                {"id": "b0", "kind": "shell", "label": "ls", "startedAt": 1, "doneAt": 2},
+                {"id": "a1", "kind": "agent", "label": "Look around", "startedAt": 1}]})
+        self.at = int(time.time() * 1000) - 1000
+        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude-work", "--at", str(self.at),
+                                   "--name", "Fix it")["ok"])
+
+    def log_lines(self):
+        path = self.cache_root() / "go-on.log"
+        return path.read_text().splitlines() if path.exists() else []
+
+    def test_it_waits_for_its_background_commands_then_ends_them(self):
+        (task,) = cs.load_queue(self.cache_root())
+        answer = self.queue("--start-queued", task["id"])
+        self.assertRegex(answer["waits"], r"^Waits for its background command “python3 -m http.server 8000” to finish "
+                                          r"before it goes on; (tomorrow )?at \d\d:\d\d it ends it$")
+        self.assertEqual((answer["ok"], answer["notify"]), (True, True))
+        self.assertEqual(answer["message"], "“Fix it” w" + answer["waits"][1:])
+        self.assertEqual(self.calls(), [], "it didn't go on")
+        # back in the queue, tried again in a minute, with no error: from its own time, the deadline
+        (back,) = cs.queued_tasks(self.cache_root(), int(time.time() * 1000))
+        self.assertEqual((back["id"], back["error"], back["waits"], back["dueAt"], back["due"]),
+                         (task["id"], "", answer["waits"], self.at, False))
+        self.assertAlmostEqual(back["startAt"], time.time() * 1000 + 60_000, delta=5000)
+        # not a go-on that didn't take: the keep engine waits with it, and doesn't queue it twice
+        self.assertIsNone(cs.kept_chats(self.cache_root())[0]["wentOnAt"])
+        later = int(time.time() * 1000) + cs.KEEP_TAKE_MS + 60_000
+        cs.look_after_kept(self.home, self.cache_root(), [], [{"profileKeys": [".claude-work"], "sessions": []}], later)
+        self.assertEqual([t["id"] for t in cs.load_queue(self.cache_root())], [task["id"]])
+        # said and logged once
+        (line,) = self.log_lines()
+        self.assertRegex(line, r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d  “Fix it” waits for its background command “python3 -m "
+                               r"http.server 8000” to finish before it goes on; (tomorrow )?at \d\d:\d\d it ends it$")
+        again = self.queue("--start-queued", task["id"])
+        self.assertEqual((again["ok"], again["notify"], again["waits"]), (True, False, answer["waits"]))
+        self.assertEqual(len(self.log_lines()), 1)
+        # its time + GO_ON_WAIT_MS: it ends them and goes on, and says what it ended
+        (back,) = cs.load_queue(self.cache_root())
+        cs.change_queue(self.cache_root(), put_back=dict(back, dueAt=self.at - cs.GO_ON_WAIT_MS))
+        ended = []
+
+        def end(home, entry, profile, claude=None):
+            ended.append((entry["jobId"], profile.key))
+            self.session_file.unlink()  # (its session quit)
+            return True, "Stopped"
+        with mock.patch.object(cs, "end_background_work", side_effect=end):
+            answer = self.queue("--start-queued", task["id"])
+        self.assertEqual(ended, [(self.SID[:8], ".claude-work")])
+        self.assertEqual(answer, {"ok": True, "message": "“Fix it” ended its background command “python3 -m http.server 8000” "
+                                                         "and went on in the background on work (1a2b3c4d)",
+                                  "ended": ["python3 -m http.server 8000"], "notify": True})
+        self.assertEqual(self.calls()[0]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])
+        self.assertEqual(cs.load_queue(self.cache_root()), [])
+        self.assertIsNotNone(cs.kept_chats(self.cache_root())[0]["wentOnAt"])
+        self.assertEqual(len(self.log_lines()), 2)
+        self.assertTrue(self.log_lines()[1].endswith(answer["message"]))
+
+    def test_a_go_on_with_nothing_in_the_background_is_as_ever(self):
+        self.session_file.unlink()
+        (task,) = cs.load_queue(self.cache_root())
+        self.assertEqual(self.queue("--start-queued", task["id"]),
+                         {"ok": True, "message": "Went on in the background on work (1a2b3c4d)"})
+        self.assertEqual(self.log_lines(), [])
+        # one that went on by itself already isn't a go-on that didn't take either
+        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude-work", "--at", str(self.at))["ok"])
+        self.stopped_chat(prompt("go on", self.now - 30), reply("Done.", self.now - 20, msg_id="m2"))
+        (task,) = cs.load_queue(self.cache_root())
+        went = cs.kept_chats(self.cache_root())[0]["wentOnAt"]
+        self.assertEqual(self.queue("--start-queued", task["id"]), {"ok": True, "message": ""})
+        self.assertEqual(cs.kept_chats(self.cache_root())[0]["wentOnAt"], went)
+
+    def test_a_chat_at_work_without_a_limit_stop_and_a_wait_for_the_limit(self):
+        # (not stopped by a limit: at work, it stays where it is, as before)
+        write(self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl",
+              lines(prompt("fix it", self.now - 60, cwd=str(self.folder))))
+        answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), force=True,
+                                  ends_at=int(time.time() * 1000) + 60_000)
+        self.assertEqual(answer, {"ok": False, "message": "It's at work again, so it stays where it is"})
+        # a go-on that waited, then waits for the usage limit: it waits afresh from its new time
+        self.stopped_chat()
+        (task,) = cs.load_queue(self.cache_root())
+        self.assertTrue(self.queue("--start-queued", task["id"])["waits"])
+        later = int(time.time() * 1000) + 3600_000
+        self.assertTrue(self.queue("--requeue", task["id"], "--at", str(later))["ok"])
+        (back,) = cs.load_queue(self.cache_root())
+        self.assertEqual((back["startAt"], "dueAt" in back, "waits" in back), (later, False, False))
+
+    def test_an_ssh_hosts_go_on_waits_there(self):
+        self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude", "--at", str(self.at), "--cwd",
+                                   "/srv/app", "--host", "lab", "--name", "Lab chat")["ok"])
+        task = next(t for t in cs.load_queue(self.cache_root()) if t["host"] == "lab")
+        import remote
+        ends = self.at + cs.GO_ON_WAIT_MS
+        with mock.patch.object(remote, "host_answer", return_value={
+                "ok": False, "message": "", "waits": True, "commands": ["npm run dev", "tail -f log"], "endsAt": ends}) as ask:
+            answer = self.queue("--start-queued", task["id"])
+        ask.assert_called_once_with("lab", ["--continue-chat", self.SID, "--profile", ".claude", "--folder", "/srv/app",
+                                            "--ends-at", str(ends)])
+        self.assertRegex(answer["message"], r"^“Lab chat” waits for its background commands “npm run dev” and “tail -f log” "
+                                            r"to finish before it goes on; (tomorrow )?at \d\d:\d\d it ends them$")
+        self.assertTrue(answer["notify"])
+        self.assertTrue(self.log_lines()[0].endswith(" · lab"))
+        back = next(t for t in cs.load_queue(self.cache_root()) if t["host"] == "lab")
+        self.assertEqual((back["error"], back["dueAt"]), ("", self.at))
+        # there: --ends-at reaches continue_chat
+        mask = os.umask(0o022)
+        os.umask(mask)
+        self.addCleanup(os.umask, mask)
+        with mock.patch.object(cs, "continue_chat", return_value={"ok": True, "message": ""}) as go_on, \
+                mock.patch.object(cs.Path, "home", return_value=self.home), contextlib.redirect_stdout(io.StringIO()):
+            cs.main(["--continue-chat", self.SID, "--profile", ".claude", "--ends-at", "123"])
+        self.assertEqual(go_on.call_args[1]["ends_at"], 123)
+
+    def test_its_commands_named_and_ended(self):
+        # a session's own shells, when its job names none: Claude's bash -c 'source <snapshot> … && eval …'
+        script = ("source /nowhere/shell-snapshots/snapshot-bash-1.sh 2>/dev/null || true && "
+                  "eval 'sleep 30 && echo '\"'\"'done'\"'\"'' < /dev/null && pwd -P >| /dev/null")
+        proc = subprocess.Popen([sys.executable, "-c", "import subprocess, sys, time\n"
+                                 f"subprocess.Popen(['bash', '-c', {script!r}])\nprint('ready', flush=True)\ntime.sleep(60)"],
+                                stdout=subprocess.PIPE, text=True)
+        self.addCleanup(proc.stdout.close)
+        self.addCleanup(lambda: (proc.kill(), proc.wait()) if proc.poll() is None else None)
+        self.assertEqual(proc.stdout.readline().strip(), "ready")
+        reaper = threading.Thread(target=proc.wait)
+        reaper.start()
+        self.addCleanup(reaper.join, 10)
+        entry = session(self.SID, pid=proc.pid, procStart=cs.proc_start_time(proc.pid), kind="bg", status="busy",
+                        jobId="nojob")
+        deadline = time.time() + 5
+        while not cs.background_commands(entry, self.profile) and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(cs.background_commands(entry, self.profile), ["sleep 30 && echo 'done'"])
+        tree = cs.process_tree(proc.pid)
+        self.assertTrue(tree)
+
+        def stop(profile, job_id, job=None, home=None, claude=None):  # (claude stop: its process quits, not its shells)
+            os.kill(proc.pid, 15)
+            return True, "Stopped"
+        with mock.patch.object(cs, "stop_background", side_effect=stop):
+            self.assertEqual(cs.end_background_work(self.home, entry, self.profile), (True, "Stopped"))
+        self.assertTrue(all(cs.process_gone({"pid": p, "procStart": s}) for p, s in tree), "its leftovers ended")
+        self.assertIsNone(cs.claude_shell_command(["bash", "-c", "npm test"]))
 
 
 class KeepGoingTests(TaskFixture):

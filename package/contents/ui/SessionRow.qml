@@ -912,8 +912,10 @@ RowLayout {
                         border.width: 1
                         border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
                     }
-                    text: row.goingOn ? i18n("Goes on at %1", root.startText(row.goingOn.startAt))
-                                      : i18n("Go on at %1", root.startText(row.goOnAt))
+                    // (one that waits for its background commands: when it ends them is in its tooltip and queued line)
+                    text: row.goingOn && row.goingOn.waits && !row.goingOn.error ? i18n("Waits to go on")
+                          : row.goingOn ? i18n("Goes on at %1", root.startText(row.goingOn.startAt))
+                          : i18n("Go on at %1", root.startText(row.goOnAt))
                     font: Kirigami.Theme.smallFont
                     Layout.preferredHeight: stepLabel.implicitHeight + Kirigami.Units.smallSpacing
                     onClicked: {
@@ -926,9 +928,13 @@ RowLayout {
                     PlasmaCore.ToolTipArea {
                         textFormat: Text.PlainText
                         anchors.fill: parent
-                        mainText: row.goingOn ? i18n("Goes on by itself at %1", root.startText(row.goingOn.startAt))
-                                              : i18n("Go on once the limit resets")
-                        subText: (row.goingOn ? "" : i18n("At %1, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.", root.startText(row.goOnAt)) + " ")
+                        readonly property bool waits: !!row.goingOn && !!row.goingOn.waits && !row.goingOn.error
+                        mainText: waits ? i18n("Waits to go on")
+                                  : row.goingOn ? i18n("Goes on by itself at %1", root.startText(row.goingOn.startAt))
+                                  : i18n("Go on once the limit resets")
+                        subText: waits ? row.goingOn.waits + ".\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
+                                                                                 : i18n("Click to cancel it."))
+                                 : (row.goingOn ? "" : i18n("At %1, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.", root.startText(row.goOnAt)) + " ")
                                  + (row.session.pid === null || row.session.pid === undefined ? ""
                                     : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
                                     : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it.")) + " "

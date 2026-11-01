@@ -941,8 +941,14 @@ button:focus-visible {
   color: var(--cs-failed);
 }
 
-.queued-error {
+.queued-error,
+.queued-note {
   padding-left: calc(16px + 6px);
+}
+
+/* (a chat's go-on that waits for its background commands: dim, as Plasma's) */
+.queued-note {
+  color: var(--cs-muted);
 }
 
 .queued-line:hover > .row-actions,

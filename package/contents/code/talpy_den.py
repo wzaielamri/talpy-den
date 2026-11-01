@@ -3919,14 +3919,32 @@ def keep_chat(cache_root, profile_key, chat_id, name="", folder="", on=True, now
 
 def note_went_on(cache_root, chat_id, now_ms=None):
     """A go-on of a chat that keeps going has started: something new should
-    show in it soon (look_after_kept checks)."""
+    show in it soon (look_after_kept checks). Its wentOnAt before (None
+    when it isn't kept, or never went on), for went_on_undone."""
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    was = []
 
     def change(data):
         k = next((k for k in data["chats"] if k["chat"] == chat_id), None)
         if k is None:
             return False
+        was.append(k.get("wentOnAt"))
         k.update(wentOnAt=now_ms, note="", cappedUntil=None)
+        return True
+    change_keep(cache_root, change)
+    return was[0] if was else None
+
+
+def went_on_undone(cache_root, chat_id, noted, was):
+    """A go-on noted at noted (note_went_on) didn't go on after all: it waits
+    for the chat's background commands, or the chat went on by itself. Its
+    wentOnAt goes back to was, unless a later go-on noted another time: a
+    go-on noted that never started would count as one that didn't take."""
+    def change(data):
+        k = next((k for k in data["chats"] if k["chat"] == chat_id), None)
+        if k is None or k.get("wentOnAt") != noted:
+            return False
+        k["wentOnAt"] = was
         return True
     change_keep(cache_root, change)
 
@@ -5461,7 +5479,7 @@ def saved_options(state_path, chat_id, model, effort):
 
 
 def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", claude=None, prefix=(),
-                  wait=None, force=False):
+                  wait=None, force=False, ends_at=None):
     """Go on with a chat a usage limit stopped, now that the limit has reset
     (a queued one: jump.py --start-queued; here or on an SSH host,
     --continue-chat): in the background on its account, with text (else
@@ -5471,7 +5489,11 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     chat. {"ok", "message", "id"}; ok with no message when it went on
     already (its newest turn isn't the limit's any more): nothing to do.
     force: go on whatever its newest turn (a chat that keeps going whose turn
-    broke off, or that the usage cap stopped)."""
+    broke off, or that the usage cap stopped).
+    ends_at (ms): a session whose turn the limit ended but that's at work on
+    its background commands (background_work) is waited for until then:
+    {"ok": False, "waits": True, "commands", "endsAt"}; from then on they're
+    ended first (end_background_work), and its answer names them ("ended")."""
     profiles = discover_profiles(home, extra_dirs)
     profile = next((p for p in profiles if matches_profile(p, profile_key)), None)
     if profile is None:
@@ -5480,16 +5502,27 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     if path is None:
         return {"ok": False, "message": "That chat isn't on this account any more"}
     peek = chat_peek(path) or {}
-    if not force and (peek.get("stopped") or {}).get("kind") != "limit":
+    limited = (peek.get("stopped") or {}).get("kind") == "limit"
+    if not force and not limited:
         return {"ok": True, "message": ""}
     # (its newest entries name none: a chat in the Claude Code panel names it at its first prompt only)
     mode = peek.get("mode") or scan_mode(path, file_size(path))
     if not (isinstance(folder, str) and os.path.isdir(folder)):
         folder = chat_folder(path) or str(home)
     claude = claude or find_claude(home, ask_shell=True)
-    ok, message = end_for_handover(home, profiles, chat_id, claude)
-    if not ok:
-        return {"ok": False, "message": message}
+    busy = background_work(profiles, chat_id) if limited and ends_at is not None else None
+    if busy is not None:
+        entry, runs_on, commands = busy
+        if time.time() * 1000 < ends_at:
+            return {"ok": False, "waits": True, "commands": commands, "endsAt": int(ends_at),
+                    "message": "It waits for its background commands to finish"}
+        ok, message = end_background_work(home, entry, runs_on, claude)
+        if not ok:
+            return {"ok": False, "message": f"Couldn't end its background commands: {message}"}
+    else:
+        ok, message = end_for_handover(home, profiles, chat_id, claude)
+        if not ok:
+            return {"ok": False, "message": message}
     # (claude --bg --resume starts a copy while a process still has the chat open)
     deadline = time.time() + (END_WAIT if wait is None else wait)
     while any(e.get("sessionId") == chat_id for e, _, _ in live_entries_all(profiles)) and time.time() < deadline:
@@ -5510,7 +5543,10 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
         message = f"Went on in the background on {profile.label}" + (f" ({how})" if how else f" ({job})" if job else "")
         if not carried:
             message += ", with the model and effort Claude saved for it"
-    return {"ok": ok, "message": message, "id": job}
+    answer = {"ok": ok, "message": message, "id": job}
+    if busy is not None:
+        answer["ended"] = busy[2]
+    return answer
 
 
 def plan_markdown(home, extra_dirs, slug, profile_key=None):
@@ -5976,6 +6012,118 @@ def end_for_handover(home, profiles, chat_id, claude=None):
             return stop_chat(entry)
         return False, "It's open where Talpy Den can't end it"
     return True, "Nothing had it open"
+
+
+# ---------------------------------------------------------------- a go-on kept waiting by background commands
+#
+# A chat a usage limit stopped can still look at work: Claude counts the
+# commands it runs in the background (a server it started, say) as work, so
+# its session says busy until they end, though its turn ended at the limit.
+# Claude can't take a message into a live background chat, and ending it
+# would end them: a go-on waits for them (the queue tries again each minute),
+# and GO_ON_WAIT_MS after its time ends them and goes on.
+
+GO_ON_WAIT_MS = 15 * 60_000  # how long a go-on waits for a chat's background commands, then ends them
+GO_ON_LOG_LINES = 200  # cache_dir/go-on.log keeps this many lines
+
+
+def claude_shell_command(argv):
+    """The command a shell that Claude started runs (bash -c 'source
+    <snapshot> … && eval '<command>' …'), from its argv, or None."""
+    script = argv[-1] if len(argv) >= 3 and "-c" in argv[1:-1] else ""
+    at = script.find("eval ")
+    if "shell-snapshots" not in script or at < 0:
+        return None
+    lexer = shlex.shlex(script[at + 5:], posix=True)
+    lexer.whitespace_split = True
+    try:
+        command = lexer.get_token()
+    except ValueError:
+        return None
+    return command or None
+
+
+def background_commands(entry, profile):
+    """The commands a chat's session runs in the background, named short: a
+    background session's from its job (state.json's fan: its shells not
+    done yet), else the shells Claude started below its process."""
+    names = []
+    job_id = entry.get("jobId")
+    if entry.get("kind") == "bg" and valid_id(job_id):
+        job = read_job([profile], job_id) or {}
+        fan = job.get("fan") if isinstance(job.get("fan"), list) else []
+        names = [f["label"] for f in fan if isinstance(f, dict) and f.get("kind") == "shell" and not f.get("doneAt")
+                 and isinstance(f.get("label"), str) and f["label"].strip()]
+    if not names and isinstance(entry.get("pid"), int) and is_alive(entry):
+        for pid, _ in process_tree(entry["pid"]):
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
+            except OSError:
+                continue
+            command = claude_shell_command(argv)
+            if command:
+                names.append(command)
+    return [short_text(next((l for l in n.splitlines() if l.strip()), n), 60) for n in names]
+
+
+def background_work(profiles, chat_id):
+    """The session that has a chat open and is at work, as one whose turn a
+    usage limit ended is on its background commands alone: (entry, profile
+    it runs on, [its commands, named short]), or None. Not one in VS Code's
+    Claude (its tab isn't Talpy Den's to end)."""
+    for entry, runs_on, _holder in live_entries_all(profiles):
+        if entry.get("sessionId") != chat_id or entry.get("kind") not in SESSION_KINDS or entry.get("spare") \
+                or entry.get("parkedJobId") or entry.get("entrypoint") == "claude-vscode":
+            continue
+        if session_state(entry) == "working":
+            return entry, runs_on, background_commands(entry, runs_on)
+    return None
+
+
+def end_background_work(home, entry, profile, claude=None):
+    """End a chat's session and the commands it runs in the background: a
+    background session is stopped (claude stop), a chat in a terminal quits
+    as with the stop button; what's left of its commands after that is
+    ended too (end_leftovers). (ok, message)."""
+    tree = process_tree(entry["pid"]) if isinstance(entry.get("pid"), int) and is_alive(entry) else []
+    job_id = entry.get("jobId")
+    if entry.get("kind") == "bg" and valid_id(job_id):
+        ok, message = stop_background(profile, job_id, read_job([profile], job_id), home, claude)
+        if ok:
+            deadline = time.time() + END_WAIT
+            while not process_gone(entry) and time.time() < deadline:
+                time.sleep(0.2)
+            end_leftovers(tree)
+        return ok, message
+    if entry.get("kind") == "interactive":
+        return stop_chat(entry, busy_ok=True)
+    return False, "It's open where Talpy Den can't end it"
+
+
+def log_go_on(cache_root, text, now=None):
+    """A dated line in cache_dir/go-on.log, of the go-ons that waited for a
+    chat's background commands (the last GO_ON_LOG_LINES lines are kept)."""
+    stamp = datetime.fromtimestamp(time.time() if now is None else now).strftime("%Y-%m-%d %H:%M:%S")
+    path = cache_root / "go-on.log"
+    private_dir(cache_root)
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            old = f.read().splitlines()
+    except OSError:
+        old = []
+    keep = old[-(GO_ON_LOG_LINES - 1):] + [f"{stamp}  {' '.join(text.split())}"]
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(keep) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------- several widgets at once
@@ -8015,6 +8163,7 @@ USAGE = """usage: talpy_den.py [--config-dir DIR]... [--done-hours H] [--recent 
   --task-command F  the shell command that starts a chat in folder F with the prompt (and plan)
   --plan-text SLUG  a plan's Markdown
   --continue-chat ID  go on with a chat a usage limit stopped, in the background (the limit has reset)
+  --ends-at MS      with --continue-chat: wait for the chat's background commands until MS, then end them
   --no-tokens       skip transcript token totals
   --pretty          indent the JSON output
   --remote          for the widget on another machine: add the shell commands that open
@@ -8053,7 +8202,7 @@ def main(argv=None):
     agent_run_id, chat_id, plans, find, find_limit = None, None, PLANS_LISTED, None, FIND_LIMIT
     memories = MEMORIES_LISTED
     task_folder, task_action, prompt, plan_slug, plan_profile, plan_text = None, None, "", None, None, None
-    continue_id, continue_folder = None, None
+    continue_id, continue_folder, continue_ends_at = None, None, None
     vscode_account, vscode_server = None, VSCODE_SERVERS["Code"]
     keep_going, usage_cap, model, effort, mode = False, 0, None, None, None
     usage_refresh = USAGE_REFRESH_MINUTES
@@ -8079,6 +8228,11 @@ def main(argv=None):
             continue_id = args.pop(0)
         elif arg == "--folder" and args:
             continue_folder = args.pop(0)
+        elif arg == "--ends-at" and args:
+            try:
+                continue_ends_at = int(args.pop(0))
+            except ValueError:
+                sys.exit(USAGE)
         elif arg == "--prompt" and args:
             prompt = args.pop(0)
         elif arg == "--model" and args:
@@ -8183,7 +8337,8 @@ def main(argv=None):
             result = {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
     elif continue_id is not None:
         try:
-            result = continue_chat(home, config_dirs, profile_key, continue_id, continue_folder, prompt)
+            result = continue_chat(home, config_dirs, profile_key, continue_id, continue_folder, prompt,
+                                   ends_at=continue_ends_at)
         except Exception as exc:
             result = {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
     elif task_action is not None:

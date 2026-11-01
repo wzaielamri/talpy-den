@@ -47,6 +47,12 @@ export interface Answer {
   how?: "resumed" | "typed" | "clipboard"; // --plan-feedback: how it reaches the chat
   text?: string; // --plan-feedback --print-command: the feedback, to paste or type in
   question?: string; // --delete-chat|plan|memory --describe: what to ask before it deletes
+  // --start-queued: a chat's go-on waits for its background commands (what the
+  // queue says), or ended them to go on; notify: say so (once, as it starts
+  // waiting, and when it ends them)
+  waits?: string;
+  ended?: string[];
+  notify?: boolean;
 }
 
 // The environment for helpers: VS Code's own variables would leak into the

@@ -118,6 +118,11 @@ export interface QueuedTask {
   createdAt: number;
   error: string; // why it didn't start (it waits for you then)
   due: boolean;
+  // a chat's go-on that waits for the chat's background commands to finish
+  // (jump.py go_on_waits): what the queue says, and the go-on's own time
+  // (they're ended GO_ON_WAIT_MS after it)
+  waits?: string;
+  dueAt?: number;
   chat?: string | null; // goes on with this chat (one a usage limit stopped) instead
   name?: string; // that chat's name
   scheduled?: boolean; // it starts at a time you picked, not when a limit resets
