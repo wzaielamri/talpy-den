@@ -163,6 +163,18 @@ class RowButtonsTests(unittest.TestCase):
         gnome = (repo / "gnome/extension/indicator.js").read_text()
         self.assertIn("[['chats', 'Talpy Den'], ['perms', 'Permissions'], ['week', 'Recap']]", gnome)
 
+    def test_a_kept_chats_tag_says_why_it_is_red_everywhere(self):
+        # Keeps going (gave up) with an error, (can't go on now) with a note, in Plasma as in VS Code
+        repo = UI.parent.parent.parent
+        row = (UI / "SessionRow.qml").read_text()
+        tag = row[row.index("icon: Icons.plasma.keepGoing"):]
+        tag = tag[:tag.index("onClicked:")]
+        self.assertRegex(tag, r'row\.kept && row\.kept\.error \? i18nc\("[^"]+", "Keeps going \(gave up\)"\)')
+        self.assertRegex(tag, r'row\.kept && row\.kept\.note \? i18nc\("[^"]+", "Keeps going \(can\'t go on now\)"\)')
+        self.assertIn('warning: row.kept !== null && (!!row.kept.error || !!row.kept.note)', tag)
+        tsx = (repo / "vscode/webview/components/SessionRow.tsx").read_text()
+        self.assertIn('"Keeps going" + (kept.error ? " (gave up)" : kept.note ? " (can\'t go on now)" : "")', tsx)
+
     def test_a_projects_dots_stand_top_right_and_its_buttons_cover_its_folder_line(self):
         # (the buttons kept their room after the dots on the name's line, so the
         # dots stood a few buttons in from the edge)

@@ -26,7 +26,7 @@
 | **Continue on …** under a chat | A usage limit stopped it: continues it on that account, which has room left. |
 | **Go on at …** under a chat | A usage limit stopped it: it goes on by itself in the background once the limit resets (click again to cancel). In *Recent chats*, its **Limit** tag does the same. |
 | **☆** next to a chat, a recent chat or a plan | Stars it: the account lists it under *★ Starred chats* or *★ Starred plans*, however old it is. **★** unstars it. |
-| **Keep going** under a chat | The same, and again after every later limit, until it's done (in *Recent chats*: **↻**). Click **↻ Keeps going** to stop that. |
+| **Keep going** under a chat | The same, and again after every later limit, until it's done (in *Recent chats*: **↻**). Click **↻ Keeps going** to stop that; red, it says why: *(gave up)* or *(can't go on now)*, with more in its tooltip. |
 | A queued task under an account | Starts it now, or cancels it (it asks first when it has text you wrote). |
 | **⚠ Same files** next to a chat | Goes to the other chat that changes the same files. |
 | Filter button at the top (**Focus**) | Shows only what needs you, the chats that finished a turn you haven't looked at yet and one line for each chat at work; **Show everything** goes back. |

@@ -963,7 +963,10 @@ RowLayout {
                 Tag {
                     visible: row.kept !== null
                     icon: Icons.plasma.keepGoing
-                    text: i18nc("a chat that goes on by itself after usage limits", "Keeps going")
+                    // (red: it says why, as VS Code's)
+                    text: row.kept && row.kept.error ? i18nc("a chat that goes on by itself after usage limits, which gave up", "Keeps going (gave up)")
+                        : row.kept && row.kept.note ? i18nc("a chat that goes on by itself after usage limits, which can't go on at the moment", "Keeps going (can't go on now)")
+                        : i18nc("a chat that goes on by itself after usage limits", "Keeps going")
                     active: row.kept !== null && !row.kept.error
                     warning: row.kept !== null && (!!row.kept.error || !!row.kept.note)
                     clickable: true
