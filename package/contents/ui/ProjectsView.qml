@@ -245,7 +245,8 @@ PlasmaComponents3.ScrollView {
                                                 width: Kirigami.Units.smallSpacing * 2
                                                 height: width
                                                 radius: width / 2
-                                                color: root.stateColor(card.here[index] ? card.here[index].session.state : "idle")
+                                                // (as its row's dot: red for a chat that failed or that a usage limit stopped)
+                                                color: card.here[index] ? root.rowColor(card.here[index].session) : root.stateColor("idle")
                                             }
                                         }
                                     }

@@ -7,7 +7,7 @@ import { useLiveView } from "../util/stores";
 import { setFocus } from "../util/ui";
 import { I, Icon } from "../util/icons";
 import { useView } from "./context";
-import { SessionRow } from "./SessionRow";
+import { dotClass, SessionRow } from "./SessionRow";
 import type { FocusItem } from "../../src/shared/model";
 
 // The focus view (the header's filter button): only what needs you, as full
@@ -65,7 +65,7 @@ export function FocusLine({ item, finished = false }: { item: FocusItem; finishe
     <button type="button" class={"focus-line" + (finished ? " finished" : "")} data-row={rowKeyOf(s, host)}
       title={`${s.name}\n${what}\nClick to open this chat`} onClick={() => post({ type: "open", chat: chatRefOf(s, host) })}>
       <span class="pet-bar" style={{ background: color || "transparent" }} aria-hidden="true" />
-      <span class={"focus-dot" + (finished ? "" : ` st-${s.state}`)} aria-hidden="true" />
+      <span class={"focus-dot" + (finished ? "" : " " + dotClass(s))} aria-hidden="true" />
       <span class="focus-name">{(host ? host + ": " : "") + s.name}</span>
       <span class="focus-what">{what}</span>
       {/* (with no step known, the state's text says how long itself) */}

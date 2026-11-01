@@ -4527,6 +4527,13 @@ PlasmoidItem {
         }
     }
 
+    // a chat's dot's color, as its row's: red when it failed or a usage limit (or an expired login)
+    // stopped it and the limit hasn't reset, else its state's
+    function rowColor(s) {
+        return s && (s.reason === "failed" || (s.stopped && !s.stopped.over)) ? Kirigami.Theme.negativeTextColor
+             : root.stateColor(s ? s.state : "idle")
+    }
+
     function usageColor(pct) {
         if (pct >= 90)
             return Kirigami.Theme.negativeTextColor

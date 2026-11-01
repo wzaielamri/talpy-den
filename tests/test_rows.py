@@ -217,6 +217,24 @@ class RowButtonsTests(unittest.TestCase):
         self.assertIn("position: absolute;", actions[:200])
         self.assertIn("bottom: 2px;", actions[:200])
 
+    def test_a_projects_dots_take_the_rows_colour_red_for_a_limit(self):
+        # Two chats a usage limit stopped showed as two green dots on their
+        # project (their state is idle), where their rows are red (2026-11-01)
+        repo = UI.parent.parent.parent
+        main = (UI / "main.qml").read_text()
+        rule = main[main.index("function rowColor(s)"):main.index("function usageColor")]
+        self.assertIn('s.reason === "failed" || (s.stopped && !s.stopped.over)', rule)
+        self.assertIn("negativeTextColor", rule)
+        qml = (UI / "ProjectsView.qml").read_text()
+        self.assertIn("root.rowColor(card.here[index].session)", qml)
+        self.assertNotIn("root.stateColor(card.here[index]", qml)
+        row = (repo / "vscode/webview/components/SessionRow.tsx").read_text()
+        self.assertIn('return s.stopped && !s.stopped.over ? "st-failed" : stateClass(s.state, s.reason);', row)
+        for name in ("ProjectsView.tsx", "FocusView.tsx"):
+            tsx = (repo / "vscode/webview/components" / name).read_text()
+            self.assertIn("dotClass(s)", tsx, name)
+            self.assertNotIn("st-${s.state}", tsx, name)
+
     def test_what_a_line_rarely_needs_is_made_only_when_needed(self):
         # Opening Recent chats, Plans or Memories made every line's buttons,
         # Delete question, keep-only question, a plan's new-chat box and its

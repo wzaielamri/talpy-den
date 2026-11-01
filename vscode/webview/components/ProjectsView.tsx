@@ -27,6 +27,7 @@ import { MoreButton } from "./MoreButton";
 import { PlanLine } from "./PlanLine";
 import { Reading } from "./Reading";
 import { RecentLine, reopenOf, type Reopen } from "./RecentLine";
+import { dotClass } from "./SessionRow";
 
 export function ProjectsView() {
   const answer = useStore(projectsAnswer);
@@ -107,7 +108,7 @@ function Project({ p, open, here, now }: { p: ProjectRow; open: boolean; here: S
         {/* a dot for each of its open chats, in its state's color, at the top right */}
         {here.length ? (
           <span class="project-dots" title={`${here.length} open ${here.length === 1 ? "chat" : "chats"}\n` + here.map((s) => `${s.name}: ${stateText(s, now)}`).join("\n")}>
-            {here.map((s) => <span key={s.key} class={`focus-dot st-${s.state}`} aria-hidden="true" />)}
+            {here.map((s) => <span key={s.key} class={`focus-dot ${dotClass(s)}`} aria-hidden="true" />)}
           </span>
         ) : null}
         {/* on hover (or Tab), over the end of its folder's line: the dots stay in sight, and nothing moves */}

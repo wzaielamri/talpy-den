@@ -50,6 +50,12 @@ export function stateClass(state: string, reason: string): string {
   return reason === "failed" ? "st-failed" : `st-${state}`;
 }
 
+/** A chat's dot's colour class, as its row's: red when it failed or a usage limit (or an expired
+ *  login) stopped it and the limit hasn't reset, else its state's. */
+export function dotClass(s: Pick<Session, "state" | "reason" | "stopped">): string {
+  return s.stopped && !s.stopped.over ? "st-failed" : stateClass(s.state, s.reason);
+}
+
 function lineTitle(kind: string): string {
   return kind === "needs"
     ? "What it needs: "

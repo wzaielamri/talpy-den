@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **A project's dots take its chats' row colours:** in the Projects tab
+  (and the Focus view's lines), a chat a usage limit stopped (or one that
+  failed) is a red dot, as its row; two chats at *Limit* showed as green
+  dots, the colour of their idle state.
 - **The settings in categories:** the Settings editor lists them under
   *Talpy Den › General*, *› Chats*, *› Notifications*, *› Usage & limits*,
   *› Talpy*, *› Recap*, *› Hosts* and *› Advanced*, as Talpy Den's
