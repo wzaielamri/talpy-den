@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""SSH hosts for the Talpy Den widget.
+"""SSH hosts and containers for the Talpy Den widget.
 
-    python3 -I remote.py --hosts                    hosts named in ~/.ssh/config
+    python3 -I remote.py --hosts [--container-days N] [--picked IDS] [--no-containers]
+                                                    hosts named in ~/.ssh/config, this computer's containers
+                                                    (running, or active in the last N days, default 30;
+                                                    the picked ones always) and the hosts' last lists
+    python3 -I remote.py --containers HOST [--container-days N] [--picked IDS]   an SSH host's containers
+    python3 -I remote.py --start CONTAINER          start a stopped container
+    python3 -I remote.py --attach CONTAINER COMMAND (in a terminal) COMMAND in the container, in this terminal
     python3 -I remote.py --status HOST [--done-hours H] [--recent N] [--plans N] [--memories N] [--no-tokens]
                                      [--usage-refresh N]
     python3 -I remote.py --open HOST COMMAND        a terminal running COMMAND on HOST
@@ -52,6 +58,11 @@ For a host that wants a password (or a passphrase, a code, a new host key),
 it. That login's connection becomes the shared one the checks use, until
 LOGIN_MINUTES after their last use, logging out (the sockets are in
 $XDG_RUNTIME_DIR), or --disconnect.
+
+Every HOST may also be a container: docker:NAME, podman:NAME or
+nerdctl:NAME on this computer, ENGINE:NAME@HOST on the SSH host HOST.
+Talpy Den works in it with the engine's exec (python3 -I - there, as on a
+host), over ssh in HOST's shared connection for one on a host.
 """
 
 import glob
@@ -229,10 +240,8 @@ def answer_after_mark(stdout):
 
 
 def ssh(host, command, stdin=None, timeout=RUN_TIMEOUT):
-    """Run command on host (batch mode): the CompletedProcess. Output that
-    isn't UTF-8 (a login script's greeting) can't break the answer."""
-    return subprocess.run(["ssh", *ssh_options(), "-T", host, posix(command)], input=stdin, capture_output=True,
-                          text=True, errors="replace", timeout=timeout)
+    """Run command on host, an SSH host or a container (run_on): the CompletedProcess."""
+    return run_on(host, command, stdin, timeout)
 
 
 def host_script(name="talpy_den.py", also=()):
@@ -256,11 +265,368 @@ def check_host(host):
     return host
 
 
+# ---------------------------------------------------------------- containers
+#
+# A Docker, Podman or nerdctl container is a place like an SSH host, its id
+# ENGINE:NAME (this computer's) or ENGINE:NAME@HOST (one on the SSH host
+# HOST). A container's name holds neither : nor @, so the id parses one way,
+# and it fits HOST_NAME: every list keyed by host (the picked ones, stars,
+# hidden ones, the queue) takes it as it is. Talpy Den works in one through
+# the engine's exec (over ssh for a host's, in that host's shared
+# connection), as the user VS Code's Dev Containers works as there (or the
+# container's own); nothing is installed in it.
+
+CONTAINER = re.compile(r"^(docker|podman|nerdctl):([A-Za-z0-9][A-Za-z0-9_.-]*)(?:@(.+))?$")
+CONTAINER_STATE_TIMEOUT = 15
+# What a container is from one inspect: its id (a container made again has a
+# new one), its state and labels (VS Code's user there)
+INSPECT_TEMPLATE = '{"id":{{json .Id}},"state":{{json .State.Status}},"labels":{{json .Config.Labels}}}'
+
+
+class Place:
+    """Where an id points: an SSH host (host), or a container (engine, name)
+    on this computer (host None) or on the SSH host host."""
+
+    def __init__(self, ident, host, engine=None, name=None):
+        self.id, self.host, self.engine, self.name = ident, host, engine, name
+
+    @property
+    def container(self):
+        return self.engine is not None
+
+    @property
+    def label(self):
+        """The name a message says: the host's, or foo / foo on HOST."""
+        if not self.container:
+            return self.host
+        return f"{self.name} on {self.host}" if self.host else self.name
+
+    @property
+    def engine_title(self):
+        return cs.ENGINE_TITLES.get(self.engine, self.engine)
+
+
+def place(ident):
+    """The Place of an id (check_host: one that could only be a name)."""
+    ident = check_host(ident)
+    m = CONTAINER.match(ident)
+    if not m:
+        if re.match(r"(docker|podman|nerdctl):", ident):
+            raise ValueError(f"not a container: {ident!r}")
+        return Place(ident, ident)
+    engine, name, host = m.groups()
+    if host is not None and (not HOST_NAME.match(host) or CONTAINER.match(host)):
+        raise ValueError(f"not a container: {ident!r}")
+    return Place(ident, host, engine, name)
+
+
+def label(ident):
+    """How a message names an SSH host or a container."""
+    try:
+        return place(ident).label
+    except ValueError:
+        return str(ident)
+
+
+def containers_file():
+    return cs.cache_dir(Path.home()) / "containers.json"
+
+
+def change_containers_file(change):
+    """change(saved) on containers.json (the users in containers, the hosts'
+    container lists, which engine `docker` is), under a lock: two checks
+    at once don't lose each other's."""
+    path = containers_file()
+    cs.private_dir(path.parent)
+    fd = os.open(str(path.parent / ".containers.lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        cs.fcntl.flock(fd, cs.fcntl.LOCK_EX)
+        saved = cs.read_json(path)
+        saved = saved if isinstance(saved, dict) else {}
+        change(saved)
+        cs.write_json_atomic(path, saved)
+        os.chmod(str(path), 0o600)
+    finally:
+        os.close(fd)
+
+
+def remember_users(found):
+    """The user to work as in each container listed (found: [{"id", "cid", "user"}])."""
+    def change(saved):
+        users = saved.get("users") if isinstance(saved.get("users"), dict) else {}
+        for c in found:
+            users[c["id"]] = {"cid": c.get("cid") or "", "user": c.get("user") or ""}
+        saved["users"] = users
+    try:
+        change_containers_file(change)
+    except OSError:
+        pass
+
+
+def engine_line(p, args):
+    """The command line running the engine with args where p's container is."""
+    argv = [p.engine, *args]
+    if p.host is None:
+        return argv
+    return ["ssh", *ssh_options(), "-T", p.host, posix(" ".join(shlex.quote(a) for a in argv))]
+
+
+def inspect(p, timeout=CONTAINER_STATE_TIMEOUT):
+    """(what one inspect of p's container says: {"state", "user", "cid"} or
+    None, the CompletedProcess). The user it gives is kept (remember_users)."""
+    args = ["inspect", "--format", INSPECT_TEMPLATE, p.name]
+    line = engine_line(p, args)
+    if p.host is not None:  # (a Toolbox's user is you there: your name there comes along)
+        line[-1] = posix(" ".join(shlex.quote(a) for a in [p.engine, *args]) + " && id -un")
+    r = subprocess.run(line, stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace",
+                       timeout=timeout)
+    lines = r.stdout.strip().splitlines()
+    try:
+        info = json.loads(lines[0]) if r.returncode == 0 and lines else None
+    except ValueError:
+        info = None
+    if not isinstance(info, dict):
+        return None, r
+    labels = info.get("labels") if isinstance(info.get("labels"), dict) else {}
+    user = cs.container_user(labels)
+    if user and p.host is not None and not cs.devcontainer_user(labels):
+        user = lines[-1].strip() if len(lines) > 1 else ""
+    found = {"id": p.id, "cid": info.get("id") or "", "user": user, "state": (info.get("state") or "").lower()}
+    remember_users([found])
+    return found, r
+
+
+def exec_user(p, fresh=False):
+    """(the user to work as in p's container, "" for its own; whether it was
+    known already). Known: from its last listing or inspect; else (or fresh)
+    one inspect says."""
+    if not fresh:
+        saved = cs.read_json(containers_file())
+        users = saved.get("users") if isinstance(saved, dict) and isinstance(saved.get("users"), dict) else {}
+        known = users.get(p.id)
+        if isinstance(known, dict) and isinstance(known.get("user"), str):
+            return known["user"], True
+    try:
+        found, _r = inspect(p)
+    except (OSError, subprocess.TimeoutExpired):
+        found = None
+    return (found["user"] if found else ""), False
+
+
+def exec_line(p, command, user="", tty=False):
+    """The engine's exec running command (POSIX shell) in p's container, as
+    user; tty: in a terminal here (with its TERM), and an ssh that may ask."""
+    argv = [p.engine, "exec", "-it" if tty else "-i"]
+    if tty:
+        argv += ["-e", "TERM", "-e", "COLORTERM"]
+    if user:
+        argv += ["-u", user]
+    argv += [p.name, "sh", "-c", command]
+    if p.host is None:
+        return argv
+    return ["ssh", *ssh_options(batch=not tty), "-t" if tty else "-T", p.host,
+            posix(" ".join(shlex.quote(a) for a in argv))]
+
+
+def run_on(ident, command, stdin=None, timeout=RUN_TIMEOUT, binary=False):
+    """Run command (POSIX shell) on an SSH host or in a container (batch
+    mode): the CompletedProcess. Output that isn't UTF-8 (a login script's
+    greeting) can't break the answer; binary: stdin and the output are bytes."""
+    p = place(ident)
+    text = {} if binary else {"text": True, "errors": "replace"}
+    if not p.container:
+        return subprocess.run(["ssh", *ssh_options(), "-T", p.host, posix(command)], input=stdin,
+                              capture_output=True, timeout=timeout, **text)
+    user, known = exec_user(p)
+    r = subprocess.run(exec_line(p, command, user), input=stdin, capture_output=True, timeout=timeout, **text)
+    err = r.stderr if not binary else r.stderr.decode("utf-8", "replace")
+    if known and r.returncode != 0 and "unable to find user" in err.lower():  # (made again since: ask anew)
+        user, _known = exec_user(p, fresh=True)
+        r = subprocess.run(exec_line(p, command, user), input=stdin, capture_output=True, timeout=timeout, **text)
+    return r
+
+
+def container_problem(p, code, stderr):
+    """(a sentence for why working in p's container failed, what it was:
+    "stopped", "paused", "gone", "engine" or ""), or (None, "") when it
+    isn't the container's (the ssh to its host, say)."""
+    low = stderr.lower()
+    title, where = p.engine_title, f" on {p.host}" if p.host else ""
+    if p.host is not None and code == 255 and not any(s in low for s in ("container", "exec session")):
+        return None, ""  # (ssh's own failure: its host's)
+    if "is not running" in low or "state improper" in low or "exec sessions on running containers" in low:
+        return f"{p.label} is stopped.", "stopped"
+    if "is paused" in low:
+        return f"{p.label} is paused ({p.engine} unpause {p.name}).", "paused"
+    if "no such container" in low or "no container with name or id" in low:
+        return f"There's no container {p.label} any more.", "gone"
+    if "permission denied" in low and ("socket" in low or "daemon" in low):
+        return f"You can't use {title}'s socket{where}: add yourself to its group (docker), then log in again.", "engine"
+    if "cannot connect to the docker daemon" in low or "is the docker daemon running" in low \
+            or "cannot connect to podman" in low:
+        return f"{title} isn't running{where}.", "engine"
+    if code == 127 and re.search(r"\b%s: (command )?not found" % re.escape(p.engine), low):
+        return f"{title} isn't installed on {p.host}.", "engine"
+    if re.search(r"""[`"']sh[`"']:? (executable file )?not found|executable file .sh. not found""", low):
+        return f"{p.label} has no shell (sh); Talpy Den needs sh and python3 there.", ""
+    if code == 127 or "python3: not found" in low or "python3: command not found" in low:
+        return f"python3 isn't installed in {p.label}; Talpy Den needs it there.", ""
+    if "unable to find user" in low:
+        return f"{p.label}: {last_line(stderr)}", ""
+    return None, ""
+
+
+def container_state(ident):
+    """(whether ident is a container that isn't running, a sentence why):
+    (False, "") for a running one and for an SSH host."""
+    p = place(ident)
+    if not p.container:
+        return False, ""
+    try:
+        found, r = inspect(p)
+    except subprocess.TimeoutExpired:
+        return True, f"{p.label} didn't answer within {CONTAINER_STATE_TIMEOUT} s."
+    except OSError:
+        return True, f"{p.engine_title} isn't installed here."
+    if found is None:
+        return True, explain(ident, r.returncode, r.stderr)
+    if found["state"] in cs.CONTAINER_RUNNING:
+        return (True, f"{p.label} is paused ({p.engine} unpause {p.name}).") if found["state"] == "paused" else (False, "")
+    return True, f"{p.label} is stopped."
+
+
+def start(ident):
+    """Start a stopped container: (ok, message)."""
+    p = place(ident)
+    if not p.container:
+        raise ValueError(f"not a container: {ident}")
+    try:
+        r = subprocess.run(engine_line(p, ["start", p.name]), stdin=subprocess.DEVNULL, capture_output=True,
+                           text=True, errors="replace", timeout=RUN_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return False, f"{p.label} didn't start within {RUN_TIMEOUT} s"
+    except OSError:
+        return False, f"{p.engine_title} isn't installed here"
+    if r.returncode != 0:
+        return False, explain(ident, r.returncode, r.stderr)
+    return True, f"Started {p.label}"
+
+
+def attach(ident, command):
+    """In this terminal: command (POSIX shell, e.g. claude --resume) in a
+    terminal of its own in the container ident (exec -it, over ssh -t for
+    one on an SSH host). A container that isn't running says so (exit 1)."""
+    p = place(ident)
+    if not p.container:
+        raise ValueError(f"not a container: {ident}")
+    try:
+        found, r = inspect(p)
+    except subprocess.TimeoutExpired:
+        print(f"{p.label} didn't answer within {CONTAINER_STATE_TIMEOUT} s.")
+        return 1
+    except OSError:
+        print(f"{p.engine_title} isn't installed here.")
+        return 1
+    if found is None:
+        print(explain(ident, r.returncode, r.stderr))
+        return 1
+    if found["state"] not in cs.CONTAINER_RUNNING:
+        print(f"{p.label} is stopped. Start it with Start in Talpy Den, or: {p.engine} start {p.name}")
+        return 1
+    line = exec_line(p, command, found["user"], tty=True)
+    sys.stdout.flush()
+    os.execvp(line[0], line)
+
+
+def attach_line(ident, command):
+    """The terminal's command line for a command in a container (attach)."""
+    return " ".join(shlex.quote(a) for a in [sys.executable or "python3", "-I", str(HERE / "remote.py"),
+                                             "--attach", ident, command])
+
+
+# ---------------------------------------------------------------- container lists
+
+
+def picked_names(picked, host=None):
+    """The picked containers of one place (host None: this computer), as
+    talpy_den.list_containers takes them (engine:name)."""
+    out = []
+    for ident in picked:
+        m = CONTAINER.match(ident)
+        if m and m.group(3) == host:
+            out.append(m.group(1) + ":" + m.group(2))
+    return out
+
+
+def containers_here(days=cs.CONTAINER_DAYS, picked=()):
+    """This computer's containers (talpy_den.list_containers): {"containers", "notes"}."""
+    found = cs.list_containers(cs.cache_dir(Path.home()), Path.home(), days, picked_names(picked))
+    remember_users(found["containers"])
+    return found
+
+
+def host_containers(host, days=cs.CONTAINER_DAYS, picked=()):
+    """An SSH host's containers, listed there (talpy_den.py --list-containers):
+    {"ok", "host", "containers", "notes", "at"} (their ids end in @host), kept
+    for the next start (cached_host_containers), or {"ok": False, "error"}."""
+    host = check_host(host)
+    if CONTAINER.match(host):
+        raise ValueError(f"not an SSH host: {host}")
+    names = picked_names(picked, host)
+    answer = host_answer(host, ["--list-containers", str(days)] + (["--picked", ",".join(names)] if names else []))
+    if not answer["ok"]:
+        return {"ok": False, "host": host, "error": answer["message"] or f"{host} couldn't list its containers"}
+    found = [c for c in answer.get("containers") or [] if isinstance(c, dict) and isinstance(c.get("id"), str)]
+    for c in found:
+        c["id"] += "@" + host
+        c["host"] = host
+    out = {"containers": [c for c in found if HOST_NAME.match(c["id"])],
+           "notes": [n for n in answer.get("notes") or [] if isinstance(n, dict)],
+           "at": int(time.time() * 1000)}
+    remember_users(out["containers"])
+
+    def keep(saved):
+        hosts = saved.get("hosts") if isinstance(saved.get("hosts"), dict) else {}
+        hosts[host] = out
+        saved["hosts"] = hosts
+    try:
+        change_containers_file(keep)
+    except OSError:
+        pass
+    return {"ok": True, "host": host, **out}
+
+
+def cached_host_containers():
+    """The SSH hosts' container lists as they were last fetched: {host: {"containers", "notes", "at"}}."""
+    saved = cs.read_json(containers_file())
+    hosts = saved.get("hosts") if isinstance(saved, dict) else None
+    return {h: v for h, v in hosts.items() if isinstance(v, dict)} if isinstance(hosts, dict) else {}
+
+
+def hosts_and_containers(days=cs.CONTAINER_DAYS, picked=(), containers=True):
+    """--hosts: ~/.ssh/config's hosts, this computer's containers (unless
+    not containers: then no engine is asked anything) and the hosts' last
+    container lists."""
+    out = {"ok": True, "hosts": ssh_hosts(), "containers": [], "notes": [], "hostContainers": {}}
+    if containers:
+        out.update(containers_here(days, picked))
+        out["hostContainers"] = cached_host_containers()
+    return out
+
+
 def explain(host, code, stderr):
-    """A sentence for why talking to host failed."""
+    """A sentence for why talking to host (or working in a container) failed."""
     text = stderr.strip()
     last = text.splitlines()[-1] if text else ""
     low = text.lower()
+    p = place(host)
+    if p.container:
+        why, _kind = container_problem(p, code, stderr)
+        if why:
+            return why
+        if p.host is None:
+            return f"{p.label}: {last}" if last else f"{p.label}: {p.engine} exec failed (exit {code})"
+        host = p.host  # (else it's the ssh to its host that failed)
     if "host key verification failed" in low or "no matching host key" in low:
         return f"{host}'s host key isn't known yet. Run ssh {host} once in a terminal to accept it."
     if "permission denied" in low or "too many authentication failures" in low:
@@ -295,23 +661,36 @@ def status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, 
     for kind in cs.STAR_KINDS:
         if stars[kind]:
             args += [f"--starred-{kind}", ",".join(sorted(stars[kind]))]
-    started = time.time()
+    started, p = time.time(), place(host)
     try:
         r = ssh(host, "python3 -I - " + " ".join(shlex.quote(a) for a in args), host_script(), STATUS_TIMEOUT)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "host": host, "error": f"{host} didn't answer within {STATUS_TIMEOUT} s."}
+        return {"ok": False, "host": host, "error": f"{p.label} didn't answer within {STATUS_TIMEOUT} s."}
     except OSError as exc:
-        return {"ok": False, "host": host, "error": f"Can't run ssh: {exc}"}
+        return {"ok": False, "host": host, "error": cant_run(p, exc)}
     elapsed = int((time.time() - started) * 1000)
     if "\n" + cs.REMOTE_MARK not in r.stdout:
-        return {"ok": False, "host": host, "error": explain(host, r.returncode, r.stderr), "elapsedMs": elapsed,
-                "login": needs_login(r.stderr)}
+        out = {"ok": False, "host": host, "error": explain(host, r.returncode, r.stderr), "elapsedMs": elapsed,
+               "login": p.host is not None and needs_login(r.stderr)}
+        if p.container:  # (stopped: Start, and no checks until then; gone; paused)
+            kind = container_problem(p, r.returncode, r.stderr)[1]
+            if kind in ("stopped", "paused", "gone"):
+                out[kind] = True
+        return out
     result = answer_after_mark(r.stdout)
     if result is None:
-        return {"ok": False, "host": host, "error": f"{host} sent an answer Talpy Den can't read.", "elapsedMs": elapsed}
+        return {"ok": False, "host": host, "error": f"{p.label} sent an answer Talpy Den can't read.", "elapsedMs": elapsed}
     if not result.get("ok"):
-        return {"ok": False, "host": host, "error": f"{host}: {result.get('error') or 'status failed'}", "elapsedMs": elapsed}
-    return {"ok": True, "host": host, "result": result, "elapsedMs": elapsed, "loggedIn": logged_in(host)}
+        return {"ok": False, "host": host, "error": f"{p.label}: {result.get('error') or 'status failed'}", "elapsedMs": elapsed}
+    return {"ok": True, "host": host, "result": result, "elapsedMs": elapsed,
+            "loggedIn": p.host is not None and logged_in(p.host)}
+
+
+def cant_run(p, exc):
+    """Why the engine (or ssh) couldn't run at all."""
+    if p.container and p.host is None:
+        return f"{p.engine_title} isn't installed here." if isinstance(exc, FileNotFoundError) else f"Can't run {p.engine}: {exc}"
+    return f"Can't run ssh: {exc}"
 
 
 def last_line(text):
@@ -324,7 +703,8 @@ def outcome(host, r):
     why it failed. Only stdout says how it went: the host's shell may print
     warnings on stderr (e.g. about a missing locale) after it."""
     if r.returncode != 0:
-        if r.returncode == 255:
+        p = place(host)
+        if r.returncode == 255 or (p.container and container_problem(p, r.returncode, r.stderr)[0]):
             return False, explain(host, r.returncode, r.stderr)
         return False, last_line(r.stderr) or last_line(r.stdout) or f"exit {r.returncode}"
     return True, last_line(r.stdout) or "Done"
@@ -332,13 +712,13 @@ def outcome(host, r):
 
 def run(host, command, stdin=None):
     """Run a shell command on host; (ok, last line of its output)."""
-    host = check_host(host)
+    p = place(host)
     try:
         r = ssh(host, command, stdin)
     except subprocess.TimeoutExpired:
-        return False, f"{host} didn't answer within {RUN_TIMEOUT} s"
+        return False, f"{p.label} didn't answer within {RUN_TIMEOUT} s"
     except OSError as exc:
-        return False, f"Can't run ssh: {exc}"
+        return False, cant_run(p, exc)
     return outcome(host, r)
 
 
@@ -357,18 +737,19 @@ def host_answer(host, args, name="talpy_den.py", also=()):
                 return put
             args[i:i + 2] = ["--text-file", put["path"]]
     command = "python3 -I - --remote " + " ".join(shlex.quote(a) for a in args)
+    p = place(host)
     try:
         r = ssh(host, command, host_script(name, also))
     except subprocess.TimeoutExpired:
-        return {"ok": False, "message": f"{host} didn't answer within {RUN_TIMEOUT} s"}
+        return {"ok": False, "message": f"{p.label} didn't answer within {RUN_TIMEOUT} s"}
     except OSError as exc:
-        return {"ok": False, "message": f"Can't run ssh: {exc}"}
+        return {"ok": False, "message": cant_run(p, exc)}
     answer = answer_after_mark(r.stdout)
     if answer is not None:
         return {**answer, "ok": bool(answer.get("ok")), "message": answer.get("message") or ""}
     ok, message = outcome(host, r)
     if ok:  # it ran, but didn't answer as the script does
-        return {"ok": False, "message": f"{host} sent an answer Talpy Den can't read."}
+        return {"ok": False, "message": f"{p.label} sent an answer Talpy Den can't read."}
     return {"ok": False, "message": message}
 
 
@@ -423,28 +804,28 @@ def agent_run(host, chat_id, agent_id, profile=None, open_it=True):
     """A chat's subagent on host: its run (talpy_den.agent_run there),
     saved here as Markdown and opened, as jump.show_agent_run does for one
     here: (ok, message, file)."""
-    host = check_host(host)
+    p = place(host)
     import jump
     args = ["--remote", "--agent-run", agent_id, "--chat", chat_id] + (["--profile", profile] if profile else [])
     try:
         r = ssh(host, "python3 -I - " + " ".join(shlex.quote(a) for a in args), host_script())
     except subprocess.TimeoutExpired:
-        return False, f"{host} didn't answer within {RUN_TIMEOUT} s", None
+        return False, f"{p.label} didn't answer within {RUN_TIMEOUT} s", None
     except OSError as exc:
-        return False, f"Can't run ssh: {exc}", None
+        return False, cant_run(p, exc), None
     if "\n" + cs.REMOTE_MARK not in r.stdout:
         return False, explain(host, r.returncode, r.stderr), None
     answer = answer_after_mark(r.stdout)
     if answer is None:
-        return False, f"{host} sent an answer Talpy Den can't read.", None
+        return False, f"{p.label} sent an answer Talpy Den can't read.", None
     if not answer.get("ok") or not isinstance(answer.get("markdown"), str):
-        return False, f"{host}: {answer.get('message') or 'no such subagent'}", None
+        return False, f"{p.label}: {answer.get('message') or 'no such subagent'}", None
     path = jump.save_run(Path.home(), answer.get("title"), agent_id, answer["markdown"])
     if open_it:
         ok, why = jump.open_markdown(path)
         if not ok:
             return False, why, str(path)
-    return True, f"{answer.get('message')} on {host}", str(path)
+    return True, f"{answer.get('message')} {where(host)}", str(path)
 
 
 def share(host, chat_id, profile=None):
@@ -471,7 +852,7 @@ def continue_on(host, chat_id, profile, open_it=True, end_first=False):
         return False, answer["message"], None
     command = answer.get("command")
     if not isinstance(command, str) or not command:
-        return False, f"{host} didn't say how to reopen it", None
+        return False, f"{label(host)} didn't say how to reopen it", None
     if not open_it:
         return True, answer["message"], command
     ok, message = open_remote(host, command)
@@ -495,7 +876,7 @@ def open_plan(host, slug, profile=None, open_it=True):
     import jump
     answer = plan_text(host, slug, profile)
     if not answer.get("ok") or not isinstance(answer.get("markdown"), str):
-        return False, answer.get("message") or f"{host} doesn't have that plan", None
+        return False, answer.get("message") or f"{label(host)} doesn't have that plan", None
     folder = jump.runs_folder(Path.home())
     path = folder / f"plan-{re.sub(r'[^A-Za-z0-9_.-]', '_', host)}-{slug}.md"
     with open(path, "w", encoding="utf-8") as f:
@@ -504,7 +885,7 @@ def open_plan(host, slug, profile=None, open_it=True):
         ok, why = jump.open_markdown(path)
         if not ok:
             return False, why, str(path)
-    return True, f"Opened the plan {answer.get('title') or slug} from {host} (a copy)", str(path)
+    return True, f"Opened the plan {answer.get('title') or slug} from {label(host)} (a copy)", str(path)
 
 
 def plan_sharing(host, slug, profile, share_it, to=None):
@@ -537,7 +918,7 @@ def task(host, profile, folder, text="", plan=None, plan_profile=None, backgroun
         return answer
     command = answer.get("command")
     if not isinstance(command, str) or not command:
-        return {"ok": False, "message": f"{host} didn't say how to start it"}
+        return {"ok": False, "message": f"{label(host)} didn't say how to start it"}
     if not open_it:
         return {"ok": True, "message": "", "command": command}
     ok, message = open_remote(host, command)
@@ -561,21 +942,20 @@ sys.stdout.write("\\n" + MARK + " " + json.dumps({"ok": True, "message": "", "pa
 
 def put_text(host, text):
     """text in a new file on host (PUT_TEXT): {"ok", "message", "path": the file there}."""
-    host = check_host(host)
+    p = place(host)
     try:
-        r = subprocess.run(["ssh", *ssh_options(), "-T", host, posix("python3 -I -c " + shlex.quote(PUT_TEXT))],
-                           input=text.encode("utf-8"), capture_output=True, timeout=RUN_TIMEOUT)
+        r = run_on(host, "python3 -I -c " + shlex.quote(PUT_TEXT), text.encode("utf-8"), binary=True)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "message": f"{host} didn't answer within {RUN_TIMEOUT} s"}
+        return {"ok": False, "message": f"{p.label} didn't answer within {RUN_TIMEOUT} s"}
     except OSError as exc:
-        return {"ok": False, "message": f"Can't run ssh: {exc}"}
+        return {"ok": False, "message": cant_run(p, exc)}
     r = subprocess.CompletedProcess(r.args, r.returncode, r.stdout.decode("utf-8", "replace"),
                                     r.stderr.decode("utf-8", "replace"))
     answer = answer_after_mark(r.stdout)
     if answer is not None and answer.get("path"):
         return {"ok": True, "message": "", "path": answer["path"]}
     ok, message = outcome(host, r)
-    return {"ok": False, "message": f"{host} sent an answer Talpy Den can't read." if ok else message}
+    return {"ok": False, "message": f"{label(host)} sent an answer Talpy Den can't read." if ok else message}
 
 
 # A picture pasted here for a task there goes to the host's pictures folder
@@ -612,24 +992,23 @@ PICTURE_NAME = re.compile(r"^[0-9]{8}-[0-9]{6}(-[0-9]+)?\.(png|jpg|webp|gif)$")
 def put_image(host, path):
     """Copy a picture pasted here (jump.py --paste-image) to host, for a task
     there: {"ok", "message", "path": the copy there, "local": path}."""
-    host, picture = check_host(host), Path(path)
+    p, picture = place(host), Path(path)
     if picture.parent != cs.images_dir(Path.home()) or not PICTURE_NAME.match(picture.name) or not picture.is_file():
         return {"ok": False, "message": "That isn't a picture pasted into a task"}
     command = "python3 -I -c " + shlex.quote(PUT_IMAGE) + " " + shlex.quote(picture.name)
     try:
-        r = subprocess.run(["ssh", *ssh_options(), "-T", host, posix(command)], input=picture.read_bytes(),
-                           capture_output=True, timeout=RUN_TIMEOUT)
+        r = run_on(host, command, picture.read_bytes(), binary=True)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "message": f"{host} didn't answer within {RUN_TIMEOUT} s"}
+        return {"ok": False, "message": f"{p.label} didn't answer within {RUN_TIMEOUT} s"}
     except OSError as exc:
-        return {"ok": False, "message": f"Can't run ssh: {exc}"}
+        return {"ok": False, "message": cant_run(p, exc)}
     r = subprocess.CompletedProcess(r.args, r.returncode, r.stdout.decode("utf-8", "replace"),
                                     r.stderr.decode("utf-8", "replace"))
     answer = answer_after_mark(r.stdout)
     if answer is not None and answer.get("path"):
         return {"ok": True, "message": "", "path": answer["path"], "local": str(picture)}
     ok, message = outcome(host, r)
-    return {"ok": False, "message": f"{host} sent an answer Talpy Den can't read." if ok else message}
+    return {"ok": False, "message": f"{label(host)} sent an answer Talpy Den can't read." if ok else message}
 
 
 def continue_chat(host, profile, chat_id, folder="", text="", ends_at=None):
@@ -670,12 +1049,21 @@ def accounts(host, args):
 def open_remote(host, command):
     """A local terminal running command on host (ssh -t: Claude needs a terminal).
     Not in batch mode: ssh may ask for a password or host key there."""
-    host = check_host(host)
+    p = place(host)
     import jump
-    line = " ".join(shlex.quote(a) for a in ["ssh", *ssh_options(batch=False), "-t", host, posix(command)])
+    if p.container:  # (attach says so in the terminal when it isn't running)
+        line = attach_line(host, command)
+    else:
+        line = " ".join(shlex.quote(a) for a in ["ssh", *ssh_options(batch=False), "-t", host, posix(command)])
     if not jump.open_terminal(str(Path.home()), line):
         return False, "No terminal found to open the chat in"
-    return True, f"Opened a terminal on {host}"
+    return True, f"Opened a terminal {where(host)}"
+
+
+def where(ident):
+    """on HOST, in foo, in foo on HOST."""
+    p = place(ident)
+    return f"in {p.label}" if p.container else f"on {p.host}"
 
 
 def needs_login(stderr):
@@ -706,9 +1094,19 @@ def logged_in(host):
     return r.returncode == 0
 
 
+def ssh_host_of(ident):
+    """The SSH host an id reaches through: the host, or a container's host
+    (a login there is that host's). This computer's containers have none."""
+    p = place(ident)
+    if p.host is None:
+        raise ValueError(f"{p.label} is a container on this computer: there's nothing to log in to")
+    return p.host
+
+
 def login(host):
-    """A terminal where you log in to host for the widget (login_here)."""
-    host = check_host(host)
+    """A terminal where you log in to host for the widget (login_here); for
+    a container on an SSH host, to that host."""
+    host = ssh_host_of(host)
     import jump
     line = " ".join(shlex.quote(a) for a in [sys.executable or "python3", "-I", str(HERE / "remote.py"),
                                              "--login-here", host])
@@ -723,7 +1121,7 @@ def login_here(host):
     code, host key) itself, so it goes to ssh only. The connection stays as
     the one the checks share. Host keys are checked as always. Exit status:
     ssh's, or 1 when there's no private folder for the connection."""
-    host = check_host(host)
+    host = ssh_host_of(host)
     d = control_dir()
     if d is None:
         print("There's no private folder for the shared connection ($XDG_RUNTIME_DIR), so Talpy Den can't keep a login.")
@@ -760,8 +1158,8 @@ def login_here(host):
 def disconnect(host):
     """Close the shared connection to host (the one you logged in with):
     nothing new can use it (ssh -O stop), and it ends with the last terminal
-    open over it (-O exit would end those too)."""
-    host = check_host(host)
+    open over it (-O exit would end those too). A container's: its host's."""
+    host = ssh_host_of(host)
     marker = login_marker(host)
     if marker is not None:
         try:
@@ -778,6 +1176,22 @@ def disconnect(host):
 USAGE = __doc__.split("\n\n")[1]
 
 
+def list_options(args):
+    """--hosts' and --containers' options: --container-days N, --picked IDS, --no-containers."""
+    kw, rest = {"days": cs.CONTAINER_DAYS, "picked": [], "containers": True}, list(args)
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--container-days" and rest and rest[0].isdigit():
+            kw["days"] = int(rest.pop(0))
+        elif arg == "--picked" and rest:
+            kw["picked"] = [i for i in rest.pop(0).split(",") if i]
+        elif arg == "--no-containers":
+            kw["containers"] = False
+        else:
+            sys.exit(USAGE)
+    return kw
+
+
 def stop_on_term(signum, frame):
     """A widget that gives up on a check (or is turned off) ends it with
     SIGTERM: exiting through Python lets subprocess.run end its ssh too."""
@@ -792,7 +1206,18 @@ def main(argv=None):
     action, args = args[0], args[1:]
     try:
         if action == "--hosts":
-            out = {"ok": True, "hosts": ssh_hosts()}
+            kw = list_options(args)
+            out = hosts_and_containers(**kw)
+        elif action == "--containers" and args:
+            kw = list_options(args[1:])
+            if not kw.pop("containers"):
+                sys.exit(USAGE)
+            out = host_containers(args[0], **kw)
+        elif action == "--attach" and len(args) == 2:  # (in the terminal open_remote opens)
+            sys.exit(attach(*args))
+        elif action == "--start" and len(args) == 1:
+            ok, message = start(args[0])
+            out = {"ok": ok, "message": message}
         elif action == "--status" and args:
             host, rest, kw = args[0], args[1:], {}
             while rest:

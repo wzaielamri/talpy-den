@@ -8234,6 +8234,292 @@ def add_vscode(result, home, extra_dirs=(), remote=False, cache_root=None):
     result.get("groups", []).sort(key=lambda g: not g["defaultHere"])  # (stable: the others keep their order)
 
 
+# ---------------------------------------------------------------- containers
+#
+# Docker, Podman and nerdctl containers, shown like SSH hosts: remote.py
+# lists this computer's with list_containers, and an SSH host's by running
+# this file there (--list-containers). The running ones and those active in
+# the last N days are listed. Talpy Den runs its checks inside one with the
+# engine's exec (remote.py).
+
+CONTAINER_DAYS = 30  # containers active this many days ago are still listed
+# Engines with Docker's command line, the one listing the most first: a
+# `docker` that's one of the others (Fedora's podman-docker, a link to
+# nerdctl) is the same containers, listed once
+CONTAINER_ENGINES = ("podman", "docker", "nerdctl")
+ENGINE_TITLES = {"docker": "Docker", "podman": "Podman", "nerdctl": "nerdctl"}
+CONTAINER_LIST_TIMEOUT = 6  # seconds an engine may take to list its containers
+CONTAINER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+CONTAINER_RUNNING = ("running", "paused", "restarting")
+# One `docker inspect` gives what the list shows: it takes a Go template
+CONTAINER_TEMPLATE = ('{"id":{{json .Id}},"name":{{json .Name}},"state":{{json .State.Status}},'
+                      '"started":{{json .State.StartedAt}},"finished":{{json .State.FinishedAt}},'
+                      '"created":{{json .Created}},"image":{{json .Config.Image}},"labels":{{json .Config.Labels}},'
+                      '"mounts":[{{range $i, $m := .Mounts}}{{if $i}},{{end}}{{json $m.Destination}}{{end}}]}')
+DEVCONTAINER_FOLDER = "devcontainer.local_folder"
+# Containers made for you to work in, as you, with your home folder mounted
+TOOLBOX_LABELS = (("manager", "distrobox"), ("com.github.containers.toolbox", "true"))
+
+
+def container_time(value):
+    """ms since the epoch of a container's time (seconds since the epoch, or
+    Docker's RFC 3339 with nanoseconds), or None: none, or a broken one such
+    as Docker's 0001-01-01 for never or a time in the future."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        seconds = float(value)
+    elif isinstance(value, str) and value:
+        m = re.match(r"(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?\s*(Z|[+-]\d\d:?\d\d)?", value)
+        if not m:
+            return None
+        try:
+            stamp = datetime(*(int(m.group(i)) for i in range(1, 7)))
+        except ValueError:
+            return None
+        seconds = (stamp - datetime(1970, 1, 1)).total_seconds() + float(m.group(7) or 0)
+        zone = m.group(8)
+        if zone and zone != "Z":
+            sign = -1 if zone[0] == "+" else 1
+            seconds += sign * (int(zone[1:3]) * 3600 + int(zone[-2:]) * 60)
+    else:
+        return None
+    if seconds < 31536000 or seconds > time.time() + 86400:  # (before 1971, or ahead of the clock)
+        return None
+    return int(seconds * 1000)
+
+
+def short_image(image):
+    """docker.io/library/ubuntu:22.04 -> ubuntu:22.04; an image id -> its first 12 digits."""
+    image = image if isinstance(image, str) else ""
+    if image.startswith("sha256:"):
+        return image[7:19]
+    if re.fullmatch(r"[0-9a-f]{64}", image):
+        return image[:12]
+    for prefix in ("docker.io/library/", "docker.io/", "localhost/"):
+        if image.startswith(prefix):
+            return image[len(prefix):]
+    return image
+
+
+def devcontainer_user(labels):
+    """The user VS Code's Dev Containers works as in a container
+    (remoteUser in its devcontainer.metadata label, the last one wins), or ""."""
+    try:
+        metadata = json.loads((labels or {}).get("devcontainer.metadata") or "[]")
+    except ValueError:
+        return ""
+    if isinstance(metadata, dict):
+        metadata = [metadata]
+    user = ""
+    for part in metadata if isinstance(metadata, list) else []:
+        if isinstance(part, dict) and isinstance(part.get("remoteUser"), str) and part["remoteUser"]:
+            user = part["remoteUser"]
+    return user
+
+
+def container_user(labels):
+    """The user Talpy Den works as in a container: VS Code's in a dev
+    container; you in a Toolbox or Distrobox one (made for you to work in,
+    with your home folder); else "": the container's own (exec's default)."""
+    user = devcontainer_user(labels)
+    if user:
+        return user
+    labels = labels or {}
+    if any(labels.get(k) == v for k, v in TOOLBOX_LABELS):
+        try:
+            import pwd
+            return pwd.getpwuid(os.getuid()).pw_name
+        except (ImportError, KeyError):
+            return ""
+    return ""
+
+
+def engine_clone(path, cache):
+    """The engine a `docker` command really is ("podman" for Fedora's
+    podman-docker or a link to podman, "nerdctl" likewise), or "docker".
+    Asked once per version of the file (its path and time), kept in cache."""
+    try:
+        real = os.path.realpath(path)
+        mtime = os.stat(real).st_mtime_ns
+    except OSError:
+        return "docker"
+    base = os.path.basename(real)
+    if base in CONTAINER_ENGINES and base != "docker":  # (a link to podman)
+        return base
+    known = cache.get(real)
+    if isinstance(known, dict) and known.get("mtime") == mtime and known.get("engine") in CONTAINER_ENGINES:
+        return known["engine"]
+    engine = "docker"
+    try:
+        with open(real, "rb") as f:
+            head = f.read(4096)
+    except OSError:
+        head = b""
+    if head.startswith(b"#!"):  # (a script: Fedora's says exec /usr/bin/podman "$@")
+        m = re.search(rb"\bexec\s+(?:\S*/)?(podman|nerdctl)\b", head)
+        engine = m.group(1).decode() if m else "docker"
+    else:
+        import subprocess
+        try:
+            r = subprocess.run([path, "--version"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, timeout=CONTAINER_LIST_TIMEOUT)
+            words = r.stdout.decode(errors="replace").lower()
+            engine = next((e for e in ("podman", "nerdctl") if e in words), "docker")
+        except (OSError, subprocess.SubprocessError):
+            pass
+    cache[real] = {"mtime": mtime, "engine": engine}
+    return engine
+
+
+def container_engines(cache_root):
+    """{engine: its command} of the container engines installed here, each
+    once (engine_clone; what it found is kept in containers.json)."""
+    import shutil
+    found = {e: shutil.which(e) for e in CONTAINER_ENGINES}
+    found = {e: p for e, p in found.items() if p}
+    if "docker" in found:
+        path = cache_root / "containers.json"
+        saved = read_json(path)
+        saved = saved if isinstance(saved, dict) else {}
+        clones = saved.get("engines") if isinstance(saved.get("engines"), dict) else {}
+        before = json.dumps(clones, sort_keys=True)
+        really = engine_clone(found["docker"], clones)
+        if json.dumps(clones, sort_keys=True) != before:
+            try:
+                private_dir(cache_root)
+                write_json_atomic(path, dict(saved, engines=clones))
+            except OSError:
+                pass
+        if really != "docker":
+            del found["docker"]
+            found.setdefault(really, found.get(really) or shutil.which(really) or "")
+            found = {e: p for e, p in found.items() if p}
+    return found
+
+
+def engine_trouble(engine, text, timed_out=False):
+    """Why an engine couldn't list its containers, in plain words."""
+    title = ENGINE_TITLES.get(engine, engine)
+    low = text.lower()
+    if timed_out:
+        return "%s didn't answer within %d s." % (title, CONTAINER_LIST_TIMEOUT)
+    if "permission denied" in low and ("socket" in low or "daemon" in low):
+        return "You can't use %s's socket: add yourself to its group (docker), then log in again." % title
+    if "cannot connect to the docker daemon" in low or "is the docker daemon running" in low \
+            or "cannot connect to podman" in low or "connection refused" in low:
+        return "%s isn't running." % title
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return "%s: %s" % (title, lines[-1][:200] if lines else "it couldn't list its containers")
+
+
+def engine_containers(engine, command, home):
+    """(the containers of one engine, a sentence when it couldn't list them).
+    Podman lists everything in one call; Docker and nerdctl name them, then
+    one inspect says the rest."""
+    import subprocess
+
+    def run(args):
+        r = subprocess.run([command, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, timeout=CONTAINER_LIST_TIMEOUT)
+        return r.returncode, r.stdout.decode(errors="replace"), r.stderr.decode(errors="replace")
+
+    out = []
+    try:
+        if engine == "podman":
+            code, stdout, stderr = run(["ps", "-a", "--format", "json"])
+            if code != 0:
+                return [], engine_trouble(engine, stderr or stdout)
+            for c in json.loads(stdout or "[]") or []:
+                if not isinstance(c, dict) or c.get("IsInfra"):  # (a pod's own)
+                    continue
+                names = c.get("Names") or []
+                out.append({"name": names[0] if isinstance(names, list) and names else "",
+                            "cid": c.get("Id") or "", "state": (c.get("State") or "").lower(),
+                            "image": c.get("Image") or "", "labels": c.get("Labels") or {},
+                            "mounts": [m for m in c.get("Mounts") or [] if isinstance(m, str)],
+                            "times": [c.get("StartedAt"), c.get("ExitedAt"), c.get("Created")]})
+        else:
+            code, stdout, stderr = run(["ps", "-a", "-q", "--no-trunc"])
+            if code != 0:
+                return [], engine_trouble(engine, stderr or stdout)
+            ids = [i for i in stdout.split() if re.fullmatch(r"[0-9a-f]{12,64}", i)]
+            if ids:
+                code, stdout, stderr = run(["inspect", "--format", CONTAINER_TEMPLATE, *ids])
+                if code != 0 and not stdout.strip():
+                    return [], engine_trouble(engine, stderr)
+                for line in stdout.splitlines():
+                    try:
+                        c = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(c, dict):
+                        continue
+                    out.append({"name": (c.get("name") or "").lstrip("/"), "cid": c.get("id") or "",
+                                "state": (c.get("state") or "").lower(), "image": c.get("image") or "",
+                                "labels": c.get("labels") or {},
+                                "mounts": [m for m in c.get("mounts") or [] if isinstance(m, str)],
+                                "times": [c.get("started"), c.get("finished"), c.get("created")]})
+    except subprocess.TimeoutExpired:
+        return [], engine_trouble(engine, "", timed_out=True)
+    except (OSError, ValueError) as exc:
+        return [], engine_trouble(engine, str(exc))
+    return out, None
+
+
+def list_containers(cache_root, home, days=CONTAINER_DAYS, picked=(), now=None):
+    """This computer's containers: {"containers": [...], "notes": [...]},
+    the running ones first, then the newest. A stopped one is listed when it
+    was active (started, stopped or made) in the last days days (0: only the
+    running ones), and a picked one (a name, or engine:name) always. The
+    engines are asked at once, each for at most CONTAINER_LIST_TIMEOUT s:
+    one that hangs holds up only itself. notes: an engine that couldn't
+    list them, and why ({"engine", "message"})."""
+    import threading
+    now = time.time() * 1000 if now is None else now
+    picked = set(picked)
+    engines = container_engines(cache_root)
+    answers = {}
+
+    def ask(engine, command):
+        answers[engine] = engine_containers(engine, command, home)
+
+    threads = [threading.Thread(target=ask, args=item, daemon=True) for item in engines.items()]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(CONTAINER_LIST_TIMEOUT + 2)
+    listed, notes, home_text = [], [], str(home)
+    for engine in engines:
+        found, trouble = answers.get(engine, ([], engine_trouble(engine, "", timed_out=True)))
+        if trouble:
+            notes.append({"engine": engine, "message": trouble})
+        for c in found:
+            name = c["name"]
+            if not isinstance(name, str) or not CONTAINER_NAME.match(name):
+                continue
+            ident = engine + ":" + name
+            running = c["state"] in CONTAINER_RUNNING
+            active = max([t for t in (container_time(v) for v in c["times"]) if t is not None] or [0]) or None
+            wanted = running or ident in picked or name in picked
+            if not wanted and days > 0 and active is not None and active >= now - days * 86400000:
+                wanted = True
+            if not wanted:
+                continue
+            labels = c["labels"] if isinstance(c["labels"], dict) else {}
+            folder = labels.get(DEVCONTAINER_FOLDER) if isinstance(labels.get(DEVCONTAINER_FOLDER), str) else ""
+            listed.append({
+                "id": ident, "engine": engine, "name": name, "image": short_image(c["image"]),
+                "state": c["state"] or "unknown", "running": running, "activeAt": active,
+                "folder": folder, "folderShort": short_folder(folder, home) if folder else "",
+                "devcontainer": bool(folder or labels.get("devcontainer.config_file")),
+                "sharesHome": home_text in c["mounts"],
+                "user": container_user(labels), "cid": c["cid"],
+            })
+    listed.sort(key=lambda c: (not c["running"], -(c["activeAt"] or 0), c["id"]))
+    return {"containers": listed, "notes": notes}
+
+
 # ---------------------------------------------------------------- remote hosts
 #
 # The widget runs this script on an SSH host (`ssh host python3 -I - --remote`
@@ -8395,6 +8681,7 @@ USAGE = """usage: talpy_den.py [--config-dir DIR]... [--done-hours H] [--recent 
                         [--permission-mode MODE] [--remote]
        talpy_den.py --plan-text SLUG [--profile PROFILE] [--remote]
        talpy_den.py --continue-chat CHAT_ID --profile PROFILE [--folder F] [--prompt TEXT] [--remote]
+       talpy_den.py --list-containers DAYS [--picked NAME,...] [--remote]
   --config-dir DIR  extra Claude config dir (repeatable)
   --done-hours H    keep finished background jobs listed for H hours (default 24, 0 = never)
   --recent N        list each account's N latest other chats (default 5, 0 = none) and count them all
@@ -8406,6 +8693,8 @@ USAGE = """usage: talpy_den.py [--config-dir DIR]... [--done-hours H] [--recent 
   --task-command F  the shell command that starts a chat in folder F with the prompt (and plan)
   --plan-text SLUG  a plan's Markdown
   --continue-chat ID  go on with a chat a usage limit stopped, in the background (the limit has reset)
+  --list-containers DAYS  the Docker, Podman and nerdctl containers here: the running ones and those
+                    active in the last DAYS days (0: only the running ones), and the --picked ones always
   --ends-at MS      with --continue-chat: wait for the chat's background commands until MS, then end them
   --no-tokens       skip transcript token totals
   --pretty          indent the JSON output
@@ -8451,6 +8740,7 @@ def main(argv=None):
     usage_refresh = USAGE_REFRESH_MINUTES
     fetch_usage = False
     starred_chats, starred_plans = set(), set()
+    container_days, picked = None, []
     while args:
         arg = args.pop(0)
         if arg == "--config-dir" and args:
@@ -8551,6 +8841,10 @@ def main(argv=None):
             usage_refresh = min(USAGE_REFRESH_MAX_MINUTES, int(args.pop(0)))
         elif arg == "--fetch-usage":
             fetch_usage = True
+        elif arg == "--list-containers" and args and args[0].isdigit():
+            container_days = int(args.pop(0))
+        elif arg == "--picked" and args:
+            picked = [p for p in args.pop(0).split(",") if p]
         else:
             sys.exit(USAGE)
     os.umask(0o077)  # cache files are private to the user
@@ -8561,7 +8855,12 @@ def main(argv=None):
         sys.exit(USAGE)
     if (task_action is not None or continue_id is not None) and not profile_key:
         sys.exit(USAGE)
-    if fetch_usage:
+    if container_days is not None:
+        try:
+            result = dict(list_containers(cache_root, home, container_days, picked), ok=True, message="")
+        except Exception as exc:
+            result = {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
+    elif fetch_usage:
         try:
             result = fetch_usage_now(home, cache_root, config_dirs)
         except Exception as exc:
