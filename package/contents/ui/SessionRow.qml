@@ -802,7 +802,9 @@ RowLayout {
         // its task progress; click to read your last prompt and Claude's reply
         Item {
             Layout.fillWidth: true
-            visible: row.stepText !== "" || row.tasks !== null
+            // (also with nothing to say: its Keeps going, Goes on at or Continue on… are on this line, as VS Code shows them)
+            visible: row.stepText !== "" || row.tasks !== null || row.kept !== null || row.goingOn !== null
+                     || row.handover !== null || (row.goOnAt > 0 && !row.remoteHost)
             implicitHeight: stepRow.implicitHeight
 
             // Under the line, so its buttons get their own clicks and tooltips

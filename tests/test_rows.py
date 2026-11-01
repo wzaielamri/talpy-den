@@ -175,6 +175,19 @@ class RowButtonsTests(unittest.TestCase):
         tsx = (repo / "vscode/webview/components/SessionRow.tsx").read_text()
         self.assertIn('"Keeps going" + (kept.error ? " (gave up)" : kept.note ? " (can\'t go on now)" : "")', tsx)
 
+    def test_a_kept_chat_shows_its_tag_with_nothing_else_to_say(self):
+        # A kept chat at work with no step or tasks (yet): its Keeps going still shows, as in VS Code,
+        # whose line with it shows whenever the chat is kept, goes on later or can (handover || goOn || goingOn || kept)
+        repo = UI.parent.parent.parent
+        row = (UI / "SessionRow.qml").read_text()
+        end = row.index("implicitHeight: stepRow.implicitHeight")
+        visible = row[row.rindex("visible:", 0, end):end]
+        for part in ('row.stepText !== ""', "row.tasks !== null", "row.kept !== null", "row.goingOn !== null",
+                     "row.handover !== null", "row.goOnAt > 0"):
+            self.assertIn(part, visible)
+        tsx = (repo / "vscode/webview/components/SessionRow.tsx").read_text()
+        self.assertIn("{handover || goOn || goingOn || kept ? (", tsx)
+
     def test_delete_asks_on_its_line_everywhere(self):
         # Delete… under a chat, a plan or a memory asks on the line itself, as Plasma's DeleteAsk:
         # what it's looking at, then the question in orange with Delete (the red trash) and Cancel
