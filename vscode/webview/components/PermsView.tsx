@@ -5,7 +5,7 @@ import { I, Icon, T } from "../util/icons";
 import { post } from "../env";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
-import { permsAnswer, weekRevokeAnswer, weekRuleAnswer } from "../util/stores";
+import { permsAnswer, useReadAgain, weekRevokeAnswer, weekRuleAnswer } from "../util/stores";
 import { MoreButton } from "./MoreButton";
 import { Reading } from "./Reading";
 
@@ -37,13 +37,14 @@ export function PermsView({ rules }: { rules: boolean }) {
     post({ type: "perms" });
   }
 
-  // Ask when the tab is in sight, again every 10 minutes
+  // Ask when the tab is in sight, again every 10 minutes and at the view's Refresh
   useEffect(() => {
     if (!visible) return;
     ask();
     const timer = setInterval(ask, REFRESH_MS);
     return () => clearInterval(timer);
   }, [visible]);
+  useReadAgain(visible, ask);
   useEffect(() => {
     if (answer) setBusy(false);
   }, [answer]);

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **One Refresh: the view's Refresh reads the tab shown again,** the
+  Recap (the days shown), Permissions or Projects, as when the tab opens,
+  and the Recap's own *Read again* (↻) beside its days is gone; Refresh
+  only checked the chats and the plan usage, so a tab waited up to 10
+  minutes or till it was opened again.
 - **A chat's Continue on…, Goes on at and Keeps going stand at the right end
   of their line,** as in Plasma; they started at the left.
 - **Deleting a finished background chat takes its background folder to

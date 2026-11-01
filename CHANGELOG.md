@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **One Refresh: the Recap's own *Read again* (↻) beside its days is gone,** and the popup's Refresh reads the tab shown again, as when the tab opens: the Recap (the days shown), Permissions or Projects. The Recap had two refreshes, its ↻ and the top row's; in VS Code the view's Refresh (its title bar's, the Command Palette's, an editor tab's) only checked the chats and the plan usage, so a tab waited up to 10 minutes or till it was opened again (Plasma, GNOME and VS Code).
 - **A chat's Continue on…, Goes on at and Keeps going stand at the right end of their line in VS Code too,** as in Plasma; they started at the left (VS Code).
 - **A kept chat shows Keeps going while it works, as in VS Code:** its line with the tag showed only when the chat had a step or tasks to show, so a kept chat at work with neither showed no sign it keeps going (Plasma).
 - **Plasma's settings pages take every setting without a warning, and the Talpy page has Talpy's own picture as its icon:** each page logged 70-80 *Setting initial properties failed* for the other pages' settings, which every page now declares (one base page); on Apply a page puts back the settings set in the popup (Focus, the new-chat box, SSH hosts, the chat pane's side by side and text size) as they are then, not as they were when it opened; the Talpy page's icon was Breeze's lion head (Plasma).

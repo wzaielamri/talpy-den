@@ -433,20 +433,7 @@ PlasmaComponents3.ScrollView {
                     mainText: parent.text
                 }
             }
-            PlasmaComponents3.ToolButton {
-                icon.name: Icons.plasma.refresh
-                display: PlasmaComponents3.AbstractButton.IconOnly
-                text: i18n("Read again")
-                enabled: !root.weekBusy
-                onClicked: root.loadWeek()
-
-                PlasmaCore.ToolTipArea {
-                    textFormat: Text.PlainText
-                    anchors.fill: parent
-                    mainText: parent.text
-                    subText: i18n("These days read again from your chats now.")
-                }
-            }
+            // (none to read these days again: the popup's Refresh does)
             PlasmaComponents3.ToolButton {
                 icon.name: Icons.plasma.share
                 display: PlasmaComponents3.AbstractButton.IconOnly

@@ -724,6 +724,67 @@ def day_hours(span):
     return (span[2] - span[1]) / week.HOUR_MS
 
 
+
+class OneRefreshTests(unittest.TestCase):
+    """The popup's Refresh (its top row's; in VS Code the view's title bar's,
+    the Command Palette's or an editor tab's header's) also reads the tab
+    shown again, as when it opens: the Recap (week.py for the days shown),
+    Permissions or Projects. The Recap's own Read again (↻) beside its days
+    is gone, so there's one Refresh (Plasma, GNOME and VS Code)."""
+
+    def body(self, pattern, text):
+        import re
+        found = re.search(pattern, text, re.S)
+        self.assertIsNotNone(found, pattern)
+        return found.group(1)
+
+    def test_plasma(self):
+        ui = ROOT / "package/contents/ui"
+        refresh = self.body(r'text: i18n\("Refresh"\)\s+onClicked: \{(.*?)\n                \}',
+                            (ui / "FullRepresentation.qml").read_text())
+        for read in ("root.loadWeek()", "root.loadPerms()", 'if (root.popupTab === "projects")\n                        root.loadProjects()'):
+            self.assertIn(read, refresh)
+        main = (ui / "main.qml").read_text()
+        self.assertIn('if (popupTab !== "week")\n            return', self.body(r"\n    function loadWeek\(\) \{(.*?)\n    \}", main))
+        self.assertIn('if (popupTab !== "perms"', self.body(r"\n    function loadPerms\(\) \{(.*?)\n    \}", main))
+        week = (ui / "WeekView.qml").read_text()
+        for gone in ("Icons.plasma.refresh", "root.loadWeek", "Read again", "These days read again"):
+            self.assertFalse(gone in week, gone)
+        for kept in ("Icons.plasma.share", "Icons.plasma.previous", "Icons.plasma.next", "root.setWeekSpan(modelData[0])"):
+            self.assertIn(kept, week)
+        for view in ("PermsView.qml", "ProjectsView.qml"):
+            self.assertNotIn("Icons.plasma.refresh", (ui / view).read_text())
+
+    def test_gnome(self):
+        ext = ROOT / "gnome/extension"
+        indicator = (ext / "indicator.js").read_text()
+        self.assertIn("this._loadTab();", self.body(r"iconButton\(Icons\.gnome\.refresh, \(\) => \{(.*?)\}\), 'Refresh'\)", indicator))
+        tab = self.body(r"\n    _loadTab\(\) \{(.*?)\n    \}", indicator)
+        self.assertIn("this.loadWeek()", tab)
+        self.assertIn("this.loadPerms()", tab)
+        week = (ext / "ui/weekView.js").read_text()
+        for gone in ("Icons.gnome.refresh", "loadWeek", "Read again", "These days read again"):
+            self.assertFalse(gone in week, gone)
+        self.assertIn("Icons.gnome.previous", week)
+        self.assertNotIn("Icons.gnome.refresh", (ext / "ui/permsView.js").read_text())
+
+    def test_vscode(self):
+        vs = ROOT / "vscode"
+        self.assertIn('registerCommand("talpyDen.refresh", () => view.refresh())', (vs / "src/extension.ts").read_text())
+        self.assertIn('this.broadcast({ type: "readAgain" });', self.body(r"\n  refresh\(\): void \{(.*?)\n  \}", (vs / "src/view.ts").read_text()))
+        self.assertIn('case "readAgain":\n      readAgain.set(readAgain.get() + 1);', (vs / "webview/main.tsx").read_text())
+        components = vs / "webview/components"
+        for name, read in (("WeekView.tsx", "useReadAgain(visible, ask);"), ("PermsView.tsx", "useReadAgain(visible, ask);"),
+                           ("ProjectsView.tsx", 'useReadAgain(visible, () => post({ type: "projects" }));')):
+            with self.subTest(name=name):
+                source = (components / name).read_text()
+                self.assertTrue(read in source, read)
+                self.assertFalse("I.refresh" in source, name)
+        week = (components / "WeekView.tsx").read_text()
+        for gone in ("Read again", "These days read again"):
+            self.assertFalse(gone in week, gone)
+        self.assertIn("I.share", week)
+
 class SpendTests(Home):
     def test_cold_resumes(self):
         t0, hour = self.t0, 3600_000

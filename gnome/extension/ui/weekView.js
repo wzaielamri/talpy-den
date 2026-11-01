@@ -66,11 +66,7 @@ export function buildWeekView(ctx) {
     after.opacity = after.reactive ? 255 : 90;
     after.visible = week.span !== 'all';
     period.add_child(after);
-    const again = iconButton(Icons.gnome.refresh, () => ctx.loadWeek());
-    ctx.tips.add(again, ['Read again', 'These days read again from your chats now.']);
-    again.reactive = again.can_focus = !week.busy;   // (after its tooltip: greyed out while it reads)
-    again.opacity = again.reactive ? 255 : 90;
-    period.add_child(again);
+    // (none to read these days again: the popup's Refresh does)
     view.add_child(period);
 
     if (recap && recap.accounts.length > 1) {

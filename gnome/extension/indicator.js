@@ -1247,7 +1247,9 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this._render(true);
     }
 
-    // What the Recap or Permissions tab shows, read again
+    // What the Recap or Permissions tab shows, read again: as it shows, as the
+    // popup opens, at the top row's Refresh (the tabs have none of their own)
+    // and every 10 minutes
     _loadTab() {
         if (this.ui.tab === 'week')
             this.loadWeek();

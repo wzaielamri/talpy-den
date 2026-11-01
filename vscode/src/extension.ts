@@ -190,10 +190,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showWarningMessage("Talpy Den: this window has no terminal running that chat.");
       },
     }),
-    vscode.commands.registerCommand("talpyDen.refresh", () => {
-      dash.refreshAll();
-      void dash.fetchUsage();
-    }),
+    vscode.commands.registerCommand("talpyDen.refresh", () => view.refresh()),
     vscode.commands.registerCommand("talpyDen.forgetRecapHistory", () => dash.forgetRecapHistory()),
     vscode.commands.registerCommand("talpyDen.pickHosts", () => a.pickHosts()),
     vscode.commands.registerCommand("talpyDen.openInEditor", () => view.openInEditor()),

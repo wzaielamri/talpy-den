@@ -157,6 +157,16 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
     this.broadcast({ type: "showTab", tab });
   }
 
+  // Refresh (the view's title bar, the Command Palette, an editor tab's
+  // header): the chats and the plan usage, and in each page the Recap,
+  // Permissions or Projects tab in sight reads again (they have no button
+  // of their own for it)
+  refresh(): void {
+    this.dash.refreshAll();
+    void this.dash.fetchUsage();
+    this.broadcast({ type: "readAgain" });
+  }
+
   // Play with Talpy (the view's ⋯ menu): a game with the big Talpy, in the
   // view's page (shown first) and in an editor tab's
   playWithTalpy(): void {
@@ -415,10 +425,7 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         break;
       case "refresh":
         if (text(m.host)) void this.dash.pollHost(m.host as string);
-        else {
-          this.dash.refreshAll();
-          void this.dash.fetchUsage();
-        }
+        else this.refresh();
         break;
       case "showRemoved":
         void this.actions.showHidden("chats", text(m.host) ?? null);

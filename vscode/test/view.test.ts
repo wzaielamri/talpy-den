@@ -9,6 +9,7 @@ import { demoProjects, demoState } from "../src/shared/demo";
 import { badgeOf, chatRefOf, findProjectChat } from "../src/shared/model";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
+import { recorded } from "./vscode-stub";
 
 const NOW = 1_800_000_000_000;
 
@@ -108,6 +109,44 @@ test("a tab shown goes to the view's page once, not to a page that loads hours l
   fresh.resolveWebviewView({ webview: first.webview, visible: true, onDidChangeVisibility: () => ({}), onDidDispose: () => ({}) } as never);
   (fresh as unknown as { receive(webview: unknown, m: unknown): void }).receive(first.webview, { type: "ready" });
   assert.deepEqual(first.got, [{ type: "showTab", tab: "week" }]);
+});
+
+// Refresh (the view's title bar, the Command Palette, an editor tab's
+// header): the chats and the plan usage, and in every page the Recap,
+// Permissions or Projects tab in sight reads again (the Recap's own Read
+// again is gone: one Refresh); a host's Refresh checks that host only
+test("Refresh checks the chats and the plan usage and has every page read its tab again; a host's checks that host", () => {
+  const calls: string[] = [];
+  const dash = {
+    onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }),
+    state: () => demoState(NOW), shownHosts: () => ["lab"], setVisible() {},
+    refreshAll: () => void calls.push("refreshAll"),
+    fetchUsage: async () => void calls.push("fetchUsage"),
+    pollHost: async (h: string) => void calls.push(`pollHost ${h}`),
+  };
+  const host = new ViewHost(vscode.Uri.file("/ext") as never, dash as never, {} as never);
+  const sidebar: { type: string }[] = [];
+  host.resolveWebviewView({
+    webview: { options: {}, html: "", postMessage: async (m: { type: string }) => (sidebar.push(m), true), onDidReceiveMessage: () => ({ dispose() {} }), asWebviewUri: (u: unknown) => u, cspSource: "" },
+    visible: true, onDidChangeVisibility: () => ({}), onDidDispose: () => ({}),
+  } as never);
+  host.openInEditor();
+  const tab = recorded.panels.at(-1)!;
+  const readAgain = () => [sidebar, tab.sent as { type: string }[]].map((sent) => sent.filter((m) => m.type === "readAgain").length);
+
+  tab.receive({ type: "refresh", host: "lab" }); // (a host's own ↻)
+  assert.deepEqual(calls, ["pollHost lab"]);
+  assert.deepEqual(readAgain(), [0, 0], "a host's Refresh reads no tab again");
+
+  calls.length = 0;
+  tab.receive({ type: "refresh" }); // (the editor tab's header)
+  assert.deepEqual(calls, ["refreshAll", "fetchUsage"]);
+  assert.deepEqual(readAgain(), [1, 1], "each page reads the tab it shows again");
+
+  calls.length = 0;
+  host.refresh(); // (talpyDen.refresh: the view's title bar, the Command Palette)
+  assert.deepEqual(calls, ["refreshAll", "fetchUsage"]);
+  assert.deepEqual(readAgain(), [2, 2]);
 });
 
 test("a chat the page names is the extension's own row, not what the page says about it", () => {

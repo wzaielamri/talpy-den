@@ -5,9 +5,9 @@
 // chats, plans and memories, each a page at a time (as Recent chats), each
 // line as under an account, with the account it's on when the project is on
 // several. Everything of it comes from week.py --projects (asked when the tab
-// is in sight, again every 10 minutes, and after a star, a hide or a
-// delete); what goes on now from the status (the view's state). No time or
-// money here: the Recap has them, by project.
+// is in sight, again every 10 minutes, at the view's Refresh, and after a
+// star, a hide or a delete); what goes on now from the status (the view's
+// state). No time or money here: the Recap has them, by project.
 
 import { useEffect, useRef } from "preact/hooks";
 import type { Group, ProjectRow, Session } from "../../src/shared/types";
@@ -18,7 +18,7 @@ import { I, Icon } from "../util/icons";
 import { useAfterFrame } from "../util/lazy";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
-import { projectsAnswer } from "../util/stores";
+import { projectsAnswer, useReadAgain } from "../util/stores";
 import { pages, pagesShown, projectListKey, projectToShow, showMore, toggleProject, uiState } from "../util/ui";
 import { useView } from "./context";
 import { FocusLine } from "./FocusView";
@@ -33,8 +33,8 @@ export function ProjectsView() {
   const answer = useStore(projectsAnswer);
   const view = useView();
   const ui = useStore(uiState);
-  // Asked when the tab is in sight, again every 10 minutes; gone, not read
-  // again after a star, a hide or a delete
+  // Asked when the tab is in sight, again every 10 minutes and at the view's
+  // Refresh; gone, not read again after a star, a hide or a delete
   const visible = useViewVisible();
   useEffect(() => {
     if (!visible) return undefined;
@@ -42,6 +42,7 @@ export function ProjectsView() {
     const t = setInterval(() => post({ type: "projects" }), 600000);
     return () => clearInterval(t);
   }, [visible]);
+  useReadAgain(visible, () => post({ type: "projects" }));
   useEffect(() => () => post({ type: "projects", shown: false }), []);
   // Shown again (Show Hidden Projects, Plans or Memories Again): read again,
   // as a hide from here is (Plasma reads again after either)

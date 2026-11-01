@@ -33,7 +33,7 @@ import { post } from "../env";
 import { I, Icon } from "../util/icons";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
-import { weekAnswer } from "../util/stores";
+import { useReadAgain, weekAnswer } from "../util/stores";
 import { showProject } from "../util/ui";
 import { Reading } from "./Reading";
 
@@ -63,13 +63,15 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
     post({ type: "week", back, account, span });
   }
 
-  // Ask for these days when the tab is in sight, again every 10 minutes
+  // Ask for these days when the tab is in sight, again every 10 minutes and
+  // at the view's Refresh
   useEffect(() => {
     if (!visible) return;
     ask();
     const timer = setInterval(ask, REFRESH_MS);
     return () => clearInterval(timer);
   }, [visible, span, back, account, hostsKey, currency]);
+  useReadAgain(visible, ask);
 
   const mine = answer && answer.span === span && answer.back === back && answer.account === account ? answer : null;
   useEffect(() => {
@@ -131,10 +133,7 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
             <Icon name={I.next} />
           </button>
         ) : null}
-        <button type="button" class="icon-btn" title={"Read again\nThese days read again from your chats now."} aria-label="Read again"
-          disabled={busy} onClick={ask}>
-          <Icon name={I.refresh} />
-        </button>
+        {/* (none to read these days again: the view's Refresh does) */}
         <button type="button" class="icon-btn" title={"Share as a picture\nThese days as a card with Talpy, to save or copy."}
           aria-label="Share as a picture" disabled={!(recap && hasData)} onClick={() => setSharing(true)}>
           <Icon name={I.share} />

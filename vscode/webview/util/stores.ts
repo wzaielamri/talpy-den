@@ -1,7 +1,7 @@
 // What the extension last sent, and whether anyone can see the view.
 
 import type { DeleteTarget, HostMessage, LiveView, ViewState } from "../../src/shared/types";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { createStore } from "./store";
 
 export const viewState = createStore<ViewState | null>(null);
@@ -27,6 +27,18 @@ export const weekRuleAnswer = createStore<Extract<HostMessage, { type: "weekRule
 export const weekRevokeAnswer = createStore<Extract<HostMessage, { type: "weekRevoke" }> | null>(null);
 export const permsAnswer = createStore<Extract<HostMessage, { type: "perms" }> | null>(null);
 export const projectsAnswer = createStore<Extract<HostMessage, { type: "projects" }> | null>(null);
+
+// Bumped at the view's Refresh (its title bar's, an editor tab's header's):
+// the Recap, Permissions or Projects tab in sight reads again, as when it
+// opens (they have no button of their own for it)
+export const readAgain = createStore(0);
+
+// read() at each Refresh while visible (the latest read: the days shown now)
+export function useReadAgain(visible: boolean, read: () => void): void {
+  const latest = useRef(read);
+  latest.current = read;
+  useEffect(() => (visible ? readAgain.subscribe(() => latest.current()) : undefined), [visible]);
+}
 
 // One chat's live view: a row re-renders when its own view changes, not at
 // every other chat's step
