@@ -8251,8 +8251,10 @@ ENGINE_TITLES = {"docker": "Docker", "podman": "Podman", "nerdctl": "nerdctl"}
 CONTAINER_LIST_TIMEOUT = 6  # seconds an engine may take to list its containers
 CONTAINER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 CONTAINER_RUNNING = ("running", "paused", "restarting")
-# One `docker inspect` gives what the list shows: it takes a Go template
-CONTAINER_TEMPLATE = ('{"id":{{json .Id}},"name":{{json .Name}},"state":{{json .State.Status}},'
+# One `docker container inspect` gives what the list shows: it takes a Go
+# template. (The id goes in quotes as it is, a hex string: Podman takes .Id
+# for its .ID only on its own, not in {{json .Id}}.)
+CONTAINER_TEMPLATE = ('{"id":"{{.Id}}","name":{{json .Name}},"state":{{json .State.Status}},'
                       '"started":{{json .State.StartedAt}},"finished":{{json .State.FinishedAt}},'
                       '"created":{{json .Created}},"image":{{json .Config.Image}},"labels":{{json .Config.Labels}},'
                       '"mounts":[{{range $i, $m := .Mounts}}{{if $i}},{{end}}{{json $m.Destination}}{{end}}]}')
@@ -8445,7 +8447,7 @@ def engine_containers(engine, command, home):
                 return [], engine_trouble(engine, stderr or stdout)
             ids = [i for i in stdout.split() if re.fullmatch(r"[0-9a-f]{12,64}", i)]
             if ids:
-                code, stdout, stderr = run(["inspect", "--format", CONTAINER_TEMPLATE, *ids])
+                code, stdout, stderr = run(["container", "inspect", "--format", CONTAINER_TEMPLATE, *ids])
                 if code != 0 and not stdout.strip():
                     return [], engine_trouble(engine, stderr)
                 for line in stdout.splitlines():

@@ -68,8 +68,11 @@ if args[:2] == ["ps", "-a"] and "json" in args:
     print(json.dumps(out))
 elif args[:2] == ["ps", "-a"]:
     print("\n".join(c["id"] for c in containers.values()))
-elif args[:1] == ["inspect"]:
-    template, keys = args[2], args[3:]
+elif args[:2] == ["container", "inspect"]:
+    template, keys = args[3], args[4:]
+    if "{{json .Id}}" in template:   # (as Podman: its .Id only on its own)
+        sys.stderr.write('Error: template: inspect:1:7: executing "inspect" at <.Id>: can\'t evaluate field Id in type interface {}\n')
+        sys.exit(125)
     for key in keys:
         name, c = find(key)
         if '"mounts"' in template:
@@ -257,8 +260,8 @@ class ListTests(FakeEngines):
         self.assertEqual([c["id"] for c in out["containers"]], ["docker:db", "docker:api"])
         self.assertEqual(out["containers"][1]["folderShort"], "/home/someone/shop")
         calls = self.engine_calls()
-        self.assertEqual([c[:3] for c in calls], [["docker", "ps", "-a"], ["docker", "inspect", "--format"]])
-        self.assertEqual(len(calls[1]) - 4, 3)  # (all of them in one inspect)
+        self.assertEqual([c[:4] for c in calls], [["docker", "ps", "-a", "-q"], ["docker", "container", "inspect", "--format"]])
+        self.assertEqual(len(calls[1]) - 5, 3)  # (all of them in one inspect)
         self.assertAlmostEqual(out["containers"][1]["activeAt"] / 1000, self.now - 5 * 86400, delta=2)
 
     def test_a_docker_that_is_podman_is_listed_once(self):
@@ -357,7 +360,7 @@ class ContainerStatusTests(FakeEngines):
         self.assertEqual(group["sessions"][0]["name"], "work in the box")
         self.assertIn("claude attach def67890", group["sessions"][0]["openCommand"])
         calls = self.engine_calls()
-        self.assertEqual(calls[0][:2], ["podman", "inspect"])  # (once: which user)
+        self.assertEqual(calls[0][:3], ["podman", "container", "inspect"])  # (once: which user)
         self.assertEqual(calls[1][:7], ["podman", "exec", "-i", "-u", "vscode", "shop", "sh"])
         self.assertEqual(calls[1][8], "python3 -I - --remote --recent 3 --no-tokens")
         self.assertFalse(out["loggedIn"])
@@ -374,7 +377,7 @@ class ContainerStatusTests(FakeEngines):
         self.put({"shop": self.container("shop", id="f" * 64, users=["root"])})  # (no dev container now)
         out = remote.status("docker:shop", tokens=False)
         self.assertTrue(out["ok"], out)
-        self.assertEqual([c[1] for c in self.engine_calls()[2:]], ["exec", "inspect", "exec"])
+        self.assertEqual([c[1] for c in self.engine_calls()[2:]], ["exec", "container", "exec"])
         self.assertNotIn("-u", self.engine_calls()[-1])
 
     def test_failures_in_plain_words(self):

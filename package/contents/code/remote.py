@@ -280,8 +280,9 @@ def check_host(host):
 CONTAINER = re.compile(r"^(docker|podman|nerdctl):([A-Za-z0-9][A-Za-z0-9_.-]*)(?:@(.+))?$")
 CONTAINER_STATE_TIMEOUT = 15
 # What a container is from one inspect: its id (a container made again has a
-# new one), its state and labels (VS Code's user there)
-INSPECT_TEMPLATE = '{"id":{{json .Id}},"state":{{json .State.Status}},"labels":{{json .Config.Labels}}}'
+# new one), its state and labels (VS Code's user there). (The id in quotes as
+# it is: Podman takes .Id for its .ID only on its own, not in {{json .Id}}.)
+INSPECT_TEMPLATE = '{"id":"{{.Id}}","state":{{json .State.Status}},"labels":{{json .Config.Labels}}}'
 
 
 class Place:
@@ -375,7 +376,7 @@ def engine_line(p, args):
 def inspect(p, timeout=CONTAINER_STATE_TIMEOUT):
     """(what one inspect of p's container says: {"state", "user", "cid"} or
     None, the CompletedProcess). The user it gives is kept (remember_users)."""
-    args = ["inspect", "--format", INSPECT_TEMPLATE, p.name]
+    args = ["container", "inspect", "--format", INSPECT_TEMPLATE, p.name]
     line = engine_line(p, args)
     if p.host is not None:  # (a Toolbox's user is you there: your name there comes along)
         line[-1] = posix(" ".join(shlex.quote(a) for a in [p.engine, *args]) + " && id -un")
