@@ -439,11 +439,12 @@ Item {
     // A drag that starts downward (within 45° of straight down) while it's in
     // its burrow pushes it in (talpy.push): it squashes, grabs the rim and
     // pushes back, sinking a little as your hand goes, with a dirt puff and a
-    // word; with less motion it's down at once. False: it isn't in its
-    // burrow, and the drag picks it up as before.
+    // word; with less motion it's down at once. Held down a second (as long
+    // as a tug takes), or pushed on far, it gives in and says so. False: it
+    // isn't in its burrow, and the drag picks it up as before.
     function push() {
         stopGame()
-        if (!talpy || !talpy.push(root.lessMotion))
+        if (!talpy || !talpy.push(root.lessMotion, () => pet.say(i18n("Okay, okay!"))))
             return false
         pushing = true
         stride.stop()
@@ -464,8 +465,25 @@ Item {
             pull()
             return
         }
-        if (talpy && talpy.pushTo(dy / unit))
-            say(i18n("Okay, okay!"))
+        if (talpy)
+            talpy.pushTo(dy / unit)
+    }
+
+    // Your hand, p, back down past where you began (within 45° of straight
+    // down) while it hangs on, before it came out: you push it in instead,
+    // down from where it is, as one move (the tug ends, drawn out easing into
+    // squashed). False: not that far down
+    function pushInstead(p) {
+        const dx = p.x - grab.pressedAt.x, dy = p.y - grab.pressedAt.y
+        if (!(dy > gu * 0.5 && Math.abs(dx) <= dy))
+            return false
+        tugging = false
+        if (!push()) {
+            tugging = true
+            return false
+        }
+        pushToward(p)
+        return true
     }
 
     // Let go: given in, it stays down a moment, then peeks out (hey!, or a
@@ -1010,7 +1028,8 @@ Item {
             } else if (dragging && pet.held) {
                 pet.holdAt(p)
             } else if (dragging && pet.tugging) {
-                pet.tugToward(p)
+                if (!pet.pushInstead(p))   // (back down past where you began: pushed in after all)
+                    pet.tugToward(p)
             }
         }
         onReleased: {

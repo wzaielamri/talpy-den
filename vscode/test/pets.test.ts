@@ -397,6 +397,57 @@ test("a drag that starts downward pushes the hero into his burrow; up or sideway
   stage.destroy();
 });
 
+// Pulled at (back up past where you began), then back down past it before he
+// came out: pushed in again, from where he is, as one move (the tug's end
+// takes nothing); held down a second, as long as a tug takes, he gives in
+test("a drag down, up, then down again before he comes out pushes the hero again", () => {
+  const t = load();
+  const stage: Any = new t.Stage(new FakeEl("div"), true, "hero", { open() {} });
+  t.resize[0]([{ contentRect: { width: 400, height: 96 } }]);
+  t.intersect[0]([{ isIntersecting: true }]);
+  stage.update({
+    mood: "idle", headline: "", counts: { waiting: 0, working: 0, idle: 1, limit: 0, done: 0 }, highUsageText: "",
+    contextFullText: "", maxFiveHour: 0, agentsRunning: 0, waiting: null,
+  });
+  const hero = stage.pets[0];
+  hero.talpy.brainOn = false;
+  const g = hero.grab;
+  const said: string[] = [];
+  hero.say = (text: string) => void said.push(text);
+  const at = (x: number, y: number) => ({ button: 0, pointerId: 1, clientX: x, clientY: y, preventDefault() {} });
+  const tick = (ms: number) => {
+    for (let i = 0; i < ms / 16; i++) hero.talpy.tick(hero.talpy.now + 16);
+  };
+  tick(500);
+  g.listeners.pointerdown[0](at(100, 40));
+  g.listeners.pointermove[0](at(102, 60)); // down: pushed
+  assert.equal(hero.pushing, true);
+  tick(200);
+  g.listeners.pointermove[0](at(100, 20)); // back up past where you began: the tug
+  assert.equal(hero.pushing, false);
+  assert.equal(hero.tugging, true);
+  assert.equal(said[said.length - 1], "Hnngh!");
+  tick(300);
+  g.listeners.pointermove[0](at(101, 40 + stage.gu * 0.3)); // (down, but not past where you began by much: still the tug)
+  assert.equal(hero.tugging, true);
+  const depth = hero.talpy.v.depth;
+  g.listeners.pointermove[0](at(101, 60)); // down again: pushed, from where he is
+  assert.equal(hero.tugging, false);
+  assert.equal(hero.pushing, true);
+  assert.equal(hero.talpy.tugging, false);
+  assert.equal(hero.talpy.pushing, true);
+  assert.ok(Math.abs(hero.talpy.pushFrom - depth) < 0.01, "from where he was pulled up to");
+  assert.ok(["Hey!", "Nooo!", "No pushing!"].includes(said[said.length - 1]), "he says so");
+  tick(1100); // the tug's second is long gone: no popping out into your hand
+  assert.equal(hero.held, false);
+  assert.equal(hero.talpy.gaveIn, true, "held down a second, he gives in");
+  assert.equal(said[said.length - 1], "Okay, okay!");
+  g.listeners.pointerup[0](at(101, 60));
+  assert.equal(hero.pushing, false);
+  assert.ok(hero.talpy.run, "down a moment, then he peeks out");
+  stage.destroy();
+});
+
 // A game with the hero (vendor/talpy/games.mjs): its three holes drawn under
 // him only while it's on; over at once when the stage hides or a chat needs you
 test("a game's holes show while it's on; the stage hidden or a chat that needs you ends it", () => {

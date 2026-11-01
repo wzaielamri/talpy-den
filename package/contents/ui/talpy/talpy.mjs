@@ -7,7 +7,7 @@
 //   t.setMood('working');          // idle working agents needs done failed limit error loading
 //   t.react('pet');                // an action now (see actions.mjs)
 //   t.tug(ok => ...);              // you pull at it: it holds on to its burrow, then comes out
-//   t.push(); t.pushTo(down); t.pushed(needs, done)  // you push it down: it pushes back, then gives in
+//   t.push(still, givesIn); t.pushTo(down); t.pushed(needs, done)  // you push it down: it pushes back, then gives in
 //   t.onTravel = ms => { ... };    // it dug in: move it to its new spot within ms
 //   t.onTravelStop = () => { ... }; // (optional) cut short under way: it stops where it is
 //   every frame: t.tick(Date.now()); then draw(ctx) in a 64 × 64 box, floor at y = 57
@@ -45,9 +45,12 @@ const EASED = { depth: 0.3, hole: 0.02, armL: 1.5, armR: 1.5, armLy: 0.1, armRy:
 // you push (PUSH_SOFT box units of your hand take it about two thirds of the
 // way to PUSH_MOST of the way down), shoving up against your hand every
 // PUSH_HEAVE_MS, and follows your hand on a spring (PUSH_HZ, PUSH_DAMP: a
-// little bouncy); once your hand has gone PUSH_GIVE units it gives in and
-// ducks all the way
-const PUSH_GIVE = 60;
+// little bouncy). As a tug takes TUG_MS, it gives in and ducks all the way
+// once your hand has held it at least PUSH_HOLD units down for TUG_MS (back
+// above that, the time starts again), or at once when your hand has gone
+// PUSH_GIVE units
+const PUSH_GIVE = 40;
+const PUSH_HOLD = 6;
 const PUSH_SOFT = 22;
 const PUSH_MOST = 0.25;   // (its eyes still show, mostly)
 const PUSH_HEAVE_MS = 760;
@@ -129,12 +132,9 @@ function bodyMove(name, ms, it) {
         m.ty = kf(p, [[0, 0], [0.3, 2.6], [0.7, 2.6], [1, 0]]);
         m.torso = true;
         return m;
-    case 'tug':          // pulled at, hanging on: drawn out of its burrow, trembling
+    case 'tug':          // pulled at, hanging on: trembling (drawn out of its burrow: Talpy.stretch, see draw)
         p = sine(Math.min(1, ms / TUG_MS));
-        m.wy = -3.5 * p;
         m.wx = lerp(-0.6, 0.6, alt(ms, 60)) * p;
-        m.sx = 1 - 0.1 * p;
-        m.sy = 1 + 0.2 * p;
         m.torso = true;
         return m;
     case 'inhale':
@@ -345,9 +345,12 @@ export class Talpy {
         this.pushDepth = 0;       // on a spring: where it is now,
         this.pushVel = 0;         // and how quickly it goes (units a second)
         this.pushAt = 0;          // (when you began: its shoves up keep time from then)
+        this.pushHeldAt = 0;      // since when your hand has held it PUSH_HOLD down (0: not now)
+        this.pushGives = null;    // (the host's word when it gives in: push)
         this.gaveIn = false;      // you pushed on: it gave in and ducked all the way
         this.pushStill = false;   // (less motion: down at once, no spring, no shoves)
         this.squash = 0;          // how squashed it's drawn (0 to 1), eased: as you push, and a moment after
+        this.stretch = 0;         // how drawn out (0 to 1), eased: as you pull (tug), and a moment after
         this.chasing = false;     // after a cookie (chase): on its feet, the host moves it
         this.chased = '';         // how (chaseAs)
         this.frameMs = 40;        // see tick()
@@ -441,13 +444,16 @@ export class Talpy {
     // You pull at it (a drag on it): in its burrow it hangs on to the rim,
     // stretched and trembling, for TUG_MS, then done(true): it lets go and
     // the host takes it (setHeld); done(false): you let go first (letGo) or
-    // took it anyway. Pushed down (push), it comes up from there into it.
+    // took it anyway. Pushed down (push), it comes up from there into it;
+    // pushed down again before it came out (push), the tug ends (done(false)).
     // False if it isn't in its burrow (out on the floor, tunnelling, held):
     // the host takes it at once
     tug(done) {
         if (this.held || this.chasing || this.tugging || this.st.tunnel === '1' || this.v.holeTo <= 0 || this.st.depth === 'out')
             return false;
         this.pushing = false;   // (pushed down, then pulled: it comes up from there into the tug, its squash easing off)
+        this.pushHeldAt = 0;
+        this.pushGives = null;
         this.tugging = true;
         this.play({ steps: TUG.hold }, ok => {
             this.tugging = false;
@@ -460,18 +466,24 @@ export class Talpy {
     // You push it down (a drag that starts downward while it's in its burrow):
     // it squashes, grabs the rim and pushes back, with a dirt puff, sinking a
     // little as your hand goes (pushTo); still (less motion): it's down at
-    // once. False if it isn't in its burrow (out on the floor, tunnelling,
-    // held, gone): the host does what it did
-    push(still) {
-        if (this.held || this.chasing || this.tugging || this.pushing || this.away || this.st.tunnel === '1' || this.v.holeTo <= 0
+    // once. givesIn(): it gives in now (held down long enough, or pushed far:
+    // the host has it say so). Pulled at (tug) and pushed back down before it
+    // came out, the tug ends (its done(false)) and it's pushed from where it
+    // is, drawn out easing into squashed. False if it isn't in its burrow (out
+    // on the floor, tunnelling, held, gone): the host does what it did
+    push(still, givesIn) {
+        if (this.held || this.chasing || this.pushing || this.away || this.st.tunnel === '1' || this.v.holeTo <= 0
             || this.st.depth === 'out')
             return false;
         this.cancel();
+        this.tugging = false;
         this.pushing = true;
         this.gaveIn = this.pushStill = !!still;
         this.pushFrom = this.pushDepth = this.pushTarget = this.v.depth;
         this.pushVel = 0;
         this.pushAt = this.now;
+        this.pushHeldAt = 0;
+        this.pushGives = givesIn || null;
         this.apply(still ? PUSH.give() : PUSH.start());
         if (still)
             this.pushTarget = DEPTH.hidden;
@@ -479,21 +491,32 @@ export class Talpy {
     }
 
     // How far down your hand went since the drag began (box units): it sinks
-    // less the further you push (see PUSH_GIVE), and once you've pushed far
-    // enough it gives in and ducks all the way. True when it gives in now (the
-    // host has it say so)
+    // less the further you push; held PUSH_HOLD down for TUG_MS, or pushed
+    // PUSH_GIVE down, it gives in and ducks all the way. True when it gives in
+    // now
     pushTo(down) {
         if (!this.pushing || this.gaveIn)
             return false;
         down = Math.max(0, down);
-        if (down >= PUSH_GIVE) {
-            this.gaveIn = true;
-            this.pushTarget = DEPTH.hidden;
-            this.apply(PUSH.give());
-            return true;
-        }
+        if (down >= PUSH_GIVE)
+            return this.giveIn();
+        if (down < PUSH_HOLD)
+            this.pushHeldAt = 0;
+        else if (!this.pushHeldAt)
+            this.pushHeldAt = this.now || 1;
         this.pushTarget = this.pushFrom + (DEPTH.hidden - this.pushFrom) * PUSH_MOST * (1 - Math.exp(-down / PUSH_SOFT));
         return false;
+    }
+
+    // (it gives in: ducks all the way, and the host has it say so)
+    giveIn() {
+        this.gaveIn = true;
+        this.pushHeldAt = 0;
+        this.pushTarget = DEPTH.hidden;
+        this.apply(PUSH.give());
+        if (this.pushGives)
+            this.pushGives();
+        return true;
     }
 
     // You let go: given in, it stays down a moment, then peeks out and is back
@@ -508,14 +531,19 @@ export class Talpy {
             return '';
         }
         this.pushing = false;
+        this.pushHeldAt = 0;
+        this.pushGives = null;
         const how = needs ? 'up' : this.gaveIn ? 'down' : 'boing';
         this.play({ steps: how === 'up' ? PUSH.needs : how === 'down' ? PUSH.back : PUSH.boing }, done, false);
         return how;
     }
 
     // (while pushed, each tick: towards where your hand has it on a spring,
-    // shoving up now and then until it gives in)
+    // shoving up now and then until it gives in, as it does once your hand
+    // has held it down for TUG_MS)
     pushStep(dt) {
+        if (!this.gaveIn && this.pushHeldAt && this.now - this.pushHeldAt >= TUG_MS)
+            this.giveIn();
         let target = this.pushTarget;
         if (this.pushStill) {
             this.pushDepth = target;
@@ -796,6 +824,13 @@ export class Talpy {
         v.plume = st.plume === 'twirl' || st.plume === 'wild' || st.tunnel === '1' ? plumeTarget : v.plume + (plumeTarget - v.plume) * k(70);
         v.sip += ((st.sip === '1' ? 1 : 0) - v.sip) * k(90);
         this.tugLean += ((st.body === 'tug' ? this.tugAim : 0) - this.tugLean) * k(110);
+        if (st.body !== 'tug' && Math.abs(this.tugLean) < 0.05)
+            this.tugLean = 0;
+        // (drawn out as the tug goes on; let go, popped out or pushed back down, easing off)
+        const stretch = st.body === 'tug' ? sine(Math.min(1, (now - (this.since.body || 0)) / TUG_MS)) : 0;
+        this.stretch = stretch >= this.stretch ? stretch : this.stretch + (stretch - this.stretch) * k(80);
+        if (Math.abs(this.stretch - stretch) < 0.002)
+            this.stretch = stretch;
         const squash = this.pushing && !this.pushStill
             ? sine(Math.min(1, clamp01((this.pushDepth - this.pushFrom) / Math.max(1, (DEPTH.hidden - this.pushFrom) * PUSH_MOST)))) : 0;
         this.squash += (squash - this.squash) * k(this.pushing ? 45 : 80);
@@ -824,7 +859,7 @@ export class Talpy {
             slow = slow || moved > EASED[key] / 20;
         }
         const body = st.body === '' ? null : st.body === 'fast' ? true : bodyMove(st.body, now - (this.since.body || 0), Number(st.it));
-        quick = quick || this.held || this.pushing || this.squash > 0 || st.walk === '1' || QUICK_PROPS[st.prop] === 1 || (body !== null && QUICK_BODY[st.body] === 1)
+        quick = quick || this.held || this.pushing || this.squash > 0 || this.stretch > 0 || this.tugLean !== 0 || st.walk === '1' || QUICK_PROPS[st.prop] === 1 || (body !== null && QUICK_BODY[st.body] === 1)
             || (BLINKING[st.eyes] === 1 && now >= this.nextBlink - 45) || now < this.blinkUntil + 45;
         slow = slow || (body !== null && RESTING_BODY[st.body] !== 1) || this.fx.some(p => p.kind !== 'z') || st.tunnel === '1' || st.orbit === '1'
             || st.think === '1' || SLOW_PROPS[st.prop] === 1;
@@ -844,6 +879,8 @@ export class Talpy {
 
     // A move that happens once and has no pictures is under way (see films)
     oneShot() {
+        if (this.squash > 0 || this.stretch > 0 || this.tugLean !== 0)
+            return true;   // (no picture is squashed, drawn out or leaning)
         for (const key in ONE_SHOT) {
             const ms = ONE_SHOT[key][this.st[key]];
             if (ms !== undefined && this.now - (this.since[key] || 0) < ms * (key === 'plume' ? Number(this.st.it) : 1))
@@ -1067,6 +1104,15 @@ export class Talpy {
         const now = this.now, st = this.st, v = this.v, pal = this.colors;
         const ms = key => now - (this.since[key] || 0);
         const move = bodyMove(st.body, ms('body'), Number(st.it)) || {};
+        // drawn out as you pull it (tug), easing off as it comes out, drops
+        // back in or is pushed back down (a still one: as far as the tug goes)
+        const stretch = st.body === 'tug' ? Math.max(this.stretch, sine(Math.min(1, ms('body') / TUG_MS))) : this.stretch;
+        if (stretch > 0) {
+            move.torso = true;
+            move.wy = (move.wy || 0) - 3.5 * stretch;
+            move.sx = (move.sx || 1) * (1 - 0.1 * stretch);
+            move.sy = (move.sy || 1) * (1 + 0.2 * stretch);
+        }
         if (this.squash > 0) {   // (squashed as you push it down, easing off as it comes back up or into a tug)
             move.torso = true;
             move.sx = (move.sx || 1) * (1 + 0.13 * this.squash);
@@ -1074,8 +1120,8 @@ export class Talpy {
         }
         if (st.body === 'push' && this.pushing && !this.gaveIn)   // (trembling as it pushes back)
             move.wx = (move.wx || 0) + lerp(-0.5, 0.5, alt(ms('body'), 60)) * Math.min(1, ms('body') / 300);
-        if (st.body === 'tug')   // (leaning towards your hand, about its burrow: tugToward)
-            move.wr = (move.wr || 0) + this.tugLean * (0.4 + 0.6 * sine(Math.min(1, ms('body') / TUG_MS))) * (this.facingLeft ? -1 : 1);
+        if (this.tugLean !== 0)   // (leaning towards your hand, about its burrow: tugToward; easing back after)
+            move.wr = (move.wr || 0) + this.tugLean * (0.4 + 0.6 * stretch) * (this.facingLeft ? -1 : 1);
         ctx.save();
         if (this.facingLeft) {
             ctx.translate(BOX, 0);

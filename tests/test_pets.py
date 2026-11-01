@@ -828,9 +828,9 @@ console.log(JSON.stringify(out));""")
     def test_pushed_down_it_hangs_on_then_gives_in_and_peeks_out(self):
         # A drag that starts downward while it's in its burrow pushes it in:
         # squashed, it grabs the rim and pushes back, sinking less the
-        # further you push and shoving up now and then; pushed on far enough,
-        # it gives in and ducks all the way; let go, it stays down a moment,
-        # peeks out and is back
+        # further you push and shoving up now and then; held down a second,
+        # as long as a tug takes, it gives in (once, and says so) and ducks
+        # all the way; let go, it stays down a moment, peeks out and is back
         r = run_node(NULL_CANVAS + """
 const t = new Talpy({ brain: false });
 let now = 1000;
@@ -838,28 +838,31 @@ t.tick(now);
 const run = (ms, until) => { for (const end = now + ms; now < end;) { now += 16; t.tick(now); t.draw(ctx); if (until && until()) break; } };
 run(600);
 const from = t.v.depth;
-const began = t.push();
+let gives = 0;
+const began = t.push(false, () => { gives += 1; });
 const look = { body: t.st.body, eyes: t.st.eyes, arms: t.st.arms, fx: t.fx.filter(p => p.kind === 'clod').length > 0 };
 t.pushTo(20);
-run(800);
+const at = now;
+run(400);
 const first = t.v.depth - from;
-t.pushTo(40);
-run(800);
+const notYet = t.pushTo(39);
+run(350);
 const second = t.v.depth - from - first;
-let top = 99, bottom = 0, squashed = 0;
-run(1600, () => { top = Math.min(top, t.v.depth); bottom = Math.max(bottom, t.v.depth); squashed = Math.max(squashed, t.squash); });
-const notYet = t.pushTo(59);
-const gives = t.pushTo(60);
+let top = 99, bottom = 0, squashed = 0, gaveAt = 0;
+run(1000, () => {
+    if (t.gaveIn) { gaveAt = now - at; return true; }
+    top = Math.min(top, t.v.depth); bottom = Math.max(bottom, t.v.depth); squashed = Math.max(squashed, t.squash);
+});
 const again = t.pushTo(80);
 run(800);
 const deep = { depth: t.v.depth >= 40, run: !!t.run, pushing: t.pushing, gaveIn: t.gaveIn };
 let back = null;
-const at = now;
-const how = t.pushed(false, ok => { back = [ok, now - at]; });
+const left = now;
+const how = t.pushed(false, ok => { back = [ok, now - left]; });
 run(700);
 const down = t.v.depth;
 run(5000, () => back !== null);
-console.log(JSON.stringify({ began, look, first, second, shoves: bottom - top, squashed, notYet, gives, again, deep, how, down,
+console.log(JSON.stringify({ began, look, first, second, shoves: bottom - top, squashed, notYet, gaveAt, gives, again, deep, how, down,
                              back, depth: t.st.depth, pushing: t.pushing }));""")
         self.assertTrue(r["began"])
         self.assertEqual(r["look"], {"body": "push", "eyes": "squint", "arms": "rim", "fx": True})   # (a dirt puff)
@@ -868,13 +871,60 @@ console.log(JSON.stringify({ began, look, first, second, shoves: bottom - top, s
         self.assertLess(r["second"], r["first"])                  # and less the further you push
         self.assertGreater(r["shoves"], 1)                        # it shoves up against your hand now and then
         self.assertGreater(r["squashed"], 0.6)
-        self.assertEqual((r["notYet"], r["gives"], r["again"]), (False, True, False))   # it gives in once
+        self.assertFalse(r["notYet"])
+        self.assertGreaterEqual(r["gaveAt"], 1000)                # held down as long as a tug takes, it gives in
+        self.assertLess(r["gaveAt"], 1050)
+        self.assertEqual((r["gives"], r["again"]), (1, False))   # once
         self.assertEqual(r["deep"], {"depth": True, "run": False, "pushing": True, "gaveIn": True})   # all the way, nothing else meanwhile
         self.assertEqual(r["how"], "down")
         self.assertGreaterEqual(r["down"], 40)                    # let go: it stays down a moment
         self.assertTrue(r["back"][0])
         self.assertGreater(r["back"][1], 2500)                    # (down, peeks left and right, out)
         self.assertEqual((r["depth"], r["pushing"]), ("half", False))
+
+    def test_pushed_on_far_it_gives_in_at_once(self):
+        # 40 box units down: no waiting for the second
+        r = run_node(NULL_CANVAS + """
+const t = new Talpy({ brain: false });
+let now = 1000;
+t.tick(now);
+const run = ms => { for (const end = now + ms; now < end;) { now += 16; t.tick(now); t.draw(ctx); } };
+run(600);
+let gives = 0;
+t.push(false, () => { gives += 1; });
+const out = [t.pushTo(20), t.gaveIn];
+run(100);
+out.push(t.pushTo(39), t.pushTo(40), t.gaveIn, gives, t.pushTo(80), gives);
+run(1500);
+out.push(gives);
+console.log(JSON.stringify(out));""")
+        self.assertEqual(r, [False, False, False, True, True, 1, False, 1, 1])
+
+    def test_held_down_the_second_starts_again_when_your_hand_comes_back_up(self):
+        # the second counts from when your hand first went PUSH_HOLD (6) down;
+        # back above that it starts again; a little push alone never gives in
+        r = run_node(NULL_CANVAS + """
+const t = new Talpy({ brain: false });
+let now = 1000;
+t.tick(now);
+const run = ms => { for (const end = now + ms; now < end;) { now += 16; t.tick(now); t.draw(ctx); } };
+run(600);
+let gives = 0;
+t.push(false, () => { gives += 1; });
+t.pushTo(4);
+run(1500);
+const little = t.gaveIn;
+t.pushTo(20);
+run(700);
+t.pushTo(3);    // back up above it
+run(300);
+t.pushTo(20);   // down again: the second starts again
+run(800);
+const notYet = t.gaveIn;
+t.pushTo(25);   // (further down within it: still the same second)
+run(300);
+console.log(JSON.stringify({ little, notYet, gaveIn: t.gaveIn, gives }));""")
+        self.assertEqual(r, {"little": False, "notYet": False, "gaveIn": True, "gives": 1})
 
     def test_let_go_before_it_gives_in_it_springs_back_up(self):
         # boing: up past where it was, then it settles where it was, unsquashed
@@ -914,7 +964,7 @@ t.tick(now);
 const run = (ms, each) => { for (const end = now + ms; now < end;) { now += 16; t.tick(now); t.draw(ctx); if (each) each(); } };
 run(600);
 t.push();
-t.pushTo(40);
+t.pushTo(30);
 run(800);
 const pushed = t.v.depth, squash = t.squash;
 let out = null;
@@ -931,6 +981,66 @@ console.log(JSON.stringify({ pushed, squash, tugs, state, firstSquash, jump, out
         self.assertLess(r["jump"], 4)                             # (as it pops up any time: a few units a frame)
         self.assertTrue(r["out"])                                 # it hangs on, then comes out
         self.assertEqual(r["after"], 0)
+
+    def test_pulled_then_pushed_back_down_it_sinks_from_there_into_the_push(self):
+        # Your hand back down past where you began before it came out: the
+        # host pushes instead; the tug ends (done(false): the host doesn't
+        # take it), and it sinks from where it is, drawn out easing into
+        # squashed: no jump in its depth or its body's size; then it still
+        # gives in, by time or by distance
+        r = run_node(NULL_CANVAS + """
+const t = new Talpy({ brain: false });
+let now = 1000;
+t.tick(now);
+const run = (ms, each) => { for (const end = now + ms; now < end;) { now += 16; t.tick(now); t.draw(ctx); if (each) each(); } };
+run(600);
+let tug = null;
+t.tug(ok => { tug = ok; });
+t.tugToward(20, -30);
+run(500);
+const before = { depth: t.v.depth, stretch: t.stretch, lean: t.tugLean };
+// (how the body's drawn: wide and tall, from draw's stretch and squash)
+const sy = () => (1 + 0.2 * t.stretch) * (1 - 0.12 * t.squash), sx = () => (1 - 0.1 * t.stretch) * (1 + 0.13 * t.squash);
+let lastD = t.v.depth, lastX = sx(), lastY = sy(), lastL = t.tugLean, jump = 0, scale = 0, lean = 0;
+const track = () => {
+    if (t.gaveIn)
+        return;   // (then it ducks all the way, quickly)
+    jump = Math.max(jump, Math.abs(t.v.depth - lastD)); scale = Math.max(scale, Math.abs(sx() - lastX), Math.abs(sy() - lastY));
+    lean = Math.max(lean, Math.abs(t.tugLean - lastL));
+    lastD = t.v.depth; lastX = sx(); lastY = sy(); lastL = t.tugLean;
+};
+let gives = 0;
+const pushes = t.push(false, () => { gives += 1; });
+const state = { tug, tugging: t.tugging, pushing: t.pushing, body: t.st.body, from: Math.abs(t.pushFrom - before.depth) < 0.01 };
+t.pushTo(4);
+run(16, track);
+const firstStretch = t.stretch;
+t.pushTo(12);
+run(500, track);
+const mid = { stretch: t.stretch, squash: t.squash > 0.3, lean: Math.abs(t.tugLean) < 1, sank: t.v.depth > before.depth + 2 };
+run(700, track);
+const held = { gaveIn: t.gaveIn, gives };
+let out = null;
+const tugAgain = t.tug(ok => { out = ok; });
+run(300);
+const back = t.push(false, () => { gives += 1; });
+const far = t.pushTo(45);
+run(16);
+console.log(JSON.stringify({ before, pushes, state, firstStretch, mid, jump, scale, lean, held, tugAgain, out, back, far, gives,
+                             tugging: t.tugging, deep: t.gaveIn }));""")
+        self.assertGreater(r["before"]["stretch"], 0.5)             # (drawn out as it hangs on)
+        self.assertGreater(r["before"]["lean"], 10)
+        self.assertTrue(r["pushes"])
+        self.assertEqual(r["state"], {"tug": False, "tugging": False, "pushing": True, "body": "push", "from": True})
+        self.assertGreater(r["firstStretch"], r["before"]["stretch"] * 0.5)   # (eased off, not gone at once)
+        self.assertEqual(r["mid"], {"stretch": 0, "squash": True, "lean": True, "sank": True})
+        self.assertLess(r["jump"], 2)                               # its depth goes on from where it was,
+        self.assertLess(r["scale"], 0.03)                           # its body from drawn out to squashed,
+        self.assertLess(r["lean"], 6)                               # its lean easing back
+        self.assertEqual(r["held"], {"gaveIn": True, "gives": 1})   # held down a second: it gives in
+        self.assertTrue(r["tugAgain"])                              # (and pulled at again, down again,
+        self.assertEqual((r["out"], r["back"], r["far"], r["gives"]), (False, True, True, 2))   # it gives in pushed on far)
+        self.assertEqual((r["tugging"], r["deep"]), (False, True))
 
     def test_with_less_motion_its_down_at_once(self):
         r = run_node(NULL_CANVAS + """
@@ -991,23 +1101,38 @@ console.log(JSON.stringify(out));""")
         # within 45° of straight down, while it's in its burrow (push() says)
         self.assertIn("p.y - pressedAt.y > 0 && Math.abs(p.x - pressedAt.x) <= p.y - pressedAt.y && pet.push()", pet)
         self.assertIn("dy > 0 && Math.abs(dx) <= dy && this.push()", ts)
-        self.assertIn("talpy.push(root.lessMotion)", pet)                # (less motion: down at once)
-        self.assertIn("talpy.push(reducedMotion())", ts)
+        # (less motion: down at once; it gives in, held down a second or pushed on far, and says so)
+        self.assertIn('talpy.push(root.lessMotion, () => pet.say(i18n("Okay, okay!")))', pet)
+        self.assertIn('talpy.push(reducedMotion(), () => { if (!this.destroyed) this.say("Okay, okay!"); })', ts)
         for text in (pet, ts):
             self.assertRegex(text, r"talpy\.pushTo\(")
             self.assertRegex(text, r'talpy\.pushed\((this\.)?mood === "needs"')
             self.assertRegex(text, r'react\("sign"\)')             # (a chat needs you: its sign)
             # then back up past where it began, or off to a side: pulled out after all
             block = text[text.index("pushToward(p"):]
-            block = block[:block.index("Okay, okay!")]
+            block = block[:block.index("pushInstead(p")]
             self.assertIn("!(dy > 0 && Math.abs(dx) <= dy)", block)
             self.assertRegex(block, r"pushing = false;?\s*\n\s*(this\.|pet\.)?pull\(\)")
+            self.assertRegex(block, r"talpy\.pushTo\(dy / ")
+            # pulled, then back down past where it began before it came out: pushed in after all,
+            # the tug over first (its callback then takes nothing), as one move
+            block = text[text.index("pushInstead(p"):]
+            block = block[:block.index("tugToward(p")]
+            self.assertRegex(block, r"dy > (this\.stage\.)?gu \* 0\.5 && Math\.abs\(dx\) <= dy")
+            self.assertRegex(block, r"tugging = false;?\s*\n\s*if \(!(this\.)?push\(\)\)")
+            self.assertRegex(block, r"(this\.)?pushToward\(p\);?\s*\n\s*return true")
             # it says something: as you push, when it gives in, when it springs back
             self.assertIn("No pushing!", text)
             self.assertIn('how === "boing"', text)
             self.assertIn("Hmpf!", text)
         self.assertIn("live: pet.landing || pet.chasing || pet.tugging || pet.pushing", pet)
         self.assertIn("!this.pushing", ts[ts.index("f.on ="):])
+        # (as the hand moves while it hangs on)
+        self.assertIn("if (!pet.pushInstead(p))   // (back down past where you began: pushed in after all)\n"
+                      "                    pet.tugToward(p)", pet)
+        self.assertIn("if (!this.pushInstead(p)) this.tugToward(p);", ts)
+        for text in (pet, ts):
+            self.assertRegex(text, r"talpy\.tug\(\(?ok\)? => \{ if \(ok && (pet|this)\.tugging\)")   # (a tug cut short takes nothing)
 
     def test_both_hosts_pull_and_let_go_through_it(self):
         # A drag that starts pulls (tug: false, it's taken at once); let go of

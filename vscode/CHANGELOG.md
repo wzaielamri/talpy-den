@@ -157,12 +157,13 @@
   draws only while it runs.
 - **Push Talpy into his burrow:** a drag that starts downward while he's in
   his burrow pushes him: he grabs the rim and pushes back (*Hey!*), sinking
-  only a little, until you push on and he gives in (*Okay, okay!*) and
+  only a little, until you hold him down a second (as long as he hangs on
+  when you pull) or push on, and he gives in (*Okay, okay!*) and
   ducks all the way; let go and he stays down a moment, then peeks out
   (*hey!*, or a giggle). Let go before that and he springs back up, boing
   (*Hmpf!*). If a chat needs you, he pops straight back up with his sign.
   Your hand back up, or off to a side, pulls him out instead, up from where
-  he is; a drag that starts up or sideways is the tug of before; the chats'
+  he is, and back down before he's out pushes him in again; a drag that starts up or sideways is the tug of before; the chats'
   pets too.
 - **Playful Talpy (`talpyDen.playfulTalpy`, on by default):** off, Talpy only
   shows what your chats do: his moods, his lamp and quiet moves (looking

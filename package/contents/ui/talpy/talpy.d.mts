@@ -56,12 +56,15 @@ export class Talpy {
     setMood(mood: string): void;
     playful: boolean;
     setPlayful(on: boolean): void;
-    // pushed down into its burrow (a drag that starts downward): false if it isn't in it;
-    // still (less motion): down at once. It pushes back, and gives in when you push on
-    // (pushTo: true then); let go: 'down' (it had given in), 'boing' (it springs back up), 'up' (needs)
+    // pushed down into its burrow (a drag that starts downward; also while it hangs on in a tug,
+    // which then ends with done(false)): false if it isn't in it; still (less motion): down at once.
+    // It pushes back, and gives in when your hand has held it down for a second or pushed on far
+    // (givesIn() then; pushTo: true when that's now); let go: 'down' (it had given in), 'boing'
+    // (it springs back up), 'up' (needs)
     pushing: boolean;
     readonly gaveIn: boolean;
-    push(still?: boolean): boolean;
+    readonly pushFrom: number;   // the depth it was pushed from (box units)
+    push(still?: boolean, givesIn?: (() => void) | null): boolean;
     pushTo(down: number): boolean;
     pushed(needs: boolean, done?: (ok: boolean) => void): "" | "down" | "boing" | "up";
     react(name: string, done?: ((ok: boolean) => void) | null): void;

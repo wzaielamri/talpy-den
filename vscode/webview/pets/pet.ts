@@ -601,11 +601,12 @@ export class Pet {
   // A drag that starts downward (within 45° of straight down) while it's in
   // its burrow pushes it in (talpy.push): it squashes, grabs the rim and
   // pushes back, sinking a little as your hand goes, with a dirt puff and a
-  // word; with less motion it's down at once. False: it isn't in its burrow,
-  // and the drag picks it up as before.
+  // word; with less motion it's down at once. Held down a second (as long as
+  // a tug takes), or pushed on far, it gives in and says so. False: it isn't
+  // in its burrow, and the drag picks it up as before.
   private push(): boolean {
     this.stopGame();
-    if (!this.talpy.push(reducedMotion())) return false;
+    if (!this.talpy.push(reducedMotion(), () => { if (!this.destroyed) this.say("Okay, okay!"); })) return false;
     this.pushing = true;
     this.stride.stop();
     this.game?.picked(); // (it stops seeing to its cookie meanwhile)
@@ -627,8 +628,26 @@ export class Pet {
       this.pull();
       return;
     }
-    if (this.talpy.pushTo(dy / (this.stage.box / 64))) this.say("Okay, okay!");
+    this.talpy.pushTo(dy / (this.stage.box / 64));
     this.changed();
+  }
+
+  // Your hand, p, back down past where you began (within 45° of straight
+  // down) while it hangs on, before it came out: you push it in instead, down
+  // from where it is, as one move (the tug ends, drawn out easing into
+  // squashed). False: not that far down
+  private pushInstead(p: { x: number; y: number }): boolean {
+    if (!this.pressedAt) return false;
+    const dx = p.x - this.pressedAt.x,
+      dy = p.y - this.pressedAt.y;
+    if (!(dy > this.stage.gu * 0.5 && Math.abs(dx) <= dy)) return false;
+    this.tugging = false;
+    if (!this.push()) {
+      this.tugging = true;
+      return false;
+    }
+    this.pushToward(p);
+    return true;
   }
 
   // Let go: given in, it stays down a moment, then peeks out (hey!, or a
@@ -982,7 +1001,7 @@ export class Pet {
       } else if (this.dragging && this.held) {
         this.holdAt(p);
       } else if (this.dragging && this.tugging) {
-        this.tugToward(p);
+        if (!this.pushInstead(p)) this.tugToward(p); // (back down past where you began: pushed in after all)
       }
     });
     // (put down, or let go of while it hung on)
