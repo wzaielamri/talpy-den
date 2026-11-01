@@ -1,6 +1,6 @@
 # On GNOME
 
-The same dashboard as a GNOME Shell extension: Talpy in the top bar, the popup with your accounts, chats, plan usage, SSH hosts, notifications and pets, and its **Recap** tab. It uses the same scripts as Talpy Den on Plasma.
+The same dashboard as a GNOME Shell extension: Talpy in the top bar, the popup with your accounts, chats, plan usage, SSH hosts and containers, notifications and pets, and its **Recap** tab. It uses the same scripts as Talpy Den on Plasma.
 
 **Requirements:** GNOME Shell 49 or 50 (Ubuntu 26.04 LTS has 50), or 43 or 44 (Debian 12; [see below](#gnome-shell-43-and-44)), python3, jq (`sudo apt install jq`); zenity for *Choose folder…* (Ubuntu has it).
 

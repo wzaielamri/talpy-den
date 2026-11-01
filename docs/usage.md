@@ -32,8 +32,9 @@
 | Filter button at the top (**Focus**) | Shows only what needs you, the chats that finished a turn you haven't looked at yet and one line for each chat at work; **Show everything** goes back. |
 | Microphone in the chat pane (**Dictate**) | Records your reply and writes it into the box (click again to stop); the first time, it offers to set dictation up. |
 | Magnifier at the top | Finds a chat by the words in its name, folder or your prompts, and project folders, plans and memories with those words. |
-| SSH hosts button at the top | Picks the SSH hosts to show. |
+| Hosts button at the top | Picks the SSH hosts and containers to show; **Reload** reads `~/.ssh/config` and the container lists again. |
 | The eye button next to an SSH host's name | Shows that host's hidden chats, plans, memories or projects again. |
+| **Start** at a stopped container | Starts it (`docker start`), then shows its chats. |
 | A project in the **Projects** tab | Click it to open it: its open chats, Claude's last recap of it, its chats, plans and memories, a page at a time. The speech bubble starts a new chat there; the hide button (a struck-out eye) hides it from the tab (nothing is deleted); right-click → *Show Hidden Projects Again (N)* brings it back. |
 | A project in the Recap's *Where Claude worked* | Opens it in the **Projects** tab. |
 | **Log in…** at an account | An account that isn't logged in (a new one, or one you logged out of): a terminal opens with Claude's own login. |
@@ -104,12 +105,14 @@ When to notify, sounds, while you're away, the keyboard shortcut.
 
 ### Hosts
 
-SSH hosts are picked with the SSH hosts button at the top of the popup.
+SSH hosts and containers are picked with the hosts button at the top of the popup.
 
 | Setting | Default | |
 |---|---|---|
-| Check SSH hosts every | 30 s | |
+| Check SSH hosts every | 30 s | Containers too |
 | Plan usage on SSH hosts | once per account | An account on this computer and a host (or on two hosts) shows its plan usage where it's listed first, with the newest numbers of them all; or on every host, or on none |
+| Show containers | on | Docker, Podman and nerdctl containers in the hosts picker; off, no container engine is asked anything (the picked ones stay picked) |
+| List containers active in the last | 30 days | Stopped containers started or stopped in these days are listed with the running ones; 0: only running ones |
 
 ### Advanced
 

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Docker, Podman and nerdctl containers, shown like SSH hosts:**
+  **Talpy Den: Show Claude on SSH Hosts and Containers…** lists this
+  computer's containers and each connected SSH host's (the running ones and
+  those active in the last 30 days, with their engine and image or dev
+  container folder), with a **Reload** button. A picked container shows like
+  a host; a stopped one says so with **Start**; its chats open in a terminal
+  inside it, and a Dev Containers window shows its own container's chats by
+  itself. Settings: **Show Containers**, **Container Days**.
+- **Each SSH host's (and container's) last answer shows at once at
+  start,** dimmed with how old it is, until its first check answers.
 - **The chat tab's *Agents 1/3* tag shows what each subagent is doing:**
   a click unfolds them in the strip under the header, as under the chat's
   row in the view: the running ones first, each with its kind, its model,

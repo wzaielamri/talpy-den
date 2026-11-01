@@ -1,13 +1,13 @@
 # Talpy Den for VS Code
 
-Every Claude Code chat you have running, on this computer and on your SSH
+Every Claude Code chat you have running, on this computer, in your containers and on your SSH
 hosts, in one VS Code view: which ones need you, which are working, how much
 of your plan is left, and Talpy, a pet who acts it all out.
 
 - **Every chat at a glance**, per Claude account: terminal chats, background
-  chats and Claude Code panels, here and on your SSH hosts (also from a
-  Remote-SSH window), with each account's plan usage and where your pace
-  leads.
+  chats and Claude Code panels, here, on your SSH hosts and in your Docker,
+  Podman or nerdctl containers (also from a Remote-SSH or Dev Containers
+  window), with each account's plan usage and where your pace leads.
 - **Act without switching**: click a chat for its tab to follow the
   conversation, reply, answer its permission prompts and questions, and
   review or undo what it changed.
