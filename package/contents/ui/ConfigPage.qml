@@ -1,5 +1,6 @@
 import QtQuick
 import org.kde.kcmutils as KCM
+import org.kde.kirigami as Kirigami
 import org.kde.plasma.plasmoid
 
 // Every settings page is one of these. Plasma hands each page every setting
@@ -36,6 +37,70 @@ KCM.SimpleKCM {
             if (!key.endsWith("Default") && ("cfg_" + key) in configPage)
                 opened[key] = configPage["cfg_" + key]
         cfgOpened = opened
+        Qt.callLater(widenPageList)
+    }
+
+    // ---- The list of pages on the left is Plasma's (its settings window
+    // gives it 7 grid units), and "Notifications" broke before its last
+    // letter there. Each page widens that list to the longest word of a
+    // page's name, measured bold (the current page's name is bold while the
+    // keyboard is on the list): never narrower than Plasma's own, at most 10
+    // grid units. Again when its scroll bar comes or goes, so the words still
+    // fit beside it.
+    property Item pageList: null
+
+    FontMetrics { id: pageNameFont }
+
+    Connections {
+        target: configPage.pageList
+        function onAvailableWidthChanged() { configPage.widenPageList() }
+    }
+
+    function widenPageList() {
+        let dialog = configPage.parent
+        while (dialog && !("globalConfigModel" in dialog && "currentSource" in dialog))
+            dialog = dialog.parent
+        if (!dialog)
+            return
+        let list = null
+        for (let i = 0; i < dialog.children.length; ++i)
+            if ("availableWidth" in dialog.children[i] && "contentWidth" in dialog.children[i])
+                list = dialog.children[i]
+        if (!list)
+            return
+        const labels = []
+        const walk = item => {
+            for (let i = 0; i < item.children.length; ++i) {
+                const child = item.children[i]
+                if ("wrapMode" in child && typeof child.text === "string")
+                    labels.push(child)
+                else
+                    walk(child)
+            }
+        }
+        walk(list)
+        if (!labels.length)
+            return
+        const font = labels[0].font
+        pageNameFont.font = Qt.font({ family: font.family, pointSize: font.pointSize > 0 ? font.pointSize : 10,
+                                      bold: true })
+        let word = 0
+        for (const label of labels)
+            for (const part of label.text.split(/\s+/))
+                word = Math.max(word, pageNameFont.advanceWidth(part))
+        // the room around a name: the list's scroll bar and padding, the
+        // page's button padding, and the name's margins in it (Plasma's
+        // ConfigCategoryDelegate: smallSpacing on each side)
+        const button = labels[0].parent && labels[0].parent.parent
+        const around = (list.width - list.availableWidth)
+            + (button && "leftPadding" in button ? button.leftPadding + button.rightPadding : 0)
+            + 2 * Kirigami.Units.smallSpacing
+        const width = Math.min(Kirigami.Units.gridUnit * 10,
+                               Math.max(Kirigami.Units.gridUnit * 7, Math.ceil(word + around + 1)))
+        if (list.width !== width)
+            list.width = width
+        if (pageList !== list)
+            pageList = list
     }
 
     // ---- every setting in main.xml and its default (tests/test_pets.py
