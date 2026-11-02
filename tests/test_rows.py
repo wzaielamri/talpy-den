@@ -175,6 +175,15 @@ class RowButtonsTests(unittest.TestCase):
         tsx = (repo / "vscode/webview/components/SessionRow.tsx").read_text()
         self.assertIn('"Keeps going" + (kept.error ? " (gave up)" : kept.note ? " (can\'t go on now)" : "")', tsx)
 
+    def test_a_lines_name_stops_where_its_hover_buttons_start(self):
+        # A line's end (CoveredEnd) is at least as wide as its buttons while they show, so the
+        # name before it is cut there, not run under them (a starred plan has no folder)
+        end = (UI / "CoveredEnd.qml").read_text()
+        self.assertIn("import QtQuick.Layouts", end)
+        self.assertIn("Layout.minimumWidth: covered", end)
+        for name in ("PlanLine.qml", "RecentLine.qml", "MemoryLine.qml"):
+            self.assertRegex((UI / name).read_text(), r"covered: \w+Buttons\.covering", name)
+
     def test_a_kept_chat_shows_its_tag_with_nothing_else_to_say(self):
         # A kept chat at work with no step or tasks (yet): its Keeps going still shows, as in VS Code,
         # whose line with it shows whenever the chat is kept, goes on later or can (handover || goOn || goingOn || kept)
