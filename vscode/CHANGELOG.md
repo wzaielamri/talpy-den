@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Plans in a project's own folder are listed:** Claude's
+  `plansDirectory` setting and a project's `.claude/plans` hold plans
+  the view didn't show. Each is listed once, under the account whose chat
+  made it, with its project as its folder, and opens, takes comments and
+  feedback, is carried out and deleted as the others; it has no Share
+  button (every account has it).
+- **A plan keeps its project once its chat is deleted**; one whose project
+  was never known says *chat gone* where its folder would be, as the
+  Projects tab's card of plans whose chat is gone.
+- **Move to project…** on a plan, and in the Projects tab a plan dragged
+  by its name onto another project's card (it lights up; the view scrolls
+  near its edges): it asks first where it goes, whether the project should
+  keep its new plans there too (its `.claude/settings.local.json`), whether
+  git would show it, and keep both or replace for a plan of that name.
+  Nothing moves until **Move**; Esc, Cancel or a click elsewhere leaves it.
+  One in a project's folder has **Move back** to its account.
 - **Docker, Podman and nerdctl containers, shown like SSH hosts:**
   **Talpy Den: Show Claude on SSH Hosts and Containers…** lists this
   computer's containers and each connected SSH host's (the running ones and
