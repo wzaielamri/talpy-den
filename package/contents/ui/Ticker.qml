@@ -24,7 +24,7 @@ Item {
     implicitHeight: row.implicitHeight
     visible: shown !== null
     // (a closed popup, or a desktop a window covers, still has it "visible")
-    readonly property bool seen: visible && root.dashboardShown && !root.coveredByWindow
+    readonly property bool seen: visible && root.dashboardShown && !root.coveredByWindow && !root.underWindows(ticker)
     onSeenChanged: if (seen) shownAt = Date.now()   // (the one on show gets its turn)
 
     function byKey(key) {

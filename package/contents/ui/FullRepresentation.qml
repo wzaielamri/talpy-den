@@ -29,12 +29,13 @@ PlasmaExtras.Representation {
 
             // In the system tray, the tray's own heading names the widget
             TalpyIcon {
+                id: headerIcon
                 visible: !root.inTray
                 Layout.preferredWidth: Kirigami.Units.iconSizes.small
                 Layout.preferredHeight: Kirigami.Units.iconSizes.small
                 color: root.stateColor(root.overall)
                 mode: root.overall
-                moving: root.dashboardShown && !root.coveredByWindow
+                moving: root.dashboardShown && !root.coveredByWindow && !root.underWindows(headerIcon)
             }
             // The app's name is the first tab: your chats now. The others: your
             // projects (ProjectsView.qml), the permissions you gave

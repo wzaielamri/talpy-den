@@ -33,7 +33,7 @@ cd talpy-den
 
 Then right-click your panel → **Add Widgets…**, search for **Talpy Den** and drag it onto the panel (or onto the desktop).
 
-You can add it more than once, e.g. on the panel and on each screen's desktop: the copies share one check and their settings, and only one of them notifies (one with a popup, when there is one). On the desktop, the pets rest while a window covers the whole widget.
+You can add it more than once, e.g. on the panel and on each screen's desktop: the copies share one check and their settings, and only one of them notifies (one with a popup, when there is one). On the desktop, the pets rest while windows cover them (one window or several together), and all of it rests while they cover the whole widget.
 
 Each [release](https://github.com/wzaielamri/talpy-den/releases) also has the Plasma widget as a `.plasmoid` file and the GNOME extension as a `.zip`, for installing without the repository (its notes say how), and the VS Code extension as a `.vsix`. `./install.sh` is still the easiest way: it also adds the status-line snippet.
 

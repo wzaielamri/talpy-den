@@ -256,9 +256,11 @@ PlasmoidItem {
     // In step with the screen: a frame animation ticks as each frame is made
     // (a timer of its own drifted against the screen and showed about one
     // frame in 18 twice), every frame or every other one (half a frame of
-    // slack, so a frame that comes a little early still counts)
+    // slack, so a frame that comes a little early still counts). It runs
+    // while a stage of pets can be seen: running, it has the whole window
+    // drawn again at every frame of the screen (on the desktop, all of it).
     FrameAnimation {
-        running: root.dashboardShown && !root.coveredByWindow && Plasmoid.configuration.showPet
+        running: Plasmoid.configuration.showPet && root.playingStages.length > 0
         property real last: 0
         onTriggered: {
             const now = Date.now()
@@ -382,6 +384,28 @@ PlasmoidItem {
     onShownInPlaceChanged: Hub.placed(instanceId, !shownInPlace)
     // (with the mouse on it, it can be seen: a window over it would have the mouse)
     readonly property bool coveredByWindow: coverWatch.item !== null && coverWatch.item.covered && !mouseOnWidget.hovered
+    // Windows over a part of the widget on the desktop (CoverWatch.qml): what's
+    // all under them holds still, as everything does once all of it is
+    // covered (a stage of pets: PetStrip.qml, the spinner, the ticker).
+    // clipTo: the list the item scrolls in, if any (what of it can show).
+    readonly property var windowsOver: coverWatch.item !== null ? coverWatch.item.over : []
+    function underWindows(item, clipTo) {
+        return windowsOver.length > 0 && coverWatch.item !== null && coverWatch.item.hides(item, clipTo || null)
+    }
+    // The stages whose pets move now (PetStrip.qml: playing): the pets' clock
+    // above runs while there's one
+    property var playingStages: []
+    function stagePlaying(stage, on) {
+        const at = playingStages.indexOf(stage)
+        if (on === (at >= 0))
+            return
+        const next = playingStages.slice()
+        if (on)
+            next.push(stage)
+        else
+            next.splice(at, 1)
+        playingStages = next
+    }
     HoverHandler {
         id: mouseOnWidget
         enabled: root.onDesktop

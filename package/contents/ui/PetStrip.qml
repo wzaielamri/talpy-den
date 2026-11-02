@@ -46,18 +46,35 @@ Item {
     readonly property real chatGround: height - tagHeight - boxSize * 6 / 64 - Kirigami.Units.smallSpacing
     readonly property real loneGround: height - gu * 0.55
     readonly property bool live: visible && root.dashboardShown
-    readonly property bool playing: live && !root.coveredByWindow && inView   // can be seen: things move
+    // can be seen: things move
+    readonly property bool playing: live && !root.coveredByWindow && inView && (!underWindows || cursorX >= 0)
+    onPlayingChanged: root.stagePlaying(strip, playing)
     // Scrolled out of sight in the list: its pets hold still (every picture
     // costs). The list (a Flickable) is found up the parents; the hero has none.
     property bool inView: true
     property Item list: null
     function checkInView() {
+        checkWindows()
         if (!list || !live)
             return
         const top = strip.mapToItem(list, 0, 0).y
         const seen = top + strip.height > 0 && top < list.height
         if (seen !== inView)
             inView = seen
+    }
+    // On the desktop, under windows that cover the stage though not all the
+    // widget (main.qml: underWindows): its pets hold still too, since each of
+    // their pictures redraws the whole desktop. (With the mouse on the stage,
+    // it can be seen.)
+    property bool underWindows: false
+    function checkWindows() {
+        const under = live && root.underWindows(strip, list)
+        if (under !== underWindows)
+            underWindows = under
+    }
+    Connections {
+        target: root
+        function onWindowsOverChanged() { strip.checkWindows() }
     }
     Connections {
         target: strip.list
@@ -120,7 +137,10 @@ Item {
     }
 
     onShownChatsChanged: sync()
-    onWidthChanged: sync()
+    onWidthChanged: {
+        sync()
+        checkWindows()
+    }
     onVisibleChanged: if (visible) laidOut.restart()
     Timer {
         id: laidOut   // (shown again: once its scroll bar is back, see spotsWidth)
@@ -135,8 +155,15 @@ Item {
             }
         }
         sync()
+        checkWindows()
+        root.stagePlaying(strip, playing)
     }
-    Component.onDestruction: if (root) root.dropPetColors(stageKey)   // (root may be gone at shutdown)
+    Component.onDestruction: {
+        if (!root)   // (gone at shutdown)
+            return
+        root.dropPetColors(stageKey)
+        root.stagePlaying(strip, false)
+    }
 
     // Shown and laid out: from now on a new pet digs its way up
     Timer {

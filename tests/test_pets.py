@@ -1907,6 +1907,62 @@ class SeveralCopiesTests(unittest.TestCase):
                                 f"{name}:{i + 1}: a loop that should stop while covered")
 
 
+
+class UnderWindowsTests(unittest.TestCase):
+    """On the laptop screen a window over the middle of the dashboard left its
+    top and bottom showing: the widget wasn't covered, so its pets went on
+    moving under the window, and each of their pictures redrew the whole
+    desktop (plasmashell at half a core all day, 2026-11-02). Now windows over
+    a part of it hide what's under them, several windows together cover it as
+    one does, and the pets' clock runs only while a stage of pets shows."""
+
+    COVER = json.dumps(str(ROOT / "ui/cover.mjs"))
+
+    def covers(self, rects, r):
+        return run_node("import { covers } from %s;\nconsole.log(JSON.stringify(covers(%s, %s)));"
+                        % (self.COVER, json.dumps(rects), json.dumps(r)))
+
+    WIDGET = {"x": 656, "y": 0, "width": 672, "height": 1008}
+
+    def test_a_window_over_the_middle_leaves_the_edges(self):
+        kwrite = {"x": 384, "y": 144, "width": 1152, "height": 748}
+        self.assertFalse(self.covers([kwrite], self.WIDGET))
+        # (a stage of pets in the middle is under it)
+        self.assertTrue(self.covers([kwrite], {"x": 656, "y": 300, "width": 672, "height": 120}))
+        self.assertFalse(self.covers([kwrite], {"x": 656, "y": 850, "width": 672, "height": 120}))
+
+    def test_windows_together_cover_it_as_one_does(self):
+        self.assertTrue(self.covers([{"x": 0, "y": 0, "width": 1920, "height": 1036}], self.WIDGET))
+        halves = [{"x": 0, "y": 0, "width": 960, "height": 1080}, {"x": 960, "y": 0, "width": 960, "height": 1080}]
+        self.assertTrue(self.covers(halves, self.WIDGET))
+        self.assertFalse(self.covers(halves[:1], self.WIDGET))
+        self.assertFalse(self.covers([], self.WIDGET))
+
+    def test_a_gap_between_tiled_windows_shows_nothing(self):
+        gap = [{"x": 0, "y": 0, "width": 959, "height": 1080}, {"x": 961, "y": 0, "width": 959, "height": 1080}]
+        self.assertTrue(self.covers(gap, self.WIDGET))
+        wide = [{"x": 0, "y": 0, "width": 950, "height": 1080}, {"x": 970, "y": 0, "width": 950, "height": 1080}]
+        self.assertFalse(self.covers(wide, self.WIDGET))
+
+    def test_what_is_under_windows_holds_still(self):
+        main = (ROOT / "ui/main.qml").read_text()
+        strip = (ROOT / "ui/PetStrip.qml").read_text()
+        clock = main[main.index("FrameAnimation {"):][:300]
+        self.assertIn("running: Plasmoid.configuration.showPet && root.playingStages.length > 0", clock)
+        self.assertIn("readonly property bool playing: live && !root.coveredByWindow && inView && (!underWindows || cursorX >= 0)", strip)
+        self.assertIn("onPlayingChanged: root.stagePlaying(strip, playing)", strip)
+        self.assertIn("root.stagePlaying(strip, false)", strip[strip.index("Component.onDestruction"):])
+        self.assertIn("function onWindowsOverChanged() { strip.checkWindows() }", strip)
+        self.assertIn("!root.underWindows(headerIcon)", (ROOT / "ui/FullRepresentation.qml").read_text())
+        self.assertIn("!root.underWindows(ticker)", (ROOT / "ui/Ticker.qml").read_text())
+
+    def test_titles_that_keep_changing_dont_hold_the_check_back(self):
+        # (a terminal's title changes several times a second while Claude
+        # works: restarted at each, the 100 ms check never ran)
+        watch = (ROOT / "ui/CoverWatch.qml").read_text()
+        self.assertIn("onDataChanged: if (!check.running) check.start()", watch)
+        self.assertNotIn("onDataChanged: check.restart()", watch)
+
 class NewChatTests(unittest.TestCase):
     def test_only_a_new_chat_switches_vscode_on_a_host(self):
         # A new chat on an SSH host's other account opens in VS Code, which
