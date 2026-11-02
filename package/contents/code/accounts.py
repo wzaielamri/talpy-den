@@ -32,7 +32,9 @@ Claude keeps the login in the folder. This script never reads it.
   Refused while chats run on the account.
 - --remove logs out, then moves the folder to the Trash (without the login)
   and removes its claude-NAME command. Only for ~/.claude-NAME folders that
-  no chat, ~/.claude or VS Code's Claude uses.
+  no chat, ~/.claude or VS Code's Claude uses. What other accounts link to
+  in it (the settings --share-from shared from it, a projects/ folder linked
+  whole, …) moves to them first (hand_over), so they keep it.
 - --default makes the account the default one, listed first everywhere
   (talpy_den.default_profile): VS Code's Claude runs on it (only that
   entry of VS Code's settings changes; --no-vscode: the VS Code extension
@@ -50,6 +52,7 @@ Prints one JSON line, {"ok": bool, "message": str, ...} (with --remote,
 after a marker line).
 """
 
+import errno
 import json
 import os
 import re
@@ -279,16 +282,40 @@ def auth_status(profile, home, claude):
             "email": cs.clean_text(data.get("email"), 80) or None}
 
 
-def linked_from(profile, profiles):
-    """What the other profiles link to in this profile's folder (settings
-    shared from it, a projects/ folder shared through a link, …): "side:
-    settings.json, skills/mine", or "". Gone to the Trash, they'd lose it."""
+def within(path, real):
+    return path == real or path.startswith(real + os.sep)
+
+
+def through(link, real):
+    """Whether link, or a link it leads to, points into the folder real (a
+    link to a link in it breaks once it's gone too, though its end is
+    elsewhere)."""
+    path = str(link)
+    for _ in range(40):  # (links in a loop end somewhere)
+        if not os.path.islink(path):  # (never raises, unlike Path's on Python 3.7)
+            return False
+        try:
+            to = os.path.join(os.path.dirname(path), os.readlink(path))
+        except OSError:
+            return False
+        head, name = os.path.split(to.rstrip(os.sep))
+        # (the folder it names with its links followed, the name itself not)
+        path = os.path.realpath(to) if name in ("", ".", "..") else os.path.join(os.path.realpath(head), name)
+        if within(path, real):
+            return True
+    return False
+
+
+def links_into(profile, profiles, preferred=None):
+    """[(profile, item)]: the links of the other profiles that point into
+    this profile's folder (settings shared from it, a projects/ folder
+    linked whole, …), the preferred profile's first. Gone to the Trash, they'd
+    lose what they point at."""
     real = str(profile.real)
     found = []
-    for p in profiles:
-        if p.real == profile.real:
-            continue
-        names = []
+    others = [p for p in profiles if p.real != profile.real]
+    others.sort(key=lambda p: preferred is None or p.real != preferred.real)  # (stable)
+    for p in others:
         try:
             entries = sorted(os.listdir(str(p.path)))
         except OSError:
@@ -300,14 +327,125 @@ def linked_from(profile, profiles):
                     items = [f"{e}/{c}" for c in sorted(os.listdir(str(p.path / e)))]
                 except OSError:
                     items = []
-            for item in items:
-                if os.path.islink(str(p.path / item)):  # (never raises, unlike Path's on Python 3.7)
-                    to = os.path.realpath(str(p.path / item))
-                    if to == real or to.startswith(real + os.sep):
-                        names.append(item)
-        if names:
-            found.append(f"{p.label}: {', '.join(names)}")
-    return "; ".join(found)
+            found.extend((p, item) for item in items if through(p.path / item, real))
+    return found
+
+
+def hand_over_plan(profile, profiles, preferred=None):
+    """What hand_over would move: [{"path" (in profile's folder), "item"
+    (its name there), "to" (the profile it goes to), "link" (where it goes:
+    its link there), "others" (the labels of the other profiles that link
+    to it)}], in order, and "" or why it can't (a link to the folder itself)."""
+    real = str(profile.real)
+    plan = []
+    for p, item in links_into(profile, profiles, preferred):
+        final = os.path.realpath(str(p.path / item))
+        if final == real:
+            return [], f"{p.label}'s {item} is a link to the whole folder: remove that link first"
+        if not within(final, real):  # (it leads elsewhere through a link in it: pointed there)
+            continue
+        entry = next((e for e in plan if within(final, e["path"])), None)  # (one moving takes this along)
+        if entry is None:
+            plan.append({"path": final, "item": os.path.relpath(final, real), "to": p, "link": p.path / item,
+                         "others": []})
+        elif p.real != entry["to"].real and p.label not in entry["others"]:
+            entry["others"].append(p.label)
+    return plan, ""
+
+
+def hand_over_text(plan, done=False):
+    """The hand-over in a sentence (done: what moved, in words), or ""."""
+    receivers = {}
+    for e in plan:
+        items, others = receivers.setdefault(e["to"].label, ([], []))
+        items.append(e["item"])
+        others.extend(o for o in e["others"] if o not in others)
+    parts = []
+    for label, (items, others) in receivers.items():
+        many = len(items) > 1
+        parts.append(f"{and_list(items)}{' moved' if done else ''} to {label}"
+                     + (f" ({and_list(others)} {'keep' if len(others) > 1 else 'keeps'} sharing "
+                        f"{'them' if many else 'it'} there)" if others else ""))
+    if not parts or done:
+        return "; ".join(parts)
+    return f"What your other accounts share from it moves to them first: {'; '.join(parts)}."
+
+
+def and_list(names):
+    names = list(names)
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def point(link, at):
+    """Make link (a link) point at at, in one step."""
+    tmp = f"{link}.talpy-den-{os.getpid()}"
+    os.symlink(at, tmp)
+    try:
+        os.replace(tmp, str(link))
+    except OSError:
+        os.unlink(tmp)
+        raise
+
+
+def hand_over(profile, profiles, home, preferred=None):
+    """Give the other profiles what they link to in profile's folder before
+    it goes to the Trash: each thing moves to the first that links to it
+    (preferred first), in place of its link there, and leaves a link to its
+    new place behind (the folder keeps working until it's gone; on another
+    disk it's copied, the original kept beside, .handed-over); the others'
+    links point at the new place. Every step leaves each link whole, so a
+    failure halfway loses nothing. (the plan done, "" or why not all of it)."""
+    plan, why = hand_over_plan(profile, profiles, preferred)
+    if why:
+        return [], why
+    real, done = str(profile.real), []
+    for e in plan:
+        src, link = e["path"], str(e["link"])
+        if os.path.realpath(link) != src:  # (it moved along with another)
+            continue
+        tmp = f"{link}.talpy-den-{os.getpid()}"
+        kept = None
+        try:
+            try:
+                os.rename(src, tmp)
+            except OSError as exc:
+                if exc.errno != errno.EXDEV:
+                    raise
+                if os.path.isdir(src):
+                    shutil.copytree(src, tmp, symlinks=True)
+                else:
+                    shutil.copy2(src, tmp)
+                kept, n = src + ".handed-over", 2
+                while os.path.lexists(kept):
+                    kept, n = f"{src}.handed-over.{n}", n + 1
+                os.rename(src, kept)
+            try:
+                if os.path.isdir(tmp):
+                    os.unlink(link)  # (a folder can't take a link's place in one step)
+                    os.rename(tmp, link)
+                else:
+                    os.replace(tmp, link)
+            except OSError:
+                if kept is not None:
+                    os.rename(kept, src)
+                    shutil.rmtree(tmp) if os.path.isdir(tmp) else os.unlink(tmp)
+                else:
+                    os.rename(tmp, src)
+                if not os.path.lexists(link):
+                    os.symlink(src, link)
+                raise
+            os.symlink(os.path.realpath(link), src)
+        except OSError as exc:
+            return done, f"{e['item']} couldn't move to {e['to'].label} ({exc.strerror or exc})"
+        done.append(e)
+    for p, item in links_into(profile, profiles, preferred):  # (the rest point at the new places)
+        final = os.path.realpath(str(p.path / item))
+        if not within(final, real):
+            try:
+                point(p.path / item, final)
+            except OSError as exc:
+                return done, f"{p.label}'s {item} couldn't point at {short(final, home)} ({exc.strerror or exc})"
+    return done, ""
 
 
 def not_removable(profile, profiles, home, vscode_on, chats):
@@ -324,9 +462,9 @@ def not_removable(profile, profiles, home, vscode_on, chats):
                 return "~/.claude links to it (plain claude runs on it): point ~/.claude at another account first"
         except (OSError, RuntimeError):
             pass
-    linked = linked_from(profile, profiles)
+    linked = hand_over_plan(profile, profiles)[1]  # (what they link to otherwise moves to them: hand_over)
     if linked:
-        return f"other accounts link to files in it ({linked}): give them copies first"
+        return linked
     if vscode_on is not None and vscode_on.real == profile.real:
         return "VS Code's Claude runs on it: switch VS Code's Claude to another account first"
     if chats:
@@ -382,6 +520,8 @@ def list_accounts(home, extra, check=False):
             "commandName": name,
             "command": bool(name) and ours(bin_dir(home) / name),
             "notRemovable": not_removable(p, profiles, home, vscode_on, chats),
+            # what its Remove moves to the other accounts first, in a sentence ("": nothing)
+            "handOver": hand_over_text(hand_over_plan(p, profiles, chosen)[0]),
         })
     switchable = vscode_state(home, profiles)[0]
     return True, "", {"accounts": accounts, "canCheck": found is not None, "linked": default_link(home),
@@ -621,13 +761,17 @@ def remove_account(home, extra, key):
            or trash_problem(profile.path, home))
     if why:
         return False, f"{profile.label} isn't removed: {why}"
+    # what the other accounts link to in it moves to them (the default account first)
+    handed, why = hand_over(profile, profiles, home, vscode_on or cs.plain_profile(home, profiles))
+    if why:
+        return False, f"{profile.label} isn't removed: {why}" + (f" ({hand_over_text(handed, True)})" if handed else "")
     claude = claude_path(home)
     credentials = profile.path / ".credentials.json"
     notes = []
     if claude is not None:
         why = stop_service(profile, home, claude)
         if why:
-            return False, f"{profile.label} isn't removed: {why}"
+            return False, f"{profile.label} isn't removed: {why}" + (f" ({hand_over_text(handed, True)})" if handed else "")
         if profile.account_id is not None or os.path.lexists(str(credentials)):
             code, said = run_claude(profile, home, claude, ["auth", "logout"])
             if code != 0:
@@ -644,6 +788,8 @@ def remove_account(home, extra, key):
     name = move_to_trash(profile.path, home)
     note_logged_out(cs.cache_dir(home), profile, False)
     message = f"Removed {profile.label}: {short(profile.path, home)} is in the Trash ({name}), without its login"
+    if handed:
+        notes.insert(0, hand_over_text(handed, True))
     return True, message + ("; " + "; ".join(notes) if notes else "")
 
 

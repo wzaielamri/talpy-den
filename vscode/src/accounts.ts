@@ -32,6 +32,7 @@ export interface AccountInfo {
   commandName: string | null; // claude-work
   command: boolean; // ~/.local/bin/claude-work is there (made by Talpy Den)
   notRemovable: string; // why it can't be removed, or ""
+  handOver?: string; // what Remove moves to the other accounts first (they link to it), in a sentence, or ""
 }
 
 export function accountDetail(a: AccountInfo): string {
@@ -247,7 +248,7 @@ export class Accounts {
       `Remove ${a.label}${this.where(host)}?`,
       {
         modal: true,
-        detail: `It logs out, then moves ${a.folder} to the Trash${host ? ` of ${host}` : ""} with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.`,
+        detail: `It logs out, then moves ${a.folder} to the Trash${host ? ` of ${host}` : ""} with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.${a.handOver ? ` ${a.handOver}` : ""}`,
       },
       "Remove",
     );

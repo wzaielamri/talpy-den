@@ -348,23 +348,98 @@ class RemoveTests(Home):
         self.assertIn("another disk than your Trash", message)
         self.assertTrue((self.home / ".claude-work/.credentials.json").exists())
 
-    def test_not_while_another_account_links_into_it(self):
-        # side shares work's settings (or one projects/ folder through a
-        # link): they'd go to the Trash with work, side left with dead links
+    def test_hands_over_what_other_accounts_link_into_it(self):
+        # side and third share work's CLAUDE.md, side its projects/ folder
+        # too: Remove gives them to side (the first that links to each),
+        # third's link points there, and work's folder goes to the Trash
+        # with links to them
         write(self.home / ".claude-work/CLAUDE.md", "work's rules")
         self.assertTrue(self.add("side", share_from=".claude-work")[0])
-        ok, message = accounts.remove_account(self.home, [], ".claude-work")
-        self.assertFalse(ok)
-        self.assertIn("other accounts link to files in it (side: CLAUDE.md)", message)
-        self.assertIn("side: CLAUDE.md", self.listed()[".claude-work"]["notRemovable"])
-        side = self.home / ".claude-side"
-        (side / "CLAUDE.md").unlink()
+        self.assertTrue(self.add("third", share_from=".claude-work")[0])
+        side, third = self.home / ".claude-side", self.home / ".claude-third"
         os.symlink(self.home / ".claude-work/projects", side / "projects")
-        self.assertIn("(side: projects)", accounts.remove_account(self.home, [], ".claude-work")[1])
+        listed = self.listed()[".claude-work"]
+        self.assertEqual(listed["notRemovable"], "")
+        self.assertEqual(listed["handOver"], "What your other accounts share from it moves to them first: "
+                                             "CLAUDE.md and projects to side (third keeps sharing them there).")
+        self.assertEqual(self.listed()[".claude-side"]["handOver"], "")
+        ok, message = accounts.remove_account(self.home, [], ".claude-work")
+        self.assertTrue(ok, message)
+        self.assertIn("; CLAUDE.md and projects moved to side (third keeps sharing them there)", message)
+        self.assertFalse(os.path.islink(side / "CLAUDE.md"))
+        self.assertEqual((side / "CLAUDE.md").read_text(), "work's rules")
+        self.assertTrue((side / "projects/-y/b.jsonl").is_file())
+        self.assertFalse(os.path.islink(side / "projects"))
+        self.assertEqual(os.readlink(third / "CLAUDE.md"), os.path.realpath(side / "CLAUDE.md"))
+        moved = self.trash() / "files/.claude-work"
+        self.assertEqual(os.readlink(moved / "CLAUDE.md"), os.path.realpath(side / "CLAUDE.md"))
+        self.assertEqual(sorted(os.listdir(side)), [".profile-name", "CLAUDE.md", "projects"])
+
+    def test_the_default_account_gets_it_first(self):
+        write(self.home / ".claude-work/CLAUDE.md", "work's rules")
+        self.add("side", share_from=".claude-work")
+        self.add("third", share_from=".claude-work")
+        third = self.home / ".claude-third"
+        default = lambda home, profiles, *a, **k: (True, next(p for p in profiles if p.label == "third"))  # noqa: E731
+        with mock.patch.object(cs, "vscode_profile", default):
+            self.assertIn("CLAUDE.md to third (side keeps sharing it there)", self.listed()[".claude-work"]["handOver"])
+            self.assertTrue(accounts.remove_account(self.home, [], ".claude-work")[0])
+        self.assertEqual((third / "CLAUDE.md").read_text(), "work's rules")
+        self.assertEqual(os.readlink(self.home / ".claude-side/CLAUDE.md"), os.path.realpath(third / "CLAUDE.md"))
+
+    def test_a_link_through_it_points_past_it(self):
+        # work's settings.json is a link to a shared one, side's a link to
+        # work's: side's then points at the shared one, nothing moves
+        shared = self.home / "dotfiles/settings.json"
+        write(shared, {"theme": "dark"})
+        os.symlink(shared, self.home / ".claude-work/settings.json")
+        self.add("side")
+        os.symlink(self.home / ".claude-work/settings.json", self.home / ".claude-side/settings.json")
+        self.assertEqual(self.listed()[".claude-work"]["handOver"], "")
+        ok, message = accounts.remove_account(self.home, [], ".claude-work")
+        self.assertTrue(ok, message)
+        self.assertNotIn(" to side", message)
+        self.assertEqual(os.readlink(self.home / ".claude-side/settings.json"), os.path.realpath(shared))
+
+    def test_on_another_disk_it_is_copied(self):
+        write(self.home / ".claude-work/CLAUDE.md", "work's rules")
+        self.add("side", share_from=".claude-work")
+        work, rename = str(self.home / ".claude-work") + os.sep, os.rename
+
+        def across(src, dst):
+            if str(src).startswith(work) and not str(dst).startswith(work):
+                raise OSError(accounts.errno.EXDEV, "Invalid cross-device link")
+            return rename(src, dst)
+        with mock.patch.object(accounts.os, "rename", across):
+            ok, message = accounts.remove_account(self.home, [], ".claude-work")
+        self.assertTrue(ok, message)
+        side = self.home / ".claude-side/CLAUDE.md"
+        self.assertFalse(os.path.islink(side))
+        self.assertEqual(side.read_text(), "work's rules")
+        moved = self.trash() / "files/.claude-work"
+        self.assertEqual((moved / "CLAUDE.md.handed-over").read_text(), "work's rules")
+        self.assertEqual(os.readlink(moved / "CLAUDE.md"), os.path.realpath(side))
+
+    def test_a_failed_move_keeps_every_link_whole(self):
+        write(self.home / ".claude-work/CLAUDE.md", "work's rules")
+        self.add("side", share_from=".claude-work")
+        with mock.patch.object(accounts.os, "replace", mock.Mock(side_effect=PermissionError(13, "Permission denied"))):
+            ok, message = accounts.remove_account(self.home, [], ".claude-work")
+        self.assertFalse(ok)
+        self.assertIn("isn't removed: CLAUDE.md couldn't move to side (Permission denied)", message)
+        self.assertEqual((self.home / ".claude-side/CLAUDE.md").read_text(), "work's rules")
+        self.assertEqual((self.home / ".claude-work/CLAUDE.md").read_text(), "work's rules")
         self.assertTrue((self.home / ".claude-work/.credentials.json").exists())
         self.assertEqual(self.calls_made(), [])
-        (side / "projects").unlink()
-        self.assertTrue(accounts.remove_account(self.home, [], ".claude-work")[0])
+
+    def test_not_while_a_link_points_at_the_whole_folder(self):
+        self.add("side")
+        os.symlink(self.home / ".claude-work", self.home / ".claude-side/old")
+        ok, message = accounts.remove_account(self.home, [], ".claude-work")
+        self.assertFalse(ok)
+        self.assertIn("side's old is a link to the whole folder: remove that link first", message)
+        self.assertTrue((self.home / ".claude-work/.credentials.json").exists())
+        self.assertEqual(self.calls_made(), [])
 
     def test_not_with_a_mount_inside(self):
         # a folder bind-mounted in it (another account's projects/, say) would

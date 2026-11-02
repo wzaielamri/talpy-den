@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Removing an account others share from gives them what they share:** an
+  account whose settings you shared when adding another, or whose `projects`
+  folder another account links to, couldn't be removed, and nothing made
+  the copies it asked for. Now *Remove…* moves each shared file or folder to
+  the first account that links to it (the default account first) before the
+  folder goes to the Trash, the others keep sharing it there, and the
+  question says where each goes (also on SSH hosts).
 - **A sleeping Talpy wakes up for a game:** four quick clicks on him while
   he slept only made him grumpy, so no game ever started (only *Play with
   Talpy* woke him). He still grumbles at the first three, and on the fourth

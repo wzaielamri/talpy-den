@@ -406,7 +406,9 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
                 ? `Remove ${a.label} on ${hostLabel(state.host)}? It logs out, then moves ${a.folder} to the Trash of ${hostLabel(state.host)} with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.`
                 : removing
                     ? `Remove ${a.label}? It logs out, then moves ${a.folder} to the Trash with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.`
-                    : `Log out of ${a.label}? Claude deletes its login; its chats and history stay, and Log in… signs it in again (also with another account).`)}</span>`;
+                    : `Log out of ${a.label}? Claude deletes its login; its chats and history stay, and Log in… signs it in again (also with another account).`)
+                // (what other accounts link to in it moves to them first: accounts.py hand_over)
+                + (removing && a.handOver ? esc(` ${a.handOver}`) : '')}</span>`;
             row.add_css_class('property');   // (the question at full strength, the account's name over it)
             button(removing ? 'Remove' : 'Log out', removing ? 'delete' : 'signOut', () => act([removing ? '--remove' : '--logout', a.key], a.key));
             button('Cancel', '', () => {

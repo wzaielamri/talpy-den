@@ -335,9 +335,11 @@ ConfigPage {
                             textFormat: Text.PlainText
                             wrapMode: Text.Wrap
                             color: Kirigami.Theme.neutralTextColor
+                            // (what other accounts link to in it moves to them first: accounts.py hand_over)
                             text: page.confirm.startsWith("remove:")
                                   ? (page.host ? i18n("Remove %1 on %3? It logs out, then moves %2 to the Trash of %3 with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.", card.account.label, card.account.folder, page.hostLabel(page.host))
                                                : i18n("Remove %1? It logs out, then moves %2 to the Trash with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.", card.account.label, card.account.folder))
+                                    + (card.account.handOver ? " " + card.account.handOver : "")
                                   : i18n("Log out of %1? Claude deletes its login; its chats and history stay, and Log in… signs it in again (also with another account).", card.account.label)
                         }
                         QQC2.Button {
