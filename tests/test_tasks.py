@@ -1188,8 +1188,9 @@ class ContinueAfterResetTests(TaskFixture):
                                                     "--effort", "xhigh", cs.CONTINUE_PROMPT])
         self.assertEqual(cs.chat_model(self.home, self.profile, "e3de1242-0000-4000-8000-000000000000"), (None, None))
 
-    def test_a_background_chat_of_it_wakes_on_the_model_and_effort_it_last_ran_on(self):
-        # (its job saved no model or effort, or others: changed there, as /model and /effort in it would)
+    def test_a_background_chat_of_it_wakes_with_its_own_options_and_what_they_lack(self):
+        # (the options its job saved are Claude's own, rewritten on /model, /effort and a mode
+        # change in it: they win; its transcript and status line only add what they lack)
         self.stopped_chat(dict(reply("On it.", self.now - 100), message=dict(reply("On it.", self.now - 100)["message"],
                                                                                  model="claude-opus-5-5")))
         write(cs.cache_dir(self.home) / "statusline/.claude-work" / f"{self.SID}.json",
@@ -1197,16 +1198,87 @@ class ContinueAfterResetTests(TaskFixture):
         state = self.home / f".claude-work/jobs/{self.SID[:8]}/state.json"
         write(state, {"sessionId": self.SID, "name": "Fix it", "respawnFlags": ["--permission-mode", "auto", "--effort", "low"]})
         answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), force=True)
-        self.assertEqual(answer["message"], "Went on in the background on work (Opus 5.5 · xhigh)")
+        self.assertEqual(answer["message"], "Went on in the background on work (Opus 5.5 · low)")
         self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])  # (no copy)
         self.assertEqual(json.loads(state.read_text()), {"sessionId": self.SID, "name": "Fix it", "respawnFlags": [
-            "--permission-mode", "auto", "--model", "claude-opus-5-5", "--effort", "xhigh"]})
+            "--permission-mode", "auto", "--effort", "low", "--model", "claude-opus-5-5"]})
         # a record of another shape is left as it is, and the answer says so
         write(state, {"sessionId": self.SID, "respawnFlags": "--model opus"})
         answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), force=True)
         self.assertEqual(answer["message"], "Went on in the background on work (1a2b3c4d), "
                                             "with the model and effort Claude saved for it")
         self.assertEqual(json.loads(state.read_text())["respawnFlags"], "--model opus")
+
+    def mode_and_effort_not_the_accounts(self):
+        """A chat in auto mode on xhigh effort, on an account whose settings
+        say model "opus" and the default mode, stopped by the limit."""
+        write(self.home / ".claude-work/settings.json", {"model": "opus", "permissions": {"defaultMode": "default"}})
+        t = self.now - 120
+        write(self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl",
+              lines(prompt("fix it", t, cwd=str(self.folder), permissionMode="default"),
+                    {"type": "permission-mode", "permissionMode": "auto", "sessionId": self.SID},
+                    dict(reply("On it.", t + 1), message=dict(reply("On it.", t + 1)["message"], model="claude-opus-5-5")),
+                    limit_error("You've hit your session limit", t + 2)))
+        write(cs.cache_dir(self.home) / "statusline/.claude-work" / f"{self.SID}.json",
+              {"session_id": self.SID, "model": {"id": "claude-opus-5-5"}, "effort": {"level": "xhigh"}})
+        return self.home / f".claude-work/jobs/{self.SID[:8]}/state.json"
+
+    def test_a_copy_that_saved_only_its_model_wakes_in_the_chats_mode_and_effort(self):
+        # (a copy Claude made of a background chat runs in the chat's mode but saves only the
+        # model the account's settings name: woken with that, it would come back in the default
+        # mode and effort; so the go-on adds them to what it saved, then wakes it)
+        state = self.mode_and_effort_not_the_accounts()
+        write(state, {"sessionId": self.SID, "template": "bg", "respawnFlags": ["--model", "opus"]})
+        answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
+        self.assertEqual(answer["message"], "Went on in the background on work (Opus · xhigh)")
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])  # (woken, no copy)
+        self.assertEqual(json.loads(state.read_text())["respawnFlags"],
+                         ["--model", "opus", "--permission-mode", "auto", "--effort", "xhigh"])
+
+    def test_a_job_its_service_still_holds_goes_on_as_a_copy_with_the_jobs_own_options(self):
+        # (one Claude's background service still holds after the wait is copied by claude --bg
+        # --resume, which saves only the options given: so they're the job's own, never none)
+        state = self.mode_and_effort_not_the_accounts()
+        write(state, {"sessionId": self.SID, "template": "bg",
+                      "respawnFlags": ["--permission-mode", "auto", "--model", "claude-opus-5-5", "--effort", "xhigh"]})
+        entry = {"sessionId": self.SID, "kind": "bg", "jobId": self.SID[:8], "status": "idle"}
+        stops = []
+        with mock.patch.object(cs, "stop_background", side_effect=lambda *a, **k: stops.append(a[1]) or (True, "stopped")), \
+                mock.patch.object(cs, "live_entries_all", side_effect=lambda *_: [] if stops else [(entry, self.profile, self.profile)]), \
+                mock.patch.object(cs, "daemon_holds", return_value=True):  # (still held after the wait)
+            answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), wait=0.3)
+        self.assertTrue(answer["ok"], answer)
+        self.assertEqual(stops, [self.SID[:8]])
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, "--permission-mode", "auto",
+                                                    "--model", "claude-opus-5-5", "--effort", "xhigh", cs.CONTINUE_PROMPT])
+        self.assertEqual(answer["message"], "Went on in the background on work (Opus 5.5 · xhigh)")
+        # once it let go, the same job is woken with them (no options, which would start a copy)
+        stops.clear()
+        with mock.patch.object(cs, "stop_background", side_effect=lambda *a, **k: stops.append(a[1]) or (True, "stopped")), \
+                mock.patch.object(cs, "live_entries_all", side_effect=lambda *_: [] if stops else [(entry, self.profile, self.profile)]), \
+                mock.patch.object(cs, "daemon_holds", return_value=False):
+            self.assertTrue(cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])
+
+    def test_another_chats_job_under_its_short_id_means_a_copy_with_its_options(self):
+        # (Claude starts a copy then, whatever is given: it saves these)
+        self.mode_and_effort_not_the_accounts()
+        write(self.home / f".claude-work/jobs/{self.SID[:8]}/state.json",
+              {"sessionId": self.SID[:8] + "-0000-4000-8000-000000000000", "respawnFlags": ["--model", "sonnet"]})
+        self.assertTrue(cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, "--permission-mode", "auto",
+                                                    "--model", "claude-opus-5-5", "--effort", "xhigh", cs.CONTINUE_PROMPT])
+
+    def test_the_answer_says_when_claude_started_a_copy_after_all(self):
+        state = self.mode_and_effort_not_the_accounts()
+        write(state, {"sessionId": self.SID, "respawnFlags": ["--permission-mode", "auto", "--model", "claude-opus-5-5",
+                                                              "--effort", "xhigh"]})
+        write(self.bin / "claude", FAKE_CLAUDE.format(python=sys.executable, log=str(self.log)) + (
+            "sys.stderr.write('note: session e3de1242 is already running in the background, so this started a copy '\n"
+            "                 'as 1a2b3c4d. `claude attach e3de1242` opens the original.\\n')\n"))
+        answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
+        self.assertEqual(answer["message"], "Went on in the background on work (Opus 5.5 · xhigh), as a copy (1a2b3c4d)")
+
 
     def test_a_panel_chat_goes_on_in_the_mode_its_first_prompt_named(self):
         # (Claude Code's panel names it at the first prompt only; big tool results after it)

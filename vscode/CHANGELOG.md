@@ -14,6 +14,13 @@
   background chat does the same (it stopped the chat, even mid-turn). Where
   the service doesn't take it, Talpy Den stops and resumes it as before,
   once the service has let go of it, so no copy is made.
+- **A background chat woken by a go-on comes back in its own permission
+  mode and effort:** a copy Claude made of a background chat saves only
+  your settings' model, so woken later it came back in the default mode
+  and effort. A go-on now adds the mode, model and effort a chat's saved
+  options lack before it wakes it (the ones it saved stay); a chat the
+  service still holds after the wait gets a copy given its own, and the
+  answer says *as a copy* when Claude made one anyway.
 - **Plans in a project's own folder are listed:** Claude's
   `plansDirectory` setting and a project's `.claude/plans` hold plans
   the view didn't show. Each is listed once, under the account whose chat

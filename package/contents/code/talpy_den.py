@@ -6057,7 +6057,7 @@ def task_command(profile, prompt, home=None, claude="claude", options=()):
 
 
 def start_background(profile, folder, prompt, home=None, claude="claude", wait=BACKGROUND_WAIT, prefix=(),
-                     resume=None, options=()):
+                     resume=None, options=(), notes=None):
     """Start a background session on this profile in folder, with prompt:
     (ok, message, its short id or None). prefix: words claude runs behind,
     e.g. systemd-run's, so a background service it starts lives on its own
@@ -6065,7 +6065,8 @@ def start_background(profile, folder, prompt, home=None, claude="claude", wait=B
     shell ends: jump.scope_prefix). resume: the id of a chat it goes on
     with (claude --bg --resume: the same chat, if nothing has it open).
     options: claude's, e.g. chat_options' (going on with a chat: only
-    go_on_options', else Claude would start a copy of it)."""
+    go_on_options', else Claude would start a copy of it). notes: a list
+    that gets the notes claude printed (say, that it started a copy)."""
     import subprocess
     home = home or Path.home()
     if not prompt.strip():
@@ -6100,6 +6101,8 @@ def start_background(profile, folder, prompt, home=None, claude="claude", wait=B
         return False, lines[-1] if lines else f"claude --bg failed (exit code {r.returncode})", None
     found = SHORT_ID.findall(out)
     job = found[-1] if found else None
+    if notes is not None:
+        notes.extend(l.strip() for l in err.splitlines() if l.strip().startswith("note:"))
     return True, (f"Started in the background on {profile.label}" + (f" ({job})" if job else "")), job
 
 
@@ -6139,19 +6142,38 @@ CONTINUE_PROMPT = "The usage limit has reset: go on where you stopped."
 GO_ON_MODES = ("default", "manual", "acceptEdits", "plan", "auto", "dontAsk")
 
 
-def go_on_options(profile, chat_id, mode, model=None, effort=None):
+def go_on_options(mode, model=None, effort=None):
     """claude's options for going on with a chat in the background (claude
-    --bg --resume), whose permission mode is mode, model and reasoning effort
-    model and effort (chat_model; None: not known): those, so the background
-    session it becomes saves them and goes on with them each time it's woken
-    (with none, the first go-on keeps the chat's mode but the session saves
-    none, and the next wakes up in Claude's default one, on whatever model
-    and effort the process that takes it has). None when a background
-    session of it is there already: Claude wakes that one with the options
-    it saved, and with any given here it would start a copy."""
-    if (profile.path / "jobs" / chat_id[:8]).exists():
-        return []
+    --bg --resume) as a background session of its own: its permission mode,
+    model and reasoning effort (None: not known), so that session saves them
+    (respawnFlags) and goes on with them each time it's woken. With none,
+    the first go-on keeps the chat's mode, but the session saves only the
+    model the account's settings name, and a later wake comes back in
+    Claude's default mode and effort. Not for a background session of it
+    that's there and settled: Claude wakes that one with the options it
+    saved, and any given here would start a copy of it."""
+    mode = "default" if mode == "manual" else mode
     return (["--permission-mode", mode] if mode in GO_ON_MODES else []) + chat_options(model, effort)
+
+
+SAVED_OPTIONS = {"--permission-mode": "mode", "--model": "model", "-m": "model", "--effort": "effort"}
+
+
+def saved_flags(flags):
+    """{"mode", "model", "effort"}: those a background job's saved options
+    (its state.json's respawnFlags, what Claude wakes it with) name."""
+    found = {}
+    if not isinstance(flags, list):
+        return found
+    for i, flag in enumerate(flags):
+        name, eq, value = flag.partition("=") if isinstance(flag, str) else ("", "", "")
+        if name not in SAVED_OPTIONS:
+            continue
+        if not eq:
+            value = flags[i + 1] if i + 1 < len(flags) and isinstance(flags[i + 1], str) else ""
+        if value and not value.startswith("-"):
+            found[SAVED_OPTIONS[name]] = value
+    return found
 
 
 def chat_model(home, profile, chat_id, path=None):
@@ -6190,31 +6212,28 @@ def last_model(path):
         nbytes *= 4
 
 
-def saved_options(state_path, chat_id, model, effort):
-    """Have a chat's background job (its state.json) wake on model and
-    effort: the --model and --effort pair in the options it saved
-    (respawnFlags) replaced, all else kept, as Claude does it itself on
-    /model and /effort in it. Only while it's settled (no process has it) and
+def saved_options(state_path, chat_id, mode, model, effort):
+    """Have a chat's background job (its state.json) wake in its permission
+    mode, on its model and effort: those its saved options (respawnFlags)
+    lack are added (a copy Claude made of a chat saves only the model its
+    account's settings name, though it runs in the chat's mode), as Claude
+    adds them itself on a mode change, /model and /effort in it; the ones it
+    has are its own and stay. Only while it's settled (no process has it) and
     in the shape it should have. Whether its options carry them now."""
     import shutil
     job = read_json(state_path)
     flags = job.get("respawnFlags") if isinstance(job, dict) and job.get("sessionId") == chat_id else None
     if not isinstance(flags, list) or not all(isinstance(f, str) for f in flags):
         return False
-    new, skip = [], False
-    for f in flags:
-        if skip:
-            skip = False
-        elif f in (("--model",) if model else ()) + (("--effort",) if effort else ()):
-            skip = True
-        elif not ((model and f.startswith("--model=")) or (effort and f.startswith("--effort="))):
-            new.append(f)
-    new += chat_options(model, effort)
-    if new != flags:
+    have = saved_flags(flags)
+    mode = "default" if mode == "manual" else mode
+    add = (["--permission-mode", mode] if mode in GO_ON_MODES and "mode" not in have else []) \
+        + chat_options(None if "model" in have else model, None if "effort" in have else effort)
+    if add:
         tmp = state_path.with_name(f".{state_path.name}.{os.getpid()}.tmp")
         try:
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(dict(job, respawnFlags=new), f)
+                json.dump(dict(job, respawnFlags=flags + add), f)
             shutil.copymode(state_path, tmp)
             os.replace(tmp, state_path)
         except OSError:
@@ -6302,24 +6321,43 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     saved = record.get("daemonShort") if isinstance(record, dict) else None
     shorts = {chat_id[:8]} | {s for s in (saved, live[0]["jobId"] if live else None) if valid_id(s)}
     services = [profile] + ([live[1]] if live and live[1] is not profile else [])
+    held = lambda: any(e.get("sessionId") == chat_id for e, _, _ in live_entries_all(profiles)) \
+        or daemon_holds(services, sorted(shorts))
     deadline = time.time() + (END_WAIT if wait is None else wait)
-    while (any(e.get("sessionId") == chat_id for e, _, _ in live_entries_all(profiles))
-           or daemon_holds(services, sorted(shorts))) and time.time() < deadline:
+    holding = held()
+    while holding and time.time() < deadline:
         time.sleep(0.2)
-    # (a picture your message names can be opened, unless Claude wakes a
-    # background session of it, with the options it saved)
-    model, effort = chat_model(home, profile, chat_id, path)
-    woken = (profile.path / "jobs" / chat_id[:8]).exists()
-    settled = not any(e.get("sessionId") == chat_id for e, _, _ in live_entries_all(profiles)) if woken else True
-    carried = not woken or not (model or effort) or (settled and saved_options(state, chat_id, model, effort))
-    pictures = [] if woken else picture_options(home, text)
+        holding = held()
+    settled = not holding
+    # The options a background job of it saved (respawnFlags) are its own (Claude rewrites them on
+    # a mode change, /model and /effort in it): they win, and its transcript and status line only
+    # fill in what they lack. A job of it that's settled is woken with them, given none here (any
+    # would start a copy), once what they lack is added to them (saved_options: a copy Claude made
+    # saved only the model the settings name, and woken with that it comes back in the default
+    # mode and effort). One still held after the wait, or another chat's under its short id, is
+    # copied by Claude whatever is given: the copy is given the job's own (and a picture your
+    # message names can be opened then).
+    guess_model, guess_effort = chat_model(home, profile, chat_id, path)
+    own_job = isinstance(record, dict) and record.get("sessionId") == chat_id
+    flags = saved_flags(record.get("respawnFlags")) if own_job else {}
+    mode = flags.get("mode") or mode
+    model, effort = flags.get("model") or guess_model, flags.get("effort") or guess_effort
+    wakes = own_job and settled
+    carried = not wakes or not (mode or model or effort) or saved_options(state, chat_id, mode, model, effort)
+    options = [] if wakes else go_on_options(mode, model, effort) + picture_options(home, text)
+    notes = []
     ok, message, job = start_background(profile, folder, prompt, home, claude, prefix=prefix, resume=chat_id,
-                                        options=go_on_options(profile, chat_id, mode, model, effort) + pictures)
+                                        options=options, notes=notes)
     if ok:
-        how = " · ".join(w for w in (model_label(model) if model else None, effort) if w) if carried else ""
+        named = (model_label(model) or (model.capitalize() if model.isalpha() else model)) if model else None
+        how = " · ".join(w for w in (named, effort) if w) if carried else ""
         message = f"Went on in the background on {profile.label}" + (f" ({how})" if how else f" ({job})" if job else "")
         if not carried:
             message += ", with the model and effort Claude saved for it"
+        if wakes and job and any("started a copy" in n for n in notes):
+            # (its job ended a moment too late: the copy runs in its mode, but saved only the
+            # model; its next go-on adds the rest, saved_options)
+            message += f", as a copy ({job})"
     answer = {"ok": ok, "message": message, "id": job}
     if busy is not None:
         answer["ended"] = busy[2]
