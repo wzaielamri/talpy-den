@@ -52,9 +52,9 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
   const { canOpen, inCode, reopen, share } = how;
   const goOn = goOnAt(c);
   const goingOn = queuedChat(view.status, c.sessionId, group.host);
-  const kept = group.host ? null : keptChat(view.status, c.sessionId);
-  const later = group.host ? "" : " Once: Keep going beside it goes on after later limits too, until it's done.";
-  const canKeep = !group.host && !kept && !goingOn && goOn > 0;
+  const kept = keptChat(view.status, c.sessionId, group.host);
+  const later = " Once: Keep going beside it goes on after later limits too, until it's done.";
+  const canKeep = !kept && !goingOn && goOn > 0;
   // a click opens its tab (else the chat itself, as the switch above says)
   const paneFirst = view.settings.clickOpensPane !== false;
   const reopenIt = () => post(inCode ? { type: "openInClaudeCode", chat } : { type: "openWindow", chat });

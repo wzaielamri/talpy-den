@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Keep going on SSH hosts and in containers:** a chat on an SSH host or in
+  a container can keep going too (↻ while it works, *Keep going* beside *Go
+  on at …* once a limit stopped it, and in *Recent chats*). It's kept on this
+  computer and goes on from here over ssh: the host's regular check says how
+  the chat stands, and Talpy Den queues each go-on from that, on this
+  computer's clock. A host that hasn't answered for 15 minutes waits, and the
+  *Keeps going* tag says so.
 - **The status bar shows Talpy, still:** its spinner had VS Code redraw the
   window 60 times a second while a chat worked, about 8% of a core, even
   with the window under others. Now the status bar shows Talpy in the panel

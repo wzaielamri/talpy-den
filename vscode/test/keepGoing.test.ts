@@ -4,6 +4,8 @@
 // start with.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import type * as vscode from "vscode";
 import { chatOptionsText } from "../src/actions";
@@ -42,6 +44,37 @@ test("the chats that keep going: found by their id, and what their tag says", ()
   assert.match(keptTitle(k), /goes on by itself in the background a minute after the limit resets/);
   assert.match(keptTitle({ ...k, error: "Gave up after 5 tries: it didn't go on" }), /Gave up after 5 tries/);
   assert.match(keptTitle({ ...k, note: "Its account's login has expired" }), /login has expired/);
+});
+
+test("an SSH host's and a container's chats keep going too, each found under its own host", () => {
+  // (2026-11-02: kept here, with their host; this computer's status lists them all)
+  const here: KeptChat = { chat: "c1", profile: ".claude-work", name: "Fix it", since: NOW, wentOnAt: null, tries: 0, note: "", error: "" };
+  const lab: KeptChat = { ...here, profile: ".claude", host: "lab" };
+  const web: KeptChat = { ...here, profile: ".claude", host: "docker:web@lab" };
+  const status = { keep: [here, lab, web] };
+  assert.equal(keptChat(status, "c1"), here);
+  assert.equal(keptChat(status, "c1", ""), here);
+  assert.equal(keptChat(status, "c1", "lab"), lab);
+  assert.equal(keptChat(status, "c1", "docker:web@lab"), web);
+  assert.equal(keptChat({ keep: [here] }, "c1", "lab"), null, "this computer's isn't the host's");
+  assert.deepEqual(keptChat({ keep: [{ ...here, host: "" }] }, "c1"), { ...here, host: "" });
+  // the buttons and the extension don't leave a host's chat out any more
+  const src = (f: string) => readFileSync(path.join(path.resolve(__dirname, "..", ".."), f), "utf8");
+  const row = src("webview/components/SessionRow.tsx");
+  assert.match(row, /const kept = keptChat\(view\.status, s\.chatId \|\| s\.sessionId, host\);/);
+  assert.match(row, /const canKeep = !kept && s\.state === "working"/);
+  assert.match(row, /\{goOn && !goingOn && !kept \? \(/);
+  assert.doesNotMatch(row, /!host && !kept|kept && !host|host \? null : keptChat/);
+  const recent = src("webview/components/RecentLine.tsx");
+  assert.match(recent, /const kept = keptChat\(view\.status, c\.sessionId, group\.host\);/);
+  assert.match(recent, /const canKeep = !kept && !goingOn && goOn > 0;/);
+  assert.match(src("webview/components/QueuedTasks.tsx"), /keptChat\(view\.status, t\.chat, t\.host\)/);
+  const actions = src("src/actions.ts");
+  assert.match(actions, /\.\.\.\(keep \? \["--keep"\] : \[\]\)/);
+  assert.match(actions, /"--keep-off", id, \.\.\.host,/);
+  assert.match(actions, /\["--end", chat\.host, .*\.\.\.off\]/);
+  assert.match(src("src/view.ts"), /if \(chat\) void this\.actions\.keepGoing\(chat, m\.on === true\);/);
+  assert.match(src("src/dashboard.ts"), /kept: \(chat: string\) => !!keptChat\(this\.status, chat, host\)/);
 });
 
 test("new chats start with the model, effort and permission mode picked: Opus, extra high and Claude's own mode to begin with", async () => {

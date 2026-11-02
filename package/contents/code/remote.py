@@ -13,7 +13,8 @@
                                      [--usage-refresh N]
     python3 -I remote.py --open HOST COMMAND        a terminal running COMMAND on HOST
     python3 -I remote.py --run HOST COMMAND         run COMMAND on HOST (e.g. claude stop)
-    python3 -I remote.py --end HOST SESSION_ID [PROFILE] [--busy]   stop a chat in a terminal or VS Code there
+    python3 -I remote.py --end HOST SESSION_ID [PROFILE] [--busy] [--keep-off CHAT_ID]   stop a chat in a terminal or VS Code there
+                     (--keep-off: and once it's stopped, that chat doesn't keep going any more)
     python3 -I remote.py --interrupt HOST SESSION_ID [PROFILE]      interrupt a working chat in tmux there
     python3 -I remote.py --dismiss HOST SESSION_ID  hide a finished chat of HOST
     python3 -I remote.py --undismiss-all HOST
@@ -666,6 +667,10 @@ def status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, 
     for kind in cs.STAR_KINDS:
         if stars[kind]:
             args += [f"--starred-{kind}", ",".join(sorted(stars[kind]))]
+    # (its chats that keep going are kept here too: listed there while they do, and how each stands)
+    kept = [k for k in cs.load_keep(cs.cache_dir(Path.home()))["chats"] if k["host"] == host and "/" not in k["profile"]]
+    if kept:
+        args += ["--kept-chats", ",".join(f"{k['chat']}/{k['profile']}" for k in kept)]
     started, p = time.time(), place(host)
     try:
         r = ssh(host, "python3 -I - " + " ".join(shlex.quote(a) for a in args), host_script(), STATUS_TIMEOUT)
@@ -837,6 +842,18 @@ def end(host, session_id, profile=None, busy=False):
     """Stop a chat that runs on host (talpy_den.stop_chat); only an idle one unless busy."""
     return run_status_script(host, ["--end", session_id] + (["--profile", profile] if profile else [])
                              + (["--busy"] if busy else []))
+
+
+def end_args(args):
+    """--end's words (HOST SESSION_ID [PROFILE]) and the chat --keep-off names ("" if none)."""
+    words, keep_off, rest = [], "", list(args)
+    while rest:
+        a = rest.pop(0)
+        if a == "--keep-off" and rest and cs.valid_id(rest[0]):
+            keep_off = rest.pop(0)
+        elif a != "--busy":
+            words.append(a)
+    return words, keep_off
 
 
 def interrupt(host, session_id, profile=None):
@@ -1073,11 +1090,14 @@ def put_image(host, path):
     return {"ok": False, "message": f"{label(host)} sent an answer Talpy Den can't read." if ok else message}
 
 
-def continue_chat(host, profile, chat_id, folder="", text="", ends_at=None):
+def continue_chat(host, profile, chat_id, folder="", text="", ends_at=None, force=False):
     """Go on with host's chat a usage limit stopped, in the background there
     (talpy_den.continue_chat; ends_at: how long it waits for the chat's
-    background commands): {"ok", "message", "id"} (or "waits", "ended")."""
+    background commands; force: whatever its newest turn, a chat that keeps
+    going whose turn broke off): {"ok", "message", "id"} (or "waits", "ended")."""
     args = ["--continue-chat", chat_id, "--profile", profile]
+    if force:
+        args.append("--force")
     if folder:
         args += ["--folder", folder]
     if text:
@@ -1310,8 +1330,12 @@ def main(argv=None):
         elif action in ("--hide", "--show-hidden") and len(args) == (3 if action == "--hide" else 2):
             ok, message = hide(*args)
             out = {"ok": ok, "message": message}
-        elif action == "--end" and len([a for a in args if a != "--busy"]) in (2, 3):
-            ok, message = end(*[a for a in args if a != "--busy"], busy="--busy" in args)
+        elif action == "--end" and len(end_args(args)[0]) in (2, 3):
+            words, keep_off = end_args(args)
+            ok, message = end(*words, busy="--busy" in args)
+            if ok and keep_off:  # (stopped: Keep going off too; not stopped, it stays on, as for a chat here)
+                cs.keep_chat(cs.cache_dir(Path.home()), "", keep_off, on=False, host=words[0])
+                message = f"{message.rstrip('.')}. It won't go on by itself any more"
             out = {"ok": ok, "message": message}
         elif action == "--interrupt" and len(args) in (2, 3):
             ok, message = interrupt(*args)

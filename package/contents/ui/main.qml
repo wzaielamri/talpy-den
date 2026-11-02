@@ -1654,7 +1654,7 @@ PlasmoidItem {
         if (!Plasmoid.configuration.notifyDone || !root.notifier || holdingBack() || !long)
             return
         if (stop) {
-            const kept = stop === "limit" && !host && keptChat(s.chatId || s.sessionId)
+            const kept = stop === "limit" && keptChat(s.chatId || s.sessionId, host)
             notify(sid, s, stop, stop === "limit" ? i18n("%1 hit the usage limit", s.name) : i18n("%1 stopped: the login expired", s.name),
                    s.stopped.text + (kept ? "\n" + i18n("It goes on by itself after the reset.") : "") + "\n"
                    + i18n("Took %1 · %2", duration(took), s.cwdShort) + where,
@@ -2767,9 +2767,11 @@ PlasmoidItem {
 
     // A chat with a process on the host (talpy_den.py --end there; busy:
     // you were told it's working or waiting), or one in tmux interrupted
-    function remoteEnd(host, sessionId, profileDir, busy) {
+    // keepOffChat: a chat that keeps going, to turn Keep going off for once it's stopped
+    function remoteEnd(host, sessionId, profileDir, busy, keepOffChat) {
         remoteAction("stop", host, "--end " + shellQuote(host) + " " + shellQuote(sessionId)
-                                   + (profileDir ? " " + shellQuote(profileDir) : "") + (busy ? " --busy" : ""))
+                                   + (profileDir ? " " + shellQuote(profileDir) : "") + (busy ? " --busy" : "")
+                                   + (keepOffChat ? " --keep-off " + shellQuote(keepOffChat) : ""))
     }
 
     function remoteInterrupt(host, sessionId, profileDir) {
@@ -3411,7 +3413,7 @@ PlasmoidItem {
         return stop.resetsAt + 60000
     }
 
-    // (keep: and after later limits too, until it's done; this computer's chats only)
+    // (keep: and after later limits too, until it's done; an SSH host's or a container's chats too)
     function queueContinue(session, host, account, keep) {
         const at = goOnAt(session)
         if (!at)
@@ -3420,34 +3422,37 @@ PlasmoidItem {
                              + shellQuote(session.chatId || session.sessionId) + " --profile " + shellQuote(session.profileDir)
                              + " --at " + Math.round(at) + (session.cwd ? " --cwd " + shellQuote(session.cwd) : "")
                              + " --name " + shellQuote(session.name || "") + (host ? " --host " + shellQuote(host) : "")
-                             + (keep && !host ? " --keep" : "")
+                             + (keep ? " --keep" : "")
                              + " --account " + shellQuote(account) + configDirArgs + " # " + Date.now())
     }
 
     // ---------------------------------------------------------------- chats that keep going
-    // A chat of this computer can keep going until it's done: after each usage
-    // limit that stops it, it goes on by itself when that resets (talpy_den.py:
-    // look_after_kept; jump.py --keep-going, --keep-off). One a limit stopped
+    // A chat (of this computer, an SSH host or a container) can keep going
+    // until it's done: after each usage limit that stops it, it goes on by
+    // itself when that resets (talpy_den.py: look_after_kept, a host's from
+    // its last answer; jump.py --keep-going, --keep-off, with --host). One a limit stopped
     // can start keeping going then (jump.py --queue-continue --keep).
 
-    // The chat that keeps going ({chat, note, error, …}), or null
-    function keptChat(chatId) {
-        return (status && status.keep ? status.keep : []).find(k => k.chat === chatId) || null
+    // The chat (of host: an SSH host or a container) that keeps going ({chat, host, note, error, …}), or null
+    function keptChat(chatId, host) {
+        return (status && status.keep ? status.keep : []).find(k => k.chat === chatId && (k.host || "") === (host || "")) || null
     }
 
-    // Can a chat of this row keep going? One of this computer at work, not in VS Code's Claude
+    // Can a chat of this row keep going? One at work (here, on an SSH host or in a container), not in VS Code's Claude
     function canKeepGoing(session, host) {
-        return !host && !!(session.chatId || session.sessionId) && session.entrypoint !== "claude-vscode"
+        return !!(session.chatId || session.sessionId) && session.entrypoint !== "claude-vscode"
                && session.state === "working"
     }
 
-    function keepGoing(session, on) {
+    // (host's: kept here, it goes on from here over ssh, look_after_host_kept)
+    function keepGoing(session, on, host) {
         const chat = session.chatId || session.sessionId
         queuer.connectSource("python3 -I " + shellQuote(codeDir + "jump.py")
                              + (on ? " --keep-going " + shellQuote(chat) + " --profile " + shellQuote(session.profileDir)
                                      + (session.cwd ? " --cwd " + shellQuote(session.cwd) : "")
                                      + " --name " + shellQuote(session.name || "")
                                    : " --keep-off " + shellQuote(chat))
+                             + (host ? " --host " + shellQuote(host) : "")
                              + configDirArgs + " # " + Date.now())
     }
 

@@ -500,8 +500,8 @@ ColumnLayout {
                         HoverButton {
                             // (what you wrote for it is asked about first: it's gone with it)
                             readonly property bool wrote: !queuedLine.task.chat || !!queuedLine.task.afterTurn
-                            readonly property bool kept: !!queuedLine.task.chat && !queuedLine.task.afterTurn && !queuedLine.task.host
-                                                         && root.keptChat(queuedLine.task.chat) !== null
+                            readonly property bool kept: !!queuedLine.task.chat && !queuedLine.task.afterTurn
+                                                         && root.keptChat(queuedLine.task.chat, queuedLine.task.host) !== null
                             icon.name: Icons.plasma.cancel
                             icon.color: Icons.color("cancel", Kirigami.Theme)
                             text: i18n("Cancel it")

@@ -926,6 +926,54 @@ exit 255
 '''
 
 
+class KeepGoingThereTests(TwoAccountHost):
+    """(2026-11-02) A host's chat that keeps going, end to end through the
+    stand-in ssh: kept here, its status run there says how it stands
+    (--kept-chats), the engine here queues its go-on from that answer, and
+    the go-on resumes it there in the background."""
+
+    def setUp(self):
+        super().setUp()  # (as HostTaskTests: a folder Claude trusts there, and a claude that notes its arguments)
+        self.folder = self.fake_home / "srv-app"
+        self.folder.mkdir()
+        (self.fake_home / ".claude/.claude.json").write_text(json.dumps({
+            "oauthAccount": {"accountUuid": "r", "organizationType": "claude_max", "displayName": "Remote Me"},
+            "projects": {str(self.folder): {"hasTrustDialogAccepted": True}}}))
+        self.claude.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/claude-args\"\necho 'Started 1a2b3c4d'\n")
+
+    def test_a_hosts_chat_a_limit_stopped_goes_on_there_from_here(self):
+        import jump
+        t = time.time() - 120
+        stamp = lambda s: time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(s))
+        # (the fixture's transcript of the chat: one file, as Claude keeps it; two of one id
+        # would be found in the file system's order)
+        self.chat.write_text("".join(json.dumps(e) + "\n" for e in [
+            {"type": "user", "timestamp": stamp(t), "cwd": str(self.folder), "sessionId": self.CHAT,
+             "message": {"role": "user", "content": "fix it"}},
+            {"type": "assistant", "timestamp": stamp(t + 1), "isApiErrorMessage": True, "sessionId": self.CHAT,
+             "message": {"id": "err", "role": "assistant", "stop_reason": "stop_sequence",
+                         "content": [{"type": "text", "text": "You've hit your session limit"}]}}]))
+        cache = cs.cache_dir(Path.home())
+        cs.keep_chat(cache, ".claude", self.CHAT, "Fix it", str(self.folder), host="lab")
+        # its status there: asked how it stands, and the answer is kept here
+        answer = remote.status("lab", tokens=False)
+        self.assertTrue(answer["ok"], answer)
+        self.assertIn(f"--kept-chats {self.CHAT}/.claude", self.calls()[-1][1])
+        self.assertEqual(answer["result"]["keptTurns"][self.CHAT]["turn"]["kind"], "limit")
+        # the engine here (the copy that notifies): its go-on, for lab, from that answer
+        cs.look_after_kept(Path.home(), cache, [], [], int(time.time() * 1000))
+        (task,) = cs.load_queue(cache)
+        self.assertEqual((task["host"], task["chat"], task["profile"], task["folder"]), ("lab", self.CHAT, ".claude", str(self.folder)))
+        # it goes on there, in the background, when its time comes
+        ok, message = jump.start_queued(Path.home(), [], task["id"])
+        self.assertTrue(ok, message)
+        args = (self.fake_home / "claude-args").read_text().split("\n")
+        self.assertEqual(args[:3], ["--bg", "--resume", self.CHAT])
+        (kept,) = cs.load_keep(cache)["chats"]
+        self.assertIsNotNone(kept["wentOnAt"])
+        self.assertEqual(cs.load_queue(cache), [])
+
+
 class LoginTests(FakeSSH):
     """A host that wants a password: you type it into ssh itself, in a
     terminal, and the checks then share that login's connection."""

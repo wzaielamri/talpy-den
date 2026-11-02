@@ -526,7 +526,8 @@ export class Dashboard implements vscode.Disposable {
       if (answer.ok && answer.result) {
         // on this computer's clock: the host's may be off
         const result = toLocalClock(answer.result, Date.now() - (answer.result.generatedAt || Date.now()));
-        const opts = this.notifyOptions();
+        // (its chats that keep going are kept here: this computer's status lists them)
+        const opts = { ...this.notifyOptions(), kept: (chat: string) => !!keptChat(this.status, chat, host) };
         const changes = mergeChanges(
           mergeChanges(
             this.tracker.track("ssh:" + host, result.groups, result.generatedAt, host, opts),

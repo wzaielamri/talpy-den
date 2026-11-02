@@ -141,6 +141,7 @@ export interface QueuedTask {
 export interface KeptChat {
   chat: string;
   profile: string;
+  host?: string; // an SSH host's or a container's ("" or missing: this computer's); kept here, it goes on from here
   name: string;
   since: number;
   wentOnAt: number | null; // when it last went on by itself

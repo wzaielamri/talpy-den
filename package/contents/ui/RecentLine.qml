@@ -152,9 +152,9 @@ Kirigami.Icon {
                 tooltip: (goingOn ? i18n("In the background, in the permission mode it had, telling Claude that the limit has reset (if it didn't go on before then).")
                           : (recentLine.chat.stopped ? recentLine.chat.stopped.text : "")
                             + (goOnAt > 0 ? "\n\n" + i18n("Click to have it go on by itself in the background at %1, a minute after the limit resets, once.", root.startText(goOnAt))
-                                            + (recentLine.remoteHost ? "" : " " + i18n("Keep going beside it: after later limits too, until it's done.")) : ""))
+                                            + " " + i18n("Keep going beside it: after later limits too, until it's done.") : ""))
                          + (goingOn ? "\n\n" + i18n("Click to cancel it.")
-                                      + (root.keptChat(recentLine.chat.sessionId) !== null && !recentLine.remoteHost
+                                      + (root.keptChat(recentLine.chat.sessionId, recentLine.remoteHost) !== null
                                          ? " " + i18n("It stops keeping going after usage limits too.") : "") : "")
                 onClicked: {
                     if (goingOn)
@@ -166,11 +166,11 @@ Kirigami.Icon {
         }
         // it keeps going (click: not any more), or a limit stopped it and it can (click: it does)
         Loader {   // (made only when it may show)
-            active: !recentLine.remoteHost && (root.keptChat(recentLine.chat.sessionId) !== null || root.goOnAt(recentLine.chat) > 0)
+            active: root.keptChat(recentLine.chat.sessionId, recentLine.remoteHost) !== null || root.goOnAt(recentLine.chat) > 0
             visible: active && !!item && item.visible
             sourceComponent: Tag {
-                readonly property var kept: recentLine.remoteHost ? null : root.keptChat(recentLine.chat.sessionId)
-                readonly property bool canKeep: kept === null && !recentLine.remoteHost && root.goOnAt(recentLine.chat) > 0
+                readonly property var kept: root.keptChat(recentLine.chat.sessionId, recentLine.remoteHost)
+                readonly property bool canKeep: kept === null && root.goOnAt(recentLine.chat) > 0
                                                 && root.queuedChat(recentLine.chat.sessionId, recentLine.remoteHost) === null
                 visible: kept !== null || canKeep
                 icon: Icons.plasma.keepGoing
@@ -183,7 +183,7 @@ Kirigami.Icon {
                                      root.startText(root.goOnAt(recentLine.chat)))
                 onClicked: {
                     if (kept)
-                        root.keepGoing(recentLine.chat, false)
+                        root.keepGoing(recentLine.chat, false, recentLine.remoteHost)
                     else
                         root.queueContinue(recentLine.chat, recentLine.remoteHost, recentLine.group.title, true)
                 }

@@ -116,9 +116,10 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
   // or by itself once the limit resets (queued; again: cancelled)
   const goOn = goOnAt(s);
   const goingOn = goOn || s.stopped ? queuedChat(view.status, s.chatId || s.sessionId, host) : null;
-  // it keeps going until it's done (after each usage limit, on by itself); one at work here can
-  const kept = host ? null : keptChat(view.status, s.chatId || s.sessionId);
-  const canKeep = !host && !kept && s.state === "working" && s.entrypoint !== "claude-vscode";
+  // it keeps going until it's done (after each usage limit, on by itself); one at work can
+  // (an SSH host's and a container's too: kept here, they go on from here over ssh)
+  const kept = keptChat(view.status, s.chatId || s.sessionId, host);
+  const canKeep = !kept && s.state === "working" && s.entrypoint !== "claude-vscode";
   const ending =
     (s.pid === null ? "" : s.kind === "bg" ? " This background chat is stopped first (claude stop)." : " Claude here quits first (its terminal stays open).") +
     " It goes on in the permission mode it had.";
@@ -323,13 +324,13 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
                 icon={I.goOnAt}
                 class="text-btn"
                 label={`Go on at ${startText(goOn, now)}`}
-                title={`At ${startText(goOn, now)}, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.${ending} If it went on before then, nothing happens.\n\nThis happens once${host ? "" : ": to have it go on after later limits too, choose Keep going"}.`}
+                title={`At ${startText(goOn, now)}, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.${ending} If it went on before then, nothing happens.\n\nThis happens once: to have it go on after later limits too, choose Keep going.`}
                 onClick={() => post({ type: "queueContinue", chat })}
               >
                 <span class="btn-words">Go on at {startText(goOn, now)}</span>
               </IconButton>
             ) : null}
-            {goOn && !goingOn && !kept && !host ? (
+            {goOn && !goingOn && !kept ? (
               <IconButton
                 icon={I.keepGoing}
                 class="text-btn"

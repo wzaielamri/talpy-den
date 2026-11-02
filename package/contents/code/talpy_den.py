@@ -3578,6 +3578,20 @@ def list_kept(groups, ctx, kept):
         listed.add(chat)
 
 
+def kept_turns(home, extra_dirs, kept, moves):
+    """How each chat here that keeps going from the computer that asks
+    stands (an SSH host's or a container's run, --kept-chats): {its id (as
+    it goes on now, moves): {"turn": last_turn} or {"gone": True}}."""
+    profiles = discover_profiles(home, extra_dirs)
+    out = {}
+    for k in kept:
+        chat = moved_chat(k["chat"], moves)
+        mine = [p for p in profiles if matches_profile(p, k["profile"])]
+        path = next((t for t in (transcript_path(p, chat) for p in mine + profiles) if t is not None), None)
+        out[chat] = {"turn": last_turn(path)} if path is not None else {"gone": True}
+    return out
+
+
 def link_shared_elsewhere(groups):
     """A shared chat is listed once. Give every other account it's shared with
     a pointer to it (`sharedHere`), unless that account lists the chat itself
@@ -4062,10 +4076,13 @@ def queued_tasks(cache_root, now_ms):
 
 # ---------------------------------------------------------------- chats that keep going
 #
-# A chat of this computer can keep going until it's done: whenever a usage
-# limit stops it, it goes on a minute after the limit resets, as often as that
-# takes. Such chats are kept in ~/.cache/talpy-den/keep.json, and the
-# status run of the copy that notifies looks after them (look_after_kept): it
+# A chat can keep going until it's done: whenever a usage limit stops it, it
+# goes on a minute after the limit resets, as often as that takes. Such chats
+# are kept in ~/.cache/talpy-den/keep.json (an SSH host's and a container's
+# too, with their "host": they go on from here, over ssh, as queued tasks
+# there do), and the status run of the copy that notifies looks after them
+# (look_after_kept; a host's chats from its last answer, see
+# look_after_host_kept): it
 # queues each go-on (started like one you queued), tries again after a pause
 # when one didn't take (nothing new in the chat a while after it went on) or
 # when the turn broke off on an API error that isn't a limit (the connection
@@ -4081,6 +4098,10 @@ KEEP_RETRY_MINUTES = (2, 5, 15, 30, 60)  # the pauses before each try again; the
 KEEP_IDLE_MS = 7 * 86400_000  # a chat kept this long with nothing new is let go
 TURN_ENDS = ("end_turn", "stop_sequence", "max_tokens")  # a reply's stop_reason that ends its turn
 RETRY_PROMPT = "Your last turn broke off (an API error): go on where you stopped."
+# An SSH host's or a container's id (remote.py's HOST_NAME: ENGINE:NAME[@HOST] for a container)
+HOST_IDENT = re.compile(r"^[A-Za-z0-9_.@][A-Za-z0-9_.@:-]*$")
+# A host's last answer older than this says too little about its chats that keep going
+KEEP_HOST_STALE_MS = 15 * 60_000
 
 
 def load_keep(cache_root):
@@ -4090,8 +4111,12 @@ def load_keep(cache_root):
     data = data if isinstance(data, dict) else {}
     chats = data.get("chats") if isinstance(data.get("chats"), list) else []
     capped = data.get("capped") if isinstance(data.get("capped"), dict) else {}
-    return {"chats": [k for k in chats if isinstance(k, dict) and valid_id(k.get("chat"))
-                      and isinstance(k.get("profile"), str) and k["profile"]],
+    chats = [k for k in chats if isinstance(k, dict) and valid_id(k.get("chat"))
+             and isinstance(k.get("profile"), str) and k["profile"]
+             and (not k.get("host") or (isinstance(k["host"], str) and HOST_IDENT.match(k["host"])))]
+    for k in chats:
+        k["host"] = k.get("host") or ""  # (this computer's)
+    return {"chats": chats,
             "capped": {w: at for w, at in capped.items() if isinstance(w, str) and number(at) is not None}}
 
 
@@ -4111,32 +4136,36 @@ def change_keep(cache_root, change, wait=True):
         return True
 
 
-def keep_chat(cache_root, profile_key, chat_id, name="", folder="", on=True, now_ms=None):
-    """Have a chat of this computer keep going, or (not on) not any more."""
+def keep_chat(cache_root, profile_key, chat_id, name="", folder="", on=True, now_ms=None, host=""):
+    """Have a chat of this computer (or of host: an SSH host or a
+    container) keep going, or (not on) not any more."""
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    host = host or ""
+    if host and not HOST_IDENT.match(host):
+        raise ValueError(f"Not a host: {host!r}")
 
     def change(data):
-        had = any(k["chat"] == chat_id for k in data["chats"])
+        had = any(k["chat"] == chat_id and k["host"] == host for k in data["chats"])
         if on and had:
             return False
-        data["chats"] = [k for k in data["chats"] if k["chat"] != chat_id]
+        data["chats"] = [k for k in data["chats"] if not (k["chat"] == chat_id and k["host"] == host)]
         if on:
-            data["chats"].append({"chat": chat_id, "profile": profile_key, "name": clean_text(name, 80),
+            data["chats"].append({"chat": chat_id, "profile": profile_key, "host": host, "name": clean_text(name, 80),
                                   "folder": folder or "", "since": now_ms, "wentOnAt": None, "tries": 0,
                                   "note": "", "error": "", "errorAt": None, "cappedUntil": None})
         return on or had
     change_keep(cache_root, change)
 
 
-def note_went_on(cache_root, chat_id, now_ms=None):
-    """A go-on of a chat that keeps going has started: something new should
-    show in it soon (look_after_kept checks). Its wentOnAt before (None
-    when it isn't kept, or never went on), for went_on_undone."""
+def note_went_on(cache_root, chat_id, now_ms=None, host=""):
+    """A go-on of a chat that keeps going (of host's) has started: something
+    new should show in it soon (look_after_kept checks). Its wentOnAt
+    before (None when it isn't kept, or never went on), for went_on_undone."""
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
     was = []
 
     def change(data):
-        k = next((k for k in data["chats"] if k["chat"] == chat_id), None)
+        k = next((k for k in data["chats"] if k["chat"] == chat_id and k["host"] == (host or "")), None)
         if k is None:
             return False
         was.append(k.get("wentOnAt"))
@@ -4146,13 +4175,13 @@ def note_went_on(cache_root, chat_id, now_ms=None):
     return was[0] if was else None
 
 
-def went_on_undone(cache_root, chat_id, noted, was):
+def went_on_undone(cache_root, chat_id, noted, was, host=""):
     """A go-on noted at noted (note_went_on) didn't go on after all: it waits
     for the chat's background commands, or the chat went on by itself. Its
     wentOnAt goes back to was, unless a later go-on noted another time: a
     go-on noted that never started would count as one that didn't take."""
     def change(data):
-        k = next((k for k in data["chats"] if k["chat"] == chat_id), None)
+        k = next((k for k in data["chats"] if k["chat"] == chat_id and k["host"] == (host or "")), None)
         if k is None or k.get("wentOnAt") != noted:
             return False
         k["wentOnAt"] = was
@@ -4161,10 +4190,11 @@ def went_on_undone(cache_root, chat_id, noted, was):
 
 
 def kept_chats(cache_root, moves=None):
-    """The chats that keep going, as the status lists them (each under the
-    id it goes on under now: moves, chat_moves)."""
-    return [dict({f: k.get(f) for f in ("chat", "profile", "name", "since", "wentOnAt", "tries", "note", "error")},
-                 chat=moved_chat(k["chat"], moves or {}))
+    """The chats that keep going, as the status lists them (this computer's
+    each under the id it goes on under now: moves, chat_moves; a host's
+    follow theirs as its answers say, look_after_host_kept)."""
+    return [dict({f: k.get(f) for f in ("chat", "profile", "host", "name", "since", "wentOnAt", "tries", "note", "error")},
+                 chat=k["chat"] if k["host"] else moved_chat(k["chat"], moves or {}))
             for k in load_keep(cache_root)["chats"]]
 
 
@@ -4172,10 +4202,10 @@ def keep_moved(cache_root, old, new):
     """A chat that keeps going goes on under a new id (Claude moved it to
     the background): keep.json follows it (once, if both are kept)."""
     def change(data):
-        k = next((k for k in data["chats"] if k["chat"] == old), None)
+        k = next((k for k in data["chats"] if k["chat"] == old and not k["host"]), None)
         if k is None or old == new:
             return False
-        if any(x["chat"] == new for x in data["chats"]):
+        if any(x["chat"] == new and not x["host"] for x in data["chats"]):
             data["chats"].remove(k)
         else:
             k["chat"] = new
@@ -4348,7 +4378,9 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
                     rows[i] = s
     names = {i: s["name"] for i, s in rows.items() if isinstance(s.get("name"), str) and s["name"].strip()}
     follow_queue(cache_root, moves, names)
-    queued = {t.get("chat") for t in load_queue(cache_root) if t.get("chat") and not t.get("host")}
+    queued = {(t.get("host") or "", t["chat"]) for t in load_queue(cache_root) if t.get("chat")}
+    # (each host with chats that keep going: its last answer, read once)
+    answers = {k["host"]: host_answer_for_keep(cache_root, k["host"]) for k in load_keep(cache_root)["chats"] if k["host"]}
     adds, stops = [], []
 
     def change(data):
@@ -4371,6 +4403,9 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
                         if k["chat"] in (s.get("chatId"), s.get("sessionId")):
                             k["cappedUntil"] = w["resetsAt"]
         for k in list(data["chats"]):
+            if k["host"]:  # (an SSH host's or a container's)
+                changed = look_after_host_kept(data, k, answers.get(k["host"]), queued, adds, now_ms) or changed
+                continue
             before = dict(k)
             chat = moved_chat(k["chat"], moves)
             if chat != k["chat"]:  # (Claude moved it to the background under a new id: it keeps going there)
@@ -4385,7 +4420,7 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
             path = transcript_path(profile, k["chat"]) if profile is not None else None
             g = next((g for g in groups if k["profile"] in (g.get("profileKeys") or [])), None)
             step = None if path is None else kept_step(
-                k, last_turn(path), rows.get(k["chat"]), k["chat"] in queued,
+                k, last_turn(path), rows.get(k["chat"]), ("", k["chat"]) in queued,
                 (g.get("limits") or g.get("accountLimits")) if g else None, now_ms)
             if path is None or step == "done":
                 data["chats"].remove(k)
@@ -4404,6 +4439,97 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
         change_queue(cache_root, add=entry, once=True)
     if stops:
         in_background(lambda: stop_all(home, extra_dirs, stops))
+
+
+def host_answer_for_keep(cache_root, host):
+    """host's last status answer, as remote.py keeps it (hosts/<host>.json,
+    whichever copy of the widget asked): {"at": when it came, on this
+    computer's clock; "offset": what to add to the host's times for this
+    computer's; "result": the status there}, or None."""
+    if not HOST_IDENT.match(host or ""):
+        return None
+    try:
+        saved = read_json(cache_root / "hosts" / (host + ".json"))
+    except (OSError, ValueError):
+        return None
+    answer = saved.get("answer") if isinstance(saved, dict) else None
+    result = answer.get("result") if isinstance(answer, dict) and answer.get("ok") else None
+    if not isinstance(result, dict) or not isinstance(result.get("groups"), list):
+        return None
+    return {"at": int(number(saved.get("at")) or 0), "offset": int(number(saved.get("offset")) or 0), "result": result}
+
+
+def host_words(host):
+    """How a note names an SSH host or a container (as remote.py's label)."""
+    m = re.match(r"^(?:docker|podman|nerdctl):([^@]+)(?:@(.+))?$", host)
+    return host if not m else (f"{m.group(1)} on {m.group(2)}" if m.group(2) else m.group(1))
+
+
+def shifted(turn_or_limits, offset):
+    """A host's last turn (last_turn) or plan limits with their times on
+    this computer's clock (offset: answer's "offset")."""
+    if not isinstance(turn_or_limits, dict) or not offset:
+        return turn_or_limits
+    out = dict(turn_or_limits)
+    for f in ("at", "resets"):
+        if isinstance(out.get(f), (int, float)) and not isinstance(out.get(f), bool) and out[f]:
+            out[f] = int(out[f] + offset)
+    if isinstance(out.get("windows"), list):
+        out["windows"] = [dict(w, **{f: int(w[f] + offset) for f in ("resetsAt", "endedAt")
+                                     if isinstance(w.get(f), (int, float)) and not isinstance(w.get(f), bool) and w[f]})
+                          for w in out["windows"] if isinstance(w, dict)]
+    return out
+
+
+def look_after_host_kept(data, k, seen, queued, adds, now_ms):
+    """look_after_kept for k, a chat of an SSH host or a container that
+    keeps going: as its last answer (seen: host_answer_for_keep) says it
+    stands. The host's status run looks up how each of its chats that keep
+    going stands (--kept-chats: "keptTurns", kept_turns) and lists them
+    while they keep going; all is judged as of when that answer came, so an
+    answer from before a go-on never counts as one that didn't take. A go-on
+    goes in the queue for host (adds), as one you queue there. Changes keep.json's
+    data in place; whether it did."""
+    before = dict(k)
+    if seen is None or now_ms - seen["at"] > KEEP_HOST_STALE_MS:
+        k["note"] = (f"Talpy Den hasn't heard from {host_words(k['host'])} for a while: "
+                     "it can go on once that answers again")
+        return k != before
+    result = seen["result"]
+    chat = moved_chat(k["chat"], result.get("moved") if isinstance(result.get("moved"), dict) else {})
+    if chat != k["chat"]:  # (Claude moved it to the background there under a new id: it keeps going there)
+        if any(x is not k and x["chat"] == chat and x["host"] == k["host"] for x in data["chats"]):
+            data["chats"].remove(k)
+            return True
+        k["chat"] = chat
+    turns = result.get("keptTurns") if isinstance(result.get("keptTurns"), dict) else {}
+    if not isinstance(turns.get(chat), dict):
+        return k != before  # (an answer from before it was kept: no word on it yet)
+    if turns[chat].get("gone"):  # (its transcript is gone there)
+        data["chats"].remove(k)
+        return True
+    groups = [g for g in result["groups"] if isinstance(g, dict)]
+    rows = {}
+    for s in (s for g in groups for s in g.get("sessions") or [] if isinstance(s, dict)):
+        for i in (s.get("sessionId"), s.get("chatId")):
+            if i and (i not in rows or s.get("pid") is not None):
+                rows[i] = s
+    g = next((g for g in groups if k["profile"] in (g.get("profileKeys") or [])), None)
+    if rows.get(chat) and isinstance(rows[chat].get("name"), str) and rows[chat]["name"].strip():
+        k["name"] = clean_text(rows[chat]["name"], 80)  # (as it's called now)
+    offset = seen["offset"]
+    limits = (g.get("limits") or g.get("accountLimits")) if g else None
+    step = kept_step(k, shifted(turns[chat].get("turn"), offset), rows.get(chat), (k["host"], chat) in queued,
+                     shifted(limits, offset), seen["at"])
+    if step == "done":
+        data["chats"].remove(k)
+        return True
+    if step is not None:
+        _, start, why, prompt = step
+        adds.append(queue_entry(k["profile"], k.get("folder") or "", prompt, int(start), host=k["host"],
+                                account=(g.get("title") or "") if g else "", chat=chat, name=k.get("name") or "",
+                                why=why, now_ms=now_ms))
+    return k != before
 
 
 def stop_all(home, extra_dirs, sessions):
@@ -8322,17 +8448,18 @@ def show_hidden(cache_root, kind):
 def forget_deleted(cache_root, kind, item_id, host=""):
     """A chat, a plan or a memory was deleted (sharing.delete_chat, …):
     the stars, the queue, keep going and what's hidden here forget it (of
-    host: its stars and queued tasks, kept here; the rest is the host's)."""
+    host: its stars, queued tasks and keep going, kept here; the rest is the
+    host's)."""
     if kind in ("chats", "plans"):
         change_stars(cache_root, kind, item_id, host, on=False)
     if kind == "chats":
         for t in load_queue(cache_root):
             if t.get("chat") == item_id and (t.get("host") or "") == (host or ""):
                 change_queue(cache_root, take=t["id"])
+        keep_chat(cache_root, "", item_id, on=False, host=host)
     if host:
         return
     if kind == "chats":
-        keep_chat(cache_root, "", item_id, on=False)
         change_dismissed(cache_root, forget=[item_id])
     else:
         change_hidden(cache_root, kind, forget=[item_id])
@@ -8352,9 +8479,11 @@ class Context:
 
 def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_done_hours=KEEP_DONE_HOURS,
             recent=RECENT_CHATS, plans=PLANS_LISTED, usage_cap=0, starred=None, usage_refresh=0,
-            memories=MEMORIES_LISTED):
+            memories=MEMORIES_LISTED, kept=None):
     """starred: {"chats", "plans"} starred here (starred_of), else this
-    computer's from the cache. usage_refresh: have Claude Code fetch the plan
+    computer's from the cache. kept: chats here that keep going from the
+    computer that asks (an SSH host's run: --kept-chats), listed as this
+    computer's own (list_kept). usage_refresh: have Claude Code fetch the plan
     usage of an account whose numbers are older than this many minutes while
     one of its chats works, at most that often (refresh_usage; 0: never; the
     status check does)."""
@@ -8495,7 +8624,7 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
     except Exception as exc:
         errors.append(f"chats moved to the background: {exc}")
     try:
-        list_kept(groups, ctx, load_keep(cache_root)["chats"])
+        list_kept(groups, ctx, [k for k in load_keep(cache_root)["chats"] if not k["host"]] + list(kept or []))
     except Exception as exc:
         errors.append(f"chats that keep going: {exc}")
     try:
@@ -9503,6 +9632,10 @@ USAGE = """usage: talpy_den.py [--config-dir DIR]... [--done-hours H] [--recent 
   --list-containers DAYS  the Docker, Podman and nerdctl containers here: the running ones and those
                     active in the last DAYS days (0: only the running ones), and the --picked ones always
   --ends-at MS      with --continue-chat: wait for the chat's background commands until MS, then end them
+  --force           with --continue-chat: go on whatever its newest turn (a chat that keeps going: its
+                    turn broke off)
+  --kept-chats C/P,…  (an SSH host's status, asked from the computer that keeps them) these chats (id/
+                    profile) keep going: they stay listed, and "keptTurns" says how each stands
   --no-tokens       skip transcript token totals
   --pretty          indent the JSON output
   --remote          for the widget on another machine: add the shell commands that open
@@ -9547,6 +9680,7 @@ def main(argv=None):
     usage_refresh = USAGE_REFRESH_MINUTES
     fetch_usage = False
     starred_chats, starred_plans = set(), set()
+    kept_here, continue_force = [], False  # (--kept-chats: an SSH host's chats that keep going, from the computer that asks)
     container_days, picked = None, []
     while args:
         arg = args.pop(0)
@@ -9566,6 +9700,13 @@ def main(argv=None):
             task_action, task_folder = arg, args.pop(0)
         elif arg == "--continue-chat" and args:
             continue_id = args.pop(0)
+        elif arg == "--force":
+            continue_force = True
+        elif arg == "--kept-chats" and args:
+            for item in args.pop(0).split(","):
+                chat, _, profile = item.partition("/")
+                if valid_id(chat) and profile:
+                    kept_here.append({"chat": chat, "profile": profile, "host": "", "name": "", "folder": ""})
         elif arg == "--folder" and args:
             continue_folder = args.pop(0)
         elif arg == "--ends-at" and args:
@@ -9687,7 +9828,7 @@ def main(argv=None):
     elif continue_id is not None:
         try:
             result = continue_chat(home, config_dirs, profile_key, continue_id, continue_folder, prompt,
-                                   ends_at=continue_ends_at)
+                                   force=continue_force, ends_at=continue_ends_at)
         except Exception as exc:
             result = {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
     elif task_action is not None:
@@ -9730,7 +9871,7 @@ def main(argv=None):
                              usage_cap=usage_cap if not remote or local else 0,
                              # (on an SSH host: the host's stars, from the computer that asks)
                              starred={"chats": starred_chats, "plans": starred_plans} if remote and not local else None,
-                             usage_refresh=usage_refresh)
+                             usage_refresh=usage_refresh, kept=kept_here if remote and not local else None)
             try:
                 add_vscode(result, home, config_dirs, remote and not local, cache_root)
             except Exception as exc:
@@ -9755,6 +9896,11 @@ def main(argv=None):
                         look_after_kept(home, cache_root, config_dirs, result["groups"], int(time.time() * 1000),
                                         usage_cap, result.get("moved"))
                     result["keep"] = kept_chats(cache_root, result.get("moved"))
+                except Exception as exc:
+                    result["errors"].append(f"chats that keep going: {exc}")
+            if remote and not local and kept_here:  # (how each stands: the computer that asks keeps them going)
+                try:
+                    result["keptTurns"] = kept_turns(home, config_dirs, kept_here, result.get("moved") or {})
                 except Exception as exc:
                     result["errors"].append(f"chats that keep going: {exc}")
             if remote:

@@ -923,9 +923,10 @@ export function resetAtText(ms: number, now: number): string {
   return days <= 0 ? `Resets at ${clockText(ms)}` : days === 1 ? `Resets tomorrow at ${clockText(ms)}` : `Resets on ${dayText(new Date(ms))} at ${clockText(ms)}`;
 }
 
-// The chat that keeps going (this computer's status lists them), or null
-export function keptChat(status: Pick<Status, "keep"> | null | undefined, chatId: string): KeptChat | null {
-  return status?.keep?.find((k) => k.chat === chatId) ?? null;
+// The chat (of host: an SSH host or a container) that keeps going, or null:
+// this computer's status lists them all, a host's too (kept here, they go on from here)
+export function keptChat(status: Pick<Status, "keep"> | null | undefined, chatId: string, host?: string): KeptChat | null {
+  return status?.keep?.find((k) => k.chat === chatId && (k.host || "") === (host || "")) ?? null;
 }
 
 // What a chat that keeps going does, for its tag's title

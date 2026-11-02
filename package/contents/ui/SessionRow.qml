@@ -163,7 +163,7 @@ RowLayout {
     readonly property real goOnAt: root.goOnAt(session)
     readonly property var goingOn: goOnAt || stopped ? root.queuedChat(session.chatId, remoteHost) : null
     // it keeps going until it's done: after each usage limit, it goes on by itself (root.keptChat)
-    readonly property var kept: remoteHost ? null : root.keptChat(session.chatId || session.sessionId)
+    readonly property var kept: root.keptChat(session.chatId || session.sessionId, remoteHost)
     readonly property bool inContainer: root.isContainer(remoteHost)
     readonly property string openHint: inContainer
                                        ? (session.entrypoint === "claude-vscode" && !session.openCommand
@@ -190,10 +190,12 @@ RowLayout {
         root.stopConfirmSession = ""
         const busy = session.state !== "idle"
         if (remoteHost && canEnd)
-            root.remoteEnd(remoteHost, session.sessionId, session.profileDir, busy)
-        else if (remoteHost)
+            root.remoteEnd(remoteHost, session.sessionId, session.profileDir, busy, keepOff && kept ? kept.chat : "")
+        else if (remoteHost) {
             root.remoteStop(remoteHost, session.stopCommand)
-        else
+            if (keepOff && kept)   // (its stop command there can't take it: off at once)
+                root.keepGoing(session, false, remoteHost)
+        } else
             root.stopSession(session.sessionId, session.profileDir, busy, keepOff && kept ? kept.chat : "")
     }
 
@@ -631,7 +633,7 @@ RowLayout {
                         icon.name: Icons.plasma.keepGoing
                         text: i18n("Keep going after usage limits")
                         Layout.alignment: Qt.AlignTop
-                        onClicked: root.keepGoing(row.session, true)
+                        onClicked: root.keepGoing(row.session, true, row.remoteHost)
 
                         PlasmaCore.ToolTipArea {
                             textFormat: Text.PlainText
@@ -921,15 +923,14 @@ RowLayout {
                                         : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it.")) + " "
                                      + i18n("It goes on in the permission mode it had.") + " "
                                      + i18n("If it went on before then, nothing happens.")
-                                     + (row.goingOn ? "" : " " + (row.remoteHost ? i18n("This happens once.")
-                                                                  : i18n("This happens once: to have it go on after later limits too, choose Keep going.")))
+                                     + (row.goingOn ? "" : " " + i18n("This happens once: to have it go on after later limits too, choose Keep going."))
                                      + (row.goingOn ? "\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
                                                                          : i18n("Click to cancel it.")) : "")
                         }
                     }
                     // or go on then, and after each later limit too, until it's done
                     IconTextButton {
-                        visible: row.goOnAt > 0 && row.goingOn === null && row.kept === null && !row.remoteHost
+                        visible: row.goOnAt > 0 && row.goingOn === null && row.kept === null
                         icon.name: Icons.plasma.keepGoing
                         text: i18n("Keep going")
                         Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
@@ -958,7 +959,7 @@ RowLayout {
                         clickable: true
                         tooltipTitle: i18n("Keeps going until it's done")
                         tooltip: row.kept ? root.keptText(row.kept) : ""
-                        onClicked: root.keepGoing(row.session, false)
+                        onClicked: root.keepGoing(row.session, false, row.remoteHost)
                     }
                 }
                 Kirigami.Icon {
@@ -1186,7 +1187,7 @@ RowLayout {
                     // (Stop alone leaves Keep going on: it goes on after the next limit)
                     text: i18n("Stop and turn Keep going off")
                     icon.name: Icons.plasma.stop
-                    visible: row.kept !== null && !row.remoteHost
+                    visible: row.kept !== null
                     onTriggered: row.stop(true)
                 },
                 Kirigami.Action {

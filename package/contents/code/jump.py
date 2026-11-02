@@ -1201,9 +1201,9 @@ def stop_keep_off(home, extra_dirs, session_id, chat_id, profile_dir=None, busy=
 
     def change(data):
         done["ok"], done["message"] = stop(home, extra_dirs, session_id, profile_dir, busy)
-        had = done["ok"] and any(k["chat"] == chat_id for k in data["chats"])
+        had = done["ok"] and any(k["chat"] == chat_id and not k["host"] for k in data["chats"])
         if had:
-            data["chats"] = [k for k in data["chats"] if k["chat"] != chat_id]
+            data["chats"] = [k for k in data["chats"] if not (k["chat"] == chat_id and not k["host"])]
         return had
     cs.change_keep(cs.cache_dir(home), change)
     if not done["ok"]:
@@ -1587,9 +1587,10 @@ def chat_goes_on_where(home, extra_dirs, chat_id, profile_dir, folder):
 def queue_continue(home, extra_dirs, chat_id, profile_dir, folder, text, start_at, host="", account="", name="",
                    keep=False):
     """Queue going on with a chat a usage limit stopped, on the profile
-    profile_dir (an SSH host's with host), to start at start_at (ms): then it
-    goes on in the background, in its folder (cs.continue_chat). keep: one of
-    this computer keeps going from then on, until it's done (keep_going)."""
+    profile_dir (an SSH host's or a container's with host), to start at
+    start_at (ms): then it goes on in the background, in its folder
+    (cs.continue_chat). keep: it keeps going from then on, until it's done
+    (keep_going)."""
     if not host:
         folder, why = chat_goes_on_where(home, extra_dirs, chat_id, profile_dir, folder)
         if folder is None:
@@ -1600,29 +1601,34 @@ def queue_continue(home, extra_dirs, chat_id, profile_dir, folder, text, start_a
         if old.get("chat") == chat_id and (old.get("host") or "") == (host or "") and not old.get("afterTurn"):
             cs.change_queue(cache_root, take=old["id"])
     cs.change_queue(cache_root, add=entry)
-    if keep and not host:
-        cs.keep_chat(cache_root, profile_dir, chat_id, name, folder)
+    if keep:
+        cs.keep_chat(cache_root, profile_dir, chat_id, name, folder, host=host)
         return True, f"Queued: it goes on {start_time(start_at)}, when the limit resets, and after later limits too until it's done"
     return True, f"Queued: it goes on {start_time(start_at)}, when the limit resets"
 
 
-def keep_going(home, extra_dirs, chat_id, profile_dir, folder, name=""):
-    """Have a chat of this computer keep going until it's done: after each
-    usage limit that stops it, it goes on by itself when that resets."""
-    folder, why = chat_goes_on_where(home, extra_dirs, chat_id, profile_dir, folder)
-    if folder is None:
-        return False, why
-    cs.keep_chat(cs.cache_dir(home), profile_dir, chat_id, name, folder)
+def keep_going(home, extra_dirs, chat_id, profile_dir, folder, name="", host=""):
+    """Have a chat (of this computer, or of host: an SSH host or a
+    container) keep going until it's done: after each usage limit that stops
+    it, it goes on by itself when that resets. (Whether a host's folder is
+    one Claude trusts there is checked as it goes on, cs.continue_chat.)"""
+    if not cs.valid_id(chat_id):
+        return False, f"Not a chat: {chat_id}"
+    if not host:
+        folder, why = chat_goes_on_where(home, extra_dirs, chat_id, profile_dir, folder)
+        if folder is None:
+            return False, why
+    cs.keep_chat(cs.cache_dir(home), profile_dir, chat_id, name, folder or "", host=host)
     return True, "It keeps going: when a usage limit stops it, it goes on by itself after the reset, until it's done"
 
 
-def keep_off(home, extra_dirs, chat_id):
-    """A chat doesn't keep going any more. Its go-on that's queued stays (it
-    shows beside it): that one is cancelled on its own (unqueue)."""
+def keep_off(home, extra_dirs, chat_id, host=""):
+    """A chat (host's) doesn't keep going any more. Its go-on that's queued
+    stays (it shows beside it): that one is cancelled on its own (unqueue)."""
     cache_root = cs.cache_dir(home)
-    cs.keep_chat(cache_root, "", chat_id, on=False)
+    cs.keep_chat(cache_root, "", chat_id, on=False, host=host)
     queued = next((t for t in cs.load_queue(cache_root)
-                   if t.get("chat") == chat_id and not t.get("host") and not t.get("afterTurn")), None)
+                   if t.get("chat") == chat_id and (t.get("host") or "") == (host or "") and not t.get("afterTurn")), None)
     if queued is not None:
         return True, f"It goes on {start_time(queued['startAt'])} as queued, but not after later limits"
     return True, "It won't go on by itself any more"
@@ -1655,8 +1661,8 @@ def unqueue(home, extra_dirs, task_id):
     taken = cs.change_queue(cache_root, take=task_id)
     if taken and taken.get("afterTurn"):  # (a reply for when its turn ends: keep going stays as it was)
         return True, "Cancelled your message"
-    if taken and taken.get("chat") and not taken.get("host"):
-        cs.keep_chat(cache_root, "", taken["chat"], on=False)  # (else it would be queued again at once)
+    if taken and taken.get("chat"):
+        cs.keep_chat(cache_root, "", taken["chat"], on=False, host=taken.get("host") or "")  # (else it would be queued again at once)
     return True, "Cancelled the queued task" if taken else "It isn't queued any more"
 
 
@@ -1731,11 +1737,15 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
                 open_vscode_link(home, extra_dirs, entry.get("session") or entry["chat"], answer["link"])
         elif entry.get("chat") and entry.get("host"):
             import remote
+            # (before it starts: a status meanwhile mustn't queue it again, see keep_going)
+            was = cs.note_went_on(cache_root, entry["chat"], now_ms, entry["host"])
             answer = remote.continue_chat(entry["host"], entry["profile"], entry["chat"], entry.get("folder") or "",
-                                          task.text, ends_at=ends_at)
-            if answer.get("waits"):
-                return go_on_waits(cache_root, entry, answer, due, now_ms, out)
+                                          task.text, ends_at=ends_at, force=entry.get("why") in ("retry", "cap"))
             ok, message = bool(answer.get("ok")), answer.get("message") or ""
+            if answer.get("waits") or (ok and not message):  # (it didn't go on: see this computer's, below)
+                cs.went_on_undone(cache_root, entry["chat"], now_ms, was, entry["host"])
+                if answer.get("waits"):
+                    return go_on_waits(cache_root, entry, answer, due, now_ms, out)
         elif entry.get("chat"):
             claude = claude_path(home)
             # (Claude moved the chat to the background under a new id: its go-on, and keeping going, follow it)
@@ -2680,7 +2690,8 @@ USAGE = ("usage: jump.py [--stop [--busy] | --interrupt] SESSION_ID [--profile P
          "       jump.py --queue-continue CHAT_ID --profile PROFILE --at MS [--cwd FOLDER] [--prompt TEXT] [--name NAME]\n"
          "               [--host HOST] [--account TITLE] [--keep]\n"
          "               (go on with a chat a usage limit stopped, at MS; --keep: and after later limits, until it's done)\n"
-         "       jump.py --keep-going CHAT_ID --profile PROFILE [--cwd FOLDER] [--name NAME] | --keep-off CHAT_ID\n"
+         "       jump.py --keep-going CHAT_ID --profile PROFILE [--cwd FOLDER] [--name NAME] [--host HOST]\n"
+         "               | --keep-off CHAT_ID [--host HOST]\n"
          "       jump.py --stop SESSION_ID [--profile PROFILE] [--busy] --and-keep-off CHAT_ID   (and Keep going off)\n"
          "               (a chat goes on by itself after each usage limit, until it's done)\n"
          "       jump.py --unqueue|--start-queued TASK_ID [--now]\n"
@@ -2912,12 +2923,12 @@ def main(argv=None):
     if (task or background) and action not in (new_chat, "--remote-new-vscode", queue_task, queue_continue):
         sys.exit(USAGE)
     if (action in (queue_task, queue_continue, requeue)) != (start_at is not None) \
-            or (queue_host and action not in (queue_task, queue_continue, "--star", "--unstar", "--star-plan",
-                                              "--unstar-plan")):
+            or (queue_host and action not in (queue_task, queue_continue, keep_going, keep_off, "--star", "--unstar",
+                                              "--star-plan", "--unstar-plan")):
         sys.exit(USAGE)
     if action is queue_continue and (task.plan or background):
         sys.exit(USAGE)
-    if (scheduled and action is not queue_task) or (keep and (action is not queue_continue or queue_host)):
+    if (scheduled and action is not queue_task) or (keep and action is not queue_continue):
         sys.exit(USAGE)
     if choose and (action not in (new_chat, queue_task) or queue_host):
         sys.exit(USAGE)
@@ -2961,9 +2972,9 @@ def main(argv=None):
             ok, message = queue_continue(Path.home(), extra, session_id, profile_dir, folder, task.text, start_at,
                                          queue_host, account_title, name_arg, keep)
         elif action is keep_going:
-            ok, message = keep_going(Path.home(), extra, session_id, profile_dir, folder, name_arg)
+            ok, message = keep_going(Path.home(), extra, session_id, profile_dir, folder, name_arg, queue_host)
         elif action is keep_off:
-            ok, message = keep_off(Path.home(), extra, session_id)
+            ok, message = keep_off(Path.home(), extra, session_id, queue_host)
         elif action is start_queued:
             ok, message = start_queued(Path.home(), extra, session_id, extra_out, now=start_now)
         elif action is unqueue:

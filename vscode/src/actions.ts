@@ -364,7 +364,7 @@ export class Actions {
               ? "It's waiting for you: Claude quits without your answer and its terminal stays open. The chat is kept and shows under Recent chats."
               : "It's idle, so nothing is interrupted: Claude quits and its terminal stays open. The chat is kept and shows under Recent chats.";
     // (one that keeps going: Stop leaves Keep going on, for the next limit, or turns it off too)
-    const kept = chat.host ? null : keptChat(this.dash.state().status, chat.chatId || chat.sessionId);
+    const kept = keptChat(this.dash.state().status, chat.chatId || chat.sessionId, chat.host);
     const keepOff = "Stop and turn Keep going off";
     const choice = await vscode.window.showWarningMessage(
       interruptible ? `Interrupt or stop “${chat.name}”?` : `Stop “${chat.name}”?`,
@@ -388,10 +388,13 @@ export class Actions {
     if (choice !== "Stop" && choice !== keepOff) return;
     let answer: Answer;
     if (chat.host && chatProcess) {
-      answer = await this.backend.action("remote.py", ["--end", chat.host, chat.sessionId, ...(chat.profileDir ? [chat.profileDir] : []), ...(busy ? ["--busy"] : [])]);
+      const off = choice === keepOff && kept ? ["--keep-off", kept.chat] : []; // (once it's stopped)
+      answer = await this.backend.action("remote.py", ["--end", chat.host, chat.sessionId, ...(chat.profileDir ? [chat.profileDir] : []), ...(busy ? ["--busy"] : []), ...off]);
     } else if (chat.host) {
       if (!chat.stopCommand) return this.fail(`${chat.name} can't be stopped from here.`);
       answer = await this.backend.action("remote.py", ["--run", chat.host, chat.stopCommand]);
+      // (its stop command there can't take it: off at once)
+      if (choice === keepOff && kept) await this.backend.action("jump.py", ["--keep-off", kept.chat, "--host", chat.host, ...configDirArgs()]);
     } else {
       const profile = chat.profileDir ? ["--profile", chat.profileDir] : [];
       const off = choice === keepOff && kept ? ["--and-keep-off", kept.chat] : [];
@@ -1184,17 +1187,19 @@ export class Actions {
     await setChatOptions(model.value, effort.value, mode.value);
   }
 
-  // A chat of this computer keeps going until it's done (after each usage
-  // limit, on by itself when that resets), or not any more (a go-on of it
-  // that's queued already stays: that one is cancelled on its own)
+  // A chat keeps going until it's done (after each usage limit, on by itself
+  // when that resets), or not any more (a go-on of it that's queued already
+  // stays: that one is cancelled on its own). An SSH host's or a container's
+  // is kept here too, and goes on from here over ssh
   async keepGoing(chat: ChatRef, on: boolean): Promise<void> {
     if (this.demoOnly()) return;
     const id = chat.chatId || chat.sessionId;
+    const host = chat.host ? ["--host", chat.host] : [];
     const answer = await this.backend.action(
       "jump.py",
       on
-        ? ["--keep-going", id, "--profile", chat.profileDir, ...(chat.cwd ? ["--cwd", chat.cwd] : []), "--name", chat.name, ...configDirArgs()]
-        : ["--keep-off", id, ...configDirArgs()],
+        ? ["--keep-going", id, "--profile", chat.profileDir, ...(chat.cwd ? ["--cwd", chat.cwd] : []), "--name", chat.name, ...host, ...configDirArgs()]
+        : ["--keep-off", id, ...host, ...configDirArgs()],
     );
     if (this.report(answer, on ? "It can't keep going" : "Couldn't change it")) this.dash.setActionInfo(answer.message);
     this.refresh();
@@ -1202,14 +1207,14 @@ export class Actions {
 
   // A chat a usage limit stopped goes on by itself at `at` (a minute after
   // the limit resets): queued, then started like a queued task (jump.py
-  // --queue-continue; an SSH host's goes on there, over ssh). keep: one of
-  // this computer goes on after later limits too, until it's done
+  // --queue-continue; an SSH host's goes on there, over ssh). keep: it goes
+  // on after later limits too, until it's done (an SSH host's too)
   async queueContinue(chat: ChatRef, at: number, account: string, keep = false): Promise<void> {
     if (this.demoOnly()) return;
     const answer = await this.backend.action("jump.py", [
       "--queue-continue", chat.chatId || chat.sessionId, "--profile", chat.profileDir, "--at", String(Math.round(at)),
       ...(chat.cwd ? ["--cwd", chat.cwd] : []), "--name", chat.name, ...(chat.host ? ["--host", chat.host] : []),
-      ...(keep && !chat.host ? ["--keep"] : []), "--account", account, ...configDirArgs(),
+      ...(keep ? ["--keep"] : []), "--account", account, ...configDirArgs(),
     ]);
     if (this.report(answer, "Couldn't queue it")) this.dash.setActionInfo(answer.message);
     this.refresh();

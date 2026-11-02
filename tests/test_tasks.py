@@ -1347,11 +1347,12 @@ class ContinueAfterResetTests(TaskFixture):
         self.assertIn("Claude doesn't trust your home folder", answer["message"])
         self.assertEqual(self.queue("--queue-continue", "nope", "--profile", ".claude-work", "--at", at),
                          {"ok": False, "message": "That chat isn't on this account any more"})
-        # on an SSH host: checked there, when it goes on
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):  # (kept here only)
-            self.queue("--queue-continue", self.SID, "--profile", ".claude", "--at", at, "--host", "lab", "--keep")
+        # on an SSH host (or in a container): checked there, when it goes on; it can keep going too
+        # (kept here, with its host: KeepGoingOnHostsTests)
         self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude", "--at", at, "--cwd", "/srv/app",
-                                   "--host", "lab", "--name", "Fix it")["ok"])
+                                   "--host", "lab", "--name", "Fix it", "--keep")["ok"])
+        self.assertEqual([(k["chat"], k["host"], k["profile"], k["wentOnAt"]) for k in cs.load_keep(self.cache_root())["chats"]],
+                         [(self.SID, "lab", ".claude", None)])
         (task,) = cs.load_queue(self.cache_root())
         import remote
         with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": "Went on in the background on work (1a2b3c4d)"}) as ask:
@@ -1359,6 +1360,9 @@ class ContinueAfterResetTests(TaskFixture):
         _, args = ask.call_args[0]
         self.assertEqual(args[:6], ["--continue-chat", self.SID, "--profile", ".claude", "--folder", "/srv/app"])
         self.assertEqual(args[6:7], ["--ends-at"])  # (its background commands are waited for until then: GoOnWaitsTests)
+        self.assertNotIn("--force", args)  # (only a try again goes on whatever its newest turn)
+        (k,) = cs.load_keep(self.cache_root())["chats"]
+        self.assertIsNotNone(k["wentOnAt"])  # (noted before it went on, as this computer's)
 
     def test_queue_in_a_folder_picked_in_the_dialog(self):
         at = str(int((time.time() + 3600) * 1000))
@@ -2156,6 +2160,246 @@ def tool_use(tid, name, inp, ts):
 def tool_result(tid, ts, error=False):
     return {"type": "user", "timestamp": iso(ts),
             "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tid, "is_error": error, "content": "ok"}]}}
+
+
+class KeepGoingOnHostsTests(TaskFixture):
+    """(2026-11-02, the user: Keep going on SSH hosts and in containers too)
+    A chat of an SSH host or a container that keeps going is kept here, with
+    its host, and goes on from here over ssh, as its queued go-on does. The
+    host's status run keeps it listed and says how it stands (--kept-chats:
+    keptTurns); the engine here judges it from that host's last answer (as
+    remote.py keeps it), as of when that came, on this computer's clock."""
+
+    SID = ContinueAfterResetTests.SID
+    NEW = "0a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b"
+    queue, cache_root = QueueTests.queue, QueueTests.cache_root
+    HOST = "lab"
+
+    def setUp(self):
+        super().setUp()
+        self.now_ms = int(self.now * 1000)
+        self.reset = self.now_ms + 3600_000
+
+    def answer(self, turn=None, at=None, offset=0, rows=(), host=None, kept=True, gone=False, moved=None, chat=None):
+        """host's last answer, saved as remote.py saves it: its times on its
+        own clock, offset ms behind this computer's."""
+        at = self.now_ms if at is None else at
+        result = {"ok": True, "generatedAt": at - offset, "moved": moved or {},
+                  "groups": [{"title": "lab · Max", "profileKeys": [".claude"], "sessions": list(rows),
+                              "limits": {"windows": [{"key": "five_hour", "pct": 100, "resetsAt": self.reset - offset}]}}]}
+        if kept:
+            result["keptTurns"] = {chat or self.SID: {"gone": True} if gone else {"turn": turn}}
+        write(self.cache_root() / "hosts" / f"{host or self.HOST}.json",
+              {"at": at, "offset": offset, "answer": {"ok": True, "host": host or self.HOST, "result": result}})
+
+    def limit(self, at, offset=0):
+        return {"kind": "limit", "window": "five_hour", "text": "You've hit your session limit", "at": at - offset, "ended": True}
+
+    def look(self, now_ms, groups=()):
+        cs.look_after_kept(self.home, self.cache_root(), [], list(groups), now_ms)
+        return cs.load_queue(self.cache_root())
+
+    def kept(self):
+        return cs.kept_chats(self.cache_root())
+
+    def keep(self, host=None):
+        return self.queue("--keep-going", self.SID, "--profile", ".claude", "--cwd", "/srv/app", "--name", "Fix it",
+                          "--host", host or self.HOST)
+
+    def test_it_goes_on_from_here_after_each_limit_until_its_done(self):
+        import remote
+        self.assertEqual(self.keep()["message"],
+                         "It keeps going: when a usage limit stops it, it goes on by itself after the reset, until it's done")
+        self.assertEqual([(k["chat"], k["host"], k["profile"]) for k in self.kept()], [(self.SID, "lab", ".claude")])
+        self.answer(self.limit(self.now_ms - 60_000))
+        (task,) = self.look(self.now_ms)
+        self.assertEqual((task["host"], task["chat"], task["profile"], task["account"], task["folder"], task["startAt"], task["why"]),
+                         ("lab", self.SID, ".claude", "lab · Max", "/srv/app", self.reset + 60_000, ""))
+        self.assertEqual(len(self.look(self.now_ms + 1000)), 1, "queued once")
+        # the limit resets: it goes on over ssh (as you queued it), noted first
+        with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": "Went on in the background on work (1a2b3c4d)"}) as ask:
+            self.assertEqual(self.queue("--start-queued", task["id"])["message"], "Went on in the background on work (1a2b3c4d)")
+        self.assertEqual(ask.call_args[0][0], "lab")
+        self.assertNotIn("--force", ask.call_args[0][1])
+        went = self.kept()[0]["wentOnAt"]
+        self.assertIsNotNone(went)
+        # an answer from before it went on says nothing about that go-on, however late it's read
+        self.answer(self.limit(self.now_ms - 60_000), at=went - 1000)
+        self.assertEqual(self.look(went + cs.KEEP_TAKE_MS * 2), [])
+        self.assertEqual((self.kept()[0]["tries"], self.kept()[0]["error"]), (0, ""))
+        # the next one: a turn of it ended by itself after the go-on: it's done
+        self.answer({"kind": "reply", "at": went + 60_000, "ended": True}, at=went + 120_000)
+        self.assertEqual(self.look(went + 125_000), [])
+        self.assertEqual(self.kept(), [])
+
+    def test_its_times_are_put_on_this_computers_clock(self):
+        # the host's clock is 2 hours behind: its limit and its reset are 2 hours "earlier"
+        self.keep()
+        self.answer(self.limit(self.now_ms - 60_000, offset=7200_000), offset=7200_000)
+        (task,) = self.look(self.now_ms)
+        self.assertEqual(task["startAt"], self.reset + 60_000)
+        # and a turn there that ended after it was kept ended after it, though the host's clock says 2 hours before
+        cs.change_queue(self.cache_root(), take=task["id"])
+        cs.keep_chat(self.cache_root(), ".claude", self.SID, host="lab", on=False)
+        cs.keep_chat(self.cache_root(), ".claude", self.SID, "Fix it", "/srv/app", now_ms=self.now_ms, host="lab")
+        self.answer({"kind": "reply", "at": self.now_ms + 60_000 - 7200_000, "ended": True}, at=self.now_ms + 120_000,
+                    offset=7200_000)
+        self.assertEqual((self.look(self.now_ms + 125_000), self.kept()), ([], []))
+
+    def test_a_go_on_that_didnt_take_there_is_tried_again_whatever_its_newest_turn(self):
+        import remote
+        self.keep()
+        t = self.now_ms
+        cs.note_went_on(self.cache_root(), self.SID, t, host="lab")
+        self.answer(self.limit(t - 600_000), at=t + 60_000)
+        self.assertEqual(self.look(t + 60_000), [], "it may still be starting")
+        self.answer(self.limit(t - 600_000), at=t + cs.KEEP_TAKE_MS + 1000)
+        (task,) = self.look(t + cs.KEEP_TAKE_MS + 2000)
+        self.assertEqual((task["why"], task["startAt"], task["host"]), ("retry", t + cs.KEEP_TAKE_MS + 1000 + 2 * 60_000, "lab"))
+        with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": "Went on"}) as ask:
+            self.queue("--start-queued", task["id"])
+        self.assertIn("--force", ask.call_args[0][1])
+        # a go-on that went on already (nothing to do there): it doesn't count as one that didn't take
+        cs.note_went_on(self.cache_root(), self.SID, t, host="lab")
+        (task,) = [cs.queue_entry(".claude", "/srv/app", "", t, host="lab", chat=self.SID)]
+        cs.change_queue(self.cache_root(), add=task)
+        with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": ""}):
+            self.queue("--start-queued", task["id"])
+        self.assertEqual(self.kept()[0]["wentOnAt"], t)
+
+    def test_while_its_host_doesnt_answer_it_waits_and_says_so(self):
+        self.keep()
+        self.answer(self.limit(self.now_ms - 60_000), at=self.now_ms - cs.KEEP_HOST_STALE_MS - 60_000)
+        self.assertEqual(self.look(self.now_ms), [])
+        self.assertEqual(self.kept()[0]["note"], "Talpy Den hasn't heard from lab for a while: it can go on once that answers again")
+        # (a container's name, and its host's)
+        self.assertEqual(cs.host_words("docker:web@lab"), "web on lab")
+        self.assertEqual(cs.host_words("podman:dev"), "dev")
+        # its answer comes: on it goes, and the note goes
+        self.answer(self.limit(self.now_ms - 60_000))
+        self.assertEqual(len(self.look(self.now_ms)), 1)
+        self.assertEqual(self.kept()[0]["note"], "")
+
+    def test_an_answer_from_before_it_was_kept_or_of_a_chat_gone_there(self):
+        self.keep()
+        self.answer(kept=False)  # (asked before it was kept: no word on it)
+        self.assertEqual((self.look(self.now_ms), len(self.kept())), ([], 1))
+        self.answer(gone=True)  # (its transcript is gone there)
+        self.assertEqual((self.look(self.now_ms), self.kept()), ([], []))
+
+    def test_it_follows_its_chat_claude_moved_to_the_background_there(self):
+        self.keep()
+        self.answer(self.limit(self.now_ms - 60_000), moved={self.SID: self.NEW}, chat=self.NEW)
+        (task,) = self.look(self.now_ms)
+        self.assertEqual((task["chat"], self.kept()[0]["chat"]), (self.NEW, self.NEW))
+
+    def test_at_work_or_open_in_a_claude_code_panel_there(self):
+        self.keep()
+        row = {"sessionId": self.SID, "chatId": self.SID, "pid": 42, "state": "working", "entrypoint": "cli", "name": "Fix it now"}
+        self.answer(self.limit(self.now_ms - 60_000), rows=[row])
+        self.assertEqual(self.look(self.now_ms), [])
+        self.assertEqual(self.kept()[0]["name"], "Fix it now")  # (as it's called there now)
+        self.answer(self.limit(self.now_ms - 60_000), rows=[dict(row, state="idle", entrypoint="claude-vscode")])
+        self.assertEqual(self.look(self.now_ms), [])
+        self.assertIn("open in a Claude Code panel", self.kept()[0]["note"])
+
+    def test_this_computers_chat_and_a_hosts_are_kept_apart(self):
+        # (one id on both: a copy made by hand, say; and one host's isn't another's)
+        self.keep()
+        self.keep("docker:web@lab")
+        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        self.assertEqual(sorted(k["host"] for k in self.kept()), ["", "docker:web@lab", "lab"])
+        self.assertEqual(self.queue("--keep-off", self.SID, "--host", "lab")["message"], "It won't go on by itself any more")
+        self.assertEqual(sorted(k["host"] for k in self.kept()), ["", "docker:web@lab"])
+        # cancelling a host's queued go-on stops that one keeping going, not this computer's
+        task = cs.queue_entry(".claude", "", "", self.reset, host="docker:web@lab", chat=self.SID)
+        cs.change_queue(self.cache_root(), add=task)
+        self.queue("--unqueue", task["id"])
+        self.assertEqual([k["host"] for k in self.kept()], [""])
+        # a chat deleted there: forgotten here too (its keep going is kept here)
+        self.keep()
+        cs.forget_deleted(self.cache_root(), "chats", self.SID, "lab")
+        self.assertEqual([k["host"] for k in self.kept()], [""])
+        # this computer's look doesn't read a host's transcript here; its own goes on as before
+        self.assertFalse(any(k["host"] for k in cs.load_keep(self.cache_root())["chats"] if k["chat"] != self.SID))
+        with self.assertRaises(ValueError):
+            cs.keep_chat(self.cache_root(), ".claude", self.SID, host="lab; rm -rf /")
+
+    def test_queued_with_keep_on_a_host(self):
+        at = str(self.reset + 60_000)
+        self.assertEqual(self.queue("--queue-continue", self.SID, "--profile", ".claude", "--at", at, "--host", "lab",
+                                    "--name", "Fix it", "--keep")["message"],
+                         f"Queued: it goes on {jump.start_time(int(at))}, when the limit resets, and after later limits too until it's done")
+        self.assertEqual([(k["chat"], k["host"]) for k in self.kept()], [(self.SID, "lab")])
+
+    def test_plasma_offers_it_on_a_hosts_and_a_containers_rows(self):
+        ui = Path(__file__).resolve().parent.parent / "package/contents/ui"
+        main, row = (ui / "main.qml").read_text(), (ui / "SessionRow.qml").read_text()
+        recent, group = (ui / "RecentLine.qml").read_text(), (ui / "GroupSection.qml").read_text()
+        can = main[main.index("function canKeepGoing("):][:300]
+        self.assertNotIn("!host", can)
+        self.assertIn('k.chat === chatId && (k.host || "") === (host || "")', main)
+        self.assertIn('(host ? " --host " + shellQuote(host) : "")\n                             + configDirArgs', main)  # keepGoing
+        self.assertIn('+ (keep ? " --keep" : "")', main)
+        self.assertIn('keptChat(s.chatId || s.sessionId, host)', main)  # (its notification says it goes on by itself)
+        self.assertIn('(keepOffChat ? " --keep-off " + shellQuote(keepOffChat) : "")', main)  # remoteEnd
+        self.assertIn("readonly property var kept: root.keptChat(session.chatId || session.sessionId, remoteHost)", row)
+        self.assertIn("visible: row.goOnAt > 0 && row.goingOn === null && row.kept === null\n", row)
+        self.assertNotRegex(row, r"remoteHost \? null : root\.keptChat|row\.kept === null && !row\.remoteHost|kept !== null && !row\.remoteHost")
+        self.assertIn("root.remoteEnd(remoteHost, session.sessionId, session.profileDir, busy, keepOff && kept ? kept.chat : \"\")", row)
+        self.assertEqual(row.count("root.keepGoing(row.session, "), 2)
+        self.assertEqual(row.count("root.keepGoing(row.session, true, row.remoteHost)") + row.count("root.keepGoing(row.session, false, row.remoteHost)"), 2)
+        self.assertNotIn('i18n("This happens once.")', row)
+        self.assertNotRegex(recent, r"!recentLine\.remoteHost && \(root\.keptChat|kept === null && !recentLine\.remoteHost"
+                                    r"|recentLine\.remoteHost \? null : root\.keptChat|recentLine\.remoteHost \? \"\" : \" \" \+ i18n\(\"Keep going")
+        self.assertIn("root.keptChat(recentLine.chat.sessionId, recentLine.remoteHost)", recent)
+        self.assertIn("root.keptChat(queuedLine.task.chat, queuedLine.task.host) !== null", group)
+
+    def test_the_hosts_run_lists_them_and_says_how_each_stands(self):
+        # (the host's status, talpy_den.py --remote there, with what's kept here for it)
+        t = self.now - 300
+        write(self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl",
+              lines(prompt("fix it", t, cwd=str(self.folder)), limit_error("You've hit your session limit", t + 1)))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), mock.patch.object(cs.Path, "home", return_value=self.home), \
+                mock.patch.object(cs, "cache_dir", return_value=self.cache_root()):
+            cs.main(["--remote", "--no-tokens", "--kept-chats", f"{self.SID}/.claude-work,{self.NEW}/.claude-work"])
+        there = json.loads(out.getvalue().split(cs.REMOTE_MARK)[1])
+        turn = there["keptTurns"][self.SID]["turn"]
+        self.assertEqual((turn["kind"], turn["ended"]), ("limit", True))
+        self.assertEqual(there["keptTurns"][self.NEW], {"gone": True})
+        # listed while it keeps going, with no process (its terminal closed): a chat to reopen
+        (row,) = [s for g in there["groups"] for s in g["sessions"] if s["chatId"] == self.SID]
+        self.assertEqual((row["kind"], row["state"]), ("chat", "done"))
+        # without them, no word on them (and an answer for this computer has none)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), mock.patch.object(cs.Path, "home", return_value=self.home), \
+                mock.patch.object(cs, "cache_dir", return_value=self.cache_root()):
+            cs.main(["--remote", "--no-tokens"])
+        there = json.loads(out.getvalue().split(cs.REMOTE_MARK)[1])
+        self.assertNotIn("keptTurns", there)
+        self.assertEqual([s for g in there["groups"] for s in g["sessions"] if s["chatId"] == self.SID], [])
+
+    def test_the_status_asks_the_host_about_them_and_a_stop_there_can_turn_it_off(self):
+        import remote
+        self.keep()
+        self.keep("docker:web@lab")
+        with mock.patch.object(remote.Path, "home", return_value=self.home), \
+                mock.patch.object(remote, "ssh", side_effect=OSError("stop here")) as ssh:
+            remote.status("lab")
+        command = ssh.call_args[0][1]
+        self.assertIn(f"--kept-chats {self.SID}/.claude", command)  # (only lab's: the container's is asked of it)
+        self.assertEqual(command.count("--kept-chats"), 1)
+        self.assertEqual(command.count(self.SID), 1)
+        # Stop and turn Keep going off: off once it's stopped there, not when it isn't
+        for ok, left in ((False, ["docker:web@lab", "lab"]), (True, ["docker:web@lab"])):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), mock.patch.object(remote.Path, "home", return_value=self.home), \
+                    mock.patch.object(remote, "run_status_script", return_value=(ok, "Stopped it" if ok else "It's busy")) as end:
+                remote.main(["--end", "lab", self.SID, ".claude", "--busy", "--keep-off", self.SID])
+            self.assertEqual(end.call_args[0], ("lab", ["--end", self.SID, "--profile", ".claude", "--busy"]))
+            self.assertEqual(sorted(k["host"] for k in self.kept()), left)
+        self.assertIn("It won't go on by itself any more", json.loads(out.getvalue())["message"])
 
 
 class PlanFeedbackTests(TaskFixture):

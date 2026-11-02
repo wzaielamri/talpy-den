@@ -35,7 +35,7 @@ function QueuedLine({ task: t, asking, ask }: { task: QueuedTask; asking: boolea
   const what = queuedWhat(t, machineStatus(view, t.host));
   // (what you wrote for it is asked about first: it's gone with it; a kept chat's go-on stops it keeping going)
   const wrote = !t.chat || !!t.afterTurn;
-  const kept = !!t.chat && !t.afterTurn && !t.host && keptChat(view.status, t.chat) !== null;
+  const kept = !!t.chat && !t.afterTurn && keptChat(view.status, t.chat, t.host) !== null;
   const folder = (t.host ? `${hostLabel(t.host)}:` : "") + (t.folder || "~");
   const how = t.waits && !t.error
     ? `${t.waits}.`
