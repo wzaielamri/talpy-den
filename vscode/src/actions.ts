@@ -1482,6 +1482,21 @@ export class Actions {
     if (error) this.fail(`Couldn't open the subagent's run: ${error}`);
   }
 
+  // An SSH host or a container joins the list (picked; a container also turns Show containers on)
+  async showHost(host: string): Promise<void> {
+    const picked = settings.sshHosts();
+    if (!picked.includes(host)) await setSshHosts([...picked, host]);
+    if (containerOf(host) && !settings.showContainers())
+      await vscode.workspace.getConfiguration("talpyDen").update("showContainers", true, vscode.ConfigurationTarget.Global);
+  }
+
+  // A chat of a host that isn't shown doesn't keep going any more (it has no row to do it from)
+  async keepOff(chatId: string, host: string): Promise<void> {
+    if (this.demoOnly()) return;
+    this.report(await this.backend.action("jump.py", ["--keep-off", chatId, "--host", host, ...configDirArgs()]), "Couldn't change it");
+    this.refresh();
+  }
+
   async hideHost(host: string): Promise<void> {
     const picked = settings.sshHosts();
     if (picked.includes(host)) await setSshHosts(picked.filter((h) => h !== host));

@@ -2332,6 +2332,38 @@ class KeepGoingOnHostsTests(TaskFixture):
                          f"Queued: it goes on {jump.start_time(int(at))}, when the limit resets, and after later limits too until it's done")
         self.assertEqual([(k["chat"], k["host"]) for k in self.kept()], [(self.SID, "lab")])
 
+    def test_a_go_on_that_couldnt_reach_its_host_starts_once_that_answers_again(self):
+        # (2026-11-02, the user: disconnected, does it still go on?) Not while the host can't be
+        # reached; then it does by itself. One the host refused waits for you, as before.
+        import remote
+        self.keep()
+        task = cs.queue_entry(".claude", "/srv/app", "", self.now_ms - 1000, host="lab", chat=self.SID)
+        cs.change_queue(self.cache_root(), add=task)
+        unreached = {"ok": False, "reached": False, "message": "Can't reach lab: Connection timed out."}
+        with mock.patch.object(remote, "host_answer", return_value=unreached):
+            self.assertFalse(self.queue("--start-queued", task["id"])["ok"])
+        (back,) = cs.load_queue(self.cache_root())
+        self.assertEqual(back["error"], "Can't reach lab: Connection timed out. It starts once lab answers again")
+        self.assertIsNone(self.kept()[0]["wentOnAt"])  # (it didn't go on: no "didn't take" to try again later)
+        self.assertFalse(cs.queued_tasks(self.cache_root(), self.now_ms)[0]["due"])
+        # an answer from before it failed changes nothing; one since makes it due again
+        self.answer(self.limit(self.now_ms - 60_000), at=back["unreachable"] - 1000)
+        self.look(back["unreachable"] + 1000)
+        self.assertTrue(cs.load_queue(self.cache_root())[0]["error"])
+        self.answer(self.limit(self.now_ms - 60_000), at=back["unreachable"] + 60_000)
+        self.look(back["unreachable"] + 61_000)
+        (again,) = cs.load_queue(self.cache_root())
+        self.assertEqual((again["error"], "unreachable" in again, again["id"]), ("", False, task["id"]))
+        self.assertTrue(cs.queued_tasks(self.cache_root(), back["unreachable"] + 61_000)[0]["due"])
+        # a container that isn't running counts as not reached too; what the host said no to doesn't
+        with mock.patch.object(remote, "host_answer", return_value={"ok": False, "message": "Claude doesn't trust /srv/app"}):
+            self.queue("--start-queued", task["id"])
+        (refused,) = cs.load_queue(self.cache_root())
+        self.assertEqual((refused["error"], "unreachable" in refused), ("Claude doesn't trust /srv/app", False))
+        self.answer(self.limit(self.now_ms - 60_000), at=self.now_ms + 3600_000)
+        self.look(self.now_ms + 3600_000)
+        self.assertEqual(cs.load_queue(self.cache_root())[0]["error"], "Claude doesn't trust /srv/app")
+
     def test_plasma_offers_it_on_a_hosts_and_a_containers_rows(self):
         ui = Path(__file__).resolve().parent.parent / "package/contents/ui"
         main, row = (ui / "main.qml").read_text(), (ui / "SessionRow.qml").read_text()
@@ -2354,6 +2386,24 @@ class KeepGoingOnHostsTests(TaskFixture):
                                     r"|recentLine\.remoteHost \? null : root\.keptChat|recentLine\.remoteHost \? \"\" : \" \" \+ i18n\(\"Keep going")
         self.assertIn("root.keptChat(recentLine.chat.sessionId, recentLine.remoteHost)", recent)
         self.assertIn("root.keptChat(queuedLine.task.chat, queuedLine.task.host) !== null", group)
+
+    def test_plasma_says_what_keeps_going_on_hosts_that_arent_shown(self):
+        # (unpicked, or a container while Show containers is off: it goes on all the same, so the list
+        # says so where the hosts go, with Show and Stop / Cancel; a task you wrote has Show only)
+        ui = Path(__file__).resolve().parent.parent / "package/contents/ui"
+        main, full, line = (ui / "main.qml").read_text(), (ui / "FullRepresentation.qml").read_text(), (ui / "UnseenLine.qml").read_text()
+        items = main[main.index("readonly property var unseenHostItems:"):][:900]
+        self.assertIn("if (!k.host || shown.indexOf(k.host) >= 0)", items)
+        self.assertIn("if (t.host && shown.indexOf(t.host) < 0 && !out.some(x => x.task === t))", items)
+        show = main[main.index("function showHost(host)"):][:300]
+        self.assertIn("if (pickedHosts.indexOf(host) < 0)\n            toggleHost(host)", show)   # (never unpicks it)
+        self.assertIn("Plasmoid.configuration.showContainers = true", show)
+        self.assertLess(full.index("model: root.focusView ? 0 : root.unseenHostItems.length"), full.index("delegate: HostSection {"))
+        self.assertIn("onClicked: root.showHost(line.host)", line)
+        self.assertIn("visible: !line.wrote", line)
+        self.assertIn("root.unqueue(line.task)", line)
+        self.assertIn("root.keepGoing({ chatId: line.kept.chat, sessionId: line.kept.chat }, false, line.host)", line)
+        self.assertIn('icon.color: Icons.color("cancel", Kirigami.Theme)', line)
 
     def test_the_hosts_run_lists_them_and_says_how_each_stands(self):
         # (the host's status, talpy_den.py --remote there, with what's kept here for it)

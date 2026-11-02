@@ -47,6 +47,18 @@ function sendState(): void {
       error: "", due: false, chat: later.chatId, name: later.name, scheduled: false,
     }];
   }
+  // ?unseen=1: a chat that keeps going on an SSH host that isn't shown, its go-on queued, and a go-on
+  // in a container on it that couldn't reach it (UnseenLines)
+  if (params.get("unseen") === "1" && state.status) {
+    const kept = { chat: "demo-unseen-1", profile: ".claude", host: "gpu-lab", name: "Train the ranker", since: Date.now(), wentOnAt: null, tries: 0, note: "", error: "" };
+    state.status.keep = [...(state.status.keep ?? []), kept];
+    const task = { profile: ".claude", account: "gpu-lab · Max", folder: "/srv/app", folderShort: "/srv/app", prompt: "", plan: null,
+      planProfile: null, planTitle: "", createdAt: Date.now(), due: false, scheduled: false };
+    state.status.queue = [...(state.status.queue ?? []),
+      { ...task, id: "q-unseen-1", host: "gpu-lab", startAt: Date.now() + 50 * 60_000, error: "", chat: kept.chat, name: kept.name },
+      { ...task, id: "q-unseen-2", host: "docker:web@gpu-lab", startAt: Date.now() - 60_000, chat: "demo-unseen-2", name: "Fix the parser",
+        error: "Can't reach gpu-lab: Connection timed out. It starts once web on gpu-lab answers again" }];
+  }
   // ?stars=1: a chat at work, a recent chat and a plan starred, and an old chat and plan under Starred
   const first = groups[0];
   if (params.get("stars") === "1" && first) {

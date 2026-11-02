@@ -363,6 +363,17 @@ PlasmaExtras.Representation {
                         }
                     }
 
+                    // Kept chats and queued tasks of hosts and containers that aren't
+                    // shown: they go on all the same (UnseenLine.qml)
+                    Repeater {
+                        model: root.focusView ? 0 : root.unseenHostItems.length
+                        delegate: UnseenLine {
+                            required property int index
+                            Layout.fillWidth: true
+                            item: root.unseenHostItems[index] || null
+                        }
+                    }
+
                     // No account here, but SSH hosts shown: one quiet line where this
                     // computer's accounts go (a computer that only watches its hosts is fine)
                     PlasmaComponents3.Label {

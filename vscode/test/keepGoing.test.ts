@@ -14,8 +14,8 @@ import { chatOptionArgs } from "../src/config";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";
 import { demoState } from "../src/shared/demo";
-import { clockText, findChatRef, findPlan, keptChat, keptTitle, limitReset, resetAtText, toLocalClock } from "../src/shared/model";
-import type { Group, KeptChat } from "../src/shared/types";
+import { clockText, findChatRef, findPlan, keptChat, keptTitle, limitReset, resetAtText, toLocalClock, unseenHostItems } from "../src/shared/model";
+import type { Group, KeptChat, QueuedTask } from "../src/shared/types";
 
 const NOW = new Date(2026, 9, 24, 10, 0).getTime();
 
@@ -75,6 +75,36 @@ test("an SSH host's and a container's chats keep going too, each found under its
   assert.match(actions, /\["--end", chat\.host, .*\.\.\.off\]/);
   assert.match(src("src/view.ts"), /if \(chat\) void this\.actions\.keepGoing\(chat, m\.on === true\);/);
   assert.match(src("src/dashboard.ts"), /kept: \(chat: string\) => !!keptChat\(this\.status, chat, host\)/);
+});
+
+test("chats that keep going and tasks queued on hosts that aren't shown are listed where the hosts go", () => {
+  // (2026-11-02, the user: unpicked, it goes on all the same: so I don't forget it)
+  const base: KeptChat = { chat: "c1", profile: ".claude", name: "Train", since: NOW, wentOnAt: null, tries: 0, note: "", error: "" };
+  const here = base;
+  const lab = { ...base, chat: "c2", host: "lab" };
+  const shownOne = { ...base, chat: "c3", host: "build" };
+  const task = (id: string, host: string, chat: string | null, extra = {}) =>
+    ({ id, host, chat, name: chat ? "Fix" : "", profile: ".claude", startAt: NOW, error: "", prompt: chat ? "" : "do it", ...extra }) as unknown as QueuedTask;
+  const labGoOn = task("t1", "lab", "c2");
+  const webGoOn = task("t2", "docker:web@lab", "c4", { error: "Can't reach lab. It starts once web on lab answers again" });
+  const written = task("t3", "lab", null);
+  const status = { keep: [here, lab, shownOne], queue: [task("t0", "", "c1"), labGoOn, webGoOn, written, task("t4", "build", "c3")] };
+  const items = unseenHostItems(status, ["build"]);
+  assert.deepEqual(items.map((i) => [i.host, i.kept?.chat ?? null, i.task?.id ?? null]),
+    [["lab", "c2", "t1"], ["docker:web@lab", null, "t2"], ["lab", null, "t3"]]);
+  assert.equal(items[0].name, "Train");
+  assert.deepEqual(unseenHostItems(status, ["build", "lab", "docker:web@lab"]), [], "all shown: nothing to say");
+  assert.deepEqual(unseenHostItems({}, []), [], "an older backend lists none");
+  // where the hosts go, with Show and Stop / Cancel (a task you wrote: Show only); the view takes both
+  const app = readFileSync(path.join(path.resolve(__dirname, "..", ".."), "webview/components/App.tsx"), "utf8");
+  assert.match(app, /<UnseenLines shown=\{state\.hosts\.map\(\(h\) => h\.name\)\} \/>/);
+  const lines = readFileSync(path.join(path.resolve(__dirname, "..", ".."), "webview/components/UnseenLines.tsx"), "utf8");
+  assert.match(lines, /post\(\{ type: "showHost", host \}\)/);
+  assert.match(lines, /t \? post\(\{ type: "unqueue", id: t\.id \}\) : kept && post\(\{ type: "keepOff", chatId: kept\.chat, host \}\)/);
+  assert.match(lines, /\{!wrote \? \(/);
+  const view = readFileSync(path.join(path.resolve(__dirname, "..", ".."), "src/view.ts"), "utf8");
+  assert.match(view, /case "showHost":/);
+  assert.match(view, /keptChat\(this\.dash\.state\(\)\.status, m\.chatId, m\.host\)/);
 });
 
 test("new chats start with the model, effort and permission mode picked: Opus, extra high and Claude's own mode to begin with", async () => {

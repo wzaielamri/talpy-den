@@ -4118,3 +4118,27 @@ body.vscode-high-contrast-light .pane {
 .plan-drag {
   cursor: grab;
 }
+
+/* A chat that keeps going (or a task queued) on a host that isn't shown
+   (UnseenLines): its buttons stay, beside its words, not only on hover */
+.unseen {
+  margin-top: 6px;
+}
+
+.unseen-line {
+  gap: 4px;
+}
+
+.unseen-line > .queued-what {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* (the words shorten first; the buttons keep theirs unless the line is very narrow) */
+.unseen-line > .icon-btn {
+  flex: none;
+  max-width: 40%;
+}

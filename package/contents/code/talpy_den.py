@@ -4369,6 +4369,7 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
     it there, and each keeps the name its chat has now. Nothing when
     another copy is at it right now."""
     moves = moves or {}
+    requeue_reached(cache_root)
     profiles = discover_profiles(home, extra_dirs)
     rows = {}
     for g in groups:
@@ -4439,6 +4440,28 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
         change_queue(cache_root, add=entry, once=True)
     if stops:
         in_background(lambda: stop_all(home, extra_dirs, stops))
+
+
+def requeue_reached(cache_root):
+    """A queued go-on (or task) of an SSH host or a container that couldn't
+    start because that couldn't be reached ("unreachable": when; jump.py
+    --start-queued) starts by itself once it has answered since (its last
+    answer, host_answer_for_keep, is newer): its error goes, so it's due."""
+    waiting = [t for t in load_queue(cache_root) if t.get("host") and number(t.get("unreachable"))]
+    if not waiting:
+        return
+    answers = {h: host_answer_for_keep(cache_root, h) for h in {t["host"] for t in waiting}}
+
+    def edit(tasks):
+        changed = False
+        for t in tasks:
+            seen = answers.get(t.get("host") or "")
+            if number(t.get("unreachable")) and seen and seen["at"] > t["unreachable"]:
+                t.pop("unreachable")
+                t["error"] = ""
+                changed = True
+        return changed
+    change_queue(cache_root, edit=edit)
 
 
 def host_answer_for_keep(cache_root, host):

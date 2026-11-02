@@ -23,6 +23,7 @@ import { petColorsVersion, viewState } from "../util/stores";
 import { TAB_ORDER, uiState } from "../util/ui";
 import { ViewContext } from "./context";
 import { GroupSection } from "./GroupSection";
+import { UnseenLines } from "./UnseenLines";
 import { Header } from "./Header";
 import { HeroStage } from "./HeroStage";
 import { HostSection } from "./HostSection";
@@ -167,6 +168,8 @@ export function App() {
               <GroupSection group={g} accounts={local.length} />
             </Guarded>
           ))}
+          {/* chats that keep going and tasks queued on hosts that aren't shown: they go on all the same */}
+          {!focus && state.status ? <UnseenLines shown={state.hosts.map((h) => h.name)} /> : null}
           {/* No account here, but SSH hosts shown: one quiet line where this computer's accounts go */}
           {!focus && state.status && local.length === 0 && state.hosts.length > 0 ? (
             <div class="no-sessions muted">No Claude Code config on this computer</div>

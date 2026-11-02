@@ -773,7 +773,10 @@ def run(host, command, stdin=None):
 
 def host_answer(host, args, name="talpy_den.py", also=()):
     """Run a script of this folder on host with args (it goes to python3's
-    stdin, as for --status): its answer, {"ok", "message", ...}. A long
+    stdin, as for --status): its answer, {"ok", "message", ...}; "reached":
+    False when the host (or the container) couldn't be reached, not when
+    the script there said no (a queued go-on starts again once it answers:
+    jump.start_queued, talpy_den.requeue_reached). A long
     message for pane.py (--text) goes over first, into a file it reads there:
     ssh's command is one argument, and one holds 128 KiB at most."""
     host = check_host(host)
@@ -790,16 +793,18 @@ def host_answer(host, args, name="talpy_den.py", also=()):
     try:
         r = ssh(host, command, host_script(name, also))
     except subprocess.TimeoutExpired:
-        return {"ok": False, "message": f"{p.label} didn't answer within {RUN_TIMEOUT} s"}
+        return {"ok": False, "reached": False, "message": f"{p.label} didn't answer within {RUN_TIMEOUT} s"}
     except OSError as exc:
-        return {"ok": False, "message": cant_run(p, exc)}
+        return {"ok": False, "reached": False, "message": cant_run(p, exc)}
     answer = answer_after_mark(r.stdout)
     if answer is not None:
         return {**answer, "ok": bool(answer.get("ok")), "message": answer.get("message") or ""}
     ok, message = outcome(host, r)
     if ok:  # it ran, but didn't answer as the script does
         return {"ok": False, "message": f"{p.label} sent an answer Talpy Den can't read."}
-    return {"ok": False, "message": message}
+    # (ssh couldn't connect, or the container isn't running: not what the script said)
+    unreached = r.returncode == 255 or (p.container and container_problem(p, r.returncode, r.stderr)[0])
+    return {"ok": False, "message": message, **({"reached": False} if unreached else {})}
 
 
 def run_status_script(host, args):

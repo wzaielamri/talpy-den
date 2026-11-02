@@ -974,6 +974,18 @@ class KeepGoingThereTests(TwoAccountHost):
         self.assertEqual(cs.load_queue(cache), [])
 
 
+class UnreachedTests(TwoAccountHost):
+    def test_an_answer_says_when_the_host_couldnt_be_reached(self):
+        # (a queued go-on then starts once the host answers again: KeepGoingOnHostsTests)
+        self.mode("unreachable")
+        answer = remote.continue_chat("lab", ".claude", self.CHAT)
+        self.assertEqual((answer["ok"], answer.get("reached")), (False, False), answer)
+        self.mode("")
+        answer = remote.continue_chat("lab", ".claude", "0a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b")  # (there, but no such chat)
+        self.assertFalse(answer["ok"])
+        self.assertNotIn("reached", answer)
+
+
 class LoginTests(FakeSSH):
     """A host that wants a password: you type it into ssh itself, in a
     terminal, and the checks then share that login's connection."""

@@ -990,6 +990,8 @@ export type WebviewMessage =
   | { type: "showRemoved"; host?: string }
   | { type: "showHidden"; host: string } // an SSH host's eye button: which kind to show again
   | { type: "hideHost"; host: string }
+  | { type: "showHost"; host: string } // (one with chats that keep going, or tasks queued, while it isn't shown)
+  | { type: "keepOff"; chatId: string; host: string } // (a chat of a host that isn't shown: it has no row)
   | { type: "pickHosts" }
   | { type: "setupUsageBars" }
   | { type: "openUsagePage" }

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A go-on that couldn't reach its host starts once the host answers
+  again:** it waited for you to start it again; now it says so and starts
+  by itself as soon as the host's next check gets through (one the host
+  turned down still waits for you).
+- **What keeps going on a host that isn't shown is still listed:** a line
+  where the hosts go says so, with **Show** and **Stop** or **Cancel**.
 - **Keep going on SSH hosts and in containers:** a chat on an SSH host or in
   a container can keep going too (↻ while it works, *Keep going* beside *Go
   on at …* once a limit stopped it, and in *Recent chats*). It's kept on this

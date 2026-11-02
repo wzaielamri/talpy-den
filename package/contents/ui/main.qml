@@ -2504,6 +2504,34 @@ PlasmoidItem {
         }
     }
 
+    // Kept chats and queued tasks of SSH hosts and containers that aren't
+    // shown (not picked, or containers while Show containers is off): they go
+    // on all the same, from here over ssh, so the list says so where the
+    // hosts go (UnseenLine.qml): [{host, name, kept, task}], a kept chat with
+    // its queued go-on
+    readonly property var unseenHostItems: {
+        const shown = shownHosts, out = []
+        const queue = (status && status.queue) || []
+        for (const k of (status && status.keep) || []) {
+            if (!k.host || shown.indexOf(k.host) >= 0)
+                continue
+            out.push({ host: k.host, name: k.name || k.chat.slice(0, 8), kept: k,
+                       task: queue.find(t => t.chat === k.chat && (t.host || "") === k.host && !t.afterTurn) || null })
+        }
+        for (const t of queue)
+            if (t.host && shown.indexOf(t.host) < 0 && !out.some(x => x.task === t))
+                out.push({ host: t.host, name: t.chat ? (t.name || t.chat.slice(0, 8)) : "", kept: null, task: t })
+        return out
+    }
+
+    // An SSH host or a container joins the list (picked; a container also turns Show containers on)
+    function showHost(host) {
+        if (pickedHosts.indexOf(host) < 0)
+            toggleHost(host)
+        if (isContainer(host) && !showContainers)
+            Plasmoid.configuration.showContainers = true
+    }
+
     function toggleHost(host) {
         const list = pickedHosts.slice()
         const i = list.indexOf(host)

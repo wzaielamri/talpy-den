@@ -9,7 +9,7 @@ import { AGENT_ID } from "./agentRun";
 import type { ChatPanes } from "./chatPane";
 import { setReopenIn, settings } from "./config";
 import type { Dashboard } from "./dashboard";
-import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, machineStatus, shareAccounts } from "./shared/model";
+import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, shareAccounts } from "./shared/model";
 import { answersOf, askShownOf } from "./shared/pane";
 import { permsHost, weekAsked, weekRevokeAsked, weekRuleAsked } from "./shared/week";
 import type { ChatRef, Group, HostMessage, Memory, PlanItem, WebviewMessage } from "./shared/types";
@@ -461,6 +461,15 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       case "hideHost":
         if (text(m.host)) void this.actions.hideHost(m.host);
         break;
+      case "showHost":
+        if (text(m.host)) void this.actions.showHost(m.host);
+        break;
+      case "keepOff": {
+        // (a chat a host that isn't shown keeps going: only one this computer's status lists as kept there)
+        const kept = text(m.chatId) && text(m.host) ? keptChat(this.dash.state().status, m.chatId, m.host) : null;
+        if (kept) void this.actions.keepOff(kept.chat, m.host as string);
+        break;
+      }
       case "pickHosts":
         void this.actions.pickHosts();
         break;

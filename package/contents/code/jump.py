@@ -1742,7 +1742,7 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
             answer = remote.continue_chat(entry["host"], entry["profile"], entry["chat"], entry.get("folder") or "",
                                           task.text, ends_at=ends_at, force=entry.get("why") in ("retry", "cap"))
             ok, message = bool(answer.get("ok")), answer.get("message") or ""
-            if answer.get("waits") or (ok and not message):  # (it didn't go on: see this computer's, below)
+            if answer.get("waits") or not ok or not message:  # (it didn't go on: see this computer's, below)
                 cs.went_on_undone(cache_root, entry["chat"], now_ms, was, entry["host"])
                 if answer.get("waits"):
                     return go_on_waits(cache_root, entry, answer, due, now_ms, out)
@@ -1777,7 +1777,14 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
             ok, message = new_chat_background(home, extra_dirs, entry["profile"], entry.get("folder"), task)
     except Exception as exc:  # (it goes back to the queue, saying why)
         ok, message = False, f"{type(exc).__name__}: {exc}"
-    if not ok:
+    if not ok and entry.get("host") and answer.get("reached") is False:
+        # (the host or the container couldn't be reached: it starts by itself once that answers again,
+        # cs.requeue_reached; anything else waits for you to start it again or cancel it)
+        import remote
+        cs.change_queue(cache_root, put_back=dict(
+            entry, unreachable=now_ms,
+            error=f"{(message or 'It could not be reached').rstrip('.')}. It starts once {remote.label(entry['host'])} answers again"))
+    elif not ok:
         cs.change_queue(cache_root, put_back=dict(entry, error=message or "It didn't start"))
     elif entry.get("chat") and not message:
         return True, ""  # it went on already: nothing to start

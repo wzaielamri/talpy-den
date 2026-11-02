@@ -929,6 +929,30 @@ export function keptChat(status: Pick<Status, "keep"> | null | undefined, chatId
   return status?.keep?.find((k) => k.chat === chatId && (k.host || "") === (host || "")) ?? null;
 }
 
+// Kept chats and queued tasks of SSH hosts and containers that aren't shown
+// (not picked, or containers while Show containers is off): they go on all
+// the same, from here over ssh, so the list says so where the hosts go
+// (UnseenLines): a kept chat with its queued go-on, then the other tasks
+export interface UnseenItem {
+  host: string;
+  name: string;
+  kept: KeptChat | null;
+  task: QueuedTask | null;
+}
+export function unseenHostItems(status: Pick<Status, "keep" | "queue"> | null | undefined, shown: string[]): UnseenItem[] {
+  const out: UnseenItem[] = [];
+  const queue = status?.queue ?? [];
+  for (const k of status?.keep ?? []) {
+    if (!k.host || shown.includes(k.host)) continue;
+    const task = queue.find((t) => t.chat === k.chat && (t.host || "") === k.host && !t.afterTurn) ?? null;
+    out.push({ host: k.host, name: k.name || k.chat.slice(0, 8), kept: k, task });
+  }
+  for (const t of queue)
+    if (t.host && !shown.includes(t.host) && !out.some((x) => x.task === t))
+      out.push({ host: t.host, name: t.chat ? t.name || t.chat.slice(0, 8) : "", kept: null, task: t });
+  return out;
+}
+
 // What a chat that keeps going does, for its tag's title
 export function keptTitle(kept: KeptChat): string {
   return [
