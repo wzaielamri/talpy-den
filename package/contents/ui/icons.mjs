@@ -28,14 +28,14 @@ const TABLE = {
     startNow:        ['media-playback-start',          'play',       'media-playback-start-symbolic'],    // a queued task, a plan carried out, a sound tried
     stop:            ['media-playback-stop',           'stop',       'media-playback-stop-symbolic'],
     interrupt:       ['media-playback-pause',          null,         'media-playback-pause-symbolic'],
-    goOnAt:          ['chronometer',                   'clock',      'alarm-symbolic'],                   // go on once the limit resets; pressed: it goes on then
-    later:           ['chronometer',                   'clock',      'alarm-symbolic'],                   // send when this turn ends
+    goOnAt:          ['clock',                         'clock',      'alarm-symbolic'],                   // go on once the limit resets; pressed: it goes on then
+    later:           ['clock',                         'clock',      'alarm-symbolic'],                   // send when this turn ends
     keepGoing:       ['media-playlist-repeat',         'repeat',     'media-playlist-repeat-symbolic'],
     star:            ['non-starred-symbolic',          'star',       'non-starred-symbolic'],
     starred:         ['starred-symbolic',              'starFull',   'starred-symbolic'],
     makeDefault:     ['starred-symbolic',              'starFull',   'starred-symbolic'],                 // an account's Make Default (plain: not a starred chat's yellow)
     share:           ['document-share',                'share',      'emblem-shared-symbolic'],           // share or continue on another account
-    continueOn:      ['system-switch-user',            'move',       'system-switch-user-symbolic'],      // continue on the account with room left
+    continueOn:      ['mail-forward',                  'move',       'system-switch-user-symbolic'],      // continue on the account with room left (Plasma: an arrow, as VS Code's)
     moveTo:          ['go-next',                       'move',       'go-next-symbolic'],                 // keep only on, move a chat to Claude Code
     edit:            ['document-edit',                 'edit',       'document-edit-symbolic'],
     send:            ['document-send',                 'send',       'document-send-symbolic'],
@@ -109,7 +109,7 @@ const TABLE = {
     terminal:        ['utilities-terminal',            'terminal',   'utilities-terminal-symbolic'],
     phone:           ['smartphone',                    null,         'phone-symbolic'],
     recap:           ['view-statistics',               'chart',      'x-office-presentation-symbolic'],   // (GNOME: a board with a chart; Settings' usage icon isn't in Adwaita or Yaru)
-    tipWaits:        ['chronometer',                   'clock',      'alarm-symbolic'],                   // the Recap's tip about the time chats waited for you
+    tipWaits:        ['clock',                         'clock',      'alarm-symbolic'],                   // the Recap's tip about the time chats waited for you
     tipLimits:       ['speedometer',                   'gauge',      'power-profile-performance-symbolic'], // the Recap's tip about usage limits
     tip:             ['help-hint',                     'lightbulb',  'dialog-information-symbolic'],      // the Recap's other tips (Claude Code's /usage)
     permissions:     ['object-locked',                 'shield',     'security-medium-symbolic'],

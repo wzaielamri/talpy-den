@@ -416,11 +416,13 @@ Item {
         spacing: 0
         HoverButton { id: on; icon.name: "document-edit"; text: "Edit"; onClicked: root.clicks++ }
         HoverButton { id: off; icon.name: "document-send"; text: "Send"; usable: false; onClicked: root.offClicks++ }
+        IconTextButton { id: words; icon.name: "clock"; text: "Go on at 03:00"; Layout.preferredHeight: 18 }
     }
     function report() {
+        const icon = words.contentItem.children[0].children[0]   // (its row: a grid with the icon, then its words)
         return [on.width, on.height, on.contentItem.width, on.contentItem.height, on.contentItem.opacity,
                 off.contentItem.opacity, off.focusPolicy === Qt.NoFocus, off.hoverEnabled,
-                root.clicks, root.offClicks].join(" ")
+                icon.width, icon.height, words.spacing, root.clicks, root.offClicks].join(" ")
     }
 }
 """
@@ -467,6 +469,16 @@ class HoverButtonTests(unittest.TestCase):
         self.assertIn("leftPadding: (Layout.preferredWidth - iconSize) / 2", button)
         self.assertIn("opacity: button.usable ? 1 : 0.4", button)
 
+    def test_a_chats_words_buttons_are_as_tight_as_its_tag(self):
+        row = (UI / "SessionRow.qml").read_text()
+        line = row[row.index("// A usage limit stopped it: continue on another account"):row.index("Kirigami.Icon {\n                    visible: row.hasPeek")]
+        self.assertEqual(line.count("IconTextButton {"), 3)                # Continue on…, Go on at…, Keep going
+        self.assertNotIn("ToolButton", line)
+        self.assertEqual(line.count("Layout.leftMargin: Kirigami.Units.smallSpacing * 2"), 4)   # (and the tag: 12 px apart)
+        button = (UI / "IconTextButton.qml").read_text()
+        self.assertIn("spacing: Kirigami.Units.smallSpacing / 2", button)  # (as Tag.qml's icon and words)
+        self.assertIn("x: tag.icon !== \"\" ? mark.x + mark.width + Kirigami.Units.smallSpacing / 2", (UI / "Tag.qml").read_text())
+
     @NEEDS_PLASMA_QML
     def test_their_icons_are_16_px_and_a_greyed_one_takes_no_click(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -475,7 +487,7 @@ class HoverButtonTests(unittest.TestCase):
             out = subprocess.run(["python3", "-c", BUTTONS_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
                                  env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
         steps = [eval(line) for line in out.stdout.split("\n") if line]
-        self.assertEqual(steps, ["20 22 16 16 1 0.4 true false 1 0"], out.stderr[-2000:])
+        self.assertEqual(steps, ["20 22 16 16 1 0.4 true false 16 16 2 1 0"], out.stderr[-2000:])
 
 
 if __name__ == "__main__":

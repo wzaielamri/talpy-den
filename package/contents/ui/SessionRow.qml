@@ -848,13 +848,13 @@ RowLayout {
                     font: Kirigami.Theme.smallFont
                 }
                 // A usage limit stopped it: continue on another account with room left
-                PlasmaComponents3.ToolButton {
+                IconTextButton {
                     id: handoverButton
                     visible: row.handover !== null
                     icon.name: Icons.plasma.continueOn
                     text: row.handover ? i18n("Continue on %1", row.handover.title) : ""
-                    font: Kirigami.Theme.smallFont
-                    Layout.preferredHeight: stepLabel.implicitHeight + Kirigami.Units.smallSpacing
+                    Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                    Layout.leftMargin: Kirigami.Units.smallSpacing * 2   // (12 px from what's before it, as VS Code's)
                     onClicked: root.handOver(row.session, row.remoteHost, row.handover)
 
                     PlasmaCore.ToolTipArea {
@@ -873,7 +873,7 @@ RowLayout {
                     }
                 }
                 // or go on by itself once the limit resets (queued; again: cancelled)
-                PlasmaComponents3.ToolButton {
+                IconTextButton {
                     visible: row.goOnAt > 0 || row.goingOn !== null
                     icon.name: Icons.plasma.goOnAt
                     // (it goes on then: framed, as a toggle that's on, as VS Code's: a thin
@@ -891,8 +891,8 @@ RowLayout {
                     text: row.goingOn && row.goingOn.waits && !row.goingOn.error ? i18n("Waits to go on")
                           : row.goingOn ? i18n("Goes on at %1", root.startText(row.goingOn.startAt))
                           : i18n("Go on at %1", root.startText(row.goOnAt))
-                    font: Kirigami.Theme.smallFont
-                    Layout.preferredHeight: stepLabel.implicitHeight + Kirigami.Units.smallSpacing
+                    Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                    Layout.leftMargin: Kirigami.Units.smallSpacing * 2
                     onClicked: {
                         if (row.goingOn)
                             root.unqueue(row.goingOn)
@@ -922,12 +922,12 @@ RowLayout {
                     }
                 }
                 // or go on then, and after each later limit too, until it's done
-                PlasmaComponents3.ToolButton {
+                IconTextButton {
                     visible: row.goOnAt > 0 && row.goingOn === null && row.kept === null && !row.remoteHost
                     icon.name: Icons.plasma.keepGoing
                     text: i18n("Keep going")
-                    font: Kirigami.Theme.smallFont
-                    Layout.preferredHeight: stepLabel.implicitHeight + Kirigami.Units.smallSpacing
+                    Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                    Layout.leftMargin: Kirigami.Units.smallSpacing * 2
                     onClicked: root.queueContinue(row.session, row.remoteHost, row.account, true)
 
                     PlasmaCore.ToolTipArea {
@@ -943,6 +943,7 @@ RowLayout {
                 // it keeps going: after each usage limit, on by itself (click: not any more)
                 Tag {
                     visible: row.kept !== null
+                    Layout.leftMargin: Kirigami.Units.smallSpacing * 2
                     icon: Icons.plasma.keepGoing
                     // (red: it says why, as VS Code's)
                     text: row.kept && row.kept.error ? i18nc("a chat that goes on by itself after usage limits, which gave up", "Keeps going (gave up)")
