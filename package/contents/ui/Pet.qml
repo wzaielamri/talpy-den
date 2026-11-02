@@ -233,7 +233,7 @@ Item {
             stopGame()
         else if (lone && root.playWanted) {
             root.playWanted = false
-            wantsToPlay(true)
+            wantsToPlay()
         }
         if (!playing || !missed)
             return
@@ -282,11 +282,17 @@ Item {
             say(i18n("Cookie first!"))
             return
         }
+        // asleep he grumbles, and on the 4th quick click gives in: he wakes up for a game
         if (mood === "done") {
             sleepyClicks += 1
             tickleTimer.restart()
-            if (sleepyClicks >= 3) {
+            if (sleepyClicks >= 4) {
                 sleepyClicks = 0
+                if (!wantsToPlay()) {
+                    react("grumpy")
+                    say(i18n("Zzz… let me sleep."))
+                }
+            } else if (sleepyClicks === 3) {
                 react("angry")
                 say(i18n("I said let me SLEEP!"))
             } else {
@@ -315,12 +321,12 @@ Item {
 
     // ------------------------------------------------------------ a game
 
-    // Four quick clicks (or Play with Talpy, fromMenu): he laughs, says
-    // "Let's play!" and a game starts; false: not now (Playful Talpy off, a
-    // cookie out, held…), the clicks only tickle. While a chat needs you he
-    // points at it instead; asleep, the menu wakes him (clicks only make him
-    // grumpy: petIt)
-    function wantsToPlay(fromMenu) {
+    // Four quick clicks (or Play with Talpy): he laughs, says "Let's play!"
+    // and a game starts; false: not now (Playful Talpy off, a cookie out,
+    // held…), the clicks only tickle. While a chat needs you he points at it
+    // instead; asleep, he wakes up for it (yawns: after the clicks, once he's
+    // grumbled, see petIt)
+    function wantsToPlay() {
         if (!lone || !root.playful || !talpy || gameOn || cookieOn || held || tugging || pushing || leaving)
             return false
         if (mood === "needs") {
@@ -328,10 +334,8 @@ Item {
             say(petLine())
             return true
         }
-        if (mood === "done" && !fromMenu)
-            return false
         // (on at once, his laugh its first move: the clicks after this one are the game's)
-        say(i18n("Let's play!"))
+        say(mood === "done" ? i18n("Okay, okay… let's play!") : i18n("Let's play!"))
         startGame(mood === "done")
         return true
     }
@@ -379,7 +383,7 @@ Item {
         function onPlayWantedChanged() {
             if (root.playWanted && pet.playing) {
                 root.playWanted = false
-                pet.wantsToPlay(true)
+                pet.wantsToPlay()
             }
         }
         function onGameStopWantedChanged() {

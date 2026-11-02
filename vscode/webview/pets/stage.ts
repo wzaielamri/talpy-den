@@ -50,7 +50,7 @@ export function setDarkAll(dark: boolean): void {
 // shows, else once it does
 export function playAll(): void {
   const hero = [...allStages].find((s) => s.hero && s.live && s.pets.length);
-  if (hero) hero.pets[0].wantsToPlay(true);
+  if (hero) hero.pets[0].wantsToPlay();
   else world.playWanted = true;
 }
 

@@ -154,18 +154,22 @@ class HostTests(unittest.TestCase):
             self.assertIn("Aww, stop it…", text[text.index("quickClicks === 3"):][:300])
             self.assertIn("Let's play!", text)
 
-    def test_not_while_he_sleeps_and_never_while_a_chat_needs_you(self):
+    def test_asleep_he_grumbles_then_wakes_up_for_it_never_while_a_chat_needs_you(self):
         for text in (self.pet, self.ts):
-            wants = text[text.index("wantsToPlay(fromMenu"):]
+            wants = text[text.index("wantsToPlay()"):]
             wants = wants[:re.search(r"(function |private )startGame\(wake", wants).start()]
             self.assertRegex(wants, r'mood === "needs"\)? ?\{?\s*\n?\s*(this\.talpy\.)?react\("sign"\)')   # he points at the chat
             self.assertRegex(wants, r'!(root|world)\.playful')                                         # Playful off: only the tickle
-            self.assertRegex(wants, r'mood === "done" && !fromMenu')                                   # asleep: clicks don't
-            self.assertRegex(wants, r'startGame\((this\.)?mood === "done"\)')                         # the menu wakes him
-        # (a click while he sleeps stays grumpy: petIt's sleepy branch comes before the clicks are counted)
+            self.assertNotIn('mood === "done" &&', wants)                                              # asleep too (clicks or the menu),
+            self.assertRegex(wants, r'startGame\((this\.)?mood === "done"\)')                         # woken up: he yawns first
+            self.assertIn("Okay, okay… let's play!", wants)
+        # asleep, clicks 1 and 2 "let me sleep", the 3rd "I said let me SLEEP!", the 4th a game
         for text in (self.pet, self.ts):
             pet_it = text[text.index("petIt()"):] if "function petIt" not in text else text[text.index("function petIt"):]
-            self.assertLess(pet_it.index("let me sleep"), pet_it.index("quickClicks += 1"))
+            sleepy = pet_it[:pet_it.index("quickClicks += 1")]
+            self.assertRegex(sleepy, r"sleepyClicks >= 4\) \{\s*\n\s*(this\.)?sleepyClicks = 0;?\s*\n\s*if \(!(this\.)?wantsToPlay\(\)\)")
+            self.assertLess(sleepy.index("sleepyClicks === 3"), sleepy.index("I said let me SLEEP!"))
+            self.assertIn("let me sleep", sleepy)
 
     def test_it_ends_at_once(self):
         # a chat that needs you, out of sight, a drag, Playful off, Esc, a click outside the stage

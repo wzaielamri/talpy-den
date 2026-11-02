@@ -414,7 +414,7 @@ export class Pet {
     }
     if (this.lone && world.playWanted) {
       world.playWanted = false;
-      this.wantsToPlay(true);
+      this.wantsToPlay();
     }
     // what happened meanwhile, if it's from the last minute (older news is dropped)
     const missed = this.missed;
@@ -533,11 +533,17 @@ export class Pet {
       this.say("Cookie first!");
       return;
     }
+    // asleep he grumbles, and on the 4th quick click gives in: he wakes up for a game
     if (this.mood === "done") {
       this.sleepyClicks += 1;
       this.tickleTimer.restart();
-      if (this.sleepyClicks >= 3) {
+      if (this.sleepyClicks >= 4) {
         this.sleepyClicks = 0;
+        if (!this.wantsToPlay()) {
+          this.talpy.react("grumpy");
+          this.say("Zzz… let me sleep.");
+        }
+      } else if (this.sleepyClicks === 3) {
         this.talpy.react("angry");
         this.say("I said let me SLEEP!");
       } else {
@@ -783,11 +789,12 @@ export class Pet {
 
   // ------------------------------------------------------------ a game
 
-  // Four quick clicks (or Play with Talpy, fromMenu): he laughs, says "Let's
-  // play!" and a game starts; false: not now (Playful Talpy off, a cookie out,
-  // held…), the clicks only tickle. While a chat needs you he points at it
-  // instead; asleep, the menu wakes him (clicks only make him grumpy: petIt)
-  wantsToPlay(fromMenu = false): boolean {
+  // Four quick clicks (or Play with Talpy): he laughs, says "Let's play!" and
+  // a game starts; false: not now (Playful Talpy off, a cookie out, held…),
+  // the clicks only tickle. While a chat needs you he points at it instead;
+  // asleep, he wakes up for it (yawns: after the clicks, once he's grumbled,
+  // see petIt)
+  wantsToPlay(): boolean {
     if (!this.lone || !world.playful || this.play?.on || this.cookieOn || this.held || this.tugging || this.pushing || this.leaving)
       return false;
     if (this.mood === "needs") {
@@ -795,9 +802,8 @@ export class Pet {
       this.say(this.petLine());
       return true;
     }
-    if (this.mood === "done" && !fromMenu) return false;
     // (on at once, his laugh its first move: the clicks after this one are the game's)
-    this.say("Let's play!");
+    this.say(this.mood === "done" ? "Okay, okay… let's play!" : "Let's play!");
     this.startGame(this.mood === "done");
     return true;
   }

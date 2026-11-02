@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **A sleeping Talpy wakes up for a game:** four quick clicks on him while
+  he slept only made him grumpy, so no game ever started (only *Play with
+  Talpy* woke him). He still grumbles at the first three, and on the fourth
+  he gives in: he yawns, says *Okay, okay… let's play!* and the game starts.
 - **A background chat goes on where it is after a usage limit, and a
   terminal showing it stays on it:** at the reset, *Keep going* and *Go on
   at …* stopped a background chat that was still running, so a terminal
