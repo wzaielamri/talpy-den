@@ -2621,17 +2621,43 @@ PlasmoidItem {
         return items
     }
 
+    // An open menu is changed in place where it can be: Plasma makes the
+    // section headers only as a menu opens (openRelative rebuilds it), so
+    // items made while it was open showed their headers as plain lines, and
+    // the old headers stayed at the top (clearMenuItems leaves them). Its
+    // lines changed (one more container, a host gone): it's made anew and
+    // Plasma rebuilds it where it is.
+    readonly property var hostItemDefaults: ({ text: "", icon: "", checkable: false, checked: false, enabled: true,
+                                               host: "", reload: false })
+    property string hostsMenuShape: ""   // its headers and lines, without what changes in place
+
+    function hostsMenuShapeOf(model) {
+        return JSON.stringify(model.map(spec => spec.section ? "S:" + spec.text : spec.separator ? "-" : "I"))
+    }
+
     function fillHostsMenu() {
         const model = hostsMenuModel()
         const shown = JSON.stringify(model)
         if (shown === hostsMenuShown)
             return
         hostsMenuShown = shown
+        const open = hostsMenu.status === PlasmaExtras.Menu.Open || hostsMenu.status === PlasmaExtras.Menu.Opening
+        const shape = hostsMenuShapeOf(model)
+        if (open && shape === hostsMenuShape && hostItems.length === model.length) {
+            model.forEach((spec, i) => {
+                if (!spec.section && !spec.separator)
+                    Object.assign(hostItems[i], hostItemDefaults, spec)
+            })
+            return
+        }
+        hostsMenuShape = shape
         hostsMenu.clearMenuItems()   // (it deletes the old items itself: destroying them again threw, and the menu stayed empty)
         const items = model.map(spec => hostItem.createObject(hostsMenu, spec))
         for (const item of items)
             hostsMenu.addMenuItem(item)
         hostItems = items
+        if (open)
+            hostsMenu.openRelative()   // (its headers made anew, the old ones gone)
     }
 
     // Actions on an SSH host: open a session in a local terminal (ssh -t),

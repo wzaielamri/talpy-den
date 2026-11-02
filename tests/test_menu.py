@@ -117,7 +117,10 @@ class MenuCatcherTests(unittest.TestCase):
 
 # The hosts picker's Reload (main.qml's own functions, in a real Plasma menu):
 # a Qt menu closes on any click, so Reload opens it again where it was, says
-# Reloading… until every list it asked for answered, then Reload again
+# Reloading… until every list it asked for answered, then Reload again. And
+# its section headers stay headers, where they belong, when it changes while
+# it's open (Plasma makes them only as it opens: refilled while open, they
+# were plain lines and the old ones stayed at the top)
 PICKER = """import QtQuick
 import org.kde.plasma.extras as PlasmaExtras
 import org.kde.plasma.components as PlasmaComponents3
@@ -132,8 +135,13 @@ Item {
     function loadHosts() {}
     function toggleHost(host) { log = log + "toggle:" + host + " " }
     function reloadHosts() { log = log + "reload "; return { "cmd-a": true, "cmd-b": true } }
+    property bool more: false   // (a container more: the menu's lines change)
     function hostsMenuModel() {
-        const items = [{ text: "lab", checkable: true, host: "lab" }, { separator: true }]
+        const items = [{ section: true, text: "SSH hosts" }, { text: "lab", checkable: true, host: "lab" },
+                       { section: true, text: "Containers" }, { text: "box", checkable: true, host: "podman:box" }]
+        if (more)
+            items.push({ text: "web", checkable: true, host: "podman:web" })
+        items.push({ separator: true })
 %(item)s
         return items
     }
@@ -159,7 +167,8 @@ def shown():
     m = menu()
     if not m or not m.isVisible():
         return "closed"
-    return " | ".join(a.text().replace("&", "") + ("" if a.isEnabled() else " (off)") for a in m.actions() if not a.isSeparator())
+    return " | ".join(("# " if a.isSeparator() else "") + a.text().replace("&", "") + ("" if a.isEnabled() else " (off)")
+                      for a in m.actions() if a.text() or not a.isSeparator())   # (a header: "# " and its name)
 def click(text):
     m = menu()
     a = next(a for a in m.actions() if a.text().replace("&", "") == text)
@@ -172,6 +181,7 @@ print(repr(shown()))
 click("Reload"); print(repr(shown()))
 answer("cmd-a"); print(repr(shown()))
 answer("cmd-b"); print(repr(shown()))
+r.setProperty("more", True); QMetaObject.invokeMethod(r, "refreshHostsMenu"); QTest.qWait(300); print(repr(shown()))
 click("lab"); print(repr(shown()))
 r.setProperty("dashboardShown", False)   # (closed before the menu could open again)
 QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, QPoint(20, 10)); QTest.qWait(300)
@@ -181,20 +191,24 @@ print(repr(r.property("log").strip()))
 
 
 def main_qml_block(main, start):
-    """The block of main.qml starting at start (4 spaces in) up to its closing brace (a property: its line)."""
+    """The block of main.qml starting at start (4 spaces in) up to its closing brace (a property: its lines)."""
     i = main.index("\n    " + start) + 1
-    if start.startswith("property "):
-        return main[i:main.index("\n", i) + 1]
+    if start.startswith(("property ", "readonly property ")):
+        end = main.index("\n", i)
+        while sum(main.count(o, i, end) - main.count(c, i, end) for o, c in ("()", "{}", "[]")) > 0:
+            end = main.index("\n", end + 1)
+        return main[i:end + 1]
     return main[i:main.index("\n    }\n", i) + 7]
 
 
 @NEEDS_PLASMA_QML
 class PickerReloadTests(unittest.TestCase):
-    def test_reload_keeps_the_picker_open_and_says_so_until_the_lists_answered(self):
+    def test_reload_keeps_the_picker_open_with_its_headers_and_says_so_until_the_lists_answered(self):
         main = (UI / "main.qml").read_text()
         code = "".join(main_qml_block(main, start) for start in (
             "property var hostsReloadWaits", "property bool hostsReloading", "function openHostsMenu(",
-            "function refreshHostsMenu(", "function fillHostsMenu(", "function reloadHostsMenu(",
+            "function refreshHostsMenu(", "readonly property var hostItemDefaults", "property string hostsMenuShape",
+            "function hostsMenuShapeOf(", "function fillHostsMenu(", "function reloadHostsMenu(",
             "function reopenHostsMenu(", "function hostsReloadAnswered(", "function hostsReloadDone(",
             "Timer {\n        id: hostsReloadTimer", "PlasmaExtras.Menu {\n        id: hostsMenu",
             "Component {\n        id: hostItem"))
@@ -207,10 +221,11 @@ class PickerReloadTests(unittest.TestCase):
             out = subprocess.run(["python3", "-c", PICKER_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
                                  env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
         self.assertEqual([eval(line) for line in out.stdout.split("\n") if line], [
-            "lab | Reload",
-            "lab | Reloading… (off)",   # (open again, at once)
-            "lab | Reloading… (off)",   # one list answered, one to go
-            "lab | Reload",
+            "# SSH hosts | lab | # Containers | box | Reload",
+            "# SSH hosts | lab | # Containers | box | Reloading… (off)",   # (open again, at once)
+            "# SSH hosts | lab | # Containers | box | Reloading… (off)",   # one list answered, one to go
+            "# SSH hosts | lab | # Containers | box | Reload",             # (changed where it is)
+            "# SSH hosts | lab | # Containers | box | web | Reload",       # a line more: made anew, still open
             "closed",                    # picking a host closes it, as before
             "closed",                    # the dashboard closed meanwhile: not opened on its own
             "reload toggle:lab reload",
