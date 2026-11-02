@@ -919,7 +919,9 @@ def open_plan(host, slug, profile=None, open_it=True):
     if not answer.get("ok") or not isinstance(answer.get("markdown"), str):
         return False, answer.get("message") or f"{label(host)} doesn't have that plan", None
     folder = jump.runs_folder(Path.home())
-    path = folder / f"plan-{re.sub(r'[^A-Za-z0-9_.-]', '_', host)}-{slug}.md"
+    # (the slug comes from the host's or container's answer: only safe characters go in a file name here)
+    safe = lambda text: re.sub(r"[^A-Za-z0-9_.-]", "_", text).lstrip(".")
+    path = folder / f"plan-{safe(host)}-{safe(slug)}.md"
     with open(path, "w", encoding="utf-8") as f:
         f.write(answer["markdown"])
     if open_it:
