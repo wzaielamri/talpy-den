@@ -3087,7 +3087,12 @@ class LinkCache:
         the last such entry before its own entries the chat it moved from
         (a chat moved twice carries both). Read once (and then only what
         was added while it's all copied entries): no `session_id` in its
-        first MOVED_HEAD_LINES lines, or its own first, isn't a moved chat."""
+        first MOVED_HEAD_LINES lines, or its own first, isn't a moved chat.
+        Nor is one whose first such entry isn't in the chat it names, when
+        that one's transcript is there: `session_id` is the id the process
+        that wrote an entry started with, so after /clear (or /resume) in a
+        chat the new conversation's entries carry the old id too, but they
+        are new, not copied."""
         try:
             st = path.stat() if st is None else st
         except OSError:
@@ -3095,8 +3100,8 @@ class LinkCache:
         key = file_key(st)
         rec = self.data["moved"].get(key) or self.old.get("moved", {}).get(key)
         if not (isinstance(rec, dict) and isinstance(rec.get("size"), int) and rec["size"] <= st.st_size
-                and isinstance(rec.get("from"), str)):
-            rec = {"size": 0, "lines": 0, "from": "", "done": False}
+                and isinstance(rec.get("from"), str) and rec.get("copied") is not None):
+            rec = {"size": 0, "lines": 0, "from": "", "done": False, "copied": False}
         if not rec.get("done") and rec["size"] < st.st_size:
             rec = dict(rec)
             own = path.stem
@@ -3116,8 +3121,10 @@ class LinkCache:
                             sid = e.get("session_id") if isinstance(e, dict) else None
                             if valid_id(sid) and sid == own:
                                 rec["done"] = True  # its own entries begin (or it never moved)
+                            elif valid_id(sid) and not rec["copied"] and not self.copied(path, sid, e.get("uuid")):
+                                rec["from"], rec["done"] = "", True  # (new entries: /clear, /resume)
                             elif valid_id(sid):
-                                rec["from"] = sid
+                                rec["from"], rec["copied"] = sid, True
                         if not rec["done"] and not rec["from"] and rec["lines"] >= MOVED_HEAD_LINES:
                             rec["done"] = True  # (no copied entries at its top)
                         if rec["done"]:
@@ -3126,6 +3133,21 @@ class LinkCache:
                 pass
         self._keep("moved", key, rec)
         return rec["from"]
+
+    def copied(self, path, chat, uuid):
+        """Can this entry of a transcript be a copy of the chat's: it's in
+        that chat's transcript (in the same folder, else another one of the
+        account's: Claude moves a transcript when its chat changes folder),
+        or that's gone, so it can't be told."""
+        source = path.with_name(f"{chat}.jsonl")
+        if not source.exists():
+            try:
+                source = next(path.parent.parent.glob(f"*/{chat}.jsonl"), None)
+            except OSError:
+                source = None
+            if source is None:
+                return True
+        return isinstance(uuid, str) and bool(uuid) and self.holds(source, uuid)
 
     def chat_info(self, path, st):
         """(name, cwd, has messages) of a transcript, read again only when it grew."""

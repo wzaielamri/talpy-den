@@ -31,7 +31,7 @@ from test_talpy_den import Fixture, iso, session, vscode_link_params, write  # n
 
 
 def lines(*entries):
-    return "".join(json.dumps(e) + "\n" for e in entries)
+    return "".join(json.dumps(e, separators=(",", ":")) + "\n" for e in entries)  # (as Claude writes them)
 
 
 def prompt(text, ts, **kw):
@@ -1434,7 +1434,7 @@ class MovedChatTests(TaskFixture):
         # moved twice: the copy carries both ids, the last before its own is the one it moved from
         newer = "7de0b1f3-0000-4000-8000-000000000001"
         write(self.project / f"{newer}.jsonl", lines(
-            {"type": "attachment", "sessionId": newer, "session_id": self.OLD},
+            {"type": "attachment", "uuid": "u2", "sessionId": newer, "session_id": self.OLD},
             {"type": "attachment", "sessionId": newer, "session_id": self.NEW},
             {"type": "attachment", "sessionId": newer, "session_id": newer}))
         self.assertEqual(links.moved_from(self.project / f"{newer}.jsonl"), self.NEW)
@@ -1444,6 +1444,23 @@ class MovedChatTests(TaskFixture):
             {"type": "attachment", "sessionId": quoted, "session_id": quoted},
             {"type": "attachment", "sessionId": quoted, "session_id": self.OLD}))
         self.assertEqual(links.moved_from(self.project / f"{quoted}.jsonl"), "")
+        # after /clear (or /resume) in a chat, the new conversation's entries carry the id its
+        # process started with too: they're new, not in that chat, so it isn't a moved one (its
+        # transcript in another folder: Claude moves it there when the chat changes folder)
+        cleared = "d0c1ea2e-0000-4000-8000-000000000003"
+        elsewhere = self.project.with_name("-repos-app--claude-worktrees-fix")
+        write(elsewhere / f"{cleared}.jsonl", lines(
+            prompt("<command-name>/clear</command-name>", self.now, sessionId=cleared, uuid="c1"),
+            prompt("something else", self.now, sessionId=cleared, uuid="c2"),
+            {"type": "attachment", "uuid": "c3", "sessionId": cleared, "session_id": self.OLD},
+            dict(reply("Sure.", self.now), uuid="c4", sessionId=cleared, session_id=self.OLD)))
+        self.assertEqual(links.moved_from(elsewhere / f"{cleared}.jsonl"), "")
+        # (a copy whose chat's transcript is gone can't be told from it: taken as moved)
+        gone = "0ad0be11-0000-4000-8000-000000000004"
+        write(self.project / f"{gone}.jsonl", lines(
+            {"type": "attachment", "uuid": "g1", "sessionId": gone, "session_id": "0ff0ff00-0000-4000-8000-000000000005"},
+            {"type": "attachment", "uuid": "g2", "sessionId": gone, "session_id": gone}))
+        self.assertEqual(links.moved_from(self.project / f"{gone}.jsonl"), "0ff0ff00-0000-4000-8000-000000000005")
         cs_moves = {self.OLD: self.NEW, self.NEW: newer}
         self.assertEqual(cs.moved_chat(self.OLD, cs_moves), newer)
         self.assertEqual(cs.moved_chat(newer, {newer: self.OLD, self.OLD: newer}), self.OLD)  # (no loop)

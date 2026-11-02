@@ -79,7 +79,9 @@
   background under a new id, with a copy of its history; at the reset,
   its go-on resumed the old id, so two copies of one conversation worked
   at once. Keep going, the queued go-on, the chat's row, its star and its
-  name now follow it to the new id, and the old id isn't listed apart.
+  name now follow it to the new id, and the old id isn't listed apart. A
+  conversation started with `/clear` in a chat isn't taken for one, so
+  the chat it cleared stays listed.
 - **A chat that keeps going stays listed until it's done or Keep going is
   off,** with its *Limit*, *Keeps going* and *Goes on at*, also once its
   terminal is closed; it vanished from its account's list.
