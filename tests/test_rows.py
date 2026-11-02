@@ -499,5 +499,158 @@ class HoverButtonTests(unittest.TestCase):
         self.assertEqual(steps, ["20 22 16 16 1 0.4 true false 16 16 2 1 0"], out.stderr[-2000:])
 
 
+# A recent chat's line (a column without spacing: the shade first in it) and
+# a chat's row (a row: the shade in its first item, the pet's bar), each with
+# a twin without a shade, to see that the shade takes no room
+SHADE = """import QtQuick
+import QtQuick.Layouts
+import org.kde.plasma.components as PlasmaComponents3
+import "%s"
+Item {
+    id: root
+    width: 400; height: 300
+    function at(item, from) { const p = item.mapToItem(from || root, 0, 0); return [Math.round(p.x), Math.round(p.y)] }
+    function box(item) { return at(item).concat([Math.round(item.width), Math.round(item.height)]) }
+    function report() {
+        return JSON.stringify({
+            line: box(lineA), name: box(nameA), lineName: at(nameA, lineA), lineTwin: at(twinNameA, twinA), lineH: [lineA.height, twinA.height],
+            row: box(rowB), rowBar: at(barB, rowB), rowName: at(nameB, rowB), rowTwin: [at(twinBarB, twinB), at(twinNameB, twinB)],
+            lineShade: box(shadeA.children[0]), rowShade: box(shadeB.children[0])})
+    }
+    function shown() { return [shadeA.children[0].visible, shadeB.children[0].visible].join(" ") }
+    ColumnLayout {
+        x: 20; y: 10; width: 360
+        spacing: 4
+        ColumnLayout {
+            id: lineA
+            Layout.fillWidth: true
+            spacing: 0
+            HoverHandler { id: hoverA }
+            HoverShade { id: shadeA; target: lineA; shown: hoverA.hovered; side: 4; pad: 2 }
+            RowLayout {
+                Layout.fillWidth: true
+                PlasmaComponents3.Label {
+                    id: nameA; text: "a recent chat"
+                    MouseArea { anchors.fill: parent; hoverEnabled: true }   // (as its name's: it takes the hover)
+                }
+            }
+            PlasmaComponents3.Label { text: "its second line" }
+        }
+        ColumnLayout {
+            id: twinA
+            Layout.fillWidth: true
+            spacing: 0
+            RowLayout { Layout.fillWidth: true; PlasmaComponents3.Label { id: twinNameA; text: "a recent chat" } }
+            PlasmaComponents3.Label { text: "its second line" }
+        }
+        RowLayout {
+            id: rowB
+            Layout.fillWidth: true
+            spacing: 6
+            HoverHandler { id: hoverB }
+            Rectangle {
+                id: barB; Layout.fillHeight: true; Layout.preferredWidth: 6; color: "orange"
+                HoverShade { id: shadeB; z: -1; target: rowB; shown: hoverB.hovered; side: 4; pad: 2 }
+            }
+            PlasmaComponents3.Label { id: nameB; text: "a chat"; Layout.fillWidth: true }
+        }
+        RowLayout {
+            id: twinB
+            Layout.fillWidth: true
+            spacing: 6
+            Rectangle { id: twinBarB; Layout.fillHeight: true; Layout.preferredWidth: 6; color: "orange" }
+            PlasmaComponents3.Label { id: twinNameB; text: "a chat"; Layout.fillWidth: true }
+        }
+    }
+}
+"""
+
+SHADE_SCRIPT = """import json, sys
+from PySide6.QtCore import QUrl, QPoint, QMetaObject, Q_RETURN_ARG
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQuick import QQuickView
+from PySide6.QtTest import QTest
+app = QGuiApplication(sys.argv)
+view = QQuickView(); view.setSource(QUrl.fromLocalFile(sys.argv[1]))
+if view.status() != QQuickView.Ready:
+    sys.exit(str([e.toString() for e in view.errors()]))
+r = view.rootObject()
+view.show(); QTest.qWaitForWindowExposed(view); QTest.qWait(100)
+call = lambda name: QMetaObject.invokeMethod(r, name, Q_RETURN_ARG("QVariant"))
+geo = json.loads(call("report")); print(repr(json.dumps(geo)))
+mid = lambda b, dx=None: QPoint(b[0] + (b[2] // 2 if dx is None else dx), b[1] + b[3] // 2)
+QTest.mouseMove(view, QPoint(390, 290)); QTest.qWait(400); print(repr(call("shown")))
+for at in (mid(geo["name"]), mid(geo["line"], geo["line"][2] - 10), mid(geo["row"]), QPoint(390, 290)):
+    QTest.mouseMove(view, at); QTest.qWait(400); print(repr(call("shown")))
+"""
+
+
+@NEEDS_PLASMA_QML
+class HoverShadeTests(unittest.TestCase):
+    """A line is shaded while the pointer is on it (2026-11-02), as a row in
+    VS Code's list (--vscode-list-hoverBackground) and GNOME's: a chat's row,
+    a recent or starred chat's line, a plan's, a memory's, a queued task's, a
+    Focus or project line, a subagent. Plasma's had only its buttons."""
+
+    def test_it_covers_the_whole_line_takes_no_room_and_follows_the_pointer(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            qml = Path(tmp) / "shade.qml"
+            qml.write_text(SHADE % UI.as_uri())
+            out = subprocess.run(["python3", "-c", SHADE_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
+                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+        steps = [eval(line) for line in out.stdout.split("\n") if line]
+        self.assertEqual(len(steps), 6, out.stderr[-2000:])
+        geo = json.loads(steps[0])
+        # no room taken: what's in the line stands where it stands without a shade
+        self.assertEqual(geo["lineName"], geo["lineTwin"])
+        self.assertEqual(geo["lineH"][0], geo["lineH"][1])
+        self.assertEqual([geo["rowBar"], geo["rowName"]], geo["rowTwin"])
+        # the whole line, side (4) past its left and right, pad (2) above and below
+        x, y, w, h = geo["line"]
+        self.assertEqual(geo["lineShade"], [x - 4, y - 2, w + 8, h + 4])
+        x, y, w, h = geo["row"]
+        self.assertEqual(geo["rowShade"], [x - 4, y - 2, w + 8, h + 4])
+        self.assertEqual(steps[1:], [
+            "false false",   # nothing under the pointer
+            "true false",    # on the line's name (which takes the hover itself)
+            "true false",    # past its words, on the line
+            "false true",    # on the chat's row: only its shade
+            "false false",   # off both
+        ], out.stderr[-2000:])
+
+    def test_every_line_vscode_shades_is_shaded_in_plasma_under_all_of_it(self):
+        # First in the line, before what it draws, so it's drawn under it: in
+        # a column without spacing (a layout adds its spacing after even an
+        # empty item), in a plain item, or in a chat's row's first item (the
+        # pet's bar), under that too
+        for name, start, first, column in (("RecentLine.qml", "id: recentLine", "RowLayout {", True),
+                                           ("PlanLine.qml", "id: planLine", "RowLayout {", True),
+                                           ("MemoryLine.qml", "id: memoryLine", "RowLayout {", True),
+                                           ("GroupSection.qml", "id: queuedLine", "RowLayout {", True),
+                                           ("FocusLine.qml", "id: line", "RowLayout {", False),
+                                           ("AgentTree.qml", "id: agentHead", "ColumnLayout {", False),
+                                           ("SessionRow.qml", "color: row.petColor", "\n    Rectangle {", False)):
+            with self.subTest(name):
+                qml = (UI / name).read_text()
+                line = qml[qml.index(start):]
+                self.assertIn("HoverShade {", line)
+                self.assertLess(line.index("HoverShade {"), line.index(first))
+                shade = line[line.index("HoverShade {"):]
+                shade = shade[:shade.index("}")]
+                self.assertRegex(shade, r"shown: \w+\.(hovered|containsMouse)\n")
+                if column:
+                    self.assertRegex(line[:line.index("HoverShade {")], r"\n\s+spacing: 0\b")
+        row = (UI / "SessionRow.qml").read_text()
+        bar = row[row.index("// A bar in the color of the chat's pet"):]
+        bar = bar[:bar.index("\n    Rectangle {", bar.index("color: row.petColor"))]
+        self.assertRegex(bar, r"HoverShade \{\s+z: -1\s+target: row\n")
+        css = (UI.parent.parent.parent / "vscode/webview/styles.css").read_text()
+        for selector in (".session:hover", ".recent-item:hover", ".agent-head:hover", ".focus-line:hover"):
+            with self.subTest(selector):
+                rule = css[css.index(selector + " {"):]
+                self.assertIn("background: var(", rule[:rule.index("}")])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -54,9 +54,15 @@ ColumnLayout {
 
                 // Its lines: click for its task, its last steps and its report
                 Item {
+                    id: agentHead
                     Layout.fillWidth: true
                     implicitHeight: agentLines.implicitHeight
 
+                    HoverShade {
+                        target: agentHead
+                        shown: agentMouse.containsMouse
+                        side: Kirigami.Units.smallSpacing / 2
+                    }
                     ColumnLayout {
                         id: agentLines
                         anchors.fill: parent

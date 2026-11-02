@@ -20,6 +20,14 @@ Item {
 
     implicitHeight: row.implicitHeight + Kirigami.Units.smallSpacing
 
+    HoverHandler {
+        id: lineHover
+    }
+    HoverShade {
+        target: line
+        shown: lineHover.hovered
+    }
+
     RowLayout {
         id: row
         anchors.left: parent.left

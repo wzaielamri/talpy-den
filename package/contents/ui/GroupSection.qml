@@ -401,6 +401,12 @@ ColumnLayout {
             TouchHold {
                 buttons: queuedButtons
             }
+            HoverShade {
+                target: queuedLine
+                shown: queuedHover.hovered
+                side: Kirigami.Units.smallSpacing
+                pad: Kirigami.Units.smallSpacing / 2
+            }
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing

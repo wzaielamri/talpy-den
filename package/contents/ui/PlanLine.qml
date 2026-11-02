@@ -38,13 +38,19 @@ ColumnLayout {
 
     Layout.fillWidth: true
     Layout.rightMargin: Kirigami.Units.smallSpacing
-    spacing: Kirigami.Units.smallSpacing / 2
+    spacing: 0   // (what shows under the line stands smallSpacing / 2 below it: the shade takes no room)
 
     HoverHandler {
         id: planHover
     }
     TouchHold {
         buttons: planButtons
+    }
+    HoverShade {
+        target: planLine
+        shown: planHover.hovered
+        side: Kirigami.Units.smallSpacing
+        pad: Kirigami.Units.smallSpacing / 2
     }
 
     RowLayout {
@@ -343,10 +349,12 @@ Kirigami.Icon {
 
     DeleteAsk {
         Layout.fillWidth: true
+        Layout.topMargin: Kirigami.Units.smallSpacing / 2
         itemKey: planLine.composerKey
     }
     MoveAsk {
         Layout.fillWidth: true
+        Layout.topMargin: Kirigami.Units.smallSpacing / 2
         itemKey: planLine.composerKey
     }
     // (made only while it's open: one under every plan made the list
@@ -358,6 +366,7 @@ Kirigami.Icon {
         active: shown
         visible: shown
         Layout.fillWidth: true
+        Layout.topMargin: Kirigami.Units.smallSpacing / 2
         onLoaded: item.visible = Qt.binding(() => planBox.shown)
 
         sourceComponent: NewChatBox {

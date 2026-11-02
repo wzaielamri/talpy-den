@@ -287,6 +287,17 @@ RowLayout {
         Layout.preferredWidth: 6
         radius: 3
         color: row.petColor || "transparent"
+
+        // The whole row shaded while the pointer is on it (out to the list's
+        // edges, halfway into the gap to the next row); in the bar, the row's
+        // first item, under it: in the row, it would take the row's spacing
+        HoverShade {
+            z: -1
+            target: row
+            shown: rowHover.hovered
+            side: Kirigami.Units.smallSpacing
+            pad: Kirigami.Units.smallSpacing / 2
+        }
     }
 
     Rectangle {

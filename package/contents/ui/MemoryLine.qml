@@ -34,6 +34,12 @@ ColumnLayout {
     TouchHold {
         buttons: memoryButtons
     }
+    HoverShade {
+        target: memoryLine
+        shown: memoryHover.hovered
+        side: Kirigami.Units.smallSpacing
+        pad: Kirigami.Units.smallSpacing / 2
+    }
 
     RowLayout {
         Layout.fillWidth: true
