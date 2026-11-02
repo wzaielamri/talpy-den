@@ -2099,9 +2099,12 @@ PlasmoidItem {
         id: hostLister
         onNewData: (source, data) => {
             disconnectSource(source)
+            root.hostsReloadAnswered(source)
             const result = root.helperResult(data)
-            if (!result.ok)
+            if (!result.ok) {
+                root.refreshHostsMenu()   // (Reloading… may go back to Reload)
                 return
+            }
             root.sshHosts = result.hosts || []
             root.containersHere = result.containers || []
             root.containerNotes = result.notes || []
@@ -2125,7 +2128,9 @@ PlasmoidItem {
     }
 
     function loadHosts() {
-        hostLister.connectSource("python3 -I " + shellQuote(codeDir + "remote.py") + " --hosts" + containerArgs() + " # " + Date.now())
+        const cmd = "python3 -I " + shellQuote(codeDir + "remote.py") + " --hosts" + containerArgs() + " # " + Date.now()
+        hostLister.connectSource(cmd)
+        return cmd
     }
 
     // An SSH host's containers (remote.py --containers there): fetched once
@@ -2137,8 +2142,11 @@ PlasmoidItem {
             disconnectSource(source)
             const host = root.containerListHosts[source]
             delete root.containerListHosts[source]
-            if (!host)
+            root.hostsReloadAnswered(source)
+            if (!host) {
+                root.refreshHostsMenu()
                 return
+            }
             const result = root.helperResult(data)
             root.hostContainers = Object.assign({}, root.hostContainers, {
                 [host]: result.ok ? { containers: result.containers || [], notes: result.notes || [], at: result.at || Date.now() }
@@ -2151,11 +2159,12 @@ PlasmoidItem {
 
     function loadHostContainers(host) {
         if (!showContainers || isContainer(host))
-            return
+            return ""
         const cmd = "python3 -I " + shellQuote(codeDir + "remote.py") + " --containers " + shellQuote(host)
                     + containerArgs() + " # " + Date.now()
         containerListHosts[cmd] = host
         containerLister.connectSource(cmd)
+        return cmd
     }
 
     // The SSH hosts shown whose last check worked: their containers are in the picker
@@ -2165,9 +2174,59 @@ PlasmoidItem {
 
     // Reload in the picker: ~/.ssh/config, this computer's containers and every connected host's
     function reloadHosts() {
-        loadHosts()
-        for (const host of connectedHosts())
-            loadHostContainers(host)
+        const waits = { [loadHosts()]: true }
+        for (const host of connectedHosts()) {
+            const cmd = loadHostContainers(host)
+            if (cmd)
+                waits[cmd] = true
+        }
+        return waits
+    }
+
+    // Reload, from the picker: a menu closes on any click, so it opens again
+    // where it was (as VS Code's stays open), and says Reloading… until every
+    // list it asked for has answered (or a minute and a half went by: an
+    // answer plasmashell lost isn't waited for)
+    property var hostsReloadWaits: ({})   // command -> true
+    property bool hostsReloading: false
+
+    function reloadHostsMenu() {
+        hostsReloadWaits = reloadHosts()
+        hostsReloading = true
+        hostsReloadTimer.restart()
+        Qt.callLater(reopenHostsMenu)   // (after the menu has closed: Qt closes it before the click's handlers run)
+    }
+
+    function reopenHostsMenu() {
+        if (!dashboardShown || !hostsMenu.visualParent || !hostsMenu.visualParent.visible)
+            return   // (the dashboard closed meanwhile)
+        hostsMenuShown = ""
+        fillHostsMenu()
+        hostsMenu.openRelative()
+    }
+
+    // (each answer refills the open menu itself, after this)
+    function hostsReloadAnswered(source) {
+        if (!hostsReloading || !(source in hostsReloadWaits))
+            return
+        delete hostsReloadWaits[source]
+        if (Object.keys(hostsReloadWaits).length === 0)
+            hostsReloadDone()
+    }
+
+    function hostsReloadDone() {
+        hostsReloadTimer.stop()
+        hostsReloadWaits = ({})
+        hostsReloading = false
+    }
+
+    Timer {
+        id: hostsReloadTimer
+        interval: 90000
+        onTriggered: {
+            root.hostsReloadDone()
+            root.refreshHostsMenu()
+        }
     }
 
     property bool hostsReady: false   // (Component.onCompleted ran: the setting changing at start isn't a change)
@@ -2439,7 +2498,7 @@ PlasmoidItem {
         PlasmaExtras.MenuItem {
             property string host
             property bool reload: false
-            onClicked: reload ? root.reloadHosts() : root.toggleHost(host)
+            onClicked: reload ? root.reloadHostsMenu() : root.toggleHost(host)
         }
     }
 
@@ -2557,7 +2616,8 @@ PlasmoidItem {
             }
         }
         items.push({ separator: true })
-        items.push({ text: i18n("Reload"), icon: Icons.plasma.refresh, reload: true })
+        items.push(hostsReloading ? { text: i18n("Reloading…"), icon: Icons.plasma.refresh, enabled: false }
+                                  : { text: i18n("Reload"), icon: Icons.plasma.refresh, reload: true })
         return items
     }
 

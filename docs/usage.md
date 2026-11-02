@@ -34,7 +34,7 @@
 | Filter button at the top (**Focus**) | Shows only what needs you, the chats that finished a turn you haven't looked at yet and one line for each chat at work; **Show everything** goes back. |
 | Microphone in the chat pane (**Dictate**) | Records your reply and writes it into the box (click again to stop); the first time, it offers to set dictation up. |
 | Magnifier at the top | Finds a chat by the words in its name, folder or your prompts, and project folders, plans and memories with those words. |
-| Hosts button at the top | Picks the SSH hosts and containers to show; **Reload** reads `~/.ssh/config` and the container lists again. |
+| Hosts button at the top | Picks the SSH hosts and containers to show; **Reload** reads `~/.ssh/config` and the container lists again, the picker staying open (*Reloading…* until they've answered). |
 | The eye button next to an SSH host's name | Shows that host's hidden chats, plans, memories or projects again. |
 | **Start** at a stopped container | Starts it (`docker start`), then shows its chats. |
 | A project in the **Projects** tab | Click it to open it: its open chats, Claude's last recap of it, its chats, plans and memories, a page at a time. The speech bubble starts a new chat there; the hide button (a struck-out eye) hides it from the tab (nothing is deleted); right-click → *Show Hidden Projects Again (N)* brings it back. |
