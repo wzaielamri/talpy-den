@@ -104,13 +104,13 @@ Claude's own VS Code panel runs no status line, and Claude Code updates its own 
 
 ## Install
 
-Not on the Marketplace yet. Download `talpy-den-<version>.vsix` from the [latest release](https://github.com/wzaielamri/talpy-den/releases/latest), then in VS Code open the Extensions view, **⋯** → **Install from VSIX…**, or:
+Install it from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=wzaielamri.talpy-den), or search for **Talpy Den** in VS Code's Extensions view. It updates by itself. Or download `talpy-den-<version>.vsix` from the [latest release](https://github.com/wzaielamri/talpy-den/releases/latest), then in VS Code open the Extensions view, **⋯** → **Install from VSIX…**, or:
 
 ```sh
 code --install-extension talpy-den-<version>.vsix
 ```
 
-A downloaded extension doesn't update by itself: install a newer release the same way. Or build it from a clone:
+A downloaded `.vsix` doesn't update by itself: install a newer release the same way. Or build it from a clone:
 
 ```sh
 git clone https://github.com/wzaielamri/talpy-den.git && cd talpy-den/vscode
