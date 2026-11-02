@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A plan Claude wrote twice is one plan, its newer file:** a chat that
+  wrote its plan in the account's plans folder writes it into its project's
+  plans folder once the project names one, and the old file stays. Both
+  were listed, and the project's line and the chat's *Plan* tag took the
+  old file. Now the newer file is the only line, every action takes it, and
+  deleting it puts the older file in the Trash too (also on SSH hosts).
 - **Removing an account others share from gives them what they share:** an
   account whose settings you shared when adding another, or whose `projects`
   folder another account links to, couldn't be removed, and nothing made

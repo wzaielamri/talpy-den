@@ -244,6 +244,68 @@ class ActionTests(ProjectPlanFixture):
         self.assertTrue((self.home / ".local/share/Trash/files/act-plan.md").is_file())
 
 
+class SameNameTests(ProjectPlanFixture):
+    """An account's plan and a project's of the same name are one plan, the
+    newer file: a chat wrote its plan in the account's plans/, its project
+    got a plans folder, and Claude wrote it there."""
+
+    def setUp(self):
+        super().setUp()
+        self.chat(".claude-work", self.app, CHAT_A, "twice-plan")
+        self.old = self.plan(self.home / ".claude-work/plans/twice-plan.md", "Old version", ago=9000)
+        self.new = self.plan(self.app / ".claude/plans/twice-plan.md", "New version", ago=4000)
+        self.profiles = cs.discover_profiles(self.home)
+        self.work = next(p for p in self.profiles if p.key == ".claude-work")
+
+    def ctx(self):
+        return cs.Context(home=self.home, profiles=self.profiles, plan_dirs=cs.PlanDirs(self.cache / "plan-dirs.json"))
+
+    def test_listed_once_as_the_newer_file(self):
+        self.assertEqual([(p["slug"], p["inProject"], p["title"]) for p in self.plans("work")],
+                         [("twice-plan", True, "New version")])
+        found = cs.find_chats(self.home, self.cache, [], "version")
+        self.assertEqual([(p["slug"], p["inProject"]) for p in found["plans"]], [("twice-plan", True)])
+        _ctx, items = week.project_items(self.home, self.cache, self.profiles, int(self.now * 1000))
+        self.assertEqual([(p["slug"], p["inProject"]) for p in items["plans"]], [("twice-plan", True)])
+        # the account's written later: that one
+        os.utime(self.old, (self.now - 1000, self.now - 1000))
+        self.assertEqual([(p["slug"], p["inProject"], p["title"]) for p in self.plans("work")],
+                         [("twice-plan", False, "Old version")])
+
+    def test_every_action_takes_the_file_its_line_shows(self):
+        self.assertEqual(cs.find_plan(self.profiles, "twice-plan", ".claude-work", self.home), self.new)
+        self.assertEqual(cs.find_plan(self.profiles, "twice-plan", ".claude-work"), self.old)   # (without home)
+        self.assertEqual(cs.plan_of(self.work, "twice-plan", self.ctx())["path"], str(self.new))
+        self.assertEqual(cs.plan_markdown(self.home, [], "twice-plan", ".claude-work")["title"], "New version")
+        self.assertIn("New version", jump.Task("go", "twice-plan", ".claude-work").prompt(self.home, self.profiles))
+        self.assertIn("every account has it",
+                      sharing.plan_sharing(self.profiles, "twice-plan", ".claude-work", True, home=self.home)[1])
+        web = self.home / "repos/web"
+        web.mkdir(parents=True)
+        self.chat(".claude-personal", web, CHAT_B, ago=60)
+        asked = sharing.move_plan(self.profiles, self.home, "twice-plan", ".claude-work", folder=str(web), describe=True)
+        self.assertEqual((asked["ok"], asked["target"]), (True, str(web / ".claude/plans/twice-plan.md")), asked)
+        self.assertTrue(sharing.move_plan(self.profiles, self.home, "twice-plan", ".claude-work", folder=str(web),
+                                          setting=False)["ok"])
+        self.assertEqual((web / ".claude/plans/twice-plan.md").read_text(), "# New version\n\nSteps.\n")
+        self.assertTrue(self.old.is_file())
+        # the account's newer: it's the plan
+        os.utime(self.old, (self.now - 10, self.now - 10))
+        self.assertEqual(cs.find_plan(self.profiles, "twice-plan", ".claude-work", self.home), self.old)
+        self.assertEqual(cs.plan_of(self.work, "twice-plan", self.ctx())["path"], str(self.old))
+
+    def test_deleting_takes_the_older_file_along(self):
+        root = sharing.store_root(self.home)
+        asked = sharing.delete(self.profiles, "plan", "twice-plan", ".claude-work", root, self.home, describe=True)
+        self.assertEqual(asked["question"], "Delete the plan “New version” from ~/repos/app/.claude/plans? It goes to "
+                                            "the Trash. So does its older copy in ~/.claude-work/plans.")
+        done = sharing.delete(self.profiles, "plan", "twice-plan", ".claude-work", root, self.home)
+        self.assertTrue(done["ok"], done)
+        self.assertFalse(self.new.exists())
+        self.assertFalse(self.old.exists())
+        self.assertEqual(self.plans("work"), [])
+
+
 class CacheTests(ProjectPlanFixture):
     def test_a_quiet_project_is_looked_at_again_after_a_while(self):
         self.chat(".claude-work", self.app, CHAT_A, ago=3 * 3600)   # (no chat there lately)

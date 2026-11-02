@@ -883,6 +883,8 @@ class HostTaskTests(TwoAccountHost):
         cs.change_stars(here, "plans", "calm-red-owl", "lab")   # (an SSH host's stars are kept here)
         (self.folder / ".claude/plans").mkdir(parents=True)
         (self.folder / ".claude/plans/calm-red-owl.md").write_text("# Another plan\n")
+        # (older than the account's: else it's the plan, the account's an old copy: cs.project_wins)
+        os.utime(self.folder / ".claude/plans/calm-red-owl.md", (time.time() - 1200, time.time() - 1200))
         asked = remote.move_plan("lab", "calm-red-owl", ".claude", describe=True)
         self.assertTrue(asked["ok"], asked)
         self.assertEqual((asked["default"], asked["exists"], asked["free"], asked["setting"]),
@@ -900,7 +902,7 @@ class HostTaskTests(TwoAccountHost):
         # listed there in its project, and back again
         group = next(g for g in remote.status("lab", tokens=False)["result"]["groups"] if g["chatProfile"] == ".claude")
         self.assertEqual([(p["slug"], p["inProject"], p["cwd"]) for p in group["plans"]],
-                         [("calm-red-owl", True, str(self.folder)), ("calm-red-owl-2", True, str(self.folder))])
+                         [("calm-red-owl-2", True, str(self.folder)), ("calm-red-owl", True, str(self.folder))])
         back = remote.move_plan("lab", "calm-red-owl-2", ".claude", back=True)
         self.assertTrue(back["ok"], back)
         self.assertTrue((self.fake_home / ".claude/plans/calm-red-owl-2.md").is_file())

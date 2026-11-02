@@ -400,6 +400,19 @@ def plan_copies(profiles, slug):
     return out
 
 
+def project_copy(profiles, slug, home, have, owner=None):
+    """(path, project folder) of the plan called slug in a project's plans
+    folder when it's the one that counts over the accounts' copies (have;
+    owner's only, given one): there are none, or it's newer
+    (cs.project_wins: two files of one name are one plan, the one its line
+    shows); else (None, None)."""
+    path, folder = cs.find_project_plan(profiles, slug, home) if home is not None else (None, None)
+    mine = [c for p, c in have if owner is None or p.real == owner.real]
+    if path is not None and all(cs.project_wins(path, c) for c in mine):
+        return path, folder
+    return None, None
+
+
 def share_plan(profiles, slug, into, source=None):
     """Link the plan called slug into the profiles `into`, from source's copy
     (else the newest one): (ok, message)."""
@@ -638,10 +651,13 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
         folder = project
     else:
         have = plan_copies(profiles, slug)
-        src = next((path for p, path in have if owner is not None and p.real == owner.real), None) \
-            if owner is not None else (have[0][1] if have and all(same(path, have[0][1]) for _, path in have) else None)
-        if src is None and not any(owner is None or p.real == owner.real for p, _ in have):
-            src, in_project = cs.project_plan_of(ctx, slug)   # (one in a project's folder, to another project)
+        src, in_project = cs.project_plan_of(ctx, slug)  # (one in a project's folder, to another project)
+        if src is not None and not all(cs.project_wins(src, path) for p, path in have
+                                       if owner is None or p.real == owner.real):
+            src, in_project = None, None   # (an account's newer one of that name is the plan)
+        if src is None:
+            src = next((path for p, path in have if owner is not None and p.real == owner.real), None) \
+                if owner is not None else (have[0][1] if have and all(same(path, have[0][1]) for _, path in have) else None)
         if src is None:
             if not have:
                 return dict(out, message="That plan isn't there any more")
@@ -842,7 +858,7 @@ def plan_sharing(profiles, slug, name, share_it, to=None, home=None):
     reads it there."""
     if not cs.PLAN_SLUG.match(slug or ""):
         return False, f"Not a plan name: {slug}"
-    if home is not None and not plan_copies(profiles, slug) and cs.find_project_plan(profiles, slug, home)[0]:
+    if project_copy(profiles, slug, home, plan_copies(profiles, slug))[0] is not None:
         return False, "This plan is in its project's folder: every account has it there"
     source = named(profiles, name) if name else None
     if name and source is None:
@@ -965,15 +981,17 @@ def plan_to_delete(profiles, slug, name, home=None):
     """A plan that goes (the profile name's, else the only one), from every
     profile it's linked into: (its accounts, its paths, the file), or (None,
     why not, None). With home, one in a project's plans folder too, when
-    the profile name (else any) has none of that name: ([], [its path], it)."""
+    the profile name (else any) has none of that name or an older one
+    (project_copy): ([], [its path, the accounts' older ones], it): two
+    files of one name are one plan, and the older would show again."""
     if not cs.PLAN_SLUG.match(slug or ""):
         return None, f"Not a plan name: {slug}", None
     have = plan_copies(profiles, slug)
     owner = named(profiles, name) if name else None
-    if home is not None and not any(owner is None or p.real == owner.real for p, _ in have):
-        path, _folder = cs.find_project_plan(profiles, slug, home)
-        if path is not None:
-            return [], [path], path
+    path, _folder = project_copy(profiles, slug, home, have, owner)
+    if path is not None:
+        _labels, older = gather((p, c) for p, c in have if cs.project_wins(path, c))
+        return [], [path] + older, path
     if not have:
         return None, "That plan isn't there any more", None
     if name:
@@ -1096,6 +1114,9 @@ def delete(profiles, kind, item, name, root, home, describe=False):
         title, busy = cs.plan_title(src) or item, None
         question = (f"Delete the plan “{title}” on {and_list(labels)}? It goes to the Trash." if labels else
                     f"Delete the plan “{title}” from {cs.short_folder(str(src.parent), home)}? It goes to the Trash.")
+        if not labels and len(paths) > 1:  # (an account's older file of that name: plan_to_delete)
+            older = and_list(dict.fromkeys(cs.short_folder(str(c.parent), home) for c in paths[1:]))
+            question += f" So does its older copy in {older}."
     else:
         labels, paths, src = chat_to_delete(profiles, item, name, root)
         if labels is None:

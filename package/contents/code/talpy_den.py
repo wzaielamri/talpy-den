@@ -4475,13 +4475,25 @@ def plan_title(path):
     return ""
 
 
+def project_wins(project_path, account_path):
+    """Whether a project's plan counts over an account's of the same name:
+    two files of one name are one plan, the newer one (a chat that wrote its
+    plan in the account's plans/ writes it into its project's plans folder
+    once the project names one, and the old file stays). A tie goes to the
+    account's (as before projects' plans were listed); a missing file loses."""
+    ours, theirs = mtime(Path(project_path)) if project_path else None, mtime(Path(account_path)) if account_path else None
+    return ours is not None and (theirs is None or ours > theirs)
+
+
 def plan_of(profile, slug, ctx=None):
     """{"slug", "title", "path", "updatedAt", "inProject"} of the plan a chat
-    made on this profile (with ctx: else the one in a project's plans
-    folder: project_plan_of), or None."""
+    made on this profile (with ctx: the one in a project's plans folder
+    where there's none here or it's newer: project_wins), or None."""
     path, folder = plan_path(profile, slug), None
-    if path is not None and not path.is_file() and ctx is not None:
-        path, folder = project_plan_of(ctx, slug)
+    if path is not None and ctx is not None:
+        found, where = project_plan_of(ctx, slug)
+        if found is not None and project_wins(found, path):
+            path, folder = found, where
     try:
         st = path.stat() if path is not None else None
     except OSError:
@@ -4624,9 +4636,10 @@ def account_plans(group, ctx, limit=PLANS_LISTED, starred=frozenset(), hidden=fr
             found.append((st.st_mtime, p, f, st, None))
     keys = set(group["profileKeys"])
     link_project_plans(ctx, None if limit > 0 else set(starred))
+    found = [c for c in found if not counted_elsewhere(ctx, c[2], None)]
     for t, folder, f, st in project_plan_files(ctx):
         owner = project_plan_owner(ctx, f.stem, folder)
-        if owner in keys and owner in by_key:
+        if owner in keys and owner in by_key and not counted_elsewhere(ctx, f, folder):
             found.append((t, by_key[owner], f, st, folder))
     found.sort(key=lambda c: -c[0])
     if left_out is not None:
@@ -4657,6 +4670,21 @@ def account_plans(group, ctx, limit=PLANS_LISTED, starred=frozenset(), hidden=fr
         if pl["inProject"]:  # (its project is where it is)
             pl["cwd"], pl["cwdShort"] = pl["projectFolder"], short_path(pl["projectFolder"], ctx.home)
     return plans
+
+
+def counted_elsewhere(ctx, path, folder):
+    """Whether another file of the plan's name is the one that counts
+    (project_wins): an account's plan (folder None) a project's newer one
+    of that name, a project's plan another project's newer one or an
+    account's newer one. Two files of one name are one plan: one line,
+    and every action takes the file it shows."""
+    slug = path.stem
+    project, where = project_plan_of(ctx, slug)
+    if folder is None:
+        return project is not None and project_wins(project, path)
+    if project is not None and project != path:
+        return True
+    return any(not project_wins(path, plan_path(p, slug)) for p in ctx.profiles)
 
 
 def same_file(path, st):
@@ -5078,6 +5106,14 @@ def stat_is_file(st):
 def project_plan_of(ctx, slug, folder=None):
     """(path, project folder) of the newest plan called slug in a project's
     plans folder (in folder's, if one is there), or (None, None)."""
+    if folder is None:  # (the newest of each name, once per check)
+        newest = getattr(ctx, "project_plan_newest", None)
+        if newest is None:
+            newest = {}
+            for _t, d, f, _st in project_plan_files(ctx):
+                newest.setdefault(f.stem, (f, d))
+            ctx.project_plan_newest = newest
+        return newest.get(slug, (None, None))
     hits = [(f, d) for _t, d, f, _st in project_plan_files(ctx) if f.stem == slug]
     return next(((f, d) for f, d in hits if d == folder), hits[0] if hits else (None, None))
 
@@ -5698,7 +5734,8 @@ def find_more(ctx, words, accounts):
             st = f.stat()
         except OSError:
             continue
-        if p is None or not PLAN_SLUG.match(f.stem) or (st.st_dev, st.st_ino) in seen:
+        if p is None or not PLAN_SLUG.match(f.stem) or (st.st_dev, st.st_ino) in seen \
+                or counted_elsewhere(ctx, f, folder):
             continue
         seen.add((st.st_dev, st.st_ino))
         title = plan_title(f) or f.stem
@@ -6015,15 +6052,19 @@ ONE_WORD = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 
 def find_plan(profiles, slug, profile_key=None, home=None):
     """The plan file <cfg>/plans/<slug>.md (on the profile profile_key, else
-    any), else (with home) the one called slug in a project's plans folder
-    (find_project_plan), or None."""
+    any), or (with home) the one called slug in a project's plans folder
+    (find_project_plan) where there's none or it's newer (project_wins: the
+    one the plan's line shows), or None."""
+    found = None
     for p in profiles:
         if profile_key and not matches_profile(p, profile_key):
             continue
         path = plan_path(p, slug)
         if path is not None and path.is_file():
-            return path
-    return find_project_plan(profiles, slug, home)[0] if home is not None else None
+            found = path
+            break
+    project = find_project_plan(profiles, slug, home)[0] if home is not None else None
+    return project if project is not None and project_wins(project, found) else found
 
 
 def task_prompt(text, plan=None, home=None, fits=None):
