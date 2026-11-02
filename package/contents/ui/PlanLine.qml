@@ -167,17 +167,12 @@ Kirigami.Icon {
             RowLayout {   // (made the first time they show)
                 spacing: 0
 
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     // star it: it stays listed under Starred; a starred one's yellow ★ (its
                     // line's ★ hides while the buttons show) unstars it
                     icon.name: planLine.plan.starred ? Icons.plasma.starred : Icons.plasma.star
                     icon.color: Icons.color(planLine.plan.starred ? "starred" : "star", Kirigami.Theme)
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: planLine.plan.starred ? i18n("Unstar") : i18n("Star")
-                    Layout.preferredHeight: planButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: planButtons.buttonWidth
                     onClicked: root.setStar("plans", planLine.plan.slug, planLine.remoteHost, !planLine.plan.starred)
 
                     PlasmaCore.ToolTipArea {
@@ -188,15 +183,10 @@ Kirigami.Icon {
                     }
                 }
                 // the plan's Markdown file itself, to change it (an SSH host's: in VS Code, over Remote-SSH)
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     visible: !planLine.remoteHost || root.vscodeInstalled
                     icon.name: Icons.plasma.edit
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Edit the plan")
-                    Layout.preferredHeight: planButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: planButtons.buttonWidth
                     onClicked: root.editPlan(planLine.plan, planLine.remoteHost)
 
                     PlasmaCore.ToolTipArea {
@@ -210,36 +200,28 @@ Kirigami.Icon {
                 }
                 // what you changed in it, to the chat that made it (main.qml: sendPlanFeedback)
                 // (a plan whose chat is gone keeps this button's place, greyed out, so every line's buttons and time stay in the same columns)
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     visible: !planLine.remoteHost
-                    enabled: !!planLine.plan.chatId
+                    usable: !!planLine.plan.chatId
                     icon.name: Icons.plasma.send
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Send your changes to Claude")
-                    Layout.preferredHeight: planButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: planButtons.buttonWidth
                     onClicked: root.sendPlanFeedback(planLine.plan.slug, planLine.plan.profileDir, planLine.plan.chatId)
 
                     PlasmaCore.ToolTipArea {
                         textFormat: Text.PlainText
                         anchors.fill: parent
                         mainText: i18n("Send your changes to Claude")
-                        subText: (planLine.plan.edited ? i18n("You changed this plan since Claude wrote it.") + " " : "")
+                        // (greyed out: why, as VS Code's)
+                        subText: !planLine.plan.chatId ? i18n("The chat that made it isn't here any more, so there's no chat to send your changes to.")
+                                 : (planLine.plan.edited ? i18n("You changed this plan since Claude wrote it.") + " " : "")
                                  + i18n("Sends what you changed in it (and notes you wrote into it) to the chat that made it: Claude revises the plan, in plan mode. In tmux it's typed in for you; else it goes to the clipboard and the chat comes up, to paste it there. A chat that isn't open reopens in plan mode with it.")
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     id: planGo
                     icon.name: Icons.plasma.startNow
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Carry it out…")
                     checked: root.planComposer === planLine.composerKey
-                    Layout.preferredHeight: planButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: planButtons.buttonWidth
                     onClicked: root.togglePlanComposer(planLine.composerKey)
 
                     PlasmaCore.ToolTipArea {
@@ -249,34 +231,25 @@ Kirigami.Icon {
                         subText: i18n("A new chat starts with the plan as its first message: in a terminal, in VS Code or in the background, in the plan's folder or another one.")
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     icon.name: Icons.plasma.origin
-                    enabled: !!planLine.plan.chatId
-                    display: PlasmaComponents3.AbstractButton.IconOnly
+                    usable: !!planLine.plan.chatId
                     text: i18n("Continue the chat that made it")
-                    Layout.preferredHeight: planButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: planButtons.buttonWidth
                     onClicked: root.continuePlanChat(planLine.plan, planLine.group, planLine.remoteHost)
 
                     PlasmaCore.ToolTipArea {
                         textFormat: Text.PlainText
                         anchors.fill: parent
                         mainText: i18n("Continue the chat that made it")
-                        subText: i18n("To change the plan with Claude: its chat comes up, or reopens (in a terminal or VS Code, as the switch of Recent chats says).")
+                        subText: !planLine.plan.chatId ? i18n("The chat that made it isn't here any more.")
+                                 : i18n("To change the plan with Claude: its chat comes up, or reopens (in a terminal or VS Code, as the switch of Recent chats says).")
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     id: planShare
                     visible: root.shareAccountsOf(planLine.remoteHost).length >= 2
                     icon.name: Icons.plasma.share
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Share it with another account…")
-                    Layout.preferredHeight: planButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: planButtons.buttonWidth
                     onClicked: root.openPlanMenu(planShare, planLine.plan, planLine.remoteHost)
 
                     PlasmaCore.ToolTipArea {
@@ -286,16 +259,11 @@ Kirigami.Icon {
                         subText: i18n("A shared plan is one file on each account: a change shows on all of them. Sharing a chat shares its plan too.")
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     // to the Trash, after a question (DeleteAsk under the line)
                     icon.name: Icons.plasma.delete
                     icon.color: Icons.color("delete", Kirigami.Theme)
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Delete…")
-                    Layout.preferredHeight: planButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: planButtons.buttonWidth
                     onClicked: root.askDelete(planLine.composerKey, "plan", planLine.plan.slug, planLine.plan.profileDir,
                                               planLine.remoteHost, "")
 
@@ -306,15 +274,10 @@ Kirigami.Icon {
                         subText: root.deleteHint("plan")
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     // hide it here (nothing is deleted)
                     icon.name: Icons.plasma.hide
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Hide this plan")
-                    Layout.preferredHeight: planButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: planButtons.buttonWidth
                     onClicked: root.hideItem("plans", planLine.plan.slug, planLine.remoteHost)
 
                     PlasmaCore.ToolTipArea {

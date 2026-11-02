@@ -8,7 +8,7 @@ import org.kde.kirigami as Kirigami
 // covered while they show, and nothing is drawn behind them (over a popup
 // that shows the desktop through, a ground of their own was a dark box).
 // Where they reach past it, the row cuts what's under them (beyond). Put it
-// last in the line's RowLayout; its buttons take buttonSize. Not only on
+// last in the line's RowLayout; its buttons are HoverButton. Not only on
 // hover: the line shows them too while one of them has the keyboard's focus
 // (focused: Tab, from the line's name), and after a press and hold with a
 // finger (held: TouchHold.qml) until the popup hides. The buttons are one
@@ -39,8 +39,6 @@ Item {
     property real lineHeight: 0             // the line's (the buttons are centered on it, a little taller)
     default property Component buttons
     property bool made: false               // (they showed once: they're kept)
-    readonly property real buttonSize: Math.round(Kirigami.Units.iconSizes.small * 1.375)   // (22 px high, 16 px icons: as in VS Code)
-    readonly property real buttonWidth: Kirigami.Units.iconSizes.small + 4                  // (packed close: 2 px each side)
     // how much of the line's end they cover now (CoveredEnd.covered), and how
     // far past what stands there
     readonly property real covering: shown ? row.width : 0   // (cut where the first one starts)

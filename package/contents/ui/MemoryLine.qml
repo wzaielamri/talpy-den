@@ -138,15 +138,10 @@ ColumnLayout {
             RowLayout {   // (made the first time they show)
                 spacing: 0
 
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     visible: !memoryLine.remoteHost   // (an SSH host's opens to change it with a click: VS Code)
                     icon.name: Icons.plasma.edit
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: memoryLine.memory.type === "account" ? i18n("Edit your instructions") : i18n("Edit this memory")
-                    Layout.preferredHeight: memoryButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: memoryButtons.buttonWidth
                     onClicked: root.openMemory(memoryLine.memory, memoryLine.remoteHost, true)
 
                     PlasmaCore.ToolTipArea {
@@ -158,17 +153,12 @@ ColumnLayout {
                                  : i18n("Opens its file in your text editor (VS Code, if the settings open plans there). What you change there is what Claude remembers; Claude reads it in new chats in that folder.")
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     // to the Trash, after a question (DeleteAsk under the line); not the account's CLAUDE.md
                     visible: memoryLine.memory.type !== "account"
                     icon.name: Icons.plasma.delete
                     icon.color: Icons.color("delete", Kirigami.Theme)
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Delete…")
-                    Layout.preferredHeight: memoryButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: memoryButtons.buttonWidth
                     onClicked: root.askDelete(memoryLine.itemKey, "memory", memoryLine.memory.key, "", memoryLine.remoteHost,
                                               memoryLine.memory.folderShort)
 
@@ -179,16 +169,11 @@ ColumnLayout {
                         subText: root.deleteHint("memory")
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     // hide it here (nothing is deleted); not the account's CLAUDE.md, which has a line of its own
                     visible: memoryLine.memory.type !== "account"
                     icon.name: Icons.plasma.hide
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Hide this memory")
-                    Layout.preferredHeight: memoryButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: memoryButtons.buttonWidth
                     onClicked: root.hideItem("memories", memoryLine.memory.key, memoryLine.remoteHost)
 
                     PlasmaCore.ToolTipArea {

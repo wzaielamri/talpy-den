@@ -473,15 +473,10 @@ ColumnLayout {
                     RowLayout {   // (made the first time they show)
                         spacing: 0
 
-                        PlasmaComponents3.ToolButton {
+                        HoverButton {
                             icon.name: Icons.plasma.startNow
-                            display: PlasmaComponents3.AbstractButton.IconOnly
                             text: i18n("Start it now")
-                            enabled: !root.isStarting(queuedLine.task.id)
-                            Layout.preferredHeight: queuedButtons.buttonSize
-                            Layout.preferredWidth: queuedButtons.buttonWidth
-                            icon.width: Kirigami.Units.iconSizes.small
-                            icon.height: Kirigami.Units.iconSizes.small
+                            usable: !root.isStarting(queuedLine.task.id)
                             Layout.alignment: Qt.AlignTop
                             onClicked: root.startQueued(queuedLine.task, true)
 
@@ -495,19 +490,14 @@ ColumnLayout {
                                            + (queuedLine.task.chat ? " " + i18n("Commands it still runs in the background are ended first.") : "")
                             }
                         }
-                        PlasmaComponents3.ToolButton {
+                        HoverButton {
                             // (what you wrote for it is asked about first: it's gone with it)
                             readonly property bool wrote: !queuedLine.task.chat || !!queuedLine.task.afterTurn
                             readonly property bool kept: !!queuedLine.task.chat && !queuedLine.task.afterTurn && !queuedLine.task.host
                                                          && root.keptChat(queuedLine.task.chat) !== null
                             icon.name: Icons.plasma.cancel
                             icon.color: Icons.color("cancel", Kirigami.Theme)
-                            display: PlasmaComponents3.AbstractButton.IconOnly
                             text: i18n("Cancel it")
-                            Layout.preferredHeight: queuedButtons.buttonSize
-                            Layout.preferredWidth: queuedButtons.buttonWidth
-                            icon.width: Kirigami.Units.iconSizes.small
-                            icon.height: Kirigami.Units.iconSizes.small
                             Layout.alignment: Qt.AlignTop
                             onClicked: {
                                 if (wrote)

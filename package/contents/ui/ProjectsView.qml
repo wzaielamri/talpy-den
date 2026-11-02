@@ -20,9 +20,8 @@ PlasmaComponents3.ScrollView {
 
     readonly property var projects: root.projectsData ? root.projectsData.projects || [] : []
     readonly property real folderWidth: Kirigami.Units.gridUnit * 8
-    // a project's buttons, as a row's (HoverButtons.qml): 22 px high, 16 px icons, packed close
+    // a project's buttons, as a row's (HoverButton.qml): 22 px high, 16 px icons, packed close
     readonly property real buttonSize: Math.round(Kirigami.Units.iconSizes.small * 1.375)
-    readonly property real buttonWidth: Kirigami.Units.iconSizes.small + 4
     // the chats listed now (open, or kept for the record): not again under Chats
     readonly property var listed: {
         const ids = {}
@@ -295,14 +294,9 @@ PlasmaComponents3.ScrollView {
                                     opacity: card.buttonsShown ? 1 : 0
                                     enabled: card.buttonsShown
 
-                                    PlasmaComponents3.ToolButton {
+                                    HoverButton {
                                         id: newHere
-                                        Layout.preferredWidth: view.buttonWidth
-                                        Layout.preferredHeight: view.buttonSize
                                         icon.source: root.iconDir + Icons.plasma.newChat   // (as an account's: at 16 px)
-                                        icon.width: Kirigami.Units.iconSizes.small
-                                        icon.height: Kirigami.Units.iconSizes.small
-                                        display: PlasmaComponents3.AbstractButton.IconOnly
                                         text: i18n("New chat here")
                                         onClicked: root.newChatInProject(card.project)
 
@@ -313,14 +307,9 @@ PlasmaComponents3.ScrollView {
                                             subText: card.project.short
                                         }
                                     }
-                                    PlasmaComponents3.ToolButton {
+                                    HoverButton {
                                         id: hideHere
-                                        Layout.preferredWidth: view.buttonWidth
-                                        Layout.preferredHeight: view.buttonSize
                                         icon.name: Icons.plasma.hide
-                                        icon.width: Kirigami.Units.iconSizes.small
-                                        icon.height: Kirigami.Units.iconSizes.small
-                                        display: PlasmaComponents3.AbstractButton.IconOnly
                                         text: i18n("Hide this project")
                                         onClicked: root.hideItem("projects", card.project.path, "")
 

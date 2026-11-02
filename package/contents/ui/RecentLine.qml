@@ -260,16 +260,11 @@ Kirigami.Icon {
             RowLayout {   // (made the first time they show)
                 spacing: 0
 
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     // with clicks opening the pane: reopen the chat itself
                     visible: Plasmoid.configuration.clickOpensPane && recentLine.canOpen
                     icon.name: Icons.plasma.openWindow
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Reopen this chat")
-                    Layout.preferredHeight: recentButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: recentButtons.buttonWidth
                     onClicked: recentLine.open()
 
                     PlasmaCore.ToolTipArea {
@@ -280,17 +275,12 @@ Kirigami.Icon {
                                                        : root.terminalHint(recentLine.remoteHost, true)
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     // star it: it stays listed under Starred; a starred one's yellow ★ (its
                     // line's ★ hides while the buttons show) unstars it
                     icon.name: recentLine.chat.starred ? Icons.plasma.starred : Icons.plasma.star
                     icon.color: Icons.color(recentLine.chat.starred ? "starred" : "star", Kirigami.Theme)
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: recentLine.chat.starred ? i18n("Unstar") : i18n("Star")
-                    Layout.preferredHeight: recentButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: recentButtons.buttonWidth
                     onClicked: root.setStar("chats", recentLine.chat.sessionId, recentLine.remoteHost, !recentLine.chat.starred)
 
                     PlasmaCore.ToolTipArea {
@@ -300,16 +290,11 @@ Kirigami.Icon {
                         subText: root.starHint("chats", false) + (recentLine.chat.starred ? " " + root.starHint("chats", true) : "")
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     id: recentShare
                     visible: root.shareAccountsOf(recentLine.remoteHost).length >= 2
                     icon.name: Icons.plasma.share
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Share or continue on another account…")
-                    Layout.preferredHeight: recentButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: recentButtons.buttonWidth
                     onClicked: root.openShareMenu(recentShare, {
                         chatId: recentLine.chat.sessionId, name: recentLine.chat.name,
                         profileDir: recentLine.chat.profileDir, shared: recentLine.chat.shared, host: recentLine.remoteHost
@@ -322,16 +307,11 @@ Kirigami.Icon {
                         subText: root.shareHint(recentLine.remoteHost)
                     }
                 }
-                PlasmaComponents3.ToolButton {
+                HoverButton {
                     // to the Trash, after a question (DeleteAsk under the line)
                     icon.name: Icons.plasma.delete
                     icon.color: Icons.color("delete", Kirigami.Theme)
-                    display: PlasmaComponents3.AbstractButton.IconOnly
                     text: i18n("Delete…")
-                    Layout.preferredHeight: recentButtons.buttonSize
-                    icon.width: Kirigami.Units.iconSizes.small
-                    icon.height: Kirigami.Units.iconSizes.small
-                    Layout.preferredWidth: recentButtons.buttonWidth
                     onClicked: root.askDelete(recentLine.rowKey, "chat", recentLine.chat.sessionId,
                                               recentLine.chat.profileDir, recentLine.remoteHost, "")
 

@@ -136,8 +136,8 @@ class RowButtonsTests(unittest.TestCase):
         self.assertIn("covered: queuedButtons.covering", line)
         self.assertIn("under: queuedEnd", line)
         buttons = line[line.index("HoverButtons {"):]
-        self.assertEqual(line.count("PlasmaComponents3.ToolButton"), buttons.count("PlasmaComponents3.ToolButton"))
-        self.assertEqual(buttons.count("PlasmaComponents3.ToolButton"), 2)
+        self.assertEqual(line.count("HoverButton {"), buttons.count("HoverButton {"))
+        self.assertEqual(buttons.count("HoverButton {"), 2)
         self.assertIn("Icons.plasma.startNow", buttons)
         self.assertIn("Icons.plasma.cancel", buttons)
 
@@ -401,6 +401,81 @@ class StarMarkTests(unittest.TestCase):
         self.assertEqual(steps, ["16 16 true true",      # starred: shown; not: as wide, nothing made
                                  "16 16 false true"],    # the buttons show: hidden, its room kept
                          out.stderr[-2000:])
+
+
+BUTTONS = """import QtQuick
+import QtQuick.Layouts
+import org.kde.plasma.components as PlasmaComponents3
+import "%s"
+Item {
+    id: root
+    width: 300; height: 40
+    property int clicks: 0
+    property int offClicks: 0
+    RowLayout {
+        spacing: 0
+        HoverButton { id: on; icon.name: "document-edit"; text: "Edit"; onClicked: root.clicks++ }
+        HoverButton { id: off; icon.name: "document-send"; text: "Send"; usable: false; onClicked: root.offClicks++ }
+    }
+    function report() {
+        return [on.width, on.height, on.contentItem.width, on.contentItem.height, on.contentItem.opacity,
+                off.contentItem.opacity, off.focusPolicy === Qt.NoFocus, off.hoverEnabled,
+                root.clicks, root.offClicks].join(" ")
+    }
+}
+"""
+
+BUTTONS_SCRIPT = """import sys
+from PySide6.QtCore import QUrl, QPoint, Qt, QMetaObject, Q_RETURN_ARG
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQuick import QQuickView
+from PySide6.QtTest import QTest
+app = QGuiApplication(sys.argv)
+view = QQuickView(); view.setSource(QUrl.fromLocalFile(sys.argv[1]))
+if view.status() != QQuickView.Ready:
+    sys.exit(str([e.toString() for e in view.errors()]))
+r = view.rootObject()
+view.show(); QTest.qWaitForWindowExposed(view); QTest.qWait(100)
+QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, QPoint(10, 20)); QTest.qWait(50)
+QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, QPoint(30, 20)); QTest.qWait(50)
+print(repr(QMetaObject.invokeMethod(r, "report", Q_RETURN_ARG("QVariant"))))
+"""
+
+
+class HoverButtonTests(unittest.TestCase):
+    """A line's buttons draw their icons at 16 px, as the line's own icons
+    and VS Code's: the theme's button margins left a 20 px button 10 px for
+    its icon, drawn at 8 to 10 px (2026-11-02). A greyed out one shows its
+    icon at 40%, as VS Code's, where enabled: false left 13%."""
+
+    def test_every_lines_buttons_are_hover_buttons(self):
+        for name in ("RecentLine.qml", "PlanLine.qml", "MemoryLine.qml", "SessionRow.qml", "GroupSection.qml"):
+            qml = (UI / name).read_text()
+            for start in [m.start() for m in re.finditer(r"\n\s+HoverButtons \{", qml)]:
+                block = qml[start:qml.index("\n" + " " * (qml.index("H", start) - start - 1) + "}", start)]
+                with self.subTest(name):
+                    self.assertIn("RowLayout {", block)
+                    self.assertGreater(block.count("HoverButton {"), 0)
+                    self.assertNotIn("ToolButton", block)
+                    self.assertNotRegex(block, r"\n\s+enabled:")          # (greyed out: usable, at 40%)
+                    self.assertNotIn("icon.width", block)                 # (its size: HoverButton's)
+        projects = (UI / "ProjectsView.qml").read_text()
+        head = projects[projects.index("id: headButtons"):projects.index("id: headButtons") + 2500]
+        self.assertEqual(head.count("HoverButton {"), 2)
+        self.assertNotIn("ToolButton", head)
+        button = (UI / "HoverButton.qml").read_text()
+        self.assertIn("leftPadding: (Layout.preferredWidth - iconSize) / 2", button)
+        self.assertIn("opacity: button.usable ? 1 : 0.4", button)
+
+    @NEEDS_PLASMA_QML
+    def test_their_icons_are_16_px_and_a_greyed_one_takes_no_click(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            qml = Path(tmp) / "buttons.qml"
+            qml.write_text(BUTTONS % UI.as_uri())
+            out = subprocess.run(["python3", "-c", BUTTONS_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
+                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+        steps = [eval(line) for line in out.stdout.split("\n") if line]
+        self.assertEqual(steps, ["20 22 16 16 1 0.4 true false 1 0"], out.stderr[-2000:])
 
 
 if __name__ == "__main__":
