@@ -2564,9 +2564,7 @@ PlasmoidItem {
         if (shown === hostsMenuShown)
             return
         hostsMenuShown = shown
-        hostsMenu.clearMenuItems()
-        for (const old of hostItems)
-            old.destroy()
+        hostsMenu.clearMenuItems()   // (it deletes the old items itself: destroying them again threw, and the menu stayed empty)
         const items = model.map(spec => hostItem.createObject(hostsMenu, spec))
         for (const item of items)
             hostsMenu.addMenuItem(item)

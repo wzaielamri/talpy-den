@@ -611,6 +611,30 @@ class FrontEndTests(unittest.TestCase):
         self.assertEqual((hosts["talpyDen.showContainers"]["default"], hosts["talpyDen.containerDays"]["default"]), (True, 30))
 
 
+class PickerRefillTests(unittest.TestCase):
+    def test_the_picker_refills_without_destroying_what_plasma_deleted(self):
+        # (clearMenuItems deletes the old items itself: destroying them again threw on
+        # the second fill, after Reload, and the picker stayed empty for good)
+        main = (REPO / "package/contents/ui/main.qml").read_text()
+        fill = main.split("function fillHostsMenu()", 1)[1].split("\n    }\n", 1)[0]
+        self.assertIn("hostsMenu.clearMenuItems()", fill)
+        self.assertNotIn(".destroy()", fill)
+
+
+class UntrustedAnswerTests(FakeEngines):
+    def test_a_plans_name_from_a_container_stays_in_its_folder(self):
+        import jump
+        old = remote.plan_text
+        remote.plan_text = lambda host, slug, profile=None: {"ok": True, "markdown": "# x", "title": "x"}
+        try:
+            ok, _message, path = remote.open_plan("podman:box", "../../../.claude/CLAUDE", open_it=False)
+        finally:
+            remote.plan_text = old
+        self.assertTrue(ok)
+        self.assertEqual(Path(path).parent, jump.runs_folder(Path.home()))
+        self.assertNotIn("/", Path(path).name)
+
+
 def test_unwrap(command):
     from test_remote import unwrapped
     return unwrapped(command)
