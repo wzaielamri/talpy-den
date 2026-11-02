@@ -22,7 +22,8 @@ ColumnLayout {
     // CLAUDE.md's line: columns of one width in all, so what's before them
     // lines up, and the folders and times too
     readonly property real folderWidth: Kirigami.Units.gridUnit * 8
-    readonly property var queued: root.queuedFor(group, remoteHost)
+    // (not a chat's go-on its row shows already: Goes on at …, which cancels it)
+    readonly property var queued: root.queuedFor(group, remoteHost).filter(t => !root.onItsRow(t, group, remoteHost))
     // Recent chats: the status' (a page more than shows), then a bigger
     // check's past those (root.fetchRecent), each once; how many show, and
     // how many are wanted (a page more than show: asked for when they aren't there)

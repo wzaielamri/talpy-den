@@ -29,7 +29,7 @@
 | **Go on at …** under a chat | A usage limit stopped it: it goes on by itself in the background once the limit resets (click again to cancel). In *Recent chats*, its **Limit** tag does the same. |
 | **☆** next to a chat, a recent chat or a plan | Stars it: the account lists it under *★ Starred chats* or *★ Starred plans*, however old it is. **★** unstars it. |
 | **Keep going** under a chat | The same, and again after every later limit, until it's done (in *Recent chats*: **↻**). Click **↻ Keeps going** to stop that; red, it says why: *(gave up)* or *(can't go on now)*, with more in its tooltip. |
-| A queued task under an account | Starts it now, or cancels it (it asks first when it has text you wrote). |
+| A queued task under an account | Starts it now, or cancels it (it asks first when it has text you wrote). A chat's go-on isn't listed there while the chat has a row: its **Goes on at …** tag says it. |
 | **⚠ Same files** next to a chat | Goes to the other chat that changes the same files. |
 | Filter button at the top (**Focus**) | Shows only what needs you, the chats that finished a turn you haven't looked at yet and one line for each chat at work; **Show everything** goes back. |
 | Microphone in the chat pane (**Dictate**) | Records your reply and writes it into the box (click again to stop); the first time, it offers to set dictation up. |

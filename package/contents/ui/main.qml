@@ -3356,9 +3356,22 @@ PlasmoidItem {
     }
 
     // The queued task that goes on with this chat (here, or on host), or null
+    // (not a reply waiting for its turn to end: that isn't a go-on)
     function queuedChat(chatId, host) {
-        return (status && status.queue ? status.queue : []).find(t => t.chat === chatId && (t.host || "") === (host || ""))
+        return (status && status.queue ? status.queue : []).find(t => !!t.chat && t.chat === chatId && !t.afterTurn
+                                                                       && (t.host || "") === (host || ""))
                || null
+    }
+
+    // Whether a queued task's line would only repeat a row: a chat's go-on
+    // whose chat is one of the account's rows, which says Goes on at …
+    // (SessionRow's goingOn); not one that failed (its line says why) nor a
+    // reply for when a turn ends. The queue lists only what no row shows.
+    function onItsRow(t, group, host) {
+        if (!t.chat || t.afterTurn || t.error)
+            return false
+        return group.sessions.some(s => s.chatId === t.chat && (goOnAt(s) > 0 || !!s.stopped)
+                                        && (queuedChat(s.chatId, host) || {}).id === t.id)
     }
 
     // When a chat a usage limit stopped can go on by itself (a minute after

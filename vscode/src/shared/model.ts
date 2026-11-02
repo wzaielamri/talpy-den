@@ -835,8 +835,21 @@ export function goOnAt(s: { stopped?: Stop | null; chatId?: string; sessionId: s
 }
 
 // The queued task that goes on with this chat (here, or on host), or null
-export function queuedChat(status: Status | null, chatId: string, host?: string): QueuedTask | null {
-  return (status?.queue ?? []).find((t) => !!t.chat && t.chat === chatId && (t.host || "") === (host || "")) ?? null;
+// (not a reply waiting for its turn to end: that isn't a go-on)
+export function queuedChat(status: Pick<Status, "queue"> | null, chatId: string, host?: string): QueuedTask | null {
+  return (status?.queue ?? []).find((t) => !!t.chat && t.chat === chatId && !t.afterTurn && (t.host || "") === (host || "")) ?? null;
+}
+
+// Whether a queued task's line would only repeat a row: a chat's go-on whose
+// chat is one of the account's rows, which says Goes on at … (SessionRow's
+// goingOn); not one that failed (its line says why) nor a reply for when a
+// turn ends. The queue lists only what no row shows.
+export function onItsRow(t: QueuedTask, g: Pick<Group, "host" | "sessions">, status: Pick<Status, "queue"> | null): boolean {
+  if (!t.chat || t.afterTurn || t.error) return false;
+  return (g.sessions ?? []).some((s) => {
+    const id = s.chatId || s.sessionId;
+    return id === t.chat && (goOnAt(s) > 0 || !!s.stopped) && queuedChat(status, id, g.host)?.id === t.id;
+  });
 }
 
 // What a queued task does, in a line; a chat's go-on names the chat as it's

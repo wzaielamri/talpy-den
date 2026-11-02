@@ -7,7 +7,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { markdownLinkFile } from "../src/agentRun";
 import { demoState } from "../src/shared/demo";
-import { findMemory, goOnAt, laterAt, laterDays, limitReset, overlapText, queuedChat, queuedFor, queuedWhat, startText } from "../src/shared/model";
+import { findMemory, goOnAt, laterAt, laterDays, limitReset, onItsRow, overlapText, queuedChat, queuedFor, queuedWhat, startText } from "../src/shared/model";
 import type { Group, QueuedTask, Session } from "../src/shared/types";
 import { TransitionTracker } from "../src/transitions";
 import { planPath } from "../src/planReview";
@@ -99,6 +99,33 @@ test("an account's queued tasks: on its machine, by its profiles", () => {
   assert.deepEqual(queuedFor(status, { profileKeys: [".claude"] }).map((t) => t.id), ["a"]);
   assert.deepEqual(queuedFor(status, { host: "lab", profileKeys: [".claude"] }).map((t) => t.id), ["b"]);
   assert.deepEqual(queuedFor(null, { profileKeys: [".claude"] }), []);
+});
+
+test("the queue lists only what no row shows", () => {
+  const stopped = { kind: "limit" as const, window: "five_hour", text: "", at: NOW, resetsAt: NOW + 3600000, over: false };
+  const row = { ...demoState(NOW).status!.groups[0].sessions[0], sessionId: "c1", chatId: "c1", pid: 42, state: "idle" as const, entrypoint: "cli", stopped };
+  const task = (id: string, more: Partial<QueuedTask>): QueuedTask => ({
+    id, host: "", profile: ".claude", account: "", folder: "/srv", folderShort: "/srv", prompt: "", plan: null, planProfile: null,
+    planTitle: "", startAt: NOW, createdAt: NOW, error: "", due: false, ...more,
+  });
+  const goOn = task("g", { chat: "c1", name: "Fix it" });
+  const fresh = task("n", { prompt: "a new chat" });
+  const status = { queue: [goOn, fresh] };
+  const g = { host: undefined, sessions: [row] };
+  // its row says Goes on at …: not again in the queue; a new chat's task has no row
+  assert.equal(onItsRow(goOn, g, status), true);
+  assert.equal(onItsRow(fresh, g, status), false);
+  // its chat isn't a row (closed, hidden, another host's): the queue says it
+  assert.equal(onItsRow(goOn, { sessions: [] }, status), false);
+  assert.equal(onItsRow(goOn, { host: "lab", sessions: [row] }, status), false);
+  // a row that shows no go-on (at work again), a go-on that failed, a reply for when the turn ends
+  assert.equal(onItsRow(goOn, { sessions: [{ ...row, stopped: null, state: "working" as const }] }, status), false);
+  assert.equal(onItsRow({ ...goOn, error: "That chat isn't there any more" }, g, { queue: [{ ...goOn, error: "x" }] }), false);
+  const reply = task("r", { chat: "c1", afterTurn: true, prompt: "and the tests" });
+  assert.equal(onItsRow(reply, g, { queue: [reply] }), false);
+  // (a reply isn't the chat's go-on: the row's tag stays the go-on's)
+  assert.equal(queuedChat({ queue: [reply, goOn] } as never, "c1")?.id, "g");
+  assert.equal(queuedChat({ queue: [reply] } as never, "c1"), null);
 });
 
 test("two chats changing the same files: a notice once per pair", () => {

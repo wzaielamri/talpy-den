@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The queue lists only what no row shows:** a chat a usage limit stopped
+  that goes on by itself was listed twice, its row saying *Goes on at …*
+  and the queue *Go on with “…”*. Now the queue leaves out a go-on whose
+  chat is one of the account's rows (its tag there cancels it), and lists
+  new tasks, replies waiting for a turn to end, go-ons of chats that aren't
+  listed and ones that failed.
 - **A plan Claude wrote twice is one plan, its newer file:** a chat that
   wrote its plan in the account's plans folder writes it into its project's
   plans folder once the project names one, and the old file stays. Both

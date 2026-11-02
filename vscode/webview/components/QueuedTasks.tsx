@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { duration, hostLabel, keptChat, machineStatus, queuedFor, queuedWhat, startText } from "../../src/shared/model";
+import { duration, hostLabel, keptChat, machineStatus, onItsRow, queuedFor, queuedWhat, startText } from "../../src/shared/model";
 import type { Group, QueuedTask } from "../../src/shared/types";
 import { post } from "../env";
 import { Icon, I, T } from "../util/icons";
@@ -9,11 +9,12 @@ import { IconButton } from "./IconButton";
 
 // Tasks waiting for this account's usage limit to reset (the queue is
 // this computer's, an SSH host's tasks included): when each starts, or why
-// it didn't; start one now, or cancel it
+// it didn't; start one now, or cancel it. Not a chat's go-on its row shows
+// already (Goes on at …, which cancels it: onItsRow)
 export function QueuedTasks({ group }: { group: Group }) {
   const view = useView();
   const [asking, setAsking] = useState(""); // the task whose Cancel it asks first
-  const tasks = queuedFor(view.status, group);
+  const tasks = queuedFor(view.status, group).filter((t) => !onItsRow(t, group, view.status));
   if (!tasks.length) return null;
   return (
     <ul class="queued">
