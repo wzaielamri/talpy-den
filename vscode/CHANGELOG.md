@@ -36,7 +36,9 @@
   keep its new plans there too (its `.claude/settings.local.json`), whether
   git would show it, and keep both or replace for a plan of that name.
   Nothing moves until **Move**; Esc, Cancel or a click elsewhere leaves it.
-  One in a project's folder has **Move back** to its account.
+  One in a project's folder has **Move back** to its account. Its star and
+  a queued task that carries it out follow it, under the name it gets with
+  keep both too.
 - **Docker, Podman and nerdctl containers, shown like SSH hosts:**
   **Talpy Den: Show Claude on SSH Hosts and Containers…** lists this
   computer's containers and each connected SSH host's (the running ones and

@@ -946,14 +946,15 @@ def move_plan(host, slug, profile, into=None, back=False, setting=True, if_exist
     """Move a plan of host into a project's plans folder there, or back into
     the account's (sharing.move_plan there), or (describe) say what that
     would do: its answer. A starred one (the stars are kept here) stays
-    starred under the name it gets."""
+    starred under the name it gets, and a queued task (kept here too) takes
+    it by that name."""
     args = ["--move-plan", slug, "--profile", profile] + (["--into", into] if into else []) \
         + (["--back"] if back else []) + ([] if setting else ["--no-setting"]) \
         + (["--if-exists", if_exists] if if_exists else []) + (["--describe"] if describe else [])
     answer = host_answer(host, args, "sharing.py", also=("accounts.py",))
     if answer["ok"] and not describe and isinstance(answer.get("slug"), str) and cs.PLAN_SLUG.match(answer["slug"]):
         import jump
-        jump.follow_plan_star(cs.cache_dir(Path.home()), slug, answer["slug"], host)
+        jump.follow_plan(cs.cache_dir(Path.home()), slug, answer["slug"], host)
     return answer
 
 

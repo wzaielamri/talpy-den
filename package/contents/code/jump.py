@@ -2630,14 +2630,25 @@ def move_plan(home, extra_dirs, slug, profile_dir=None, into=None, back=False, s
     answer = sharing.move_plan(cs.discover_profiles(home, extra_dirs), home, slug, profile_dir, into, back, setting,
                                if_exists, describe)
     if answer["ok"] and not describe:
-        follow_plan_star(cs.cache_dir(home), slug, answer.get("slug") or slug)
+        follow_plan(cs.cache_dir(home), slug, answer.get("slug") or slug)
     return answer.pop("ok"), answer.pop("message"), answer
 
 
-def follow_plan_star(cache_root, slug, new_slug, host=""):
-    """A starred plan moved under another name (keep both) is starred under it too."""
-    if new_slug != slug and slug in cs.starred_of(cs.load_stars(cache_root), host)["plans"]:
+def follow_plan(cache_root, slug, new_slug, host=""):
+    """A plan moved under another name (keep both): starred, it's starred
+    under it too, and a queued task that carries it out takes it by that
+    name (the queue is kept here, an SSH host's tasks too)."""
+    if new_slug == slug:
+        return
+    if slug in cs.starred_of(cs.load_stars(cache_root), host)["plans"]:
         cs.change_stars(cache_root, "plans", new_slug, host, on=True)
+
+    def rename(tasks):
+        mine = [t for t in tasks if t.get("plan") == slug and (t.get("host") or "") == (host or "")]
+        for t in mine:
+            t["plan"] = new_slug
+        return bool(mine)
+    cs.change_queue(cache_root, edit=rename)
 
 
 def delete_item(home, extra_dirs, kind, item, profile_dir=None, describe=False):

@@ -334,6 +334,10 @@ class MoveTests(ProjectPlanFixture):
         other = self.plan(self.app / ".claude/plans/calm-red-owl.md", "Another one")
         cs.change_stars(self.cache_root, "plans", "calm-red-owl")
         cs.change_hidden(self.cache_root, "plans", add="calm-red-owl")
+        task = lambda host: cs.queue_entry(".claude-work", str(self.app), "", 1, host=host, plan="calm-red-owl",
+                                           plan_profile=".claude-work")
+        cs.change_queue(self.cache_root, add=task(""))
+        cs.change_queue(self.cache_root, add=task("lab"))  # (an SSH host's plan of that name: not this one)
         asked = self.move("--describe")
         self.assertEqual((asked["exists"], asked["free"]), (True, "calm-red-owl-2"))
         self.assertIn("keep both (calm-red-owl-2), or replace it?", asked["question"])
@@ -348,6 +352,9 @@ class MoveTests(ProjectPlanFixture):
         self.assertEqual((self.app / ".claude/plans/calm-red-owl-2.md").read_text(), "# The plan\n\nSteps.\n")
         self.assertIn("calm-red-owl-2", cs.starred_of(cs.load_stars(self.cache_root))["plans"])
         self.assertIn("calm-red-owl-2", cs.load_hidden(self.cache_root)["plans"])
+        # a queued task that carries it out takes it by its new name
+        self.assertEqual([(t["host"], t["plan"]) for t in cs.load_queue(self.cache_root)],
+                         [("", "calm-red-owl-2"), ("lab", "calm-red-owl")])
         noted = cs.load_plan_projects(self.cache_root)["calm-red-owl-2"]
         self.assertEqual((noted["project"], noted["chat"]), (str(self.app), CHAT_A))
 
