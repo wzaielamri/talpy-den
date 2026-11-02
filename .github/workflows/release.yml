@@ -84,6 +84,36 @@ jobs:
             echo "## VS Code"
             entry vscode/CHANGELOG.md
           } > notes.md
+          # GitHub takes up to 125,000 characters of notes (1.17.0 had 175,000).
+          # Longer, the VS Code part becomes a link to its CHANGELOG (nearly all
+          # of it is in the list above too), and longer still the list stops
+          # after a whole entry, with a link to the rest. (Here, not in a file
+          # of the repository: a release run by hand checks out an older tag.)
+          python3 - notes.md "$TAG" <<'FIT'
+          import sys
+          path, tag = sys.argv[1], sys.argv[2]
+          room = 120000  # (the install text after it is about 1,500 more)
+          url = "https://github.com/wzaielamri/talpy-den/blob/" + tag
+          text = open(path, encoding="utf-8").read()
+          if len(text) > room:
+              head = text.split("\n## VS Code\n", 1)[0].rstrip("\n")
+              tail = "\n\n## VS Code\n\nIts changes are in [vscode/CHANGELOG.md](" + url + "/vscode/CHANGELOG.md).\n"
+              if len(head) + len(tail) > room:
+                  more = "\n\n… and more: the whole list is in [CHANGELOG.md](" + url + "/CHANGELOG.md)."
+                  entries, kept = [], []
+                  for line in head.split("\n"):
+                      if line.startswith("- ") or not entries:
+                          entries.append(line)
+                      else:
+                          entries[-1] += "\n" + line
+                  for e in entries:
+                      if len("\n".join(kept + [e])) + len(more) + len(tail) > room:
+                          break
+                      kept.append(e)
+                  head = "\n".join(kept) + more
+              text = head + tail
+          open(path, "w", encoding="utf-8").write(text)
+          FIT
           # (only this text is indented for the workflow file: the CHANGELOGs' own indents stay)
           sed 's/^          //' >> notes.md <<NOTES
 
