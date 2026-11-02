@@ -480,12 +480,45 @@ class HoverButtonTests(unittest.TestCase):
 
     def test_a_chats_words_buttons_are_as_tight_as_its_tag(self):
         row = (UI / "SessionRow.qml").read_text()
-        line = row[row.index("// A usage limit stopped it: continue on another account"):row.index("Kirigami.Icon {\n                    visible: row.hasPeek")]
+        line = row[row.index("// A usage limit stopped it: what's next"):row.index("Kirigami.Icon {\n                    visible: row.hasPeek")]
         self.assertEqual(line.count("IconTextButton {"), 3)                # Continue on…, Go on at…, Keep going
         self.assertNotIn("ToolButton", line)
-        self.assertEqual(line.count("Layout.leftMargin: Kirigami.Units.smallSpacing * 2"), 4)   # (and the tag: 12 px apart)
+        # (2026-11-02, the user: closer together) 4 px apart, in a row of their
+        # own 12 px from the words before them, as VS Code's
+        self.assertEqual(line.count("Layout.leftMargin"), 1)
+        self.assertIn("RowLayout {\n                    visible: row.handover !== null || row.goOnAt > 0 || row.goingOn !== null || row.kept !== null\n"
+                      "                    Layout.leftMargin: Kirigami.Units.smallSpacing * 2\n"
+                      "                    spacing: Kirigami.Units.smallSpacing\n", line)
+        self.assertIn("on: row.goingOn !== null", line)                    # Goes on at…: a toggle that's on
+        self.assertNotIn("Rectangle {", line)                              # (its frame: IconTextButton's)
         button = (UI / "IconTextButton.qml").read_text()
         self.assertIn("spacing: Kirigami.Units.smallSpacing / 2", button)  # (as Tag.qml's icon and words)
+        # framed thin, as the Tag beside them, so they read as buttons, not words
+        # (the user, of Continue on…); on: a faint tint in the frame too
+        frame = button[button.index("    Rectangle {"):]
+        self.assertIn("border.width: 1", frame)
+        self.assertIn("border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)", frame)
+        self.assertIn('color: button.on ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.08) : "transparent"', frame)
+        self.assertIn(": Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)",
+                      (UI / "Tag.qml").read_text())
+        # VS Code: the same frame, 4 px apart; narrow, a button's words shorten
+        # instead of the line running out past the row's left edge, over its
+        # colour bar (the user's screenshot, 2026-11-02)
+        repo = UI.parent.parent.parent
+        css = (repo / "vscode/webview/styles.css").read_text()
+        text_btn = css[css.index(".icon-btn.text-btn {"):][:300]
+        self.assertIn("box-shadow: inset 0 0 0 1px var(--cs-tag-border);", text_btn[:text_btn.index("}")])
+        handover = css[css.index(".handover {"):][:200]
+        self.assertIn("gap: 3px 4px;", handover[:handover.index("}")])
+        shrink = css[css.index(".handover > .icon-btn {"):][:200]
+        for rule in ("flex: 0 1 auto;", "min-width: 0;", "max-width: 100%;"):
+            self.assertIn(rule, shrink[:shrink.index("}")])
+        words = css[css.index(".btn-words {"):][:200]
+        for rule in ("min-width: 0;", "overflow: hidden;", "text-overflow: ellipsis;"):
+            self.assertIn(rule, words[:words.index("}")])
+        tsx = (repo / "vscode/webview/components/SessionRow.tsx").read_text()
+        self.assertEqual(tsx.count('class="text-btn"'), 4)
+        self.assertEqual(tsx.count('<span class="btn-words">'), 4)
         self.assertIn("x: tag.icon !== \"\" ? mark.x + mark.width + Kirigami.Units.smallSpacing / 2", (UI / "Tag.qml").read_text())
 
     @NEEDS_PLASMA_QML

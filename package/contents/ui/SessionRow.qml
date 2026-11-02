@@ -858,114 +858,108 @@ RowLayout {
                     opacity: doing ? 1 : 0.8
                     font: Kirigami.Theme.smallFont
                 }
-                // A usage limit stopped it: continue on another account with room left
-                IconTextButton {
-                    id: handoverButton
-                    visible: row.handover !== null
-                    icon.name: Icons.plasma.continueOn
-                    text: row.handover ? i18n("Continue on %1", row.handover.title) : ""
-                    Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
-                    Layout.leftMargin: Kirigami.Units.smallSpacing * 2   // (12 px from what's before it, as VS Code's)
-                    onClicked: root.handOver(row.session, row.remoteHost, row.handover)
-
-                    PlasmaCore.ToolTipArea {
-                        textFormat: Text.PlainText
-                        anchors.fill: parent
-                        mainText: row.handover ? i18n("Continue on %1", row.handover.title) : ""
-                        subText: !row.handover ? ""
-                                 : (row.handover.pct !== null
-                                    ? i18n("%1 has used %2% of its %3 limit.", row.handover.title, Math.round(row.handover.pct), row.handover.label)
-                                    : i18n("%1's plan usage isn't known here.", row.handover.title))
-                                   + " " + (row.session.pid !== null
-                                            ? (row.session.kind === "bg"
-                                               ? i18n("This background chat is stopped first (claude stop); then the chat is shared with %1 and reopens there in a terminal.", row.handover.title)
-                                               : i18n("Claude here quits first (its terminal stays open); then the chat is shared with %1 and reopens there in a terminal.", row.handover.title))
-                                            : i18n("The chat is shared with %1 and reopens there in a terminal.", row.handover.title))
-                    }
-                }
-                // or go on by itself once the limit resets (queued; again: cancelled)
-                IconTextButton {
-                    visible: row.goOnAt > 0 || row.goingOn !== null
-                    icon.name: Icons.plasma.goOnAt
-                    // (it goes on then: framed, as a toggle that's on, as VS Code's: a thin
-                    // border and a faint tint of the text's color, no fill of its own; a click cancels it)
-                    Rectangle {
-                        visible: row.goingOn !== null
-                        anchors.fill: parent
-                        z: -0.5
-                        radius: Kirigami.Units.cornerRadius
-                        color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.08)
-                        border.width: 1
-                        border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
-                    }
-                    // (one that waits for its background commands: when it ends them is in its tooltip and queued line)
-                    text: row.goingOn && row.goingOn.waits && !row.goingOn.error ? i18n("Waits to go on")
-                          : row.goingOn ? i18n("Goes on at %1", root.startText(row.goingOn.startAt))
-                          : i18n("Go on at %1", root.startText(row.goOnAt))
-                    Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                // A usage limit stopped it: what's next, close together, away from
+                // the words before them (as VS Code's)
+                RowLayout {
+                    visible: row.handover !== null || row.goOnAt > 0 || row.goingOn !== null || row.kept !== null
                     Layout.leftMargin: Kirigami.Units.smallSpacing * 2
-                    onClicked: {
-                        if (row.goingOn)
-                            root.unqueue(row.goingOn)
-                        else
-                            root.queueContinue(row.session, row.remoteHost, row.account, false)
-                    }
+                    spacing: Kirigami.Units.smallSpacing
 
-                    PlasmaCore.ToolTipArea {
-                        textFormat: Text.PlainText
-                        anchors.fill: parent
-                        readonly property bool waits: !!row.goingOn && !!row.goingOn.waits && !row.goingOn.error
-                        mainText: waits ? i18n("Waits to go on")
-                                  : row.goingOn ? i18n("Goes on by itself at %1", root.startText(row.goingOn.startAt))
-                                  : i18n("Go on once the limit resets")
-                        subText: waits ? row.goingOn.waits + ".\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
-                                                                                 : i18n("Click to cancel it."))
-                                 : (row.goingOn ? "" : i18n("At %1, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.", root.startText(row.goOnAt)) + " ")
-                                 + (row.session.pid === null || row.session.pid === undefined ? ""
-                                    : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
-                                    : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it.")) + " "
-                                 + i18n("It goes on in the permission mode it had.") + " "
-                                 + i18n("If it went on before then, nothing happens.")
-                                 + (row.goingOn ? "" : " " + (row.remoteHost ? i18n("This happens once.")
-                                                              : i18n("This happens once: to have it go on after later limits too, choose Keep going.")))
-                                 + (row.goingOn ? "\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
-                                                                     : i18n("Click to cancel it.")) : "")
-                    }
-                }
-                // or go on then, and after each later limit too, until it's done
-                IconTextButton {
-                    visible: row.goOnAt > 0 && row.goingOn === null && row.kept === null && !row.remoteHost
-                    icon.name: Icons.plasma.keepGoing
-                    text: i18n("Keep going")
-                    Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
-                    Layout.leftMargin: Kirigami.Units.smallSpacing * 2
-                    onClicked: root.queueContinue(row.session, row.remoteHost, row.account, true)
+                    // continue on another account with room left
+                    IconTextButton {
+                        id: handoverButton
+                        visible: row.handover !== null
+                        icon.name: Icons.plasma.continueOn
+                        text: row.handover ? i18n("Continue on %1", row.handover.title) : ""
+                        Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                        onClicked: root.handOver(row.session, row.remoteHost, row.handover)
 
-                    PlasmaCore.ToolTipArea {
-                        textFormat: Text.PlainText
-                        anchors.fill: parent
-                        mainText: i18n("Keep going until it's done")
-                        subText: i18n("At %1, a minute after the limit resets, the chat goes on in the background, in the permission mode it had, and again after each later limit that stops it, until a turn of it ends by itself.", root.startText(row.goOnAt))
-                                 + " " + (row.session.pid === null || row.session.pid === undefined ? ""
-                                          : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
-                                          : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it."))
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: row.handover ? i18n("Continue on %1", row.handover.title) : ""
+                            subText: !row.handover ? ""
+                                     : (row.handover.pct !== null
+                                        ? i18n("%1 has used %2% of its %3 limit.", row.handover.title, Math.round(row.handover.pct), row.handover.label)
+                                        : i18n("%1's plan usage isn't known here.", row.handover.title))
+                                       + " " + (row.session.pid !== null
+                                                ? (row.session.kind === "bg"
+                                                   ? i18n("This background chat is stopped first (claude stop); then the chat is shared with %1 and reopens there in a terminal.", row.handover.title)
+                                                   : i18n("Claude here quits first (its terminal stays open); then the chat is shared with %1 and reopens there in a terminal.", row.handover.title))
+                                                : i18n("The chat is shared with %1 and reopens there in a terminal.", row.handover.title))
+                        }
                     }
-                }
-                // it keeps going: after each usage limit, on by itself (click: not any more)
-                Tag {
-                    visible: row.kept !== null
-                    Layout.leftMargin: Kirigami.Units.smallSpacing * 2
-                    icon: Icons.plasma.keepGoing
-                    // (red: it says why, as VS Code's)
-                    text: row.kept && row.kept.error ? i18nc("a chat that goes on by itself after usage limits, which gave up", "Keeps going (gave up)")
-                        : row.kept && row.kept.note ? i18nc("a chat that goes on by itself after usage limits, which can't go on at the moment", "Keeps going (can't go on now)")
-                        : i18nc("a chat that goes on by itself after usage limits", "Keeps going")
-                    active: row.kept !== null && !row.kept.error
-                    warning: row.kept !== null && (!!row.kept.error || !!row.kept.note)
-                    clickable: true
-                    tooltipTitle: i18n("Keeps going until it's done")
-                    tooltip: row.kept ? root.keptText(row.kept) : ""
-                    onClicked: root.keepGoing(row.session, false)
+                    // or go on by itself once the limit resets (queued; again: cancelled)
+                    IconTextButton {
+                        visible: row.goOnAt > 0 || row.goingOn !== null
+                        icon.name: Icons.plasma.goOnAt
+                        on: row.goingOn !== null   // (it goes on then, as a toggle that's on; a click cancels it)
+                        // (one that waits for its background commands: when it ends them is in its tooltip and queued line)
+                        text: row.goingOn && row.goingOn.waits && !row.goingOn.error ? i18n("Waits to go on")
+                              : row.goingOn ? i18n("Goes on at %1", root.startText(row.goingOn.startAt))
+                              : i18n("Go on at %1", root.startText(row.goOnAt))
+                        Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                        onClicked: {
+                            if (row.goingOn)
+                                root.unqueue(row.goingOn)
+                            else
+                                root.queueContinue(row.session, row.remoteHost, row.account, false)
+                        }
+
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            readonly property bool waits: !!row.goingOn && !!row.goingOn.waits && !row.goingOn.error
+                            mainText: waits ? i18n("Waits to go on")
+                                      : row.goingOn ? i18n("Goes on by itself at %1", root.startText(row.goingOn.startAt))
+                                      : i18n("Go on once the limit resets")
+                            subText: waits ? row.goingOn.waits + ".\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
+                                                                                     : i18n("Click to cancel it."))
+                                     : (row.goingOn ? "" : i18n("At %1, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.", root.startText(row.goOnAt)) + " ")
+                                     + (row.session.pid === null || row.session.pid === undefined ? ""
+                                        : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
+                                        : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it.")) + " "
+                                     + i18n("It goes on in the permission mode it had.") + " "
+                                     + i18n("If it went on before then, nothing happens.")
+                                     + (row.goingOn ? "" : " " + (row.remoteHost ? i18n("This happens once.")
+                                                                  : i18n("This happens once: to have it go on after later limits too, choose Keep going.")))
+                                     + (row.goingOn ? "\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
+                                                                         : i18n("Click to cancel it.")) : "")
+                        }
+                    }
+                    // or go on then, and after each later limit too, until it's done
+                    IconTextButton {
+                        visible: row.goOnAt > 0 && row.goingOn === null && row.kept === null && !row.remoteHost
+                        icon.name: Icons.plasma.keepGoing
+                        text: i18n("Keep going")
+                        Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                        onClicked: root.queueContinue(row.session, row.remoteHost, row.account, true)
+
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: i18n("Keep going until it's done")
+                            subText: i18n("At %1, a minute after the limit resets, the chat goes on in the background, in the permission mode it had, and again after each later limit that stops it, until a turn of it ends by itself.", root.startText(row.goOnAt))
+                                     + " " + (row.session.pid === null || row.session.pid === undefined ? ""
+                                              : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
+                                              : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it."))
+                        }
+                    }
+                    // it keeps going: after each usage limit, on by itself (click: not any more)
+                    Tag {
+                        visible: row.kept !== null
+                        icon: Icons.plasma.keepGoing
+                        // (red: it says why, as VS Code's)
+                        text: row.kept && row.kept.error ? i18nc("a chat that goes on by itself after usage limits, which gave up", "Keeps going (gave up)")
+                            : row.kept && row.kept.note ? i18nc("a chat that goes on by itself after usage limits, which can't go on at the moment", "Keeps going (can't go on now)")
+                            : i18nc("a chat that goes on by itself after usage limits", "Keeps going")
+                        active: row.kept !== null && !row.kept.error
+                        warning: row.kept !== null && (!!row.kept.error || !!row.kept.note)
+                        clickable: true
+                        tooltipTitle: i18n("Keeps going until it's done")
+                        tooltip: row.kept ? root.keptText(row.kept) : ""
+                        onClicked: root.keepGoing(row.session, false)
+                    }
                 }
                 Kirigami.Icon {
                     visible: row.hasPeek

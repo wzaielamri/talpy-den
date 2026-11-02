@@ -301,7 +301,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
               }
               onClick={() => post({ type: "handOver", chat, profile: handover.shareProfile })}
             >
-              Continue on {handover.title}
+              <span class="btn-words">Continue on {handover.title}</span>
             </IconButton>
             ) : null}
             {goingOn ? (
@@ -316,7 +316,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
                   : `Goes on by itself at ${startText(goingOn.startAt, now)}, in the background, telling Claude that the limit has reset.${ending} If it went on before then, nothing happens.\n\nClick to cancel it${kept ? ": then it doesn't keep going either" : ""}.`}
                 onClick={() => post({ type: "unqueue", id: goingOn.id })}
               >
-                {goingOn.waits && !goingOn.error ? "Waits to go on" : `Goes on at ${startText(goingOn.startAt, now)}`}
+                <span class="btn-words">{goingOn.waits && !goingOn.error ? "Waits to go on" : `Goes on at ${startText(goingOn.startAt, now)}`}</span>
               </IconButton>
             ) : goOn ? (
               <IconButton
@@ -326,7 +326,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
                 title={`At ${startText(goOn, now)}, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.${ending} If it went on before then, nothing happens.\n\nThis happens once${host ? "" : ": to have it go on after later limits too, choose Keep going"}.`}
                 onClick={() => post({ type: "queueContinue", chat })}
               >
-                Go on at {startText(goOn, now)}
+                <span class="btn-words">Go on at {startText(goOn, now)}</span>
               </IconButton>
             ) : null}
             {goOn && !goingOn && !kept && !host ? (
@@ -337,7 +337,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
                 title={`Keep going until it's done: at ${startText(goOn, now)}, a minute after the limit resets, the chat goes on in the background, and again after each later limit that stops it, until a turn of it ends by itself.${ending}`}
                 onClick={() => post({ type: "queueContinue", chat, keep: true })}
               >
-                Keep going
+                <span class="btn-words">Keep going</span>
               </IconButton>
             ) : null}
             {kept ? (

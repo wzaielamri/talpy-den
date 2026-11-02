@@ -6,6 +6,13 @@
   (the view narrowed and widened again) took the pet anywhere, out of the
   list's order; it now goes to its own spot, and one whose dig was cut short
   digs on there once what it's doing is over.
+- **A chat's *Continue on …*, *Go on at …* and *Keep going* look like buttons
+  and stand close together:** each has a thin frame, as the *Keeps going* tag
+  beside them, where *Continue on …* read like words on the line; they stand
+  4 px apart (12 before), and *Goes on at …* keeps its faint tint.
+- **A narrow view keeps a chat's buttons inside its row:** a button wider
+  than the line ran out past the row's left edge, its icon over the chat's
+  colour bar; its words now shorten (*Continue on pers…*).
 - **The queue lists only what no row shows:** a chat a usage limit stopped
   that goes on by itself was listed twice, its row saying *Goes on at …*
   and the queue *Go on with “…”*. Now the queue leaves out a go-on whose

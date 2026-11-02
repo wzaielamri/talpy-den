@@ -378,13 +378,23 @@ code {
   padding-right: 2px;
 }
 
-/* A button with its words beside its icon (Go on at …, Keep going), as
-   Plasma's tool buttons with text; pressed: a toggle that's on */
+/* A button with its words beside its icon (Continue on …, Go on at …, Keep
+   going), as Plasma's tool buttons with text: framed thin, as a tag beside
+   it, so it reads as a button and not as words on the line; pressed: a
+   toggle that's on (a faint tint in its frame too) */
 .icon-btn.text-btn {
   gap: 4px;
   padding: 0 6px 0 3px;
   font-size: 0.85em;
   white-space: nowrap;
+  box-shadow: inset 0 0 0 1px var(--cs-tag-border);
+}
+
+/* its words, shortened (…) when the line is narrower than they are */
+.btn-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .icon-btn[aria-pressed="true"] {
@@ -1057,8 +1067,16 @@ button:focus-visible {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0 12px;
+  gap: 3px 4px;
   margin-top: 1px;
+}
+
+/* narrow: a button as wide as the line at most, its words shortened, so
+   none runs out past the row's left edge (over its colour bar) */
+.handover > .icon-btn {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .session {
