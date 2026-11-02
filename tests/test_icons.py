@@ -183,3 +183,31 @@ class UseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StatusBarFontTests(unittest.TestCase):
+    """VS Code's status bar shows Talpy, held still, from the extension's icon
+    font (tools/talpy_font.py): its spinner had VS Code redraw the window 60
+    times a second while a chat worked, about 8% of a core (2026-11-02)."""
+
+    def test_each_pose_is_a_glyph_of_the_font(self):
+        try:
+            import fontforge
+        except ImportError:
+            raise unittest.SkipTest("python3-fontforge isn't installed")
+        manifest = json.loads((REPO / "vscode/package.json").read_text())
+        icons = manifest["contributes"]["icons"]
+        self.assertEqual(sorted(icons), sorted(f"talpy-den-{s}" for s in ("waiting", "working", "idle", "none")))
+        font = fontforge.open(str(REPO / "vscode" / icons["talpy-den-working"]["default"]["fontPath"]))
+        try:
+            for name, icon in icons.items():
+                code = int(icon["default"]["fontCharacter"].lstrip("\\"), 16)
+                self.assertIn(code, font, name)
+                glyph = font[code]
+                self.assertGreater(len(glyph.foreground), 0, name)
+                left, bottom, right, top = glyph.boundingBox()
+                # inside the codicons' 300 unit em, as big as they are
+                self.assertTrue(0 <= left and right <= 300 and 0 <= bottom and top <= 300, (name, glyph.boundingBox()))
+                self.assertGreater(right - left, 200, name)
+        finally:
+            font.close()

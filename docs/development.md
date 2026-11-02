@@ -42,7 +42,8 @@ vscode/                   the VS Code extension (TypeScript: src/ the extension,
                           backend, Talpy and the snippet into vscode/vendor/
 statusline-snippet.sh     the snippet install.sh adds to your status line
 tests/                    unit tests: they build Claude Code's files in temporary folders
-tools/                    render_popup.sh (offscreen screenshots), talpy_icons.mjs (Talpy's still pictures), gnome/ (headless GNOME Shell test),
+tools/                    render_popup.sh (offscreen screenshots), talpy_icons.mjs (Talpy's still pictures), talpy_font.py (VS Code's
+                          status bar icon font of them: needs potrace and python3-fontforge), gnome/ (headless GNOME Shell test),
                           check_public.py (nothing private gets committed)
 ```
 

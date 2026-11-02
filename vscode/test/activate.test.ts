@@ -46,8 +46,8 @@ test("activates, registers everything, and shows the first poll", { skip: proces
     commands.executeCommand = execute;
 
     const item = stub.recorded.statusBarItems[0];
-    for (let i = 0; i < 100 && !item.text.includes("bell-dot"); i++) await new Promise((r) => setTimeout(r, 100));
-    assert.equal(item.text, "$(bell-dot) 1", "the waiting chat shows in the status bar");
+    for (let i = 0; i < 100 && !item.text.includes("talpy-den-waiting"); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(item.text, "$(talpy-den-waiting) 1", "the waiting chat shows in the status bar");
     assert.deepEqual(item.backgroundColor, new stub.ThemeColor("statusBarItem.warningBackground"));
     for (const s of subscriptions) s.dispose();
   } finally {

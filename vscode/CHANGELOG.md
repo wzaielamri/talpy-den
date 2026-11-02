@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The status bar shows Talpy, still:** its spinner had VS Code redraw the
+  window 60 times a second while a chat worked, about 8% of a core, even
+  with the window under others. Now the status bar shows Talpy in the panel
+  icon's pose for the state, held still: at work with the count of working
+  chats, popped up (on the warning colour) with the count of chats that need
+  you, smiling on your turn, asleep when nothing runs. They replace the
+  spinner, the bell and the sparkle, and cost nothing while they show.
 - **A chat's pet stays on its spot:** a dig whose spot came back meanwhile
   (the view narrowed and widened again) took the pet anywhere, out of the
   list's order; it now goes to its own spot, and one whose dig was cut short

@@ -6,6 +6,8 @@
 //   node tools/talpy_icons.mjs                    notification and window icons in package/contents/pets/
 //   node tools/talpy_icons.mjs --store OUT.svg    the 128 px store icon (Talpy in its burrow on navy)
 //   node tools/talpy_icons.mjs --glyph OUT.svg    the one-color panel icon (VS Code's sidebar)
+//   node tools/talpy_icons.mjs --status DIR       the status bar's still poses, one SVG each, in black
+//                                                 (tools/talpy_font.py makes VS Code's icon font of them)
 //
 // A small stand-in for a canvas records what Talpy draws, with every point
 // already moved by the transform, as SVG paths.
@@ -165,6 +167,16 @@ if (args[0] === '--store') {
     const ctx = new SvgContext();
     drawGlyph(ctx, 'working', '#c5c5c5', 0);
     writeFileSync(args[1], ctx.svg('0 0 24 24'));
+} else if (args[0] === '--status') {
+    // The panel icon's poses, held still (the status bar's spinner had VS
+    // Code redraw its window 60 times a second while a chat worked): at work
+    // as the sidebar's, popped up when a chat needs you, smiling on your
+    // turn, asleep when nothing runs
+    for (const [state, now] of [['working', 0], ['waiting', 220], ['idle', 0], ['none', 0]]) {
+        const ctx = new SvgContext();
+        drawGlyph(ctx, state, '#000', now);
+        writeFileSync(join(args[1], `${state}.svg`), ctx.svg('0 0 24 24'));
+    }
 } else {
     const dir = join(here, '../package/contents/pets');
     for (const [name, step] of Object.entries(NOTIFY))   // (the sign needs room on the right)

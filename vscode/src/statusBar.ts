@@ -1,7 +1,11 @@
 // The status bar item: the panel icon of the widget. A status bar can only
 // show text and icons, so the count of chats that need you goes in the text
 // (with the warning background), the 5-hour usage after it: of the account
-// VS Code's Claude runs on, when it has numbers.
+// VS Code's Claude runs on, when it has numbers. The icon is Talpy, held
+// still in the panel icon's pose for the state (the extension's icon font,
+// media/talpy-glyphs.woff, made by tools/talpy_font.py): a spinner had VS
+// Code redraw its window 60 times a second while a chat worked, about 8% of
+// a core, under other windows too.
 
 import * as vscode from "vscode";
 import { settings } from "./config";
@@ -14,7 +18,7 @@ export class StatusBar implements vscode.Disposable {
   constructor() {
     this.item.name = "Talpy Den";
     this.item.command = "talpyDen.view.focus";
-    this.item.text = "$(sparkle)";
+    this.item.text = "$(talpy-den-none)";
     this.item.show();
   }
 
@@ -27,9 +31,9 @@ export class StatusBar implements vscode.Disposable {
     const counts = countStates(groups);
     const overall = overallState(groups, counts);
     const parts: string[] = [];
-    if (overall === "waiting") parts.push(`$(bell-dot) ${counts.waiting}`);
-    else if (overall === "working") parts.push(`$(loading~spin) ${counts.working}`);
-    else parts.push("$(sparkle)");
+    if (overall === "waiting") parts.push(`$(talpy-den-waiting) ${counts.waiting}`);
+    else if (overall === "working") parts.push(`$(talpy-den-working) ${counts.working}`);
+    else parts.push(`$(talpy-den-${overall})`);
     // (the account VS Code's Claude runs on first: its chats are the ones here)
     const usage = settings.showUsageInStatusBar() ? panelWindow(groups, claudeCodeGroup(groups, state.hosts, state.claudeCode)?.id) : null;
     if (usage) parts.push(`${Math.round(usage.window.pct)}%`);

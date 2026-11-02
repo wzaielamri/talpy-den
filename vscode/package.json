@@ -42,6 +42,24 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "icons": {
+      "talpy-den-working": {
+        "description": "Talpy Den: chats at work (the status bar)",
+        "default": { "fontPath": "media/talpy-glyphs.woff", "fontCharacter": "\\E000" }
+      },
+      "talpy-den-waiting": {
+        "description": "Talpy Den: a chat needs you (the status bar)",
+        "default": { "fontPath": "media/talpy-glyphs.woff", "fontCharacter": "\\E001" }
+      },
+      "talpy-den-idle": {
+        "description": "Talpy Den: your turn in a chat (the status bar)",
+        "default": { "fontPath": "media/talpy-glyphs.woff", "fontCharacter": "\\E002" }
+      },
+      "talpy-den-none": {
+        "description": "Talpy Den: no chat running (the status bar)",
+        "default": { "fontPath": "media/talpy-glyphs.woff", "fontCharacter": "\\E003" }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
