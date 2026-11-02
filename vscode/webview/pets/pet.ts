@@ -174,6 +174,9 @@ export class Pet {
   private readonly tickleTimer: Timer;
   private readonly contextTimer: Timer;
   private readonly usageTimer: Timer;
+  private readonly homing: Timer;
+  private digging = false; // a dig under way (digTo)
+  private digRun = 0;
 
   private pressedAt: { x: number; y: number } | null = null;
   private dragging = false;
@@ -232,6 +235,18 @@ export class Pet {
       this.talpy.react((input?.maxFiveHour ?? 0) >= 100 ? "battery" : "mindblown");
       this.say(input?.highUsageText ?? "");
     }, true, true);
+
+    // A chat's pet ends up on its spot, whatever came while it dug: another
+    // move cut the dig short, or the spot moved again while it tunnelled (it
+    // digs on there, once what it's doing now is over; out of sight: once
+    // it's seen again, liveChanged)
+    this.homing = new Timer(clock, 600, () => {
+      if (this.lone || this.digging || this.held || this.tugging || this.pushing || this.leaving || this.arriving
+        || this.landing || !this.stage.live || Math.abs(this.px - this.homeX) < this.stage.bodyWidth * 0.3) return;
+      const run = this.talpy.run as { auto: boolean } | null;
+      if (run && !run.auto) this.homing.restart(); // it acts something out: after that
+      else this.digTo(this.homeX, true);
+    });
 
     // Drawing: Talpy on its sheets (with room around it for what it throws
     // and holds up), its name tag, and a grab area around its body
@@ -412,6 +427,7 @@ export class Pet {
       this.stopGame();
       return;
     }
+    if (!this.lone) this.homing.restart();
     if (this.lone && world.playWanted) {
       world.playWanted = false;
       this.wantsToPlay();
@@ -494,14 +510,25 @@ export class Pet {
       this.changed();
       return;
     }
-    this.talpy.react(quick ? "scoot" : "dig");
+    const run = ++this.digRun;
+    this.digging = true;
+    this.talpy.react(quick ? "scoot" : "dig", () => this.dug(run));
+  }
+
+  // A dig ended (done, or cut short): a chat's pet checks it's on its spot
+  private dug(run: number): void {
+    if (run !== this.digRun) return; // (a newer dig took over)
+    this.digging = false;
+    if (!this.lone) this.homing.restart();
   }
 
   // It dug in: tunnel across to its new spot within ms
   private travel(ms: number): void {
     let to = this.travelTo;
     this.travelTo = -1;
-    if (to < 0) {
+    if (to < 0 && !this.lone) {
+      to = this.homeX; // (a chat's pet has no ideas of its own: a dig whose spot came back meanwhile takes it there)
+    } else if (to < 0) {
       // its own idea: towards the mouse if it hovers the stage, else anywhere
       const cursor = this.stage.cursorX();
       to = cursor >= 0
@@ -1316,7 +1343,7 @@ export class Pet {
     this.stopGame();
     for (const c of this.playHoles) c.remove();
     for (const t of [this.stride, this.faller, this.popper, this.fill]) t.stop();
-    for (const t of [this.lookTimer, this.tickleTimer, this.contextTimer, this.usageTimer]) t.stop();
+    for (const t of [this.lookTimer, this.tickleTimer, this.contextTimer, this.usageTimer, this.homing]) t.stop();
     for (const el of [this.leftHole, this.cookieShadow, this.cookie, this.sheets, this.tag, this.grab]) el?.remove();
   }
 }

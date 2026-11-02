@@ -121,6 +121,12 @@ Item {
 
     onShownChatsChanged: sync()
     onWidthChanged: sync()
+    onVisibleChanged: if (visible) laidOut.restart()
+    Timer {
+        id: laidOut   // (shown again: once its scroll bar is back, see spotsWidth)
+        interval: 150
+        onTriggered: strip.sync()
+    }
     Component.onCompleted: {
         for (let p = parent; p; p = p.parent) {
             if (p.contentY !== undefined && p.flicking !== undefined) {
@@ -146,8 +152,14 @@ Item {
         return -1
     }
 
+    // The width the spots are made for: the stage's while it shows. Hidden
+    // (under another tab, or the focus view) the list loses its scroll bar
+    // and the stage gets a little wider: the pets keep their spots, which
+    // are right again once it shows
+    property real spotsWidth: 0
+
     function spacingFor(n) {
-        return Math.max(0, Math.min(gu * 7.5, (width - 2 * margin) / Math.max(1, n)))
+        return Math.max(0, Math.min(gu * 7.5, (spotsWidth - 2 * margin) / Math.max(1, n)))
     }
 
     // Where a pet stands: the hero on the right of his stage (under the
@@ -191,7 +203,9 @@ Item {
                 petModel.append({ petKey: "", colorIndex: -1, leaving: false, label: "", host: "" })
             return
         }
-        const seen = JSON.stringify([width, shownChats.map(c => {
+        if (visible || spotsWidth <= 0)
+            spotsWidth = width
+        const seen = JSON.stringify([spotsWidth, shownChats.map(c => {
             const s = c.session   // what a pet shows of its chat (Pet.qml)
             return [c.key, s.state, s.reason, s.name, s.since, s.context, s.agents ? s.agents.running : 0,
                     s.stopped ? [s.stopped.kind, s.stopped.over, s.stopped.resetsAt] : null, c.host || ""]

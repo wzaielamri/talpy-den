@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **A chat's pet stays on its spot:** a dig whose spot came back meanwhile
+  (the view narrowed and widened again) took the pet anywhere, out of the
+  list's order; it now goes to its own spot, and one whose dig was cut short
+  digs on there once what it's doing is over.
 - **The queue lists only what no row shows:** a chat a usage limit stopped
   that goes on by itself was listed twice, its row saying *Goes on at …*
   and the queue *Go on with “…”*. Now the queue leaves out a go-on whose

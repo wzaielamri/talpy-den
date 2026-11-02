@@ -150,7 +150,36 @@ Item {
             travelTo = -1
             return
         }
-        react(quick ? "scoot" : "dig")
+        const run = ++digRun
+        digging = true
+        react(quick ? "scoot" : "dig", () => dug(run))
+    }
+    // A dig ended (done, or cut short): a chat's pet checks it's on its spot
+    function dug(run) {
+        if (run !== digRun)
+            return   // (a newer dig took over)
+        digging = false
+        if (!lone)
+            homing.restart()
+    }
+    property bool digging: false   // a dig under way (digTo)
+    property int digRun: 0
+
+    // A chat's pet ends up on its spot, whatever came while it dug: another
+    // move cut the dig short, or the spot moved again while it tunnelled
+    // (it digs on there, once what it's doing now is over)
+    Timer {
+        id: homing
+        interval: 600
+        onTriggered: {
+            if (pet.lone || pet.digging || pet.held || pet.tugging || pet.pushing || pet.leaving || pet.arriving
+                    || pet.landing || !pet.talpy || !pet.playing || Math.abs(pet.px - pet.homeX) < pet.bodyWidth * 0.3)
+                return   // (out of sight: once it's seen again, onPlayingChanged)
+            if (pet.talpy.run && !pet.talpy.run.auto)
+                restart()   // it acts something out: after that
+            else
+                pet.digTo(pet.homeX, true)
+        }
     }
 
     function say(text) {
@@ -235,6 +264,8 @@ Item {
             root.playWanted = false
             wantsToPlay()
         }
+        if (playing && !lone)
+            homing.restart()   // (a dig cut short while it couldn't be seen: on to its spot)
         if (!playing || !missed)
             return
         const m = missed
@@ -952,7 +983,9 @@ Item {
         onTravel: ms => {
             let to = pet.travelTo
             pet.travelTo = -1
-            if (to < 0) {
+            if (to < 0 && !pet.lone)
+                to = pet.homeX   // (a chat's pet has no ideas of its own: a dig whose spot came back meanwhile takes it there)
+            else if (to < 0) {
                 // its own idea: towards the mouse if it hovers the stage, else anywhere
                 const cursor = pet.strip.cursorX
                 to = cursor >= 0 ? cursor + (Math.random() - 0.5) * pet.bodyWidth

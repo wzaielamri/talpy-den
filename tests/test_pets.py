@@ -254,7 +254,50 @@ console.log(JSON.stringify({ scoot: length('scoot'), dig: length('dig'),
         self.assertLess(result["scoot"], result["dig"] * 0.6)
         pet = (ROOT / "ui/Pet.qml").read_text()
         self.assertIn("digTo(homeX, true)", pet)
-        self.assertIn('react(quick ? "scoot" : "dig")', pet)
+        self.assertIn('react(quick ? "scoot" : "dig", () => dug(run))', pet)
+
+    def test_a_chats_pet_ends_up_on_its_spot(self):
+        # (2026-11-02, the user: after another tab and back, the pets stood in the
+        # wrong places) Hidden, the list lost its scroll bar and the stage got
+        # wider: the pets' spots moved, and their digs waited (nothing moves
+        # unseen); shown again, the spots came back to where the pets stood, so
+        # digTo dropped the target, and the waiting dig took the big Talpy's
+        # "anywhere": a random spot. Now the spots are made at the stage's width
+        # while it shows, a chat's pet never picks a spot, and one a dig left
+        # elsewhere (cut short, or its spot moved under way) digs on to its own
+        strip = (ROOT / "ui/PetStrip.qml").read_text()
+        self.assertIn("if (visible || spotsWidth <= 0)\n            spotsWidth = width", strip)
+        self.assertIn("(spotsWidth - 2 * margin)", strip)
+        self.assertIn("onVisibleChanged: if (visible) laidOut.restart()", strip)
+        sync = strip[strip.index("    function sync() {"):strip.index("    function removePet(")]
+        self.assertNotRegex(sync.replace("spotsWidth = width", ""), r"\bwidth\b")   # (only spotsWidth, past the hero)
+        pet = (ROOT / "ui/Pet.qml").read_text()
+        vscode = (ROOT.parent.parent / "vscode/webview/pets/pet.ts").read_text()
+        gnome = (ROOT.parent.parent / "gnome/extension/ui/pets.js").read_text()
+        self.assertIn("if (to < 0 && !pet.lone)\n                to = pet.homeX", pet)
+        self.assertIn("if (to < 0 && !this.lone) {\n      to = this.homeX;", vscode)
+        self.assertIn("if (to < 0 && !this.lone) {\n            to = this.stage.slotX(this.key);", gnome)
+        # the dig's end, its own (a newer one took over: not), starts the check
+        for text, run in ((pet, "if (run !== digRun)"), (vscode, "if (run !== this.digRun) return;")):
+            dig = text[text.index("digTo("):]
+            dig = dig[:dig.index('react(quick ? "scoot" : "dig", () => ')]
+            self.assertIn("const run = ++", dig)
+            self.assertRegex(text, r'react\(quick \? "scoot" : "dig", \(\) => (this\.)?dug\(run\)\)')
+            dug = text[text.index("dug(run: number)" if text is vscode else "function dug(run)"):][:300]
+            self.assertIn(run, dug)
+            self.assertRegex(dug, r"digging = false;?\s+if \(!(this\.)?lone\)\s+(this\.)?homing\.restart\(\)")
+        homing = pet[pet.index("id: homing"):pet.index("id: homing") + 900]
+        self.assertIn("pet.digging", homing)
+        self.assertIn("!pet.playing", homing)
+        self.assertIn("pet.talpy.run && !pet.talpy.run.auto", homing)   # (it acts something out: after that)
+        self.assertIn("pet.digTo(pet.homeX, true)", homing)
+        homing_ts = vscode[vscode.index("this.homing = new Timer("):][:900]
+        for part in ("this.digging", "!this.stage.live", "run && !run.auto", "this.digTo(this.homeX, true)"):
+            self.assertIn(part, homing_ts)
+        # seen again: it checks (a dig cut short while it couldn't be seen)
+        playing = pet[pet.index("onPlayingChanged: {"):]
+        self.assertIn("if (playing && !lone)\n            homing.restart()", playing[:playing.index("\n    }\n")])
+        self.assertIn("if (!this.lone) this.homing.restart();\n    if (this.lone && world.playWanted)", vscode)
 
     def test_the_hero_walks_anywhere_on_its_stage_over_the_headline(self):
         # The user wanted the big Talpy free to go left too, not kept to the
@@ -1828,8 +1871,8 @@ class SeveralCopiesTests(unittest.TestCase):
                         ("if (!reducedMotion() && this.talpy.tug(", "if (!root.lessMotion && talpy && talpy.tug(")):
             self.assertIn(ts, pet_ts)
             self.assertIn(qml, pet)
-        dig_ts = pet_ts[pet_ts.index("private digTo("):pet_ts.index('this.talpy.react(quick ? "scoot" : "dig")')]
-        dig = pet[pet.index("function digTo("):pet.index('react(quick ? "scoot" : "dig")')]
+        dig_ts = pet_ts[pet_ts.index("private digTo("):pet_ts.index('this.talpy.react(quick ? "scoot" : "dig"')]
+        dig = pet[pet.index("function digTo("):pet.index('react(quick ? "scoot" : "dig"')]
         self.assertIn("if (reducedMotion()) {", dig_ts)
         self.assertIn("if (root.lessMotion) {", dig)
         self.assertIn("night && !reducedMotion()", stage_ts)

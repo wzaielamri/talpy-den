@@ -417,7 +417,9 @@ class Pet {
     _travel(ms) {
         let to = this.travelTo;
         this.travelTo = -1;
-        if (to < 0) {
+        if (to < 0 && !this.lone) {
+            to = this.stage.slotX(this.key);   // (a chat's pet has no ideas of its own: a dig whose spot came back meanwhile takes it there)
+        } else if (to < 0) {
             const cursor = this.stage.cursorX, s = this.stage.size;
             to = cursor >= 0 ? cursor + (Math.random() - 0.5) * s.body : Math.random() * this.stage.width;
         }
