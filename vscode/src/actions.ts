@@ -45,7 +45,7 @@ import {
   shareAccounts,
   shellQuote,
 } from "./shared/model";
-import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, PlanItem, Project, Session } from "./shared/types";
+import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "./shared/types";
 import { attachClients, localAncestors, type Place, type Terminals } from "./terminals";
 import type { PlanReview } from "./planReview";
 import { windowHostFile } from "./remoteHost";
@@ -488,6 +488,34 @@ export class Actions {
     if (this.demoOnly()) return;
     const answer = await this.deleteRun(kind, id, profileDir, host, false);
     if (this.report(answer, "Couldn't delete it")) this.dash.setActionInfo(answer.message || "Moved to the Trash");
+    this.refresh(host);
+  }
+
+  // Move a plan into a project's own plans folder, or back to its account
+  // (jump.py --move-plan; an SSH host's: remote.py there). The view asks
+  // first: describeMove says where it goes and what to ask (the backend's
+  // --describe); nothing moves before movePlan
+  private moveRun(plan: { slug: string; profileDir: string }, host: string | undefined, folder: string | undefined, back: boolean,
+    extra: string[]): Promise<Answer> {
+    const where = [...(back ? ["--back"] : folder ? ["--into", folder] : []), ...extra];
+    return this.backend.action(host ? "remote.py" : "jump.py", host
+      ? ["--move-plan", host, plan.slug, plan.profileDir, ...where]
+      : ["--move-plan", plan.slug, "--profile", plan.profileDir, ...where, ...configDirArgs()]);
+  }
+
+  async describeMove(plan: { slug: string; profileDir: string }, host: string | undefined, folder: string | undefined, back: boolean):
+    Promise<{ ok: boolean; answer: MoveAnswer | null; message: string }> {
+    if (this.dash.demo) return { ok: false, answer: null, message: "Demo mode: these plans are made up. Run “Talpy Den: Toggle Demo Data” to go back." };
+    const ask = await this.moveRun(plan, host, folder, back, ["--describe"]);
+    return ask.ok ? { ok: true, answer: ask as unknown as MoveAnswer, message: "" } : { ok: false, answer: null, message: ask.message || "It can't be moved." };
+  }
+
+  async movePlan(plan: { slug: string; profileDir: string }, host: string | undefined, folder: string | undefined, back: boolean,
+    keepThere: boolean, ifExists?: "keep" | "replace"): Promise<void> {
+    if (this.demoOnly()) return;
+    const answer = await this.moveRun(plan, host, folder, back,
+      [...(!back && !keepThere ? ["--no-setting"] : []), ...(ifExists ? ["--if-exists", ifExists] : [])]);
+    if (this.report(answer, "Couldn't move the plan")) this.dash.setActionInfo(answer.message || "Moved the plan");
     this.refresh(host);
   }
 

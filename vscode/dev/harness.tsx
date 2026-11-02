@@ -5,6 +5,7 @@ import "../webview/main";
 import { demoPerms, demoProjects, demoState, demoWeek } from "../src/shared/demo";
 import type { HostMessage } from "../src/shared/types";
 import { setFocus, setTab, toggleProject, toggleRecent, toggleStarred, uiState } from "../webview/util/ui";
+import { askMove } from "../webview/components/MoveAsk";
 
 const params = new URLSearchParams(location.search);
 let phase = Number(params.get("phase")) || 0;
@@ -122,9 +123,16 @@ setTimeout(() => {
   if (params.get("week") === "1") send({ type: "week", back: 0, account: "", span, recap: demoWeek(Date.now(), 0, "", span), error: "" });
   if (params.get("perms") === "1") send({ type: "perms", data: demoPerms(Date.now()), error: "" });
   // ?tab=projects: that tab (&project=webapp: that project opened)
-  if (params.get("tab") === "projects") setTab("projects");
+  if (params.get("tab") === "projects") {
+    setTab("projects");
+    send({ type: "projects", data: demoProjects(Date.now()), error: "" });   // (at once: a screenshot doesn't wait)
+  }
   const project = demoProjects(Date.now()).projects.find((p) => p.name === params.get("project"));
   if (project && !uiState.get().projects[project.path]) toggleProject(project.path);
+  // ?drop=webapp: a plan of the plans whose chat is gone dropped on that project: its question
+  const dropOn = demoProjects(Date.now()).projects.find((p) => p.name === params.get("drop"));
+  const gone = demoProjects(Date.now()).projects.find((p) => !p.path)?.plans[0];
+  if (dropOn && gone) setTimeout(() => askMove("drop|" + dropOn.path, { groupId: "", id: gone.key, folder: dropOn.path }, false), 0);
   // ?focus=1: the focus view
   if (params.get("focus") === "1") setFocus(true);
   // ?scroll=N: to see the top stay put over the list
@@ -144,6 +152,17 @@ window.addEventListener("harness-post", (event) => {
   const m = (event as CustomEvent).detail as { type: string; back?: number; account?: string; span?: "day" | "week" | "all" };
   if (m.type === "perms") send({ type: "perms", data: demoPerms(Date.now()), error: "" });
   if (m.type === "projects") send({ type: "projects", data: demoProjects(Date.now()), error: "" });
+  // (Move to project…: a made-up answer, as jump.py --move-plan --describe gives one)
+  if (m.type === "moveDescribe") {
+    const d = m as unknown as { key: string; folder?: string; back?: boolean };
+    const folder = d.folder || "/home/alice/projects/webapp";
+    const short = folder.replace(/^\/home\/[^/]+/, "~");
+    send({ type: "moveAsk", key: d.key, ok: true, message: "", answer: {
+      title: "Date parser rewrite", slug: "brave-green-otter", back: !!d.back, project: folder, projectShort: short,
+      target: folder + "/.claude/plans/brave-green-otter.md", targetShort: short + "/.claude/plans/brave-green-otter.md",
+      setting: "", settingsFile: short + "/.claude/settings.local.json", git: true, exists: false, free: "", account: "work",
+      lost: false, choices: [{ path: folder, short }, { path: "/home/alice/projects/api", short: "~/projects/api" }], default: folder } });
+  }
   if (m.type !== "week") return;
   const back = m.back ?? 0;
   const account = m.account ?? "";

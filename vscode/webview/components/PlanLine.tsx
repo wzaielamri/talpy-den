@@ -6,6 +6,9 @@ import { I, Icon, T } from "../util/icons";
 import { useWoken } from "../util/lazy";
 import { useView } from "./context";
 import { askDelete, DeleteAsk } from "./DeleteAsk";
+import { askMove, MoveAsk } from "./MoveAsk";
+import { moveAsk, planDrag } from "../util/stores";
+import { useStore } from "../util/store";
 import { Elided } from "./Elided";
 import { IconButton } from "./IconButton";
 import { Tag } from "./Tag";
@@ -21,6 +24,10 @@ import { Tag } from "./Tag";
 // project's, and accountTag the account it's on when the project is on
 // several. One whose project isn't known says "chat gone" there, as the
 // Projects tab's card of plans whose chat is gone (chatGoneCard: in it).
+// Move to project… puts its file into a project's own plans folder (one
+// there has Move back), after a question under the line (MoveAsk); in the
+// Projects tab (project set) its name drags onto another project's card,
+// which asks the same.
 export function PlanLine({ plan: p, group, project, accountTag, chatGoneCard }:
   { plan: PlanItem; group: Group; project?: string; accountTag?: string; chatGoneCard?: boolean }) {
   const view = useView();
@@ -31,14 +38,25 @@ export function PlanLine({ plan: p, group, project, accountTag, chatGoneCard }:
   const ref = (plan: string) => (host ? { groupId: group.id, host, plan } : { groupId: group.id, plan });
   // (in a project: only the part of its folder below the project's)
   const folder = project !== undefined ? folderIn(p.cwd, project, p.cwdShort) : p.cwdShort;
-  const askKey = `plan|${host ?? ""}|${group.id}|${p.key}`; // (Delete?'s line)
+  const askKey = `plan|${host ?? ""}|${group.id}|${p.key}`; // (Delete?'s line, and Move?'s)
+  const account = group.name || p.profile;
+  const draggable = project !== undefined && !host;
+  const asking = useStore(moveAsk)?.key === askKey;
   return (
     <>
     <li class="recent-item" {...wake}>
       <Icon name={I.plan} class="line-icon" />
       <button
         type="button"
-        class="link recent-name"
+        class={"link recent-name" + (draggable ? " plan-drag" : "")}
+        draggable={draggable}
+        onDragStart={draggable ? (e) => {
+          e.dataTransfer?.setData("text/plain", p.title);
+          if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+          moveAsk.set(null);
+          planDrag.set({ id: p.key, groupId: group.id, from: project ?? "" });
+        } : undefined}
+        onDragEnd={draggable ? () => planDrag.set(null) : undefined}
         title={
           `${p.title}\n` +
           (copy
@@ -128,6 +146,17 @@ export function PlanLine({ plan: p, group, project, accountTag, chatGoneCard }:
               : "Continue the chat that made it\nThe chat that made it isn't here any more."}
             onClick={() => post({ type: "continuePlanChat", ...ref(p.key) })}
           />
+          <IconButton
+            icon={p.inProject ? I.moveBack : I.moveToProject}
+            label={p.inProject ? `Move back to ${account}…` : "Move to project…"}
+            askFor={askKey}
+            pressed={asking}
+            title={p.inProject
+              ? `Move back to ${account}…\nMoves its file from its project's plans folder into ${account}'s own plans. It asks first.`
+              : "Move to project…\nMoves its file into a project's own plans folder (the one its plansDirectory setting names, else .claude/plans), so it's with the project and every account has it. It asks first." +
+                (draggable ? " You can also drag it by its name onto another project." : "")}
+            onClick={() => askMove(askKey, { groupId: group.id, ...(host ? { host } : {}), id: p.key, ...(p.inProject ? { back: true } : {}) }, !p.inProject)}
+          />
           {share ? (
             <IconButton
               icon={I.share}
@@ -144,6 +173,7 @@ export function PlanLine({ plan: p, group, project, accountTag, chatGoneCard }:
       ) : null}
     </li>
     {woken ? <DeleteAsk itemKey={askKey} li /> : null}
+    {woken ? <MoveAsk itemKey={askKey} li /> : null}
     </>
   );
 }

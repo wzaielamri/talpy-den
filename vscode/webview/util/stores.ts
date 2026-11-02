@@ -1,6 +1,6 @@
 // What the extension last sent, and whether anyone can see the view.
 
-import type { DeleteTarget, HostMessage, LiveView, ViewState } from "../../src/shared/types";
+import type { DeleteTarget, HostMessage, LiveView, MoveAnswer, MoveTarget, ViewState } from "../../src/shared/types";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { createStore } from "./store";
 
@@ -73,3 +73,21 @@ export interface DeleteAsk {
   message: string;
 }
 export const deleteAsk = createStore<DeleteAsk | null>(null);
+
+// The question before a plan moves into a project (Move to project…, or a
+// plan dropped on another project's card), one at a time: busy while the
+// extension looks where it would go, then its answer, or why it can't
+// (message); keepThere: "Keep this project's new plans there too"
+export interface MoveAsk {
+  key: string; // the line's, or "drop|" + the card's folder
+  target: MoveTarget;
+  pick: boolean; // the projects to pick from show
+  busy: boolean;
+  answer: MoveAnswer | null;
+  message: string;
+  keepThere: boolean;
+}
+export const moveAsk = createStore<MoveAsk | null>(null);
+
+// A plan dragged by its name in the Projects tab: {key, groupId, from (its card's folder)}
+export const planDrag = createStore<{ id: string; groupId: string; from: string } | null>(null);

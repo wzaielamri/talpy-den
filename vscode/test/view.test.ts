@@ -207,6 +207,32 @@ test("a chat that isn't in the extension's state, and a message that isn't one, 
   assert.deepEqual(calls, []);
 });
 
+// Move to project… and a plan dropped on a project ask first (moveDescribe):
+// nothing moves until the question is answered (movePlan), and only a plan
+// the view lists goes, to a folder named in full
+test("a plan's move asks first, and moves only a plan it lists to a folder in full", () => {
+  const state = demoState(NOW);
+  const g = state.status!.groups[0];
+  g.plans = [];
+  const { calls, receive } = setup(state);
+  const named = () => calls.splice(0).map((c) => [c.name, ...c.args.map((a) => (a && typeof a === "object" && "slug" in a ? (a as { slug: string }).slug : a))]);
+  receive({ type: "moveDescribe", key: "plan||g|demo-plan-1", groupId: g.id, id: "demo-plan-1" });
+  receive({ type: "moveDescribe", key: "drop|/srv/app", groupId: g.id, id: "demo-plan-1", folder: "/srv/app" });
+  receive({ type: "moveDescribe", key: "plan||g|demo-plan-1", groupId: g.id, id: "demo-plan-1", back: true });
+  assert.deepEqual(named(), [["describeMove", "brave-green-otter", undefined, undefined, false],
+    ["describeMove", "brave-green-otter", undefined, "/srv/app", false], ["describeMove", "brave-green-otter", undefined, undefined, true]]);
+  // (a drop only asks: nothing moved)
+  receive({ type: "moveDescribe", key: "x", groupId: g.id, id: "demo-plan-1", folder: "relative/folder" });
+  receive({ type: "moveDescribe", groupId: g.id, id: "demo-plan-1" });
+  receive({ type: "movePlan", groupId: g.id, id: "nope", keepThere: true });
+  receive({ type: "movePlan", groupId: g.id, id: "demo-plan-1", folder: "relative", keepThere: true });
+  assert.deepEqual(named(), []);
+  receive({ type: "movePlan", groupId: g.id, id: "demo-plan-1", folder: "/srv/app", keepThere: false, ifExists: "keep" });
+  receive({ type: "movePlan", groupId: g.id, id: "demo-plan-1", back: true, keepThere: true, ifExists: "everything" });
+  assert.deepEqual(named(), [["movePlan", "brave-green-otter", undefined, "/srv/app", false, false, "keep"],
+    ["movePlan", "brave-green-otter", undefined, undefined, true, true, undefined]]);
+});
+
 // The Projects tab's lines are this computer's chats, plans and memories as
 // week.py --projects last listed them: the status lists only the starred
 // plans and the CLAUDE.md, so a click on one is found there

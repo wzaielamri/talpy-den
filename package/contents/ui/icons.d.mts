@@ -21,6 +21,8 @@ export type Meaning =
   | "share"
   | "continueOn"
   | "moveTo"
+  | "moveToProject"
+  | "moveBack"
   | "edit"
   | "send"
   | "copy"

@@ -9,7 +9,7 @@
 // star, a hide or a delete); what goes on now from the status (the view's
 // state). No time or money here: the Recap has them, by project.
 
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Group, ProjectRow, Session } from "../../src/shared/types";
 import { duration, folderIn, groupOfProfile, listedChats, openChatsByProject, pagedTitle, pageSizeOf, projectLists, stateText } from "../../src/shared/model";
 import { post } from "../env";
@@ -18,12 +18,13 @@ import { I, Icon } from "../util/icons";
 import { useAfterFrame } from "../util/lazy";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
-import { projectsAnswer, useReadAgain } from "../util/stores";
+import { planDrag, projectsAnswer, useReadAgain } from "../util/stores";
 import { pages, pagesShown, projectListKey, projectToShow, showMore, toggleProject, uiState } from "../util/ui";
 import { useView } from "./context";
 import { FocusLine } from "./FocusView";
 import { MemoryLine } from "./MemoryLine";
 import { MoreButton } from "./MoreButton";
+import { askMove, MoveAsk } from "./MoveAsk";
 import { PlanLine } from "./PlanLine";
 import { Reading } from "./Reading";
 import { RecentLine, reopenOf, type Reopen } from "./RecentLine";
@@ -44,6 +45,18 @@ export function ProjectsView() {
   }, [visible]);
   useReadAgain(visible, () => post({ type: "projects" }));
   useEffect(() => () => post({ type: "projects", shown: false }), []);
+  // A plan dragged near the view's top or bottom edge: the view scrolls
+  const dragging = !!useStore(planDrag);
+  useEffect(() => {
+    if (!dragging) return undefined;
+    const edge = 40;
+    const over = (e: DragEvent) => {
+      const step = e.clientY < edge ? -12 : e.clientY > window.innerHeight - edge ? 12 : 0;
+      if (step) (document.scrollingElement ?? document.documentElement).scrollBy(0, step);
+    };
+    document.addEventListener("dragover", over);
+    return () => document.removeEventListener("dragover", over);
+  }, [dragging]);
   // Shown again (Show Hidden Projects, Plans or Memories Again): read again,
   // as a hide from here is (Plasma reads again after either)
   const hidden = (view.status?.hiddenProjects ?? 0) + (view.status?.hiddenPlans ?? 0) + (view.status?.hiddenMemories ?? 0);
@@ -93,8 +106,36 @@ function Project({ p, open, here, now }: { p: ProjectRow; open: boolean; here: S
   // (a plan whose chat is gone: its folder isn't known)
   const unfiled = !p.path;
   const profileDir = p.chats[0]?.profileDir ?? p.plans[0]?.profileDir ?? p.memories[0]?.profileDir ?? "";
+  // A plan dragged here from another project (or the plans whose chat is
+  // gone): this card lights up, and a drop asks to move it here (MoveAsk at
+  // its top); its own project, a folder that's gone and the plans whose chat
+  // is gone take none
+  const drag = useStore(planDrag);
+  const [over, setOver] = useState(false);
+  const takes = !!drag && !!p.path && !p.gone && drag.from !== p.path;
+  useEffect(() => {
+    if (!drag) setOver(false);
+  }, [drag]);
   return (
-    <section class="project" ref={card}>
+    <section
+      class={"project" + (over && takes ? " drop-target" : "")}
+      ref={card}
+      onDragOver={takes ? (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      } : undefined}
+      onDragLeave={(e) => {
+        if (!card.current?.contains(e.relatedTarget as Node | null)) setOver(false);
+      }}
+      onDrop={takes ? (e) => {
+        e.preventDefault();
+        setOver(false);
+        const d = planDrag.get();
+        planDrag.set(null);
+        if (d) askMove("drop|" + p.path, { groupId: d.groupId, id: d.id, folder: p.path }, false);
+      } : undefined}
+    >
       <div class="project-head">
         <button type="button" class="project-name" aria-expanded={open} onClick={() => toggleProject(p.path)}>
           <span class={"chevron" + (open ? " open" : "")} aria-hidden="true"><Icon name={I.folded} /></span>
@@ -126,6 +167,7 @@ function Project({ p, open, here, now }: { p: ProjectRow; open: boolean; here: S
           </span>
         )}
       </div>
+      {unfiled ? null : <MoveAsk itemKey={"drop|" + p.path} />}
       {open ? <ProjectDetails p={p} here={here} /> : null}
     </section>
   );

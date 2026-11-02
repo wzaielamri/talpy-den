@@ -311,6 +311,29 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         );
         break;
       }
+      case "moveDescribe": {
+        // what Move to project… (or a plan dropped on a project) would do, for the question
+        const key = text(m.key), found = this.planOf({ groupId: m.groupId, host: m.host, plan: m.id });
+        if (!key) break;
+        const folder = text(m.folder), back = m.back === true;
+        const answer = found && (!folder || folder.startsWith("/"))
+          ? this.actions.describeMove(found.plan, found.group.host, folder, back)
+          : Promise.resolve({ ok: false, answer: null, message: "That plan isn't listed any more." });
+        void answer.then(
+          (a) => webview.postMessage({ type: "moveAsk", key, ...a } satisfies HostMessage),
+          () => webview.postMessage({ type: "moveAsk", key, ok: false, answer: null, message: "It can't be moved." } satisfies HostMessage),
+        );
+        break;
+      }
+      case "movePlan": {
+        // (the question was answered)
+        const found = this.planOf({ groupId: m.groupId, host: m.host, plan: m.id }), folder = text(m.folder);
+        const ifExists = m.ifExists === "keep" || m.ifExists === "replace" ? m.ifExists : undefined;
+        if (found && (!folder || folder.startsWith("/")))
+          void this.actions.movePlan(found.plan, found.group.host, folder, m.back === true, m.keepThere !== false, ifExists)
+            .then(() => this.projectsChanged());
+        break;
+      }
       case "share":
         if (chat) void this.actions.share(chat);
         break;

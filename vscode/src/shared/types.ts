@@ -917,6 +917,31 @@ export function isDecision(d: unknown): d is Decision {
 // A chat, or an account's plan or memory (by its key, as the extension knows it), to delete
 export type DeleteTarget = { kind: "chat" | "plan" | "memory"; chat?: ChatRef; groupId?: string; host?: string; id?: string };
 
+// A plan to move into a project's own plans folder (folder: the project; none:
+// the chat's own), or back to its account (back): by its key, as the extension knows it
+export type MoveTarget = { groupId: string; host?: string; id: string; folder?: string; back?: boolean };
+
+// What Move to project… would do (jump.py --move-plan --describe): where the
+// plan goes, and what the question says
+export interface MoveAnswer {
+  title: string;
+  slug: string;
+  back: boolean;
+  project: string; // the project it goes to ("": none picked yet)
+  projectShort: string;
+  target: string; // the file it becomes
+  targetShort: string;
+  setting: string; // where the project's plansDirectory comes from ("local", "project", "user"); "": none, so "Keep this project's new plans there too" is offered
+  settingsFile: string; // the settings.local.json that would name it
+  git: boolean | null; // git would show it there (null: not a repository)
+  exists: boolean; // another plan of that name is there: keep both (free) or replace
+  free: string;
+  account: string;
+  lost: boolean; // (back) the project's chats look for it in the project's folder
+  choices: { path: string; short: string }[]; // the projects it can go to, the chat's own first
+  default: string;
+}
+
 // webview -> extension
 export type WebviewMessage =
   | { type: "ready" }
@@ -933,6 +958,8 @@ export type WebviewMessage =
   | { type: "hide"; kind: "plans" | "memories" | "projects"; groupId?: string; host?: string; id: string } // id: the plan's or memory's key, a project's folder
   | ({ type: "delete" } & DeleteTarget) // to the Trash (the line asked first: deleteDescribe)
   | ({ type: "deleteDescribe"; key: string } & DeleteTarget) // what Delete would do, for the question on the line (key: the line's)
+  | ({ type: "moveDescribe"; key: string } & MoveTarget) // what Move to project… would do, for the question (key: the line's or the card's)
+  | ({ type: "movePlan"; keepThere: boolean; ifExists?: "keep" | "replace" } & MoveTarget) // (the question was answered: Move, Keep both, Replace)
   | { type: "share"; chat: ChatRef }
   | { type: "compareChanges"; chat: ChatRef; turn: boolean }
   | { type: "openAgentRun"; chat: ChatRef; agentId: string }
@@ -988,5 +1015,6 @@ export type HostMessage =
   | { type: "weekRevoke"; id: string; host: string; ok: boolean; message: string }
   | { type: "perms"; data: PermsData | null; error: string }
   | { type: "deleteAsk"; key: string; ok: boolean; question: string; message: string } // (deleteDescribe's answer: the question, or why it can't)
+  | { type: "moveAsk"; key: string; ok: boolean; answer: MoveAnswer | null; message: string } // (moveDescribe's answer)
   | { type: "projects"; data: ProjectsData | null; error: string }
   | { type: "recentMore"; groupId: string; host?: string; recent: RecentChat[]; asked: number }; // (none: the check failed)

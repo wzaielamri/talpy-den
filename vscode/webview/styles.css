@@ -4057,3 +4057,46 @@ body.vscode-high-contrast-light .pane {
   margin-top: 2px;
   opacity: 0.8;
 }
+
+/* Move a plan?: under the line that asks, or at the top of the card it was
+   dropped on (MoveAsk), as every question (.confirm); its notes small, the
+   ones to mind in the question's orange */
+.move-ask {
+  margin: 2px 0 4px;
+}
+
+.move-pick {
+  max-width: 100%;
+  color: var(--vscode-dropdown-foreground);
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-dropdown-border, transparent);
+}
+
+.move-keep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+}
+
+.move-note {
+  margin-left: 1.6em;
+}
+
+.move-warn {
+  color: var(--cs-waiting);
+}
+
+.move-buttons {
+  justify-content: flex-end;
+}
+
+/* A plan dragged by its name onto another project: the card it would go to */
+.project.drop-target {
+  outline: 1px solid var(--vscode-focusBorder);
+  background: var(--vscode-list-dropBackground, color-mix(in srgb, var(--vscode-focusBorder) 15%, transparent));
+}
+
+.plan-drag {
+  cursor: grab;
+}

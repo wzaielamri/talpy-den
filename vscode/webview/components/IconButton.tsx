@@ -13,6 +13,7 @@ export function IconButton(props: {
   children?: ComponentChildren;
   disabled?: boolean; // (greyed out in its place, so every line's buttons stay in the same columns)
   pressed?: boolean; // a toggle that's on (drawn pressed)
+  askFor?: string; // the key of the question it opens (MoveAsk: a press on it isn't one "outside" the question)
 }) {
   return (
     <button
@@ -22,6 +23,7 @@ export function IconButton(props: {
       aria-label={props.label}
       disabled={props.disabled}
       aria-pressed={props.pressed}
+      data-ask-for={props.askFor}
       onClick={(e) => {
         e.stopPropagation();
         props.onClick();
