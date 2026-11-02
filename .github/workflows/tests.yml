@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.12", "3.14"]
+        python: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -23,11 +23,17 @@ jobs:
       - name: Run the tests
         run: python -m unittest discover -s tests -v
 
-  # The status script also runs on SSH hosts, whose python3 can be as old as 3.7
-  python37:
-    name: Python 3.7 (SSH hosts)
+  # The status script also runs on SSH hosts, whose python3 can be as old as
+  # 3.7 (3.9: Debian 11). In the official images: setup-python has no build
+  # of these for the newer runners (Ubuntu 26.04 has no 3.9)
+  old-python:
+    name: Python ${{ matrix.python }} (SSH hosts)
     runs-on: ubuntu-latest
-    container: python:3.7-slim
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.7", "3.9"]
+    container: python:${{ matrix.python }}-slim
     steps:
       - uses: actions/checkout@v5
       - name: Run the tests
