@@ -28,15 +28,20 @@ export interface PlanComment {
 
 // {slug, file} of a plan of this computer, <config>/plans/<slug>.md (a Claude
 // config folder: ~/.claude*, or one of configDirs), or null
-export function planFileOf(uri: vscode.Uri, configDirs: string[] = [], home = os.homedir()): { slug: string; file: string } | null {
+export function planFileOf(uri: vscode.Uri, configDirs: string[] = [], home = os.homedir(),
+  listed: ReadonlySet<string> = new Set()): { slug: string; file: string } | null {
   // (file: in a Remote-SSH window too: this extension runs on this computer)
   if (uri.scheme !== "file") return null;
-  return planPath(uri.path, configDirs, home);
+  return planPath(uri.path, configDirs, home, listed);
 }
 
-export function planPath(file: string, configDirs: string[] = [], home = os.homedir()): { slug: string; file: string } | null {
-  if (!file.endsWith(".md") || path.basename(path.dirname(file)) !== "plans") return null;
+// listed: the files of the plans in projects' own plans folders the view
+// lists (Claude's plansDirectory there names any folder)
+export function planPath(file: string, configDirs: string[] = [], home = os.homedir(),
+  listed: ReadonlySet<string> = new Set()): { slug: string; file: string } | null {
   const slug = path.basename(file, ".md");
+  if (listed.has(file) && file.endsWith(".md") && SLUG.test(slug)) return { slug, file };
+  if (!file.endsWith(".md") || path.basename(path.dirname(file)) !== "plans") return null;
   const config = path.dirname(path.dirname(file));
   const own = path.dirname(config) === home && /^\.claude(-[^/]+)?$/.test(path.basename(config));
   return SLUG.test(slug) && (own || configDirs.includes(config)) ? { slug, file } : null;
@@ -46,11 +51,11 @@ export class PlanReview implements vscode.Disposable {
   private readonly controller: vscode.CommentController;
   private readonly threads = new Map<string, Set<vscode.CommentThread>>(); // plan file -> its comment threads
 
-  constructor(private readonly configDirs: () => string[]) {
+  constructor(private readonly configDirs: () => string[], private readonly listed: () => ReadonlySet<string> = () => new Set()) {
     this.controller = vscode.comments.createCommentController(CONTROLLER_ID, "Feedback for Claude");
     this.controller.options = { prompt: "Comment for Claude…", placeHolder: "What Claude should change here" };
     this.controller.commentingRangeProvider = {
-      provideCommentingRanges: (doc) => (planFileOf(doc.uri, this.configDirs()) ? [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)] : []),
+      provideCommentingRanges: (doc) => (planFileOf(doc.uri, this.configDirs(), undefined, this.listed()) ? [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)] : []),
     };
   }
 

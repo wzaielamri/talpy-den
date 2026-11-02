@@ -92,12 +92,25 @@ export function activate(context: vscode.ExtensionContext): void {
   const a = actions;
   const hiddenShown = new Map<HiddenKind, number>(); // (what the context keys say)
   let needsYouShown = false;
-  const review = new PlanReview(extraConfigDirs);
+  // (the plans in projects' own plans folders the view lists: their files take comments and feedback too)
+  const projectPlans = (): Set<string> => {
+    const groups = dash.state().status?.groups ?? [];
+    return new Set([...groups.flatMap((g) => [...(g.plans ?? []), ...(g.starredPlans ?? [])]), ...(dash.projectsRead()?.projects ?? []).flatMap((p) => p.plans)]
+      .filter((p) => p.inProject).map((p) => p.path));
+  };
+  const review = new PlanReview(extraConfigDirs, projectPlans);
   a.planReview = review;
-  // (Send Feedback's button: plans in ~/.claude* and in talpyDen.extraConfigDirs' folders)
-  const planFolders = () => void vscode.commands.executeCommand("setContext", "talpyDen.planFolders", extraConfigDirs().map((d) => path.join(d, "plans")));
+  // (Send Feedback's button: plans in ~/.claude*, in talpyDen.extraConfigDirs' folders and in the projects' plans folders listed)
+  let planFoldersSet: string | null = null;   // (what the context key says: set the first time, then on a change)
+  const planFolders = () => {
+    const folders = [...new Set([...extraConfigDirs().map((d) => path.join(d, "plans")), ...[...projectPlans()].map((f) => path.dirname(f))])];
+    if (folders.join("\n") === planFoldersSet) return;
+    planFoldersSet = folders.join("\n");
+    void vscode.commands.executeCommand("setContext", "talpyDen.planFolders", folders);
+  };
   planFolders();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration("talpyDen.extraConfigDirs") && planFolders()));
+  context.subscriptions.push(dash.onState(() => planFolders()));
   // each chat's tab: its conversation, a reply box, what it asks, its review
   const panes = new ChatPanes(context.extensionUri, backend, dash, actions, terminals, log);
   view.panes = panes;
@@ -106,7 +119,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Send Feedback to Claude, for a plan's file (the editor's, or the active one)
   const sendFeedback = (uri?: vscode.Uri) => {
     const target = uri instanceof vscode.Uri ? uri : vscode.window.activeTextEditor?.document.uri;
-    const file = target ? planFileOf(target, extraConfigDirs()) : null;
+    const file = target ? planFileOf(target, extraConfigDirs(), undefined, projectPlans()) : null;
     if (!file) return void vscode.window.showInformationMessage("Talpy Den: open a plan's file first (✎ next to a plan).");
     const state = dash.state();
     const groups = state.status?.groups ?? [];

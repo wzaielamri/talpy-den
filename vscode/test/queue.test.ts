@@ -68,6 +68,10 @@ test("feedback goes with the plan files of Claude's config folders", () => {
   assert.equal(planPath("/home/alice/notes/plans/calm-red-owl.md", [], "/home/alice"), null); // not Claude's
   assert.equal(planPath("/srv/claude/plans/a.md", ["/srv/claude"], "/home/alice")?.slug, "a"); // a config folder of the settings
   assert.equal(planPath("/home/alice/.claude-work/plans/notes.txt", [], "/home/alice"), null);
+  // a plan in a project's own plans folder the view lists (plansDirectory names any folder)
+  const listed = new Set(["/home/alice/app/docs/design/calm-red-owl.md"]);
+  assert.deepEqual(planPath("/home/alice/app/docs/design/calm-red-owl.md", [], "/home/alice", listed), { slug: "calm-red-owl", file: "/home/alice/app/docs/design/calm-red-owl.md" });
+  assert.equal(planPath("/home/alice/app/docs/design/other.md", [], "/home/alice", listed), null);
 });
 
 test("a task can start later, at a day and time you pick", () => {
