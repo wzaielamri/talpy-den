@@ -1253,12 +1253,13 @@ class ContinueAfterResetTests(TaskFixture):
         self.assertEqual((self.calls(), cs.load_queue(self.cache_root())), ([], []))
 
     def test_a_session_that_still_has_it_open_is_stopped_first(self):
+        # (with no background service to take the go-on in: see BackgroundServiceTests)
         self.stopped_chat()
         stops = []
+        entry = {"sessionId": self.SID, "kind": "bg", "jobId": "e3de1242", "status": "idle"}
         with mock.patch.object(cs, "stop_background", side_effect=lambda *a, **k: stops.append(a[1]) or (True, "stopped")), \
-                mock.patch.object(cs, "live_entries_all", return_value=[]) as live:
-            live.side_effect = [[({"sessionId": self.SID, "kind": "bg", "jobId": "e3de1242", "status": "idle"},
-                                  self.profile, self.profile)], []]
+                mock.patch.object(cs, "live_entries_all",
+                                  side_effect=lambda profiles: [] if stops else [(entry, self.profile, self.profile)]):
             answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
         self.assertTrue(answer["ok"], answer)
         self.assertEqual(stops, ["e3de1242"])
@@ -1649,6 +1650,179 @@ class GoOnWaitsTests(TaskFixture):
             self.assertEqual(cs.end_background_work(self.home, entry, self.profile), (True, "Stopped"))
         self.assertTrue(all(cs.process_gone({"pid": p, "procStart": s}) for p, s in tree), "its leftovers ended")
         self.assertIsNone(cs.claude_shell_command(["bash", "-c", "npm test"]))
+
+
+class FakeService:
+    """Claude's background service for a profile, as Talpy Den asks it: a
+    Unix socket at its place (cs.DAEMON_TMP, patched to a folder of the
+    test's), one JSON line in, answer(request) as one JSON line out; the
+    requests are kept. Its key is daemon/control.key in the profile."""
+
+    KEY = "0123456789abcdef0123456789abcdef"
+
+    def __init__(self, test, profile, answer):
+        import socket
+        self.requests, self.answer = [], answer
+        root = Path(tempfile.mkdtemp(prefix="td-", dir="/tmp"))  # (a socket's path: at most 107 bytes)
+        test.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
+        value = str(profile.path)
+        patches = [mock.patch.object(cs, "DAEMON_TMP", root), mock.patch.object(cs, "DAEMON_RETRY_GAP", 0),
+                   mock.patch.object(cs, "service_config_dir", side_effect=lambda p: value if p.path == profile.path else None)]
+        for p in patches:
+            p.start()
+            test.addCleanup(p.stop)
+        self.path = cs.daemon_socket(profile)
+        self.path.parent.mkdir(parents=True)
+        write(profile.path / "daemon/control.key", self.KEY + "\n")
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(str(self.path))
+        self.server.listen(8)
+        test.addCleanup(self.server.close)
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def serve(self):
+        while True:
+            try:
+                conn, _ = self.server.accept()
+            except OSError:
+                return
+            with conn:
+                data = b""
+                while b"\n" not in data:
+                    chunk = conn.recv(65536)
+                    if not chunk:
+                        break
+                    data += chunk
+                request = json.loads(data.split(b"\n", 1)[0])
+                self.requests.append(request)
+                conn.sendall((json.dumps(self.answer(request)) + "\n").encode())
+
+    def ops(self, op):
+        return [r for r in self.requests if r.get("op") == op]
+
+
+class BackgroundServiceTests(TaskFixture):
+    """A background session at its usage limit takes the go-on in where it
+    is, through Claude's background service (the way `claude agents`
+    answers one): never stopped, so a terminal that shows it (claude attach)
+    stays on it, and no copy of the chat. The user's report of 2026-11-02:
+    at the reset, the go-on stopped the session (claude stop) and the
+    terminal attached to it said "Session 06682d7c has exited."; the claude
+    --bg --resume that followed, 0.4 s later, came while the service still
+    held it, so Claude started a copy (9e5d7c9d) that lost its auto mode and
+    xhigh effort."""
+
+    SID = ContinueAfterResetTests.SID
+    queue, cache_root = QueueTests.queue, QueueTests.cache_root
+    stopped_chat = ContinueAfterResetTests.stopped_chat
+
+    def setUp(self):
+        super().setUp()
+        self.stopped_chat()
+        self.session_file = self.home / ".claude-work/sessions/50.json"
+        self.live("idle")
+
+    def live(self, status, **kw):
+        write(self.session_file, session(self.SID, kind="bg", status=status, jobId=self.SID[:8], **kw))
+
+    @staticmethod
+    def takes_it(request):
+        if request["op"] == "reply":
+            return {"ok": True, "op": "reply"}
+        return {"ok": True, "op": request["op"], "alive": True, "present": True, "ready": True}
+
+    def go_on(self, **kw):
+        return cs.continue_chat(self.home, [], ".claude-work", self.SID, None, kw.pop("text", ""), str(self.bin / "claude"),
+                                **kw)
+
+    def test_its_session_takes_the_go_on_in_and_isnt_stopped(self):
+        service = FakeService(self, self.profile, self.takes_it)
+        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude-work",
+                                   "--at", str(int(time.time() * 1000) - 1000), "--name", "Fix it")["ok"])
+        (task,) = cs.load_queue(self.cache_root())
+        self.assertEqual(self.queue("--start-queued", task["id"]),
+                         {"ok": True, "message": "Went on in its background session on work (e3de1242)"})
+        self.assertEqual(service.requests, [{"op": "reply", "short": "e3de1242", "text": cs.CONTINUE_PROMPT,
+                                             "auth": FakeService.KEY, "proto": 1}])
+        self.assertEqual(self.calls(), [], "no claude stop, no claude --bg --resume")
+        self.assertEqual(cs.load_queue(self.cache_root()), [])
+        self.assertIsNotNone(cs.kept_chats(self.cache_root())[0]["wentOnAt"], "a go-on that didn't take is tried again")
+
+    def test_one_at_work_on_the_background_commands_the_limit_left_takes_it_in_at_once(self):
+        # (they run on: no wait for them, nothing ended)
+        service = FakeService(self, self.profile, self.takes_it)
+        self.live("busy")
+        answer = self.go_on(text="go on with step 2", ends_at=int(time.time() * 1000) + 60_000)
+        self.assertEqual(answer, {"ok": True, "message": "Went on in its background session on work (e3de1242)",
+                                  "id": "e3de1242"})
+        self.assertEqual([r["text"] for r in service.ops("reply")], ["go on with step 2"])
+        # one at work on more than that (its newest turn isn't the limit's) isn't typed into
+        write(self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl",
+              lines(prompt("fix it", self.now - 60, cwd=str(self.folder))))
+        self.assertEqual(self.go_on(force=True), {"ok": False, "message": "It's at work again, so it stays where it is"})
+        # nor one that asks you something
+        self.stopped_chat()
+        self.live("waiting", waitingFor="permission prompt")
+        self.assertFalse(self.go_on(force=True)["ok"])
+        self.assertEqual(len(service.ops("reply")), 1)
+        self.assertEqual(self.calls(), [])
+
+    def test_a_reply_starting_or_restarting_is_tried_again_as_claude_does(self):
+        tries = []
+
+        def starting(request):
+            tries.append(request["op"])
+            if request["op"] == "reply" and len(tries) < 3:
+                return {"ok": False, "error": "the session is still starting", "code": "ESTARTING"}
+            return self.takes_it(request)
+        FakeService(self, self.profile, starting)
+        self.assertTrue(self.go_on()["ok"])
+        self.assertEqual(tries, ["reply"] * 3)
+        self.assertEqual(self.calls(), [])
+
+    def test_one_it_wont_take_stops_and_goes_on_once_the_service_let_go(self):
+        # (its key doesn't match, say: as before, claude stop then claude --bg --resume, but not
+        # while the service still holds its session, which would start a copy)
+        held = {"n": 3}
+
+        def refuses(request):
+            if request["op"] == "reply":
+                return {"ok": False, "error": "reply rejected: the presented daemon control key doesn't match",
+                        "code": "EAUTH"}
+            held["n"] -= 1
+            return {"ok": True, "op": "has", "alive": held["n"] > 0, "present": held["n"] > 0, "ready": True}
+        service = FakeService(self, self.profile, refuses)
+        stops, starts = [], []
+
+        def stop(profile, job_id, job=None, home=None, claude=None):
+            stops.append(job_id)
+            self.session_file.unlink()  # (its process quit; the service lets go a moment later)
+            return True, "Stopped"
+        start = cs.start_background
+        with mock.patch.object(cs, "stop_background", side_effect=stop), \
+                mock.patch.object(cs, "start_background", side_effect=lambda *a, **k: starts.append(held["n"]) or start(*a, **k)):
+            answer = self.go_on()
+        self.assertEqual(answer, {"ok": True, "message": "Went on in the background on work (1a2b3c4d)", "id": "1a2b3c4d"})
+        self.assertEqual((stops, starts), (["e3de1242"], [0]))
+        self.assertEqual([r["short"] for r in service.ops("has")], ["e3de1242"] * 3)
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])
+
+    def test_no_service_no_key_or_no_answer_is_as_before(self):
+        self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
+                         (False, "Claude's background service can't be asked"))  # (no key)
+        FakeService(self, self.profile, lambda r: {"ok": False, "error": "unknown op: reply", "code": "EUNKNOWN"})
+        self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
+                         (False, "Claude's background service didn't take it: unknown op: reply"))
+        self.assertEqual(cs.reply_to_background(self.profile, "../x", "hi"), (False, "Claude's background service can't be asked"))
+        with mock.patch.object(cs, "service_config_dir", return_value=None):
+            self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
+                             (False, "Claude's background service didn't answer"))
+            self.assertFalse(cs.daemon_holds([self.profile], ["e3de1242"]))
+        # (where Claude puts it: /tmp/cc-daemon-<uid>/<sha256 of the CLAUDE_CONFIG_DIR it runs with>[:8])
+        with mock.patch.object(cs, "service_config_dir", return_value="/home/u/.claude-work"), \
+                mock.patch.object(cs, "DAEMON_TMP", Path("/tmp")):
+            self.assertEqual(str(cs.daemon_socket(self.profile)), f"/tmp/cc-daemon-{os.getuid()}/9fa37e90/control.sock")
 
 
 class KeepGoingTests(TaskFixture):

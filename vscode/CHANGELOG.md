@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **A background chat goes on where it is after a usage limit, and a
+  terminal showing it stays on it:** at the reset, *Keep going* and *Go on
+  at …* stopped a background chat that was still running, so a terminal
+  attached to it (`claude attach`) said *Session … has exited*; the resume
+  that followed could even make Claude start a copy under a new id, in its
+  default permission mode. Now the go-on goes into the running chat through
+  Claude's background service, as `claude agents` answers one: the same
+  chat, mode, model and effort, its commands still running, and the
+  attached terminal shows it go on. The chat tab's **Send** to a running
+  background chat does the same (it stopped the chat, even mid-turn). Where
+  the service doesn't take it, Talpy Den stops and resumes it as before,
+  once the service has let go of it, so no copy is made.
 - **Plans in a project's own folder are listed:** Claude's
   `plansDirectory` setting and a project's `.claude/plans` hold plans
   the view didn't show. Each is listed once, under the account whose chat

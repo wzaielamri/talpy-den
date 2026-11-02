@@ -967,7 +967,27 @@ class SendTests(PaneFixture):
                          ("background", "Sent: the chat goes on with it in the background (1a2b3c4d)"))
         self.assertEqual(self.calls(), [["--bg", "--resume", SID, "and the docs"]])
 
+    def test_a_background_session_takes_it_in_where_it_is(self):
+        # (through Claude's background service, as `claude agents` answers one: queued while it works,
+        # never stopped, so a terminal attached to it stays on it)
+        from test_tasks import FakeService
+        self.live(kind="bg", status="busy", jobId="bgjob1")
+        profile = next(p for p in cs.discover_profiles(self.home) if p.key == ".claude-work")
+        service = FakeService(self, profile, lambda r: {"ok": True, "op": r["op"]})
+        with mock.patch.object(cs, "stop_background") as stopped:
+            answer = self.send()
+        self.assertEqual(answer, {"ok": True, "how": "typed", "message": "Sent (typed into its background session)"})
+        self.assertEqual([(r["short"], r["text"]) for r in service.ops("reply")], [("bgjob1", "and the docs")])
+        self.assertEqual((stopped.call_count, self.calls()), (0, []))
+        # one that asks you something stops first, as before (a message typed in would land in its question)
+        self.live(kind="bg", status="waiting", waitingFor="permission prompt", jobId="bgjob1")
+        with mock.patch.object(cs, "stop_background", return_value=(True, "Stopped")) as stopped, \
+                mock.patch.object(cs, "continue_chat", return_value={"ok": True, "id": "1a2b3c4d"}):
+            self.assertEqual(self.send()["how"], "background")
+        self.assertEqual((stopped.call_count, len(service.ops("reply"))), (1, 1))
+
     def test_a_background_session_stops_first(self):
+        # (one whose service doesn't take it in: there's none here)
         self.live(kind="bg", status="busy", jobId="bgjob1")
         write(self.home / ".claude-work/jobs/bgjob1/state.json", {"state": "working", "sessionId": SID})
         with mock.patch.object(cs, "stop_background", return_value=(True, "Stopped")) as stopped, \

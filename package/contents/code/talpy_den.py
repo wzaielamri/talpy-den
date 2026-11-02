@@ -2657,8 +2657,9 @@ def note_live(groups, cache_root):
 
 def reply_route(row):
     """How a chat takes a message: "tmux" (typed into its pane), "vscode"
-    (its VS Code tab's input), "background" (claude --bg --resume: a chat
-    with no process, or a background session) or "terminal" (a terminal
+    (its VS Code tab's input), "background" (a live background session
+    takes it in through Claude's service, reply_to_background; else claude
+    --bg --resume: a chat with no process) or "terminal" (a terminal
     that takes no text from outside: going on in the background or the
     clipboard)."""
     if not row.get("pid") or row.get("kind") == "bg":
@@ -6231,9 +6232,13 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     (a queued one: jump.py --start-queued; here or on an SSH host,
     --continue-chat): in the background on its account, with text (else
     CONTINUE_PROMPT) as your next message, in its permission mode, on its
-    model and effort (go_on_options). A session that has it open idle ends first
-    (end_for_handover), then claude --bg --resume goes on with the same
-    chat. {"ok", "message", "id"}; ok with no message when it went on
+    model and effort (go_on_options). A background session that has it
+    open idle (or whose turn the limit ended, at work on its background
+    commands alone) takes the message in where it is (reply_to_background):
+    a terminal that shows it stays on it. Else a session that has it open
+    idle ends first (end_for_handover), then claude --bg --resume goes on
+    with the same chat, once Claude's background service has let go of it.
+    {"ok", "message", "id"}; ok with no message when it went on
     already (its newest turn isn't the limit's any more): nothing to do.
     force: go on whatever its newest turn (a chat that keeps going whose turn
     broke off, or that the usage cap stopped).
@@ -6266,6 +6271,17 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     if not (isinstance(folder, str) and os.path.isdir(folder)):
         folder = chat_folder(path) or str(home)
     claude = claude or find_claude(home, ask_shell=True)
+    prompt = (text or "").strip() or CONTINUE_PROMPT
+    # (a background session that has it open takes the message in, as `claude agents` answers one: it goes
+    # on where it is, its background commands too, and a terminal attached to it isn't ended. Not one
+    # that asks you something, or at work on more than the background commands a limit left running)
+    live = live_background(profiles, chat_id)
+    if live is not None and (session_state(live[0]) == "idle" or limited and session_state(live[0]) == "working"):
+        entry, runs_on = live
+        ok, _ = reply_to_background(runs_on, entry["jobId"], prompt)
+        if ok:
+            return {"ok": True, "message": f"Went on in its background session on {runs_on.label} ({entry['jobId']})",
+                    "id": entry["jobId"]}
     busy = background_work(profiles, chat_id) if limited and ends_at is not None else None
     if busy is not None:
         entry, runs_on, commands = busy
@@ -6279,20 +6295,25 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
         ok, message = end_for_handover(home, profiles, chat_id, claude)
         if not ok:
             return {"ok": False, "message": message}
-    # (claude --bg --resume starts a copy while a process still has the chat open)
+    # (claude --bg --resume starts a copy while a process still has the chat open, or while Claude's
+    # background service still holds its session: the one it would wake, and the one that was stopped)
+    state = profile.path / "jobs" / chat_id[:8] / "state.json"
+    record = read_json(state)
+    saved = record.get("daemonShort") if isinstance(record, dict) else None
+    shorts = {chat_id[:8]} | {s for s in (saved, live[0]["jobId"] if live else None) if valid_id(s)}
+    services = [profile] + ([live[1]] if live and live[1] is not profile else [])
     deadline = time.time() + (END_WAIT if wait is None else wait)
-    while any(e.get("sessionId") == chat_id for e, _, _ in live_entries_all(profiles)) and time.time() < deadline:
+    while (any(e.get("sessionId") == chat_id for e, _, _ in live_entries_all(profiles))
+           or daemon_holds(services, sorted(shorts))) and time.time() < deadline:
         time.sleep(0.2)
     # (a picture your message names can be opened, unless Claude wakes a
     # background session of it, with the options it saved)
     model, effort = chat_model(home, profile, chat_id, path)
-    state = profile.path / "jobs" / chat_id[:8] / "state.json"
     woken = (profile.path / "jobs" / chat_id[:8]).exists()
     settled = not any(e.get("sessionId") == chat_id for e, _, _ in live_entries_all(profiles)) if woken else True
     carried = not woken or not (model or effort) or (settled and saved_options(state, chat_id, model, effort))
     pictures = [] if woken else picture_options(home, text)
-    ok, message, job = start_background(profile, folder, (text or "").strip() or CONTINUE_PROMPT, home, claude,
-                                        prefix=prefix, resume=chat_id,
+    ok, message, job = start_background(profile, folder, prompt, home, claude, prefix=prefix, resume=chat_id,
                                         options=go_on_options(profile, chat_id, mode, model, effort) + pictures)
     if ok:
         how = " · ".join(w for w in (model_label(model) if model else None, effort) if w) if carried else ""
@@ -6722,6 +6743,125 @@ def interrupt_chat_by_id(home, extra_dirs, session_id, profile_key=None):
     return interrupt_chat(entry) if entry else (False, "That chat isn't running any more")
 
 
+# ---------------------------------------------------------------- Claude's background service
+#
+# Claude runs the background sessions of a Claude folder under one service,
+# which answers on a Unix socket, /tmp/cc-daemon-<uid>/<sha256(the
+# CLAUDE_CONFIG_DIR it runs with)[:8]>/control.sock: a JSON request a line,
+# a JSON answer a line (Claude 2.1.316, read from its own client). Talpy Den
+# asks it two things, as Claude's own commands do:
+# - "has": does it still hold a session? claude --bg --resume asks it, and
+#   starts a copy of the chat (a new id, without the options its session
+#   saved) while it does, which it still can a moment after claude stop;
+# - "reply": a message into a live background session, the way `claude
+#   agents` answers one (typed in at its prompt; queued while it works). The
+#   session goes on where it is: the same id, its options, its background
+#   commands, and a terminal that shows it (claude attach) stays on it, where
+#   claude stop would end that terminal's attach. A reply shows the
+#   service's key, daemon/control.key in the Claude folder.
+# Neither is documented: a service that doesn't answer as these expect
+# leaves Talpy Den doing what it did before (claude stop, then claude --bg
+# --resume).
+
+DAEMON_TMP = Path("/tmp")
+DAEMON_PROTO = 1
+DAEMON_WAIT = 5  # seconds the service gets to answer
+DAEMON_ANSWER_MAX = 1 << 20
+DAEMON_KEY_MAX = 4096
+# a reply refused for a moment (a session starting or restarting) is tried again, as Claude does
+DAEMON_RETRY_CODES = ("ESTARTING", "ENOREPLY", "ERESPAWNING")
+DAEMON_RETRIES = 10
+DAEMON_RETRY_GAP = 0.2
+
+
+def daemon_socket(profile):
+    """The control socket of the background service running for this profile, or None."""
+    value = service_config_dir(profile)
+    if not value:
+        return None
+    return DAEMON_TMP / f"cc-daemon-{os.getuid()}" / hashlib.sha256(value.encode()).hexdigest()[:8] / "control.sock"
+
+
+def daemon_ask(profile, request, wait=DAEMON_WAIT):
+    """The answer (a dict) of this profile's background service to request,
+    or None when no service answers."""
+    import socket
+    path = daemon_socket(profile)
+    if path is None:
+        return None
+    data = b""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(wait)
+            s.connect(str(path))
+            s.sendall((json.dumps(dict(request, proto=DAEMON_PROTO)) + "\n").encode())
+            while b"\n" not in data and len(data) < DAEMON_ANSWER_MAX:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+    except OSError:
+        return None
+    try:
+        answer = json.loads(data.split(b"\n", 1)[0].decode("utf-8", "replace"))
+    except ValueError:
+        return None
+    return answer if isinstance(answer, dict) else None
+
+
+def daemon_holds(profiles, shorts):
+    """Does the background service of one of profiles still hold a session
+    of one of these short ids (its "has": there, or restarting)? False
+    when none answers."""
+    for profile in profiles:
+        for short in shorts:
+            answer = daemon_ask(profile, {"op": "has", "short": short})
+            if answer and answer.get("ok") and answer.get("op") == "has" \
+                    and (answer.get("present") or answer.get("alive")):
+                return True
+    return False
+
+
+def reply_to_background(profile, job_id, text):
+    """Your message into a live background session (job_id: its short id),
+    through its service's reply: (ok, message). Not ok when the service
+    isn't there, doesn't answer within DAEMON_WAIT or won't take it (it
+    says why)."""
+    key_path = profile.path / "daemon" / "control.key"
+    try:
+        if key_path.stat().st_size > DAEMON_KEY_MAX:
+            return False, "Claude's background service has a key Talpy Den doesn't know"
+        key = key_path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        key = ""
+    if not key or not valid_id(job_id) or not (text or "").strip():
+        return False, "Claude's background service can't be asked"
+    answer = None
+    for attempt in range(DAEMON_RETRIES):
+        if attempt:
+            time.sleep(DAEMON_RETRY_GAP)
+        answer = daemon_ask(profile, {"op": "reply", "short": job_id, "text": text, "auth": key})
+        if answer is None:
+            return False, "Claude's background service didn't answer"
+        if answer.get("ok") and answer.get("op") == "reply":
+            return True, "Sent"
+        if answer.get("code") not in DAEMON_RETRY_CODES:
+            break
+    error = answer.get("error") if isinstance(answer, dict) else None
+    return False, f"Claude's background service didn't take it: {error}" if isinstance(error, str) and error \
+        else "Claude's background service didn't take it"
+
+
+def live_background(profiles, chat_id):
+    """(entry, profile it runs on) of the background session that has a chat
+    open now, or None."""
+    for entry, runs_on, _holder in live_entries_all(profiles):
+        if entry.get("sessionId") == chat_id and entry.get("kind") == "bg" and valid_id(entry.get("jobId")) \
+                and not entry.get("spare") and not entry.get("parkedJobId"):
+            return entry, runs_on
+    return None
+
+
 def stop_background(profile, job_id, job=None, home=None, claude=None):
     """Stop a background session with `claude stop` (its conversation is
     kept): (ok, message)."""
@@ -6775,9 +6915,12 @@ def end_for_handover(home, profiles, chat_id, claude=None):
 # A chat a usage limit stopped can still look at work: Claude counts the
 # commands it runs in the background (a server it started, say) as work, so
 # its session says busy until they end, though its turn ended at the limit.
-# Claude can't take a message into a live background chat, and ending it
-# would end them: a go-on waits for them (the queue tries again each minute),
-# and GO_ON_WAIT_MS after its time ends them and goes on.
+# A background session takes the go-on in all the same (reply_to_background),
+# and they run on. A chat in a terminal can't take a message from outside,
+# nor a background session whose service won't (nor claude --bg --resume a
+# chat whose session is live), and ending it would end them: such a go-on
+# waits for them (the queue tries again each minute), and GO_ON_WAIT_MS
+# after its time ends them and goes on.
 
 GO_ON_WAIT_MS = 15 * 60_000  # how long a go-on waits for a chat's background commands, then ends them
 GO_ON_LOG_LINES = 200  # cache_dir/go-on.log keeps this many lines
