@@ -14,8 +14,8 @@ of your plan is left, and Talpy, a pet who acts it all out.
 - **Notifications** when a chat needs you or finishes, and one key
   (Ctrl+Alt+Shift+C) for the chat that needs you.
 - **Start chats** in a terminal, a Claude Code panel or the background, with
-  a task, later, or once a usage limit resets; a chat a limit stopped can keep
-  going by itself.
+  a task, later, or once a usage limit resets; a chat can keep going by
+  itself after each usage limit, also on your SSH hosts and in containers.
 - **Recap and Permissions**: your day, week or everything with Claude, and
   every permission you gave, to revoke.
 - **Recent chats, ★ starred chats and plans** under each account, a page at a
