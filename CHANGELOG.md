@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.17.0 (2026-11-02)
 
 - **A go-on that couldn't reach its host starts once the host answers again:** a go-on (or a task) queued for an SSH host or a container whose time came while it couldn't be reached (you disconnected, no network, the container stopped) failed and waited for you to start it again; now it says *It starts once lab answers again* and does, by itself, as soon as the host's next check gets through. One the host turned down (*Claude doesn't trust …*) still waits for you (Plasma and VS Code).
 - **What keeps going on a host that isn't shown is still listed:** a chat that keeps going, or a task queued, on an SSH host or a container you unpicked (or while containers are off) goes on all the same, but nothing showed it. Now a line says so where the hosts go (*“Train the ranker” keeps going on gpu-lab, which isn't shown · goes on at 19:14*, or why its go-on couldn't start), with **Show gpu-lab** and **Stop** (Keep going off, its go-on cancelled) or **Cancel**; a task you wrote has **Show** only (Plasma and VS Code).

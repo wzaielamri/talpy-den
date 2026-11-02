@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.17.0
 
 - **A go-on that couldn't reach its host starts once the host answers
   again:** it waited for you to start it again; now it says so and starts
