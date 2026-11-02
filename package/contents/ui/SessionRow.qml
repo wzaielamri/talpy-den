@@ -398,7 +398,7 @@ RowLayout {
                             Tag {
                                 visible: row.tag !== ""
                                 text: row.tag
-                                tooltip: row.session.pid === null ? i18n("No terminal or panel has it open: a reply goes on with it in the background.")
+                                tooltip: root.movedText(row.session) + (row.session.pid === null ? i18n("No terminal or panel has it open: a reply goes on with it in the background.")
                                          : row.session.kind === "bg"
                                          ? i18n("A background chat: Claude's background service runs it, with no terminal of its own. Click the name to open it in a terminal (claude attach).")
                                          : row.session.entrypoint === "claude-vscode"
@@ -406,7 +406,7 @@ RowLayout {
                                          : row.session.tmux ? i18n("It runs in a tmux pane.")
                                          : row.session.vscodeTerminal || row.session.terminalApp === "VS Code" ? i18n("It runs in a terminal of VS Code.")
                                          : row.session.terminalApp ? i18n("It runs in a terminal (%1).", row.session.terminalApp)
-                                         : i18n("It runs in a terminal.")
+                                         : i18n("It runs in a terminal."))
                             }
                             // a background session shown in a terminal too (claude attach)
                             Tag {

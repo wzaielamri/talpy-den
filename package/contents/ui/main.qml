@@ -2364,6 +2364,7 @@ PlasmoidItem {
                 shift(s.peek, ["at"])
                 shift(s.peek && s.peek.recap, ["at"])
                 shift(s.stopped, ["at", "resetsAt"])
+                shift(s.movedFrom, ["at"])
                 shift(s.plan, ["updatedAt"])
                 shift(s.stats, ["startedAt", "lastAt"])
                 for (const a of (s.agents && s.agents.tree) || [])
@@ -3334,6 +3335,15 @@ PlasmoidItem {
 
     function clockText(ms) {
         return new Date(ms).toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
+    }
+
+    // A chat Claude moved to the background under a new id (its row's movedFrom), in a line
+    function movedText(s) {
+        const m = s ? s.movedFrom : null
+        if (!m)
+            return ""
+        return (m.at ? i18n("Moved to the background at %1: Claude goes on with it under a new id.", clockText(m.at))
+                     : i18n("Moved to the background: Claude goes on with it under a new id.")) + "\n\n"
     }
 
     // What a queued task does, in a line

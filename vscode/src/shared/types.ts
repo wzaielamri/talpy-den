@@ -253,6 +253,7 @@ export interface Session {
   vscodeTerminal?: number | null;
   terminalApp?: string | null; // the terminal it runs in otherwise, by name (Konsole, kitty…)
   attached?: { in: "terminal" | "tmux" | "vscode"; app: string } | null; // a background session shown in a terminal too (claude attach)
+  movedFrom?: { id: string; at: number | null } | null; // Claude moved it to the background under a new id: the id it had, when
   // How it takes a message from the chat tab (talpy_den.py: reply_route);
   // older backends leave these out
   reply?: ReplyRoute;

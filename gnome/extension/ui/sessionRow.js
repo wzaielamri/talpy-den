@@ -65,7 +65,7 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
         : s.tmux ? ['Tmux', 'It runs in a tmux pane.']
         : s.vscodeTerminal || s.terminalApp === 'VS Code' ? ['VS Code terminal', 'It runs in a terminal of VS Code.']
         : ['Terminal', s.terminalApp ? L.fmt('It runs in a terminal (%1).', s.terminalApp) : 'It runs in a terminal.'];
-    tags.push(tips.add(tag(kindTag), kindTip));
+    tags.push(tips.add(tag(kindTag), L.movedText(s) + kindTip));
     // a background session shown in a terminal too (claude attach)
     if (s.kind === 'bg' && s.attached) {
         const where = s.attached.in === 'tmux' ? 'Tmux' : s.attached.in === 'vscode' ? 'VS Code terminal' : 'Terminal';

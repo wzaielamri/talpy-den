@@ -1406,3 +1406,10 @@ class ProjectTests(unittest.TestCase):
         self.assertNotIn("workedMs", app_row)                                     # (no time or money: the Recap has them)
         self.assertEqual((gone["gone"], gone["lastAt"], gone["chatCount"], app_row["gone"]), (True, now - 40 * 86400_000, 0, False))
         self.assertEqual(([p["slug"] for p in nowhere["plans"]], nowhere["path"]), (["p2"], ""))
+        # a chat Claude moved to the background under a new id is that one now: its old id
+        # isn't listed apart once the new one is (talpy_den.chat_moves)
+        moved = chats + [chat("f" * 8, str(app), "fix it", [[now - 60_000, now, 60_000, [], {}]])]
+        rows = week.projects(moved, now, home, accounts=accounts, there=there | {"f" * 8},
+                             moves={"a" * 8: "f" * 8, "b" * 8: "9" * 8})
+        app_row = next(p for p in rows if p["name"] == "app")
+        self.assertEqual([c["sessionId"] for c in app_row["chats"]], ["f" * 8, "b" * 8])  # (b's new one isn't there)

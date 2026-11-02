@@ -255,6 +255,17 @@ test("an SSH host's times on this computer's clock, its chats' stops too", () =>
     eq(local.groups[0].sessions[0].stopped, {kind: 'limit', at: 3600600, resetsAt: 3609000});
     eq(local.groups[0].recent[0].stopped, {at: 3600050, resetsAt: 3600070});
     eq(result.groups[0].sessions[0].stopped.resetsAt, 9000, 'a copy');
+    const moved = L.toLocalClock({generatedAt: 1000, groups: [group([session('a', 'idle', {movedFrom: {id: 'b', at: 700}})])]}, 3600000);
+    eq(moved.groups[0].sessions[0].movedFrom, {id: 'b', at: 3600700});
+});
+
+test('a chat Claude moved to the background says so where it runs', () => {
+    const at = new Date(2026, 10, 1, 16, 1).getTime();
+    eq(L.movedText(session('a', 'idle', {movedFrom: {id: 'b', at}})),
+        'Moved to the background at 16:01: Claude goes on with it under a new id.\n\n');
+    eq(L.movedText(session('a', 'idle', {movedFrom: {id: 'b', at: null}})),
+        'Moved to the background: Claude goes on with it under a new id.\n\n');
+    eq(L.movedText(session('a', 'idle')), '');
 });
 
 test("an account here and on an SSH host has its plan usage once", () => {

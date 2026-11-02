@@ -3,7 +3,9 @@ import { test } from "node:test";
 import { demoProjects, demoState } from "../src/shared/demo";
 import type { Group, HostState, Session, Status } from "../src/shared/types";
 import {
+  clockText,
   findProjectChat,
+  movedText,
   findProjectMemory,
   findProjectPlan,
   folderIn,
@@ -291,6 +293,16 @@ test("a host that didn't answer this time doesn't count; its clock is put right"
   assert.equal(shifted.generatedAt, result.generatedAt + 60000);
   assert.equal(shifted.groups[0].sessions[0].since, (result.groups[0].sessions[0].since ?? 0) + 60000);
   assert.equal(toLocalClock(result, 2000), result, "a few seconds: just the network");
+  const moved: Status = { ...result, groups: [{ ...result.groups[0], sessions: [{ ...result.groups[0].sessions[0], movedFrom: { id: "b", at: 700 } }] }] };
+  assert.deepEqual(toLocalClock(moved, 60000).groups[0].sessions[0].movedFrom, { id: "b", at: 60700 });
+});
+
+test("a chat Claude moved to the background says so where it runs", () => {
+  const at = new Date(2026, 10, 1, 16, 1).getTime();
+  assert.equal(movedText({ movedFrom: { id: "b", at } }),
+    `Moved to the background at ${clockText(at)}: Claude goes on with it under a new id.\n\n`);
+  assert.equal(movedText({ movedFrom: { id: "b", at: null } }), "Moved to the background: Claude goes on with it under a new id.\n\n");
+  assert.equal(movedText({}), "");
 });
 
 test("a host's memories come onto this computer's clock too, like its plans", () => {

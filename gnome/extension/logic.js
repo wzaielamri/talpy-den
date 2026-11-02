@@ -833,6 +833,7 @@ export function toLocalClock(result, offset) {
             shift(s.peek, ['at']);
             shift(s.peek && s.peek.recap, ['at']);
             shift(s.stopped, ['at', 'resetsAt']);
+            shift(s.movedFrom, ['at']);
             shift(s.plan, ['updatedAt']);
             shift(s.stats, ['startedAt', 'lastAt']);
             for (const a of (s.agents && s.agents.tree) || [])
@@ -1471,6 +1472,15 @@ const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 function clock(ms) {
     const d = new Date(ms);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// A chat Claude moved to the background under a new id (its row's movedFrom), in a line, or ''
+export function movedText(s) {
+    const m = s && s.movedFrom;
+    if (!m)
+        return '';
+    return (m.at ? `Moved to the background at ${clock(m.at)}: Claude goes on with it under a new id.`
+        : 'Moved to the background: Claude goes on with it under a new id.') + '\n\n';
 }
 
 // 3h 5m, 45m: a week of work reads better in hours than in days

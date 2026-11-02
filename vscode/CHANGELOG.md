@@ -81,7 +81,9 @@
   at once. Keep going, the queued go-on, the chat's row, its star and its
   name now follow it to the new id, and the old id isn't listed apart. A
   conversation started with `/clear` in a chat isn't taken for one, so
-  the chat it cleared stays listed.
+  the chat it cleared stays listed. A chat you hid stays hidden under its
+  new id, the Projects tab lists a moved chat once, and the row's
+  *Background* tag says when it moved.
 - **A chat that keeps going stays listed until it's done or Keep going is
   off,** with its *Limit*, *Keeps going* and *Goes on at*, also once its
   terminal is closed; it vanished from its account's list.

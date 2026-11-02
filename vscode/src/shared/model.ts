@@ -105,6 +105,7 @@ export function toLocalClock(result: Status, offset: number): Status {
       shift(s.peek as unknown as Record<string, unknown>, ["at"]);
       shift(s.peek?.recap as unknown as Record<string, unknown>, ["at"]);
       shift(s.stopped as unknown as Record<string, unknown>, ["at", "resetsAt"]);
+      shift(s.movedFrom as unknown as Record<string, unknown>, ["at"]);
       shift(s.plan as unknown as Record<string, unknown>, ["updatedAt"]);
       shift(s.stats as unknown as Record<string, unknown>, ["startedAt", "lastAt"]);
       shift(s.review as unknown as Record<string, unknown>, ["editedAt"]);
@@ -860,6 +861,14 @@ export function chatNameNow(status: Pick<Status, "groups"> | null | undefined, c
 
 export function clockText(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** A chat Claude moved to the background under a new id (its row's movedFrom), in a line, or "". */
+export function movedText(s: Pick<Session, "movedFrom">): string {
+  const m = s.movedFrom;
+  if (!m) return "";
+  return (m.at ? `Moved to the background at ${clockText(m.at)}: Claude goes on with it under a new id.`
+    : "Moved to the background: Claude goes on with it under a new id.") + "\n\n";
 }
 
 function dayText(d: Date): string {

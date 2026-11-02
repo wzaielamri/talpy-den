@@ -3530,6 +3530,23 @@ def follow_moved(groups, ctx):
     ctx.moved_on = set(getattr(ctx, "moved_on", None) or ()) | set(moves)
 
 
+def note_moved(groups, ctx):
+    """The row of a chat Claude moved to the background under a new id
+    (chat_moves) says so: "movedFrom": {"id": the id it had, "at": when
+    (ms; its background job's start, else None)}."""
+    back = {new: old for old, new in chat_moves(ctx).items()}
+    if not back:
+        return
+    for g in groups:
+        for s in g["sessions"]:
+            cid = chat_id(s)
+            if cid not in back:
+                continue
+            job = read_job(ctx.profiles, cid[:8])
+            at = to_ms(job.get("createdAt")) if isinstance(job, dict) and job.get("sessionId") == cid else None
+            s["movedFrom"] = {"id": back[cid], "at": at}
+
+
 def list_kept(groups, ctx, kept):
     """A chat that keeps going (kept: keep.json's entries) stays listed until
     it's let go, with or without a process, as a background one: one whose
@@ -8441,12 +8458,23 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
     except Exception as exc:
         errors.append(f"chats that keep going: {exc}")
     try:
+        note_moved(groups, ctx)
+    except Exception as exc:
+        errors.append(f"chats moved to the background: {exc}")
+    try:
         note_attached(groups, profiles)
     except Exception as exc:
         errors.append(f"background chats in terminals: {exc}")
     # Removed from the list by the user: hidden while finished; one that runs
     # again comes back (and is forgotten).
     dismissed = load_dismissed(cache_root)
+    try:
+        # (a chat you hid that Claude moved to the background under a new id: hidden there too)
+        moves = chat_moves(ctx)
+        for old in [i for i in dismissed if i in moves]:
+            dismissed = change_dismissed(cache_root, add=moved_chat(old, moves), forget=[old], now_ms=dismissed[old])
+    except Exception as exc:
+        errors.append(f"hidden chats moved to the background: {exc}")
     forget, dismissed_rows = set(), 0
     for g in groups:
         shown = []

@@ -2367,7 +2367,7 @@ def host_chats(host, back, span="week", since=None, until=None):
 PROJECT_RECAP_CHATS = 3  # how many of a project's newest chats are read for Claude's last recap of it
 
 
-def projects(chats, now_ms, home, plans=(), memories=(), accounts=None, starred=frozenset(), there=None):
+def projects(chats, now_ms, home, plans=(), memories=(), accounts=None, starred=frozenset(), there=None, moves=None):
     """The Projects tab's rows, the newest first: [{"name", "path", "short",
     "gone" (its folder isn't there any more), "lastAt", "accounts" (the names
     of the accounts it has something on), "chatCount", "chats", "plans",
@@ -2378,9 +2378,13 @@ def projects(chats, now_ms, home, plans=(), memories=(), accounts=None, starred=
     folder, both by that folder's git repository as a chat. A plan whose chat
     is gone is in the row of path "" (last). accounts: {profile key: account
     name}; there: the ids of the chats whose transcript is still here (a
-    deleted one's numbers stay in the Recap's history: not listed)."""
+    deleted one's numbers stay in the Recap's history: not listed); moves:
+    {chat id: the id it moved to} (talpy_den.py chat_moves: a chat Claude
+    moved to the background under a new id is that one now, so its old id
+    isn't listed apart once the new one is)."""
     accounts = accounts or {}
     out, roots = {}, {}
+    moves, listed = moves or {}, {c["id"] for c in chats}
 
     def row(folder):
         p = out.get(folder)
@@ -2399,6 +2403,8 @@ def projects(chats, now_ms, home, plans=(), memories=(), accounts=None, starred=
     for c in chats:
         folder = c.get("project") or c.get("folder") or ""
         if not folder or (there is not None and c["id"] not in there):
+            continue
+        if c["id"] in moves and cs.moved_chat(c["id"], moves) in listed:
             continue
         last = max([t[1] for t in c["turns"]] + c["prompts"] + [0])
         if not last:
@@ -2610,7 +2616,7 @@ def main(argv=None):
                 c["id"] = cid
             ctx, items = project_items(home, cache_root, profiles, now_ms)
             rows = projects(list(chats.values()), now_ms, home, items["plans"], items["memories"], items["accounts"],
-                            items["starred"], items["there"])
+                            items["starred"], items["there"], cs.chat_moves(ctx))
             hidden = cs.load_hidden(cache_root)["projects"]  # (the ones you hid: jump.py --hide projects FOLDER)
             hidden_paths = [p["path"] for p in rows if p["path"] in hidden]   # (an open chat there is theirs, not shown elsewhere)
             rows = [p for p in rows if p["path"] not in hidden]

@@ -17,6 +17,7 @@ import {
   overlapText,
   liveMatch,
   peekLine,
+  movedText,
   petKeyOf,
   queuedChat,
   reopensInClaudeCode,
@@ -155,7 +156,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
             </button>
           ) : null}
           {showProfile && s.profile ? <Tag text={s.profile} title="The Claude profile (config folder) this chat runs in" /> : null}
-          <Tag text={where.tag} title={where.title} />
+          <Tag text={where.tag} title={movedText(s) + where.title} />
           {isBackground(s) && attachedTag(s.attached) ? (
             <Tag text={attachedTag(s.attached)!.tag} title={attachedTag(s.attached)!.title} />
           ) : null}

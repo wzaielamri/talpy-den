@@ -1508,6 +1508,32 @@ class MovedChatTests(TaskFixture):
         (task,) = cs.load_queue(self.cache_root())
         self.assertEqual((task["chat"], task["name"]), (self.NEW, "shared creature code tug"))
 
+    def test_its_row_says_it_moved_and_a_hide_follows_it(self):
+        # (its background job's start is when it moved)
+        write(self.home / f".claude-work/jobs/{self.NEW[:8]}/state.json",
+              {"sessionId": self.NEW, "createdAt": "2026-11-01T15:01:12.738Z", "template": "bg"})
+        cs.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
+        (row,) = [s for s in self.rows(self.status()) if s["chatId"] == self.NEW]
+        self.assertEqual(row["movedFrom"], {"id": self.OLD, "at": cs.to_ms("2026-11-01T15:01:12.738Z")})
+        # the same on an SSH host or in a container (its status: talpy_den.py --remote there)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), mock.patch.object(cs.Path, "home", return_value=self.home), \
+                mock.patch.object(cs, "cache_dir", return_value=self.cache_root()):
+            cs.main(["--remote"])
+        there = json.loads(out.getvalue().split(cs.REMOTE_MARK)[1])
+        self.assertEqual([s["movedFrom"]["id"] for g in there["groups"] for s in g["sessions"] if s.get("movedFrom")], [self.OLD])
+        # a chat you hid stays hidden under its new id (and the old one is forgotten)
+        hid = int(self.now * 1000) - 60_000
+        cs.change_dismissed(self.cache_root(), add=self.OLD, now_ms=hid)
+        status = self.status()
+        self.assertEqual(cs.load_dismissed(self.cache_root()), {self.NEW: hid})
+        self.assertEqual([s for s in self.rows(status) if self.NEW in (s["sessionId"], s["chatId"])], [])
+        self.assertEqual(status["dismissed"], 1)
+
+    def test_search_finds_it_once_under_its_new_id(self):
+        found = cs.find_chats(self.home, self.cache_root(), [], "app")
+        self.assertEqual([c["sessionId"] for c in found["results"]], [self.NEW])
+
 
 class KeptChatListedTests(TaskFixture):
     """A kept chat whose terminal was closed vanished from its account's
