@@ -37,6 +37,8 @@ const TABLE = {
     share:           ['document-share',                'share',      'emblem-shared-symbolic'],           // share or continue on another account
     continueOn:      ['mail-forward',                  'move',       'system-switch-user-symbolic'],      // continue on the account with room left (Plasma: an arrow, as VS Code's)
     moveTo:          ['go-next',                       'move',       'go-next-symbolic'],                 // keep only on, move a chat to Claude Code
+    moveToProject:   ['document-export',               'export',     'folder-drag-accept-symbolic'],      // a plan into a project's own plans folder
+    moveBack:        ['document-import',               'import',     'document-revert-symbolic'],         // a plan of a project's folder back to its account
     edit:            ['document-edit',                 'edit',       'document-edit-symbolic'],
     send:            ['document-send',                 'send',       'document-send-symbolic'],
     copy:            ['edit-copy',                     null,         'edit-copy-symbolic'],

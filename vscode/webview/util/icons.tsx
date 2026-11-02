@@ -7,7 +7,7 @@
 import type { JSX } from "preact";
 import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit" | "export" | "import";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -90,6 +90,19 @@ const shapes: Record<IconName, JSX.Element> = {
   ),
   send: <path d="M2.5 8l11-5.5-3.5 11-2.5-4.5zM7.5 9l6-6.5" />,
   move: <path d="M2.5 8h8M7.75 5.25L10.5 8l-2.75 2.75M13.25 3v10" />,
+  // a page with an arrow out of it (a plan into its project) or into it (back to its account)
+  export: (
+    <>
+      <path d="M8.5 13.75H4a1 1 0 0 1-1-1v-9.5a1 1 0 0 1 1-1h4.25l3 3V8" />
+      <path d="M8 2.25v3.25h3.25M9.5 11.75h5M12.75 10l1.75 1.75-1.75 1.75" />
+    </>
+  ),
+  import: (
+    <>
+      <path d="M8.5 13.75H4a1 1 0 0 1-1-1v-9.5a1 1 0 0 1 1-1h4.25l3 3V8" />
+      <path d="M8 2.25v3.25h3.25M14.5 11.75h-5M11.25 10L9.5 11.75l1.75 1.75" />
+    </>
+  ),
   star: <path d="M8 1.9l1.85 3.8 4.15.6-3 2.93.7 4.13L8 11.4l-3.7 1.96.7-4.13-3-2.93 4.15-.6z" />,
   starFull: <path d="M8 1.9l1.85 3.8 4.15.6-3 2.93.7 4.13L8 11.4l-3.7 1.96.7-4.13-3-2.93 4.15-.6z" fill="currentColor" />,
   // (an eye, struck out: hidden, nothing deleted)

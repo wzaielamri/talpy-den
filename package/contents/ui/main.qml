@@ -289,6 +289,8 @@ PlasmoidItem {
         rowsPlaced = false
         if (dashboardShown)
             rowsPlacedTimer.restart()
+        else
+            cancelMove()   // (a question about moving a plan: gone with the popup, nothing moved)
     }
     Timer {
         id: rowsPlacedTimer
@@ -2951,6 +2953,7 @@ PlasmoidItem {
             deleteAsk = noDeleteAsk
             return
         }
+        cancelMove()
         deleteAsk = { key: key, kind: kind, id: id, profileDir: profileDir || "", host: host || "", folder: folder || "",
                       busy: true, question: "", message: "" }
         deleteRun(deleteArgs(kind, id, profileDir, host) + " --describe", { key: key, host: host || "", describe: true })
@@ -3003,6 +3006,92 @@ PlasmoidItem {
             } else {
                 root.actionError = ""
                 root.actionInfo = result.message   // (Moved to the Trash)
+                actionInfoTimer.restart()
+            }
+            if (what.host)
+                root.pollHost(what.host)
+            else
+                root.refresh()
+            if (!what.host && root.projectsShown)
+                root.loadProjects()
+        }
+    }
+
+    // Move to project… (a plan's button) and a plan dropped on another
+    // project's card in the Projects tab ask first (moveAsk, shown by
+    // MoveAsk.qml under the plan's line or the card it was dropped on): where
+    // it goes, whether the project's settings.local.json should keep its new
+    // plans there too, whether git would show it, and keep both or replace
+    // when a plan of that name is there. Nothing moves until Move (or Keep
+    // both, Replace); Esc, Cancel or a click anywhere else lets it be.
+    // {key: where it shows, slug, profileDir, host, back (to its account),
+    // folder (the project picked; "": the chat's own), pick (offer the
+    // projects to pick from), busy, answer (jump.py --move-plan --describe), keepThere, message}
+    readonly property var noMoveAsk: ({ key: "", slug: "", profileDir: "", host: "", back: false, folder: "", pick: false,
+                                        busy: false, answer: null, keepThere: true, message: "" })
+    property var moveAsk: noMoveAsk
+    property Item moveAskItem: null   // (the question on screen, MoveAsk.qml: a click outside it lets it be)
+    onPopupTabChanged: cancelMove()
+
+    function askMove(key, plan, host, folder, back, pick) {
+        if (moveAsk.key === key && !folder) {   // (its button again: the question goes)
+            cancelMove()
+            return
+        }
+        deleteAsk = noDeleteAsk
+        moveAsk = { key: key, slug: plan.slug, profileDir: plan.profileDir || "", host: host || "", back: !!back,
+                    folder: folder || "", pick: !!pick, busy: true, answer: null,
+                    keepThere: moveAsk.key === key ? moveAsk.keepThere : true, message: "" }
+        moveRun(moveArgs(moveAsk, "") + " --describe", { key: key, host: host || "", describe: true })
+    }
+    function cancelMove() {
+        if (moveAsk.key !== "")
+            moveAsk = noMoveAsk
+    }
+    // (jump.py --move-plan SLUG --profile P [--into F | --back] …; an SSH host's: remote.py --move-plan HOST SLUG P …)
+    function moveArgs(a, ifExists) {
+        return "--move-plan " + (a.host ? shellQuote(a.host) + " " + shellQuote(a.slug) + " " + shellQuote(a.profileDir)
+                                        : shellQuote(a.slug) + profileArg(a.profileDir))
+               + (a.back ? " --back" : a.folder ? " --into " + shellQuote(a.folder) : "")
+               + (!a.back && !a.keepThere ? " --no-setting" : "")
+               + (ifExists ? " --if-exists " + ifExists : "")
+    }
+    // Move (ifExists ""), Keep both ("keep") or Replace ("replace")
+    function confirmMove(ifExists) {
+        const a = moveAsk
+        if (!a.answer || a.busy)
+            return
+        const into = a.answer.project && !a.back ? a.answer.project : a.folder
+        moveAsk = noMoveAsk
+        moveRun(moveArgs(Object.assign({}, a, { folder: into }), ifExists), { key: a.key, host: a.host, describe: false })
+    }
+    property var moveRuns: ({})   // command -> {key, host, describe}
+    function moveRun(args, what) {
+        const cmd = "python3 -I " + shellQuote(codeDir + (what.host ? "remote.py" : "jump.py")) + " " + args
+                    + (what.host ? "" : configDirArgs) + " # " + Date.now()
+        moveRuns[cmd] = what
+        mover.connectSource(cmd)
+    }
+    Exec {
+        id: mover
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            const what = root.moveRuns[source] || { key: "", host: "", describe: false }
+            delete root.moveRuns[source]
+            const result = root.helperResult(data)
+            if (what.describe) {
+                if (root.moveAsk.key !== what.key || !root.moveAsk.busy)   // (cancelled, or asked again meanwhile)
+                    return
+                root.moveAsk = Object.assign({}, root.moveAsk, { busy: false, answer: result.ok ? result : null,
+                                                                 message: result.ok ? "" : result.message || i18n("It can't be moved.") })
+                return
+            }
+            if (!result.ok) {
+                root.actionError = result.message
+                actionErrorTimer.restart()
+            } else {
+                root.actionError = ""
+                root.actionInfo = result.message   // (Moved the plan to …)
                 actionInfoTimer.restart()
             }
             if (what.host)

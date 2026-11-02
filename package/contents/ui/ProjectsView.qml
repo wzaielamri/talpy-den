@@ -14,7 +14,10 @@ import "icons.mjs" as Icons
 // line as under an account, with the account it's on when the project is
 // on several. Everything of it comes from week.py --projects (main.qml:
 // loadProjects), what goes on now from the status. No time or money here:
-// the Recap has them, by project.
+// the Recap has them, by project. A plan dragged by its name onto another
+// project's card asks to move it there (the card it would go to lights up,
+// and the list scrolls near its top and bottom edges); the question shows
+// at the top of that card (MoveAsk.qml), and nothing moves without it.
 PlasmaComponents3.ScrollView {
     id: view
 
@@ -61,6 +64,114 @@ PlasmaComponents3.ScrollView {
     }
     function isOpen(project) {
         return !!root.openProjects[project.path]
+    }
+
+    // A plan dragged onto another project (PlanLine.qml's name: dragMoved,
+    // dragEnded): {plan, from: its card's folder}; dropCard, the card under
+    // it that would take it (not its own, nor the card of plans whose chat is
+    // gone); a drop there asks (root.askMove), anywhere else does nothing
+    property var dragged: null
+    property point dragScene: Qt.point(0, 0)
+    property Item dropCard: null
+    readonly property point dragAt: { view.flickY; return dragged ? view.mapFromItem(null, dragScene.x, dragScene.y) : Qt.point(0, 0) }
+    readonly property real flickY: view.contentItem ? view.contentItem.contentY : 0
+    readonly property real edge: Kirigami.Units.gridUnit * 2   // (this near the top or bottom, the list scrolls)
+    readonly property int edgeScroll: !dragged ? 0 : dragAt.y < edge ? -1 : dragAt.y > height - edge ? 1 : 0
+    function dragMove(plan, from, scenePosition) {
+        if (!dragged) {
+            root.cancelMove()
+            root.deleteAsk = root.noDeleteAsk
+        }
+        dragged = { plan: plan, from: from }
+        dragScene = scenePosition
+        findDropCard()
+    }
+    function findDropCard() {
+        let found = null
+        for (let i = 0; dragged && i < cards.count; i++) {
+            const c = cards.itemAt(i)
+            if (!c || !c.visible)
+                continue
+            const q = c.mapFromItem(null, dragScene.x, dragScene.y)
+            if (q.x >= 0 && q.y >= 0 && q.x < c.width && q.y < c.height) {
+                found = c.project.path && c.project.path !== dragged.from && !c.project.gone ? c : null
+                break
+            }
+        }
+        dropCard = found
+    }
+    function dragEnd() {
+        const card = dropCard, d = dragged
+        dragged = null
+        dropCard = null
+        if (card && d)
+            root.askMove("drop|" + card.project.path, d.plan, "", card.project.path, false, false)
+    }
+    Timer {   // (near an edge: the list scrolls, and what's under the plan is looked at again)
+        interval: 30
+        repeat: true
+        running: view.edgeScroll !== 0
+        onTriggered: {
+            const flick = view.contentItem
+            flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height,
+                                                  flick.contentY + view.edgeScroll * Kirigami.Units.gridUnit / 2))
+            view.findDropCard()
+        }
+    }
+    // The card it would go to, lit up, and the plan by the pointer: over the
+    // list, not in it (a second item in the ScrollView would be content too)
+    readonly property Item dragLayer: Item {
+        parent: view
+        anchors.fill: parent
+        z: 100
+        clip: true
+        visible: view.dragged !== null   // (nothing in it takes the mouse: the drag goes on under it)
+
+        Rectangle {
+            readonly property rect at: { view.flickY; view.dragAt; return view.dropCard
+                ? view.dropCard.mapToItem(view.dragLayer, 0, 0, view.dropCard.width, view.dropCard.height) : Qt.rect(0, 0, 0, 0) }
+            visible: view.dropCard !== null
+            x: at.x - Kirigami.Units.smallSpacing / 2
+            y: at.y - Kirigami.Units.smallSpacing / 2
+            width: at.width + Kirigami.Units.smallSpacing
+            height: at.height + Kirigami.Units.smallSpacing
+            radius: Kirigami.Units.smallSpacing
+            color: Qt.rgba(Kirigami.Theme.focusColor.r, Kirigami.Theme.focusColor.g, Kirigami.Theme.focusColor.b, 0.15)   // (the accent: highlightColor is a pale tint in a popup)
+            border.color: Kirigami.Theme.focusColor
+            border.width: 1
+        }
+        Rectangle {
+            x: Math.min(view.dragAt.x + Kirigami.Units.largeSpacing, view.width - width)
+            y: view.dragAt.y + Kirigami.Units.largeSpacing
+            width: Math.min(ghost.implicitWidth + 2 * Kirigami.Units.smallSpacing, view.width * 0.7)
+            height: ghost.implicitHeight + Kirigami.Units.smallSpacing
+            radius: Kirigami.Units.smallSpacing
+            // (as a tooltip: its text and background always go together)
+            Kirigami.Theme.colorSet: Kirigami.Theme.Tooltip
+            Kirigami.Theme.inherit: false
+            color: Kirigami.Theme.backgroundColor
+            border.color: Kirigami.Theme.focusColor
+            opacity: 0.9
+
+            RowLayout {
+                id: ghost
+                anchors.fill: parent
+                anchors.leftMargin: Kirigami.Units.smallSpacing
+                anchors.rightMargin: Kirigami.Units.smallSpacing
+                spacing: Kirigami.Units.smallSpacing
+                Kirigami.Icon {
+                    source: Icons.plasma.plan
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                    Layout.preferredHeight: Layout.preferredWidth
+                }
+                PlasmaComponents3.Label {
+                    Layout.fillWidth: true
+                    textFormat: Text.PlainText
+                    text: view.dragged ? view.dragged.plan.title : ""
+                    elide: Text.ElideRight
+                }
+            }
+        }
     }
 
     // A project opened from the Recap, scrolled to the top of the view
@@ -131,6 +242,7 @@ PlasmaComponents3.ScrollView {
         }
 
         Repeater {
+            id: cards
             model: view.projects.length
             delegate: ColumnLayout {
                 id: card
@@ -329,6 +441,12 @@ PlasmaComponents3.ScrollView {
                     }
                 }
 
+                // A plan dropped on it: may it move here? (made only then)
+                MoveAsk {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                    itemKey: card.unfiled ? "" : "drop|" + card.project.path
+                }
                 // Opened: what's in it (made only then)
                 Loader {
                     active: card.unfolded
@@ -447,6 +565,9 @@ PlasmaComponents3.ScrollView {
                                         accountTag: inside.tagged ? plan.account || "" : ""
                                         project: inside.project.path
                                         chatGoneCard: inside.project.path === ""
+                                        draggable: true
+                                        onDragMoved: at => view.dragMove(plan, inside.project.path, at)
+                                        onDragEnded: view.dragEnd()
                                         folderWidth: inside.folderWidth
                                     }
                                 }

@@ -624,6 +624,7 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
             accounts.add((st.st_dev, st.st_ino))
         except OSError:
             pass
+    in_project = None   # (moving one of a project's folder to another project: that project)
     if back:
         src, project = cs.project_plan_of(ctx, slug)
         if src is None:
@@ -639,17 +640,23 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
         have = plan_copies(profiles, slug)
         src = next((path for p, path in have if owner is not None and p.real == owner.real), None) \
             if owner is not None else (have[0][1] if have and all(same(path, have[0][1]) for _, path in have) else None)
+        if src is None and not any(owner is None or p.real == owner.real for p, _ in have):
+            src, in_project = cs.project_plan_of(ctx, slug)   # (one in a project's folder, to another project)
         if src is None:
             if not have:
-                return dict(out, message="That plan isn't in an account's plans any more")
+                return dict(out, message="That plan isn't there any more")
             return dict(out, message=(f"{owner.label} doesn't have this plan" if owner is not None else
                                       "Several accounts have a different plan of that name: say which account's goes"))
-        owner = owner or next(p for p, path in have if same(path, src))
+        if owner is None:
+            key = cs.project_plan_owner(ctx, slug, in_project) if in_project else None
+            owner = next((p for p in profiles if p.key == key), None) if key else \
+                next(p for p, path in have if same(path, src))
+            owner = owner or profiles[0]
         starts = cs.start_folders(ctx)
         choices = sorted((f for f in starts if os.path.isdir(f) and os.path.normpath(f) != os.path.normpath(str(home))),
                          key=lambda f: -starts[f][0])[:MOVE_CHOICES]
         default = plan_origin(profiles, ctx, slug).get("project") or ""
-        default = default if default and os.path.isdir(default) else ""
+        default = default if default and os.path.isdir(default) and default != in_project else ""
         if default:  # (the chat's own first)
             choices = [default] + [f for f in choices if f != default]
         out["choices"] = [{"path": f, "short": short(f)} for f in choices]
@@ -703,7 +710,7 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
     new_slug = out["free"] if out["exists"] and if_exists == "keep" else slug
     dest = os.path.join(dest_dir, new_slug + ".md")
     # (every account's link to it goes once it's there: it's in one place then)
-    links = [src] if back else [path for _p, path in plan_copies(profiles, slug) if same(path, src)]
+    links = [src] if back or in_project else [path for _p, path in plan_copies(profiles, slug) if same(path, src)]
     added = False
     try:
         if not back and not out["setting"] and setting:

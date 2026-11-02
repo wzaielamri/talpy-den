@@ -14,7 +14,11 @@ import "icons.mjs" as Icons
 // account's ★ Starred plans and in its project (ProjectsView.qml). A plan
 // whose project isn't known (its chat went before Talpy Den saw it) says
 // "chat gone" where its folder would be, as the Projects tab's card of
-// plans whose chat is gone (chatGoneCard: in that card, it needn't).
+// plans whose chat is gone (chatGoneCard: in that card, it needn't). Move
+// to project… puts its file into a project's own plans folder (one there
+// has Move back instead), after a question under the line (MoveAsk.qml); in
+// the Projects tab (draggable) its name can be dragged onto another
+// project's card, which asks the same.
 ColumnLayout {
     id: planLine
 
@@ -24,6 +28,10 @@ ColumnLayout {
     property string accountTag: ""   // (in a project on several accounts: the one it's on)
     property string project: ""   // (in a project: its folder; the line's folder says only the part below it)
     property bool chatGoneCard: false   // (in the Projects tab's card of plans whose chat is gone)
+    property bool draggable: false   // (in the Projects tab: its name drags onto another project's card)
+    signal dragMoved(point scenePosition)
+    signal dragEnded()
+    Component.onDestruction: if (planDrag.active) planLine.dragEnded()   // (a line gone mid-drag: the drag ends with it)
     property real folderWidth: Kirigami.Units.gridUnit * 8
     readonly property real endWidth: root.endWidth(folderWidth)
     readonly property string composerKey: (planLine.remoteHost ? planLine.remoteHost + "|" : "") + plan.key
@@ -60,6 +68,17 @@ ColumnLayout {
             activeFocusOnTab: true
             Keys.onReturnPressed: root.openPlan(planLine.plan.slug, planLine.plan.profileDir, planLine.remoteHost)
             Keys.onEnterPressed: root.openPlan(planLine.plan.slug, planLine.plan.profileDir, planLine.remoteHost)
+
+            // (dragged by its name with a mouse, past a click's few pixels: the click still opens it)
+            DragHandler {
+                id: planDrag
+                enabled: planLine.draggable
+                target: null
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                cursorShape: Qt.ClosedHandCursor
+                onActiveChanged: active ? planLine.dragMoved(centroid.scenePosition) : planLine.dragEnded()
+                onCentroidChanged: if (active) planLine.dragMoved(centroid.scenePosition)
+            }
 
             PlasmaCore.ToolTipArea {
                 textFormat: Text.PlainText
@@ -171,6 +190,7 @@ Kirigami.Icon {
             lineHeight: planName.implicitHeight
             shown: planHover.hovered || planName.activeFocus || planButtons.focused || planButtons.held
                    || root.planComposer === planLine.composerKey || root.deleteAsk.key === planLine.composerKey
+                   || root.moveAsk.key === planLine.composerKey
             under: planEnd
 
             RowLayout {   // (made the first time they show)
@@ -254,6 +274,26 @@ Kirigami.Icon {
                                  : i18n("To change the plan with Claude: its chat comes up, or reopens (in a terminal or VS Code, as the switch of Recent chats says).")
                     }
                 }
+                // into a project's own plans folder, or (one there) back to its account; it asks first (MoveAsk under the line)
+                HoverButton {
+                    id: planMove
+                    readonly property string account: planLine.group.name || planLine.plan.profile
+                    icon.name: planLine.plan.inProject ? Icons.plasma.moveBack : Icons.plasma.moveToProject
+                    text: planLine.plan.inProject ? i18n("Move back to %1…", account) : i18n("Move to project…")
+                    checked: root.moveAsk.key === planLine.composerKey
+                    onClicked: root.askMove(planLine.composerKey, planLine.plan, planLine.remoteHost, "",
+                                            !!planLine.plan.inProject, !planLine.plan.inProject)
+
+                    PlasmaCore.ToolTipArea {
+                        textFormat: Text.PlainText
+                        anchors.fill: parent
+                        mainText: planMove.text
+                        subText: planLine.plan.inProject
+                                 ? i18n("Moves its file from its project's plans folder into %1's own plans. It asks first.", planMove.account)
+                                 : i18n("Moves its file into a project's own plans folder (the one its plansDirectory setting names, else .claude/plans), so it's with the project and every account has it. It asks first.")
+                                   + (planLine.draggable ? " " + i18n("You can also drag it by its name onto another project.") : "")
+                    }
+                }
                 HoverButton {
                     id: planShare
                     // (not one in a project's own folder: every account has it there)
@@ -302,6 +342,10 @@ Kirigami.Icon {
     }
 
     DeleteAsk {
+        Layout.fillWidth: true
+        itemKey: planLine.composerKey
+    }
+    MoveAsk {
         Layout.fillWidth: true
         itemKey: planLine.composerKey
     }

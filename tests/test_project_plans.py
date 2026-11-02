@@ -404,6 +404,21 @@ class MoveTests(ProjectPlanFixture):
         self.assertTrue(back["lost"])
         self.assertIn("they won't find it there", back["question"])
 
+    def test_from_one_project_to_another(self):
+        web = self.home / "repos/web"
+        web.mkdir(parents=True)
+        self.chat(".claude-personal", web, CHAT_B, ago=60)
+        self.assertTrue(self.move("--no-setting")["ok"])
+        in_app = self.app / ".claude/plans/calm-red-owl.md"
+        asked = self.move("--into", str(web), "--describe")
+        self.assertEqual((asked["ok"], asked["target"]), (True, str(web / ".claude/plans/calm-red-owl.md")))
+        self.assertTrue(in_app.is_file())
+        self.assertEqual(self.move("--into", str(self.app))["message"], "It's there already")
+        moved = self.move("--into", str(web), "--no-setting")
+        self.assertTrue(moved["ok"], moved)
+        self.assertFalse(in_app.exists())
+        self.assertTrue((web / ".claude/plans/calm-red-owl.md").is_file())
+
     def test_wrong_asks(self):
         self.assertFalse(self.move("--into", "relative/folder")["ok"])
         with self.assertRaises(SystemExit):

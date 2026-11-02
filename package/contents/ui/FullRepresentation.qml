@@ -434,4 +434,27 @@ PlasmaExtras.Representation {
             onMenu: at => root.openWidgetMenu(this, at.x, at.y)
         }
     }
+
+    // While a plan's Move question shows (MoveAsk.qml), a press anywhere else
+    // only lets it be (nothing moves); on the question itself it goes through
+    // to its buttons, and its list of projects (a popup) is above this. The
+    // wheel still scrolls.
+    Loader {
+        parent: full
+        anchors.fill: parent
+        z: 1001
+        active: root.moveAsk.key !== ""
+        sourceComponent: MouseArea {
+            acceptedButtons: Qt.AllButtons
+            onPressed: mouse => {
+                const box = root.moveAskItem
+                const p = box ? mapToItem(box, mouse.x, mouse.y) : null
+                if (p && p.x >= 0 && p.y >= 0 && p.x < box.width && p.y < box.height) {
+                    mouse.accepted = false
+                    return
+                }
+                Qt.callLater(root.cancelMove)   // (not from inside this press: the question's going takes this away)
+            }
+        }
+    }
 }
