@@ -249,6 +249,7 @@ export interface Session {
   // --remote: shell commands, run on the machine the session is on
   openCommand?: string | null;
   stopCommand?: string | null;
+  terminalCommand?: string | null; // --remote: a VS Code chat's, resumed in a terminal there instead
   // --remote: the process of the VS Code terminal it runs in (that terminal's
   // processId, on the machine the session is on), if it does
   vscodeTerminal?: number | null;
@@ -974,6 +975,7 @@ export interface ChatRef {
   jobId?: string | null;
   openCommand?: string | null;
   stopCommand?: string | null;
+  terminalCommand?: string | null;
   vscodeTerminal?: number | null;
   shared?: boolean;
   plan?: { slug: string; path: string } | null; // the plan it made

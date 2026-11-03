@@ -35,6 +35,7 @@ export function chatRefOf(s: Session, host?: string): ChatRef {
     jobId: s.jobId,
     openCommand: s.openCommand ?? null,
     stopCommand: s.stopCommand ?? null,
+    terminalCommand: s.terminalCommand ?? null,
     vscodeTerminal: s.vscodeTerminal ?? null,
     // a fork of a shared chat is a chat of its own
     shared: !!s.shared && !s.shared.forkOf,

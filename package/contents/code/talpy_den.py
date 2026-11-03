@@ -10023,6 +10023,8 @@ def add_remote_commands(result, home, extra_dirs=(), claude=None):
                     s["stopCommand"] = stop_command(p, s["jobId"], home, job, claude)
             elif s["kind"] == "chat":
                 s["openCommand"] = in_folder(s["cwd"], resume_command(p, s["chatId"], home, s["cwd"], claude))
+            elif s["entrypoint"] == "claude-vscode":  # (in a terminal there instead of VS Code)
+                s["terminalCommand"] = in_folder(s["cwd"], resume_command(p, s["chatId"], home, s["cwd"], claude))
         for c in g.get("recent", []) + g.get("starred", []):  # (★ Starred: copies of their own)
             p = profiles.get(c["profileDir"])
             c["openCommand"] = in_folder(c["cwd"], resume_command(p, c["sessionId"], home, c["cwd"], claude)) if p else None

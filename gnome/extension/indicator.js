@@ -66,7 +66,8 @@ class TalpyDenIndicator extends PanelMenu.Button {
         // recentMore: group key -> {recent, asked}, an account's recent chats as
         // a check that listed more has them)
         this.ui = {expandedAgents: {}, expandedAgent: {}, expandedRecent: {}, expandedStarred: {}, expandedPeek: {}, expandedStats: {},
-            morePages: {}, recentMore: {}, stopConfirm: '', shareConfirm: null, deleteAsk: null, openMenu: null, tab: 'chats'};
+            morePages: {}, recentMore: {}, stopConfirm: '', shareConfirm: null, deleteAsk: null, vscodeAsk: null, openMenu: null,
+            tab: 'chats'};
         this._recentAsked = {};   // group key -> how many recent chats a check was asked for (till it's folded)
         // The Recap tab's days and what week.py said of them (it runs only
         // while that tab is open: setTab, loadWeek)
@@ -1107,16 +1108,48 @@ class TalpyDenIndicator extends PanelMenu.Button {
     // chats open in a terminal (ssh); one running there shows where it runs
     // here (its VS Code window, the terminal of one, or the terminal with the
     // ssh connection)
-    async remoteShow(host, session) {
+    async remoteShow(host, session, allowVscode = false) {
         const cwd = session.cwd ? ['--cwd', session.cwd] : [];
+        if (this.ui.vscodeAsk) {
+            this.ui.vscodeAsk = null;
+            this.rerender();
+        }
         if (session.openCommand) {
             this.remoteOpen(host, session.openCommand);
         } else if (session.entrypoint === 'claude-vscode') {
-            this._jumped(await this._helper('jump.py', ['--remote-vscode', host, session.sessionId, ...cwd]));
+            const result = await this._helper('jump.py', ['--remote-vscode', host, session.sessionId, ...cwd,
+                ...allowVscode ? ['--allow-vscode'] : []]);
+            if (result.ask === 'vscode' && !this._destroyed) {   // (a container's VS Code chat: ask first, under its line)
+                this.ui.vscodeAsk = {key: L.rowKey(session, host), host, session, question: result.message};
+                this._actionError = '';
+                if (this.menu.isOpen)
+                    this.rerender();
+                else
+                    this.showChats();
+                return;
+            }
+            this._jumped(result);
         } else {
             const vscode = session.vscodeTerminal ? ['--vscode-terminal', String(Math.trunc(session.vscodeTerminal)), ...cwd] : [];
             this._jumped(await this._helper('jump.py', ['--remote-terminal', host, '--name', session.name || '', ...vscode]));
         }
+    }
+
+    // A container's VS Code chat with no VS Code window attached to it asks
+    // once first (jump.py --remote-vscode: Dev Containers shares your SSH
+    // agent and Git credentials with it): VS Code, or a terminal in it
+    vscodeAskOpen() {
+        const asked = this.ui.vscodeAsk;
+        if (asked)
+            this.remoteShow(asked.host, asked.session, true);
+    }
+
+    vscodeAskTerminal() {
+        const asked = this.ui.vscodeAsk;
+        this.ui.vscodeAsk = null;
+        this.rerender();
+        if (asked)
+            this.remoteOpen(asked.host, asked.session.terminalCommand);
     }
 
     remoteOpen(host, command) {

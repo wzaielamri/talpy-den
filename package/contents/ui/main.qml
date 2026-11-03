@@ -986,7 +986,15 @@ PlasmoidItem {
         onNewData: (source, data) => {
             disconnectSource(source)
             const result = root.helperResult(data)
-            if (result.ok) {
+            const asked = root.vscodeAsks[source]
+            delete root.vscodeAsks[source]
+            if (result.ask === "vscode" && asked) {   // (a container's VS Code chat: ask first, under its line)
+                root.vscodeAsk = { key: root.rowKeyOf(asked.session, asked.host), host: asked.host, session: asked.session,
+                                   question: result.message }
+                root.actionError = ""
+                root.popupTab = "chats"
+                root.expanded = true
+            } else if (result.ok) {
                 root.actionError = ""
                 root.expanded = false
             } else {
@@ -2765,19 +2773,42 @@ PlasmoidItem {
     // Bring up a session of an SSH host: background sessions and finished chats
     // open in a terminal (ssh); one running there shows where it runs here (its
     // VS Code window, the terminal of one, or the terminal tab with the ssh connection)
-    function remoteShow(host, session) {
+    function remoteShow(host, session, allowVscode) {
         forgetFinished(petKeyOf(session, host))
+        vscodeAsk = noVscodeAsk
         const cwd = session.cwd ? " --cwd " + shellQuote(session.cwd) : ""
         if (session.openCommand)
             remoteOpen(host, session.openCommand)
-        else if (session.entrypoint === "claude-vscode")
-            jumper.connectSource("python3 -I " + shellQuote(codeDir + "jump.py") + " --remote-vscode " + shellQuote(host)
-                                 + " " + shellQuote(session.sessionId) + cwd + " # " + Date.now())
-        else
+        else if (session.entrypoint === "claude-vscode") {
+            const source = "python3 -I " + shellQuote(codeDir + "jump.py") + " --remote-vscode " + shellQuote(host)
+                           + " " + shellQuote(session.sessionId) + cwd + (allowVscode ? " --allow-vscode" : "") + " # " + Date.now()
+            vscodeAsks[source] = { host: host, session: session }
+            jumper.connectSource(source)
+        } else
             jumper.connectSource("python3 -I " + shellQuote(codeDir + "jump.py") + " --remote-terminal " + shellQuote(host)
                                  + " --name " + shellQuote(session.name || "")
                                  + (session.vscodeTerminal ? " --vscode-terminal " + Math.trunc(session.vscodeTerminal) + cwd : "")
                                  + " # " + Date.now())
+    }
+
+    // A container's VS Code chat with no VS Code window attached to it asks
+    // once first (jump.py --remote-vscode: Dev Containers shares your SSH
+    // agent and Git credentials with it): {key: its line's, host, session, question}
+    readonly property var noVscodeAsk: ({ key: "", host: "", session: null, question: "" })
+    property var vscodeAsk: noVscodeAsk
+    property var vscodeAsks: ({})   // (jumper's source -> {host, session})
+
+    function vscodeAskOpen() {
+        const asked = vscodeAsk
+        if (asked.session)
+            remoteShow(asked.host, asked.session, true)
+    }
+
+    function vscodeAskTerminal() {
+        const asked = vscodeAsk
+        vscodeAsk = noVscodeAsk
+        if (asked.session)
+            remoteOpen(asked.host, asked.session.terminalCommand)
     }
 
     function remoteOpen(host, command) {

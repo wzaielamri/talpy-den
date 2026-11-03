@@ -219,7 +219,7 @@ export class Actions {
   }
 
   // The widget's way: jump.py raises the terminal tab or window it runs in
-  private async openSystem(chat: ChatRef): Promise<void> {
+  private async openSystem(chat: ChatRef, allowVscode = false): Promise<void> {
     const host = chat.host;
     let answer: Answer;
     if (!host) {
@@ -228,7 +228,21 @@ export class Actions {
     } else if (chat.openCommand) {
       answer = await this.backend.action("remote.py", ["--open", host, chat.openCommand]);
     } else if (chat.entrypoint === "claude-vscode") {
-      answer = await this.backend.action("jump.py", ["--remote-vscode", host, chat.sessionId, ...(chat.cwd ? ["--cwd", chat.cwd] : [])]);
+      answer = await this.backend.action("jump.py", ["--remote-vscode", host, chat.sessionId, ...(chat.cwd ? ["--cwd", chat.cwd] : []),
+        ...(allowVscode ? ["--allow-vscode"] : [])]);
+      // a container's with no VS Code window attached to it: asked once first
+      // (Dev Containers shares your SSH agent and Git credentials with it)
+      if (answer.ask === "vscode") {
+        const open = "Open in VS Code";
+        const terminal = "Open in a terminal instead";
+        const choice = await vscode.window.showWarningMessage(answer.message, { modal: true }, open, terminal);
+        if (choice === open) return this.openSystem(chat, true);
+        if (choice === terminal) {
+          if (!chat.terminalCommand) return this.fail(`This chat runs in a terminal on ${hostLabel(host)}; Talpy Den can't bring it here.`);
+          await this.terminals.run(`${host}|${chat.key}`, chat.name, chat.terminalCommand, this.place(host), { chatOn: host });
+        }
+        return;
+      }
     } else {
       // in a VS Code terminal there: the window connected to the host shows it
       const vscode = chat.vscodeTerminal ? ["--vscode-terminal", String(Math.trunc(chat.vscodeTerminal)), ...(chat.cwd ? ["--cwd", chat.cwd] : [])] : [];

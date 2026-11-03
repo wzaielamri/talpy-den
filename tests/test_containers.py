@@ -628,6 +628,29 @@ class JumpByIdTests(FakeEngines):
             jump.proc_cmdline = old
 
 
+class VscodeAskTests(FakeEngines):
+    def test_a_containers_vscode_chat_asks_once_per_container(self):
+        import jump
+        from unittest import mock
+        self.engine("podman")
+        self.put({"shop": self.container("shop")})
+        ask = "Open VS Code attached to podman:shop? Dev Containers shares your SSH agent and Git credentials with it."
+        with mock.patch.object(jump, "vscode_connected_to", lambda host: ([], "")), \
+                mock.patch.object(jump.shutil, "which", lambda n: "/bin/true" if n == "xdg-open" else None):
+            self.assertEqual(jump.jump_remote_vscode("podman:shop", "abc", "/w"), (None, ask))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                jump.main(["--remote-vscode", "podman:shop", "abc"])
+            self.assertEqual(json.loads(out.getvalue()), {"ok": False, "message": ask, "ask": "vscode"})
+            # yes once: kept for that container (past the question: no VS Code here)
+            self.assertIn("isn't installed", jump.jump_remote_vscode("podman:shop", "abc", "/w", allow=True)[1])
+            self.assertIn("isn't installed", jump.jump_remote_vscode("podman:shop", "abc", "/w")[1])
+            # one made again with that name asks again; an SSH host's never does
+            self.put({"shop": self.container("shop", id="f" * 64)})
+            self.assertEqual(jump.jump_remote_vscode("podman:shop", "abc", "/w"), (None, ask))
+            self.assertIn("isn't installed", jump.jump_remote_vscode("lab", "abc", "/w")[1])
+
+
 REPO = CODE.parent.parent.parent
 JS_CONTAINER = "/^(docker|podman|nerdctl):([A-Za-z0-9][A-Za-z0-9_.-]*)(?:@(.+))?$/"
 

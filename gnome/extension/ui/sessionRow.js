@@ -206,6 +206,10 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
         body.add_child(buildKeepOnly(ctx));
     if (asksDelete)
         body.add_child(buildDeleteAsk(ctx));
+    if (ctx.ui.vscodeAsk?.key === rowKey) {   // (open VS Code attached to its container? indicator.js remoteShow)
+        body.add_child(confirmLine(ctx.ui.vscodeAsk.question, 'Open in VS Code', 'vscodeApp', () => ctx.vscodeAskOpen(),
+            () => ctx.vscodeAskTerminal(), {cancelText: 'Open in a terminal instead'}));
+    }
 
     if (confirmingStop && canStop) {
         const buttons = [

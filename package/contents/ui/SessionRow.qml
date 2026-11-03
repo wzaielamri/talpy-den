@@ -1135,6 +1135,21 @@ RowLayout {
             shown: row.confirmingKeepOnly
         }
 
+        // Open VS Code attached to this chat's container? (main.qml: vscodeAsk)
+        Loader {
+            Layout.fillWidth: true
+            active: root.vscodeAsk.key !== "" && root.vscodeAsk.key === row.rowKey
+            visible: active
+            sourceComponent: ConfirmLine {
+                text: root.vscodeAsk.question
+                confirmText: i18n("Open in VS Code")
+                confirmIcon: "vscodeApp"
+                cancelText: i18n("Open in a terminal instead")
+                onConfirmed: root.vscodeAskOpen()
+                onCancelled: root.vscodeAskTerminal()
+            }
+        }
+
         DeleteAsk {
             Layout.fillWidth: true
             itemKey: row.session.key !== "" ? row.rowKey : ""

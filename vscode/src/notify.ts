@@ -29,6 +29,7 @@ export function chatRef(s: Session, host?: string): ChatRef {
     jobId: s.jobId,
     openCommand: s.openCommand ?? null,
     stopCommand: s.stopCommand ?? null,
+    terminalCommand: s.terminalCommand ?? null,
     vscodeTerminal: s.vscodeTerminal ?? null,
     shared: !!s.shared,
   };

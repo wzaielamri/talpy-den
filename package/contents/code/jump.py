@@ -655,10 +655,12 @@ def vscode_connected_to(host):
     return mains, caption
 
 
-def jump_remote_vscode(host, session_id, folder=""):
+def jump_remote_vscode(host, session_id, folder="", allow=False):
     """Show a VS Code chat that runs on an SSH host: raise the VS Code window
     connected to that host (Remote-SSH puts "[SSH: host]" in its title) and
-    reveal the conversation; open VS Code on the host if none is."""
+    reveal the conversation; open VS Code on the host if none is. For a
+    container with no window attached, (None, the question) until you said
+    yes for it (allow: you say so now; remote.vscode_allowed)."""
     url = "vscode://anthropic.claude-code/open?" + link_query({"session": session_id})
     opener = shutil.which("xdg-open")
     if not opener:
@@ -669,6 +671,10 @@ def jump_remote_vscode(host, session_id, folder=""):
         time.sleep(0.3)  # let VS Code see its window focused, so the link opens there
         subprocess.Popen([opener, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         return True, f"Opened the conversation in VS Code ({remote_label(host)})"
+    if is_container(host):
+        import remote
+        if not remote.vscode_allowed(host, allow):
+            return None, f"Open VS Code attached to {host}? Dev Containers shares your SSH agent and Git credentials with it."
     code = next((shutil.which(n) for n in VSCODE_NAMES if shutil.which(n)), None)
     if not code:
         return False, f"This chat runs in VS Code {remote_where(host)}, and VS Code isn't installed here"
@@ -2710,7 +2716,7 @@ USAGE = ("usage: jump.py [--stop [--busy] | --interrupt] SESSION_ID [--profile P
          "       jump.py --star-plan|--unstar-plan SLUG [--host HOST]\n"
          "       jump.py --requeue TASK_ID --at MS   (it waits on until MS)\n"
          "       jump.py --share SESSION_ID\n"
-         "       jump.py --remote-vscode HOST SESSION_ID [--cwd FOLDER_ON_HOST]\n"
+         "       jump.py --remote-vscode HOST SESSION_ID [--cwd FOLDER_ON_HOST] [--allow-vscode]\n"
          "       jump.py --remote-terminal HOST [--name SESSION_NAME] [--vscode-terminal PID [--cwd FOLDER_ON_HOST]]\n"
          "       jump.py --vscode-link SESSION_ID LINK [--config-dir DIR]...\n"
          "       jump.py --remote-new-vscode HOST [--cwd FOLDER_ON_HOST] [--account CONFIG_DIR|-]\n"
@@ -2760,6 +2766,7 @@ def main(argv=None):
     feedback_plan, comments, extra_out, hide_kind, describe = None, [], {}, None, False
     keep_off_chat = None
     into, back, setting, if_exists = None, False, True, None
+    allow_vscode = False
     while args:
         arg = args.pop(0)
         if arg == "--config-dir" and args:
@@ -2898,6 +2905,8 @@ def main(argv=None):
             if_exists = args.pop(0)
         elif arg == "--describe":
             describe = True
+        elif arg == "--allow-vscode":
+            allow_vscode = True
         elif arg in ("--remote-vscode", "--remote-terminal", "--remote-new-vscode", "--remote-resume-vscode",
                      "--remote-edit") and args:
             action, remote_host = arg, args.pop(0)
@@ -3006,7 +3015,9 @@ def main(argv=None):
         elif action in ("--open-memory", "--edit-memory"):
             ok, message = open_memory(Path.home(), extra, session_id, action == "--edit-memory")
         elif action == "--remote-vscode":
-            ok, message = jump_remote_vscode(remote_host, session_id, folder or "")
+            ok, message = jump_remote_vscode(remote_host, session_id, folder or "", allow_vscode)
+            if ok is None:  # (a container's: asked first)
+                ok, extra_out = False, {"ask": "vscode"}
         elif action == "--remote-terminal":
             ok, message = jump_remote_terminal(remote_host, name_arg, vscode_terminal, folder or "")
         elif action == "--remote-new-vscode":

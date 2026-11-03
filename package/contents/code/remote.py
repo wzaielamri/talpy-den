@@ -369,6 +369,33 @@ def remember_users(found, inspected=False):
         pass
 
 
+def vscode_allowed(ident, allow=False):
+    """Whether a click on a chat may attach VS Code to the container ident
+    (Dev Containers shares your SSH agent and Git credentials with it): you
+    said so for this very container (its id now: one made again with that
+    name asks anew); allow: you say so now, and it's kept."""
+    try:
+        found, _r = inspect(place(ident))
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        found = None
+    cid = found["cid"] if found else ""
+
+    def keep(saved):
+        said = saved.get("vscode") if isinstance(saved.get("vscode"), dict) else {}
+        said[ident] = cid
+        saved["vscode"] = said
+    if allow:
+        if cid:
+            try:
+                change_containers_file(keep)
+            except OSError:
+                pass
+        return True
+    saved = cs.read_json(containers_file())
+    said = saved.get("vscode") if isinstance(saved, dict) and isinstance(saved.get("vscode"), dict) else {}
+    return bool(cid) and said.get(ident) == cid
+
+
 def engine_line(p, args):
     """The command line running the engine with args where p's container is."""
     argv = [p.engine, *args]
