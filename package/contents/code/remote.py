@@ -74,6 +74,8 @@ import glob
 import json
 import os
 import re
+import select
+import selectors
 import shlex
 import signal
 import stat
@@ -464,19 +466,89 @@ def exec_line(p, command, user="", tty=False):
 def run_on(ident, command, stdin=None, timeout=RUN_TIMEOUT, binary=False):
     """Run command (POSIX shell) on an SSH host or in a container (batch
     mode): the CompletedProcess. Output that isn't UTF-8 (a login script's
-    greeting) can't break the answer; binary: stdin and the output are bytes."""
+    greeting) can't break the answer; binary: stdin and the output are bytes.
+    Past ANSWER_MAX of output, TooMuch (run_capped)."""
     p = place(ident)
-    text = {} if binary else {"text": True, "errors": "replace"}
     if not p.container:
-        return subprocess.run(["ssh", *ssh_options(), "-T", p.host, posix(command)], input=stdin,
-                              capture_output=True, timeout=timeout, **text)
+        return run_capped(["ssh", *ssh_options(), "-T", p.host, posix(command)], stdin, timeout, binary)
     user, known = exec_user(p)
-    r = subprocess.run(exec_line(p, command, user), input=stdin, capture_output=True, timeout=timeout, **text)
+    r = run_capped(exec_line(p, command, user), stdin, timeout, binary)
     err = r.stderr if not binary else r.stderr.decode("utf-8", "replace")
     if known and r.returncode != 0 and "unable to find user" in err.lower():  # (made again since: ask anew)
         user, _known = exec_user(p, fresh=True)
-        r = subprocess.run(exec_line(p, command, user), input=stdin, capture_output=True, timeout=timeout, **text)
+        r = run_capped(exec_line(p, command, user), stdin, timeout, binary)
     return r
+
+
+# What's read of a host's (or a container's) output, its stdout and its
+# stderr each: a real answer has well under 1 MB (a busy host's status,
+# 50 KB), and a host that sends more can't fill this computer's memory, or
+# Talpy Den's cache with it (hosts/<host>.json, read at every start)
+ANSWER_MAX = 16 << 20
+
+
+class TooMuch(OSError):
+    """A host's output went past ANSWER_MAX: the command there was ended (cant_run says so)."""
+
+
+def run_capped(line, stdin=None, timeout=RUN_TIMEOUT, binary=False):
+    """subprocess.run(line, input=stdin, capture_output=True, timeout=timeout,
+    text=not binary, errors="replace"), reading at most ANSWER_MAX bytes of
+    stdout and of stderr as they come: past that the command is ended, and
+    TooMuch raised. (As subprocess's own: writes of PIPE_BUF a pipe takes
+    in one go, so neither side waits on the other.)"""
+    data = None if stdin is None else stdin if binary else stdin.encode("utf-8")
+    proc = subprocess.Popen(line, stdin=subprocess.PIPE if data is not None else None,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    got, size = {proc.stdout: [], proc.stderr: []}, {proc.stdout: 0, proc.stderr: 0}
+    sent, deadline = 0, time.monotonic() + timeout
+    try:
+        with selectors.DefaultSelector() as sel:
+            sel.register(proc.stdout, selectors.EVENT_READ)
+            sel.register(proc.stderr, selectors.EVENT_READ)
+            if data:
+                sel.register(proc.stdin, selectors.EVENT_WRITE)
+            elif data is not None:
+                proc.stdin.close()
+            while sel.get_map():
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise subprocess.TimeoutExpired(line, timeout)
+                for key, _ in sel.select(left):
+                    f = key.fileobj
+                    if f is proc.stdin:
+                        try:
+                            sent += os.write(f.fileno(), data[sent:sent + select.PIPE_BUF])
+                        except BrokenPipeError:  # (it ended before it read it all)
+                            sent = len(data)
+                        if sent >= len(data):
+                            sel.unregister(f)
+                            f.close()
+                        continue
+                    chunk = os.read(f.fileno(), 1 << 16)
+                    if not chunk:
+                        sel.unregister(f)
+                        continue
+                    got[f].append(chunk)
+                    size[f] += len(chunk)
+                    if size[f] > ANSWER_MAX:
+                        raise TooMuch(f"over {ANSWER_MAX >> 20} MB")
+        proc.wait(max(0, deadline - time.monotonic()))
+    except BaseException:  # (a timeout, too much, or SIGTERM: the widget gave up on it)
+        proc.kill()
+        proc.wait()
+        raise
+    finally:
+        for f in (proc.stdin, proc.stdout, proc.stderr):
+            try:
+                if f is not None:
+                    f.close()
+            except OSError:
+                pass
+    stdout, stderr = b"".join(got[proc.stdout]), b"".join(got[proc.stderr])
+    if not binary:  # (as text=True reads it: \r\n and \r are \n)
+        stdout, stderr = (b.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n") for b in (stdout, stderr))
+    return subprocess.CompletedProcess(line, proc.returncode, stdout, stderr)
 
 
 def container_problem(p, code, stderr):
@@ -783,8 +855,11 @@ def last_answers(hosts):
     out = {}
     for host in hosts:
         try:
+            # (kept as JSON, an answer may take 3 times its size, \uXXXX; one bigger was kept before ANSWER_MAX)
+            if answer_file(host).stat().st_size > 3 * ANSWER_MAX:
+                continue
             saved = cs.read_json(answer_file(host))
-        except ValueError:
+        except (OSError, ValueError):
             continue
         if isinstance(saved, dict) and isinstance(saved.get("answer"), dict) and saved["answer"].get("ok"):
             if isinstance(saved["answer"].get("result"), dict):  # (one kept before ids were checked, too)
@@ -795,6 +870,8 @@ def last_answers(hosts):
 
 def cant_run(p, exc):
     """Why the engine (or ssh) couldn't run at all."""
+    if isinstance(exc, TooMuch):
+        return f"{p.label} sent too much ({exc}): Talpy Den stopped reading it."
     if p.container and p.host is None:
         return f"{p.engine_title} isn't installed here." if isinstance(exc, FileNotFoundError) else f"Can't run {p.engine}: {exc}"
     return f"Can't run ssh: {exc}"

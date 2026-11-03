@@ -15,6 +15,7 @@ import textwrap
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.dont_write_bytecode = True
 CODE = Path(__file__).resolve().parent.parent / "package/contents/code"
@@ -46,6 +47,7 @@ case "$FAKE_SSH_MODE" in
   unreachable) echo "ssh: connect to host x port 22: Connection timed out" >&2; exit 255 ;;
   slow) sleep 5 ;;
   noisy) echo "Welcome to the cluster! Quota: 80%" ;;
+  flood) head -c 3000000 /dev/zero | tr '\0' x ;;
   latin1) printf 'Gr\374\337 Gott\n' ;;
   fish|tcsh)  # a login shell that reads quotes its own way (LOGIN_SHELL)
     cd "$FAKE_HOME" && exec env -i HOME="$FAKE_HOME" PATH="$FAKE_PATH" XDG_CACHE_HOME="$FAKE_HOME/.cache" \
@@ -299,6 +301,19 @@ class StatusTests(FakeSSH):
         (group,) = result["groups"]
         self.assertEqual(group["sessions"], rows[3:])
         self.assertEqual((group["recent"], group["starred"]), (rows[3:], []))
+
+    def test_a_host_that_sends_too_much(self):
+        # (it was all kept in memory, in hosts/lab.json and read again at every start)
+        self.assertTrue(remote.status("lab", tokens=False)["ok"])
+        kept = remote.answer_file("lab").read_bytes()
+        self.mode("flood")
+        with mock.patch.object(remote, "ANSWER_MAX", 1 << 20):
+            out = remote.status("lab", tokens=False)
+            self.assertEqual(out["error"], "lab sent too much (over 1 MB): Talpy Den stopped reading it.")
+            self.assertEqual(remote.answer_file("lab").read_bytes(), kept, "not kept")
+            self.assertIn("lab", remote.last_answers(["lab"]))
+            remote.answer_file("lab").write_text(json.dumps({"answer": {"ok": True, "pad": "x" * (4 << 20)}}))
+            self.assertEqual(remote.last_answers(["lab"]), {})  # (one kept before the cap)
 
     def test_login_noise_before_the_answer(self):
         self.mode("noisy")
