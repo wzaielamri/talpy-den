@@ -651,11 +651,13 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
             owner = next((p for p in profiles if p.key == key), None) if key else \
                 next(p for p, path in have if same(path, src))
             owner = owner or profiles[0]
-        starts = cs.start_folders(ctx)
-        choices = sorted((f for f in starts if os.path.isdir(f) and os.path.normpath(f) != os.path.normpath(str(home))),
+        starts, at_home = cs.start_folders(ctx), os.path.normpath(str(home))
+        # (not the home folder: its .claude is ~/.claude, an account's own)
+        choices = sorted((f for f in starts if os.path.isdir(f) and os.path.normpath(f) != at_home),
                          key=lambda f: -starts[f][0])[:MOVE_CHOICES]
         default = plan_origin(profiles, ctx, slug).get("project") or ""
-        default = default if default and os.path.isdir(default) and default != in_project else ""
+        default = default if default and os.path.isdir(default) and default != in_project \
+            and os.path.normpath(default) != at_home else ""
         if default:  # (the chat's own first)
             choices = [default] + [f for f in choices if f != default]
         out["choices"] = [{"path": f, "short": short(f)} for f in choices]
@@ -668,6 +670,8 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
         folder = os.path.normpath(folder)
         if not os.path.isabs(folder) or not os.path.isdir(folder):
             return dict(out, message=f"{short(folder)} isn't a folder here")
+        if folder == at_home:
+            return dict(out, message=f"{short(os.path.join(folder, cs.PROJECT_PLANS_DIR))} is an account's own plans folder")
         where, value = cs.project_settings(ctx, folder, owner)
         named_dir = cs.plans_dir_in(folder, value) if value is not None else None
         dest_dir = named_dir or os.path.join(folder, cs.PROJECT_PLANS_DIR)

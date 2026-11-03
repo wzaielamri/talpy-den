@@ -550,6 +550,19 @@ class MoveTests(ProjectPlanFixture):
         self.assertFalse(in_app.exists())
         self.assertTrue((web / ".claude/plans/calm-red-owl.md").is_file())
 
+    def test_a_plan_made_in_the_home_folder_asks_which_project(self):
+        # (its .claude is ~/.claude, an account's own: the plan would leave its account)
+        self.chat(".claude-work", self.home, CHAT_B, "home-plan", ago=60)
+        home_plan = self.plan(self.home / ".claude-work/plans/home-plan.md", "Planned at home")
+        asked = sharing.move_plan(cs.discover_profiles(self.home), self.home, "home-plan", ".claude-work", describe=True)
+        self.assertEqual((asked["ok"], asked["default"], [c["short"] for c in asked["choices"]]),
+                         (True, "", ["~/repos/app"]))
+        self.assertEqual(asked["question"], "Move “Planned at home” to which project?")
+        moved = sharing.move_plan(cs.discover_profiles(self.home), self.home, "home-plan", ".claude-work",
+                                  folder=str(self.home), setting=False)
+        self.assertEqual((moved["ok"], moved["message"]), (False, "~/.claude/plans is an account's own plans folder"))
+        self.assertTrue(home_plan.is_file())
+
     def test_wrong_asks(self):
         self.assertFalse(self.move("--into", "relative/folder")["ok"])
         with self.assertRaises(SystemExit):
