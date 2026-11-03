@@ -4421,14 +4421,14 @@ def kept_chats(cache_root, moves=None):
             for k in load_keep(cache_root)["chats"]]
 
 
-def keep_moved(cache_root, old, new):
-    """A chat that keeps going goes on under a new id (Claude moved it to
-    the background): keep.json follows it (once, if both are kept)."""
+def keep_moved(cache_root, old, new, host=""):
+    """A chat that keeps going (host's) goes on under a new id (Claude moved
+    it to the background): keep.json follows it (once, if both are kept)."""
     def change(data):
-        k = next((k for k in data["chats"] if k["chat"] == old and not k["host"]), None)
+        k = next((k for k in data["chats"] if k["chat"] == old and k["host"] == host), None)
         if k is None or old == new:
             return False
-        if any(x["chat"] == new and not x["host"] for x in data["chats"]):
+        if any(x["chat"] == new and x["host"] == host for x in data["chats"]):
             data["chats"].remove(k)
         else:
             k["chat"] = new
@@ -4450,6 +4450,36 @@ def follow_queue(cache_root, moves, names):
             if (chat, name) != (t["chat"], t.get("name") or ""):
                 t["chat"], t["name"] = chat, name
                 changed = True
+        return changed
+    change_queue(cache_root, edit=edit)
+
+
+def follow_host_moves(cache_root, host, moved, starred, kept):
+    """An SSH host's (or a container's) chats Claude moved to the background
+    there under a new id (its answer's "moved": {old id: new id}): what's
+    kept of them here follows them, as this computer's do (collect,
+    look_after_kept), their stars, keeping going and queued go-ons and
+    replies. starred, kept: that host's (starred_of, keep.json's entries),
+    as read for the check. Once per answer, and only when one of them moved."""
+    moved = {old: new for old, new in moved.items() if valid_id(old) and valid_id(new) and old != new} \
+        if isinstance(moved, dict) else {}
+    if not moved:
+        return
+    for old in [c for c in starred["chats"] if c in moved]:
+        change_stars(cache_root, "chats", moved_chat(old, moved), host, on=True)
+        change_stars(cache_root, "chats", old, host, on=False)
+    for k in [k for k in kept if k["chat"] in moved]:
+        keep_moved(cache_root, k["chat"], moved_chat(k["chat"], moved), host)
+
+    def edit(tasks):
+        mine = [t for t in tasks if (t.get("host") or "") == host and t.get("chat")]
+        changed = False
+        for t in [t for t in mine if t["chat"] in moved]:
+            t["chat"] = moved_chat(t["chat"], moved)
+            changed = True
+            if not t.get("afterTurn") and any(x is not t and x["chat"] == t["chat"] and not x.get("afterTurn") for x in mine):
+                tasks.remove(t)  # (a go-on of it under its new id is queued already)
+                mine.remove(t)
         return changed
     change_queue(cache_root, edit=edit)
 
@@ -4742,7 +4772,8 @@ def look_after_host_kept(data, k, seen, queued, adds, now_ms):
                      "it can go on once that answers again")
         return k != before
     result = seen["result"]
-    chat = moved_chat(k["chat"], result.get("moved") if isinstance(result.get("moved"), dict) else {})
+    old = k["chat"]
+    chat = moved_chat(old, result.get("moved") if isinstance(result.get("moved"), dict) else {})
     if chat != k["chat"]:  # (Claude moved it to the background there under a new id: it keeps going there)
         if any(x is not k and x["chat"] == chat and x["host"] == k["host"] for x in data["chats"]):
             data["chats"].remove(k)
@@ -4765,8 +4796,9 @@ def look_after_host_kept(data, k, seen, queued, adds, now_ms):
         k["name"] = clean_text(rows[chat]["name"], 80)  # (as it's called now)
     offset = seen["offset"]
     limits = (g.get("limits") or g.get("accountLimits")) if g else None
-    step = kept_step(k, shifted(turns[chat].get("turn"), offset), rows.get(chat), (k["host"], chat) in queued,
-                     shifted(limits, offset), seen["at"])
+    # (its go-on queued under the id it had counts too, until remote.py's check follows it: follow_host_moves)
+    step = kept_step(k, shifted(turns[chat].get("turn"), offset), rows.get(chat),
+                     (k["host"], chat) in queued or (k["host"], old) in queued, shifted(limits, offset), seen["at"])
     if step == "done":
         data["chats"].remove(k)
         return True

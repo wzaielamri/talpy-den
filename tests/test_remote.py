@@ -991,6 +991,28 @@ class KeepGoingThereTests(TwoAccountHost):
         self.assertIsNotNone(kept["wentOnAt"])
         self.assertEqual(cs.load_queue(cache), [])
 
+    def test_a_hosts_chat_moved_to_the_background_takes_its_star_keep_going_and_go_on_along(self):
+        # (2026-11-03) its go-on under the old id got a second one beside it, and its star couldn't be taken off
+        new = "9a8b7c6d-0000-4000-8000-000000000003"
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 120))
+        line = lambda sid: json.dumps({"type": "user", "uuid": "u1", "timestamp": stamp, "cwd": str(self.folder),
+                                       "sessionId": sid, "session_id": self.CHAT,
+                                       "message": {"role": "user", "content": "fix it"}}, separators=(",", ":")) + "\n"
+        self.chat.write_text(line(self.CHAT))
+        self.chat.with_name(f"{new}.jsonl").write_text(line(new))  # (Claude's copy of it, under its new id)
+        cache = cs.cache_dir(Path.home())
+        now = int(time.time() * 1000)
+        cs.keep_chat(cache, ".claude", self.CHAT, "Fix it", str(self.folder), host="lab")
+        cs.change_stars(cache, "chats", self.CHAT, "lab")
+        cs.change_queue(cache, add=cs.queue_entry(".claude", str(self.folder), "", now + 3600_000, host="lab",
+                                                  chat=self.CHAT, name="Fix it"))
+        answer = remote.status("lab", tokens=False)
+        self.assertEqual(answer["result"]["moved"], {self.CHAT: new})
+        self.assertEqual(cs.starred_of(cs.load_stars(cache), "lab")["chats"], {new})
+        self.assertEqual([k["chat"] for k in cs.load_keep(cache)["chats"]], [new])
+        cs.look_after_kept(Path.home(), cache, [], [], now)
+        self.assertEqual([(t["host"], t["chat"]) for t in cs.load_queue(cache)], [("lab", new)])
+
 
 class UnreachedTests(TwoAccountHost):
     def test_an_answer_says_when_the_host_couldnt_be_reached(self):

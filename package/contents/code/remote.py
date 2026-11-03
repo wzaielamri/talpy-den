@@ -815,6 +815,10 @@ def status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, 
     out = {"ok": True, "host": host, "result": chats_with_ids(result), "elapsedMs": elapsed,
            "loggedIn": p.host is not None and logged_in(p.host)}
     remember_answer(host, out)
+    try:  # (its chats Claude moved to the background there under a new id: their stars, keeping going and go-ons follow)
+        cs.follow_host_moves(cs.cache_dir(Path.home()), host, result.get("moved"), stars, kept)
+    except (OSError, ValueError):
+        pass
     return out
 
 
