@@ -1024,9 +1024,15 @@ def hide(host, kind, item_id=None):
 def delete(host, kind, item, profile=None, describe=False):
     """Delete a chat, a plan or a memory of host (kind chat, plan, memory)
     to the host's Trash, or (describe) say what would go (sharing.delete
-    there): its answer. Its stars and queued tasks, kept here, forget it."""
+    there): its answer. Its stars and queued tasks, kept here, forget it
+    (a plan's question says its queued tasks go too)."""
     args = ["--delete-" + kind, item] + (["--profile", profile] if profile else []) + (["--describe"] if describe else [])
     answer = host_answer(host, args, "sharing.py", also=("accounts.py",))
+    if describe and kind == "plan" and isinstance(answer.get("question"), str):
+        more = cs.plan_tasks_go(cs.queued_for_plan(cs.cache_dir(Path.home()), item, host))
+        if more and answer.get("message") == answer["question"]:
+            answer["message"] += more
+        answer["question"] += more
     if answer["ok"] and not describe:
         cs.forget_deleted(cs.cache_dir(Path.home()), {"chat": "chats", "plan": "plans"}.get(kind, "memories"), item, host)
     return answer

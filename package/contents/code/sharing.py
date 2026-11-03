@@ -1133,6 +1133,7 @@ def delete(profiles, kind, item, name, root, home, describe=False):
         if older:
             older = and_list(dict.fromkeys(cs.short_folder(str(c.parent), home) for c in older))
             question += f" So does its older copy in {older}."
+        question += cs.plan_tasks_go(cs.queued_for_plan(cs.cache_dir(home), item))
     else:
         labels, paths, src = chat_to_delete(profiles, item, name, root)
         if labels is None:

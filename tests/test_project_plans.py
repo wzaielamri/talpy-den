@@ -269,6 +269,18 @@ class ActionTests(ProjectPlanFixture):
         self.assertFalse(self.path.exists())
         self.assertTrue((self.home / ".local/share/Trash/files/act-plan.md").is_file())
 
+    def test_deleting_takes_the_tasks_queued_to_carry_it_out(self):
+        # (else at its time a task fails with "That plan isn't there any more", and waits till you cancel it)
+        cache, at = cs.cache_dir(self.home), int(self.now * 1000) + 3600_000
+        for host, plan in (("", "act-plan"), ("lab", "act-plan"), ("", "other-plan")):
+            cs.change_queue(cache, add=cs.queue_entry(".claude-work", str(self.app), "", at, host, plan=plan))
+        profiles, root = cs.discover_profiles(self.home), sharing.store_root(self.home)
+        asked = sharing.delete(profiles, "plan", "act-plan", ".claude-work", root, self.home, describe=True)
+        self.assertEqual(asked["question"], "Delete the plan “Act on it” from ~/repos/app/.claude/plans? It goes to the "
+                                            "Trash. So does the task queued to carry it out.")
+        self.assertTrue(sharing.delete(profiles, "plan", "act-plan", ".claude-work", root, self.home)["ok"])
+        self.assertEqual([(t["host"], t["plan"]) for t in cs.load_queue(cache)], [("lab", "act-plan"), ("", "other-plan")])
+
 
 class SameNameTests(ProjectPlanFixture):
     """An account's plan and a project's of the same name are one plan, the

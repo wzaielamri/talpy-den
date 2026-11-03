@@ -9231,13 +9231,32 @@ def show_hidden(cache_root, kind):
     return True, f"Showing {count} hidden {one if count == 1 else many} again"
 
 
+def queued_for_plan(cache_root, slug, host=""):
+    """The queued tasks that carry out the plan slug (of host: the queue is kept here)."""
+    return [t for t in load_queue(cache_root) if t.get("plan") == slug and (t.get("host") or "") == (host or "")]
+
+
+def plan_tasks_go(tasks):
+    """What Delete's question adds for a plan's queued tasks (queued_for_plan): they go with it."""
+    if not tasks:
+        return ""
+    return " So does the task queued to carry it out." if len(tasks) == 1 else \
+        f" So do the {len(tasks)} tasks queued to carry it out."
+
+
 def forget_deleted(cache_root, kind, item_id, host=""):
     """A chat, a plan or a memory was deleted (sharing.delete_chat, …):
     the stars, the queue, keep going and what's hidden here forget it (of
     host: its stars, queued tasks and keep going, kept here; the rest is the
-    host's)."""
+    host's). A plan's queued tasks go too, as a chat's go-ons (Delete's
+    question says so: plan_tasks_go)."""
     if kind in ("chats", "plans"):
         change_stars(cache_root, kind, item_id, host, on=False)
+    if kind == "plans" and queued_for_plan(cache_root, item_id, host):
+        def drop(tasks):
+            tasks[:] = [t for t in tasks if not (t.get("plan") == item_id and (t.get("host") or "") == (host or ""))]
+            return True
+        change_queue(cache_root, edit=drop)
     if kind == "chats":
         for t in load_queue(cache_root):
             if t.get("chat") == item_id and (t.get("host") or "") == (host or ""):
