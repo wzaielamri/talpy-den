@@ -297,6 +297,7 @@ PlasmaComponents3.ScrollView {
                     visible: card.index > 0
                 }
                 RowLayout {
+                    id: head
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.smallSpacing
 
@@ -313,6 +314,16 @@ PlasmaComponents3.ScrollView {
                         // (on the name's line)
                         Layout.alignment: Qt.AlignTop
                         Layout.topMargin: Math.max(0, (projectName.implicitHeight - Layout.preferredHeight) / 2)
+
+                        // the line shaded while the pointer is on it, as a chat's row (in the
+                        // line's first item, under it: in the line, it would take its spacing)
+                        HoverShade {
+                            z: -1
+                            target: head
+                            shown: cardHover.hovered
+                            side: Kirigami.Units.smallSpacing
+                            pad: Kirigami.Units.smallSpacing / 2
+                        }
                     }
                     // Its name, with a dot for each of its open chats at the top right; under it its folder and
                     // when Claude last worked there, a line as high as a row's buttons, whose end they cover on

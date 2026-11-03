@@ -623,7 +623,8 @@ class HoverShadeTests(unittest.TestCase):
     """A line is shaded while the pointer is on it (2026-11-02), as a row in
     VS Code's list (--vscode-list-hoverBackground) and GNOME's: a chat's row,
     a recent or starred chat's line, a plan's, a memory's, a queued task's, a
-    Focus or project line, a subagent. Plasma's had only its buttons."""
+    Focus or project line, a subagent, a project's own line in the Projects
+    tab. Plasma's had only its buttons."""
 
     def test_it_covers_the_whole_line_takes_no_room_and_follows_the_pointer(self):
         import json
@@ -663,6 +664,7 @@ class HoverShadeTests(unittest.TestCase):
                                            ("GroupSection.qml", "id: queuedLine", "RowLayout {", True),
                                            ("FocusLine.qml", "id: line", "RowLayout {", False),
                                            ("AgentTree.qml", "id: agentHead", "ColumnLayout {", False),
+                                           ("ProjectsView.qml", "id: head", "ColumnLayout {", False),
                                            ("SessionRow.qml", "color: row.petColor", "\n    Rectangle {", False)):
             with self.subTest(name):
                 qml = (UI / name).read_text()
@@ -679,9 +681,9 @@ class HoverShadeTests(unittest.TestCase):
         bar = bar[:bar.index("\n    Rectangle {", bar.index("color: row.petColor"))]
         self.assertRegex(bar, r"HoverShade \{\s+z: -1\s+target: row\n")
         css = (UI.parent.parent.parent / "vscode/webview/styles.css").read_text()
-        for selector in (".session:hover", ".recent-item:hover", ".agent-head:hover", ".focus-line:hover"):
+        for selector in (".session:hover", ".recent-item:hover", ".agent-head:hover", ".focus-line:hover", ".project-head:hover"):
             with self.subTest(selector):
-                rule = css[css.index(selector + " {"):]
+                rule = css[css.index("\n" + selector + " {"):]   # (its own rule, not high contrast's)
                 self.assertIn("background: var(", rule[:rule.index("}")])
 
 

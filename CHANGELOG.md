@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **The Recap lists every window of your plan, one that hasn't started too:** an account with no reply in the last 5 hours (Claude says its 5-hour window is at 0%, with no reset time) showed only its *7d* under *Your plan's limits now*, though the Chats tab showed its *5h* at 0%. Now each window the Chats tab shows is there, an empty bar at 0% for one with nothing to draw yet (Plasma, GNOME and VS Code).
+- **A project's line in the Projects tab is shaded while the pointer is on it,** as a chat's row: its name and its folder's line take the same faint tint, so it's clear which project its *New chat here* and *Hide* buttons belong to (Plasma and VS Code).
 
 ## 1.17.0 (2026-11-02)
 

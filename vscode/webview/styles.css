@@ -1830,7 +1830,8 @@ button:focus-visible {
    High contrast themes draw borders instead of shades */
 
 body.vscode-high-contrast .session:hover,
-body.vscode-high-contrast .recent-item:hover {
+body.vscode-high-contrast .recent-item:hover,
+body.vscode-high-contrast .project-head:hover {
   outline: 1px dashed var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
   outline-offset: -1px;
 }
@@ -3941,6 +3942,14 @@ body.vscode-high-contrast-light .pane {
   display: flex;
   gap: 6px;
   align-items: flex-start;
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+/* shaded while the pointer is on it, as a chat's row */
+.project-head:hover {
+  background: var(--cs-hover);
 }
 
 .project-name {
@@ -4045,10 +4054,11 @@ body.vscode-high-contrast-light .pane {
    point at its line, or Tab to it, at the end of its folder's line */
 .project-actions {
   position: absolute;
-  right: 0;
+  right: 4px;
   bottom: 2px;
   display: flex;
-  background: var(--cs-bg);
+  border-radius: 4px;
+  background: linear-gradient(var(--cs-hover), var(--cs-hover)), var(--cs-bg); /* (on the line's shade, as a row's) */
   opacity: 0;
   pointer-events: none;
 }
