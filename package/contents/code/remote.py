@@ -800,8 +800,11 @@ def status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, 
         return {"ok": False, "host": host, "error": cant_run(p, exc)}
     elapsed = int((time.time() - started) * 1000)
     if "\n" + cs.REMOTE_MARK not in r.stdout:
+        # (only ssh's own failure asks for a login: not the engine's "permission denied" on its socket there)
+        login = p.host is not None and r.returncode == 255 and needs_login(r.stderr) \
+            and not (p.container and container_problem(p, r.returncode, r.stderr)[0])
         out = {"ok": False, "host": host, "error": explain(host, r.returncode, r.stderr), "elapsedMs": elapsed,
-               "login": p.host is not None and needs_login(r.stderr)}
+               "login": login}
         if p.container:  # (stopped: Start, and no checks until then; gone; paused)
             kind = container_problem(p, r.returncode, r.stderr)[1]
             if kind in ("stopped", "paused", "gone"):

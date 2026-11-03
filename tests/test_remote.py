@@ -1057,6 +1057,12 @@ class LoginTests(FakeSSH):
         for mode, login in (("denied", True), ("hostkey", True), ("unreachable", False)):
             self.mode(mode)
             self.assertIs(remote.status("lab")["login"], login, mode)
+        # (2026-11-03) not a container's engine saying no there: a login changes nothing, its error says why
+        from unittest import mock
+        denied = subprocess.CompletedProcess([], 1, "", "permission denied while trying to connect to the Docker daemon "
+                                             "socket at unix:///var/run/docker.sock: connect: permission denied\n")
+        with mock.patch.object(remote, "ssh", return_value=denied):
+            self.assertIs(remote.status("docker:web@lab")["login"], False)
 
     def test_logged_in_while_the_connection_you_opened_is_there(self):
         self.assertIs(remote.status("lab")["loggedIn"], False)
