@@ -251,14 +251,25 @@ def ssh(host, command, stdin=None, timeout=RUN_TIMEOUT):
     return run_on(host, command, stdin, timeout)
 
 
+# First on a host: a python3 older than 3.7 there (RHEL 8's is 3.6) says so,
+# not the error of a call it lacks later on
+PYTHON_CHECK = ("import sys\n"
+                "if sys.version_info < (3, 7):\n"
+                "    import json\n"
+                "    why = 'python3 there is %d.%d; Talpy Den needs 3.7 or newer' % sys.version_info[:2]\n"
+                "    sys.stdout.write('\\n" + cs.REMOTE_MARK + " ' + json.dumps({'ok': False, 'error': why, 'message': why}) + '\\n')\n"
+                "    sys.exit(0)\n")
+
+
 def host_script(name="talpy_den.py", also=()):
     """What runs on a host, on python3's stdin: talpy_den.py, or another
     script of this folder that imports it (sharing.py), after talpy_den.py
-    (and the scripts also, e.g. accounts.py) loaded as those modules."""
+    (and the scripts also, e.g. accounts.py) loaded as those modules; each
+    after PYTHON_CHECK."""
     status = (HERE / "talpy_den.py").read_text(encoding="utf-8")
     if name == "talpy_den.py":
-        return status
-    script = "import sys, types\n"
+        return PYTHON_CHECK + status
+    script = PYTHON_CHECK + "import sys, types\n"
     for module in ("talpy_den.py", *also):
         text = status if module == "talpy_den.py" else (HERE / module).read_text(encoding="utf-8")
         script += (f"module = sys.modules[{module[:-3]!r}] = types.ModuleType({module[:-3]!r})\n"

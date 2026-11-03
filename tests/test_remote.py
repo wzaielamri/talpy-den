@@ -185,6 +185,16 @@ class HostListTests(unittest.TestCase):
             cfg.write_text(f"Include {cfg}\nHost a\n")
             self.assertEqual([h["name"] for h in remote.ssh_hosts(cfg)], ["a"])
 
+    def test_a_python3_too_old_there_says_so(self):
+        # (2026-11-03) RHEL 8's 3.6 said "AttributeError: type object 'datetime.datetime' has no attribute 'fromisoformat'"
+        from unittest import mock
+        for script in (remote.host_script(), remote.host_script("sharing.py", ("accounts.py",))):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), mock.patch.object(sys, "version_info", (3, 6, 8, "final", 0)), \
+                    self.assertRaises(SystemExit):
+                exec(compile(script, "<stdin>", "exec"), {"__name__": "__main__"})
+            self.assertEqual(remote.answer_after_mark(out.getvalue())["error"], "python3 there is 3.6; Talpy Den needs 3.7 or newer")
+
     def test_host_names_checked(self):
         for bad in ("-oProxyCommand=evil", "a b", "", "x;rm", "$(id)"):
             with self.assertRaises(ValueError):
