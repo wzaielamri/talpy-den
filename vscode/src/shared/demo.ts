@@ -560,7 +560,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       answered: 148, refused: 2, waitMs: 3.3 * HOUR, byTool: [["Bash", 81], ["Edit", 39], ["Read", 24], ["WebFetch", 4]],
       rules: [
         { kind: "dir", value: "/home/alice/projects/shared-ui", project: "/home/alice/projects/webapp", count: 24, waitMs: 2.1 * HOUR,
-          example: "~/projects/shared-ui/src/button.tsx", id: "a1b2c3d4e5f6", state: "new", title: "Let chats in webapp read ~/projects/shared-ui",
+          example: "~/projects/shared-ui/src/button.tsx", id: "a1b2c3d4e5f6", state: "new", title: "Let chats in webapp use ~/projects/shared-ui (read; edit too when they accept edits)",
           change: "adds ~/projects/shared-ui to permissions.additionalDirectories in ~/projects/webapp/.claude/settings.local.json" },
         { kind: "allow", value: "Bash(git status *)", project: "/home/alice/projects/date-parser", count: 11, waitMs: 14 * MIN,
           example: "git status --short", id: "0f1e2d3c4b5a", state: "added", title: "Allow “git status” in date-parser",

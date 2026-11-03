@@ -1670,7 +1670,8 @@ def rule_state(kind, value, project, home, added, accounts=None, profiles=None):
 def rule_title(kind, value, project, home):
     where = project_name(project, home)
     if kind == "dir":
-        return "Let chats in %s read %s" % (where, tilde(value, home))
+        # (a working folder of theirs: read, and changed without asking too in accept edits mode)
+        return "Let chats in %s use %s (read; edit too when they accept edits)" % (where, tilde(value, home))
     if kind == "edits":
         return "Let chats in %s edit their files without asking" % where
     if value.startswith("Bash("):
@@ -1923,7 +1924,7 @@ def granted_title(kind, value, home):
     if kind == "flag":
         return FLAGS.get(value) or "You accepted bypass permissions mode's warning"
     if kind == "dir":
-        return "Read files in %s" % tilde(os.path.expanduser(value), home)
+        return "Use files in %s (read; edit too when chats accept edits)" % tilde(os.path.expanduser(value), home)
     if kind == "trust":
         return "Trusted folder: %s" % tilde(value, home)
     if kind == "mcp":

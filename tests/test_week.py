@@ -1194,7 +1194,7 @@ class PromptTests(Projects):
         self.assertEqual(rules, [("dir", str(self.lib), 2, "new"), ("edits", str(self.app), 1, "new"),
                                  ("allow", "Bash(git status *)", 1, "new"),
                                  ("allow", "WebFetch(domain:docs.example.org)", 1, "new")])
-        self.assertEqual(p["rules"][0]["title"], "Let chats in app read ~/repos/lib")
+        self.assertEqual(p["rules"][0]["title"], "Let chats in app use ~/repos/lib (read; edit too when they accept edits)")
         self.assertIn("additionalDirectories", p["rules"][0]["change"])
 
     def test_a_forked_chat_counts_its_prompts_and_compactions_once(self):
@@ -1360,7 +1360,7 @@ class GrantedTests(Projects):
         self.assertEqual([(g["kind"], g["value"], g["title"], g["place"], g["where"]) for g in self.granted()], [
             ("allow", "Bash(npm test *)", "Run “npm test *”", "every chat of personal, work", "~/.claude-shared/settings.json"),
             ("mode", "acceptEdits", "Accept file edits without asking", "chats started in app", "~/repos/app/.claude/settings.local.json"),
-            ("dir", str(self.lib), "Read files in ~/repos/lib", "chats started in app", "~/repos/app/.claude/settings.local.json"),
+            ("dir", str(self.lib), "Use files in ~/repos/lib (read; edit too when chats accept edits)", "chats started in app", "~/repos/app/.claude/settings.local.json"),
             ("allow", "Bash(git status *)", "Run “git status *”", "chats started in app", "~/repos/app/.claude/settings.local.json"),
             ("allow", "WebFetch(domain:docs.example.org)", "Open pages from docs.example.org", "chats started in app",
              "~/repos/app/.claude/settings.local.json"),
