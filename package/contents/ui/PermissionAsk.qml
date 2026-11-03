@@ -56,7 +56,33 @@ ColumnLayout {
     })
     // (another prompt, or another chat's: a Deny… begun for the one before is dropped, with its note)
     readonly property string requestKey: permission ? (permission.request || permission.line || "") : ""
-    onRequestKeyChanged: cancelDeny()
+    // Another prompt in the place of the one shown (a parallel subagent's, the next one): its buttons wait a
+    // moment, so a click meant for the one before doesn't answer it, and it says it's new (not the hook's
+    // request coming for the prompt shown: the same thing asked)
+    property var shown: null          // {request, what} of the prompt shown
+    property bool settling: false     // (its buttons wait)
+    property bool fresh: false        // (it says "New prompt")
+    onRequestKeyChanged: {
+        cancelDeny()
+        const what = permission ? [permission.tool, permission.line, permission.command, permission.file].join("\n") : ""
+        const request = permission ? permission.request || "" : ""
+        if (shown && permission && (what !== shown.what || (request && shown.request && request !== shown.request))) {
+            settling = fresh = true
+            settleTimer.restart()
+            freshTimer.restart()
+        }
+        shown = permission ? { request: request, what: what } : null
+    }
+    Timer {
+        id: settleTimer
+        interval: 600
+        onTriggered: ask.settling = false
+    }
+    Timer {
+        id: freshTimer
+        interval: 3000
+        onTriggered: ask.fresh = false
+    }
 
     function cancelDeny() {
         denying = false
@@ -83,13 +109,13 @@ ColumnLayout {
         font.bold: true
         font.pointSize: ask.pt
         wrapMode: Text.Wrap
-        text: !ask.permission ? ""
+        text: (ask.fresh && ask.permission ? i18n("New prompt · ") : "") + (!ask.permission ? ""
               : ask.plan ? i18n("Claude has a plan, ready to start:")
               : ask.asksQuestions ? (ask.questions.length > 1 ? i18n("Claude asks you %1 questions:", ask.questions.length)
                                                               : i18n("Claude asks you:"))
               : ask.permission.command ? i18n("Claude asks to run:")
               : ask.permission.file ? i18n("Claude asks to change %1:", ask.permission.file)
-              : i18n("Claude asks: %1", ask.permission.line)
+              : i18n("Claude asks: %1", ask.permission.line))
     }
     Rectangle {
         visible: !!ask.permission && ask.permission.command !== ""
@@ -198,7 +224,7 @@ ColumnLayout {
     QuestionForm {
         id: questionForm
         visible: ask.asksQuestions
-        enabled: ask.canAnswer && !ask.busy
+        enabled: ask.canAnswer && !ask.busy && !ask.settling
         Layout.fillWidth: true
         Layout.topMargin: Kirigami.Units.smallSpacing
         questions: ask.questions
@@ -212,13 +238,13 @@ ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
         PlasmaComponents3.Button {
-            enabled: !ask.busy && questionForm.complete
+            enabled: !ask.busy && !ask.settling && questionForm.complete
             icon.name: Icons.plasma.send
             text: i18n("Send answers")
             onClicked: ask.answered("answer", "", questionForm.answers())
         }
         PlasmaComponents3.Button {
-            enabled: !ask.busy
+            enabled: !ask.busy && !ask.settling
             icon.name: Icons.plasma.deny
             icon.color: Icons.color("deny", Kirigami.Theme)
             text: i18n("Decline…")
@@ -234,7 +260,7 @@ ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
         PlasmaComponents3.Button {
-            enabled: !ask.busy
+            enabled: !ask.busy && !ask.settling
             icon.name: Icons.plasma.always
             icon.color: Icons.color("always", Kirigami.Theme)
             text: i18n("Approve, accept edits")
@@ -249,7 +275,7 @@ ColumnLayout {
             }
         }
         PlasmaComponents3.Button {
-            enabled: !ask.busy
+            enabled: !ask.busy && !ask.settling
             icon.name: Icons.plasma.allow
             icon.color: Icons.color("allow", Kirigami.Theme)
             text: i18n("Approve")
@@ -263,7 +289,7 @@ ColumnLayout {
             }
         }
         PlasmaComponents3.Button {
-            enabled: !ask.busy
+            enabled: !ask.busy && !ask.settling
             icon.name: Icons.plasma.edit
             text: i18n("Keep planning…")
             onClicked: ask.denyWithNote()
@@ -275,7 +301,7 @@ ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
         PlasmaComponents3.Button {
-            enabled: !ask.busy
+            enabled: !ask.busy && !ask.settling
             icon.name: Icons.plasma.allow
             icon.color: Icons.color("allow", Kirigami.Theme)
             text: i18n("Allow once")
@@ -283,7 +309,7 @@ ColumnLayout {
         }
         PlasmaComponents3.Button {
             visible: ask.permission && (ask.permission.answer === "keys" || ask.permission.always !== "")
-            enabled: !ask.busy
+            enabled: !ask.busy && !ask.settling
             icon.name: Icons.plasma.always
             icon.color: Icons.color("always", Kirigami.Theme)
             text: i18n("Always allow")
@@ -299,7 +325,7 @@ ColumnLayout {
             }
         }
         PlasmaComponents3.Button {
-            enabled: !ask.busy
+            enabled: !ask.busy && !ask.settling
             icon.name: Icons.plasma.deny
             icon.color: Icons.color("deny", Kirigami.Theme)
             text: i18n("Deny…")
@@ -323,7 +349,7 @@ ColumnLayout {
         }
         PlasmaComponents3.Button {
             id: denyButton
-            enabled: !ask.busy
+            enabled: !ask.busy && !ask.settling
             icon.name: ask.plan ? Icons.plasma.edit : Icons.plasma.deny
             icon.color: ask.plan ? "transparent" : Icons.color("deny", Kirigami.Theme)
             text: ask.plan ? i18n("Keep planning") : ask.asksQuestions ? i18n("Decline") : i18n("Deny")

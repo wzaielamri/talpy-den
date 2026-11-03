@@ -8,7 +8,7 @@ import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { attachedTag, clipboardCode, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, picturesIn, PICTURE_TYPES, promptHistory, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
-import { AskBox, askKey } from "./components/AskBox";
+import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
 import type { Answers, Decision, Session } from "../src/shared/types";
 import { agentsNow, agentsRunningFirst, modeHint, modeText } from "../src/shared/model";
@@ -809,7 +809,7 @@ function ChatApp() {
               </div>
             ) : null}
           </div>
-          {chat?.permission ? <AskBox key={askKey(chat.permission)} ask={chat.permission} onAnswer={answer} busy={answering > 0} /> : null}
+          {chat?.permission ? <AskBox ask={chat.permission} onAnswer={answer} busy={answering > 0} /> : null}
           {chat?.queued ? (
             <div class="pane-queued">
               <span>Sent when this turn ends: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}</span>

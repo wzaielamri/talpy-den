@@ -38,7 +38,7 @@ import { useLiveView } from "../util/stores";
 import { toggleAgentDetail, toggleAgents, togglePeek, uiState } from "../util/ui";
 import { askDelete, DeleteAsk } from "./DeleteAsk";
 import { AgentTree } from "./AgentTree";
-import { AskBox, askKey } from "./AskBox";
+import { AskBox } from "./AskBox";
 import { useView } from "./context";
 import { I, Icon, T } from "../util/icons";
 import { Elided } from "./Elided";
@@ -355,7 +355,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
         ) : null}
 
         {s.state === "waiting" && s.permission ? (
-          <AskBox key={askKey(s.permission)} ask={s.permission} max={6} compact
+          <AskBox ask={s.permission} max={6} compact
             onAnswer={(decision, note, answers) => post({ type: "answerPermission", chat, decision, note, answers, shown: shownAsk(s.permission) })}
             onWholePlan={() => post({ type: "openPane", chat, tab: "chat" })} />
         ) : null}

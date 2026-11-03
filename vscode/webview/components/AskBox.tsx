@@ -2,17 +2,24 @@
 // Deny (with a note), or Claude's questions to answer: in its row and in its
 // chat tab (a change it asks for as CodeView.tsx draws it).
 
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Answers, Decision, PermissionAsk, Question } from "../../src/shared/types";
 import { I, Icon, T } from "../util/icons";
 import { Markdown } from "../util/markdown";
 import { Diff } from "./CodeView";
 
-// The prompt an AskBox is for, its key where it's drawn: a Deny note begun
-// for one prompt goes when the chat asks the next
+// The prompt an AskBox is for: a Deny note begun for one prompt goes when
+// the chat asks the next
 export function askKey(ask: PermissionAsk): string {
   return ask.request ?? ask.line;
 }
+
+// Another prompt in the place of the one shown (a parallel subagent's, the
+// next one): its buttons wait SETTLE_MS, so a click meant for the one before
+// doesn't answer it, and it says it's new for FRESH_MS (not the hook's request
+// coming for the prompt shown: the same thing asked)
+const SETTLE_MS = 600;
+const FRESH_MS = 3000;
 
 // What it asks with when there's no command or change to show (an MCP
 // tool's, a page's): in a row the first ARG_ROWS, one line each (the chat's
@@ -29,7 +36,30 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
   max?: number;
   compact?: boolean; // (in a row: the options' descriptions in tooltips)
 }) {
-  const [denying, setDenying] = useState(false);
+  const k = askKey(ask);
+  const what = [ask.tool, ask.line, ask.command, ask.file].join("\n");
+  const request = ask.request ?? "";
+  const shown = useRef({ k, what, request, changed: 0 });
+  if (shown.current.k !== k) {
+    const other = what !== shown.current.what || (!!request && !!shown.current.request && request !== shown.current.request);
+    shown.current = { k, what, request, changed: other ? Date.now() : 0 };
+  }
+  const since = shown.current.changed ? Date.now() - shown.current.changed : Infinity;
+  const settling = since < SETTLE_MS;
+  const fresh = since < FRESH_MS;
+  const [, redraw] = useState(0);
+  useEffect(() => {
+    if (!fresh) return;
+    const timers = [SETTLE_MS, FRESH_MS].filter((ms) => ms > since).map((ms) => setTimeout(() => redraw((n) => n + 1), ms - since));
+    return () => timers.forEach(clearTimeout);
+  }, [shown.current.changed]);
+  const off = busy || settling;
+  const [denyingFor, setDenyingFor] = useState(""); // (the prompt a Deny… was begun for)
+  const denying = denyingFor === k;
+  const setDenying = (on: boolean) => {
+    if (on && !denying) setNote("");
+    setDenyingFor(on ? k : "");
+  };
   const [note, setNote] = useState("");
   const canAnswer = ask.answer === "hook" || ask.answer === "keys";
   const questions = ask.questions ?? [];
@@ -39,13 +69,14 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
     ? questions.length > 1 ? `Claude asks you ${questions.length} questions:` : "Claude asks you:"
     : ask.command ? "Claude asks to run:" : ask.file ? `Claude asks to change ${ask.file}:` : `Claude asks: ${ask.line}`;
   const deny = () => {
+    if (off) return;
     onAnswer(plan ? "keep" : "deny", note);
     setDenying(false);
     setNote("");
   };
   return (
     <div class="ask-box">
-      <div class="ask-title">{title}</div>
+      <div class="ask-title">{fresh ? "New prompt · " : ""}{title}</div>
       {ask.command ? <pre class="ask-command">{ask.command}</pre> : null}
       {args.length ? (
         <div class={"ask-command ask-args" + (compact ? " compact" : "")}>
@@ -63,15 +94,15 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
       ) : null}
       {canAnswer && !denying && plan ? (
         <div class="ask-buttons">
-          <button type="button" class="btn secondary" disabled={busy} onClick={() => onAnswer("approve-edits", "")}
+          <button type="button" class="btn secondary" disabled={off} onClick={() => onAnswer("approve-edits", "")}
             title="It starts on the plan and changes files without asking for the rest of this chat (accept edits mode); commands still ask.">
             <Icon name={I.always} tone={T.always} /><strong>Approve, accept edits</strong>
           </button>
-          <button type="button" class="btn secondary" disabled={busy} onClick={() => onAnswer("approve", "")}
+          <button type="button" class="btn secondary" disabled={off} onClick={() => onAnswer("approve", "")}
             title="It starts on the plan and asks before each change, as “Yes, manually approve edits” in its dialog.">
             <Icon name={I.allow} tone={T.allow} />Approve
           </button>
-          <button type="button" class="btn secondary" disabled={busy} onClick={() => setDenying(true)}><Icon name={I.edit} />Keep planning…</button>
+          <button type="button" class="btn secondary" disabled={off} onClick={() => setDenying(true)}><Icon name={I.edit} />Keep planning…</button>
         </div>
       ) : null}
       {ask.diff.length ? <Diff lines={ask.diff} max={max} path={ask.file} /> : null}
@@ -79,7 +110,7 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
         <QuestionForm
           key={askKey(ask)}
           questions={questions}
-          enabled={canAnswer && !busy}
+          enabled={canAnswer && !off}
           buttons={canAnswer && !denying}
           compact={compact}
           onSend={(answers) => onAnswer("answer", "", answers)}
@@ -88,12 +119,12 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
       ) : null}
       {canAnswer && !denying && !questions.length && !plan ? (
         <div class="ask-buttons">
-          <button type="button" class="btn secondary" disabled={busy} onClick={() => onAnswer("allow", "")}><Icon name={I.allow} tone={T.allow} />Allow once</button>
+          <button type="button" class="btn secondary" disabled={off} onClick={() => onAnswer("allow", "")}><Icon name={I.allow} tone={T.allow} />Allow once</button>
           {ask.answer === "keys" || ask.always ? (
             <button
               type="button"
               class="btn secondary"
-              disabled={busy}
+              disabled={off}
               title={ask.answer === "keys" ? "Like “Yes, and don't ask again” in its dialog (for an edit, “Yes, allow all edits during this session”)."
                 : `From now on, without asking: ${ask.always}.`}
               onClick={() => onAnswer("always", "")}
@@ -101,7 +132,7 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
               <Icon name={I.always} tone={T.always} />Always allow
             </button>
           ) : null}
-          <button type="button" class="btn secondary" disabled={busy} onClick={() => setDenying(true)}><Icon name={I.deny} tone={T.deny} />Deny…</button>
+          <button type="button" class="btn secondary" disabled={off} onClick={() => setDenying(true)}><Icon name={I.deny} tone={T.deny} />Deny…</button>
         </div>
       ) : null}
       {canAnswer && denying ? (
@@ -114,13 +145,13 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
             onInput={(e) => setNote((e.target as HTMLInputElement).value)}
             onKeyDown={(e) => {
               // (not the Enter that picks a word in an input method's list)
-              if (e.key === "Enter" && !e.isComposing && !busy) {
+              if (e.key === "Enter" && !e.isComposing && !off) {
                 e.preventDefault();
                 deny();
               }
             }}
           />
-          <button type="button" class="btn secondary" disabled={busy} onClick={deny}>{plan ? <Icon name={I.edit} /> : <Icon name={I.deny} tone={T.deny} />}{plan ? "Keep planning" : questions.length ? "Decline" : "Deny"}</button>
+          <button type="button" class="btn secondary" disabled={off} onClick={deny}>{plan ? <Icon name={I.edit} /> : <Icon name={I.deny} tone={T.deny} />}{plan ? "Keep planning" : questions.length ? "Decline" : "Deny"}</button>
           <button type="button" class="btn secondary" onClick={() => setDenying(false)}>Cancel</button>
         </div>
       ) : null}
