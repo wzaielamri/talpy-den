@@ -202,7 +202,7 @@ export function claudeCodeReopenHint(g: Pick<Group, "host" | "vscodeHere" | "pro
       : `Claude Code ${hostWhere(g.host)} runs on another account: a new chat in its Claude Code chat tab on this one switches it, in a window connected to ${hostLabel(g.host)}.`;
   if (!claudeCodeHere(g, info)) {
     const on = groups.find((o) => !o.host && !!info.profileKey && (o.profileKeys ?? []).includes(info.profileKey));
-    return `Claude Code runs on ${on ? on.title : info.profileKey || "another account"}, not ${g.title}: switch it with “Talpy Den: Default Claude Account…” (or the account in the status bar) to reopen this account's chats there.`;
+    return `Claude Code runs on ${on ? on.title : info.profileKey || "another account"}, not ${g.title}: switch it with “Talpy Den: Default Claude Account…” (or the link in the hover of Talpy Den's status bar item) to reopen this account's chats there.`;
   }
   return "Opens the chat in a Claude Code panel, in the VS Code window that has the chat's folder (opened if it isn't).";
 }

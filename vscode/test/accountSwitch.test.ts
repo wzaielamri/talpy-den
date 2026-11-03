@@ -32,9 +32,11 @@ test("a Remote-SSH window shows the host's account and switches it in the host's
   })) as unknown as typeof stub.workspace.getConfiguration;
   try {
     const account = new AccountSwitch(dash);
-    account.update(state);
-    const item = stub.recorded.statusBarItems.at(-1)!;
-    assert.equal(item.text, "$(account) Claude: work");
+    // (named in Talpy Den's status bar item, its hover linking to the switch)
+    const shown = account.update(state);
+    assert.equal(shown?.name, "work");
+    assert.equal(shown?.group, groups[0]);
+    assert.equal(shown?.tip, "Claude Code on lab runs on work · Team.");
     assert.equal(await account.switchHost(groups[1]), true);
     assert.deepEqual(updates, [["environmentVariables",
       [{ name: "FOO", value: "1" }, { name: "CLAUDE_CONFIG_DIR", value: "/home/me/.claude-personal" }], stub.ConfigurationTarget.Global]]);
@@ -44,7 +46,6 @@ test("a Remote-SSH window shows the host's account and switches it in the host's
     assert.deepEqual(updates[1], ["environmentVariables", [{ name: "FOO", value: "1" }], stub.ConfigurationTarget.Global]);
     assert.equal(await account.switchHost(hostGroup("old", "old", false, undefined)), false);
     assert.equal(updates.length, 2);
-    account.dispose();
   } finally {
     stub.env.remoteName = undefined;
     stub.workspace.getConfiguration = realConfig;
@@ -79,7 +80,6 @@ test("making a host's account the default also points the host's ~/.claude there
     // a new chat's switch (not as the default) leaves the host's ~/.claude alone
     assert.equal(await account.switchHost(groups[1]), true);
     assert.equal(calls.length, 2);
-    account.dispose();
   } finally {
     stub.env.remoteName = undefined;
     stub.workspace.getConfiguration = realConfig;

@@ -1,5 +1,6 @@
 // VS Code's Claude, the Claude Code extension's panel: which account it runs
-// on (a status bar item) and switching it, through VS Code's own setting
+// on (named in Talpy Den's status bar item, statusBar.ts, with a link in its
+// hover to switch) and switching it, through VS Code's own setting
 // (vscodeAccount.ts). In a Remote-SSH window the panel runs on the host: the
 // setting is a machine setting, which VS Code keeps per host (its Remote
 // Settings, written from a window connected to it), so the host's accounts
@@ -37,8 +38,17 @@ function panelDir(): string {
   return panelConfigDir(vscode.workspace.getConfiguration("claudeCode").get("environmentVariables"));
 }
 
-export class AccountSwitch implements vscode.Disposable {
-  private item = vscode.window.createStatusBarItem("talpyDen.account", vscode.StatusBarAlignment.Right, 99);
+// The account the status bar item names (null: one account, nothing to
+// tell apart): its short name, its group (so the usage next to it is known
+// to be its own), what its hover says, and what the hover's link does
+export interface AccountShown {
+  name: string;
+  group?: Group;
+  tip: string;
+  link: string;
+}
+
+export class AccountSwitch {
   private startedOn = realOr(panelDir()); // the folder this window's panel started on
   private switching = false;
   private told = "";
@@ -46,33 +56,28 @@ export class AccountSwitch implements vscode.Disposable {
   constructor(
     private dash: Dashboard,
     private backend?: Backend, // for pointing ~/.claude at the default account too (accounts.py)
-  ) {
-    this.item.name = "Talpy Den: VS Code's Claude account";
-    this.item.command = "talpyDen.switchAccount";
-  }
+  ) {}
 
-  dispose(): void {
-    this.item.dispose();
-  }
-
-  update(state: ViewState): void {
+  // Which account VS Code's Claude runs on, for the status bar item; and a
+  // window whose panel's account was switched elsewhere offers to reload
+  update(state: ViewState): AccountShown | null {
     if (vscode.env.remoteName) return this.updateOnHost(state);
     const groups = state.status?.groups ?? [];
-    if (state.demo || groups.length < 2) {
-      this.item.hide();
-      return;
-    }
+    if (state.demo || groups.length < 2) return null;
     const key = localPanelProfileKey();
     const group = groups.find((g) => g.profileKeys.includes(key));
     const dir = panelDir();
-    this.item.text = `$(account) Claude: ${group ? group.name : key}`;
     const plain = groups.find((g) => g.plainHere);
-    this.item.tooltip =
-      `VS Code's Claude runs on ${group ? group.title : key} (${tildify(dir)})` +
-      (group?.defaultHere ? ", the default account" : "") +
-      (plain && plain !== group ? `; plain claude on ${plain.title}` : "") +
-      ". Click to change the default account.";
-    this.item.show();
+    const shown: AccountShown = {
+      name: group ? group.name : key,
+      group,
+      tip:
+        `VS Code's Claude runs on ${group ? group.title : key} (${tildify(dir)})` +
+        (group?.defaultHere ? ", the default account" : "") +
+        (plain && plain !== group ? `; plain claude on ${plain.title}` : "") +
+        ".",
+      link: "Change the default account…",
+    };
     // Switched elsewhere (another window, or by hand): this window's panel
     // runs on the old account until the window reloads
     const now = realOr(dir);
@@ -85,21 +90,22 @@ export class AccountSwitch implements vscode.Disposable {
         )
         .then((c) => c && vscode.commands.executeCommand(RELOAD));
     }
+    return shown;
   }
 
   // A Remote-SSH window: the host's accounts, and which one Claude Code there
   // runs on (its backend reads the VS Code server's settings)
-  private updateOnHost(state: ViewState): void {
+  private updateOnHost(state: ViewState): AccountShown | null {
     const host = this.dash.currentHost;
     const groups = host ? (machineStatus(state, host)?.groups ?? []) : [];
-    if (!host || state.demo || groups.length < 2) {
-      this.item.hide();
-      return;
-    }
+    if (!host || state.demo || groups.length < 2) return null;
     const on = groups.find((g) => g.vscodeHere);
-    this.item.text = `$(account) Claude: ${on ? on.name : "?"}`;
-    this.item.tooltip = `Claude Code on ${host} runs on ${on ? on.title : "an account Talpy Den can't tell"}. Click to switch.`;
-    this.item.show();
+    return {
+      name: on ? on.name : "?",
+      group: on,
+      tip: `Claude Code on ${host} runs on ${on ? on.title : "an account Talpy Den can't tell"}.`,
+      link: `Change ${host}'s default account…`,
+    };
   }
 
   async switch(): Promise<void> {
@@ -309,7 +315,7 @@ export class AccountSwitch implements vscode.Disposable {
       this.fail(`Couldn't change Claude Code's settings on ${group.host}: ${(err as Error).message}`);
       return false;
     }
-    void this.dash.refreshAll(); // the host's accounts and this item follow
+    void this.dash.refreshAll(); // the host's accounts and the status bar item follow
     return true;
   }
 

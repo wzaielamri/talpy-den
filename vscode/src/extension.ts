@@ -53,7 +53,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const notifier = new Notifier(backend, (chat) => void actions?.open(chat));
   const dash = new Dashboard(backend, notifier, log);
   const terminals = new Terminals((host, since) => dash.hostCheckedSince(host, since), (host, command) => backend.attachLine(host, command));
-  const statusBar = new StatusBar(); // (first: the main status bar item)
+  const statusBar = new StatusBar(); // (Talpy Den's one status bar item; the account it names comes from account)
   const account = new AccountSwitch(dash, backend);
   const answerOldest = async (decision: "allow" | "deny"): Promise<void> => {
     const r = await backend.pane(["--oldest", decision], 20000);
@@ -145,12 +145,10 @@ export function activate(context: vscode.ExtensionContext): void {
     dash,
     view,
     statusBar,
-    account,
     registerPreview(),
     vscode.window.registerWebviewViewProvider(ViewHost.viewId, view, { webviewOptions: { retainContextWhenHidden: true } }),
     dash.onState((state) => {
-      statusBar.update(state);
-      account.update(state);
+      statusBar.update(state, account.update(state));
       const waiting = countStates(allGroups(state.status, state.hosts)).waiting;
       view.setBadge(waiting, dash.unseenCount());
       // (Go to the Chat That Needs You shows in the view's ⋯ menu only while one does)
@@ -241,7 +239,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("talpyDen.dictationModels", () => dictationModels(backend)),
     panes,
   );
-  statusBar.update(dash.state());
+  statusBar.update(dash.state(), account.update(dash.state()));
   void dash.start();
 }
 
