@@ -968,6 +968,24 @@ def chat_to_delete(profiles, chat_id, name, root):
     return labels, paths, path
 
 
+def moved_before(profiles, src, name, root, home):
+    """What a chat Claude moved to the background under a new id (src: its
+    transcript) was before, which goes with it: [(the id it had, its
+    accounts, its paths)] (chat_to_delete), each chat it moved from
+    (LinkCache.moved_from), newest first; not one open or at work (that one
+    is listed by itself)."""
+    links, found, seen = cs.LinkCache(cs.cache_dir(home) / "links.json"), [], {src.stem}
+    old = links.moved_from(src)
+    while old and old not in seen:
+        seen.add(old)
+        labels, paths, path = chat_to_delete(profiles, old, name, root)
+        if labels is None or open_in(profiles, old) or job_at_work(profiles, chat_jobs(profiles, old)):
+            break
+        found.append((old, labels, paths))
+        old = links.moved_from(path)
+    return found
+
+
 def plan_to_delete(profiles, slug, name, home=None):
     """A plan that goes (the profile name's, else the only one), from every
     profile it's linked into: (its accounts, its paths, the file), or (None,
@@ -1088,7 +1106,7 @@ def delete(profiles, kind, item, name, root, home, describe=False):
     is the one to ask; "open" names the account a session has the chat open
     on (it isn't deleted then: ok is false, the message says why), as does
     a background job of the chat that isn't finished."""
-    at_work = None
+    at_work, before = None, []
     if kind == "memory":
         p, path = memory_to_delete(profiles, item)
         if p is None:
@@ -1118,8 +1136,14 @@ def delete(profiles, kind, item, name, root, home, describe=False):
             title = item[:8]
         busy = open_in(profiles, item)
         at_work = None if busy else job_at_work(profiles, chat_jobs(profiles, item))
+        # (else what it was before Claude moved it to the background comes back as a chat of its own)
+        before = moved_before(profiles, src, name, root, home)
+        for _old, more, older in before:
+            labels += [label for label in more if label not in labels]
+            paths += [path for path in older if path not in paths]
         question = (f"Delete “{title}” on {and_list(labels)}? It goes to the Trash with its subagents and "
-                    "checkpoints; the Recap keeps its numbers.")
+                    "checkpoints" + (", and its older copy from before Claude moved it to the background" if before else "")
+                    + "; the Recap keeps its numbers.")
     why = f"It's open on {busy}. Exit it there first." if busy else ""
     if at_work:
         why = f"It runs in the background on {at_work}. Stop it first."
@@ -1139,7 +1163,8 @@ def delete(profiles, kind, item, name, root, home, describe=False):
             message += f", but MEMORY.md still names it ({exc.strerror or exc})"
     if ok:
         try:
-            cs.forget_deleted(cs.cache_dir(home), kind + "s" if kind != "memory" else "memories", item)
+            for i in [item] + [old for old, _, _ in before]:
+                cs.forget_deleted(cs.cache_dir(home), kind + "s" if kind != "memory" else "memories", i)
         except OSError:
             pass
     return {"ok": ok, "message": message}

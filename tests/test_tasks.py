@@ -1538,6 +1538,14 @@ class MovedChatTests(TaskFixture):
         found = cs.find_chats(self.home, self.cache_root(), [], "app")
         self.assertEqual([c["sessionId"] for c in found["results"]], [self.NEW])
 
+    def test_deleting_it_takes_what_it_was_before_along(self):
+        # (2026-11-03) the old id's transcript came back as a recent chat of the same name
+        with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(Path(self.tmp.name) / "data")}):
+            asked = jump.delete_item(self.home, [], "chat", self.NEW, ".claude-work", describe=True)[2]
+            self.assertIn("checkpoints, and its older copy from before Claude moved it to the background;", asked["question"])
+            self.assertEqual(jump.delete_item(self.home, [], "chat", self.NEW, ".claude-work")[1], "Moved to the Trash")
+        self.assertEqual(list(self.project.glob("*.jsonl")), [])
+
 
 class KeptChatListedTests(TaskFixture):
     """A kept chat whose terminal was closed vanished from its account's
