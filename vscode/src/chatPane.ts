@@ -20,7 +20,7 @@ import { openComparison } from "./changes";
 import { cacheDir, configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
 import { chatRefOf, doingText, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, chatWhere, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
+import { answersOf, askShownOf, chatWhere, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { localAncestors, type Terminals } from "./terminals";
@@ -125,27 +125,34 @@ export class ChatPanes implements vscode.Disposable {
   // as pane.py --send does (tmux, its Claude Code panel's input, the background).
   // how "enter" (Enter in the tab): auto, but a terminal that takes no text
   // gets the copy, so Claude there never quits on an Enter. One message to a
-  // chat at a time (its tab, a notification's Reply…): one sent while another
-  // is still on its way isn't sent.
-  async send(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<{ ok: boolean; message: string; ask?: boolean }> {
+  // chat at a time (its tab, a notification's Reply…), in the order sent: one
+  // sent while another is still on its way goes once that one has (never
+  // dropped). went: it went into the chat itself (typed in, or on in the
+  // background), not into VS Code's input or the clipboard.
+  async send(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<{ ok: boolean; message: string; ask?: boolean; went?: boolean }> {
     text = text.trim();
     if (!text) return { ok: false, message: "Write your message first" };
     if (text.length > TEXT_MAX) return { ok: false, message: "That message is too long" };
     const key = `${chat.host ?? ""}|${chat.chatId || chat.sessionId}`;
-    if (this.sending.has(key)) return { ok: false, message: "Your last message to it is still being sent: try again in a moment" };
-    this.sending.add(key);
+    const before = this.sending.get(key) ?? Promise.resolve();
+    const now = before.then(async () => {
+      try {
+        return await this.sendNow(chat, text, how, afterTurn);
+      } catch (e) {
+        return { ok: false, message: `Couldn't send it: ${e instanceof Error ? e.message : String(e)}` };
+      }
+    });
+    this.sending.set(key, now);
     try {
-      return await this.sendNow(chat, text, how, afterTurn);
-    } catch (e) {
-      return { ok: false, message: `Couldn't send it: ${e instanceof Error ? e.message : String(e)}` };
+      return await now;
     } finally {
-      this.sending.delete(key);
+      if (this.sending.get(key) === now) this.sending.delete(key);
     }
   }
 
-  private sending = new Set<string>(); // "<host>|<chat id>": a message on its way
+  private sending = new Map<string, Promise<unknown>>(); // "<host>|<chat id>": the last message on its way to it
 
-  private async sendNow(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<{ ok: boolean; message: string; ask?: boolean }> {
+  private async sendNow(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<{ ok: boolean; message: string; ask?: boolean; went?: boolean }> {
     const host = chat.host ?? "";
     const chatId = chat.chatId || chat.sessionId;
     const { session } = findPaneRow(this.dash.state(), host, chatId);
@@ -163,7 +170,7 @@ export class ChatPanes implements vscode.Disposable {
       await new Promise((r) => setTimeout(r, 300));
       terminal.sendText("\r", false);
       this.refresh(host);
-      return { ok: true, message: "Sent (typed into its terminal)" };
+      return { ok: true, message: "Sent (typed into its terminal)", went: true };
     }
     const sid = session?.sessionId ?? chat.sessionId;
     // (a long message goes in a file of its own, private to you, that pane.py
@@ -195,7 +202,7 @@ export class ChatPanes implements vscode.Disposable {
       }
     }
     this.refresh(host);
-    return { ok: !!r.ok, message: String(r.message ?? "") };
+    return { ok: !!r.ok, message: String(r.message ?? ""), went: !!r.ok && (r.how === "typed" || r.how === "background") };
   }
 
   // The terminal of this window a chat of this computer (or of the host this
@@ -284,6 +291,8 @@ class Pane implements vscode.Disposable {
       }),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration("talpyDen.chatTextScale")) this.post({ type: "textSize", scale: Pane.textScale() });
+        if (e.affectsConfiguration("talpyDen.chatFont") || e.affectsConfiguration("terminal.integrated.fontFamily")
+            || e.affectsConfiguration("editor.fontFamily")) this.post({ type: "font", family: Pane.chatFont() });
         if (e.affectsConfiguration("talpyDen.diffSideBySide")) this.post({ type: "diffLayout", split: Pane.sideBySide() });
       }),
     );
@@ -291,6 +300,17 @@ class Pane implements vscode.Disposable {
 
   private static sideBySide(): boolean {
     return vscode.workspace.getConfiguration("talpyDen").get("diffSideBySide") !== false;
+  }
+
+  // The conversation's font (talpyDen.chatFont): the terminal's, as Claude's
+  // terminal shows a chat (terminal.integrated.fontFamily, which falls back to
+  // the editor's), the editor's, or "" (VS Code's own)
+  static chatFont(): string {
+    const which = vscode.workspace.getConfiguration("talpyDen").get("chatFont");
+    if (which === "ui") return "";
+    const editor = vscode.workspace.getConfiguration("editor").get<string>("fontFamily") || "var(--vscode-editor-font-family, monospace)";
+    const terminal = which === "editor" ? "" : vscode.workspace.getConfiguration("terminal.integrated").get<string>("fontFamily") || "";
+    return terminal || editor;
   }
 
   private static textScale(): number {
@@ -373,7 +393,8 @@ class Pane implements vscode.Disposable {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     if (this.disposed || !this.panel.visible) return; // (closed: the reading stops)
-    const every = this.host || this.owner.ext.dash.liveHook ? 5000 : 1500;
+    // (with the watcher, only for what it can't see: a moment it wasn't running)
+    const every = this.host ? 5000 : this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
     this.timer = setTimeout(() => void this.load().finally(() => this.schedule()), every);
   }
 
@@ -390,16 +411,65 @@ class Pane implements vscode.Disposable {
         ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...(this.host ? ["--host", this.host] : configDirArgs()),
       ], this.host ? 60000 : 30000);
       if (this.disposed || (r.ok && r.unchanged)) return;
-      if (r.ok && typeof r.stamp === "string") this.stamp = r.stamp;
-      // (at the most a tab shows: no Show earlier, it says so instead)
-      const capped = r.ok && !!r.more && this.limit >= LIMIT_MAX;
-      this.post({ type: "conversation", answer: (r.ok ? { ...r, more: !!r.more && !capped, capped } : r) as never });
+      this.take(r);
     } finally {
       this.loading = false;
       if (this.loadAgain) {
         this.loadAgain = false;
         if (!this.disposed) void this.load();
       }
+    }
+    void this.watch();
+  }
+
+  // A read's answer, or the watcher's (not one read before what's shown: stampFresher)
+  private take(r: Record<string, any>): boolean {
+    if (r.ok && !stampFresher(r.stamp, this.stamp, this.limit)) return false;
+    if (r.ok && typeof r.stamp === "string") this.stamp = r.stamp;
+    // (at the most a tab shows: no Show earlier, it says so instead)
+    const capped = r.ok && !!r.more && this.limit >= LIMIT_MAX;
+    this.post({ type: "conversation", answer: (r.ok ? { ...r, more: !!r.more && !capped, capped } : r) as never });
+    return true;
+  }
+
+  // The watcher: a chat of this computer is read the moment its transcript
+  // changes (pane.py --conversation --wait: it waits for that, up to 50 s,
+  // then again), so your message and what Claude writes show at once, not at
+  // the next look. Not for an SSH host's (a look every 5 s); three failures
+  // in a row: looks only.
+  private watching = false;
+  private watchFailures = 0;
+  private async watch(): Promise<void> {
+    if (this.watching || this.host || this.disposed || !this.stamp || this.watchFailures >= 3) return;
+    this.watching = true;
+    try {
+      // (a pause that doesn't keep VS Code's extension host, or a test, from ending)
+      const pause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms).unref?.());
+      while (!this.disposed && this.panel.visible && this.stamp && this.watchFailures < 3) {
+        const limit = this.limit;
+        const stamp = this.stamp;
+        const asked = Date.now();
+        const r = await this.owner.ext.backend.pane([
+          "--conversation", this.chatId, "--limit", String(limit), "--if-changed", stamp, "--wait", "50",
+          ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...configDirArgs(),
+        ], 70000);
+        if (this.disposed) return;
+        if (!r.ok) {
+          this.watchFailures += 1;
+          await pause(5000);
+          continue;
+        }
+        this.watchFailures = 0;
+        const changed = !r.unchanged && typeof r.stamp === "string" && r.stamp !== stamp;
+        // (one read for another length, Show earlier meanwhile: read again)
+        if (changed && !this.take(r)) void this.load();
+        // (an answer at once is paced: a change that came meanwhile, the next ask a moment later; nothing
+        // new, a pane.py that doesn't wait, an old one on the way: in 5 s. Never again and again)
+        const spent = Date.now() - asked;
+        if (spent < 250) await pause(changed ? 250 - spent : 5000);
+      }
+    } finally {
+      this.watching = false;
     }
   }
 
@@ -411,8 +481,9 @@ class Pane implements vscode.Disposable {
     this.post({ type: "review", answer: r.ok ? (r as never) : null, error: r.ok ? "" : String(r.message ?? "") });
   }
 
-  private result(kind: string, r: { ok: boolean; message: string; ask?: boolean }): void {
-    this.post({ type: "result", kind, ok: r.ok, message: r.message, ...(r.ask ? { ask: true } : {}) });
+  private result(kind: string, r: { ok: boolean; message: string; ask?: boolean; went?: boolean }, id?: number): void {
+    this.post({ type: "result", kind, ok: r.ok, message: r.message, ...(r.ask ? { ask: true } : {}), ...(r.went ? { went: true } : {}),
+                ...(typeof id === "number" ? { id } : {}) });
   }
 
   private async receive(raw: unknown): Promise<void> {
@@ -440,9 +511,8 @@ class Pane implements vscode.Disposable {
       case "send": {
         if (typeof m.text !== "string" || !["auto", "background", "copy", "enter"].includes(m.how)) break;
         const r = await this.owner.send(this.chat, m.text, m.how, m.afterTurn === true);
-        this.result(m.afterTurn ? "later" : "send", r);
-        this.stamp = "";
-        await this.load();
+        this.result(m.afterTurn ? "later" : "send", r, typeof m.id === "number" ? m.id : undefined);
+        await this.load();   // (the watcher has it already, as it's written; an SSH host's chat now)
         break;
       }
       case "unqueue": {
@@ -664,7 +734,7 @@ class Pane implements vscode.Disposable {
     const { uri } = this.owner.ext;
     const nonce = crypto.randomBytes(16).toString("base64");
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(uri, ...p)).toString();
-    const config = JSON.stringify({ tab, local: !this.host, scale: Pane.textScale(), split: Pane.sideBySide() });
+    const config = JSON.stringify({ tab, local: !this.host, scale: Pane.textScale(), split: Pane.sideBySide(), font: Pane.chatFont() });
     const csp = [
       "default-src 'none'",
       "base-uri 'none'",

@@ -561,6 +561,18 @@
               "markdownDescription": "Text size in a chat's tab, times VS Code's font size. The tab's A− / A+ buttons and Ctrl+wheel change it.",
               "order": 8
             },
+            "talpyDen.chatFont": {
+              "type": "string",
+              "enum": ["terminal", "editor", "ui"],
+              "enumDescriptions": [
+                "The integrated terminal's font (else the editor's), as Claude's terminal shows a chat",
+                "The editor's font",
+                "VS Code's own interface font"
+              ],
+              "default": "terminal",
+              "markdownDescription": "The font of a chat's tab: its conversation and your reply.",
+              "order": 8
+            },
             "talpyDen.dictateLanguage": {
               "type": "string",
               "default": "auto",

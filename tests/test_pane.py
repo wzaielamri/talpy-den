@@ -1420,6 +1420,71 @@ class TestsAfterEditTests(PaneFixture):
         self.assertEqual([c for c in others if cs.is_test_run(c)], [])
 
 
+class QuickChatTests(PaneFixture):
+    """What makes the pane quick: --wait answers the moment the transcript
+    changes; a send with no profile named works; the terminal's font."""
+
+    def test_wait_answers_when_the_transcript_changes(self):
+        t = self.now - 100
+        self.chat(prompt("run the tests", t, cwd=str(self.folder)))
+        stamp = self.cli("--conversation", SID)["stamp"]
+        start = time.time()
+        # (nothing new: unchanged once the wait is over)
+        self.assertEqual(self.cli("--conversation", SID, "--if-changed", stamp, "--wait", "0.3"), {"ok": True, "unchanged": True})
+        self.assertGreaterEqual(time.time() - start, 0.25)
+
+        def later():
+            time.sleep(0.3)
+            with open(self.transcript, "a") as f:
+                f.write(lines(text_reply("They pass.", t + 1, "m1", "end_turn")))
+        import threading
+        threading.Thread(target=later).start()
+        start = time.time()
+        answer = self.cli("--conversation", SID, "--if-changed", stamp, "--wait", "20")
+        self.assertLess(time.time() - start, 5)
+        self.assertEqual(answer["items"][-1]["text"], "They pass.")
+        self.assertNotEqual(answer["stamp"], stamp)
+
+    def test_wait_isnt_sent_to_a_host(self):
+        with mock.patch("remote.host_answer", return_value={"ok": True, "unchanged": True}) as asked:
+            self.cli("--conversation", SID, "--if-changed", "1:2/120", "--wait", "50", "--host", "gpu")
+        self.assertEqual(asked.call_args[0][1], ["--conversation", SID, "--if-changed", "1:2/120"])
+
+    def test_no_profile_named_matches_none(self):
+        profile = cs.discover_profiles(self.home)[0]
+        self.assertFalse(cs.matches_profile(profile, None))
+        self.assertFalse(cs.matches_profile(profile, ""))
+
+    def test_terminal_font(self):
+        cfg = self.home / ".config"
+        with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": str(cfg), "XDG_DATA_HOME": str(self.home / ".local/share")}):
+            # Konsole's built-in profile: none named (the pane takes a fixed-width one)
+            self.assertEqual(pane.terminal_font(self.home), {"ok": True, "family": "", "terminal": "konsole"})
+            write(cfg / "konsolerc", "[Desktop Entry]\nDefaultProfile=Mine.profile\n")
+            write(self.home / ".local/share/konsole/Mine.profile",
+                  "[General]\nName=Mine\n\n[Appearance]\nColorScheme=Breeze\nFont=JetBrains Mono,12,-1,5,400,0,0,0,0,0\n")
+            self.assertEqual(pane.terminal_font(self.home)["family"], "JetBrains Mono")
+            # the terminal picked in System Settings, from its own settings
+            write(cfg / "kdeglobals", "[General]\nTerminalApplication=kitty\n")
+            write(cfg / "kitty/kitty.conf", "# fonts\nfont_family      Fira Code\nfont_size 11\n")
+            self.assertEqual(pane.terminal_font(self.home), {"ok": True, "family": "Fira Code", "terminal": "kitty"})
+            write(cfg / "kitty/kitty.conf", 'font_family family="Iosevka Term" style=Regular\n')
+            self.assertEqual(pane.terminal_font(self.home)["family"], "Iosevka Term")
+            write(cfg / "kdeglobals", "[General]\nTerminalApplication=alacritty\n")
+            write(cfg / "alacritty/alacritty.toml", '[font]\nsize = 11\n\n[font.normal]\nfamily = "Hack"\n')
+            self.assertEqual(pane.terminal_font(self.home)["family"], "Hack")
+            write(cfg / "kdeglobals", "[General]\nTerminalApplication=foot\n")
+            write(cfg / "foot/foot.ini", "[main]\nfont=Source Code Pro:size=10,Noto Color Emoji\n")
+            self.assertEqual(pane.terminal_font(self.home)["family"], "Source Code Pro")
+            write(cfg / "kdeglobals", "[General]\nTerminalApplication=ghostty\n")
+            write(cfg / "ghostty/config", 'theme = dark\nfont-family = "Cascadia Mono"\n')
+            self.assertEqual(pane.terminal_font(self.home)["family"], "Cascadia Mono")
+            write(cfg / "kdeglobals", "[General]\nTerminalApplication=xfce4-terminal\n")
+            write(cfg / "xfce4/terminal/terminalrc", "[Configuration]\nFontName=DejaVu Sans Mono 12\n")
+            self.assertEqual(pane.terminal_font(self.home)["family"], "DejaVu Sans Mono")
+        self.assertEqual(self.cli("--terminal-font")["ok"], True)
+
+
 class RelayTests(PaneFixture):
     def test_on_and_off(self):
         shared = self.home / ".claude-shared/settings.json"

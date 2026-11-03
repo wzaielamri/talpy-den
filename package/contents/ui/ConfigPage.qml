@@ -179,6 +179,10 @@ KCM.SimpleKCM {
     property var cfg_diffSideBySideDefault
     property var cfg_paneTextPercent
     property var cfg_paneTextPercentDefault
+    property var cfg_paneFont
+    property var cfg_paneFontDefault
+    property var cfg_paneTerminalFont
+    property var cfg_paneTerminalFontDefault
     property var cfg_newChatInVscode
     property var cfg_newChatInVscodeDefault
     property var cfg_newChatModel

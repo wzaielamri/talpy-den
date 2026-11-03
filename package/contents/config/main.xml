@@ -173,6 +173,14 @@
       <label>Text size in the chat pane, in percent of the desktop's font size (A− / A+ and Ctrl+wheel there)</label>
       <default>115</default>
     </entry>
+    <entry name="paneFont" type="String">
+      <label>The chat pane's text: "terminal" in your terminal's font (as Claude's terminal shows it), "desktop" in the desktop's font</label>
+      <default>terminal</default>
+    </entry>
+    <entry name="paneTerminalFont" type="String">
+      <label>Your terminal's font, as last found (pane.py --terminal-font, each time the chat pane is made): known as the pane opens</label>
+      <default></default>
+    </entry>
     <entry name="newChatInVscode" type="Bool">
       <label>New and recent chats open in VS Code (the Terminal | VS Code switch at the top of their lists)</label>
       <default>false</default>

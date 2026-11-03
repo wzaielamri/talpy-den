@@ -3154,6 +3154,26 @@ body.vscode-high-contrast-light .pane {
   word-break: break-word;
 }
 
+/* The conversation and your reply in the terminal's font, as Claude's
+   terminal shows a chat (talpyDen.chatFont: --pane-font) */
+.pane-list,
+.pane-replybox .pane-reply {
+  font-family: var(--pane-font, inherit);
+}
+
+/* Yours, on its way (shown as you send it: Sending… till it has gone) */
+.pane-you.sending .pane-you-text {
+  opacity: 0.6;
+}
+
+.pane-you-state {
+  flex: none;
+  align-self: flex-start;
+  margin-left: 12px;
+  color: var(--cs-muted);
+  font-size: 0.85em;
+}
+
 /* A tool call */
 .pane-tool {
   flex-direction: column;

@@ -19,6 +19,7 @@ export interface PaneItem {
   diff?: string[]; // tool: an edit's change (unified lines, @@ at the file's line numbers when known)
   error?: boolean; // note: an API error (a usage limit…)
   at: number | null;
+  sending?: boolean; // you: the tab's own, your message on its way (PendingSent)
 }
 
 export interface Conversation {
@@ -137,8 +138,11 @@ export type PaneHostMessage =
   | { type: "chat"; chat: PaneChat }
   | { type: "conversation"; answer: Conversation }
   | { type: "review"; answer: ReviewAnswer | null; error: string }
-  | { type: "result"; kind: string; ok: boolean; message: string; ask?: boolean } // ask: its terminal takes no text: choose
+  // ask: its terminal takes no text: choose; id: the message it's for (send); went: it went into the chat
+  // itself (typed in, or on in the background: not VS Code's input or the clipboard)
+  | { type: "result"; kind: string; ok: boolean; message: string; ask?: boolean; id?: number; went?: boolean }
   | { type: "textSize"; scale: number } // talpyDen.chatTextScale
+  | { type: "font"; family: string } // talpyDen.chatFont, as a CSS font-family ("": VS Code's own)
   | { type: "diffLayout"; split: boolean } // talpyDen.diffSideBySide
   | { type: "picked"; paths: string[] } // files picked to attach (+), attached as dropped ones
   | { type: "picture"; id: string; path: string; error: string } // a pasted picture, saved (path: where the chat opens it)
@@ -156,7 +160,7 @@ export type PaneHostMessage =
 export type PaneMessage =
   | { type: "ready" }
   | { type: "more" } // older items too
-  | { type: "send"; text: string; how: "auto" | "background" | "copy" | "enter"; afterTurn: boolean }
+  | { type: "send"; text: string; how: "auto" | "background" | "copy" | "enter"; afterTurn: boolean; id?: number } // id: shown at once (PendingSent)
   | { type: "unqueue" } // the reply waiting for the turn to end
   | { type: "answer"; decision: Decision; note: string; answers?: Answers; shown: AskShown | null } // shown: the prompt you answer
   | { type: "review" }
@@ -353,6 +357,55 @@ export function testsText(review: Review | null | undefined): { text: string; ti
     : { text: "Tests", title: `Tests failed after its last edit: ${run.command}`, ok: false };
 }
 
+// Your message, at once: the chat tab shows it as you send it (as being sent,
+// then as yours) till the conversation has it, as the Plasma pane does
+export interface PendingSent {
+  id: number;
+  text: string;
+  at: number; // ms, when you sent it
+  state: "sending" | "sent";
+  sentAt: number; // ms, when pane.py said it went
+  known: string[]; // the keys of your prompts shown then: the one this becomes is another
+}
+
+const squash = (s: string) => s.replace(/\s+/g, " ").trim();
+
+// The ids of the ones the conversation has now: a prompt of yours that wasn't
+// there when you sent it, with its words (or the start of them, cut with …);
+// or, after a moment, any new one of this computer's chat (local: Claude can
+// have changed its words, a picture's say); or one that went 30 s ago (it
+// went: the conversation just doesn't show it)
+export function pendingTaken(items: PaneItem[], pending: PendingSent[], now: number, local: boolean): Set<number> {
+  const claimed = new Set<string>();
+  const done = new Set<number>();
+  for (const p of pending) {
+    const want = squash(p.text);
+    const found = items.find((it) => {
+      const key = String(it.key);
+      if (it.kind !== "you" || p.known.includes(key) || claimed.has(key)) return false;
+      const said = squash(it.text ?? "");
+      const cut = said.endsWith("…") ? said.slice(0, -1).trim() : "";
+      return said === want || (cut !== "" && want.startsWith(cut))
+        || (local && p.state === "sent" && now - p.sentAt > 3000 && (it.at ?? 0) >= p.at - 2000);
+    });
+    if (found) claimed.add(String(found.key));
+    if (found || (p.state === "sent" && now - p.sentAt > 30000)) done.add(p.id);
+  }
+  return done;
+}
+
+// Is a conversation's stamp ("<size>:<time>/<length>") one to show, after the
+// one shown (current)? Not one read for another length (Show earlier
+// meanwhile), nor one read before it (a transcript only grows): the watcher's
+// answer and a read's can cross
+export function stampFresher(next: unknown, current: string, limit: number): boolean {
+  const a = String(next ?? "").split("/");
+  if (a.length > 1 && a[1] !== String(limit)) return false;
+  if (!current) return true;
+  const b = current.split("/");
+  return a[1] !== b[1] || Number(a[0].split(":")[0]) >= Number(b[0].split(":")[0]);
+}
+
 // How a reply reaches the chat, in a sentence
 export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: string, host: string): string {
   const where = host ? ` (on ${host})` : "";
@@ -367,7 +420,7 @@ export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: s
       return `Its terminal takes no text from outside: send it, and Claude there quits and the chat goes on in the background, or copy it and open its terminal.${where}`;
     default:
       return hasProcess && kind === "bg"
-        ? `Its background chat stops, then goes on with your message.${where}`
+        ? `Goes into its background session, as if you typed it there.${where}`
         : `The chat goes on in the background with your message.${where}`;
   }
 }

@@ -151,15 +151,25 @@ Window {
 
     FontMetrics {
         id: fm
+        font.family: pane.chatFamily
         font.pointSize: pane.pt
     }
-    // Code in a fixed-width font: the desktop's, if it is one (it can be set to any font), else monospace
+    // Code in a fixed-width font: your terminal's (pane.py --terminal-font, kept
+    // in the settings: known as the pane opens), if it's there; else the
+    // desktop's, if it is one (it can be set to any font); else monospace
     FontMetrics {
         id: fixedFm
         font.family: surface.Kirigami.Theme.fixedWidthFont.family
     }
-    readonly property string monoFamily: Math.abs(fixedFm.advanceWidth("iiii") - fixedFm.advanceWidth("WWWW")) < 0.5
+    readonly property string terminalFamily: Plasmoid.configuration.paneTerminalFont || ""
+    readonly property string monoFamily: terminalFamily !== "" && Qt.fontFamilies().indexOf(terminalFamily) >= 0 ? terminalFamily
+                                         : Math.abs(fixedFm.advanceWidth("iiii") - fixedFm.advanceWidth("WWWW")) < 0.5
                                          ? surface.Kirigami.Theme.fixedWidthFont.family : "monospace"
+    // The conversation and your reply: in that font, as Claude's terminal shows
+    // them (roomier than most desktop fonts, every letter on its own), or, set
+    // so (Settings > Chats), the desktop's
+    readonly property string chatFamily: Plasmoid.configuration.paneFont === "desktop"
+                                         ? surface.Kirigami.Theme.defaultFont.family : monoFamily
     readonly property real gutter: Math.round(fm.height * 1.3)   // where the dots go
 
     // ● before a reply or a tool call, on its first line (blinking: still going)
@@ -267,9 +277,13 @@ Window {
         draftKey = (chat.host || "") + "\n" + chatId
         replyBox.text = drafts[draftKey] || ""
         delete drafts[draftKey]
-        sending = false
-        sendStale.stop()
+        // (a message on its way to the chat before still goes, and its answer is
+        // said here; the watcher's for it is left out)
         askHow = false
+        lastItems = []
+        watchLine = ""
+        watchFailures = 0
+        chaseUntil = 0
         askColumn.cancelDeny()
         answering = 0
         answerStale.stop()
@@ -295,6 +309,7 @@ Window {
     Component.onCompleted: {
         ready = true
         reset()
+        run("font", "--terminal-font")   // (changed since it was last found: from now on)
     }
     Connections {
         target: root
@@ -366,9 +381,13 @@ Window {
     // every 1.5 s, goes without, so its name repeats while nothing changes:
     // every executable DataSource in plasmashell keeps each name, hub/Exec.qml)
     function run(kind, args, sent) {
+        start(args + (kind === "conversation" ? "" : " # " + Date.now()),   // (read again and again: one name)
+              { kind: kind, chat: chatId, host: host, target: row || chat, sent: sent || "", draft: draftKey })
+    }
+    // (asked: what run() keeps of it; a message that waited its turn, outbox, has the chat it was written to)
+    function start(args, asked) {
         const cmd = "python3 -I " + root.shellQuote(root.codeDir + "pane.py") + " " + args
-                    + (kind === "conversation" ? "" : " # " + Date.now())   // (read again and again: one name)
-        runs[cmd] = { kind: kind, chat: chatId, host: host, target: row || chat, sent: sent || "", draft: draftKey }
+        runs[cmd] = asked
         runner.connectSource(cmd)
     }
     // command -> {kind, chat: the chat it's for, host, target: its row (openRow), sent: the box's text a message
@@ -402,10 +421,81 @@ Window {
     readonly property bool shown: visible && visibility !== Window.Minimized
     onShownChanged: if (shown && loaded) load()
     Timer {
-        interval: pane.host || pane.followsLive ? 5000 : 1500
+        // (with the watcher, only for what it can't see: a moment it wasn't running)
+        interval: pane.host ? 5000 : pane.watchOk ? 15000 : pane.followsLive ? 5000 : 1500
         running: pane.shown && pane.chatId !== ""
         repeat: true
         onTriggered: pane.load()
+    }
+
+    // The watcher: a chat of this computer is read the moment its transcript
+    // changes (pane.py --conversation --wait: it waits for that, up to 50 s,
+    // and runs again), so your message and what Claude writes show at once,
+    // not at the next look. Not for an SSH host's (a look every 5 s, and
+    // often just after you sent something, chase)
+    readonly property bool watching: shown && !host && chatId !== "" && loaded && stamp !== "" && watchFailures < 3
+    readonly property bool watchOk: watching && watchLine !== "" && watchFailures === 0
+    property string watchLine: ""     // the one running (an answer from another is left out)
+    property real watchStartedAt: 0
+    property int watchFailures: 0     // (three in a row: looks only, till another chat is opened)
+    onWatchingChanged: if (watching) watchNow()
+    // (each time what's shown changes: one for it; the one before answers with
+    // the next change, or in 50 s, and is left out)
+    function watchNow() {
+        if (!watching || watchRetry.running)
+            return
+        const line = "python3 -I " + root.shellQuote(root.codeDir + "pane.py") + " --conversation " + root.shellQuote(chatId)
+                     + " --limit " + limit + " --if-changed " + root.shellQuote(stamp) + " --wait 50" + paneArgs()
+        if (line === watchLine && Date.now() - watchStartedAt < watcher.staleMs)
+            return
+        watchLine = line
+        watchStartedAt = Date.now()
+        watcher.connectSource(line)
+    }
+    Exec {
+        id: watcher
+        staleMs: 70000   // (pane.py waits 50 s at the most)
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            if (source !== pane.watchLine)
+                return   // (for the chat before, or a run given up on)
+            pane.watchLine = ""
+            const result = root.helperResult(data)
+            if (!result.ok) {
+                pane.watchFailures += 1
+                watchRetry.restart()
+                return
+            }
+            pane.watchFailures = 0
+            // (nothing new, at once: a pane.py that doesn't wait, an old one on the way: in 5 s, never
+            // again and again. A change shows at once, and the next one is waited for)
+            if (result.unchanged && Date.now() - pane.watchStartedAt < 1000) {
+                watchRetry.restart()
+                return
+            }
+            pane.takeConversation(result)
+            Qt.callLater(pane.watchNow)
+        }
+    }
+    Timer {
+        id: watchRetry
+        interval: 5000
+        onTriggered: pane.watchNow()
+    }
+
+    // Just after your message went: read often till the conversation has it
+    // (the watcher has it at once; this is for an SSH host's chat, and in case)
+    property real chaseUntil: 0
+    Timer {
+        interval: pane.host ? 1000 : 400
+        running: pane.shown && pane.chaseUntil > 0
+        repeat: true
+        onTriggered: {
+            if (Date.now() > pane.chaseUntil || !pane.pendingSent.some(p => p.state === "sent" && p.chat === pane.chatId))
+                pane.chaseUntil = 0
+            else
+                pane.load()
+        }
     }
     Connections {
         target: Hub
@@ -413,6 +503,33 @@ Window {
             if (pane.shown && !pane.host && pane.sessionId && views.some(v => v.sessionId === pane.sessionId))
                 pane.load()
         }
+    }
+
+    // A read's answer, or the watcher's. The two can cross: one read before
+    // what's shown (a shorter transcript), or for another length (Show
+    // earlier meanwhile), isn't taken
+    function takeConversation(result) {
+        loadError = ""
+        if (result.unchanged || !fresher(result.stamp))
+            return
+        const following = !loaded || nearEnd()
+        stamp = result.stamp || ""
+        more = !!result.more
+        lastItems = result.items || []
+        merge(withPending(lastItems))
+        loaded = true
+        if (following)
+            keepEnd()
+        Qt.callLater(watchNow)
+    }
+    function fresher(s) {   // (a stamp: "<size>:<time>/<length>"; a transcript only grows)
+        const a = String(s || "").split("/")
+        if (a.length > 1 && a[1] !== String(limit))
+            return false
+        if (!stamp)
+            return true
+        const b = stamp.split("/")
+        return a[1] !== b[1] || Number(a[0].split(":")[0]) >= Number(b[0].split(":")[0])
     }
 
     // The items in place (by key): rows keep their state, the list its position
@@ -580,6 +697,13 @@ Window {
 
     // asked: the run it answers ({kind, chat, host, target}: run())
     function handle(kind, result, asked) {
+        if (kind === "font") {
+            if (result.ok && typeof result.family === "string" && result.family !== Plasmoid.configuration.paneTerminalFont)
+                Plasmoid.configuration.paneTerminalFont = result.family
+            return
+        }
+        if (kind === "send" || kind === "later")
+            sentDone(asked, result)   // (shown as sent, or back in its box; the next one to that chat goes)
         // An answer for the chat shown before (another one was opened since,
         // reset()): none of it goes into this one's conversation, review, box
         // or buttons. A message sent there still goes where it was going.
@@ -591,7 +715,8 @@ Window {
                     root.openRow(asked.target, asked.host)
                 else if (!result.ok || result.how === "ask" || result.how === "copy") {
                     // (it didn't go, and the box it was in is this chat's now: said here)
-                    info = i18n("Your message to %1 didn't go: %2", asked.target && asked.target.name ? asked.target.name : i18n("the chat before"),
+                    info = i18n("Your message to %1 didn't go (it's back in its reply box): %2",
+                                asked.target && asked.target.name ? asked.target.name : i18n("the chat before"),
                                 result.message || i18n("its terminal takes no text"))
                     infoBad = true
                     infoTimer.restart()
@@ -630,16 +755,7 @@ Window {
                 loadMissing = !!result.missing
                 return
             }
-            loadError = ""
-            if (result.unchanged)
-                return
-            const following = !loaded || nearEnd()
-            stamp = result.stamp || ""
-            more = !!result.more
-            merge(result.items || [])
-            loaded = true
-            if (following)
-                keepEnd()
+            takeConversation(result)
             return
         }
         if (kind === "review") {
@@ -654,10 +770,6 @@ Window {
         info = result.message || (result.ok ? "" : i18n("That didn't work"))
         infoBad = !result.ok
         infoTimer.restart()
-        if (kind === "send" || kind === "later") {
-            sending = false
-            sendStale.stop()
-        }
         if (kind === "send" && result.ok) {
             if (result.how === "ask") {
                 askHow = true
@@ -838,18 +950,40 @@ Window {
     property bool askHow: false   // its terminal takes no text: background or copy?
     property var drafts: ({})     // what you were typing to the other chats ("host\nchatId" -> text)
     property string draftKey: ""  // the chat the box's text is for
-    property bool sending: false  // a message on its way: none other till it's there (an Enter again, a click)
 
-    // (one that never comes back: Send works again after a while)
+    // Your message, at once: Enter, and it's in the conversation (as being
+    // sent, then as yours, till the transcript has it: withPending) and the
+    // box is empty for the next one. Messages to a chat go one at a time, in
+    // the order you sent them (outbox: one sent while another is on its way
+    // waits for it, it's never dropped); to other chats meanwhile, at once.
+    // One that doesn't go is back in its box, and the pane says why.
+    property bool sending: false  // a message on its way (inFlight isn't empty)
+    property var inFlight: ({})   // draft key -> true: a message to that chat on its way
+    property var outbox: []       // [{args, asked}]: waiting for the one before to that chat
+    property var pendingSent: []  // [{id, chat, host, text, at, state: "sending"|"sent", sentAt, known}]
+    property int sentCount: 0
+    property var lastItems: []    // pane.py's items as last read (the pending ones go after them)
+
+    // (one whose answer never comes, plasmashell lost it: given up after
+    // staleMs, so the ones after it go, and said)
     Timer {
-        id: sendStale
-        interval: pane.staleMs
-        onTriggered: pane.sending = false
+        interval: 10000
+        repeat: true
+        running: pane.sending
+        onTriggered: {
+            for (const cmd in pane.runs) {
+                const a = pane.runs[cmd]
+                if ((a.kind === "send" || a.kind === "later") && Date.now() - (a.startedAt || 0) > pane.staleMs) {
+                    delete pane.runs[cmd]
+                    pane.handle(a.kind, { ok: false, message: i18n("No answer in time: look whether it got there before you send it again") }, a)
+                }
+            }
+        }
     }
 
     function send(how, afterTurn) {
         const text = replyBox.text.trim()
-        if (!text || sending)
+        if (!text)
             return
         // (it goes on the command line: one too long for it is refused here, as
         // VS Code does, and stays in the box)
@@ -859,13 +993,129 @@ Window {
             infoTimer.restart()
             return
         }
-        sending = true
-        sendStale.restart()
-        run(afterTurn ? "later" : "send", "--send " + root.shellQuote(chatId) + " --text " + root.shellQuote(text)
-            + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + " --how " + (how || "auto")
-            + (afterTurn ? " --after-turn --name " + root.shellQuote(chatName) : "") + paneArgs(), replyBox.text)
-        if (afterTurn)
+        // (shown at once where it goes to the chat itself: not a copy, put on the clipboard with
+        // its tab opened, nor one for VS Code's input, or Enter for a terminal (a copy too):
+        // the box keeps those till then)
+        const shows = !afterTurn && how !== "copy"
+                      && (how === "background" || route === "background" || route === "tmux")
+        if (!shows && !afterTurn && (inFlight[draftKey] || outbox.some(m => m.asked.draft === draftKey)))
+            return   // (one the box keeps is on its way: an Enter again doesn't send it twice)
+        const id = ++sentCount
+        const asked = { kind: afterTurn ? "later" : "send", chat: chatId, host: host, target: row || chat,
+                        sent: shows || afterTurn ? "" : replyBox.text, draft: draftKey, text: text, id: id, startedAt: 0 }
+        outbox = outbox.concat([{ asked: asked,
+            args: "--send " + root.shellQuote(chatId) + " --text " + root.shellQuote(text)
+                  + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + " --how " + (how || "auto")
+                  + (afterTurn ? " --after-turn --name " + root.shellQuote(chatName) : "") + paneArgs() }])
+        if (shows) {
+            const known = {}   // (your prompts shown now: the one this becomes is another)
+            for (const it of lastItems)
+                if (it.kind === "you")
+                    known[String(it.key)] = true
+            pendingSent = pendingSent.concat([{ id: id, chat: chatId, host: host || "", text: text, at: Date.now(),
+                                                state: "sending", sentAt: 0, known: known }])
             replyBox.text = ""
+            historyAt = -1
+            suggestions = []
+            askHow = false
+            showPending()
+            keepEnd()
+        } else if (afterTurn) {
+            replyBox.text = ""
+        }
+        pump()
+    }
+    // Each chat's next message, once the one before to it has its answer
+    function pump() {
+        const left = []
+        for (const m of outbox) {
+            if (inFlight[m.asked.draft]) {
+                left.push(m)
+                continue
+            }
+            inFlight[m.asked.draft] = true
+            m.asked.startedAt = Date.now()
+            start(m.args + " # " + Date.now() + "." + m.asked.id, m.asked)
+        }
+        outbox = left
+        sending = Object.keys(inFlight).length > 0
+    }
+    // What came of a message (its answer): gone to the chat, shown as yours
+    // till the conversation has it (read often meanwhile); in VS Code's input
+    // or on the clipboard, not here; else back in its box
+    function sentDone(asked, result) {
+        delete inFlight[asked.draft]
+        const p = pendingSent.find(x => x.id === asked.id)
+        if (p) {
+            if (result.ok && (result.how === "typed" || result.how === "background")) {
+                p.state = "sent"
+                p.sentAt = Date.now()
+                pendingSent = pendingSent.slice()
+                chaseUntil = Date.now() + 10000
+            } else {
+                pendingSent = pendingSent.filter(x => x !== p)
+                if (!(result.ok && (result.how === "vscode" || (result.how === "copy" && result.copied))))
+                    giveBack(asked)
+            }
+            if (asked.chat === chatId)
+                showPending()
+        }
+        Qt.callLater(pump)
+    }
+    function giveBack(asked) {
+        if (asked.draft === draftKey) {
+            const now = replyBox.text
+            replyBox.text = asked.text + (now.trim() ? "\n" + now : "")
+            replyBox.cursorPosition = asked.text.length
+        } else {
+            const was = drafts[asked.draft] || ""
+            drafts[asked.draft] = asked.text + (was.trim() ? "\n" + was : "")
+        }
+    }
+
+    // The conversation with your messages on their way after it: each till
+    // the conversation has it (a prompt of yours that wasn't there when you
+    // sent it, with its words; or, after a moment, any new one of this
+    // computer's chat: Claude can have changed them, a picture's say), or
+    // 30 s after it went (it went: the conversation just doesn't show it)
+    function norm(s) {
+        return String(s || "").replace(/\s+/g, " ").trim()
+    }
+    function withPending(list) {
+        const mine = pendingSent.filter(p => p.chat === chatId && p.host === (host || ""))
+        if (!mine.length)
+            return list
+        const claimed = {}
+        const now = Date.now()
+        const done = {}
+        for (const p of mine) {
+            const want = norm(p.text)
+            const found = list.find(it => {
+                const key = String(it.key)
+                if (it.kind !== "you" || p.known[key] || claimed[key])
+                    return false
+                const said = norm(it.text)
+                const cut = said.endsWith("…") ? said.slice(0, -1).trim() : ""
+                return said === want || (cut !== "" && want.indexOf(cut) === 0)
+                    || (!p.host && p.state === "sent" && now - p.sentAt > 3000 && (it.at || 0) >= p.at - 2000)
+            })
+            if (found)
+                claimed[String(found.key)] = true
+            if (found || (p.state === "sent" && now - p.sentAt > 30000))
+                done[p.id] = true
+        }
+        if (Object.keys(done).length)
+            pendingSent = pendingSent.filter(p => !done[p.id])
+        return list.concat(pendingSent.filter(p => p.chat === chatId && p.host === (host || ""))
+                                      .map(p => ({ kind: "you", key: "pending-" + p.id, text: p.text, status: p.state, at: p.at })))
+    }
+    function showPending() {
+        if (loaded) {
+            const following = nearEnd()
+            merge(withPending(lastItems))
+            if (following)
+                keepEnd()
+        }
     }
     function utf8Length(text) {
         let n = 0
@@ -889,7 +1139,7 @@ Window {
         if (route === "terminal")
             return i18n("Its terminal takes no text from outside: Enter copies your message and opens its tab, to paste it there. Send, go on in the background: Claude there quits and the chat goes on in the background.") + where
         if (row && row.pid && row.kind === "bg")
-            return i18n("Its background chat stops, then goes on with your message.") + where
+            return i18n("Goes into its background session, as if you typed it there.") + where
         return i18n("The chat goes on in the background with your message.") + where
     }
 
@@ -1531,6 +1781,7 @@ Window {
                                 text: (activity && !toolAbove ? activity : i18n("Working")) + "…"
                                 elide: Text.ElideRight
                                 color: root.stateColor("working")
+                                font.family: pane.chatFamily
                                 font.pointSize: pane.pt
                             }
                         }
@@ -1614,8 +1865,19 @@ Window {
                                         color: Kirigami.Theme.textColor
                                         selectionColor: Kirigami.Theme.focusColor
                                         selectedTextColor: Kirigami.Theme.highlightedTextColor
-                                        font.family: Kirigami.Theme.defaultFont.family
+                                        font.family: pane.chatFamily
                                         font.pointSize: pane.pt
+                                        opacity: entry.status === "sending" ? 0.6 : 1
+                                    }
+                                    // (on its way: pane.py --send hasn't answered yet)
+                                    PlasmaComponents3.Label {
+                                        visible: entry.status === "sending"
+                                        Layout.alignment: Qt.AlignTop
+                                        Layout.leftMargin: Kirigami.Units.largeSpacing
+                                        textFormat: Text.PlainText
+                                        text: i18n("Sending…")
+                                        color: pane.mutedColor
+                                        font.pointSize: pane.pt * 0.85
                                     }
                                 }
                             }
@@ -1643,7 +1905,7 @@ Window {
                                     color: Kirigami.Theme.textColor
                                     selectionColor: Kirigami.Theme.focusColor
                                     selectedTextColor: Kirigami.Theme.highlightedTextColor
-                                    font.family: Kirigami.Theme.defaultFont.family
+                                    font.family: pane.chatFamily
                                     font.pointSize: pane.pt
                                     onLinkActivated: link => {
                                         if (link.indexOf("copy:") === 0)
@@ -1707,6 +1969,7 @@ Window {
                                                 wrapMode: Text.Wrap
                                                 maximumLineCount: entry.unfolded ? 20 : 2
                                                 elide: Text.ElideRight
+                                                font.family: pane.chatFamily
                                                 font.pointSize: pane.pt
                                             }
                                             PlasmaComponents3.Label {
@@ -1717,6 +1980,7 @@ Window {
                                                     : toolBox.asking ? "⎿  " + i18n("Waiting for your answer")
                                                     : ""
                                                 elide: Text.ElideRight
+                                                font.family: pane.chatFamily
                                                 font.pointSize: pane.pt * 0.92
                                                 color: entry.status === "error" ? Kirigami.Theme.negativeTextColor
                                                      : toolBox.asking ? Kirigami.Theme.neutralTextColor : pane.mutedColor
@@ -1805,6 +2069,7 @@ Window {
                                     text: entry.text
                                     horizontalAlignment: Text.AlignHCenter
                                     wrapMode: Text.Wrap
+                                    font.family: pane.chatFamily
                                     font.italic: true
                                     font.pointSize: pane.pt * 0.9
                                     color: entry.bad ? Kirigami.Theme.negativeTextColor : pane.mutedColor
@@ -1965,6 +2230,10 @@ Window {
                         anchors.topMargin: Kirigami.Units.smallSpacing
                         anchors.bottomMargin: Kirigami.Units.smallSpacing
                         anchors.rightMargin: Kirigami.Units.smallSpacing
+                        // (what you write wraps; the hint, wider than the box in a
+                        // fixed-width font, ends in … instead of scrolling sideways)
+                        contentWidth: availableWidth
+                        PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
 
                         PlasmaComponents3.TextArea {
                             id: replyBox
@@ -1972,6 +2241,7 @@ Window {
                             placeholderText: pane.permission ? i18n("It's asking you something: answer that first")
                                                              : i18n("Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop: a picture or a file too)")
                             wrapMode: TextEdit.Wrap
+                            font.family: pane.chatFamily
                             font.pointSize: pane.pt
                             enabled: !(pane.permission && pane.route === "tmux")
                             // Enter sends, as in Claude's own prompt (Shift+Enter: a new line). For a
@@ -2190,14 +2460,14 @@ Window {
 
                         PlasmaComponents3.Button {
                             visible: pane.route === "terminal" || pane.askHow
-                            enabled: replyBox.text.trim() !== "" && !pane.sending
+                            enabled: replyBox.text.trim() !== ""
                             icon.name: Icons.plasma.copy
                             text: i18n("Copy and open its tab")
                             onClicked: pane.send("copy", false)
                         }
                         PlasmaComponents3.Button {
                             visible: pane.busy
-                            enabled: replyBox.text.trim() !== "" && !pane.sending
+                            enabled: replyBox.text.trim() !== ""
                             icon.name: Icons.plasma.later
                             text: i18n("Send when this turn ends")
                             onClicked: pane.send(pane.route === "terminal" || pane.askHow ? "background" : "auto", true)
@@ -2212,10 +2482,10 @@ Window {
                         PlasmaComponents3.Button {
                             // (a terminal that takes no text, known or just found out: not while
                             // Claude works there, it would quit mid-turn; Send when this turn ends)
-                            enabled: replyBox.text.trim() !== "" && !pane.sending && !((pane.route === "terminal" || pane.askHow) && pane.busy)
+                            enabled: replyBox.text.trim() !== "" && !((pane.route === "terminal" || pane.askHow) && pane.busy)
                                      && !(pane.permission && pane.route === "tmux")
                             icon.name: Icons.plasma.send
-                            text: pane.sending ? i18n("Sending…") : pane.route === "terminal" || pane.askHow ? i18n("Send, go on in the background") : i18n("Send")
+                            text: pane.route === "terminal" || pane.askHow ? i18n("Send, go on in the background") : i18n("Send")
                             onClicked: pane.send(pane.route === "terminal" || pane.askHow ? "background" : "auto", false)
                         }
                     }

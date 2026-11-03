@@ -287,7 +287,10 @@ def discover_profiles(home, extra_dirs=()):
 
 
 def matches_profile(profile, name):
-    """Is name (a folder name like .claude-work, or a path) this profile?"""
+    """Is name (a folder name like .claude-work, or a path) this profile?
+    None or "" (no profile named) is none."""
+    if not isinstance(name, str) or not name:
+        return False
     if name in (profile.dirname, profile.key, *profile.snapshot_dirs):
         return True
     try:

@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answersOf, chatWhere, oneChoice, picturesIn, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
+import { answersOf, chatWhere, oneChoice, pendingTaken, picturesIn, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -137,7 +137,7 @@ test("a reply goes to pane.py --send; copy goes to the clipboard and opens the c
   assert.equal(clipboardWrites.at(-1), "and the tests");
   assert.equal(ask.opened.length, 1);
   const typed = panes(state, { how: "typed", message: "Sent" });
-  assert.deepEqual(await typed.p.send(chatRefOf(row), "hi", "enter", false), { ok: true, message: "Sent" });
+  assert.deepEqual(await typed.p.send(chatRefOf(row), "hi", "enter", false), { ok: true, message: "Sent", went: true });
   assert.equal(typed.opened.length, 0);
 });
 
@@ -295,7 +295,9 @@ test("Claude's Markdown: ~~struck~~ text, and a code block keeps its text for Co
 test("Show earlier goes up to the most a tab shows, then the tab says only the last steps are shown", async () => {
   const row = demoState(NOW).status!.groups.flatMap((g) => g.sessions)[0];
   const limits: string[] = [];
-  const backend = { pane: async (args: string[]) => (limits.push(args[args.indexOf("--limit") + 1]), { ok: true, items: [], more: true, stamp: `s${limits.length}` }) };
+  // (the watcher, --wait, finds nothing new)
+  const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true }
+    : (limits.push(args[args.indexOf("--limit") + 1]), { ok: true, items: [], more: true, stamp: `s${limits.length}` })) };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false };
   const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
                           { find: async () => undefined } as never, {} as never);
@@ -570,7 +572,7 @@ test("a chat that asks something else while it waits is told again, with buttons
 
 // ---------------------------------------------------------------- one message at a time
 
-test("one message to a chat at a time: one sent while the last is on its way isn't sent; the tab always hears back", async () => {
+test("messages to a chat go one at a time, in the order sent: one sent while the last is on its way goes once that one has; the tab always hears back", async () => {
   const state = demoState(NOW);
   const row = state.status!.groups.flatMap((g) => g.sessions)[0];
   const calls: string[][] = [];
@@ -588,29 +590,67 @@ test("one message to a chat at a time: one sent while the last is on its way isn
                  onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false };
   const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { open: async () => undefined } as never,
                           { find: async () => undefined } as never, {} as never);
-  const busy = { ok: false, message: "Your last message to it is still being sent: try again in a moment" };
+  const tick = () => new Promise((r) => setTimeout(r, 10));
   const first = p.send(chatRefOf(row), "fix the parser", "auto", false);
-  const second = p.send(chatRefOf(row), "fix the parser", "enter", false); // (a second Enter)
+  const second = p.send(chatRefOf(row), "and the tests", "auto", false); // (sent while the first is on its way)
   const later = p.send(chatRefOf(row), "and the docs", "background", true);
-  await new Promise((r) => setTimeout(r, 10));
-  assert.equal(calls.length, 1, "sent once");
-  assert.deepEqual(await second, busy);
-  assert.deepEqual(await later, busy);
-  release({ ok: true, message: "Sent" });
-  assert.deepEqual(await first, { ok: true, message: "Sent" });
-  const next = p.send(chatRefOf(row), "and the docs", "auto", false); // (once it's sent, the next one goes)
-  await new Promise((r) => setTimeout(r, 10));
-  release({ ok: true, message: "Sent" });
-  assert.equal((await next).ok, true);
-  assert.equal(calls.length, 2);
-  // the tab hears back about every send, even one that failed on the way (its Send button comes back)
-  fail = true;
+  await tick();
+  assert.equal(calls.length, 1, "one at a time");
+  release({ ok: true, how: "typed", message: "Sent (typed into its background session)" });
+  assert.deepEqual(await first, { ok: true, message: "Sent (typed into its background session)", went: true });
+  await tick();
+  assert.equal(calls.length, 2, "then the next, in order");
+  assert.equal(calls[1][calls[1].indexOf("--text") + 1], "and the tests");
+  release({ ok: true, how: "background", message: "Sent: the chat goes on with it in the background" });
+  assert.equal((await second).went, true);
+  await tick();
+  assert.ok(calls[2].includes("--after-turn"));
+  release({ ok: true, message: "It's sent when this turn ends" });
+  assert.deepEqual(await later, { ok: true, message: "It's sent when this turn ends", went: false });
+  assert.equal(calls.length, 3, "none dropped");
+  // the tab hears back about every send, with the id it gave it (shown as you sent it), even one that
+  // failed on the way (it's back in the box)
   p.open(chatRefOf(row));
   const panel = recorded.panels.at(-1)!;
-  panel.receive({ type: "send", text: "hello", how: "auto", afterTurn: false });
-  await new Promise((r) => setTimeout(r, 10));
-  assert.deepEqual(panel.sent.filter((m) => (m as { type: string }).type === "result"),
-                   [{ type: "result", kind: "send", ok: false, message: "Couldn't send it: the helper fell over" }]);
+  panel.receive({ type: "send", text: "hello", how: "auto", afterTurn: false, id: 7 });
+  await tick();
+  release({ ok: true, how: "typed", message: "Sent (typed into its background session)" });
+  await tick();
+  fail = true;
+  panel.receive({ type: "send", text: "hello again", how: "auto", afterTurn: false, id: 8 });
+  await tick();
+  assert.deepEqual(panel.sent.filter((m) => (m as { type: string }).type === "result"), [
+    { type: "result", kind: "send", ok: true, message: "Sent (typed into its background session)", went: true, id: 7 },
+    { type: "result", kind: "send", ok: false, message: "Couldn't send it: the helper fell over", id: 8 },
+  ]);
+});
+
+test("your message shows at once till the conversation has it; a stamp read before the one shown isn't taken", () => {
+  const you = (key: string, text: string, at: number) => ({ kind: "you" as const, key, text, at });
+  const sent = (id: number, text: string, state: "sending" | "sent", known: string[] = ["a"]) =>
+    ({ id, text, at: NOW, state, sentAt: state === "sent" ? NOW : 0, known });
+  const items = [you("a", "hello", NOW - 60000)];
+  // not there yet: shown
+  assert.deepEqual([...pendingTaken(items, [sent(1, "fix  the\nparser", "sending")], NOW + 100, true)], []);
+  // there with its words (spaces as they come), or the start of them cut with …
+  assert.deepEqual([...pendingTaken([...items, you("b", "fix the parser", NOW + 300)], [sent(1, "fix  the\nparser", "sending")], NOW + 400, true)], [1]);
+  assert.deepEqual([...pendingTaken([...items, you("b", "a long one\n…", NOW + 300)], [sent(1, "a long one with more", "sent")], NOW + 400, false)], [1]);
+  // the same words as a prompt shown when it was sent aren't it
+  assert.deepEqual([...pendingTaken(items, [sent(1, "hello", "sent")], NOW + 400, true)], []);
+  // two the same and one new prompt: the first is it
+  assert.deepEqual([...pendingTaken([...items, you("b", "go on", NOW + 1)], [sent(1, "go on", "sent"), sent(2, "go on", "sent")], NOW + 400, true)], [1]);
+  // this computer's: after a moment, any new prompt (Claude changed its words); an SSH host's: its words only
+  const changed = [...items, you("b", "[Image #1] look", NOW + 300)];
+  assert.deepEqual([...pendingTaken(changed, [sent(1, "[Image: /tmp/a.png] look", "sent")], NOW + 1000, true)], []);
+  assert.deepEqual([...pendingTaken(changed, [sent(1, "[Image: /tmp/a.png] look", "sent")], NOW + 4000, true)], [1]);
+  assert.deepEqual([...pendingTaken(changed, [sent(1, "[Image: /tmp/a.png] look", "sent")], NOW + 4000, false)], []);
+  // gone 30 s after it went, whatever the conversation shows
+  assert.deepEqual([...pendingTaken(items, [sent(1, "x", "sent"), sent(2, "y", "sending")], NOW + 31000, false)], [1]);
+
+  assert.equal(stampFresher("120:5/120", "100:4/120", 120), true);
+  assert.equal(stampFresher("100:4/120", "120:5/120", 120), false, "read before what's shown");
+  assert.equal(stampFresher("200:9/120", "100:4/240", 240), false, "read for another length");
+  assert.equal(stampFresher("100:4/240", "", 240), true);
 });
 
 // ---------------------------------------------------------------- the microphone, starting

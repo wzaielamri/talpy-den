@@ -4,12 +4,15 @@ its permission prompt and its review.
 
     python3 -I pane.py ACTION [--host HOST] [--config-dir DIR]... [--remote] [--pretty]
 
-  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP]
+  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP [--wait S]]
         the chat as the pane shows it: your prompts, Claude's replies
         (markdown), each tool call as one line with how it went, and notes
         (a usage limit, an interruption); the newest N items. STAMP: the
         "stamp" of the last answer; while the transcript is as it was then,
-        the answer is only {"ok", "unchanged"}.
+        the answer is only {"ok", "unchanged"}. --wait: while it's as it was,
+        wait up to S seconds (at most WAIT_MAX_S) for it to change, and answer
+        the moment it does (the pane's watcher: what Claude writes shows at
+        once, not at the next look). Not on an SSH host (it's left out there).
   --send CHAT --profile P --text T [--session ID] [--how auto|background|copy|enter] [--after-turn] [--name N]
         your message to the chat, the way it can take one (send) (or
         --text-file F: a long one in F, a text-*.txt of the cache folder,
@@ -55,6 +58,9 @@ its permission prompt and its review.
         what the reply box offers as you type: / commands (Claude's own, yours
         and the project's) and skills, the project's files for @, and your
         past prompts in its folder (newest first) for ↑
+  --terminal-font
+        your terminal's font family, as the pane shows the conversation in
+        it: {"ok", "family" ("" if it names none), "terminal"} (terminal_font)
   --oldest allow|deny [--osd]
         answer the oldest prompt a chat waits on (one the hook relayed; a plan:
         approve it, or keep planning), for a keyboard shortcut; --osd: say on
@@ -420,6 +426,37 @@ def stamp_of(path):
     return f"{st.st_size}:{st.st_mtime_ns}"
 
 
+WAIT_MAX_S = 55  # (the pane gives up on a run after 70 s, hub/Exec.qml's staleMs, VS Code after 70 s)
+WAIT_GATHER_S = 0.04  # after a change: what Claude writes with it (a prompt and its attachments)
+# inotify: IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE | IN_DELETE_SELF | IN_MOVE_SELF (a line added, the file
+# replaced or moved: Claude moves a chat's transcript when it goes into a worktree)
+WAIT_MASK = 0x2 | 0x4 | 0x8 | 0x400 | 0x800
+
+
+def wait_for_change(path, stamp, seconds, clock=time.time):
+    """Wait up to seconds for the transcript at path to be other than stamp
+    (stamp_of): whether it is. inotify on the file (elsewhere: a look every
+    half second); it ends as soon as whoever started it is gone."""
+    import live  # (its Watch: the same inotify the widget's watcher uses)
+    watch = live.Watch([str(path)], WAIT_MASK)  # (watching first: nothing between the look and the wait is missed)
+    parent, end = os.getppid(), clock() + max(0.0, seconds)
+    try:
+        while True:
+            try:
+                if stamp_of(path) != stamp:
+                    return True
+            except OSError:
+                return True  # (gone: the read says so)
+            left = end - clock()
+            if left <= 0 or os.getppid() != parent:
+                return False
+            if watch.wait(min(left, 1.0)):
+                time.sleep(WAIT_GATHER_S)
+                watch.drain()
+    finally:
+        watch.close()
+
+
 def find_transcript(home, extra_dirs, chat_id, profile_key=None):
     """(profile, transcript) of a chat: under the profile named first, else any that has it."""
     profiles = cs.discover_profiles(home, extra_dirs)
@@ -431,7 +468,7 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
     return None, None
 
 
-def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None):
+def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0):
     if not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
@@ -439,7 +476,14 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
         return {"ok": False, "missing": True, "message": NO_CHAT}
     stamp = stamp_of(path)
     if if_changed and if_changed == f"{stamp}/{limit}":
-        return {"ok": True, "unchanged": True}
+        if not (wait > 0 and wait_for_change(path, stamp, min(wait, WAIT_MAX_S))):
+            return {"ok": True, "unchanged": True}
+        if not path.exists():  # (moved: where it is now)
+            profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
+        try:
+            stamp = stamp_of(path)  # (before it's read: what's written meanwhile is a change the next time)
+        except (OSError, AttributeError):
+            return {"ok": False, "missing": True, "message": NO_CHAT}
     items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)))
     name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
     peek = cs.chat_peek(path) or {}
@@ -1643,6 +1687,103 @@ def relay_status(home, extra_dirs, kind="relay"):
 
 # ---------------------------------------------------------------- command line
 
+# ---------------------------------------------------------------- your terminal's font
+#
+# The chat pane shows the conversation in it, as Claude's own terminal does:
+# the terminal the widget opens chats in (System Settings > Default
+# Applications, else Konsole), from its own settings. "" when it says none
+# (Konsole's built-in profile: the desktop's fixed-width font, which the
+# pane takes then, if it is one).
+
+TERMINAL_FILE_MAX = 1 << 20
+
+
+def read_small(path):
+    try:
+        if os.path.getsize(path) > TERMINAL_FILE_MAX:
+            return ""
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def ini_value(text, group, key):
+    """key's value in [group] of an INI-like file (None: no such line)."""
+    current = None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("["):
+            current = line
+        elif current == group and "=" in line and line.split("=", 1)[0].strip() == key:
+            return line.split("=", 1)[1].strip()
+    return None
+
+
+def config_home(home):
+    return Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config")
+
+
+def konsole_font(home):
+    """Konsole's default profile's font family (Yakuake's too, it uses Konsole's profiles)."""
+    for rc in ("konsolerc", "yakuakerc"):
+        name = ini_value(read_small(config_home(home) / rc), "[Desktop Entry]", "DefaultProfile")
+        if not name or "/" in name:
+            continue
+        data_dirs = [os.environ.get("XDG_DATA_HOME") or str(home / ".local/share")] \
+            + (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")
+        for d in data_dirs:
+            font = ini_value(read_small(Path(d) / "konsole" / name), "[Appearance]", "Font")
+            if font:
+                return font.split(",", 1)[0].strip()
+    return ""
+
+
+def first_match(text, pattern):
+    m = re.search(pattern, text, re.M)
+    return m.group(1).strip().strip("\"'") if m else ""
+
+
+def other_terminal_font(home, name):
+    """The font family a terminal other than Konsole is set to, from its own settings ("" if none)."""
+    cfg = config_home(home)
+    if name == "kitty":
+        value = first_match(read_small(cfg / "kitty/kitty.conf"), r"^\s*font_family\s+(.+?)\s*$")
+        if value.startswith("family="):  # (kitty 0.36: font_family family="X" style=…)
+            value = first_match(value, r"family=(\"[^\"]+\"|'[^']+'|\S+)")
+        return "" if value == "monospace" else value
+    if name == "alacritty":
+        text = read_small(cfg / "alacritty/alacritty.toml") or read_small(cfg / "alacritty/alacritty.yml")
+        return first_match(text, r"family\s*[=:]\s*(\"[^\"]+\"|'[^']+'|[^\s#]+)")
+    if name in ("foot", "footclient"):
+        value = ini_value(read_small(cfg / "foot/foot.ini"), "[main]", "font") \
+            or first_match(read_small(cfg / "foot/foot.ini"), r"^\s*font\s*=\s*(.+)$")
+        return re.split(r"[:,]", value or "", maxsplit=1)[0].strip()
+    if name == "ghostty":
+        return first_match(read_small(cfg / "ghostty/config"), r"^\s*font-family\s*=\s*(.+?)\s*$")
+    if name == "wezterm":
+        text = read_small(cfg / "wezterm/wezterm.lua") or read_small(home / ".wezterm.lua")
+        return first_match(text, r"wezterm\.font(?:_with_fallback)?\s*\(\s*\{?\s*(?:family\s*=\s*)?(\"[^\"]+\"|'[^']+')")
+    if name == "xfce4-terminal":
+        text = read_small(cfg / "xfce4/terminal/terminalrc")
+        if (ini_value(text, "[Configuration]", "FontUseSystem") or "").upper() == "TRUE":
+            return ""
+        return re.sub(r"\s+\d+(\.\d+)?$", "", ini_value(text, "[Configuration]", "FontName") or "")
+    return ""
+
+
+def terminal_font(home):
+    """{"ok", "family", "terminal"}: your terminal's font family ("" when it names none)."""
+    chosen = ini_value(read_small(config_home(home) / "kdeglobals"), "[General]", "TerminalApplication")
+    try:
+        name = Path(shlex.split(chosen)[0]).name if chosen else ""
+    except ValueError:
+        name = ""
+    if name and name not in ("konsole", "yakuake"):
+        return {"ok": True, "family": other_terminal_font(home, name), "terminal": name}
+    return {"ok": True, "family": konsole_font(home), "terminal": "konsole"}
+
+
 def take_text(cache_root, name):
     """The message in a file of the cache (text-*.txt), which goes once read
     (one command-line argument holds 128 KiB at most); None if it isn't one."""
@@ -1673,13 +1814,16 @@ def main(argv=None):
         if args[i] == "--host" and i + 1 < len(args):
             host, i = args[i + 1], i + 2
             continue
+        if args[i] == "--wait" and i + 1 < len(args):  # (not over ssh: a host's chat is looked at again instead)
+            i += 2
+            continue
         if args[i] not in ("--remote", "--pretty"):
             rest.append(args[i])
         i += 1
     action, target = None, None
     profile, how, note, decision, message, name = None, "auto", "", None, "", ""
     session, text, stamp, limit, files, config_dirs, answers = None, None, None, PANE_ITEMS, [], [], None
-    after, off, remote, pretty, source, expect, text_file = False, False, False, False, None, None, None
+    after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete")
     osd = False
@@ -1720,10 +1864,17 @@ def main(argv=None):
             stamp = args.pop(0)
         elif arg == "--limit" and args and args[0].isdigit():
             limit = int(args.pop(0))
+        elif arg == "--wait" and args:
+            try:
+                wait = max(0.0, float(args.pop(0)))
+            except ValueError:
+                wait = 0.0
         elif arg == "--config-dir" and args:
             config_dirs.append(args.pop(0))
         elif arg == "--hook-source" and args:
             source = base64.b64decode(args.pop(0)).decode("utf-8")
+        elif arg == "--terminal-font" and action is None:
+            action, target = arg, ""
         elif arg == "--after-turn":
             after = True
         elif arg == "--osd":
@@ -1773,7 +1924,7 @@ def main(argv=None):
                 answer = copy_answer((text or "").strip(), ENTER_COPIES)  # (here, as above)
             return emit(answer)
         if action == "--conversation":
-            result = chat_conversation(home, config_dirs, target, profile, limit, stamp)
+            result = chat_conversation(home, config_dirs, target, profile, limit, stamp, wait)
         elif action == "--send":
             if after:
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)
@@ -1788,6 +1939,8 @@ def main(argv=None):
             result = {"ok": ok, "message": said, **({"changed": True} if not ok and said in (NOT_ASKING, ASKS_ELSE) else {})}
         elif action == "--complete":
             result = completions(home, config_dirs, target, profile)
+        elif action == "--terminal-font":
+            result = terminal_font(home)
         elif action == "--oldest":
             ok, said = answer_oldest(cache_root, target)
             if osd:

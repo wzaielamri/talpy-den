@@ -18,12 +18,15 @@ ConfigPage {
     // popup's new-chat box, and cfg_diffSideBySide, cfg_paneTextPercent, set in the chat pane:
     // ConfigPage's, which puts them back as they are now on Apply)
     property alias cfg_dictateLanguage: dictateLanguage.text
+    property string cfg_paneFont
+    // (cfg_paneTerminalFont: found by the pane, pane.py --terminal-font; ConfigPage's)
 
     // Plasma passes every setting and its default to each page: declaring the
     // defaults of this page's settings avoids "SimpleKCM does not have a
     // property called cfg_…Default" warnings for them.
     property bool cfg_clickOpensPaneDefault
     property string cfg_dictateLanguageDefault
+    property string cfg_paneFontDefault
 
     readonly property string codeDir: decodeURIComponent(Qt.resolvedUrl("../code/").toString().replace(/^file:\/\//, ""))
 
@@ -169,6 +172,26 @@ ConfigPage {
             font: Kirigami.Theme.smallFont
             opacity: 0.7
             text: i18n("New and recent chats open in a terminal or in VS Code: the Terminal | VS Code switch at the top of their lists picks it.")
+        }
+
+        QQC2.ComboBox {
+            id: paneFont
+            readonly property var values: ["terminal", "desktop"]
+            Kirigami.FormData.label: i18n("Chat pane text:")
+            model: [Plasmoid.configuration.paneTerminalFont
+                        ? i18n("In your terminal's font (%1)", Plasmoid.configuration.paneTerminalFont)
+                        : i18n("In your terminal's font"),
+                    i18n("In the desktop's font")]
+            currentIndex: Math.max(0, values.indexOf(page.cfg_paneFont))
+            onActivated: page.cfg_paneFont = values[currentIndex]
+        }
+
+        QQC2.Label {
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 20
+            wrapMode: Text.Wrap
+            font: Kirigami.Theme.smallFont
+            opacity: 0.7
+            text: i18n("The conversation and your reply, as Claude's terminal shows them: in the font of the terminal Talpy Den opens chats in (System Settings > Default Applications, else Konsole), or a fixed-width one. The size: A− / A+ in the pane.")
         }
 
         Kirigami.Separator {

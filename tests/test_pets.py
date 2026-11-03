@@ -2116,7 +2116,7 @@ class SettingsPageTests(unittest.TestCase):
             defaults.update(own_defaults)
         # (the ones set in the popup are ConfigPage's on every page: it puts them back as they are now on Apply)
         popup = {"focusView", "sshHosts", "newChatInVscode", "newChatModel", "newChatEffort", "newChatMode",
-                 "diffSideBySide", "paneTextPercent"}
+                 "diffSideBySide", "paneTextPercent", "paneTerminalFont"}
         self.assertEqual(found, {k: v for k, v in kinds.items() if k not in popup})
         self.assertEqual({k + "Default": v for k, v in kinds.items() if k not in popup}, defaults)
 

@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { attachedTag, whereTag, droppedPaths, fileMention, picturesIn, PICTURE_TYPES, routeHint, shownAsk, suggestFor, type Offers, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { attachedTag, whereTag, droppedPaths, fileMention, pendingTaken, picturesIn, PICTURE_TYPES, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox, askKey } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -21,7 +21,7 @@ import { Markdown } from "./util/markdown";
 
 declare global {
   interface Window {
-    CLAUDE_CHAT: { tab: "chat" | "review"; local: boolean; scale?: number; split?: boolean };
+    CLAUDE_CHAT: { tab: "chat" | "review"; local: boolean; scale?: number; split?: boolean; font?: string };
   }
 }
 
@@ -158,6 +158,11 @@ function ChatApp() {
   // second Enter doesn't send it twice (the ref: two keys before a redraw)
   const [sending, setSending] = useState(false);
   const sendingNow = useRef(false);
+  // Yours on their way, shown after the conversation till it has them (send, pendingTaken)
+  const [outgoing, setOutgoing] = useState<PendingSent[]>([]);
+  const outgoingNow = useRef<PendingSent[]>([]); // (for the extension's answers: the handler is made once)
+  outgoingNow.current = outgoing;
+  const sentCount = useRef(0);
   const [review, setReview] = useState<ReviewAnswer | null>(null);
   const [reviewError, setReviewError] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -168,6 +173,7 @@ function ChatApp() {
   const [commitText, setCommitText] = useState("");
   const [commitEdited, setCommitEdited] = useState(false);
   const [scale, setScale] = useState(config.scale ?? 1.15);
+  const [font, setFont] = useState(config.font ?? ""); // (the conversation's and your reply's: talpyDen.chatFont)
   const [shown, setShown] = useState(true); // (the tab in front: its working Talpy moves only then)
   const list = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
@@ -329,6 +335,7 @@ function ChatApp() {
       if (!m || typeof m !== "object") return;
       if (m.type === "chat") setChat(m.chat);
       else if (m.type === "textSize") setScale(m.scale);
+      else if (m.type === "font") setFont(m.family);
       else if (m.type === "visible") setShown(m.visible);
       else if (m.type === "diffLayout") setSplit(m.split);
       else if (m.type === "picked") attachPaths(m.paths);
@@ -407,6 +414,21 @@ function ChatApp() {
           return;
         }
         if (m.kind === "answer") setAnswering((n) => Math.max(0, n - 1));
+        if (m.kind === "send" && typeof m.id === "number") {
+          // (one shown as you sent it: gone into the chat, it's shown as sent till the
+          // conversation has it; else out of the conversation, and back in the box
+          // unless it's in VS Code's input or on the clipboard)
+          const id = m.id;
+          const p = outgoingNow.current.find((x) => x.id === id);
+          if (m.ok && m.went) setOutgoing((was) => was.map((x) => (x.id === id ? { ...x, state: "sent", sentAt: Date.now() } : x)));
+          else {
+            setOutgoing((was) => was.filter((x) => x.id !== id));
+            if (p && (!m.ok || m.ask)) setText((t) => p.text + (t.trim() ? "\n" + t : ""));
+          }
+          if (m.ask) setAskHow(true);
+          if (!m.ok || m.ask || !m.went) setInfo(m.message ? { ok: m.ok && !m.ask, message: m.message } : null);
+          return;
+        }
         if (m.kind === "send" || m.kind === "later") {
           sendingNow.current = false;
           setSending(false);
@@ -462,7 +484,7 @@ function ChatApp() {
   useLayoutEffect(() => {
     const el = list.current;
     if (el && follow.current) el.scrollTop = el.scrollHeight;
-  }, [items, chat?.activity]);
+  }, [items, outgoing, chat?.activity]);
   // The list made shorter (a prompt to answer under it, the queued reply,
   // what the reply box offers) or taller: still at its end if it was
   useEffect(() => {
@@ -500,11 +522,31 @@ function ChatApp() {
       : listTop.current;
   }, [tab]);
 
+  // Your message, at once where it goes to the chat itself (typed in, or on in
+  // the background): in the conversation as being sent, the box empty for the
+  // next one (the extension sends each in turn). A copy, one for VS Code's
+  // input, Enter for a terminal that takes no text: the box keeps it till then.
   const send = (how: "auto" | "background" | "copy" | "enter", afterTurn: boolean) => {
-    if (!text.trim() || sendingNow.current) return;
-    sendingNow.current = true;
-    setSending(true);
-    post({ type: "send", text, how, afterTurn });
+    const said = text.trim();
+    if (!said) return;
+    const route = chat?.route;
+    const shows = !afterTurn && how !== "copy" && (how === "background" || route === "background" || route === "tmux" || route === "vscodeTerminal");
+    if (!shows) {
+      if (sendingNow.current) return;
+      sendingNow.current = true;
+      setSending(true);
+      post({ type: "send", text, how, afterTurn });
+      return;
+    }
+    const id = ++sentCount.current;
+    setOutgoing((was) => [...was, { id, text: said, at: Date.now(), state: "sending", sentAt: 0,
+                                    known: items.filter((it) => it.kind === "you").map((it) => String(it.key)) }]);
+    setText("");
+    setCursor(0);
+    historyAt.current = -1;
+    setAskHow(false);
+    follow.current = true;
+    post({ type: "send", text, how, afterTurn, id });
   };
   // (to the prompt shown now: if the chat asks something else by then, it isn't answered)
   const answer = (decision: Decision, note: string, answers?: Answers) => {
@@ -525,12 +567,27 @@ function ChatApp() {
   // (the Chat tab leaves out its tool calls)
   const asking = !!chat?.permission;
   const going = !!chat?.busy;
-  const steps = useMemo(() => items.map((it, i) => {
-    const gap = gapOf(it.kind, items[i - 1]?.kind);
+  // (yours on their way out of it once the conversation has them: as it comes, and each second for the time rules)
+  useEffect(() => {
+    if (!outgoing.length) return undefined;
+    const settle = () => {
+      const done = pendingTaken(items, outgoing, Date.now(), !chat?.host);
+      if (done.size) setOutgoing((was) => was.filter((p) => !done.has(p.id)));
+    };
+    settle();
+    const tick = setInterval(settle, 1000);
+    return () => clearInterval(tick);
+  }, [items, outgoing, chat?.host]);
+  const shownItems = useMemo((): PaneItem[] => (outgoing.length
+    ? [...items, ...outgoing.map((p) => ({ kind: "you" as const, key: `pending-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending" }))]
+    : items), [items, outgoing]);
+  const steps = useMemo(() => shownItems.map((it, i) => {
+    const gap = gapOf(it.kind, shownItems[i - 1]?.kind);
     return it.kind === "you" ? (
-      <div key={it.key} data-key={it.key} class={`pane-item pane-you ${gap}`}>
+      <div key={it.key} data-key={it.key} class={`pane-item pane-you ${gap}${it.sending ? " sending" : ""}`}>
         <span class="pane-gutter" aria-hidden="true">›</span>
         <div class="pane-you-text">{it.text}</div>
+        {it.sending ? <span class="pane-you-state">Sending…</span> : null}
       </div>
     ) : it.kind === "claude" ? (
       <div key={it.key} data-key={it.key} class={`pane-item pane-claude ${gap}`}>
@@ -547,7 +604,7 @@ function ChatApp() {
         item={it}
         gap={gap}
         open={!!open[it.key]}
-        asking={asking && i === items.length - 1 && it.status === "open"}
+        asking={asking && i === shownItems.length - 1 && it.status === "open"}
         going={going && it.status === "open"}
         onToggle={() => setOpen((was) => ({ ...was, [it.key]: !was[it.key] }))}
         split={split}
@@ -558,10 +615,10 @@ function ChatApp() {
         <span>{it.text}</span>
       </div>
     );
-  }), [items, open, asking, going, split, tab]);
+  }), [shownItems, open, asking, going, split, tab]);
 
   return (
-    <div class="pane pane-grow" style={{ "--pane-scale": String(scale) }}>
+    <div class="pane pane-grow" style={{ "--pane-scale": String(scale), ...(font ? { "--pane-font": font } : {}) }}>
       <div class="pane-head">
         <span class={`state-dot st-${chat?.state ?? "done"}`} aria-hidden="true" />
         <h2 class="pane-name">{chat?.name ?? ""}</h2>

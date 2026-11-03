@@ -155,9 +155,9 @@ def changes(seen, snap, live, now):
 
 
 class Watch:
-    """inotify on the folders (None: not on this system: look every half second)."""
+    """inotify on the folders, or files (None: not on this system: look every half second)."""
 
-    def __init__(self, folders):
+    def __init__(self, folders, mask=WATCH_MASK):
         self.fd = None
         try:
             libc = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -166,7 +166,7 @@ class Watch:
             return
         if fd < 0:
             return
-        added = [libc.inotify_add_watch(fd, f.encode(), WATCH_MASK) for f in folders]
+        added = [libc.inotify_add_watch(fd, f.encode(), mask) for f in folders]
         if not any(w >= 0 for w in added):
             os.close(fd)
             return
@@ -188,6 +188,11 @@ class Watch:
                 pass
         except OSError:
             pass
+
+    def close(self):
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
 
 
 def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time):
