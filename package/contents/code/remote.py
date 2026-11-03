@@ -1464,8 +1464,8 @@ def main(argv=None):
             words, keep_off = end_args(args)
             ok, message = end(*words, busy="--busy" in args)
             if ok and keep_off:  # (stopped: Keep going off too; not stopped, it stays on, as for a chat here)
-                cs.keep_chat(cs.cache_dir(Path.home()), "", keep_off, on=False, host=words[0])
-                message = f"{message.rstrip('.')}. It won't go on by itself any more"
+                import jump  # (its words name a go-on that's still queued for it, as for a chat here)
+                message = f"{message.rstrip('.')}. {jump.keep_off(Path.home(), [], keep_off, words[0])[1]}"
             out = {"ok": ok, "message": message}
         elif action == "--interrupt" and len(args) in (2, 3):
             ok, message = interrupt(*args)
