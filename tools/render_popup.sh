@@ -58,6 +58,12 @@ grab = """
 %s
 """ % (int(secs), out, os.environ.get("EXTRA", ""))
 s = s.replace("PlasmoidItem {\n    id: root\n", "PlasmoidItem {\n    id: root\n" + grab, 1)
+# The render is the only copy in its own cache, so it would be the one that
+# notifies: it would pop up your desktop's notifications and start the queued
+# tasks and go-ons it copied (queue.json, keep.json) for real. It never does.
+notifier = "readonly property bool notifier: "
+assert s.count(notifier) == 1, "main.qml's notifier property moved: update render_popup.sh"
+s = s.replace(notifier, notifier + "false && ", 1)
 open(main, "w").write(s)
 PY
 mkdir -p "$work/data" "$work/config" "$work/state" "$work/cache/talpy-den"
