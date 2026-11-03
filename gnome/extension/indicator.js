@@ -1119,7 +1119,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         } else if (session.entrypoint === 'claude-vscode') {
             const result = await this._helper('jump.py', ['--remote-vscode', host, session.sessionId, ...cwd,
                 ...allowVscode ? ['--allow-vscode'] : []]);
-            if (result.ask === 'vscode' && !this._destroyed) {   // (a container's VS Code chat: ask first, under its line)
+            if (result.ask === 'vscode' && !this._destroyed) {   // (a host's or container's VS Code chat: ask first, under its line)
                 this.ui.vscodeAsk = {key: L.rowKey(session, host), host, session, question: result.message};
                 this._actionError = '';
                 if (this.menu.isOpen)
@@ -1135,9 +1135,10 @@ class TalpyDenIndicator extends PanelMenu.Button {
         }
     }
 
-    // A container's VS Code chat with no VS Code window attached to it asks
-    // once first (jump.py --remote-vscode: Dev Containers shares your SSH
-    // agent and Git credentials with it): VS Code, or a terminal in it
+    // A host's or container's VS Code chat with no VS Code window connected
+    // to it asks once first (jump.py --remote-vscode: its VS Code server can
+    // read your clipboard and open links here; Dev Containers shares your SSH
+    // agent and Git credentials with a container): VS Code, or a terminal there
     vscodeAskOpen() {
         const asked = this.ui.vscodeAsk;
         if (asked)

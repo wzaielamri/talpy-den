@@ -1135,7 +1135,7 @@ RowLayout {
             shown: row.confirmingKeepOnly
         }
 
-        // Open VS Code attached to this chat's container? (main.qml: vscodeAsk)
+        // Open VS Code connected to this chat's host or container? (main.qml: vscodeAsk)
         Loader {
             Layout.fillWidth: true
             active: root.vscodeAsk.key !== "" && root.vscodeAsk.key === row.rowKey

@@ -626,7 +626,7 @@ class JumpByIdTests(FakeEngines):
 
 
 class VscodeAskTests(FakeEngines):
-    def test_a_containers_vscode_chat_asks_once_per_container(self):
+    def test_a_vscode_chat_asks_once_per_container_and_host(self):
         import jump
         from unittest import mock
         self.engine("podman")
@@ -642,10 +642,15 @@ class VscodeAskTests(FakeEngines):
             # yes once: kept for that container (past the question: no VS Code here)
             self.assertIn("isn't installed", jump.jump_remote_vscode("podman:shop", "abc", "/w", allow=True)[1])
             self.assertIn("isn't installed", jump.jump_remote_vscode("podman:shop", "abc", "/w")[1])
-            # one made again with that name asks again; an SSH host's never does
+            # one made again with that name asks again
             self.put({"shop": self.container("shop", id="f" * 64)})
             self.assertEqual(jump.jump_remote_vscode("podman:shop", "abc", "/w"), (None, ask))
+            # an SSH host's asks once too (its VS Code server reaches this computer), kept by its name
+            there = "Open VS Code connected to lab? Its VS Code server can read your clipboard and open links here."
+            self.assertEqual(jump.jump_remote_vscode("lab", "abc", "/w"), (None, there))
+            self.assertIn("isn't installed", jump.jump_remote_vscode("lab", "abc", "/w", allow=True)[1])
             self.assertIn("isn't installed", jump.jump_remote_vscode("lab", "abc", "/w")[1])
+            self.assertEqual(jump.jump_remote_vscode("lab2", "abc", "/w")[0], None)
 
 
 REPO = CODE.parent.parent.parent

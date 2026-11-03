@@ -658,9 +658,10 @@ def vscode_connected_to(host):
 def jump_remote_vscode(host, session_id, folder="", allow=False):
     """Show a VS Code chat that runs on an SSH host: raise the VS Code window
     connected to that host (Remote-SSH puts "[SSH: host]" in its title) and
-    reveal the conversation; open VS Code on the host if none is. For a
-    container with no window attached, (None, the question) until you said
-    yes for it (allow: you say so now; remote.vscode_allowed)."""
+    reveal the conversation; open VS Code on the host if none is. With no
+    window connected (or attached to a container), (None, the question)
+    until you said yes for that host or container (allow: you say so now;
+    remote.vscode_allowed)."""
     url = "vscode://anthropic.claude-code/open?" + link_query({"session": session_id})
     opener = shutil.which("xdg-open")
     if not opener:
@@ -671,10 +672,11 @@ def jump_remote_vscode(host, session_id, folder="", allow=False):
         time.sleep(0.3)  # let VS Code see its window focused, so the link opens there
         subprocess.Popen([opener, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         return True, f"Opened the conversation in VS Code ({remote_label(host)})"
-    if is_container(host):
-        import remote
-        if not remote.vscode_allowed(host, allow):
-            return None, f"Open VS Code attached to {host}? Dev Containers shares your SSH agent and Git credentials with it."
+    import remote
+    if not remote.vscode_allowed(host, allow):
+        return None, (f"Open VS Code attached to {host}? Dev Containers shares your SSH agent and Git credentials with it."
+                      if is_container(host) else
+                      f"Open VS Code connected to {host}? Its VS Code server can read your clipboard and open links here.")
     code = next((shutil.which(n) for n in VSCODE_NAMES if shutil.which(n)), None)
     if not code:
         return False, f"This chat runs in VS Code {remote_where(host)}, and VS Code isn't installed here"
@@ -3053,7 +3055,7 @@ def main(argv=None):
             ok, message = open_memory(Path.home(), extra, session_id, action == "--edit-memory")
         elif action == "--remote-vscode":
             ok, message = jump_remote_vscode(remote_host, session_id, folder or "", allow_vscode)
-            if ok is None:  # (a container's: asked first)
+            if ok is None:  # (no window there yet: asked first)
                 ok, extra_out = False, {"ask": "vscode"}
         elif action == "--remote-terminal":
             ok, message = jump_remote_terminal(remote_host, name_arg, vscode_terminal, folder or "")

@@ -230,8 +230,9 @@ export class Actions {
     } else if (chat.entrypoint === "claude-vscode") {
       answer = await this.backend.action("jump.py", ["--remote-vscode", host, chat.sessionId, ...(chat.cwd ? ["--cwd", chat.cwd] : []),
         ...(allowVscode ? ["--allow-vscode"] : [])]);
-      // a container's with no VS Code window attached to it: asked once first
-      // (Dev Containers shares your SSH agent and Git credentials with it)
+      // a host's or container's with no VS Code window connected to it: asked
+      // once first (its VS Code server can read your clipboard and open links
+      // here; Dev Containers shares your SSH agent and Git credentials with a container)
       if (answer.ask === "vscode") {
         const open = "Open in VS Code";
         const terminal = "Open in a terminal instead";

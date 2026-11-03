@@ -988,7 +988,7 @@ PlasmoidItem {
             const result = root.helperResult(data)
             const asked = root.vscodeAsks[source]
             delete root.vscodeAsks[source]
-            if (result.ask === "vscode" && asked) {   // (a container's VS Code chat: ask first, under its line)
+            if (result.ask === "vscode" && asked) {   // (a host's or container's VS Code chat: ask first, under its line)
                 root.vscodeAsk = { key: root.rowKeyOf(asked.session, asked.host), host: asked.host, session: asked.session,
                                    question: result.message }
                 root.actionError = ""
@@ -2793,9 +2793,10 @@ PlasmoidItem {
                                  + " # " + Date.now())
     }
 
-    // A container's VS Code chat with no VS Code window attached to it asks
-    // once first (jump.py --remote-vscode: Dev Containers shares your SSH
-    // agent and Git credentials with it): {key: its line's, host, session, question}
+    // A host's or container's VS Code chat with no VS Code window connected
+    // to it asks once first (jump.py --remote-vscode: its VS Code server can
+    // read your clipboard and open links here; Dev Containers shares your SSH
+    // agent and Git credentials with a container): {key: its line's, host, session, question}
     readonly property var noVscodeAsk: ({ key: "", host: "", session: null, question: "" })
     property var vscodeAsk: noVscodeAsk
     property var vscodeAsks: ({})   // (jumper's source -> {host, session})

@@ -1447,7 +1447,8 @@ class RemoteShowTests(unittest.TestCase):
         with Patch(vscode_main_pids=lambda: [100], raise_window=lambda *a, **k: self.fail("nothing to raise"),
                    subprocess=fake, shutil=type("W", (), {"which": staticmethod(lambda n: "/usr/bin/" + n)}),
                    scope_prefix=lambda name: ["systemd-run", f"--unit={name}", "--"], later=later.append,
-                   **self.procs({100: []}, {100: "code"}, {100: ["code"]})):
+                   **self.procs({100: []}, {100: "code"}, {100: ["code"]})), \
+                mock.patch("remote.vscode_allowed", return_value=True):  # (you said yes for it: test_containers)
             ok, msg = jump.jump_remote_vscode("labserver", "abc-123", "/home/me/proj")
         self.assertTrue(ok, msg)
         # VS Code gets a scope of its own: restarting plasmashell mustn't stop it

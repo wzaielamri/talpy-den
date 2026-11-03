@@ -373,14 +373,20 @@ def remember_users(found, inspected=False):
 
 def vscode_allowed(ident, allow=False):
     """Whether a click on a chat may attach VS Code to the container ident
-    (Dev Containers shares your SSH agent and Git credentials with it): you
-    said so for this very container (its id now: one made again with that
-    name asks anew); allow: you say so now, and it's kept."""
-    try:
-        found, _r = inspect(place(ident))
-    except (OSError, subprocess.TimeoutExpired, ValueError):
-        found = None
-    cid = found["cid"] if found else ""
+    (Dev Containers shares your SSH agent and Git credentials with it), or
+    connect it to the SSH host ident (its VS Code server can read your
+    clipboard and open links here): you said so for this very container (its
+    id now: one made again with that name asks anew), or for that host;
+    allow: you say so now, and it's kept."""
+    p = place(ident)
+    if p.container:
+        try:
+            found, _r = inspect(p)
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            found = None
+        cid = found["cid"] if found else ""
+    else:
+        cid = "ssh"  # (a host's: kept by its name)
 
     def keep(saved):
         said = saved.get("vscode") if isinstance(saved.get("vscode"), dict) else {}
