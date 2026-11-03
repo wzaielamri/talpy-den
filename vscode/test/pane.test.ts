@@ -426,6 +426,41 @@ test("a chat's tab shown again reads its conversation at once", async () => {
   }
 });
 
+// Closing a chat's terminal, Claude moves it to the background under a new id
+// (the status's "moved"): its tab goes on with it there, not with the old
+// transcript, which stops at the move
+test("a chat's tab follows the chat Claude moved to the background under a new id", async () => {
+  const state = demoState(NOW);
+  const row = state.status!.groups.flatMap((g) => g.sessions).find((x) => x.chatId)!;
+  const old = "0dd0dd00-0000-4000-8000-000000000001";
+  const reads: string[] = [];
+  const backend = { pane: async (args: string[]) => (args[0] === "--conversation" && reads.push(args[1]), { ok: true, unchanged: true }) };
+  const changed: (() => void)[] = [];
+  const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined,
+                 onState: (l: () => void) => (changed.push(l), { dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: true };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: old, sessionId: old, profileDir: row.profileDir, name: row.name } as never);
+  const panel = recorded.panels.at(-1)!;
+  try {
+    panel.show(true);
+    panel.receive({ type: "ready" });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(reads, [old]);
+    state.status!.moved = { [old]: row.chatId };
+    changed.forEach((l) => l());
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(reads.at(-1), row.chatId);
+    const chats = panel.sent.filter((m) => (m as { type: string }).type === "chat") as { chat: { chatId: string; state: string } }[];
+    assert.deepEqual([chats.at(-1)!.chat.chatId, chats.at(-1)!.chat.state], [row.chatId, row.state]);
+    const tabs = recorded.panels.length;
+    p.open({ chatId: old, sessionId: old, profileDir: row.profileDir, name: row.name } as never);
+    assert.equal(recorded.panels.length, tabs, "the same tab, by the id it had");
+  } finally {
+    p.dispose();
+  }
+});
+
 test("the pictures a reply names, each once, and taking one out", () => {
   const a = "/cache-here/talpy-den/images/a.png";
   const text = `look [Image: ${a}] and [Image: /x/b.jpg] again [Image: ${a}]`;

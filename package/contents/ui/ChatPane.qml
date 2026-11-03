@@ -405,8 +405,24 @@ Window {
         if (tab === "review" && wasTab === "review")
             Qt.callLater(loadReview)   // (the tab stays: onTabChanged doesn't read this one's)
     }
+    // Claude moved the chat to the background under a new id (main.qml followPaneChat):
+    // the same conversation goes on there, so what's shown, your reply and your
+    // messages on their way stay, and its new transcript is read
+    function follow() {
+        draftKey = (chat.host || "") + "\n" + chatId
+        if (pendingSent.some(p => p.chat === chat.from))
+            pendingSent = pendingSent.map(p => p.chat === chat.from ? Object.assign({}, p, { chat: chatId }) : p)
+        stamp = ""   // (another transcript: its first read is taken; the watcher then waits on it)
+        watchLine = ""
+        watchFailures = 0
+        loading = false   // (a read for the id it had is left out when it comes: handle())
+        loadAgain = false
+        Qt.callLater(load)
+        if (tab === "review")
+            Qt.callLater(loadReview)
+    }
     property bool ready: false   // (nothing runs while the window is being made)
-    onChatIdChanged: if (ready) reset()
+    onChatIdChanged: if (ready) (chat.from && draftKey === (chat.host || "") + "\n" + chat.from ? follow() : reset())
     Component.onCompleted: {
         ready = true
         reset()

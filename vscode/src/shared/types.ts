@@ -551,6 +551,7 @@ export interface Status {
   cli?: { installed: boolean };
   queue?: QueuedTask[]; // this computer's status only: tasks waiting for a usage limit
   keep?: KeptChat[]; // this computer's status only: the chats that keep going
+  moved?: Record<string, string>; // chat id -> the id it goes on under: chats Claude moved to the background under a new id
   // this computer's status only: chats marked reviewed ("[host|]chat id" ->
   // when; 0: marked not reviewed), and since when chats are to review at all
   reviewed?: Record<string, number>;

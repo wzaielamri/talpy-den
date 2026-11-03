@@ -33,13 +33,17 @@ type DictationState = Extract<PaneHostMessage, { type: "dictation" }>["state"];
 const LIMIT = 120;
 const LIMIT_MAX = 2000;
 
-// The chat's row now: a listed session, else one of its account's recent chats
-export function findPaneRow(state: Pick<ViewState, "status" | "hosts">, host: string, chatId: string): { session?: Session; recent?: RecentChat } {
+// The chat's row now: a listed session, else one of its account's recent chats.
+// One Claude moved to the background under a new id (its terminal closed: the
+// status's "moved") is that one's, movedTo, unless a chat still runs under the old
+export function findPaneRow(state: Pick<ViewState, "status" | "hosts">, host: string, chatId: string, follow = true): { session?: Session; recent?: RecentChat; movedTo?: string } {
   const where = host ? state.hosts.find((h) => h.name === host)?.result : state.status;
   for (const g of where?.groups ?? []) {
     const s = (g.sessions ?? []).find((x) => (x.chatId || x.sessionId) === chatId || x.sessionId === chatId);
-    if (s) return { session: s };
+    if (s && (!follow || s.pid != null || !where?.moved?.[chatId])) return { session: s };
   }
+  const to = follow ? where?.moved?.[chatId] : undefined;
+  if (to && to !== chatId) return { ...findPaneRow(state, host, to, false), movedTo: to };
   for (const g of where?.groups ?? []) {
     const c = [...(g.recent ?? []), ...(g.starred ?? [])].find((x) => x.sessionId === chatId);
     if (c) return { recent: c };
@@ -65,12 +69,19 @@ export class ChatPanes implements vscode.Disposable {
   open(chat: ChatRef, tab: "chat" | "review" = "chat"): void {
     this.dash.opened(chat); // (looked at: off the focus view's Finished lines)
     const chatId = chat.chatId || chat.sessionId;
-    const key = `${chat.host ?? ""}|${chatId}`;
+    // (by the id it had: its tab, if one has it under the new id Claude moved it to)
+    const key = `${chat.host ?? ""}|${findPaneRow(this.dash.state(), chat.host ?? "", chatId).movedTo ?? chatId}`;
     const pane = this.panes.get(key);
     if (pane) return pane.reveal(tab);
     const created = new Pane(this, chat, tab);
     this.panes.set(key, created);
-    created.onClosed(() => this.panes.delete(key));
+    created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
+  }
+
+  // A tab's chat Claude moved to the background under a new id goes on under that one (Pane.follow)
+  moved(pane: Pane, from: string, to: string): void {
+    if (this.panes.get(from) === pane) this.panes.delete(from);
+    if (!this.panes.has(to)) this.panes.set(to, pane);
   }
 
   // An answer to what a waiting chat asks (its row, the tab, a notification),
@@ -350,9 +361,10 @@ class Pane implements vscode.Disposable {
   private async pushChat(): Promise<void> {
     if (this.disposed) return;
     const state = this.owner.ext.dash.state();
-    const { session, recent } = findPaneRow(state, this.host, this.chatId);
+    const { session, recent, movedTo } = findPaneRow(state, this.host, this.chatId);
     if (session) this.chat = chatRefOf(session, this.host || undefined);
     else if (recent) this.chat = recentRef(recent, this.host || undefined);
+    if (movedTo) this.follow(movedTo);
     this.terminalHere = session ? await this.owner.routeHere(session, this.host) : false;
     if (this.disposed) return; // (closed meanwhile)
     const item = session ?? (recent ? { ...recent, chatId: recent.sessionId, state: "done" as const } : undefined);
@@ -394,6 +406,16 @@ class Pane implements vscode.Disposable {
     this.lastState = chat.state;
   }
 
+  // Claude moved the chat to the background under a new id (its terminal
+  // closed): the same conversation goes on there, so the tab goes on with it,
+  // its new transcript read now (a read for the id it had is left out)
+  private follow(to: string): void {
+    this.owner.moved(this, `${this.host}|${this.chatId}`, `${this.host}|${to}`);
+    this.chatId = to;
+    this.stamp = "";
+    void this.load();
+  }
+
   // The conversation, again while the tab shows (often for this computer's
   // chats; with live mode it's read at each step, so this is a fallback)
   private schedule(): void {
@@ -412,12 +434,17 @@ class Pane implements vscode.Disposable {
       return;
     }
     this.loading = true;
+    const chatId = this.chatId;
     try {
       const r = await this.owner.ext.backend.pane([
-        "--conversation", this.chatId, "--limit", String(this.limit), ...(this.stamp ? ["--if-changed", this.stamp] : []),
+        "--conversation", chatId, "--limit", String(this.limit), ...(this.stamp ? ["--if-changed", this.stamp] : []),
         ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...(this.host ? ["--host", this.host] : configDirArgs()),
       ], this.host ? 60000 : 30000);
       if (this.disposed || (r.ok && r.unchanged)) return;
+      if (chatId !== this.chatId) {
+        this.loadAgain = true; // (Claude moved it meanwhile: its new id's, follow)
+        return;
+      }
       this.take(r);
     } finally {
       this.loading = false;
@@ -461,12 +488,14 @@ class Pane implements vscode.Disposable {
       while (!this.disposed && this.panel.visible && this.stamp && this.watchFailures < 3) {
         const limit = this.limit;
         const stamp = this.stamp;
+        const chatId = this.chatId;
         const asked = Date.now();
         const r = await this.owner.ext.backend.pane([
-          "--conversation", this.chatId, "--limit", String(limit), "--if-changed", stamp, "--wait", "50",
+          "--conversation", chatId, "--limit", String(limit), "--if-changed", stamp, "--wait", "50",
           ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...configDirArgs(),
         ], 70000);
         if (this.disposed) return;
+        if (chatId !== this.chatId) continue; // (Claude moved it meanwhile: its new id's is waited on now)
         if (!r.ok) {
           this.watchFailures += 1;
           await pause(5000);

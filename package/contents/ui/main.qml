@@ -1454,6 +1454,7 @@ PlasmoidItem {
         now = parsed.generatedAt
         liveFromRows(parsed.groups)
         status = parsed   // first: whether this copy notifies
+        followPaneChat("", parsed)
         trackTransitions("", parsed.groups, parsed.generatedAt, "")
         trackLimitStops("", parsed.groups, "")
         trackOverlaps("", parsed.groups, "")
@@ -2479,6 +2480,7 @@ PlasmoidItem {
             setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(),
                               login: false, loggedIn: !!answer.loggedIn, clockOffset: result === answer.result ? 0 : offset,
                               stopped: false, gone: false, paused: false, cached: false })
+            followPaneChat(host, result)
             if (status)
                 startDueTasks(status.queue || [])   // (a reply waiting for the end of a turn there: it ended)
         } else {
@@ -3803,7 +3805,9 @@ PlasmoidItem {
     // else a new one
     function openPane(s, host, tab, then) {
         forgetFinished(petKeyOf(s, host))
-        const chatId = s.chatId || s.sessionId
+        // (one opened by the id it had, before Claude moved it: under the new one)
+        const moved = movedChat({ chatId: s.chatId || s.sessionId }, host ? (remote[host] || {}).result : status)
+        const chatId = moved || s.chatId || s.sessionId
         const key = (host || "") + "|" + chatId
         const holder = Hub.paneHolder(key, instanceId)
         if (holder) {
@@ -3816,8 +3820,9 @@ PlasmoidItem {
             open.act(then)
             return
         }
-        const chat = { chatId: chatId, sessionId: s.sessionId || "", profileDir: s.profileDir || "",
-                       host: host || "", name: s.name || "", cwd: s.cwd || "", tab: tab || "chat", at: Date.now(), key: s.key || "" }
+        const chat = { chatId: chatId, sessionId: moved ? "" : s.sessionId || "", profileDir: s.profileDir || "",
+                       host: host || "", name: s.name || "", cwd: s.cwd || "", tab: tab || "chat", at: Date.now(),
+                       key: moved ? "" : s.key || "" }
         let win = paneWindows.find(w => !w.chat.chatId && w.lastKey === key) || paneWindows.find(w => !w.chat.chatId)
         if (win) {
             win.chat = chat
@@ -3849,6 +3854,51 @@ PlasmoidItem {
             if (win) {
                 win.forward(tab)
                 win.act(then)
+            }
+        }
+    }
+
+    // The id Claude moved the chat c to the background under (its terminal closed),
+    // or "": result, a check's answer of its host, has "moved" {chat id: the id it
+    // goes on under}; a chat that still runs under the id it had stays
+    function movedChat(c, result) {
+        const to = result && result.moved ? result.moved[c.chatId] : ""
+        if (!to || to === c.chatId)
+            return ""
+        for (const g of result.groups || [])
+            for (const s of g.sessions || [])
+                if ((s.chatId || s.sessionId) === c.chatId && s.pid !== null && s.pid !== undefined)
+                    return ""
+        return to
+    }
+    // After a check of host ("": this computer's): each window whose chat moved goes
+    // on with it under that id (ChatPane follow()), and Hub lists it so; a closed
+    // window's last chat and a draft kept for a chat follow it too
+    function followPaneChat(host, result) {
+        if (!result || !result.moved)
+            return
+        let shown = false
+        for (const w of paneWindows) {
+            const c = w.chat
+            if (c.chatId) {
+                const to = (c.host || "") === host ? movedChat(c, result) : ""
+                if (to) {
+                    w.chat = Object.assign({}, c, { chatId: to, sessionId: "", key: "", from: c.chatId })
+                    shown = true
+                }
+            } else if (w.lastKey.indexOf(host + "|") === 0) {
+                const to = movedChat({ chatId: w.lastKey.slice(host.length + 1) }, result)
+                if (to)
+                    w.lastKey = host + "|" + to
+            }
+        }
+        if (shown)
+            paneListChanged()
+        for (const k in paneDrafts) {
+            const to = k.indexOf(host + "\n") === 0 ? movedChat({ chatId: k.slice(host.length + 1) }, result) : ""
+            if (to && !((host + "\n" + to) in paneDrafts)) {
+                paneDrafts[host + "\n" + to] = paneDrafts[k]
+                delete paneDrafts[k]
             }
         }
     }
