@@ -9,8 +9,13 @@
 // lookbehind.
 //
 // style: {pt (the text's point size), mono (a monospace family), text,
-// muted, accent (bullets, quote bars), heading, code (inline code), codeBg,
-// blockBg (code blocks), border, link}: colors as "#rrggbb".
+// muted, accent (bullets, quote bars), heading, strong (bold, small headings
+// and a table's head, as Claude's terminal draws bold: the theme's highlight;
+// none: the text's), code (inline code), codeBg, blockBg (code blocks),
+// border, link}: colors as "#rrggbb"; syntax (codehtml.mjs syntaxColors: a
+// code block's colors, by the language after its ```; none: as written).
+
+import { fenceLanguage, highlight } from "./codeview.mjs";
 
 const FENCE = /^(\s*)(```+|~~~+)\s*([^\s`]*)/;
 const HEADING = /^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;   // (a closing run of # only after a space: C# stays)
@@ -71,7 +76,7 @@ export function inline(text, s) {
         if (m[1] !== undefined)   // (its ground ends with its last character: no margin that reads as a space)
             out += `<span style="font-family:${family(s.mono)}; font-size:${(s.pt * 0.92).toFixed(1)}pt; color:${s.code}; background-color:${s.codeBg}">${escape(m[1])}</span>`;
         else if (m[2] !== undefined || m[3] !== undefined)
-            out += `<b>${inline(m[2] !== undefined ? m[2] : m[3], s)}</b>`;
+            out += `<b style="color:${s.strong || s.text}">${inline(m[2] !== undefined ? m[2] : m[3], s)}</b>`;
         else if (m[4] !== undefined || m[5] !== undefined)
             out += `<i>${inline(m[4] !== undefined ? m[4] : m[5], s)}</i>`;
         else if (m[6] !== undefined)
@@ -203,6 +208,18 @@ export function codeBlocks(text) {
 
 const HEADING_SIZE = [1.5, 1.3, 1.15, 1.05, 1, 1];
 
+// A code block's text in its language's colors (codeview.mjs highlight), as escaped HTML
+function colored(text, lang, s) {
+    const kind = s.syntax ? fenceLanguage(lang) : "";
+    if (!kind || text.length > 200000)
+        return escape(text);
+    const state = {};
+    return text.split("\n").map(line => highlight(line, kind, state).map(run => {
+        const color = run[0] ? s.syntax[run[0]] : "";
+        return color ? `<span style="color:${color}">${escape(run[1])}</span>` : escape(run[1]);
+    }).join("")).join("\n");
+}
+
 function listHtml(items, s, top, bottom) {
     // Nested <ul>/<ol>: Qt draws the markers, in the item's color (the accent)
     let out = "";
@@ -235,7 +252,7 @@ export function toHtml(text, s) {
         const bottom = 0;   // (the next block's top is the gap)
         if (b.kind === "heading") {
             const size = HEADING_SIZE[b.level - 1] * s.pt;
-            return `<p style="margin-top:${k === 0 ? "0px" : px(em * 1.1)}; margin-bottom:${px(em * 0.1)}; font-size:${size.toFixed(1)}pt; font-weight:700; color:${b.level <= 3 ? s.heading : s.text}">${inline(b.text, s)}</p>`;
+            return `<p style="margin-top:${k === 0 ? "0px" : px(em * 1.1)}; margin-bottom:${px(em * 0.1)}; font-size:${size.toFixed(1)}pt; font-weight:700; color:${b.level <= 3 ? s.heading : s.strong || s.text}">${inline(b.text, s)}</p>`;
         }
         if (b.kind === "list")
             return listHtml(b.items, s, top, bottom);
@@ -245,7 +262,7 @@ export function toHtml(text, s) {
             const head = `<table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:${px(em * 0.3)}"><tr><td style="${small}; color:${s.muted}">${escape(b.lang)}</td>`
                 + `<td align="right" style="${small}"><a href="copy:${n}" style="color:${s.muted}; text-decoration:none">Copy</a></td></tr></table>`;
             return spacer(top) + `<table width="100%" cellspacing="0" cellpadding="${Math.round(em * 0.5)}" style="background-color:${s.blockBg}; border-color:${s.border}; border-style:solid; border-width:1px"><tr><td>`
-                + head + `<pre style="font-family:${family(s.mono)}; font-size:${(s.pt * 0.92).toFixed(1)}pt; white-space:pre-wrap; margin:0px">${escape(b.text)}</pre></td></tr></table>`;
+                + head + `<pre style="font-family:${family(s.mono)}; font-size:${(s.pt * 0.92).toFixed(1)}pt; white-space:pre-wrap; margin:0px">${colored(b.text, b.lang, s)}</pre></td></tr></table>`;
         }
         if (b.kind === "quote")
             return spacer(top) + `<table cellspacing="0" cellpadding="0"><tr><td width="3" style="background-color:${s.accent}"></td>`
@@ -254,7 +271,7 @@ export function toHtml(text, s) {
             return spacer(top + em * 0.3) + `<table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:${px(em * 0.3)}"><tr><td style="background-color:${s.border}; font-size:1pt">&nbsp;</td></tr></table>`;
         if (b.kind === "table") {
             const pad = Math.round(em * 0.35);
-            const head = b.head.map(c => `<th align="left">${inline(c, s)}</th>`).join("");
+            const head = b.head.map(c => `<th align="left" style="color:${s.strong || s.text}">${inline(c, s)}</th>`).join("");
             const rows = b.rows.map(r => "<tr>" + r.map(c => `<td>${inline(c, s)}</td>`).join("") + "</tr>").join("");
             return spacer(top) + `<table cellspacing="0" cellpadding="${pad}" style="border-collapse:collapse; border-color:${s.border}; border-style:solid; border-width:1px"><tr>${head}</tr>${rows}</table>`;
         }

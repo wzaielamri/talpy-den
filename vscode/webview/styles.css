@@ -2909,6 +2909,8 @@ body.chat-page {
 .pane {
   --pane-claude: #d97757;
   --pane-code: #b1b9f9;
+  /* bold, as Claude's terminal draws it: the terminal's bright blue */
+  --pane-strong: var(--vscode-terminal-ansiBrightBlue, var(--vscode-textLink-foreground, #3daee9));
   --pane-you: var(--cs-working);
   --pane-gutter: 1.6em;
   --pane-block-bg: color-mix(in srgb, #000 22%, var(--cs-bg));
@@ -3161,6 +3163,37 @@ body.vscode-high-contrast-light .pane {
   font-family: var(--pane-font, inherit);
 }
 
+/* Yours, queued (sent while Claude works): grey, as Claude's terminal shows it */
+.pane-you.queued {
+  border-left-color: var(--cs-muted);
+  background: color-mix(in srgb, var(--cs-fg) 7%, transparent);
+}
+
+.pane-you.queued .pane-gutter {
+  color: var(--cs-muted);
+}
+
+.pane-you-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pane-you-queue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--cs-muted);
+  font-size: 0.85em;
+}
+
+.pane-you-queue .grow {
+  flex: 1 1 auto;
+}
+
 /* Yours, on its way (shown as you send it: Sending… till it has gone) */
 .pane-you.sending .pane-you-text {
   opacity: 0.6;
@@ -3338,6 +3371,12 @@ body.vscode-high-contrast-light .pane {
   color: var(--pane-claude, inherit);
 }
 
+.md strong,
+.md-table th,
+.pane-tool-call strong {
+  color: var(--pane-strong, inherit);
+}
+
 .md-heading {
   margin: 0;
   color: var(--pane-claude, inherit);
@@ -3364,7 +3403,7 @@ body.vscode-high-contrast-light .pane {
 .md-h4,
 .md-h5,
 .md-h6 {
-  color: inherit;
+  color: var(--pane-strong, inherit);
   font-size: 1.05em;
 }
 

@@ -161,6 +161,17 @@ const EXT = {
 };
 const NAMES = { Makefile: 'sh', Dockerfile: 'sh', CMakeLists: 'sh', '.bashrc': 'sh', '.zshrc': 'sh', '.profile': 'sh' };
 
+// A code block's language, by the name after its ``` (python, bash, ts…), as language()
+const FENCES = {
+    python: 'py', python3: 'py', py3: 'py', shell: 'sh', console: 'sh', shellsession: 'sh', zsh: 'sh', bash: 'sh', sh: 'sh',
+    javascript: 'js', typescript: 'js', node: 'js', golang: 'c', rust: 'c', kotlin: 'c', csharp: 'c', 'c++': 'c', objc: 'c',
+    ruby: 'rb', jsonc: 'json', json5: 'json', yml: 'yaml', dockerfile: 'sh', makefile: 'sh', diff: '', text: '', plain: ''
+};
+export function fenceLanguage(name) {
+    const n = String(name || '').toLowerCase();
+    return FENCES[n] !== undefined ? FENCES[n] : EXT[n] || '';
+}
+
 // The language of a file (by its extension), '' for one without colors
 export function language(path) {
     const name = String(path || '').split('/').pop();

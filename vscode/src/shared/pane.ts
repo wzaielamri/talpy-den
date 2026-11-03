@@ -20,6 +20,8 @@ export interface PaneItem {
   error?: boolean; // note: an API error (a usage limit…)
   at: number | null;
   sending?: boolean; // you: the tab's own, your message on its way (PendingSent)
+  until?: number; // you: the tab's own, held till then (ms): sent while Claude works, Edit / ✕ / Send now meanwhile
+  queued?: boolean; // you: waiting in Claude's queue, till it takes it in at its next step (pane.py)
 }
 
 export interface Conversation {
@@ -74,6 +76,7 @@ export interface PaneChat {
   stateText: string;
   route: Session["reply"] | "vscodeTerminal"; // vscodeTerminal: one of this window's terminals (it types it in)
   busy: boolean; // working or waiting
+  atWork: boolean; // working, its turn not over (only a background command after it isn't): a message waits a moment
   activity: string; // what it does now
   permission: PermissionAsk | null;
   changes: number; // files it changed
@@ -363,10 +366,16 @@ export interface PendingSent {
   id: number;
   text: string;
   at: number; // ms, when you sent it
-  state: "sending" | "sent";
+  state: "held" | "sending" | "sent"; // held: sent while Claude works, a moment to take it back (HOLD_MS)
   sentAt: number; // ms, when pane.py said it went
   known: string[]; // the keys of your prompts shown then: the one this becomes is another
+  until?: number; // held: when it goes to Claude (ms)
+  how?: "auto" | "background" | "copy" | "enter"; // held: how it's sent then
 }
+
+// How long a message sent while Claude works waits, queued, to be taken back
+// (Edit, ✕, ↑ in an empty box), as ↑ does in Claude's terminal
+export const HOLD_MS = 5000;
 
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();
 
@@ -379,6 +388,7 @@ export function pendingTaken(items: PaneItem[], pending: PendingSent[], now: num
   const claimed = new Set<string>();
   const done = new Set<number>();
   for (const p of pending) {
+    if (p.state === "held") continue; // (not sent yet: nothing in the conversation is it)
     const want = squash(p.text);
     const found = items.find((it) => {
       const key = String(it.key);

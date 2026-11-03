@@ -249,18 +249,14 @@ def conversation_items(lines):
     # Messages sent while Claude works: the transcript has each one when it's
     # sent (queue-operation enqueue) and again once Claude takes it in, after
     # its next tool result (an attachment, queued_command), which can be long
-    # after. waiting: the items shown for those not taken in yet; taken: the
-    # ids of those that were; due: the one made the chat's own prompt (dequeue)
-    waiting, taken, due = [], set(), None
+    # after. waiting: those not taken in yet, listed last with "queued": True
+    # (Claude's terminal shows them under the conversation, as queued); one
+    # taken in goes where Claude took it, with the same key; taken: the ids of
+    # those that were; due: those made the chat's own prompts (dequeue), in turn
+    waiting, taken, due = [], set(), []
 
     def find_waiting(text):
         return next((w for w in waiting if same_text(w["text"], text)), None)
-
-    def forget(item):
-        for n, other in enumerate(items):
-            if other is item:
-                del items[n]
-                break
 
     for line in lines:
         if not PANE_LINE.search(line):
@@ -276,20 +272,18 @@ def conversation_items(lines):
         if kind == "queue-operation":
             op, text = e.get("operation"), typed_text(e.get("content"))
             if op == "enqueue" and text:
-                item = {"kind": "you", "key": f"queued-{at}", "text": clip(text, TEXT_CHARS, 10 ** 6), "at": at}
-                items.append(item)
-                waiting.append(item)
+                waiting.append({"kind": "you", "key": f"queued-{at}", "text": clip(text, TEXT_CHARS, 10 ** 6), "at": at})
             elif op == "remove" and text:
                 item = find_waiting(text)
                 if item is not None:
                     waiting.remove(item)
+                    items.append(item)
                     taken.add(e.get("commandUuid"))
             elif op == "popAll":  # (back in your input box: not sent)
                 for item in [w for w in waiting if not text or same_text(w["text"], text)]:
                     waiting.remove(item)
-                    forget(item)
             elif op == "dequeue" and waiting:
-                due = waiting.pop(0)  # (the prompt that follows is this one)
+                due.append(waiting.pop(0))  # (the next prompt is this one)
             continue
         if kind == "attachment":
             a = e.get("attachment")
@@ -301,6 +295,7 @@ def conversation_items(lines):
             item = find_waiting(text) if text else None
             if item is not None:
                 waiting.remove(item)
+                items.append(item)
             elif text and a.get("source_uuid") not in taken:
                 items.append({"kind": "you", "key": uid, "text": clip(text, TEXT_CHARS, 10 ** 6), "at": at})
             continue
@@ -329,11 +324,12 @@ def conversation_items(lines):
                             item["summary"] = change_summary(item["name"], full, item["summary"])
             prompt = cs.human_prompt(e)
             if prompt is not None:
-                if due is not None:
-                    shown, due = due, None
+                if due:
+                    shown = due.pop(0)
                     if same_text(shown["text"], prompt):
+                        items.append(shown)   # (its key as it was while it waited)
                         continue
-                    forget(shown)  # (not what was sent: it was put together with others)
+                    # (not what was sent: it was put together with others, this prompt shows them)
                 items.append({"kind": "you", "key": uid, "text": clip(prompt, TEXT_CHARS, 10 ** 6), "at": at})
                 continue
             text = cs.message_text(msg).strip()
@@ -368,6 +364,10 @@ def conversation_items(lines):
                         "diff": capped(edit_lines(c.get("name"), inp, None)) if c.get("name") in EDITS else []}
                 tools[c["id"]] = (item, inp)
                 items.append(item)
+    items.extend(due)  # (taken as prompts that aren't written yet)
+    for item in waiting:  # (still queued: last, as Claude's terminal shows them)
+        item["queued"] = True
+        items.append(item)
     for item, inp in tools.values():  # (an edit not made yet: at the file's line numbers)
         path = inp.get("file_path")
         if item["name"] == "Edit" and isinstance(path, str) and path.startswith("/"):

@@ -362,6 +362,7 @@ class Pane implements vscode.Disposable {
       stateText: session ? stateText(session, state.now) : "not running",
       route: this.terminalHere ? "vscodeTerminal" : (session?.reply ?? "background"),
       busy: session?.state === "working" || session?.state === "waiting",
+      atWork: session?.state === "working" && session.reason !== "background shell",
       activity: session ? doingText(session, this.host ? null : liveOf(session, state.live)) : "",
       permission: session?.state === "waiting" ? (session.permission ?? null) : null,
       changes: (session?.changes ?? recent?.changes)?.count ?? 0,

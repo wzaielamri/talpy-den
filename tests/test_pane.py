@@ -203,9 +203,9 @@ class ConversationTests(PaneFixture):
         self.chat(prompt("go", t, cwd=str(self.folder)),
                   tool_use("t1", "Bash", {"command": "sleep 60"}, t + 1, "m1"),
                   queue("enqueue", "also this", t + 2))
-        self.assertEqual([(i["kind"], i["text"]) for i in pane.conversation(self.transcript)[0] if i["kind"] == "you"],
-                         [("you", "go"), ("you", "also this")])
-        # taken in: still one, where it was sent
+        self.assertEqual([(i["kind"], i.get("text"), i.get("queued", False)) for i in pane.conversation(self.transcript)[0]],
+                         [("you", "go", False), ("tool", None, False), ("you", "also this", True)])   # (waiting: last, queued)
+        # taken in: still one, where Claude took it in
         self.chat(prompt("go", t, cwd=str(self.folder)),
                   tool_use("t1", "Bash", {"command": "sleep 60"}, t + 1, "m1"),
                   queue("enqueue", "also this", t + 2),
@@ -215,7 +215,8 @@ class ConversationTests(PaneFixture):
         items = pane.conversation(self.transcript)[0]
         self.assertEqual([(i["kind"], i.get("text")) for i in items if i["kind"] == "you"],
                          [("you", "go"), ("you", "also this")])
-        self.assertEqual([i["kind"] for i in items], ["you", "tool", "you"])   # (before its tool's result came back)
+        self.assertEqual([i["kind"] for i in items], ["you", "tool", "you"])
+        self.assertFalse(any(i.get("queued") for i in items))
         # one whose enqueue isn't in the transcript shows when it's taken in, if it's yours
         self.chat(taken("never seen", t + 3, "c2"),
                   taken("a subagent's report", t + 4, "c3", origin={"kind": "peer", "from": "x"}),
@@ -234,7 +235,9 @@ class ConversationTests(PaneFixture):
                   {**queued, "operation": "dequeue", "timestamp": iso(t + 3), "content": None},
                   prompt("first", t + 3, cwd=str(self.folder)))
         items = pane.conversation(self.transcript)[0]
-        self.assertEqual([(i["kind"], i["text"]) for i in items], [("you", "first"), ("claude", "done")])
+        # (where Claude took it in: after the turn it waited for, no longer queued)
+        self.assertEqual([(i["kind"], i["text"], i.get("queued", False)) for i in items],
+                         [("claude", "done", False), ("you", "first", False)])
         # (put together with others: its own text, not twice)
         self.chat(queued, {**queued, "operation": "dequeue", "timestamp": iso(t + 3), "content": None},
                   prompt("first\nsecond", t + 3, cwd=str(self.folder)))
@@ -1595,7 +1598,7 @@ if __name__ == "__main__":
 
 
 MARKDOWN = CODE.parent / "ui/markdown.mjs"
-STYLE = {"pt": 11, "mono": "Hack", "text": "#eeeeee", "muted": "#999999", "accent": "#d97757", "heading": "#d97757",
+STYLE = {"pt": 11, "mono": "Hack", "text": "#eeeeee", "strong": "#3daee9", "muted": "#999999", "accent": "#d97757", "heading": "#d97757",
          "code": "#b1b9f9", "codeBg": "#333333", "blockBg": "#111111", "border": "#444444", "link": "#3daee9"}
 
 
@@ -1645,6 +1648,17 @@ class PaneMarkdownTests(unittest.TestCase):
         texts = markdown('["## Notes on C#", "### F#", "# Title ##", "## Issue #42", "# x #"].map(t => Md.blocks(t)[0].text)')
         self.assertEqual(texts, ["Notes on C#", "F#", "Title", "Issue #42", "x"])
 
+    def test_a_code_blocks_colors(self):
+        # (in its language's colors, as a tool's listing: by the name after its ```)
+        style = dict(STYLE, syntax={"kw": "#ff7b72", "lit": "#79c0ff", "str": "#a5d6ff", "com": "#8b949e", "num": "#79c0ff",
+                                    "fn": "#d2a8ff", "key": "#7ee787"})
+        html = markdown(f"Md.toHtml({json.dumps(chr(96) * 3 + 'python' + chr(10) + 'def f(): return 1  # one' + chr(10) + chr(96) * 3)}, "
+                        f"{json.dumps(style)})")
+        self.assertIn('<span style="color:#ff7b72">def</span>', html)
+        self.assertIn('<span style="color:#8b949e"># one</span>', html)
+        # a language it doesn't know, or no colors given: as written
+        self.assertIn("&lt;x&gt;", markdown(f"Md.toHtml({json.dumps(chr(96) * 3 + 'brainfuck' + chr(10) + '<x>' + chr(10) + chr(96) * 3)}, style)"))
+
     def test_blocks(self):
         text = ("# Title\n\nSome **bold**, *it*, snake_case_name and `code`.\n\n## Steps\n\n1. one\n2. two\n"
                 "   - nested\n\n```python\nprint(1)\n```\n\n> quoted\n\n---\n\n| a | b |\n|---|---|\n| 1 | 2 |\n")
@@ -1652,7 +1666,7 @@ class PaneMarkdownTests(unittest.TestCase):
         self.assertEqual(kinds, ["heading", "para", "heading", "list", "code", "quote", "rule", "table"])
         html = markdown(f"Md.toHtml({json.dumps(text)}, style)")
         self.assertIn("snake_case_name", html)
-        self.assertIn("<b>bold</b>", html)
+        self.assertIn('<b style="color:#3daee9">bold</b>', html)
         self.assertIn("<i>it</i>", html)
         self.assertEqual(html.count("<ol"), html.count("</ol>"))
         self.assertEqual(html.count("<ul"), html.count("</ul>"))
@@ -1669,7 +1683,7 @@ class PaneMarkdownTests(unittest.TestCase):
             self.assertNotIn("<b>", html, text)
             self.assertEqual(html.count("*"), text.count("*"), text)
         html = markdown('Md.toHtml("**Note:** a *b* and __c__, a*b*c, ~~d~~", style)')
-        for part in ["<b>Note:</b>", "<i>b</i>", "<b>c</b>", "a<i>b</i>c", "<s>d</s>"]:
+        for part in ['<b style="color:#3daee9">Note:</b>', "<i>b</i>", '<b style="color:#3daee9">c</b>', "a<i>b</i>c", "<s>d</s>"]:
             self.assertIn(part, html)
 
     def test_escapes_and_pipes_in_a_table(self):

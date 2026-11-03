@@ -350,7 +350,8 @@ test("Claude's Markdown: bare web addresses, \\| in a table, globs and *args, a 
   assert.equal(md("**Note:** a *b* and __c__, a*b*c"), "<p><strong>Note:</strong> a <em>b</em> and <strong>c</strong>, a<em>b</em>c</p>");
   const copied: string[] = [];
   const tree = Markdown({ text: "1. Run:\n   ```python\n   if x:\n       go()\n   ```", onCopy: (code) => copied.push(code) });
-  assert.ok(asHtml(tree).includes("<code>if x:\n    go()</code>"), asHtml(tree));
+  // (in its language's colors, as a tool's listing; its text as it was, for Copy)
+  assert.ok(asHtml(tree).includes('<code><span class="cv-kw">if</span> x:\n    <span class="cv-fn">go</span>()</code>'), asHtml(tree));
 });
 
 test("a picture pasted in a chat's tab is saved, an SSH host's chat gets a copy there; nothing else is taken", async () => {
@@ -646,6 +647,9 @@ test("your message shows at once till the conversation has it; a stamp read befo
   assert.deepEqual([...pendingTaken(changed, [sent(1, "[Image: /tmp/a.png] look", "sent")], NOW + 4000, false)], []);
   // gone 30 s after it went, whatever the conversation shows
   assert.deepEqual([...pendingTaken(items, [sent(1, "x", "sent"), sent(2, "y", "sending")], NOW + 31000, false)], [1]);
+  // held (sent while Claude works, not gone yet): never it, however long, whatever the conversation shows
+  const held = { ...sent(3, "go on", "sent"), state: "held" as const, until: NOW + 5000 };
+  assert.deepEqual([...pendingTaken([...items, you("b", "go on", NOW + 1)], [held], NOW + 60000, true)], []);
 
   assert.equal(stampFresher("120:5/120", "100:4/120", 120), true);
   assert.equal(stampFresher("100:4/120", "120:5/120", 120), false, "read before what's shown");

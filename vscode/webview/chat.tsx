@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { attachedTag, whereTag, droppedPaths, fileMention, pendingTaken, picturesIn, PICTURE_TYPES, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { attachedTag, whereTag, droppedPaths, fileMention, HOLD_MS, pendingTaken, picturesIn, PICTURE_TYPES, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox, askKey } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -538,16 +538,49 @@ function ChatApp() {
       post({ type: "send", text, how, afterTurn });
       return;
     }
+    // (Claude at work: it waits a moment, queued, to be taken back, as ↑ does in Claude's terminal)
+    const holds = !!chat?.atWork;
     const id = ++sentCount.current;
-    setOutgoing((was) => [...was, { id, text: said, at: Date.now(), state: "sending", sentAt: 0,
-                                    known: items.filter((it) => it.kind === "you").map((it) => String(it.key)) }]);
+    setOutgoing((was) => [...was, { id, text: said, at: Date.now(), state: holds ? "held" : "sending", sentAt: 0,
+                                    known: items.filter((it) => it.kind === "you").map((it) => String(it.key)),
+                                    ...(holds ? { until: Date.now() + HOLD_MS, how } : {}) }]);
     setText("");
     setCursor(0);
     historyAt.current = -1;
     setAskHow(false);
     follow.current = true;
-    post({ type: "send", text, how, afterTurn, id });
+    if (holds) setNow(Date.now());
+    else post({ type: "send", text, how, afterTurn, id });
   };
+  // Held: it goes to Claude when its moment is up, or at once with Send now;
+  // Edit (or ↑ in an empty box) takes it back into the box, ✕ drops it
+  const [now, setNow] = useState(0);
+  const release = (id: number) => {
+    const p = outgoingNow.current.find((x) => x.id === id && x.state === "held");
+    if (!p) return;
+    outgoingNow.current = outgoingNow.current.map((x) => (x === p ? { ...x, state: "sending" as const } : x));
+    setOutgoing(outgoingNow.current);
+    post({ type: "send", text: p.text, how: p.how ?? "auto", afterTurn: false, id });
+  };
+  const takeBack = (id: number, edit: boolean): boolean => {
+    const p = outgoingNow.current.find((x) => x.id === id && x.state === "held");
+    if (!p) return false;
+    outgoingNow.current = outgoingNow.current.filter((x) => x !== p);
+    setOutgoing(outgoingNow.current);
+    if (edit) setText((t) => p.text + (t.trim() ? "\n" + t : ""));
+    reply.current?.focus();
+    return true;
+  };
+  const held = outgoing.some((p) => p.state === "held");
+  useEffect(() => {
+    if (!held) return undefined;
+    const tick = setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      for (const p of outgoingNow.current) if (p.state === "held" && (p.until ?? 0) <= t) release(p.id);
+    }, 250);
+    return () => clearInterval(tick);
+  }, [held]);
   // (to the prompt shown now: if the chat asks something else by then, it isn't answered)
   const answer = (decision: Decision, note: string, answers?: Answers) => {
     setAnswering((n) => n + 1);
@@ -579,14 +612,35 @@ function ChatApp() {
     return () => clearInterval(tick);
   }, [items, outgoing, chat?.host]);
   const shownItems = useMemo((): PaneItem[] => (outgoing.length
-    ? [...items, ...outgoing.map((p) => ({ kind: "you" as const, key: `pending-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending" }))]
+    ? [...items, ...outgoing.map((p) => ({ kind: "you" as const, key: `pending-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending",
+                                           ...(p.state === "held" ? { until: p.until ?? 0 } : {}) }))]
     : items), [items, outgoing]);
   const steps = useMemo(() => shownItems.map((it, i) => {
     const gap = gapOf(it.kind, shownItems[i - 1]?.kind);
+    // (queued: grey, as Claude's terminal shows it, with what becomes of it: held a moment,
+    // Edit / ✕ / Send now, then in Claude's queue till it takes it in at its next step)
+    const id = it.until ? Number(String(it.key).slice("pending-".length)) : 0;
     return it.kind === "you" ? (
-      <div key={it.key} data-key={it.key} class={`pane-item pane-you ${gap}${it.sending ? " sending" : ""}`}>
+      <div key={it.key} data-key={it.key} class={`pane-item pane-you ${gap}${it.sending ? " sending" : ""}${it.until || it.queued ? " queued" : ""}`}>
         <span class="pane-gutter" aria-hidden="true">›</span>
-        <div class="pane-you-text">{it.text}</div>
+        <div class="pane-you-main">
+          <div class="pane-you-text">{it.text}</div>
+          {it.until || it.queued ? (
+            <div class="pane-you-queue">
+              <span class="grow">{it.until ? `Queued · goes to Claude in ${Math.max(1, Math.ceil((it.until - now) / 1000))} s`
+                                           : "Queued · Claude takes it in at its next step"}</span>
+              {it.until ? (
+                <>
+                  <button type="button" class="btn secondary small" title="Back in the box, to change it (↑ in an empty box too)"
+                          onClick={() => takeBack(id, true)}><Icon name={I.edit} />Edit</button>
+                  <button type="button" class="btn secondary small" title="Remove" aria-label="Remove"
+                          onClick={() => takeBack(id, false)}><Icon name={I.cancel} tone={T.cancel} /></button>
+                  <button type="button" class="btn secondary small" onClick={() => release(id)}><Icon name={I.send} />Send now</button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         {it.sending ? <span class="pane-you-state">Sending…</span> : null}
       </div>
     ) : it.kind === "claude" ? (
@@ -615,7 +669,7 @@ function ChatApp() {
         <span>{it.text}</span>
       </div>
     );
-  }), [shownItems, open, asking, going, split, tab]);
+  }), [shownItems, open, asking, going, split, tab, held ? now : 0]);
 
   return (
     <div class="pane pane-grow" style={{ "--pane-scale": String(scale), ...(font ? { "--pane-font": font } : {}) }}>
@@ -778,6 +832,14 @@ function ChatApp() {
               }
               const firstLine = box.value.lastIndexOf("\n", box.selectionStart - 1) < 0;
               const lastLine = box.value.indexOf("\n", box.selectionStart) < 0;
+              // (↑ in an empty box: your queued message, still held, back in it first)
+              if (e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && box.value === "") {
+                const last = outgoingNow.current.filter((x) => x.state === "held").at(-1);
+                if (last && takeBack(last.id, true)) {
+                  e.preventDefault();
+                  return;
+                }
+              }
               if (!e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
                   && ((e.key === "ArrowUp" && firstLine && (box.value === "" || historyAt.current >= 0))
                       || (e.key === "ArrowDown" && lastLine && historyAt.current >= 0))

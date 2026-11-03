@@ -33,6 +33,7 @@ const chat: PaneChat = {
   route: params.get("route") === "terminal" ? "terminal" : "tmux",
   canMove: params.get("route") === "terminal",
   busy: true,
+  atWork: !ask,
   activity: "Bash: npm test -- parser",
   permission: ask === "question"
     ? { tool: "AskUserQuestion", line: questions[0].question, command: "", file: "", diff: [], always: "", questions,
@@ -134,6 +135,19 @@ if (unfold)
 // ?open=1: every tool call unfolded (clicked once the conversation shows)
 if (params.get("open") === "1")
   setTimeout(() => document.querySelectorAll<HTMLButtonElement>(".pane-tool-line").forEach((b, i) => setTimeout(() => b.click(), 60 * i)), 900);
+
+// ?queue=1: a message in Claude's queue, and one sent while it works (held: Edit / ✕ / Send now)
+if (params.get("queue") === "1") {
+  items.push({ kind: "you", key: "q1", text: "Also check week 1 of 2027.", queued: true, at: now });
+  setTimeout(() => {
+    const box = document.querySelector<HTMLTextAreaElement>(".pane-reply");
+    if (!box) return;
+    box.focus();
+    box.value = "And run the whole suite after.";
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    setTimeout(() => box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })), 50);
+  }, 600);
+}
 
 // what the page sends, answered as the extension would
 // ?type=TEXT: typed into the reply box (to see what it offers)

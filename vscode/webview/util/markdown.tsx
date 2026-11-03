@@ -2,9 +2,22 @@
 // blocks, tables, quotes, bold, italics, strikethrough, inline code, links),
 // made into elements here, never into HTML text, so nothing in a reply can
 // run or load anything in the page. What isn't understood shows as written.
-// A code block has its language and a Copy button (onCopy).
+// A code block has its language, its colors (codeview.mjs, as the widget's)
+// and a Copy button (onCopy).
 
 import type { ComponentChildren, JSX } from "preact";
+import { fenceLanguage, highlight } from "../../vendor/codeview.mjs";
+
+// A code block's text in its language's colors (.cv-kw…; as written for one without)
+function colored(text: string, lang: string): ComponentChildren {
+  const kind = fenceLanguage(lang);
+  if (!kind || text.length > 200000) return text;
+  const state = {};
+  return text.split("\n").map((line, n) => [
+    n ? "\n" : "",
+    ...highlight(line, kind, state).map(([k, t], i) => (k ? <span key={`${n}.${i}`} class={`cv-${k}`}>{t}</span> : t)),
+  ]);
+}
 
 const FENCE = /^(\s*)(```+|~~~+)\s*([^\s`]*)/;
 const HEADING = /^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/; // (a closing run of # only after a space: C# stays)
@@ -135,8 +148,8 @@ export function Markdown({ text, onCopy }: { text: string; onCopy?: (code: strin
               </button>
             ) : null}
           </div>
-          <pre class="md-code">
-            <code>{code}</code>
+          <pre class="md-code cv">
+            <code>{colored(code, fence[3])}</code>
           </pre>
         </div>,
       );

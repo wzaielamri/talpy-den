@@ -38,9 +38,14 @@ export function palette(dark, text, bg, mono, pt, advance) {
         addBg: mix(bg, green, dark ? 0.2 : 0.12), addWord: mix(bg, green, dark ? 0.45 : 0.32),
         delBg: mix(bg, red, dark ? 0.2 : 0.1), delWord: mix(bg, red, dark ? 0.45 : 0.27),
         add: dark ? "#56d364" : "#1a7f37", del: dark ? "#f47067" : "#cf222e", bad: dark ? "#f47067" : "#cf222e",
-        syntax: dark ? { kw: "#ff7b72", lit: "#79c0ff", str: "#a5d6ff", com: "#8b949e", num: "#79c0ff", fn: "#d2a8ff", key: "#7ee787" }
-                     : { kw: "#cf222e", lit: "#0550ae", str: "#0a3069", com: "#6e7781", num: "#0550ae", fn: "#8250df", key: "#116329" }
+        syntax: syntaxColors(dark)
     };
+}
+
+// The syntax colors, as GitHub's (also a reply's code blocks: markdown.mjs)
+export function syntaxColors(dark) {
+    return dark ? { kw: "#ff7b72", lit: "#79c0ff", str: "#a5d6ff", com: "#8b949e", num: "#79c0ff", fn: "#d2a8ff", key: "#7ee787" }
+                : { kw: "#cf222e", lit: "#0550ae", str: "#0a3069", com: "#6e7781", num: "#0550ae", fn: "#8250df", key: "#116329" };
 }
 
 // ---------------------------------------------------------------- html

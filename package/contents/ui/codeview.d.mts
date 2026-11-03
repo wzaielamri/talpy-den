@@ -15,4 +15,5 @@ export function pairs(rows: readonly DiffRow[]): Record<number, number>;
 export function changed(a: string, b: string): [start: number, endA: number, endB: number] | null;
 export function readLines(output: string): { no: number | null; text: string }[] | null;
 export function language(path: string): string;
+export function fenceLanguage(name: string): string;
 export function highlight(text: string, lang: string, state?: { block?: boolean }): Run[];

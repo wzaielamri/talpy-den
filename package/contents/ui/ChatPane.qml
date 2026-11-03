@@ -134,8 +134,14 @@ Window {
     readonly property color mutedColor: mix(textColor, 0.62)
     readonly property color borderColor: mix(textColor, 0.16)
     readonly property color youColor: surface.Kirigami.Theme.focusColor
+    // Bold, as Claude's terminal draws it (Breeze's blue there): the theme's
+    // accent (focusColor: a Plasma 6 window's highlightColor is a pale
+    // selection tint), darker on a light theme so it reads on white. Also
+    // tool names and a table's head
+    readonly property color strongColor: dark ? surface.Kirigami.Theme.focusColor
+                                              : Qt.darker(surface.Kirigami.Theme.focusColor, 1.45)
     readonly property var mdStyle: ({
-        pt: pt, mono: monoFamily, text: hex(textColor), muted: hex(mutedColor),
+        pt: pt, mono: monoFamily, text: hex(textColor), muted: hex(mutedColor), strong: hex(strongColor), syntax: Code.syntaxColors(dark),
         accent: hex(claudeColor), heading: hex(claudeColor), code: hex(codeColor), codeBg: hex(mix(textColor, 0.09)),
         blockBg: hex(dark ? Qt.tint(surface.Kirigami.Theme.backgroundColor, Qt.rgba(0, 0, 0, 0.28)) : mix(textColor, 0.04)),
         border: hex(borderColor), link: hex(surface.Kirigami.Theme.linkColor)
@@ -545,11 +551,12 @@ Window {
             const flat = { kind: it.kind, key: String(it.key), text: it.text || "", line: it.line || "",
                            name: it.name || "", status: it.status || "", input: it.input || "", output: it.output || "",
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
-                           diff: (it.diff || []).join("\n") }
+                           diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0 }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
                 if (old.text !== flat.text || old.status !== flat.status || old.output !== flat.output
-                        || old.input !== flat.input || old.summary !== flat.summary || old.prev !== flat.prev || old.diff !== flat.diff)
+                        || old.input !== flat.input || old.summary !== flat.summary || old.prev !== flat.prev || old.diff !== flat.diff
+                        || old.queued !== flat.queued || old.until !== flat.until)
                     items.set(i, flat)
             } else if (i < items.count) {
                 items.insert(i, flat)
@@ -1000,20 +1007,27 @@ Window {
                       && (how === "background" || route === "background" || route === "tmux")
         if (!shows && !afterTurn && (inFlight[draftKey] || outbox.some(m => m.asked.draft === draftKey)))
             return   // (one the box keeps is on its way: an Enter again doesn't send it twice)
+        // (Claude at work: it waits a moment, queued, to be taken back, as ↑ does in Claude's terminal.
+        // Not when its turn is over and only a background command runs: Claude takes it in at once)
+        const holds = shows && chatState === "working" && !(row && row.reason === "background shell")
         const id = ++sentCount
         const asked = { kind: afterTurn ? "later" : "send", chat: chatId, host: host, target: row || chat,
                         sent: shows || afterTurn ? "" : replyBox.text, draft: draftKey, text: text, id: id, startedAt: 0 }
-        outbox = outbox.concat([{ asked: asked,
+        const out = { asked: asked,
             args: "--send " + root.shellQuote(chatId) + " --text " + root.shellQuote(text)
                   + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + " --how " + (how || "auto")
-                  + (afterTurn ? " --after-turn --name " + root.shellQuote(chatName) : "") + paneArgs() }])
+                  + (afterTurn ? " --after-turn --name " + root.shellQuote(chatName) : "") + paneArgs() }
+        if (!holds)
+            outbox = outbox.concat([out])
         if (shows) {
             const known = {}   // (your prompts shown now: the one this becomes is another)
             for (const it of lastItems)
                 if (it.kind === "you")
                     known[String(it.key)] = true
+            now = Date.now()
             pendingSent = pendingSent.concat([{ id: id, chat: chatId, host: host || "", text: text, at: Date.now(),
-                                                state: "sending", sentAt: 0, known: known }])
+                                                state: holds ? "held" : "sending", sentAt: 0, known: known,
+                                                until: holds ? Date.now() + holdMs : 0, out: holds ? out : null }])
             replyBox.text = ""
             historyAt = -1
             suggestions = []
@@ -1024,6 +1038,52 @@ Window {
             replyBox.text = ""
         }
         pump()
+    }
+    // Held (sent while Claude works): it goes to Claude when its moment is up
+    // (Claude takes it in at its next step), or at once with Send now; Edit
+    // (or ↑ in an empty box) takes it back into its box, Remove drops it
+    readonly property int holdMs: 5000
+    property real now: 0   // (the countdowns', while one is held)
+    Timer {
+        interval: 250
+        repeat: true
+        running: pane.pendingSent.some(p => p.state === "held")
+        onTriggered: {
+            pane.now = Date.now()
+            for (const p of pane.pendingSent.filter(x => x.state === "held" && x.until <= pane.now))
+                pane.release("pending-" + p.id)
+        }
+    }
+    function heldOf(key) {
+        return pendingSent.find(p => "pending-" + p.id === key && p.state === "held") || null
+    }
+    function release(key) {
+        const p = heldOf(key)
+        if (!p)
+            return
+        p.state = "sending"
+        outbox = outbox.concat([p.out])
+        pendingSent = pendingSent.slice()
+        if (p.chat === chatId)
+            showPending()
+        pump()
+    }
+    function takeBack(key, edit) {
+        const p = heldOf(key)
+        if (!p)
+            return false
+        pendingSent = pendingSent.filter(x => x !== p)
+        if (edit)
+            giveBack(p.out.asked)
+        if (p.chat === chatId)
+            showPending()
+        replyBox.forceActiveFocus()
+        return true
+    }
+    // ↑ in an empty box: the newest one held for this chat, back in it
+    function takeBackLast() {
+        const mine = pendingSent.filter(p => p.state === "held" && p.chat === chatId && p.host === (host || ""))
+        return mine.length > 0 && takeBack("pending-" + mine[mine.length - 1].id, true)
     }
     // Each chat's next message, once the one before to it has its answer
     function pump() {
@@ -1089,6 +1149,8 @@ Window {
         const now = Date.now()
         const done = {}
         for (const p of mine) {
+            if (p.state === "held")
+                continue   // (not sent yet: nothing in the conversation is it)
             const want = norm(p.text)
             const found = list.find(it => {
                 const key = String(it.key)
@@ -1107,7 +1169,7 @@ Window {
         if (Object.keys(done).length)
             pendingSent = pendingSent.filter(p => !done[p.id])
         return list.concat(pendingSent.filter(p => p.chat === chatId && p.host === (host || ""))
-                                      .map(p => ({ kind: "you", key: "pending-" + p.id, text: p.text, status: p.state, at: p.at })))
+                                      .map(p => ({ kind: "you", key: "pending-" + p.id, text: p.text, status: p.state, at: p.at, until: p.until })))
     }
     function showPending() {
         if (loaded) {
@@ -1802,6 +1864,8 @@ Window {
                         required property string prev
                         required property bool bad
                         required property string diff
+                        required property bool queued   // (yours, in Claude's queue: pane.py)
+                        required property real until    // (yours, held: when it goes to Claude, ms)
                         readonly property bool unfolded: pane.openTools[key] === true
                         // more room before your prompt (a new turn) than between steps
                         readonly property real gap: index === 0 ? 0
@@ -1822,27 +1886,40 @@ Window {
                                            : entry.kind === "tool" ? toolItem : noteItem
                         }
 
-                        // Yours: a band in your accent color, after a ›
+                        // Yours: a band in your accent color, after a ›. Queued (sent
+                        // while Claude works), grey, as Claude's terminal shows it, with
+                        // what becomes of it: held a moment (Edit, ✕, Send now; ↑ in the
+                        // box), then in Claude's queue till it takes it in at its next step
                         Component {
                             id: youItem
 
                             Rectangle {
-                                implicitHeight: youRow.implicitHeight + Kirigami.Units.largeSpacing * 1.5
+                                id: youBand
+                                readonly property bool held: entry.status === "held"
+                                readonly property bool waits: held || entry.queued
+                                readonly property color mark: waits ? pane.mutedColor : pane.youColor
+                                implicitHeight: youColumn.implicitHeight + Kirigami.Units.largeSpacing * 1.5
                                 radius: Kirigami.Units.cornerRadius
-                                color: Qt.tint(Kirigami.Theme.backgroundColor, Qt.rgba(pane.youColor.r, pane.youColor.g, pane.youColor.b, 0.13))
+                                color: waits ? pane.mix(pane.textColor, 0.07)
+                                     : Qt.tint(Kirigami.Theme.backgroundColor, Qt.rgba(pane.youColor.r, pane.youColor.g, pane.youColor.b, 0.13))
 
                                 Rectangle {
                                     width: 3
                                     height: parent.height
                                     radius: 1.5
-                                    color: pane.youColor
+                                    color: youBand.mark
                                 }
-                                RowLayout {
-                                    id: youRow
+                                ColumnLayout {
+                                    id: youColumn
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     anchors.rightMargin: Kirigami.Units.largeSpacing
+                                    spacing: Kirigami.Units.smallSpacing
+
+                                RowLayout {
+                                    id: youRow
+                                    Layout.fillWidth: true
                                     spacing: 0
 
                                     PlasmaComponents3.Label {
@@ -1851,7 +1928,7 @@ Window {
                                         horizontalAlignment: Text.AlignHCenter
                                         textFormat: Text.PlainText
                                         text: "›"
-                                        color: pane.youColor
+                                        color: youBand.mark
                                         font.pointSize: pane.pt
                                         font.weight: Font.Bold
                                     }
@@ -1879,6 +1956,52 @@ Window {
                                         color: pane.mutedColor
                                         font.pointSize: pane.pt * 0.85
                                     }
+                                }
+                                // Queued: what becomes of it
+                                RowLayout {
+                                    visible: youBand.waits
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: pane.gutter
+                                    spacing: Kirigami.Units.smallSpacing
+
+                                    PlasmaComponents3.Label {
+                                        Layout.fillWidth: true
+                                        textFormat: Text.PlainText
+                                        wrapMode: Text.Wrap
+                                        text: youBand.held
+                                              ? i18n("Queued · goes to Claude in %1 s", Math.max(1, Math.ceil((entry.until - pane.now) / 1000)))
+                                              : i18n("Queued · Claude takes it in at its next step")
+                                        color: pane.mutedColor
+                                        font.family: pane.chatFamily
+                                        font.pointSize: pane.pt * 0.85
+                                    }
+                                    PlasmaComponents3.ToolButton {
+                                        visible: youBand.held
+                                        icon.name: Icons.plasma.edit
+                                        text: i18n("Edit")
+                                        onClicked: pane.takeBack(entry.key, true)
+                                        PlasmaComponents3.ToolTip.text: i18n("Back in the box, to change it (↑ in an empty box too)")
+                                        PlasmaComponents3.ToolTip.visible: hovered
+                                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                    }
+                                    PlasmaComponents3.ToolButton {
+                                        visible: youBand.held
+                                        icon.name: Icons.plasma.cancel
+                                        icon.color: Icons.color("cancel", Kirigami.Theme)
+                                        display: PlasmaComponents3.AbstractButton.IconOnly
+                                        text: i18n("Remove")
+                                        onClicked: pane.takeBack(entry.key, false)
+                                        PlasmaComponents3.ToolTip.text: text
+                                        PlasmaComponents3.ToolTip.visible: hovered
+                                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                    }
+                                    PlasmaComponents3.ToolButton {
+                                        visible: youBand.held
+                                        icon.name: Icons.plasma.send
+                                        text: i18n("Send now")
+                                        onClicked: pane.release(entry.key)
+                                    }
+                                }
                                 }
                             }
                         }
@@ -1963,9 +2086,9 @@ Window {
                                             PlasmaComponents3.Label {
                                                 Layout.fillWidth: true
                                                 textFormat: Text.StyledText
-                                                text: toolBox.args ? "<b>" + Md.escape(entry.name) + "</b>&nbsp;&nbsp;<font face=\"" + pane.monoFamily
-                                                                     + "\" color=\"" + pane.hex(pane.codeColor) + "\">" + Md.escape(toolBox.args) + "</font>"
-                                                                   : "<b>" + Md.escape(entry.line) + "</b>"
+                                                text: "<b><font color=\"" + pane.hex(pane.strongColor) + "\">" + Md.escape(toolBox.args ? entry.name : entry.line) + "</font></b>"
+                                                      + (toolBox.args ? "&nbsp;&nbsp;<font face=\"" + pane.monoFamily + "\" color=\"" + pane.hex(pane.codeColor) + "\">"
+                                                                        + Md.escape(toolBox.args) + "</font>" : "")
                                                 wrapMode: Text.Wrap
                                                 maximumLineCount: entry.unfolded ? 20 : 2
                                                 elide: Text.ElideRight
@@ -2275,6 +2398,11 @@ Window {
                                         event.accepted = true
                                         return
                                     }
+                                }
+                                // (↑ in an empty box: your queued message, still held, back in it first)
+                                if (event.key === Qt.Key_Up && event.modifiers === Qt.NoModifier && text === "" && pane.takeBackLast()) {
+                                    event.accepted = true
+                                    return
                                 }
                                 if ((event.key === Qt.Key_Up && text.lastIndexOf("\n", cursorPosition - 1) < 0)
                                         || (event.key === Qt.Key_Down && pane.historyAt >= 0 && text.indexOf("\n", cursorPosition) < 0)) {
