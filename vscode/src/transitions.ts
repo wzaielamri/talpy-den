@@ -5,7 +5,7 @@
 
 import { duration, petKeyOf, plural, reasonText, stopOf } from "./shared/model";
 import { sameAsk, shownAsk } from "./shared/pane";
-import type { AskShown, Group, PetEventKind, Session, SessionState, Stop } from "./shared/types";
+import type { AskShown, Group, PermissionAsk, PetEventKind, Session, SessionState, Stop } from "./shared/types";
 
 export interface Notice {
   key: string; // the row: one notification per row at a time
@@ -59,10 +59,24 @@ export function askText(s: Session): string {
   if (!p) return "";
   if (p.plan) return p.plan.title || "Approve it to start, or keep planning.";
   const questions = p.questions ?? [];
-  // (an MCP tool's, a page's: the first of what it asks with; its tab shows all)
-  const args = (p.args ?? []).slice(0, 3).map((a) => a.replace(/\s+/g, " ")).map((a) => (a.length > 100 ? `${a.slice(0, 99)}…` : a))
-    .concat((p.args?.length ?? 0) > 3 ? [`… ${p.args!.length - 3} more`] : []);
-  return questions.length ? questions.map((q) => q.question).join(" ") : p.command || (p.file ? `Change ${p.file}` : [p.line, ...args].join(" · "));
+  if (questions.length) return questions.map((q) => q.question).join(" ");
+  const head = askHead(p);
+  return p.command ? head.text : p.file ? `Change ${p.file}` : [p.line, ...(head.text ? [head.text] : [])].join(" · ");
+}
+
+// What a notification shows of a permission's command (or of an MCP tool's,
+// a page's arguments, a line each): all of it when that's at most 3 lines and
+// 200 characters, else its start and "… N more lines: Open to read it all"
+// (cut: its buttons are then Open, Allow once and Deny, no Always allow: what
+// it would allow isn't all there; as Plasma's askHead)
+export function askHead(p: PermissionAsk): { text: string; cut: boolean } {
+  const lines = p.command ? p.command.split("\n") : p.file ? [] : (p.args ?? []).map((a) => a.replace(/\s+/g, " "));
+  const whole = lines.join(p.command ? "\n" : " · ");
+  if (lines.length <= 3 && lines.join("\n").length <= 200) return { text: whole, cut: false };
+  const shown = lines.slice(0, 3).join("\n").slice(0, 200);
+  const more = lines.length - shown.split("\n").length;
+  const rest = more > 0 ? `… ${more} more line${more === 1 ? "" : "s"}: Open to read it all` : "… Open to read it all";
+  return { text: `${p.command ? shown : shown.split("\n").join(" · ")} ${rest}`, cut: true };
 }
 
 // The title of its notification (as Plasma's askText)

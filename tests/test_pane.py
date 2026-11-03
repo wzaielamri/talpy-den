@@ -526,10 +526,12 @@ class AskNotificationTests(unittest.TestCase):
         main = (CODE.parent / "ui/main.qml").read_text()
         block = main[main.index("id: askNotificationComponent"):]
         block = block[:block.index("onClosed:")]
-        actions = re.search(r"questions.length === 0 \? \(withAlways \? \[([^\]]*)\] : \[([^\]]*)\]\)", block)
-        self.assertEqual([a.strip() for a in actions.group(1).split(",")],
+        actions = re.search(r"questions.length === 0 \? \(cut \? \[([^\]]*)\]\s*: withAlways \? \[([^\]]*)\] : \[([^\]]*)\]\)", block)
+        self.assertEqual([a.strip() for a in actions.group(2).split(",")],
                          ["allowAction", "alwaysAction", "denyAction", "noteAction"])
-        self.assertEqual([a.strip() for a in actions.group(2).split(",")], ["allowAction", "denyAction", "noteAction"])
+        self.assertEqual([a.strip() for a in actions.group(3).split(",")], ["allowAction", "denyAction", "noteAction"])
+        # (a command it can't show whole: Open, to read it all, Allow once and Deny; no Always allow)
+        self.assertEqual([a.strip() for a in actions.group(1).split(",")], ["openAction", "allowAction", "denyAction"])
         # Plasma puts a reply button before all the others (its ActionContainer.qml)
         self.assertNotIn("replyAction", block)
 

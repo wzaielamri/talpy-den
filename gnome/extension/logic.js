@@ -237,10 +237,24 @@ export function askText(s) {
         return [fmt('%1 has a plan ready', s.name), p.plan.title || 'Approve it to start, or keep planning.'];
     if (p.questions && p.questions.length)
         return [fmt('%1 asks you', s.name), p.questions.map(q => q.question).join('\n')];
-    // (an MCP tool's, a page's: the first of what it asks with, each on a line; the pane shows all)
-    const args = (p.args || []).slice(0, 3).map(a => a.replace(/\s+/g, ' ')).map(a => a.length > 100 ? `${a.slice(0, 99)}…` : a)
-        .concat(p.args && p.args.length > 3 ? [fmt('… %1 more', p.args.length - 3)] : []);
-    return [fmt('%1 asks for a permission', s.name), p.command || (p.file ? fmt('Change %1', p.file) : [p.line || ''].concat(args).join('\n'))];
+    const head = askHead(p);
+    return [fmt('%1 asks for a permission', s.name),
+            p.command ? head.text : p.file ? fmt('Change %1', p.file) : [p.line || ''].concat(head.text ? [head.text] : []).join('\n')];
+}
+
+// What a notification shows of a permission's command (or of an MCP tool's,
+// a page's arguments, a line each): all of it when that's at most 3 lines and
+// 200 characters, else its start and "… N more lines: Open to read it all"
+// ({text, cut}; as main.qml's askHead, whose notification then offers Open,
+// Allow once and Deny)
+export function askHead(p) {
+    const lines = p.command ? p.command.split('\n') : p.file ? [] : (p.args || []).map(a => a.replace(/\s+/g, ' '));
+    const whole = lines.join('\n');
+    if (lines.length <= 3 && whole.length <= 200)
+        return {text: whole, cut: false};
+    const shown = lines.slice(0, 3).join('\n').slice(0, 200);
+    const more = lines.length - shown.split('\n').length;
+    return {text: `${shown}\n${more > 0 ? `… ${plural(more, '%1 more line', '%1 more lines')}: Open to read it all` : '… Open to read it all'}`, cut: true};
 }
 
 // The 5-hour usage that goes next to the panel icon: this computer's default

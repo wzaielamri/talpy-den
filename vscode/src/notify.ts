@@ -12,7 +12,7 @@ import { gnomeSoundTheme } from "./desktop";
 import type { Digest } from "./away";
 import { oneChoice, questionsOf, shownAsk } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Question, Session } from "./shared/types";
-import type { Changes } from "./transitions";
+import { askHead, type Changes } from "./transitions";
 
 export function chatRef(s: Session, host?: string): ChatRef {
   return {
@@ -119,15 +119,17 @@ export class Notifier implements vscode.Disposable {
       // a permission prompt: answer it here, in Claude's own order (Yes, Yes
       // and don't ask again, No); a chat that waits or finished: reply here
       // (two chats on the same files, a limit that reset: Open only)
-      const buttons = asks
-        ? ["Allow once", ...(p!.answer === "keys" || p!.always ? ["Always allow"] : []), "Deny", "Deny with a note…", "Open"]
+      // (a command it can't show whole: Open, its tab with all of it, Allow once and Deny; askHead)
+      const cut = asks && askHead(p!).cut;
+      const buttons = cut ? ["Open", "Allow once", "Deny"]
+        : asks ? ["Allow once", ...(p!.answer === "keys" || p!.always ? ["Always allow"] : []), "Deny", "Deny with a note…", "Open"]
         : this.panes && (n.kind === "done" || (n.kind === "waiting" && !p)) ? ["Reply…", "Open"] : ["Open"];
       // (what Always allow lets through from now on, next to the button)
-      const always = asks && p!.answer === "hook" && p!.always ? ` · Always allow: ${p!.always}` : "";
+      const always = asks && !cut && p!.answer === "hook" && p!.always ? ` · Always allow: ${p!.always}` : "";
       void show(text + always, ...buttons).then(async (choice) => {
         const panes = this.panes;
         if (choice === "Open") {
-          if (panes && settings.clickOpensPane()) panes.open(chat, "chat");
+          if (panes && (cut || settings.clickOpensPane())) panes.open(chat, "chat");
           else this.open(chat);
         } else if (panes && (choice === "Allow once" || choice === "Always allow" || choice === "Deny")) {
           this.told(chat, await panes.answer(chat, choice === "Allow once" ? "allow" : choice === "Always allow" ? "always" : "deny", shown));

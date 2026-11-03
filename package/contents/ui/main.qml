@@ -1152,6 +1152,8 @@ PlasmoidItem {
             property string asked          // what it asked (root.askId): a check that finds it asks something else makes it anew
             readonly property bool withAlways: !!row && !!row.permission
                                                && (row.permission.answer === "keys" || row.permission.always !== "")
+            // (a command it can't show whole: Open, to read it all, Allow once and Deny; root.askHead)
+            readonly property bool cut: !!row && !!row.permission && root.askHead(row.permission).cut
             readonly property var questions: row && row.permission && row.permission.questions ? row.permission.questions : []
             readonly property bool isPlan: !!row && !!row.permission && !!row.permission.plan
             readonly property var choices: questions.length === 1 && !questions[0].multiSelect ? questions[0].options.slice(0, 4) : []
@@ -1180,6 +1182,10 @@ PlasmoidItem {
             }
             property QtObject answerAction: NotificationAction {
                 label: i18n("Answer…")
+                onActivated: root.openPane(ask.row, ask.host, "chat")
+            }
+            property QtObject openAction: NotificationAction {
+                label: i18n("Open")
                 onActivated: root.openPane(ask.row, ask.host, "chat")
             }
             property QtObject allowAction: NotificationAction {
@@ -1217,7 +1223,9 @@ PlasmoidItem {
                 label: i18n("Open")
                 onActivated: root.openFromNotification(ask, true)
             }
-            actions: isPlan ? [approveEditsAction, approveAction, keepPlanningAction] : questions.length === 0 ? (withAlways ? [allowAction, alwaysAction, denyAction, noteAction] : [allowAction, denyAction, noteAction])
+            actions: isPlan ? [approveEditsAction, approveAction, keepPlanningAction]
+                     : questions.length === 0 ? (cut ? [openAction, allowAction, denyAction]
+                                                 : withAlways ? [allowAction, alwaysAction, denyAction, noteAction] : [allowAction, denyAction, noteAction])
                      : choices.length ? [choice0, choice1, choice2, choice3].slice(0, choices.length).concat([otherAction])
                      : [answerAction]
             onClosed: {
@@ -3980,12 +3988,26 @@ PlasmoidItem {
             return [i18n("%1 has a plan ready", s.name), p.plan.title || i18n("Approve it to start, or keep planning.")]
         if (p.questions && p.questions.length)
             return [i18n("%1 asks you", s.name), p.questions.map(q => q.question).join("\n")]
-        // (an MCP tool's, a page's: the first of what it asks with, each on a line; the pane shows all)
-        const args = (p.args || []).slice(0, 3).map(a => a.replace(/\s+/g, " ")).map(a => a.length > 100 ? a.slice(0, 99) + "…" : a)
-                     .concat(p.args && p.args.length > 3 ? [i18n("… %1 more", p.args.length - 3)] : [])
-        const asked = p.command || (p.file ? i18n("Change %1", p.file) : [p.line].concat(args).join("\n"))
+        const head = askHead(p)
+        const asked = p.command ? head.text : p.file ? i18n("Change %1", p.file) : [p.line].concat(head.text ? [head.text] : []).join("\n")
         // (what its Always allow button lets through from now on, where the click is)
-        return [i18n("%1 asks for a permission", s.name), p.answer === "hook" && p.always ? asked + "\n" + i18n("Always allow: %1", p.always) : asked]
+        return [i18n("%1 asks for a permission", s.name),
+                p.answer === "hook" && p.always && !head.cut ? asked + "\n" + i18n("Always allow: %1", p.always) : asked]
+    }
+
+    // What a notification shows of a permission's command (or of an MCP tool's, a page's arguments, a
+    // line each): all of it when that's at most 3 lines and 200 characters, else its start and
+    // "… N more lines: Open to read it all" (cut: its buttons are then Open, Allow once and Deny, no
+    // Always allow: what it would allow isn't all there). {text, cut}
+    function askHead(p) {
+        const lines = p.command ? p.command.split("\n") : p.file ? [] : (p.args || []).map(a => a.replace(/\s+/g, " "))
+        const whole = lines.join("\n")
+        if (lines.length <= 3 && whole.length <= 200)
+            return { text: whole, cut: false }
+        const shown = lines.slice(0, 3).join("\n").slice(0, 200)
+        const more = lines.length - shown.split("\n").length
+        return { text: shown + "\n" + (more > 0 ? i18np("… %1 more line: Open to read it all", "… %1 more lines: Open to read it all", more)
+                                                 : i18n("… Open to read it all")), cut: true }
     }
 
     // Whether the widget can answer what a waiting chat asks (its permission:
