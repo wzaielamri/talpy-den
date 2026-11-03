@@ -254,8 +254,7 @@ ColumnLayout {
                 mainText: i18n("Always allow")
                 subText: !ask.permission ? ""
                          : ask.permission.answer === "keys" ? i18n("Like \"Yes, and don't ask again\" in its dialog (for an edit, \"Yes, allow all edits during this session\").")
-                         : i18n("From now on, without asking: %1. Saved in the project's .claude/settings.local.json, as Claude's own \"don't ask again\" does.",
-                                ask.permission.always)
+                         : i18n("From now on, without asking: %1.", ask.permission.always)
             }
         }
         PlasmaComponents3.Button {

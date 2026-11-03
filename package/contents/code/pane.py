@@ -588,8 +588,8 @@ def decision_of(decision, note, suggestions, inp=None, answers=None):
     out = {"behavior": "allow"}
     if question:
         out["updatedInput"] = dict(inp, answers=answers)
-    elif decision == "always" and suggestions:
-        out["updatedPermissions"] = suggestions
+    elif decision == "always" and cs.always_allow(suggestions)[0]:
+        out["updatedPermissions"] = cs.always_allow(suggestions)[0]  # (what its label says: no more)
     return out
 
 

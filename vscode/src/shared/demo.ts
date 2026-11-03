@@ -173,7 +173,7 @@ function personal(now: number, phase: number): Group {
         stats: chatStats(now, 2, 6, [["Bash", 7], ["Read", 4], ["Write", 1]], 2_100_000),
         reply: "tmux",
         permission: { tool: "Bash", line: "Bash: git tag v2.0.0", command: "git tag v2.0.0", file: "", diff: [],
-                      always: "Bash(git tag v2.0.0)", request: "demo-request", answer: "hook" },
+                      always: "Bash(git tag v2.0.0) in this project (.claude/settings.local.json)", request: "demo-request", answer: "hook" },
       }),
       session(now, {
         key: "demo-3",

@@ -283,7 +283,7 @@ export interface PermissionAsk {
   command: string; // a Bash command, or ""
   file: string; // the file it would change, or ""
   diff: string[]; // the change, as unified diff lines
-  always: string; // what Always allow lets through, or "" (nothing to remember)
+  always: string; // what Always allow lets through, and where, or "" (nothing to remember): "Bash(git push:*) in this project (.claude/settings.local.json)"
   // Claude's multiple-choice questions (its AskUserQuestion tool), answered
   // with "answer"; older backends leave it out
   questions?: Question[];

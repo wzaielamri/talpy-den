@@ -382,16 +382,29 @@ class PermissionViewTests(PaneFixture):
                                   [{"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "npm publish"}],
                                     "behavior": "allow", "destination": "localSettings"}])
         self.assertEqual((bash["line"], bash["command"], bash["always"]),
-                         ("Bash: npm publish", "npm publish", "Bash(npm publish)"))
+                         ("Bash: npm publish", "npm publish", "Bash(npm publish) in this project (.claude/settings.local.json)"))
         edit = cs.permission_view("Edit", {"file_path": str(self.folder / "src/a.py"), "old_string": "a\nb",
                                            "new_string": "a\nc"}, str(self.folder))
         self.assertEqual(edit["file"], "src/a.py")
         self.assertEqual(edit["diff"][-2:], ["-b", "+c"])
         write(self.folder / "b.txt", "old\n")
         whole = cs.permission_view("Write", {"file_path": str(self.folder / "b.txt"), "content": "new\n"},
-                                   str(self.folder), [{"type": "addDirectories", "directories": [str(self.home / "other")]}])
+                                   str(self.folder), [{"type": "addDirectories", "directories": [str(self.home / "other")],
+                                                       "destination": "session"}])
         self.assertEqual(whole["diff"][-2:], ["-old", "+new"])
-        self.assertEqual(whole["always"], "the folder ~/other")
+        self.assertEqual(whole["always"], "access to ~/other in this chat")
+
+    def test_always_allow_says_all_it_does(self):
+        # (Claude 2.1.317's suggestions for a write outside the chat's folders: it said "the folder ~/other",
+        # saved in settings.local.json, and the click also turned on accept edits for the whole chat)
+        outside = [{"type": "setMode", "mode": "acceptEdits", "destination": "session"},
+                   {"type": "addDirectories", "directories": [str(self.home / "other")], "destination": "session"},
+                   {"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "rm -rf /"}], "behavior": "deny",
+                    "destination": "localSettings"},
+                   {"type": "addRules", "rules": [{"toolName": "Bash"}], "behavior": "allow", "destination": "elsewhere"}]
+        view = cs.permission_view("Write", {"file_path": str(self.home / "other/x"), "content": "hi"}, str(self.folder), outside)
+        self.assertEqual(view["always"], "all edits (accept edits mode) and access to ~/other, in this chat")
+        self.assertEqual(pane.decision_of("always", "", outside)["updatedPermissions"], outside[:2])  # (what it says: no more)
 
     def test_a_write_over_a_big_file_or_a_pipe(self):
         # (each check made the view: it read the whole file and diffed it, minutes of CPU for a big one)

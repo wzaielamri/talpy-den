@@ -2410,19 +2410,54 @@ def permission_view(tool, inp, cwd, suggestions=()):
             # (its new text: under the @@ line, so a row's few lines show it)
             view["diff"].insert(1, "Replaces %s, not compared here: the new text" % other)
             del view["diff"][DIFF_LINES:]
-    suggestions = [s for s in suggestions or () if isinstance(s, dict)]
-    rules = [r for s in suggestions if s.get("type") == "addRules" for r in s.get("rules") or () if isinstance(r, dict)]
-    dirs = [d for s in suggestions if s.get("type") == "addDirectories"
-            for d in s.get("directories") or () if isinstance(d, str)]
-    modes = [s.get("mode") for s in suggestions if s.get("type") == "setMode" and isinstance(s.get("mode"), str)]
-    if rules:
-        view["always"] = ", ".join(f"{r.get('toolName')}({r['ruleContent']})" if r.get("ruleContent")
-                                   else str(r.get("toolName")) for r in rules)
-    elif dirs:
-        view["always"] = "the folder " + ", ".join(short_path(d, Path.home()) for d in dirs)
-    elif modes:
-        view["always"] = f"everything in {modes[0]} mode"
+    view["always"] = always_allow(suggestions)[1]
     return view
+
+
+# What Always allow lets through, by what Claude suggests: the kinds Talpy
+# Den says in words (a mode that lets more through; a rule that allows, a
+# folder), and where each goes (a suggestion for anywhere else isn't sent)
+ALWAYS_MODES = {"acceptEdits": "all edits (accept edits mode)", "bypassPermissions": "everything (bypass permissions mode)",
+                "auto": "what auto mode finds safe"}
+ALWAYS_WHERE = {"session": "in this chat", "cliArg": "in this chat",
+                "localSettings": "in this project (.claude/settings.local.json)",
+                "projectSettings": "in this project (.claude/settings.json, shared through git)",
+                "userSettings": "in every project (your user settings)"}
+
+
+def always_allow(suggestions):
+    """(the suggestions Always allow sends, what they let through in words:
+    "all edits (accept edits mode) and access to ~/other, in this chat",
+    "Bash(git push:*) in this project (.claude/settings.local.json)"; ""
+    when there's none). Only those the words name are sent (pane.py
+    decision_of), so the button says all it does."""
+    kept, groups = [], {}
+    for s in suggestions or ():
+        if not isinstance(s, dict) or s.get("destination") not in ALWAYS_WHERE:
+            continue
+        if s.get("type") == "setMode" and s.get("mode") in ALWAYS_MODES:
+            words = [ALWAYS_MODES[s["mode"]]]
+        elif s.get("type") == "addRules" and s.get("behavior") == "allow":
+            rules = [r for r in s.get("rules") or () if isinstance(r, dict) and isinstance(r.get("toolName"), str)
+                     and r["toolName"] and isinstance(r.get("ruleContent") or "", str)]
+            s = dict(s, rules=rules)
+            words = [short_text("%s(%s)" % (r["toolName"], r["ruleContent"]) if r.get("ruleContent") else r["toolName"], 120)
+                     for r in rules]
+        elif s.get("type") == "addDirectories":
+            s = dict(s, directories=[d for d in s.get("directories") or () if isinstance(d, str) and d])
+            home = str(Path.home())  # (the folder whole, from ~ on: which one must be clear)
+            words = ["access to " + short_text("~" + d[len(home):] if d == home or d.startswith(home + "/") else d, 200)
+                     for d in s["directories"]]
+        else:
+            continue
+        if words:
+            kept.append(s)
+            groups.setdefault(ALWAYS_WHERE[s["destination"]], []).extend(words)
+    text = []
+    for where, words in groups.items():
+        what = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1] + ","
+        text.append("%s %s" % (what, where))
+    return kept, "; ".join(text)
 
 
 def plan_view(inp):
