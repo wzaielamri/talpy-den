@@ -489,7 +489,9 @@ def mtime(path):
 
 
 def valid_id(value):
-    return isinstance(value, str) and value != "" and "/" not in value and value not in (".", "..")
+    # (nor a word that is a flag, "--screenshot": ids go on as words of jump.py's and remote.py's command lines)
+    return isinstance(value, str) and value != "" and "/" not in value and value not in (".", "..") \
+        and not value.startswith("-")
 
 
 # The Claude folder a status-line snapshot is of (statusline-snippet.sh

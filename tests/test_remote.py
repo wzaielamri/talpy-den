@@ -298,6 +298,15 @@ class StatusTests(FakeSSH):
         self.assertTrue(remote.status("lab", tokens=False, usage_refresh=15)["ok"])
         self.assertEqual(self.calls()[-1][1], "python3 -I - --remote --no-tokens --usage-refresh 15")
 
+    def test_a_chat_id_that_is_a_flag_is_dropped(self):
+        # (passed on as a word of jump.py's command line, "--screenshot" was taken for that flag)
+        rows = [{"sessionId": "--screenshot"}, {"sessionId": "abc12345", "chatId": "--pick-files"},
+                {"sessionId": "a/../b"}, {"sessionId": "abc12345", "chatId": None}, {"sessionId": ""}]
+        result = remote.chats_with_ids({"groups": [{"sessions": list(rows), "recent": list(rows), "starred": rows[:1]}]})
+        (group,) = result["groups"]
+        self.assertEqual(group["sessions"], rows[3:])
+        self.assertEqual((group["recent"], group["starred"]), (rows[3:], []))
+
     def test_login_noise_before_the_answer(self):
         self.mode("noisy")
         self.assertTrue(remote.status("lab")["ok"])

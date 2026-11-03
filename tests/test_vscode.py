@@ -471,6 +471,11 @@ class ResumeTests(VscodeHome):
             jump.main(["--remote-resume-vscode", "lab", "abc", "--cwd", "/srv"])
             with self.assertRaises(SystemExit):
                 jump.main(["--remote-resume-vscode", "lab"])   # which chat?
+            # a host's chat id that is another action's flag isn't taken for it (a region screenshot, here)
+            for action in ("--remote-resume-vscode", "--remote-vscode"):
+                with Patch((jump, "screenshot", lambda *a: calls.append("screenshot") or (True, ""))), \
+                        self.assertRaises(SystemExit):
+                    jump.main([action, "lab", "--screenshot", "--cwd", "/srv"])
         self.assertEqual(calls, [("vscode", "abc", ".claude-work"), ("terminal", "abc", ".claude-work"),
                                  ("ssh", "lab", "abc", "/srv")])
 

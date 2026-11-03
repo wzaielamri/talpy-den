@@ -2908,8 +2908,12 @@ def main(argv=None):
             describe = True
         elif arg == "--allow-vscode":
             allow_vscode = True
-        elif arg in ("--remote-vscode", "--remote-terminal", "--remote-new-vscode", "--remote-resume-vscode",
-                     "--remote-edit") and args:
+        elif arg in ("--remote-vscode", "--remote-resume-vscode", "--remote-edit") and len(args) >= 2:
+            # (the chat's id, or the file, is the word after HOST: a host's id that is a flag isn't taken for one)
+            action, remote_host, session_id = arg, args.pop(0), args.pop(0)
+            if arg != "--remote-edit" and not cs.valid_id(session_id):
+                sys.exit(USAGE)
+        elif arg in ("--remote-terminal", "--remote-new-vscode") and args:
             action, remote_host = arg, args.pop(0)
         elif arg == "--name" and args:
             name_arg = args.pop(0)

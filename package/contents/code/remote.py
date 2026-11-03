@@ -734,10 +734,24 @@ def status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, 
         return {"ok": False, "host": host, "error": f"{p.label} sent an answer Talpy Den can't read.", "elapsedMs": elapsed}
     if not result.get("ok"):
         return {"ok": False, "host": host, "error": f"{p.label}: {result.get('error') or 'status failed'}", "elapsedMs": elapsed}
-    out = {"ok": True, "host": host, "result": result, "elapsedMs": elapsed,
+    out = {"ok": True, "host": host, "result": chats_with_ids(result), "elapsedMs": elapsed,
            "loggedIn": p.host is not None and logged_in(p.host)}
     remember_answer(host, out)
     return out
+
+
+def chats_with_ids(result):
+    """A host's answer without its chats whose id isn't a chat's (cs.valid_id;
+    none yet, a chat just starting, stays): the front ends pass a chat's
+    sessionId and chatId on as words of command lines here, and a host's
+    "--screenshot" was taken for that flag."""
+    def plain(s):
+        return isinstance(s, dict) and all(s.get(k) in (None, "") or cs.valid_id(s[k]) for k in ("sessionId", "chatId"))
+    for g in result.get("groups") if isinstance(result.get("groups"), list) else []:
+        for key in ("sessions", "recent", "starred"):
+            if isinstance(g, dict) and isinstance(g.get(key), list):
+                g[key] = [s for s in g[key] if plain(s)]
+    return result
 
 
 # Each host's and container's last answer, kept for the next start: the
@@ -773,6 +787,8 @@ def last_answers(hosts):
         except ValueError:
             continue
         if isinstance(saved, dict) and isinstance(saved.get("answer"), dict) and saved["answer"].get("ok"):
+            if isinstance(saved["answer"].get("result"), dict):  # (one kept before ids were checked, too)
+                chats_with_ids(saved["answer"]["result"])
             out[host] = {"at": saved.get("at") or 0, "offset": saved.get("offset") or 0, "answer": saved["answer"]}
     return out
 
