@@ -604,12 +604,13 @@ def ssh_target(argv):
 
 
 def host_names(host):
-    """Names a host goes by: its ~/.ssh/config alias and HostName."""
-    names = {host}
+    """Names a host goes by: its ~/.ssh/config alias and HostName (of
+    user@host: host's too, the name its ssh goes to: ssh_target)."""
+    names = {host, host.rsplit("@", 1)[-1]}
     try:
         import remote
         for h in remote.ssh_hosts():
-            if h["name"] == host and h["hostname"]:
+            if h["name"] in names and h["hostname"]:
                 names.add(h["hostname"])
     except Exception:
         pass
@@ -651,7 +652,8 @@ def vscode_connected_to(host):
                                    if proc_name(pid) == "ssh" and not typed_in_vscode(pid, main)) if t in names), None)
         if target is not None:
             mains.append(main)
-            caption = f"[SSH: {target}]" if len(mains) == 1 else caption
+            # (a window of user@host is called so, though its ssh's target is the host alone)
+            caption = f"[SSH: {host if target == host.rsplit('@', 1)[-1] else target}]" if len(mains) == 1 else caption
     return mains, caption
 
 

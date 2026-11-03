@@ -1422,6 +1422,16 @@ class RemoteShowTests(unittest.TestCase):
             self.assertTrue(jump.jump_remote_vscode("labserver", "abc-123", "/home/me/proj")[0])
         self.assertEqual(raised, [(([100], "[SSH: labserver.uni.example]"), {"require": True, "prefer": "proj"})])
 
+    def test_a_window_of_user_at_host_is_found(self):
+        # (2026-11-03) its ssh goes to lab.example, which host_names("me@lab.example") didn't hold
+        tree, names = {100: [110], 110: [120]}, {100: "code", 120: "ssh"}
+        argvs = {100: ["/usr/share/code/code"], 120: ["ssh", "-T", "-D", "1", "me@lab.example"]}
+        procs = dict(self.procs(tree, names, argvs), host_names=jump.host_names)
+        import remote
+        with Patch(vscode_main_pids=lambda: [100], proc_env_value=lambda pid, name: None, **procs), \
+                mock.patch.object(remote, "ssh_hosts", return_value=[]):
+            self.assertEqual(jump.vscode_connected_to("me@lab.example"), ([100], "[SSH: me@lab.example]"))
+
     def test_an_ssh_typed_in_a_vscode_terminal_isnt_remote_ssh(self):
         # VS Code's terminals give their shells TERM_PROGRAM=vscode; Remote-SSH's
         # ssh (the extension host's, with its -D) has VS Code's own environment
