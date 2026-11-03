@@ -1024,6 +1024,12 @@ class UnreachedTests(TwoAccountHost):
         answer = remote.continue_chat("lab", ".claude", "0a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b")  # (there, but no such chat)
         self.assertFalse(answer["ok"])
         self.assertNotIn("reached", answer)
+        # (2026-11-03) nor one that took too long: it got there and may have gone on, so it isn't started again by itself
+        from unittest import mock
+        with mock.patch.object(remote, "ssh", side_effect=subprocess.TimeoutExpired("ssh", remote.RUN_TIMEOUT)):
+            answer = remote.continue_chat("lab", ".claude", self.CHAT)
+        self.assertEqual((answer["ok"], answer["message"]), (False, "lab didn't answer within 60 s"))
+        self.assertNotIn("reached", answer)
 
 
 class LoginTests(FakeSSH):

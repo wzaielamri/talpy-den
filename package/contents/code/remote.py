@@ -920,7 +920,9 @@ def host_answer(host, args, name="talpy_den.py", also=()):
     """Run a script of this folder on host with args (it goes to python3's
     stdin, as for --status): its answer, {"ok", "message", ...}; "reached":
     False when the host (or the container) couldn't be reached, not when
-    the script there said no (a queued go-on starts again once it answers:
+    the script there said no or took too long (it got there: ssh gives up on
+    a host it can't reach well before, ConnectTimeout and ServerAlive*), so
+    it may have done it (a queued go-on starts again once it answers:
     jump.start_queued, talpy_den.requeue_reached). Your own text in args
     (TEXT_ARGS) goes on the stdin too, before the script, not in ssh's
     command (with_texts)."""
@@ -932,7 +934,7 @@ def host_answer(host, args, name="talpy_den.py", also=()):
     try:
         r = ssh(host, command, script)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "reached": False, "message": f"{p.label} didn't answer within {RUN_TIMEOUT} s"}
+        return {"ok": False, "message": f"{p.label} didn't answer within {RUN_TIMEOUT} s"}
     except OSError as exc:
         return {"ok": False, "reached": False, "message": cant_run(p, exc)}
     answer = answer_after_mark(r.stdout)
