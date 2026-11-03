@@ -1102,15 +1102,20 @@ PlasmoidItem {
         expanded = true
     }
     Timer {
-        interval: 30 * 60000
+        // (the first ask a minute after it starts, as VS Code's: the week is marked as told at the first ask,
+        // and right at login no SSH host has answered yet; then every 30 minutes)
+        interval: 60000
         repeat: true
-        triggeredOnStart: true
         running: root.notifier && Plasmoid.configuration.mondayRecap
+        onRunningChanged: if (running) interval = 60000
         // (the SSH hosts shown, as the Recap it opens counts them: the ones that answered their last check)
-        onTriggered: mondayAsk.connectSource("python3 -I " + root.shellQuote(root.codeDir + "week.py") + " --monday-recap"
-                                             + root.shownHosts.filter(host => root.remote[host] && root.remote[host].result && !root.remote[host].error)
-                                                              .map(host => " --host " + root.shellQuote(host)).join("")
-                                             + root.configDirArgs)
+        onTriggered: {
+            interval = 30 * 60000
+            mondayAsk.connectSource("python3 -I " + root.shellQuote(root.codeDir + "week.py") + " --monday-recap"
+                                    + root.shownHosts.filter(host => root.remote[host] && root.remote[host].result && !root.remote[host].error)
+                                                     .map(host => " --host " + root.shellQuote(host)).join("")
+                                    + root.configDirArgs)
+        }
     }
     Exec {
         id: mondayAsk
