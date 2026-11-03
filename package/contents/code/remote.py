@@ -593,11 +593,10 @@ def host_containers(host, days=cs.CONTAINER_DAYS, picked=()):
     answer = host_answer(host, ["--list-containers", str(days)] + (["--picked", ",".join(names)] if names else []))
     if not answer["ok"]:
         return {"ok": False, "host": host, "error": answer["message"] or f"{host} couldn't list its containers"}
-    found = [c for c in answer.get("containers") or [] if isinstance(c, dict) and isinstance(c.get("id"), str)]
-    for c in found:
-        c["id"] += "@" + host
-        c["host"] = host
-    out = {"containers": [c for c in found if HOST_NAME.match(c["id"])],
+    listed = answer.get("containers") if isinstance(answer.get("containers"), list) else []
+    found = [host_container(dict(c, id=c["id"] + "@" + host), host) for c in listed
+             if isinstance(c, dict) and isinstance(c.get("id"), str)]
+    out = {"containers": [c for c in found if c],
            "notes": [n for n in answer.get("notes") or [] if isinstance(n, dict)],
            "at": int(time.time() * 1000)}
     remember_users(out["containers"])
@@ -613,11 +612,27 @@ def host_containers(host, days=cs.CONTAINER_DAYS, picked=()):
     return {"ok": True, "host": host, **out}
 
 
+def host_container(c, host):
+    """One of an SSH host's containers as its list says (its id
+    ENGINE:NAME@host), with its engine and name from that id; None for one
+    whose id isn't a container of host's (an SSH destination such as root@lab,
+    a container on another host): a host's list names its own containers only."""
+    m = CONTAINER.fullmatch(c.get("id")) if isinstance(c, dict) and isinstance(c.get("id"), str) else None
+    if not m or m.group(3) != host:
+        return None
+    return dict(c, engine=m.group(1), name=m.group(2), host=host)
+
+
 def cached_host_containers():
     """The SSH hosts' container lists as they were last fetched: {host: {"containers", "notes", "at"}}."""
     saved = cs.read_json(containers_file())
     hosts = saved.get("hosts") if isinstance(saved, dict) else None
-    return {h: v for h, v in hosts.items() if isinstance(v, dict)} if isinstance(hosts, dict) else {}
+    out = {}
+    for h, v in hosts.items() if isinstance(hosts, dict) else ():
+        if isinstance(v, dict) and HOST_NAME.match(h) and not CONTAINER.match(h):
+            found = [host_container(c, h) for c in v["containers"]] if isinstance(v.get("containers"), list) else []
+            out[h] = dict(v, containers=[c for c in found if c])
+    return out
 
 
 def hosts_and_containers(days=cs.CONTAINER_DAYS, picked=(), containers=True):

@@ -356,6 +356,24 @@ class HostListTests(FakeEngines):
             remote.host_containers("docker:api")
 
 
+    def test_a_hosts_list_names_only_its_own_containers(self):
+        crafted = ["docker:web", "docker:x@other", "lab2", "root@lab.example", "docker:x@-oProxyCommand=id", "docker:web\nfoo"]
+        answer = {"ok": True, "message": "", "containers": [{"id": i, "name": "evil  (podman · ubuntu)", "engine": "nerdctl"}
+                                                             for i in crafted]}
+        old, remote.host_answer = remote.host_answer, lambda host, args, *a, **k: dict(answer)
+        try:
+            out = remote.host_containers("lab")
+        finally:
+            remote.host_answer = old
+        self.assertEqual([(c["id"], c["engine"], c["name"], c["host"]) for c in out["containers"]],
+                         [("docker:web@lab", "docker", "web", "lab")])
+        # nor what a list kept before says
+        remote.change_containers_file(lambda saved: saved.update(hosts={"lab": {"containers": [
+            {"id": "root@lab", "name": "web"}, {"id": "docker:x@other@lab"}, {"id": "docker:web@lab", "name": "evil"}]}}))
+        cached = remote.cached_host_containers()["lab"]["containers"]
+        self.assertEqual([(c["id"], c["name"]) for c in cached], [("docker:web@lab", "web")])
+
+
 class ContainerStatusTests(FakeEngines):
     def test_status_inside_as_vscodes_user(self):
         self.engine("podman")

@@ -51,6 +51,10 @@ test("a Dev Containers window's container, as remote.py names it", () => {
   // through Remote-SSH: one on that host
   assert.equal(containerFromAuthority(attached("api") + "@ssh-remote+lab", known), "docker:api@lab");
   assert.equal(containerFromAuthority(attached("api"), known), "docker:api");
+  // a host's list can't make it another place (an SSH destination as a container's id)
+  const spoof = [{ id: "root@lab", engine: "docker", name: "web", host: "lab" }, { id: "docker:x@other@lab", engine: "docker", name: "x", host: "lab" }];
+  assert.equal(containerFromAuthority(attached("web") + "@ssh-remote+lab", spoof), "docker:web@lab");
+  assert.equal(containerFromAuthority(attached("x") + "@ssh-remote+lab", spoof), "docker:x@lab");
   // not a container window
   assert.equal(containerFromAuthority("ssh-remote+lab", known), undefined);
   assert.equal(containerFromAuthority(undefined, known), undefined);

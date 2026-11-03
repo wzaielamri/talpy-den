@@ -4,6 +4,7 @@
 // so it reaches that host with its own ssh, like any other picked host.
 
 import { spawnSync } from "node:child_process";
+import { containerOf } from "./shared/model";
 
 // The host names remote.py accepts (its HOST_NAME)
 export const HOST_NAME = /^[A-Za-z0-9_.@][A-Za-z0-9_.@:-]*$/;
@@ -101,7 +102,11 @@ export function containerFromAuthority(
   } catch {
     return "";
   }
-  const here = known.filter((c) => (c.host ?? "") === host);
+  // (a listed one whose id is that container on this host: a host's list can't name another place)
+  const here = known.filter((c) => {
+    const id = containerOf(c.id);
+    return (c.host ?? "") === host && !!id && id.host === host && id.engine === c.engine && id.name === c.name;
+  });
   let found: (typeof known)[number] | undefined;
   let name = "";
   if (typeof config === "string") {
