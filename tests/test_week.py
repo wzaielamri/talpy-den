@@ -850,6 +850,25 @@ class PlanTests(Home):
         self.assertEqual((five["pct"], five["resetsAt"], five["reset"], five["points"]), (0, None, True, []))
         self.assertEqual((seven["pct"], seven["resetsAt"], seven["reset"]), (40, t0 + 7 * week.DAY_MS, False))
 
+    def test_a_window_not_started_is_shown_too(self):
+        # personal at 96% of its week and no reply in the last 5 hours: Claude
+        # says its 5-hour window is at 0% with no reset time, which the usage
+        # history doesn't keep, and the Recap showed only "personal · 7d"
+        t0 = self.t0
+        d = self.home / ".claude-personal"
+        d.joinpath(".claude.json").write_text(json.dumps({"oauthAccount": {"accountUuid": "acct-pro"}, "cachedUsageUtilization": {
+            "fetchedAtMs": t0, "accountUuid": "acct-pro", "utilization": {
+                "five_hour": {"utilization": 0, "resets_at": None},
+                "seven_day": {"utilization": 96, "resets_at": "2026-10-24T22:00:00+00:00"}}}}))
+        profiles = self.profiles()
+        gid = {m.label: cs.short_id(g) for g, members in cs.group_profiles(profiles) for m in members}
+        resets = cs.to_ms("2026-10-24T22:00:00+00:00")
+        cs.write_json_atomic(self.cache_root / "usage.json",
+                             {"groups": {gid["personal"]: {"seven_day": {"resetsAt": resets, "points": [[t0 - 60_000, 95], [t0, 96]]}}}})
+        plans = {p["name"]: p["windows"] for p in week.plan_windows(self.cache_root, profiles, t0 + 60_000)}
+        self.assertEqual([(w["key"], w["pct"], w["resetsAt"], w["reset"], len(w["points"])) for w in plans["personal"]],
+                         [("five_hour", 0, None, False, 0), ("seven_day", 96, resets, False, 2)])
+
 
 class Projects(Home):
     """Two of your projects, ~/repos/app (where the chats start) and ~/repos/lib."""

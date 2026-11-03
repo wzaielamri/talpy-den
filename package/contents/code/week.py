@@ -2088,9 +2088,13 @@ def plan_windows(cache_root, profiles, now_ms):
     (the widget's usage history, usage.json): [{"account", "name", "windows":
     [{"key", "label", "resetsAt", "pct", "reset", "points": [[ms, pct], ...]}]}].
     One past its reset is at 0% with nothing filled yet, as on the Chats tab
-    (talpy_den.py: limit_window)."""
+    (talpy_den.py: limit_window). Every window the Chats tab shows is here,
+    one with nothing on record too: a 5-hour window that hasn't started
+    (no reply in the last 5 hours: Claude says 0%, no reset time) isn't in
+    the history, which keeps only windows with a reset time."""
     data = cs.read_json(cache_root / "usage.json")
     groups = data.get("groups") if isinstance(data, dict) and isinstance(data.get("groups"), dict) else {}
+    logged_out = cs.logged_out_notes(cache_root)
     out = []
     for gid, members in cs.group_profiles(profiles):
         named = next((p for p in members if not p.is_default), members[0])
@@ -2105,6 +2109,14 @@ def plan_windows(cache_root, profiles, now_ms):
             windows.append({"key": key, "label": cs.WINDOW_LABELS.get(key, key), "resetsAt": None if reset else resets,
                             "pct": 0 if reset else points[-1][1], "reset": reset,
                             "points": [] if reset else points[::step] + ([points[-1]] if (len(points) - 1) % step else [])})
+        # (a logged-out account's last status lines are no one's plan usage now, as on the Chats tab)
+        now = None if all(cs.needs_login(p, logged_out) for p in members) else \
+            cs.plan_limits(cache_root / "statusline", members, now_ms)
+        have = {w["key"] for w in windows}
+        for w in (now or {}).get("windows") or ():
+            if w["key"] in cs.WINDOW_ORDER and w["key"] not in have:
+                windows.append({"key": w["key"], "label": w["label"], "resetsAt": w["resetsAt"],
+                                "pct": w["pct"], "reset": w["reset"], "points": []})
         windows.sort(key=lambda w: cs.WINDOW_ORDER.index(w["key"]))
         if windows:
             out.append({"account": cs.short_id(gid), "name": named.label, "windows": windows})

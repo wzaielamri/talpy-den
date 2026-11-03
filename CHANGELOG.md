@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The Recap lists every window of your plan, one that hasn't started too:** an account with no reply in the last 5 hours (Claude says its 5-hour window is at 0%, with no reset time) showed only its *7d* under *Your plan's limits now*, though the Chats tab showed its *5h* at 0%. Now each window the Chats tab shows is there, an empty bar at 0% for one with nothing to draw yet (Plasma, GNOME and VS Code).
+
 ## 1.17.0 (2026-11-02)
 
 - **A go-on that couldn't reach its host starts once the host answers again:** a go-on (or a task) queued for an SSH host or a container whose time came while it couldn't be reached (you disconnected, no network, the container stopped) failed and waited for you to start it again; now it says *It starts once lab answers again* and does, by itself, as soon as the host's next check gets through. One the host turned down (*Claude doesn't trust …*) still waits for you (Plasma and VS Code).
