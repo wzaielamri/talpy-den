@@ -4682,7 +4682,8 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
             elif step is not None:
                 _, start, why, prompt = step
                 adds.append(queue_entry(k["profile"], k.get("folder") or "", prompt, int(start), chat=k["chat"],
-                                        name=k.get("name") or "", why=why, now_ms=now_ms))
+                                        account=(g.get("title") or "") if g else "", name=k.get("name") or "",
+                                        why=why, now_ms=now_ms))
                 k["cappedUntil"] = None
             changed = changed or k != before
         return changed
