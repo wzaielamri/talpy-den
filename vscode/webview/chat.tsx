@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { attachedTag, whereTag, droppedPaths, fileMention, HOLD_MS, pendingTaken, picturesIn, PICTURE_TYPES, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { attachedTag, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, picturesIn, PICTURE_TYPES, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox, askKey } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -555,6 +555,16 @@ function ChatApp() {
   // Held: it goes to Claude when its moment is up, or at once with Send now;
   // Edit (or ↑ in an empty box) takes it back into the box, ✕ drops it
   const [now, setNow] = useState(0);
+  // A picture of yours, big (its thumbnail clicked): over the tab, till a click, × or Esc
+  const [big, setBig] = useState<{ path: string; src: string } | null>(null);
+  useEffect(() => {
+    if (!big) return undefined;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setBig(null);
+    };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [big]);
   const release = (id: number) => {
     const p = outgoingNow.current.find((x) => x.id === id && x.state === "held");
     if (!p) return;
@@ -624,7 +634,16 @@ function ChatApp() {
       <div key={it.key} data-key={it.key} class={`pane-item pane-you ${gap}${it.sending ? " sending" : ""}${it.until || it.queued ? " queued" : ""}`}>
         <span class="pane-gutter" aria-hidden="true">›</span>
         <div class="pane-you-main">
-          <div class="pane-you-text">{it.text}</div>
+          <div class="pane-you-text">{numberedPictures(it.text ?? "")}</div>
+          {it.thumbs?.length ? (
+            <div class="pane-you-pics">
+              {it.thumbs.map((t) => (
+                <button key={t.path} type="button" class="pane-you-pic" title="Click to see it big" onClick={() => setBig(t)}>
+                  <img src={t.src} alt="" />
+                </button>
+              ))}
+            </div>
+          ) : null}
           {it.until || it.queued ? (
             <div class="pane-you-queue">
               <span class="grow">{it.until ? `Queued · goes to Claude in ${Math.max(1, Math.ceil((it.until - now) / 1000))} s`
@@ -673,6 +692,19 @@ function ChatApp() {
 
   return (
     <div class="pane pane-grow" style={{ "--pane-scale": String(scale), ...(font ? { "--pane-font": font } : {}) }}>
+      {big ? (
+        <div class="pane-big" role="dialog" aria-label="A picture of yours" onClick={() => setBig(null)}>
+          <img src={big.src} alt="" />
+          <div class="pane-big-tools" onClick={(e) => e.stopPropagation()}>
+            <button type="button" class="btn secondary small" title="In VS Code's image viewer" onClick={() => post({ type: "openPicture", path: big.path })}>
+              <Icon name={I.openRun} />Open
+            </button>
+            <button type="button" class="btn secondary small" title="Close (Esc)" aria-label="Close" onClick={() => setBig(null)}>
+              <Icon name={I.close} />
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div class="pane-head">
         <span class={`state-dot st-${chat?.state ?? "done"}`} aria-hidden="true" />
         <h2 class="pane-name">{chat?.name ?? ""}</h2>

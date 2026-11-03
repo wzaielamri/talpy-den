@@ -235,7 +235,50 @@ def same_text(a, b):
     return " ".join(a.split()) == " ".join(b.split())
 
 
-def conversation_items(lines):
+PICTURE_NAMED = re.compile(r"\[Image: (/[^\]\n]+)\]")
+PICTURE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}
+PICTURE_MAX = 20 << 20  # bytes of one pasted picture saved for the pane
+
+
+def prompt_pictures(text, blocks, uid, folder):
+    """The pictures a prompt of yours has, for the pane's thumbnails: the
+    files it names ([Image: /path], a picture pasted in the pane), then
+    those pasted into it in Claude's terminal or panel (its image blocks),
+    each saved once in folder (cs.images_dir, kept as long as the pane's own,
+    IMAGES_KEEP_DAYS), named after its entry. folder None (an SSH host's
+    chat): the files it names only."""
+    out = []
+    for path in PICTURE_NAMED.findall(text or ""):
+        if path not in out:
+            out.append(path)
+    if folder is None:
+        return out
+    n = 0
+    for c in blocks:
+        if c.get("type") != "image":
+            continue
+        n += 1
+        src = c.get("source") if isinstance(c.get("source"), dict) else {}
+        ext, data = PICTURE_TYPES.get(src.get("media_type")), src.get("data")
+        if src.get("type") != "base64" or ext is None or not isinstance(data, str) or len(data) > PICTURE_MAX * 4 // 3 + 4:
+            continue
+        path = Path(folder) / f"chat-{re.sub(r'[^0-9A-Za-z-]', '', str(uid))[:64]}-{n}{ext}"
+        if not path.exists():
+            try:
+                picture = base64.b64decode(data, validate=True)
+                Path(folder).mkdir(parents=True, exist_ok=True)
+                os.chmod(folder, 0o700)  # (a screenshot can show anything)
+                part = path.with_name(path.name + ".part")
+                with open(os.open(str(part), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb") as f:
+                    f.write(picture)
+                os.replace(part, path)
+            except (ValueError, OSError):
+                continue
+        out.append(str(path))
+    return out
+
+
+def conversation_items(lines, pictures=None):
     """The pane's items from transcript lines (oldest first): {"kind": "you",
     "text"} for a prompt of yours (one sent while Claude works shows when you
     send it, not once Claude takes it in), {"kind": "claude", "text"} for Claude's
@@ -244,7 +287,9 @@ def conversation_items(lines):
     line), "diff" (an edit's: edit_lines)} for a tool call and {"kind":
     "note", "text"} for an interruption, a usage limit or a compaction;
     each with "at" (ms) and "key" (the same in the next answer, as long as
-    the item is listed). Entries of subagents (sidechains) aren't in it."""
+    the item is listed); a prompt of yours with pictures has "pictures"
+    (their files: prompt_pictures, saved in the folder pictures). Entries
+    of subagents (sidechains) aren't in it."""
     items, tools = [], {}
     # Messages sent while Claude works: the transcript has each one when it's
     # sent (queue-operation enqueue) and again once Claude takes it in, after
@@ -254,6 +299,15 @@ def conversation_items(lines):
     # taken in goes where Claude took it, with the same key; taken: the ids of
     # those that were; due: those made the chat's own prompts (dequeue), in turn
     waiting, taken, due = [], set(), []
+
+    def you(key, text, at, content):
+        """A prompt of yours as an item (content: its message's, for the pictures in it)"""
+        item = {"kind": "you", "key": key, "text": clip(text, TEXT_CHARS, 10 ** 6), "at": at}
+        blocks = [c for c in content if isinstance(c, dict)] if isinstance(content, list) else []
+        shown = prompt_pictures(text, blocks, key, pictures)
+        if shown:
+            item["pictures"] = shown
+        return item
 
     def find_waiting(text):
         return next((w for w in waiting if same_text(w["text"], text)), None)
@@ -272,7 +326,7 @@ def conversation_items(lines):
         if kind == "queue-operation":
             op, text = e.get("operation"), typed_text(e.get("content"))
             if op == "enqueue" and text:
-                waiting.append({"kind": "you", "key": f"queued-{at}", "text": clip(text, TEXT_CHARS, 10 ** 6), "at": at})
+                waiting.append(you(f"queued-{at}", text, at, e.get("content")))
             elif op == "remove" and text:
                 item = find_waiting(text)
                 if item is not None:
@@ -297,7 +351,7 @@ def conversation_items(lines):
                 waiting.remove(item)
                 items.append(item)
             elif text and a.get("source_uuid") not in taken:
-                items.append({"kind": "you", "key": uid, "text": clip(text, TEXT_CHARS, 10 ** 6), "at": at})
+                items.append(you(uid, text, at, a.get("prompt")))
             continue
         if kind == "system":
             if e.get("subtype") == "compact_boundary":
@@ -330,7 +384,7 @@ def conversation_items(lines):
                         items.append(shown)   # (its key as it was while it waited)
                         continue
                     # (not what was sent: it was put together with others, this prompt shows them)
-                items.append({"kind": "you", "key": uid, "text": clip(prompt, TEXT_CHARS, 10 ** 6), "at": at})
+                items.append(you(uid, prompt, at, blocks))
                 continue
             text = cs.message_text(msg).strip()
             if text.startswith(INTERRUPTED):
@@ -408,14 +462,14 @@ def tail_lines(path, size, nbytes):
     return lines, whole
 
 
-def conversation(path, limit=PANE_ITEMS):
-    """(items, more) of a chat: its newest limit items (conversation_items),
-    and whether there are older ones."""
+def conversation(path, limit=PANE_ITEMS, pictures=None):
+    """(items, more) of a chat: its newest limit items (conversation_items,
+    pasted pictures saved in pictures), and whether there are older ones."""
     size = path.stat().st_size
     nbytes = PANE_TAIL_BYTES
     while True:
         lines, whole = tail_lines(path, size, nbytes)
-        items = conversation_items(lines)
+        items = conversation_items(lines, pictures)
         if whole or len(items) > limit or nbytes >= PANE_TAIL_MAX:
             return within_budget(items[-limit:]), len(items) > limit or not whole
         nbytes *= 4
@@ -468,7 +522,7 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
     return None, None
 
 
-def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0):
+def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None):
     if not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
@@ -484,7 +538,7 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
             stamp = stamp_of(path)  # (before it's read: what's written meanwhile is a change the next time)
         except (OSError, AttributeError):
             return {"ok": False, "missing": True, "message": NO_CHAT}
-    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)))
+    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures)
     name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
     peek = cs.chat_peek(path) or {}
     return {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or cs.chat_folder(path) or "",
@@ -1924,7 +1978,9 @@ def main(argv=None):
                 answer = copy_answer((text or "").strip(), ENTER_COPIES)  # (here, as above)
             return emit(answer)
         if action == "--conversation":
-            result = chat_conversation(home, config_dirs, target, profile, limit, stamp, wait)
+            # (pasted pictures saved for the thumbnails: not on an SSH host, where the pane doesn't look)
+            result = chat_conversation(home, config_dirs, target, profile, limit, stamp, wait,
+                                       None if remote else cs.images_dir(home))
         elif action == "--send":
             if after:
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)

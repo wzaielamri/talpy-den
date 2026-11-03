@@ -233,6 +233,15 @@ export class ChatPanes implements vscode.Disposable {
   }
 }
 
+// Talpy Den's folder of pictures (pasted ones, and those pasted into a chat
+// in Claude's terminal: pane.py prompt_pictures); only its pictures show in a tab
+function picturesDir(): string {
+  return path.join(cacheDir(), "images");
+}
+function inPictures(file: string): boolean {
+  return path.resolve(file).startsWith(picturesDir() + path.sep);
+}
+
 class Pane implements vscode.Disposable {
   private panel: vscode.WebviewPanel;
   private host: string;
@@ -264,7 +273,8 @@ class Pane implements vscode.Disposable {
     this.panel = vscode.window.createWebviewPanel("talpyDen.chat", chat.name || this.chatId.slice(0, 8), vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.joinPath(uri, "dist")],
+      // (and the pictures in your messages, shown small: Talpy Den's folder of them)
+      localResourceRoots: [vscode.Uri.joinPath(uri, "dist"), vscode.Uri.file(picturesDir())],
     });
     this.panel.iconPath = vscode.Uri.joinPath(uri, "media", "talpy.svg");
     this.shown = this.panel.visible;
@@ -426,6 +436,12 @@ class Pane implements vscode.Disposable {
   // A read's answer, or the watcher's (not one read before what's shown: stampFresher)
   private take(r: Record<string, any>): boolean {
     if (r.ok && !stampFresher(r.stamp, this.stamp, this.limit)) return false;
+    // (your pictures, small: those in Talpy Den's folder of them, by the address the tab can load; not an SSH host's)
+    if (r.ok && Array.isArray(r.items) && !this.host)
+      for (const it of r.items as Record<string, any>[])
+        if (Array.isArray(it.pictures))
+          it.thumbs = it.pictures.filter((f: unknown): f is string => typeof f === "string" && inPictures(f))
+            .map((f: string) => ({ path: f, src: this.panel.webview.asWebviewUri(vscode.Uri.file(f)).toString() }));
     if (r.ok && typeof r.stamp === "string") this.stamp = r.stamp;
     // (at the most a tab shows: no Show earlier, it says so instead)
     const capped = r.ok && !!r.more && this.limit >= LIMIT_MAX;
@@ -567,6 +583,10 @@ class Pane implements vscode.Disposable {
         break;
       case "moveToClaudeCode":
         await actions.moveToClaudeCode(this.chat);
+        break;
+      case "openPicture":
+        if (typeof m.path === "string" && !this.host && inPictures(m.path))
+          await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(m.path));
         break;
       case "copy":
         if (typeof m.text !== "string") break;

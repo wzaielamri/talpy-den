@@ -286,6 +286,7 @@ Window {
         // (a message on its way to the chat before still goes, and its answer is
         // said here; the watcher's for it is left out)
         askHow = false
+        bigPicture = ""
         lastItems = []
         watchLine = ""
         watchFailures = 0
@@ -551,12 +552,13 @@ Window {
             const flat = { kind: it.kind, key: String(it.key), text: it.text || "", line: it.line || "",
                            name: it.name || "", status: it.status || "", input: it.input || "", output: it.output || "",
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
-                           diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0 }
+                           diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
+                           pictures: (it.pictures || []).join("\n") }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
                 if (old.text !== flat.text || old.status !== flat.status || old.output !== flat.output
                         || old.input !== flat.input || old.summary !== flat.summary || old.prev !== flat.prev || old.diff !== flat.diff
-                        || old.queued !== flat.queued || old.until !== flat.until)
+                        || old.queued !== flat.queued || old.until !== flat.until || old.pictures !== flat.pictures)
                     items.set(i, flat)
             } else if (i < items.count) {
                 items.insert(i, flat)
@@ -1133,6 +1135,32 @@ Window {
         }
     }
 
+    // The pictures a text names ([Image: /path]), each once; the text with
+    // each as [Image #1], [Image #2]…, as Claude's terminal writes them (its
+    // picture under it). (The pattern written in each: a regex kept in a
+    // property is Qt's QRegularExpression, with no .source)
+    function pictureNames(text) {
+        const out = [], pattern = /\[Image: (\/[^\]\n]+)\]/g
+        let m
+        while ((m = pattern.exec(text || "")) !== null)
+            if (out.indexOf(m[1]) < 0)
+                out.push(m[1])
+        return out
+    }
+    function shownText(text) {
+        const seen = {}
+        let n = 0
+        return String(text || "").replace(/\[Image: (\/[^\]\n]+)\]/g, (all, path) => "[Image #" + (seen[path] || (seen[path] = ++n)) + "]")
+    }
+
+    // A picture of yours, big (its thumbnail clicked): over the pane, till a click, × or Esc
+    property string bigPicture: ""
+    Shortcut {
+        sequence: "Escape"
+        enabled: pane.bigPicture !== ""
+        onActivated: pane.bigPicture = ""
+    }
+
     // The conversation with your messages on their way after it: each till
     // the conversation has it (a prompt of yours that wasn't there when you
     // sent it, with its words; or, after a moment, any new one of this
@@ -1169,7 +1197,8 @@ Window {
         if (Object.keys(done).length)
             pendingSent = pendingSent.filter(p => !done[p.id])
         return list.concat(pendingSent.filter(p => p.chat === chatId && p.host === (host || ""))
-                                      .map(p => ({ kind: "you", key: "pending-" + p.id, text: p.text, status: p.state, at: p.at, until: p.until })))
+                                      .map(p => ({ kind: "you", key: "pending-" + p.id, text: p.text, status: p.state, at: p.at, until: p.until,
+                                                   pictures: pictureNames(p.text) })))
     }
     function showPending() {
         if (loaded) {
@@ -1866,6 +1895,7 @@ Window {
                         required property string diff
                         required property bool queued   // (yours, in Claude's queue: pane.py)
                         required property real until    // (yours, held: when it goes to Claude, ms)
+                        required property string pictures   // (yours: the pictures in it, "\n"-joined: pane.py prompt_pictures)
                         readonly property bool unfolded: pane.openTools[key] === true
                         // more room before your prompt (a new turn) than between steps
                         readonly property real gap: index === 0 ? 0
@@ -1934,7 +1964,7 @@ Window {
                                     }
                                     TextEdit {
                                         Layout.fillWidth: true
-                                        text: entry.text
+                                        text: pane.shownText(entry.text)
                                         textFormat: TextEdit.PlainText
                                         readOnly: true
                                         selectByMouse: true
@@ -1956,6 +1986,17 @@ Window {
                                         color: pane.mutedColor
                                         font.pointSize: pane.pt * 0.85
                                     }
+                                }
+                                // Its pictures, small: a click shows one big (bigView)
+                                PictureStrip {
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: pane.gutter
+                                    pictures: entry.pictures ? entry.pictures.split("\n") : []
+                                    host: pane.host
+                                    removable: false
+                                    opensHere: true
+                                    thumbHeight: Kirigami.Units.gridUnit * 4
+                                    onOpenRequested: path => pane.bigPicture = path
                                 }
                                 // Queued: what becomes of it
                                 RowLayout {
@@ -2894,6 +2935,55 @@ Window {
                         subText: parent.marked ? i18n("Click to mark it not reviewed.")
                                                : i18n("Its row stops saying \"to review\", until it changes files again.")
                     }
+                }
+            }
+        }
+
+        // A picture of yours, big: a click anywhere (or × or Esc) closes it,
+        // Open shows it in your picture viewer
+        Rectangle {
+            id: bigView
+            anchors.fill: parent
+            visible: pane.bigPicture !== ""
+            z: 100
+            color: Qt.rgba(0, 0, 0, 0.85)
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: pane.bigPicture = ""
+            }
+            Image {
+                anchors.fill: parent
+                anchors.margins: Kirigami.Units.gridUnit * 2
+                source: pane.bigPicture ? "file://" + encodeURI(pane.bigPicture) : ""
+                sourceSize.width: width * Screen.devicePixelRatio
+                sourceSize.height: height * Screen.devicePixelRatio
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                smooth: true
+            }
+            RowLayout {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: Kirigami.Units.smallSpacing
+                spacing: Kirigami.Units.smallSpacing
+
+                PlasmaComponents3.ToolButton {
+                    icon.name: Icons.plasma.openRun
+                    text: i18n("Open")
+                    onClicked: Qt.openUrlExternally("file://" + encodeURI(pane.bigPicture))
+                    PlasmaComponents3.ToolTip.text: i18n("In your picture viewer")
+                    PlasmaComponents3.ToolTip.visible: hovered
+                    PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+                }
+                PlasmaComponents3.ToolButton {
+                    icon.name: Icons.plasma.close
+                    display: PlasmaComponents3.AbstractButton.IconOnly
+                    text: i18n("Close (Esc)")
+                    onClicked: pane.bigPicture = ""
+                    PlasmaComponents3.ToolTip.text: text
+                    PlasmaComponents3.ToolTip.visible: hovered
+                    PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                 }
             }
         }

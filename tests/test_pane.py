@@ -1448,6 +1448,31 @@ class QuickChatTests(PaneFixture):
         self.assertEqual(answer["items"][-1]["text"], "They pass.")
         self.assertNotEqual(answer["stamp"], stamp)
 
+    def test_your_pictures(self):
+        # (the files a prompt names, then those pasted into it, saved once for the thumbnails;
+        # a queued one's too; an SSH host's chat: the files it names only, nothing saved there)
+        t = self.now - 100
+        png = base64.b64encode(b"\x89PNG\r\n\x1a\n-a picture-").decode()
+        pasted = {"type": "user", "uuid": "u-1", "timestamp": iso(t + 1), "message": {"role": "user", "content": [
+            {"type": "text", "text": "[Image #1] what's this?"},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": png}}]}}
+        self.chat(prompt("look: [Image: /home/me/.cache/talpy-den/images/a.png] and [Image: /tmp/b.jpg]", t, cwd=str(self.folder)),
+                  pasted,
+                  {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(t + 2),
+                   "content": "and [Image: /home/me/.cache/talpy-den/images/c.png]"})
+        folder = self.cache / "images"
+        items = pane.conversation(self.transcript, 120, folder)[0]
+        self.assertEqual([i.get("pictures") for i in items], [
+            ["/home/me/.cache/talpy-den/images/a.png", "/tmp/b.jpg"], [str(folder / "chat-u-1-1.png")],
+            ["/home/me/.cache/talpy-den/images/c.png"]])
+        saved = folder / "chat-u-1-1.png"
+        self.assertEqual(saved.read_bytes(), b"\x89PNG\r\n\x1a\n-a picture-")
+        self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+        made = saved.stat().st_mtime_ns
+        pane.conversation(self.transcript, 120, folder)   # (read again: not written again)
+        self.assertEqual(saved.stat().st_mtime_ns, made)
+        self.assertEqual([i.get("pictures") for i in pane.conversation(self.transcript)[0]][1], None)   # (no folder: an SSH host's)
+
     def test_wait_isnt_sent_to_a_host(self):
         with mock.patch("remote.host_answer", return_value={"ok": True, "unchanged": True}) as asked:
             self.cli("--conversation", SID, "--if-changed", "1:2/120", "--wait", "50", "--host", "gpu")

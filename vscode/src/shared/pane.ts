@@ -22,6 +22,8 @@ export interface PaneItem {
   sending?: boolean; // you: the tab's own, your message on its way (PendingSent)
   until?: number; // you: the tab's own, held till then (ms): sent while Claude works, Edit / ✕ / Send now meanwhile
   queued?: boolean; // you: waiting in Claude's queue, till it takes it in at its next step (pane.py)
+  pictures?: string[]; // you: the pictures in it, their files (pane.py prompt_pictures)
+  thumbs?: { path: string; src: string }[]; // you: those the tab can show, with their address in it (the extension's)
 }
 
 export interface Conversation {
@@ -176,6 +178,7 @@ export type PaneMessage =
   | { type: "openAgentRun"; agentId: string } // a subagent's whole run, in the Markdown preview (its strip)
   | { type: "moveToClaudeCode" } // Claude quits in its terminal, the chat reopens in a Claude Code panel (asks first)
   | { type: "copy"; text: string } // a code block of a reply, to the clipboard
+  | { type: "openPicture"; path: string } // a picture of yours, in VS Code's image viewer
   | { type: "textSize"; scale: number } // A− / A+: talpyDen.chatTextScale
   | { type: "diffLayout"; split: boolean } // side by side or one after the other: talpyDen.diffSideBySide
   | { type: "pickFiles" } // + : files to attach, from VS Code's file dialog (answered with "picked")
@@ -414,6 +417,16 @@ export function stampFresher(next: unknown, current: string, limit: number): boo
   if (!current) return true;
   const b = current.split("/");
   return a[1] !== b[1] || Number(a[0].split(":")[0]) >= Number(b[0].split(":")[0]);
+}
+
+// Your text with each picture it names ([Image: /path]) as [Image #1],
+// [Image #2]…, as Claude's terminal writes them (its picture under it)
+export function numberedPictures(text: string): string {
+  const seen = new Map<string, number>();
+  return text.replace(/\[Image: (\/[^\]\n]+)\]/g, (_all, p: string) => {
+    if (!seen.has(p)) seen.set(p, seen.size + 1);
+    return `[Image #${seen.get(p)}]`;
+  });
 }
 
 // How a reply reaches the chat, in a sentence

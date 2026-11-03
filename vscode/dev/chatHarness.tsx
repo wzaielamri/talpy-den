@@ -136,6 +136,15 @@ if (unfold)
 if (params.get("open") === "1")
   setTimeout(() => document.querySelectorAll<HTMLButtonElement>(".pane-tool-line").forEach((b, i) => setTimeout(() => b.click(), 60 * i)), 900);
 
+// ?pics=1: your last message with two pictures (thumbnails; ?pics=big: the first one opened big)
+if (params.get("pics")) {
+  const pic = "/home/alice/.cache/talpy-den/images/20261103-162501.png";
+  items.push({ kind: "you", key: "p1", text: `[Image: ${pic}] [Image: ${pic.replace("01.png", "14.png")}] the stars show in the pane`, at: now,
+               thumbs: [{ path: pic, src: "../media/icon.png" }, { path: pic.replace("01.png", "14.png"), src: "../media/talpy.svg" }] });
+  if (params.get("pics") === "big")
+    setTimeout(() => document.querySelector<HTMLButtonElement>(".pane-you-pic")?.click(), 900);
+}
+
 // ?queue=1: a message in Claude's queue, and one sent while it works (held: Edit / ✕ / Send now)
 if (params.get("queue") === "1") {
   items.push({ kind: "you", key: "q1", text: "Also check week 1 of 2027.", queued: true, at: now });

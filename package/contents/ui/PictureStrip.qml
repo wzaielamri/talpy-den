@@ -6,8 +6,10 @@ import org.kde.kirigami as Kirigami
 import "icons.mjs" as Icons
 
 // The pictures a task or a reply names ([Image: /path], pasted in), small:
-// a click shows one, × takes it out (removeRequested). An SSH host's picture
-// shows its copy here (root.pictureCopies).
+// a click shows one (opensHere: openRequested, the chat pane shows it big;
+// else your picture viewer), × takes it out (removeRequested; removable
+// false: none, a message's that went). An SSH host's picture shows its copy
+// here (root.pictureCopies).
 Flow {
     id: strip
 
@@ -15,7 +17,10 @@ Flow {
     property string host: ""
     property string removeText: i18n("Take it out")
     property real thumbHeight: Kirigami.Units.gridUnit * 3
+    property bool removable: true
+    property bool opensHere: false
     signal removeRequested(string path)
+    signal openRequested(string path)   // (its file here: a host's copy)
 
     visible: pictures.length > 0
     spacing: Kirigami.Units.smallSpacing
@@ -66,15 +71,23 @@ Flow {
             MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: Qt.openUrlExternally(thumb.source)
+                onClicked: {
+                    if (thumb.status === Image.Error)
+                        return
+                    if (strip.opensHere)
+                        strip.openRequested(root.pictureCopies[picture.modelData] || picture.modelData)
+                    else
+                        Qt.openUrlExternally(thumb.source)
+                }
             }
             PlasmaCore.ToolTipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: i18n("A picture for Claude")
+                mainText: strip.opensHere ? i18n("Click to see it big") : i18n("A picture for Claude")
                 subText: strip.host ? i18n("%1, on %2", picture.modelData, root.hostLabel(strip.host)) : picture.modelData
             }
             Rectangle {   // (the × shows on any picture)
+                visible: strip.removable
                 anchors.fill: remove
                 radius: width / 2
                 color: Kirigami.Theme.backgroundColor
@@ -82,6 +95,7 @@ Flow {
             }
             PlasmaComponents3.ToolButton {
                 id: remove
+                visible: strip.removable
                 anchors.top: parent.top
                 anchors.right: parent.right
                 icon.name: Icons.plasma.cancel

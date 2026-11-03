@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answersOf, chatWhere, oneChoice, pendingTaken, picturesIn, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
+import { answersOf, chatWhere, numberedPictures, oneChoice, pendingTaken, picturesIn, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -627,6 +627,12 @@ test("messages to a chat go one at a time, in the order sent: one sent while the
     { type: "result", kind: "send", ok: true, message: "Sent (typed into its background session)", went: true, id: 7 },
     { type: "result", kind: "send", ok: false, message: "Couldn't send it: the helper fell over", id: 8 },
   ]);
+});
+
+test("your pictures read as Claude's terminal writes them: [Image #1], [Image #2], one picture named twice the same number", () => {
+  assert.equal(numberedPictures("look [Image: /c/a.png] and [Image: /c/b.png], then [Image: /c/a.png] again"),
+               "look [Image #1] and [Image #2], then [Image #1] again");
+  assert.equal(numberedPictures("[Image #1] pasted in the terminal"), "[Image #1] pasted in the terminal");
 });
 
 test("your message shows at once till the conversation has it; a stamp read before the one shown isn't taken", () => {
