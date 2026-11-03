@@ -3980,7 +3980,10 @@ PlasmoidItem {
             return [i18n("%1 has a plan ready", s.name), p.plan.title || i18n("Approve it to start, or keep planning.")]
         if (p.questions && p.questions.length)
             return [i18n("%1 asks you", s.name), p.questions.map(q => q.question).join("\n")]
-        const asked = p.command || (p.file ? i18n("Change %1", p.file) : p.line)
+        // (an MCP tool's, a page's: the first of what it asks with, each on a line; the pane shows all)
+        const args = (p.args || []).slice(0, 3).map(a => a.replace(/\s+/g, " ")).map(a => a.length > 100 ? a.slice(0, 99) + "…" : a)
+                     .concat(p.args && p.args.length > 3 ? [i18n("… %1 more", p.args.length - 3)] : [])
+        const asked = p.command || (p.file ? i18n("Change %1", p.file) : [p.line].concat(args).join("\n"))
         // (what its Always allow button lets through from now on, where the click is)
         return [i18n("%1 asks for a permission", s.name), p.answer === "hook" && p.always ? asked + "\n" + i18n("Always allow: %1", p.always) : asked]
     }

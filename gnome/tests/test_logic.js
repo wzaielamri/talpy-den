@@ -156,6 +156,9 @@ test("a waiting chat's notification says what it asks, as Plasma's", () => {
     const s = (permission) => ({name: 'fix', permission});
     eq(L.askText(s({command: 'make deploy', line: 'Bash: make deploy'})), ['fix asks for a permission', 'make deploy']);
     eq(L.askText(s({file: '/x/a.py', line: 'Edit: a.py'})), ['fix asks for a permission', 'Change /x/a.py']);
+    // (an MCP tool's: what it sends where, not only its name)
+    eq(L.askText(s({line: 'slack: send_message', args: ['channel: #x', 'text: a\nb', 'as: me', 'thread: 1']})),
+       ['fix asks for a permission', 'slack: send_message\nchannel: #x\ntext: a b\nas: me\n… 1 more']);
     eq(L.askText(s({questions: [{question: 'Which one?'}, {question: 'And?'}]})), ['fix asks you', 'Which one?\nAnd?']);
     eq(L.askText(s({plan: {title: 'Plan: speed up'}})), ['fix has a plan ready', 'Plan: speed up']);
     eq(L.askText(s({plan: {title: ''}})), ['fix has a plan ready', 'Approve it to start, or keep planning.']);

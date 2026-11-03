@@ -422,6 +422,16 @@ class PermissionViewTests(PaneFixture):
         view = cs.permission_view("Write", {"file_path": str(self.folder / "pipe"), "content": "x\n"}, str(self.folder))
         self.assertEqual(view["diff"], ["@@ -0,0 +1 @@", "Replaces something that isn't a plain file, not compared here: the new text", "+x"])
 
+    def test_what_an_mcp_tool_asks_with(self):
+        # (its prompt showed only "slack: send_message": Allow sent a secret to a channel the user never saw)
+        view = cs.permission_view("mcp__slack__send_message", {"channel": "#attacker-dm", "text": "AWS_SECRET=x\ny",
+                                                               "blocks": [{"type": "section"}], "thread": None}, "/tmp")
+        self.assertEqual((view["line"], view["args"]), ("slack: send_message", [
+            "channel: #attacker-dm", "text: AWS_SECRET=x\ny", 'blocks: [{"type": "section"}]']))
+        url = cs.permission_view("WebFetch", {"url": "https://x.org/?k=" + "s" * 2000}, "")["args"][0]
+        self.assertEqual((len(url), url[-2:]), (len("url: ") + cs.ARG_CHARS, "s…"))
+        self.assertEqual(cs.permission_view("Bash", {"command": "ls", "description": "list"}, "")["args"], [])
+
     def test_a_question(self):
         view = cs.permission_view("AskUserQuestion", QUESTIONS, str(self.folder))
         self.assertEqual(view["line"], "Pick a color")

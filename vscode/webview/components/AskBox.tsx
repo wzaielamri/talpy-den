@@ -14,6 +14,11 @@ export function askKey(ask: PermissionAsk): string {
   return ask.request ?? ask.line;
 }
 
+// What it asks with when there's no command or change to show (an MCP
+// tool's, a page's): in a row the first ARG_ROWS, one line each (the chat's
+// tab: all of them)
+const ARG_ROWS = 3;
+
 // What a waiting chat asks, with Allow once / Always allow / Deny (a note);
 // Claude's questions: each with its options, Send answers / Decline (a note)
 export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, compact = false }: {
@@ -29,6 +34,7 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
   const canAnswer = ask.answer === "hook" || ask.answer === "keys";
   const questions = ask.questions ?? [];
   const plan = ask.plan ?? null;
+  const args = ask.args ?? [];
   const title = plan ? "Claude has a plan, ready to start:" : questions.length
     ? questions.length > 1 ? `Claude asks you ${questions.length} questions:` : "Claude asks you:"
     : ask.command ? "Claude asks to run:" : ask.file ? `Claude asks to change ${ask.file}:` : `Claude asks: ${ask.line}`;
@@ -41,6 +47,12 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
     <div class="ask-box">
       <div class="ask-title">{title}</div>
       {ask.command ? <pre class="ask-command">{ask.command}</pre> : null}
+      {args.length ? (
+        <div class={"ask-command ask-args" + (compact ? " compact" : "")}>
+          {(compact ? args.slice(0, ARG_ROWS) : args).map((a, i) => <div key={i}>{compact ? a.replace(/\s+/g, " ") : a}</div>)}
+          {compact && args.length > ARG_ROWS ? <div class="ask-more">… {args.length - ARG_ROWS} more: the chat's tab shows them all</div> : null}
+        </div>
+      ) : null}
       {plan ? (
         <div class={"ask-plan" + (compact ? " compact" : "")}>
           <Markdown text={plan.text} />

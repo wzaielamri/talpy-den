@@ -2263,6 +2263,7 @@ QUESTION_CHARS = 2000  # of a question, an option's label or its description
 # setMode in updatedPermissions sets the mode, a deny's message is the feedback)
 PLAN_TOOL = "ExitPlanMode"
 PLAN_CHARS = 60000  # of a plan, in the row
+ARG_CHARS, ARG_KEYS = 1200, 24  # of what a prompt with no command or change asks with ("args"; the pane's tool details' caps)
 
 
 def file_size(path):
@@ -2383,11 +2384,13 @@ def question_view(inp):
 def permission_view(tool, inp, cwd, suggestions=()):
     """What a permission prompt asks, as the pane and the row show it:
     {"tool", "line" (one line), "command" (a Bash command), "file", "diff"
-    (lines), "always" (what Always allow lets through, or ""), "questions"
-    (Claude's multiple-choice questions: question_view)}."""
+    (lines), "args" (the rest of what it asks with, "key: value", when there's
+    no command or change to show: an MCP tool's, a page's), "always" (what
+    Always allow lets through, or ""), "questions" (Claude's multiple-choice
+    questions: question_view)}."""
     inp = inp if isinstance(inp, dict) else {}
     view = {"tool": tool or "", "line": describe_tool({"name": tool, "input": inp}), "command": "", "file": "",
-            "diff": [], "always": "", "questions": [], "plan": None}
+            "diff": [], "args": [], "always": "", "questions": [], "plan": None}
     if tool == PLAN_TOOL:
         view["plan"] = plan_view(inp)
         view["line"] = "Plan: " + view["plan"]["title"] if view["plan"]["title"] else "A plan, ready to start"
@@ -2410,8 +2413,30 @@ def permission_view(tool, inp, cwd, suggestions=()):
             # (its new text: under the @@ line, so a row's few lines show it)
             view["diff"].insert(1, "Replaces %s, not compared here: the new text" % other)
             del view["diff"][DIFF_LINES:]
+    if not view["command"] and not view["diff"]:
+        view["args"] = tool_args(inp, skip=("file_path", "notebook_path") if view["file"] else ())
     view["always"] = always_allow(suggestions)[1]
     return view
+
+
+def tool_args(inp, skip=()):
+    """A tool call's input as "key: value" lines (a list or an object as
+    JSON), each value cut at ARG_CHARS, the first ARG_KEYS of them; the last
+    says how many more there are."""
+    out = []
+    for key, value in inp.items():
+        if key in skip or value is None or value == "":
+            continue
+        if len(out) == ARG_KEYS:
+            out.append("… %d more" % (sum(1 for k, v in inp.items() if k not in skip and v not in (None, "")) - ARG_KEYS))
+            break
+        if not isinstance(value, str):
+            try:
+                value = json.dumps(value, ensure_ascii=False)
+            except (TypeError, ValueError):
+                value = str(value)
+        out.append("%s: %s" % (key, value if len(value) <= ARG_CHARS else value[:ARG_CHARS - 1] + "…"))
+    return out
 
 
 # What Always allow lets through, by what Claude suggests: the kinds Talpy

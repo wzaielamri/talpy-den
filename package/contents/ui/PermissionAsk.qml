@@ -26,6 +26,10 @@ ColumnLayout {
 
     readonly property bool canAnswer: !!permission && (permission.answer === "hook" || permission.answer === "keys")
     readonly property var diff: permission && permission.diff ? permission.diff : []
+    // What it asks with when there's no command or change to show (an MCP tool's, a page's): "key: value"
+    // lines; in a row the first argRows, one line each, the pane all of them
+    readonly property var args: permission && permission.args ? permission.args : []
+    readonly property int argRows: 3
     readonly property var questions: permission && permission.questions ? permission.questions : []
     readonly property bool asksQuestions: questions.length > 0
     readonly property var plan: permission && permission.plan ? permission.plan : null
@@ -107,6 +111,43 @@ ColumnLayout {
             selectionColor: Kirigami.Theme.focusColor
             font.family: ask.mono
             font.pointSize: ask.smallPt
+        }
+    }
+    Rectangle {
+        visible: ask.args.length > 0
+        Layout.fillWidth: true
+        implicitHeight: argsColumn.implicitHeight + Kirigami.Units.smallSpacing * 2
+        radius: Kirigami.Units.cornerRadius
+        color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.07)
+
+        Column {
+            id: argsColumn
+            x: Kirigami.Units.smallSpacing
+            y: Kirigami.Units.smallSpacing
+            width: parent.width - Kirigami.Units.smallSpacing * 2
+
+            Repeater {
+                model: ask.compact ? ask.args.slice(0, ask.argRows) : ask.args
+                PlasmaComponents3.Label {
+                    width: argsColumn.width
+                    // (in a row: on one line, cut with … where it doesn't fit)
+                    text: ask.compact ? modelData.replace(/\s+/g, " ") : modelData
+                    textFormat: Text.PlainText
+                    wrapMode: ask.compact ? Text.NoWrap : Text.WrapAnywhere
+                    elide: ask.compact ? Text.ElideRight : Text.ElideNone
+                    font.family: ask.mono
+                    font.pointSize: ask.smallPt
+                }
+            }
+            PlasmaComponents3.Label {
+                visible: ask.compact && ask.args.length > ask.argRows
+                width: argsColumn.width
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                font.pointSize: ask.smallPt
+                opacity: 0.7
+                text: i18n("… %1 more: the chat's pane shows them all", ask.args.length - ask.argRows)
+            }
         }
     }
     // The plan, rendered (in a row: its start, the pane shows all of it)

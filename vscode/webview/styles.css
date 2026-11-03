@@ -2907,6 +2907,18 @@ body.vscode-high-contrast .top.scrolled {
   overflow-x: auto;
 }
 
+/* (in a row: each on one line, cut with … where it doesn't fit) */
+.ask-args.compact > div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ask-args .ask-more {
+  font-family: var(--vscode-font-family);
+  opacity: 0.7;
+}
+
 /* Code and changes (CodeView.tsx): numbered lines, + and −, tinted rows,
    changed words marked, syntax colors as GitHub's (light, dark) */
 .cv {

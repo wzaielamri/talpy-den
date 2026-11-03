@@ -59,7 +59,10 @@ export function askText(s: Session): string {
   if (!p) return "";
   if (p.plan) return p.plan.title || "Approve it to start, or keep planning.";
   const questions = p.questions ?? [];
-  return questions.length ? questions.map((q) => q.question).join(" ") : p.command || (p.file ? `Change ${p.file}` : p.line);
+  // (an MCP tool's, a page's: the first of what it asks with; its tab shows all)
+  const args = (p.args ?? []).slice(0, 3).map((a) => a.replace(/\s+/g, " ")).map((a) => (a.length > 100 ? `${a.slice(0, 99)}…` : a))
+    .concat((p.args?.length ?? 0) > 3 ? [`… ${p.args!.length - 3} more`] : []);
+  return questions.length ? questions.map((q) => q.question).join(" ") : p.command || (p.file ? `Change ${p.file}` : [p.line, ...args].join(" · "));
 }
 
 // The title of its notification (as Plasma's askText)

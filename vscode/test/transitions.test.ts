@@ -149,4 +149,7 @@ test("a chat waiting on its plan says so, as Plasma's notification", () => {
   assert.equal(askText(s as never), "Speed up");
   const untitled = { ...s, permission: { ...s.permission, plan: { ...s.permission.plan, title: "" } } };
   assert.equal(askText(untitled as never), "Approve it to start, or keep planning.");
+  // (an MCP tool's: what it sends where, not only its name)
+  const mcp = { ...s, permission: { answer: "hook", line: "slack: send_message", command: "", file: "", args: ["channel: #x", "text: a\nb"] } };
+  assert.equal(askText(mcp as never), "slack: send_message · channel: #x · text: a b");
 });

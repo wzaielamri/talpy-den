@@ -283,6 +283,9 @@ export interface PermissionAsk {
   command: string; // a Bash command, or ""
   file: string; // the file it would change, or ""
   diff: string[]; // the change, as unified diff lines
+  // what it asks with when there's no command or change to show (an MCP
+  // tool's, a page's): "key: value" lines; older backends leave it out
+  args?: string[];
   always: string; // what Always allow lets through, and where, or "" (nothing to remember): "Bash(git push:*) in this project (.claude/settings.local.json)"
   // Claude's multiple-choice questions (its AskUserQuestion tool), answered
   // with "answer"; older backends leave it out

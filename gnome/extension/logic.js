@@ -237,7 +237,10 @@ export function askText(s) {
         return [fmt('%1 has a plan ready', s.name), p.plan.title || 'Approve it to start, or keep planning.'];
     if (p.questions && p.questions.length)
         return [fmt('%1 asks you', s.name), p.questions.map(q => q.question).join('\n')];
-    return [fmt('%1 asks for a permission', s.name), p.command || (p.file ? fmt('Change %1', p.file) : p.line || '')];
+    // (an MCP tool's, a page's: the first of what it asks with, each on a line; the pane shows all)
+    const args = (p.args || []).slice(0, 3).map(a => a.replace(/\s+/g, ' ')).map(a => a.length > 100 ? `${a.slice(0, 99)}…` : a)
+        .concat(p.args && p.args.length > 3 ? [fmt('… %1 more', p.args.length - 3)] : []);
+    return [fmt('%1 asks for a permission', s.name), p.command || (p.file ? fmt('Change %1', p.file) : [p.line || ''].concat(args).join('\n'))];
 }
 
 // The 5-hour usage that goes next to the panel icon: this computer's default
