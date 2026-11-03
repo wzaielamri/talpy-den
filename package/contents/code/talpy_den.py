@@ -9661,21 +9661,33 @@ def devcontainer_user(labels):
     return user
 
 
-def container_user(labels):
-    """The user Talpy Den works as in a container: VS Code's in a dev
-    container; you in a Toolbox or Distrobox one (made for you to work in,
-    with your home folder); else "": the container's own (exec's default)."""
-    user = devcontainer_user(labels)
-    if user:
-        return user
+def root_user(user):
+    """Whether a container's user (NAME, UID, NAME:GROUP or UID:GID) is root:
+    "" (exec's default: root, unless the image says otherwise), root or 0."""
+    name = user.split(":")[0].strip() if isinstance(user, str) else ""
+    return name in ("", "root") or (name.isdigit() and int(name) == 0)
+
+
+def container_user(labels, own="", you=None):
+    """The user Talpy Den works as in a container, "" for its own (exec's
+    default). Labels only ever drop root: a container whose own user (own,
+    its Config.User) isn't root is worked in as that; one that runs as root
+    as VS Code's Dev Containers' user in a dev container, or you (you: your
+    login name, this computer's by default) in a Toolbox or Distrobox (made
+    for you to work in, with your home folder); never as root from a label."""
+    if not root_user(own):
+        return ""
     labels = labels or {}
-    if any(labels.get(k) == v for k, v in TOOLBOX_LABELS):
-        try:
-            import pwd
-            return pwd.getpwuid(os.getuid()).pw_name
-        except (ImportError, KeyError):
-            return ""
-    return ""
+    user = devcontainer_user(labels)
+    if not user and any(labels.get(k) == v for k, v in TOOLBOX_LABELS):
+        if you is None:
+            try:
+                import pwd
+                you = pwd.getpwuid(os.getuid()).pw_name
+            except (ImportError, KeyError):
+                you = ""
+        user = you
+    return "" if root_user(user) else user
 
 
 def engine_clone(path, cache):
@@ -9856,8 +9868,7 @@ def list_containers(cache_root, home, days=CONTAINER_DAYS, picked=(), now=None):
                 "state": c["state"] or "unknown", "running": running, "activeAt": active,
                 "folder": folder, "folderShort": short_folder(folder, home) if folder else "",
                 "devcontainer": bool(folder or labels.get("devcontainer.config_file")),
-                "sharesHome": home_text in c["mounts"],
-                "user": container_user(labels), "cid": c["cid"],
+                "sharesHome": home_text in c["mounts"], "cid": c["cid"],
             })
     listed.sort(key=lambda c: (not c["running"], -(c["activeAt"] or 0), c["id"]))
     return {"containers": listed, "notes": notes}

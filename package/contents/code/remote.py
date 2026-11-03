@@ -278,15 +278,19 @@ def check_host(host):
 # and it fits HOST_NAME: every list keyed by host (the picked ones, stars,
 # hidden ones, the queue) takes it as it is. Talpy Den works in one through
 # the engine's exec (over ssh for a host's, in that host's shared
-# connection), as the user VS Code's Dev Containers works as there (or the
-# container's own); nothing is installed in it.
+# connection), as the container's own user, or (one that runs as root) the
+# user VS Code's Dev Containers works as there, or you in a Toolbox or
+# Distrobox, never as root from a label (talpy_den.container_user); nothing
+# is installed in it.
 
 CONTAINER = re.compile(r"^(docker|podman|nerdctl):([A-Za-z0-9][A-Za-z0-9_.-]*)(?:@(.+))?$")
 CONTAINER_STATE_TIMEOUT = 15
 # What a container is from one inspect: its id (a container made again has a
-# new one), its state and labels (VS Code's user there). (The id in quotes as
-# it is: Podman takes .Id for its .ID only on its own, not in {{json .Id}}.)
-INSPECT_TEMPLATE = '{"id":"{{.Id}}","state":{{json .State.Status}},"labels":{{json .Config.Labels}}}'
+# new one), its state, its own user and labels (VS Code's user there). (The
+# id in quotes as it is: Podman takes .Id for its .ID only on its own, not in
+# {{json .Id}}.)
+INSPECT_TEMPLATE = ('{"id":"{{.Id}}","state":{{json .State.Status}},"user":{{json .Config.User}},'
+                    '"labels":{{json .Config.Labels}}}')
 
 
 class Place:
@@ -356,12 +360,19 @@ def change_containers_file(change):
         os.close(fd)
 
 
-def remember_users(found):
-    """The user to work as in each container listed (found: [{"id", "cid", "user"}])."""
+def remember_users(found, inspected=False):
+    """The user to work as in each container inspected (found: [{"id", "cid",
+    "user", "own"}]), or each one listed's id (found: [{"id", "cid"}]): one
+    listed with another id than the one kept was made again, and its user is
+    asked anew."""
     def change(saved):
         users = saved.get("users") if isinstance(saved.get("users"), dict) else {}
         for c in found:
-            users[c["id"]] = {"cid": c.get("cid") or "", "user": c.get("user") or ""}
+            cid, known = c.get("cid") or "", users.get(c["id"])
+            if inspected:
+                users[c["id"]] = {"cid": cid, "user": c.get("user") or "", "own": c["own"]}
+            elif not (isinstance(known, dict) and known.get("cid") == cid):
+                users[c["id"]] = {"cid": cid}
         saved["users"] = users
     try:
         change_containers_file(change)
@@ -394,23 +405,23 @@ def inspect(p, timeout=CONTAINER_STATE_TIMEOUT):
     if not isinstance(info, dict):
         return None, r
     labels = info.get("labels") if isinstance(info.get("labels"), dict) else {}
-    user = cs.container_user(labels)
-    if user and p.host is not None and not cs.devcontainer_user(labels):
-        user = lines[-1].strip() if len(lines) > 1 else ""
-    found = {"id": p.id, "cid": info.get("id") or "", "user": user, "state": (info.get("state") or "").lower()}
-    remember_users([found])
+    own = info.get("user") if isinstance(info.get("user"), str) else ""
+    you = (lines[-1].strip() if len(lines) > 1 else "") if p.host is not None else None
+    found = {"id": p.id, "cid": info.get("id") or "", "user": cs.container_user(labels, own, you), "own": own,
+             "state": (info.get("state") or "").lower()}
+    remember_users([found], inspected=True)
     return found, r
 
 
 def exec_user(p, fresh=False):
     """(the user to work as in p's container, "" for its own; whether it was
-    known already). Known: from its last listing or inspect; else (or fresh)
-    one inspect says."""
+    known already). Known: from its last inspect (one kept by an older Talpy
+    Den, without its own user, isn't); else (or fresh) one inspect says."""
     if not fresh:
         saved = cs.read_json(containers_file())
         users = saved.get("users") if isinstance(saved, dict) and isinstance(saved.get("users"), dict) else {}
         known = users.get(p.id)
-        if isinstance(known, dict) and isinstance(known.get("user"), str):
+        if isinstance(known, dict) and isinstance(known.get("user"), str) and isinstance(known.get("own"), str):
             return known["user"], True
     try:
         found, _r = inspect(p)

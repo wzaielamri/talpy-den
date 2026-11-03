@@ -20,7 +20,7 @@ from test_remote import CODE, FakeSSH, remote, cs  # noqa: E402
 # or on the fake SSH host (whose commands run without this environment: its
 # files are named in CONF). The containers are in CONF["containers"] (JSON:
 # name -> {id, state, image, labels, mounts, started, finished, created,
-# users}); a container's home is CONF["homes"]/<name>. Every call is logged
+# user (its own), users}); a container's home is CONF["homes"]/<name>. Every call is logged
 # to CONF["log"]; CONF["mode"] holds a failure to imitate.
 FAKE_ENGINE = r'''
 import json, os, subprocess, sys
@@ -80,7 +80,7 @@ elif args[:2] == ["container", "inspect"]:
                               "finished": iso(c.get("finished")), "created": iso(c.get("created")),
                               "image": c["image"], "labels": c.get("labels"), "mounts": c.get("mounts") or []}))
         else:
-            print(json.dumps({"id": c["id"], "state": c["state"], "labels": c.get("labels")}))
+            print(json.dumps({"id": c["id"], "state": c["state"], "user": c.get("user", ""), "labels": c.get("labels")}))
 elif args[:1] == ["start"]:
     name, c = find(args[1])
     c["state"] = "running"
@@ -215,7 +215,16 @@ class IdTests(unittest.TestCase):
         self.assertEqual(cs.devcontainer_user({"devcontainer.metadata": "not json"}), "")
         self.assertEqual(cs.container_user(None), "")
         import pwd
-        self.assertEqual(cs.container_user({"manager": "distrobox"}), pwd.getpwuid(os.getuid()).pw_name)
+        me = pwd.getpwuid(os.getuid()).pw_name
+        self.assertEqual(cs.container_user({"manager": "distrobox"}), "" if me == "root" else me)
+        # labels only drop root: a container's own user that isn't root stays; never root from a label
+        self.assertEqual([cs.container_user(DEV_LABELS, own) for own in ("", "root", "0:0", "root:wheel")], ["vscode"] * 4)
+        self.assertEqual(cs.container_user(DEV_LABELS, "1000"), "")
+        self.assertEqual(cs.container_user({"manager": "distrobox"}, "node", "me"), "")
+        self.assertEqual(cs.container_user({"manager": "distrobox"}, "root:root", "me"), "me")
+        for user in ("root", "0", "0:0", "root:root"):
+            self.assertEqual(cs.container_user({"devcontainer.metadata": json.dumps([{"remoteUser": user}])}), "", user)
+            self.assertEqual(cs.container_user({"com.github.containers.toolbox": "true"}, "", user), "", user)
 
 
 class ListTests(FakeEngines):
@@ -235,8 +244,7 @@ class ListTests(FakeEngines):
                          ["podman:web", "podman:made", "podman:box", "podman:recent", "podman:dev"])
         by = {c["name"]: c for c in out["containers"]}
         self.assertEqual((by["web"]["running"], by["web"]["image"], by["web"]["state"]), (True, "nginx:1", "running"))
-        self.assertEqual((by["dev"]["devcontainer"], by["dev"]["folder"], by["dev"]["user"]),
-                         (True, "/home/someone/shop", "vscode"))
+        self.assertEqual((by["dev"]["devcontainer"], by["dev"]["folder"]), (True, "/home/someone/shop"))
         self.assertTrue(by["box"]["sharesHome"])
         self.assertFalse(by["dev"]["sharesHome"])
         self.assertAlmostEqual(by["recent"]["activeAt"] / 1000, self.now - 3 * 86400, delta=2)
@@ -247,9 +255,9 @@ class ListTests(FakeEngines):
                          ["podman:web", "podman:old"])
         # (one call for all of Podman's)
         self.assertEqual({tuple(c[:3]) for c in self.engine_calls()}, {("podman", "ps", "-a")})
-        # the users to work as are kept for the checks
+        # each one's id is kept (its user to work as: from an inspect)
         users = json.loads((cs.cache_dir(Path.home()) / "containers.json").read_text())["users"]
-        self.assertEqual(users["podman:dev"]["user"], "vscode")
+        self.assertEqual(users["podman:dev"], {"cid": self.container("dev")["id"]})
         self.assertEqual(oct((cs.cache_dir(Path.home()) / "containers.json").stat().st_mode & 0o777), "0o600")
 
     def test_docker_names_them_then_one_inspect(self):
@@ -378,6 +386,20 @@ class ContainerStatusTests(FakeEngines):
         out = remote.status("docker:shop", tokens=False)
         self.assertTrue(out["ok"], out)
         self.assertEqual([c[1] for c in self.engine_calls()[2:]], ["exec", "container", "exec"])
+        self.assertNotIn("-u", self.engine_calls()[-1])
+
+    def test_a_label_never_makes_it_root(self):
+        self.engine("podman")
+        root_label = {"devcontainer.metadata": json.dumps([{"remoteUser": "root"}])}
+        self.put({"app": self.container("app", labels=dict(DEV_LABELS, **root_label), user="1000"),
+                  "box": self.container("box", labels={"com.github.containers.toolbox": "true"}, user="1000")})
+        for name in ("app", "box"):
+            self.assertTrue(remote.status("podman:" + name, tokens=False)["ok"])
+            self.assertEqual(self.engine_calls()[-1][:4], ["podman", "exec", "-i", name])  # (its own user)
+        # nor a root kept by an older Talpy Den
+        cs.write_json_atomic(remote.containers_file(), {"users": {"podman:app": {"cid": self.container("app")["id"], "user": "root"}}})
+        self.assertTrue(remote.status("podman:app", tokens=False)["ok"])
+        self.assertEqual([c[1] for c in self.engine_calls()[-2:]], ["container", "exec"])
         self.assertNotIn("-u", self.engine_calls()[-1])
 
     def test_failures_in_plain_words(self):
