@@ -1443,16 +1443,17 @@ class RemoteShowTests(unittest.TestCase):
     def test_vscode_opened_on_the_host_when_not_connected(self):
         opened = []
         fake = type("S", (), {"Popen": staticmethod(lambda args, **k: opened.append(args)), "DEVNULL": None})
+        later = []
         with Patch(vscode_main_pids=lambda: [100], raise_window=lambda *a, **k: self.fail("nothing to raise"),
                    subprocess=fake, shutil=type("W", (), {"which": staticmethod(lambda n: "/usr/bin/" + n)}),
-                   scope_prefix=lambda name: ["systemd-run", f"--unit={name}", "--"],
+                   scope_prefix=lambda name: ["systemd-run", f"--unit={name}", "--"], later=later.append,
                    **self.procs({100: []}, {100: "code"}, {100: ["code"]})):
             ok, msg = jump.jump_remote_vscode("labserver", "abc-123", "/home/me/proj")
         self.assertTrue(ok, msg)
         # VS Code gets a scope of its own: restarting plasmashell mustn't stop it
-        self.assertEqual(opened[0], ["systemd-run", "--unit=code", "--", "/usr/bin/code", "--folder-uri",
-                                     "vscode-remote://ssh-remote+labserver/home/me/proj"])
-        self.assertIn("vscode://anthropic.claude-code/open?session=abc-123", opened[1][-1])
+        self.assertEqual(opened, [["systemd-run", "--unit=code", "--", "/usr/bin/code", "--folder-uri",
+                                   "vscode-remote://ssh-remote+labserver/home/me/proj"]])
+        self.assertEqual(len(later), 1)  # (the link once that window is connected: open_remote_vscode_chat)
 
     def test_terminal_tab_with_the_ssh_session(self):
         tabs = {300: [("1", 11, 11, "~ : bash"), ("2", 12, 22, "🏠 ✳ other chat"), ("3", 13, 23, "🏠 ◐ fix parser")]}

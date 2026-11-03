@@ -682,8 +682,7 @@ def jump_remote_vscode(host, session_id, folder="", allow=False):
     args = [code, "--folder-uri", remote_folder] if remote_folder else [code, "--remote", remote_authority(host)]
     start_app(args)
     # the link once the window has connected (VS Code passes it to the extension there)
-    subprocess.Popen(["bash", "-c", f"sleep 10; exec {shlex.quote(opener)} {shlex.quote(url)}"],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    later(lambda: open_remote_vscode_chat(host, 10, prefer=os.path.basename(folder.rstrip("/")), link=url))
     return True, f"Opening VS Code {remote_where(host)}; the chat shows once it's connected"
 
 
@@ -1867,6 +1866,39 @@ def open_vscode_chat(caption, wait, prefer="", link=VSCODE_NEW_CHAT):
                          stderr=subprocess.DEVNULL, start_new_session=True)
 
 
+REMOTE_CONNECT_WAIT = 90  # seconds a remote window may take to connect (a first server install, a slow host)
+
+
+def open_remote_vscode_chat(host, wait, prefer="", link=VSCODE_NEW_CHAT):
+    """After wait seconds (VS Code connecting to host): once its window
+    connected to host is there (vscode_connected_to, asked every second up to
+    REMOTE_CONNECT_WAIT), bring it up and hand the Claude extension its link.
+    A vscode:// link goes to the VS Code window that was active last, a
+    window of this computer while that one isn't there: then it isn't opened,
+    and a note says so."""
+    time.sleep(wait)
+    deadline = time.monotonic() + REMOTE_CONNECT_WAIT
+    while True:
+        mains, caption = vscode_connected_to(host)
+        if not mains and is_container(host):  # (one on an SSH host: its window's exec runs there, out of sight)
+            import remote
+            p = remote.place(host)
+            mains = vscode_connected_to(p.host)[0] if p.host is not None else []
+        if mains:
+            break
+        if time.monotonic() > deadline:
+            import pane
+            pane.show_note(f"VS Code didn't connect to {remote_label(host)} yet: the chat wasn't opened", False)
+            return
+        time.sleep(1)
+    raise_window(mains, caption, require=True, prefer=prefer)
+    time.sleep(0.3)  # let VS Code see its window focused, so the link opens there
+    opener = shutil.which("xdg-open")
+    if opener:
+        subprocess.Popen([opener, link], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+
+
 def vscode_for(home, extra_dirs, dirname):
     """(VS Code's command, the profile named dirname), when VS Code's Claude
     runs on that profile: VS Code's environment and settings decide which one
@@ -1960,7 +1992,7 @@ def remote_vscode(host, folder, link, what):
         start_app([code, "--folder-uri", remote_folder_uri(host, folder)])
     else:
         start_app([code, "--remote", remote_authority(host)])
-    later(lambda: open_vscode_chat(remote_caption(host), 10, prefer=os.path.basename(folder.rstrip("/")), link=link))
+    later(lambda: open_remote_vscode_chat(host, 10, prefer=os.path.basename(folder.rstrip("/")), link=link))
     return True, f"Opening VS Code {remote_where(host)}; {what} once it's connected"
 
 

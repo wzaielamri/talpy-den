@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.dont_write_bytecode = True
 CODE = Path(__file__).resolve().parent.parent / "package/contents/code"
@@ -300,7 +301,9 @@ class VscodeHome(Home):
             (jump, "start_app", lambda args, cwd=None: self.started.append(args)),
             (jump, "later", lambda task: task()),
             (jump, "raise_window", lambda pids, caption="", require=False, prefer="": self.raised.append((caption, require))),
-            (jump, "time", type("T", (), {"sleep": staticmethod(lambda s: self.waits.append(s))})),
+            (jump, "time", type("T", (), {"sleep": staticmethod(lambda s: self.waits.append(s)),
+                                          "monotonic": staticmethod(lambda: sum(self.waits))})),
+            (jump, "vscode_connected_to", lambda host: ([100], f"[SSH: {host}]")),
             (jump, "subprocess", fake_popen),
             (jump, "shutil", type("W", (), {"which": staticmethod(lambda n: f"/usr/bin/{n}")})),
         ]
@@ -346,7 +349,8 @@ class NewChatTests(VscodeHome):
                    (jump, "raise_window", lambda pids, caption="", require=False, prefer="":
                     self.raised.append((caption, prefer))),
                    (jump, "vscode_main_pids", lambda: []),
-                   (jump, "time", type("T", (), {"sleep": staticmethod(lambda s: None)})),
+                   (jump, "vscode_connected_to", lambda host: ([100], f"[SSH: {host}]")),
+                   (jump, "time", type("T", (), {"sleep": staticmethod(lambda s: None), "monotonic": staticmethod(lambda: 0)})),
                    (jump, "subprocess", type("P", (), {"Popen": staticmethod(lambda args, **k: self.opened.append(args)),
                                                        "DEVNULL": None})),
                    (jump, "shutil", type("W", (), {"which": staticmethod(lambda n: f"/usr/bin/{n}")}))]
@@ -459,6 +463,13 @@ class ResumeTests(VscodeHome):
         self.assertEqual(self.started, [["/usr/bin/code", "--folder-uri", "vscode-remote://ssh-remote+lab/srv/proj"]])
         self.assertEqual(self.raised, [("[SSH: lab]", True)])
         self.assertEqual(self.opened, [["/usr/bin/xdg-open", f"vscode://anthropic.claude-code/open?session={self.CHAT}"]])
+        # (a window that doesn't connect: the link would go to the VS Code window used last, one of this computer)
+        self.opened.clear()
+        with Patch(*self.fakes(), (jump, "vscode_connected_to", lambda host: ([], f"[SSH: {host}]"))), \
+                mock.patch("pane.show_note") as note:
+            self.assertTrue(jump.resume_remote_vscode("lab", self.CHAT, "/srv/proj")[0])
+        self.assertEqual(self.opened, [])
+        note.assert_called_once_with("VS Code didn't connect to lab yet: the chat wasn't opened", False)
 
     def test_resume_command_line(self):
         calls = []
