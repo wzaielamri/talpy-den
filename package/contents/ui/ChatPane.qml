@@ -1135,6 +1135,76 @@ Window {
         }
     }
 
+    // A selection across messages, as on a web page (VS Code's tab): each
+    // message is a text of its own, where a drag selects only in it; one
+    // that goes on into the next ones selects them too, the whole of each it
+    // passes and the last up to the pointer. Ctrl+C in a message copies all
+    // of it, each message's text after a blank line
+    property int selFrom: -1      // the message the drag started in (its index)
+    property int selLast: -1      // (its text box keeps its selection till another is pressed)
+    property var selOthers: ({})  // index -> true: the other messages selected now
+    function boxAt(index) {
+        const d = index >= 0 ? list.itemAtIndex(index) : null
+        return d && d.textBox ? d.textBox : null
+    }
+    function selectStart(p) {   // (p: in the list)
+        for (const k in selOthers) {
+            const b = boxAt(Number(k))
+            if (b)
+                b.deselect()
+        }
+        selOthers = {}
+        const i = list.indexAt(p.x + list.contentX, p.y + list.contentY)
+        if (selLast >= 0 && selLast !== i && boxAt(selLast))
+            boxAt(selLast).deselect()
+        selFrom = boxAt(i) ? i : -1
+        selLast = selFrom
+    }
+    function selectAcross(p) {
+        const i = list.indexAt(p.x + list.contentX, p.y + list.contentY)
+        if (selFrom < 0 || i < 0)
+            return
+        const next = {}
+        if (i !== selFrom) {
+            const down = i > selFrom
+            for (let k = down ? selFrom + 1 : i; down ? k <= i : k < selFrom; k++) {
+                const b = boxAt(k)
+                if (!b)
+                    continue   // (a tool call, a note: no text to select)
+                if (k === i) {
+                    const q = b.mapFromItem(list, p.x, p.y)
+                    const at = b.positionAt(q.x, q.y)
+                    if (down)
+                        b.select(0, at)
+                    else
+                        b.select(at, b.length)
+                } else {
+                    b.selectAll()
+                }
+                next[k] = true
+            }
+        }
+        for (const k in selOthers) {
+            if (!next[k]) {
+                const b = boxAt(Number(k))
+                if (b)
+                    b.deselect()
+            }
+        }
+        selOthers = next
+    }
+    function selectionText() {
+        return Object.keys(selOthers).map(Number).concat([selFrom]).sort((a, b) => a - b)
+            .map(k => boxAt(k)).filter(b => b && b.selectedText !== "")
+            .map(b => b.selectedText.replace(/[\u2028\u2029]/g, "\n")).join("\n\n")
+    }
+    function copyAcross(event) {   // (Ctrl+C in a message: with others selected too, all of it)
+        if (event.matches(StandardKey.Copy) && Object.keys(selOthers).length > 0) {
+            copyText(selectionText())
+            event.accepted = true
+        }
+    }
+
     // The pictures a text names ([Image: /path]), each once; the text with
     // each as [Image #1], [Image #2]…, as Claude's terminal writes them (its
     // picture under it). (The pattern written in each: a regex kept in a
@@ -1896,6 +1966,7 @@ Window {
                         required property bool queued   // (yours, in Claude's queue: pane.py)
                         required property real until    // (yours, held: when it goes to Claude, ms)
                         required property string pictures   // (yours: the pictures in it, "\n"-joined: pane.py prompt_pictures)
+                        property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
                         readonly property bool unfolded: pane.openTools[key] === true
                         // more room before your prompt (a new turn) than between steps
                         readonly property real gap: index === 0 ? 0
@@ -1963,11 +2034,15 @@ Window {
                                         font.weight: Font.Bold
                                     }
                                     TextEdit {
+                                        id: youText
+                                        Component.onCompleted: entry.textBox = youText
                                         Layout.fillWidth: true
                                         text: pane.shownText(entry.text)
                                         textFormat: TextEdit.PlainText
                                         readOnly: true
                                         selectByMouse: true
+                                        persistentSelection: true   // (selectAcross clears it)
+                                        Keys.onPressed: event => pane.copyAcross(event)
                                         wrapMode: TextEdit.Wrap
                                         color: Kirigami.Theme.textColor
                                         selectionColor: Kirigami.Theme.focusColor
@@ -2060,10 +2135,14 @@ Window {
                                     lineHeight: fm.height
                                 }
                                 TextEdit {
+                                    id: replyText
+                                    Component.onCompleted: entry.textBox = replyText
                                     Layout.fillWidth: true
                                     text: Md.toHtml(entry.text, pane.mdStyle)
                                     textFormat: TextEdit.RichText
                                     readOnly: true
+                                    persistentSelection: true   // (selectAcross clears it)
+                                    Keys.onPressed: event => pane.copyAcross(event)
                                     selectByMouse: true
                                     wrapMode: TextEdit.Wrap
                                     color: Kirigami.Theme.textColor
@@ -2246,6 +2325,23 @@ Window {
                             }
                         }
                     }
+                }
+            }
+
+            // A drag in a message that goes on into the next ones selects them
+            // too (selectAcross); a handler on top of the list, passive, so the
+            // text box under it still takes the press, and links, buttons and
+            // scrolling are as they were (it only looks, while you drag)
+            Item {
+                id: selectOver
+                parent: scroll
+                anchors.fill: parent
+                z: 10
+                PointHandler {
+                    acceptedButtons: Qt.LeftButton
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    onActiveChanged: if (active) pane.selectStart(selectOver.mapToItem(list, point.position.x, point.position.y))
+                    onPointChanged: if (active) pane.selectAcross(selectOver.mapToItem(list, point.position.x, point.position.y))
                 }
             }
 
