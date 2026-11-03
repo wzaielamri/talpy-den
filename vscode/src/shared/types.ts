@@ -597,7 +597,9 @@ export interface ContainerInfo {
   folder: string; // its dev container's project folder (VS Code's Dev Containers)
   folderShort: string;
   devcontainer: boolean;
+  configFile?: string; // its dev container's config file (devcontainer.json)
   sharesHome: boolean; // your home folder is mounted in it (Toolbox, Distrobox…)
+  viaDocker?: boolean; // the docker command reaches it (Docker's, or Podman's for a docker that is Podman)
   cid?: string; // the engine's id of it
   host?: string;
 }

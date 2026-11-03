@@ -34,11 +34,11 @@ test("other remotes and odd names are not SSH hosts", () => {
 
 test("a Dev Containers window's container, as remote.py names it", () => {
   const known = [
-    { id: "podman:shop", engine: "podman", name: "shop", folder: "/home/me/shop", cid: "ab".repeat(32) },
+    { id: "podman:shop", engine: "podman", name: "shop", folder: "/home/me/shop", cid: "ab".repeat(32), viaDocker: true },
     { id: "docker:api@lab", engine: "docker", name: "api", folder: "/srv/api", host: "lab" },
   ];
   const attached = (name: string) => "attached-container+" + hex({ containerName: "/" + name });
-  // its name (listed: the listing's engine, though Dev Containers runs "docker")
+  // its name (listed: the listing's engine, though Dev Containers runs "docker", which is Podman here)
   assert.equal(containerFromAuthority(attached("shop"), known), "podman:shop");
   // not listed: Dev Containers' engine
   assert.equal(containerFromAuthority(attached("new-one"), known, "/usr/bin/podman"), "podman:new-one");
@@ -51,6 +51,17 @@ test("a Dev Containers window's container, as remote.py names it", () => {
   // through Remote-SSH: one on that host
   assert.equal(containerFromAuthority(attached("api") + "@ssh-remote+lab", known), "docker:api@lab");
   assert.equal(containerFromAuthority(attached("api"), known), "docker:api");
+  // the engine Dev Containers runs, and the config file of a dev container; more than one fits: not known
+  const two = [
+    { id: "podman:web", engine: "podman", name: "web" }, { id: "docker:web", engine: "docker", name: "web", viaDocker: true },
+    { id: "docker:shop-b", engine: "docker", name: "shop-b", folder: "/home/me/shop", configFile: "/home/me/shop/b/devcontainer.json" },
+    { id: "docker:shop-a", engine: "docker", name: "shop-a", folder: "/home/me/shop", configFile: "/home/me/shop/a/devcontainer.json" },
+  ];
+  assert.equal(containerFromAuthority(attached("web"), two), "docker:web");
+  assert.equal(containerFromAuthority(attached("web"), two, "podman"), "podman:web");
+  const config = (file: string) => "dev-container+" + hex({ hostPath: "/home/me/shop", configFile: { $mid: 1, fsPath: file, path: file, scheme: "file" } });
+  assert.equal(containerFromAuthority(config("/home/me/shop/a/devcontainer.json"), two), "docker:shop-a");
+  assert.equal(containerFromAuthority("dev-container+" + hex({ hostPath: "/home/me/shop" }), two), "");
   // a host's list can't make it another place (an SSH destination as a container's id)
   const spoof = [{ id: "root@lab", engine: "docker", name: "web", host: "lab" }, { id: "docker:x@other@lab", engine: "docker", name: "x", host: "lab" }];
   assert.equal(containerFromAuthority(attached("web") + "@ssh-remote+lab", spoof), "docker:web@lab");

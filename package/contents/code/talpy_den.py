@@ -9600,6 +9600,7 @@ CONTAINER_TEMPLATE = ('{"id":"{{.Id}}","name":{{json .Name}},"state":{{json .Sta
                       '"created":{{json .Created}},"image":{{json .Config.Image}},"labels":{{json .Config.Labels}},'
                       '"mounts":[{{range $i, $m := .Mounts}}{{if $i}},{{end}}{{json $m.Destination}}{{end}}]}')
 DEVCONTAINER_FOLDER = "devcontainer.local_folder"
+DEVCONTAINER_CONFIG = "devcontainer.config_file"
 # Containers made for you to work in, as you, with your home folder mounted
 TOOLBOX_LABELS = (("manager", "distrobox"), ("com.github.containers.toolbox", "true"))
 
@@ -9728,11 +9729,13 @@ def engine_clone(path, cache):
 
 
 def container_engines(cache_root):
-    """{engine: its command} of the container engines installed here, each
-    once (engine_clone; what it found is kept in containers.json)."""
+    """({engine: its command} of the container engines installed here, each
+    once; the engine the `docker` command really is, or ""): engine_clone,
+    what it found is kept in containers.json."""
     import shutil
     found = {e: shutil.which(e) for e in CONTAINER_ENGINES}
     found = {e: p for e, p in found.items() if p}
+    really = ""
     if "docker" in found:
         path = cache_root / "containers.json"
         saved = read_json(path)
@@ -9750,7 +9753,7 @@ def container_engines(cache_root):
             del found["docker"]
             found.setdefault(really, found.get(really) or shutil.which(really) or "")
             found = {e: p for e, p in found.items() if p}
-    return found
+    return found, really
 
 
 def engine_trouble(engine, text, timed_out=False):
@@ -9829,11 +9832,12 @@ def list_containers(cache_root, home, days=CONTAINER_DAYS, picked=(), now=None):
     running ones), and a picked one (a name, or engine:name) always. The
     engines are asked at once, each for at most CONTAINER_LIST_TIMEOUT s:
     one that hangs holds up only itself. notes: an engine that couldn't
-    list them, and why ({"engine", "message"})."""
+    list them, and why ({"engine", "message"}). viaDocker: the `docker`
+    command reaches it (Docker's, or Podman's for a docker that is Podman)."""
     import threading
     now = time.time() * 1000 if now is None else now
     picked = set(picked)
-    engines = container_engines(cache_root)
+    engines, docker_is = container_engines(cache_root)
     answers = {}
 
     def ask(engine, command):
@@ -9863,11 +9867,13 @@ def list_containers(cache_root, home, days=CONTAINER_DAYS, picked=(), now=None):
                 continue
             labels = c["labels"] if isinstance(c["labels"], dict) else {}
             folder = labels.get(DEVCONTAINER_FOLDER) if isinstance(labels.get(DEVCONTAINER_FOLDER), str) else ""
+            config = labels.get(DEVCONTAINER_CONFIG) if isinstance(labels.get(DEVCONTAINER_CONFIG), str) else ""
             listed.append({
                 "id": ident, "engine": engine, "name": name, "image": short_image(c["image"]),
                 "state": c["state"] or "unknown", "running": running, "activeAt": active,
                 "folder": folder, "folderShort": short_folder(folder, home) if folder else "",
-                "devcontainer": bool(folder or labels.get("devcontainer.config_file")),
+                "devcontainer": bool(folder or config), "configFile": config,
+                "viaDocker": engine == docker_is,
                 "sharesHome": home_text in c["mounts"], "cid": c["cid"],
             })
     listed.sort(key=lambda c: (not c["running"], -(c["activeAt"] or 0), c["id"]))

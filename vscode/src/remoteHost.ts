@@ -82,13 +82,15 @@ export function currentRemoteAuthority(vscode: typeof import("vscode")): string 
 // The container a Dev Containers window is in, as remote.py names it
 // (engine:NAME, engine:NAME@HOST through Remote-SSH): its authority names it
 // (attached-container: {"containerName": "/NAME"} in hex JSON, or its id),
-// or its project folder does (dev-container: {"hostPath": …}), looked up in
-// the containers listed (known). "" for a container window it can't name
-// (not listed yet); undefined for a window that isn't in a container.
-// dockerPath: Dev Containers' engine setting, for one not listed.
+// or its project folder and config file do (dev-container: {"hostPath": …,
+// "configFile": …}), looked up in the containers listed (known) of the engine
+// Dev Containers runs (dockerPath, its setting; a docker that is Podman's
+// reaches Podman's: viaDocker). "" for a container window it can't name (not
+// listed yet, or more than one fits); undefined for a window that isn't in
+// a container.
 export function containerFromAuthority(
   authority: string | undefined,
-  known: { id: string; engine: string; name: string; folder?: string; cid?: string; host?: string }[],
+  known: { id: string; engine: string; name: string; folder?: string; configFile?: string; cid?: string; host?: string; viaDocker?: boolean }[],
   dockerPath = "docker",
 ): string | undefined {
   const m = /^(attached-container|dev-container)\+([0-9a-fA-F]+)(?:@(.+))?$/.exec(authority ?? "");
@@ -102,25 +104,30 @@ export function containerFromAuthority(
   } catch {
     return "";
   }
-  // (a listed one whose id is that container on this host: a host's list can't name another place)
-  const here = known.filter((c) => {
-    const id = containerOf(c.id);
-    return (c.host ?? "") === host && !!id && id.host === host && id.engine === c.engine && id.name === c.name;
-  });
-  let found: (typeof known)[number] | undefined;
-  let name = "";
-  if (typeof config === "string") {
-    found = here.find((c) => c.cid === config || (c.cid ?? "").startsWith(config as string)); // (an id)
-  } else if (m[1] === "attached-container" && typeof config.containerName === "string") {
-    name = config.containerName.replace(/^\//, "");
-    found = here.find((c) => c.name === name);
-  } else if (typeof config.hostPath === "string") {
-    found = here.find((c) => c.folder === config.hostPath); // (its project folder: the dev container made for it)
-  }
-  if (found) return found.id;
-  if (!name || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) return "";
   const base = dockerPath.split("/").pop() ?? "docker";
   const engine = base === "podman" || base === "nerdctl" ? base : "docker";
+  // (a listed one whose id is that container on this host, a host's list can't name another
+  // place; of the engine the window's Dev Containers runs)
+  const here = known.filter((c) => {
+    const id = containerOf(c.id);
+    return (c.host ?? "") === host && !!id && id.host === host && id.engine === c.engine && id.name === c.name
+      && (c.engine === engine || (engine === "docker" && !!c.viaDocker));
+  });
+  let found: typeof known = [];
+  let name = "";
+  if (typeof config === "string") {
+    found = here.filter((c) => c.cid === config || (c.cid ?? "").startsWith(config as string)); // (an id)
+  } else if (m[1] === "attached-container" && typeof config.containerName === "string") {
+    name = config.containerName.replace(/^\//, "");
+    found = here.filter((c) => c.name === name);
+  } else if (typeof config.hostPath === "string") {
+    // its project folder (the dev container made for it) and, when both say, its config file
+    const cf = config.configFile as { fsPath?: unknown; path?: unknown } | string | undefined;
+    const file = typeof cf === "string" ? cf : typeof cf?.fsPath === "string" ? cf.fsPath : typeof cf?.path === "string" ? cf.path : "";
+    found = here.filter((c) => c.folder === config.hostPath && (!file || !c.configFile || c.configFile === file));
+  }
+  if (found.length) return found.length === 1 ? found[0].id : "";
+  if (!name || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) return "";
   return `${engine}:${name}` + (host ? `@${host}` : "");
 }
 

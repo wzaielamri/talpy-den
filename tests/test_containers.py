@@ -278,14 +278,15 @@ class ListTests(FakeEngines):
         self.engine("nerdctl")
         self.put({"web": self.container("web")})
         out = remote.containers_here(30)
-        self.assertEqual(sorted(c["id"] for c in out["containers"]), ["nerdctl:web", "podman:web"])
+        self.assertEqual(sorted((c["id"], c["viaDocker"]) for c in out["containers"]), [("nerdctl:web", False), ("podman:web", True)])
         self.assertNotIn("docker", {c[0] for c in self.engine_calls()})
         engines = json.loads((cs.cache_dir(Path.home()) / "containers.json").read_text())["engines"]
         self.assertEqual(list(engines.values())[0]["engine"], "podman")
         # a link named docker to podman too
         (self.engines / "docker").unlink()
         (self.engines / "docker").symlink_to(podman)
-        self.assertEqual(sorted(cs.container_engines(cs.cache_dir(Path.home()))), ["nerdctl", "podman"])
+        engines, docker_is = cs.container_engines(cs.cache_dir(Path.home()))
+        self.assertEqual((sorted(engines), docker_is), (["nerdctl", "podman"], "podman"))
 
     def test_engine_trouble_is_a_note(self):
         self.engine("docker")
