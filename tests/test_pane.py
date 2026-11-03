@@ -393,6 +393,22 @@ class PermissionViewTests(PaneFixture):
         self.assertEqual(whole["diff"][-2:], ["-old", "+new"])
         self.assertEqual(whole["always"], "the folder ~/other")
 
+    def test_a_write_over_a_big_file_or_a_pipe(self):
+        # (each check made the view: it read the whole file and diffed it, minutes of CPU for a big one)
+        write(self.folder / "big.txt", "".join("row %d\n" % i for i in range(3000)))
+        new = "".join("row %d\n" % i if i % 50 else "changed\n" for i in range(3000))
+        with mock.patch.object(cs, "DIFF_FILE_MAX", 1000):
+            view = cs.permission_view("Write", {"file_path": str(self.folder / "big.txt"), "content": new}, str(self.folder))
+        self.assertEqual(view["diff"][:3], ["@@ -0,0 +1,3000 @@", "Replaces a file of 1 MB, not compared here: the new text",
+                                            "+changed"])
+        self.assertEqual(len(view["diff"]), cs.DIFF_LINES)
+        with mock.patch.object(cs, "DIFF_COMPARE_LINES", 1000):
+            view = cs.permission_view("Write", {"file_path": str(self.folder / "big.txt"), "content": new}, str(self.folder))
+        self.assertEqual(view["diff"][:2], ["@@ -1,2953 +1,2953 @@", "Too long to compare here: 2953 new lines in place of 2953"])
+        os.mkfifo(self.folder / "pipe")
+        view = cs.permission_view("Write", {"file_path": str(self.folder / "pipe"), "content": "x\n"}, str(self.folder))
+        self.assertEqual(view["diff"], ["@@ -0,0 +1 @@", "Replaces something that isn't a plain file, not compared here: the new text", "+x"])
+
     def test_a_question(self):
         view = cs.permission_view("AskUserQuestion", QUESTIONS, str(self.folder))
         self.assertEqual(view["line"], "Pick a color")

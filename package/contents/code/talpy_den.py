@@ -2250,6 +2250,8 @@ class ChatCache:
 
 DIFF_LINES = 400  # of one file's diff, in the review (and of an edit a prompt asks for)
 DIFF_CHARS = 60000
+DIFF_FILE_MAX = 2 << 20  # a file a prompt's change is compared with, at most (bigger: not read)
+DIFF_COMPARE_LINES = 4000  # of a change, compared line by line (difflib's time grows with their square)
 PERMISSIONS = "permissions"
 REQUEST_MAX_AGE_MS = 86400_000
 ASK_TOOL = "AskUserQuestion"
@@ -2278,6 +2280,28 @@ def read_file(path):
         return None
 
 
+def text_to_compare(path):
+    """A file a prompt's change is shown against: (its text, "") when it's a
+    plain file of at most DIFF_FILE_MAX, else (None, what it is: "a file of
+    18 MB", "something that isn't a plain file"); (None, "") when there's
+    none. (Opened without waiting, so a pipe put there is never read.)"""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOCTTY", 0))
+    except OSError:
+        return None, ""
+    with os.fdopen(fd, "rb") as f:
+        try:
+            st = os.fstat(fd)
+            if st.st_mode & 0o170000 != 0o100000:  # (stat.S_ISREG)
+                return None, "something that isn't a plain file"
+            data = f.read(DIFF_FILE_MAX + 1) if st.st_size <= DIFF_FILE_MAX else b""
+        except OSError:
+            return None, ""
+        if st.st_size > DIFF_FILE_MAX or len(data) > DIFF_FILE_MAX:
+            return None, "a file of %d MB" % max(1, round(max(st.st_size, len(data)) / (1 << 20)))
+        return data.decode("utf-8", "replace"), ""
+
+
 HUNK_LINE = re.compile(r"^@@ -(\d+)(,\d+)? \+(\d+)(,\d+)? @@")
 
 
@@ -2286,6 +2310,7 @@ def edit_diff(name, inp, current, limit=DIFF_LINES):
     NotebookEdit call asks for (current: the file's text now, for Write and
     for an Edit's line numbers); the first limit of them (None: all)."""
     import difflib
+    import itertools
     if name == "Edit":
         old, new = inp.get("old_string"), inp.get("new_string")
         pairs = [(old, new)] if isinstance(old, str) and isinstance(new, str) else []
@@ -2300,20 +2325,43 @@ def edit_diff(name, inp, current, limit=DIFF_LINES):
         pairs = []
     out = []
     for old, new in pairs:
-        diff = list(difflib.unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=2))
+        # (difflib's time grows with the square of what it compares: only the
+        # lines between those both start and end with are, and 2 of those
+        # around them; a change longer than DIFF_COMPARE_LINES shows its new
+        # lines, with a note)
+        a, b = old.splitlines(), new.splitlines()
+        head, most = 0, min(len(a), len(b))
+        while head < most and a[head] == b[head]:
+            head += 1
+        tail = 0
+        while tail < most - head and a[-1 - tail] == b[-1 - tail]:
+            tail += 1
+        top, cut = max(0, head - 2), max(0, tail - 2)
+        a, b = a[top:len(a) - cut], b[top:len(b) - cut]
+        if not a or not b or len(a) + len(b) > DIFF_COMPARE_LINES:
+            def span(n):
+                return "1" if n == 1 else "%d,%d" % (n > 0, n)  # (as difflib writes it)
+            note = ["Too long to compare here: %d new lines in place of %d" % (len(b), len(a))] if a and b else []
+            diff = itertools.chain(["@@ -%s +%s @@" % (span(len(a)), span(len(b)))] + note if a or b else [],
+                                   ("-" + line for line in a if not b), ("+" + line for line in b))
+        else:
+            diff = difflib.unified_diff(a, b, lineterm="", n=2)
+            next(diff, None), next(diff, None)  # (its --- and +++ lines)
         # The @@ lines at the file's line numbers: a Write's are; an Edit's
         # are the change's own, moved to where its text is in the file
         # (current), else left out ("@@ @@")
-        shift = 0 if name == "Write" else None
+        shift = top if name == "Write" else None
         if name == "Edit" and current and old and old in current:
-            shift = current[:current.index(old)].count("\n")
-        for line in diff[2:]:
+            shift = current[:current.index(old)].count("\n") + top
+        for line in diff:
+            if limit is not None and len(out) >= limit:
+                return out
             m = HUNK_LINE.match(line)
             if m:
                 line = "@@ @@" if shift is None else "@@ -%d%s +%d%s @@" % (
                     int(m.group(1)) + shift, m.group(2) or "", int(m.group(3)) + shift, m.group(4) or "")
             out.append(line)
-    return out[:limit]
+    return out
 
 
 def question_view(inp):
@@ -2354,11 +2402,14 @@ def permission_view(tool, inp, cwd, suggestions=()):
     path = inp.get("file_path") or inp.get("notebook_path")
     if isinstance(path, str) and path:
         view["file"] = file_label(path, cwd or "", Path.home())
-        current = None
+        current, other = None, ""
         if tool in ("Write", "Edit"):
-            data = read_file(path) if tool == "Write" or file_size(path) < (2 << 20) else None
-            current = data.decode("utf-8", "replace") if data is not None else ""
-        view["diff"] = edit_diff(tool, inp, current)
+            current, other = text_to_compare(path)
+        view["diff"] = edit_diff(tool, inp, current or "")
+        if tool == "Write" and other and view["diff"]:
+            # (its new text: under the @@ line, so a row's few lines show it)
+            view["diff"].insert(1, "Replaces %s, not compared here: the new text" % other)
+            del view["diff"][DIFF_LINES:]
     suggestions = [s for s in suggestions or () if isinstance(s, dict)]
     rules = [r for s in suggestions if s.get("type") == "addRules" for r in s.get("rules") or () if isinstance(r, dict)]
     dirs = [d for s in suggestions if s.get("type") == "addDirectories"
