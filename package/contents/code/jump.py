@@ -1753,14 +1753,16 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
                 if answer.get("waits"):
                     return go_on_waits(cache_root, entry, answer, due, now_ms, out)
         elif entry.get("chat"):
+            # (at once, before it starts: a status meanwhile mustn't queue it again, see keep_going)
+            was = cs.note_went_on(cache_root, entry["chat"], now_ms)
             claude = claude_path(home)
             # (Claude moved the chat to the background under a new id: its go-on, and keeping going, follow it)
             chat = cs.continuation(home, extra_dirs, entry["profile"], entry["chat"])
             if chat != entry["chat"]:
-                cs.keep_moved(cache_root, entry["chat"], chat)
+                cs.keep_moved(cache_root, entry["chat"], chat)  # (noted, it takes that along)
                 entry = dict(entry, chat=chat)
-            # (before it starts: a status meanwhile mustn't queue it again, see keep_going)
-            was = cs.note_went_on(cache_root, entry["chat"], now_ms)
+                noted = cs.note_went_on(cache_root, chat, now_ms)  # (one kept under its new id already)
+                was = was if noted == now_ms else noted
             answer = (cs.continue_chat(home, extra_dirs, entry["profile"], entry["chat"], entry.get("folder"), task.text,
                                        claude, prefix=scope_prefix("claude"), force=entry.get("why") in ("retry", "cap"),
                                        ends_at=ends_at)

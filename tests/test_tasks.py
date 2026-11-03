@@ -2002,12 +2002,17 @@ class KeepGoingTests(TaskFixture):
                          (self.SID, "Fix it", self.reset + 60_000, "", ""))
         self.assertEqual(len(self.look(self.now_ms + 1000)), 1, "queued once")
         # the limit resets: it goes on (and while it starts, a status doesn't queue it again)
-        start = cs.continue_chat
+        start, where = cs.continue_chat, cs.continuation
 
         def going_on(*a, **k):
             self.assertEqual(self.look(int(time.time() * 1000)), [])
             return start(*a, **k)
-        with mock.patch.object(cs, "continue_chat", side_effect=going_on):
+
+        def looking_up(*a, **k):  # (taken out of the queue, not started yet: 2026-11-03)
+            self.assertEqual(self.look(int(time.time() * 1000)), [])
+            return where(*a, **k)
+        with mock.patch.object(cs, "continue_chat", side_effect=going_on), \
+                mock.patch.object(cs, "continuation", side_effect=looking_up):
             self.assertEqual(self.queue("--start-queued", task["id"])["message"], "Went on in the background on work (1a2b3c4d)")
         self.assertIsNotNone(self.kept()[0]["wentOnAt"])
         # a limit stops it again in the next window: it goes on after that one too
