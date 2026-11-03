@@ -9728,6 +9728,24 @@ def engine_clone(path, cache):
     return engine
 
 
+def change_containers_file(cache_root, change):
+    """change(saved) on cache_root's containers.json (the users in
+    containers, the hosts' container lists, which engine `docker` is), under
+    a lock: two checks at once don't lose each other's. Only you can read it."""
+    path = cache_root / "containers.json"
+    private_dir(cache_root)
+    fd = os.open(str(cache_root / ".containers.lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        saved = read_json(path)
+        saved = saved if isinstance(saved, dict) else {}
+        change(saved)
+        write_json_atomic(path, saved, private=True)
+        os.chmod(str(path), 0o600)
+    finally:
+        os.close(fd)
+
+
 def container_engines(cache_root):
     """({engine: its command} of the container engines installed here, each
     once; the engine the `docker` command really is, or ""): engine_clone,
@@ -9737,16 +9755,18 @@ def container_engines(cache_root):
     found = {e: p for e, p in found.items() if p}
     really = ""
     if "docker" in found:
-        path = cache_root / "containers.json"
-        saved = read_json(path)
+        saved = read_json(cache_root / "containers.json")
         saved = saved if isinstance(saved, dict) else {}
         clones = saved.get("engines") if isinstance(saved.get("engines"), dict) else {}
         before = json.dumps(clones, sort_keys=True)
         really = engine_clone(found["docker"], clones)
         if json.dumps(clones, sort_keys=True) != before:
+            def keep(saved):
+                engines = saved.get("engines") if isinstance(saved.get("engines"), dict) else {}
+                engines.update(clones)
+                saved["engines"] = engines
             try:
-                private_dir(cache_root)
-                write_json_atomic(path, dict(saved, engines=clones))
+                change_containers_file(cache_root, keep)
             except OSError:
                 pass
         if really != "docker":

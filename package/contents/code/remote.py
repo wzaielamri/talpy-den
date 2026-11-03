@@ -345,19 +345,8 @@ def containers_file():
 def change_containers_file(change):
     """change(saved) on containers.json (the users in containers, the hosts'
     container lists, which engine `docker` is), under a lock: two checks
-    at once don't lose each other's."""
-    path = containers_file()
-    cs.private_dir(path.parent)
-    fd = os.open(str(path.parent / ".containers.lock"), os.O_CREAT | os.O_RDWR, 0o600)
-    try:
-        cs.fcntl.flock(fd, cs.fcntl.LOCK_EX)
-        saved = cs.read_json(path)
-        saved = saved if isinstance(saved, dict) else {}
-        change(saved)
-        cs.write_json_atomic(path, saved)
-        os.chmod(str(path), 0o600)
-    finally:
-        os.close(fd)
+    at once don't lose each other's (talpy_den.change_containers_file)."""
+    cs.change_containers_file(containers_file().parent, change)
 
 
 def remember_users(found, inspected=False):

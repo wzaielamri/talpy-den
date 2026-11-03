@@ -282,6 +282,14 @@ class ListTests(FakeEngines):
         self.assertNotIn("docker", {c[0] for c in self.engine_calls()})
         engines = json.loads((cs.cache_dir(Path.home()) / "containers.json").read_text())["engines"]
         self.assertEqual(list(engines.values())[0]["engine"], "podman")
+        # what it found is kept readable only by you
+        (cs.cache_dir(Path.home()) / "containers.json").unlink()
+        umask = os.umask(0o022)
+        try:
+            cs.container_engines(cs.cache_dir(Path.home()))
+        finally:
+            os.umask(umask)
+        self.assertEqual((cs.cache_dir(Path.home()) / "containers.json").stat().st_mode & 0o777, 0o600)
         # a link named docker to podman too
         (self.engines / "docker").unlink()
         (self.engines / "docker").symlink_to(podman)
