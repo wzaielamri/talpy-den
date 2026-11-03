@@ -3980,7 +3980,9 @@ PlasmoidItem {
             return [i18n("%1 has a plan ready", s.name), p.plan.title || i18n("Approve it to start, or keep planning.")]
         if (p.questions && p.questions.length)
             return [i18n("%1 asks you", s.name), p.questions.map(q => q.question).join("\n")]
-        return [i18n("%1 asks for a permission", s.name), p.command || (p.file ? i18n("Change %1", p.file) : p.line)]
+        const asked = p.command || (p.file ? i18n("Change %1", p.file) : p.line)
+        // (what its Always allow button lets through from now on, where the click is)
+        return [i18n("%1 asks for a permission", s.name), p.answer === "hook" && p.always ? asked + "\n" + i18n("Always allow: %1", p.always) : asked]
     }
 
     // Whether the widget can answer what a waiting chat asks (its permission:

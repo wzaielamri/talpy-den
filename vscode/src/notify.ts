@@ -122,7 +122,9 @@ export class Notifier implements vscode.Disposable {
       const buttons = asks
         ? ["Allow once", ...(p!.answer === "keys" || p!.always ? ["Always allow"] : []), "Deny", "Deny with a note…", "Open"]
         : this.panes && (n.kind === "done" || (n.kind === "waiting" && !p)) ? ["Reply…", "Open"] : ["Open"];
-      void show(text, ...buttons).then(async (choice) => {
+      // (what Always allow lets through from now on, next to the button)
+      const always = asks && p!.answer === "hook" && p!.always ? ` · Always allow: ${p!.always}` : "";
+      void show(text + always, ...buttons).then(async (choice) => {
         const panes = this.panes;
         if (choice === "Open") {
           if (panes && settings.clickOpensPane()) panes.open(chat, "chat");

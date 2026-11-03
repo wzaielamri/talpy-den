@@ -14,9 +14,10 @@ test("a permission prompt's notification lists Allow once, Always allow, Deny, D
   const { Notifier } = await import("../src/notify");
   const window = vscode.window as unknown as Record<string, unknown>;
   const shown: string[][] = [];
+  const messages: string[] = [];
   let pick = "";
   let note: string | undefined = "";
-  window.showWarningMessage = async (_m: string, ...buttons: string[]) => (shown.push(buttons), pick);
+  window.showWarningMessage = async (m: string, ...buttons: string[]) => (messages.push(m), shown.push(buttons), pick);
   window.showInputBox = async () => note;
   const answers: [string, string][] = [];
   const notifier = new Notifier({ sound() {} } as never, () => undefined);
@@ -31,11 +32,13 @@ test("a permission prompt's notification lists Allow once, Always allow, Deny, D
   };
 
   await notify(ask({}));
-  await notify(ask({ always: "Bash(npm publish:*)" }));
+  await notify(ask({ always: "Bash(npm publish:*) in this project (.claude/settings.local.json)" }));
   assert.deepEqual(shown, [
     ["Allow once", "Deny", "Deny with a note…", "Open"],
     ["Allow once", "Always allow", "Deny", "Deny with a note…", "Open"],
   ]);
+  // (what Always allow lets through from now on, next to the button)
+  assert.equal(messages[1], "deploy asks —  · Always allow: Bash(npm publish:*) in this project (.claude/settings.local.json)");
 
   pick = "Deny with a note…";
   note = "  publish to the test registry  ";
