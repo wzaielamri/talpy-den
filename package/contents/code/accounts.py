@@ -398,6 +398,9 @@ def hand_over(profile, profiles, home, preferred=None):
     plan, why = hand_over_plan(profile, profiles, preferred)
     if why:
         return [], why
+    # (found before anything moves: once a folder moved, a link into it goes through the link left in its
+    # place, which leads out, and no longer looks like one into this folder; it would break once it's gone)
+    links = links_into(profile, profiles, preferred)
     real, done = str(profile.real), []
     for e in plan:
         src, link = e["path"], str(e["link"])
@@ -438,13 +441,16 @@ def hand_over(profile, profiles, home, preferred=None):
         except OSError as exc:
             return done, f"{e['item']} couldn't move to {e['to'].label} ({exc.strerror or exc})"
         done.append(e)
-    for p, item in links_into(profile, profiles, preferred):  # (the rest point at the new places)
-        final = os.path.realpath(str(p.path / item))
-        if not within(final, real):
-            try:
+    for p, item in links:  # (the rest point at the new places)
+        path = str(p.path / item)
+        final = os.path.realpath(path)
+        if not os.path.islink(path) or within(final, real):  # (one moved there, or one that didn't move)
+            continue
+        try:
+            if os.readlink(path) != final:
                 point(p.path / item, final)
-            except OSError as exc:
-                return done, f"{p.label}'s {item} couldn't point at {short(final, home)} ({exc.strerror or exc})"
+        except OSError as exc:
+            return done, f"{p.label}'s {item} couldn't point at {short(final, home)} ({exc.strerror or exc})"
     return done, ""
 
 

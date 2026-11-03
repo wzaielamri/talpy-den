@@ -387,6 +387,23 @@ class RemoveTests(Home):
         self.assertEqual((third / "CLAUDE.md").read_text(), "work's rules")
         self.assertEqual(os.readlink(self.home / ".claude-side/CLAUDE.md"), os.path.realpath(third / "CLAUDE.md"))
 
+    def test_a_link_into_a_folder_that_moved_whole_points_at_its_new_place(self):
+        # side links work's skills/ whole, third one skill of it: skills/ moves to side (the
+        # default account), and third's link points there, not through work's folder in the Trash
+        write(self.home / ".claude-work/skills/a/SKILL.md", "a skill")
+        self.add("side")
+        self.add("third")
+        side, third = self.home / ".claude-side", self.home / ".claude-third"
+        os.symlink(self.home / ".claude-work/skills", side / "skills")
+        (third / "skills").mkdir()
+        os.symlink(self.home / ".claude-work/skills/a", third / "skills/a")
+        default = lambda home, profiles, *a, **k: (True, next(p for p in profiles if p.label == "side"))  # noqa: E731
+        with mock.patch.object(cs, "vscode_profile", default):
+            self.assertIn("skills to side (third keeps sharing it there)", self.listed()[".claude-work"]["handOver"])
+            self.assertTrue(accounts.remove_account(self.home, [], ".claude-work")[0])
+        self.assertEqual(os.readlink(third / "skills/a"), os.path.realpath(side / "skills/a"))
+        self.assertEqual((third / "skills/a/SKILL.md").read_text(), "a skill")
+
     def test_a_link_through_it_points_past_it(self):
         # work's settings.json is a link to a shared one, side's a link to
         # work's: side's then points at the shared one, nothing moves
