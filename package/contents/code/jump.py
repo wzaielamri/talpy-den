@@ -707,8 +707,8 @@ def jump_remote_vscode_terminal(host, terminal, folder=""):
     if not raise_window(mains, caption, require=True, prefer=os.path.basename(folder.rstrip("/"))):
         return False, none if there else f"Couldn't raise the VS Code window ({raise_hint()})"
     if show_vscode_terminal(proc_name(mains[0]), terminal, host):
-        return True, f"Switched to the VS Code terminal running this chat on {host}"
-    return True, f"Switched to the VS Code window connected to {host}"
+        return True, f"Switched to the VS Code terminal running this chat {remote_where(host)}"
+    return True, f"Switched to the VS Code window connected to {remote_label(host)}"
 
 
 def jump_remote_terminal(host, name="", vscode_terminal=None, folder=""):
@@ -2020,7 +2020,7 @@ def new_chat_remote_vscode(host, folder="", account=None, task=NO_TASK):
     if task.plan:
         answer = remote.plan_text(host, task.plan, task.plan_profile)
         if not answer.get("ok"):
-            return False, answer.get("message") or f"Couldn't get the plan from {host}"
+            return False, answer.get("message") or f"Couldn't get the plan from {remote_label(host)}"
         prompt = cs.fitting_plan_prompt(task.text, answer.get("markdown") or "", answer.get("where") or task.plan,
                                         vscode_link_fits)
     if not vscode_link_fits(prompt):
@@ -2028,7 +2028,7 @@ def new_chat_remote_vscode(host, folder="", account=None, task=NO_TASK):
     if account is not None:
         ok, message = remote.vscode_account(host, None if account == "-" else account)
         if not ok:
-            return False, f"Couldn't switch VS Code's Claude on {host}: {message}"
+            return False, f"Couldn't switch VS Code's Claude {remote_where(host)}: {message}"
     return remote_vscode(host, folder, vscode_task_link(prompt), "the new chat starts")
 
 
