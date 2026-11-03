@@ -348,6 +348,9 @@ test("Claude's Markdown: bare web addresses, \\| in a table, globs and *args, a 
   for (const text of ["Look at the *.py and *.js files", "Use **kwargs and *args in f(*args, **kwargs)", "foo__bar__baz"])
     assert.equal(md(text), `<p>${text}</p>`);
   assert.equal(md("**Note:** a *b* and __c__, a*b*c"), "<p><strong>Note:</strong> a <em>b</em> and <strong>c</strong>, a<em>b</em>c</p>");
+  // (a one-character bold before another on the line ends at its own marks; a bold never runs over another's)
+  assert.equal(md("with **Edit**, **✕** and **Send now**."), "<p>with <strong>Edit</strong>, <strong>✕</strong> and <strong>Send now</strong>.</p>");
+  assert.equal(md("f(*args, **kw) and **bold**"), "<p>f(*args, **kw) and <strong>bold</strong></p>");
   const copied: string[] = [];
   const tree = Markdown({ text: "1. Run:\n   ```python\n   if x:\n       go()\n   ```", onCopy: (code) => copied.push(code) });
   // (in its language's colors, as a tool's listing; its text as it was, for Copy)

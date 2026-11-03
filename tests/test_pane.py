@@ -1673,6 +1673,15 @@ class PaneMarkdownTests(unittest.TestCase):
         self.assertIn('href="copy:0"', html)
         self.assertEqual(markdown(f"Md.codeBlocks({json.dumps(text)})"), ["print(1)"])
 
+    def test_bold_ends_at_its_own_closing_marks(self):
+        # (a one-character bold before another bold on the line, as **Edit**, **✕** and **Send now**,
+        # was bold up to the last one's closing marks; a bold never runs over another's marks)
+        for text, want in [("with **Edit**, **✕** and **Send now**.", ["Edit", "✕", "Send now"]),
+                           ("f(*args, **kw) and **bold**", ["bold"]), ("__x__ y __z__", ["x", "z"])]:
+            html = markdown(f"Md.inline({json.dumps(text)}, style)")
+            self.assertEqual(re.findall(r"<b[^>]*>(.*?)</b>", html), want, html)
+        self.assertEqual(markdown('Md.inline("~~1~~ or ~~2~~", style)'), "<s>1</s> or <s>2</s>")
+
     def test_asterisks_in_globs_and_args_stay(self):
         # (a closing * or ** comes right after text, and not between punctuation and a word;
         # __x__ like _x_ only between words' edges)
