@@ -7146,9 +7146,9 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
         message = f"Went on in the background on {profile.label}" + (f" ({how})" if how else f" ({job})" if job else "")
         if not carried:
             message += ", with the model and effort Claude saved for it"
-        if wakes and job and any("started a copy" in n for n in notes):
-            # (its job ended a moment too late: the copy runs in its mode, but saved only the
-            # model; its next go-on adds the rest, saved_options)
+        if job and any("started a copy" in n for n in notes):
+            # (still held after the wait, or its job ended a moment too late: the latter's copy runs
+            # in its mode, but saved only the model; its next go-on adds the rest, saved_options)
             message += f", as a copy ({job})"
     answer = {"ok": ok, "message": message, "id": job}
     if busy is not None:
