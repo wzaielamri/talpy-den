@@ -48,7 +48,7 @@ export interface NotifyOptions {
   notifyWaiting: boolean;
   notifyDone: boolean;
   notifyDoneMinSeconds: number;
-  kept?: (chatId: string) => boolean; // a chat of this computer that keeps going (goes on when a limit resets)
+  kept?: (chatId: string) => boolean; // a chat that keeps going (goes on when a limit resets; in a host's poll, the host's)
 }
 
 const SOUND_RANK: Record<SoundKind, number> = { "": 0, done: 1, failed: 2, waiting: 3 };
@@ -216,7 +216,7 @@ export class TransitionTracker {
     changes.finished.push({ id: sid, session: s, host, took, at: nowMs, stop });
     if (!opts.notifyDone || took < opts.notifyDoneMinSeconds * 1000) return;
     if (stop) {
-      const kept = stop === "limit" && !host && !!opts.kept?.(s.chatId || s.sessionId);
+      const kept = stop === "limit" && !!opts.kept?.(s.chatId || s.sessionId);
       changes.notices.push({
         key: sid,
         kind: "stopped",
