@@ -1263,6 +1263,27 @@ class PromptTests(Projects):
         self.assertEqual(week.load_added(self.cache_root), [])
         self.assertFalse(week.undo_rule(self.home, self.cache_root, rid)[0])
 
+    def test_a_settings_file_that_is_a_link_is_left_alone(self):
+        # (a repo can ship .claude/settings.local.json -> the account's settings.json: Allow changed that)
+        self.asked()
+        week.updated_cache(self.cache_root, self.profiles(), self.now)
+        account = self.home / ".claude/settings.json"
+        cs.write_json_atomic(account, {"env": {"A": "1"}})
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(os.path.relpath(account, self.settings.parent), self.settings)
+        ok, message, _ = week.allow_rule(self.home, self.cache_root, "edits", str(self.app), str(self.app))
+        self.assertEqual((ok, message), (False, "~/repos/app/.claude/settings.local.json is a link to another file: "
+                                                "Talpy Den doesn't change a rule through a link"))
+        self.assertEqual(json.loads(account.read_text()), {"env": {"A": "1"}})
+        os.unlink(self.settings)
+        ok, _, rid = week.allow_rule(self.home, self.cache_root, "edits", str(self.app), str(self.app))
+        self.assertTrue(ok)
+        self.settings.unlink()  # (made a link after the rule went in: Undo leaves the account's file too)
+        cs.write_json_atomic(account, {"permissions": {"defaultMode": "acceptEdits"}})
+        os.symlink(account, self.settings)
+        self.assertFalse(week.undo_rule(self.home, self.cache_root, rid)[0])
+        self.assertEqual(json.loads(account.read_text()), {"permissions": {"defaultMode": "acceptEdits"}})
+
     def test_your_own_settings_stay(self):
         self.asked()
         week.updated_cache(self.cache_root, self.profiles(), self.now)

@@ -1750,6 +1750,16 @@ def write_settings(path, data):
     os.replace(str(tmp), str(path))
 
 
+def linked_settings(path, project, home):
+    """Why Talpy Den won't change project's settings.local.json (path): it,
+    or its .claude folder, is a link to somewhere else (a repo can ship one:
+    the rule would land in what it points to, an account's settings.json, say);
+    None when it's the folder's own file."""
+    if os.path.realpath(str(path)) == os.path.join(os.path.realpath(project), ".claude", "settings.local.json"):
+        return None
+    return "%s is a link to another file: Talpy Den doesn't change a rule through a link" % tilde(path, home)
+
+
 def take_out(perms, key, value):
     """value out of the list perms[key]; the key goes once that's empty."""
     if isinstance(perms.get(key), list):
@@ -1777,6 +1787,9 @@ def allow_rule(home, cache_root, kind, value, project):
     if not ok:
         return False, "Not a rule the Permissions tab offers", None
     path = settings_paths(project)[0]
+    linked = linked_settings(path, project, home)
+    if linked:
+        return False, linked, None
     data = cs.read_json(path) if path.exists() else {}
     if not isinstance(data, dict):
         return False, "%s isn't JSON Talpy Den can change: leave it as it is" % tilde(path, home), None
@@ -1809,6 +1822,9 @@ def undo_rule(home, cache_root, rid):
     if note is None:
         return False, "That rule wasn't added here"
     path = Path(note["file"])
+    linked = linked_settings(path, note.get("project") or "/", home)
+    if linked:
+        return False, linked
     data = cs.read_json(path)
     perms = data.get("permissions") if isinstance(data, dict) and isinstance(data.get("permissions"), dict) else None
     if perms is not None:
