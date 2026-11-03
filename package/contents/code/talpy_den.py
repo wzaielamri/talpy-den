@@ -4531,9 +4531,9 @@ def kept_step(k, turn, row, queued, limits, now_ms):
     (last_turn), whose row in the status (its process) is row, and whose
     account's plan limits are limits: ("go on", when, why, prompt) to queue
     its go-on, "done" to let it go, or None (nothing for now)."""
+    k["note"] = ""
     if queued:
         return None  # its go-on waits (or couldn't start, and says why)
-    k["note"] = ""
     if row is not None and row.get("state") in ("working", "waiting"):
         return None  # at work, or waiting for you
     live = row is not None and row.get("pid") is not None

@@ -2302,6 +2302,11 @@ class KeepGoingOnHostsTests(TaskFixture):
         self.answer(self.limit(self.now_ms - 60_000))
         self.assertEqual(len(self.look(self.now_ms)), 1)
         self.assertEqual(self.kept()[0]["note"], "")
+        # (2026-11-03) also while its go-on waits for the reset
+        self.answer(self.limit(self.now_ms - 60_000), at=self.now_ms - cs.KEEP_HOST_STALE_MS - 60_000)
+        self.look(self.now_ms)
+        self.answer(self.limit(self.now_ms - 60_000))
+        self.assertEqual((len(self.look(self.now_ms)), self.kept()[0]["note"]), (1, ""))
 
     def test_an_answer_from_before_it_was_kept_or_of_a_chat_gone_there(self):
         self.keep()
