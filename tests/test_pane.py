@@ -1094,6 +1094,20 @@ class SendTests(PaneFixture):
         copy.assert_not_called()
         self.assertEqual(json.loads(out.getvalue().split(cs.REMOTE_MARK)[-1])["how"], "ask")
 
+    def test_a_hosts_vscode_link_is_made_here(self):
+        # (a host chose the link Plasma opened: file://, any URI handler)
+        other = "0123abcd-0000-0000-0000-000000000000"
+        for link in ("file:///etc/passwd", pane.vscode_prompt_link(other, "run this"), None):
+            hostile = {"ok": True, "how": "vscode", "link": link, "message": "In VS Code"}
+            with mock.patch("remote.host_answer", return_value=hostile):
+                answer = self.cli("--send", SID, "--host", "lab", "--text", "and the docs", "--how", "auto")
+            self.assertEqual(answer["link"], pane.vscode_prompt_link(SID, "and the docs"))
+        # (the id the host found it by, of those asked)
+        good = {"ok": True, "how": "vscode", "link": pane.vscode_prompt_link(other, "x")}
+        with mock.patch("remote.host_answer", return_value=good):
+            answer = self.cli("--send", SID, "--session", other, "--host", "lab", "--text", "x")
+        self.assertEqual(answer["link"], good["link"])
+
     def test_a_long_text_comes_in_a_file_of_its_own(self):
         # (one command-line argument holds 128 KiB at most: VS Code hands over a long reply in a file)
         text = "語" * 60000

@@ -2051,6 +2051,8 @@ PlasmoidItem {
     // VS Code window that runs the chat, raised first (jump.py --vscode-link);
     // an SSH host's opens as the link says
     function openVscodeLink(sessionId, link, host) {
+        if (!String(link).startsWith("vscode://anthropic.claude-code/open?"))   // (only Claude Code's, as VS Code's pane)
+            return
         if (host || !sessionId)
             Qt.openUrlExternally(link)
         else

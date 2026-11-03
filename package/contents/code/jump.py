@@ -1729,11 +1729,12 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
             args = ["--send", entry["chat"], "--profile", entry["profile"], "--text", task.text, "--how", how]
             if entry.get("session"):
                 args += ["--session", entry["session"]]
+            import pane
             if entry.get("host"):
                 import remote
-                answer = remote.host_answer(entry["host"], args, name="pane.py")
+                answer = pane.host_vscode_link(remote.host_answer(entry["host"], args, name="pane.py"),
+                                               (entry.get("session"), entry["chat"]), task.text)
             else:
-                import pane
                 answer = pane.send(home, extra_dirs, entry["profile"], entry["chat"], task.text, entry.get("session"),
                                    how, claude_path(home))
             ok, message = bool(answer.get("ok")) and answer.get("how") != "ask", answer.get("message") or ""

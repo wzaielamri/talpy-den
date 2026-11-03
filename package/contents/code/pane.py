@@ -1079,6 +1079,21 @@ def vscode_prompt_link(session_id, text):
     return "vscode://anthropic.claude-code/open?" + urlencode({"session": session_id, "prompt": text}).replace("%", "%25")
 
 
+def host_vscode_link(answer, ids, text):
+    """An SSH host's answer to --send that the chat is in VS Code: its link
+    made here from what was asked (the chat's id the host found it by, of
+    ids, else the first, and your text), never one the host chose, which
+    would be opened on this computer. No link when no id is a chat's."""
+    if answer.get("how") != "vscode":
+        return answer
+    links = [vscode_prompt_link(i, (text or "").strip()) for i in ids if cs.valid_id(i or "")]
+    if links:
+        answer["link"] = answer.get("link") if answer.get("link") in links else links[0]
+    else:
+        answer.pop("link", None)
+    return answer
+
+
 def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped=True):
     """claude --bg --resume with your message. scoped: in a systemd scope of
     its own (jump.scope_prefix), as the widget's go-ons and tasks start: run
@@ -1986,6 +2001,8 @@ def main(argv=None):
             answer = forward(host, rest)
             if action == "--review" and answer.get("ok"):
                 answer["reviewedAt"] = cs.load_reviewed(cache_root).get(cs.review_key(target, host))
+            if action == "--send":
+                answer = host_vscode_link(answer, (session, target), text)
             if action == "--send" and how == "enter" and answer.get("how") == "ask":
                 answer = copy_answer((text or "").strip(), ENTER_COPIES)  # (here, as above)
             return emit(answer)
