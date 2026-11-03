@@ -598,6 +598,22 @@ def container_problem(p, code, stderr):
     return None, ""
 
 
+def paused_told(p, why, kind, stderr):
+    """container_problem's (why, kind), a paused container told from a
+    stopped one: Podman refuses an exec, or a start, of a paused one in a
+    stopped one's words ("container state improper"), so then (only) an
+    inspect tells."""
+    if kind != "stopped" or "state improper" not in stderr.lower():
+        return why, kind
+    try:
+        found, _ = inspect(p)
+    except (OSError, subprocess.TimeoutExpired):
+        found = None
+    if found is not None and found["state"] == "paused":
+        return f"{p.label} is paused ({p.engine} unpause {p.name}).", "paused"
+    return why, kind
+
+
 def container_state(ident):
     """(whether ident is a container that isn't running, a sentence why):
     (False, "") for a running one and for an SSH host."""
@@ -630,7 +646,8 @@ def start(ident):
     except OSError:
         return False, f"{p.engine_title} isn't installed here"
     if r.returncode != 0:
-        return False, explain(ident, r.returncode, r.stderr)
+        return False, paused_told(p, *container_problem(p, r.returncode, r.stderr), r.stderr)[0] \
+            or explain(ident, r.returncode, r.stderr)
     return True, f"Started {p.label}"
 
 
@@ -811,15 +828,13 @@ def status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, 
         return {"ok": False, "host": host, "error": cant_run(p, exc)}
     elapsed = int((time.time() - started) * 1000)
     if "\n" + cs.REMOTE_MARK not in r.stdout:
+        why, kind = paused_told(p, *container_problem(p, r.returncode, r.stderr), r.stderr) if p.container else (None, "")
         # (only ssh's own failure asks for a login: not the engine's "permission denied" on its socket there)
-        login = p.host is not None and r.returncode == 255 and needs_login(r.stderr) \
-            and not (p.container and container_problem(p, r.returncode, r.stderr)[0])
-        out = {"ok": False, "host": host, "error": explain(host, r.returncode, r.stderr), "elapsedMs": elapsed,
+        login = p.host is not None and r.returncode == 255 and needs_login(r.stderr) and not why
+        out = {"ok": False, "host": host, "error": why or explain(host, r.returncode, r.stderr), "elapsedMs": elapsed,
                "login": login}
-        if p.container:  # (stopped: Start, and no checks until then; gone; paused)
-            kind = container_problem(p, r.returncode, r.stderr)[1]
-            if kind in ("stopped", "paused", "gone"):
-                out[kind] = True
+        if kind in ("stopped", "paused", "gone"):  # (stopped: Start, and no checks until then; gone; paused)
+            out[kind] = True
         return out
     result = answer_after_mark(r.stdout)
     if result is None:

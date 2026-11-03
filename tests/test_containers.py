@@ -432,9 +432,13 @@ class ContainerStatusTests(FakeEngines):
     def test_failures_in_plain_words(self):
         self.engine("podman")
         self.engine("docker")
-        self.put({"off": self.container("off", "exited", days_ago=3), "bare": self.container("bare", nopython=True)})
+        self.put({"off": self.container("off", "exited", days_ago=3), "bare": self.container("bare", nopython=True),
+                  "held": self.container("held", "paused")})
         out = remote.status("podman:off")
         self.assertEqual((out["ok"], out["error"], out.get("stopped")), (False, "off is stopped.", True))
+        # (2026-11-03) Podman refuses an exec of a paused one in a stopped one's words: no Start for it
+        out = remote.status("podman:held")
+        self.assertEqual((out["error"], out.get("paused"), out.get("stopped")), ("held is paused (podman unpause held).", True, None))
         self.assertEqual(remote.status("docker:off")["error"], "off is stopped.")
         out = remote.status("podman:nope")
         self.assertEqual((out["error"], out.get("gone")), ("There's no container nope any more.", True))
