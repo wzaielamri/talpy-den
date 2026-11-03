@@ -1979,7 +1979,7 @@ def main(argv=None):
         out = json.dumps(result, indent=2 if pretty and not remote else None)
         sys.stdout.write(("\n" + cs.REMOTE_MARK + " " if remote else "") + out + "\n")
 
-    if text_file is not None:  # (a long message: VS Code's, or remote.put_text's on a host)
+    if text_file is not None:  # (a long message: VS Code's)
         text = take_text(cache_root, text_file)
         if text is None:
             return emit({"ok": False, "message": "Couldn't read your message"})

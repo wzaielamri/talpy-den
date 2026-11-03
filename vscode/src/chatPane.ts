@@ -174,8 +174,9 @@ export class ChatPanes implements vscode.Disposable {
     }
     const sid = session?.sessionId ?? chat.sessionId;
     // (a long message goes in a file of its own, private to you, that pane.py
-    // removes once read: one command-line argument holds 128 KiB at most)
-    const file = Buffer.byteLength(text) > TEXT_IN_ARGS ? path.join(cacheDir(), `text-${crypto.randomUUID()}.txt`) : "";
+    // removes once read: one command-line argument holds 128 KiB at most; a
+    // host's too, so it isn't in the process list while the host answers)
+    const file = host || Buffer.byteLength(text) > TEXT_IN_ARGS ? path.join(cacheDir(), `text-${crypto.randomUUID()}.txt`) : "";
     // (enter goes as auto: the copy is VS Code's clipboard, also in a remote window)
     const args = ["--send", chatId, ...(file ? ["--text-file", file] : ["--text", text]), "--how", how === "enter" ? "auto" : how, ...(sid ? ["--session", sid] : []),
                   ...(chat.profileDir ? ["--profile", chat.profileDir] : []), ...(afterTurn ? ["--after-turn", "--name", chat.name || ""] : []),

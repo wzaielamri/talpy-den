@@ -259,25 +259,18 @@ class LoginShellTests(FakeSSH):
         self.assertEqual((self.fake_home / ".cache/talpy-den/images" / here.name).read_bytes(), here.read_bytes())
 
 
-    def test_a_long_text_goes_over_first(self):
-        # (one command-line argument holds 128 KiB at most, and ssh's command is one)
-        text = "語" * 50000 + " it's\n!x"
-        self.mode("tcsh")
-        put = remote.put_text("lab", text)
-        self.assertTrue(put["ok"], put)
-        there = Path(put["path"])
-        self.assertEqual((there.parent, there.read_text(encoding="utf-8")), (self.fake_home / ".cache/talpy-den", text))
-        self.assertEqual(there.stat().st_mode & 0o777, 0o600)
-        there.unlink()
-        answer = remote.host_answer("lab", ["--send", "abc12345", "--text", text, "--how", "copy"], name="pane.py")
-        self.assertIn("message", answer)
-        put_call, run_call = self.calls()[-2:]
-        self.assertIn("--text-file", run_call[1])
-        self.assertNotIn("語", run_call[1])
-        self.assertEqual(list((self.fake_home / ".cache/talpy-den").glob("text-*")), [], "read and removed there")
-        # a short one goes in the command, as before
-        remote.host_answer("lab", ["--send", "abc12345", "--text", "and the docs", "--how", "copy"], name="pane.py")
-        self.assertIn("--text 'and the docs'", self.calls()[-1][1])
+    def test_your_text_goes_on_stdin(self):
+        # (a command is in the process list for every user there and here; one argument holds 128 KiB at most;
+        # tcsh refuses a newline in it)
+        for text in ("語" * 50000 + " it's\n!x", "and the docs"):
+            self.mode("tcsh")
+            answer = remote.host_answer("lab", ["--send", "abc12345", "--text", text, "--how", "auto", "--after-turn",
+                                                 "--profile", ".claude"],
+                                        name="pane.py")
+            self.assertTrue(answer["ok"], answer)
+            self.assertEqual(self.calls()[-1][1], "python3 -I - --remote --send abc12345 --how auto --after-turn --profile .claude")
+            (queued,) = cs.load_queue(self.fake_home / ".cache/talpy-den")
+            self.assertEqual(queued["prompt"], text)  # (queued there, for when its turn ends)
 
 
 class StatusTests(FakeSSH):
@@ -810,6 +803,7 @@ class HostTaskTests(TwoAccountHost):
         answer = remote.task("lab", ".claude", str(self.folder), "fix it", "calm-red-owl", ".claude", background=True)
         self.assertEqual((answer["ok"], answer["id"]), (True, "1a2b3c4d"), answer)
         args = (self.fake_home / "claude-args").read_text()
+        self.assertNotIn("fix it", self.calls()[-1][1])  # (on stdin: remote.with_texts)
         self.assertTrue(args.startswith("--bg\nfix it\n\nThe plan (saved as ~/.claude/plans/calm-red-owl.md):"), args)
         # not where Claude doesn't trust the folder (its home, here)
         answer = remote.task("lab", ".claude", "~", "fix it", background=True)
