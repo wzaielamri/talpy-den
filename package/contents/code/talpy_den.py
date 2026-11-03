@@ -5898,14 +5898,17 @@ def link_project_plans(ctx, wanted=None):
         find_plan_chats(todo, ctx)
 
 
-def find_project_plan(profiles, slug, home, cache_root=None):
+def find_project_plan(profiles, slug, home, cache_root=None, every=False):
     """(path, project folder) of a plan in a project's plans folder, for an
-    action (the caches only read), or (None, None)."""
+    action (the caches only read), or (None, None); every: [(path, project
+    folder)] of each file of that name in one, newest first."""
     if not (isinstance(slug, str) and PLAN_SLUG.match(slug)) or home is None:
-        return None, None
+        return [] if every else (None, None)
     root = cache_dir(home) if cache_root is None else cache_root
     ctx = Context(home=home, profiles=profiles, plan_dirs=PlanDirs(root / "plan-dirs.json", save=False),
                   plan_projects=PlanProjects(root, save=False))
+    if every:
+        return [(f, d) for _t, d, f, _st in project_plan_files(ctx) if f.stem == slug]
     return project_plan_of(ctx, slug)
 
 

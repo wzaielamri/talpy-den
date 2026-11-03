@@ -329,6 +329,17 @@ class SameNameTests(ProjectPlanFixture):
         self.assertTrue(done["ok"], done)
         self.assertFalse(self.new.exists())
         self.assertFalse(self.old.exists())
+
+    def test_deleting_the_accounts_newer_one_takes_the_projects_along(self):
+        # (else the project's older version would show again, as the plan)
+        os.utime(self.old, (self.now - 10, self.now - 10))
+        root = sharing.store_root(self.home)
+        asked = sharing.delete(self.profiles, "plan", "twice-plan", ".claude-work", root, self.home, describe=True)
+        self.assertEqual(asked["question"], "Delete the plan “Old version” on work? It goes to the Trash. "
+                                            "So does its older copy in ~/repos/app/.claude/plans.")
+        self.assertTrue(sharing.delete(self.profiles, "plan", "twice-plan", ".claude-work", root, self.home)["ok"])
+        self.assertFalse(self.new.exists())
+        self.assertEqual(self.plans("work"), [])
         self.assertEqual(self.plans("work"), [])
 
 

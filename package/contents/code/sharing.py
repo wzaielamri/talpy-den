@@ -991,8 +991,9 @@ def plan_to_delete(profiles, slug, name, home=None):
     profile it's linked into: (its accounts, its paths, the file), or (None,
     why not, None). With home, one in a project's plans folder too, when
     the profile name (else any) has none of that name or an older one
-    (project_copy): ([], [its path, the accounts' older ones], it): two
-    files of one name are one plan, and the older would show again."""
+    (project_copy): ([], [its path, the accounts' older ones], it); and an
+    account's takes the projects' older ones along: two files of one name
+    are one plan, and the older would show again."""
     if not cs.PLAN_SLUG.match(slug or ""):
         return None, f"Not a plan name: {slug}", None
     have = plan_copies(profiles, slug)
@@ -1015,6 +1016,7 @@ def plan_to_delete(profiles, slug, name, home=None):
         if not all(same(path, src) for _, path in have):
             return None, "Several accounts have a different plan of that name: say which account's goes", None
     labels, paths = gather((p, path) for p, path in have if same(path, src))
+    paths += [f for f, _folder in cs.find_project_plan(profiles, slug, home, every=True) if not cs.project_wins(f, src)]
     return labels, paths, src
 
 
@@ -1123,8 +1125,9 @@ def delete(profiles, kind, item, name, root, home, describe=False):
         title, busy = cs.plan_title(src) or item, None
         question = (f"Delete the plan “{title}” on {and_list(labels)}? It goes to the Trash." if labels else
                     f"Delete the plan “{title}” from {cs.short_folder(str(src.parent), home)}? It goes to the Trash.")
-        if not labels and len(paths) > 1:  # (an account's older file of that name: plan_to_delete)
-            older = and_list(dict.fromkeys(cs.short_folder(str(c.parent), home) for c in paths[1:]))
+        older = [c for c in paths if not same(c, src)]  # (an older file of that name elsewhere: plan_to_delete)
+        if older:
+            older = and_list(dict.fromkeys(cs.short_folder(str(c.parent), home) for c in older))
             question += f" So does its older copy in {older}."
     else:
         labels, paths, src = chat_to_delete(profiles, item, name, root)
