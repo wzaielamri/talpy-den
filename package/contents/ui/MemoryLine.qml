@@ -165,8 +165,7 @@ ColumnLayout {
                     icon.name: Icons.plasma.delete
                     icon.color: Icons.color("delete", Kirigami.Theme)
                     text: i18n("Delete…")
-                    onClicked: root.askDelete(memoryLine.itemKey, "memory", memoryLine.memory.key, "", memoryLine.remoteHost,
-                                              memoryLine.memory.folderShort)
+                    onClicked: root.askDelete(memoryLine.itemKey, "memory", memoryLine.memory.key, "", memoryLine.remoteHost)
 
                     PlasmaCore.ToolTipArea {
                         textFormat: Text.PlainText

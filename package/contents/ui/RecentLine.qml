@@ -319,7 +319,7 @@ Kirigami.Icon {
                     icon.color: Icons.color("delete", Kirigami.Theme)
                     text: i18n("Delete…")
                     onClicked: root.askDelete(recentLine.rowKey, "chat", recentLine.chat.sessionId,
-                                              recentLine.chat.profileDir, recentLine.remoteHost, "")
+                                              recentLine.chat.profileDir, recentLine.remoteHost)
 
                     PlasmaCore.ToolTipArea {
                         textFormat: Text.PlainText

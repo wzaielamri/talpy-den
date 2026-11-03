@@ -3112,16 +3112,10 @@ PlasmoidItem {
              : i18n("Moves its file to the Trash and takes its line out of MEMORY.md: Claude stops reading it in new chats in its folder. It asks first.")
     }
 
-    // "a", "a and b", "a, b and c"
-    function andList(names) {
-        return names.length < 2 ? names.join("") : i18nc("the last two of a list", "%1 and %2",
-                                                         names.slice(0, -1).join(", "), names[names.length - 1])
-    }
-
     // Delete… asks first (deleteAsk, shown under the item's line: DeleteAsk.qml):
     // {key: the line's key, kind: chat | plan | memory, id, profileDir, host,
-    // folder: a memory's, busy: being looked at, question, message: why it can't}
-    readonly property var noDeleteAsk: ({ key: "", kind: "", id: "", profileDir: "", host: "", folder: "",
+    // busy: being looked at, question, message: why it can't}
+    readonly property var noDeleteAsk: ({ key: "", kind: "", id: "", profileDir: "", host: "",
                                           busy: false, question: "", message: "" })
     property var deleteAsk: noDeleteAsk
 
@@ -3132,13 +3126,13 @@ PlasmoidItem {
                                                 : shellQuote(id) + (kind !== "memory" ? profileArg(profileDir) : ""))
     }
 
-    function askDelete(key, kind, id, profileDir, host, folder) {
+    function askDelete(key, kind, id, profileDir, host) {
         if (deleteAsk.key === key) {   // (again: the question goes)
             deleteAsk = noDeleteAsk
             return
         }
         cancelMove()
-        deleteAsk = { key: key, kind: kind, id: id, profileDir: profileDir || "", host: host || "", folder: folder || "",
+        deleteAsk = { key: key, kind: kind, id: id, profileDir: profileDir || "", host: host || "",
                       busy: true, question: "", message: "" }
         deleteRun(deleteArgs(kind, id, profileDir, host) + " --describe", { key: key, host: host || "", describe: true })
     }
@@ -3168,19 +3162,8 @@ PlasmoidItem {
                 const a = root.deleteAsk
                 if (a.key !== what.key)   // (cancelled, or another one asked meanwhile)
                     return
-                const name = result.name || ""
-                const accounts = root.andList(result.accounts || [])
-                // (the backend's words, here to translate)
-                const question = !result.ok || !name ? result.question || ""
-                               : a.kind === "chat" && accounts
-                               ? i18n("Delete “%1” on %2? It goes to the Trash with its subagents and checkpoints; the Recap keeps its numbers.", name, accounts)
-                               : a.kind === "plan" && accounts ? i18n("Delete the plan “%1” on %2? It goes to the Trash.", name, accounts)
-                               : a.kind === "plan" && result.folder   // (one in its project's plans folder)
-                               ? i18n("Delete the plan “%1” from %2? It goes to the Trash.", name, result.folder)
-                               : a.kind === "memory" && a.folder
-                               ? i18n("Delete the memory “%1”? It goes to the Trash, and Claude stops reading it in new chats in %2.", name, a.folder)
-                               : result.question || ""
-                root.deleteAsk = Object.assign({}, a, { busy: false, question: result.ok ? question : "",
+                // (the backend's question, as GNOME and VS Code show it: with what else goes, an older copy, …)
+                root.deleteAsk = Object.assign({}, a, { busy: false, question: result.ok ? result.question || "" : "",
                                                         message: result.ok ? "" : result.message || i18n("It can't be deleted.") })
                 return
             }

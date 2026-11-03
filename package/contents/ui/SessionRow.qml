@@ -668,7 +668,7 @@ RowLayout {
                         text: i18n("Delete…")
                         Layout.alignment: Qt.AlignTop
                         onClicked: root.askDelete(row.rowKey, "chat", row.session.chatId || row.session.sessionId,
-                                                  row.session.profileDir, row.remoteHost, "")
+                                                  row.session.profileDir, row.remoteHost)
 
                         PlasmaCore.ToolTipArea {
                             textFormat: Text.PlainText

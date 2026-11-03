@@ -321,7 +321,7 @@ Kirigami.Icon {
                     icon.color: Icons.color("delete", Kirigami.Theme)
                     text: i18n("Delete…")
                     onClicked: root.askDelete(planLine.composerKey, "plan", planLine.plan.slug, planLine.plan.profileDir,
-                                              planLine.remoteHost, "")
+                                              planLine.remoteHost)
 
                     PlasmaCore.ToolTipArea {
                         textFormat: Text.PlainText
