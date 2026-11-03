@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { cacheDir } from "./config";
-import { duration } from "./shared/model";
+import { duration, hostLabel } from "./shared/model";
 import type { Group, Session } from "./shared/types";
 import type { Changes, PetEvent } from "./transitions";
 
@@ -57,7 +57,7 @@ export function digestOf(away: number, happened: Happened[], resets: string[], g
   if (waiting.length) {
     // (a line each for the first three, with its host, as Plasma's)
     for (const w of waiting.slice(0, 3))
-      parts.push(`Needs you: ${w.session.name}${w.host ? ` · ${w.host}` : ""} (waiting ${duration(now - (w.session.since ?? now))})`);
+      parts.push(`Needs you: ${w.session.name}${w.host ? ` · ${hostLabel(w.host)}` : ""} (waiting ${duration(now - (w.session.since ?? now))})`);
     const rest = waiting.length - 3;
     if (rest > 0) parts.push(`+${rest} more ${rest === 1 ? "needs" : "need"} you`);
   }

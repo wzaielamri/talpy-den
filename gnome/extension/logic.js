@@ -587,7 +587,7 @@ export class Tracker {
         const startedAt = this.turnStarts[source] || {};
         const ended = this.lastEnded[source] || {};
         const primed = !!this.primed[source];
-        const where = host ? ` · ${host}` : '';
+        const where = host ? ` · ${hostLabel(host)}` : '';
         const sound = kind => {
             if (SOUND_RANK[kind] > SOUND_RANK[out.sound])
                 out.sound = kind;
@@ -674,7 +674,7 @@ export class Tracker {
     // expired login broke off didn't finish (its notification replaces a
     // "finished" one sent a poll before).
     _turnEnded(out, sid, s, host, took, settings, sound) {
-        const where = host ? ` · ${host}` : '';
+        const where = host ? ` · ${hostLabel(host)}` : '';
         const stop = stopOf(s);
         const pk = petKeyOf(s, host);
         if (stop === 'limit')

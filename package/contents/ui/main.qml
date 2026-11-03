@@ -1524,7 +1524,7 @@ PlasmoidItem {
         const startedAt = turnStarts[source] || {}
         const ended = lastEnded[source] || {}
         const primed = !!primedSources[source]
-        const where = host ? " · " + host : ""
+        const where = host ? " · " + hostLabel(host) : ""
         for (const g of groupList) {
             for (const s of g.sessions) {
                 const sid = petKeyOf(s, host)   // starts with source + "|" for a host's
@@ -1619,7 +1619,7 @@ PlasmoidItem {
 
     // A chat waits for you: its pet, your phone and a notification say so
     function alertWaiting(sid, s, host, nowMs) {
-        const where = host ? " · " + host : ""
+        const where = host ? " · " + hostLabel(host) : ""
         lastWaitingAlert[sid] = { at: nowMs, ask: askId(s) }
         petEvent("waiting", i18n("%1 needs you!", s.name), petKeyOf(s, host))
         toPhone(i18n("Claude: %1 needs you", s.name + where) + (s.detail ? " (" + s.detail + ")" : "")
@@ -1636,7 +1636,7 @@ PlasmoidItem {
     // expired login broke off didn't finish. late: that shows only now, after
     // it was told as finished (which this takes back).
     function turnEnded(sid, s, host, took, late) {
-        const where = host ? " · " + host : ""
+        const where = host ? " · " + hostLabel(host) : ""
         const stop = stopOf(s)
         const long = took >= Plasmoid.configuration.notifyDoneMinSeconds * 1000
         const pk = petKeyOf(s, host)
@@ -3365,7 +3365,7 @@ PlasmoidItem {
                     if (root.notifier && Plasmoid.configuration.notifyWaiting && !holdingBack())
                         notify("overlap|" + source + "|" + pair, s, "overlap", i18n("Two chats change the same files"),
                                i18n("%1 and %2: %3", s.name, o.name, o.files.join(", ") + (o.count > o.files.length ? " …" : ""))
-                               + (host ? "\n" + host : ""), "dialog-warning", host)
+                               + (host ? "\n" + hostLabel(host) : ""), "dialog-warning", host)
                 }
         lastOverlaps = Object.assign({}, lastOverlaps, { [source]: next })
     }
@@ -3642,7 +3642,7 @@ PlasmoidItem {
                                     result.message, "media-playback-start", "")
                 } else if (root.notifier && Plasmoid.configuration.notifyDone && !root.holdingBack())
                     root.notify("queued|" + t.id, null, "started", i18n("Started on %1: %2", t.account, what),
-                                result.message + (t.host ? " · " + t.host : ""), "media-playback-start", "")
+                                result.message + (t.host ? " · " + root.hostLabel(t.host) : ""), "media-playback-start", "")
             } else if (!result.ok && t && t.afterTurn) {   // (your reply, as VS Code says it)
                 root.actionError = i18n("Couldn't send your reply to %1: %2", t.name || i18n("the chat"), result.message)
                 actionErrorTimer.restart()
@@ -4082,7 +4082,7 @@ PlasmoidItem {
                     const s = asked.session
                     root.notify(root.petKeyOf(s, asked.host), s, "waiting", i18n("%1 doesn't ask that any more", s.name),
                                 i18n("Nothing was answered. Open it to see what it asks now.") + "\n" + (s.cwdShort || "")
-                                + (asked.host ? " · " + asked.host : ""), "dialog-warning", asked.host, true)
+                                + (asked.host ? " · " + root.hostLabel(asked.host) : ""), "dialog-warning", asked.host, true)
                 }
             } else if (draft && result.how === "ask") {
                 root.openPane(draft.session, draft.host, "chat", { draft: draft.text })   // (its terminal takes no text: you choose there)
@@ -5120,7 +5120,7 @@ PlasmoidItem {
                 root.pictureCopies = Object.assign({}, root.pictureCopies, { [result.path]: result.local })
                 root.imagePasted(result.path, root.pictureCopyTarget)
             } else {
-                root.actionError = i18n("Couldn't copy the picture to %1: %2", root.pictureCopyingTo, result.message)
+                root.actionError = i18n("Couldn't copy the picture to %1: %2", root.hostLabel(root.pictureCopyingTo), result.message)
                 actionErrorTimer.restart()
                 if (root.pictureCopyTarget.indexOf("pane:") === 0)
                     root.paneNote(root.pictureCopyTarget, root.actionError)

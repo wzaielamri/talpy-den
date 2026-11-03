@@ -19,7 +19,7 @@ import type { Backend } from "./backend";
 import { openComparison } from "./changes";
 import { cacheDir, configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
-import { chatRefOf, doingText, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
+import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
 import { answersOf, askShownOf, chatWhere, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
@@ -603,7 +603,7 @@ class Pane implements vscode.Disposable {
         const saved = await backend.saveImage(m.mime, m.data);
         const there = saved.path && this.host ? await backend.putImage(this.host, saved.path) : saved;
         this.post({ type: "picture", id: m.id, path: there.path ?? "",
-                    error: there.path ? "" : this.host && saved.path ? `Couldn't copy the picture to ${this.host}: ${there.message}` : there.message });
+                    error: there.path ? "" : this.host && saved.path ? `Couldn't copy the picture to ${hostLabel(this.host)}: ${there.message}` : there.message });
         break;
       }
       case "screenshot":
@@ -624,7 +624,7 @@ class Pane implements vscode.Disposable {
         }
         const there = this.host ? await backend.putImage(this.host, got.path) : got;
         this.post({ type: "picture", id: m.id, path: there.path ?? "",
-                    error: there.path ? "" : `Couldn't copy the picture to ${this.host}: ${there.message}` });
+                    error: there.path ? "" : `Couldn't copy the picture to ${hostLabel(this.host)}: ${there.message}` });
         break;
       }
       case "dictate":

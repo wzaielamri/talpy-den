@@ -3,7 +3,7 @@
 // source is "" for this computer and "ssh:<host>" for an SSH host; each keeps
 // its own memory, so one poll never decides for another.
 
-import { duration, petKeyOf, plural, reasonText, stopOf } from "./shared/model";
+import { duration, hostLabel, petKeyOf, plural, reasonText, stopOf } from "./shared/model";
 import { sameAsk, shownAsk } from "./shared/pane";
 import type { AskShown, Group, PermissionAsk, PetEventKind, Session, SessionState, Stop } from "./shared/types";
 
@@ -115,7 +115,7 @@ export class TransitionTracker {
     const startedAt = this.turnStarts.get(source) ?? new Map<string, number>();
     const ended = this.lastEnded.get(source) ?? new Map<string, number>();
     const primed = before !== undefined; // the first poll of a source only learns
-    const where = host ? ` · ${host}` : "";
+    const where = host ? ` · ${hostLabel(host)}` : "";
     const queueSound = (kind: SoundKind) => {
       if (SOUND_RANK[kind] > SOUND_RANK[changes.sound]) changes.sound = kind;
     };
@@ -205,7 +205,7 @@ export class TransitionTracker {
     opts: NotifyOptions,
     queueSound: (kind: SoundKind) => void,
   ): void {
-    const where = host ? ` · ${host}` : "";
+    const where = host ? ` · ${hostLabel(host)}` : "";
     const stop = stopOf(s);
     const pk = petKeyOf(s, host);
     if (stop === "limit") changes.petEvents.push({ kind: "limit", text: `${s.name} hit the usage limit.`, key: pk });
@@ -264,7 +264,7 @@ export class TransitionTracker {
       changes.notices.push({
         key: `limit-reset|${source}|${g.id}`,
         kind: "reset",
-        title: `${host ? `${host}: ` : ""}${g.name}: the usage limit reset`,
+        title: `${host ? `${hostLabel(host)}: ` : ""}${g.name}: the usage limit reset`,
         body: plural(freed.length, `${names} can go on`, `%1 chats can go on: ${names}`),
         session: freed[0],
         host,
@@ -296,7 +296,7 @@ export class TransitionTracker {
               key: `overlap|${source}|${pair}`,
               kind: "overlap",
               title: "Two chats change the same files",
-              body: `${s.name} and ${o.name}: ${o.files.join(", ")}${o.count > o.files.length ? " …" : ""}${host ? ` · ${host}` : ""}`,
+              body: `${s.name} and ${o.name}: ${o.files.join(", ")}${o.count > o.files.length ? " …" : ""}${host ? ` · ${hostLabel(host)}` : ""}`,
               session: s,
               host,
             });

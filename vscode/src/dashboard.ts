@@ -16,7 +16,7 @@ import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";
 import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
 import { demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
-import { allGroups, containerDetail, containerOf, chatsNeedingYou, findProjectChat, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { allGroups, containerDetail, containerOf, chatsNeedingYou, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
@@ -626,7 +626,7 @@ export class Dashboard implements vscode.Disposable {
           this.setActionInfo(answer.message);
           if (this.notifier.isLeader() && !this.visible) void vscode.window.showInformationMessage(noLinks(answer.message));
         } else if (settings.notifyDone() && this.notifier.isLeader())
-          void vscode.window.showInformationMessage(noLinks(`Started on ${t.account}: ${what} — ${answer.message}${t.host ? ` · ${t.host}` : ""}`));
+          void vscode.window.showInformationMessage(noLinks(`Started on ${t.account}: ${what} — ${answer.message}${t.host ? ` · ${hostLabel(t.host)}` : ""}`));
       } else if (!answer.ok) {
         this.setActionError(`Couldn't start the queued task: ${answer.message}`);
         if (!this.visible) void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't start the queued task “${what}”: ${answer.message}`));
