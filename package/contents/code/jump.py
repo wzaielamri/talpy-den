@@ -695,10 +695,17 @@ def jump_remote_vscode_terminal(host, terminal, folder=""):
     host (terminal: the process that terminal started there): raise that
     window, then have the Talpy Den extension bring the terminal up."""
     mains, caption = vscode_connected_to(host)
+    # (a container on an SSH host: its window's exec runs there, out of sight; it's the window
+    # connected to that host whose title names the container)
+    import remote
+    there = remote.place(host).host if not mains and is_container(host) else None
+    if there:
+        mains = vscode_connected_to(there)[0]
+    none = f"This chat runs in a VS Code terminal {remote_where(host)}, and no VS Code window here is connected to it"
     if not mains:
-        return False, f"This chat runs in a VS Code terminal {remote_where(host)}, and no VS Code window here is connected to it"
+        return False, none
     if not raise_window(mains, caption, require=True, prefer=os.path.basename(folder.rstrip("/"))):
-        return False, f"Couldn't raise the VS Code window ({raise_hint()})"
+        return False, none if there else f"Couldn't raise the VS Code window ({raise_hint()})"
     if show_vscode_terminal(proc_name(mains[0]), terminal, host):
         return True, f"Switched to the VS Code terminal running this chat on {host}"
     return True, f"Switched to the VS Code window connected to {host}"
