@@ -47,6 +47,8 @@ Window {
         const n = p.questions ? p.questions.length : 0
         return n > 1 ? "decline" : n ? "question" : p.plan ? "plan" : "deny"
     }
+    readonly property bool replyDenies: replyAnswers === "deny" || replyAnswers === "decline"
+    readonly property bool replyKeepsPlanning: replyAnswers === "plan"
     // (it asks something only its own prompt can answer: a reply waits till that's answered)
     readonly property bool replyWaits: !!permission && replyAnswers === "" && (route === "tmux" || (!!row && row.kind === "bg"))
     readonly property var queued: root.queuedMessage(chatId, host)
@@ -3046,9 +3048,8 @@ Window {
                             // Claude works there, it would quit mid-turn; Send when this turn ends)
                             enabled: replyBox.text.trim() !== "" && !((pane.route === "terminal" || pane.askHow) && pane.busy)
                                      && !pane.replyWaits && !(pane.replyAnswers && pane.answering > 0)
-                            icon.name: pane.replyAnswers === "plan" ? Icons.plasma.edit : pane.replyAnswers === "deny" || pane.replyAnswers === "decline" ? Icons.plasma.deny
-                                       : Icons.plasma.send
-                            icon.color: pane.replyAnswers === "deny" || pane.replyAnswers === "decline" ? Icons.color("deny", Kirigami.Theme) : "transparent"
+                            icon.name: pane.replyDenies ? Icons.plasma.deny : pane.replyKeepsPlanning ? Icons.plasma.edit : Icons.plasma.send
+                            icon.color: pane.replyDenies ? Icons.color("deny", Kirigami.Theme) : "transparent"
                             text: pane.replyAnswers === "deny" ? i18n("Deny with this note")
                                   : pane.replyAnswers === "plan" ? i18n("Keep planning with this note")
                                   : pane.replyAnswers === "question" ? i18n("Send as your answer")
