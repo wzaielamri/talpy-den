@@ -1729,6 +1729,17 @@ class LaneTests(unittest.TestCase):
 class ProjectTests(unittest.TestCase):
     """The Projects tab (week.projects): chats, plans and memories by project, newest first."""
 
+    def test_a_worktrees_chat_is_its_repositorys(self):
+        home = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(home))
+        repo, wt = home / "repo", home / "repo/.claude/worktrees/w1"
+        (repo / ".git/worktrees/w1").mkdir(parents=True)
+        (wt / "src").mkdir(parents=True)
+        (wt / ".git").write_text("gitdir: %s\n" % (repo / ".git/worktrees/w1"))
+        (repo / ".git/worktrees/w1/commondir").write_text("../..\n")
+        (repo / ".git/worktrees/w1/gitdir").write_text("%s\n" % (wt / ".git"))
+        self.assertEqual(week.project_of(str(wt / "src"), home, {}), str(repo))
+
     def test_projects_with_their_chats_plans_and_memories_newest_first(self):
         now = 100 * 86400_000
         home = Path(tempfile.mkdtemp())

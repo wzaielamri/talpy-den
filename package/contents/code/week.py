@@ -1052,10 +1052,13 @@ def account_ids(profiles):
 
 def project_of(folder, home, roots):
     """The project a chat's folder belongs to: its git repository's folder
-    (a chat started in a subfolder counts for it), else the folder itself."""
+    (a chat started in a subfolder counts for it; one in a worktree, for the
+    repository it's a worktree of, as Claude's settings and trust do), else
+    the folder itself."""
     if folder not in roots:
         try:
             root = cs.git_root(Path(folder)) if folder.startswith("/") else None
+            root = cs.main_repository(root) if root is not None else None
         except OSError:
             root = None
         roots[folder] = str(root) if root is not None and root != home and root.parent != root else folder
