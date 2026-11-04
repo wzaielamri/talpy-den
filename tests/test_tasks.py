@@ -2768,7 +2768,7 @@ class MarkdownTests(Fixture):
     def open(self, app, which=("okular", "xdg-open", "code"), name="run.md", folder=None):
         started = []
         if app:
-            write(self.cache / "talpy-den/settings.json", {"at": 1, "by": "x", "values": {"markdownApp": app}})
+            write(cs.state_dir(self.cache / "talpy-den") / "settings.json", {"at": 1, "by": "x", "values": {"markdownApp": app}})
         path = (folder or self.cache / "talpy-den/agent-runs") / name
         write(path, "# Run\n\nDone.\n")
         self.cache.mkdir(parents=True, exist_ok=True)
@@ -2806,7 +2806,7 @@ class MarkdownTests(Fixture):
 
     def edit(self, app, defaults, which=("xdg-open", "gtk-launch", "code")):
         started = []
-        write(self.cache / "talpy-den/settings.json", {"at": 1, "by": "x", "values": {"markdownApp": app or "auto"}})
+        write(cs.state_dir(self.cache / "talpy-den") / "settings.json", {"at": 1, "by": "x", "values": {"markdownApp": app or "auto"}})
         path = self.home / "plan.md"
         with mock.patch.object(jump, "start_app", lambda args, cwd=None: started.append(args)), \
                 mock.patch.object(jump.cs, "cache_dir", return_value=self.cache / "talpy-den"), \

@@ -6,7 +6,7 @@ allow, Deny with a note) as well as in the chat; and Claude's questions
 
 Claude runs it whenever a chat asks for a permission, side by side with its
 own dialog: whichever is answered first counts. It writes the request to
-~/.cache/talpy-den/permissions/<id>.json and waits for Talpy Den's
+~/.local/state/talpy-den/permissions/<id>.json and waits for Talpy Den's
 answer (<id>.answer.json, written by pane.py --answer). It ends without a
 word, so the dialog alone decides, once the chat stops waiting (you
 answered it there), when its Claude is gone, or when no dialog shows a few
@@ -25,7 +25,7 @@ import time
 
 # This file's version: a status check brings an older copy of it in
 # ~/.local/share/talpy-den up to date (talpy_den.refresh_hooks)
-HOOK_REVISION = 2
+HOOK_REVISION = 3
 POLL_S = 0.3
 STATE_EVERY_S = 1.0
 NO_DIALOG_S = 5.0  # a chat that isn't waiting by then asks only after its hooks: let it
@@ -63,7 +63,15 @@ def claude_pid():
 
 
 def cache_root():
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    # (Talpy Den's state folder, not its cache: whoever may write ~/.cache, a
+    # container given it, mustn't be able to answer for you. Beside the
+    # cache, as talpy_den.state_dir has it: ~/.local/state for ~/.cache)
+    base = os.environ.get("XDG_STATE_HOME")
+    if not base:
+        cache = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+        cache = os.path.normpath(cache)
+        base = (os.path.join(os.path.dirname(cache), ".local", "state") if os.path.basename(cache) == ".cache"
+                else os.path.join(cache, "state"))
     return os.path.join(base, "talpy-den", "permissions")
 
 

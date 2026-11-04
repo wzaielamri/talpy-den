@@ -341,14 +341,14 @@ def label(ident):
 
 
 def containers_file():
-    return cs.cache_dir(Path.home()) / "containers.json"
+    return cs.state_dir(cs.cache_dir(Path.home())) / "containers.json"
 
 
 def change_containers_file(change):
     """change(saved) on containers.json (the users in containers, the hosts'
     container lists, which engine `docker` is), under a lock: two checks
     at once don't lose each other's (talpy_den.change_containers_file)."""
-    cs.change_containers_file(containers_file().parent, change)
+    cs.change_containers_file(cs.cache_dir(Path.home()), change)
 
 
 def remember_users(found, inspected=False):

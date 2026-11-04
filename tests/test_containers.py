@@ -256,9 +256,9 @@ class ListTests(FakeEngines):
         # (one call for all of Podman's)
         self.assertEqual({tuple(c[:3]) for c in self.engine_calls()}, {("podman", "ps", "-a")})
         # each one's id is kept (its user to work as: from an inspect)
-        users = json.loads((cs.cache_dir(Path.home()) / "containers.json").read_text())["users"]
+        users = json.loads(remote.containers_file().read_text())["users"]
         self.assertEqual(users["podman:dev"], {"cid": self.container("dev")["id"]})
-        self.assertEqual(oct((cs.cache_dir(Path.home()) / "containers.json").stat().st_mode & 0o777), "0o600")
+        self.assertEqual(oct(remote.containers_file().stat().st_mode & 0o777), "0o600")
 
     def test_docker_names_them_then_one_inspect(self):
         self.engine("docker")
@@ -280,16 +280,16 @@ class ListTests(FakeEngines):
         out = remote.containers_here(30)
         self.assertEqual(sorted((c["id"], c["viaDocker"]) for c in out["containers"]), [("nerdctl:web", False), ("podman:web", True)])
         self.assertNotIn("docker", {c[0] for c in self.engine_calls()})
-        engines = json.loads((cs.cache_dir(Path.home()) / "containers.json").read_text())["engines"]
+        engines = json.loads(remote.containers_file().read_text())["engines"]
         self.assertEqual(list(engines.values())[0]["engine"], "podman")
         # what it found is kept readable only by you
-        (cs.cache_dir(Path.home()) / "containers.json").unlink()
+        remote.containers_file().unlink()
         umask = os.umask(0o022)
         try:
             cs.container_engines(cs.cache_dir(Path.home()))
         finally:
             os.umask(umask)
-        self.assertEqual((cs.cache_dir(Path.home()) / "containers.json").stat().st_mode & 0o777, 0o600)
+        self.assertEqual(remote.containers_file().stat().st_mode & 0o777, 0o600)
         # a link named docker to podman too
         (self.engines / "docker").unlink()
         (self.engines / "docker").symlink_to(podman)

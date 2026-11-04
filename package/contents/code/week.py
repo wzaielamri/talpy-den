@@ -1570,7 +1570,7 @@ def claude_did(chats, lo, hi):
 # flagged (safetyCheck), what you refused, nor anything under /tmp or a
 # Claude config folder.
 
-RULES_FILE = "rules.json"  # in the widget's cache: the rules this tab added, to undo them
+RULES_FILE = "rules.json"  # in the state folder (cs.state_dir): the rules this tab added, to undo them
 TOP_RULES = 6
 # (a rule takes any options: not rg, tree, git branch/diff/log/show, whose
 # --pre, -o, -D and --output run programs, write files or delete branches)
@@ -1729,7 +1729,7 @@ def permission_prompts(chats, lo, hi, home, added=(), profiles=None):
 
 
 def load_added(cache_root):
-    data = cs.read_json(cache_root / RULES_FILE)
+    data = cs.read_json(cs.state_dir(cache_root) / RULES_FILE)
     return [a for a in data.get("added", [])] if isinstance(data, dict) and isinstance(data.get("added"), list) else []
 
 
@@ -1797,7 +1797,7 @@ def allow_rule(home, cache_root, kind, value, project):
         perms.setdefault("allow", []).append(value)
     write_settings(path, data)
     added = [a for a in load_added(cache_root) if a.get("id") != note["id"]] + [note]
-    cs.write_json_atomic(cache_root / RULES_FILE, {"added": added})
+    cs.write_json_atomic(cs.state_dir(cache_root) / RULES_FILE, {"added": added})
     return True, "%s: done (%s)" % (rule_title(kind, value, project, home), rule_change(kind, value, project, home)), note["id"]
 
 
@@ -1829,7 +1829,7 @@ def undo_rule(home, cache_root, rid):
             path.unlink()  # (the file this tab made, empty again)
         else:
             write_settings(path, data)
-    cs.write_json_atomic(cache_root / RULES_FILE, {"added": [a for a in added if a.get("id") != rid]})
+    cs.write_json_atomic(cs.state_dir(cache_root) / RULES_FILE, {"added": [a for a in added if a.get("id") != rid]})
     return True, "Taken back: %s" % rule_title(note["kind"], note["value"], note["project"], home)
 
 

@@ -1222,6 +1222,25 @@ class ContentFileTests(Fixture):
         self.assertIn("Deep one", [c["name"] for g in result["groups"] for c in g["recent"]])
 
 
+class StateTests(Fixture):
+    def test_what_talpy_den_acts_on_is_kept_out_of_the_cache(self):
+        # (a container given ~/.cache could queue a task there, or change the settings every copy takes)
+        write(self.cache / "queue.json", {"tasks": [{"id": "task1", "prompt": "mine"}]})
+        write(self.cache / "settings.json", {"at": 1, "by": "x", "values": {"usageCap": 80}})
+        self.assertEqual([t["id"] for t in cs.load_queue(self.cache)], ["task1"])  # (moved over, once)
+        self.assertEqual(cs.shared_settings(self.cache)["values"], {"usageCap": 80})
+        self.assertFalse((self.cache / "queue.json").exists() or (self.cache / "settings.json").exists())
+        write(self.cache / "queue.json", {"tasks": [{"id": "task2", "prompt": "planted"}]})
+        cs._STATE.clear()  # (as a new check)
+        self.assertEqual([t["id"] for t in cs.load_queue(self.cache)], ["task1"])
+        self.assertEqual(oct(cs.state_dir(self.cache).stat().st_mode & 0o777), "0o700")
+        fresh = Path(self.tmp.name) / "fresh/.cache/talpy-den"  # (nothing kept yet: one put there later isn't taken either)
+        cs.state_dir(fresh)
+        write(fresh / "keep.json", {"chats": [{"chat": "planted"}]})
+        cs._STATE.clear()
+        self.assertEqual(cs.load_keep(fresh)["chats"], [])
+
+
 class RecentProjectTests(Fixture):
     def test_newest_first_skipping_gone_and_scratch_folders(self):
         real_a, real_b = self.home / "repos/a", self.home / "repos/b"
@@ -1565,7 +1584,7 @@ class SeveralWidgetsTests(unittest.TestCase):
         shared = cs.shared_settings(self.root)
         self.assertEqual((shared["at"], shared["by"], shared["values"]["sshHosts"]), (2000, "panel", "lab"))
         self.assertNotIn("bogus", shared["values"])
-        self.assertEqual(oct((self.root / "settings.json").stat().st_mode & 0o777), "0o600")
+        self.assertEqual(oct((cs.state_dir(self.root) / "settings.json").stat().st_mode & 0o777), "0o600")
 
     def test_through_the_status_check(self):
         home = Path(self.tmp.name) / "home"

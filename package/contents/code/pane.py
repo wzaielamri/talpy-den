@@ -652,7 +652,8 @@ def answer_request(cache_root, request_id, decision, note="", answers=None):
         return False, f"Not an answer: {decision}"
     if not re.fullmatch(r"[0-9]+-[0-9a-f]{8}", request_id or ""):
         return False, f"Not a request: {request_id}"
-    folder = cs.requests_dir(cache_root)
+    folder = next((d for d in cs.request_dirs(cache_root) if os.path.isfile(d / (request_id + ".json"))),
+                  cs.requests_dir(cache_root))  # (where its hook waits for the answer)
     req = cs.read_json(folder / (request_id + ".json"))
     if not isinstance(req, dict) or not cs.pid_alive(req.get("hookPid")):
         return False, NOT_ASKING

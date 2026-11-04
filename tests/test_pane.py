@@ -735,7 +735,7 @@ class HookTests(unittest.TestCase):
         write(self.state, {"pid": os.getpid(), "status": "waiting"})
 
     def env(self):
-        return dict(os.environ, HOME=str(self.home), XDG_CACHE_HOME=str(self.cache),
+        return dict(os.environ, HOME=str(self.home), XDG_CACHE_HOME=str(self.cache), XDG_STATE_HOME=str(self.cache / "state"),
                     CLAUDE_CONFIG_DIR=str(self.home / ".claude-x"))
 
     def start(self, tool="Bash", inp=None, suggestions=None):
@@ -764,7 +764,7 @@ class HookTests(unittest.TestCase):
         decision = out["hookSpecificOutput"]["decision"]
         self.assertEqual(decision["behavior"], "allow")
         self.assertEqual(decision["updatedPermissions"][0]["rules"][0]["ruleContent"], "make")
-        self.assertEqual(list((self.cache / "talpy-den/permissions").iterdir()), [])
+        self.assertEqual(list(cs.requests_dir(self.cache / "talpy-den").iterdir()), [])
 
     def test_answered_in_the_chat(self):
         hook, request = self.start()
@@ -776,7 +776,7 @@ class HookTests(unittest.TestCase):
         self.assertIn("isn't asking any more", message)
         # the front ends hear it may ask something else now (as with --keys --expect)
         out = io.StringIO()
-        with mock.patch.dict(os.environ, {"HOME": str(self.home), "XDG_CACHE_HOME": str(self.cache)}), \
+        with mock.patch.dict(os.environ, {"HOME": str(self.home), "XDG_CACHE_HOME": str(self.cache), "XDG_STATE_HOME": str(self.cache / "state")}), \
                 contextlib.redirect_stdout(out):
             pane.main(["--answer", request["id"], "--decision", "allow"])
         self.assertEqual(json.loads(out.getvalue()), {"ok": False, "message": message, "changed": True})
@@ -900,7 +900,7 @@ class HookTests(unittest.TestCase):
         self.assertEqual(pane.answer_request(cache, old["id"], "deny"), (False, "It asks something else now"))
         self.assertIsNone(first.poll())
         out = io.StringIO()
-        with mock.patch.dict(os.environ, {"HOME": str(self.home), "XDG_CACHE_HOME": str(self.cache)}), \
+        with mock.patch.dict(os.environ, {"HOME": str(self.home), "XDG_CACHE_HOME": str(self.cache), "XDG_STATE_HOME": str(self.cache / "state")}), \
                 contextlib.redirect_stdout(out):
             pane.main(["--answer", old["id"], "--decision", "deny"])
         self.assertEqual(json.loads(out.getvalue()), {"ok": False, "message": "It asks something else now", "changed": True})

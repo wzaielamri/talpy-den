@@ -2657,7 +2657,24 @@ def chat_tool_use(home, extra_dirs, session_id, profile_key=None):
 
 
 def requests_dir(cache_root):
-    return cache_root / PERMISSIONS
+    """Where the permission hook writes its requests and reads your answers:
+    the state folder (state_dir), never the cache."""
+    return state_dir(cache_root) / PERMISSIONS
+
+
+def names_in(folder):
+    """os.listdir(folder), [] when there's none."""
+    try:
+        return os.listdir(folder)
+    except OSError:
+        return []
+
+
+def request_dirs(cache_root):
+    """requests_dir, then the cache's permissions/, where a copy of the hook
+    older than this one still writes (on an SSH host, until it's turned on
+    again there): what it asks still shows, and your answer goes beside it."""
+    return [requests_dir(cache_root), Path(cache_root) / PERMISSIONS]
 
 
 def pid_alive(pid):
@@ -2679,13 +2696,8 @@ def permission_requests(cache_root, now_ms=None):
     the chat stops waiting, so when the chat asks again at once, the older
     request is one it doesn't show any more."""
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
-    folder = requests_dir(cache_root)
-    try:
-        names = os.listdir(folder)
-    except OSError:
-        return {}
     out = {}
-    for name in sorted(names):
+    for folder, name in [(d, n) for d in request_dirs(cache_root) for n in sorted(names_in(d))]:
         if not name.endswith(".json") or name.endswith(".answer.json"):
             continue
         path = folder / name
@@ -4203,7 +4215,7 @@ QUEUE_PROMPT_MAX = 100_000
 
 
 def load_queue(cache_root):
-    data = read_json(cache_root / "queue.json")
+    data = read_json(state_dir(cache_root) / "queue.json")
     tasks = data.get("tasks") if isinstance(data, dict) else None
     return [t for t in tasks if isinstance(t, dict) and valid_id(t.get("id"))] if isinstance(tasks, list) else []
 
@@ -4213,13 +4225,14 @@ def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edi
     the same chat is queued already), take one out by its id (returned), or
     put one back (e.g. with the error it got); edit(tasks) changes the
     tasks in place and says whether it did. The task taken out, or None."""
-    private_dir(cache_root)
-    with open(cache_root / "queue.lock", "a") as lock:
+    state = state_dir(cache_root)
+    private_dir(state)
+    with open(state / "queue.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         tasks = load_queue(cache_root)
         taken = None
         if edit is not None and edit(tasks):
-            write_json_atomic(cache_root / "queue.json", {"tasks": tasks})
+            write_json_atomic(state / "queue.json", {"tasks": tasks})
         if take is not None:
             taken = next((t for t in tasks if t["id"] == take), None)
             tasks = [t for t in tasks if t["id"] != take]
@@ -4231,7 +4244,7 @@ def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edi
         if add is not None:
             tasks.append(add)
         if add is not None or taken is not None or put_back is not None:
-            write_json_atomic(cache_root / "queue.json", {"tasks": tasks})
+            write_json_atomic(state / "queue.json", {"tasks": tasks})
         return taken
 
 
@@ -4316,7 +4329,7 @@ KEEP_HOST_STALE_MS = 15 * 60_000
 def load_keep(cache_root):
     """{"chats": the chats that keep going, "capped": {account|window: when
     that window resets}, for the windows the usage cap stopped chats in}."""
-    data = read_json(cache_root / "keep.json")
+    data = read_json(state_dir(cache_root) / "keep.json")
     data = data if isinstance(data, dict) else {}
     chats = data.get("chats") if isinstance(data.get("chats"), list) else []
     capped = data.get("capped") if isinstance(data.get("capped"), dict) else {}
@@ -4333,15 +4346,16 @@ def change_keep(cache_root, change, wait=True):
     """Change keep.json under a lock: change(data) changes it in place and
     says whether it did. False (nothing done) when another copy has the lock
     and wait is False: it looks after the chats right now."""
-    private_dir(cache_root)
-    with open(cache_root / "keep.lock", "a") as lock:
+    state = state_dir(cache_root)
+    private_dir(state)
+    with open(state / "keep.lock", "a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except BlockingIOError:
             return False
         data = load_keep(cache_root)
         if change(data):
-            write_json_atomic(cache_root / "keep.json", data)
+            write_json_atomic(state / "keep.json", data)
         return True
 
 
@@ -7879,7 +7893,7 @@ def config_defaults(main_xml=None):
 
 def shared_settings(cache_root):
     """The settings the widgets share: {"at", "by", "values"}, or None."""
-    data = read_json(cache_root / "settings.json")
+    data = read_json(state_dir(cache_root) / "settings.json")
     if not isinstance(data, dict) or not isinstance(data.get("values"), dict) or number(data.get("at")) is None:
         return None
     return {"at": data["at"], "by": str(data.get("by") or ""), "values": data["values"]}
@@ -7893,9 +7907,9 @@ def save_shared_settings(cache_root, by, values, now_ms, unless_default=False):
     values = {k: v for k, v in values.items() if k in defaults} if defaults else dict(values)
     if unless_default and defaults and all(values.get(k, d) == d for k, d in defaults.items()):
         return False, "Nothing set up yet"
-    private_dir(cache_root)
-    write_json_atomic(cache_root / "settings.json", {"at": now_ms, "by": by, "values": values})
-    os.chmod(cache_root / "settings.json", 0o600)  # your SSH hosts are in it
+    state = state_dir(cache_root)
+    private_dir(state)
+    write_json_atomic(state / "settings.json", {"at": now_ms, "by": by, "values": values}, private=True)  # (your SSH hosts are in it)
     return True, "Settings saved"
 
 
@@ -8918,6 +8932,83 @@ class ScanLock:
 
 def cache_dir(home):
     return Path(os.environ.get("XDG_CACHE_HOME") or home / ".cache") / "talpy-den"
+
+
+# What Talpy Den acts on by itself is kept apart from the cache: other
+# programs are sometimes given ~/.cache (a container sharing pip's
+# downloads), and must not be able to queue a task, keep a chat going, change
+# the settings every copy takes over, the rules the Permissions tab undoes,
+# which user Talpy Den works as in a container or the containers VS Code may
+# attach to, nor answer a permission prompt.
+STATE_FILES = ("queue.json", "keep.json", "settings.json", "rules.json", "containers.json")
+_STATE = {}  # (state_dir's answers)
+
+
+def state_dir(cache_root):
+    """The folder of what Talpy Den acts on (STATE_FILES, the permission
+    hook's requests), beside the cache folder: $XDG_STATE_HOME/talpy-den for
+    the usual cache when that's set, else ~/.local/state/talpy-den for
+    ~/.cache/talpy-den (<home>/.local/state/<name> for any <home>/.cache/<name>),
+    state/<name> in the folder of any other cache folder <name> (as the
+    permission hook finds it). What an older version kept in the cache moves
+    there the first time (move_to_state)."""
+    key = (str(cache_root), os.environ.get("XDG_CACHE_HOME"), os.environ.get("XDG_STATE_HOME"), os.environ.get("HOME"))
+    state = _STATE.get(key)  # (worked out once a run)
+    if state is None:
+        cache_root = Path(cache_root)
+        usual = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "talpy-den"
+        if os.environ.get("XDG_STATE_HOME") and cache_root == usual:
+            state = Path(os.environ["XDG_STATE_HOME"]) / "talpy-den"
+        elif cache_root.parent.name == ".cache":
+            state = cache_root.parent.parent / ".local" / "state" / cache_root.name
+        else:
+            state = cache_root.parent / "state" / cache_root.name
+        _STATE[key] = state
+        if not os.path.exists(state / ".moved"):
+            move_to_state(cache_root, state)
+    return state
+
+
+def move_to_state(cache_root, state):
+    """STATE_FILES an older version kept in the cache move to state, at the
+    first check (.moved notes it, so one put in the cache later is never
+    taken): under a lock, so two checks starting at once move them once and
+    anything else needing them waits until they're there. A file already in
+    state stays; the cache's copy goes either way."""
+    there = [n for n in STATE_FILES if os.path.lexists(cache_root / n)]
+    try:  # (made now, with nothing to move too: only what an older version left is ever taken)
+        private_dir(state)
+        fd = os.open(str(state / ".moved.lock"), os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0), 0o600)
+    except OSError:
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        if os.path.exists(state / ".moved"):
+            return
+        for name in there:
+            old, new = cache_root / name, state / name
+            try:
+                if not os.path.lexists(new):
+                    data = read_plain(old)  # (a plain file only, as one of ours is)
+                    if data is not None:
+                        try:
+                            os.rename(old, new)  # (in one go; another disk: a copy)
+                            continue
+                        except OSError:
+                            write_atomic(new, data, 0o600, new=True)
+                os.unlink(old)
+            except OSError:
+                pass
+        for name in ("queue.lock", "keep.lock", ".containers.lock"):  # (theirs: unused now)
+            try:
+                os.unlink(cache_root / name)
+            except OSError:
+                pass
+        os.close(os.open(str(state / ".moved"), os.O_CREAT | os.O_WRONLY, 0o600))
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def adopt_legacy_dirs(home):
@@ -9985,10 +10076,12 @@ def engine_clone(path, cache):
 def change_containers_file(cache_root, change):
     """change(saved) on cache_root's containers.json (the users in
     containers, the hosts' container lists, which engine `docker` is), under
-    a lock: two checks at once don't lose each other's. Only you can read it."""
-    path = cache_root / "containers.json"
-    private_dir(cache_root)
-    fd = os.open(str(cache_root / ".containers.lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    a lock: two checks at once don't lose each other's. Only you can read it
+    (in the state folder: it says which user to work as in a container)."""
+    state = state_dir(cache_root)
+    path = state / "containers.json"
+    private_dir(state)
+    fd = os.open(str(state / ".containers.lock"), os.O_CREAT | os.O_RDWR, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         saved = read_json(path)
@@ -10009,7 +10102,7 @@ def container_engines(cache_root):
     found = {e: p for e, p in found.items() if p}
     really = ""
     if "docker" in found:
-        saved = read_json(cache_root / "containers.json")
+        saved = read_json(state_dir(cache_root) / "containers.json")
         saved = saved if isinstance(saved, dict) else {}
         clones = saved.get("engines") if isinstance(saved.get("engines"), dict) else {}
         before = json.dumps(clones, sort_keys=True)
