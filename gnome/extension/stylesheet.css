@@ -263,6 +263,4 @@
 .claude-limits-num { min-width: 4.5em; text-align: right; }
 .claude-limits-event { spacing: 6px; }
 .claude-limits-event-bar { width: 2px; background-color: rgba(245, 121, 0, 0.85); }
-.claude-limits-charts { spacing: 12px; margin-top: 4px; }
-.claude-limits-weeks { width: 9em; }
-.claude-limits-mix { width: 8em; }
+.claude-limits-chart { spacing: 2px; margin-top: 4px; }

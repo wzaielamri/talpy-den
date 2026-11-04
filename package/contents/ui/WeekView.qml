@@ -23,7 +23,7 @@ PlasmaComponents3.ScrollView {
 
     readonly property var recap: root.weekRecap
     readonly property string span: root.weekSpan   // the one picked (its answer may still come)
-    readonly property bool weeks: !!recap && recap.span === "all"   // a row per 7 days, with their numbers
+    readonly property bool weeks: !!recap && (recap.span === "month" || recap.span === "all")   // a row per 7 days, with their numbers
     readonly property var days: recap ? recap.days : []
     readonly property var sum: recap ? recap.sum : null
     readonly property var previous: recap && recap.previous && (recap.previous.workedMs || recap.previous.prompts
@@ -159,6 +159,8 @@ PlasmaComponents3.ScrollView {
     readonly property var limitsData: root.limitsAccount === root.weekAccount ? root.limitsData : null
     readonly property var limitsShown: limitsData ? limitsData.accounts.filter(a => a.periods.length) : []
     readonly property bool limitsCompared: limitsShown.length > 1 && new Set(limitsShown.map(a => a.plan)).size > 1
+    readonly property real limitsNow: limitsData ? limitsData.generatedAt : 0
+    readonly property real limitsStart: Limits.start(limitsShown, limitsNow)
     readonly property var emptyLimits: ({ id: "", name: "", plan: "", periods: [], windows: [], events: [], changes: {},
                                           now: { fiveHour: null, share: null, fill: null, tokens: null, weeks: {} },
                                           equivalents: null })
@@ -236,10 +238,17 @@ PlasmaComponents3.ScrollView {
                     five ? i18n("a 5-hour window") : i18n("a week"))
                + (five && week ? "; " + i18n("%1 a week", tokens(week.output)) : "") + ", " + i18n("at API prices")
     }
+    // The legend under what filled a window: a part's words, and the total
+    function limitPartText(part) {
+        return part.kind === "cacheRead" ? i18n("cache reads %1", shareText(part.share))
+             : part.kind === "fresh" ? i18n("new input and cache writes %1", shareText(part.share))
+             : i18n("output %1", shareText(part.share))
+    }
     function limitMixText(m) {
-        return m.parts.length ? i18n("%1 tokens filled one: %2 cache reads, %3 new input and cache writes, %4 output",
-                                     tokens(Math.round(m.total)), shareText(m.parts[0].share), shareText(m.parts[1].share),
-                                     shareText(m.parts[2].share)) : ""
+        return m.parts.length ? i18n("%1 tokens fill a 5-hour window", tokens(Math.round(m.total))) : ""
+    }
+    function limitPartColor(kind) {
+        return kind === "output" ? workColor : kind === "fresh" ? waitColor : youColor
     }
     // A window's size: whole amounts from 10 up ("$48", "€1,180")
     function limitMoney(usd) {
@@ -1196,456 +1205,6 @@ PlasmaComponents3.ScrollView {
             }
         }
 
-        // Advanced analyses (folded until you open it): how much a full window
-        // of each account's plan held, week by week, and how that changed
-        ColumnLayout {
-            id: limitsSection
-            Layout.fillWidth: true
-            visible: view.hasData && view.recap.back === 0
-            spacing: Math.round(view.gu * 0.2)
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.topMargin: Math.round(view.gu * 0.7)
-                spacing: Math.round(view.gu * 0.35)
-
-                Kirigami.Separator {
-                    Layout.fillWidth: true
-                }
-                Item {
-                    Layout.fillWidth: true
-                    implicitHeight: limitsHead.implicitHeight
-
-                    RowLayout {
-                        id: limitsHead
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        spacing: Kirigami.Units.smallSpacing
-
-                        Kirigami.Icon {
-                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                            Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                            source: root.limitsOpen ? Icons.plasma.unfolded : Icons.plasma.folded
-                            opacity: 0.6
-                        }
-                        Kirigami.Heading {
-                            textFormat: Text.PlainText
-                            level: 2
-                            font.weight: Font.Bold
-                            text: i18n("Advanced analyses")
-                        }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            text: "· " + i18n("your plan's limits over time · estimates")
-                            elide: Text.ElideRight
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.6
-                        }
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.toggleLimits()
-                    }
-                }
-            }
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                visible: root.limitsOpen && !view.limitsData
-                text: root.limitsError ? i18n("Couldn't work it out: %1", root.limitsError)
-                                       : i18n("Working out how much your plan's windows held, from your chats and the limit readings kept.")
-                color: root.limitsError ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-                opacity: root.limitsError ? 1 : 0.6
-                wrapMode: Text.Wrap
-            }
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                visible: root.limitsOpen && !!view.limitsData && view.limitsShown.length === 0
-                text: i18n("Not enough readings yet: a few 5-hour windows used past half tell how much one holds.")
-                opacity: 0.6
-                wrapMode: Text.Wrap
-            }
-            // (two plans or more: side by side)
-            GridLayout {
-                Layout.fillWidth: true
-                visible: root.limitsOpen && view.limitsCompared
-                columns: 4
-                columnSpacing: Kirigami.Units.largeSpacing
-                rowSpacing: 0
-
-                Repeater {
-                    model: [i18n("Plan"), i18n("5-hour"), i18n("Week"), i18n("5-hour share")]
-                    delegate: PlasmaComponents3.Label {
-                        required property var modelData
-                        required property int index
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: index === 0
-                        horizontalAlignment: index ? Text.AlignRight : Text.AlignLeft
-                        text: modelData
-                        font.bold: true
-                        opacity: 0.75
-                    }
-                }
-                Repeater {
-                    model: view.limitsCompared ? view.limitsShown.length * 4 : 0
-                    delegate: PlasmaComponents3.Label {
-                        required property int index
-                        readonly property var account: view.limitsShown[Math.floor(index / 4)] || view.emptyLimits
-                        readonly property int column: index % 4
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: column === 0
-                        horizontalAlignment: column ? Text.AlignRight : Text.AlignLeft
-                        elide: Text.ElideRight
-                        text: column === 0 ? account.name + " · " + (account.plan || "?")
-                            : column === 1 ? (account.now.fiveHour ? view.limitMoney(account.now.fiveHour.cost) : "–")
-                            : column === 2 ? (account.now.weeks.seven_day ? view.limitMoney(account.now.weeks.seven_day.cost) : "–")
-                            : (account.now.share ? Math.round(account.now.share.pct) + "%" : "–")
-                    }
-                }
-            }
-            Repeater {
-                model: root.limitsOpen ? view.limitsShown.length : 0
-                delegate: ColumnLayout {
-                    id: limitsOf
-                    required property int index
-                    readonly property var account: view.limitsShown[index] || view.emptyLimits
-                    readonly property var chart: Limits.dots(account, view.limitsData ? view.limitsData.generatedAt : 0)
-                    readonly property var bars: Limits.weekBars(account)
-                    readonly property var mix: Limits.mix(account.now.tokens)
-                    Layout.fillWidth: true
-                    Layout.topMargin: Math.round(view.gu * 0.4)
-                    spacing: Math.round(view.gu * 0.2)
-
-                    component Subtitle: PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        Layout.topMargin: Math.round(view.gu * 0.3)
-                        font.bold: true
-                        opacity: 0.75
-                    }
-
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        text: (view.limitsShown.length > 1 ? limitsOf.account.name + " · " : "") + (limitsOf.account.plan || "")
-                        font.bold: true
-                        elide: Text.ElideRight
-                    }
-                    Repeater {
-                        model: limitsOf.account.events.length
-                        delegate: RowLayout {
-                            id: eventLine
-                            required property int index
-                            readonly property var event: limitsOf.account.events[index]
-                            Layout.fillWidth: true
-                            spacing: Kirigami.Units.smallSpacing
-
-                            Rectangle {
-                                Layout.preferredWidth: 2
-                                Layout.fillHeight: true
-                                color: view.waitColor
-                            }
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.fillWidth: true
-                                text: view.limitEventText(eventLine.event)
-                                font: Kirigami.Theme.smallFont
-                                wrapMode: Text.Wrap
-
-                                PlasmaCore.ToolTipArea {
-                                    anchors.fill: parent
-                                    textFormat: Text.PlainText
-                                    mainText: view.limitEventText(eventLine.event)
-                                    subText: view.limitEventTip(eventLine.event)
-                                }
-                            }
-                        }
-                    }
-                    Subtitle {
-                        text: i18n("How your limits changed")
-                    }
-                    Repeater {
-                        model: Limits.keys(limitsOf.account)
-                        delegate: Item {
-                            id: sizeLine
-                            required property var modelData
-                            readonly property var size: Limits.now(limitsOf.account, modelData)
-                            Layout.fillWidth: true
-                            implicitHeight: sizeRow.implicitHeight
-
-                            RowLayout {
-                                id: sizeRow
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                spacing: Kirigami.Units.smallSpacing
-
-                                PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
-                                    Layout.preferredWidth: view.gu * 7
-                                    text: view.limitLabel(sizeLine.modelData)
-                                    elide: Text.ElideRight
-                                }
-                                PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
-                                    Layout.preferredWidth: view.gu * 4.5
-                                    horizontalAlignment: Text.AlignRight
-                                    text: (sizeLine.size.value && sizeLine.size.value.scaled ? "≈ " : "")
-                                          + view.limitMoney(sizeLine.size.value ? sizeLine.size.value.cost : 0)
-                                    font.bold: true
-                                }
-                                PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
-                                    Layout.fillWidth: true
-                                    text: view.limitChangeText(sizeLine.size.change)
-                                    font: Kirigami.Theme.smallFont
-                                    color: Limits.bad(sizeLine.size.change) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-                                    opacity: Limits.bad(sizeLine.size.change) ? 1 : 0.6
-                                    wrapMode: Text.Wrap
-                                }
-                            }
-                            PlasmaCore.ToolTipArea {
-                                anchors.fill: parent
-                                textFormat: Text.PlainText
-                                mainText: view.limitLabel(sizeLine.modelData)
-                                subText: view.limitSizeTip(sizeLine.modelData, limitsOf.account)
-                            }
-                        }
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: limitsOf.chart.dots.length > 0 || limitsOf.bars.length > 0
-                        spacing: Kirigami.Units.largeSpacing
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredWidth: 3
-                            visible: limitsOf.chart.dots.length > 0
-                            spacing: 2
-
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.fillWidth: true
-                                text: i18n("5-hour windows · %1 to %2", view.limitMoney(limitsOf.chart.lo), view.limitMoney(limitsOf.chart.top))
-                                font: Kirigami.Theme.smallFont
-                                opacity: 0.6
-                                elide: Text.ElideRight
-                            }
-                            Canvas {
-                                id: dotsChart
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: Math.round(view.gu * 2.6)
-                                onWidthChanged: requestPaint()
-                                Connections {
-                                    target: limitsOf
-                                    function onChartChanged() {
-                                        dotsChart.requestPaint()
-                                    }
-                                }
-                                onPaint: {
-                                    const ctx = getContext("2d")
-                                    ctx.reset()
-                                    const w = width, h = height, c = limitsOf.chart
-                                    const y = v => h - 3.5 - v * (h - 7)
-                                    ctx.fillStyle = view.grid
-                                    ctx.fillRect(0, 0, w, h)
-                                    ctx.fillStyle = view.waitColor
-                                    for (const x of c.marks)
-                                        ctx.fillRect(Math.round(x * w), 0, 1, h)
-                                    ctx.strokeStyle = view.youColor
-                                    ctx.lineWidth = 2
-                                    for (const m of c.medians) {
-                                        ctx.beginPath()
-                                        ctx.moveTo(m.x1 * w, y(m.y))
-                                        ctx.lineTo(m.x2 * w, y(m.y))
-                                        ctx.stroke()
-                                    }
-                                    ctx.fillStyle = view.workColor
-                                    for (const d of c.dots) {
-                                        ctx.beginPath()
-                                        ctx.arc(Math.max(3.5, Math.min(w - 3.5, d.x * w)), y(d.y), 3.5, 0, 2 * Math.PI)
-                                        ctx.fill()
-                                    }
-                                }
-                                PlasmaCore.ToolTipArea {
-                                    anchors.fill: parent
-                                    textFormat: Text.PlainText
-                                    mainText: i18n("5-hour windows")
-                                    subText: i18n("How much each 5-hour window held, week by week (a dot each), with each week's middle as a line.")
-                                             + (limitsOf.chart.marks.length ? " " + i18n("An orange line marks where your limits changed.") : "")
-                                }
-                            }
-                        }
-                        ColumnLayout {
-                            Layout.preferredWidth: view.gu * 8
-                            Layout.maximumWidth: view.gu * 8
-                            visible: limitsOf.bars.length > 0
-                            spacing: 2
-
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                text: i18n("Weeks")
-                                font: Kirigami.Theme.smallFont
-                                opacity: 0.6
-                            }
-                            Canvas {
-                                id: weeksChart
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: Math.round(view.gu * 2.6)
-                                onWidthChanged: requestPaint()
-                                Connections {
-                                    target: limitsOf
-                                    function onBarsChanged() {
-                                        weeksChart.requestPaint()
-                                    }
-                                }
-                                onPaint: {
-                                    const ctx = getContext("2d")
-                                    ctx.reset()
-                                    const w = width, h = height, bs = limitsOf.bars
-                                    ctx.fillStyle = view.grid
-                                    ctx.fillRect(0, 0, w, h)
-                                    const gap = 3
-                                    const bw = Math.min(24, (w - gap * (bs.length + 1)) / Math.max(1, bs.length))
-                                    for (let i = 0; i < bs.length; i++) {
-                                        const bh = Math.max(2, bs[i].h * (h - 2))
-                                        ctx.globalAlpha = bs[i].partial ? 0.5 : 1
-                                        ctx.fillStyle = i === bs.length - 1 ? view.workColor : view.youColor
-                                        ctx.fillRect(gap + i * (bw + gap), h - bh, bw, bh)
-                                    }
-                                    ctx.globalAlpha = 1
-                                }
-                                PlasmaCore.ToolTipArea {
-                                    anchors.fill: parent
-                                    textFormat: Text.PlainText
-                                    mainText: i18n("Weeks")
-                                    subText: limitsOf.bars.map(b => view.limitDay(b.from) + ": " + view.limitMoney(b.cost)
-                                                               + (b.partial ? " " + i18n("(the limit began during it)") : "")).join("\n")
-                                }
-                            }
-                        }
-                    }
-                    Subtitle {
-                        visible: !!limitsOf.account.now.share
-                        text: i18n("A 5-hour window in the week")
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        visible: !!limitsOf.account.now.share
-                        text: limitsOf.account.now.share ? view.limitShareText(limitsOf.account.now.share.pct) : ""
-                        wrapMode: Text.Wrap
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: !!limitsOf.account.now.share
-                        spacing: Kirigami.Units.smallSpacing
-
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            text: view.limitChangeText(limitsOf.account.changes.share)
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.6
-                        }
-                        Row {
-                            id: shareTrend
-                            readonly property var values: limitsOf.account.periods.map(p => p.share ? p.share.pct : null)
-                            readonly property real highest: Math.max(1e-9, ...values.filter(v => v !== null))
-                            spacing: Math.max(1, Math.round(view.gu * 0.12))
-
-                            Repeater {
-                                model: shareTrend.values.length
-                                delegate: Item {
-                                    required property int index
-                                    readonly property var value: shareTrend.values[index]
-                                    width: Math.round(view.gu * 0.5)
-                                    height: Math.round(view.gu * 0.8)
-
-                                    Rectangle {
-                                        anchors.bottom: parent.bottom
-                                        width: parent.width
-                                        height: parent.value === null ? width : Math.max(1, parent.height * parent.value / shareTrend.highest)
-                                        radius: parent.value === null ? width / 2 : 1
-                                        color: parent.index === shareTrend.values.length - 1 ? view.workColor : view.youColor
-                                        opacity: parent.value === null ? 0.3 : 1
-                                    }
-                                }
-                            }
-                        }
-                        Item {
-                            Layout.fillWidth: true
-                        }
-                    }
-                    Subtitle {
-                        visible: !!limitsOf.account.now.fill
-                        text: i18n("How long a window lasts")
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        visible: !!limitsOf.account.now.fill
-                        text: view.limitFillText(limitsOf.account.now.fill)
-                        wrapMode: Text.Wrap
-                    }
-                    Subtitle {
-                        visible: view.limitTokensText(limitsOf.account) !== "" || limitsOf.mix.parts.length > 0
-                        text: i18n("In tokens")
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        visible: text !== ""
-                        text: view.limitTokensText(limitsOf.account)
-                        wrapMode: Text.Wrap
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: limitsOf.mix.parts.length > 0
-                        spacing: Kirigami.Units.smallSpacing
-
-                        Row {
-                            id: mixBar
-                            Layout.alignment: Qt.AlignVCenter
-                            readonly property real full: view.gu * 6
-                            spacing: 2
-
-                            Repeater {
-                                model: limitsOf.mix.parts.length
-                                delegate: Rectangle {
-                                    required property int index
-                                    readonly property var part: limitsOf.mix.parts[index]
-                                    width: Math.max(2, part.share * (mixBar.full - 4))
-                                    height: Math.round(view.gu * 0.3)
-                                    radius: height / 2
-                                    color: part.kind === "output" ? view.workColor : part.kind === "fresh" ? view.waitColor : view.youColor
-                                }
-                            }
-                        }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            text: view.limitMixText(limitsOf.mix)
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.6
-                            wrapMode: Text.Wrap
-                        }
-                    }
-                }
-            }
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                Layout.topMargin: Math.round(view.gu * 0.3)
-                visible: root.limitsOpen && view.limitsShown.length > 0
-                text: view.limitsData ? view.limitFootText(view.limitsData) : ""
-                font: Kirigami.Theme.smallFont
-                opacity: 0.6
-                wrapMode: Text.Wrap
-            }
-        }
-
         // The day, chat by chat (week.py: day_lanes): when each chat worked,
         // waited for you (a permission, a question) or was paused (asleep, a
         // limit); between its turns it was your turn. A name opens its chat.
@@ -2129,6 +1688,499 @@ PlasmaComponents3.ScrollView {
                 for (const s of failed)
                     text += "\n" + i18n("%1 couldn't be read: %2", root.hostLabel(s.host), s.error)
                 return text
+            }
+        }
+
+        // Under it all: the Advanced analyses (folded until you open it): how
+        // much a full window of each account's plan held, week by week, and
+        // how that changed
+        ColumnLayout {
+            id: limitsSection
+            Layout.fillWidth: true
+            visible: view.hasData && view.recap.back === 0
+            spacing: Math.round(view.gu * 0.2)
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: Math.round(view.gu * 0.7)
+                spacing: Math.round(view.gu * 0.35)
+
+                Kirigami.Separator {
+                    Layout.fillWidth: true
+                }
+                Item {
+                    Layout.fillWidth: true
+                    implicitHeight: limitsHead.implicitHeight
+
+                    RowLayout {
+                        id: limitsHead
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        spacing: Kirigami.Units.smallSpacing
+
+                        Kirigami.Icon {
+                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                            Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                            source: root.limitsOpen ? Icons.plasma.unfolded : Icons.plasma.folded
+                            opacity: 0.6
+                        }
+                        Kirigami.Heading {
+                            textFormat: Text.PlainText
+                            level: 2
+                            font.weight: Font.Bold
+                            text: i18n("Advanced analyses")
+                        }
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            Layout.fillWidth: true
+                            text: "· " + i18n("your plan's limits over time · estimates")
+                            elide: Text.ElideRight
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.6
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleLimits()
+                    }
+                }
+            }
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                visible: root.limitsOpen && !view.limitsData
+                text: root.limitsError ? i18n("Couldn't work it out: %1", root.limitsError)
+                                       : i18n("Working out how much your plan's windows held, from your chats and the limit readings kept.")
+                color: root.limitsError ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                opacity: root.limitsError ? 1 : 0.6
+                wrapMode: Text.Wrap
+            }
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                visible: root.limitsOpen && !!view.limitsData && view.limitsShown.length === 0
+                text: i18n("Not enough readings yet: a few 5-hour windows used past half tell how much one holds.")
+                opacity: 0.6
+                wrapMode: Text.Wrap
+            }
+            // (two plans or more: side by side)
+            GridLayout {
+                Layout.fillWidth: true
+                visible: root.limitsOpen && view.limitsCompared
+                columns: 4
+                columnSpacing: Kirigami.Units.largeSpacing
+                rowSpacing: 0
+
+                Repeater {
+                    model: [i18n("Plan"), i18n("5-hour"), i18n("Week"), i18n("5-hour share")]
+                    delegate: PlasmaComponents3.Label {
+                        required property var modelData
+                        required property int index
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: index === 0
+                        horizontalAlignment: index ? Text.AlignRight : Text.AlignLeft
+                        text: modelData
+                        font.bold: true
+                        opacity: 0.75
+                    }
+                }
+                Repeater {
+                    model: view.limitsCompared ? view.limitsShown.length * 4 : 0
+                    delegate: PlasmaComponents3.Label {
+                        required property int index
+                        readonly property var account: view.limitsShown[Math.floor(index / 4)] || view.emptyLimits
+                        readonly property int column: index % 4
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: column === 0
+                        horizontalAlignment: column ? Text.AlignRight : Text.AlignLeft
+                        elide: Text.ElideRight
+                        text: column === 0 ? account.name + " · " + (account.plan || "?")
+                            : column === 1 ? (account.now.fiveHour ? view.limitMoney(account.now.fiveHour.cost) : "–")
+                            : column === 2 ? (account.now.weeks.seven_day ? view.limitMoney(account.now.weeks.seven_day.cost) : "–")
+                            : (account.now.share ? Math.round(account.now.share.pct) + "%" : "–")
+                    }
+                }
+            }
+            Repeater {
+                model: root.limitsOpen ? view.limitsShown.length : 0
+                delegate: ColumnLayout {
+                    id: limitsOf
+                    required property int index
+                    readonly property var account: view.limitsShown[index] || view.emptyLimits
+                    // (every account's chart on one time line: a week is at the same place in each)
+                    readonly property var chart: Limits.dots(account, view.limitsNow, view.limitsStart)
+                    readonly property var bars: Limits.weekBars(account, view.limitsNow, view.limitsStart)
+                    readonly property real weekTop: Math.max(0, ...bars.map(b => b.cost))
+                    readonly property var mix: Limits.mix(account.now.tokens)
+                    Layout.fillWidth: true
+                    Layout.topMargin: Math.round(view.gu * 0.4)
+                    spacing: Math.round(view.gu * 0.2)
+
+                    component Subtitle: PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        Layout.topMargin: Math.round(view.gu * 0.3)
+                        font.bold: true
+                        opacity: 0.75
+                    }
+
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        text: (view.limitsShown.length > 1 ? limitsOf.account.name + " · " : "") + (limitsOf.account.plan || "")
+                        font.bold: true
+                        elide: Text.ElideRight
+                    }
+                    Repeater {
+                        model: limitsOf.account.events.length
+                        delegate: RowLayout {
+                            id: eventLine
+                            required property int index
+                            readonly property var event: limitsOf.account.events[index]
+                            Layout.fillWidth: true
+                            spacing: Kirigami.Units.smallSpacing
+
+                            Rectangle {
+                                Layout.preferredWidth: 2
+                                Layout.fillHeight: true
+                                color: view.waitColor
+                            }
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.fillWidth: true
+                                text: view.limitEventText(eventLine.event)
+                                font: Kirigami.Theme.smallFont
+                                wrapMode: Text.Wrap
+
+                                PlasmaCore.ToolTipArea {
+                                    anchors.fill: parent
+                                    textFormat: Text.PlainText
+                                    mainText: view.limitEventText(eventLine.event)
+                                    subText: view.limitEventTip(eventLine.event)
+                                }
+                            }
+                        }
+                    }
+                    Subtitle {
+                        text: i18n("How your limits changed")
+                    }
+                    Repeater {
+                        model: Limits.keys(limitsOf.account)
+                        delegate: Item {
+                            id: sizeLine
+                            required property var modelData
+                            readonly property var size: Limits.now(limitsOf.account, modelData)
+                            Layout.fillWidth: true
+                            implicitHeight: sizeRow.implicitHeight
+
+                            RowLayout {
+                                id: sizeRow
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                spacing: Kirigami.Units.smallSpacing
+
+                                PlasmaComponents3.Label {
+                                    textFormat: Text.PlainText
+                                    Layout.preferredWidth: view.gu * 7
+                                    text: view.limitLabel(sizeLine.modelData)
+                                    elide: Text.ElideRight
+                                }
+                                PlasmaComponents3.Label {
+                                    textFormat: Text.PlainText
+                                    Layout.preferredWidth: view.gu * 4.5
+                                    horizontalAlignment: Text.AlignRight
+                                    text: (sizeLine.size.value && sizeLine.size.value.scaled ? "≈ " : "")
+                                          + view.limitMoney(sizeLine.size.value ? sizeLine.size.value.cost : 0)
+                                    font.bold: true
+                                }
+                                PlasmaComponents3.Label {
+                                    textFormat: Text.PlainText
+                                    Layout.fillWidth: true
+                                    text: view.limitChangeText(sizeLine.size.change)
+                                    font: Kirigami.Theme.smallFont
+                                    color: Limits.bad(sizeLine.size.change) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                                    opacity: Limits.bad(sizeLine.size.change) ? 1 : 0.6
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                            PlasmaCore.ToolTipArea {
+                                anchors.fill: parent
+                                textFormat: Text.PlainText
+                                mainText: view.limitLabel(sizeLine.modelData)
+                                subText: view.limitSizeTip(sizeLine.modelData, limitsOf.account)
+                            }
+                        }
+                    }
+                    // one chart the section's width: each 5-hour window a dot, the
+                    // weeks as bars under them on the same days
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.topMargin: Math.round(view.gu * 0.2)
+                        visible: limitsOf.chart.dots.length > 0 || limitsOf.bars.length > 0
+                        spacing: 2
+
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            Layout.fillWidth: true
+                            visible: limitsOf.chart.dots.length > 0
+                            text: i18n("Each 5-hour window · %1 to %2", view.limitMoney(limitsOf.chart.lo), view.limitMoney(limitsOf.chart.top))
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.6
+                            elide: Text.ElideRight
+                        }
+                        Canvas {
+                            id: dotsChart
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Math.round(view.gu * 2.6)
+                            visible: limitsOf.chart.dots.length > 0
+                            onWidthChanged: requestPaint()
+                            Connections {
+                                target: limitsOf
+                                function onChartChanged() {
+                                    dotsChart.requestPaint()
+                                }
+                            }
+                            onPaint: {
+                                const ctx = getContext("2d")
+                                ctx.reset()
+                                const w = width, h = height, c = limitsOf.chart
+                                const y = v => h - 3.5 - v * (h - 7)
+                                ctx.fillStyle = view.grid
+                                ctx.fillRect(0, 0, w, h)
+                                ctx.fillStyle = view.waitColor
+                                for (const x of c.marks)
+                                    ctx.fillRect(Math.round(x * w), 0, 1, h)
+                                ctx.strokeStyle = view.youColor
+                                ctx.lineWidth = 2
+                                for (const m of c.medians) {
+                                    ctx.beginPath()
+                                    ctx.moveTo(m.x1 * w, y(m.y))
+                                    ctx.lineTo(m.x2 * w, y(m.y))
+                                    ctx.stroke()
+                                }
+                                ctx.fillStyle = view.workColor
+                                for (const d of c.dots) {
+                                    ctx.beginPath()
+                                    ctx.arc(Math.max(3.5, Math.min(w - 3.5, d.x * w)), y(d.y), 3.5, 0, 2 * Math.PI)
+                                    ctx.fill()
+                                }
+                            }
+                            PlasmaCore.ToolTipArea {
+                                anchors.fill: parent
+                                textFormat: Text.PlainText
+                                mainText: i18n("5-hour windows")
+                                subText: i18n("How much each 5-hour window held, week by week (a dot each), with each week's middle as a line.")
+                                         + (limitsOf.chart.marks.length ? " " + i18n("An orange line marks where your limits changed.") : "")
+                            }
+                        }
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            Layout.fillWidth: true
+                            visible: limitsOf.bars.length > 0
+                            text: i18n("Each week · up to %1", view.limitMoney(limitsOf.weekTop))
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.6
+                            elide: Text.ElideRight
+                        }
+                        Canvas {
+                            id: weeksChart
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Math.round(view.gu * 1.5)
+                            visible: limitsOf.bars.length > 0
+                            onWidthChanged: requestPaint()
+                            Connections {
+                                target: limitsOf
+                                function onBarsChanged() {
+                                    weeksChart.requestPaint()
+                                }
+                            }
+                            onPaint: {
+                                const ctx = getContext("2d")
+                                ctx.reset()
+                                const w = width, h = height, bs = limitsOf.bars
+                                ctx.fillStyle = view.grid
+                                ctx.fillRect(0, 0, w, h)
+                                ctx.fillStyle = view.waitColor
+                                for (const x of limitsOf.chart.marks)
+                                    ctx.fillRect(Math.round(x * w), 0, 1, h)
+                                for (let i = 0; i < bs.length; i++) {   // (each on its own days, a pixel apart)
+                                    const bh = Math.max(2, bs[i].h * (h - 2))
+                                    ctx.globalAlpha = bs[i].partial ? 0.5 : 1
+                                    ctx.fillStyle = i === bs.length - 1 ? view.workColor : view.youColor
+                                    ctx.fillRect(bs[i].x1 * w + 1, h - bh, Math.max(1, (bs[i].x2 - bs[i].x1) * w - 2), bh)
+                                }
+                                ctx.globalAlpha = 1
+                            }
+                            PlasmaCore.ToolTipArea {
+                                anchors.fill: parent
+                                textFormat: Text.PlainText
+                                mainText: i18n("Weeks")
+                                subText: limitsOf.bars.map(b => view.limitDay(b.from) + ": " + view.limitMoney(b.cost)
+                                                           + (b.partial ? " " + i18n("(the limit began during it)") : "")).join("\n")
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.fillWidth: true
+                                text: view.limitDay(view.limitsStart)
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.6
+                            }
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                text: i18n("today")
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.6
+                            }
+                        }
+                    }
+                    Subtitle {
+                        visible: !!limitsOf.account.now.share
+                        text: i18n("A 5-hour window in the week")
+                    }
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        visible: !!limitsOf.account.now.share
+                        text: limitsOf.account.now.share ? view.limitShareText(limitsOf.account.now.share.pct) : ""
+                        wrapMode: Text.Wrap
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: !!limitsOf.account.now.share
+                        spacing: Kirigami.Units.smallSpacing
+
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            text: view.limitChangeText(limitsOf.account.changes.share)
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.6
+                        }
+                        Row {
+                            id: shareTrend
+                            readonly property var values: limitsOf.account.periods.map(p => p.share ? p.share.pct : null)
+                            readonly property real highest: Math.max(1e-9, ...values.filter(v => v !== null))
+                            spacing: Math.max(1, Math.round(view.gu * 0.12))
+
+                            Repeater {
+                                model: shareTrend.values.length
+                                delegate: Item {
+                                    required property int index
+                                    readonly property var value: shareTrend.values[index]
+                                    width: Math.round(view.gu * 0.5)
+                                    height: Math.round(view.gu * 0.8)
+
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width
+                                        height: parent.value === null ? width : Math.max(1, parent.height * parent.value / shareTrend.highest)
+                                        radius: parent.value === null ? width / 2 : 1
+                                        color: parent.index === shareTrend.values.length - 1 ? view.workColor : view.youColor
+                                        opacity: parent.value === null ? 0.3 : 1
+                                    }
+                                }
+                            }
+                        }
+                        Item {
+                            Layout.fillWidth: true
+                        }
+                    }
+                    Subtitle {
+                        visible: !!limitsOf.account.now.fill
+                        text: i18n("How long a window lasts")
+                    }
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        visible: !!limitsOf.account.now.fill
+                        text: view.limitFillText(limitsOf.account.now.fill)
+                        wrapMode: Text.Wrap
+                    }
+                    Subtitle {
+                        visible: view.limitTokensText(limitsOf.account) !== "" || limitsOf.mix.parts.length > 0
+                        text: i18n("In tokens")
+                    }
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        visible: text !== ""
+                        text: view.limitTokensText(limitsOf.account)
+                        wrapMode: Text.Wrap
+                    }
+                    // what filled a window: a bar the chart's width (each part at
+                    // least a few pixels, so a small one still shows), its legend under it
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: limitsOf.mix.parts.length > 0
+                        spacing: 3
+
+                        Row {
+                            id: mixBar
+                            Layout.fillWidth: true
+                            readonly property real room: width - 2 * Math.max(0, limitsOf.mix.parts.length - 1) - 4 * limitsOf.mix.parts.length
+                            spacing: 2
+
+                            Repeater {
+                                model: limitsOf.mix.parts.length
+                                delegate: Rectangle {
+                                    required property int index
+                                    readonly property var part: limitsOf.mix.parts[index]
+                                    width: 4 + part.share * Math.max(0, mixBar.room)
+                                    height: Math.round(view.gu * 0.3)
+                                    radius: height / 2
+                                    color: view.limitPartColor(part.kind)
+                                }
+                            }
+                        }
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: Kirigami.Units.largeSpacing
+
+                            Repeater {
+                                model: limitsOf.mix.parts.length
+                                delegate: Row {
+                                    required property int index
+                                    readonly property var part: limitsOf.mix.parts[index]
+                                    spacing: Kirigami.Units.smallSpacing
+
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: Math.round(view.gu * 0.45)
+                                        height: width
+                                        radius: 2
+                                        color: view.limitPartColor(parent.part.kind)
+                                    }
+                                    PlasmaComponents3.Label {
+                                        textFormat: Text.PlainText
+                                        text: view.limitPartText(parent.part)
+                                        font: Kirigami.Theme.smallFont
+                                        opacity: 0.6
+                                    }
+                                }
+                            }
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                text: view.limitMixText(limitsOf.mix)
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.6
+                            }
+                        }
+                    }
+                }
+            }
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                Layout.topMargin: Math.round(view.gu * 0.3)
+                visible: root.limitsOpen && view.limitsShown.length > 0
+                text: view.limitsData ? view.limitFootText(view.limitsData) : ""
+                font: Kirigami.Theme.smallFont
+                opacity: 0.6
+                wrapMode: Text.Wrap
             }
         }
     }

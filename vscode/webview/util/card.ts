@@ -74,9 +74,9 @@ export function drawCard(canvas: HTMLCanvasElement, r: WeekRecap, names: boolean
     ctx.font = `${11 * k}px system-ui, sans-serif`;
     ctx.fillText(label, tx, ty + 16 * k);
   });
-  // Claude's work, day by day, oldest first; Overall's rows (a row per 7
-  // days) come newest first: its last 20 weeks, so they fit
-  const days = r.span === "all" ? r.days.slice(0, 20).reverse() : r.days;
+  // Claude's work, day by day, oldest first; a month's and Overall's rows (a
+  // row per 7 days) come newest first: the last 20 weeks, so they fit
+  const days = r.span === "month" || r.span === "all" ? r.days.slice(0, 20).reverse() : r.days;
   if (days.length > 1) {
     const top = Math.max(1, ...days.map((d) => d.workedMs || 0));
     const gap = days.length > 20 ? 2 : 5; // (a month's 30 days fit in the same width)

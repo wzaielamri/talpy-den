@@ -17,6 +17,7 @@ import {
   periodText,
   periodWaiting,
   stepText,
+  weekRows,
   planText,
   RECAP_SECTIONS,
   type RecapSection,
@@ -41,6 +42,7 @@ import {
   limitLabel,
   limitMix,
   limitMoney,
+  limitStart,
   limitShareText,
   limitSizeTip,
   limitTokensText,
@@ -107,7 +109,6 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
     work: () => <Work recap={recap!} />,
     days: () => <Timeline recap={recap!} />,
     plan: () => <Plan recap={recap!} />,
-    limits: () => <Limits recap={recap!} account={account} />,
     lanes: () => <Lanes recap={recap!} />,
     projects: () => <Projects recap={recap!} />,
     chats: () => <Chats recap={recap!} />,
@@ -199,6 +200,7 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
           {factsText(s) ? <div class="week-facts small muted">{factsText(s)}</div> : null}
           {RECAP_SECTIONS.map((k) => <Fragment key={k}>{sections[k]()}</Fragment>)}
           <div class="week-foot small muted">{footText(recap)}</div>
+          <Limits recap={recap} account={account} />
         </>
       ) : null}
     </div>
@@ -282,7 +284,7 @@ function Timeline({ recap }: { recap: WeekRecap }) {
   const [hover, setHover] = useState<{ row: number; x: number; ms: number; px: number } | null>(null);
   const [open, setOpen] = useState("");
   const cur = currencyOf(recap);
-  const weeks = recap.span === "all"; // (a row per 7 days, with their numbers)
+  const weeks = weekRows(recap.span); // (a row per 7 days, with their numbers)
   const last = weeks ? 0 : recap.days.length - 1;
   const most = Math.max(1, ...recap.days.map((d) => Math.max(d.youMs, d.workedMs)));
   // (by the day's own wall clock: dayPlace)
@@ -432,7 +434,8 @@ function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
               </tbody>
             </table>
           ) : null}
-          {shown.map((a) => <LimitsOf key={a.id} a={a} many={shown.length > 1} cur={cur} now={data!.generatedAt} />)}
+          {shown.map((a) => <LimitsOf key={a.id} a={a} many={shown.length > 1} cur={cur} now={data!.generatedAt}
+            start={limitStart(shown, data!.generatedAt)} />)}
           <div class="small muted">{limitFootText(data!)}</div>
         </>
       )}
@@ -440,9 +443,11 @@ function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
   );
 }
 
-function LimitsOf({ a, many, cur, now }: { a: LimitAccount; many: boolean; cur: Currency; now: number }) {
-  const dots = limitDots(a, now);
-  const bars = limitWeekBars(a);
+function LimitsOf({ a, many, cur, now, start }: { a: LimitAccount; many: boolean; cur: Currency; now: number; start: number }) {
+  // (every account's chart on one time line: a week is at the same place in each)
+  const dots = limitDots(a, now, start);
+  const bars = limitWeekBars(a, now, start);
+  const weekTop = Math.max(0, ...bars.map((b) => b.cost));
   const mix = limitMix(a.now.tokens);
   const shares = a.periods.map((p) => p.share?.pct ?? null);
   return (
@@ -468,10 +473,10 @@ function LimitsOf({ a, many, cur, now }: { a: LimitAccount; many: boolean; cur: 
         })}
       </ul>
       {dots.dots.length || bars.length ? (
-        <div class="limits-charts">
+        <figure class="limits-chart">
           {dots.dots.length ? (
-            <figure class="limits-chart">
-              <figcaption class="small muted">5-hour windows · {limitMoney(dots.lo, cur)} to {limitMoney(dots.top, cur)}</figcaption>
+            <>
+              <figcaption class="small muted">Each 5-hour window · {limitMoney(dots.lo, cur)} to {limitMoney(dots.top, cur)}</figcaption>
               <div class="limits-dots" role="img" aria-label="How much each 5-hour window held, week by week, with each week's middle">
                 {dots.marks.map((x, i) => <span key={"c" + i} class="mark" style={{ left: `${x * 100}%` }} />)}
                 {dots.medians.map((m, i) => (
@@ -482,21 +487,23 @@ function LimitsOf({ a, many, cur, now }: { a: LimitAccount; many: boolean; cur: 
                     title={`${limitMoney(d.full, cur)} · ${d.tip}`} />
                 ))}
               </div>
-            </figure>
+            </>
           ) : null}
           {bars.length ? (
-            <figure class="limits-chart">
-              <figcaption class="small muted">Weeks</figcaption>
-              <div class="limits-bars" role="img" aria-label="How much each week held">
+            <>
+              <figcaption class="small muted">Each week · up to {limitMoney(weekTop, cur)}</figcaption>
+              <div class="limits-bars" role="img" aria-label="How much each week held, on the same days as the 5-hour windows">
+                {dots.marks.map((x, i) => <span key={"c" + i} class="mark" style={{ left: `${x * 100}%` }} />)}
                 {bars.map((b, i) => (
-                  <span key={b.from} class={(i === bars.length - 1 ? "now" : "") + (b.partial ? " partial" : "")}
-                    style={{ height: `max(2px, ${b.h * 100}%)` }}
+                  <span key={b.from} class={"bar" + (i === bars.length - 1 ? " now" : "") + (b.partial ? " partial" : "")}
+                    style={{ left: `${b.x1 * 100}%`, width: `${(b.x2 - b.x1) * 100}%`, height: `max(2px, ${b.h * 100}%)` }}
                     title={`Week of ${limitDay(b.from)}: ${limitMoney(b.cost, cur)}` + (b.partial ? " (the limit began during it)" : "")} />
                 ))}
               </div>
-            </figure>
+            </>
           ) : null}
-        </div>
+          <div class="limits-axis small muted"><span>{limitDay(start)}</span><span>today</span></div>
+        </figure>
       ) : null}
       {a.now.share ? (
         <>
@@ -519,11 +526,14 @@ function LimitsOf({ a, many, cur, now }: { a: LimitAccount; many: boolean; cur: 
           <h3>In tokens</h3>
           {a.equivalents ? <div class="limits-line">{limitTokensText(a)}</div> : null}
           {mix.parts.length ? (
-            <div class="limits-line">
+            <div class="limits-mix-box">
               <span class="limits-mix" aria-hidden="true">
                 {mix.parts.map((p) => <span key={p.kind} class={p.kind} style={{ flexGrow: p.share }} />)}
               </span>
-              <span class="small muted">{mix.text}</span>
+              <div class="limits-legend small muted">
+                {mix.parts.map((p) => <span key={p.kind}><i class={"key " + p.kind} />{p.label}</span>)}
+                <span>{mix.text}</span>
+              </div>
             </div>
           ) : null}
         </>

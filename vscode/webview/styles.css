@@ -2574,33 +2574,31 @@ body.vscode-high-contrast .top.scrolled {
   font-variant-numeric: tabular-nums;
 }
 
-.limits-charts {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: 12px;
-  margin-top: 4px;
-}
-
-@container (max-width: 400px) {
-  .limits-charts {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
+/* one chart per account, full width: each 5-hour window as a dot (each week's
+   middle as a line), the weeks as bars under them on the same days, every
+   account on the same time line; a change of the limits a line across both */
 .limits-chart {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  margin: 0;
+  margin: 4px 0 0;
 }
 
 .limits-dots,
 .limits-bars {
   position: relative;
-  height: 48px;
   border-radius: 2px;
   background: var(--cs-track);
+}
+
+.limits-dots {
+  height: 48px;
+}
+
+.limits-bars {
+  height: 28px;
+  margin-bottom: 2px;
 }
 
 .limits-dots .dot {
@@ -2614,7 +2612,8 @@ body.vscode-high-contrast .top.scrolled {
 }
 
 /* a change of the plan's limits: a thin line across the chart */
-.limits-dots .mark {
+.limits-dots .mark,
+.limits-bars .mark {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -2635,26 +2634,27 @@ body.vscode-high-contrast .top.scrolled {
   background: color-mix(in srgb, var(--cs-fg) 45%, transparent);
 }
 
-.limits-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  padding: 0 3px;
-}
-
-.limits-bars span {
-  flex: 1;
-  max-width: 24px;
+.limits-bars .bar {
+  position: absolute;
+  bottom: 0;
+  box-sizing: border-box;
+  border-left: 1px solid var(--cs-bg);
+  border-right: 1px solid var(--cs-bg);
   border-radius: 2px 2px 0 0;
   background: color-mix(in srgb, var(--cs-fg) 40%, transparent);
 }
 
-.limits-bars span.now {
+.limits-bars .bar.now {
   background: var(--cs-working);
 }
 
-.limits-bars span.partial {
+.limits-bars .bar.partial {
   opacity: 0.5;
+}
+
+.limits-axis {
+  display: flex;
+  justify-content: space-between;
 }
 
 .limits-line {
@@ -2668,27 +2668,53 @@ body.vscode-high-contrast .top.scrolled {
   margin-top: 0;
 }
 
+/* what filled a window: a bar the chart's width, its legend under it (each
+   part at least a few pixels, so a small one still shows) */
+.limits-mix-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 2px;
+}
+
 .limits-mix {
   display: flex;
   gap: 2px;
-  width: 8em;
+  width: 100%;
   height: 6px;
 }
 
 .limits-mix span {
-  min-width: 2px;
+  min-width: 4px;
   border-radius: 3px;
 }
 
-.limits-mix .cacheRead {
+.limits-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+
+.limits-legend .key {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+}
+
+.limits-mix .cacheRead,
+.limits-legend .cacheRead {
   background: color-mix(in srgb, var(--cs-fg) 30%, transparent);
 }
 
-.limits-mix .fresh {
+.limits-mix .fresh,
+.limits-legend .fresh {
   background: var(--cs-usage-medium);
 }
 
-.limits-mix .output {
+.limits-mix .output,
+.limits-legend .output {
   background: var(--cs-working);
 }
 

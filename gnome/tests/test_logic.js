@@ -762,6 +762,7 @@ test('amounts in another currency, at the rate week.py sends', () => {
     eq(L.weekArgs(1, '', [], {}, [], 'USD', 'month'), ['--span', 'month', '--back', '1']);
     eq([L.weekPeriodWaiting('month', 0), L.weekStepText('month', false), L.weekStepText('day', true)],
         ['Last 30 days', 'The 30 days before', 'The day after']);
+    eq([L.weekRows('month'), L.weekRows('all'), L.weekRows('week')], [true, true, false]);
 });
 
 test('trend lines, what Claude did, where the money went, the prompts you answered', () => {
@@ -854,8 +855,14 @@ test('advanced analyses: how a plan\'s limits changed, in words (as VS Code)', (
     eq(L.limitMoney(47.6), '$48');
     eq(L.limitMoney(1180.4), '$1,180');
     eq(L.limitMoney(47.6, {code: 'EUR', rate: 0.9}), '€43');
-    eq(L.limitMix({fresh: 2e6, output: 0.4e6, cacheRead: 112e6}).text,
-        '114.4M tokens filled one: 98% cache reads, 2% new input and cache writes, <1% output');
+    const mix = L.limitMix({fresh: 2e6, output: 0.4e6, cacheRead: 112e6});
+    eq(mix.parts.map(p => p.label), ['cache reads 98%', 'new input and cache writes 2%', 'output <1%']);
+    eq(mix.text, '114.4M tokens fill a 5-hour window');
+    const week = 7 * 86400000, now = day + 3 * week;
+    const acct = from => ({periods: [{from, until: from + week, fiveHour: null, weeks: {seven_day: {cost: 10}}}], windows: [], events: []});
+    const [a, b] = [acct(day), acct(day + week)];
+    eq(L.limitStart([a, b], now), day);
+    eq(L.limitWeekBars(b, now, L.limitStart([a, b], now)).map(x => [x.x1, x.x2].map(v => Math.round(v * 3))), [[1, 2]]);
     eq(L.limitFillText({wallMs: 97 * 60000, workMs: 155 * 60000}), 'Full after about 1h 37m at your pace · Claude worked 2h 35m in it, across chats');
 });
 

@@ -436,16 +436,23 @@ class RecapTests(Home):
         self.assertEqual(sum(r["workedMs"] for r in everything["days"]), everything["sum"]["workedMs"])
 
     def test_a_month(self):
-        # the 30 days ending today, a row each; the 30 before to compare; 30 days a step back
+        # the 30 days ending today, a row per 7 days (newest first, the oldest
+        # only the month's own days); the 30 before to compare; 30 days a step back
         t0 = self.t0
         self.write(Transcript().prompt(t0).reply(t0 + 1000, "a").duration(t0 + 60_000, 60_000), "chat-a")
+        early = t0 - 27 * week.DAY_MS  # (in the month's oldest row)
+        self.write(Transcript().prompt(early).reply(early + 1000, "c").duration(early + 20_000, 20_000), "chat-c")
         old = t0 - 35 * week.DAY_MS
         self.write(Transcript().prompt(old).reply(old + 1000, "b").duration(old + 30_000, 30_000), "chat-b")
         month = self.recap(span="month", days=80)
-        self.assertEqual((month["span"], month["from"], month["to"], len(month["days"])), ("month", "2026-09-25", "2026-10-24", 30))
-        self.assertEqual((month["sum"]["workedMs"], month["previous"]["workedMs"]), (60_000, 30_000))
-        self.assertEqual(month["sum"]["busiestDay"], "2026-10-24")
-        self.assertEqual([t and t["workedMs"] for t in month["trend"]][-2:], [30_000, 60_000])
+        self.assertEqual((month["span"], month["from"], month["to"]), ("month", "2026-09-25", "2026-10-24"))
+        self.assertEqual([(r["day"], r["to"], r["workedMs"]) for r in month["days"]],
+                         [("2026-10-18", "2026-10-24", 60_000), ("2026-10-11", "2026-10-17", 0), ("2026-10-04", "2026-10-10", 0),
+                          ("2026-09-27", "2026-10-03", 20_000), ("2026-09-25", "2026-09-26", 0)])
+        self.assertEqual((month["sum"]["workedMs"], month["previous"]["workedMs"]), (80_000, 30_000))
+        self.assertEqual(sum(r["workedMs"] for r in month["days"]), month["sum"]["workedMs"])
+        self.assertEqual(month["sum"]["busiestDay"], "2026-10-24")  # (a day, not a row)
+        self.assertEqual([t and t["workedMs"] for t in month["trend"]][-2:], [30_000, 80_000])
         self.assertEqual(month["backMax"], 1)  # (35 days back: one step)
         self.assertEqual(self.recap(span="month", back=1, days=80)["sum"]["workedMs"], 30_000)
         self.assertEqual(week.span_days("month", 0, self.now)[0][0], "2026-09-25")

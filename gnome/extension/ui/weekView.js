@@ -126,7 +126,6 @@ export function buildWeekView(ctx) {
     }
     view.add_child(buildTimeline(ctx, recap, cur));
     view.add_child(buildPlan(ctx, recap));
-    view.add_child(buildLimits(ctx, recap));
     view.add_child(buildProjects(ctx, recap, cur));
     if (recap.chats.length) {
         const chats = column('claude-week-section', {x_expand: true});
@@ -145,6 +144,7 @@ export function buildWeekView(ctx) {
     view.add_child(models);
     view.add_child(buildTips(ctx, recap));
     view.add_child(paragraph(L.weekFootText(recap), 'claude-small claude-dim claude-week-foot'));
+    view.add_child(buildLimits(ctx, recap));   // (under it all: the folded Advanced analyses)
     return view;
 }
 
@@ -191,7 +191,7 @@ function chatLine(ctx, c, cur, where = null, sub = false) {
 // usage limit stopped a chat. Click a day for its chats.
 function buildTimeline(ctx, recap, cur) {
     const section = column('claude-week-section', {x_expand: true});
-    const weeks = recap.span === 'all';   // (a row per 7 days, with their numbers)
+    const weeks = L.weekRows(recap.span);   // (a row per 7 days, with their numbers)
     section.add_child(heading(weeks ? 'Week by week' : recap.span === 'day' ? 'Through the day' : 'Day by day'));
     const legend = box('claude-week-head', {x_expand: true});
     const keys = weeks ? [['claude-week-swatch-you', 'You'], ['claude-bg-working', 'Claude worked']]
@@ -424,13 +424,15 @@ function buildLimits(ctx, recap) {
                 [a.now.weeks.seven_day ? L.limitMoney(a.now.weeks.seven_day.cost, cur) : '–'], [a.now.share ? `${Math.round(a.now.share.pct)}%` : '–']]));
         }
     }
+    // (every account's chart on one time line: a week is at the same place in each)
+    const start = L.limitStart(shown, data.generatedAt);
     for (const a of shown)
-        section.add_child(limitsOf(ctx, a, shown.length > 1, cur, data.generatedAt));
+        section.add_child(limitsOf(ctx, a, shown.length > 1, cur, data.generatedAt, start));
     section.add_child(paragraph(L.limitFootText(data), 'claude-small claude-dim'));
     return section;
 }
 
-function limitsOf(ctx, a, many, cur, now) {
+function limitsOf(ctx, a, many, cur, now, start) {
     const col = column('claude-limits-account', {x_expand: true});
     col.add_child(label((many ? `${a.name} · ` : '') + (a.plan || ''), 'claude-strong'));
     for (const e of a.events || []) {
@@ -452,30 +454,33 @@ function limitsOf(ctx, a, many, cur, now) {
         ctx.tips.add(line, [L.limitLabel(k), L.limitSizeTip(k, a, cur)]);
         col.add_child(line);
     }
-    const dots = L.limitDots(a, now);
-    const bars = L.limitWeekBars(a);
+    const dots = L.limitDots(a, now, start);
+    const bars = L.limitWeekBars(a, now, start);
     if (dots.dots.length || bars.length) {
-        const charts = box('claude-limits-charts', {x_expand: true});
+        // one chart the section's width: each 5-hour window a dot, the weeks
+        // as bars under them on the same days
+        const chart = column('claude-limits-chart', {x_expand: true});
         if (dots.dots.length) {
-            const chart = column('', {x_expand: true});
-            chart.add_child(label(`5-hour windows · ${L.limitMoney(dots.lo, cur)} to ${L.limitMoney(dots.top, cur)}`, 'claude-small claude-dim'));
+            chart.add_child(label(`Each 5-hour window · ${L.limitMoney(dots.lo, cur)} to ${L.limitMoney(dots.top, cur)}`, 'claude-small claude-dim'));
             const area = new St.DrawingArea({x_expand: true, height: 48 * scaleFactor()});
             area.connect('repaint', d => paintDots(d, dots));
             chart.add_child(area);
-            ctx.tips.add(chart, ['5-hour windows', 'How much each 5-hour window held, week by week (a dot each), with each week\'s middle as a line' +
+            ctx.tips.add(area, ['5-hour windows', "How much each 5-hour window held, week by week (a dot each), with each week's middle as a line" +
                 (dots.marks.length ? ' and an orange line where your limits changed.' : '.')]);
-            charts.add_child(chart);
         }
         if (bars.length) {
-            const chart = column('claude-limits-weeks');
-            chart.add_child(label('Weeks', 'claude-small claude-dim'));
-            const area = new St.DrawingArea({x_expand: true, height: 48 * scaleFactor()});
-            area.connect('repaint', d => paintWeeks(d, bars));
+            const top = Math.max(...bars.map(b => b.cost));
+            chart.add_child(label(`Each week · up to ${L.limitMoney(top, cur)}`, 'claude-small claude-dim'));
+            const area = new St.DrawingArea({x_expand: true, height: 28 * scaleFactor()});
+            area.connect('repaint', d => paintWeeks(d, bars, dots.marks));
             chart.add_child(area);
-            ctx.tips.add(chart, ['Weeks', bars.map(b => `${L.limitDay(b.from)}: ${L.limitMoney(b.cost, cur)}${b.partial ? ' (the limit began during it)' : ''}`).join('\n')]);
-            charts.add_child(chart);
+            ctx.tips.add(area, ['Weeks', bars.map(b => `${L.limitDay(b.from)}: ${L.limitMoney(b.cost, cur)}${b.partial ? ' (the limit began during it)' : ''}`).join('\n')]);
         }
-        col.add_child(charts);
+        const axis = box('', {x_expand: true});
+        axis.add_child(label(L.limitDay(start), 'claude-small claude-dim', {x_expand: true}));
+        axis.add_child(label('today', 'claude-small claude-dim'));
+        chart.add_child(axis);
+        col.add_child(chart);
     }
     if (a.now.share) {
         col.add_child(subtitle('A 5-hour window in the week'));
@@ -496,12 +501,17 @@ function limitsOf(ctx, a, many, cur, now) {
         if (tokens)
             col.add_child(paragraph(tokens, ''));
         if (mix.parts.length) {
-            const line = box('claude-stats-project', {x_expand: true});
-            const area = new St.DrawingArea({style_class: 'claude-limits-mix', height: 6 * scaleFactor(), y_align: Clutter.ActorAlign.CENTER});
+            // (the bar the chart's width, its legend under it)
+            const area = new St.DrawingArea({x_expand: true, height: 6 * scaleFactor()});
             area.connect('repaint', d => paintMix(d, mix.parts));
-            line.add_child(area);
-            line.add_child(paragraph(mix.text, 'claude-small claude-dim', {x_expand: true}));
-            col.add_child(line);
+            col.add_child(area);
+            const keys = {cacheRead: YOU, fresh: WAIT, output: [...WORK, 1]};
+            const legend = paragraph('', 'claude-small claude-dim');
+            const hex = c => `#${c.slice(0, 3).map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('')}`;
+            const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            legend.clutter_text.set_markup(mix.parts.map(p => `<span foreground="${hex(keys[p.kind])}">■</span> ${esc(p.label)}`).join('   '));
+            col.add_child(legend);
+            col.add_child(paragraph(mix.text, 'claude-small claude-dim'));
         }
     }
     return col;
@@ -533,18 +543,21 @@ function paintDots(area, dots) {
     cr.$dispose();
 }
 
-function paintWeeks(area, bars) {
+function paintWeeks(area, bars, marks) {
     const [cr, w, h] = scaled(area);
     cr.setSourceRGBA(...GRID);
     cr.rectangle(0, 0, w, h);
     cr.fill();
-    const gap = 3;
-    const width = Math.min(24, (w - gap * (bars.length + 1)) / bars.length);
-    bars.forEach((b, i) => {
+    cr.setSourceRGBA(...WAIT);
+    for (const x of marks) {
+        cr.rectangle(Math.round(x * w), 0, 1, h);
+        cr.fill();
+    }
+    bars.forEach((b, i) => {   // (each on its own days, a pixel apart)
         const height = Math.max(2, b.h * (h - 2));
         const color = i === bars.length - 1 ? [...WORK, 1] : YOU;
         cr.setSourceRGBA(color[0], color[1], color[2], color[3] * (b.partial ? 0.5 : 1));
-        cr.rectangle(gap + i * (width + gap), h - height, width, height);
+        cr.rectangle(b.x1 * w + 1, h - height, Math.max(1, (b.x2 - b.x1) * w - 2), height);
         cr.fill();
     });
     cr.$dispose();
@@ -554,8 +567,9 @@ function paintMix(area, parts) {
     const [cr, w, h] = scaled(area);
     const colors = {cacheRead: YOU, fresh: WAIT, output: [...WORK, 1]};
     let x = 0;
+    const room = w - 2 * (parts.length - 1) - 4 * parts.length;   // (each part at least 4 px)
     for (const p of parts) {
-        const width = Math.max(2, p.share * (w - 2 * (parts.length - 1)));
+        const width = 4 + p.share * room;
         cr.setSourceRGBA(...colors[p.kind]);
         cr.rectangle(x, 0, width, h);
         cr.fill();

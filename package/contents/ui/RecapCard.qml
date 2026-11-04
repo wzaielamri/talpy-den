@@ -14,7 +14,7 @@ Rectangle {
     readonly property var total: recap && recap.sum ? recap.sum : ({})
     // its bars, oldest first; Overall's rows (a row per 7 days) come newest
     // first: its last 20 weeks, so they fit
-    readonly property var days: !recap || !recap.days ? [] : span === "all" ? recap.days.slice(0, 20).reverse() : recap.days
+    readonly property var days: !recap || !recap.days ? [] : span === "month" || span === "all" ? recap.days.slice(0, 20).reverse() : recap.days
     readonly property var projects: recap && recap.projects ? recap.projects.slice(0, 3) : []
     readonly property string span: recap && recap.span ? recap.span : "week"
     readonly property real maxDay: Math.max(1, ...days.map(d => d.workedMs || 0))

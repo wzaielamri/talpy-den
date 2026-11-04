@@ -1582,6 +1582,11 @@ export function weekPeriodWaiting(span, back) {
     return back !== 0 ? '' : span === 'day' ? 'Today' : span === 'all' ? 'Everything' : span === 'month' ? 'Last 30 days' : 'Last 7 days';
 }
 
+// Spans whose timeline has a row per 7 days, not per day
+export function weekRows(span) {
+    return span === 'month' || span === 'all';
+}
+
 // The step back and on: "The day before", "The 30 days after", …
 export function weekStepText(span, after) {
     return `The ${span === 'day' ? 'day' : span === 'month' ? '30 days' : 'week'} ${after ? 'after' : 'before'}`;
@@ -1912,17 +1917,16 @@ export function limitTokensText(a) {
         `${five ? 'a 5-hour window' : 'a week'}${five && week ? `; ${formatTokens(week.output)} a week` : ''}, at API prices`;
 }
 
-// What filled a window: its parts (shares of all its tokens) and the line for them
+// What filled a window: its parts (shares of all its tokens, each with its
+// legend's words) and the line under them
 export function limitMix(t) {
     const total = t ? t.cacheRead + t.fresh + t.output : 0;
     if (!t || total <= 0)
         return {parts: [], text: ''};
-    const parts = ['cacheRead', 'fresh', 'output'].map(kind => ({kind, share: t[kind] / total}));
-    return {
-        parts,
-        text: `${formatTokens(Math.round(total))} tokens filled one: ${weekShareText(parts[0].share)} cache reads, ` +
-            `${weekShareText(parts[1].share)} new input and cache writes, ${weekShareText(parts[2].share)} output`,
-    };
+    const names = {cacheRead: 'cache reads', fresh: 'new input and cache writes', output: 'output'};
+    const parts = ['cacheRead', 'fresh', 'output'].map(kind => ({kind, share: t[kind] / total,
+        label: `${names[kind]} ${weekShareText(t[kind] / total)}`}));
+    return {parts, text: `${formatTokens(Math.round(total))} tokens fill a 5-hour window`};
 }
 
 // A window's size: whole amounts from 10 up ("$48", "€1,180")
@@ -1938,8 +1942,8 @@ export function limitMoney(usd, cur = USD) {
 // The dots of the 5-hour windows (x, y: 0 to 1), each week's median and each
 // change of the limits, over the weeks kept; from a little under the
 // smallest to a little over the largest
-export function limitDots(a, now) {
-    const from = a.periods.length ? a.periods[0].from : now;
+export function limitDots(a, now, start = null) {
+    const from = start !== null ? start : a.periods.length ? a.periods[0].from : now;
     const span = Math.max(1, now - from);
     const sizes = [...a.windows.map(w => w.full), ...a.periods.map(p => (p.fiveHour ? p.fiveHour.cost : NaN))].filter(v => v > 0);
     const most = sizes.length ? Math.max(...sizes) : 1;
@@ -1959,11 +1963,23 @@ export function limitDots(a, now) {
     };
 }
 
-// The weeks' bars (the main weekly window): height 0 to 1
-export function limitWeekBars(a) {
+// The weeks' bars (the main weekly window) on the same time line as the
+// dots (x1, x2: 0 to 1, from start to now), height 0 to 1 of the largest
+export function limitWeekBars(a, now, start = null) {
+    const from = start !== null ? start : a.periods.length ? a.periods[0].from : now;
+    const span = Math.max(1, now - from);
+    const x = ms => Math.max(0, Math.min(1, (ms - from) / span));
     const weeks = a.periods.filter(p => p.weeks.seven_day);
     const top = Math.max(1e-9, ...weeks.map(p => p.weeks.seven_day.cost));
-    return weeks.map(p => ({from: p.from, cost: p.weeks.seven_day.cost, h: p.weeks.seven_day.cost / top, partial: !!p.weeks.seven_day.partial}));
+    return weeks.map(p => ({from: p.from, cost: p.weeks.seven_day.cost, x1: x(p.from), x2: x(Math.min(p.until, now)),
+        h: p.weeks.seven_day.cost / top, partial: !!p.weeks.seven_day.partial}));
+}
+
+// Where every account's charts begin: the earliest week any of them has, so
+// a day is at the same place in each
+export function limitStart(accounts, now) {
+    const starts = accounts.filter(a => a.periods.length).map(a => a.periods[0].from);
+    return starts.length ? Math.min(...starts) : now;
 }
 
 // The window keys an account has, in the order the Chats tab lists them

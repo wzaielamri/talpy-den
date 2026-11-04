@@ -18,8 +18,8 @@ off: then it keeps only what the transcripts still have.
     python3 -I week.py [--span day|week|all] [--back N] [--account ID] [--host HOST]... [--config-dir DIR]... [--currency C] [--pretty]
 
     --span S      day: one day (back N days); week: 7 days (back N weeks, the
-                  default); month: 30 days (back N times 30); all: everything
-                  kept, a row per 7 days
+                  default); month: 30 days (back N times 30), a row per 7 days;
+                  all: everything kept, a row per 7 days
     --back N      the day or 7 days N before today's
     --history-status | --history on|off | --forget
                   whether the history is kept (and since when), keep it or
@@ -87,6 +87,7 @@ CACHE_LOCK = "week.lock"
 LOCK_WAIT_S = 30  # another run reading the transcripts: wait for it this long, then use the cache as it is
 SPANS = ("day", "week", "month", "all")
 SPAN_DAYS = {"day": 1, "week": 7, "month": 30}  # (a span's days: a step back, the period before and the trend's)
+WEEK_ROWS = ("month", "all")  # spans whose timeline has a row per 7 days, not per day
 BACK_LIMIT = 3650  # (days or weeks back: further than any history)
 DAY_MS = 86_400_000
 HOUR_MS = 3_600_000
@@ -1358,18 +1359,21 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         trend[-1]["start"] = w0
 
     # The timeline, a day per row, with each day's chats (to unfold) and the
-    # moments a usage limit stopped one; for all, a row per 7 days (newest
-    # first, ending today) with their numbers
+    # moments a usage limit stopped one; for a month and everything, a row
+    # per 7 days (newest first, ending today, the oldest from the span's
+    # first day) with their numbers
     hits = sorted({t for c in chats for t in c["limits"] if w0 <= t < w1})
     day_rows, row_days = [], days
-    if span == "all":
+    by_week = span in WEEK_ROWS
+    if by_week:
         row_days = []
+        first = date.fromisoformat(days[0][0])
         end = date.fromisoformat(days[-1][0])
-        while True:
+        while end >= first:
             start = end - timedelta(days=6)
+            if span == "month":  # (its oldest row only its own days; everything's are 7 days each)
+                start = max(first, start)
             row_days.append((start.isoformat(), midnight(start), midnight(end + timedelta(days=1))))
-            if midnight(start) <= w0:
-                break
             end = start - timedelta(days=1)
     for day, ds, row_end in row_days:
         if ds >= now_ms:
@@ -1391,11 +1395,13 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         row["cost"] = round(sum(request_cost(k, t) for k, t in used), 4)
         row["tokenTotal"] = sum(sum(t[:TOKEN_KINDS]) for _, t in used)
         row["chats"] = chats_of(chats, parts["stretches"], ds, de, home)
-        if span == "all":  # (a row's numbers and chats: no 24 hours to draw)
-            row.update(to=(date.fromisoformat(day) + timedelta(days=6)).isoformat(), you=[], work=[], wait=[])
+        if by_week:  # (a row's numbers and chats: no 24 hours to draw)
+            row.update(to=(date.fromtimestamp(row_end / 1000) - timedelta(days=1)).isoformat(), you=[], work=[], wait=[])
         day_rows.append(row)
-    total["busiestDay"] = (max(day_rows, key=lambda r: r["workedMs"])["day"]
-                           if span in ("week", "month") and any(r["workedMs"] for r in day_rows) else None)
+    # (the day Claude worked most: by its days, also where a row is 7 of them)
+    worked = {day: sum(w * max(0, min(b, de) - max(a, ds)) for a, b, _, w in parts["stretches"])
+              for day, ds, de in days} if span in ("week", "month") else {}
+    total["busiestDay"] = max(worked, key=worked.get) if any(worked.values()) else None
 
     # Where it went: folders (with their chats), chats, models
     folders, models, guessed, saved = {}, {}, set(), 0.0

@@ -10,9 +10,9 @@ import {
   coldText, currencyOf, dayTip, deltaText, factsText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
   shareText, tipMeaning,
-  dateText, periodWaiting, rowDay, shortDay, stepText,
+  dateText, periodWaiting, rowDay, shortDay, stepText, weekRows,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
-  limitWeekBars,
+  limitStart, limitWeekBars,
 } from "../src/shared/week";
 import { ViewHost } from "../src/view";
 
@@ -48,7 +48,7 @@ test("the days shown, and the week's facts", () => {
 test("the Recap reads as a story: the tiles, what Claude did, when, where, then the money", () => {
   assert.deepEqual(weekTiles(demoWeek(NOW)).map((t) => t.label), ["You", "Claude worked", "Prompts", "Tokens", "At API prices"]);
   // (Turns that cost the most is gone: Chats it worked on most says it; the cold-cache note is with the tips)
-  assert.deepEqual([...RECAP_SECTIONS], ["work", "days", "plan", "limits", "lanes", "projects", "chats", "models", "tips"]);
+  assert.deepEqual([...RECAP_SECTIONS], ["work", "days", "plan", "lanes", "projects", "chats", "models", "tips"]);
 });
 
 test("the tokens used: a tile with its change and trend, and a row's tokens", () => {
@@ -156,15 +156,17 @@ test("a day and everything: what the period line says, Overall's rows", () => {
   assert.equal(weekTiles(all)[0].delta, "");
 });
 
-test("a month: the last 30 days, a row each, against the 30 before", () => {
+test("a month: the last 30 days, a row per 7 days, against the 30 before", () => {
   const month = demoWeek(NOW, 0, "", "month");
-  assert.equal(month.days.length, 30);
+  assert.equal(month.days.length, 5);
+  assert.ok(month.days[0].start > month.days[1].start); // (newest first)
+  assert.deepEqual([weekRows("month"), weekRows("all"), weekRows("week"), weekRows("day")], [true, true, false, false]);
   assert.match(periodText(month), /^Last 30 days · \d+ \w{3} – \d+ \w{3}$/);
   assert.doesNotMatch(periodText({ ...month, back: 1 }), /^Last/);
   assert.equal(periodWaiting("month", 0), "Last 30 days");
   assert.deepEqual([stepText("month", false), stepText("month", true), stepText("day", false), stepText("week", true)],
     ["The 30 days before", "The 30 days after", "The day before", "The week after"]);
-  assert.equal(month.sum.workedMs, month.days.reduce((t, d) => t + d.workedMs, 0));
+  assert.ok(month.sum.workedMs > 0);
   const tip = weekTiles(month)[0].tip;
   assert.match(tip, /\nThe 30 days before: /);
   assert.match(tip, /\n30 days at a time, these 30 days last: /);
@@ -417,7 +419,8 @@ test("advanced analyses: how a plan's limits changed, in words", () => {
   assert.match(limitFillText({ wallMs: 6 * HOUR, workMs: 0 }), /doesn't fill in its 5 hours$/);
   const mix = limitMix({ fresh: 2e6, output: 0.4e6, cacheRead: 112e6 });
   assert.deepEqual(mix.parts.map((p) => p.kind), ["cacheRead", "fresh", "output"]);
-  assert.equal(mix.text, "114.4M tokens filled one: 98% cache reads, 2% new input and cache writes, <1% output");
+  assert.deepEqual(mix.parts.map((p) => p.label), ["cache reads 98%", "new input and cache writes 2%", "output <1%"]);
+  assert.equal(mix.text, "114.4M tokens fill a 5-hour window");
   assert.match(limitFootText({ since: NOW }), /since 24 Oct\. Use on claude\.ai/);
 });
 
@@ -430,7 +433,14 @@ test("advanced analyses: the demo's accounts, their charts and tokens", () => {
   const dots = limitDots(max, NOW);
   assert.ok(dots.dots.length > 10 && dots.dots.every((d) => d.x >= 0 && d.x <= 1 && d.y > 0 && d.y < 1));
   assert.ok(dots.lo > 0 && dots.top > dots.lo);
-  assert.deepEqual(limitWeekBars(team).map((b) => b.cost), [297, 291, 288]);
+  assert.deepEqual(limitWeekBars(team, NOW).map((b) => b.cost), [297, 291, 288]);
+  // (both accounts on one time line: a week is at the same place in each)
+  const start = limitStart(accounts, NOW);
+  const [maxBars, teamBars] = [limitWeekBars(max, NOW, start), limitWeekBars(team, NOW, start)];
+  assert.equal(maxBars[maxBars.length - 1].x1, teamBars[teamBars.length - 1].x1);
+  assert.ok(teamBars[0].x1 > 0 && maxBars[0].x1 === 0);
+  assert.equal(start, Math.min(max.periods[0].from, team.periods[0].from));
+  assert.equal(limitStart([], NOW), NOW);
   assert.match(limitTokensText(team), /^2\.5M output tokens of Opus 5\.5 \(or 245\.0M cache reads\) fill a 5-hour window; 14\.4M a week, at API prices$/);
   assert.equal(demoLimits(NOW, team.id).accounts.length, 1);
 });

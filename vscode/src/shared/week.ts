@@ -99,7 +99,7 @@ export function dateText(day: string): string {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-// "Sat 24": a timeline row's day ("19 Oct": Overall's 7 days)
+// "Sat 24": a timeline row's day ("19 Oct": a month's or Overall's 7 days)
 export function rowDay(day: string, weeks = false): string {
   return weeks ? shortDay(day) : dayLabel(day).split(" ").slice(0, 2).join(" ");
 }
@@ -155,10 +155,15 @@ function amountText(v: number, kind: Kind, cur: Currency): string {
 
 // The Recap's sections under its tiles, top to bottom (the same in every
 // front end): what Claude did; when (the day-by-day graph, your plan's
-// limits now and, folded, the advanced analyses of them; chat by chat); where (by
-// project, the chats it worked on most); then the money (at API prices,
-// what could use less of your plan)
-export const RECAP_SECTIONS = ["work", "days", "plan", "limits", "lanes", "projects", "chats", "models", "tips"] as const;
+// limits now, chat by chat); where (by project, the chats it worked on
+// most); then the money (at API prices, what could use less of your plan).
+// Under them all, after the closing note, the folded Advanced analyses.
+export const RECAP_SECTIONS = ["work", "days", "plan", "lanes", "projects", "chats", "models", "tips"] as const;
+
+// Spans whose timeline has a row per 7 days, not per day
+export function weekRows(span: WeekSpan | undefined): boolean {
+  return span === "month" || span === "all";
+}
 export type RecapSection = (typeof RECAP_SECTIONS)[number];
 
 export interface WeekTile {
@@ -562,16 +567,18 @@ export function limitMoney(usd: number, cur: Currency = USD): string {
   return symbol ? symbol + text : `${text} ${cur.code}`;
 }
 
-// What filled a window: its parts (shares of all its tokens) and the line for them
-export function limitMix(t: LimitPeriod["tokens"]): { parts: { kind: "cacheRead" | "fresh" | "output"; share: number }[]; text: string } {
+// What filled a window: its parts (shares of all its tokens, each with its
+// legend's words) and the line under them
+export function limitMix(t: LimitPeriod["tokens"]): {
+  parts: { kind: "cacheRead" | "fresh" | "output"; share: number; label: string }[];
+  text: string;
+} {
   const total = t ? t.cacheRead + t.fresh + t.output : 0;
   if (!t || total <= 0) return { parts: [], text: "" };
-  const parts = (["cacheRead", "fresh", "output"] as const).map((kind) => ({ kind, share: t[kind] / total }));
-  return {
-    parts,
-    text: `${shortCount(total)} tokens filled one: ${shareText(parts[0].share)} cache reads, ` +
-      `${shareText(parts[1].share)} new input and cache writes, ${shareText(parts[2].share)} output`,
-  };
+  const names = { cacheRead: "cache reads", fresh: "new input and cache writes", output: "output" };
+  const parts = (["cacheRead", "fresh", "output"] as const).map((kind) => ({ kind, share: t[kind] / total,
+    label: `${names[kind]} ${shareText(t[kind] / total)}` }));
+  return { parts, text: `${shortCount(total)} tokens fill a 5-hour window` };
 }
 
 // "24 Oct": when a week began
@@ -584,14 +591,14 @@ export function limitDay(ms: number): string {
 // the weeks kept; from a little under the smallest to a little over the
 // largest (from 0 they'd all sit at the top, a change unseen: the caption
 // says the range)
-export function limitDots(a: LimitAccount, now: number): {
+export function limitDots(a: LimitAccount, now: number, start?: number): {
   dots: { x: number; y: number; full: number; tip: string }[];
   medians: { x1: number; x2: number; y: number }[];
   marks: number[]; // (x of each change of the limits)
   lo: number;
   top: number;
 } {
-  const from = a.periods.length ? a.periods[0].from : now;
+  const from = start ?? (a.periods.length ? a.periods[0].from : now);
   const span = Math.max(1, now - from);
   const sizes = [...a.windows.map((w) => w.full), ...a.periods.map((p) => p.fiveHour?.cost ?? NaN)].filter((v) => v > 0);
   const most = sizes.length ? Math.max(...sizes) : 1;
@@ -612,10 +619,23 @@ export function limitDots(a: LimitAccount, now: number): {
 }
 
 // The weeks' bars (the main weekly window): height 0 to 1, the newest marked
-export function limitWeekBars(a: LimitAccount): { from: number; cost: number; h: number; partial: boolean }[] {
+// The weeks' bars (the main weekly window) on the same time line as the
+// dots (x1, x2: 0 to 1, from start to now), height 0 to 1 of the largest
+export function limitWeekBars(a: LimitAccount, now: number, start?: number): { from: number; cost: number; x1: number; x2: number; h: number; partial: boolean }[] {
+  const from = start ?? (a.periods.length ? a.periods[0].from : now);
+  const span = Math.max(1, now - from);
+  const x = (ms: number) => Math.max(0, Math.min(1, (ms - from) / span));
   const weeks = a.periods.filter((p) => p.weeks.seven_day);
   const top = Math.max(1e-9, ...weeks.map((p) => p.weeks.seven_day.cost));
-  return weeks.map((p) => ({ from: p.from, cost: p.weeks.seven_day.cost, h: p.weeks.seven_day.cost / top, partial: !!p.weeks.seven_day.partial }));
+  return weeks.map((p) => ({ from: p.from, cost: p.weeks.seven_day.cost, x1: x(p.from), x2: x(Math.min(p.until, now)),
+    h: p.weeks.seven_day.cost / top, partial: !!p.weeks.seven_day.partial }));
+}
+
+// Where every account's charts begin: the earliest week any of them has, so
+// a day is at the same place in each
+export function limitStart(accounts: LimitAccount[], now: number): number {
+  const starts = accounts.filter((a) => a.periods.length).map((a) => a.periods[0].from);
+  return starts.length ? Math.min(...starts) : now;
 }
 
 // The window keys an account has, in the order the Chats tab lists them

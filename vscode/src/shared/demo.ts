@@ -426,9 +426,14 @@ function demoLanes(start: number): WeekLane[] {
 
 export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "week"): WeekRecap {
   if (span === "month") {
-    // the last 30 days: the made-up weeks back to back, a row each day
+    // the last 30 days: the made-up weeks back to back, a row per 7 days (newest first)
     const weeks = [4, 3, 2, 1, 0].map((b) => demoWeek(now, b + 5 * back, account));
     const days = weeks.flatMap((w) => w.days).slice(-30);
+    const rows: WeekDay[] = weeks.map((w) => ({
+      ...w.days[0], to: w.to, you: [], work: [], wait: [], limits: [], end: w.days[w.days.length - 1].end,
+      youMs: w.sum.youMs, workedMs: w.sum.workedMs, busyMs: w.sum.busyMs, waitMs: w.sum.waitMs, prompts: w.sum.prompts, cost: w.sum.cost,
+      tokenTotal: w.sum.tokenTotal, chats: w.chats.slice(0, 3),
+    })).reverse();
     const add = (key: keyof WeekNumbers) => days.reduce((t, d) => t + (d[key] || 0), 0);
     const numbers = (k: number): WeekNumbers => ({ youMs: add("youMs") * k, workedMs: add("workedMs") * k, busyMs: add("busyMs") * k,
       waitMs: add("waitMs") * k, prompts: Math.round(add("prompts") * k), cost: add("cost") * k, tokenTotal: Math.round(add("tokenTotal") * k) });
@@ -436,7 +441,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     const sum = { ...week.sum, ...numbers(1), turns: week.sum.turns * 4, chats: week.sum.chats * 3,
       busiestDay: days.reduce((b, d) => (d.workedMs > b.workedMs ? d : b), days[0]).day };
     const start = days[0].start;
-    return { ...week, span, back, backMax: 2, first: days[0].day, from: days[0].day, to: days[days.length - 1].day, days, sum,
+    return { ...week, span, back, backMax: 2, first: days[0].day, from: days[0].day, to: days[days.length - 1].day, days: rows, sum,
       previous: numbers(0.86),
       trend: [0.7, 0.78, 0.81, 0.86].map((k, i) => ({ ...numbers(k), start: start - (4 - i) * 30 * 86400000 })).concat([{ ...numbers(1), start }]) };
   }
