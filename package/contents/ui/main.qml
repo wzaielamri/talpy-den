@@ -856,6 +856,54 @@ PlasmoidItem {
         return (host ? host + "|" : "") + (s.profileDir || "") + "/" + (s.chatId || s.sessionId || "")
     }
 
+    // A chat Claude moved to the background under a new id (its row's
+    // movedFrom) keeps what's open in its row (its details, its subagents and
+    // theirs, a Stop asked) and where it was drawn, as it keeps its pet
+    // (PetStrip.sync): what was kept under the id it had goes over to the new
+    // one, before the list shows it. Only for a moved row with something kept
+    // under its old key, unless the old id is still listed (both run).
+    function followMovedRows(host, groups) {
+        for (const g of groups || [])
+            for (const s of g.sessions || []) {
+                if (!s.movedFrom || !s.movedFrom.id)
+                    continue
+                const from = rowKeyOf({ profileDir: s.profileDir, chatId: s.movedFrom.id }, host)
+                const to = rowKeyOf(s, host)
+                const runs = Object.keys(expandedAgentRuns).filter(k => k.startsWith(from + "|"))
+                if (from === to || !(from in expandedPeek || from in expandedAgents || from in rowSpots
+                                     || stopConfirmSession === from || runs.length))
+                    continue
+                if (g.sessions.some(o => (o.chatId || o.sessionId) === s.movedFrom.id))
+                    continue
+                const moved = map => {
+                    if (!(from in map))
+                        return map
+                    const next = Object.assign({}, map)
+                    if (!(to in next))
+                        next[to] = next[from]
+                    delete next[from]
+                    return next
+                }
+                if (from in expandedPeek)
+                    expandedPeek = moved(expandedPeek)
+                if (from in expandedAgents)
+                    expandedAgents = moved(expandedAgents)
+                if (runs.length) {
+                    const next = Object.assign({}, expandedAgentRuns)
+                    for (const k of runs) {
+                        next[to + k.slice(from.length)] = next[k]
+                        delete next[k]
+                    }
+                    expandedAgentRuns = next
+                }
+                if (from in rowSpots && !(to in rowSpots))
+                    rowSpots[to] = rowSpots[from]
+                delete rowSpots[from]
+                if (stopConfirmSession === from)
+                    stopConfirmSession = to
+            }
+    }
+
     function togglePeek(rowKey) {
         const next = Object.assign({}, expandedPeek)
         next[rowKey] = !next[rowKey]
@@ -1456,6 +1504,7 @@ PlasmoidItem {
         lastFullUpdate = Date.now()
         now = parsed.generatedAt
         liveFromRows(parsed.groups)
+        followMovedRows("", parsed.groups)
         status = parsed   // first: whether this copy notifies
         followPaneChat("", parsed)
         trackTransitions("", parsed.groups, parsed.generatedAt, "")
@@ -2509,6 +2558,7 @@ PlasmoidItem {
             trackLimitStops("ssh:" + host, result.groups, host)
             trackOverlaps("ssh:" + host, result.groups, host)
             celebrateResets("ssh:" + host, result.groups)
+            followMovedRows(host, result.groups)
             // clockOffset: what its times were moved by (0: not moved), for
             // the ones left on its clock (reviewPending)
             setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(),

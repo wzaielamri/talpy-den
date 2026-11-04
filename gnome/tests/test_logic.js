@@ -624,6 +624,16 @@ test('subagent details', () => {
     eq(L.rowKey(live, 'lab'), L.rowKey({...live, key: '.claude-work/s1/job'}, 'lab'));
     eq(L.rowKey(live, 'lab'), 'lab|.claude-work/c1');
     eq(L.rowKey({...live, chatId: null}, ''), '.claude-work/s1');
+    // ... and when Claude moves it to the background under a new id (movedFrom), once
+    const ui = {expandedPeek: {'lab|.claude-work/c1': true}, expandedAgents: {'lab|.claude-work/c1': true},
+        expandedAgent: {'lab|.claude-work/c1|a1': true}, stopConfirm: ''};
+    const moved = {...live, key: '.claude-work/c2/job', sessionId: 'c2', chatId: 'c2', movedFrom: {id: 'c1', at: null}};
+    L.followMovedRows(ui, [{sessions: [moved]}], 'lab');
+    eq([ui.expandedPeek, ui.expandedAgents, ui.expandedAgent],
+        [{'lab|.claude-work/c2': true}, {'lab|.claude-work/c2': true}, {'lab|.claude-work/c2|a1': true}]);
+    const both = {expandedPeek: {'.claude-work/c1': true}, expandedAgents: {}, expandedAgent: {}, stopConfirm: ''};
+    L.followMovedRows(both, [{sessions: [{...live, pid: 7}, moved]}], '');
+    eq(both.expandedPeek, {'.claude-work/c1': true}, 'the old id still runs: its row keeps them');
     eq(L.agentSummaryText(a), '12 tool calls · 45.2k tokens');
     eq(L.agentSummaryText({toolCalls: 1, tokens: null}), '1 tool call');
     eq(L.agentSummaryText({toolCalls: null, tokens: 0}), '', 'nothing known');

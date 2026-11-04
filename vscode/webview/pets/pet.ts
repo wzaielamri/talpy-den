@@ -100,7 +100,7 @@ function div(className: string): HTMLDivElement {
 
 export class Pet {
   readonly stage: Stage;
-  readonly key: string; // the chat's key ("" for the hero)
+  key: string; // the chat's key ("" for the hero; a chat Claude moved to the background takes its new one: Stage.sync)
   readonly lone: boolean;
   readonly colorIndex: number; // -1 for the hero
   chat: Session | null = null; // the chat's session, null once it left the list

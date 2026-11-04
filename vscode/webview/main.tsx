@@ -1,6 +1,6 @@
 // The webview's entry: draws the dashboard from what the extension sends.
 
-import { gotRecentMore, setTab } from "./util/ui";
+import { followMovedRows, gotRecentMore, setTab } from "./util/ui";
 import { render } from "preact";
 import type { HostMessage } from "../src/shared/types";
 import { App } from "./components/App";
@@ -17,6 +17,7 @@ window.addEventListener("message", (event: MessageEvent) => {
   switch (msg.type) {
     case "state":
       liveViews.set(msg.state.live ?? {});
+      followMovedRows(msg.state);
       viewState.set(msg.state);
       break;
     case "live":

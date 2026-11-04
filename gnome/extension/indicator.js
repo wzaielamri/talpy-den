@@ -302,6 +302,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
             // The new status first: a reaction that fails mustn't keep the
             // popup on old data (on Plasma one froze it at a limit reset)
             this._errorText = result.errorText;
+            L.followMovedRows(this.ui, result.status.groups, '');
             this._status = result.status;
             try {
                 this._track('', result.status.groups, result.status.generatedAt, '');
@@ -1048,6 +1049,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         if (answer.ok && answer.result) {
             // on this computer's clock: the host's may be off
             const result = L.toLocalClock(answer.result, Date.now() - (answer.result.generatedAt || Date.now()));
+            L.followMovedRows(this.ui, result.groups, host);
             this._setRemote(host, {loading: false, ok: true, error: '', result, updatedAt: Date.now(),
                 stopped: false, gone: false, cached: false});
             try {

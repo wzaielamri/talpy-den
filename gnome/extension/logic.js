@@ -1186,6 +1186,39 @@ export function rowKey(s, remoteHost) {
     return `${remoteHost ? `${remoteHost}|` : ''}${s.profileDir}/${s.chatId || s.sessionId}`;
 }
 
+// A chat Claude moved to the background under a new id (its row's movedFrom)
+// keeps what's open in its row (its details, its subagents and theirs, a Stop
+// asked), as it keeps its pet (pets.js setChats): what ui kept under the id it
+// had goes over to the new one, as each check comes. Only for a moved row
+// with something kept under its old key, unless the old id is still listed.
+export function followMovedRows(ui, groups, host) {
+    for (const g of groups || []) {
+        for (const s of g.sessions || []) {
+            if (!s.movedFrom || !s.movedFrom.id)
+                continue;
+            const from = rowKey({profileDir: s.profileDir, chatId: s.movedFrom.id}, host), to = rowKey(s, host);
+            const runs = Object.keys(ui.expandedAgent).filter(k => k.startsWith(`${from}|`));
+            if (from === to || !(from in ui.expandedPeek || from in ui.expandedAgents || ui.stopConfirm === from || runs.length))
+                continue;
+            if (g.sessions.some(o => (o.chatId || o.sessionId) === s.movedFrom.id))
+                continue;
+            for (const map of [ui.expandedPeek, ui.expandedAgents]) {
+                if (!(from in map))
+                    continue;
+                if (!(to in map))
+                    map[to] = map[from];
+                delete map[from];
+            }
+            for (const k of runs) {
+                ui.expandedAgent[to + k.slice(from.length)] = ui.expandedAgent[k];
+                delete ui.expandedAgent[k];
+            }
+            if (ui.stopConfirm === from)
+                ui.stopConfirm = to;
+        }
+    }
+}
+
 // Popup state of one subagent (unfolded or not): by its row's key and its id
 export function agentKey(rowKey, agent) {
     return `${rowKey}|${agent.id}`;

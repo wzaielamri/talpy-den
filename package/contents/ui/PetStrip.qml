@@ -244,6 +244,21 @@ Item {
         for (const c of shownChats)
             byKey[c.key] = c
         chatByKey = byKey
+        // A chat Claude moved to the background under a new id (its row's
+        // movedFrom) keeps its pet, in its color, where it stands: the pet
+        // of the id it had takes the new one (unless that one is still listed)
+        for (const c of shownChats) {
+            const m = c.session.movedFrom
+            if (!m || !m.id || indexOfPet(c.key) >= 0)
+                continue
+            const from = root.petKeyOf({ profileDir: c.session.profileDir, chatId: m.id }, c.host)
+            const i = indexOfPet(from)
+            if (i < 0 || from in byKey)
+                continue
+            if (from in slots)   // (its spot first: it doesn't head for the middle meanwhile)
+                slots = Object.assign({ [c.key]: slots[from] }, slots)
+            petModel.setProperty(i, "petKey", c.key)
+        }
         for (let i = 0; i < petModel.count; i++) {
             const p = petModel.get(i)
             const leave = !(p.petKey in byKey)

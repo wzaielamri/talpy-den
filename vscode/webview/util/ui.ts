@@ -3,10 +3,10 @@
 // projects and stats are open. Kept by row and account key, since every poll
 // brings new objects.
 
-import type { RecentMore } from "../../src/shared/model";
-import type { Group, RecentChat } from "../../src/shared/types";
+import { allGroups, type RecentMore } from "../../src/shared/model";
+import type { Group, RecentChat, ViewState } from "../../src/shared/types";
 import { post, savedState, saveState } from "../env";
-import { groupKeyOf } from "./chat";
+import { groupKeyOf, rowKeyOf } from "./chat";
 import { createStore } from "./store";
 
 export type Tab = "chats" | "week" | "perms" | "projects";
@@ -80,6 +80,37 @@ export function toggleAgents(rowKey: string): void {
 export function toggleAgentDetail(key: string): void {
   const s = uiState.get();
   persist({ ...s, agentDetail: toggled(s.agentDetail, key) });
+}
+
+// A chat Claude moved to the background under a new id (its row's movedFrom)
+// keeps its subagents, theirs and its peek open, as it keeps its pet
+// (pets/stage.ts sync): what was open under the id it had goes over to the new
+// one, as each state comes. Only for a moved row with something open under
+// its old key, unless the old id is still listed (both run).
+export function followMovedRows(state: ViewState): void {
+  let s = uiState.get();
+  let changed = false;
+  for (const g of allGroups(state.status, state.hosts)) {
+    for (const r of g.sessions) {
+      const old = r.movedFrom?.id;
+      if (!old) continue;
+      const from = rowKeyOf({ ...r, chatId: old }, g.host), to = rowKeyOf(r, g.host);
+      const runs = Object.keys(s.agentDetail).filter((k) => k.startsWith(from + "|"));
+      if (from === to || !(s.agents[from] || s.peek[from] || runs.length)) continue;
+      if (g.sessions.some((o) => (o.chatId || o.sessionId) === old)) continue;
+      const moved = (map: Record<string, true>, keys: string[]): Record<string, true> => {
+        const next = { ...map };
+        for (const k of keys) {
+          next[to + k.slice(from.length)] = true;
+          delete next[k];
+        }
+        return next;
+      };
+      s = { ...s, agents: moved(s.agents, s.agents[from] ? [from] : []), peek: moved(s.peek, s.peek[from] ? [from] : []), agentDetail: moved(s.agentDetail, runs) };
+      changed = true;
+    }
+  }
+  if (changed) persist(s);
 }
 
 export function togglePeek(rowKey: string): void {

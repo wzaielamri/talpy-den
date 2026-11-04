@@ -18,7 +18,7 @@
 // paused CSS animations.
 
 import { editorTab, isDark } from "../env";
-import { plural } from "../../src/shared/model";
+import { petKeyOf, plural } from "../../src/shared/model";
 import type { TalpyTheme } from "../../vendor/talpy/talpy.mjs";
 import type { AccountInput, HeroInput, PetStage, StageCallbacks, StageChat } from "./api";
 import type { ChatRef, Counts } from "../../src/shared/types";
@@ -406,6 +406,20 @@ export class Stage implements PetStage, Animator {
     }
     const shown = this.chats.slice(0, this.maxPets);
     const byKey = new Map(shown.map((c) => [c.key, c]));
+    // A chat Claude moved to the background under a new id (its row's
+    // movedFrom) keeps its pet, in its color, where it stands: the pet of the
+    // id it had takes the new one (unless that one is still listed)
+    for (const c of shown) {
+      const m = c.session.movedFrom;
+      if (!m?.id || this.petFor(c.key)) continue;
+      const from = petKeyOf({ profileDir: c.session.profileDir, chatId: m.id, sessionId: m.id, key: "" }, c.host);
+      const pet = this.petFor(from);
+      if (!pet || byKey.has(from)) continue;
+      const spot = this.slots.get(from);
+      if (spot !== undefined) this.slots.set(c.key, spot);
+      this.slots.delete(from);
+      pet.key = c.key;
+    }
     for (const p of [...this.pets]) p.setChat(byKey.get(p.key) ?? null);
     // While a pet digs away the others stay where they are and a new chat's
     // pet waits: none tunnels over it or digs up where it still stands

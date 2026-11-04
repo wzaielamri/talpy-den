@@ -782,6 +782,26 @@ class Stage {
         const shown = chats.slice(0, this.pets.maxPets);
         this.hidden = chats.length - shown.length;
         const byKey = new Map(shown.map(c => [c.key, c]));
+        // A chat Claude moved to the background under a new id (its row's
+        // movedFrom) keeps its pet, in its color, where it stands: the pet
+        // of the id it had takes the new one (unless that one is still listed)
+        for (const c of shown) {
+            const m = c.session.movedFrom;
+            if (!m || !m.id || this.list.has(c.key))
+                continue;
+            const from = L.petKeyOf({profileDir: c.session.profileDir, chatId: m.id}, c.host);
+            const pet = this.list.get(from);
+            if (!pet || byKey.has(from))
+                continue;
+            this.list.delete(from);
+            this.list.set(c.key, pet);
+            pet.key = c.key;
+            this.colors[c.key] = this.colors[from];
+            delete this.colors[from];
+            const at = this.order.indexOf(from);
+            if (at >= 0)
+                this.order[at] = c.key;
+        }
         for (const [key, pet] of this.list) {
             const c = byKey.get(key);
             if (!c && !pet.leaving) {
