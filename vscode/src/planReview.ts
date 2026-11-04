@@ -4,7 +4,6 @@
 // to the chat's plan): what you changed and your comments go to the chat
 // that made the plan, which revises it in plan mode (jump.py --plan-feedback,
 // Actions.sendPlanFeedback). The comments are kept until they're sent.
-import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 
@@ -27,24 +26,28 @@ export interface PlanComment {
 }
 
 // {slug, file} of a plan of this computer, <config>/plans/<slug>.md (a Claude
-// config folder: ~/.claude*, or one of configDirs), or null
-export function planFileOf(uri: vscode.Uri, configDirs: string[] = [], home = os.homedir(),
+// config folder: ~/.claude*, or one of configDirs; or a project's own
+// .claude/plans), or null
+export function planFileOf(uri: vscode.Uri, configDirs: string[] = [],
   listed: ReadonlySet<string> = new Set()): { slug: string; file: string } | null {
   // (file: in a Remote-SSH window too: this extension runs on this computer)
   if (uri.scheme !== "file") return null;
-  return planPath(uri.path, configDirs, home, listed);
+  return planPath(uri.path, configDirs, listed);
 }
 
 // listed: the files of the plans in projects' own plans folders the view
 // lists (Claude's plansDirectory there names any folder)
-export function planPath(file: string, configDirs: string[] = [], home = os.homedir(),
+export function planPath(file: string, configDirs: string[] = [],
   listed: ReadonlySet<string> = new Set()): { slug: string; file: string } | null {
   const slug = path.basename(file, ".md");
   if (listed.has(file) && file.endsWith(".md") && SLUG.test(slug)) return { slug, file };
   if (!file.endsWith(".md") || path.basename(path.dirname(file)) !== "plans") return null;
   const config = path.dirname(path.dirname(file));
-  const own = path.dirname(config) === home && /^\.claude(-[^/]+)?$/.test(path.basename(config));
-  return SLUG.test(slug) && (own || configDirs.includes(config)) ? { slug, file } : null;
+  // (an account's, ~/.claude*, or a project's .claude: the editor's Send
+  // Feedback button shows on each, package.json's when; jump.py finds a
+  // project's plan by its name)
+  const claude = /^\.claude[^/]*$/.test(path.basename(config));
+  return SLUG.test(slug) && (claude || configDirs.includes(config)) ? { slug, file } : null;
 }
 
 export class PlanReview implements vscode.Disposable {
@@ -55,7 +58,7 @@ export class PlanReview implements vscode.Disposable {
     this.controller = vscode.comments.createCommentController(CONTROLLER_ID, "Feedback for Claude");
     this.controller.options = { prompt: "Comment for Claude…", placeHolder: "What Claude should change here" };
     this.controller.commentingRangeProvider = {
-      provideCommentingRanges: (doc) => (planFileOf(doc.uri, this.configDirs(), undefined, this.listed()) ? [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)] : []),
+      provideCommentingRanges: (doc) => (planFileOf(doc.uri, this.configDirs(), this.listed()) ? [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)] : []),
     };
   }
 

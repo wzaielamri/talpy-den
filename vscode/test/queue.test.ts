@@ -63,15 +63,17 @@ test("an account's memories are found by their key", () => {
 
 test("feedback goes with the plan files of Claude's config folders", () => {
   const file = "/home/alice/.claude-work/plans/calm-red-owl.md";
-  assert.deepEqual(planPath(file, [], "/home/alice"), { slug: "calm-red-owl", file });
-  assert.equal(planPath("/home/alice/.claude/plans/calm-red-owl.md", [], "/home/alice")?.slug, "calm-red-owl");
-  assert.equal(planPath("/home/alice/notes/plans/calm-red-owl.md", [], "/home/alice"), null); // not Claude's
-  assert.equal(planPath("/srv/claude/plans/a.md", ["/srv/claude"], "/home/alice")?.slug, "a"); // a config folder of the settings
-  assert.equal(planPath("/home/alice/.claude-work/plans/notes.txt", [], "/home/alice"), null);
+  assert.deepEqual(planPath(file, []), { slug: "calm-red-owl", file });
+  assert.equal(planPath("/home/alice/.claude/plans/calm-red-owl.md", [])?.slug, "calm-red-owl");
+  assert.equal(planPath("/home/alice/notes/plans/calm-red-owl.md", []), null); // not Claude's
+  assert.equal(planPath("/srv/claude/plans/a.md", ["/srv/claude"])?.slug, "a"); // a config folder of the settings
+  assert.equal(planPath("/home/alice/.claude-work/plans/notes.txt", []), null);
+  // a project's own .claude/plans, also before the view lists it (as the editor's button shows on it)
+  assert.equal(planPath("/home/alice/app/.claude/plans/fix-parser.md", [])?.slug, "fix-parser");
   // a plan in a project's own plans folder the view lists (plansDirectory names any folder)
   const listed = new Set(["/home/alice/app/docs/design/calm-red-owl.md"]);
-  assert.deepEqual(planPath("/home/alice/app/docs/design/calm-red-owl.md", [], "/home/alice", listed), { slug: "calm-red-owl", file: "/home/alice/app/docs/design/calm-red-owl.md" });
-  assert.equal(planPath("/home/alice/app/docs/design/other.md", [], "/home/alice", listed), null);
+  assert.deepEqual(planPath("/home/alice/app/docs/design/calm-red-owl.md", [], listed), { slug: "calm-red-owl", file: "/home/alice/app/docs/design/calm-red-owl.md" });
+  assert.equal(planPath("/home/alice/app/docs/design/other.md", [], listed), null);
 });
 
 test("a task can start later, at a day and time you pick", () => {

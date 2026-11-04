@@ -121,7 +121,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Send Feedback to Claude, for a plan's file (the editor's, or the active one)
   const sendFeedback = (uri?: vscode.Uri) => {
     const target = uri instanceof vscode.Uri ? uri : vscode.window.activeTextEditor?.document.uri;
-    const file = target ? planFileOf(target, extraConfigDirs(), undefined, projectPlans()) : null;
+    const file = target ? planFileOf(target, extraConfigDirs(), projectPlans()) : null;
     if (!file) return void vscode.window.showInformationMessage("Talpy Den: open a plan's file first (✎ next to a plan).");
     const state = dash.state();
     const groups = state.status?.groups ?? [];
