@@ -180,8 +180,11 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         // (the picked containers too, unless Show containers is off)
         const hosts = settings.get_strv('ssh-hosts').map(h => h.trim())
             .filter(h => h && (settings.get_boolean('show-containers') || !containerOf(h)));
-        const where = new Adw.ComboRow({title: 'On', subtitle: 'A host\'s accounts go over ssh: nothing is installed there, and its logins open in a terminal here, where you paste the code Claude gives you.',
-            model: Gtk.StringList.new(['This computer', ...hosts.map(h => hostLabel(h))])});
+        // (a container's accounts go through its engine on this computer or its host, not ssh)
+        const whereText = host => (!host ? '' : esc(containerOf(host)
+            ? `In ${hostLabel(host)}: nothing is installed there, and its logins open in a terminal here, where you paste the code Claude gives you.`
+            : `On ${host}, over ssh: nothing is installed there, and its logins open in a terminal here, where you paste the code Claude gives you.`));
+        const where = new Adw.ComboRow({title: 'On', model: Gtk.StringList.new(['This computer', ...hosts.map(h => hostLabel(h))])});
         if (hosts.length) {
             const on = new Adw.PreferencesGroup();
             on.add(where);
@@ -343,6 +346,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         where.connect('notify::selected', () => {
             state.host = where.selected > 0 ? hosts[where.selected - 1] : '';
             list.title = state.host ? esc(`Accounts on ${hostLabel(state.host)}`) : 'Accounts on this computer';
+            where.subtitle = whereText(state.host);
             state.accounts = [];
             state.loaded = false;
             state.confirm = '';
