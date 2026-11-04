@@ -426,6 +426,44 @@ test("a chat's tab shown again reads its conversation at once", async () => {
   }
 });
 
+// The watcher (pane.py --wait) ends while the tab is hidden; shown again with
+// nothing new, it waits on the transcript again (one, never two), not a look every 1.5 s
+test("a chat's tab shown again waits on its transcript again, one watcher at a time", async () => {
+  const calls: string[] = [];
+  let release = () => {};
+  const backend = { pane: async (args: string[]) => {
+    if (args.includes("--wait")) return (calls.push("wait"), await new Promise<void>((r) => (release = r)), { ok: true, unchanged: true });
+    calls.push(args.includes("--if-changed") ? "changed?" : "read");
+    return args.includes("--if-changed") ? { ok: true, unchanged: true } : { ok: true, items: [], more: false, stamp: "10:1/120" };
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+  p.open(chatRefOf(demoState(NOW).status!.groups.flatMap((g) => g.sessions)[0]));
+  const panel = recorded.panels.at(-1)!;
+  try {
+    panel.show(true);
+    panel.receive({ type: "ready" });
+    await tick();
+    assert.deepEqual(calls.splice(0), ["read", "wait"]);
+    panel.show(false);
+    panel.show(true); // (back while it still waits: that one goes on)
+    await tick();
+    assert.deepEqual(calls.splice(0), ["changed?"]);
+    await tick(300);
+    panel.show(false);
+    release(); // (its wait ends while hidden: it stops)
+    await tick();
+    panel.show(true);
+    await tick();
+    assert.deepEqual(calls.splice(0), ["changed?", "wait"]);
+  } finally {
+    p.dispose();
+    release();
+  }
+});
+
 // Closing a chat's terminal, Claude moves it to the background under a new id
 // (the status's "moved"): its tab goes on with it there, not with the old
 // transcript, which stops at the move

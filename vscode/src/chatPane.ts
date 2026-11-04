@@ -306,8 +306,9 @@ class Pane implements vscode.Disposable {
         if (this.disposed || this.panel.visible === this.shown) return;
         this.shown = this.panel.visible;
         this.post({ type: "visible", visible: this.shown });
-        if (this.shown && this.ready) void this.load();
-        this.schedule();
+        // (the look's pace once the read has started the watcher again: 15 s, not 1.5)
+        if (this.shown && this.ready) void this.load().finally(() => this.schedule());
+        else this.schedule();
       }),
       this.panel.onDidDispose(() => this.dispose()),
       owner.ext.dash.onState(() => void this.pushChat()),
@@ -446,7 +447,8 @@ class Pane implements vscode.Disposable {
         "--conversation", chatId, "--limit", String(this.limit), ...(this.stamp ? ["--if-changed", this.stamp] : []),
         ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...(this.host ? ["--host", this.host] : configDirArgs()),
       ], this.host ? 60000 : 30000);
-      if (this.disposed || (r.ok && r.unchanged)) return;
+      if (this.disposed) return;
+      if (r.ok && r.unchanged) return void this.watch(); // (shown again, nothing new: it waits on it again)
       if (chatId !== this.chatId) {
         this.loadAgain = true; // (Claude moved it meanwhile: its new id's, follow)
         return;
