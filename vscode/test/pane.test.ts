@@ -786,6 +786,49 @@ test("a reply to a background chat that asks something answers it: a No with you
   assert.match(routeHint("background", true, "bg", "", "deny"), /denies it/);
 });
 
+// An SSH host's chat has no watcher: just after you sent it something it's
+// read every second (as Plasma's window does) till that shows, else every 5 s
+test("an SSH host's chat is read every second just after you sent it something, till something new shows", async () => {
+  const row = { ...demoState(NOW).status!.groups.flatMap((g) => g.sessions)[0], host: "lab" };
+  let reads = 0;
+  let fresh = false;
+  const backend = { pane: async (args: string[]) => args[0] === "--send" ? { ok: true, how: "typed", message: "Sent" }
+    : (reads++, fresh ? { ok: true, items: [], more: false, stamp: "20:2/120" } : { ok: true, unchanged: true }) };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined,
+                 onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    p.open(chatRefOf(row, "lab"));
+    const panel = recorded.panels.at(-1)!;
+    panel.show(true);
+    panel.receive({ type: "ready" });
+    await flush();
+    panel.receive({ type: "send", text: "and the docs", how: "auto", afterTurn: false, id: 1 });
+    await flush();
+    const sent = reads;
+    mock.timers.tick(1000);
+    await flush();
+    mock.timers.tick(1000);
+    await flush();
+    assert.equal(reads, sent + 2, "every second");
+    fresh = true; // (it shows)
+    mock.timers.tick(1000);
+    await flush();
+    mock.timers.tick(4000);
+    await flush();
+    assert.equal(reads, sent + 3, "then every 5 s");
+    mock.timers.tick(1000);
+    await flush();
+    assert.equal(reads, sent + 4);
+    p.dispose();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test("your pictures read as Claude's terminal writes them: [Image #1], [Image #2], one picture named twice the same number", () => {
   assert.equal(numberedPictures("look [Image: /c/a.png] and [Image: /c/b.png], then [Image: /c/a.png] again"),
                "look [Image #1] and [Image #2], then [Image #1] again");

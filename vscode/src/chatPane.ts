@@ -443,11 +443,13 @@ class Pane implements vscode.Disposable {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     if (this.disposed || !this.panel.visible) return; // (closed: the reading stops)
-    // (with the watcher, only for what it can't see: a moment it wasn't running)
-    const every = this.host ? 5000 : this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
+    // (with the watcher, only for what it can't see: a moment it wasn't running; an SSH host's chat
+    // every second just after you sent it something, till that shows: chaseUntil)
+    const every = this.host ? (Date.now() < this.chaseUntil ? 1000 : 5000) : this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
     this.timer = setTimeout(() => void this.load().finally(() => this.schedule()), every);
   }
 
+  private chaseUntil = 0;
   private async load(): Promise<void> {
     if (this.disposed) return;
     if (this.loading) {
@@ -467,7 +469,7 @@ class Pane implements vscode.Disposable {
         this.loadAgain = true; // (Claude moved it meanwhile: its new id's, follow)
         return;
       }
-      this.take(r);
+      if (this.take(r) && r.ok) this.chaseUntil = 0; // (something new: your message, or what Claude writes)
     } finally {
       this.loading = false;
       if (this.loadAgain) {
@@ -584,7 +586,9 @@ class Pane implements vscode.Disposable {
         if (typeof m.text !== "string" || !["auto", "background", "copy", "enter"].includes(m.how)) break;
         const r = await this.owner.send(this.chat, m.text, m.how, m.afterTurn === true);
         this.result(m.afterTurn ? "later" : "send", r, typeof m.id === "number" ? m.id : undefined);
+        if (this.host && r.went) this.chaseUntil = Date.now() + 10000; // (as Plasma: read every second for 10 s, till it shows)
         await this.load();   // (the watcher has it already, as it's written; an SSH host's chat now)
+        if (this.chaseUntil) this.schedule();
         break;
       }
       case "unqueue": {
