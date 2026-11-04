@@ -525,15 +525,34 @@ class HistoryTests(Home):
         self.deleted.unlink()
         self.worked()
         past = self.cache_root / week.cs.USAGE_PAST_FILE  # (the plan windows that ended go too)
-        week.cs.write_json_atomic(past, {"version": 1, "windows": []})
+        week.cs.write_json_atomic(past, {"version": 1, "windows": [{"key": "five_hour"}]})
+        self.assertEqual(week.history_status(self.cache_root)["planWindows"], 1)  # (so the question asks)
         # (it says how many chats it forgot, as the question before counted them)
         self.assertEqual(week.set_history(self.cache_root, False),
-                         (True, "The Recap keeps only what Claude still has (it forgot 1 deleted chat)"))
+                         (True, "The Recap keeps only what Claude still has (it forgot 1 deleted chat and your "
+                                "plan's windows that ended)"))
         self.assertEqual(self.worked(), [("chat-a", 60_000)])
         self.assertFalse(week.history_status(self.cache_root)["keep"])
         self.assertFalse(past.exists())
         self.assertTrue(week.set_history(self.cache_root, True)[0])
         self.assertTrue(week.history_status(self.cache_root)["keep"])
+
+    def test_off_a_moved_chat_keeps_its_tokens(self):
+        moved = self.kept.parent.parent / "-w--claude-worktrees-x" / self.kept.name
+        moved.parent.mkdir()
+        self.kept.rename(moved)
+        self.worked()
+        week.set_history(self.cache_root, False)
+        cache = week.updated_cache(self.cache_root, self.profiles(), self.now)
+        chat = week.chats_between(cache, self.profiles(), 0, self.now + week.DAY_MS, self.home)["chat-a"]
+        self.assertEqual(sum(t[1] for agg in chat["hours"].values() for t in agg["t"].values()), 100)  # (its output)
+
+    def test_a_chat_of_a_folder_this_run_doesnt_read_isnt_deleted(self):
+        # (another front end's settings have no such extra Claude folder: they share the cache)
+        self.write(Transcript().prompt(self.t0).reply(self.t0 + 1000, "c"), "chat-c", "personal")
+        week.updated_cache(self.cache_root, self.profiles(), self.now)
+        week.updated_cache(self.cache_root, [p for p in self.profiles() if p.real.name == ".claude-work"], self.now)
+        self.assertEqual(week.history_status(self.cache_root)["deletedChats"], 0)
 
     def test_forget_starts_again_from_the_transcripts(self):
         self.deleted.unlink()

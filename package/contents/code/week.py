@@ -317,7 +317,9 @@ def scan(profiles, cache, now_ms, keep=True):
     it (the ids of the counted ones are kept with their hour).
 
     keep: a transcript Claude has deleted keeps its record ("gone"), for
-    the history; else it goes with it."""
+    the history; else it goes with it. One that's there but in none of the
+    profiles of this run (another front end's extra Claude folder: they
+    share the cache) keeps its record as it is."""
     old = cache.get("files") if isinstance(cache.get("files"), dict) else {}
     found = found_transcripts(profiles)
     for key in list(found):  # a file reached through another of its paths now keeps its record
@@ -337,13 +339,16 @@ def scan(profiles, cache, now_ms, keep=True):
         rec["profiles"] = f["profiles"]
         rec.pop("gone", None)
         files[key] = rec
-    if keep:
-        for key, rec in old.items():
-            if key not in files and isinstance(rec, dict) and isinstance(rec.get("data"), dict):
-                rec["gone"] = True  # (its transcript was deleted: what was read stays)
-                if isinstance(rec.get("state"), dict):
-                    rec["state"]["turn"] = None  # (no turn goes on in it any more)
-                files[key] = rec
+    for key, rec in old.items():
+        if key in files or not isinstance(rec, dict) or not isinstance(rec.get("data"), dict):
+            continue
+        if not rec.get("gone") and os.path.exists(key):
+            files[key] = rec  # (not deleted: of a profile this run doesn't read)
+        elif keep:
+            rec["gone"] = True  # (its transcript was deleted: what was read stays)
+            if isinstance(rec.get("state"), dict):
+                rec["state"]["turn"] = None  # (no turn goes on in it any more)
+            files[key] = rec
     counted = {i for rec in files.values() for agg in rec["data"]["hours"].values() for i in agg.get("m", [])}
     for key in sorted(found):
         rec = files[key]
@@ -900,12 +905,22 @@ def keep_history(cache_root):
     return cs.history_kept(cache_root)
 
 
+def past_windows(cache_root):
+    """How many of the plan's windows that ended talpy_den.py keeps (usage-past.json)."""
+    data = cs.read_json(cache_root / cs.USAGE_PAST_FILE)
+    windows = data.get("windows") if isinstance(data, dict) else None
+    return len(windows) if isinstance(windows, list) else 0
+
+
 def forget_past_windows(cache_root):
-    """The plan windows that ended (talpy_den.py's usage-past.json) go with the history."""
+    """The plan windows that ended (talpy_den.py's usage-past.json) go with
+    the history: how many there were."""
+    n = past_windows(cache_root)
     try:
         (cache_root / cs.USAGE_PAST_FILE).unlink()
     except OSError:
         pass
+    return n
 
 
 def first_activity(cache):
@@ -934,7 +949,7 @@ def history_status(cache_root):
         size = 0
     return {"ok": True, "keep": keep_history(cache_root),
             "since": date.fromtimestamp(first / 1000).isoformat() if first else None,
-            "deletedChats": len(gone), "sizeKB": size // 1024}
+            "deletedChats": len(gone), "planWindows": past_windows(cache_root), "sizeKB": size // 1024}
 
 
 def set_history(cache_root, keep):
@@ -945,20 +960,28 @@ def set_history(cache_root, keep):
         cs.write_json_atomic(cache_root / HISTORY_FILE, {"keep": bool(keep)})
         if keep:
             return True, "The Recap keeps its history"
-        forget_past_windows(cache_root)
+        windows = forget_past_windows(cache_root)
         cache = load_cache(cache_root)
         files = cache["files"]
         gone = [k for k, rec in files.items() if isinstance(rec, dict) and rec.get("gone")]
         # (in chats, as history_status counts them for the question before:
         # one moved to another folder isn't deleted)
         here = {rec.get("chat") for rec in files.values() if isinstance(rec, dict) and not rec.get("gone")}
-        chats = len({files[k].get("chat") for k in gone} - here)
-        for k in gone:
+        gone_chats = {files[k].get("chat") for k in gone}
+        chats = len(gone_chats - here)
+        # (a moved chat's tokens are in its old file's record, a reply counting
+        # once, in the first transcript read: its files are read again from
+        # their start, so it keeps them)
+        moved = gone_chats & here
+        drop = set(gone) | {k for k, rec in files.items() if isinstance(rec, dict) and rec.get("chat") in moved}
+        for k in drop:
             del files[k]
-        if gone:
+        if drop:
             cs.write_json_atomic(cache_path(cache_root), cache)
+        forgot = (["%d deleted %s" % (chats, "chat" if chats == 1 else "chats")] if chats else []) + (
+            ["your plan's windows that ended"] if windows else [])
         return True, "The Recap keeps only what Claude still has" + (
-            " (it forgot %d deleted %s)" % (chats, "chat" if chats == 1 else "chats") if chats else "")
+            " (it forgot %s)" % " and ".join(forgot) if forgot else "")
 
 
 def forget_history(cache_root):
@@ -972,8 +995,9 @@ def forget_history(cache_root):
                 (cache_root / name).unlink()
             except OSError:
                 pass
-        forget_past_windows(cache_root)
-        return True, "The saved history is deleted: the Recap starts again from the chats Claude still has"
+        windows = forget_past_windows(cache_root)
+        return True, ("The saved history and your plan's windows that ended are deleted" if windows else
+                      "The saved history is deleted") + ": the Recap starts again from the chats Claude still has"
 
 
 # ---------------------------------------------------------------- one machine's chats of some days

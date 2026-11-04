@@ -728,7 +728,7 @@
               "default": true,
               "scope": "application",
               "ignoreSync": true,
-              "markdownDescription": "Claude Code deletes chats after 30 days (its `cleanupPeriodDays` setting). The Recap tab's **Overall** keeps their numbers past that, in `~/.cache/talpy-den`: times, tokens, costs, folders and chat names. Off, it keeps only what Claude still has. One choice for Talpy Den here and on Plasma or GNOME. **Talpy Den: Delete the Recap's Saved History…** deletes it.",
+              "markdownDescription": "Claude Code deletes chats after 30 days (its `cleanupPeriodDays` setting). The Recap tab's **Overall** keeps their numbers past that, in `~/.cache/talpy-den`: times, tokens, costs, folders and chat names; and your plan's windows that ended, for 90 days. Off, it keeps only what Claude still has. One choice for Talpy Den here and on Plasma or GNOME. **Talpy Den: Delete the Recap's Saved History…** deletes it.",
               "order": 3
             },
             "talpyDen.recapRules": {

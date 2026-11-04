@@ -474,7 +474,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
     // extension, kept next to their cache, so it changes at once
     _historyGroup(window) {
         const group = new Adw.PreferencesGroup({title: 'History',
-            description: "Claude Code deletes chats after 30 days (its cleanupPeriodDays setting). The Recap's Overall keeps their numbers past that, in ~/.cache/talpy-den: times, tokens, costs, folders and chat names. Off, it keeps only what Claude still has. This changes at once, for the VS Code extension too."});
+            description: "Claude Code deletes chats after 30 days (its cleanupPeriodDays setting). The Recap's Overall keeps their numbers past that, in ~/.cache/talpy-den: times, tokens, costs, folders and chat names; and your plan's windows that ended, for 90 days. Off, it keeps only what Claude still has. This changes at once, for the VS Code extension too."});
         const week = args => new Promise(resolve => {
             try {
                 const proc = Gio.Subprocess.new(['python3', '-I', GLib.build_filenamev([this.path, 'code', 'week.py']), ...args],
@@ -517,7 +517,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             }};
         };
         let syncing = false;
-        let deletedChats = 0;   // (in the history: off forgets them, so it asks first)
+        let deletedChats = 0, planWindows = 0;   // (in the history: off forgets them, so it asks first)
         const setKeep = on => {
             syncing = true;
             keep.active = on;
@@ -530,15 +530,16 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             setKeep(st.keep);
             keep.sensitive = true;
             deletedChats = st.deletedChats || 0;
+            planWindows = st.planWindows || 0;
             // ("Kept since 1 Sep 2026, with 1 chat Claude has deleted · 12 KB", as Plasma's)
             const since = st.since ? new Date(`${st.since}T00:00`) : null;
             const n = st.deletedChats || 0;
             saved.subtitle = since ? `Kept since ${since.getDate()} ${MONTHS[since.getMonth()]} ${since.getFullYear()}, with ${n} ${n === 1 ? 'chat' : 'chats'} ` +
                 `Claude has deleted · ${st.sizeKB} KB` : 'Nothing kept yet.';
-            forget.sensitive = !!st.since;
+            forget.sensitive = !!st.since || planWindows > 0;
         };
         const said = result => window.add_toast(new Adw.Toast({title: GLib.markup_escape_text(result.message || '', -1), timeout: 5}));
-        // the numbers of the chats Claude has deleted go for good: asked first
+        // the numbers of the chats Claude has deleted and the plan's windows go for good: asked first
         const offAsk = question('Stop Keeping It', async () => {
             said(await week(['--history', 'off']));
             sync();
@@ -547,7 +548,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             said(await week(['--forget']));
             sync();
         });
-        forgetAsk.show(false, "Delete the Recap's saved history? It starts again from the chats Claude still has.");
+        forgetAsk.show(false, "Delete the Recap's saved history and your plan's windows that ended? It starts again from the chats Claude still has.");
         keep.connect('notify::active', async () => {
             if (syncing)
                 return;
@@ -555,10 +556,11 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
                 offAsk.show(false);
                 return;
             }
-            if (!keep.active && deletedChats > 0) {
-                offAsk.show(true, deletedChats === 1
-                    ? 'Stop keeping the history? The Recap forgets the numbers of the 1 chat Claude has deleted, for good.'
-                    : `Stop keeping the history? The Recap forgets the numbers of the ${deletedChats} chats Claude has deleted, for good.`);
+            if (!keep.active && (deletedChats > 0 || planWindows > 0)) {
+                const windows = planWindows > 0 ? "your plan's windows that ended" : '';
+                const chats = deletedChats === 0 ? ''
+                    : `the numbers of the ${deletedChats} ${deletedChats === 1 ? 'chat' : 'chats'} Claude has deleted`;
+                offAsk.show(true, `Stop keeping the history? The Recap forgets ${chats && windows ? `${chats}, and ${windows}` : chats || windows}, for good.`);
                 return;
             }
             offAsk.show(false);

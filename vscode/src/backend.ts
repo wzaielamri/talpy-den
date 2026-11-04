@@ -298,10 +298,13 @@ export class Backend {
   }
 
   // The Monday recap (week.py --monday-recap): due once a week for whichever copy asks first
-  // Whether the Recap keeps its history, and how many chats Claude deleted are in it (week.py --history-status)
-  async historyStatus(): Promise<{ keep: boolean; deletedChats: number } | null> {
+  // Whether the Recap keeps its history, how many chats Claude deleted are in it and how many of the
+  // plan's windows that ended are kept with it (week.py --history-status)
+  async historyStatus(): Promise<{ keep: boolean; deletedChats: number; planWindows: number } | null> {
     const r = await this.json(["week.py", "--history-status"], 60000);
-    return r?.ok && typeof r.keep === "boolean" ? { keep: r.keep, deletedChats: Number(r.deletedChats) || 0 } : null;
+    return r?.ok && typeof r.keep === "boolean"
+      ? { keep: r.keep, deletedChats: Number(r.deletedChats) || 0, planWindows: Number(r.planWindows) || 0 }
+      : null;
   }
 
   async mondayRecap(args: string[]): Promise<Record<string, any> | null> {

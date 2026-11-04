@@ -27,10 +27,10 @@ ConfigPage {
     // The Recap's history (week.py --history-status, --history on|off,
     // --forget): one choice for every copy of the widget and the VS Code
     // extension, kept next to their cache, so it changes at once (not with Apply)
-    property var history: null        // {keep, since, deletedChats, sizeKB}
+    property var history: null        // {keep, since, deletedChats, planWindows, sizeKB}
     property string historyMessage: ""
     property bool forgetAsking: false
-    property bool historyOffAsking: false   // (off forgets the chats Claude deleted: asked first)
+    property bool historyOffAsking: false   // (off forgets the chats Claude deleted and the plan windows: asked first)
 
     Exec {
         id: historyHelper
@@ -102,8 +102,8 @@ ConfigPage {
             enabled: page.history !== null
             checked: page.history ? page.history.keep : true
             onToggled: {
-                if (!checked && page.history && page.history.deletedChats > 0)
-                    page.historyOffAsking = true   // (the numbers of chats Claude deleted go: asked first)
+                if (!checked && page.history && (page.history.deletedChats > 0 || page.history.planWindows > 0))
+                    page.historyOffAsking = true   // (what only the history has goes: asked first)
                 else
                     page.runHistory(["--history", checked ? "on" : "off"])
                 checked = Qt.binding(() => page.history ? page.history.keep : true)   // (it shows what the Recap keeps)
@@ -118,9 +118,16 @@ ConfigPage {
                 Layout.maximumWidth: Kirigami.Units.gridUnit * 14
                 wrapMode: Text.Wrap
                 color: Kirigami.Theme.neutralTextColor   // (a question: as every one, ConfirmLine)
-                text: i18np("Stop keeping the history? The Recap forgets the numbers of the %1 chat Claude has deleted, for good.",
+                text: !page.history ? ""
+                    : page.history.deletedChats === 0
+                    ? i18n("Stop keeping the history? The Recap forgets your plan's windows that ended, for good.")
+                    : page.history.planWindows > 0
+                    ? i18np("Stop keeping the history? The Recap forgets the numbers of the %1 chat Claude has deleted, and your plan's windows that ended, for good.",
+                            "Stop keeping the history? The Recap forgets the numbers of the %1 chats Claude has deleted, and your plan's windows that ended, for good.",
+                            page.history.deletedChats)
+                    : i18np("Stop keeping the history? The Recap forgets the numbers of the %1 chat Claude has deleted, for good.",
                             "Stop keeping the history? The Recap forgets the numbers of the %1 chats Claude has deleted, for good.",
-                            page.history ? page.history.deletedChats : 0)
+                            page.history.deletedChats)
             }
             QQC2.Button {
                 icon.name: Icons.plasma.erase
@@ -142,7 +149,7 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
-            text: i18n("Claude Code deletes chats after 30 days (its cleanupPeriodDays setting). The Recap's Overall keeps their numbers past that, in ~/.cache/talpy-den: times, tokens, costs, folders and chat names. Off, it keeps only what Claude still has. This changes at once, for the VS Code extension too.")
+            text: i18n("Claude Code deletes chats after 30 days (its cleanupPeriodDays setting). The Recap's Overall keeps their numbers past that, in ~/.cache/talpy-den: times, tokens, costs, folders and chat names; and your plan's windows that ended, for 90 days. Off, it keeps only what Claude still has. This changes at once, for the VS Code extension too.")
                   + (!page.history ? "" : "\n" + (page.history.since
                          ? i18np("Kept since %2, with %1 chat Claude has deleted · %3 KB", "Kept since %2, with %1 chats Claude has deleted · %3 KB",
                                  page.history.deletedChats, Qt.locale().toString(new Date(page.history.since + "T00:00"), "d MMM yyyy"),
@@ -155,7 +162,7 @@ ConfigPage {
 
             QQC2.Button {
                 visible: !page.forgetAsking
-                enabled: page.history !== null && !!page.history.since
+                enabled: page.history !== null && (!!page.history.since || page.history.planWindows > 0)
                 icon.name: Icons.plasma.erase
                 icon.color: Icons.color("erase", Kirigami.Theme)
                 text: i18n("Delete Saved History…")
@@ -166,7 +173,7 @@ ConfigPage {
                 Layout.maximumWidth: Kirigami.Units.gridUnit * 14
                 wrapMode: Text.Wrap
                 color: Kirigami.Theme.neutralTextColor   // (a question: as every one, ConfirmLine)
-                text: i18n("Delete the Recap's saved history? It starts again from the chats Claude still has.")
+                text: i18n("Delete the Recap's saved history and your plan's windows that ended? It starts again from the chats Claude still has.")
             }
             QQC2.Button {
                 visible: page.forgetAsking

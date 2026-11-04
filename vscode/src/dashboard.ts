@@ -915,12 +915,15 @@ export class Dashboard implements vscode.Disposable {
     if (this.demoPhase !== null || !vscode.window.state.focused) return;
     const now = await this.backend.historyStatus();
     if (now && now.keep === keep) return; // (the setting caught up with week.py's choice: syncRecapHistory)
-    // off forgets the numbers of the chats Claude has deleted: asked first, as Delete Saved History… does
-    if (!keep && now && now.deletedChats > 0) {
+    // off forgets the numbers of the chats Claude has deleted and the plan's windows that ended: asked
+    // first, as Delete Saved History… does
+    if (!keep && now && (now.deletedChats > 0 || now.planWindows > 0)) {
       const n = now.deletedChats;
+      const chats = n > 0 ? `the numbers of the ${n} ${n === 1 ? "chat" : "chats"} Claude has deleted` : "";
+      const windows = now.planWindows > 0 ? "your plan's windows that ended" : "";
       const pick = await vscode.window.showWarningMessage("Stop keeping the history?", {
         modal: true,
-        detail: `The Recap forgets the numbers of the ${n} ${n === 1 ? "chat" : "chats"} Claude has deleted, for good.`,
+        detail: `The Recap forgets ${chats && windows ? `${chats}, and ${windows}` : chats || windows}, for good.`,
       }, "Stop Keeping It");
       if (pick !== "Stop Keeping It") {
         await vscode.workspace.getConfiguration("talpyDen").update("recapHistory", true, vscode.ConfigurationTarget.Global);
@@ -946,7 +949,7 @@ export class Dashboard implements vscode.Disposable {
   }
 
   async forgetRecapHistory(): Promise<void> {
-    const pick = await vscode.window.showWarningMessage("Delete the Recap's saved history?", {
+    const pick = await vscode.window.showWarningMessage("Delete the Recap's saved history and your plan's windows that ended?", {
       modal: true,
       detail: "It starts again from the chats Claude still has (Claude Code keeps them 30 days by default).",
     }, "Delete");
