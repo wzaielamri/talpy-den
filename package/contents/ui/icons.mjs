@@ -28,6 +28,7 @@ const TABLE = {
     startNow:        ['media-playback-start',          'play',       'media-playback-start-symbolic'],    // a queued task, a plan carried out, a sound tried
     stop:            ['media-playback-stop',           'stop',       'media-playback-stop-symbolic'],
     interrupt:       ['media-playback-pause',          null,         'media-playback-pause-symbolic'],
+    stopTurn:        ['media-playback-stop',           'stop',       'media-playback-stop-symbolic'],     // Talpy Chat's Stop: what Claude does now (Esc in its terminal), the chat stays
     goOnAt:          ['clock',                         'clock',      'alarm-symbolic'],                   // go on once the limit resets; pressed: it goes on then
     later:           ['clock',                         'clock',      'alarm-symbolic'],                   // send when this turn ends
     keepGoing:       ['media-playlist-repeat',         'repeat',     'media-playlist-repeat-symbolic'],

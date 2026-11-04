@@ -13,6 +13,7 @@ export type Meaning =
   | "startNow"
   | "stop"
   | "interrupt"
+  | "stopTurn"
   | "goOnAt"
   | "later"
   | "keepGoing"

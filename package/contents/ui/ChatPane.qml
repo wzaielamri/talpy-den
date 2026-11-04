@@ -115,6 +115,32 @@ Window {
     readonly property string where: starting ? "background" : fresh ? "new" : !row || !row.pid ? "closed" : row.kind === "bg" ? "background"
                                     : row.entrypoint === "claude-vscode" ? "claude" : row.tmux ? "tmux"
                                     : row.vscodeTerminal || row.terminalApp === "VS Code" ? "vscode" : "terminal"
+    // Stop on its working line, while Claude works on its turn (as Esc in its terminal: what Claude
+    // does now stops, the chat stays and takes your next message): a chat in tmux (Ctrl+C in its
+    // pane), a background chat on a Claude Code version that was checked on (its row's bgStop: Esc
+    // through Claude's background service). pane.py --interrupt; VS Code: shared/pane.ts stopOf
+    readonly property bool atWork: chatState === "working" && !!row && row.reason !== "background shell"
+    readonly property bool canStop: atWork && !!row.pid && (where === "tmux" || (where === "background" && !!row.bgStop))
+    // (else, on its working line's tooltip: where it can be stopped)
+    readonly property string stopElsewhere: !atWork || canStop ? ""
+        : where === "claude" ? i18n("To stop it: the stop button in its Claude Code panel.")
+        : where === "background" ? i18n("To stop it: open it in a terminal and press Esc there. Talpy Chat's Stop doesn't know the background chats of this Claude Code version yet.")
+        : i18n("To stop it: press Esc in its terminal. Talpy Chat can't type into that terminal.")
+    property bool stopping: false   // (Stop clicked: "Stopping…" till its turn ends, it says why not, or 15 s)
+    onAtWorkChanged: if (!atWork) stopping = false
+    function stop() {
+        if (stopping || !canStop)
+            return
+        stopping = true
+        stopWait.restart()
+        run("interrupt", "--interrupt " + root.shellQuote(chatId)
+            + (sessionId && sessionId !== chatId ? " --session " + root.shellQuote(sessionId) : "") + paneArgs())
+    }
+    Timer {
+        id: stopWait
+        interval: 15000
+        onTriggered: pane.stopping = false
+    }
 
     title: i18nc("window title: a chat's name", "%1 — Talpy Chat", chatName || chatId.slice(0, 8))
     readonly property int wantedWidth: Kirigami.Units.gridUnit * 38   // (beside the popup, if there's room: main.qml)
@@ -372,6 +398,7 @@ Window {
     function reset() {
         tasksOpen = false
         agentsOpen = false
+        stopping = false
         offers = null
         offersAt = 0
         suggestions = []
@@ -956,6 +983,21 @@ Window {
             reviewError = result.ok ? "" : (result.message || "")
             if (result.ok && !commitEdited)
                 commitText.text = result.message || ""
+            return
+        }
+        if (kind === "interrupt") {
+            // (stopped: the conversation says Interrupted, and its working line goes)
+            if (!result.ok) {
+                stopping = false
+                info = i18n("Couldn't stop it: %1", result.message || i18n("That didn't work"))
+                infoBad = true
+                infoTimer.restart()
+            }
+            root.refresh()
+            if (host)
+                root.pollHost(host)
+            stamp = ""
+            load()
             return
         }
         info = result.message || (result.ok ? "" : i18n("That didn't work"))
@@ -2315,8 +2357,8 @@ Window {
                         RowLayout {
                             id: workingLine
                             anchors.left: parent.left
-                            anchors.right: parent.right
                             anchors.bottom: parent.bottom
+                            width: list.width   // (the list's, as its rows': the footer can be wider, under the scroll bar)
                             spacing: 0
 
                             TalpyIcon {
@@ -2327,6 +2369,7 @@ Window {
                                 moving: workingLine.visible && pane.shown && pane.conversationTab
                             }
                             PlasmaComponents3.Label {
+                                id: workingText
                                 textFormat: Text.PlainText
                                 Layout.fillWidth: true
                                 // (what it's doing, unless that's the tool call just above)
@@ -2338,6 +2381,24 @@ Window {
                                 color: root.stateColor("working")
                                 font.family: pane.chatFamily
                                 font.pointSize: pane.pt
+                                // (no Stop here: where it can be stopped, on hover; made only then)
+                                Loader {
+                                    anchors.fill: parent
+                                    active: pane.stopElsewhere !== ""
+                                    sourceComponent: TipArea {
+                                        mainText: workingText.text
+                                        subText: pane.stopElsewhere
+                                    }
+                                }
+                            }
+                            // Stop, at its end (StopButton.qml: read and made only for a chat it can stop,
+                            // while it works; as tall with it as without, so nothing moves)
+                            Loader {
+                                active: pane.canStop
+                                Layout.preferredHeight: pane.queueButtonHeight
+                                Layout.preferredWidth: item ? item.implicitWidth : 0
+                                Layout.leftMargin: active ? Kirigami.Units.smallSpacing : 0
+                                source: active ? "StopButton.qml" : ""
                             }
                         }
                     }
