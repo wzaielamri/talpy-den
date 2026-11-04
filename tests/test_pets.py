@@ -2003,6 +2003,22 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('source: active ? "NewChatOptions.qml" : ""', pane)   # (its QML read only then too)
         self.assertNotIn("ComboBox", pane)
 
+    def test_stop_is_made_only_for_a_chat_it_can_stop_and_keeps_the_line_still(self):
+        # Talpy Chat's Stop (A1): its button's QML is read and made only while a chat it can stop
+        # works; the working line is as tall without it (nothing moves when it comes or goes), as
+        # wide as the conversation's rows (not under the scroll bar), and a click goes to pane.py
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn('active: pane.canStop\n', pane)
+        self.assertIn('source: active ? "StopButton.qml" : ""', pane)
+        loader = pane[pane.index('source: active ? "StopButton.qml"') - 400:]
+        self.assertIn("Layout.preferredHeight: pane.queueButtonHeight", loader[:400])
+        self.assertIn("width: list.width   // (the list's", pane)
+        self.assertIn('run("interrupt", "--interrupt "', pane)
+        self.assertIn('(where === "tmux" || (where === "background" && !!row.bgStop))', pane)
+        button = (ROOT / "ui/StopButton.qml").read_text()
+        self.assertIn("onClicked: pane.stop()", button)
+        self.assertIn("Icons.plasma.stopTurn", button)
+
     def test_a_folder_row_never_closes_its_own_list(self):
         # Closing the list (newChatGroup = "") destroys its rows: the rest of
         # the row's click handler lost root ("ReferenceError: root is not
