@@ -30,7 +30,7 @@ package/                  the Plasma widget (what install.sh installs)
 └── contents/
     ├── ui/               QML: main.qml (data, actions), FullRepresentation.qml (popup), GroupSection.qml (account),
     │                     SessionRow.qml, PetStrip.qml + Pet.qml (pets), hub/Hub.qml (checks shared by all copies), …
-    ├── code/             Python: talpy_den.py (status; poll.py runs it for each check, compiled code cached),
+    ├── code/             Python: talpy_den.py (status; poll.py runs it for each check, compiled code kept in ~/.local/share/talpy-den),
     │                     jump.py (actions), sharing.py (shared chats), accounts.py (accounts), remote.py (SSH),
     │                     markdown_page.py (plans and runs as a web page), notify_sound.py
     ├── config/           settings schema and pages

@@ -1174,6 +1174,17 @@ class OutputTests(Fixture):
             names = [c["name"] for g in answer["groups"] for c in g["recent"]]
             self.assertIn("Fix the \ud83d", names)
 
+    @unittest.skipIf(sys.version_info < (3, 8), "3.7 has no pycache_prefix")
+    def test_compiled_code_is_never_kept_in_the_cache(self):
+        # (a container given ~/.cache could put code there that a check ran here)
+        data = self.home / ".local/share"
+        env = {**os.environ, "HOME": str(self.home), "XDG_CACHE_HOME": str(self.cache), "XDG_DATA_HOME": str(data)}
+        out = subprocess.run([sys.executable, "-I", str(ROOT / "package/contents/code/poll.py"), "--no-tokens"],
+                             capture_output=True, text=True, env=env)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(list(self.cache.rglob("*.pyc")), [])
+        self.assertTrue(list((data / "talpy-den/pycache").rglob("talpy_den.*.pyc")))
+
 
 class RecentProjectTests(Fixture):
     def test_newest_first_skipping_gone_and_scratch_folders(self):

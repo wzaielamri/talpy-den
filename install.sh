@@ -460,6 +460,8 @@ fi
 
 # 1. Widget (without Python bytecode caches a test run may have left in it)
 find "$here/package" -name __pycache__ -type d -prune -exec rm -rf {} +
+# (and the compiled copies an older Talpy Den kept in the cache: now in its data folder)
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/talpy-den/pycache"
 if [ "$target" = gnome ]; then
   build_gnome
   remove_legacy
