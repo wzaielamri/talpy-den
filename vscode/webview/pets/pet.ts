@@ -19,7 +19,7 @@
 // opens the chat when clicked (drag it for fun: it digs back to its spot).
 
 import type { ChatRef, Session } from "../../src/shared/types";
-import { stateText } from "../../src/shared/model";
+import { hostLabel, stateText } from "../../src/shared/model";
 import { CookieGame, type CookieWords } from "../../vendor/talpy/cookie.mjs";
 import { Films } from "../../vendor/talpy/films.mjs";
 import { pickGame, type Game } from "../../vendor/talpy/games.mjs";
@@ -468,7 +468,7 @@ export class Pet {
     const c = this.lastChat;
     const title = this.lone || !c
       ? ""
-      : `${c.host ? c.host + ": " : ""}${c.session.name}\n${stateText(c.session, Date.now())}\nClick to open this chat`;
+      : `${c.host ? hostLabel(c.host) + ": " : ""}${c.session.name}\n${stateText(c.session, Date.now())}\nClick to open this chat`;
     if (this.drawn.title !== title) {
       this.drawn.title = title;
       this.grab.title = title;

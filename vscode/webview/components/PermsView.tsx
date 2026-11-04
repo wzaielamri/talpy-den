@@ -113,7 +113,7 @@ function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, se
   return (
     <section class="week-section">
       <h2>{host ? `Permission prompts on ${hostLabel(host)}, last 7 days` : "Permission prompts, last 7 days"}</h2>
-      <div>{p.answered ? promptsText(p) : `You answered no permission prompts on ${host || "this computer"} in the last 7 days.`}</div>
+      <div>{p.answered ? promptsText(p) : `You answered no permission prompts on ${host ? hostLabel(host) : "this computer"} in the last 7 days.`}</div>
       {p.byTool.length ? <div class="small muted">For: {p.byTool.map(([tool, n]) => `${tool} ${n}`).join(" · ")}</div> : null}
       {rules.length ? (
         <div class="small muted">

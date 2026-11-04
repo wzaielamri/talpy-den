@@ -713,7 +713,7 @@ class Stage {
             this.ctx.tips.add(this.headline, () => {
                 const c = this._calling();
                 return c ? [L.fmt('Open %1', c.session.name),
-                    (c.host ? `${c.host} · ` : '') + L.stateText(c.session, this.ctx.now)] : '';
+                    (c.host ? `${L.hostLabel(c.host)} · ` : '') + L.stateText(c.session, this.ctx.now)] : '';
             });
             this.chips = box('claude-chips');
             this.info.add_child(this.headline);

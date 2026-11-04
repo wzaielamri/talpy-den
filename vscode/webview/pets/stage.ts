@@ -18,7 +18,7 @@
 // paused CSS animations.
 
 import { editorTab, isDark } from "../env";
-import { petKeyOf, plural } from "../../src/shared/model";
+import { hostLabel, petKeyOf, plural } from "../../src/shared/model";
 import type { TalpyTheme } from "../../vendor/talpy/talpy.mjs";
 import type { AccountInput, HeroInput, PetStage, StageCallbacks, StageChat } from "./api";
 import type { ChatRef, Counts } from "../../src/shared/types";
@@ -514,7 +514,7 @@ export class Stage implements PetStage, Animator {
     h.classList.toggle("cs-calling", mood === "needs");
     h.classList.toggle("cs-clickable", !!calling);
     // "1 chat needs you": click to go there (its tooltip: Open fix parser, then lab · Waiting · 3m)
-    const where = [calling?.host, input.waitingState].filter(Boolean).join(" · ");
+    const where = [calling?.host && hostLabel(calling.host), input.waitingState].filter(Boolean).join(" · ");
     const title = calling ? `Open ${calling.name}${where ? `\n${where}` : ""}` : "";
     if (h.title !== title) h.title = title;
     if (calling) {
