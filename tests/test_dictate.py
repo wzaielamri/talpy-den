@@ -1,5 +1,6 @@
 """Dictating a reply (dictate.py): recorded here, written down by whisper.cpp
 here; run with stand-ins for the recorder and whisper.cpp."""
+import io
 import json
 import os
 import subprocess
@@ -270,7 +271,24 @@ class FasterWhisperTests(DictateTests):
         self.assertTrue(got["ok"], got)
         self.assertEqual([c[1:3] for c in calls], [["-m", "venv"], ["-I", "-m"], ["-I", "-c"]])
         self.assertEqual(calls[1][0], str(self.whisper / "venv/bin/python"))
+        self.assertEqual(calls[1][-3:], ["-c", str(self.whisper / "venv/constraints.txt"), dictate.FW_PACKAGE])
+        self.assertIn('faster-whisper==1.2.1; python_version == "3.14"', (self.whisper / "venv/constraints.txt").read_text())
         self.assertTrue((self.whisper / "venv/.ready").is_file())
+
+    def test_a_pinned_model_is_kept_only_with_its_sha256(self):
+        self.in_process()
+        asked = []
+
+        def urlopen(url, timeout=None):
+            asked.append(url)
+            return io.BytesIO(b"not the model")
+        with mock.patch.dict(dictate.MODELS, {"tiny": ("ggml-tiny.bin", 0, "")}), \
+                mock.patch.dict(dictate.GGML_PINS, {"tiny": ("abc123", "0" * 64)}), \
+                mock.patch.object(dictate.urllib.request, "urlopen", urlopen):
+            got = dictate.fetch_ggml("tiny")
+        self.assertEqual(got["message"], "Couldn't download the tiny model: it isn't the file expected (another sha256)")
+        self.assertEqual(asked, ["https://huggingface.co/ggerganov/whisper.cpp/resolve/abc123/ggml-tiny.bin"])
+        self.assertEqual(list(dictate.data_dir().glob("ggml-tiny.bin*")), [])
 
     def test_one_download_at_a_time(self):
         import fcntl

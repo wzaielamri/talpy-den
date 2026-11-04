@@ -39,6 +39,7 @@ environment).
 import contextlib
 import fcntl
 import importlib.util
+import hashlib
 import json
 import os
 import re
@@ -62,8 +63,24 @@ MODELS = {
     "large-v3-turbo": ("ggml-large-v3-turbo.bin", 1550, "the best, slow without a graphics card"),
 }
 AUTO = ("small", "base", "base.en", "medium", "large-v3-turbo", "tiny")   # (auto: the first one downloaded)
-MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
+MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/%s/"
 FW_PACKAGE = "faster-whisper>=1.1,<2"
+# The exact versions faster-whisper's environment gets (pip -c), on each
+# Python they were checked on; on another one pip takes what fits, as before.
+FW_CONSTRAINTS = "".join('%s; python_version == "3.14"\n' % pin for pin in (
+    "anyio==4.15.1", "av==19.0.2", "click==8.5.0", "ctranslate2==4.8.4", "faster-whisper==1.2.1", "filelock==4.2.4",
+    "flatbuffers==25.12.19", "fsspec==2026.9.0", "h11==0.16.0", "hf-xet==1.7.0", "httpcore2==2.16.0", "httpx2==2.16.0",
+    "huggingface_hub==2.3.0", "idna==3.20", "numpy==2.5.4", "onnxruntime==1.31.1", "packaging==26.3",
+    "protobuf==7.36.2", "PyYAML==6.0.3", "tokenizers==0.23.3", "tqdm==4.70.1", "truststore==0.10.5",
+    "typing_extensions==4.16.0"))
+# Each speech model at a fixed revision of its repository, with the sha256 of
+# its file (whisper.cpp's ggml-*.bin; faster-whisper's model.bin), checked
+# before it's kept: {name: (revision, sha256)}. TO FILL IN from huggingface.co
+# (ggerganov/whisper.cpp and Systran/faster-whisper-<name>: the commit, and
+# the file's SHA256 its page shows); a model without them still comes from
+# the repository's newest revision, unchecked but for its size.
+GGML_PINS = {name: None for name in MODELS}
+FW_PINS = {name: None for name in MODELS}
 FW_MB = 470   # (faster-whisper's environment, about)
 READY = ".ready"
 # faster-whisper, run in its environment: writes down a 16 kHz mono WAV (read
@@ -86,7 +103,7 @@ for segment in segments:
 FW_GET = r"""
 import sys
 from faster_whisper import download_model
-download_model(sys.argv[1], output_dir=sys.argv[2])
+download_model(sys.argv[1], output_dir=sys.argv[2], revision=sys.argv[3] or None)
 """
 LONGEST_S = 300
 LEFTOVER_S = 3600  # (a recording's files, kept no longer than that: see tidy)
@@ -254,9 +271,10 @@ def setup(name="base"):
                 return {"ok": False, "message": "To set up dictation, install Python's venv (Debian, Ubuntu: sudo apt install python3-venv)"}
             shutil.rmtree(venv, ignore_errors=True)
             python = str(venv / "bin" / "python")
+            pins = venv / "constraints.txt"
             for cmd, what in (([sys.executable, "-m", "venv", str(venv)], "make faster-whisper's environment"),
                               ([python, "-I", "-m", "pip", "install", "--disable-pip-version-check", "--no-input", "-q",
-                                FW_PACKAGE], "install faster-whisper"),
+                                "-c", str(pins), FW_PACKAGE], "install faster-whisper"),
                               ([python, "-I", "-c", "import faster_whisper, numpy"], "start faster-whisper")):
                 try:
                     r = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
@@ -267,6 +285,8 @@ def setup(name="base"):
                 if r.returncode != 0:
                     shutil.rmtree(venv, ignore_errors=True)
                     return {"ok": False, "message": f"Couldn't {what}: {last_line(r)}"}
+                if not pins.exists():  # (once the environment is there)
+                    pins.write_text(FW_CONSTRAINTS)
             (venv / READY).write_text(FW_PACKAGE + "\n")
         if model_path("faster-whisper", name) is None:
             got = fetch_fw(name)
@@ -424,11 +444,18 @@ def fetch_ggml(name):
     folder = data_dir()
     folder.mkdir(parents=True, exist_ok=True)
     target, part = folder / file, folder / (file + ".part")
+    pin = GGML_PINS.get(name)
+    digest = hashlib.sha256()
     try:
-        with urllib.request.urlopen(MODEL_URL + file, timeout=60) as r, open(part, "wb") as out:
-            shutil.copyfileobj(r, out, 1 << 20)
+        with urllib.request.urlopen(MODEL_URL % (pin[0] if pin else "main") + file, timeout=60) as r, \
+                open(part, "wb") as out:
+            for chunk in iter(lambda: r.read(1 << 20), b""):
+                digest.update(chunk)
+                out.write(chunk)
         if part.stat().st_size < mb * 2 ** 20 * 0.9:
             raise OSError("the download was cut short")
+        if pin and digest.hexdigest() != pin[1]:
+            raise OSError("it isn't the file expected (another sha256)")
         os.replace(part, target)
     except (OSError, ValueError) as exc:
         try:
@@ -439,19 +466,31 @@ def fetch_ggml(name):
     return {"ok": True, "model": str(target), "message": f"The {name} speech model is here"}
 
 
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def fetch_fw(name):
     target, part = fw_models() / name, fw_models() / (name + ".part")
     shutil.rmtree(part, ignore_errors=True)
     part.mkdir(parents=True)
     env = dict(os.environ, HF_HUB_DISABLE_TELEMETRY="1", HF_HUB_DISABLE_PROGRESS_BARS="1")
+    pin = FW_PINS.get(name)
     try:
-        r = subprocess.run([fw_python(), "-I", "-c", FW_GET, name, str(part)], stdin=subprocess.DEVNULL,
+        r = subprocess.run([fw_python(), "-I", "-c", FW_GET, name, str(part), pin[0] if pin else ""],
+                           stdin=subprocess.DEVNULL,
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3600, env=env)
         problem = None if r.returncode == 0 else last_line(r)
     except (OSError, TypeError, subprocess.TimeoutExpired) as exc:
         problem = str(exc)
     if problem is None and not (part / "model.bin").is_file():
         problem = "the download was cut short"
+    elif problem is None and pin and file_sha256(part / "model.bin") != pin[1]:
+        problem = "it isn't the file expected (another sha256)"
     if problem:
         shutil.rmtree(part, ignore_errors=True)
         return {"ok": False, "message": f"Couldn't download the {name} model: {problem}"}
