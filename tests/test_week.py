@@ -1284,6 +1284,18 @@ class PromptTests(Projects):
         self.assertFalse(week.undo_rule(self.home, self.cache_root, rid)[0])
         self.assertEqual(json.loads(account.read_text()), {"permissions": {"defaultMode": "acceptEdits"}})
 
+    def test_a_link_beside_the_settings_file_is_never_written_through(self):
+        # (a repo could ship .claude/.settings.local.json.<pid>.tmp -> ~/.bashrc: the new file's name)
+        self.asked()
+        week.updated_cache(self.cache_root, self.profiles(), self.now)
+        victim = self.home / ".bashrc"
+        victim.write_text("alias ll='ls -l'\n")
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(victim, self.settings.with_name(".settings.local.json.%d.tmp" % os.getpid()))
+        self.assertTrue(week.allow_rule(self.home, self.cache_root, "edits", str(self.app), str(self.app))[0])
+        self.assertEqual(victim.read_text(), "alias ll='ls -l'\n")
+        self.assertEqual(json.loads(self.settings.read_text()), {"permissions": {"defaultMode": "acceptEdits"}})
+
     def test_your_own_settings_stay(self):
         self.asked()
         week.updated_cache(self.cache_root, self.profiles(), self.now)

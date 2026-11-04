@@ -1742,13 +1742,8 @@ def known_folder(cache, project):
 def write_settings(path, data):
     path = Path(os.path.realpath(str(path)))  # (a link stays a link: its file changes)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(".%s.%d.tmp" % (path.name, os.getpid()))
-    with open(str(tmp), "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    if path.exists():
-        os.chmod(str(tmp), path.stat().st_mode & 0o7777)  # (who may read it stays as it was)
-    os.replace(str(tmp), str(path))
+    # (who may read it stays as it was; through a new file no link was put at: a project's folder is its repo's)
+    cs.write_atomic(path, (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 def take_out(perms, key, value):

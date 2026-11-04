@@ -548,19 +548,7 @@ def add_plans_setting(path):
             raise ValueError(f"{os.path.basename(path)} isn't a JSON object: left it as it is")
     data[cs.PLANS_SETTING] = cs.PROJECT_PLANS_DIR
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = os.path.join(os.path.dirname(path), f".{os.path.basename(path)}.{os.getpid()}.tmp")
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-        if there:
-            shutil.copymode(path, tmp)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    cs.write_atomic(path, (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 def place(src, dest):
@@ -573,15 +561,10 @@ def place(src, dest):
         raise
     except OSError:
         pass
-    tmp = os.path.join(os.path.dirname(str(dest)), f".{os.path.basename(str(dest))}.{os.getpid()}.tmp")
-    try:
-        shutil.copy2(str(src), tmp)
-        os.link(tmp, str(dest))
-    finally:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+    with open(str(src), "rb") as f:
+        st = os.fstat(f.fileno())
+        data = f.read()
+    cs.write_atomic(dest, data, st.st_mode & 0o7777, (st.st_atime_ns, st.st_mtime_ns), new=True)
 
 
 def move_ctx(profiles, home):

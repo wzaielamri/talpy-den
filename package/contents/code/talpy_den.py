@@ -144,6 +144,45 @@ def write_json_atomic(path, data, private=False):
         raise
 
 
+def write_atomic(path, data, mode=None, times=None, new=False):
+    """Write data (bytes) as path in one go, safely in a folder whose content
+    isn't yours alone (a project, a repository: it can ship links): through
+    a new file beside it (tempfile.mkstemp: a random name, made by this call,
+    never one a link was put at), renamed over path (new: linked as path,
+    which mustn't be there: FileExistsError). mode: its permission bits
+    (None: path's own, else 0o666 less the umask); times: its (atime_ns,
+    mtime_ns)."""
+    import tempfile
+    path = str(path)
+    folder, name = os.path.split(path)
+    if mode is None:
+        try:
+            mode = os.stat(path).st_mode & 0o7777
+        except OSError:
+            mask = os.umask(0o077)
+            os.umask(mask)
+            mode = 0o666 & ~mask
+    fd, tmp = tempfile.mkstemp(prefix=f".{name}.", suffix=".tmp", dir=folder or ".")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()  # (before the times: a write at close would change them)
+            os.fchmod(f.fileno(), mode)
+            if times is not None:
+                os.utime(f.fileno(), ns=times)
+        if new:
+            os.link(tmp, path)
+            os.unlink(tmp)
+        else:
+            os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def to_ms(value):
     """Epoch seconds, epoch milliseconds or an ISO-8601 string -> epoch ms."""
     if isinstance(value, bool) or value is None:

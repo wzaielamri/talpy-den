@@ -1521,23 +1521,22 @@ def undo(home, extra_dirs, chat_id, profile_key=None, wanted=()):
                     os.unlink(real)
                     done += 1
             elif current != original:
-                tmp = real + ".talpy-den-undo"
                 # (with your umask, not this run's private one: a file or
                 # folder it brings back is as you'd have made it)
                 mask = os.umask(USER_UMASK[0]) if USER_UMASK[0] is not None else None
                 try:
                     os.makedirs(os.path.dirname(real), exist_ok=True)
-                    with open(tmp, "wb") as f:
-                        f.write(original)
+                    mode = None  # (as the file is now, else as you'd make it)
+                    if current is None and git_executable(full):  # (a script it removed runs again)
+                        own = os.umask(0o077)
+                        os.umask(own)
+                        mode = 0o666 & ~own
+                        mode |= (mode & 0o444) >> 2
+                    # (through a new file of a name no one could put a link at: the repo is the chat's)
+                    cs.write_atomic(real, original, mode)
                 finally:
                     if mask is not None:
                         os.umask(mask)
-                if current is not None:
-                    shutil.copymode(real, tmp)
-                elif git_executable(full):  # (a script it removed runs again)
-                    mode = os.stat(tmp).st_mode
-                    os.chmod(tmp, mode | (mode & 0o444) >> 2)
-                os.replace(tmp, real)
                 done += 1
         except OSError as exc:
             failed.append(f"{cs.file_label(full, cwd, home)}: {exc.strerror or exc}")

@@ -1408,6 +1408,15 @@ class ReviewTests(PaneFixture):
         self.assertEqual(pane.undo(self.home, [], SID, None, {str(link)}), (True, "Put back 1 file as before the chat"))
         self.assertEqual((link.is_symlink(), real.read_text()), (True, "alias ll='ls -l'\n"))
 
+    def test_undo_never_writes_through_a_link_put_beside_the_file(self):
+        # (a repo could ship a.py.talpy-den-undo -> ~/.bashrc: Undo's new file had that name)
+        victim = self.home / ".bashrc"
+        write(victim, "alias ll='ls -l'\n")
+        a = self.folder / "a.py"
+        os.symlink(str(victim), str(a) + ".talpy-den-undo")
+        self.assertEqual(pane.undo(self.home, [], SID, None, {str(a)}), (True, "Put back 1 file as before the chat"))
+        self.assertEqual((victim.read_text(), a.is_symlink(), a.read_text()), ("alias ll='ls -l'\n", False, "x = 1\ny = 2\n"))
+
     @unittest.skipUnless(HAVE_GIT, "needs git")
     def test_commit_leaves_out_files_git_ignores(self):
         write(self.folder / ".gitignore", ".env\n")
