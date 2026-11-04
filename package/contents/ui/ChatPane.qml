@@ -1325,34 +1325,55 @@ Window {
     // that goes on into the next ones selects them too, the whole of each it
     // passes and the last up to the pointer. Ctrl+C in a message copies all
     // of it, each message's text after a blank line
-    property int selFrom: -1      // the message the drag started in (its index)
-    property int selLast: -1      // (its text box keeps its selection till another is pressed)
-    property var selOthers: ({})  // index -> true: the other messages selected now
+    // (each by its key, its index a hint: a new step can take rows off the top, every index moving)
+    property string selFrom: ""   // the message the drag started in
+    property int selFromAt: -1
+    property string selLast: ""   // (its text box keeps its selection till another is pressed)
+    property int selLastAt: -1
+    property var selOthers: ({})  // key -> its index when selected: the other messages selected now
     function boxAt(index) {
         const d = index >= 0 ? list.itemAtIndex(index) : null
         return d && d.textBox ? d.textBox : null
     }
+    function keyAt(index) {
+        return index >= 0 && index < items.count ? items.get(index).key : ""
+    }
+    function selIndex(key, at) {   // (at: where it was)
+        if (key === "")
+            return -1
+        if (keyAt(at) === key)
+            return at
+        for (let i = items.count - 1; i >= 0; i--)
+            if (items.get(i).key === key)
+                return i
+        return -1
+    }
     function selectStart(p) {   // (p: in the list)
         for (const k in selOthers) {
-            const b = boxAt(Number(k))
+            const b = boxAt(selIndex(k, selOthers[k]))
             if (b)
                 b.deselect()
         }
         selOthers = {}
         const i = list.indexAt(p.x + list.contentX, p.y + list.contentY)
-        if (selLast >= 0 && selLast !== i && boxAt(selLast))
-            boxAt(selLast).deselect()
-        selFrom = boxAt(i) ? i : -1
+        const last = selIndex(selLast, selLastAt)
+        if (last >= 0 && last !== i && boxAt(last))
+            boxAt(last).deselect()
+        selFromAt = boxAt(i) ? i : -1
+        selFrom = keyAt(selFromAt)
         selLast = selFrom
+        selLastAt = selFromAt
     }
     function selectAcross(p) {
         const i = list.indexAt(p.x + list.contentX, p.y + list.contentY)
-        if (selFrom < 0 || i < 0)
+        const from = selIndex(selFrom, selFromAt)
+        if (from < 0 || i < 0)
             return
+        selFromAt = from
         const next = {}
-        if (i !== selFrom) {
-            const down = i > selFrom
-            for (let k = down ? selFrom + 1 : i; down ? k <= i : k < selFrom; k++) {
+        if (i !== from) {
+            const down = i > from
+            for (let k = down ? from + 1 : i; down ? k <= i : k < from; k++) {
                 const b = boxAt(k)
                 if (!b)
                     continue   // (a tool call, a note: no text to select)
@@ -1366,12 +1387,12 @@ Window {
                 } else {
                     b.selectAll()
                 }
-                next[k] = true
+                next[keyAt(k)] = k
             }
         }
         for (const k in selOthers) {
-            if (!next[k]) {
-                const b = boxAt(Number(k))
+            if (next[k] === undefined) {
+                const b = boxAt(selIndex(k, selOthers[k]))
                 if (b)
                     b.deselect()
             }
@@ -1379,8 +1400,9 @@ Window {
         selOthers = next
     }
     function selectionText() {
-        return Object.keys(selOthers).map(Number).concat([selFrom]).sort((a, b) => a - b)
-            .map(k => boxAt(k)).filter(b => b && b.selectedText !== "")
+        return Object.keys(selOthers).map(k => selIndex(k, selOthers[k])).concat([selIndex(selFrom, selFromAt)])
+            .filter(i => i >= 0).sort((a, b) => a - b)
+            .map(i => boxAt(i)).filter(b => b && b.selectedText !== "")
             .map(b => b.selectedText.replace(/[\u2028\u2029]/g, "\n")).join("\n\n")
     }
     function copyAcross(event) {   // (Ctrl+C in a message: with others selected too, all of it)
