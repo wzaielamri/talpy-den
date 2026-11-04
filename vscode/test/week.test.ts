@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
 import { demoLimits, demoPerms, demoState, demoWeek } from "../src/shared/demo";
+import { clockText } from "../src/shared/model";
 import type { WeekDay } from "../src/shared/types";
 import {
   coldText, currencyOf, dayTip, deltaText, factsText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
@@ -413,10 +414,10 @@ test("advanced analyses: how a plan's limits changed, in words", () => {
   assert.equal(limitChangeText({ kind: "limits", factor: 1.04, at: day }), "about the same since 4 Nov");
   assert.equal(limitChangeText({ kind: "limits", factor: null, at: day }), "your plan changed on 4 Nov");
   assert.equal(limitEventText({ at: day, factors: { five_hour: 5, seven_day: 4.71 }, from: "Pro", to: "Max 5×" }),
-    "4 Nov 18:52 · your limits grew about 4.7× · Pro → Max 5×");
+    `4 Nov ${clockText(day)} · your limits grew about 4.7× · Pro → Max 5×`);
   assert.equal(limitEventText({ at: day, factors: { five_hour: 0.2, seven_day: 0.2 }, from: null, to: "Pro" }),
-    "4 Nov 18:52 · your limits shrank 80% · now Pro");
-  assert.equal(limitEventText({ at: day, factors: {}, from: "Pro", to: "Max 5×" }), "4 Nov 18:52 · your plan changed · Pro → Max 5×");
+    `4 Nov ${clockText(day)} · your limits shrank 80% · now Pro`);
+  assert.equal(limitEventText({ at: day, factors: {}, from: "Pro", to: "Max 5×" }), `4 Nov ${clockText(day)} · your plan changed · Pro → Max 5×`);
   assert.equal(limitChangeText({ kind: "few" }), "too few readings to compare yet");
   assert.equal(limitChangeText(null), "");
   assert.equal(limitShareText(17.2), "17% of the week · about 6 full windows a week");
