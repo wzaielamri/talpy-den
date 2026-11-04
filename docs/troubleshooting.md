@@ -1,7 +1,7 @@
 # Troubleshooting
 
 - **"No plan usage yet":** plan usage comes from the status line, so it shows up after the next reply in a chat of that account (in VS Code's Claude Code panel, which runs no status line, Talpy Den asks Claude Code for it while the chat works). If it never does, check that `jq` is installed and that the snippet is in your status-line script (`./install.sh` adds it). Saved snapshots are in `~/.cache/talpy-den/statusline/`.
-- **Talpy Den isn't in the widget list:** it needs Plasma 6. Check that it's installed: `kpackagetool6 -t Plasma/Applet --list | grep claude`.
+- **Talpy Den isn't in the widget list:** it needs Plasma 6. Check that it's installed: `kpackagetool6 -t Plasma/Applet --list | grep talpyden`.
 - **The old version is still showing after an update:** `systemctl --user restart plasma-plasmashell`.
 - **"Can't find the claude command":** Talpy Den looks on PATH, in the usual install folders and on your login shell's PATH. If Claude is somewhere else, add its folder to PATH in `~/.profile` (not only `~/.bashrc`) and log in again.
 - **A chat didn't go on right after the usage limit reset:** a chat whose turn the limit ended still looks at work while commands it started in the background run (a server, say). A background chat takes its go-on in all the same, and they run on; a chat in a terminal can't take a message from outside, so its go-on waits for them to finish (its queued line says until when) and, if they still run 15 minutes after its time, ends them and goes on; its line's **Start it now** ends them at once and goes on. A notification says so when it starts waiting and when it ends them, and `~/.cache/talpy-den/go-on.log` keeps a dated line of each (its last 200 lines).
