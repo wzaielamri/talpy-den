@@ -42,13 +42,16 @@ import {
   keptChat,
   machineStatus,
   nextChatIndex,
+  opensInTalpyChat,
   reopensInClaudeCode,
   shareAccounts,
   shellQuote,
+  talpyChatHere,
 } from "./shared/model";
 import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "./shared/types";
 import { asPaste, attachClients, localAncestors, type Place, type Terminals } from "./terminals";
 import type { PlanReview } from "./planReview";
+import type { ChatPanes } from "./chatPane";
 import { windowHostFile } from "./remoteHost";
 
 const CHAT_LINK = "vscode://anthropic.claude-code/open?session=";
@@ -126,6 +129,7 @@ export class Actions {
   ) {}
 
   planReview?: PlanReview; // your comments on plans (set once it's there)
+  panes?: ChatPanes; // Talpy Chat's tabs (set once they're there)
 
   private place(host?: string): Place {
     if (!host) return { kind: "local" };
@@ -154,11 +158,15 @@ export class Actions {
 
   // ---------------------------------------------------------------- open
 
-  async open(chat: ChatRef): Promise<void> {
+  // direct: its own window all the same (Talpy Chat's Open in a terminal: a background chat's
+  // terminal, claude attach; a chat that isn't running reopens as the switch says, but not in Talpy Chat)
+  async open(chat: ChatRef, direct = false): Promise<void> {
     if (this.demoOnly()) return;
     this.dash.opened(chat); // (looked at: off the focus view's Finished lines)
     // A chat no Claude has open: where the switch of Recent chats says (from
-    // its row, its tab, the search alike)
+    // its row, its tab, the search alike); with Talpy Chat picked, also a
+    // background chat no terminal shows (it has no window of its own)
+    if (!direct && this.panes && this.opensInTalpyChat(chat)) return this.panes.open(chat, "chat");
     if (chat.kind === "chat" && !chat.pid && reopensInClaudeCode(settings.reopenIn(), this.cliOn(chat.host), this.claudeCodeFor(chat)))
       return this.openInClaudeCode(chat);
     if (settings.openIn() === "system") return this.openSystem(chat);
@@ -963,7 +971,9 @@ export class Actions {
   // ---------------------------------------------------------------- new chat
 
   // A new chat on an account, in one of its folders (or one you pick), in a
-  // terminal, or in the Claude Code chat tab. "Start with a task…" asks what
+  // Talpy Chat tab (in the background: its tab opens on it, and your first
+  // message there starts it; listed first), in a terminal, or in the Claude
+  // Code chat tab. "Start with a task…" asks what
   // Claude should do first: the chat starts with it (in a terminal at once,
   // in a chat tab typed in for you to send), and can run in the background
   // then (claude --bg: no window, listed right away; only in folders Claude
@@ -1021,7 +1031,7 @@ export class Actions {
     }
     const label = (f: Project) =>
       `$(${f.short === "~" ? "home" : "folder"}) ${f.short === "~" ? "Home folder (~)" : f.short}` + (plan && f.path === plan.cwd ? "  (the plan's)" : "");
-    type Item = vscode.QuickPickItem & { start?: "terminal" | "background" | "queue" | "schedule" | "panel" | "task" | "options"; folder?: Project; choose?: "dialog" | "type" };
+    type Item = vscode.QuickPickItem & { start?: "talpy" | "terminal" | "background" | "queue" | "schedule" | "panel" | "task" | "options"; folder?: Project; choose?: "dialog" | "type" };
     const canBrowse = !host || host === this.dash.currentHost;
     const items: Item[] = [];
     if (cli && !hasTask)
@@ -1032,6 +1042,17 @@ export class Actions {
         description: "the model, effort and permissions it starts with (not in a Claude Code panel): change…",
         start: "options",
       });
+    // In a Talpy Chat tab, first: this computer's chats, where a hook given to one chat runs (a folder
+    // Claude doesn't trust yet opens in a terminal: a background chat can't ask)
+    if (talpyChatHere(machineStatus(state, host), host, false)) {
+      items.push({ label: "In a Talpy Chat tab", kind: vscode.QuickPickItemKind.Separator });
+      for (const f of folders.filter((f) => f.path))
+        items.push(f.trusted === false
+          ? { label: label(f), description: "in a terminal: Claude doesn't trust it yet", start: "terminal", folder: f }
+          : { label: label(f), description: hasTask ? "in the background, its tab open on it" : "your first message there starts it, in the background",
+              start: "talpy", folder: f });
+      items.push({ label: "$(folder-opened) Choose folder…", start: "talpy", choose: "dialog" });
+    }
     if (cli) {
       items.push({ label: "In a terminal", kind: vscode.QuickPickItemKind.Separator });
       for (const f of folders) items.push({ label: label(f), start: "terminal", folder: f });
@@ -1055,7 +1076,7 @@ export class Actions {
     }
     if (!cli) items.push({ label: "In a terminal", kind: vscode.QuickPickItemKind.Separator }, { label: "$(warning) No claude command", description: host ? hostWhere(host) : "on this computer" });
     items.push(...panel.map((p) => ({ ...p, start: p.panel ? ("panel" as const) : undefined })));
-    const pick = await vscode.window.showQuickPick(items, {
+    let pick = await vscode.window.showQuickPick(items, {
       title: plan ? `Carry out “${plan.title}” on ${where}` : task ? `“${task.length > 60 ? task.slice(0, 59) + "…" : task}” on ${where}` : undefined,
       placeHolder: plan || task ? "Start it in…" : `New chat on ${where} in…`,
     });
@@ -1077,6 +1098,26 @@ export class Actions {
       if (!text?.trim()) return;
       this.unsentTask = text.trim();
       return this.newChat(group.id, host, undefined, text.trim(), first);
+    }
+    if (pick.start === "talpy") {
+      let where = pick.folder ? { path: pick.folder.path, short: pick.folder.short } : null;
+      if (pick.choose === "dialog") {
+        const picked = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, defaultUri: vscode.Uri.file(os.homedir()), openLabel: "Start Chat Here" });
+        if (!picked?.length) return;
+        const answer = await this.backend.action("jump.py", ["--pick-folder", group.chatProfile, "--cwd", picked[0].fsPath, ...configDirArgs()]);
+        if (!this.report(answer, "Couldn't open a new chat")) return;
+        where = { path: String(answer.path ?? picked[0].fsPath), short: String(answer.short ?? picked[0].fsPath) };
+        if (answer.trusted !== true) {
+          // (a background chat can't ask whether you trust it: this one starts in a terminal, where Claude asks)
+          this.dash.setActionInfo(`Claude doesn't trust ${where.short} yet: this chat opens in a terminal, where it asks.`);
+          pick = { label: "", start: "terminal", folder: { path: where.path, short: where.short, trusted: false } as Project };
+        }
+      }
+      if (pick.start === "talpy") {
+        if (!where || !this.panes) return;
+        if (task && task === this.unsentTask) this.unsentTask = "";
+        return this.panes.openNew(group, where, task ?? "", plan);
+      }
     }
     if (pick.start === "panel") return this.panelChat(group, hasTask ? await this.taskText(task ?? "", plan, host) : undefined);
     if (pick.start === "schedule") {
@@ -1286,6 +1327,15 @@ export class Actions {
     const group = allGroups(state.status, state.hosts).find((g) => g.id === groupId && (g.host ?? "") === (host ?? ""));
     if (!group?.loginCommand) return this.fail(`Can't log in to ${group ? groupLabel(group) : "that account"} from here.`);
     await this.terminals.run(`login|${host ?? ""}|${group.id}`, `log in to ${group.name}`, group.loginCommand, this.place(host), { private: true });
+  }
+
+  // With Talpy Chat picked in Open in: a chat that isn't running, or a background one no terminal shows
+  private opensInTalpyChat(chat: ChatRef): boolean {
+    const state = this.dash.state();
+    const status = machineStatus(state, chat.host);
+    const session = (status?.groups ?? []).flatMap((g) => g.sessions ?? []).find((s) => s.sessionId === chat.sessionId);
+    return opensInTalpyChat({ kind: chat.kind, pid: chat.pid, attached: session?.attached ?? null }, settings.reopenIn(), status, chat.host,
+                            this.claudeCodeFor(chat));
   }
 
   // There's a claude command on the machine (here, or that host) for chats in a terminal

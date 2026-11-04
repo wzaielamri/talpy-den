@@ -17,12 +17,12 @@ import type { Actions } from "./actions";
 import { AGENT_ID } from "./agentRun";
 import type { Backend } from "./backend";
 import { openComparison } from "./changes";
-import { cacheDir, configDirArgs } from "./config";
+import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } from "./config";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
 import { answersOf, askShownOf, chatWhere, HOLD_MS, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
-import type { Answers, AskShown, ChatRef, Decision, RecentChat, Session, ViewState } from "./shared/types";
+import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
 import { asPaste, localAncestors, type Terminals } from "./terminals";
@@ -52,9 +52,20 @@ export function findPaneRow(state: Pick<ViewState, "status" | "hosts">, host: st
   return {};
 }
 
+// A new chat Talpy Chat starts (New Chat… in a Talpy Chat tab), till its first message starts it
+interface Fresh {
+  profile: string; // its account's profile (pane.py --start)
+  account: string;
+  cwd: string;
+  short: string;
+  plan: { slug: string; profileDir: string; title: string } | null;
+  task: string; // sent as its first message once the tab is ready
+}
+
 export class ChatPanes implements vscode.Disposable {
   private panes = new Map<string, Pane>(); // "<host>|<chat id>" -> its tab
   private answers = 0; // (answers given: each one's id, for its tab)
+  private newChats = 0;
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -77,6 +88,21 @@ export class ChatPanes implements vscode.Disposable {
     if (pane) return pane.reveal(tab);
     const created = new Pane(this, chat, tab);
     this.panes.set(key, created);
+    created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
+  }
+
+  // A new chat in a tab of its own, for that account and folder, with nothing started yet: your first
+  // message there starts it in the background (pane.py --start, with the permission hook for it
+  // alone), a task at once; plan: one it carries out (its first message, with what you wrote)
+  openNew(group: Group, folder: { path: string; short: string }, task = "", plan?: PlanItem): void {
+    const id = `new-${Date.now()}-${++this.newChats}`;
+    const chat: ChatRef = { key: id, sessionId: "", chatId: id, profileDir: group.chatProfile, name: `New chat in ${folder.short}`,
+                            cwd: folder.path, kind: "chat", pid: null };
+    const fresh: Fresh = { profile: group.chatProfile, account: group.title, cwd: folder.path, short: folder.short,
+                           plan: plan ? { slug: plan.slug, profileDir: plan.profileDir, title: plan.title } : null,
+                           task: task || (plan ? "Implement this plan." : "") };
+    const created = new Pane(this, chat, "chat", fresh);
+    this.panes.set(`|${id}`, created);
     created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
   }
 
@@ -299,11 +325,14 @@ class Pane implements vscode.Disposable {
   private pendingDraft = "";
   private held = new Map<number, { text: string; how: "auto" | "background" | "copy" | "enter"; until: number }>(); // (the page's, till they go: ChatPanes.sendHeld)
   private terminalHere = false;
+  private starting: Promise<{ ok: boolean; message: string; went?: boolean }> | null = null; // (a new chat's first message, on its way)
+  private startedAt = 0; // (it started: its transcript may not be there for a moment)
 
   constructor(
     private owner: ChatPanes,
     chat: ChatRef,
     tab: "chat" | "review",
+    private fresh: Fresh | null = null,
   ) {
     this.chat = chat;
     this.host = chat.host ?? "";
@@ -344,6 +373,8 @@ class Pane implements vscode.Disposable {
         if (e.affectsConfiguration("talpyDen.chatFont") || e.affectsConfiguration("terminal.integrated.fontFamily")
             || e.affectsConfiguration("editor.fontFamily")) this.post({ type: "font", family: Pane.chatFont() });
         if (e.affectsConfiguration("talpyDen.diffSideBySide")) this.post({ type: "diffLayout", split: Pane.sideBySide() });
+        if (this.fresh && (e.affectsConfiguration("talpyDen.newChatModel") || e.affectsConfiguration("talpyDen.newChatEffort")
+            || e.affectsConfiguration("talpyDen.newChatMode"))) void this.pushChat();   // (its ⚙ line)
       }),
     );
   }
@@ -401,6 +432,8 @@ class Pane implements vscode.Disposable {
     if (this.disposed) return; // (closed meanwhile)
     const item = session ?? (recent ? { ...recent, chatId: recent.sessionId, state: "done" as const } : undefined);
     const queued = queuedReply(state.status, this.chatId, this.host || undefined);
+    // (a new chat: till it's listed, "Starting…" once your first message went)
+    const starting = !!this.starting || (!!this.startedAt && !session && !recent);
     const chat: PaneChat = {
       host: this.host,
       chatId: this.chatId,
@@ -409,7 +442,7 @@ class Pane implements vscode.Disposable {
       name: session?.name ?? recent?.name ?? this.chat.name,
       cwd: session?.cwd ?? recent?.cwd ?? this.chat.cwd ?? "",
       state: session?.state ?? "done",
-      stateText: session ? stateText(session, state.now) : "not running",
+      stateText: session ? stateText(session, state.now) : starting ? "starting" : this.fresh ? "new" : "not running",
       route: this.terminalHere ? "vscodeTerminal" : (session?.reply ?? "background"),
       busy: session?.state === "working" || session?.state === "waiting",
       atWork: session?.state === "working" && session.reason !== "background shell",
@@ -421,7 +454,7 @@ class Pane implements vscode.Disposable {
       review: session?.review ?? recent?.review ?? null,
       queued: queued ? { id: queued.id, prompt: queued.prompt, error: queued.error } : null,
       canMove: !!session && this.owner.ext.actions.canMoveToClaudeCode(this.chat),
-      where: chatWhere(session, this.terminalHere),
+      where: starting ? "background" : this.fresh ? "new" : chatWhere(session, this.terminalHere),
       terminalApp: session?.terminalApp ?? "",
       attached: session?.kind === "bg" ? (session.attached ?? null) : null,
       profile: session?.profile ?? "",
@@ -430,6 +463,9 @@ class Pane implements vscode.Disposable {
       plan: session?.plan ? { title: session.plan.title } : null,
       agents: session?.agents ?? null,
       tasks: session?.tasks && session.tasks.total > 0 ? session.tasks : null,
+      fresh: this.fresh ? { account: this.fresh.account, folder: this.fresh.short, plan: this.fresh.plan?.title ?? "",
+                            model: settings.newChatModel(), effort: settings.newChatEffort(), mode: settings.newChatMode() } : null,
+      starting,
     };
     this.panel.title = chat.name || this.chatId.slice(0, 8);
     if (this.ready) this.post({ type: "chat", chat });
@@ -464,6 +500,10 @@ class Pane implements vscode.Disposable {
   private chaseUntil = 0;
   private async load(): Promise<void> {
     if (this.disposed) return;
+    if (this.fresh) {   // (nothing to read yet: it shows empty, ready for your first message)
+      this.post({ type: "conversation", answer: { ok: true, items: [], stamp: "", more: false } as never });
+      return;
+    }
     if (this.loading) {
       this.loadAgain = true; // (something changed while it was read: read it again then)
       return;
@@ -477,6 +517,8 @@ class Pane implements vscode.Disposable {
       ], this.host ? 60000 : 30000);
       if (this.disposed) return;
       if (r.ok && r.unchanged) return void this.watch(); // (shown again, nothing new: it waits on it again)
+      // (a chat just started has no transcript for a moment: your message shows meanwhile)
+      if (!r.ok && r.missing && this.startedAt && Date.now() - this.startedAt < 60000) return;
       if (chatId !== this.chatId) {
         this.loadAgain = true; // (Claude moved it meanwhile: its new id's, follow)
         return;
@@ -551,6 +593,55 @@ class Pane implements vscode.Disposable {
     }
   }
 
+  // A new chat's first message: it starts in the background (pane.py --start: on its account, in
+  // its folder, with the new-chat model, effort and mode, and the permission hook for it alone),
+  // and the tab goes on with it under its id. One sent while that's on its way goes to it after.
+  private async start(text: string): Promise<{ ok: boolean; message: string; went?: boolean }> {
+    if (this.starting) {
+      const first = await this.starting;
+      if (!first.ok || this.fresh) return { ok: false, message: "The chat didn't start: send it again once it has" };
+      return this.owner.send(this.chat, text, "auto", false);
+    }
+    const f = this.fresh;
+    if (!f) return this.owner.send(this.chat, text, "auto", false);
+    this.starting = (async () => {
+      const file = Buffer.byteLength(text) > TEXT_IN_ARGS ? path.join(cacheDir(), `text-${crypto.randomUUID()}.txt`) : "";
+      let r: Record<string, any>;
+      try {
+        if (file) {
+          fs.mkdirSync(cacheDir(), { recursive: true, mode: 0o700 });
+          fs.writeFileSync(file, text, { mode: 0o600, flag: "wx" });
+        }
+        r = await this.owner.ext.backend.pane([
+          "--start", f.profile, "--cwd", f.cwd, ...(file ? ["--text-file", file] : ["--text", text]), ...chatOptionArgs(),
+          ...(f.plan ? ["--plan", f.plan.slug, "--plan-profile", f.plan.profileDir] : []), ...configDirArgs(),
+        ], 180000);
+      } catch (e) {
+        r = { ok: false, message: e instanceof Error ? e.message : String(e) };
+      } finally {
+        if (file) fs.rmSync(file, { force: true });
+      }
+      if (this.disposed || !r.ok || typeof r.chat !== "string") return { ok: false, message: String(r.message ?? "It didn't start") };
+      const from = this.chatId;
+      this.fresh = null;
+      this.startedAt = Date.now();
+      this.owner.moved(this, `|${from}`, `|${r.chat}`);
+      this.chatId = r.chat;
+      this.chat = { ...this.chat, key: r.chat, chatId: r.chat, sessionId: r.chat, profileDir: typeof r.profileDir === "string" ? r.profileDir : this.chat.profileDir };
+      this.stamp = "";
+      this.owner.refresh("");
+      return { ok: true, message: "", went: true };
+    })();
+    void this.pushChat();   // (Starting…)
+    try {
+      return await this.starting;
+    } finally {
+      this.starting = null;
+      void this.pushChat();
+      void this.load();
+    }
+  }
+
   private async loadReview(): Promise<void> {
     const r = await this.owner.ext.backend.pane([
       "--review", this.chatId, ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []),
@@ -580,6 +671,14 @@ class Pane implements vscode.Disposable {
           this.draft(this.pendingDraft);
           this.pendingDraft = "";
         }
+        // (a new chat's task: its first message, shown as sent at once, as one you typed)
+        if (this.fresh?.task) {
+          this.post({ type: "startWith", text: this.fresh.task });
+          this.fresh.task = "";
+        }
+        break;
+      case "chatOptions":
+        if ([m.model, m.effort, m.mode].every((v) => typeof v === "string")) await setChatOptions(m.model, m.effort, m.mode);
         break;
       case "more":
         this.limit = Math.min(LIMIT_MAX, this.limit * 2);
@@ -596,7 +695,8 @@ class Pane implements vscode.Disposable {
       case "send": {
         if (typeof m.id === "number") this.held.delete(m.id); // (it goes now: from the tab)
         if (typeof m.text !== "string" || !["auto", "background", "copy", "enter"].includes(m.how)) break;
-        const r = await this.owner.send(this.chat, m.text, m.how, m.afterTurn === true);
+        // (a new chat's first message starts it; one sent meanwhile waits for that, then goes to it)
+        const r = this.fresh || this.starting ? await this.start(m.text) : await this.owner.send(this.chat, m.text, m.how, m.afterTurn === true);
         this.result(m.afterTurn ? "later" : "send", r, typeof m.id === "number" ? m.id : undefined);
         if (this.host && r.went) this.chaseUntil = Date.now() + 10000; // (as Plasma: read every second for 10 s, till it shows)
         await this.load();   // (the watcher has it already, as it's written; an SSH host's chat now)
@@ -650,7 +750,8 @@ class Pane implements vscode.Disposable {
         if (typeof m.agentId === "string" && AGENT_ID.test(m.agentId)) await actions.openAgentRun(this.chat, m.agentId);
         break;
       case "openWindow":
-        await actions.open(this.chat);
+        // (a background chat's: a terminal on it, claude attach, also where its window is this tab)
+        if (!this.fresh) await actions.open(this.chat, true);
         break;
       case "moveToClaudeCode":
         await actions.moveToClaudeCode(this.chat);
@@ -706,7 +807,9 @@ class Pane implements vscode.Disposable {
         await this.dictate(m.action);
         break;
       case "complete": {
-        const r = await backend.pane(["--complete", this.chatId, ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []),
+        // (a new chat's: its folder's, and your prompts there)
+        const r = await backend.pane([...(this.fresh ? ["--complete", "-", "--cwd", this.fresh.cwd] : ["--complete", this.chatId]),
+          ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []),
           ...(this.host ? ["--host", this.host] : configDirArgs())], this.host ? 60000 : 20000);
         if (r.ok) this.post({ type: "offers", offers: { commands: Array.isArray(r.commands) ? r.commands : [],
           files: Array.isArray(r.files) ? r.files : [], history: Array.isArray(r.history) ? r.history : [] } });

@@ -464,6 +464,60 @@ test("a chat's tab shown again waits on its transcript again, one watcher at a t
   }
 });
 
+// New Chat… in a Talpy Chat tab: an empty tab for the account and folder, its first message starts the chat in
+// the background (pane.py --start), and the tab goes on with it under its id; one sent meanwhile goes to it after
+test("a new chat's tab starts it with its first message, then goes on with it", async () => {
+  const NEW = "c0ffee00-0000-4000-8000-000000000001";
+  const calls: string[][] = [];
+  let release: () => void = () => undefined;
+  const started = new Promise<void>((r) => (release = r));
+  const backend = { pane: async (args: string[]) => {
+    calls.push(own(args));
+    if (args[0] === "--start") {
+      await started;
+      return { ok: true, how: "background", chat: NEW, id: NEW.slice(0, 8), profileDir: ".claude-work", message: "Started" };
+    }
+    return args[0] === "--send" ? { ok: true, how: "typed", message: "Sent" } : { ok: false, missing: true, message: "not yet" };
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }),
+                 onLive: () => ({ dispose() {} }), liveHook: false, setActionError() {}, setActionInfo() {} };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+  const group = { id: "g", title: "work · Team", chatProfile: ".claude-work" } as never;
+  p.openNew(group, { path: "/home/me/repos/app", short: "~/repos/app" }, "Fix the tests");
+  const panel = recorded.panels.at(-1)!;
+  const chats = () => panel.sent.filter((m) => (m as { type: string }).type === "chat").map((m) => (m as { chat: { chatId: string; fresh?: { account: string; folder: string } | null; starting?: boolean; where: string; stateText: string } }).chat);
+  try {
+    panel.show(true);
+    panel.receive({ type: "ready" });
+    await tick();
+    assert.equal((panel as unknown as { title: string }).title, "New chat in ~/repos/app");
+    const first = chats().at(-1)!;
+    assert.deepEqual([first.fresh?.account, first.fresh?.folder, first.where, first.stateText, first.starting], ["work · Team", "~/repos/app", "new", "new", false]);
+    assert.ok(panel.sent.some((m) => JSON.stringify(m) === JSON.stringify({ type: "startWith", text: "Fix the tests" })), "the task goes as its first message");
+    assert.equal(calls.length, 0, "nothing read or started before it's sent");
+    panel.receive({ type: "send", text: "Fix the tests", how: "auto", afterTurn: false, id: 1 });
+    panel.receive({ type: "send", text: "and the docs", how: "auto", afterTurn: false, id: 2 });
+    await tick();
+    assert.equal(calls.filter((c) => c[0] === "--start").length, 1, "started once");
+    const start = calls.find((c) => c[0] === "--start")!;
+    assert.deepEqual(start.slice(0, 6), ["--start", ".claude-work", "--cwd", "/home/me/repos/app", "--text", "Fix the tests"]);
+    assert.equal(chats().at(-1)!.starting, true, "Starting…");
+    release();
+    await tick(50);
+    const results = panel.sent.filter((m) => (m as { type: string; kind?: string }).type === "result").map((m) => m as { kind: string; ok: boolean; went?: boolean; id?: number });
+    assert.deepEqual(results.map((r) => [r.kind, r.ok, r.went, r.id]), [["send", true, true, 1], ["send", true, true, 2]]);
+    const send = calls.find((c) => c[0] === "--send")!;
+    assert.deepEqual(send.slice(0, 4), ["--send", NEW, "--text", "and the docs"], "the second one to the chat it started");
+    assert.equal(chats().at(-1)!.chatId, NEW);
+    assert.equal(chats().at(-1)!.fresh, null);
+  } finally {
+    p.dispose();
+    release();
+  }
+});
+
 // Closing a chat's terminal, Claude moves it to the background under a new id
 // (the status's "moved"): its tab goes on with it there, not with the old
 // transcript, which stops at the move

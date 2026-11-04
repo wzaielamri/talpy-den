@@ -40,8 +40,9 @@ a new chat (used by the Talpy Den widget).
     python3 -I jump.py --screenshot              (a region of the screen you pick, saved as a picture)
     python3 -I jump.py --attach PATH             (a dropped file: a picture is copied in as one, else named as is)
     python3 -I jump.py --pick-files [FOLDER]     (files to attach, from the desktop's file dialog: their paths)
-    python3 -I jump.py --pick-folder PROFILE     (a folder for a new chat in Talpy Chat, from the desktop's folder
-                                                 dialog: its path, short name and whether Claude trusts it)
+    python3 -I jump.py --pick-folder PROFILE [--cwd FOLDER]
+                                                 (a folder for a new chat in Talpy Chat, from the desktop's folder
+                                                 dialog, or FOLDER: its path, short name and whether Claude trusts it)
     python3 -I jump.py --copy-image PATH         (a PNG to the clipboard: wl-copy, else xclip)
     python3 -I jump.py --agent-run AGENT_ID --chat CHAT_ID [--profile PROFILE] [--no-open]
                                                  (a subagent's whole run, as a Markdown file)
@@ -1359,17 +1360,22 @@ def pick_files(home, start):
     return True, "", {"paths": paths}
 
 
-def pick_folder(home, extra_dirs, profile_key):
+def pick_folder(home, extra_dirs, profile_key, folder=None):
     """--pick-folder: (ok, message, {"path", "short", "trusted"}) of a folder
     for a new chat in Talpy Chat, picked in the desktop's folder dialog (it
-    opens in your home folder); cancelled: ok with no path. trusted: Claude
-    trusts it on that profile already (a background chat can't ask)."""
+    opens in your home folder), or folder (VS Code's own dialog picked it);
+    cancelled: ok with no path. trusted: Claude trusts it on that profile
+    already (a background chat can't ask)."""
     profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
     if profile is None:
         return False, f"No Claude profile called {profile_key}", {}
-    folder, error = choose_folder(f"New Claude chat on {profile.label} in…", home)
+    error = ""
+    if not folder:
+        folder, error = choose_folder(f"New Claude chat on {profile.label} in…", home)
     if folder is None:
         return not error, error, {}
+    if not os.path.isdir(folder):
+        return False, f"The folder {cs.short_folder(folder, home)} isn't there", {}
     return True, "", {"path": folder, "short": cs.short_folder(folder, home),
                       "trusted": cs.folder_trusted(profile, folder, home)}
 
@@ -3121,7 +3127,7 @@ def main(argv=None):
         elif action is pick_files:
             ok, message, extra_out = pick_files(Path.home(), attach_path)
         elif action is pick_folder:
-            ok, message, extra_out = pick_folder(Path.home(), extra, attach_path)
+            ok, message, extra_out = pick_folder(Path.home(), extra, attach_path, folder)
         elif action is show_agent_run:
             ok, message, run_file = show_agent_run(Path.home(), extra, session_id, agent_id, profile_dir, open_it)
         elif action is show_changes and listing:

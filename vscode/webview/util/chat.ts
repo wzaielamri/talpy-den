@@ -83,7 +83,8 @@ export function isBackground(s: Session): boolean {
 
 // inCode: a chat no Claude has open reopens in a Claude Code panel (the switch
 // of Recent chats)
-export function openHint(s: Session, host?: string, inCode = false): string {
+export function openHint(s: Session, host?: string, inCode = false, inTalpy = false): string {
+  if (inTalpy) return s.kind === "chat" ? "Reopen this chat in Talpy Chat" : "Open this background chat in Talpy Chat (no terminal shows it)";
   if (s.kind === "chat" && inCode) return host ? `Reopen this chat in a Claude Code panel (VS Code connected to ${hostLabel(host)})` : "Reopen this chat in a Claude Code panel";
   if (containerOf(host)) {
     const name = hostLabel(host!);

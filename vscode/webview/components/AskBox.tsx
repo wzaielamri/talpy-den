@@ -28,8 +28,9 @@ const ARG_ROWS = 3;
 
 // What a waiting chat asks, with Allow once / Always allow / Deny (a note);
 // Claude's questions: each with its options, Send answers / Decline (a note)
-export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, compact = false }: {
+export function AskBox({ ask, onAnswer, onWholePlan, onTerminal, busy = false, max = 12, compact = false }: {
   ask: PermissionAsk;
+  onTerminal?: () => void; // (a background chat's, in its tab: where it can't be answered here, a terminal on it, claude attach)
   onWholePlan?: () => void; // (a row: the chat's tab shows all of it)
   onAnswer: (d: Decision, note: string, answers?: Answers) => void;
   busy?: boolean;
@@ -155,7 +156,16 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
           <button type="button" class="btn secondary" onClick={() => setDenying(false)}>Cancel</button>
         </div>
       ) : null}
-      {!canAnswer ? (
+      {!canAnswer && onTerminal ? (
+        <div class="ask-buttons">
+          <button type="button" class="btn" onClick={onTerminal}><Icon name={I.terminal} />Answer it in a terminal</button>
+        </div>
+      ) : null}
+      {!canAnswer && onTerminal ? (
+        <div class="muted small">
+          This background chat started without Talpy Den's hook, so what it asks can't be answered here: answer it in a terminal (claude attach shows Claude's own prompt), or run “Talpy Den: Answer Permission Prompts from Talpy Den…” for the next ones.
+        </div>
+      ) : !canAnswer ? (
         <div class="muted small">
           {plan
             ? "Approve it in the chat, or run “Talpy Den: Answer Permission Prompts from Talpy Den…” (it takes plans too) to approve it here."

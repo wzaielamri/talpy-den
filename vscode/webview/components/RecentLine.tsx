@@ -1,4 +1,4 @@
-import { ago, claudeCodeHere, claudeCodeReopenHint, cliInstalled, folderIn, goOnAt, hostLabel, keptChat, keptTitle, machineStatus, queuedChat, reopensInClaudeCode, startText, stopText, terminalReopenHint } from "../../src/shared/model";
+import { ago, claudeCodeHere, claudeCodeReopenHint, cliInstalled, folderIn, goOnAt, hostLabel, keptChat, keptTitle, machineStatus, openChatsIn, queuedChat, startText, stopText, talpyChatHere, talpyChatHint, talpyChatTitle, terminalReopenHint } from "../../src/shared/model";
 import { reviewPending, testsText } from "../../src/shared/pane";
 import type { Group, RecentChat, ViewState } from "../../src/shared/types";
 import { post } from "../env";
@@ -11,16 +11,21 @@ import { IconButton } from "./IconButton";
 import { Tag, TestsTag } from "./Tag";
 import { I, Icon, T } from "../util/icons";
 
-// Where an account's chats that no Claude has open reopen: in a terminal,
-// or in a Claude Code panel (the switch above Recent chats, kept in
-// talpyDen.reopenIn), and whether they can at all (no claude command on the
-// chat's machine, Claude Code not here or on another account); what its
-// reopen button says, and whether a chat of it can move to another account
+// Where an account's chats that no Claude has open reopen: in Talpy Chat, in
+// a terminal, or in a Claude Code panel (the switch above Recent chats, kept
+// in talpyDen.reopenIn), and whether they can at all (Talpy Chat on an SSH
+// host, no claude command on the chat's machine, Claude Code not here or on
+// another account); what its reopen button says, and whether a chat of it can
+// move to another account
 export interface Reopen {
+  talpyHere: boolean;
   cliHere: boolean;
   codeHere: boolean;
+  inTalpy: boolean;
   inCode: boolean;
   canOpen: boolean;
+  talpyTitle: string;
+  talpyHint: string;
   terminalHint: string;
   codeHint: string;
   reopen: string;
@@ -31,12 +36,16 @@ export function reopenOf(view: ViewState, group: Group): Reopen {
   const status = machineStatus(view, group.host);
   const cliHere = cliInstalled(status);
   const codeHere = claudeCodeHere(group, view.claudeCode);
-  const inCode = reopensInClaudeCode(view.settings.reopenIn, cliHere, codeHere);
+  const where = openChatsIn(view.settings.reopenIn, status, group.host, codeHere, true);
+  const inCode = where === "claudeCode";
+  const inTalpy = where === "talpyChat";
+  const talpyHint = talpyChatHint(status, group.host, true);
   const terminalHint = terminalReopenHint(group.host, cliHere);
   const codeHint = claudeCodeReopenHint(group, view.claudeCode, view.status?.groups ?? []);
   const canOpen = inCode || cliHere;
-  const reopen = !canOpen ? `${terminalHint}\n${codeHint}` : inCode ? codeHint : terminalHint;
-  return { cliHere, codeHere, inCode, canOpen, terminalHint, codeHint, reopen, share: canShareRecent(status) };
+  const reopen = !canOpen ? `${terminalHint}\n${codeHint}` : inCode ? codeHint : inTalpy ? talpyHint : terminalHint;
+  return { talpyHere: talpyChatHere(status, group.host, true), cliHere, codeHere, inTalpy, inCode, canOpen,
+           talpyTitle: talpyChatTitle(status, group.host, true), talpyHint, terminalHint, codeHint, reopen, share: canShareRecent(status) };
 }
 
 // One of an account's chats that no Claude has open (Recent chats, ★ Starred
@@ -49,7 +58,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
   const view = useView();
   const [woken, wake] = useWoken(); // (its buttons: made the first time they show)
   const chat = recentRef(c, group.host);
-  const { canOpen, inCode, reopen, share } = how;
+  const { canOpen, inCode, inTalpy, reopen, share } = how;
   const goOn = goOnAt(c);
   const goingOn = queuedChat(view.status, c.sessionId, group.host);
   const kept = keptChat(view.status, c.sessionId, group.host);
@@ -57,7 +66,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
   const canKeep = !kept && !goingOn && goOn > 0;
   // a click opens its tab (else the chat itself, as the switch above says)
   const paneFirst = view.settings.clickOpensPane !== false;
-  const reopenIt = () => post(inCode ? { type: "openInClaudeCode", chat } : { type: "openWindow", chat });
+  const reopenIt = () => post(inCode ? { type: "openInClaudeCode", chat } : inTalpy ? { type: "openPane", chat } : { type: "openWindow", chat });
   const toReview = reviewPending({ ...c, chatId: c.sessionId, state: "done" }, view.status, group.host);
   const tests = testsText(c.review);
   // (in a project: only the part of its folder below the project's)
@@ -73,7 +82,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
         title={
           `${c.name}\n` +
           (paneFirst
-            ? "Click to open it in Talpy Chat: its conversation, a box to reply, and what it changed." + (canOpen ? `\nThe reopen button (on hover): ${reopen}` : "")
+            ? "Click to open it in Talpy Chat: its conversation, a box to reply, and what it changed." + (canOpen && !inTalpy ? `\nThe reopen button (on hover): ${reopen}` : "")
             : reopen) +
           (c.cwd ? `\nFolder: ${group.host ? `${hostLabel(group.host)}:` : ""}${c.cwd}` : "") +
           (c.shared ? `\nShared between accounts; last used on ${c.profile}.` : "") +
@@ -142,7 +151,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
       <span class="recent-ago small muted nowrap">{ago(view.now - c.lastActive)}</span>
       {woken ? (
         <div class="row-actions">
-          {paneFirst && canOpen ? (
+          {paneFirst && canOpen && !inTalpy ? (
             <IconButton icon={I.openWindow} label="Reopen this chat" title={`Reopen this chat\n${reopen}`} onClick={reopenIt} />
           ) : null}
           {/* (a starred one's yellow ★ unstars it: the line's own ★ hides while these show) */}

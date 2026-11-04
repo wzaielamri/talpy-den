@@ -212,11 +212,21 @@ if (typed)
     box.dispatchEvent(new Event("input", { bubbles: true }));
   }, 300);
 
+// ?new=1: a new chat's tab (New Chat… in a Talpy Chat tab), empty, with its ⚙ line; ?new=task: its task
+// sent as its first message at once, Starting… till it's listed
+const fresh = params.get("new");
+if (fresh)
+  Object.assign(chat, { chatId: "new-1", sessionId: "", name: "New chat in ~/repos/app", cwd: "/home/alice/repos/app", state: "done",
+                        stateText: "new", route: "background", busy: false, atWork: false, permission: null, changes: 0, where: "new",
+                        attached: null, mode: "", plan: null, agents: null, tasks: null, queued: null, canMove: false,
+                        fresh: { account: "work · Team", folder: "~/repos/app", plan: "", model: "opus", effort: "xhigh", mode: "default" } });
+
 window.addEventListener("harness-post", (e: Event) => {
   const m = (e as CustomEvent).detail as { type: string };
   if (m.type === "ready") {
     send({ type: "chat", chat });
-    send({ type: "conversation", answer: { ok: true, items, more: true, stamp: "1" } });
+    send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1" } });
+    if (fresh === "task") setTimeout(() => send({ type: "startWith", text: "Fix the flaky date test in tests/parser.test.ts" }), 100);
     const tab = params.get("tab");   // ?tab=steps
     if (tab) send({ type: "result", kind: "tab:" + tab, ok: true, message: "" });
   } else if (m.type === "picture") {

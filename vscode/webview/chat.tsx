@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, clipboardCode, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, clipboardCode, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -194,6 +194,29 @@ function AskedCard({ item, open, onToggle, gap }: { item: PaneItem; open: boolea
   );
 }
 
+// A new chat's ⚙ line: the model, effort and permission mode it starts with (the new-chat ones,
+// as New Chat… has them; a change is kept for the next new chat)
+function NewChatOptions({ fresh }: { fresh: NonNullable<PaneChat["fresh"]> }) {
+  const pick = (label: string, title: string, options: [string, string][], value: string, set: (v: string) => void) => (
+    <select class="pane-option" aria-label={label} title={`${label}\n${title}`} value={value}
+      onChange={(e) => set((e.currentTarget as HTMLSelectElement).value)}>
+      {options.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
+    </select>
+  );
+  const send = (model: string, effort: string, mode: string) => post({ type: "chatOptions", model, effort, mode });
+  return (
+    <div class="pane-options">
+      <Icon name={I.settings} />
+      {pick("Model", "The chat starts with it (claude --model); /model changes it in the chat. The next new chat starts with the same.",
+            CHAT_MODELS, fresh.model, (v) => send(v, fresh.effort, fresh.mode))}
+      {pick("Reasoning effort", "How hard Claude thinks (claude --effort); /effort changes it in the chat. The next new chat starts with the same.",
+            CHAT_EFFORTS, fresh.effort, (v) => send(fresh.model, v, fresh.mode))}
+      {pick("Permission mode", "The chat starts in it (claude --permission-mode). The next new chat starts in the same. A background chat can start in auto mode or bypass permissions only once you turned that on in a terminal: Claude says so then.",
+            CHAT_MODES, fresh.mode, (v) => send(fresh.model, fresh.effort, v))}
+    </div>
+  );
+}
+
 function ChatApp() {
   const [chat, setChat] = useState<PaneChat | null>(null);
   const [items, setItems] = useState<PaneItem[]>([]);
@@ -228,6 +251,7 @@ function ChatApp() {
   const itemsNow = useRef<PaneItem[]>([]);
   itemsNow.current = items;
   const sentCount = useRef(0);
+  const startNext = useRef(false); // (a new chat's task, put in the box: it goes as soon as it's there)
   const [review, setReview] = useState<ReviewAnswer | null>(null);
   const [reviewError, setReviewError] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -424,6 +448,10 @@ function ChatApp() {
         }
       }
       else if (m.type === "offers") setOffers(m.offers);
+      else if (m.type === "startWith") {   // (a new chat's task: sent at once, as if you typed it)
+        startNext.current = true;
+        setText(m.text);
+      }
       else if (m.type === "dictation") {
         setDictating(m.state);
         if (m.state === "recording") setRecordedAt(Date.now());
@@ -648,6 +676,12 @@ function ChatApp() {
       post({ type: "hold", id, text: said, how }); // (the extension sends it if the tab closes first)
     } else post({ type: "send", text, how, afterTurn, id });
   };
+  useEffect(() => {
+    if (startNext.current && text.trim() && chat) {
+      startNext.current = false;
+      send("auto", false);
+    }
+  }, [text, chat]);
   // Held: it goes to Claude when its moment is up, or at once with Send now;
   // Edit (or ↑ in an empty box) takes it back into the box, Cancel drops it
   const [now, setNow] = useState(0);
@@ -730,6 +764,10 @@ function ChatApp() {
     const tick = setInterval(settle, 1000);
     return () => clearInterval(tick);
   }, [items, answersOut]);
+  // A new chat's first message is on its way, or it isn't listed yet: "Starting…" (at once, here)
+  const starting = !!chat?.starting || (!!chat?.fresh && outgoing.some((p) => p.state !== "held"));
+  // (its dot and state: a new chat's muted, Starting… in the working colour)
+  const headState = starting && chat?.state !== "waiting" ? "working" : chat?.fresh ? "new" : chat?.state ?? "done";
   const shownItems = useMemo((): PaneItem[] => (outgoing.length || answersOut.length
     ? [...items,
        ...answersOut.map((p) => ({ kind: "you" as const, key: `answer-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending", answered: p.answered })),
@@ -821,10 +859,10 @@ function ChatApp() {
         </div>
       ) : null}
       <div class="pane-head">
-        <span class={`state-dot st-${chat?.state ?? "done"}`} aria-hidden="true" />
+        <span class={`state-dot st-${headState}`} aria-hidden="true" />
         <h2 class="pane-name">{chat?.name ?? ""}</h2>
         {chat?.host ? <Tag text={chat.host} title={`This chat runs on the SSH host ${chat.host}.`} /> : null}
-        <span class={`pane-state st-${chat?.state ?? "done"}`}>{chat?.stateText ?? ""}</span>
+        <span class={`pane-state st-${headState}`}>{starting && chat?.fresh ? "starting" : chat?.stateText ?? ""}</span>
         <span class="pane-sizes">
           <IconButton icon={I.zoomOut} label="Smaller text" title="Smaller text (Ctrl+wheel)" disabled={scale <= TEXT_SCALES[0] + 0.001} onClick={() => zoom(-1)} />
           <IconButton icon={I.zoomIn} label="Larger text" title="Larger text (Ctrl+wheel)" disabled={scale >= TEXT_SCALES[TEXT_SCALES.length - 1] - 0.001} onClick={() => zoom(1)} />
@@ -837,15 +875,26 @@ function ChatApp() {
             onClick={() => post({ type: "moveToClaudeCode" })}
           />
         ) : null}
-        <IconButton
-          icon={I.openWindow}
-          label="Open its window"
-          title={"Open its window\nThe terminal or Claude Code panel the chat runs in; a chat that isn't open reopens, in a terminal or a Claude Code panel as the switch of Recent chats says."}
-          onClick={() => post({ type: "openWindow" })}
-        />
+        {chat && !chat.fresh && !chat.starting ? (
+          chat.where === "background" ? (
+            <IconButton
+              icon={I.terminal}
+              label="Open in a terminal"
+              title={"Open in a terminal\nThe background chat in a terminal too (claude attach): what it shows there, and its own prompts. It goes on running; nothing is lost."}
+              onClick={() => post({ type: "openWindow" })}
+            />
+          ) : (
+            <IconButton
+              icon={I.openWindow}
+              label="Open its window"
+              title={"Open its window\nThe terminal or Claude Code panel the chat runs in; a chat that isn't open reopens in a terminal or a Claude Code panel, as the switch of Recent chats says."}
+              onClick={() => post({ type: "openWindow" })}
+            />
+          )
+        ) : null}
       </div>
       <div class="pane-folder">
-        {chat ? <Tag {...(({ tag, title }) => ({ text: tag, title }))(whereTag(chat.where, chat.terminalApp))} /> : null}
+        {chat ? <Tag {...(({ tag, title }) => ({ text: tag, title }))(whereTag(starting ? "background" : chat.where, chat.terminalApp, chat.fresh?.account))} /> : null}
         {chat && chat.where === "background" && attachedTag(chat.attached) ? (
           <Tag {...(({ tag, title }) => ({ text: tag, title }))(attachedTag(chat.attached)!)} />
         ) : null}
@@ -867,7 +916,7 @@ function ChatApp() {
               (chat.agents.failed ? `, ${chat.agents.failed} failed` : "") + `. Click to ${strip.agents ? "hide" : "show"} what each one is doing.`}
             onClick={() => setStrip({ ...strip, agents: !strip.agents })} />
         ) : null}
-        <span class="pane-path">{(chat?.host ? chat.host + ":" : "") + (chat?.cwd ?? "")}</span>
+        <span class="pane-path">{(chat?.host ? chat.host + ":" : "") + (chat?.fresh ? chat.fresh.folder : chat?.cwd ?? "")}</span>
       </div>
       {chat?.tasks || (chat?.agents && chat.agents.total > 0) ? (
         <TaskStrip key={chat.chatId} tasks={chat.tasks} agents={chat.agents && chat.agents.total > 0 ? chat.agents : null} open={strip}
@@ -879,9 +928,11 @@ function ChatApp() {
             {t === "chat" ? "Chat" : "Steps"}
           </button>
         ))}
-        <button type="button" role="tab" aria-selected={tab === "review"} class={tab === "review" ? "on" : ""} onClick={() => showTab("review")}>
-          {chat?.changes ? `Review ±${chat.changes}${chat.reviewPending ? " •" : ""}` : "Review"}
-        </button>
+        {chat?.fresh ? null : (
+          <button type="button" role="tab" aria-selected={tab === "review"} class={tab === "review" ? "on" : ""} onClick={() => showTab("review")}>
+            {chat?.changes ? `Review ±${chat.changes}${chat.reviewPending ? " •" : ""}` : "Review"}
+          </button>
+        )}
       </div>
       {info ? <div class={info.ok ? "pane-info" : "pane-info bad"}>{info.message}</div> : null}
 
@@ -909,17 +960,26 @@ function ChatApp() {
               <div class="muted center small">Only its last 2000 steps are shown here.</div>
             ) : null}
             {!loaded || loadError ? <div class={`muted center${loadError && !loadMissing ? " bad" : ""}`}>{loadError || "Reading the chat…"}</div> : null}
+            {chat?.fresh && !shownItems.length ? (
+              <div class="muted center pane-new">
+                {chat.fresh.plan ? `A new chat on ${chat.fresh.account} in ${chat.fresh.folder}, to carry out “${chat.fresh.plan}”.`
+                  : `A new chat on ${chat.fresh.account} in ${chat.fresh.folder}.`}
+                <br />
+                Your first message starts it in the background. Here you reply, answer what Claude asks and see what it changed; open it in a terminal any time.
+              </div>
+            ) : null}
             {steps}
-            {chat?.state === "working" ? (
+            {chat?.state === "working" || starting ? (
               <div class="pane-item pane-working">
                 <span class="pane-gutter">
                   <TalpyIcon state="thinking" moving={shown} />
                 </span>
-                <span>{activity && !(tab === "steps" && last?.kind === "tool" && last.status === "open") ? activity : "Working"}…</span>
+                <span>{starting && chat?.state !== "working" ? "Starting" : activity && !(tab === "steps" && last?.kind === "tool" && last.status === "open") ? activity : "Working"}…</span>
               </div>
             ) : null}
           </div>
-          {chat?.permission ? <AskBox ask={chat.permission} onAnswer={answer} busy={answering > 0} /> : null}
+          {chat?.permission ? <AskBox ask={chat.permission} onAnswer={answer} busy={answering > 0}
+            onTerminal={chat.where === "background" && !chat.host ? () => post({ type: "openWindow" }) : undefined} /> : null}
           {chat?.queued ? (
             <div class="pane-queued">
               <span>Sent when this turn ends: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}</span>
@@ -946,6 +1006,7 @@ function ChatApp() {
               ))}
             </ul>
           ) : null}
+          {chat?.fresh && !starting ? <NewChatOptions fresh={chat.fresh} /> : null}
           <div class={"pane-replybox" + (dragging ? " dropping" : "")}
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
@@ -955,7 +1016,9 @@ function ChatApp() {
             class="pane-reply"
             rows={3}
             ref={reply}
-            placeholder={chat?.permission && !asks ? "It's asking you something: answer that first" : "Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop with Shift: a picture or a file too)"}
+            placeholder={chat?.permission && !asks ? "It's asking you something: answer that first"
+              : chat?.fresh && !starting ? "What should Claude do? (Enter starts the chat, Shift+Enter: new line; Ctrl+V or drop with Shift: a picture or a file too)"
+              : "Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop with Shift: a picture or a file too)"}
             value={text}
             onInput={(e) => {
               const box = e.target as HTMLTextAreaElement;
@@ -1049,7 +1112,8 @@ function ChatApp() {
               <button type="button" class="btn secondary" onClick={() => setOfferModel("")}>Not now</button>
             </div>
           ) : null}
-          <div class="pane-hint">{chat ? routeHint(chat.route, chat.state !== "done" || !!chat.busy, chat.where === "background" ? "bg" : "", chat.host, asks) : ""}</div>
+          <div class="pane-hint">{chat?.fresh || starting ? newChatHint(chat?.fresh ?? { account: "", folder: "", plan: "", model: "", effort: "", mode: "" }, starting)
+            : chat ? routeHint(chat.route, chat.state !== "done" || !!chat.busy, chat.where === "background" ? "bg" : "", chat.host, asks) : ""}</div>
           <div class="pane-buttons">
             {/* (icons, as in the widget; what dictation is doing shows beside the microphone) */}
             <button type="button" class={"icon-btn pane-mic" + (dictating === "recording" ? " on" : "")}
@@ -1094,7 +1158,7 @@ function ChatApp() {
               onClick={() => send(terminal ? "background" : "auto", false)}
             >
               {asks ? <><Icon name={asks === "plan" ? I.edit : asks === "question" ? I.send : I.deny} tone={asks === "deny" || asks === "decline" ? T.deny : undefined} />{REPLY_ANSWERS[asks].send}</>
-                : <><Icon name={I.send} />{sending ? "Sending…" : terminal ? "Send, go on in the background" : "Send"}</>}
+                : <><Icon name={I.send} />{sending ? "Sending…" : terminal ? "Send, go on in the background" : chat?.fresh && !starting ? "Start" : "Send"}</>}
             </button>
           </div>
         </>

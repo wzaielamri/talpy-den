@@ -14,7 +14,12 @@ import {
   hasTurn,
   claudeCodeReopenHint,
   cliInstalled,
+  openChatsIn,
+  opensInTalpyChat,
   reopensInClaudeCode,
+  talpyChatHere,
+  talpyChatHint,
+  talpyChatTitle,
   terminalReopenHint,
 } from "../src/shared/model";
 import type { Group, PlanItem } from "../src/shared/types";
@@ -61,6 +66,37 @@ test("recent chats reopen where you picked, or in Claude Code without a claude c
   assert.equal(reopensInClaudeCode("claudeCode", true, true), true);
   assert.equal(reopensInClaudeCode("terminal", false, true), true, "no claude command");
   assert.equal(reopensInClaudeCode("claudeCode", true, false), false, "Claude Code isn't on this account");
+});
+
+test("Talpy Chat is one more choice: this computer's chats, a new one where a hook given to one chat runs", () => {
+  const here = { cli: { installed: true } };
+  const managed = { cli: { installed: true, hooks: false } };
+  assert.equal(talpyChatHere(here, undefined, false), true);
+  assert.equal(talpyChatHere(null, undefined, false), true, "not known yet: there");
+  assert.equal(talpyChatHere(here, "lab", true), false, "an SSH host's prompts can't reach it yet");
+  assert.equal(talpyChatHere({ cli: { installed: false } }, undefined, true), false);
+  assert.equal(talpyChatHere(managed, undefined, false), false, "managed settings: only their own hooks");
+  assert.equal(talpyChatHere(managed, undefined, true), true, "a chat that isn't running still opens there");
+  // where chats open: Claude Code as before, Talpy Chat only where you picked it and it works
+  assert.equal(openChatsIn("terminal", here, undefined, true, true), "terminal", "nobody's choice changes");
+  assert.equal(openChatsIn("claudeCode", here, undefined, true, true), "claudeCode");
+  assert.equal(openChatsIn("talpyChat", here, undefined, true, true), "talpyChat");
+  assert.equal(openChatsIn("talpyChat", here, "lab", true, true), "terminal");
+  assert.equal(openChatsIn("talpyChat", { cli: { installed: false } }, undefined, true, true), "claudeCode", "no claude command");
+  assert.equal(openChatsIn("talpyChat", managed, undefined, false, false), "terminal");
+  // its window: a chat that isn't running, or a background one no terminal shows
+  assert.equal(opensInTalpyChat({ kind: "chat", pid: null }, "talpyChat", here, undefined, false), true);
+  assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "talpyChat", here, undefined, false), true);
+  assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: { in: "terminal", app: "Konsole" } }, "talpyChat", here, undefined, false), false,
+               "the terminal it's shown in");
+  assert.equal(opensInTalpyChat({ kind: "interactive", pid: 7 }, "talpyChat", here, undefined, false), false, "running chats stay where they run");
+  assert.equal(opensInTalpyChat({ kind: "chat", pid: null }, "terminal", here, undefined, false), false);
+  // the same words as Plasma's
+  assert.equal(talpyChatTitle(here, undefined, false), "New chats in Talpy Chat");
+  assert.equal(talpyChatHint(here, undefined, false),
+               "New chats run in the background and open here: reply, answer Claude's prompts, see what changed. Open one in a terminal any time.");
+  assert.equal(talpyChatTitle(here, "lab", true), "Not on SSH hosts yet");
+  assert.match(talpyChatHint(managed, undefined, false), /allowManagedHooksOnly/);
 });
 
 test("each half says what it does, or why it's greyed out", () => {

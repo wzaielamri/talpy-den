@@ -866,6 +866,11 @@ button:focus-visible {
   --st: var(--cs-failed);
 }
 
+/* a new chat in Talpy Chat, not started yet */
+.st-new {
+  --st: var(--cs-muted);
+}
+
 /* A usage limit (or an expired login) stopped it: red until the limit resets */
 .session.stopped {
   --st: var(--cs-failed);
@@ -3257,6 +3262,10 @@ body.vscode-high-contrast-light .pane {
   background: color-mix(in srgb, var(--cs-idle) 20%, transparent);
 }
 
+.pane-state.st-new {
+  background: color-mix(in srgb, var(--cs-muted) 18%, transparent);
+}
+
 .pane-state.st-failed {
   background: color-mix(in srgb, var(--cs-failed) 20%, transparent);
 }
@@ -4040,6 +4049,35 @@ body.vscode-high-contrast-light .pane {
 .pane-hint {
   color: var(--cs-muted);
   font-size: 0.82em;
+}
+
+/* a new chat's ⚙ line: the model, effort and permission mode it starts with */
+.pane-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pane-options .icon {
+  color: var(--cs-muted);
+}
+
+.pane-option {
+  max-width: 100%;
+  padding: 1px 2px;
+  color: var(--vscode-dropdown-foreground);
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-dropdown-border, transparent);
+  border-radius: 2px;
+  font: inherit;
+  font-size: 0.9em;
+}
+
+/* a new chat, before your first message */
+.pane-new {
+  margin-top: 1.5em;
+  line-height: 1.5;
 }
 
 .pane-buttons {

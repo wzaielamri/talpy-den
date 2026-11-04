@@ -16,9 +16,9 @@ import { RecentLine, reopenOf, type Reopen } from "./RecentLine";
 // time (as many as the Recent chats setting; "Show N more" the next page,
 // folded again the first one). The status lists a page more recent chats
 // than show, and how many there are; past those the extension runs a check
-// that lists more, once. A switch at the top says where they reopen: in a
-// terminal, or in a Claude Code panel (kept in talpyDen.reopenIn); a half is
-// greyed out where it can't work.
+// that lists more, once. A switch at the top says where they reopen: in Talpy
+// Chat, in a terminal, or in a Claude Code panel (kept in talpyDen.reopenIn);
+// a half is greyed out where it can't work.
 export function RecentChats({ group }: { group: Group }) {
   const view = useView();
   const ui = useStore(uiState);
@@ -48,8 +48,8 @@ export function RecentChats({ group }: { group: Group }) {
             class="recent-toggle small"
             aria-expanded={open}
             title={(paneFirst
-              ? "This account's latest chats that aren't listed above, newest first. Click one to open it in Talpy Chat; its reopen button (on hover) reopens it in a terminal or in a Claude Code panel (the switch at the top of the list)."
-              : "This account's latest chats that aren't listed above, newest first. Click one to reopen it, in a terminal or in a Claude Code panel (the switch at the top of the list).") +
+              ? "This account's latest chats that aren't listed above, newest first. Click one to open it in Talpy Chat; its reopen button (on hover) reopens it where the switch at the top of the list says."
+              : "This account's latest chats that aren't listed above, newest first. Click one to reopen it, in Talpy Chat, a terminal or a Claude Code panel (the switch at the top of the list).") +
               " Show more lists more of them; folded again, it lists the first ones again. Every chat of a project is in the Projects tab."}
             onClick={() => toggleRecent(key)}
           >
@@ -95,7 +95,7 @@ export function RecentChats({ group }: { group: Group }) {
   );
 }
 
-// Where an account's chats reopen: Terminal | Claude Code panel
+// Where an account's chats reopen: Talpy Chat | Terminal | Claude Code panel
 function OpenIn({ how }: { how: Reopen }) {
   const half = (where: ReopenIn, icon: IconName, text: string, available: boolean, checked: boolean, title: string) => (
     <button
@@ -110,13 +110,14 @@ function OpenIn({ how }: { how: Reopen }) {
       {text}
     </button>
   );
-  const { cliHere, codeHere, inCode, terminalHint, codeHint } = how;
+  const { talpyHere, cliHere, codeHere, inTalpy, inCode, talpyTitle, talpyHint, terminalHint, codeHint } = how;
   return (
     <>
       <div class="open-in small" role="group" aria-label="Where recent chats reopen">
         <span class="muted">Open in:</span>
-        {half("terminal", I.terminal, "Terminal", cliHere, cliHere && !inCode, (cliHere ? "Reopen chats in a terminal\n" : "No claude command\n") + terminalHint)}
-        {half("claudeCode", I.openPane, "Claude Code panel", codeHere, inCode, (codeHere ? "Reopen chats in a Claude Code panel\n" : "Not here\n") + codeHint)}
+        {half("talpyChat", I.openPane, "Talpy Chat", talpyHere, inTalpy, `${talpyTitle}\n${talpyHint}`)}
+        {half("terminal", I.terminal, "Terminal", cliHere, cliHere && !inCode && !inTalpy, (cliHere ? "Reopen chats in a terminal\n" : "No claude command\n") + terminalHint)}
+        {half("claudeCode", I.openWindow, "Claude Code panel", codeHere, inCode, (codeHere ? "Reopen chats in a Claude Code panel\n" : "Not here\n") + codeHint)}
       </div>
       {!cliHere && !codeHere ? <div class="open-in-why small muted">{`${terminalHint} ${codeHint}`}</div> : null}
     </>

@@ -464,15 +464,17 @@
             "talpyDen.reopenIn": {
               "type": "string",
               "enum": [
+                "talpyChat",
                 "terminal",
                 "claudeCode"
               ],
               "enumDescriptions": [
+                "Open chats in Talpy Chat: a chat that isn't running opens in its tab, and your next message goes on with it in the background; you answer Claude's prompts there. A background chat no terminal shows opens there too. This computer's chats only: an SSH host's or a container's open in a terminal.",
                 "Reopen chats that aren't running in a terminal (claude --resume), as `#talpyDen.openIn#` says.",
                 "Reopen chats that aren't running in a Claude Code panel, in the VS Code window that has the chat's folder (on an SSH host's chats: connected to it)."
               ],
               "default": "terminal",
-              "markdownDescription": "Where chats that aren't running reopen: the **Terminal | Claude Code panel** switch above Recent chats. It holds for those, Talpy Chat (**Open its window**), its row and Find a Chat. Without a `claude` command they reopen in Claude Code.",
+              "markdownDescription": "Where chats open: the **Talpy Chat | Terminal | Claude Code panel** switch above Recent chats. It holds for chats that aren't running (from their row, their tab's **Open its window** and Find a Chat) and, with Talpy Chat, for a background chat no terminal shows (its pet, its row, its notifications). **New Chat…** lists **In a Talpy Chat tab** first. Without a `claude` command they reopen in Claude Code.",
               "order": 2
             },
             "talpyDen.clickOpensPane": {

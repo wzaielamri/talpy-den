@@ -547,8 +547,9 @@ export interface Status {
   errors: string[];
   host?: string;
   claude?: string;
-  // Whether the claude command is on this machine (missing when unsure)
-  cli?: { installed: boolean };
+  // Whether the claude command is on this machine (missing when unsure); hooks: whether a hook
+  // given to one chat runs (false where managed settings let only their own run)
+  cli?: { installed: boolean; hooks?: boolean };
   queue?: QueuedTask[]; // this computer's status only: tasks waiting for a usage limit
   keep?: KeptChat[]; // this computer's status only: the chats that keep going
   moved?: Record<string, string>; // chat id -> the id it goes on under: chats Claude moved to the background under a new id
@@ -628,7 +629,8 @@ export interface ViewSettings {
   showContainers?: boolean; // containers are in the hosts picker (talpyDen.showContainers)
 }
 
-export type ReopenIn = "terminal" | "claudeCode";
+// Where chats open (the Open in switch): Talpy Chat (in the background, in its tab), a terminal, a Claude Code panel
+export type ReopenIn = "talpyChat" | "terminal" | "claudeCode";
 
 // Plan usage on SSH hosts' accounts (shareUsage): once per account, on every host, or on none
 export type SshUsage = "once" | "all" | "none";

@@ -117,6 +117,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const panes = new ChatPanes(context.extensionUri, backend, dash, actions, terminals, log);
   view.panes = panes;
   notifier.panes = panes;
+  actions.panes = panes;
 
   // Send Feedback to Claude, for a plan's file (the editor's, or the active one)
   const sendFeedback = (uri?: vscode.Uri) => {

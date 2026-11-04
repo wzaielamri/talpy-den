@@ -30,7 +30,10 @@ export const settings = {
   includeCurrentRemote: () => cfg().get<boolean>("includeCurrentRemote", true),
   clickOpensPane: () => cfg().get<boolean>("clickOpensPane", true) !== false,
   openIn: () => (cfg().get<string>("openIn", "vscode") === "system" ? "system" : "vscode"),
-  reopenIn: (): ReopenIn => (cfg().get<string>("reopenIn", "terminal") === "claudeCode" ? "claudeCode" : "terminal"),
+  reopenIn: (): ReopenIn => {
+    const v = cfg().get<string>("reopenIn", "terminal");
+    return v === "claudeCode" || v === "talpyChat" ? v : "terminal";
+  },
   sshUsage: (): SshUsage => {
     const v = cfg().get<string>("sshUsage", "once");
     return v === "all" || v === "none" ? v : "once";

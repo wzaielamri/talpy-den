@@ -119,13 +119,33 @@ export interface PaneChat {
   plan: { title: string } | null;
   agents: Session["agents"];
   tasks: Session["tasks"]; // its task list (the strip under the header), or null
+  // A new chat (New Chat… in a Talpy Chat tab), till your first message starts it in the background:
+  // its account, folder, the plan it carries out, and the model, effort and mode it starts with (its ⚙ line)
+  fresh?: NewChat | null;
+  starting?: boolean; // your first message started it, and it isn't listed yet: "Starting…"
 }
+
+export interface NewChat {
+  account: string;
+  folder: string; // as shown (~/repos/x)
+  plan: string; // the title of the plan it carries out, or ""
+  model: string;
+  effort: string;
+  mode: string;
+}
+
+// A new chat's ⚙ line: the model, effort and permission mode it starts with (the same words as
+// Plasma's; "": Claude's own default)
+export const CHAT_MODELS: [string, string][] = [["opus", "Opus"], ["sonnet", "Sonnet"], ["fable", "Fable"], ["haiku", "Haiku"], ["", "Claude's default model"]];
+export const CHAT_EFFORTS: [string, string][] = [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"], ["", "Claude's default effort"]];
+export const CHAT_MODES: [string, string][] = [["default", "Manual (asks first)"], ["acceptEdits", "Accept edits"], ["plan", "Plan"], ["auto", "Auto"],
+  ["dontAsk", "Don't ask"], ["bypassPermissions", "Bypass permissions"], ["", "Claude's default mode"]];
 
 // Where a chat runs (the tag under its name, the same words as the rows'):
 // a background session, closed (no process: a reply goes on in the
 // background), a Claude Code panel, tmux, a terminal of VS Code (this
 // window's or another's) or another terminal
-export type ChatWhere = "background" | "closed" | "claude" | "tmux" | "vscode" | "terminal";
+export type ChatWhere = "new" | "background" | "closed" | "claude" | "tmux" | "vscode" | "terminal";
 
 export function chatWhere(s: Pick<Session, "pid" | "kind" | "entrypoint" | "tmux" | "vscodeTerminal" | "terminalApp"> | undefined, terminalHere: boolean): ChatWhere {
   if (!s || !s.pid) return "closed";
@@ -142,11 +162,13 @@ export function attachedTag(attached: Session["attached"]): { tag: string; title
   return { tag, title: attached.app ? `Shown in a terminal too (${attached.app}): claude attach.` : "Shown in a terminal too: claude attach." };
 }
 
-// Its tag, and what the tag says on hover (terminalApp: the terminal's name)
-export function whereTag(where: ChatWhere, terminalApp = ""): { tag: string; title: string } {
+// Its tag, and what the tag says on hover (terminalApp: the terminal's name; account: a new chat's)
+export function whereTag(where: ChatWhere, terminalApp = "", account = ""): { tag: string; title: string } {
   switch (where) {
+    case "new":
+      return { tag: "New", title: `Not started yet: your first message starts it in the background, on ${account}.` };
     case "background":
-      return { tag: "Background", title: "A background chat: Claude's background service runs it, with no terminal of its own. Open its window to see it in a terminal (claude attach)." };
+      return { tag: "Background", title: "A background chat: Claude's background service runs it, with no terminal of its own. Open in a terminal shows it in one too (claude attach)." };
     case "closed":
       return { tag: "Not open", title: "No terminal or panel has it open: a reply goes on with it in the background." };
     case "claude":
@@ -175,6 +197,7 @@ export type PaneHostMessage =
   | { type: "picture"; id: string; path: string; error: string } // a pasted picture, saved (path: where the chat opens it)
   | { type: "file"; id: string; path: string } // a file dropped on the tab: named in the reply (@path)
   | { type: "offers"; offers: Offers } // what the reply box offers as you type (pane.py --complete)
+  | { type: "startWith"; text: string } // a new chat's task: sent as its first message, as if you typed it
   // dictating: "starting" (the microphone, not recording yet), "recording", "writing", "model" (downloading one), "setup" (setting it up), "" (done:
   // text written down, or why not); offerModel: whisper is there but no speech model (engine: which
   // one), offerSetup: nothing writes it down yet (setupMb: what setting up downloads); the tab asks
@@ -202,6 +225,7 @@ export type PaneMessage =
   | { type: "commit"; message: string }
   | { type: "reviewed"; on: boolean }
   | { type: "openWindow" }
+  | { type: "chatOptions"; model: string; effort: string; mode: string } // a new chat's ⚙ line (kept for the next new chat)
   | { type: "openPlan" } // the plan it made
   | { type: "openAgentRun"; agentId: string } // a subagent's whole run, in the Markdown preview (its strip)
   | { type: "moveToClaudeCode" } // Claude quits in its terminal, the chat reopens in a Claude Code panel (asks first)
@@ -580,6 +604,12 @@ export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: s
         ? `Goes into the background chat as it runs, as if you typed it there.${where}`
         : `The chat goes on in the background with your message.${where}`;
   }
+}
+
+// A new chat's line under the box (Plasma's routeHint for one, the same words)
+export function newChatHint(fresh: NewChat, starting: boolean): string {
+  return starting ? "The chat starts in the background with your message."
+    : `Your first message starts the chat in the background, on ${fresh.account} in ${fresh.folder}: you answer what it asks here.`;
 }
 
 // A background chat that asks you something you can answer here: your reply

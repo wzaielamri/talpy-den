@@ -64,6 +64,9 @@ export interface Answer {
   text?: string; // --plan-feedback --print-command: the feedback, to paste or type in
   question?: string; // --delete-chat|plan|memory --describe: what to ask before it deletes
   ask?: "vscode"; // --remote-vscode: a container's, asked first (message: the question)
+  path?: string; // --pick-folder: the folder, as it's written (short), and whether Claude trusts it
+  short?: string;
+  trusted?: boolean;
   // --start-queued: a chat's go-on waits for its background commands (what the
   // queue says), or ended them to go on; notify: say so (once, as it starts
   // waiting, and when it ends them)

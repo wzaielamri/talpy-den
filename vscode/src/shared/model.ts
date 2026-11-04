@@ -180,6 +180,54 @@ export function reopensInClaudeCode(prefer: ReopenIn, cliHere: boolean, codeHere
   return codeHere && (prefer === "claudeCode" || !cliHere);
 }
 
+// Chats can open in Talpy Chat: on this computer, with a claude command; a
+// new one only where a hook given to one chat runs (it answers what a
+// background chat asks: managed settings may let only their own run).
+// resuming: a chat that isn't running (it reopens), not a new one
+export function talpyChatHere(status: Pick<Status, "cli"> | null | undefined, host: string | undefined, resuming: boolean): boolean {
+  return !host && cliInstalled(status) && (resuming || status?.cli?.hooks !== false);
+}
+
+// Where chats open, "talpyChat" | "terminal" | "claudeCode": Claude Code as
+// reopensInClaudeCode says, else Talpy Chat where you picked it and it can be
+export function openChatsIn(prefer: ReopenIn, status: Pick<Status, "cli"> | null | undefined, host: string | undefined,
+                            codeHere: boolean, resuming: boolean): ReopenIn {
+  if (reopensInClaudeCode(prefer, cliInstalled(status), codeHere)) return "claudeCode";
+  return prefer === "talpyChat" && talpyChatHere(status, host, resuming) ? "talpyChat" : "terminal";
+}
+
+// A chat whose window is its Talpy Chat tab, with Talpy Chat picked in Open
+// in: one that isn't running (it reopens there), or a background one no
+// terminal shows (it has none: its pet, its row, its notifications open it there)
+export function opensInTalpyChat(c: { kind?: string; pid?: number | null; attached?: Session["attached"] | null },
+                                 prefer: ReopenIn, status: Pick<Status, "cli"> | null | undefined, host: string | undefined,
+                                 codeHere: boolean): boolean {
+  if (openChatsIn(prefer, status, host, codeHere, true) !== "talpyChat") return false;
+  return (c.kind === "chat" && !c.pid) || (c.kind === "bg" && !!c.pid && !c.attached);
+}
+
+// The Talpy Chat half's tooltip (Plasma's talpyChatHint, the same words)
+export function talpyChatHint(status: Pick<Status, "cli"> | null | undefined, host: string | undefined, resuming: boolean): string {
+  if (host)
+    return containerOf(host)
+      ? `Talpy Chat can't answer the prompts of a background chat in ${hostLabel(host)} yet, so its chats open in a terminal or in VS Code.`
+      : `Talpy Chat can't answer the prompts of a background chat on ${host} yet, so its chats open in a terminal or in VS Code.`;
+  if (!cliInstalled(status)) return terminalReopenHint(undefined, false);
+  if (!talpyChatHere(status, host, resuming))
+    return "Managed settings here let only their own hooks run (allowManagedHooksOnly), and Talpy Chat answers what a background chat asks through a hook of Talpy Den's.";
+  return resuming
+    ? "A chat that isn't running opens in Talpy Chat: your next message goes on with it in the background, and you answer Claude's prompts there. Open one in a terminal any time."
+    : "New chats run in the background and open here: reply, answer Claude's prompts, see what changed. Open one in a terminal any time.";
+}
+
+// The Talpy Chat half's title: what it does, or why it's greyed out
+export function talpyChatTitle(status: Pick<Status, "cli"> | null | undefined, host: string | undefined, resuming: boolean): string {
+  if (host) return containerOf(host) ? "Not in containers yet" : "Not on SSH hosts yet";
+  if (!cliInstalled(status)) return "No claude command";
+  if (!talpyChatHere(status, host, resuming)) return "Hooks are off here";
+  return resuming ? "Reopen chats in Talpy Chat" : "New chats in Talpy Chat";
+}
+
 // A chat running in a terminal (VS Code's or another, here or on an SSH
 // host) can move to a Claude Code panel when Claude Code is on its account
 // (codeHere): Claude quits in the terminal and the chat reopens in the tab

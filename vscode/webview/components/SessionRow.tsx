@@ -21,6 +21,7 @@ import {
   movedText,
   petKeyOf,
   queuedChat,
+  opensInTalpyChat,
   reopensInClaudeCode,
   resetAtText,
   shareAccounts,
@@ -110,6 +111,8 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
   const codeHere = claudeCodeHere({ ...group, host }, view.claudeCode);
   const move = canMoveToClaudeCode(s, codeHere);
   const reopenInCode = s.kind === "chat" && reopensInClaudeCode(view.settings.reopenIn, cliInstalled(machineStatus(view, host)), codeHere);
+  // (Talpy Chat picked in Open in: a chat that isn't running, or a background one no terminal shows, opens there)
+  const inTalpy = opensInTalpyChat(s, view.settings.reopenIn, machineStatus(view, host), host, codeHere);
   const mode = modeText(s.peek?.mode);
   const ultracode = s.peek?.ultracode === true;
   // A usage limit stopped it: it can go on on another account with room left
@@ -142,7 +145,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           <button
             type="button"
             class="link session-name"
-            title={paneFirst ? "Open this chat in Talpy Chat: its conversation as it goes, a box to reply, and what it changed" : openHint(s, host, reopenInCode)}
+            title={paneFirst ? "Open this chat in Talpy Chat: its conversation as it goes, a box to reply, and what it changed" : openHint(s, host, reopenInCode, inTalpy)}
             onClick={() => post({ type: "open", chat })}
           >
             {s.name}
@@ -377,7 +380,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           <IconButton
             icon={paneFirst ? I.openWindow : I.openPane}
             label={paneFirst ? "Open its window" : "Open in Talpy Chat"}
-            title={paneFirst ? openHint(s, host, reopenInCode) : "Open in Talpy Chat\nIts conversation as it goes, a box to reply, and what it changed."}
+            title={paneFirst ? openHint(s, host, reopenInCode, inTalpy) : "Open in Talpy Chat\nIts conversation as it goes, a box to reply, and what it changed."}
             onClick={() => post(paneFirst ? { type: "openWindow", chat } : { type: "openPane", chat })}
           />
           {move ? (

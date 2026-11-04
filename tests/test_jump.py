@@ -815,6 +815,10 @@ class ChooseFolderTests(Fixture):
         with Patch(choose_folder=lambda title, start: (None, "No folder dialog found (install kdialog)")):
             self.assertEqual(jump.pick_folder(self.home, [], ".claude-work"), (False, "No folder dialog found (install kdialog)", {}))
         self.assertFalse(jump.pick_folder(self.home, [], ".claude-nope")[0])
+        # one VS Code's own dialog picked: no dialog here
+        with Patch(choose_folder=lambda title, start: self.fail("asked")):
+            self.assertEqual(jump.pick_folder(self.home, [], ".claude-work", str(other))[2]["trusted"], False)
+            self.assertFalse(jump.pick_folder(self.home, [], ".claude-work", str(self.home / "gone"))[0])
         out = io.StringIO()
         with Patch(choose_folder=lambda title, start: (str(trusted), "")), mock.patch.object(jump.Path, "home", return_value=self.home), \
                 contextlib.redirect_stdout(out):
