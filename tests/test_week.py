@@ -495,19 +495,25 @@ class HistoryTests(Home):
     def test_off_it_keeps_only_what_claude_has(self):
         self.deleted.unlink()
         self.worked()
+        past = self.cache_root / week.cs.USAGE_PAST_FILE  # (the plan windows that ended go too)
+        week.cs.write_json_atomic(past, {"version": 1, "windows": []})
         # (it says how many chats it forgot, as the question before counted them)
         self.assertEqual(week.set_history(self.cache_root, False),
                          (True, "The Recap keeps only what Claude still has (it forgot 1 deleted chat)"))
         self.assertEqual(self.worked(), [("chat-a", 60_000)])
         self.assertFalse(week.history_status(self.cache_root)["keep"])
+        self.assertFalse(past.exists())
         self.assertTrue(week.set_history(self.cache_root, True)[0])
         self.assertTrue(week.history_status(self.cache_root)["keep"])
 
     def test_forget_starts_again_from_the_transcripts(self):
         self.deleted.unlink()
         self.worked()
+        past = self.cache_root / week.cs.USAGE_PAST_FILE
+        week.cs.write_json_atomic(past, {"version": 1, "windows": []})
         self.assertTrue(week.forget_history(self.cache_root)[0])
         self.assertFalse((self.cache_root / week.CACHE_FILE).exists())
+        self.assertFalse(past.exists())
         self.assertEqual(self.worked(), [("chat-a", 60_000)])
         self.assertEqual(week.history_status(self.cache_root)["since"], "2026-10-24")
 

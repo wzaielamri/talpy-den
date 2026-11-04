@@ -7835,6 +7835,72 @@ FORECAST_MIN_MS = 15 * 60_000  # too early in a window to tell its pace
 USAGE_POINT_EVERY_MS = 10 * 60_000  # an unchanged value is still noted this often
 USAGE_POINTS_KEPT = 300
 USAGE_HISTORY_VERSION = 1
+# The windows that ended are kept a while longer (usage-past.json), for looking
+# back at how your limits went: thinned to a point per step of their usage
+# (the time each step was first seen), and only while the Recap keeps its
+# history (history.json, the setting "Keep a history beyond Claude's 30 days")
+USAGE_PAST_FILE = "usage-past.json"
+USAGE_PAST_VERSION = 1
+USAGE_PAST_DAYS = 90
+USAGE_PAST_STEP = {"five_hour": 5}  # percent; 1 in the weekly windows
+HISTORY_SETTING_FILE = "history.json"  # {"keep": false} once you turn the history off (week.py)
+
+
+def history_kept(cache_root):
+    """Does the Recap keep its history (the setting is on unless turned off)?"""
+    data = read_json(cache_root / HISTORY_SETTING_FILE)
+    return not (isinstance(data, dict) and data.get("keep") is False)
+
+
+def trimmed_points(points):
+    """A window's points down to USAGE_POINTS_KEPT: first the repeats inside a
+    run of one value (the run's first and last point stay, so it draws the
+    same), then the oldest. Only a weekly window gets this long, and its
+    pace doesn't use the points."""
+    if len(points) <= USAGE_POINTS_KEPT:
+        return points
+    kept = [p for i, p in enumerate(points)
+            if i == 0 or i == len(points) - 1 or not (points[i - 1][1] == p[1] == points[i + 1][1])]
+    return kept[-USAGE_POINTS_KEPT:]
+
+
+def past_points(key, points):
+    """An ended window's points as usage-past.json keeps them: the first, the
+    first one at each step up (5% in the 5-hour window, 1% in the weekly
+    ones), any that went down, and the last value it reached."""
+    step = USAGE_PAST_STEP.get(key, 1)
+    kept = []
+    for p in points:
+        if not kept or p[1] >= kept[-1][1] + step or p[1] < kept[-1][1]:
+            kept.append(p)
+    if kept and points[-1][1] != kept[-1][1]:
+        kept.append(points[-1])
+    return kept
+
+
+def save_usage_past(cache_root, ended, now_ms):
+    """Add the windows that ended to usage-past.json and drop the ones older
+    than USAGE_PAST_DAYS; with the history off there's none (the file goes)."""
+    path = cache_root / USAGE_PAST_FILE
+    if not history_kept(cache_root):
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return
+    data = read_json(path)
+    past = data.get("windows") if isinstance(data, dict) and data.get("version") == USAGE_PAST_VERSION else None
+    past = [w for w in past if isinstance(w, dict) and isinstance(w.get("resetsAt"), (int, float))] \
+        if isinstance(past, list) else []
+    have = {(w.get("group"), w.get("key"), round(w["resetsAt"] / 120_000)) for w in past}
+    for w in ended:
+        k = (w["group"], w["key"], round(w["resetsAt"] / 120_000))
+        if k not in have:  # (noted once: a window is kept as it was when it first ended)
+            have.add(k)
+            past.append(w)
+    cutoff = now_ms - USAGE_PAST_DAYS * 86400_000
+    past = sorted((w for w in past if w["resetsAt"] >= cutoff), key=lambda w: w["resetsAt"])
+    write_json_atomic(path, {"version": USAGE_PAST_VERSION, "windows": past}, private=True)
 
 
 def window_hours(key):
@@ -7848,7 +7914,9 @@ def same_window(a, b):
 
 class UsageHistory:
     """Each account's plan usage over its current windows: {group id:
-    {window key: {"resetsAt", "points": [[ms, percent], …]}}}, in usage.json."""
+    {window key: {"resetsAt", "points": [[ms, percent], …]}}}, in usage.json.
+    A window that ends goes on to usage-past.json: {"windows": [{"group",
+    "key", "plan", "resetsAt", "points"}]}, oldest first."""
 
     def __init__(self, path):
         self.path = path
@@ -7856,6 +7924,18 @@ class UsageHistory:
         ok = isinstance(data, dict) and data.get("version") == USAGE_HISTORY_VERSION and isinstance(data.get("groups"), dict)
         self.groups = data["groups"] if ok else {}
         self.changed = False
+        self.ended = []  # the windows that ended in this check, for usage-past.json
+        self.now_ms = None
+
+    def end(self, gid, key, rec, plan):
+        """A window that's over (a new one began, or it reset a day ago)."""
+        if not isinstance(rec, dict) or not isinstance(rec.get("resetsAt"), (int, float)) or not window_hours(key):
+            return
+        points = [p for p in rec.get("points") or [] if isinstance(p, list) and len(p) == 2
+                  and isinstance(p[0], (int, float)) and isinstance(p[1], (int, float))]
+        if points:
+            self.ended.append({"group": gid, "key": key, "plan": plan, "resetsAt": rec["resetsAt"],
+                               "points": past_points(key, points)})
 
     def points(self, gid, window):
         rec = (self.groups.get(gid) or {}).get(window["key"])
@@ -7863,9 +7943,11 @@ class UsageHistory:
             return []
         return [p for p in rec.get("points") or [] if isinstance(p, list) and len(p) == 2]
 
-    def record(self, gid, limits, now_ms):
-        """Note the group's usage as of its newest status-line snapshot."""
+    def record(self, gid, limits, now_ms, plan=None):
+        """Note the group's usage as of its newest status-line snapshot (plan:
+        its plan's name, kept with the windows that end)."""
         t = limits["updatedAt"]
+        self.now_ms = now_ms
         if not isinstance(self.groups.get(gid), dict):
             self.groups[gid] = {}
         group = self.groups[gid]
@@ -7875,6 +7957,7 @@ class UsageHistory:
             rec = group.get(w["key"])
             if not isinstance(rec, dict) or not same_window(rec.get("resetsAt"), w["resetsAt"]) \
                     or not isinstance(rec.get("points"), list):
+                self.end(gid, w["key"], rec, plan)  # (the window before, if there was one)
                 rec = {"resetsAt": w["resetsAt"], "points": []}
             points = rec["points"]
             if points and t < points[-1][0] - 60_000:  # the clock was set back: those points are "from the future"
@@ -7882,11 +7965,12 @@ class UsageHistory:
             last = points[-1] if points else None
             if last is None or (t > last[0] and (w["pct"] != last[1] or t - last[0] >= USAGE_POINT_EVERY_MS)):
                 points.append([t, w["pct"]])
-                del points[:-USAGE_POINTS_KEPT]
+                points[:] = trimmed_points(points)
                 group[w["key"]] = rec
                 self.changed = True
         for key in [k for k, rec in group.items() if not isinstance(rec, dict)
                     or not isinstance(rec.get("resetsAt"), (int, float)) or rec["resetsAt"] < now_ms - 86400_000]:
+            self.end(gid, key, group[key], plan)
             del group[key]  # a window that ended a day ago
             self.changed = True
 
@@ -7896,6 +7980,12 @@ class UsageHistory:
                 write_json_atomic(self.path, {"version": USAGE_HISTORY_VERSION, "groups": self.groups})
             except OSError:
                 pass
+        if self.ended:
+            try:
+                save_usage_past(self.path.parent, self.ended, self.now_ms or int(time.time() * 1000))
+            except OSError:
+                pass
+            self.ended = []
 
 
 def usage_forecast(window, points, now_ms):
@@ -8876,7 +8966,7 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
                     due.append(stale)
                 if group["limits"]:
                     if lock.held:
-                        usage.record(group["id"], group["limits"], now_ms)
+                        usage.record(group["id"], group["limits"], now_ms, plan=plan)
                     for w in group["limits"]["windows"]:
                         w["forecast"] = usage_forecast(w, usage.points(group["id"], w), now_ms)
             except Exception as exc:

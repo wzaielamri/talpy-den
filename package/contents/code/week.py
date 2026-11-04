@@ -76,7 +76,7 @@ import talpy_den as cs  # noqa: E402
 
 CACHE_FILE = "week-3.json"  # (a new layout gets a new name: an older copy of this file keeps its own)
 OLD_CACHE_FILES = ("week-1.json", "week-2.json")
-HISTORY_FILE = "history.json"  # {"keep": false} once you turn the history off
+HISTORY_FILE = cs.HISTORY_SETTING_FILE  # {"keep": false} once you turn the history off
 CACHE_LOCK = "week.lock"
 LOCK_WAIT_S = 30  # another run reading the transcripts: wait for it this long, then use the cache as it is
 SPANS = ("day", "week", "all")
@@ -889,8 +889,15 @@ def updated_cache(cache_root, profiles, now_ms):
 
 
 def keep_history(cache_root):
-    data = cs.read_json(cache_root / HISTORY_FILE)
-    return not (isinstance(data, dict) and data.get("keep") is False)
+    return cs.history_kept(cache_root)
+
+
+def forget_past_windows(cache_root):
+    """The plan windows that ended (talpy_den.py's usage-past.json) go with the history."""
+    try:
+        (cache_root / cs.USAGE_PAST_FILE).unlink()
+    except OSError:
+        pass
 
 
 def first_activity(cache):
@@ -930,6 +937,7 @@ def set_history(cache_root, keep):
         cs.write_json_atomic(cache_root / HISTORY_FILE, {"keep": bool(keep)})
         if keep:
             return True, "The Recap keeps its history"
+        forget_past_windows(cache_root)
         cache = load_cache(cache_root)
         files = cache["files"]
         gone = [k for k, rec in files.items() if isinstance(rec, dict) and rec.get("gone")]
@@ -956,6 +964,7 @@ def forget_history(cache_root):
                 (cache_root / name).unlink()
             except OSError:
                 pass
+        forget_past_windows(cache_root)
         return True, "The saved history is deleted: the Recap starts again from the chats Claude still has"
 
 

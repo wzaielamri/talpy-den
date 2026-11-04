@@ -1835,6 +1835,60 @@ class UsageHistoryTests(Fixture):
         self.collect(with_tokens=False)
         self.assertEqual(self.history(), [20])
 
+    def past(self):
+        data = json.loads((self.cache / cs.USAGE_PAST_FILE).read_text())
+        return [(w["key"], w["plan"], [p[1] for p in w["points"]]) for w in data["windows"]]
+
+    def test_an_ended_window_is_kept_thinned_with_its_plan(self):
+        gid = self.group(self.collect(with_tokens=False), "work")["id"]
+        now_ms = int(self.now * 1000)
+        values = [0, 2, 4, 5, 9, 10, 10, 12]  # (5% steps: 0, 5, 10, and the last value, 12)
+        write(self.cache / "usage.json", {"version": 1, "groups": {gid: {"five_hour": {
+            "resetsAt": now_ms - 600_000, "points": [[now_ms - 4 * 3600_000 + i * 60_000, v] for i, v in enumerate(values)]}}}})
+        self.snapshot(1, 0, resets_in=5 * 3600)  # the next window began
+        self.collect(with_tokens=False)
+        self.assertEqual(self.past(), [("five_hour", "Team", [0, 5, 10, 12])])
+        self.assertEqual(self.history(), [1])
+        self.collect(with_tokens=False)
+        self.assertEqual(len(self.past()), 1)  # (noted once)
+
+    def test_a_window_gone_a_day_is_kept_and_old_ones_go(self):
+        gid = self.group(self.collect(with_tokens=False), "work")["id"]
+        now_ms = int(self.now * 1000)
+        day = 86400_000
+        write(self.cache / cs.USAGE_PAST_FILE, {"version": 1, "windows": [
+            {"group": gid, "key": "seven_day", "plan": "Team", "resetsAt": now_ms - 91 * day, "points": [[1, 50]]},
+            {"group": gid, "key": "seven_day", "plan": "Team", "resetsAt": now_ms - 89 * day, "points": [[1, 60]]}]})
+        write(self.cache / "usage.json", {"version": 1, "groups": {gid: {"seven_day": {
+            "resetsAt": now_ms - 2 * day, "points": [[now_ms - 3 * day, 70], [now_ms - 3 * day + 1, 71]]}}}})
+        self.snapshot(5, 0)  # (no weekly window in it)
+        self.collect(with_tokens=False)
+        self.assertEqual(self.past(), [("seven_day", "Team", [60]), ("seven_day", "Team", [70, 71])])
+        self.assertEqual(self.history(), [5])
+
+    def test_none_kept_with_the_history_off(self):
+        gid = self.group(self.collect(with_tokens=False), "work")["id"]
+        now_ms = int(self.now * 1000)
+        write(self.cache / cs.HISTORY_SETTING_FILE, {"keep": False})
+        write(self.cache / cs.USAGE_PAST_FILE, {"version": 1, "windows": []})
+        write(self.cache / "usage.json", {"version": 1, "groups": {gid: {"five_hour": {
+            "resetsAt": now_ms - 600_000, "points": [[now_ms - 3600_000, 40]]}}}})
+        self.snapshot(1, 0, resets_in=5 * 3600)
+        self.collect(with_tokens=False)
+        self.assertFalse((self.cache / cs.USAGE_PAST_FILE).exists())
+        self.assertEqual(self.history(), [1])
+
+    def test_a_long_window_drops_repeats_before_its_start(self):
+        # a weekly window: its value noted again every 10 minutes while unchanged
+        runs = [[i, i // 10] for i in range(400)]  # 40 runs of 10 points
+        kept = cs.trimmed_points(runs)
+        self.assertEqual(len(kept), 80)  # (each run's first and last point)
+        self.assertEqual(kept[:3], [[0, 0], [9, 0], [10, 1]])
+        self.assertEqual(kept[-1], [399, 39])
+        rising = [[i, i] for i in range(400)]  # (nothing to drop but the oldest)
+        self.assertEqual(cs.trimmed_points(rising), rising[-300:])
+        self.assertEqual(cs.trimmed_points(rising[:5]), rising[:5])
+
 
 class TaskProgressTests(Fixture):
     """A chat's task list, as Claude keeps it in <cfg>/tasks/<session id>/."""
