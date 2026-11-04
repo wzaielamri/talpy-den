@@ -1985,6 +1985,22 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('const account = group && !group.vscodeHere ? " --account " + shellQuote(group.configDir || "-") : ""', main)
         self.assertIn("(group.vscodeHere || (!resuming && vscodeSwitches(group, host)))", main)
 
+    def test_open_in_talpy_chat_is_one_more_choice_and_nobodys_changes(self):
+        # Talpy Chat | Terminal | Claude Code panel: openChatsIn, terminal by default; a VS Code
+        # picked before (newChatInVscode) stays VS Code, once
+        xml = (ROOT / "config/main.xml").read_text()
+        entry = xml[xml.index('<entry name="openChatsIn" type="String">'):]
+        self.assertIn("<default>terminal</default>", entry[:entry.index("</entry>")])
+        main = (ROOT / "ui/main.qml").read_text()
+        self.assertIn('if (Plasmoid.configuration.newChatInVscode) {\n            Plasmoid.configuration.openChatsIn = "vscode"\n'
+                      '            Plasmoid.configuration.newChatInVscode = false', main)
+        switch = (ROOT / "ui/OpenInSwitch.qml").read_text()
+        halves = [switch.index(f'onClicked: Plasmoid.configuration.openChatsIn = "{w}"') for w in ("talpyChat", "terminal", "vscode")]
+        self.assertEqual(halves, sorted(halves), "Talpy Chat first")
+        # a new chat's ⚙ line is made only in a new chat's window (every other opens as quickly)
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn("active: pane.fresh !== null && !pane.starting", pane)
+
     def test_a_folder_row_never_closes_its_own_list(self):
         # Closing the list (newChatGroup = "") destroys its rows: the rest of
         # the row's click handler lost root ("ReferenceError: root is not
