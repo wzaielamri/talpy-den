@@ -418,6 +418,31 @@ class MoveTests(ProjectPlanFixture):
         self.assertFalse(src.exists())
         self.assertFalse((self.app / ".claude/settings.local.json").exists())
 
+    def test_never_through_a_link_out_of_the_project(self):
+        # (a repo can ship them: its .claude/plans a link to ~/.claude/rules, its settings.local.json to yours)
+        user = self.home / ".claude-work/settings.json"
+        write(user, {"model": "opus"})
+        (self.home / ".claude-work/rules").mkdir()
+        (self.app / ".claude").mkdir()
+        os.symlink("../../../.claude-work/rules", self.app / ".claude/plans")
+        os.symlink("../../../.claude-work/settings.json", self.app / ".claude/settings.local.json")
+        for args in (("--describe",), ()):
+            moved = self.move(*args)
+            self.assertEqual((moved["ok"], moved["message"]),
+                             (False, "~/repos/app/.claude/plans is a link to another folder: "
+                                     "Talpy Den doesn't move a plan through a link"))
+        os.unlink(self.app / ".claude/plans")
+        moved = self.move()
+        self.assertEqual((moved["ok"], moved["message"]),
+                         (False, "~/repos/app/.claude/settings.local.json is a link to another file: "
+                                 "Talpy Den doesn't change a setting through a link"))
+        self.assertEqual((json.loads(user.read_text()), os.listdir(self.home / ".claude-work/rules")), ({"model": "opus"}, []))
+        self.assertTrue(self.src.is_file())
+        # (without the setting, into the project's own folder)
+        self.assertTrue(self.move("--no-setting")["ok"])
+        self.assertTrue((self.app / ".claude/plans/calm-red-owl.md").is_file())
+        self.assertEqual(json.loads(user.read_text()), {"model": "opus"})
+
     def test_never_over_another_plan_of_that_name(self):
         other = self.plan(self.app / ".claude/plans/calm-red-owl.md", "Another one")
         cs.change_stars(self.cache_root, "plans", "calm-red-owl")

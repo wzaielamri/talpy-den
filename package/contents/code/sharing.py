@@ -534,11 +534,11 @@ def git_shows(folder, path):
 def add_plans_setting(path):
     """Put "plansDirectory": ".claude/plans" into a project's
     settings.local.json (made if it isn't there), its other keys as they
-    were; ValueError when it isn't a JSON object (then it's left as it is)."""
-    real = os.path.realpath(path)
-    data, there = {}, os.path.isfile(real)
+    were; ValueError when it isn't a JSON object (then it's left as it is).
+    The file itself: never what a link there points to (move_plan refuses one)."""
+    data, there = {}, os.path.isfile(path)
     if there:
-        with open(real, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             text = f.read()
         try:
             data = json.loads(text) if text.strip() else {}
@@ -547,14 +547,14 @@ def add_plans_setting(path):
         if not isinstance(data, dict):
             raise ValueError(f"{os.path.basename(path)} isn't a JSON object: left it as it is")
     data[cs.PLANS_SETTING] = cs.PROJECT_PLANS_DIR
-    os.makedirs(os.path.dirname(real), exist_ok=True)
-    tmp = os.path.join(os.path.dirname(real), f".{os.path.basename(real)}.{os.getpid()}.tmp")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = os.path.join(os.path.dirname(path), f".{os.path.basename(path)}.{os.getpid()}.tmp")
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
         if there:
-            shutil.copymode(real, tmp)
-        os.replace(tmp, real)
+            shutil.copymode(path, tmp)
+        os.replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)
@@ -697,6 +697,14 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
             return dict(out, message=f"{short(dest_dir)} is an account's own plans folder")
     except OSError:
         pass
+    if not back:  # (a repo can ship them as links: to ~/.claude/rules, to an account's settings.json)
+        if not cs.stays_in(os.path.normpath(dest_dir), folder):
+            return dict(out, message=f"{short(dest_dir)} is a link to another folder: Talpy Den doesn't move a plan through a link")
+        settings = cs.local_settings_file(ctx, folder)
+        linked = cs.linked_settings(settings, os.path.dirname(os.path.dirname(settings)), home, "change a setting") \
+            if not out["setting"] and setting else None
+        if linked:
+            return dict(out, message=linked)
     out.update(title=cs.plan_title(src) or slug, account=owner.label, project=folder, projectShort=short(folder),
                target=dest, targetShort=short(dest))
     if same(dest, src):

@@ -5501,6 +5501,16 @@ def project_settings(ctx, folder, profile):
     return ("user", value) if there else ("", None)
 
 
+def linked_settings(path, project, home, doing="change a rule"):
+    """Why Talpy Den won't change project's settings.local.json (path): it,
+    or its .claude folder, is a link to somewhere else (a repo can ship one:
+    the change would land in what it points to, an account's settings.json,
+    say); None when it's the folder's own file."""
+    if os.path.realpath(str(path)) == os.path.join(os.path.realpath(str(project)), ".claude", "settings.local.json"):
+        return None
+    return "%s is a link to another file: Talpy Den doesn't %s through a link" % (short_folder(str(path), home), doing)
+
+
 def local_settings_file(ctx, folder):
     """The project's .claude/settings.local.json that Claude reads (in a git
     repository: the one in its main folder)."""
