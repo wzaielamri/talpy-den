@@ -77,7 +77,8 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
               (host
                 ? `The default account on ${hostLabel(host)}: listed first; Claude Code there (its VS Code server) and plain claude there run on it.`
                 : "The default account: listed first, its usage is in the status bar, and VS Code's Claude and plain claude run on it.") +
-              " Change it with Claude Accounts → Make Default, or the account item in the status bar."
+              " Change it with Claude Accounts → Make Default, or with the link in the hover of Talpy Den's item in the status bar" +
+              (host ? ` (in a VS Code window connected to ${hostLabel(host)}).` : ".")
             }
           />
         ) : null}
