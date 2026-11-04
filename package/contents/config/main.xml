@@ -162,23 +162,23 @@
       <default>true</default>
     </entry>
     <entry name="clickOpensPane" type="Bool">
-      <label>A click on a chat opens it in the chat pane beside the popup (else in its own window: terminal or VS Code)</label>
+      <label>A click on a chat opens it in Talpy Chat (else in its own window: terminal or VS Code)</label>
       <default>true</default>
     </entry>
     <entry name="diffSideBySide" type="Bool">
-      <label>Changes side by side (before | after) in the chat pane, where it's wide enough</label>
+      <label>Changes side by side (before | after) in Talpy Chat, where it's wide enough</label>
       <default>true</default>
     </entry>
     <entry name="paneTextPercent" type="Int">
-      <label>Text size in the chat pane, in percent of the desktop's font size (A− / A+ and Ctrl+wheel there)</label>
+      <label>Text size in Talpy Chat, in percent of the desktop's font size (A− / A+ and Ctrl+wheel there)</label>
       <default>115</default>
     </entry>
     <entry name="paneFont" type="String">
-      <label>The chat pane's text: "terminal" in your terminal's font (as Claude's terminal shows it), "desktop" in the desktop's font</label>
+      <label>Talpy Chat's text: "terminal" in your terminal's font (as Claude's terminal shows it), "desktop" in the desktop's font</label>
       <default>terminal</default>
     </entry>
     <entry name="paneTerminalFont" type="String">
-      <label>Your terminal's font, as last found (pane.py --terminal-font, each time the chat pane is made): known as the pane opens</label>
+      <label>Your terminal's font, as last found (pane.py --terminal-font, each time a Talpy Chat window is made): known as it opens</label>
       <default></default>
     </entry>
     <entry name="newChatInVscode" type="Bool">

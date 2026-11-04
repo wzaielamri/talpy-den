@@ -172,7 +172,7 @@ ColumnLayout {
                 elide: Text.ElideRight
                 font.pointSize: ask.smallPt
                 opacity: 0.7
-                text: i18n("… %1 more: the chat's pane shows them all", ask.args.length - ask.argRows)
+                text: i18n("… %1 more: Talpy Chat shows them all", ask.args.length - ask.argRows)
             }
         }
     }

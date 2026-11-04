@@ -360,7 +360,7 @@ RowLayout {
                                 width: nameLabel.contentWidth
                                 height: parent.height
                                 mainText: Plasmoid.configuration.clickOpensPane
-                                          ? i18n("Open this chat beside the popup: its conversation, a box to reply, and what it changed")
+                                          ? i18n("Open this chat in Talpy Chat: its conversation, a box to reply, and what it changed")
                                           : row.openHint
 
                                 MouseArea {
@@ -601,14 +601,14 @@ RowLayout {
                     HoverButton {
                         // the other way to open it than a click on its name: its window, or the pane
                         icon.name: Plasmoid.configuration.clickOpensPane ? Icons.plasma.openWindow : Icons.plasma.openPane
-                        text: Plasmoid.configuration.clickOpensPane ? i18n("Open its window") : i18n("Open in the chat pane")
+                        text: Plasmoid.configuration.clickOpensPane ? i18n("Open its window") : i18n("Open in Talpy Chat")
                         Layout.alignment: Qt.AlignTop
                         onClicked: Plasmoid.configuration.clickOpensPane ? row.open() : root.openPane(row.session, row.remoteHost, "chat")
 
                         PlasmaCore.ToolTipArea {
                             textFormat: Text.PlainText
                             anchors.fill: parent
-                            mainText: Plasmoid.configuration.clickOpensPane ? row.openHint : i18n("Open in the chat pane")
+                            mainText: Plasmoid.configuration.clickOpensPane ? row.openHint : i18n("Open in Talpy Chat")
                             subText: Plasmoid.configuration.clickOpensPane ? ""
                                      : i18n("Beside the popup: its conversation, a box to reply, and what it changed.")
                         }

@@ -2997,7 +2997,7 @@ Window {
                                 anchors.fill: parent
                                 mainText: i18n("Attach files…")
                                 subText: pane.host ? i18n("Pick pictures for your reply (copied to %1 once you say so).", root.hostLabel(pane.host))
-                                                   : i18n("Pick files for your reply: a picture goes in as one, another file is named for Claude to read. You can drop them on the pane too.")
+                                                   : i18n("Pick files for your reply: a picture goes in as one, another file is named for Claude to read. You can drop them on this window too.")
                             }
                         }
                         PlasmaComponents3.ToolButton {
@@ -3010,7 +3010,7 @@ Window {
                                 textFormat: Text.PlainText
                                 anchors.fill: parent
                                 mainText: i18n("Screenshot…")
-                                subText: i18n("Pick a region of the screen: its picture goes in your reply. Files and pictures can be dropped on the pane too.")
+                                subText: i18n("Pick a region of the screen: its picture goes in your reply. Files and pictures can be dropped on this window too.")
                             }
                         }
                         Item {
@@ -3123,7 +3123,7 @@ Window {
                                 textFormat: Text.PlainText
                                 anchors.fill: parent
                                 mainText: i18n("Side by side")
-                                subText: i18n("Each change as before | after, where the pane is wide enough; else removed and added lines one after the other.")
+                                subText: i18n("Each change as before | after, where the window is wide enough; else removed and added lines one after the other.")
                             }
                         }
                     }

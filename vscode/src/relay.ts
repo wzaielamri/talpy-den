@@ -1,7 +1,7 @@
 // Answer Permission Prompts from Talpy Den…: the widget's hook
 // (pane.py --relay on|off) in each Claude profile's settings.json, here and
 // on the SSH hosts shown. With it, a chat that asks for a permission shows
-// Allow once, Always allow and Deny in its row, its tab and its notification;
+// Allow once, Always allow and Deny in its row, in Talpy Chat and in its notification;
 // Claude still asks in the chat too, and the first answer counts. Chats in
 // tmux can be answered without it (with their dialog's keys).
 
@@ -21,7 +21,7 @@ export async function answerPermissionsHere(backend: Backend, dash: Dashboard): 
     {
       label: `${on ? "$(check) " : ""}Answer them from Talpy Den too`,
       description: on ? "on now" : "",
-      detail: `Adds a hook to each Claude profile's settings.json${where}: a chat that asks for a permission shows Allow once, Always allow and Deny in its row, its tab and its notification, and Claude's questions show their options there to answer. Claude still asks in the chat; the first answer counts.`,
+      detail: `Adds a hook to each Claude profile's settings.json${where}: a chat that asks for a permission shows Allow once, Always allow and Deny in its row, in Talpy Chat and in its notification, and Claude's questions show their options there to answer. Claude still asks in the chat; the first answer counts.`,
       on: true,
     },
     {
@@ -57,7 +57,7 @@ export async function liveModeHere(backend: Backend, dash: Dashboard): Promise<v
     {
       label: `${on ? "$(check) " : ""}Show each step as it happens`,
       description: on ? "on now" : "",
-      detail: "Adds a hook to each Claude profile's settings.json that notes each step of each chat (Claude doesn't wait for it): rows, chat tabs and the line under the big Talpy follow every tool call at once.",
+      detail: "Adds a hook to each Claude profile's settings.json that notes each step of each chat (Claude doesn't wait for it): rows, Talpy Chat and the line under the big Talpy follow every tool call at once.",
       on: true,
     },
     {

@@ -81,7 +81,7 @@ export function AskBox({ ask, onAnswer, onWholePlan, busy = false, max = 12, com
       {args.length ? (
         <div class={"ask-command ask-args" + (compact ? " compact" : "")}>
           {(compact ? args.slice(0, ARG_ROWS) : args).map((a, i) => <div key={i}>{compact ? a.replace(/\s+/g, " ") : a}</div>)}
-          {compact && args.length > ARG_ROWS ? <div class="ask-more">… {args.length - ARG_ROWS} more: the chat's tab shows them all</div> : null}
+          {compact && args.length > ARG_ROWS ? <div class="ask-more">… {args.length - ARG_ROWS} more: Talpy Chat shows them all</div> : null}
         </div>
       ) : null}
       {plan ? (

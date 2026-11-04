@@ -658,7 +658,7 @@ ColumnLayout {
             anchors.fill: parent
             mainText: i18n("Recent chats")
             subText: (Plasmoid.configuration.clickOpensPane
-                      ? i18n("This account's latest chats that aren't listed above, newest first. Click one to open it beside the popup; its reopen button (on hover) reopens it in a terminal or in VS Code (the switch at the top of the list).")
+                      ? i18n("This account's latest chats that aren't listed above, newest first. Click one to open it in Talpy Chat; its reopen button (on hover) reopens it in a terminal or in VS Code (the switch at the top of the list).")
                       : i18n("This account's latest chats that aren't listed above, newest first. Click one to reopen it, in a terminal or in VS Code (the switch at the top of the list)."))
                      + " " + i18n("Show more lists more of them; folded again, it lists the first ones again. Every chat of a project is in the Projects tab.")
         }

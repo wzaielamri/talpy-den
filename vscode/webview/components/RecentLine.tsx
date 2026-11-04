@@ -73,7 +73,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
         title={
           `${c.name}\n` +
           (paneFirst
-            ? "Click to open it in a tab: its conversation, a box to reply, and what it changed." + (canOpen ? `\nThe reopen button (on hover): ${reopen}` : "")
+            ? "Click to open it in Talpy Chat: its conversation, a box to reply, and what it changed." + (canOpen ? `\nThe reopen button (on hover): ${reopen}` : "")
             : reopen) +
           (c.cwd ? `\nFolder: ${group.host ? `${hostLabel(group.host)}:` : ""}${c.cwd}` : "") +
           (c.shared ? `\nShared between accounts; last used on ${c.profile}.` : "") +

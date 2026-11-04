@@ -3914,7 +3914,7 @@ PlasmoidItem {
                 paneComponent = Qt.createComponent(Qt.resolvedUrl("ChatPane.qml"))
             win = paneComponent.status === Component.Ready ? paneComponent.createObject(root, { chat: chat }) : null
             if (!win) {
-                console.warn("talpy-den: the chat pane couldn't be made:", paneComponent.errorString())
+                console.warn("talpy-den: Talpy Chat's window couldn't be made:", paneComponent.errorString())
                 return
             }
             paneWindows = paneWindows.concat([win])

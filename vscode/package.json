@@ -472,13 +472,13 @@
                 "Reopen chats that aren't running in a Claude Code panel, in the VS Code window that has the chat's folder (on an SSH host's chats: connected to it)."
               ],
               "default": "terminal",
-              "markdownDescription": "Where chats that aren't running reopen: the **Terminal | Claude Code panel** switch above Recent chats. It holds for those, a chat's tab (**Open its window**), its row and Find a Chat. Without a `claude` command they reopen in Claude Code.",
+              "markdownDescription": "Where chats that aren't running reopen: the **Terminal | Claude Code panel** switch above Recent chats. It holds for those, Talpy Chat (**Open its window**), its row and Find a Chat. Without a `claude` command they reopen in Claude Code.",
               "order": 2
             },
             "talpyDen.clickOpensPane": {
               "type": "boolean",
               "default": true,
-              "markdownDescription": "A click on a chat opens it in an editor tab: its conversation as it goes, a box to reply, what it asks for (Allow / Deny), and what it changed (Undo, Commit, Mark reviewed). Off: a click opens the chat itself, as `#talpyDen.openIn#` says (the tab is then a button beside it).",
+              "markdownDescription": "A click on a chat opens it in Talpy Chat, an editor tab: its conversation as it goes, a box to reply, what it asks for (Allow / Deny), and what it changed (Undo, Commit, Mark reviewed). Off: a click opens the chat itself, as `#talpyDen.openIn#` says (the tab is then a button beside it).",
               "order": 3
             },
             "talpyDen.newChatModel": {
@@ -553,7 +553,7 @@
             "talpyDen.diffSideBySide": {
               "type": "boolean",
               "default": true,
-              "markdownDescription": "Show a change in a chat's tab side by side (before | after) where the tab is wide enough, else removed and added lines one after the other. The switch in a change's corner sets it too.",
+              "markdownDescription": "Show a change in Talpy Chat side by side (before | after) where its tab is wide enough, else removed and added lines one after the other. The switch in a change's corner sets it too.",
               "order": 7
             },
             "talpyDen.chatTextScale": {
@@ -561,7 +561,7 @@
               "default": 1.15,
               "minimum": 0.8,
               "maximum": 2,
-              "markdownDescription": "Text size in a chat's tab, times VS Code's font size. The tab's A− / A+ buttons and Ctrl+wheel change it.",
+              "markdownDescription": "Text size in Talpy Chat, times VS Code's font size. Its A− / A+ buttons and Ctrl+wheel change it.",
               "order": 8
             },
             "talpyDen.chatFont": {
@@ -573,13 +573,13 @@
                 "VS Code's own interface font"
               ],
               "default": "terminal",
-              "markdownDescription": "The font of a chat's tab: its conversation and your reply.",
+              "markdownDescription": "The font of Talpy Chat: the conversation and your reply.",
               "order": 8
             },
             "talpyDen.dictateLanguage": {
               "type": "string",
               "default": "auto",
-              "markdownDescription": "The language you dictate replies in, as a code (`en`, `de`, `fr`…), or `auto` to let whisper tell. Dictating (the microphone in a chat's tab) runs on this computer: the first click offers to set it up (faster-whisper, no sudo), and **Talpy Den: Dictation Models…** downloads, deletes or picks the speech model. What you say never leaves the computer.",
+              "markdownDescription": "The language you dictate replies in, as a code (`en`, `de`, `fr`…), or `auto` to let whisper tell. Dictating (the microphone in Talpy Chat) runs on this computer: the first click offers to set it up (faster-whisper, no sudo), and **Talpy Den: Dictation Models…** downloads, deletes or picks the speech model. What you say never leaves the computer.",
               "order": 9
             }
         }

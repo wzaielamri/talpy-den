@@ -161,9 +161,9 @@ ConfigPage {
 
         QQC2.CheckBox {
             id: clickOpensPane
-            text: i18n("A click on a chat opens it beside the popup")
+            text: i18n("A click on a chat opens it in Talpy Chat")
             QQC2.ToolTip.visible: hovered
-            QQC2.ToolTip.text: i18n("The chat pane: its conversation as it goes, a box to reply, what it asks for, and what it changed. Off: a click goes to the chat's terminal or VS Code tab (the pane is then a button beside it).")
+            QQC2.ToolTip.text: i18n("Talpy Chat: its conversation as it goes, a box to reply, what it asks for, and what it changed. Off: a click goes to the chat's terminal or VS Code tab (Talpy Chat is then a button beside it).")
         }
 
         QQC2.Label {
@@ -177,7 +177,7 @@ ConfigPage {
         QQC2.ComboBox {
             id: paneFont
             readonly property var values: ["terminal", "desktop"]
-            Kirigami.FormData.label: i18n("Chat pane text:")
+            Kirigami.FormData.label: i18n("Talpy Chat text:")
             model: [Plasmoid.configuration.paneTerminalFont
                         ? i18n("In your terminal's font (%1)", Plasmoid.configuration.paneTerminalFont)
                         : i18n("In your terminal's font"),
@@ -250,7 +250,7 @@ ConfigPage {
 
         Kirigami.Separator {
             Kirigami.FormData.isSection: true
-            Kirigami.FormData.label: i18n("Chat window")
+            Kirigami.FormData.label: i18n("Talpy Chat")
         }
 
         QQC2.Label {
@@ -258,7 +258,7 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
-            text: i18n("Side by side changes and the text size are set in the chat pane: its side-by-side button, and A− / A+ or Ctrl+wheel.")
+            text: i18n("Side by side changes and the text size are set in Talpy Chat itself: its side-by-side button, and A− / A+ or Ctrl+wheel.")
         }
 
         QQC2.TextField {

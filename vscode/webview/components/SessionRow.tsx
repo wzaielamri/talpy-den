@@ -142,7 +142,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           <button
             type="button"
             class="link session-name"
-            title={paneFirst ? "Open this chat in a tab: its conversation as it goes, a box to reply, and what it changed" : openHint(s, host, reopenInCode)}
+            title={paneFirst ? "Open this chat in Talpy Chat: its conversation as it goes, a box to reply, and what it changed" : openHint(s, host, reopenInCode)}
             onClick={() => post({ type: "open", chat })}
           >
             {s.name}
@@ -376,8 +376,8 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           {/* the other way to open it than a click on its name: its window, or its tab */}
           <IconButton
             icon={paneFirst ? I.openWindow : I.openPane}
-            label={paneFirst ? "Open its window" : "Open in a tab"}
-            title={paneFirst ? openHint(s, host, reopenInCode) : "Open in a tab\nIts conversation as it goes, a box to reply, and what it changed."}
+            label={paneFirst ? "Open its window" : "Open in Talpy Chat"}
+            title={paneFirst ? openHint(s, host, reopenInCode) : "Open in Talpy Chat\nIts conversation as it goes, a box to reply, and what it changed."}
             onClick={() => post(paneFirst ? { type: "openWindow", chat } : { type: "openPane", chat })}
           />
           {move ? (

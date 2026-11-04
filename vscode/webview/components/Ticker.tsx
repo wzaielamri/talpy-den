@@ -45,7 +45,7 @@ export function Ticker({ groups, shown: tabShown }: { groups: Group[]; shown: bo
       type="button"
       class="ticker"
       ref={box}
-      title={`${item.host ? hostLabel(item.host) + ": " : ""}${item.name}\n${item.text}\n\nClick to open it in a tab.`}
+      title={`${item.host ? hostLabel(item.host) + ": " : ""}${item.name}\n${item.text}\n\nClick to open it in Talpy Chat.`}
       onClick={() => post({ type: "openPane", chat: chatRefOf(item.session, item.host) })}
     >
       {several ? <span class="ticker-name">{item.host ? `${hostLabel(item.host)}: ` : ""}{item.name}</span> : null}

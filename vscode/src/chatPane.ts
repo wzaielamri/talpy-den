@@ -313,7 +313,7 @@ class Pane implements vscode.Disposable {
     this.panel.webview.html = this.html(tab);
     this.disposables.push(
       this.panel.webview.onDidReceiveMessage((m: unknown) =>
-        void this.receive(m).catch((e) => this.owner.ext.log?.warn?.(`The chat tab's request failed: ${e instanceof Error ? e.message : String(e)}`))),
+        void this.receive(m).catch((e) => this.owner.ext.log?.warn?.(`Talpy Chat's request failed: ${e instanceof Error ? e.message : String(e)}`))),
       // shown again: the conversation at once (nothing read it while hidden);
       // focus moving between editors changes nothing
       this.panel.onDidChangeViewState(() => {

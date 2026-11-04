@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **One name for the chat window: Talpy Chat.** The window a chat opens in beside the popup (Plasma) and its editor tab (VS Code) were called the chat pane, the chat tab or the chat window, depending on where you looked. Buttons, tooltips, settings and the docs now all say Talpy Chat: *Open in Talpy Chat*, *A click on a chat opens it in Talpy Chat*, *Talpy Chat text*. Where VS Code's docs mean Claude Code's own chat tab, they now say the Claude Code tab (Plasma and VS Code).
+
 ## 1.18.0 (2026-11-04)
 
 ### Highlights

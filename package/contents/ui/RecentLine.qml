@@ -90,7 +90,7 @@ ColumnLayout {
                 height: parent.height
                 mainText: recentLine.chat.name
                 subText: (Plasmoid.configuration.clickOpensPane
-                          ? i18n("Click to open it beside the popup: its conversation, a box to reply, and what it changed.")
+                          ? i18n("Click to open it in Talpy Chat: its conversation, a box to reply, and what it changed.")
                             + (recentLine.canOpen ? "\n" + i18n("The reopen button (on hover): %1", recentLine.inVscode ? root.vscodeHint(recentLine.group, recentLine.remoteHost, true)
                                                                                                                          : root.terminalHint(recentLine.remoteHost, true)) : "")
                           : recentLine.canOpen ? (recentLine.inVscode ? root.vscodeHint(recentLine.group, recentLine.remoteHost, true)

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Better
+
+- **One name: Talpy Chat.** A chat's tab is called Talpy Chat everywhere:
+  *Open in Talpy Chat* on a row, in tooltips, settings and the docs.
+
 ## 1.18.0
 
 ### New

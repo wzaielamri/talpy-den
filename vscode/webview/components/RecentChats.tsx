@@ -48,7 +48,7 @@ export function RecentChats({ group }: { group: Group }) {
             class="recent-toggle small"
             aria-expanded={open}
             title={(paneFirst
-              ? "This account's latest chats that aren't listed above, newest first. Click one to open it in a tab; its reopen button (on hover) reopens it in a terminal or in a Claude Code panel (the switch at the top of the list)."
+              ? "This account's latest chats that aren't listed above, newest first. Click one to open it in Talpy Chat; its reopen button (on hover) reopens it in a terminal or in a Claude Code panel (the switch at the top of the list)."
               : "This account's latest chats that aren't listed above, newest first. Click one to reopen it, in a terminal or in a Claude Code panel (the switch at the top of the list).") +
               " Show more lists more of them; folded again, it lists the first ones again. Every chat of a project is in the Projects tab."}
             onClick={() => toggleRecent(key)}

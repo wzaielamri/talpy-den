@@ -87,7 +87,7 @@ Rectangle {
             anchors.fill: parent
             mainText: parent.text
             subText: Plasmoid.configuration.diffSideBySide ? i18n("Changes as removed and added lines, one after the other.")
-                                                           : i18n("Changes as before | after, where the pane is wide enough.")
+                                                           : i18n("Changes as before | after, where there's room.")
         }
         }
     }

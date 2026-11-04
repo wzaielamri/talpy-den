@@ -142,7 +142,7 @@ Item {
             anchors.fill: parent
             textFormat: Text.PlainText
             active: ticker.shown !== null
-            mainText: ticker.shown ? i18n("Open %1 beside the popup", ticker.shown.name) : ""
+            mainText: ticker.shown ? i18n("Open %1 in Talpy Chat", ticker.shown.name) : ""
             subText: ticker.shown ? ticker.shown.text : ""
         }
     }

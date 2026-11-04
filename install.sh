@@ -259,7 +259,7 @@ pane_app="org.wzaielamri.talpyden.chat"
 pane_desktop="${XDG_DATA_HOME:-$HOME/.local/share}/applications/$pane_app.desktop"
 pane_rule="talpy-den-chat-pane"
 pane_rule_keys=(
-  "Description=Talpy Den: Talpy as the chat pane's icon"
+  "Description=Talpy Den: Talpy as Talpy Chat's icon"
   "title=— Talpy Chat" "titlematch=2"         # 2: the title has it (ChatPane.qml's title)
   "wmclass=plasmashell" "wmclassmatch=2"       # (org.kde.plasmashell on Wayland)
   "types=1"                                    # normal windows
