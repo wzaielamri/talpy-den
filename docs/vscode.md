@@ -141,6 +141,7 @@ The ones that pick what Talpy Den runs or reads on this computer (`talpyDen.pyth
 | `talpyDen.newChatModel` / `newChatEffort` / `newChatMode` | `opus` / `xhigh` / Claude's default | The model, reasoning effort and permission mode new chats in a terminal or the background start with (`claude --model`, `--effort`, `--permission-mode`; **New Chat…**'s ⚙ line sets them). A Claude Code panel has its own |
 | `talpyDen.diffSideBySide` | `true` | A change in a chat's tab shows side by side (before \| after) where the tab is wide enough, else removed and added lines one after the other (the switch in a change's corner sets it too) |
 | `talpyDen.chatTextScale` | `1.15` | Text size in a chat's tab, times VS Code's font size (the tab's **A−** / **A+** and Ctrl+wheel set it) |
+| `talpyDen.chatFont` | `terminal` | The font of a chat's tab, its conversation and your reply: `terminal` the integrated terminal's (else the editor's), as Claude's terminal shows a chat; `editor` the editor's; `ui` VS Code's own interface font |
 | `talpyDen.dictateLanguage` | `auto` | The language you dictate replies in (`en`, `de`, `fr`…), or `auto` to let whisper tell |
 
 ### Notifications

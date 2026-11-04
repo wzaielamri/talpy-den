@@ -64,6 +64,7 @@ Where chats open, new chats, permission prompts, the chat window.
 | Setting | Default | |
 |---|---|---|
 | A click on a chat opens it beside the popup | on | Off: in its terminal or VS Code tab. Where new and recent chats open, a terminal or VS Code, is the *Terminal \| VS Code* switch at the top of their lists; the model, effort and permission mode a new chat starts with are picked in its new-chat box |
+| Chat pane text | in your terminal's font | The conversation and your reply in the chat window, as Claude's terminal shows them: in the font of the terminal Talpy Den opens chats in (else a fixed-width one), or in the desktop's font. The size: **A−** / **A+** in the window |
 | Answer permission prompts from Talpy Den | off | The hook that lets rows, the pane and notifications answer permission prompts and Claude's questions (see [Features](features.md)); changes Claude's settings at once |
 | Keyboard answers | off | Two global shortcuts that answer the chat that has waited longest for a permission, from anywhere: **Meta+Alt+Y** allows it once (a plan: approves it), **Meta+Alt+N** denies it (a plan: keeps planning). They take *Answer permission prompts from Talpy Den*; pick other keys in System Settings → Shortcuts → Talpy Den |
 | Dictation language | auto | The language you dictate in (`en`, `de`, `fr`…), or auto to let whisper tell; below it, set up dictation, download, delete or pick a speech model, or remove faster-whisper |
