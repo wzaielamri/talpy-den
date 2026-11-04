@@ -64,6 +64,12 @@ s = s.replace("PlasmoidItem {\n    id: root\n", "PlasmoidItem {\n    id: root\n"
 notifier = "readonly property bool notifier: "
 assert s.count(notifier) == 1, "main.qml's notifier property moved: update render_popup.sh"
 s = s.replace(notifier, notifier + "false && ", 1)
+# A Talpy Chat window opened in a render (EXTRA: root.openPane(…)) would be
+# placed beside the popup by jump.py --place-window, which scripts your
+# desktop's KWin. It isn't placed: it shows wherever the render puts it.
+place = "    function paneGeometry(win) {\n"
+assert s.count(place) == 1, "main.qml's paneGeometry moved: update render_popup.sh"
+s = s.replace(place, place + "        return null   // (render: never scripts your KWin)\n", 1)
 open(main, "w").write(s)
 PY
 mkdir -p "$work/data" "$work/config" "$work/state" "$work/cache/talpy-den"
