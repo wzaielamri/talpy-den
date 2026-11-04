@@ -7181,7 +7181,7 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
         entry, runs_on = live
         ok, _ = reply_to_background(runs_on, entry["jobId"], prompt)
         if ok:
-            return {"ok": True, "message": f"Went on in its background session on {runs_on.label} ({entry['jobId']})",
+            return {"ok": True, "message": f"Went on in its background chat on {runs_on.label} ({entry['jobId']})",
                     "id": entry["jobId"]}
     busy = background_work(profiles, chat_id) if limited and ends_at is not None else None
     if busy is not None:

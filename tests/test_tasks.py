@@ -1869,7 +1869,7 @@ class BackgroundServiceTests(TaskFixture):
                                    "--at", str(int(time.time() * 1000) - 1000), "--name", "Fix it")["ok"])
         (task,) = cs.load_queue(self.cache_root())
         self.assertEqual(self.queue("--start-queued", task["id"]),
-                         {"ok": True, "message": "Went on in its background session on work (e3de1242)"})
+                         {"ok": True, "message": "Went on in its background chat on work (e3de1242)"})
         self.assertEqual(service.requests, [{"op": "reply", "short": "e3de1242", "text": cs.CONTINUE_PROMPT,
                                              "auth": FakeService.KEY, "proto": 1}])
         self.assertEqual(self.calls(), [], "no claude stop, no claude --bg --resume")
@@ -1881,7 +1881,7 @@ class BackgroundServiceTests(TaskFixture):
         service = FakeService(self, self.profile, self.takes_it)
         self.live("busy")
         answer = self.go_on(text="go on with step 2", ends_at=int(time.time() * 1000) + 60_000)
-        self.assertEqual(answer, {"ok": True, "message": "Went on in its background session on work (e3de1242)",
+        self.assertEqual(answer, {"ok": True, "message": "Went on in its background chat on work (e3de1242)",
                                   "id": "e3de1242"})
         self.assertEqual([r["text"] for r in service.ops("reply")], ["go on with step 2"])
         # one at work on more than that (its newest turn isn't the limit's) isn't typed into
