@@ -176,7 +176,7 @@ class Checker:
         local, _, domain = e.partition("@")
         example = any(domain == d or domain.endswith("." + d) for d in EXAMPLE_DOMAINS) or domain.endswith(EXAMPLE_TLDS)
         return (e in self.identities or example or domain == "users.noreply.github.com"
-                or local in ("noreply", "no-reply") or e == "git@github.com")
+                or local in ("noreply", "no-reply") or e in ("git@github.com", "support@github.com"))  # (GitHub's own: Dependabot signs off as support@) check-public: ok
 
     def check_line(self, where, line):
         for name, rx in TOKEN_RES:  # never allowed, "check-public: ok" or not
