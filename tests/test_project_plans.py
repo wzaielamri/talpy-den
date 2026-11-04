@@ -498,5 +498,163 @@ class MoveTests(ProjectPlanFixture):
         self.assertTrue(self.src.is_file())
 
 
+def compact(entry):
+    return json.dumps(entry, separators=(",", ":"))   # (as Claude writes a transcript's lines)
+
+
+class ClaudesProjectListTests(ProjectPlanFixture):
+    """A project's plans folder is still read once Claude deleted its chats:
+    Claude keeps the folder in its list of projects (.claude.json)."""
+
+    def known(self, config, *folders):
+        data = json.loads(config.read_text()) if config.is_file() else {}
+        data["projects"] = {str(f): {"allowedTools": []} for f in folders}
+        write(config, data)
+
+    def test_read_once_its_chats_are_deleted(self):
+        transcript = self.chat(".claude-work", self.app, CHAT_A)
+        self.plan(self.app / ".claude/plans/still-here.md", "Still here")
+        self.assertEqual(self.listed("work"), [("still-here", True, str(self.app))])
+        transcript.unlink()   # (Claude deleted it: cleanupPeriodDays)
+        self.assertEqual(self.listed("work"), [])
+        self.known(self.home / ".claude-work/.claude.json", self.app, self.home / "repos/gone")
+        self.assertEqual(self.listed("work"), [("still-here", True, str(self.app))])
+        # the Projects tab has it in its project
+        _ctx, items = week.project_items(self.home, self.cache, cs.discover_profiles(self.home), int(self.now * 1000))
+        rows = week.projects([], int(self.now * 1000), self.home, items["plans"], (), items["accounts"])
+        self.assertEqual([(r["path"], [p["slug"] for p in r["plans"]]) for r in rows], [(str(self.app), ["still-here"])])
+
+    def test_under_the_account_that_ran_there(self):
+        # (the default ~/.claude keeps its list in ~/.claude.json, with its account)
+        self.known(self.home / ".claude.json", self.app)
+        write(self.app / ".claude/settings.json", {"plansDirectory": "docs/plans"})
+        self.plan(self.app / "docs/plans/home-listed.md", "Listed")
+        self.assertEqual(self.listed("personal"), [("home-listed", True, str(self.app))])
+        self.assertEqual(self.listed("work"), [])
+
+    def test_never_claudes_own_folders(self):
+        job = self.home / ".claude-work/jobs/j1/proj"
+        self.known(self.home / ".claude-work/.claude.json", job)
+        self.plan(job / ".claude/plans/job-plan.md", "A job's")
+        self.assertEqual(self.listed("work"), [])
+
+
+class WrittenPlanTests(ProjectPlanFixture):
+    """A plan file a chat wrote itself (no slug, as a progress log it was
+    asked to keep): its chat is the newest one that wrote it, found by the
+    Projects tab, not one that only read it or quoted a call that wrote it."""
+
+    def setUp(self):
+        super().setUp()
+        self.web = self.home / "repos/web"
+        self.web.mkdir(parents=True)
+        self.log = self.plan(self.home / ".claude-work/plans/progress-log.md", "Progress", ago=300)
+
+    def calls(self, profile, folder, chat_id, *calls, **kw):
+        """A chat in folder whose replies made the tool calls ((name, input, result)); path: its transcript."""
+        folder, ago, dump = str(folder), kw.get("ago", 200), kw.get("dump", compact)
+        path = kw.get("path") or self.home / profile / "projects" / folder.replace("/", "-").replace(".", "-") / (chat_id + ".jsonl")
+        t = self.now - ago
+        lines = [{"type": "user", "cwd": folder, "sessionId": chat_id, "timestamp": iso(t),
+                  "message": {"role": "user", "content": "go on"}}]
+        for i, (name, inp, result) in enumerate(calls):
+            lines += [{"type": "assistant", "cwd": folder, "sessionId": chat_id, "timestamp": iso(t + 1),
+                       "message": {"id": "m%d" % i, "role": "assistant",
+                                   "content": [{"type": "tool_use", "id": "t%d" % i, "name": name, "input": inp}]}},
+                      {"type": "user", "cwd": folder, "sessionId": chat_id, "timestamp": iso(t + 2),
+                       "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t%d" % i,
+                                                                "content": result}]}}]
+        write(path, "".join(dump(e) + "\n" for e in lines))
+        os.utime(path, (t + 2, t + 2))
+        return path
+
+    def projects_tab(self):
+        ctx, items = week.project_items(self.home, self.cache, cs.discover_profiles(self.home), int(self.now * 1000))
+        for saved in (ctx.links, ctx.slugs, ctx.chats, ctx.plan_dirs, ctx.plan_projects, ctx.plan_writes):
+            saved.save()
+        return {p["slug"]: p for p in items["plans"]}
+
+    def test_the_chat_that_wrote_it(self):
+        log = str(self.log)
+        self.calls(".claude-work", self.app, CHAT_A,
+                   ("Write", {"file_path": log, "content": "# Progress\n"}, "File created successfully at: " + log), ago=400)
+        self.calls(".claude-work", self.web, CHAT_B,
+                   ("Read", {"file_path": log}, "# Progress"),
+                   ("Bash", {"command": "cat " + log, "description": "Show it"}, "# Progress"),
+                   ("Bash", {"command": "grep -rh progress-log ~/.claude-work/projects"},   # (a call quoted: escaped)
+                    compact({"name": "Bash", "input": {"command": "echo done >> " + log}})), ago=100)
+        # (the status check doesn't look for it)
+        self.assertEqual([(p["cwd"], p["chatId"]) for p in self.plans("work")], [("", None)])
+        plan = self.projects_tab()["progress-log"]
+        self.assertEqual((plan["cwd"], plan["projectFolder"], plan["chatId"], plan["chatProfileDir"]),
+                         (str(self.app), str(self.app), CHAT_A, ".claude-work"))
+        rows = week.projects([], int(self.now * 1000), self.home, [plan], (), {})
+        self.assertEqual([r["path"] for r in rows], [str(self.app)])
+        # noted: the status check has it too, and it keeps its project once the chat is gone
+        self.assertEqual([(p["cwd"], p["chatId"]) for p in self.plans("work")], [(str(self.app), CHAT_A)])
+        next(self.home.glob(".claude-work/projects/*/%s.jsonl" % CHAT_A)).unlink()
+        self.assertEqual([(p["cwd"], p["chatId"]) for p in self.plans("work")], [(str(self.app), None)])
+
+    def test_the_newest_chat_that_wrote_it(self):
+        self.calls(".claude-work", self.app, CHAT_A, ("Write", {"file_path": str(self.log), "content": "1"}, "ok"), ago=400)
+        self.calls(".claude-personal", self.web, CHAT_B,
+                   ("Edit", {"replace_all": False, "file_path": str(self.log), "old_string": "1", "new_string": "2"}, "ok"),
+                   ago=100)
+        plan = self.projects_tab()["progress-log"]
+        self.assertEqual((plan["cwd"], plan["chatId"], plan["chatProfileDir"]), (str(self.web), CHAT_B, ".claude-personal"))
+
+    def test_a_shell_command_that_writes_it(self):
+        names = ("a-log", "b-log", "c-log", "d-log", "e-log")
+        for name in names:
+            self.plan(self.home / ".claude-work/plans" / (name + ".md"), name, ago=300)
+        os.symlink(self.home / ".claude-work", self.home / "alias")
+        commands = ("echo one >> ~/.claude-work/plans/a-log.md",
+                    'printf x | tee -a "$HOME/.claude-work/plans/b-log.md" > /dev/null',
+                    "cat > '%s/alias/plans/c-log.md' <<'EOF'\n# C\nEOF" % self.home,  # (through a link)
+                    "date>>${HOME}/.claude-work/plans/d-log.md")
+        for n, command in enumerate(commands):
+            self.calls(".claude-work", self.app, "%08d-1111-2222-3333-444444444444" % n,
+                       ("Bash", {"command": command, "description": "Note it"}, ""), ago=100 + n)
+        # (a transcript written with spaces after its colons)
+        self.calls(".claude-work", self.web, CHAT_C, ("Bash", {"command": "echo 5 >> ~/.claude-work/plans/e-log.md"}, ""),
+                   dump=json.dumps)
+        # (only named, not written)
+        self.plan(self.home / ".claude-work/plans/f-log.md", "f", ago=300)
+        self.calls(".claude-work", self.web, CHAT_B, ("Bash", {"command": "wc -l ~/.claude-work/plans/f-log.md"}, "1"))
+        found = self.projects_tab()
+        self.assertEqual([found[name]["cwd"] for name in names + ("f-log",)], [str(self.app)] * 4 + [str(self.web), ""])
+
+    def test_written_by_its_subagent(self):
+        main = self.calls(".claude-work", self.app, CHAT_A, ("Task", {"prompt": "Append to " + str(self.log)}, "Done"))
+        self.calls(".claude-work", self.app, CHAT_A, ("Bash", {"command": "echo step >> " + str(self.log)}, ""),
+                   path=main.parent / CHAT_A / "subagents" / "agent-a1.jsonl")
+        plan = self.projects_tab()["progress-log"]
+        self.assertEqual((plan["cwd"], plan["chatId"]), (str(self.app), CHAT_A))
+
+    def test_read_once_then_where_it_grew(self):
+        transcript = self.calls(".claude-work", self.app, CHAT_A, ("Read", {"file_path": "/etc/hosts"}, "x"))
+        line = compact({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Write", "input": {"file_path": str(self.log), "content": "x"}}]}}) + "\n"
+        cut = line.index("/plans/") + 3   # (Claude was writing it: the call cut in its file's name)
+        writes = cs.PlanWrites(self.cache / "plan-writes.json", self.home)
+        with open(str(transcript), "a") as f:
+            f.write(line[:cut])
+        self.assertEqual(writes.paths(transcript, transcript.stat()), [])
+        with open(str(transcript), "a") as f:
+            f.write(line[cut:])
+        self.assertEqual(writes.paths(transcript, transcript.stat()), [str(self.log)])
+        writes.save()
+        again = cs.PlanWrites(self.cache / "plan-writes.json", self.home)
+        with mock.patch.object(cs, "plan_writes", side_effect=AssertionError("read again")):
+            self.assertEqual(again.paths(transcript, transcript.stat()), [str(self.log)])
+
+    def test_a_long_history_is_read_a_part_at_a_time(self):
+        self.calls(".claude-work", self.app, CHAT_A, ("Write", {"file_path": str(self.log), "content": "x" * 5000}, "ok"), ago=400)
+        self.calls(".claude-work", self.web, CHAT_B, ("Read", {"file_path": "/etc/hosts"}, "y" * 5000), ago=100)
+        with mock.patch.object(cs, "PLAN_WRITES_BUDGET", 1000):
+            self.assertIsNone(self.projects_tab()["progress-log"]["chatId"])   # (the newest chat read, then no more)
+            self.assertEqual(self.projects_tab()["progress-log"]["chatId"], CHAT_A)
+
+
 if __name__ == "__main__":
     unittest.main()

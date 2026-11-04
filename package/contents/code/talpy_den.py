@@ -241,6 +241,11 @@ class Profile:
         # whose status line hasn't run lately
         cache = data.get("cachedUsageUtilization")
         self.usage_cache = cache if isinstance(cache, dict) and cache.get("accountUuid") in (None, self.account_id) else None
+        # and the folders Claude ran in (its "projects"), which it keeps when
+        # it deletes their chats (cleanupPeriodDays): plan_folders
+        projects = data.get("projects")
+        self.project_folders = [f for f in projects if isinstance(f, str) and f.startswith("/")] \
+            if isinstance(projects, dict) else []
         self.display_name = clean_text(account.get("displayName"), 40) or None
         org_type = account.get("organizationType") or ""
         self.plan = PLAN_NAMES.get(org_type) or (
@@ -4732,6 +4737,161 @@ def transcript_slug(path, size, start=0):
         nbytes *= 4
 
 
+# A plan file a chat wrote itself (a progress log it was asked to keep in
+# ~/.claude/plans, say) has no slug in any transcript. Its chat is the newest
+# one that wrote the file (itself or by its subagents): the file_path of its
+# Write, Edit or MultiEdit call, or what >, >> or tee writes to in its Bash
+# call, by its full path (/home/you/.claude/plans/x.md, ~/.claude/plans/x.md,
+# $HOME/...). A chat that only reads the file or names it, or quotes such a
+# call in a tool's output (its quotes are escaped there), isn't its chat.
+# It's looked for only by the Projects tab (week.py --projects: PlanWrites
+# in its context) and only for the plans no slug matched and no project was
+# noted for, in every transcript (you may have changed the file since its
+# chat last did anything), the newest first. Each is read once, then only
+# where it grew, at most PLAN_WRITES_BUDGET bytes in all at a time (the
+# rest the next time: a first look at a long history stays quick). Once
+# found, the chat is noted as a slug's would be.
+
+PLAN_FILE = re.compile(rb"/plans/([A-Za-z0-9][A-Za-z0-9_-]{0,127})\.md(?![A-Za-z0-9_-])")
+PATH_STOPS = frozenset(b" \t\r\n\"'`<>|;&()[],=*?\\:")  # (what ends a path in a command or a JSON string)
+WRITE_CALL = re.compile(rb'"name"\s*:\s*"(?:Write|Edit|MultiEdit)"\s*,\s*"input"\s*:\s*\{')
+BASH_CALL = re.compile(rb'"name"\s*:\s*"Bash"\s*,\s*"input"\s*:\s*\{')
+FILE_PATH_VALUE = re.compile(rb'"file_path"\s*:\s*"$')
+COMMAND_VALUE = re.compile(rb'"command"\s*:\s*"')
+TO_FILE = re.compile(rb"(?:>|[\s|]tee(?:\s+-a)?)\s*(?:\\\"|')?$")  # (a shell command's end before the file it writes, "quoted" or 'quoted')
+PLAN_FOLDER_BYTES = 1024  # the longest folder before /plans/ that counts
+WRITE_CALL_BYTES = 61440  # how far before the file its Bash call may start
+PLAN_WRITES_CHUNK = 1 << 20  # a transcript is read 1 MB at a time
+PLAN_WRITES_OVERLAP = 65536  # read again before where a read ended (a call it cut)
+PLAN_WRITES_KEPT = 100  # a transcript's last ones kept
+PLAN_WRITES_BUDGET = 512 << 20  # the most a look reads (the rest: the next one)
+
+
+def unescaped_quote(b, start):
+    """Whether the bytes b have a " after start that no backslash escapes
+    (the end of the JSON string they're in)."""
+    q = b.find(b'"', start)
+    while q >= 0:
+        n = 0
+        while q - n > start and b[q - n - 1] == 0x5C:
+            n += 1
+        if n % 2 == 0:
+            return True
+        q = b.find(b'"', q + 1)
+    return False
+
+
+def written_plan(buf, m, whole, home):
+    """The full path of the plan file that a tool call in the bytes buf
+    writes at the match m (PLAN_FILE), or None (home: the home folder,
+    bytes). whole: buf starts where its file does (else a folder cut at its
+    start is none)."""
+    i = m.start()
+    lo, j = max(0, i - PLAN_FOLDER_BYTES), i
+    while j > lo and buf[j - 1] not in PATH_STOPS:
+        j -= 1
+    if j == lo and (lo > 0 or not whole):
+        return None
+    folder = buf[j:i]
+    for prefix in (b"${HOME}", b"$HOME", b"~"):
+        if folder == prefix or folder.startswith(prefix + b"/"):
+            folder = home + folder[len(prefix):]
+            break
+    if not folder.startswith(b"/"):
+        return None
+    start = max(0, j - WRITE_CALL_BYTES)
+    before = buf[buf.rfind(b"\n", start, j) + 1 or start:j]  # (the call's own line: a transcript's entry)
+    k = before.rfind(b'"name"')  # (the nearest tool call's name: one quoted in a string has its quotes escaped)
+    if k < 0:
+        wrote = False
+    elif FILE_PATH_VALUE.search(before[-64:]):
+        wrote = WRITE_CALL.match(before, k) is not None
+    elif TO_FILE.search(before[-24:]) and BASH_CALL.match(before, k):
+        c = COMMAND_VALUE.search(before, k)
+        wrote = c is not None and not unescaped_quote(before, c.end())
+    else:
+        wrote = False
+    return os.path.normpath(folder.decode("utf-8", "replace") + "/plans/" + m.group(1).decode("ascii") + ".md") \
+        if wrote else None
+
+
+def plan_writes(path, start, end, home, found=()):
+    """found, then the plan files a transcript's tool calls write
+    (written_plan) in its bytes start..end, read PLAN_WRITES_CHUNK at a
+    time (from a little before start: a call the last read cut): [path],
+    each once, the one written last at the end, at most the last
+    PLAN_WRITES_KEPT. None if it can't be read."""
+    out = dict.fromkeys(found)
+    pos = max(0, start - PLAN_WRITES_OVERLAP)
+    try:
+        with open(path, "rb") as f:
+            f.seek(pos)
+            tail = b""
+            while pos < end:
+                chunk = f.read(min(PLAN_WRITES_CHUNK, end - pos))
+                if not chunk:
+                    break
+                buf = tail + chunk
+                whole = pos - len(tail) == 0
+                for m in PLAN_FILE.finditer(buf):
+                    wrote = written_plan(buf, m, whole, home)
+                    if wrote is not None:
+                        out.pop(wrote, None)
+                        out[wrote] = None
+                pos += len(chunk)
+                tail = buf[-PLAN_WRITES_OVERLAP:]
+    except OSError:
+        return None
+    return list(out)[-PLAN_WRITES_KEPT:]
+
+
+class PlanWrites:
+    """The plan files each transcript's tool calls write (plan_writes), kept
+    in plan-writes.json so a transcript is read once, then only where it
+    grew, at most PLAN_WRITES_BUDGET bytes in all (budget) for one look:
+    {file key: [bytes read, [paths]]}, a few dozen bytes for each
+    transcript Claude keeps; an entry no look used for CACHE_KEEP_S (its
+    transcript deleted, or no plan to look for) is dropped (keep_unused)."""
+
+    VERSION = 1
+
+    def __init__(self, path, home):
+        self.path, self.home = path, os.fsencode(str(home))
+        data = read_json(path)
+        ok = isinstance(data, dict) and data.get("version") == self.VERSION and isinstance(data.get("files"), dict)
+        self.old = data if ok else {}
+        self.data = {"version": self.VERSION, "files": {}}
+        self.changed = not ok
+        self.budget = PLAN_WRITES_BUDGET
+
+    def paths(self, f, st):
+        """The plan files the transcript f (its stat st) writes (as far as
+        it was read, once the budget is spent)."""
+        key = file_key(st)
+        cached = self.data["files"].get(key) or self.old.get("files", {}).get(key)
+        size, found = 0, []
+        if isinstance(cached, list) and len(cached) == 2 and isinstance(cached[0], int) \
+                and 0 <= cached[0] <= st.st_size and isinstance(cached[1], list) \
+                and all(isinstance(p, str) for p in cached[1]):
+            size, found = cached
+        if size < st.st_size and self.budget > 0:
+            self.budget -= st.st_size - size
+            more = plan_writes(f, size, st.st_size, self.home, found)
+            if more is not None:
+                size, found = st.st_size, more
+                self.changed = True
+        self.data["files"][key] = [size, found]
+        return found
+
+    def save(self):
+        kept = keep_unused(self.old, self.data, ("files",), time.time())
+        if self.changed or kept or set(self.data["files"]) != set(self.old.get("files", {})):
+            try:
+                write_json_atomic(self.path, self.data, private=True)
+            except OSError:
+                pass
+
+
 def all_transcripts(ctx):
     """[(mtime, profile, path, stat)] of every chat transcript, newest first
     (once per check)."""
@@ -4851,11 +5011,24 @@ def find_plan_chats(plans, ctx):
     """The chat that made each plan: the newest transcript with its slug. It
     was active when the plan was written, so only transcripts changed since
     the oldest plan's time are read; older ones count with the slug noted
-    for them then (a plan you changed since is newer than its chat)."""
+    for them then (a plan you changed since is newer than its chat). With
+    the context's PlanWrites (the Projects tab), a plan (with its "path")
+    no slug matched and no project was noted for has the chat that wrote
+    its file (find_written_plan_chats)."""
     slugs = getattr(ctx, "slugs", None)
     if slugs is None:
         return
     noted, dirs = plan_projects_of(ctx), getattr(ctx, "plan_dirs", None)
+
+    def found(pl, t, p, f, st):
+        _, cwd, _ = ctx.links.chat_info(f, st)
+        start = dirs.start_folder(f"{p.key}/{f.parent.name}", f) if dirs is not None else ""
+        pl["chatId"], pl["chatProfileDir"] = f.stem, p.key
+        pl["cwd"], pl["cwdShort"] = cwd, short_path(cwd, ctx.home) if cwd else ""
+        pl["projectFolder"] = start or cwd
+        pl["edited"] = plan_edited(pl["updatedAt"], t)
+        noted.note(pl["slug"], cwd, start or cwd, f.stem, p.key)  # (it keeps its project once the chat is gone)
+
     wanted = {pl["slug"]: pl for pl in plans}
     oldest = min(pl["updatedAt"] for pl in plans) / 1000 - 60
     for t, p, f, st in all_transcripts(ctx):
@@ -4863,21 +5036,15 @@ def find_plan_chats(plans, ctx):
             break
         slug = slugs.slug(f, st) if t >= oldest else slugs.cached(st)
         pl = wanted.pop(slug, None) if slug else None
-        if pl is None:
-            continue
-        _, cwd, _ = ctx.links.chat_info(f, st)
-        start = dirs.start_folder(f"{p.key}/{f.parent.name}", f) if dirs is not None else ""
-        pl["chatId"], pl["chatProfileDir"] = f.stem, p.key
-        pl["cwd"], pl["cwdShort"] = cwd, short_path(cwd, ctx.home) if cwd else ""
-        pl["projectFolder"] = start or cwd
-        pl["edited"] = plan_edited(pl["updatedAt"], t)
-        noted.note(slug, cwd, start or cwd, f.stem, p.key)  # (it keeps its project once the chat is gone)
+        if pl is not None:
+            found(pl, t, p, f, st)
     # The ones whose chat wasn't found: the folder noted while it was there,
     # and that chat if it's still there (a plan moved under another name)
-    by_id = None
+    by_id, unknown = None, []
     for pl in wanted.values():
         e = noted.get(pl["slug"])
         if e is None:
+            unknown.append(pl)
             continue
         pl["cwd"], pl["cwdShort"] = e["cwd"], short_path(e["cwd"], ctx.home)
         pl["projectFolder"] = e.get("project") or e["cwd"]
@@ -4888,6 +5055,45 @@ def find_plan_chats(plans, ctx):
             if p is not None:
                 pl["chatId"], pl["chatProfileDir"] = e["chat"], p.key
                 pl["edited"] = plan_edited(pl["updatedAt"], t)
+    writes = getattr(ctx, "plan_writes", None)
+    if unknown and writes is not None:
+        find_written_plan_chats(unknown, ctx, writes, found)
+
+
+def find_written_plan_chats(plans, ctx, writes, found):
+    """The chat of each plan (with its "path") that no slug matched: the
+    newest one that wrote its file (PlanWrites: by its own calls or its
+    subagents'; the same file, whichever link or name it's written by).
+    found(plan, mtime, profile, transcript, stat) takes it."""
+    by_file = {}
+    for pl in plans:
+        try:
+            st = os.stat(pl["path"]) if pl.get("path") else None
+        except OSError:
+            st = None
+        if st is not None:
+            by_file[(st.st_dev, st.st_ino)] = pl
+    named = {}  # (each path written: its file, stat once)
+    for t, p, f, st in all_transcripts(ctx):  # (newest first)
+        if not by_file:
+            break
+        for g in [f] + subagent_transcripts(f):
+            try:
+                g_st = st if g is f else g.stat()
+            except OSError:
+                continue
+            for path in writes.paths(g, g_st):
+                key = named.get(path, 0)
+                if key == 0:
+                    try:
+                        s = os.stat(path)
+                        key = (s.st_dev, s.st_ino)
+                    except OSError:
+                        key = None
+                    named[path] = key
+                pl = by_file.pop(key, None) if key is not None else None
+                if pl is not None:
+                    found(pl, t, p, f, st)
 
 
 # ---------------------------------------------------------------- plans in projects
@@ -4899,10 +5105,12 @@ def find_plan_chats(plans, ctx):
 # repository, the one in the repository's main folder: Claude reads it
 # there), else the project's .claude/settings.json, else the account's
 # settings.json (then it's for every project). Talpy Den lists the plans in
-# that folder of each project chats started in, and in the project's
-# .claude/plans (where Move to project puts a plan when the project names no
-# folder), each once: under the account whose chat made it, else the one
-# with the newest chat there, with the project's folder. What it read of
+# that folder of each project chats started in (and of each folder Claude
+# keeps in its list of projects, once their chats are deleted:
+# plan_folders), and in the project's .claude/plans (where Move to project
+# puts a plan when the project names no folder), each once: under the
+# account whose chat made it, else the one with the newest chat there, with
+# the project's folder. What it read of
 # each project (the folder each projects/ folder is for, its git
 # repository, its settings, its plan folders) is kept in plan-dirs.json:
 # Claude writes a plan while a chat runs, so a check looks again at the
@@ -5186,9 +5394,7 @@ def start_folders(ctx):
         key = (p.key, folder)
         if key not in newest:
             newest[key] = (t, p, f, folder[folder.rfind("/") + 1:])
-    skip = list(getattr(ctx, "own_folders", None) or own_folders(ctx.profiles))
-    if getattr(ctx, "usage_check", None):
-        skip.append(ctx.usage_check)
+    skip = not_projects(ctx)
     found = {}
     for (key, _d), (t, p, f, name) in newest.items():
         folder = dirs.start_folder(f"{key}/{name}", f)
@@ -5203,10 +5409,46 @@ def start_folders(ctx):
     return found
 
 
+def not_projects(ctx):
+    """Folders a chat runs in that aren't projects: Claude's own and Talpy Den's."""
+    skip = list(getattr(ctx, "own_folders", None) or own_folders(ctx.profiles))
+    if getattr(ctx, "usage_check", None):
+        skip.append(ctx.usage_check)
+    return skip
+
+
+def plan_folders(ctx):
+    """start_folders, and the folders Claude ran in that no chat here
+    started in any more: Claude deletes a chat after cleanupPeriodDays (30
+    by default) but keeps the folder in its list of projects (.claude.json's
+    "projects": Profile.project_folders), so a project's plans folder is
+    still read once its chats are gone. {folder: (when its newest chat
+    changed (0: there's none), a profile that ran there, the profile keys
+    that did)}, once per check; nothing more is read than the profiles'
+    .claude.json, which every check reads anyway."""
+    found = getattr(ctx, "plan_folders_found", None)
+    if found is not None:
+        return found
+    found = dict(start_folders(ctx))
+    known, more = {os.path.normpath(f) for f in found}, {}
+    for p in ctx.profiles:
+        for folder in getattr(p, "project_folders", ()):
+            folder = os.path.normpath(folder)
+            if folder in more:
+                more[folder][2].add(p.key)
+            elif folder not in known:
+                more[folder] = (0, p, {p.key})
+    if more:
+        skip = not_projects(ctx)
+        found.update((f, v) for f, v in more.items() if not any(inside(f, s) for s in skip))
+    ctx.plan_folders_found = found
+    return found
+
+
 def project_plan_files(ctx):
     """[(mtime, project folder, path, stat)] of the plans in the projects'
-    plan folders (project_plan_dirs), newest first, each file once; never
-    an account's own plans/ (once per check)."""
+    plan folders (project_plan_dirs of plan_folders), newest first, each
+    file once; never an account's own plans/ (once per check)."""
     found = getattr(ctx, "project_plan_files", None)
     if found is not None:
         return found
@@ -5222,7 +5464,7 @@ def project_plan_files(ctx):
     for e in list(plan_projects_of(ctx).plans.values()) + list(plan_projects_of(ctx).new.values()):
         if isinstance(e.get("at"), (int, float)) and e["at"] / 1000 > noted.get(e.get("project"), 0):
             noted[e.get("project")] = e["at"] / 1000
-    for folder, (t, _p, keys) in sorted(start_folders(ctx).items()):  # (a project before the ones inside it)
+    for folder, (t, _p, keys) in sorted(plan_folders(ctx).items()):  # (a project before the ones inside it)
         again = t >= now - PROJECT_ACTIVE_S or noted.get(folder, 0) >= now - PROJECT_RECHECK_S
         for d in dirs.project_dirs(folder, now, again, lambda: project_plan_dirs(ctx, folder, keys)):
             if d in dirs_seen:
@@ -5272,12 +5514,13 @@ def project_plan_of(ctx, slug, folder=None):
 
 def project_plan_owner(ctx, slug, folder):
     """The profile key a project's plan is listed under: of the chat that
-    made it (as noted), else of the newest chat in the project."""
+    made it (as noted), else of the newest chat in the project, else of an
+    account that ran there (plan_folders)."""
     keys = {p.key for p in ctx.profiles}
     noted = plan_projects_of(ctx).get(slug)
     if noted and noted.get("profile") in keys:
         return noted["profile"]
-    _t, p, _keys = start_folders(ctx).get(folder, (0, None, ()))
+    _t, p, _keys = plan_folders(ctx).get(folder, (0, None, ()))
     return p.key if p is not None else ctx.profiles[0].key
 
 
@@ -5357,7 +5600,7 @@ def link_project_plans(ctx, wanted=None):
     if done is None:
         done = ctx.project_plans_linked = set()
     noted = plan_projects_of(ctx)
-    todo = [{"slug": f.stem, "updatedAt": int(t * 1000), "chatId": None}
+    todo = [{"slug": f.stem, "updatedAt": int(t * 1000), "chatId": None, "path": str(f)}
             for t, _d, f, _st in project_plan_files(ctx)
             if f.stem not in done and (wanted is None or f.stem in wanted) and noted.get(f.stem) is None]
     done.update(pl["slug"] for pl in todo)
