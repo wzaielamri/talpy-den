@@ -563,8 +563,8 @@ test('while you were away', () => {
     group([session('r', 'idle')], {host: 'lab'})];
     const d = L.awayDigest(away, after, now, 5);
     eq(d.title, 'While you were away (1h 12m)');
-    eq(d.body.split('\n'), ['Needs you: chat b (waiting 22m)', 'Finished: chat a, chat n, chat r (lab)', 'Failed: chat f',
-        'Stopped: chat s', '5h limit reset (work)']);
+    eq(d.body.split('\n'), ['Needs you: chat b (waiting 22m)', 'Finished: chat a, chat n, chat r · lab', 'Failed: chat f',
+        'Stopped: chat s', '5h limit reset']);
     eq(d.first.key, '/b');
     eq(L.awayDigest(away, after, T + 4 * M, 5), null, 'not away long enough');
     eq(L.awayDigest(away, before, now, 5), null, 'nothing happened');

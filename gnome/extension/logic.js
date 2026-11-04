@@ -1366,7 +1366,7 @@ export function awayDigest(away, groups, now, minMinutes) {
     if (!(awayMs >= minMinutes * 60000))
         return null;
     const before = away.snapshot.sessions;
-    const named = (s, host) => (host ? fmt('%1 (%2)', s.name, hostLabel(host)) : s.name);
+    const named = (s, host) => (host ? fmt('%1 · %2', s.name, hostLabel(host)) : s.name);
     const finished = [], failed = [], stopped = [], limited = [], loggedOut = [], resets = [];
     for (const g of groups) {
         for (const s of g.sessions) {
@@ -1383,7 +1383,7 @@ export function awayDigest(away, groups, now, minMinutes) {
         for (const w of g.limits ? g.limits.windows : []) {
             const prev = away.snapshot.windows[`${g.host || ''}|${g.id}/${w.key}`];
             if (prev && prev.resetsAt && prev.resetsAt > away.lockedAt && prev.resetsAt <= now)
-                resets.push(fmt('%1 limit reset (%2)', w.label, groupLabel(g)));
+                resets.push(fmt('%1 limit reset', w.label) + (g.host ? ` · ${hostLabel(g.host)}` : ''));
         }
     }
     const waiting = chatsNeedingYou(groups);

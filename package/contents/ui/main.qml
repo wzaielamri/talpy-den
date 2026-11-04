@@ -755,8 +755,7 @@ PlasmoidItem {
             lines.push(i18n("Hit the usage limit: %1", list(limited)))
         if (loggedOut.length)
             lines.push(i18n("Login expired: %1", list(loggedOut)))
-        for (const r of resets)
-            lines.push(i18n("%1 limit reset", r))
+        lines.push(...resets)
         return lines
     }
 
@@ -1523,7 +1522,7 @@ PlasmoidItem {
                 const key = source + "|" + g.id + "/" + w.key
                 if (key in lastWindows && lastWindows[key] >= 25 && w.pct < lastWindows[key] - 20) {
                     petEvent("reset", i18n("%1 limit reset!", w.label), "")
-                    noteAway("reset", w.label + where)
+                    noteAway("reset", i18n("%1 limit reset", w.label) + where)
                 }
                 next[key] = w.pct
             }
