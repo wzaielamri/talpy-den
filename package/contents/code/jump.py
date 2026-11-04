@@ -122,9 +122,11 @@ if (best) {
 # The chat pane's window (ChatPane.qml), put beside the widget's popup: a
 # window can't place itself on Wayland, KWin can. The pane asks before it
 # shows the window, and KWin puts it there as it appears (else it would show
-# where KWin puts new windows first, then jump); one that's open moves now.
-# Its title, with * for the chat's name: that can change before it shows
-# (and KWin adds " <2>" to a title that's taken).
+# where KWin puts new windows first, then jump). Only one appearing: each
+# chat has a window of its own, and the others open now are left where they
+# are (the one asked about is hidden till KWin has answered). Its title,
+# with * for the chat's name: that can change before it shows (and KWin adds
+# " <2>" to a title that's taken).
 # A new size takes the window a moment to draw, and KWin moves it only with
 # it: a window that's just appearing is hidden till then (at most half a
 # second), so it's only seen in place. (A window that never comes isn't
@@ -144,10 +146,10 @@ function shown() {
         hidden = null;
     }
 }
-function place(w, appearing) {
+function place(w) {
     const to = {x: want.x, y: want.y, width: want.width, height: want.height};
     const now = w.frameGeometry;
-    if (appearing && (now.width !== to.width || now.height !== to.height) && typeof QTimer === "function") {
+    if ((now.width !== to.width || now.height !== to.height) && typeof QTimer === "function") {
         hidden = {window: w, opacity: w.opacity};
         w.opacity = 0;
         w.frameGeometryChanged.connect(shown);
@@ -163,14 +165,10 @@ function added(w) {
     if (fits(w)) {
         workspace.windowAdded.disconnect(added);
         if (Date.now() - want.at < 5000)
-            place(w, true);
+            place(w);
     }
 }
-const open = workspace.windowList().filter(fits);
-if (open.length)
-    place(open[0], false);
-else
-    workspace.windowAdded.connect(added);
+workspace.windowAdded.connect(added);
 """
 KWIN_PLACE_NAME = "talpy-den-place"
 

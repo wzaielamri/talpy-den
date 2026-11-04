@@ -18,13 +18,15 @@ import "icons.mjs" as Icons
 // with Allow once / Always allow / Deny, or Claude's questions to answer;
 // and its review: the files it
 // changed, against how they were before the chat, with Undo, Commit and
-// Mark reviewed. One window, for the chat root.paneChat.
+// Mark reviewed. One window for each chat (chat: main.qml openPane), kept
+// hidden once it's closed, for the next chat opened.
 Window {
     id: pane
     objectName: "talpyDenChatPane"   // (TipArea: tooltips drawn in this window)
 
-    readonly property var chat: root.paneChat || ({})
-    readonly property var row: root.paneRow   // its row in the status now (null: not listed)
+    property var chat: ({})   // {chatId, sessionId, profileDir, host, name, cwd, tab}: none while it's closed
+    property string lastKey: ""   // (closed: the chat it showed, opened in it again: main.qml)
+    readonly property var row: root.paneRowOf(chat)   // its row in the status now (null: not listed)
     readonly property string host: chat.host || ""
     readonly property string chatId: chat.chatId || ""
     readonly property string profileDir: row && row.profileDir ? row.profileDir : (chat.profileDir || "")
@@ -102,7 +104,72 @@ Window {
     color: Kirigami.Theme.backgroundColor
     onClosing: {
         cancelDictation()
-        root.closePane()
+        root.paneClosed(pane)
+    }
+
+    // Where it opens, and when (main.qml placePane and showPane): beside the
+    // popup, once KWin is ready for it (placeAsk answered, at most a second)
+    // and its conversation is read (at most 400 ms). ask: the --place-window
+    // command it waits for ("": none), null: shown, nothing waited for
+    property string placeAsk: ""
+    property bool placeReading: false
+    function placing(ask) {
+        placeAsk = ask || ""
+        placeReading = ask !== null
+        if (ask !== null)
+            placeReadTimer.restart()
+        else
+            placeReadTimer.stop()
+        if (ask)
+            placeTimer.restart()
+        else
+            placeTimer.stop()
+    }
+    Timer {
+        id: placeReadTimer
+        interval: 400
+        onTriggered: {
+            pane.placeReading = false
+            root.showPane(pane)
+        }
+    }
+    Timer {
+        id: placeTimer
+        interval: 1000
+        onTriggered: {
+            pane.placeAsk = ""
+            root.showPane(pane)
+        }
+    }
+    onLoadedChanged: root.showPane(pane)
+    onLoadErrorChanged: root.showPane(pane)
+
+    // Opened again (here, or from another copy of the widget: Hub paneRaise):
+    // forward, with focus, on the tab asked for
+    function forward(tab) {
+        if (tab)
+            pane.tab = tab
+        if (visible && visibility === Window.Minimized)
+            showNormal()
+        raise()
+        requestActivate()
+    }
+    // What it does once it shows its chat (main.qml openPane's then): a reply
+    // from a notification in its box, for a terminal that takes no text
+    // (draft: you choose how it goes), Deny with a note's field (denying), or
+    // Other…'s, a question's own words (typing)
+    function act(then) {
+        if (!then)
+            return
+        if (then.draft) {
+            replyBox.text = then.draft
+            replyBox.cursorPosition = replyBox.text.length
+            pane.askHow = true
+        }
+        if (then.denying)
+            askColumn.denyWithNote()
+        if (then.typing)
+            askColumn.typeAnswer()
     }
 
     // ---------------------------------------------------------------- how it looks
@@ -321,55 +388,31 @@ Window {
         reset()
         run("font", "--terminal-font")   // (changed since it was last found: from now on)
     }
+    // (a picture or file for this window's reply box: main.qml's target for it)
+    readonly property string pasteTarget: "pane:" + host + "|" + chatId
     Connections {
         target: root
-        function onPaneDraftChanged() {   // (a reply from a notification, for a terminal that takes no text)
-            if (root.paneDraft) {
-                replyBox.text = root.paneDraft
-                replyBox.cursorPosition = replyBox.text.length
-                pane.askHow = true
-                root.paneDraft = ""
-            }
-        }
         function onImagePasted(path, target) {   // (Ctrl+V: a picture, saved; an SSH host's copied there)
-            if (target !== "pane")
+            if (target !== pane.pasteTarget)
                 return
             const at = replyBox.cursorPosition
             replyBox.insert(at, (at > 0 && replyBox.text.charAt(at - 1).trim() !== "" ? " " : "") + "[Image: " + path + "] ")
             replyBox.forceActiveFocus()
         }
         function onFileAttached(path, target) {   // (a file dropped on the pane: named, as Claude's @ does)
-            if (target !== "pane")
+            if (target !== pane.pasteTarget)
                 return
             const at = replyBox.cursorPosition
             const named = /\s/.test(path) ? "@\"" + path + "\"" : "@" + path
             replyBox.insert(at, (at > 0 && replyBox.text.charAt(at - 1).trim() !== "" ? " " : "") + named + " ")
             replyBox.forceActiveFocus()
         }
-        function onPaneNote(message) {
+        function onPaneNote(target, message) {
+            if (target !== pane.pasteTarget)
+                return
             pane.info = message
             pane.infoBad = true
             infoTimer.restart()
-        }
-        function onPaneDenyingChanged() {   // (Deny with a note, from a notification)
-            if (root.paneDenying) {
-                askColumn.denyWithNote()
-                root.paneDenying = false
-            }
-        }
-        function onPaneTypingChanged() {   // (Other…, from a question's notification)
-            if (root.paneTyping) {
-                askColumn.typeAnswer()
-                root.paneTyping = false
-            }
-        }
-        function onPaneChatChanged() {   // (opened again, here or from another copy: forward, with focus)
-            if (root.paneChat && root.paneChat.tab)
-                pane.tab = root.paneChat.tab
-            if (pane.visible && pane.visibility === Window.Minimized)
-                pane.showNormal()
-            pane.raise()
-            pane.requestActivate()
         }
     }
 
@@ -1002,7 +1045,9 @@ Window {
     // ---------------------------------------------------------------- replying
 
     property bool askHow: false   // its terminal takes no text: background or copy?
-    property var drafts: ({})     // what you were typing to the other chats ("host\nchatId" -> text)
+    // what you were typing to the other chats ("host\nchatId" -> text): this copy's
+    // windows share it, so it's there whichever window the chat opens in again
+    readonly property var drafts: root.paneDrafts
     property string draftKey: ""  // the chat the box's text is for
 
     // Your message, at once: Enter, and it's in the conversation (as being
@@ -1170,15 +1215,21 @@ Window {
         }
         Qt.callLater(pump)
     }
+    // (back in the box of the window that shows its chat now, this one or
+    // another; else in its draft, for when it's opened)
     function giveBack(asked) {
-        if (asked.draft === draftKey) {
-            const now = replyBox.text
-            replyBox.text = asked.text + (now.trim() ? "\n" + now : "")
-            replyBox.cursorPosition = asked.text.length
+        const win = asked.draft === draftKey ? pane : root.paneWindows.find(w => w.draftKey === asked.draft) || null
+        if (win) {
+            win.putBack(asked.text)
         } else {
             const was = drafts[asked.draft] || ""
             drafts[asked.draft] = asked.text + (was.trim() ? "\n" + was : "")
         }
+    }
+    function putBack(text) {   // (before what's in the box now)
+        const now = replyBox.text
+        replyBox.text = text + (now.trim() ? "\n" + now : "")
+        replyBox.cursorPosition = text.length
     }
 
     // A selection across messages, as on a web page (VS Code's tab): each
@@ -1512,7 +1563,7 @@ Window {
                 const paths = (drop.urls || []).map(u => String(u)).filter(u => u.startsWith("file://"))
                                                .map(u => decodeURIComponent(u.slice(7)))
                 if (paths.length) {
-                    root.attachFiles(paths, pane.host, "pane")
+                    root.attachFiles(paths, pane.host, pane.pasteTarget)
                     drop.acceptProposedAction()
                 }
             }
@@ -2658,7 +2709,7 @@ Window {
                                 }
                                 if (event.matches(StandardKey.Paste) && !canPaste) {
                                     event.accepted = true
-                                    root.pasteImage(pane.host, "pane")
+                                    root.pasteImage(pane.host, pane.pasteTarget)
                                     return
                                 }
                                 if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
@@ -2691,7 +2742,7 @@ Window {
                 RowLayout {
                     Layout.fillWidth: true
                     visible: !!pane.host && !!root.pictureOffer && root.pictureOffer.host === pane.host
-                             && root.pictureOffer.target === "pane"
+                             && root.pictureOffer.target === pane.pasteTarget
                     spacing: Kirigami.Units.smallSpacing
 
                     Image {
@@ -2711,7 +2762,7 @@ Window {
                     }
                 }
                 PlasmaComponents3.Label {
-                    visible: !!pane.host && root.pictureCopyingTo === pane.host && root.pictureCopyTarget === "pane"
+                    visible: !!pane.host && root.pictureCopyingTo === pane.host && root.pictureCopyTarget === pane.pasteTarget
                     textFormat: Text.PlainText
                     text: i18n("Copying the picture to %1…", root.hostLabel(pane.host))
                     color: pane.mutedColor
@@ -2798,7 +2849,7 @@ Window {
                             icon.name: Icons.plasma.attach
                             text: i18n("Attach files…")
                             display: PlasmaComponents3.AbstractButton.IconOnly
-                            onClicked: root.pickFiles(pane.host, "pane", pane.row ? pane.row.cwd || "" : pane.chat.cwd || "")
+                            onClicked: root.pickFiles(pane.host, pane.pasteTarget, pane.row ? pane.row.cwd || "" : pane.chat.cwd || "")
 
                             TipArea {
                                 textFormat: Text.PlainText
@@ -2812,7 +2863,7 @@ Window {
                             icon.name: Icons.plasma.screenshot
                             text: i18n("Screenshot…")
                             display: PlasmaComponents3.AbstractButton.IconOnly
-                            onClicked: root.takeScreenshot(pane.host, "pane")
+                            onClicked: root.takeScreenshot(pane.host, pane.pasteTarget)
 
                             TipArea {
                                 textFormat: Text.PlainText

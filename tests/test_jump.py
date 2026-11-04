@@ -292,6 +292,9 @@ const out = {};
 const another = Win("Fix — Talpy Chat", 77, [500, 700]), open = Win("Fix — Talpy Chat <2>", 5, [400, 300]);
 let ws = run([another, open]);
 out.open = [at(open), open.opacity, at(another), ws.windowAdded.count];
+const next = Win("Other — Talpy Chat", 5, [500, 728]);
+ws.windowAdded.emit(next);
+out.next = [at(next), at(open), ws.windowAdded.count];
 
 const elsewhere = Win("Fix — Talpy Chat", 77, [400, 300]), other = Win("Talpy Chat settings", 5, [400, 300]);
 const coming = Win("Renamed since — Talpy Chat", 5, [500, 728]);
@@ -327,8 +330,10 @@ process.stdout.write(JSON.stringify(out));
         self.assertEqual(node.returncode, 0, node.stderr)
         out = json.loads(node.stdout)
         target = [900, 100, 500, 700]
-        # open already: moved now, as it is (a window that shows isn't hidden)
-        self.assertEqual(out["open"], [target, 1, None, 0])
+        # another chat's window, open already, stays where it is (each chat has
+        # a window of its own): the one asked about is waited for
+        self.assertEqual(out["open"], [None, 1, None, 1])
+        self.assertEqual(out["next"], [target, None, 0])
         # not there yet: waited for; another program's window isn't it, nor one titled otherwise
         self.assertEqual(out["notMine"], [None, None, 1])
         # it appears (its name changed since: * stands for any): hidden till

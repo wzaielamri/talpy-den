@@ -1640,7 +1640,7 @@ PlasmoidItem {
                 awayEvents = awayEvents.slice(0, i).concat(awayEvents.slice(i + 1))
         } else if (!stop && long) {
             markUnseen(sid, "done")
-            if (!paneChat || petKeyOf(paneChat, paneChat.host) !== sid)   // (its pane shows it: you're looking)
+            if (!paneShows(sid))   // (its pane shows it: you're looking)
                 finishedUnopened = Object.assign({}, finishedUnopened, { [sid]: true })
         }
         noteAway(stop || (s.reason === "failed" || s.reason === "stopped" ? s.reason : "done"), s.name + where, sid)
@@ -3717,12 +3717,14 @@ PlasmoidItem {
     // A chat beside the popup (ChatPane.qml): its conversation, a box to
     // reply, what it asks for, and its review (pane.py). A click on a chat's
     // name opens it there (or, with clickOpensPane off, the chat's window).
+    // Each chat has a window of its own, as it has a tab in VS Code: another
+    // chat opens in another window, the one before stays open, and a chat
+    // whose window is open already brings it forward.
 
-    property var paneChat: null   // {chatId, sessionId, profileDir, host, name, cwd, tab}
-    // the chat's row in the status now: a listed session, else a recent chat (or null)
-    readonly property var paneRow: {
-        const c = paneChat
-        if (!c)
+    // c's row in the status now: a listed session, else a recent chat (or null).
+    // c: a pane's chat {chatId, sessionId, profileDir, host, name, cwd, tab}
+    function paneRowOf(c) {
+        if (!c || !c.chatId)
             return null
         const groupList = hostGroups(c.host || "")
         let found = null
@@ -3739,46 +3741,83 @@ PlasmoidItem {
         return found
     }
 
-    // s: a session row or a recent chat (sessionId is its chat then); tab: "chat" or "review";
-    // then: what the pane does once it shows it ({draft}, {denying}, {typing}: paneAct).
-    // A chat has one window: open in another copy's pane (the panel's, a
-    // desktop's), that one comes forward instead, and does it; open in this
-    // one's, it comes forward (ChatPane: onPaneChatChanged)
-    function openPane(s, host, tab, then) {
-        forgetFinished(petKeyOf(s, host))
-        const holder = Hub.paneHolder((host || "") + "|" + (s.chatId || s.sessionId), instanceId)
-        if (holder) {
-            Hub.paneRaise(holder, tab || "chat", then || null)
-            return
-        }
-        paneChat = { chatId: s.chatId || s.sessionId, sessionId: s.sessionId || "", profileDir: s.profileDir || "",
-                     host: host || "", name: s.name || "", cwd: s.cwd || "", tab: tab || "chat", at: Date.now(), key: s.key || "" }
-        if (paneLoader.item && !paneLoader.item.visible)
-            placePane()   // (closed before: shown again; the first time, once it's made)
-        paneMade = true
-        paneAct(then)
+    // This copy's chat windows: the open ones (a chat set, shown or about to
+    // be) and the closed ones, hidden, kept for the next chat to open in
+    // without being made again (made the first time one is needed: ChatPane.qml
+    // isn't read before)
+    property var paneWindows: []
+    property var paneComponent: null
+    property var paneDrafts: ({})   // what you were typing to each chat ("host\nchatId" -> text), any window's
+    function paneKeyOf(c) {
+        return c && c.chatId ? (c.host || "") + "|" + c.chatId : ""
     }
-    function paneAct(then) {
-        if (!then)
-            return
-        if (then.draft !== undefined)
-            paneDraft = then.draft
-        if (then.denying)
-            paneDenying = true
-        if (then.typing)
-            paneTyping = true
+    function paneWindowOf(key) {   // (this copy's open window for that chat, or null)
+        return key ? paneWindows.find(w => paneKeyOf(w.chat) === key) || null : null
+    }
+    // (an open pane shows the chat, petKeyOf: you're looking, or about to)
+    function paneShows(sid) {
+        return paneWindows.some(w => !!w.chat.chatId && petKeyOf(w.chat, w.chat.host) === sid)
+    }
+    // (which chats this copy's windows show: one opened from another copy comes forward here)
+    function paneListChanged() {
+        Hub.paneShown(instanceId, paneWindows.map(w => paneKeyOf(w.chat)).filter(k => k !== ""))
     }
 
-    function closePane() {
-        paneChat = null
+    // s: a session row or a recent chat (sessionId is its chat then); tab: "chat" or "review";
+    // then: what the pane does once it shows it ({draft}, {denying}, {typing}: ChatPane act).
+    // A chat has one window: open in another copy's (the panel's, a
+    // desktop's), that one comes forward instead, and does it; open in this
+    // one's, it comes forward (ChatPane forward). Another chat opens in a
+    // window of its own: a closed one (the one this chat had last, else any),
+    // else a new one
+    function openPane(s, host, tab, then) {
+        forgetFinished(petKeyOf(s, host))
+        const chatId = s.chatId || s.sessionId
+        const key = (host || "") + "|" + chatId
+        const holder = Hub.paneHolder(key, instanceId)
+        if (holder) {
+            Hub.paneRaise(holder, key, tab || "chat", then || null)
+            return
+        }
+        const open = paneWindowOf(key)
+        if (open) {
+            open.forward(tab || "chat")
+            open.act(then)
+            return
+        }
+        const chat = { chatId: chatId, sessionId: s.sessionId || "", profileDir: s.profileDir || "",
+                       host: host || "", name: s.name || "", cwd: s.cwd || "", tab: tab || "chat", at: Date.now(), key: s.key || "" }
+        let win = paneWindows.find(w => !w.chat.chatId && w.lastKey === key) || paneWindows.find(w => !w.chat.chatId)
+        if (win) {
+            win.chat = chat
+        } else {
+            if (!paneComponent)
+                paneComponent = Qt.createComponent(Qt.resolvedUrl("ChatPane.qml"))
+            win = paneComponent.status === Component.Ready ? paneComponent.createObject(root, { chat: chat }) : null
+            if (!win) {
+                console.warn("talpy-den: the chat pane couldn't be made:", paneComponent.errorString())
+                return
+            }
+            paneWindows = paneWindows.concat([win])
+        }
+        paneListChanged()
+        placePane(win)
+        win.act(then)
     }
-    onPaneChatChanged: Hub.paneShown(instanceId, paneChat ? (paneChat.host || "") + "|" + paneChat.chatId : "")
+
+    // Closed (ChatPane onClosing): hidden, and free for the next chat
+    function paneClosed(win) {
+        win.lastKey = paneKeyOf(win.chat)
+        win.chat = ({})
+        paneListChanged()
+    }
     Connections {
         target: Hub
-        function onPaneRaise(id, tab, then) {   // (this copy's pane shows the chat another copy opened)
-            if (id === root.instanceId && root.paneChat) {
-                root.paneChat = Object.assign({}, root.paneChat, { tab: tab, at: Date.now() })
-                root.paneAct(then)
+        function onPaneRaise(id, key, tab, then) {   // (this copy's window shows the chat another copy opened)
+            const win = id === root.instanceId ? root.paneWindowOf(key) : null
+            if (win) {
+                win.forward(tab)
+                win.act(then)
             }
         }
     }
@@ -3805,46 +3844,14 @@ PlasmoidItem {
         }
     }
 
-    // Its window is made the first time it opens and kept, hidden, when it's
-    // closed: it opens again without being made again
-    property bool paneMade: false
-    Loader {
-        id: paneLoader
-        active: root.paneMade
-        source: "ChatPane.qml"
-        onLoaded: root.placePane()
-    }
-
     // It opens as any window does: whole, where it goes, with only KWin's
     // animation. Beside the popup, on the side with more room, KWin puts it
     // as it appears (jump.py --place-window, asked before it's shown: else it
     // shows where KWin puts new windows first, then jumps). It's shown once
     // KWin is ready and its conversation is read: at its end, not "Reading
     // the chat…" first. A read that takes longer (an SSH host's) isn't
-    // waited for after 400 ms, KWin after a second.
-    property string paneAsk: ""   // (the --place-window command it waits for)
-    property bool paneReading: false   // (its conversation is waited for)
-    Timer {
-        id: paneReadTimer
-        interval: 400
-        onTriggered: {
-            root.paneReading = false
-            root.showPane()
-        }
-    }
-    Timer {
-        id: paneTimer
-        interval: 1000
-        onTriggered: {
-            root.paneAsk = ""
-            root.showPane()
-        }
-    }
-    Connections {
-        target: paneLoader.item
-        function onLoadedChanged() { root.showPane() }
-        function onLoadErrorChanged() { root.showPane() }
-    }
+    // waited for after 400 ms, KWin after a second (ChatPane: placeAsk,
+    // placeReading and their timers; each window waits for its own).
 
     // [x, y, width, height] of the pane beside the popup, on the side with more
     // room, as tall as the popup; null while the popup isn't shown
@@ -3863,32 +3870,29 @@ PlasmoidItem {
         return [Math.round(x), Math.round(Math.max(sy, Math.min(y, sy + sh - height))), width, height]
     }
 
-    function placePane() {
-        const win = paneLoader.item
+    function placePane(win) {
         const geometry = paneGeometry(win)
-        paneReading = true
-        paneReadTimer.restart()
-        paneAsk = ""
+        let ask = ""
         if (geometry) {
             // (at the size it'll have beside the popup from the start: KWin only moves it there)
             win.width = geometry[2]
             win.height = geometry[3]
-            // (its title, with * for the chat's name: that can change before it shows)
-            paneAsk = "python3 -I " + shellQuote(codeDir + "jump.py") + " --place-window "
-                      + shellQuote(i18nc("window title: a chat's name", "%1 — Talpy Chat", "*")) + " " + geometry.join(",")
-                      + " # " + Date.now()
-            placer.connectSource(paneAsk)
-            paneTimer.restart()
+            // (its title, with * for the chat's name: that can change before it shows. The
+            // other chats' windows, open, are left where they are: KWin places only one appearing)
+            ask = "python3 -I " + shellQuote(codeDir + "jump.py") + " --place-window "
+                  + shellQuote(i18nc("window title: a chat's name", "%1 — Talpy Chat", "*")) + " " + geometry.join(",")
+                  + " # " + Date.now()
         }
-        showPane()
+        win.placing(ask)
+        if (ask)
+            placer.connectSource(ask)
+        showPane(win)
     }
 
-    function showPane() {
-        const win = paneLoader.item
-        if (!win || win.visible || !paneChat || paneAsk !== "" || (paneReading && !win.loaded && win.loadError === ""))
+    function showPane(win) {
+        if (!win || win.visible || !win.chat.chatId || win.placeAsk !== "" || (win.placeReading && !win.loaded && win.loadError === ""))
             return
-        paneReadTimer.stop()
-        paneTimer.stop()
+        win.placing(null)
         win.visible = true
         win.opened()
     }
@@ -3897,9 +3901,10 @@ PlasmoidItem {
         id: placer
         onNewData: (source, data) => {
             disconnectSource(source)
-            if (source === root.paneAsk) {
-                root.paneAsk = ""
-                root.showPane()
+            const win = root.paneWindows.find(w => w.placeAsk === source)
+            if (win) {
+                win.placeAsk = ""
+                root.showPane(win)
             }
         }
     }
@@ -3990,7 +3995,6 @@ PlasmoidItem {
             return
         openPane(s, host, "chat", { typing: true })
     }
-    property bool paneTyping: false   // (the pane readies its question's own-words field)
 
     // Deny with a note, from a notification: the chat's pane, its note field ready
     function denyWithNote(s, host) {
@@ -3998,7 +4002,6 @@ PlasmoidItem {
             return
         openPane(s, host, "chat", { denying: true })
     }
-    property bool paneDenying: false   // (the pane opens its ask's note field)
 
     // A reply from a notification: sent as the chat takes one; one in a
     // terminal that takes no text opens the pane with it
@@ -4052,7 +4055,6 @@ PlasmoidItem {
                 root.pollHost(asked.host)   // (what it asks now there, as the pane does)
         }
     }
-    property string paneDraft: ""   // (a reply the pane takes into its box)
 
     // ---------------------------------------------------------------- opening a chat by its id
     // A chat found by the search, or the one that made a plan: its row when
@@ -4930,11 +4932,11 @@ PlasmoidItem {
 
     // A picture pasted into the task or into a reply in the chat pane
     // (jump.py --paste-image saves the clipboard's): the box it's for (target
-    // "task" or "pane") puts it in where you are typing. For an SSH host's
+    // "task", or a chat window's "pane:host|chatId") puts it in where you are typing. For an SSH host's
     // chat it's copied there first, once you say so (remote.py --put-image):
     // pictureOffer is the one that box asks about.
     signal imagePasted(string path, string target)
-    signal paneNote(string message)   // (why a picture didn't come, said in the pane: the popup may be closed)
+    signal paneNote(string target, string message)   // (why a picture didn't come, said in that pane: the popup may be closed)
     property var pasteFor: ({})   // a paste's command: { host ("": here), target }
     property var pictureOffer: null   // { host, path, target }
     property string pictureCopyingTo: ""
@@ -4972,8 +4974,8 @@ PlasmoidItem {
             const result = root.helperResult(data)
             if (result.ok)
                 root.attachFiles(result.paths || [], pick.host, pick.target)
-            else if (pick.target === "pane")
-                root.paneNote(result.message || "")
+            else if (pick.target.indexOf("pane:") === 0)
+                root.paneNote(pick.target, result.message || "")
         }
     }
     function attachFiles(paths, host, target) {
@@ -5002,8 +5004,8 @@ PlasmoidItem {
                 if (paste.host) {
                     root.actionError = i18n("Only pictures go to %1's chat (copied there): that file is on this computer", hostLabel(paste.host))
                     actionErrorTimer.restart()
-                    if (paste.target === "pane")
-                        root.paneNote(root.actionError)
+                    if (paste.target.indexOf("pane:") === 0)
+                        root.paneNote(paste.target, root.actionError)
                 } else {
                     root.fileAttached(result.path, paste.target)
                 }
@@ -5011,8 +5013,8 @@ PlasmoidItem {
                 if (result.message !== "No screenshot taken") {   // (you cancelled it)
                     root.actionError = result.message
                     actionErrorTimer.restart()
-                    if (paste.target === "pane")
-                        root.paneNote(result.message)
+                    if (paste.target.indexOf("pane:") === 0)
+                        root.paneNote(paste.target, result.message)
                 }
             } else if (paste.host) {
                 root.pictureOffer = { host: paste.host, path: result.path, target: paste.target }
@@ -5032,8 +5034,8 @@ PlasmoidItem {
             } else {
                 root.actionError = i18n("Couldn't copy the picture to %1: %2", root.pictureCopyingTo, result.message)
                 actionErrorTimer.restart()
-                if (root.pictureCopyTarget === "pane")
-                    root.paneNote(root.actionError)
+                if (root.pictureCopyTarget.indexOf("pane:") === 0)
+                    root.paneNote(root.pictureCopyTarget, root.actionError)
             }
             root.pictureCopyingTo = ""
         }
