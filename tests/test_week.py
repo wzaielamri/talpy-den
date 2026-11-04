@@ -1150,7 +1150,7 @@ class LimitHistoryTests(Home):
         self.history()
         self.assertTrue((self.cache_root / cs.USAGE_PAST_FILE).exists())
         (self.cache_root / cs.USAGE_PAST_FILE).unlink()
-        cs.write_json_atomic(self.cache_root / cs.HISTORY_SETTING_FILE, {"keep": False})
+        cs.write_json_atomic(cs.history_file(self.cache_root), {"keep": False})
         self.history()
         self.assertFalse((self.cache_root / cs.USAGE_PAST_FILE).exists())  # (the history off: none kept)
 

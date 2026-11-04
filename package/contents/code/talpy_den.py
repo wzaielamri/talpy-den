@@ -8257,16 +8257,40 @@ USAGE_PAST_STEP = {"five_hour": 5}  # percent; 1 in the weekly windows
 HISTORY_SETTING_FILE = "history.json"
 
 
+def history_file(cache_root):
+    """history.json, in the state folder (state_dir): it reaches the SSH hosts
+    and containers, which delete their plan's windows by it, so what's in the
+    cache mustn't decide it. One an older version kept in the cache moves
+    there the first time (.moved-history notes it, as move_to_state does)."""
+    state = state_dir(cache_root)
+    path = state / HISTORY_SETTING_FILE
+    mark = state / ".moved-history"
+    if not os.path.exists(mark):
+        old = Path(cache_root) / HISTORY_SETTING_FILE
+        try:
+            private_dir(state)
+            if os.path.lexists(old):
+                if not os.path.lexists(path):
+                    data = read_plain(old)  # (a plain file only, as ours is)
+                    if data is not None:
+                        write_atomic(path, data, 0o600, new=True)
+                os.unlink(old)
+            os.close(os.open(str(mark), os.O_CREAT | os.O_WRONLY, 0o600))
+        except OSError:
+            pass
+    return path
+
+
 def history_kept(cache_root):
     """Does the Recap keep its history (the setting is on unless turned off)?"""
-    data = read_json(cache_root / HISTORY_SETTING_FILE)
+    data = read_json(history_file(cache_root))
     return not (isinstance(data, dict) and data.get("keep") is False)
 
 
 def history_setting(cache_root):
     """(keep, since): history_kept, and when it was last turned on or off or
     deleted (ms; None: never), what came before going with it."""
-    data = read_json(cache_root / HISTORY_SETTING_FILE)
+    data = read_json(history_file(cache_root))
     data = data if isinstance(data, dict) else {}
     since = data.get("since")
     return data.get("keep") is not False, since if isinstance(since, int) and since > 0 else None

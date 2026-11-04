@@ -1945,7 +1945,7 @@ class UsageHistoryTests(Fixture):
     def test_none_kept_with_the_history_off(self):
         gid = self.group(self.collect(with_tokens=False), "work")["id"]
         now_ms = int(self.now * 1000)
-        write(self.cache / cs.HISTORY_SETTING_FILE, {"keep": False})
+        write(cs.history_file(self.cache), {"keep": False})
         write(self.cache / cs.USAGE_PAST_FILE, {"version": 1, "windows": []})
         write(self.cache / "usage.json", {"version": 1, "groups": {gid: {"five_hour": {
             "resetsAt": now_ms - 600_000, "points": [[now_ms - 3600_000, 40]]}}}})
@@ -1953,6 +1953,16 @@ class UsageHistoryTests(Fixture):
         self.collect(with_tokens=False)
         self.assertFalse((self.cache / cs.USAGE_PAST_FILE).exists())
         self.assertEqual(self.history(), [1])
+
+    def test_the_history_setting_is_kept_in_the_state_folder(self):
+        # an older version's history.json in the cache moves there once; one put in the cache later counts for nothing
+        write(self.cache / cs.HISTORY_SETTING_FILE, {"keep": False, "since": 5})
+        self.assertEqual(cs.history_setting(self.cache), (False, 5))
+        self.assertFalse((self.cache / cs.HISTORY_SETTING_FILE).exists())
+        self.assertEqual(cs.history_file(self.cache).parent, cs.state_dir(self.cache))
+        cs.write_json_atomic(cs.history_file(self.cache), {"keep": True})
+        write(self.cache / cs.HISTORY_SETTING_FILE, {"keep": False})
+        self.assertTrue(cs.history_kept(self.cache))
 
     def test_the_plan_with_its_tier(self):
         for plan, account, detail in (

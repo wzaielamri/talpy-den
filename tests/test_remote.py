@@ -328,7 +328,7 @@ class StatusTests(FakeSSH):
     def test_the_hosts_plan_windows_follow_the_history_setting_here(self):
         there = self.fake_home / ".cache/talpy-den" / cs.USAGE_PAST_FILE
         there.parent.mkdir(parents=True, exist_ok=True)
-        here = cs.cache_dir(Path.home()) / cs.HISTORY_SETTING_FILE
+        here = cs.history_file(cs.cache_dir(Path.home()))
         here.parent.mkdir(parents=True, exist_ok=True)
         # turned off here; deleted here (Delete Saved History…) while the setting is on
         for setting, flag in (({"keep": False}, "--no-history"),
