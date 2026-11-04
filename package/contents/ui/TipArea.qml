@@ -38,6 +38,7 @@ Item {
                 parent: tip
                 visible: tip.inPane && tip.active && hover.hovered && (tip.mainText !== "" || tip.subText !== "")
                 delay: Kirigami.Units.toolTipDelay
+                textFormat: tip.textFormat   // (its label guesses rich text: a plan title's <img src=…> would be markup)
                 text: tip.subText ? tip.mainText + "\n" + tip.subText : tip.mainText
             }
         }

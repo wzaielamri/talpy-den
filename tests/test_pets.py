@@ -1670,7 +1670,7 @@ class PlainTextTests(unittest.TestCase):
                 continue
             lines = path.read_text().split("\n")
             for i, line in enumerate(lines):
-                m = re.match(r"(\s*)(PlasmaComponents3\.Label|Text|Kirigami\.Heading|PlasmaCore\.ToolTipArea)\s*\{\s*$", line)
+                m = re.match(r"(\s*)(PlasmaComponents3\.Label|Text|Kirigami\.Heading|PlasmaCore\.ToolTipArea|PlasmaComponents3\.ToolTip)\s*\{\s*$", line)
                 if not m:
                     continue
                 own, depth = [], 0
