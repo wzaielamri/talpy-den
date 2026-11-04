@@ -8313,8 +8313,11 @@ def usage_forecast(window, points, now_ms):
 # minutes, 5 unless you set it; 0: never), a check has Claude Code fetch them,
 # the way /usage does: `claude -p /usage` uses no tokens and saves no chat.
 # Its hooks are off (the live hook would note it as a chat), and it runs in a
-# folder of its own, whose session isn't listed (live_row). At most once per
-# interval per profile, whichever copy of the widget checks (usage-check.json).
+# folder of its own, whose session isn't listed (live_row), reading only your
+# own settings: none of a folder's (-p skips the trust question, so settings
+# put there, an apiKeyHelper or env, would apply), and no MCP server. At most
+# once per interval per profile, whichever copy of the widget checks
+# (usage-check.json).
 
 USAGE_REFRESH_MINUTES = 5  # the interval unless you set one
 USAGE_REFRESH_MAX_MINUTES = 60
@@ -8447,8 +8450,8 @@ def usage_refresh_command(profile, home, claude, folder):
     limit = [timeout, "-k", "10", str(USAGE_REFRESH_LIMIT)] if timeout else []
     projects = profile.path / "projects" / mangle(str(folder))
     argv = ["/bin/sh", "-c", USAGE_CHECK_SCRIPT, "sh", str(projects), *limit,
-            claude, "-p", "/usage", "--no-session-persistence", "--settings", USAGE_CHECK_SETTINGS,
-            "--output-format", "json"]
+            claude, "-p", "/usage", "--no-session-persistence", "--setting-sources", "user", "--strict-mcp-config",
+            "--settings", USAGE_CHECK_SETTINGS, "--output-format", "json"]
     return argv, env
 
 

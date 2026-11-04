@@ -2187,8 +2187,8 @@ class UsageRefreshTests(UsageFetchFixture):
         self.assertEqual(argv, [
             "/bin/sh", "-c", cs.USAGE_CHECK_SCRIPT, "sh", str(self.work / "projects" / cs.mangle(str(folder))),
             *([timeout, "-k", "10", "60"] if timeout else []),
-            self.CLAUDE, "-p", "/usage", "--no-session-persistence", "--settings", '{"disableAllHooks":true}',
-            "--output-format", "json"])
+            self.CLAUDE, "-p", "/usage", "--no-session-persistence", "--setting-sources", "user", "--strict-mcp-config",
+            "--settings", '{"disableAllHooks":true}', "--output-format", "json"])
         self.assertEqual(cwd, str(folder))
         self.assertEqual(oct(folder.stat().st_mode & 0o777), "0o700")
         self.assertNotIn("CLAUDECODE", env)  # (else it would count as part of the session the widget runs in)
