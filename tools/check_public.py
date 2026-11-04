@@ -61,9 +61,15 @@ EXAMPLE_TLDS = (".example", ".invalid", ".test", ".localhost")
 # Commits a contributor made and that are published as they are: --history
 # doesn't check their author and committer (all they added still is)
 PUBLISHED_IDENTITIES = {"a993a0a8e24450b2ea6490d06f74ef04bc0bfe92", "af361e91e3e685c8e3f101fab0b7c02eab50871d"}
-# Values from ~/.ssh/config that are far too common to be personal
+# Values from ~/.ssh/config (and host names) that are far too common to be personal: account names, forges,
+# the distributions' default host names, and plain words people name a host by, which the code uses as words
+# ("lab" is this repository's own example host)
 COMMON = {"root", "git", "ubuntu", "admin", "user", "debian", "pi", "localhost", "github.com", "gitlab.com",
-          "bitbucket.org", "ssh.github.com", "ssh.dev.azure.com", "vs-ssh.visualstudio.com"}
+          "bitbucket.org", "ssh.github.com", "ssh.dev.azure.com", "vs-ssh.visualstudio.com",
+          "fedora", "archlinux", "localhost.localdomain", "raspberrypi",
+          "lab", "work", "dev", "prod", "test", "home", "server", "remote", "local", "build", "staging", "backup",
+          "desktop", "laptop", "office", "cloud", "box", "gpu", "nas", "web"}
+SCISSORS = "# ------------------------ >8 ------------------------"  # git commit -v: the diff follows it
 
 
 def mask(text):
@@ -111,6 +117,19 @@ def ssh_config_values(path, seen):
     return out
 
 
+def default_hostname():
+    """The host name the distribution gives a machine whose name was never set (os-release's DEFAULT_HOSTNAME)."""
+    for path in ("/etc/os-release", "/usr/lib/os-release"):
+        try:
+            for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("DEFAULT_HOSTNAME="):
+                    return line.split("=", 1)[1].strip().strip("\"'").lower()
+            return ""
+        except OSError:
+            pass
+    return ""
+
+
 def personal_strings():
     """Things that identify this machine or its owner; never in a public file."""
     found = set()
@@ -126,8 +145,9 @@ def personal_strings():
             found.add(home)
         try:
             name = socket.gethostname()
-            found.add(name)
-            found.add(name.split(".")[0])
+            if name.lower() != default_hostname():  # (a host name never set: the distribution's, not yours)
+                found.add(name)
+                found.add(name.split(".")[0])
         except OSError:
             pass
     found |= ssh_config_values(Path.home() / ".ssh" / "config", set())
@@ -231,7 +251,9 @@ def main(argv):
                 checker.check_identity(var, m.group(1))
     elif mode == "--message" and len(argv) == 2:
         text = Path(argv[1]).read_text(encoding="utf-8", errors="replace")
-        text = "\n".join(l for l in text.splitlines() if not l.startswith("#"))
+        lines = text.splitlines()
+        lines = lines[:lines.index(SCISSORS)] if SCISSORS in lines else lines  # (git drops what follows)
+        text = "\n".join(l for l in lines if not l.startswith("#"))
         checker.check_text("commit message", text)
     elif mode in ("--all", "--history"):
         for m in argv:
