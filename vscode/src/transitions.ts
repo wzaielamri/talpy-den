@@ -101,7 +101,7 @@ export class TransitionTracker {
   private lastOverlaps = new Map<string, Set<string>>(); // source -> pairs of rows changing the same files
   private lastStates = new Map<string, Map<string, SessionState>>();
   private turnStarts = new Map<string, Map<string, number>>();
-  private lastEnded = new Map<string, Map<string, number>>(); // the turns that ended at the last poll, told as finished: how long they took
+  private lastEnded = new Map<string, Map<string, { took: number; at: number }>>(); // the turns that ended lately (a minute, while idle or done), told as finished: how long they took, when
   private lastWaitingAlert = new Map<string, { at: number; ask: AskShown | null }>(); // a chat's last "needs input" alert, and what it asked
   private lastWindows = new Map<string, number>();
   private toldAsks = new Map<string, AskShown>(); // chats told about with Allow / Deny buttons while they wait: the prompt told
@@ -110,10 +110,10 @@ export class TransitionTracker {
     const changes: Changes = { notices: [], petEvents: [], sound: "", finished: [] };
     const next = new Map<string, SessionState>();
     const starts = new Map<string, number>();
-    const ends = new Map<string, number>();
+    const ends = new Map<string, { took: number; at: number }>();
     const before = this.lastStates.get(source);
     const startedAt = this.turnStarts.get(source) ?? new Map<string, number>();
-    const ended = this.lastEnded.get(source) ?? new Map<string, number>();
+    const ended = this.lastEnded.get(source) ?? new Map<string, { took: number; at: number }>();
     const primed = before !== undefined; // the first poll of a source only learns
     const where = host ? ` · ${hostLabel(host)}` : "";
     const queueSound = (kind: SoundKind) => {
@@ -132,13 +132,16 @@ export class TransitionTracker {
         if (s.state === "working" || s.state === "waiting") starts.set(sid, startedAt.get(sid) ?? s.since ?? nowMs);
         if (!primed) continue;
         const stop = stopOf(s);
-        const endedTook = ended.get(sid);
-        if (stop && endedTook !== undefined) {
+        const endedTurn = ended.get(sid);
+        if (stop && endedTurn) {
           // Claude writes its transcript a moment after the turn ends, so the
           // usage limit that ended it can show a poll later: it didn't finish after all
-          this.turnEnded(changes, sid, s, host, endedTook, nowMs, opts, queueSound);
+          this.turnEnded(changes, sid, s, host, endedTurn.took, nowMs, opts, queueSound);
           continue;
         }
+        // (a poll or two later too, with polls coming quickly: for a minute,
+        // while it stays idle or done)
+        if (endedTurn && (s.state === "idle" || s.state === "done") && nowMs - endedTurn.at < 60000) ends.set(sid, endedTurn);
         const asks = s.state === "waiting" && !!s.permission && (s.permission.answer === "hook" || s.permission.answer === "keys");
         if (s.state !== "waiting") this.toldAsks.delete(sid);
         const told = this.toldAsks.get(sid);
@@ -180,7 +183,7 @@ export class TransitionTracker {
           // (a background session a limit stops can say it waits for a moment first)
           const took = (s.since ?? nowMs) - (startedAt.get(sid) ?? nowMs);
           this.turnEnded(changes, sid, s, host, took, nowMs, opts, queueSound);
-          if (!stop) ends.set(sid, took);
+          if (!stop) ends.set(sid, { took, at: nowMs });
         }
       }
     }

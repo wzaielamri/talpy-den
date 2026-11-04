@@ -51,7 +51,7 @@ test("no digest for a short absence, for nothing new, or for time spent in anoth
   assert.equal(away.since, null);
 });
 
-test("chats a usage limit or the login stopped are said so, also when the limit showed a poll late", () => {
+test("chats a usage limit or the login stopped are said so, also when the limit showed a poll or two late", () => {
   const limit = { kind: "limit" as const, window: "five_hour", text: "You've hit your session limit · resets 4am (Europe/Berlin)", at: NOW };
   const login = { ...limit, kind: "login" as const, window: null, text: "Login expired" };
   const tracker = new TransitionTracker();
@@ -65,7 +65,8 @@ test("chats a usage limit or the login stopped are said so, also when the limit 
     { name: "train", state: "idle", since: later, stopped: login },
   ]);
   away.note(tracker.track("", at(false), later, undefined, OPTS), [], later);
-  away.note(tracker.track("", at(true), later + 2000, undefined, OPTS), [], later + 2000); // deploy's limit shows a poll later
+  away.note(tracker.track("", at(false), later + 1000, undefined, OPTS), [], later + 1000); // (a second poll right after: not yet)
+  away.note(tracker.track("", at(true), later + 2000, undefined, OPTS), [], later + 2000); // deploy's limit shows two polls later
   assert.deepEqual(away.back(NOW + 72 * MIN, NOW, at(true), 5 * MIN)!.lines, ["Hit the usage limit: parser, deploy", "Login expired: train"]);
 });
 
