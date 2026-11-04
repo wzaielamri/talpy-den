@@ -409,15 +409,18 @@ Rectangle {
                     }
                 }
 
-                PlasmaCore.ToolTipArea {
-                    textFormat: Text.PlainText
-                    anchors.fill: parent
-                    active: folderRow.untrusted
-                    mainText: i18n("Claude doesn't trust this folder yet")
-                    subText: folderRow.folder.short === "~"
-                             ? i18n("Claude never keeps trusting your home folder, and a background chat can't ask: start it in a terminal, or pick a project folder.")
-                             : i18n("A background chat can't ask whether you trust it: start a chat there in a terminal once and say yes.")
-                }
+                // (a tooltip drawn in the popup, not Plasma's shared tooltip
+                // window: when Plasma quits, this list can change once more
+                // and Qt then keeps its rows until the very end, and the last
+                // row that had used Plasma's tooltip window took it down after
+                // the event loop had stopped, which held plasmashell's exit
+                // for good, until systemd aborted it)
+                PlasmaComponents3.ToolTip.visible: folderRow.untrusted && folderRow.hovered
+                PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+                PlasmaComponents3.ToolTip.text: i18n("Claude doesn't trust this folder yet") + "\n"
+                    + (folderRow.folder.short === "~"
+                       ? i18n("Claude never keeps trusting your home folder, and a background chat can't ask: start it in a terminal, or pick a project folder.")
+                       : i18n("A background chat can't ask whether you trust it: start a chat there in a terminal once and say yes."))
             }
         }
 
