@@ -2154,6 +2154,7 @@ def plan_windows_of(plans, account):
 # limits but isn't here. Run only by --limits, when you unfold it.
 
 LIMITS_DAYS = cs.USAGE_PAST_DAYS
+LIMITS_LOCK_WAIT_S = 2
 LIMIT_FIVE_MIN_PCT = 50  # a 5-hour window read this full or more tells its size
 LIMIT_WEEK_MIN_PCT = 20  # (weekly readings are whole percents: one of 5% could be 4.5 or 5.5)
 LIMIT_CHANGE_PCT = 10  # a smaller difference between two weeks is noise
@@ -2625,12 +2626,20 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
         plans[cs.short_id(gid)] = next((p.plan_detail for p in members if p.plan), None)
     readings, ended = limit_readings(cache_root, profiles, now_ms, plans)
     if ended:  # (the snapshots' readings of ended windows, kept before Claude Code's cleanup takes them)
-        with cs.ScanLock(cache_root / "tokens.lock") as lock:
-            if lock.held:
-                try:
-                    cs.save_usage_past(cache_root, ended, now_ms)
-                except OSError:
-                    pass
+        # (the status checks hold the lock while they write usage-past.json
+        # too, a moment every few seconds: waited for, up to LIMITS_LOCK_WAIT_S)
+        deadline = time.time() + LIMITS_LOCK_WAIT_S
+        while True:
+            with cs.ScanLock(cache_root / "tokens.lock") as lock:
+                if lock.held:
+                    try:
+                        cs.save_usage_past(cache_root, ended, now_ms)
+                    except OSError:
+                        pass
+                    break
+            if time.time() >= deadline:
+                break
+            time.sleep(0.05)
     wanted = [a for a in accounts if (not account or a["id"] == account) and readings.get(a["id"])]
     out = {"ok": True, "generatedAt": now_ms, "since": None, "accounts": []}
     if not wanted:

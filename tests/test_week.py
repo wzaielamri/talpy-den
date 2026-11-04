@@ -1092,6 +1092,15 @@ class LimitHistoryTests(Home):
         self.assertEqual(work["windows"][0]["full"], 40)
         kept = json.loads((self.cache_root / cs.USAGE_PAST_FILE).read_text())["windows"]
         self.assertEqual([(w["key"], w["group"]) for w in kept], [("five_hour", self.gid("work"))])
+        # (kept also while a status check holds the lock a moment)
+        (self.cache_root / cs.USAGE_PAST_FILE).unlink()
+        import fcntl
+        import threading
+        fd = os.open(str(self.cache_root / "tokens.lock"), os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        threading.Timer(0.3, lambda: os.close(fd)).start()
+        self.history()
+        self.assertTrue((self.cache_root / cs.USAGE_PAST_FILE).exists())
         (self.cache_root / cs.USAGE_PAST_FILE).unlink()
         cs.write_json_atomic(self.cache_root / cs.HISTORY_SETTING_FILE, {"keep": False})
         self.history()
