@@ -2,6 +2,20 @@
 
 ## 1.18.0 (2026-11-04)
 
+### Highlights
+
+- **A month in the Recap,** and **Advanced analyses** of how your plan's limits changed, from your plan's windows now kept for 90 days (Plasma, GNOME and VS Code).
+- **The chat window feels instant:** your message shows the moment you press Enter, Claude's reply as it's written, in your terminal's font and colours; a message sent while Claude works waits 5 s with **Edit**, **Send now** and **Cancel**, and ↑ brings back the last one (Plasma and VS Code).
+- **Each chat has its own chat window**, and a reply to a background chat that asks you something answers it (Plasma; the reply also in VS Code).
+- **A chat Claude moves to the background stays the same chat:** its window, messages on their way, pet, star, Keep going and queued go-on follow it, also on SSH hosts and in containers (Plasma, GNOME and VS Code).
+- **Keep going and the queue:** one go-on at the reset, not two; it works for hidden SSH hosts and containers too; a task never starts into a usage limit (Plasma and VS Code).
+- **The Projects tab:** projects stand out, worktrees are under their repository, and plans and memories are where they belong (Plasma and VS Code).
+- **One status bar item in VS Code:** Talpy with what needs you and the default account's usage, whose hover switches accounts (VS Code).
+- **Safer:** about 30 hardening fixes: nothing in your cache runs or acts, repositories, SSH hosts and containers can no longer reach your files, run programs here or put links and markup in what you see, and Always allow says all it does (Plasma, GNOME and VS Code).
+- **About 100 fixes** from a full review of all three front ends: data that came back after Delete, a star you couldn't remove, Remove… breaking another account's links, containers named by an internal id, and more (Plasma, GNOME and VS Code).
+
+### Every change
+
 - **Plasma quits and restarts in a second again, not 40:** with a plan's *Carry it out* box (or the + box) open and the pointer once on a folder that tooltip said Claude doesn't trust yet, Plasma hung when it quit (a restart, logging out) until systemd aborted it after 40 seconds, and its crash report showed. That folder's tooltip is now drawn in the popup, as the chat window's are, and no longer holds Plasma's shared tooltip window when Plasma quits (Plasma).
 - **A month in the Recap:** **Day | Week | Month | Overall**: *Month* is your last 30 days, a row per 7 days on the timeline (*Week by week*, as *Overall*), against the 30 days before, with a trend of the 30-day stretches before it; step back 30 days at a time. Its bigger numbers fit their tiles (Plasma's shrink to fit), and its share card says *My month with Claude*. In Plasma, VS Code and GNOME.
 - **Advanced analyses in the Recap: how your plan's limits changed:** Anthropic doesn't say how much a 5-hour window or a week of a plan holds, or when that changes. A new folded section at the end of the Recap works it out from your own chats and the limit readings Talpy Den kept: for each account, under its plan with its tier (*Max 5×*, *Team · standard seat*, …), how much a full 5-hour window and a full week held at API prices, week by week, how that changed against the week before, a chart of each 5-hour window with the weeks under them (every account's on the same days), how much of the week a 5-hour window is, how long one lasts at your pace, and what that is in tokens; two plans side by side. A plan change, up or down, or a change of Anthropic's, is caught from the readings themselves (the same usage read as another share of the window, with nothing used between) and said with when and by how much; before and after are measured apart. In Plasma, VS Code and GNOME, folded until you open it, and run only then (`week.py --limits`).

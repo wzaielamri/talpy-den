@@ -37,7 +37,12 @@ class ReleaseNotesTests(unittest.TestCase):
         root_log, vscode_log = (ROOT / "CHANGELOG.md").read_text(), (ROOT / "vscode/CHANGELOG.md").read_text()
         notes = self.notes(version, root_log, vscode_log)
         self.assertLess(len(notes), LIMIT)
-        self.assertTrue(notes.startswith("## KDE Plasma and GNOME\n"))
+        if "### Highlights" in root_log.split(f"## {version}", 1)[1].split("\n## ", 1)[0]:
+            self.assertTrue(notes.startswith("## Highlights\n"))  # (only those, and links to every change)
+            self.assertIn(f"blob/v{version}/CHANGELOG.md", notes)
+            self.assertNotIn("### Every change", notes)
+        else:
+            self.assertTrue(notes.startswith("## KDE Plasma and GNOME\n"))
         self.assertIn("## Install", notes)
         self.assertIn(f"talpy-den-{version}.vsix", notes)
 

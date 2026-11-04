@@ -83,13 +83,26 @@ jobs:
         run: |
           # A CHANGELOG's entry for this version: the lines under its "## <version>" heading
           entry() { awk -v head="## $VERSION" '($0 == head || index($0, head " ") == 1) && !on { on = 1; next } /^## / && on { exit } on' "$1"; }
-          {
-            echo "## KDE Plasma and GNOME"
-            entry CHANGELOG.md
-            echo
-            echo "## VS Code"
-            entry vscode/CHANGELOG.md
-          } > notes.md
+          # its "### Highlights" part, when it has one: the page shows only that,
+          # with links to every change, so nobody scrolls through all of them
+          highlights() { entry "$1" | awk '/^### Highlights$/ { on = 1; next } /^### / && on { exit } on'; }
+          url="https://github.com/wzaielamri/talpy-den/blob/$TAG"
+          if [ -n "$(highlights CHANGELOG.md | tr -d '[:space:]')" ]; then
+            {
+              echo "## Highlights"
+              highlights CHANGELOG.md
+              echo
+              echo "**Every change:** [CHANGELOG.md]($url/CHANGELOG.md) (Plasma, GNOME and VS Code) and [vscode/CHANGELOG.md]($url/vscode/CHANGELOG.md) (VS Code's own list)."
+            } > notes.md
+          else
+            {
+              echo "## KDE Plasma and GNOME"
+              entry CHANGELOG.md
+              echo
+              echo "## VS Code"
+              entry vscode/CHANGELOG.md
+            } > notes.md
+          fi
           # GitHub takes up to 125,000 characters of notes (1.17.0 had 175,000).
           # Longer, the VS Code part becomes a link to its CHANGELOG (nearly all
           # of it is in the list above too), and longer still the list stops
