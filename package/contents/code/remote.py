@@ -994,12 +994,14 @@ TEXT_ARGS = ("--text", "--prompt", "--note", "--answers", "--message")
 def with_texts(script, args):
     """(script, args) for python3 -I - --remote on a host: with a TEXT_ARGS
     value in args, the args without those texts, and the script after a line
-    that gives it all its args there (Python 3.7's too)."""
+    that gives it all its args there (Python 3.7's too), in ASCII: before
+    3.10, Python reading its script from stdin misreads a long line of other
+    characters (a reply in Japanese: "SyntaxError: Non-UTF-8 code")."""
     texts = {i for i in range(1, len(args)) if args[i - 1] in TEXT_ARGS}
     if not texts:
         return script, args
     shown = [a for i, a in enumerate(args) if i not in texts and i + 1 not in texts]
-    return "import sys; sys.argv[1:] = %r\n" % (["--remote", *args],) + script, shown
+    return "import sys; sys.argv[1:] = %s\n" % ascii(["--remote", *args]) + script, shown
 
 
 def run_status_script(host, args):
