@@ -58,6 +58,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this._containersHere = [];    // this computer's containers (remote.py --hosts)
         this._containerNotes = [];    // an engine here that couldn't list its containers, and why
         this._hostContainers = {};    // SSH host -> {containers, notes, at} or {error} (remote.py --containers)
+        this._hostsReloading = false; // the picker's Reload waits for the lists it asked for
         this.remote = {};             // host -> {loading, ok, error, result, updatedAt}
         this._remotePolling = new Set();
         this._polling = false;
@@ -981,11 +982,23 @@ class TalpyDenIndicator extends PanelMenu.Button {
         return this.shownHosts.filter(h => !L.containerOf(h) && this.remote[h] && this.remote[h].ok);
     }
 
-    // Reload in the picker: ~/.ssh/config, this computer's containers and every connected host's
+    // ~/.ssh/config, this computer's containers and every connected host's
+    // again: resolves once they've all answered
     reloadHosts() {
-        this._loadHosts();
-        for (const host of this.connectedHosts)
-            this.loadHostContainers(host);
+        return Promise.all([this._loadHosts(), ...this.connectedHosts.map(host => this.loadHostContainers(host))]);
+    }
+
+    // Reload in the picker: it says Reloading…, greyed out, until every list
+    // it asked for has answered (each is over within a minute: ssh's own limit)
+    async reloadHostsPicker() {
+        this._hostsReloading = true;
+        this._render();
+        try {
+            await this.reloadHosts();
+        } finally {
+            this._hostsReloading = false;
+            this._render();
+        }
     }
 
     _onShowContainers() {
@@ -1621,7 +1634,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         const shown = chats ? [this._status ? {...this._status, generatedAt: 0} : null, remote]
             : [c, overall, this._status?.dismissed || 0];
         const signature = JSON.stringify([shown, this._errorText,
-            this._sshHosts, this._containersHere, this._containerNotes, this._hostContainers, this.ui, this._actionError, this._actionInfo, Math.floor(this.now / 60000),
+            this._sshHosts, this._containersHere, this._containerNotes, this._hostContainers, this._hostsReloading, this.ui, this._actionError, this._actionInfo, Math.floor(this.now / 60000),
             this.ui.tab === 'week' ? [this.week.span, this.week.back, this.week.account, this.week.busy, this.week.error, this.week.copied,
                 this.week.open, this.week.recap ? this.week.recap.generatedAt : 0] : null,
             this.ui.tab === 'perms' ? {...this.perms, data: this.perms.data ? this.perms.data.generatedAt : 0} : null,
@@ -1728,7 +1741,10 @@ class TalpyDenIndicator extends PanelMenu.Button {
                     menu.add_child(label(note, 'claude-dim claude-indent'));
             }
         }
-        menu.add_child(textButton('Reload', () => this.reloadHosts(), 'claude-menu-item', Icons.gnome.refresh));
+        const reload = textButton(this._hostsReloading ? 'Reloading…' : 'Reload', () => this.reloadHostsPicker(),
+            this._hostsReloading ? 'claude-menu-item claude-dim' : 'claude-menu-item', Icons.gnome.refresh);
+        reload.reactive = reload.can_focus = !this._hostsReloading;
+        menu.add_child(reload);
         return menu;
     }
 
