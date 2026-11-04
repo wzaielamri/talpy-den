@@ -7492,9 +7492,25 @@ def daemon_socket(profile):
     return DAEMON_TMP / f"cc-daemon-{os.getuid()}" / hashlib.sha256(value.encode()).hexdigest()[:8] / "control.sock"
 
 
+def peer_uid(sock):
+    """The user id of the process at the other end of a connected Unix
+    socket (SO_PEERCRED), or None where the system can't say."""
+    import socket
+    import struct
+    opt = getattr(socket, "SO_PEERCRED", None)
+    if opt is None:
+        return None
+    try:
+        return struct.unpack("iII", sock.getsockopt(socket.SOL_SOCKET, opt, struct.calcsize("iII")))[1]
+    except (OSError, struct.error):
+        return None
+
+
 def daemon_ask(profile, request, wait=DAEMON_WAIT):
     """The answer (a dict) of this profile's background service to request,
-    or None when no service answers."""
+    or None when no service answers. Only a service of yours is asked: the
+    socket's folder is in the shared /tmp, where another user could have
+    made it first (your message and the service's key go in the request)."""
     import socket
     path = daemon_socket(profile)
     if path is None:
@@ -7504,6 +7520,9 @@ def daemon_ask(profile, request, wait=DAEMON_WAIT):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.settimeout(wait)
             s.connect(str(path))
+            uid = peer_uid(s)
+            if (os.lstat(str(path)).st_uid if uid is None else uid) != os.getuid():
+                return None
             s.sendall((json.dumps(dict(request, proto=DAEMON_PROTO)) + "\n").encode())
             while b"\n" not in data and len(data) < DAEMON_ANSWER_MAX:
                 chunk = s.recv(65536)

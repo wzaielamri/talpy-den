@@ -1930,7 +1930,7 @@ class BackgroundServiceTests(TaskFixture):
     def test_no_service_no_key_or_no_answer_is_as_before(self):
         self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
                          (False, "Claude's background service can't be asked"))  # (no key)
-        FakeService(self, self.profile, lambda r: {"ok": False, "error": "unknown op: reply", "code": "EUNKNOWN"})
+        service = FakeService(self, self.profile, lambda r: {"ok": False, "error": "unknown op: reply", "code": "EUNKNOWN"})
         self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
                          (False, "Claude's background service didn't take it: unknown op: reply"))
         self.assertEqual(cs.reply_to_background(self.profile, "../x", "hi"), (False, "Claude's background service can't be asked"))
@@ -1938,6 +1938,16 @@ class BackgroundServiceTests(TaskFixture):
             self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
                              (False, "Claude's background service didn't answer"))
             self.assertFalse(cs.daemon_holds([self.profile], ["e3de1242"]))
+        # (a service of another user, who made that folder in /tmp first: never told your message or the key)
+        asked = len(service.requests)
+        with mock.patch.object(cs, "peer_uid", return_value=os.getuid() + 1):
+            self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
+                             (False, "Claude's background service didn't answer"))
+        self.assertEqual(len(service.requests), asked)
+        import socket
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.connect(str(service.path))
+            self.assertEqual(cs.peer_uid(s), os.getuid())
         # (where Claude puts it: /tmp/cc-daemon-<uid>/<sha256 of the CLAUDE_CONFIG_DIR it runs with>[:8])
         with mock.patch.object(cs, "service_config_dir", return_value="/home/u/.claude-work"), \
                 mock.patch.object(cs, "DAEMON_TMP", Path("/tmp")):
