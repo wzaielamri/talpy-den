@@ -1188,7 +1188,7 @@ class OutputTests(Fixture):
 
 class ContentFileTests(Fixture):
     """Files a repository or a chat can name: read only when plain files, at
-    most so much."""
+    most so much, however deep their JSON."""
 
     def test_settings_linked_to_a_device_or_a_pipe_arent_read(self):
         d = self.home / "repos/evil/.claude"
@@ -1208,6 +1208,18 @@ class ContentFileTests(Fixture):
         os.mkfifo(worktree / "gitdir/commondir")
         self.assertEqual(cs.canonical_git_root(str(worktree)), str(worktree))
         self.assertEqual(cs.main_repository(worktree), worktree)
+
+    def test_json_nested_deeper_than_python_reads_is_skipped(self):
+        deep = '{"x": ' + "[" * 200000 + "]" * 200000 + "}"
+        write(self.home / "repos/app/.claude/settings.local.json", deep)
+        self.assertIsNone(cs.read_json(self.home / "repos/app/.claude/settings.local.json"))
+        title = '{"type":"ai-title","aiTitle":"Deep one"}\n'
+        prompt = json.dumps({"type": "user", "cwd": "/tmp/x", "message": {"content": "go"}}) + "\n"
+        reply = json.dumps({"type": "assistant", "cwd": "/tmp/x", "message": {"content": [{"type": "text", "text": "ok"}]}})
+        write(self.home / ".claude-work/projects/-tmp-x/deep.jsonl", title + prompt + deep + "\n" + reply + "\n")
+        result = self.collect()
+        self.assertNotIn("recent chats", " ".join(result.get("errors") or []))
+        self.assertIn("Deep one", [c["name"] for g in result["groups"] for c in g["recent"]])
 
 
 class RecentProjectTests(Fixture):

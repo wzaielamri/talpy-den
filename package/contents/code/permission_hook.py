@@ -121,7 +121,7 @@ def remove(*paths):
 def main():
     try:
         request = json.load(sys.stdin)
-    except ValueError:
+    except (ValueError, RecursionError):
         return 0
     if not isinstance(request, dict):
         return 0

@@ -542,7 +542,7 @@ def add_plans_setting(path):
         try:
             text = raw.decode("utf-8") if raw is not None else None
             data = None if text is None else json.loads(text) if text.strip() else {}
-        except ValueError:
+        except (ValueError, RecursionError):
             data = None
         if not isinstance(data, dict):
             raise ValueError(f"{os.path.basename(path)} isn't a JSON object: left it as it is")

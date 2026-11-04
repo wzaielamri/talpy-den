@@ -247,7 +247,7 @@ def tidy(where, now):
 def main():
     try:
         event = json.load(sys.stdin)
-    except ValueError:
+    except (ValueError, RecursionError):
         return 0
     sid = event.get("session_id") if isinstance(event, dict) else None
     if not isinstance(sid, str) or not SESSION_ID.match(sid):

@@ -364,8 +364,8 @@ def read_transcript(path, rec, counted):
                 rec["offset"] += len(line)
                 try:
                     take_line(line, rec, counted)
-                except (KeyError, TypeError, ValueError, AttributeError, IndexError):
-                    continue  # an entry of a shape this doesn't know
+                except (KeyError, TypeError, ValueError, AttributeError, IndexError, RecursionError):
+                    continue  # an entry of a shape this doesn't know (or nested deeper than json reads)
     except OSError:
         pass
 

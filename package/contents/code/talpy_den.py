@@ -100,14 +100,15 @@ SETTINGS_MAX = 4 << 20  # bytes of a settings file read at most (a project's is 
 
 
 def read_json(path, limit=None):
-    """path's JSON, or None: not there, not JSON, or not a plain file of at
-    most limit bytes (read_plain: a link to a device or a pipe is never read)."""
+    """path's JSON, or None: not there, not JSON (or nested deeper than json
+    reads), or not a plain file of at most limit bytes (read_plain: a link
+    to a device or a pipe is never read)."""
     data = read_plain(path, limit)
     if data is None:
         return None
     try:
         return json.loads(data.decode("utf-8"))
-    except ValueError:  # (not UTF-8 either)
+    except (ValueError, RecursionError):  # (ValueError: not UTF-8 either)
         return None
 
 
@@ -1062,7 +1063,7 @@ def agent_task(path):
                     continue
                 try:
                     e = json.loads(line)
-                except ValueError:
+                except (ValueError, RecursionError):
                     continue
                 if not isinstance(e, dict) or e.get("type") != "user":
                     continue
@@ -1082,7 +1083,7 @@ def agent_started(path):
             for line in f:
                 try:
                     ts = to_ms(json.loads(line).get("timestamp"))
-                except (ValueError, AttributeError):
+                except (ValueError, AttributeError, RecursionError):
                     continue
                 if ts is not None:
                     return ts
@@ -1418,7 +1419,7 @@ def agent_run_markdown(path, meta, parent_name="", cwd="", home=None):
                 continue
             try:
                 e = json.loads(line)
-            except ValueError:
+            except (ValueError, RecursionError):
                 continue
             if not isinstance(e, dict) or e.get("type") not in ("user", "assistant"):
                 continue
@@ -1626,7 +1627,7 @@ def tail_entries(path, size, nbytes, more=False):
             continue
         try:
             e = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if isinstance(e, dict) and e.get("type") in kinds:
             entries.append(e)
@@ -1988,7 +1989,7 @@ def scan_named(path, end):
                 if mode or ultra:
                     try:
                         e = json.loads(line)
-                    except ValueError:
+                    except (ValueError, RecursionError):
                         continue
                     if isinstance(e, dict):
                         fold_mode(rec, e)
@@ -2022,7 +2023,7 @@ def scan_edits(path, rec, start=0, sessions=None):
                 if edits or talk or mode or ultra:
                     try:
                         e = json.loads(line)
-                    except ValueError:
+                    except (ValueError, RecursionError):
                         e = None
                     if isinstance(e, dict):
                         if edits:
@@ -2601,7 +2602,7 @@ def open_tools(path):
             continue
         try:
             e = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if not isinstance(e, dict) or e.get("isSidechain") or e.get("type") not in ("user", "assistant"):
             continue
@@ -2977,7 +2978,7 @@ def scan_tests(path, rec, start=0):
                     continue
                 try:
                     e = json.loads(line)
-                except ValueError:
+                except (ValueError, RecursionError):
                     continue
                 if isinstance(e, dict) and not e.get("isSidechain"):
                     fold_tests(rec, e)
@@ -3093,7 +3094,7 @@ def chat_folder(path):
                 continue
             try:
                 cwd = json.loads(line).get("cwd")
-            except (ValueError, AttributeError):
+            except (ValueError, AttributeError, RecursionError):
                 continue
             if isinstance(cwd, str) and cwd.startswith("/"):
                 return cwd
@@ -3116,7 +3117,7 @@ def start_folder(path):
             continue
         try:
             cwd = json.loads(line).get("cwd")
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, RecursionError):
             continue
         if isinstance(cwd, str) and cwd.startswith("/"):
             return cwd if mangle(cwd) == path.parent.name else None
@@ -3222,7 +3223,7 @@ class LinkCache:
                     if b'"continued-in"' in line or b'"stop_reason":"' in line:
                         try:
                             e = json.loads(line)
-                        except ValueError:
+                        except (ValueError, RecursionError):
                             e = None
                         if isinstance(e, dict):
                             if e.get("type") == "continued-in" and valid_id(e.get("continuedInSessionId")):
@@ -3256,7 +3257,7 @@ class LinkCache:
                 continue
             try:
                 e = json.loads(line)
-            except ValueError:
+            except (ValueError, RecursionError):
                 continue
             if isinstance(e, dict) and isinstance(e.get("uuid"), str) and e["uuid"]:
                 found = e["uuid"]
@@ -3324,7 +3325,7 @@ class LinkCache:
                         if b'"session_id"' in line:
                             try:
                                 e = json.loads(line)
-                            except ValueError:
+                            except (ValueError, RecursionError):
                                 e = None
                             sid = e.get("session_id") if isinstance(e, dict) else None
                             if valid_id(sid) and sid == own:
@@ -3925,7 +3926,7 @@ def read_chat_info(path, size):
             continue
         try:
             e = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if not isinstance(e, dict):
             continue
@@ -5422,7 +5423,7 @@ def first_cwd(path):
             continue
         try:
             e = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         cwd = e.get("cwd") if isinstance(e, dict) else None
         if isinstance(cwd, str) and cwd.startswith("/"):
@@ -5950,7 +5951,7 @@ def memory_folder(project):
                         continue
                     try:
                         e = json.loads(line)
-                    except ValueError:
+                    except (ValueError, RecursionError):
                         continue
                     cwd = e.get("cwd") if isinstance(e, dict) else None
                     if isinstance(cwd, str) and cwd.startswith("/") and mangle(cwd) == project.name:
@@ -6112,7 +6113,7 @@ def claude_plan(transcript, slug):
                     continue
                 try:
                     e = json.loads(line)
-                except ValueError:
+                except (ValueError, RecursionError):
                     continue
                 content = (e.get("message") or {}).get("content") if isinstance(e.get("message"), dict) else None
                 for c in content if isinstance(content, list) else []:
@@ -6246,7 +6247,7 @@ def history_all(profile):
     for line in lines:
         try:
             e = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if isinstance(e, dict):
             entries.append(e)
@@ -7920,7 +7921,7 @@ def history_tail(profile):
     for line in lines:
         try:
             e = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if isinstance(e, dict):
             entries.append(e)
@@ -8573,7 +8574,7 @@ def scan_transcripts(profile, cache, now):
             return
         try:
             e = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             return
         if not isinstance(e, dict) or e.get("type") != "assistant" or not isinstance(e.get("message"), dict):
             return
@@ -8733,7 +8734,7 @@ def scan_prompts(profile, rec, stats_from):
             for line in chunk[:end].splitlines():
                 try:
                     e = json.loads(line)
-                except ValueError:
+                except (ValueError, RecursionError):
                     continue
                 day = local_day(e.get("timestamp")) if isinstance(e, dict) else None
                 if day is None or day < stats_from:
@@ -9901,7 +9902,7 @@ def devcontainer_user(labels):
     (remoteUser in its devcontainer.metadata label, the last one wins), or ""."""
     try:
         metadata = json.loads((labels or {}).get("devcontainer.metadata") or "[]")
-    except ValueError:
+    except (ValueError, RecursionError):
         return ""
     if isinstance(metadata, dict):
         metadata = [metadata]
@@ -10079,7 +10080,7 @@ def engine_containers(engine, command, home):
                 for line in stdout.splitlines():
                     try:
                         c = json.loads(line)
-                    except ValueError:
+                    except (ValueError, RecursionError):
                         continue
                     if not isinstance(c, dict):
                         continue

@@ -350,7 +350,7 @@ def conversation_items(lines, pictures=None):
             continue
         try:
             e = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if not isinstance(e, dict) or e.get("isSidechain"):
             continue
@@ -1350,7 +1350,7 @@ def tool_originals(transcripts, wanted):
                     continue
                 try:
                     e = json.loads(line)
-                except ValueError:
+                except (ValueError, RecursionError):
                     continue
                 r = e.get("toolUseResult") if isinstance(e, dict) else None
                 if not isinstance(r, dict) or not isinstance(r.get("filePath"), str) or not r["filePath"].startswith("/"):
