@@ -645,9 +645,13 @@ export class Dashboard implements vscode.Disposable {
       const what = queuedWhat(t, machineStatus(this.state(), t.host)).split("\n")[0];
       if (t.afterTurn) {
         // your reply, sent as the chat's turn ended
-        if (answer.ok && answer.message && settings.notifyDone() && this.notifier.isLeader() && !this.visible)
+        if (answer.ok && answer.message && settings.notifyDone() && this.notifier.isLeader() && !this.holdingBack() && !this.visible)
           void vscode.window.showInformationMessage(noLinks(`Sent to ${t.name || "the chat"}: ${t.prompt} — ${answer.message}`));
-        else if (!answer.ok) this.setActionError(`Couldn't send your reply to ${t.name || "the chat"}: ${answer.message}`);
+        else if (!answer.ok) {
+          this.setActionError(`Couldn't send your reply to ${t.name || "the chat"}: ${answer.message}`);
+          if (this.notifier.isLeader() && !this.visible)
+            void vscode.window.showErrorMessage(noLinks(`Couldn't send your reply to ${t.name || "the chat"}: ${t.prompt} — ${answer.message}`));
+        }
       } else if (answer.waits !== undefined) {
         // a chat's go-on waits for its background commands (the queue says
         // so): told once, as it starts waiting, as the widget does
@@ -662,7 +666,7 @@ export class Dashboard implements vscode.Disposable {
           // (it ended the background commands it waited for: told whatever the settings, as it began to wait)
           this.setActionInfo(answer.message);
           if (this.notifier.isLeader() && !this.visible) void vscode.window.showInformationMessage(noLinks(answer.message));
-        } else if (settings.notifyDone() && this.notifier.isLeader())
+        } else if (settings.notifyDone() && this.notifier.isLeader() && !this.holdingBack())
           void vscode.window.showInformationMessage(noLinks(`Started on ${t.account}: ${what} — ${answer.message}${t.host ? ` · ${hostLabel(t.host)}` : ""}`));
       } else if (!answer.ok) {
         this.setActionError(`Couldn't start the queued task: ${answer.message}`);
@@ -710,11 +714,15 @@ export class Dashboard implements vscode.Disposable {
       const now = Date.now();
       this.away.tracker.note(changes, resets, now);
       this.noteUnseen(changes);
-      const holdDone = settings.awayDigest() && this.away.holding(now, settings.awayMinutes() * 60000);
-      if (!this.demo) this.notifier.handle(changes, { holdDone });
+      if (!this.demo) this.notifier.handle(changes, { holdDone: this.holdingBack(now) });
     } catch (e) {
       this.log.error(`A reaction to the new status failed: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  // You're away: what finished (and a queued task that started) waits for the digest
+  private holdingBack(now = Date.now()): boolean {
+    return settings.awayDigest() && this.away.holding(now, settings.awayMinutes() * 60000);
   }
 
   // A turn that finished while you weren't looking at the view (and that was

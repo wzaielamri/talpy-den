@@ -107,6 +107,27 @@ test("a reply after a chat's turn waits for its account's usage limit to reset, 
   }
 });
 
+// A reply queued for a chat's turn's end that fails to send is told outside
+// the view too, with what you wrote, as a queued task that fails
+test("a queued reply that couldn't be sent is notified while the view is hidden", async () => {
+  const vscode = (await import("vscode")) as unknown as typeof import("./vscode-stub");
+  const window = vscode.window as unknown as Record<string, unknown>;
+  const was = window.showErrorMessage;
+  const shown: string[] = [];
+  window.showErrorMessage = async (m: string) => (shown.push(m), undefined);
+  const backend = { action: async () => ({ ok: false, message: "its terminal is gone" }), status: async () => ({ status: null }) } as unknown as Backend;
+  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  try {
+    await dash.startQueued({ id: "q5", afterTurn: true, chat: "e3de1242", name: "fix", host: "", profile: ".claude-work", account: "work", prompt: "then run the tests" } as never);
+    assert.deepEqual(shown, ["Couldn't send your reply to fix: then run the tests — its terminal is gone"]);
+    assert.equal(dash.state().actionError, "Couldn't send your reply to fix: its terminal is gone");
+  } finally {
+    window.showErrorMessage = was;
+    dash.dispose();
+  }
+});
+
 // A task due here whose account is at its usage limit by lab's newer numbers
 // (this computer's are from the morning) waits for the reset, as the
 // account's bar says (shareUsage)
