@@ -11,11 +11,12 @@ import org.kde.kirigami as Kirigami
 // last in the line's RowLayout; its buttons are HoverButton. Not only on
 // hover: the line shows them too while one of them has the keyboard's focus
 // (focused: Tab, from the line's name), and after a press and hold with a
-// finger (held: TouchHold.qml) until the popup hides. The buttons are one
-// item (a RowLayout of them, spacing 0), made the first time they show and
-// kept then: made with every line, they made a list slow to open (each
-// button takes a millisecond or two to make, and most lines are never
-// hovered).
+// finger (held: TouchHold.qml) until the popup hides. Right before it in the
+// RowLayout goes what stands at the end (a CoveredEnd, which takes back the
+// layout's spacing before this). The buttons are one item (a RowLayout of
+// them, spacing 0), made the first time they show and kept then: made with
+// every line, they made a list slow to open (each button takes a
+// millisecond or two to make, and most lines are never hovered).
 Item {
     id: hover
 
@@ -46,7 +47,6 @@ Item {
 
     Layout.alignment: Qt.AlignTop
     Layout.preferredWidth: 0
-    Layout.leftMargin: parent && parent.spacing !== undefined ? -parent.spacing : 0
     implicitHeight: lineHeight > 0 ? lineHeight : row.implicitHeight
     z: 1
 
