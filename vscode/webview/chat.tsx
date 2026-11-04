@@ -158,6 +158,7 @@ function ChatApp() {
   // second Enter doesn't send it twice (the ref: two keys before a redraw)
   const [sending, setSending] = useState(false);
   const sendingNow = useRef(false);
+  const [unqueueAsk, setUnqueueAsk] = useState(""); // (Cancel on your message for when this turn ends: asked first, as the view's queued line)
   const answeredWith = useRef(""); // (your reply that answers what a background chat asks: out of the box once it has)
   // Yours on their way, shown after the conversation till it has them (send, pendingTaken)
   const [outgoing, setOutgoing] = useState<PendingSent[]>([]);
@@ -832,7 +833,16 @@ function ChatApp() {
           {chat?.queued ? (
             <div class="pane-queued">
               <span>Sent when this turn ends: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}</span>
-              <button type="button" class="btn secondary small" onClick={() => post({ type: "unqueue" })}><Icon name={I.cancel} tone={T.cancel} />Cancel</button>
+              <button type="button" class="btn secondary small" onClick={() => setUnqueueAsk(unqueueAsk === chat.queued!.id ? "" : chat.queued!.id)}>
+                <Icon name={I.cancel} tone={T.cancel} />Cancel
+              </button>
+            </div>
+          ) : null}
+          {chat?.queued && unqueueAsk === chat.queued.id ? (
+            <div class="confirm">
+              <span>{`Cancel your message to “${chat.name || "the chat"}”? It isn't sent, and its text is gone.`}</span>
+              <button type="button" class="btn secondary small" onClick={() => { setUnqueueAsk(""); post({ type: "unqueue" }); }}><Icon name={I.cancel} tone={T.cancel} />Cancel it</button>
+              <button type="button" class="btn secondary small" onClick={() => setUnqueueAsk("")}>Keep it</button>
             </div>
           ) : null}
           {offered.items.length ? (

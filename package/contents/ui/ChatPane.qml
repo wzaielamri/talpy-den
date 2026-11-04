@@ -50,6 +50,7 @@ Window {
     // (it asks something only its own prompt can answer: a reply waits till that's answered)
     readonly property bool replyWaits: !!permission && replyAnswers === "" && (route === "tmux" || (!!row && row.kind === "bg"))
     readonly property var queued: root.queuedMessage(chatId, host)
+    property string unqueueAsk: ""   // Cancel on it clicked: asked first (its id)
     readonly property bool reviewPending: row ? root.reviewPending(row, host) : false
     // Chat (your messages and Claude's replies), Steps (its tool calls too)
     // and Review; its screen is in its window (Open its window)
@@ -2658,8 +2659,23 @@ Window {
                         icon.name: Icons.plasma.cancel
                         icon.color: Icons.color("cancel", Kirigami.Theme)
                         text: i18n("Cancel")
-                        onClicked: root.unqueue(pane.queued)
+                        onClicked: pane.unqueueAsk = pane.unqueueAsk === pane.queued.id ? "" : pane.queued.id
                     }
+                }
+                // (asked first, as the popup's queued line: what you wrote is gone with it)
+                ConfirmLine {
+                    Layout.fillWidth: true
+                    visible: pane.queued !== null && pane.unqueueAsk === pane.queued.id
+                    text: i18n("Cancel your message to “%1”? It isn't sent, and its text is gone.",
+                               pane.queued && pane.queued.name ? pane.queued.name : pane.chatName || i18n("the chat"))
+                    confirmText: i18n("Cancel it")
+                    confirmIcon: "cancel"
+                    cancelText: i18n("Keep it")
+                    onConfirmed: {
+                        pane.unqueueAsk = ""
+                        root.unqueue(pane.queued)
+                    }
+                    onCancelled: pane.unqueueAsk = ""
                 }
                 // What it offers for what you're typing (/ commands, @ files)
                 Rectangle {
