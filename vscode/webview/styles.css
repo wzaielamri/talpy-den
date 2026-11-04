@@ -4159,12 +4159,19 @@ body.vscode-high-contrast-light .pane {
   opacity: 0.75;
 }
 
+/* each title's lines (with their Show N more) a little further in than it, under it: the
+   groups are seen at a glance (as Plasma's) */
 .project-details > .recent-list {
-  padding-left: 4px;
+  padding-left: 16px;
 }
 
 .project-details > .more-button {
-  margin-left: 4px;
+  margin-left: 16px;
+}
+
+.project-details > .focus-line {
+  width: auto;
+  margin-left: 12px;
 }
 
 /* a dot for each of a project's open chats */

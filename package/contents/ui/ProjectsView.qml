@@ -476,6 +476,10 @@ PlasmaComponents3.ScrollView {
                         readonly property int plansShown: Math.min(plans.length, root.pageSize * root.pagesShown(pageKey + "|plans"))
                         readonly property var memories: project.memories || []
                         readonly property int memoriesShown: Math.min(memories.length, root.pageSize * root.pagesShown(pageKey + "|memories"))
+                        // its titles on the name's line, and each title's lines (with their Show N more) a little
+                        // further in, under it: the groups are seen at a glance
+                        readonly property real titleIndent: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                        readonly property real lineIndent: titleIndent + Kirigami.Units.largeSpacing + Kirigami.Units.smallSpacing
                         // the lines' folder column (one for its chats, plans and memories, so their
                         // times line up), only when a line that shows is in a folder below the
                         // project's: empty on every line, it took room their names were cut short for
@@ -491,7 +495,7 @@ PlasmaComponents3.ScrollView {
                         // What goes on there now
                         SubTitle {
                             visible: card.here.length > 0
-                            Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                            Layout.leftMargin: inside.titleIndent
                             text: i18n("Active chats (%1)", card.here.length)
                         }
                         Repeater {
@@ -499,6 +503,7 @@ PlasmaComponents3.ScrollView {
                             delegate: FocusLine {
                                 required property int index
                                 Layout.fillWidth: true
+                                Layout.leftMargin: inside.lineIndent
                                 item: card.here[index] || null
                             }
                         }
@@ -506,7 +511,7 @@ PlasmaComponents3.ScrollView {
                         PlasmaComponents3.Label {
                             textFormat: Text.PlainText
                             Layout.fillWidth: true
-                            Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                            Layout.leftMargin: inside.titleIndent
                             visible: !!inside.project.recap && !!inside.project.recap.text
                             text: visible ? "“" + inside.project.recap.text + "”" : ""
                             font.italic: true
@@ -519,7 +524,7 @@ PlasmaComponents3.ScrollView {
                         // Its chats, newest first, a page at a time
                         SubTitle {
                             visible: inside.chats.length > 0
-                            Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                            Layout.leftMargin: inside.titleIndent
                             text: inside.chatsShown < inside.chats.length
                                   ? i18nc("a project's chats: how many show, of how many", "Chats (%1 of %2)", inside.chatsShown, inside.chats.length)
                                   : i18n("Chats (%1)", inside.chats.length)
@@ -528,7 +533,7 @@ PlasmaComponents3.ScrollView {
                             model: PageRows { size: inside.chatsShown }
                             delegate: RecentLine {
                                 required property int index
-                                Layout.leftMargin: Kirigami.Units.gridUnit
+                                Layout.leftMargin: inside.lineIndent
                                 chat: inside.chats[index] || root.emptyRecent
                                 group: root.groupOfProfile(chat.profileDir)
                                 accountTag: inside.tagged ? chat.account || "" : ""
@@ -537,6 +542,7 @@ PlasmaComponents3.ScrollView {
                             }
                         }
                         MoreButton {
+                            Layout.leftMargin: inside.lineIndent
                             open: true
                             listKey: inside.pageKey
                             shown: inside.chatsShown
@@ -568,7 +574,7 @@ PlasmaComponents3.ScrollView {
 
                                 SubTitle {
                                     visible: inside.plans.length > 0
-                                    Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                                    Layout.leftMargin: inside.titleIndent
                                     text: inside.plansShown < inside.plans.length
                                           ? i18nc("a project's plans: how many show, of how many", "Plans (%1 of %2)", inside.plansShown, inside.plans.length)
                                           : i18n("Plans (%1)", inside.plans.length)
@@ -577,7 +583,7 @@ PlasmaComponents3.ScrollView {
                                     model: PageRows { size: inside.plansShown }
                                     delegate: PlanLine {
                                         required property int index
-                                        Layout.leftMargin: Kirigami.Units.gridUnit
+                                        Layout.leftMargin: inside.lineIndent
                                         plan: inside.plans[index] || root.emptyPlan
                                         group: root.groupOfProfile(plan.profileDir)
                                         accountTag: inside.tagged ? plan.account || "" : ""
@@ -590,6 +596,7 @@ PlasmaComponents3.ScrollView {
                                     }
                                 }
                                 MoreButton {
+                                    Layout.leftMargin: inside.lineIndent
                                     open: true
                                     listKey: inside.pageKey + "|plans"
                                     shown: inside.plansShown
@@ -597,7 +604,7 @@ PlasmaComponents3.ScrollView {
                                 }
                                 SubTitle {
                                     visible: inside.memories.length > 0
-                                    Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                                    Layout.leftMargin: inside.titleIndent
                                     text: inside.memoriesShown < inside.memories.length
                                           ? i18nc("a project's memories: how many show, of how many", "Memories (%1 of %2)", inside.memoriesShown, inside.memories.length)
                                           : i18n("Memories (%1)", inside.memories.length)
@@ -606,7 +613,7 @@ PlasmaComponents3.ScrollView {
                                     model: PageRows { size: inside.memoriesShown }
                                     delegate: MemoryLine {
                                         required property int index
-                                        Layout.leftMargin: Kirigami.Units.gridUnit
+                                        Layout.leftMargin: inside.lineIndent
                                         memory: inside.memories[index] || root.emptyMemory
                                         accountTag: inside.tagged ? memory.account || "" : ""
                                         project: inside.project.path
@@ -614,6 +621,7 @@ PlasmaComponents3.ScrollView {
                                     }
                                 }
                                 MoreButton {
+                                    Layout.leftMargin: inside.lineIndent
                                     open: true
                                     listKey: inside.pageKey + "|memories"
                                     shown: inside.memoriesShown
