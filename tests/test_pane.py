@@ -116,6 +116,18 @@ class CompleteTests(PaneFixture):
         self.assertFalse(any("node_modules" in f for f in got["files"]))
         self.assertEqual(got["history"], ["old one", "fix it"])
 
+    def test_a_command_linked_to_a_device_or_a_pipe_isnt_read(self):
+        # (a repo can ship .claude/commands/deploy.md -> /dev/zero: reading it whole took all the memory)
+        commands, skills = self.folder / ".claude/commands", self.folder / ".claude/skills"
+        (skills / "x").mkdir(parents=True)
+        commands.mkdir(parents=True)
+        os.symlink("/dev/null", commands / "deploy.md")
+        os.mkfifo(commands / "wait.md")
+        os.mkfifo(skills / "x/SKILL.md")
+        write(commands / "test.md", "Run the tests" + "x" * 9000)
+        self.assertEqual([c["name"] for c in pane.command_files(commands, "project")], ["/test"])
+        self.assertEqual(pane.skill_dirs(skills, "project"), [])
+
     def test_a_git_projects_files_leave_out_whats_ignored(self):
         if not shutil.which("git"):
             self.skipTest("git isn't installed")

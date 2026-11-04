@@ -93,16 +93,21 @@ KNOWN_VALUES = {
 NOT_STARTED = "send a prompt to start"  # needs of a background session given no prompt yet
 RECENT_JOB_MS = 5000
 KEEP_DONE_HOURS = 24  # finished background jobs stay listed this long
+SETTINGS_MAX = 4 << 20  # bytes of a settings file read at most (a project's is its repository's: a bigger one is skipped)
 
 
 # ---------------------------------------------------------------- helpers
 
 
-def read_json(path):
+def read_json(path, limit=None):
+    """path's JSON, or None: not there, not JSON, or not a plain file of at
+    most limit bytes (read_plain: a link to a device or a pipe is never read)."""
+    data = read_plain(path, limit)
+    if data is None:
+        return None
     try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
+        return json.loads(data.decode("utf-8"))
+    except ValueError:  # (not UTF-8 either)
         return None
 
 
@@ -2312,31 +2317,32 @@ def file_size(path):
         return 0
 
 
-def read_file(path):
-    try:
-        with open(path, "rb") as f:
-            return f.read()
-    except OSError:
-        return None
+NOT_PLAIN = "something that isn't a plain file"
 
 
-def bytes_to_compare(path, limit):
+def bytes_to_compare(path, limit, head=False):
     """A file a change is shown against: (its content, "") when it's a
-    plain file of at most limit bytes (None: any size), else (None, what it
-    is: "a file of 18 MB", "something that isn't a plain file"); (None, "")
-    when there's none. (Opened without waiting, so a pipe put there is
-    never read.)"""
+    plain file of at most limit bytes (None: any size; head: a bigger one's
+    first limit bytes), else (None, what it is: "a file of 18 MB",
+    "something that isn't a plain file"); (None, "") when there's none.
+    (Opened without waiting, so a pipe put there is never read.)"""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOCTTY", 0))
-    except OSError:
+    except (OSError, ValueError):  # (ValueError: a NUL in the path)
         return None, ""
+    try:
+        st = os.fstat(fd)
+    except OSError:
+        st = None
+    if st is None or st.st_mode & 0o170000 != 0o100000:  # (stat.S_ISREG; a folder: fdopen would refuse it)
+        os.close(fd)
+        return None, "" if st is None else NOT_PLAIN
     with os.fdopen(fd, "rb") as f:
         try:
-            st = os.fstat(fd)
-            if st.st_mode & 0o170000 != 0o100000:  # (stat.S_ISREG)
-                return None, "something that isn't a plain file"
             if limit is None:
                 return f.read(), ""
+            if head:
+                return f.read(limit), ""
             data = f.read(st.st_size + 1) if st.st_size <= limit else b""  # (not a buffer of limit: sized as the file)
             if st.st_size < len(data) <= limit:  # (it grew meanwhile)
                 data += f.read(limit + 1 - len(data))
@@ -2345,6 +2351,15 @@ def bytes_to_compare(path, limit):
         if st.st_size > limit or len(data) > limit:
             return None, "a file of %d MB" % max(1, round(max(st.st_size, len(data)) / (1 << 20)))
         return data, ""
+
+
+def read_plain(path, limit=None, head=False):
+    """path's content when it's a plain file (or a link to one) of at most
+    limit bytes (None: any size; head: a bigger one's first limit bytes),
+    else None: the reader of every file a repository, a chat or a host can
+    name, so a link to a device, a pipe or a socket is never read nor
+    waited for (bytes_to_compare)."""
+    return bytes_to_compare(path, limit, head)[0]
 
 
 def text_to_compare(path):
@@ -2542,7 +2557,8 @@ def plan_view(inp):
     text = inp.get("plan") if isinstance(inp.get("plan"), str) else ""
     path = inp.get("planFilePath") if isinstance(inp.get("planFilePath"), str) else ""
     if not text.strip() and path:
-        data = read_file(path)
+        # (its start only, from a plain file: enough to tell it's longer than PLAN_CHARS)
+        data = read_plain(path, PLAN_CHARS * 4 + 4, head=True)
         text = data.decode("utf-8", "replace") if data is not None else ""
     title = ""
     for line in text.splitlines():
@@ -5381,14 +5397,12 @@ def canonical_git_root(folder):
         if os.path.isdir(git):
             return d
         if os.path.isfile(git):
-            try:
-                with open(git, encoding="utf-8") as f:
-                    line = f.read(4096).strip()
-                gitdir = os.path.join(d, line[len("gitdir:"):].strip()) if line.startswith("gitdir:") else ""
-                with open(os.path.join(gitdir, "commondir"), encoding="utf-8") as f:
-                    common = os.path.normpath(os.path.join(gitdir, f.read(4096).strip()))
-            except (OSError, ValueError):
+            line = git_line(git) or ""
+            gitdir = os.path.join(d, line[len("gitdir:"):].strip()) if line.startswith("gitdir:") else ""
+            back = git_line(os.path.join(gitdir, "commondir")) if gitdir else None
+            if back is None:
                 return d  # (a submodule, or a worktree whose repository went)
+            common = os.path.normpath(os.path.join(gitdir, back))
             return os.path.dirname(common) if os.path.basename(common) == ".git" else d
         up = os.path.dirname(d)
         if up == d:
@@ -5494,7 +5508,7 @@ class PlanDirs:
         stamp = [st.st_mtime_ns, st.st_size]
         cached = self._get("settings", path)
         if not (isinstance(cached, list) and len(cached) == 4 and cached[:2] == stamp):
-            data = read_json(Path(path))
+            data = read_json(path, SETTINGS_MAX)
             there = isinstance(data, dict) and PLANS_SETTING in data
             value = data[PLANS_SETTING] if there and isinstance(data[PLANS_SETTING], str) else None
             cached = stamp + [there, value]
@@ -6503,18 +6517,28 @@ def main_repository(root):
     for a worktree of another repository (its .git a file naming a folder in
     that one's .git/worktrees, which names it back) that repository's, else
     root itself."""
+    text = git_line(root / ".git")  # (a repository's own .git is a folder: None)
+    if not text or not text.startswith("gitdir:"):
+        return root
     try:
-        text = (root / ".git").read_text(encoding="utf-8", errors="replace").strip()
-        if not text.startswith("gitdir:"):
-            return root
         gitdir = Path(os.path.normpath(root / text[7:].strip()))
-        common = Path(os.path.normpath(gitdir / (gitdir / "commondir").read_text(encoding="utf-8").strip()))
-        back = Path(os.path.normpath(gitdir / (gitdir / "gitdir").read_text(encoding="utf-8").strip()))
+        common, back = git_line(gitdir / "commondir"), git_line(gitdir / "gitdir")
+        if common is None or back is None:
+            return root
+        common, back = Path(os.path.normpath(gitdir / common)), Path(os.path.normpath(gitdir / back))
         if gitdir.parent != common / "worktrees" or back.resolve() != root.resolve() / ".git":
             return root
         return common.parent if common.name == ".git" else common
-    except OSError:   # (a repository's own .git is a folder: IsADirectoryError)
+    except (OSError, ValueError):  # (ValueError: a NUL in a path)
         return root
+
+
+def git_line(path):
+    """What a git file (.git, commondir, gitdir) says, from its start; None
+    when it isn't a plain file (a project unpacked from an archive can link
+    one to a device or a pipe: never read)."""
+    data = read_plain(path, 4096, head=True)
+    return data.decode("utf-8", "replace").strip() if data is not None else None
 
 
 def folder_trusted(profile, folder, home=None, trusted=None):

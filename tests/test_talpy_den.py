@@ -1186,6 +1186,30 @@ class OutputTests(Fixture):
         self.assertTrue(list((data / "talpy-den/pycache").rglob("talpy_den.*.pyc")))
 
 
+class ContentFileTests(Fixture):
+    """Files a repository or a chat can name: read only when plain files, at
+    most so much."""
+
+    def test_settings_linked_to_a_device_or_a_pipe_arent_read(self):
+        d = self.home / "repos/evil/.claude"
+        d.mkdir(parents=True)
+        os.symlink("/dev/null", d / "settings.json")  # (/dev/zero in the proof: no test of that here, it would take the memory)
+        os.mkfifo(d / "settings.local.json")
+        dirs = cs.PlanDirs(self.cache / "plan-dirs.json", save=False)
+        self.assertEqual([dirs.setting(str(d / n)) for n in ("settings.json", "settings.local.json")], [(False, None)] * 2)
+
+    def test_a_git_file_that_is_a_pipe_isnt_read(self):
+        proj, worktree = self.home / "Downloads/proj", self.home / "Downloads/wt"
+        proj.mkdir(parents=True)
+        os.mkfifo(proj / ".git")
+        self.assertEqual(cs.main_repository(proj), proj)
+        (worktree / "gitdir").mkdir(parents=True)
+        write(worktree / ".git", "gitdir: gitdir\n")
+        os.mkfifo(worktree / "gitdir/commondir")
+        self.assertEqual(cs.canonical_git_root(str(worktree)), str(worktree))
+        self.assertEqual(cs.main_repository(worktree), worktree)
+
+
 class RecentProjectTests(Fixture):
     def test_newest_first_skipping_gone_and_scratch_folders(self):
         real_a, real_b = self.home / "repos/a", self.home / "repos/b"

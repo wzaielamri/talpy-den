@@ -1664,7 +1664,7 @@ def rule_state(kind, value, project, home, added, accounts=None, profiles=None):
     profiles = cs.discover_profiles(home) if profiles is None else profiles
     files = settings_paths(project) + [p.real / "settings.json" for p in profiles
                                        if accounts is None or p.key in accounts]
-    return "allowed" if any(in_settings(cs.read_json(f), kind, value) for f in files) else "new"
+    return "allowed" if any(in_settings(cs.read_json(f, cs.SETTINGS_MAX), kind, value) for f in files) else "new"
 
 
 def rule_title(kind, value, project, home):
@@ -1776,7 +1776,7 @@ def allow_rule(home, cache_root, kind, value, project):
     linked = cs.linked_settings(path, project, home)
     if linked:
         return False, linked, None
-    data = cs.read_json(path) if path.exists() else {}
+    data = cs.read_json(path, cs.SETTINGS_MAX) if path.exists() else {}
     if not isinstance(data, dict):
         return False, "%s isn't JSON Talpy Den can change: leave it as it is" % tilde(path, home), None
     perms = data.get("permissions")
@@ -1946,7 +1946,7 @@ def granted_rules(home, folders, profiles, added=()):
         if real in seen or not os.path.isfile(real):
             return
         seen.add(real)
-        data = cs.read_json(real)
+        data = cs.read_json(real, cs.SETTINGS_MAX)
         if not isinstance(data, dict):
             return
         perms = data.get("permissions") if isinstance(data.get("permissions"), dict) else {}

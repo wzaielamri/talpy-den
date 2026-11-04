@@ -538,10 +538,10 @@ def add_plans_setting(path):
     The file itself: never what a link there points to (move_plan refuses one)."""
     data, there = {}, os.path.isfile(path)
     if there:
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
+        raw = cs.read_plain(path, cs.SETTINGS_MAX)  # (the repository's file: read as one, at most that much)
         try:
-            data = json.loads(text) if text.strip() else {}
+            text = raw.decode("utf-8") if raw is not None else None
+            data = None if text is None else json.loads(text) if text.strip() else {}
         except ValueError:
             data = None
         if not isinstance(data, dict):

@@ -748,10 +748,10 @@ def command_files(folder, scope):
     except OSError:
         return out
     for f in files:
-        try:
-            meta, first = front_matter(f.read_text(encoding="utf-8", errors="replace")[:4000])
-        except OSError:
+        head = cs.read_plain(f, 4000, head=True)  # (only its start: a plain file, a repository's link to a device isn't read)
+        if head is None:
             continue
+        meta, first = front_matter(head.decode("utf-8", "replace"))
         name = ":".join(f.relative_to(folder).with_suffix("").parts)
         out.append({"name": "/" + name, "about": cs.short_text(meta.get("description") or first, 100), "kind": scope})
     return out
@@ -765,10 +765,10 @@ def skill_dirs(folder, scope):
     except OSError:
         return out
     for d in dirs:
-        try:
-            meta, first = front_matter((d / "SKILL.md").read_text(encoding="utf-8", errors="replace")[:4000])
-        except OSError:
+        head = cs.read_plain(d / "SKILL.md", 4000, head=True)
+        if head is None:
             continue
+        meta, first = front_matter(head.decode("utf-8", "replace"))
         out.append({"name": "/" + (meta.get("name") or d.name), "about": cs.short_text(meta.get("description") or first, 100),
                     "kind": scope + " skill"})
     return out
