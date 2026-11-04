@@ -122,6 +122,10 @@ for cfg in [home / ".claude", *sorted(home.glob(".claude-*"))]:
         path = Path(os.path.expanduser(os.path.expandvars(word)))  # ~/…, $HOME/… and ${HOME}/…
         if path.is_absolute() and path.is_file() and shell_script(path) and str(path.resolve()) not in found:
             found.append(str(path.resolve()))
+        # (VS Code's wrapper, which has the snippet: the command after it is the
+        # status line it wraps, one the snippet couldn't be added to)
+        if path.name == "statusline.sh" and path.parent.name in ("talpy-den", "claude-status"):
+            break
 for path in found:
     print(path)
 EOF

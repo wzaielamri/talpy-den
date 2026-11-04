@@ -71,6 +71,19 @@ class InstallTests(unittest.TestCase):
         self.install()
         self.assertIn("# >>> talpy-den >>>", (self.home / ".claude/statusline").read_text())
 
+    def test_the_script_vs_codes_wrapper_runs_is_left_alone(self):
+        wrapped = self.home / ".claude/statusline"
+        wrapped.parent.mkdir(parents=True)
+        wrapped.write_text("#!/bin/bash\ninput=$(cat)\necho ok\n")
+        wrapper = self.home / ".local/share/talpy-den/statusline.sh"
+        wrapper.parent.mkdir(parents=True)
+        wrapper.write_text("#!/usr/bin/env bash\ninput=$(cat)\n# >>> talpy-den >>>\n# <<< talpy-den <<<\n")
+        (self.home / ".claude/settings.json").write_text(json.dumps(
+            {"statusLine": {"command": "%s '~/.claude/statusline'" % wrapper}}))
+        self.install()
+        self.assertEqual(wrapper.read_text().count("# >>> talpy-den >>>"), 1)
+        self.assertNotIn("talpy-den", wrapped.read_text())
+
     def test_a_line_that_goes_on_isnt_the_place(self):
         script = self.statusline("~/.claude/statusline.sh", "#!/bin/sh\ninput=$(cat) && echo \"$input\"\n")
         out = self.install()
