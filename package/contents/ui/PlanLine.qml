@@ -228,7 +228,9 @@ Kirigami.Icon {
                         textFormat: Text.PlainText
                         anchors.fill: parent
                         mainText: i18n("Edit the plan")
-                        subText: planLine.remoteHost
+                        subText: root.isContainer(planLine.remoteHost)
+                                 ? i18n("Opens its Markdown file in %1 in VS Code (Dev Containers). What you change there is the plan.", root.hostLabel(planLine.remoteHost))
+                                 : planLine.remoteHost
                                  ? i18n("Opens its Markdown file on %1 in VS Code (Remote - SSH). What you change there is the plan.", root.hostLabel(planLine.remoteHost))
                                  : i18n("Opens its Markdown file in your text editor (VS Code, if the settings open plans there). What you change there is the plan.")
                     }

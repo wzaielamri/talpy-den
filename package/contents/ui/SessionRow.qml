@@ -501,7 +501,9 @@ RowLayout {
                                 onClicked: root.editPlan({ slug: row.session.plan.slug, path: row.session.plan.path,
                                                            profileDir: row.session.profileDir }, row.remoteHost)
                                 tooltipTitle: i18n("Edit the plan")
-                                tooltip: (row.remoteHost
+                                tooltip: (root.isContainer(row.remoteHost)
+                                          ? i18n("Opens its Markdown file in %1 in VS Code (Dev Containers). What you change there is the plan.", root.hostLabel(row.remoteHost))
+                                          : row.remoteHost
                                           ? i18n("Opens its Markdown file on %1 in VS Code (Remote - SSH). What you change there is the plan.", root.hostLabel(row.remoteHost))
                                           : i18n("Opens its Markdown file in your text editor (VS Code, if the settings open plans there). What you change there is the plan."))
                                          + (row.remoteHost ? "" : " " + i18n("Then send your changes to this chat (Send to Claude): Claude revises the plan."))

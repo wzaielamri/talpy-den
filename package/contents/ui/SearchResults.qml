@@ -212,6 +212,9 @@ ColumnLayout {
                     account: root.hostGroups(block.host).length > 1 ? memory.profile : ""
                     tipTitle: memory.name
                     tip: !block.host ? i18n("A memory on %1. Click to read it.", memory.account)
+                         : root.isContainer(block.host)
+                           ? (root.vscodeInstalled ? i18n("A memory on %1. Click to open its file in %2 in VS Code (Dev Containers).", memory.account, root.hostLabel(block.host))
+                                                   : i18n("A memory on %1. Needs VS Code (Dev Containers) to open a memory in %2.", memory.account, root.hostLabel(block.host)))
                          : root.vscodeInstalled ? i18n("A memory on %1. Click to open its file on %2 in VS Code (Remote - SSH).", memory.account, root.hostLabel(block.host))
                          : i18n("A memory on %1. Needs VS Code (Remote - SSH) to open a memory on %2.", memory.account, root.hostLabel(block.host))
                     enabled: !block.host || root.vscodeInstalled

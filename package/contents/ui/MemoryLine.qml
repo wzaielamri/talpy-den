@@ -73,8 +73,11 @@ ColumnLayout {
                          + (memoryLine.memory.type ? i18n("Kind: %1", memoryLine.memory.type) + "\n" : "")
                          + (memoryLine.memory.folder ? (memoryLine.memory.folderGone ? i18n("Folder: %1 (not there any more)", (memoryLine.remoteHost ? root.hostLabel(memoryLine.remoteHost) + ":" : "") + memoryLine.memory.folder)
                                                                                      : i18n("Folder: %1", (memoryLine.remoteHost ? root.hostLabel(memoryLine.remoteHost) + ":" : "") + memoryLine.memory.folder)) + "\n" : "")
-                         + (memoryLine.remoteHost ? (memoryLine.canOpen ? i18n("Click to open its file on %1 in VS Code (Remote - SSH).", root.hostLabel(memoryLine.remoteHost))
-                                                                     : i18n("Needs VS Code (Remote - SSH) to open a memory on %1.", root.hostLabel(memoryLine.remoteHost)))
+                         + (memoryLine.remoteHost ? (root.isContainer(memoryLine.remoteHost)
+                                                     ? (memoryLine.canOpen ? i18n("Click to open its file in %1 in VS Code (Dev Containers).", root.hostLabel(memoryLine.remoteHost))
+                                                                           : i18n("Needs VS Code (Dev Containers) to open a memory in %1.", root.hostLabel(memoryLine.remoteHost)))
+                                                     : memoryLine.canOpen ? i18n("Click to open its file on %1 in VS Code (Remote - SSH).", root.hostLabel(memoryLine.remoteHost))
+                                                     : i18n("Needs VS Code (Remote - SSH) to open a memory on %1.", root.hostLabel(memoryLine.remoteHost)))
                                                : i18n("Click to read it, rendered."))
 
                 MouseArea {
