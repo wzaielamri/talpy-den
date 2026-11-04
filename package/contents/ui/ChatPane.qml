@@ -523,7 +523,8 @@ Window {
         stamp = result.stamp || ""
         more = !!result.more
         lastItems = result.items || []
-        merge(withPending(lastItems))
+        const handoff = {}
+        merge(withPending(lastItems, handoff), handoff)
         loaded = true
         if (following)
             keepEnd()
@@ -539,10 +540,22 @@ Window {
         return a[1] !== b[1] || Number(a[0].split(":")[0]) >= Number(b[0].split(":")[0])
     }
 
-    // The items in place (by key): rows keep their state, the list its position
-    function merge(list) {
+    // The items in place (by key): rows keep their state, the list its position.
+    // handoff: {key: "pending-N"}, your message now in the conversation as key:
+    // its row stays, under its new key (not taken out and made again)
+    function merge(list, handoff) {
         const wanted = {}
         list.forEach(i => wanted[i.key] = true)
+        if (handoff) {
+            const shown = {}
+            for (let i = 0; i < items.count; i++)
+                shown[items.get(i).key] = i
+            for (const key in handoff) {
+                const at = shown[handoff[key]]
+                if (at !== undefined && shown[key] === undefined && wanted[key])
+                    items.setProperty(at, "key", key)
+            }
+        }
         for (let i = items.count - 1; i >= 0; i--) {
             if (!wanted[items.get(i).key])
                 items.remove(i)
@@ -1045,6 +1058,7 @@ Window {
     // (Claude takes it in at its next step), or at once with Send now; Edit
     // (or ↑ in an empty box) takes it back into its box, Remove drops it
     readonly property int holdMs: 5000
+    readonly property real queueButtonHeight: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing * 2
     property real now: 0   // (the countdowns', while one is held)
     Timer {
         interval: 250
@@ -1239,7 +1253,7 @@ Window {
     function norm(s) {
         return String(s || "").replace(/\s+/g, " ").trim()
     }
-    function withPending(list) {
+    function withPending(list, handoff) {   // (handoff: {key: "pending-N"}, each one found as key)
         const mine = pendingSent.filter(p => p.chat === chatId && p.host === (host || ""))
         if (!mine.length)
             return list
@@ -1259,8 +1273,11 @@ Window {
                 return said === want || (cut !== "" && want.indexOf(cut) === 0)
                     || (!p.host && p.state === "sent" && now - p.sentAt > 3000 && (it.at || 0) >= p.at - 2000)
             })
-            if (found)
+            if (found) {
                 claimed[String(found.key)] = true
+                if (handoff)
+                    handoff[String(found.key)] = "pending-" + p.id
+            }
             if (found || (p.state === "sent" && now - p.sentAt > 30000))
                 done[p.id] = true
         }
@@ -1273,7 +1290,8 @@ Window {
     function showPending() {
         if (loaded) {
             const following = nearEnd()
-            merge(withPending(lastItems))
+            const handoff = {}
+            merge(withPending(lastItems, handoff), handoff)
             if (following)
                 keepEnd()
         }
@@ -1973,7 +1991,11 @@ Window {
                             : kind === "you" ? Kirigami.Units.gridUnit * 1.6
                             : kind === "tool" && prev === "tool" ? Kirigami.Units.smallSpacing * 1.5
                             : Kirigami.Units.gridUnit * 0.8
-                        readonly property bool shows: kind !== "tool" || pane.listTab === "steps"
+                        readonly property bool shows: (kind !== "tool" || pane.listTab === "steps") && listed
+                        // (its row gone from the model: Qt's ListView can leave a delegate it no
+                        // longer lays out where it was, drawn over the rows now there; one shifted
+                        // by a row put in before it, then removed, was seen still drawn, twice)
+                        readonly property bool listed: index >= 0
                         width: list.width
                         implicitHeight: gap + body.implicitHeight
                         height: shows ? implicitHeight : 0
@@ -1989,7 +2011,7 @@ Window {
 
                         // Yours: a band in your accent color, after a ›. Queued (sent
                         // while Claude works), grey, as Claude's terminal shows it, with
-                        // what becomes of it: held a moment (Edit, ✕, Send now; ↑ in the
+                        // what becomes of it: held a moment (Edit, Send now, Cancel; ↑ in the
                         // box), then in Claude's queue till it takes it in at its next step
                         Component {
                             id: youItem
@@ -2091,8 +2113,10 @@ Window {
                                         font.family: pane.chatFamily
                                         font.pointSize: pane.pt * 0.85
                                     }
-                                    PlasmaComponents3.ToolButton {
+                                    // (framed thin, so they read as buttons; Cancel last, at the end)
+                                    IconTextButton {
                                         visible: youBand.held
+                                        Layout.preferredHeight: pane.queueButtonHeight
                                         icon.name: Icons.plasma.edit
                                         text: i18n("Edit")
                                         onClicked: pane.takeBack(entry.key, true)
@@ -2100,22 +2124,26 @@ Window {
                                         PlasmaComponents3.ToolTip.visible: hovered
                                         PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                                     }
-                                    PlasmaComponents3.ToolButton {
+                                    IconTextButton {
                                         visible: youBand.held
-                                        icon.name: Icons.plasma.cancel
-                                        icon.color: Icons.color("cancel", Kirigami.Theme)
-                                        display: PlasmaComponents3.AbstractButton.IconOnly
-                                        text: i18n("Remove")
-                                        onClicked: pane.takeBack(entry.key, false)
-                                        PlasmaComponents3.ToolTip.text: text
-                                        PlasmaComponents3.ToolTip.visible: hovered
-                                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
-                                    }
-                                    PlasmaComponents3.ToolButton {
-                                        visible: youBand.held
+                                        Layout.preferredHeight: pane.queueButtonHeight
                                         icon.name: Icons.plasma.send
                                         text: i18n("Send now")
                                         onClicked: pane.release(entry.key)
+                                        PlasmaComponents3.ToolTip.text: i18n("To Claude now: it takes it in at its next step")
+                                        PlasmaComponents3.ToolTip.visible: hovered
+                                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                    }
+                                    IconTextButton {
+                                        visible: youBand.held
+                                        Layout.preferredHeight: pane.queueButtonHeight
+                                        icon.name: Icons.plasma.cancel
+                                        icon.color: Icons.color("cancel", Kirigami.Theme)
+                                        text: i18n("Cancel")
+                                        onClicked: pane.takeBack(entry.key, false)
+                                        PlasmaComponents3.ToolTip.text: i18n("Don't send it")
+                                        PlasmaComponents3.ToolTip.visible: hovered
+                                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                                     }
                                 }
                                 }

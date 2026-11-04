@@ -377,7 +377,7 @@ export interface PendingSent {
 }
 
 // How long a message sent while Claude works waits, queued, to be taken back
-// (Edit, ✕, ↑ in an empty box), as ↑ does in Claude's terminal
+// (Edit, Cancel, ↑ in an empty box), as ↑ does in Claude's terminal
 export const HOLD_MS = 5000;
 
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();

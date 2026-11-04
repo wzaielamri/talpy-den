@@ -553,7 +553,7 @@ function ChatApp() {
     else post({ type: "send", text, how, afterTurn, id });
   };
   // Held: it goes to Claude when its moment is up, or at once with Send now;
-  // Edit (or ↑ in an empty box) takes it back into the box, ✕ drops it
+  // Edit (or ↑ in an empty box) takes it back into the box, Cancel drops it
   const [now, setNow] = useState(0);
   // A picture of yours, big (its thumbnail clicked): over the tab, till a click, × or Esc
   const [big, setBig] = useState<{ path: string; src: string } | null>(null);
@@ -628,7 +628,7 @@ function ChatApp() {
   const steps = useMemo(() => shownItems.map((it, i) => {
     const gap = gapOf(it.kind, shownItems[i - 1]?.kind);
     // (queued: grey, as Claude's terminal shows it, with what becomes of it: held a moment,
-    // Edit / ✕ / Send now, then in Claude's queue till it takes it in at its next step)
+    // Edit / Send now / Cancel, then in Claude's queue till it takes it in at its next step)
     const id = it.until ? Number(String(it.key).slice("pending-".length)) : 0;
     return it.kind === "you" ? (
       <div key={it.key} data-key={it.key} class={`pane-item pane-you ${gap}${it.sending ? " sending" : ""}${it.until || it.queued ? " queued" : ""}`}>
@@ -652,9 +652,10 @@ function ChatApp() {
                 <>
                   <button type="button" class="btn secondary small" title="Back in the box, to change it (↑ in an empty box too)"
                           onClick={() => takeBack(id, true)}><Icon name={I.edit} />Edit</button>
-                  <button type="button" class="btn secondary small" title="Remove" aria-label="Remove"
-                          onClick={() => takeBack(id, false)}><Icon name={I.cancel} tone={T.cancel} /></button>
-                  <button type="button" class="btn secondary small" onClick={() => release(id)}><Icon name={I.send} />Send now</button>
+                  <button type="button" class="btn secondary small" title="To Claude now: it takes it in at its next step"
+                          onClick={() => release(id)}><Icon name={I.send} />Send now</button>
+                  <button type="button" class="btn secondary small" title="Don't send it"
+                          onClick={() => takeBack(id, false)}><Icon name={I.cancel} tone={T.cancel} />Cancel</button>
                 </>
               ) : null}
             </div>
