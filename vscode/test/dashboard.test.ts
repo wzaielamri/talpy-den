@@ -107,6 +107,34 @@ test("a reply after a chat's turn waits for its account's usage limit to reset, 
   }
 });
 
+// A task due here whose account is at its usage limit by lab's newer numbers
+// (this computer's are from the morning) waits for the reset, as the
+// account's bar says (shareUsage)
+test("a due task waits for its account's usage limit by another machine's newer numbers", () => {
+  const actions: string[][] = [];
+  const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;
+  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const priv = dash as unknown as { hosts: Map<string, unknown>; startDueTasks(s: Status): void; starting: Set<string> };
+  try {
+    const status = withFiveHour(20);
+    const g = status.groups[0];
+    g.cap = null;
+    for (const s of g.sessions) s.stopped = null;
+    const reset = Date.now() + 3600_000;
+    const lab = structuredClone(g);
+    lab.limits = { ...lab.limits!, updatedAt: g.limits!.updatedAt + 3600_000, windows: [{ ...lab.limits!.windows[0], pct: 100, resetsAt: reset }] };
+    priv.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result: { ...structuredClone(demoState(NOW).hosts[0].result!), groups: [lab] }, updatedAt: NOW });
+    dash.shownHosts = () => ["lab"];
+    status.queue = [{ id: "q4", due: true, profile: g.profileKeys[0], startAt: 0 } as never];
+    priv.startDueTasks(status);
+    assert.deepEqual(actions.map((a) => a.slice(0, 4)), [["--requeue", "q4", "--at", String(reset + 60_000)]]);
+  } finally {
+    priv.starting.clear();
+    dash.dispose();
+  }
+});
+
 // A chat's go-on that waits for its background commands says so once, as it
 // starts waiting, and once it ends them and goes on; a normal go-on, or one
 // that waits on, is told as before (by the Done setting) or not at all

@@ -590,6 +590,14 @@ export class Dashboard implements vscode.Disposable {
     // (a host's accounts as it last said them, also when its last check
     // failed: allGroups leaves those out, and its chats aren't gone then)
     const groupsOf = (host: string): Group[] => (host ? (this.hosts.get(host)?.result?.groups ?? []) : status.groups);
+    // (an account as its section shows it: with the newest plan usage of any
+    // machine it's on, shareUsage, as the new-chat box queued it by; worked
+    // out once, for the first task due)
+    let shared: { status: Status | null; hosts: HostState[] } | undefined;
+    const usageGroupsOf = (host: string): Group[] => {
+      shared ??= shareUsage(status, this.shownHosts().map((name) => this.hosts.get(name)).filter((h): h is HostState => !!h), settings.sshUsage());
+      return (host ? shared.hosts.find((h) => h.name === host)?.result?.groups : shared.status?.groups) ?? groupsOf(host);
+    };
     for (const t of status.queue ?? []) {
       if (t.afterTurn) {
         // a reply for when the chat's turn ends: now it has (or the chat isn't
@@ -604,7 +612,7 @@ export class Dashboard implements vscode.Disposable {
         if (t.startAt > Date.now()) continue; // (it waits for a usage limit to reset, as below)
       } else if (!t.due || this.starting.has(t.id)) continue;
       // (a reply too: on an account at its usage limit it would stop at once)
-      const group = groupsOf(t.host || "").find((g) => (g.profileKeys ?? []).includes(t.profile));
+      const group = usageGroupsOf(t.host || "").find((g) => (g.profileKeys ?? []).includes(t.profile));
       const reset = group ? limitReset(group, Date.now()) : null;
       if (!reset) {
         void this.startQueued(t);
