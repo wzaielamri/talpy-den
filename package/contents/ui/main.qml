@@ -2330,7 +2330,14 @@ PlasmoidItem {
     // Status of the hosts you picked: polled less often than this computer,
     // once for all copies (hub/Hub.qml; a host just picked is checked at once)
     property var wantedHosts: ({})   // host -> its check's command
-    readonly property string hostWish: JSON.stringify([shownHosts, Plasmoid.configuration.remotePollSeconds,
+    // An SSH host or a container that isn't shown, while a chat of it keeps going
+    // or a task of it is queued here (unseenHostItems): the copy that notifies
+    // still checks it, as often, for Keep going and the queue, which go by its
+    // last answer (hosts/<host>.json); nothing of it is shown (handleRemote)
+    readonly property var unseenChecked: notifier ? unseenHostItems.map(x => x.host).filter((h, i, all) => all.indexOf(h) === i).sort() : []
+    property var wantedUnseen: ({})   // host -> its check's command
+    property var unseenIdle: ({})     // host -> true: stopped or gone, checked once a day (as a shown one)
+    readonly property string hostWish: JSON.stringify([shownHosts, unseenChecked, Plasmoid.configuration.remotePollSeconds,
         Plasmoid.configuration.keepDoneHours, Plasmoid.configuration.recentChats, Plasmoid.configuration.showTokens,
         Plasmoid.configuration.usageRefreshMinutes])
     onHostWishChanged: wantHosts()
@@ -2345,15 +2352,31 @@ PlasmoidItem {
             const idle = remote[host] && (remote[host].stopped || remote[host].gone)
             Hub.want(instanceId, "ssh:" + host, next[host], idle ? 86400000 : interval, false)
         }
+        const unseen = {}, idle = {}
+        for (const host of unseenChecked) {
+            if (host in next)
+                continue
+            unseen[host] = hostCommand(host)
+            idle[host] = !!unseenIdle[host]
+            Hub.want(instanceId, "unseen:" + host, unseen[host], idle[host] ? 86400000 : interval, false)
+        }
         for (const host in wantedHosts)
             if (!(host in next))
                 Hub.unwant(instanceId, "ssh:" + host)
+        for (const host in wantedUnseen)
+            if (!(host in unseen))
+                Hub.unwant(instanceId, "unseen:" + host)
         wantedHosts = next
+        wantedUnseen = unseen
+        unseenIdle = idle
     }
 
     function hostOfCommand(command) {
         for (const host in wantedHosts)
             if (wantedHosts[host] === command)
+                return host
+        for (const host in wantedUnseen)
+            if (wantedUnseen[host] === command)
                 return host
         return ""
     }
@@ -2460,8 +2483,16 @@ PlasmoidItem {
     }
 
     function handleRemote(host, data) {
-        if (shownHosts.indexOf(host) < 0)
-            return  // unticked while its check was running
+        if (shownHosts.indexOf(host) < 0) {   // unticked while its check was running, or checked unseen
+            if (!(host in wantedUnseen))
+                return
+            const answer = helperResult(data), idle = !answer.ok && !!(answer.stopped || answer.gone)
+            if (idle !== !!unseenIdle[host]) {
+                unseenIdle = Object.assign({}, unseenIdle, { [host]: idle })
+                Qt.callLater(wantHosts)
+            }
+            return
+        }
         const answer = helperResult(data)
         const was = remote[host] || {}
         if (answer.ok && answer.result && !was.ok && !isContainer(host))

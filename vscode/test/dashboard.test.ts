@@ -224,6 +224,45 @@ test("a slow pollInterval isn't made faster while the view is hidden", async () 
   }
 });
 
+// Keep going and the queue go by a host's last answer: one that isn't shown is
+// still checked while a chat of it keeps going or a task of it is queued here
+// (else its go-on never comes), and only then; a stopped container isn't
+test("a host that isn't shown is checked while something of it keeps going or is queued, and only then", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  const { overrides } = await import("./vscode-stub");
+  overrides.set("sshHosts", []);
+  overrides.set("remotePollSeconds", 30);
+  const asked: string[] = [];
+  const backend = {
+    hostStatus: async (host: string) => (asked.push(host), host.startsWith("docker:") ? { ok: false, error: "web is stopped.", stopped: true } : { ok: false, error: "x" }),
+  } as unknown as Backend;
+  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const priv = dash as unknown as { status: Status; scheduleHosts(delay?: number): void };
+  const tick = async (ms: number) => {
+    mock.timers.tick(ms);
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  };
+  try {
+    const status = structuredClone(demoState(NOW).status!);
+    Object.assign(status, { keep: [], queue: [] });
+    priv.status = status;
+    priv.scheduleHosts(0);
+    await tick(0);
+    assert.deepEqual(asked, [], "nothing of it kept or queued: no ssh");
+    Object.assign(status, { keep: [{ host: "lab", chat: "c1", name: "fix", profile: ".claude" }],
+                            queue: [{ id: "t1", host: "docker:web", chat: null, startAt: NOW, error: "" }] });
+    await tick(30000);
+    assert.deepEqual(asked.splice(0), ["lab", "docker:web"]);
+    await tick(30000);
+    assert.deepEqual(asked.splice(0), ["lab"], "a stopped container isn't checked again");
+  } finally {
+    overrides.clear();
+    dash.dispose();
+    mock.timers.reset();
+  }
+});
+
 test("a host listed twice in the settings is one host", async () => {
   const { overrides } = await import("./vscode-stub");
   const { settings } = await import("../src/config");

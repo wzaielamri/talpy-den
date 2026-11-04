@@ -16,7 +16,7 @@ import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";
 import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
 import { demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
-import { allGroups, containerDetail, containerOf, chatsNeedingYou, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, unseenHostItems, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
@@ -48,6 +48,8 @@ export class Dashboard implements vscode.Disposable {
   private hostBusy = new Set<string>();
   private hostAgain = new Set<string>(); // an action there while its check ran: checked again after it
   private hostAnswered = new Map<string, number>(); // host -> when its last check that answered started
+  private unseenBusy = new Set<string>(); // (checkUnseen)
+  private unseenIdle = new Set<string>(); // a host not shown that's stopped or gone: not checked again (as a shown one)
   private localTimer?: NodeJS.Timeout;
   private hostTimer?: NodeJS.Timeout;
   private retryTimer?: NodeJS.Timeout; // Python didn't work: try again (its own timer: polls mustn't cancel it)
@@ -366,8 +368,33 @@ export class Dashboard implements vscode.Disposable {
         const h = this.hosts.get(host);
         if (!h?.stopped && !h?.gone) void this.pollHost(host);
       }
+      for (const host of this.unseenChecked()) void this.checkUnseen(host);
       this.scheduleHosts();
     }, wait);
+  }
+
+  // An SSH host or a container that isn't shown, while a chat of it keeps going
+  // or a task of it is queued here (unseenHostItems): the window that notifies
+  // still checks it, as often, for Keep going and the queue, which go by its
+  // last answer (hosts/<host>.json); nothing of it is shown
+  private unseenChecked(): string[] {
+    if (this.demo || !this.notifier.isLeader()) return [];
+    const shown = this.shownHosts();
+    for (const host of this.unseenIdle) if (shown.includes(host)) this.unseenIdle.delete(host); // (its own checks now)
+    return [...new Set(unseenHostItems(this.status, shown).map((x) => x.host))];
+  }
+
+  private async checkUnseen(host: string): Promise<void> {
+    if (this.unseenBusy.has(host) || this.unseenIdle.has(host) || this.disposed) return;
+    this.unseenBusy.add(host);
+    try {
+      const answer = await this.backend.hostStatus(host, statusArgs());
+      if (!answer.ok && (answer.stopped || answer.gone)) this.unseenIdle.add(host);
+    } catch (e) {
+      this.log.warn(`${host}: ${(e as Error).message}`);
+    } finally {
+      this.unseenBusy.delete(host);
+    }
   }
 
   // This computer's check only: the usage cap, and (in the window that
