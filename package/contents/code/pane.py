@@ -984,6 +984,15 @@ def tmux_run(base, args, data=None):
 
 
 _pastes = [0]
+TYPED_OUT = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def as_typed(text):
+    """text to paste into a chat's terminal: its control characters left out
+    (but tabs and new lines; a CR is one), so nothing in it ends the paste
+    early and presses keys (an ESC[201~ in a plan's line, then Ctrl+C and a
+    !command); as VS Code's asPaste"""
+    return TYPED_OUT.sub("", text.replace("\r\n", "\n").replace("\r", "\n"))
 
 
 def tmux_type(entry, text):
@@ -995,7 +1004,7 @@ def tmux_type(entry, text):
     # process) would else paste this text into its chat, or take it away
     _pastes[0] += 1
     buffer = f"talpy-den-{os.getpid()}-{_pastes[0]}"
-    for args, data in ((["load-buffer", "-b", buffer, "-"], text.encode()),
+    for args, data in ((["load-buffer", "-b", buffer, "-"], as_typed(text).encode()),
                        (["paste-buffer", "-p", "-d", "-b", buffer, "-t", target], None),
                        (["send-keys", "-t", target, "Enter"], None)):
         if args[0] == "send-keys":

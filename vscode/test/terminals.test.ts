@@ -10,7 +10,7 @@ import type { Backend } from "../src/backend";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";
 import { demoState } from "../src/shared/demo";
-import { Terminals } from "../src/terminals";
+import { asPaste, Terminals } from "../src/terminals";
 
 const stub = vscode as unknown as typeof import("./vscode-stub");
 const NOW = 1_800_000_000_000;
@@ -82,4 +82,11 @@ test("the dashboard knows when a check of a host that answered started", async (
     dash.dispose();
     mock.timers.reset();
   }
+});
+
+// A plan's line (or a reply) typed into a chat's terminal as a paste can't
+// end the paste and press keys: Ctrl+C, then a !command Talpy Den's Enter runs
+test("text typed into a chat's terminal is one paste, whatever it holds", () => {
+  const plan = "3. Run the tests\x1b[201~\x03!touch /tmp/pwned-by-plan\x1b[200~\u009b201~\r\n4.\tShip\r5. Done";
+  assert.equal(asPaste(plan), "\x1b[200~3. Run the tests[201~!touch /tmp/pwned-by-plan[200~201~\n4.\tShip\n5. Done\x1b[201~");
 });

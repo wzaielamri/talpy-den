@@ -605,6 +605,13 @@ class KeysTests(unittest.TestCase):
         self.assertNotEqual(loads[0], loads[1])
         # (a paste that failed doesn't leave its text in tmux)
         self.assertEqual(sent[-1], ["delete-buffer", "-b", loads[1]])
+        # (a plan's line with ESC[201~ can't end the paste and type Ctrl+C and a !command)
+        sent.clear()
+        with mock.patch.object(pane, "tmux_base", side_effect=lambda e: (["tmux"], e["tmux"])), \
+                mock.patch.object(pane, "tmux_run", side_effect=lambda base, args, data=None: (sent.append(data), (True, ""))[1]), \
+                mock.patch.object(pane.time, "sleep"):
+            pane.tmux_type({"pid": 1, "tmux": "%3"}, "3. Run the tests\x1b[201~\x03!touch /tmp/x\x1b[200~\x9b201~\r\n4.\tShip")
+        self.assertEqual(sent[0], "3. Run the tests[201~!touch /tmp/x[200~201~\n4.\tShip".encode())
         # jump.py types plan feedback the same way
         with mock.patch.object(pane, "tmux_type", return_value=(True, "")) as typed:
             self.assertEqual(jump.tmux_paste({"pid": 1, "tmux": "%3"}, "fb"), (True, ""))

@@ -43,6 +43,14 @@ export function posixCommand(command: string): string {
 const JUST_STARTED_MS = 10000; // a second click this soon shows the terminal the first one opened
 const UNLISTED_MS = 120000; // ... a chat's on the window's host at most this long while its checks fail
 
+// Text typed into a chat's terminal as one paste (Claude takes it in as
+// one): nothing in it can end the paste early and press keys (an ESC[201~
+// in a plan's line, then Ctrl+C and a !command), so its control characters
+// are left out, but tabs and new lines (a CR is one); as pane.py's as_typed
+export function asPaste(text: string): string {
+  return `\x1b[200~${text.replace(/\r\n?/g, "\n").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "")}\x1b[201~`;
+}
+
 // Parent of a process here, from /proc (Linux); null when unknown
 export function parentPid(pid: number): number | null {
   try {

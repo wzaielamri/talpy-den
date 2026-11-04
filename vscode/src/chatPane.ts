@@ -23,7 +23,7 @@ import { chatRefOf, doingText, liveOf, petKeyOf, recentRef, stateText } from "./
 import { answersOf, askShownOf, chatWhere, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
-import { localAncestors, type Terminals } from "./terminals";
+import { asPaste, localAncestors, type Terminals } from "./terminals";
 
 export const ASKS_SOMETHING_ELSE = "It asks something else now"; // (pane.py --keys --expect says the same)
 const TEXT_MAX = 100_000; // (as a queued task's prompt may be)
@@ -166,7 +166,7 @@ export class ChatPanes implements vscode.Disposable {
     const terminal = !afterTurn ? await this.windowTerminal(session, host) : undefined;
     if (terminal && session) {
       if (session.state === "waiting") return { ok: false, message: "It's asking you something: answer that first" };
-      terminal.sendText(`\x1b[200~${text}\x1b[201~`, false);
+      terminal.sendText(asPaste(text), false);
       await new Promise((r) => setTimeout(r, 300));
       terminal.sendText("\r", false);
       this.refresh(host);

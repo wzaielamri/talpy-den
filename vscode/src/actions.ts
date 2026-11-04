@@ -46,7 +46,7 @@ import {
   shellQuote,
 } from "./shared/model";
 import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "./shared/types";
-import { attachClients, localAncestors, type Place, type Terminals } from "./terminals";
+import { asPaste, attachClients, localAncestors, type Place, type Terminals } from "./terminals";
 import type { PlanReview } from "./planReview";
 import { windowHostFile } from "./remoteHost";
 
@@ -675,7 +675,7 @@ export class Actions {
         const terminal = await this.terminals.find(localAncestors(chat.pid), false);
         if (terminal) {
           // as a paste (Claude takes it in as one), then Enter
-          terminal.sendText(`\x1b[200~${text}\x1b[201~`, false);
+          terminal.sendText(asPaste(text), false);
           await new Promise((r) => setTimeout(r, 300));
           terminal.sendText("\r", false);
           terminal.show();
