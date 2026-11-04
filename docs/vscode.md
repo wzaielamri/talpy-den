@@ -215,6 +215,7 @@ All in the Command Palette under **Talpy Den:**; the view's title bar and **⋯*
 | Dictation Models… | | Downloads, deletes or picks a speech model, or removes faster-whisper |
 | Delete the Recap's Saved History… | | The Recap starts again from the chats Claude still has; your plan's windows that ended go too |
 | Send Feedback to Claude | | In a plan's preview: sends your comments and changes to the chat that made it |
+| Play with Talpy / Turn On Playful Talpy / Turn Off Playful Talpy | | A game with the big Talpy; Playful Talpy (his tricks and props, jokes, cookies and games) on or off (`talpyDen.playfulTalpy`) |
 | Refresh | | Checks the chats and the plan usage again; on the Recap, Permissions or Projects tab it reads that tab again too (they have no button of their own for it) |
 | Open Usage Page on claude.ai, Open Settings, Show Log, Toggle Demo Data | | |
 
