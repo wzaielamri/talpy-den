@@ -1,5 +1,51 @@
 # Changelog
 
+## Unreleased
+
+### Safer
+
+- **A container or an SSH host can no longer pick a program Talpy Den runs
+  on this computer:** its Python, SSH hosts, Claude folders and Recap
+  history are read only from your own user settings, never from a remote
+  window's machine settings or a workspace.
+- **A repository or a remote can no longer start your chats with permission
+  prompts off, nor stop them:** the new chats' permission mode, model and
+  effort and the usage cap come only from your user settings.
+- **A chat can no longer put a link that runs a VS Code command into a
+  notification:** what a chat or a host wrote shows there as written.
+- **Plans, subagents' runs and memories open in a Talpy Den tab**, rendered
+  as the chat tab renders replies, which loads no pictures from the web (VS
+  Code's Markdown preview did, the moment you opened one). **Open as text**
+  shows the file in the editor, with a plan's comments.
+- **Opening VS Code on a container or an SSH host asks once:** a click no
+  longer attaches VS Code to it by itself (sharing your SSH agent and Git
+  credentials, or your clipboard); **Open in a terminal instead** is there
+  too.
+- **Nothing in your `~/.cache` runs or acts any more:** Talpy Den's compiled
+  Python and what it acts on by itself (queued tasks, chats that keep going,
+  shared settings, permission answers) are in `~/.local/share/talpy-den` and
+  `~/.local/state/talpy-den`, so a container given your cache can't run code
+  as you, start a chat or answer a prompt. Older files move over by
+  themselves.
+- **A repository's links can no longer reach your files:** a plan or a plans
+  folder linked out of it isn't listed, and Undo, Allow and Move to project
+  never write through a link.
+- **A plan can no longer press keys in its chat** when you send your
+  feedback on it.
+- **Permission prompts show what you allow:** an MCP tool's arguments,
+  everything *Always allow* saves (in notifications too), *New prompt* when
+  one takes another's place under the pointer; a notification for a long
+  command offers **Open** instead of *Always allow*.
+- **Containers and SSH hosts stay in their place:** Talpy Den works in a
+  container as its own user, never root because of a label; a host can't
+  pick what opens here, list another host as its container or send more
+  than 16 MB; your replies to its chats aren't in its process list.
+- **Odd files no longer hang Talpy Den:** a link to `/dev/zero` or a pipe,
+  a big file or deeply nested JSON in a repository or a chat is skipped or
+  compared in part.
+- **Dictation's Set up** installs the versions it was checked with and
+  checks each speech model's SHA-256.
+
 ## 1.17.0
 
 ### New
