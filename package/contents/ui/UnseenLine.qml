@@ -10,8 +10,10 @@ import "icons.mjs" as Icons
 // same, from here over ssh, so it's said where the hosts go, lest you forget
 // it: Show (the host joins the list, with all its buttons) and Stop (Keep
 // going off, its queued go-on cancelled) or Cancel. A task you wrote is
-// cancelled where it shows, which asks first: here it has Show only.
-RowLayout {
+// cancelled where it shows, which asks first: here it has Show only. Your
+// message to a chat, queued for its turn's end, asks first here too, as
+// its queued line does (what you wrote is gone with it).
+ColumnLayout {
     id: line
 
     property var item: null
@@ -19,95 +21,118 @@ RowLayout {
     readonly property var task: item ? item.task : null
     readonly property var kept: item ? item.kept : null
     readonly property bool wrote: !!task && !task.chat
+    readonly property bool message: !!task && !!task.afterTurn
     readonly property string where: root.hostLabel(host)
     readonly property real lineHeight: Math.max(what.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
 
-    spacing: Kirigami.Units.smallSpacing
+    spacing: 0
     Layout.leftMargin: Kirigami.Units.smallSpacing
     Layout.rightMargin: Kirigami.Units.smallSpacing
 
-    Kirigami.Icon {
-        source: line.kept ? Icons.plasma.keepGoing : Icons.plasma.goOnAt
-        Layout.preferredWidth: Kirigami.Units.iconSizes.small
-        Layout.preferredHeight: Layout.preferredWidth
-        Layout.alignment: Qt.AlignTop   // (beside its first line, also with why it couldn't start under it)
-        Layout.topMargin: Math.max(0, (what.implicitHeight - Kirigami.Units.iconSizes.small) / 2)
-        opacity: 0.8
-    }
-    ColumnLayout {
+    RowLayout {
         Layout.fillWidth: true
-        spacing: 0
+        spacing: Kirigami.Units.smallSpacing
 
-        PlasmaComponents3.Label {
-            id: what
+        Kirigami.Icon {
+            source: line.kept ? Icons.plasma.keepGoing : Icons.plasma.goOnAt
+            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+            Layout.preferredHeight: Layout.preferredWidth
+            Layout.alignment: Qt.AlignTop   // (beside its first line, also with why it couldn't start under it)
+            Layout.topMargin: Math.max(0, (what.implicitHeight - Kirigami.Units.iconSizes.small) / 2)
+            opacity: 0.8
+        }
+        ColumnLayout {
             Layout.fillWidth: true
-            textFormat: Text.PlainText
-            elide: Text.ElideRight
-            font: Kirigami.Theme.smallFont
-            text: (line.kept ? i18n("“%1” keeps going on %2, which isn't shown", line.item.name, line.where)
-                   : line.task && line.task.afterTurn ? i18n("Your message to “%1” on %2, which isn't shown", line.item.name, line.where)
-                   : line.task && line.task.chat ? i18n("“%1” goes on by itself on %2, which isn't shown", line.item.name, line.where)
-                   : i18n("A task queued on %1, which isn't shown", line.where))
-                  + (line.task && !line.task.error && !line.task.afterTurn
-                     ? " · " + (line.task.chat ? i18n("goes on at %1", root.startText(line.task.startAt))
-                                               : i18n("starts at %1", root.startText(line.task.startAt))) : "")
+            spacing: 0
+
+            PlasmaComponents3.Label {
+                id: what
+                Layout.fillWidth: true
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                font: Kirigami.Theme.smallFont
+                text: (line.kept ? i18n("“%1” keeps going on %2, which isn't shown", line.item.name, line.where)
+                       : line.task && line.task.afterTurn ? i18n("Your message to “%1” on %2, which isn't shown", line.item.name, line.where)
+                       : line.task && line.task.chat ? i18n("“%1” goes on by itself on %2, which isn't shown", line.item.name, line.where)
+                       : i18n("A task queued on %1, which isn't shown", line.where))
+                      + (line.task && !line.task.error && !line.task.afterTurn
+                         ? " · " + (line.task.chat ? i18n("goes on at %1", root.startText(line.task.startAt))
+                                                   : i18n("starts at %1", root.startText(line.task.startAt))) : "")
+
+                PlasmaCore.ToolTipArea {
+                    textFormat: Text.PlainText
+                    anchors.fill: parent
+                    mainText: what.text
+                    subText: i18n("It goes on all the same: Talpy Den starts it from here, over ssh. Show %1 to see it with all its buttons.", line.where)
+                             + (line.kept ? " " + i18n("Stop: it doesn't keep going any more, and its queued go-on is cancelled.") : "")
+                }
+            }
+            // (its go-on couldn't start: why, e.g. … It starts once lab answers again)
+            PlasmaComponents3.Label {
+                id: why
+                visible: !!line.task && !!line.task.error
+                Layout.fillWidth: true
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                font: Kirigami.Theme.smallFont
+                color: Kirigami.Theme.negativeTextColor
+                text: line.task && line.task.error ? line.task.error : ""
+
+                PlasmaCore.ToolTipArea {
+                    textFormat: Text.PlainText
+                    anchors.fill: parent
+                    active: why.truncated
+                    mainText: i18n("It couldn't start")
+                    subText: why.text
+                }
+            }
+        }
+        IconTextButton {
+            icon.name: root.isContainer(line.host) ? "" : Icons.plasma.host
+            icon.source: root.isContainer(line.host) ? root.hostIcon(line.host) : ""
+            text: i18n("Show %1", line.where)
+            Layout.preferredHeight: line.lineHeight
+            Layout.alignment: Qt.AlignTop
+            onClicked: root.showHost(line.host)
+        }
+        IconTextButton {
+            visible: !line.wrote
+            icon.name: Icons.plasma.cancel
+            icon.color: Icons.color("cancel", Kirigami.Theme)
+            text: line.kept ? i18n("Stop") : i18n("Cancel")
+            Layout.preferredHeight: line.lineHeight
+            Layout.alignment: Qt.AlignTop
+            onClicked: {
+                if (line.message)
+                    root.unqueueAsk = root.unqueueAsk === line.task.id ? "" : line.task.id
+                else if (line.task)
+                    root.unqueue(line.task)   // (a kept chat's go-on: Keep going goes off with it, jump.py --unqueue)
+                else if (line.kept)
+                    root.keepGoing({ chatId: line.kept.chat, sessionId: line.kept.chat }, false, line.host)
+            }
 
             PlasmaCore.ToolTipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: what.text
-                subText: i18n("It goes on all the same: Talpy Den starts it from here, over ssh. Show %1 to see it with all its buttons.", line.where)
-                         + (line.kept ? " " + i18n("Stop: it doesn't keep going any more, and its queued go-on is cancelled.") : "")
-            }
-        }
-        // (its go-on couldn't start: why, e.g. … It starts once lab answers again)
-        PlasmaComponents3.Label {
-            id: why
-            visible: !!line.task && !!line.task.error
-            Layout.fillWidth: true
-            textFormat: Text.PlainText
-            elide: Text.ElideRight
-            font: Kirigami.Theme.smallFont
-            color: Kirigami.Theme.negativeTextColor
-            text: line.task && line.task.error ? line.task.error : ""
-
-            PlasmaCore.ToolTipArea {
-                textFormat: Text.PlainText
-                anchors.fill: parent
-                active: why.truncated
-                mainText: i18n("It couldn't start")
-                subText: why.text
+                mainText: line.kept ? i18n("Stop keeping it going") : i18n("Cancel it")
+                subText: line.kept ? i18n("It doesn't go on by itself after usage limits any more; its queued go-on is cancelled.")
+                         : line.message ? i18n("It isn't sent.") + " " + i18n("It asks first: what you wrote for it is gone with it.")
+                         : i18n("It doesn't go on by itself.")
             }
         }
     }
-    IconTextButton {
-        icon.name: root.isContainer(line.host) ? "" : Icons.plasma.host
-        icon.source: root.isContainer(line.host) ? root.hostIcon(line.host) : ""
-        text: i18n("Show %1", line.where)
-        Layout.preferredHeight: line.lineHeight
-        Layout.alignment: Qt.AlignTop
-        onClicked: root.showHost(line.host)
-    }
-    IconTextButton {
-        visible: !line.wrote
-        icon.name: Icons.plasma.cancel
-        icon.color: Icons.color("cancel", Kirigami.Theme)
-        text: line.kept ? i18n("Stop") : i18n("Cancel")
-        Layout.preferredHeight: line.lineHeight
-        Layout.alignment: Qt.AlignTop
-        onClicked: {
-            if (line.task)
-                root.unqueue(line.task)   // (a kept chat's go-on: Keep going goes off with it, jump.py --unqueue)
-            else if (line.kept)
-                root.keepGoing({ chatId: line.kept.chat, sessionId: line.kept.chat }, false, line.host)
+    ConfirmLine {
+        visible: line.message && root.unqueueAsk === line.task.id
+        Layout.fillWidth: true
+        Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+        text: i18n("Cancel your message to “%1”? It isn't sent, and its text is gone.", line.item ? line.item.name : "")
+        confirmText: i18n("Cancel it")
+        confirmIcon: "cancel"
+        cancelText: i18n("Keep it")
+        onConfirmed: {
+            root.unqueueAsk = ""
+            root.unqueue(line.task)
         }
-
-        PlasmaCore.ToolTipArea {
-            textFormat: Text.PlainText
-            anchors.fill: parent
-            mainText: line.kept ? i18n("Stop keeping it going") : i18n("Cancel it")
-            subText: line.kept ? i18n("It doesn't go on by itself after usage limits any more; its queued go-on is cancelled.")
-                               : i18n("It doesn't go on by itself.")
-        }
+        onCancelled: root.unqueueAsk = ""
     }
 }

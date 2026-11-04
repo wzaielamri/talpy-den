@@ -1,3 +1,4 @@
+import { useState } from "preact/hooks";
 import { containerOf, hostLabel, startText, unseenHostItems, type UnseenItem } from "../../src/shared/model";
 import { post } from "../env";
 import { Icon, I, T } from "../util/icons";
@@ -10,20 +11,24 @@ import { IconButton } from "./IconButton";
 // Plasma's UnseenLine.qml: Show (the host joins the list, with all its
 // buttons) and Stop (Keep going off, its queued go-on cancelled) or Cancel.
 // A task you wrote is cancelled where it shows, which asks first: Show only.
+// Your message to a chat, queued for its turn's end, asks first here too, as
+// its queued line does (what you wrote is gone with it).
 export function UnseenLines({ shown }: { shown: string[] }) {
   const view = useView();
+  const [asking, setAsking] = useState(""); // the message whose Cancel it asks first
   const items = unseenHostItems(view.status, shown);
   if (!items.length) return null;
   return (
     <ul class="queued unseen">
       {items.map((it) => (
-        <UnseenLine key={`${it.host}|${it.kept?.chat ?? ""}|${it.task?.id ?? ""}`} item={it} />
+        <UnseenLine key={`${it.host}|${it.kept?.chat ?? ""}|${it.task?.id ?? ""}`} item={it}
+          asking={!!it.task && asking === it.task.id} ask={(on) => setAsking(on && it.task ? it.task.id : "")} />
       ))}
     </ul>
   );
 }
 
-function UnseenLine({ item }: { item: UnseenItem }) {
+function UnseenLine({ item, asking, ask }: { item: UnseenItem; asking: boolean; ask: (on: boolean) => void }) {
   const view = useView();
   const { host, kept, task: t, name } = item;
   const where = hostLabel(host);
@@ -36,6 +41,7 @@ function UnseenLine({ item }: { item: UnseenItem }) {
         : `A task queued on ${where}, which isn't shown`;
   const when = t && !t.error && !t.afterTurn ? ` · ${t.chat ? "goes on" : "starts"} at ${startText(t.startAt, view.now)}` : "";
   const wrote = !!t && !t.chat;
+  const message = !!t?.afterTurn;
   return (
     <li class={"queued-item" + (t?.error ? " failed" : "")}>
       <div class="recent-item queued-line unseen-line">
@@ -53,13 +59,21 @@ function UnseenLine({ item }: { item: UnseenItem }) {
         {!wrote ? (
           <IconButton icon={I.cancel} tone={T.cancel} class="text-btn" label={kept ? "Stop" : "Cancel"}
             title={kept ? "Stop keeping it going\nIt doesn't go on by itself after usage limits any more; its queued go-on is cancelled."
+              : message ? "Cancel it\nIt isn't sent. It asks first: what you wrote for it is gone with it."
               : "Cancel it\nIt doesn't go on by itself."}
-            onClick={() => (t ? post({ type: "unqueue", id: t.id }) : kept && post({ type: "keepOff", chatId: kept.chat, host }))}>
+            onClick={() => (message ? ask(!asking) : t ? post({ type: "unqueue", id: t.id }) : kept && post({ type: "keepOff", chatId: kept.chat, host }))}>
             <span class="btn-words">{kept ? "Stop" : "Cancel"}</span>
           </IconButton>
         ) : null}
       </div>
       {t?.error ? <div class="queued-error small">{t.error}</div> : null}
+      {t && asking ? (
+        <div class="confirm queued-ask">
+          <span>{`Cancel your message to “${name}”? It isn't sent, and its text is gone.`}</span>
+          <button type="button" class="btn secondary small" onClick={() => { ask(false); post({ type: "unqueue", id: t.id }); }}><Icon name={I.cancel} tone={T.cancel} />Cancel it</button>
+          <button type="button" class="btn secondary small" onClick={() => ask(false)}>Keep it</button>
+        </div>
+      ) : null}
     </li>
   );
 }
