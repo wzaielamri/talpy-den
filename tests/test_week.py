@@ -346,6 +346,13 @@ class RecapTests(Home):
         self.assertEqual(self.recap(back=1)["sum"]["workedMs"], 0)
         self.assertEqual(self.recap(back=1)["to"], "2026-10-17")
 
+    def test_a_project_in_the_home_folder_is_shown_short_and_opened_by_its_folder(self):
+        # (the Projects tab's rows go by the whole folder: a click opens that one)
+        app = str(self.home / "repos" / "app")
+        self.write(Transcript(app).prompt(self.t0).reply(self.t0 + 60_000, "a").duration(self.t0 + 120_000, 120_000))
+        p = self.recap()["projects"][0]
+        self.assertEqual((p["path"], p["folder"]), ("~/repos/app", app))
+
     def test_the_week_before(self):
         before = self.t0 - 7 * week.DAY_MS
         self.write(Transcript().prompt(before).reply(before + 1000, "a").duration(before + 30_000, 30_000))

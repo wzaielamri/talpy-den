@@ -529,10 +529,10 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     previous: { youMs: total("youMs") * 0.8, workedMs: total("workedMs") * 0.7, busyMs: 0, waitMs: 0, prompts: total("prompts") - 18, cost: cost * 0.75,
       tokenTotal: total("tokenTotal") * 0.75 },
     projects: [
-      { name: "webapp", path: "~/projects/webapp", host: "", workedMs: total("workedMs") * 0.55, cost: cost * 0.55, prompts: 92, chats: [DEMO_CHATS[1]], chatCount: 11 },
-      { name: "date-parser", path: "~/projects/date-parser", host: "", workedMs: total("workedMs") * 0.25, cost: cost * 0.27, prompts: 41, chats: [DEMO_CHATS[0]], chatCount: 6 },
-      { name: "pipeline", path: "/srv/pipeline", host: "build-server", workedMs: total("workedMs") * 0.15, cost: cost * 0.14, prompts: 17, chats: [DEMO_CHATS[2]], chatCount: 4 },
-      { name: "~", path: "~", host: "", workedMs: total("workedMs") * 0.05, cost: cost * 0.04, prompts: 9, chats: [], chatCount: 2 },
+      { name: "webapp", path: "~/projects/webapp", folder: "/home/alice/projects/webapp", host: "", workedMs: total("workedMs") * 0.55, cost: cost * 0.55, prompts: 92, chats: [DEMO_CHATS[1]], chatCount: 11 },
+      { name: "date-parser", path: "~/projects/date-parser", folder: "/home/alice/projects/date-parser", host: "", workedMs: total("workedMs") * 0.25, cost: cost * 0.27, prompts: 41, chats: [DEMO_CHATS[0]], chatCount: 6 },
+      { name: "pipeline", path: "/srv/pipeline", folder: "/srv/pipeline", host: "build-server", workedMs: total("workedMs") * 0.15, cost: cost * 0.14, prompts: 17, chats: [DEMO_CHATS[2]], chatCount: 4 },
+      { name: "~", path: "~", folder: "/home/alice", host: "", workedMs: total("workedMs") * 0.05, cost: cost * 0.04, prompts: 9, chats: [], chatCount: 2 },
     ],
     chats: DEMO_CHATS,
     models: [

@@ -710,7 +710,8 @@ export interface WeekSum extends WeekNumbers {
 
 export interface WeekProject {
   name: string;
-  path: string;
+  path: string; // this computer's short ("~/repos/app")
+  folder?: string; // the whole folder (as the Projects tab's rows; an older week.py leaves it out)
   host: string;
   workedMs: number;
   cost: number;

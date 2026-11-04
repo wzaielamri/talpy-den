@@ -1398,7 +1398,7 @@ PlasmaComponents3.ScrollView {
                                 if (projectRow.project.host)
                                     view.openProject = projectRow.open ? "" : projectRow.key
                                 else
-                                    root.showProject(projectRow.project.path)
+                                    root.showProject(projectRow.project.folder || projectRow.project.path)
                             }
 
                             PlasmaCore.ToolTipArea {

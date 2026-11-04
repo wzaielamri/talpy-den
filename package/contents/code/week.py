@@ -1428,7 +1428,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         folder = c.get("project") or c["folder"] or ""
         fkey = c["host"] + "|" + folder
         f = folders.setdefault(fkey, {"name": project_name(folder, home), "path": cs.short_path(folder, home) if not c["host"] else folder,
-                                      "host": c["host"], "workedMs": 0, "cost": 0.0, "prompts": 0, "chats": []})
+                                      "folder": folder, "host": c["host"], "workedMs": 0, "cost": 0.0, "prompts": 0, "chats": []})
         row = chat_row(c, home, work, cost, prompts)
         f["workedMs"] += work
         f["cost"] += cost

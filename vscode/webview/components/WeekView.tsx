@@ -570,7 +570,7 @@ function Projects({ recap }: { recap: WeekRecap }) {
           const shown = open === key;
           const chats = Array.isArray(p.chats) ? p.chats : [];
           return [
-            <li key={key} class={"opens" + (shown ? " open" : "")} {...opens(shown, () => (p.host ? setOpen(shown ? "" : key) : showProject(p.path)))}
+            <li key={key} class={"opens" + (shown ? " open" : "")} {...opens(shown, () => (p.host ? setOpen(shown ? "" : key) : showProject(p.folder || p.path)))}
               title={`${p.host ? hostLabel(p.host) + ": " : ""}${p.path}\nClaude worked ${hoursText(p.workedMs)} · ${moneyText(p.cost, cur)} at API prices\n` +
                 `${plural(p.prompts, "%1 prompt", "%1 prompts")} · ${plural(p.chatCount ?? chats.length, "%1 chat", "%1 chats")}\n` +
                 (p.host ? "Click for its chats." : "Click to open it in the Projects tab: its chats, plans and memories.")}>
