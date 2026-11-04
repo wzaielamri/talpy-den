@@ -34,16 +34,18 @@ jobs:
         run: |
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a version tag: $TAG"; exit 1; }
           echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: vscode/package-lock.json
+          # no npm cache: what's published is built from the tag alone, not
+          # from a cache an earlier run saved (setup-node's advice for
+          # workflows that publish)
+          package-manager-cache: false
       - name: The tag matches the versions
         run: |
           v="$VERSION"
