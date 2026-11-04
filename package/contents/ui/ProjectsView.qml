@@ -188,11 +188,11 @@ PlasmaComponents3.ScrollView {
         }
     }
 
-    // the title of an opened project's chats, plans, memories: small, as the folds of an account's lists
+    // the title of an opened project's active chats, chats, plans, memories: the text's size, bold
+    // and dimmed (small, they were hard to spot among the lines)
     component SubTitle: PlasmaComponents3.Label {
         textFormat: Text.PlainText
         Layout.fillWidth: true
-        font.pointSize: Kirigami.Theme.smallFont.pointSize
         font.weight: Font.DemiBold
         opacity: 0.75
         elide: Text.ElideRight
@@ -334,9 +334,11 @@ PlasmaComponents3.ScrollView {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: Kirigami.Units.smallSpacing
+                            // (big and bold: a project is spotted among the lines of the one opened above it)
                             Kirigami.Heading {
                                 id: projectName
-                                level: 4
+                                level: 2
+                                type: Kirigami.Heading.Type.Primary
                                 textFormat: Text.PlainText
                                 Layout.fillWidth: true
                                 text: card.unfiled ? i18n("Plans whose chat is gone") : card.project.name
@@ -487,6 +489,11 @@ PlasmaComponents3.ScrollView {
                         spacing: Kirigami.Units.smallSpacing
 
                         // What goes on there now
+                        SubTitle {
+                            visible: card.here.length > 0
+                            Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                            text: i18n("Active chats (%1)", card.here.length)
+                        }
                         Repeater {
                             model: card.here.length
                             delegate: FocusLine {

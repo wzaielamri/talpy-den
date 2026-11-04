@@ -200,17 +200,23 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
     ...(rest ? lists.memories.slice(0, lists.memoriesShown).map((m) => (m.type === "account" ? "every folder" : folderIn(m.folder, p.path, m.folderShort))) : []),
   ].some((f) => !!f);
   const listClass = "recent-list" + (belowProject ? "" : " no-folders");
+  // what goes on there now: the focus view's lines (as Plasma's)
+  const active = here.flatMap((s) => {
+    const g = groups.find((x) => x.sessions.includes(s));
+    return g ? [<FocusLine key={s.key} item={{ key: s.key, session: s, group: g }} />] : [];
+  });
   return (
     <div class="project-details">
-      {/* what goes on there now: the focus view's lines (as Plasma's) */}
-      {here.map((s) => {
-        const g = groups.find((x) => x.sessions.includes(s));
-        return g ? <FocusLine key={s.key} item={{ key: s.key, session: s, group: g }} /> : null;
-      })}
+      {active.length ? (
+        <>
+          <div class="project-list">{`Active chats (${active.length})`}</div>
+          {active}
+        </>
+      ) : null}
       {p.recap?.text ? <p class="project-recap">“{p.recap.text}”</p> : null}
       {lists.chats.length ? (
         <>
-          <div class="project-list small">{pagedTitle("Chats", lists.chatsShown, lists.chats.length)}</div>
+          <div class="project-list">{pagedTitle("Chats", lists.chatsShown, lists.chats.length)}</div>
           <ul class={listClass}>
             {lists.chats.slice(0, lists.chatsShown).map((c) => {
               const g = groupOf(c.profileDir);
@@ -222,7 +228,7 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
       ) : null}
       {rest && lists.plans.length ? (
         <>
-          <div class="project-list small">{pagedTitle("Plans", lists.plansShown, lists.plans.length)}</div>
+          <div class="project-list">{pagedTitle("Plans", lists.plansShown, lists.plans.length)}</div>
           <ul class={listClass}>
             {lists.plans.slice(0, lists.plansShown).map((x) => {
               const g = groupOf(x.profileDir);
@@ -234,7 +240,7 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
       ) : null}
       {rest && lists.memories.length ? (
         <>
-          <div class="project-list small">{pagedTitle("Memories", lists.memoriesShown, lists.memories.length)}</div>
+          <div class="project-list">{pagedTitle("Memories", lists.memoriesShown, lists.memories.length)}</div>
           <ul class={listClass}>
             {lists.memories.slice(0, lists.memoriesShown).map((m) => {
               const g = groupOf(m.profileDir);

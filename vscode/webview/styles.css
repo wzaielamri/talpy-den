@@ -4105,7 +4105,7 @@ body.vscode-high-contrast-light .pane {
   align-self: flex-start;
   display: flex;
   align-items: center;
-  height: 1.4em;
+  height: 1.68em; /* (the name's line: 1.2em at 1.4) */
   transition: transform 0.15s;
 }
 
@@ -4113,7 +4113,9 @@ body.vscode-high-contrast-light .pane {
   transform: rotate(90deg);
 }
 
+/* big and bold: a project is spotted among the lines of the one opened above it */
 .project-title strong {
+  font-size: 1.2em;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -4149,7 +4151,8 @@ body.vscode-high-contrast-light .pane {
   -webkit-line-clamp: 4; /* (as Plasma's: 4 lines at most) */
 }
 
-/* an opened project's Chats, Plans and Memories: small titles, as an account's folds */
+/* an opened project's Active chats, Chats, Plans and Memories: the text's size, bold and dimmed
+   (small, they were hard to spot among the lines) */
 .project-list {
   margin-top: 2px;
   font-weight: 600;
@@ -4170,7 +4173,7 @@ body.vscode-high-contrast-light .pane {
   flex: none;
   gap: 3px;
   align-items: center;
-  height: 1.4em;
+  height: 1.68em; /* (on the name's line) */
   padding-top: 2px;
 }
 
