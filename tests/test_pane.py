@@ -1537,15 +1537,26 @@ class QuickChatTests(PaneFixture):
         pasted = {"type": "user", "uuid": "u-1", "timestamp": iso(t + 1), "message": {"role": "user", "content": [
             {"type": "text", "text": "[Image #1] what's this?"},
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": png}}]}}
-        self.chat(prompt("look: [Image: /home/me/.cache/talpy-den/images/a.png] and [Image: /tmp/b.jpg]", t, cwd=str(self.folder)),
+        a, b, c = self.cache / "images/a.png", self.folder / "b.jpg", self.cache / "images/c.png"
+        for f in (a, b, c):
+            write(f, "-a picture-")
+        # (only a regular file: a pty or a pipe never answers, and plasmashell's pictures waited on it for good)
+        pipe = self.folder / "pipe.png"
+        os.mkfifo(pipe)
+        self.chat(prompt(f"look: [Image: {a}] and [Image: {b}] [Image: /dev/ptmx] [Image: {pipe}] [Image: /nowhere.png]", t,
+                         cwd=str(self.folder)),
                   pasted,
                   {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(t + 2),
-                   "content": "and [Image: /home/me/.cache/talpy-den/images/c.png]"})
+                   "content": f"and [Image: {c}]"})
         folder = self.cache / "images"
         items = pane.conversation(self.transcript, 120, folder)[0]
         self.assertEqual([i.get("pictures") for i in items], [
-            ["/home/me/.cache/talpy-den/images/a.png", "/tmp/b.jpg"], [str(folder / "chat-u-1-1.png")],
-            ["/home/me/.cache/talpy-den/images/c.png"]])
+            [str(a), str(b)], [str(folder / "chat-u-1-1.png")], [str(c)]])
+        # an SSH host's: its paths there, shown from this computer only when one is a regular file here too
+        self.assertEqual(pane.pictures_here([{"pictures": [str(a), "/dev/ptmx", str(pipe), "/on/lab.png"]}, {"text": "hi"}]),
+                         [{"pictures": [str(a), "/dev/ptmx", str(pipe), "/on/lab.png"], "here": [str(a)]}, {"text": "hi"}])
+        with mock.patch("remote.host_answer", return_value={"ok": True, "items": [{"kind": "you", "pictures": ["/dev/ptmx"]}]}):
+            self.assertEqual(self.cli("--conversation", SID, "--host", "lab")["items"][0]["here"], [])
         saved = folder / "chat-u-1-1.png"
         self.assertEqual(saved.read_bytes(), b"\x89PNG\r\n\x1a\n-a picture-")
         self.assertEqual(saved.stat().st_mode & 0o777, 0o600)

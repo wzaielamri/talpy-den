@@ -81,6 +81,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -240,16 +241,38 @@ PICTURE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp
 PICTURE_MAX = 20 << 20  # bytes of one pasted picture saved for the pane
 
 
+def regular_file(path):
+    """Whether path is a regular file (or a link to one): only such a picture
+    is read for a thumbnail (a pty or a pipe named [Image: /dev/ptmx] never
+    answers, and every later picture of plasmashell waits on it for good)."""
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except (OSError, ValueError):
+        return False
+
+
+def pictures_here(items):
+    """A host's chat names its pictures by their paths there, and the pane
+    shows each from this computer: the copy of one you pasted, else the file
+    of that path here, read only when it's a regular file here (each item's
+    "here", regular_file)."""
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and isinstance(item.get("pictures"), list):
+            item["here"] = [p for p in item["pictures"] if isinstance(p, str) and p.startswith("/") and regular_file(p)]
+    return items
+
+
 def prompt_pictures(text, blocks, uid, folder):
     """The pictures a prompt of yours has, for the pane's thumbnails: the
     files it names ([Image: /path], a picture pasted in the pane), then
     those pasted into it in Claude's terminal or panel (its image blocks),
     each saved once in folder (cs.images_dir, kept as long as the pane's own,
     IMAGES_KEEP_DAYS), named after its entry. folder None (an SSH host's
-    chat): the files it names only."""
+    chat): the files it names only. A named one is kept only when it's a
+    regular file (regular_file)."""
     out = []
     for path in PICTURE_NAMED.findall(text or ""):
-        if path not in out:
+        if path not in out and regular_file(path):
             out.append(path)
     if folder is None:
         return out
@@ -2007,6 +2030,8 @@ def main(argv=None):
             answer = forward(host, rest)
             if action == "--review" and answer.get("ok"):
                 answer["reviewedAt"] = cs.load_reviewed(cache_root).get(cs.review_key(target, host))
+            if action == "--conversation" and answer.get("ok"):
+                pictures_here(answer.get("items"))
             if action == "--send":
                 answer = host_vscode_link(answer, (session, target), text)
             if action == "--send" and how == "enter" and answer.get("how") == "ask":

@@ -614,12 +614,13 @@ Window {
                            name: it.name || "", status: it.status || "", input: it.input || "", output: it.output || "",
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
                            diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
-                           pictures: (it.pictures || []).join("\n") }
+                           pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n") }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
                 if (old.text !== flat.text || old.status !== flat.status || old.output !== flat.output
                         || old.input !== flat.input || old.summary !== flat.summary || old.prev !== flat.prev || old.diff !== flat.diff
-                        || old.queued !== flat.queued || old.until !== flat.until || old.pictures !== flat.pictures)
+                        || old.queued !== flat.queued || old.until !== flat.until || old.pictures !== flat.pictures
+                        || old.here !== flat.here)
                     items.set(i, flat)
             } else if (i < items.count) {
                 items.insert(i, flat)
@@ -2067,6 +2068,7 @@ Window {
                         required property bool queued   // (yours, in Claude's queue: pane.py)
                         required property real until    // (yours, held: when it goes to Claude, ms)
                         required property string pictures   // (yours: the pictures in it, "\n"-joined: pane.py prompt_pictures)
+                        required property string here       // (a host's: those of them that are a regular file here, pane.py pictures_here)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
                         readonly property bool unfolded: pane.openTools[key] === true
                         // more room before your prompt (a new turn) than between steps
@@ -2172,6 +2174,7 @@ Window {
                                     Layout.fillWidth: true
                                     Layout.leftMargin: pane.gutter
                                     pictures: entry.pictures ? entry.pictures.split("\n") : []
+                                    here: pane.host ? (entry.here ? entry.here.split("\n") : []) : null
                                     host: pane.host
                                     removable: false
                                     opensHere: true

@@ -9,12 +9,14 @@ import "icons.mjs" as Icons
 // a click shows one (opensHere: openRequested, the chat pane shows it big;
 // else your picture viewer), × takes it out (removeRequested; removable
 // false: none, a message's that went). An SSH host's picture shows its copy
-// here (root.pictureCopies).
+// here (root.pictureCopies), else (here) the file of its path here when
+// that's a regular file (pane.py pictures_here).
 Flow {
     id: strip
 
     property var pictures: []   // their paths (on host)
     property string host: ""
+    property var here: null     // a host's chat: those that are a regular file here too (null: all, this computer's)
     property string removeText: i18n("Take it out")
     property real thumbHeight: Kirigami.Units.gridUnit * 3
     property bool removable: true
@@ -47,6 +49,9 @@ Flow {
         delegate: Item {
             id: picture
             required property string modelData
+            // (its file here: a host's copy, else its path when it's listed here)
+            readonly property string file: root.pictureCopies[modelData]
+                                           || (strip.here === null || strip.here.indexOf(modelData) >= 0 ? modelData : "")
             height: strip.thumbHeight
             width: thumb.implicitHeight > 0 ? Math.min(height * 8 / 3, height * thumb.implicitWidth / thumb.implicitHeight)
                                             : height
@@ -54,7 +59,7 @@ Flow {
             Image {
                 id: thumb
                 anchors.fill: parent
-                source: "file://" + encodeURI(root.pictureCopies[picture.modelData] || picture.modelData)   // (a host's: its copy here)
+                source: picture.file ? "file://" + encodeURI(picture.file) : ""
                 sourceSize.height: parent.height * Screen.devicePixelRatio
                 fillMode: Image.PreserveAspectFit
                 horizontalAlignment: Image.AlignLeft
@@ -62,7 +67,7 @@ Flow {
             }
             PlasmaComponents3.Label {
                 anchors.centerIn: parent
-                visible: thumb.status === Image.Error
+                visible: thumb.status === Image.Error || !picture.file
                 textFormat: Text.PlainText
                 text: i18n("Not there")
                 font: Kirigami.Theme.smallFont
@@ -72,10 +77,10 @@ Flow {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    if (thumb.status === Image.Error)
+                    if (thumb.status === Image.Error || !picture.file)
                         return
                     if (strip.opensHere)
-                        strip.openRequested(root.pictureCopies[picture.modelData] || picture.modelData)
+                        strip.openRequested(picture.file)
                     else
                         Qt.openUrlExternally(thumb.source)
                 }
