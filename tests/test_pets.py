@@ -1722,6 +1722,15 @@ class SeveralCopiesTests(unittest.TestCase):
         self.assertIn("readonly property bool covered: windowCovers && !KWindowSystem.showingDesktop", watch)
         self.assertRegex(main, r"coveredByWindow: .*covered && !mouseOnWidget\.hovered")
 
+    def test_a_desktop_widgets_popup_isnt_taken_for_covered(self):
+        # A desktop widget too small for the dashboard shows an icon and the
+        # dashboard in a popup: with a window over the icon, the popup's pets,
+        # spinner and ticker stood still and Recap never loaded. Windows are
+        # looked at only while the dashboard is drawn on the desktop itself.
+        main = (ROOT / "ui/main.qml").read_text()
+        loader = main[main.index("id: coverWatch"):][:120]
+        self.assertIn("active: root.onDesktop && root.shownInPlace", loader)
+
     def test_a_dashboard_on_the_desktop_keeps_its_pets_after_a_click(self):
         # Opening a chat "closes the popup" (expanded = false), but a dashboard
         # on the desktop stays on screen: its pets froze (seen on one screen,

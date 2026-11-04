@@ -10,8 +10,9 @@ import "cover.mjs" as Cover
 // starts them again. Where windows cover only a part of it, what's under
 // them holds still too (hides(): a stage of pets, the spinner), since each
 // picture of the smallest pet redraws the whole desktop. Loaded only on the
-// desktop (and only where the taskmanager module is), so elsewhere the
-// widget is never taken for covered.
+// desktop with the dashboard drawn there (and only where the taskmanager
+// module is), so elsewhere the widget is never taken for covered: a popup
+// (the panel's, or a small desktop widget's icon's) shows above windows.
 Item {
     id: watch
 

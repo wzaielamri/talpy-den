@@ -410,9 +410,12 @@ PlasmoidItem {
         id: mouseOnWidget
         enabled: root.onDesktop
     }
+    // (only while the dashboard is drawn there: a desktop widget too small
+    // for it shows an icon and the dashboard in a popup, above the windows
+    // that cover the icon, in a window of its own)
     Loader {
         id: coverWatch
-        active: root.onDesktop
+        active: root.onDesktop && root.shownInPlace
         source: "CoverWatch.qml"
     }
     readonly property int agentsRunning: {
