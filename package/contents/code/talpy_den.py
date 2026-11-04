@@ -5496,29 +5496,35 @@ def account_memories(group, ctx, limit=MEMORIES_LISTED, hidden=frozenset(), left
     "profile", "updatedAt"}]. The ones you hid (keys in hidden) are left
     out, their keys added to the set left_out."""
     by_key = {p.key: p for p in ctx.profiles}
-    files = []
+    ways = {}   # {(device, inode): [(mtime, profile, path)]}: each file, the ways it's reached
     for key in group["profileKeys"]:
         p = by_key.get(key)
         try:
-            files += [(p, f) for f in p.path.glob("projects/*/memory/*.md")] if p is not None else []
+            files = list(p.path.glob("projects/*/memory/*.md")) if p is not None else []
         except OSError:
             continue
-    # One file reached two ways is listed once, by the way that isn't a link: an
-    # old projects/<folder>'s memory/ linked to the new one's (kept for its chats
-    # when the folder was renamed) would file it under the old folder, gone
-    files.sort(key=lambda c: memory_via_link(c[1]))
-    found, seen = [], set()
-    for p, f in files:
-        try:
-            st = f.stat()
-        except OSError:
-            continue
-        if f.name == "MEMORY.md" or not f.is_file() or (st.st_dev, st.st_ino) in seen:
-            continue
-        seen.add((st.st_dev, st.st_ino))
-        found.append((st.st_mtime, p, f))
+        for f in files:
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            if f.name != "MEMORY.md" and f.is_file():
+                ways.setdefault((st.st_dev, st.st_ino), []).append((st.st_mtime, p, f))
+    folders = {}
+
+    def folder_of(project):
+        if project not in folders:
+            folders[project] = memory_folder(project)
+        return folders[project]
+
+    # A file reached more than one way (one projects/<folder>'s memory/ linked
+    # to another's, either way round: kept for the chats of a folder that was
+    # renamed, or shared by two) is listed once: by a folder that's still there,
+    # else by the way that isn't through a link
+    found = [min(c, key=lambda w: (folder_of(w[2].parent.parent)[1], memory_via_link(w[2]))) if len(c) > 1 else c[0]
+             for c in ways.values()]
     found.sort(key=lambda c: -c[0])
-    folders, out = {}, account_instructions(group, ctx)
+    out = account_instructions(group, ctx)
     if hidden:
         hid = {m["key"] for m in out if m["key"] in hidden} | {memory_key(p, f) for _, p, f in found
                                                                   if memory_key(p, f) in hidden}
@@ -5527,11 +5533,8 @@ def account_memories(group, ctx, limit=MEMORIES_LISTED, hidden=frozenset(), left
         out = [m for m in out if m["key"] not in hid]
         found = [c for c in found if memory_key(c[1], c[2]) not in hid]
     for t, p, f in found[:limit]:
-        project = f.parent.parent
-        if project not in folders:
-            folders[project] = memory_folder(project)
         head = memory_head(f)
-        folder, gone = folders[project]
+        folder, gone = folder_of(f.parent.parent)
         out.append({
             "key": memory_key(p, f),
             "name": clean_text(head.get("name") or f.stem, 120),

@@ -2684,20 +2684,27 @@ class MemoryTests(Fixture):
         listed = next(m for m in self.group(self.collect(with_tokens=False), "work")["memories"] if m["name"] == "notes")
         self.assertEqual((listed["folder"], listed["folderGone"]), (str(old), False))
 
-    def test_a_renamed_folders_linked_memories_are_the_new_folders(self):
-        # (renamed: the old projects/<folder>'s memory/ linked to the new one's, for its chats)
+    def test_memories_linked_from_a_renamed_folder_are_the_folders_there(self):
+        # (renamed: one projects/<folder>'s memory/ linked to the other's, for its chats, either way round)
         w = self.home / ".claude-work"
-        old, new = self.home / "repos/claude_widget", self.home / "repos/talpy-den"
-        new.mkdir(parents=True)
-        write(w / "projects" / cs.mangle(str(new)) / "memory/notes.md", "---\nname: notes\ntype: project\n---\n")
-        (w / "projects" / cs.mangle(str(old))).mkdir(parents=True)
-        (w / "projects" / cs.mangle(str(old)) / "memory").symlink_to(w / "projects" / cs.mangle(str(new)) / "memory")
         glob = Path.glob
-        for backwards in (False, True):   # (whichever the folder lists first)
-            with mock.patch.object(Path, "glob", lambda self, pattern: sorted(glob(self, pattern), reverse=backwards)):
-                listed = [m for m in self.group(self.collect(with_tokens=False), "work")["memories"] if m["name"] == "notes"]
-            self.assertEqual([(m["folder"], m["folderGone"]) for m in listed], [(str(new), False)])
-            self.assertEqual(listed[0]["path"], str(w / "projects" / cs.mangle(str(new)) / "memory/notes.md"))
+
+        def listed(name):
+            for backwards in (False, True):   # (whichever the folder lists first)
+                with mock.patch.object(Path, "glob", lambda self, pattern: sorted(glob(self, pattern), reverse=backwards)):
+                    yield [(m["folder"], m["folderGone"]) for m in self.group(self.collect(with_tokens=False), "work")["memories"]
+                           if m["name"] == name]
+        for n, linked_to_new in enumerate((True, False)):
+            old, new = self.home / f"repos/old{n}", self.home / f"repos/new{n}"
+            new.mkdir(parents=True)
+            real, link = (new, old) if linked_to_new else (old, new)
+            write(w / "projects" / cs.mangle(str(real)) / f"memory/notes{n}.md", f"---\nname: notes{n}\ntype: project\n---\n")
+            (w / "projects" / cs.mangle(str(link))).mkdir(parents=True)
+            (w / "projects" / cs.mangle(str(link)) / "memory").symlink_to(w / "projects" / cs.mangle(str(real)) / "memory")
+            self.assertEqual(list(listed(f"notes{n}")), [[(str(new), False)]] * 2)
+        # both folders there: the one it's really in
+        (self.home / "repos/old1").mkdir()
+        self.assertEqual(list(listed("notes1")), [[(str(self.home / "repos/old1"), False)]] * 2)
 
     def test_memories_open_with_projects_kept_elsewhere(self):
         # (projects/ linked to a folder on another disk: its memories are still the profile's)
