@@ -2,7 +2,7 @@
   "name": "talpy-den",
   "displayName": "Talpy Den",
   "description": "Every Claude Code chat on this computer and your SSH hosts in one view: who needs you, plan usage, subagents, and Talpy, the animated pet. Runs on your side, also in Remote-SSH windows.",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "publisher": "wzaielamri",
   "author": {
     "name": "Wadhah Zai El Amri",

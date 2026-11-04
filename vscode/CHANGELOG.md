@@ -1,6 +1,86 @@
 # Changelog
 
-## Unreleased
+## 1.18.0
+
+### New
+
+- **A month in the Recap:** **Day | Week | Month | Overall**: your last 30
+  days, a row per week, against the 30 days before, stepping back 30 days at
+  a time; its share card says *My month with Claude*.
+- **How your plan's limits changed:** a folded section at the end of the
+  Recap works out, from your own chats and the limit readings Talpy Den
+  keeps for 90 days, how much a 5-hour window and a week of each account's
+  plan held, week by week, and says when a plan change, or one of
+  Anthropic's, changed that and by how much.
+- **One status bar item:** Talpy with the count of chats that need you, and
+  the default account's 5-hour usage beside its name (**1 · work 42%**); its
+  hover changes the default account.
+- **The chat tab looks like Claude's terminal:** in your terminal's font
+  (`talpyDen.chatFont`), bold and headings in the terminal's blue, bullets
+  in Claude's orange and code blocks in their language's colors. A code
+  block's **Copy** says *Copied*.
+- **A message sent while Claude works is queued:** for 5 s it waits with
+  **Edit**, **Send now** and **Cancel**, then Claude takes it in at its next
+  step, as its terminal's queue does.
+- **Pictures in your messages** read *[Image #1]*, with a thumbnail under
+  the message, big on a click.
+
+### Better
+
+- **Your message shows the moment you press Enter,** and Claude's reply as
+  soon as it's written: the chat tab waits on the chat's transcript rather
+  than reading it every few seconds. Messages to a chat go one after the
+  other, in order, none dropped, and ↑ brings back the one you just sent.
+- **A reply to a background chat that asks you something answers it** (your
+  words go with a Deny, or as the answer to its question), and a message to
+  a running background chat goes in as if typed there: the chat is never
+  stopped for it.
+- **A chat Claude moves to the background stays the same chat:** its tab,
+  your messages on their way, its pet, star, Keep going and queued go-on
+  follow it to its new id, also on SSH hosts, and Delete takes its older
+  copy along.
+- **The Projects tab:** projects stand out (a bigger, bold name, shaded
+  under the pointer, their *Active chats* apart), a worktree's chats are in
+  its repository's project, and plans and memories are where they belong:
+  plan files a chat wrote itself, a project's plans folder after Claude
+  deleted its chats, a renamed project's memories. A project under *Where
+  Claude worked* in the Recap opens there.
+- **A container is named as its section names it** (*web on lab*, not
+  `podman:web@lab`) in every notification, question and menu.
+- **The Talpy Den tab keeps its pets** while you look at another tab; the
+  Permissions tab's lines are shaded under the pointer, and a prompt's and a
+  question's buttons are framed.
+- **Status checks stay quick** with many chats open in a big project.
+
+### Fixed
+
+- **Keep going:** one go-on at the reset, not two; a chat that keeps going
+  on a hidden SSH host or container still goes on after a limit; its notes
+  and notifications say what's so.
+- **Limits and queued tasks as in Plasma:** a turn a limit broke off is no
+  longer told as finished, a task due on an account at its limit waits for
+  the reset, a reply that can't be sent is told, and a message held 5 s
+  still goes when you close the chat's tab.
+- **Rows show what's so:** a chat in Claude's VS Code panel or in the
+  background no longer shows an old run's model and cost, the **Tests**
+  badge counts only a test run, and a starred chat you fork stays under
+  *Starred*.
+- **Deleting a plan** takes its older copies and the tasks queued to carry
+  it out along.
+- **The Recap** lists every window of your plan (one at 0% too), counts an
+  SSH host's work on the right day when its clock is off, and its history
+  setting covers your plan's windows, here and on every host.
+- **SSH hosts and containers:** a click finds the chats of a host named
+  `user@host` and a chat in a VS Code terminal of a container on a host; a
+  new chat in VS Code on a host waits for its window to connect; a Docker
+  socket you can't use, an old python3 and a paused Podman container each
+  say so; and containers follow **Show containers**, with the Permissions
+  tab working on them.
+- **Smaller fixes:** **Move to project…** on a plan from your home folder
+  asks which project, removing an account keeps your other accounts' shared
+  skills working, *Shared through git* only in a git repository, bold ends
+  at its own marks, and Find a Chat and a plan's comments work in more
+  places.
 
 ### Safer
 
@@ -45,6 +125,9 @@
   compared in part.
 - **Dictation's Set up** installs the versions it was checked with and
   checks each speech model's SHA-256.
+
+Every change in detail is in the repository's
+[CHANGELOG](https://github.com/wzaielamri/talpy-den/blob/v1.18.0/CHANGELOG.md).
 
 ## 1.17.0
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.18.0 (2026-11-04)
 
 - **Plasma quits and restarts in a second again, not 40:** with a plan's *Carry it out* box (or the + box) open and the pointer once on a folder that tooltip said Claude doesn't trust yet, Plasma hung when it quit (a restart, logging out) until systemd aborted it after 40 seconds, and its crash report showed. That folder's tooltip is now drawn in the popup, as the chat window's are, and no longer holds Plasma's shared tooltip window when Plasma quits (Plasma).
 - **A month in the Recap:** **Day | Week | Month | Overall**: *Month* is your last 30 days, a row per 7 days on the timeline (*Week by week*, as *Overall*), against the 30 days before, with a trend of the 30-day stretches before it; step back 30 days at a time. Its bigger numbers fit their tiles (Plasma's shrink to fit), and its share card says *My month with Claude*. In Plasma, VS Code and GNOME.
