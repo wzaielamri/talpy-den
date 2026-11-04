@@ -2684,6 +2684,21 @@ class MemoryTests(Fixture):
         listed = next(m for m in self.group(self.collect(with_tokens=False), "work")["memories"] if m["name"] == "notes")
         self.assertEqual((listed["folder"], listed["folderGone"]), (str(old), False))
 
+    def test_a_renamed_folders_linked_memories_are_the_new_folders(self):
+        # (renamed: the old projects/<folder>'s memory/ linked to the new one's, for its chats)
+        w = self.home / ".claude-work"
+        old, new = self.home / "repos/claude_widget", self.home / "repos/talpy-den"
+        new.mkdir(parents=True)
+        write(w / "projects" / cs.mangle(str(new)) / "memory/notes.md", "---\nname: notes\ntype: project\n---\n")
+        (w / "projects" / cs.mangle(str(old))).mkdir(parents=True)
+        (w / "projects" / cs.mangle(str(old)) / "memory").symlink_to(w / "projects" / cs.mangle(str(new)) / "memory")
+        glob = Path.glob
+        for backwards in (False, True):   # (whichever the folder lists first)
+            with mock.patch.object(Path, "glob", lambda self, pattern: sorted(glob(self, pattern), reverse=backwards)):
+                listed = [m for m in self.group(self.collect(with_tokens=False), "work")["memories"] if m["name"] == "notes"]
+            self.assertEqual([(m["folder"], m["folderGone"]) for m in listed], [(str(new), False)])
+            self.assertEqual(listed[0]["path"], str(w / "projects" / cs.mangle(str(new)) / "memory/notes.md"))
+
     def test_memories_open_with_projects_kept_elsewhere(self):
         # (projects/ linked to a folder on another disk: its memories are still the profile's)
         w = self.home / ".claude-work"

@@ -5480,6 +5480,15 @@ def memory_key(profile, path):
     return f"{profile.key}/{path.parent.parent.name}/{path.stem}/memory"
 
 
+def memory_via_link(path):
+    """Whether a projects/<folder>/memory/<name>.md is reached through a link
+    (the file, its memory/ or its projects/<folder>)."""
+    try:
+        return any(x.is_symlink() for x in (path, path.parent, path.parent.parent))
+    except OSError:
+        return False
+
+
 def account_memories(group, ctx, limit=MEMORIES_LISTED, hidden=frozenset(), left_out=None):
     """The memories of an account's profiles, newest first: [{"key", "name",
     "description", "type", "path", "folder", "folderShort", "folderGone"
@@ -5487,22 +5496,27 @@ def account_memories(group, ctx, limit=MEMORIES_LISTED, hidden=frozenset(), left
     "profile", "updatedAt"}]. The ones you hid (keys in hidden) are left
     out, their keys added to the set left_out."""
     by_key = {p.key: p for p in ctx.profiles}
-    found, seen = [], set()
+    files = []
     for key in group["profileKeys"]:
         p = by_key.get(key)
         try:
-            files = list(p.path.glob("projects/*/memory/*.md")) if p is not None else []
+            files += [(p, f) for f in p.path.glob("projects/*/memory/*.md")] if p is not None else []
         except OSError:
             continue
-        for f in files:
-            try:
-                st = f.stat()
-            except OSError:
-                continue
-            if f.name == "MEMORY.md" or not f.is_file() or (st.st_dev, st.st_ino) in seen:
-                continue
-            seen.add((st.st_dev, st.st_ino))
-            found.append((st.st_mtime, p, f))
+    # One file reached two ways is listed once, by the way that isn't a link: an
+    # old projects/<folder>'s memory/ linked to the new one's (kept for its chats
+    # when the folder was renamed) would file it under the old folder, gone
+    files.sort(key=lambda c: memory_via_link(c[1]))
+    found, seen = [], set()
+    for p, f in files:
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        if f.name == "MEMORY.md" or not f.is_file() or (st.st_dev, st.st_ino) in seen:
+            continue
+        seen.add((st.st_dev, st.st_ino))
+        found.append((st.st_mtime, p, f))
     found.sort(key=lambda c: -c[0])
     folders, out = {}, account_instructions(group, ctx)
     if hidden:
