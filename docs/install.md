@@ -37,7 +37,7 @@ You can add it more than once, e.g. on the panel and on each screen's desktop: t
 
 Each [release](https://github.com/wzaielamri/talpy-den/releases) also has the Plasma widget as a `.plasmoid` file and the GNOME extension as a `.zip`, for installing without the repository (its notes say how), and the VS Code extension as a `.vsix`. `./install.sh` is still the easiest way: it also adds the status-line snippet.
 
-For VS Code, [Talpy Den for VS Code](vscode.md) is an extension of its own, installed from the same [releases](https://github.com/wzaielamri/talpy-den/releases/latest) (a `.vsix`). It brings its own copy of the backend, so it doesn't need the Plasma widget, and it works alongside it.
+For VS Code, [Talpy Den for VS Code](vscode.md) is an extension of its own, installed from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=wzaielamri.talpy-den) (it updates by itself) or from the same [releases](https://github.com/wzaielamri/talpy-den/releases/latest) (a `.vsix`). It brings its own copy of the backend, so it doesn't need the Plasma widget, and it works alongside it.
 
 `install.sh` does up to four things:
 
@@ -93,7 +93,7 @@ git pull
 
 If the panel keeps showing the old version, restart Plasma's shell: `systemctl --user restart plasma-plasmashell`.
 
-The VS Code extension doesn't update by itself: install the `.vsix` of a newer [release](https://github.com/wzaielamri/talpy-den/releases/latest) the same way (`code --install-extension talpy-den-<version>.vsix`).
+The VS Code extension from the Marketplace updates by itself. One installed from a `.vsix` doesn't: install the `.vsix` of a newer [release](https://github.com/wzaielamri/talpy-den/releases/latest) the same way (`code --install-extension talpy-den-<version>.vsix`).
 
 ## Uninstalling
 
