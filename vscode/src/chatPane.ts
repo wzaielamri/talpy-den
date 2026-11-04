@@ -19,8 +19,9 @@ import type { Backend } from "./backend";
 import { openComparison } from "./changes";
 import { cacheDir, configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
+import { noLinks } from "./notify";
 import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, chatWhere, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
+import { answersOf, askShownOf, chatWhere, HOLD_MS, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -128,6 +129,18 @@ export class ChatPanes implements vscode.Disposable {
     else if (!answer.ok) this.dash.setActionError(answer.message);
     else if (answer.message) this.dash.setActionInfo(answer.message);
     return answer;
+  }
+
+  // A message held a moment in a tab that closed before it went (sent while
+  // Claude works, to be taken back): it goes when its moment is up all the
+  // same, as if the tab were open; one that doesn't go is said, with its text
+  sendHeld(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", until: number): void {
+    setTimeout(() => void this.send(chat, text, how, false).then((r) => {
+      if (r.ask) return this.draft(chat, text);
+      if (r.ok) return;
+      this.dash.setActionError(`Couldn't send your reply to ${chat.name || "the chat"}: ${r.message}`);
+      void vscode.window.showErrorMessage(noLinks(`Couldn't send your reply to ${chat.name || "the chat"}: ${text} — ${r.message}`));
+    }), Math.max(0, until - Date.now())).unref?.();
   }
 
   // The chat's tab, open with text as its unsent reply
@@ -277,6 +290,7 @@ class Pane implements vscode.Disposable {
   private ready = false;
   private shown = false; // (the tab showed at its last view-state change)
   private pendingDraft = "";
+  private held = new Map<number, { text: string; how: "auto" | "background" | "copy" | "enter"; until: number }>(); // (the page's, till they go: ChatPanes.sendHeld)
   private terminalHere = false;
 
   constructor(
@@ -558,7 +572,15 @@ class Pane implements vscode.Disposable {
         this.stamp = "";
         await this.load();
         break;
+      case "hold":
+        if (typeof m.id === "number" && typeof m.text === "string" && ["auto", "background", "enter"].includes(m.how))
+          this.held.set(m.id, { text: m.text, how: m.how, until: Date.now() + HOLD_MS });
+        break;
+      case "unhold":
+        this.held.delete(m.id);
+        break;
       case "send": {
+        if (typeof m.id === "number") this.held.delete(m.id); // (it goes now: from the tab)
         if (typeof m.text !== "string" || !["auto", "background", "copy", "enter"].includes(m.how)) break;
         const r = await this.owner.send(this.chat, m.text, m.how, m.afterTurn === true);
         this.result(m.afterTurn ? "later" : "send", r, typeof m.id === "number" ? m.id : undefined);
@@ -826,6 +848,9 @@ class Pane implements vscode.Disposable {
     // (the tab closed while it listened; one still starting is stopped once it has: dictate sees disposed)
     if (this.recording) void this.owner.ext.backend.dictate(["--cancel", this.recording]);
     this.recording = "";
+    // (a message it held a moment still goes, when its moment is up)
+    for (const h of this.held.values()) this.owner.sendHeld(this.chat, h.text, h.how, h.until);
+    this.held.clear();
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     for (const d of this.disposables) d.dispose();

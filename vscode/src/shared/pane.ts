@@ -167,6 +167,8 @@ export type PaneMessage =
   | { type: "ready" }
   | { type: "more" } // older items too
   | { type: "send"; text: string; how: "auto" | "background" | "copy" | "enter"; afterTurn: boolean; id?: number } // id: shown at once (PendingSent)
+  | { type: "hold"; id: number; text: string; how: "auto" | "background" | "copy" | "enter" } // held a moment (PendingSent "held"): goes even if the tab closes meanwhile
+  | { type: "unhold"; id: number } // a held one taken back (Edit, Cancel)
   | { type: "unqueue" } // the reply waiting for the turn to end
   | { type: "answer"; decision: Decision; note: string; answers?: Answers; shown: AskShown | null } // shown: the prompt you answer
   | { type: "review" }

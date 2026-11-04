@@ -5,12 +5,12 @@
 // into elements only (no link that runs anything).
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answersOf, chatWhere, clipboardCode, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
+import { answersOf, chatWhere, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -740,6 +740,39 @@ test("messages to a chat go one at a time, in the order sent: one sent while the
     { type: "result", kind: "send", ok: true, message: "Sent (typed into its background session)", went: true, id: 7 },
     { type: "result", kind: "send", ok: false, message: "Couldn't send it: the helper fell over", id: 8 },
   ]);
+});
+
+// A message sent while Claude works is held a moment in the tab, to be taken
+// back; its tab closed meanwhile, it goes all the same when its moment is up
+// (as Plasma's closed window sends it); one taken back doesn't
+test("a held message goes when its moment is up, also when its tab closed first; one taken back doesn't", async () => {
+  const row = demoState(NOW).status!.groups.flatMap((g) => g.sessions)[0];
+  const sent: string[] = [];
+  const backend = { pane: async (args: string[]) => args[0] === "--send"
+    ? (sent.push(args[args.indexOf("--text") + 1]), { ok: true, how: "background", message: "Sent" }) : { ok: true, unchanged: true } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, setActionError() {},
+                 onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  p.open(chatRefOf(row));
+  const panel = recorded.panels.at(-1)!;
+  panel.show(true);
+  panel.receive({ type: "ready" });
+  await new Promise((r) => setTimeout(r, 10));
+  panel.receive({ type: "hold", id: 1, text: "also run the linter", how: "auto" });
+  panel.receive({ type: "hold", id: 2, text: "never mind", how: "auto" });
+  panel.receive({ type: "unhold", id: 2 });
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    panel.dispose();
+    await Promise.resolve();
+    assert.deepEqual(sent, [], "not before its moment");
+    mock.timers.tick(HOLD_MS);
+  } finally {
+    mock.timers.reset();
+  }
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(sent, ["also run the linter"]);
 });
 
 test("your pictures read as Claude's terminal writes them: [Image #1], [Image #2], one picture named twice the same number", () => {

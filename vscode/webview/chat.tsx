@@ -553,8 +553,10 @@ function ChatApp() {
     historyAt.current = -1;
     setAskHow(false);
     follow.current = true;
-    if (holds) setNow(Date.now());
-    else post({ type: "send", text, how, afterTurn, id });
+    if (holds) {
+      setNow(Date.now());
+      post({ type: "hold", id, text: said, how }); // (the extension sends it if the tab closes first)
+    } else post({ type: "send", text, how, afterTurn, id });
   };
   // Held: it goes to Claude when its moment is up, or at once with Send now;
   // Edit (or ↑ in an empty box) takes it back into the box, Cancel drops it
@@ -581,6 +583,7 @@ function ChatApp() {
     if (!p) return false;
     outgoingNow.current = outgoingNow.current.filter((x) => x !== p);
     setOutgoing(outgoingNow.current);
+    post({ type: "unhold", id });
     if (edit) setText((t) => p.text + (t.trim() ? "\n" + t : ""));
     reply.current?.focus();
     return true;
