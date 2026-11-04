@@ -24,6 +24,13 @@ its permission prompt and its review.
         How enter (Enter in the pane): auto, but a terminal that takes no
         text gets the copy (Claude there never quits on an Enter).
         --after-turn: queued, it's sent once the chat's turn ends.
+  --start PROFILE --cwd FOLDER --text T [--model M] [--effort E] [--permission-mode MODE] [--plan SLUG [--plan-profile P]]
+        a new chat Talpy Chat starts, with T as its first message (or
+        --text-file F): in the background on that profile, in FOLDER (claude
+        --bg), with the permission hook for it alone unless the profile's
+        settings have it (--settings: Talpy Chat answers what it asks), in a
+        systemd scope of its own. {"ok", "message", "how": "background",
+        "id": its job's short id, "chat": its chat id, "profileDir"}
   --answer REQUEST --decision allow|always|deny|answer|approve|approve-edits|keep [--note T] [--answers JSON]
         answer a permission request the hook relayed (permission_hook.py);
         Claude's questions (AskUserQuestion): answer, with JSON {question:
@@ -1303,19 +1310,20 @@ def host_vscode_link(answer, ids, text):
     return answer
 
 
-def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped=True):
+def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped=True, hook=None):
     """claude --bg --resume with your message. scoped: in a systemd scope of
     its own (jump.scope_prefix), as the widget's go-ons and tasks start: run
     from the widget, Claude's background service would be in plasmashell's
     group of processes, and a restart of plasmashell (by hand, after an update,
     a crash) would end it, and every background chat it runs, mid-turn. Not on
-    an SSH host (--remote)."""
+    an SSH host (--remote). hook: the permission hook it goes on with
+    (chat_hook: a background chat has no terminal to ask in)."""
     prefix = []
     if scoped:
         import jump
         prefix = jump.scope_prefix("claude")
     answer = cs.continue_chat(home, extra_dirs, profile.key, chat_id, text=text, claude=claude, prefix=prefix,
-                              force=True)
+                              force=True, settings=hook)
     if answer.get("ok"):
         answer["message"] = "Sent: the chat goes on with it in the background" + (
             f" ({answer['id']})" if answer.get("id") else "")
@@ -1328,7 +1336,9 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
     "link" (vscode), "copied" (copy)}. how "ask": the chat runs in a
     terminal that takes no text from outside, and you choose (how
     background or copy). scoped: a chat it wakes in the background in a
-    systemd scope of its own (go_on_in_background)."""
+    systemd scope of its own (go_on_in_background), with the permission hook
+    for it (chat_hook); not on an SSH host, where Talpy Den has no hook of
+    its own."""
     text = (text or "").strip()
     if not text:
         return {"ok": False, "message": "Write your message first"}
@@ -1388,9 +1398,77 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
         ok, message = cs.stop_chat(entry)
         if not ok:
             return {"ok": False, "message": message}
-    answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped)
+    hook = chat_hook(home, next((p for p in profiles if cs.matches_profile(p, profile_key)), profile)) if scoped else None
+    answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped, hook)
     answer["how"] = "background"
     return answer
+
+
+def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=None, mode=None, plan=None,
+               plan_profile=None, claude=None, scoped=True):
+    """A new chat Talpy Chat starts with your first message (text; or a
+    plan's, with what you add): in the background on the profile, in folder
+    (claude --bg, in a systemd scope of its own: go_on_in_background), with
+    that model, effort and permission mode, and the permission hook for it
+    alone (chat_hook), so what it asks is answered in Talpy Chat. Only in a
+    folder Claude trusts (a background chat can't ask). {"ok", "message",
+    "how": "background", "id": its job's short id, "chat": its chat id
+    (from its job's record), "profileDir"}."""
+    text = (text or "").strip()
+    if not text and not plan:
+        return {"ok": False, "message": "Write your message first"}
+    profiles = cs.discover_profiles(home, extra_dirs)
+    profile = next((p for p in profiles if cs.matches_profile(p, profile_key)), None)
+    if profile is None:
+        return {"ok": False, "message": f"No Claude profile called {profile_key}"}
+    try:
+        options = cs.chat_options(model, effort, mode)
+    except ValueError as exc:
+        return {"ok": False, "message": str(exc)}
+    plan_path = None
+    if plan:
+        plan_path = cs.find_plan(profiles, plan, plan_profile, home)
+        if plan_path is None:
+            return {"ok": False, "message": "That plan isn't there any more"}
+    claude = claude or cs.find_claude(home, ask_shell=True)
+    if claude is None:
+        return {"ok": False, "message": "No claude command found"}
+    hook = chat_hook(home, profile) if scoped else None
+    options = (["--settings", hook] if hook else []) + options + cs.picture_options(home, text)
+    prefix = []
+    if scoped:
+        import jump
+        prefix = jump.scope_prefix("claude")
+    folder = os.path.expanduser(folder) if isinstance(folder, str) and folder.strip() else str(home)
+    ok, message, job = cs.start_background(profile, folder, cs.task_prompt(text, plan_path, home), home, claude,
+                                           prefix=prefix, options=options)
+    if not ok:
+        return {"ok": False, "message": message}
+    chat = job_chat(profile, job)
+    if chat is None:
+        return {"ok": False, "message": f"It started ({job}), but its chat isn't there to show: find it in the list"}
+    return {"ok": True, "how": "background", "id": job, "chat": chat, "profileDir": profile.key,
+            "message": "Started in the background on " + profile.label}
+
+
+JOB_RECORD_WAIT_S = 2.0
+
+
+def job_chat(profile, job, wait=JOB_RECORD_WAIT_S):
+    """The chat id of a background job claude --bg started (its record,
+    jobs/<job>/state.json, names it; claude writes it before it answers, so
+    a moment's wait at the most)."""
+    if not cs.valid_id(job or ""):
+        return None
+    deadline = time.time() + wait
+    while True:
+        record = cs.read_json(profile.path / "jobs" / job / "state.json")
+        chat = record.get("sessionId") if isinstance(record, dict) else None
+        if isinstance(chat, str) and cs.valid_id(chat) and chat.startswith(job):
+            return chat
+        if time.time() >= deadline:
+            return None
+        time.sleep(0.1)
 
 
 def send_later(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", host="", name=""):
@@ -2009,6 +2087,40 @@ def live(home, extra_dirs, on, source=None):
     return True, "Chats show their steps at each check"
 
 
+def hook_copy(home, kind="relay"):
+    """The hook's copy in Talpy Den's data folder, put there if it isn't (a
+    chat Talpy Chat starts names it in settings of its own, while the
+    setting for every chat may be off; a status check brings it up to date,
+    talpy_den.refresh_hooks): its path, or None (no hook here to copy)."""
+    target = hook_path(home, kind)
+    if target.is_file():
+        return target
+    try:
+        data = (Path(__file__).resolve().parent / HOOKS[kind]["source"]).read_bytes()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, target)
+    except (OSError, NameError):
+        return None
+    return target
+
+
+def chat_hook(home, profile):
+    """The permission hook for one chat, as claude --settings takes it
+    (JSON: the same entry --relay on writes), so a background chat Talpy
+    Chat starts or wakes asks its permission prompts and questions where
+    Talpy Chat answers them: it has no terminal to ask in. None when the
+    profile's own settings have the hook (on for every chat: it would run
+    twice), or managed settings let only their own hooks run."""
+    if cs.managed_hooks_only() or has_hook(cs.read_json(profile.path / "settings.json") or {}):
+        return None
+    target = hook_copy(home)
+    if target is None:
+        return None
+    return json.dumps(set_hook({}, hook_command(target), True), separators=(",", ":"))
+
+
 def relay_status(home, extra_dirs, kind="relay"):
     files = settings_files(home, extra_dirs)
     on = [has_hook(cs.read_json(p) or {}, kind) for p in files]
@@ -2155,8 +2267,9 @@ def main(argv=None):
     session, text, stamp, limit, files, config_dirs, answers = None, None, None, PANE_ITEMS, [], [], None
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
-               "--relay", "--live", "--oldest", "--shortcuts", "--complete")
+               "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start")
     osd = False
+    cwd, model, effort, mode, plan, plan_profile = None, None, None, None, None, None
     while args:
         arg = args.pop(0)
         if arg in actions and args and action is None:
@@ -2186,6 +2299,18 @@ def main(argv=None):
                 answers = None
         elif arg == "--message" and args:
             message = args.pop(0)
+        elif arg == "--cwd" and args:
+            cwd = args.pop(0)
+        elif arg == "--model" and args:
+            model = args.pop(0)
+        elif arg == "--effort" and args:
+            effort = args.pop(0)
+        elif arg == "--permission-mode" and args:
+            mode = args.pop(0)
+        elif arg == "--plan" and args:
+            plan = args.pop(0)
+        elif arg == "--plan-profile" and args:
+            plan_profile = args.pop(0)
         elif arg == "--name" and args:
             name = args.pop(0)
         elif arg == "--file" and args:
@@ -2243,6 +2368,8 @@ def main(argv=None):
         if host and action == "--send" and after:  # (queued here: the widget here sends it then)
             ok, said = send_later(home, config_dirs, profile, target, text, session, how, host, name)
             return emit({"ok": ok, "message": said})
+        if host and action == "--start":  # (a host's prompts can't reach Talpy Chat yet)
+            return emit({"ok": False, "message": "Talpy Chat starts chats on this computer only, for now"})
         if host:
             if action in ("--relay", "--live") and target == "on" and source is None:
                 path = Path(__file__).resolve().parent / HOOKS[action[2:]]["source"]
@@ -2269,6 +2396,9 @@ def main(argv=None):
                 result = send(home, config_dirs, profile, target, text, session, how, scoped=not remote)
                 if how == "enter" and result.get("how") == "ask" and not remote:  # (on a host: copied here, above)
                     result = copy_answer((text or "").strip(), ENTER_COPIES)
+        elif action == "--start":
+            result = start_chat(home, config_dirs, target, cwd, text, model, effort, mode, plan, plan_profile,
+                                scoped=not remote)
         elif action == "--answer":
             ok, said = answer_request(cache_root, target, decision, note, answers)
             # (changed: the request you answered is gone; the chat may ask something else now)

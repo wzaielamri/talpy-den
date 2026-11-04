@@ -2789,6 +2789,32 @@ HOOK_REVISION = re.compile(rb"^HOOK_REVISION = ([0-9]+)", re.M)
 HOOK_GUARD = "] || exit 0;"  # (in the hooks' commands, once each: pane.hook_command)
 
 
+# Where an organization's managed settings are (Linux, macOS): claude reads
+# managed-settings.json there, and each .json file of managed-settings.d
+MANAGED_SETTINGS_DIRS = ("/etc/claude-code", "/Library/Application Support/ClaudeCode")
+
+
+def managed_hooks_only(dirs=None):
+    """Do managed settings let only their own hooks run (allowManagedHooksOnly),
+    or none (disableAllHooks)? Then a hook Talpy Den gives one chat (claude
+    --settings: Talpy Chat's permission hook) doesn't run, so Talpy Chat
+    can't answer what a background chat it started asks."""
+    for folder in MANAGED_SETTINGS_DIRS if dirs is None else dirs:
+        if not os.path.isdir(folder):
+            continue
+        files = [os.path.join(folder, "managed-settings.json")]
+        drop_ins = os.path.join(folder, "managed-settings.d")
+        try:
+            files += sorted(os.path.join(drop_ins, n) for n in os.listdir(drop_ins) if n.endswith(".json"))
+        except OSError:
+            pass
+        for name in files:
+            data = read_json(Path(name))
+            if isinstance(data, dict) and (data.get("allowManagedHooksOnly") is True or data.get("disableAllHooks") is True):
+                return True
+    return False
+
+
 def hooks_dir(home):
     """Where pane.py --relay/--live on keeps the hooks' copies that Claude's settings name."""
     return Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share") / "talpy-den"
@@ -7094,14 +7120,21 @@ def last_model(path):
         nbytes *= 4
 
 
-def saved_options(state_path, chat_id, mode, model, effort):
+def has_settings_flag(flags):
+    """Do claude's options name settings of their own (--settings)?"""
+    return any(f == "--settings" or f.startswith("--settings=") for f in flags if isinstance(f, str))
+
+
+def saved_options(state_path, chat_id, mode, model, effort, settings=None):
     """Have a chat's background job (its state.json) wake in its permission
     mode, on its model and effort: those its saved options (respawnFlags)
     lack are added (a copy Claude made of a chat saves only the model its
     account's settings name, though it runs in the chat's mode), as Claude
     adds them itself on a mode change, /model and /effort in it; the ones it
-    has are its own and stay. Only while it's settled (no process has it) and
-    in the shape it should have. Whether its options carry them now."""
+    has are its own and stay. settings: settings of its own (claude
+    --settings, JSON: Talpy Chat's permission hook for it), added when it has
+    none. Only while it's settled (no process has it) and in the shape it
+    should have. Whether its options carry them now."""
     import shutil
     job = read_json(state_path)
     flags = job.get("respawnFlags") if isinstance(job, dict) and job.get("sessionId") == chat_id else None
@@ -7110,7 +7143,8 @@ def saved_options(state_path, chat_id, mode, model, effort):
     have = saved_flags(flags)
     mode = "default" if mode == "manual" else mode
     add = (["--permission-mode", mode] if mode in GO_ON_MODES and "mode" not in have else []) \
-        + chat_options(None if "model" in have else model, None if "effort" in have else effort)
+        + chat_options(None if "model" in have else model, None if "effort" in have else effort) \
+        + (["--settings", settings] if settings and not has_settings_flag(flags) else [])
     if add:
         tmp = state_path.with_name(f".{state_path.name}.{os.getpid()}.tmp")
         try:
@@ -7128,7 +7162,7 @@ def saved_options(state_path, chat_id, mode, model, effort):
 
 
 def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", claude=None, prefix=(),
-                  wait=None, force=False, ends_at=None):
+                  wait=None, force=False, ends_at=None, settings=None):
     """Go on with a chat a usage limit stopped, now that the limit has reset
     (a queued one: jump.py --start-queued; here or on an SSH host,
     --continue-chat): in the background on its account, with text (else
@@ -7146,7 +7180,11 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     ends_at (ms): a session whose turn the limit ended but that's at work on
     its background commands (background_work) is waited for until then:
     {"ok": False, "waits": True, "commands", "endsAt"}; from then on they're
-    ended first (end_background_work), and its answer names them ("ended")."""
+    ended first (end_background_work), and its answer names them ("ended").
+    settings: settings of its own it goes on with (claude --settings, JSON:
+    Talpy Chat's permission hook for it), unless its background job has some
+    already: written into the job's saved options when it's woken (any
+    option given would start a copy), else given."""
     profiles = discover_profiles(home, extra_dirs)
     profile = next((p for p in profiles if matches_profile(p, profile_key)), None)
     if profile is None:
@@ -7225,8 +7263,10 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     mode = flags.get("mode") or mode
     model, effort = flags.get("model") or guess_model, flags.get("effort") or guess_effort
     wakes = own_job and settled
-    carried = not wakes or not (mode or model or effort) or saved_options(state, chat_id, mode, model, effort)
-    options = [] if wakes else go_on_options(mode, model, effort) + picture_options(home, text)
+    carried = not wakes or not (mode or model or effort or settings) \
+        or saved_options(state, chat_id, mode, model, effort, settings)
+    options = [] if wakes else go_on_options(mode, model, effort) + (["--settings", settings] if settings else []) \
+        + picture_options(home, text)
     notes = []
     ok, message, job = start_background(profile, folder, prompt, home, claude, prefix=prefix, resume=chat_id,
                                         options=options, notes=notes)
@@ -10885,7 +10925,8 @@ def main(argv=None):
             claude = None
             try:
                 claude = cached_find_claude(home, cache_root, time.time())
-                result["cli"] = {"installed": claude is not None}
+                # (and whether a hook given to one chat runs: Talpy Chat answers a background chat through it)
+                result["cli"] = {"installed": claude is not None, "hooks": not managed_hooks_only()}
             except Exception as exc:
                 result["errors"].append(f"claude command: {exc}")
             if instance is not None:

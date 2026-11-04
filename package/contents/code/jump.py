@@ -40,6 +40,8 @@ a new chat (used by the Talpy Den widget).
     python3 -I jump.py --screenshot              (a region of the screen you pick, saved as a picture)
     python3 -I jump.py --attach PATH             (a dropped file: a picture is copied in as one, else named as is)
     python3 -I jump.py --pick-files [FOLDER]     (files to attach, from the desktop's file dialog: their paths)
+    python3 -I jump.py --pick-folder PROFILE     (a folder for a new chat in Talpy Chat, from the desktop's folder
+                                                 dialog: its path, short name and whether Claude trusts it)
     python3 -I jump.py --copy-image PATH         (a PNG to the clipboard: wl-copy, else xclip)
     python3 -I jump.py --agent-run AGENT_ID --chat CHAT_ID [--profile PROFILE] [--no-open]
                                                  (a subagent's whole run, as a Markdown file)
@@ -1355,6 +1357,21 @@ def pick_files(home, start):
     if paths is None:
         return False, error, {}
     return True, "", {"paths": paths}
+
+
+def pick_folder(home, extra_dirs, profile_key):
+    """--pick-folder: (ok, message, {"path", "short", "trusted"}) of a folder
+    for a new chat in Talpy Chat, picked in the desktop's folder dialog (it
+    opens in your home folder); cancelled: ok with no path. trusted: Claude
+    trusts it on that profile already (a background chat can't ask)."""
+    profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
+    if profile is None:
+        return False, f"No Claude profile called {profile_key}", {}
+    folder, error = choose_folder(f"New Claude chat on {profile.label} in…", home)
+    if folder is None:
+        return not error, error, {}
+    return True, "", {"path": folder, "short": cs.short_folder(folder, home),
+                      "trusted": cs.folder_trusted(profile, folder, home)}
 
 
 # ---------------------------------------------------------------- pictures in a task
@@ -2918,6 +2935,8 @@ def main(argv=None):
         elif arg == "--pick-files":
             action, session_id = pick_files, "-"
             attach_path = args.pop(0) if args and not args[0].startswith("--") else ""
+        elif arg == "--pick-folder" and args:
+            action, attach_path, session_id = pick_folder, args.pop(0), "-"
         elif arg == "--turn":
             turn = True
         elif arg == "--list":
@@ -3101,6 +3120,8 @@ def main(argv=None):
             ok, message, extra_out = attach_file(Path.home(), attach_path)
         elif action is pick_files:
             ok, message, extra_out = pick_files(Path.home(), attach_path)
+        elif action is pick_folder:
+            ok, message, extra_out = pick_folder(Path.home(), extra, attach_path)
         elif action is show_agent_run:
             ok, message, run_file = show_agent_run(Path.home(), extra, session_id, agent_id, profile_dir, open_it)
         elif action is show_changes and listing:

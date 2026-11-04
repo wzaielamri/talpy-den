@@ -798,6 +798,30 @@ class ChooseFolderTests(Fixture):
         (ok, msg), asked, _ = self.choosing(".claude-nope", (str(self.home), ""))
         self.assertEqual((ok, asked), (False, []))
 
+    def test_a_folder_for_talpy_chat_says_whether_claude_trusts_it(self):
+        # (Talpy Chat starts it in the background, where Claude can't ask: one it doesn't trust opens in a terminal)
+        trusted, other = self.home / "repos/b", self.home / "repos/c"
+        for f in (trusted, other):
+            f.mkdir(parents=True)
+        w = self.home / ".claude-work/.claude.json"
+        data = json.loads(w.read_text())
+        data["projects"] = {str(trusted): {"hasTrustDialogAccepted": True}}
+        w.write_text(json.dumps(data))
+        for chosen, said in ((str(trusted), (True, "", {"path": str(trusted), "short": "~/repos/b", "trusted": True})),
+                             (str(other), (True, "", {"path": str(other), "short": "~/repos/c", "trusted": False})),
+                             (None, (True, "", {}))):
+            with Patch(choose_folder=lambda title, start: (chosen, "")):
+                self.assertEqual(jump.pick_folder(self.home, [], ".claude-work"), said)
+        with Patch(choose_folder=lambda title, start: (None, "No folder dialog found (install kdialog)")):
+            self.assertEqual(jump.pick_folder(self.home, [], ".claude-work"), (False, "No folder dialog found (install kdialog)", {}))
+        self.assertFalse(jump.pick_folder(self.home, [], ".claude-nope")[0])
+        out = io.StringIO()
+        with Patch(choose_folder=lambda title, start: (str(trusted), "")), mock.patch.object(jump.Path, "home", return_value=self.home), \
+                contextlib.redirect_stdout(out):
+            jump.main(["--pick-folder", ".claude-work"])
+        self.assertEqual(json.loads(out.getvalue()), {"ok": True, "message": "", "path": str(trusted), "short": "~/repos/b",
+                                                      "trusted": True})
+
     def test_command_line(self):
         calls = []
         out = io.StringIO()

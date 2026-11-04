@@ -463,13 +463,13 @@ class ActionTests(FakeSSH):
         self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --end busy-there --profile .claude --busy"])
 
     def test_host_says_whether_claude_is_there(self):
-        self.assertEqual(remote.status("lab", tokens=False)["result"]["cli"], {"installed": False})
+        self.assertEqual(remote.status("lab", tokens=False)["result"]["cli"], {"installed": False, "hooks": True})
         claude = self.fake_home / ".local/bin/claude"
         claude.parent.mkdir(parents=True)
         claude.write_text("#!/bin/sh\n")
         claude.chmod(0o755)
         result = remote.status("lab", tokens=False)["result"]
-        self.assertEqual((result["cli"], result["claude"]), ({"installed": True}, str(claude)))
+        self.assertEqual((result["cli"], result["claude"]), ({"installed": True, "hooks": True}, str(claude)))
 
     def test_open_runs_the_command_unchanged_on_the_host(self):
         # A command with quotes, spaces and $: it must reach the host as is.

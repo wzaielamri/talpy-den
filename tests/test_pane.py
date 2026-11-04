@@ -1149,7 +1149,7 @@ class HookTests(unittest.TestCase):
         self.assertEqual((ok, message), (False, "It asks for a permission, not a question"))
 
 
-class SendTests(PaneFixture):
+class SendFixture(PaneFixture):
     def setUp(self):
         super().setUp()
         self.bin = self.home / "bin"
@@ -1177,12 +1177,22 @@ class SendTests(PaneFixture):
     def live(self, **kw):
         write(self.home / ".claude-work/sessions/30.json", session(SID, cwd=str(self.folder), **kw))
 
+    def hook(self):
+        """The permission hook a chat Talpy Chat starts or wakes gets for itself (claude --settings)."""
+        command = pane.hook_command(self.home / ".local/share/talpy-den/permission-hook.py")
+        return json.dumps({"hooks": {"PermissionRequest": [{"matcher": "*", "hooks": [
+            {"type": "command", "command": command, "timeout": pane.HOOK_TIMEOUT_S}]}]}}, separators=(",", ":"))
+
+
+
+class SendTests(SendFixture):
     def test_a_finished_chat_goes_on_in_the_background(self):
         answer = self.send()
         self.assertTrue(answer["ok"], answer)
         self.assertEqual((answer["how"], answer["message"]),
                          ("background", "Sent: the chat goes on with it in the background (1a2b3c4d)"))
-        self.assertEqual(self.calls(), [["--bg", "--resume", SID, "and the docs"]])
+        # (with the permission hook for it alone: a background chat has no terminal to ask in)
+        self.assertEqual(self.calls(), [["--bg", "--resume", SID, "--settings", self.hook(), "and the docs"]])
 
     def test_a_background_session_takes_it_in_where_it_is(self):
         # (through Claude's background service, as `claude agents` answers one: queued while it works,
@@ -1283,7 +1293,7 @@ class SendTests(PaneFixture):
         with mock.patch.object(pane, "copy_to_clipboard") as copy:
             self.assertEqual(self.send("enter")["how"], "background")
         copy.assert_not_called()
-        self.assertEqual(self.calls(), [["--bg", "--resume", SID, "and the docs"]])
+        self.assertEqual(self.calls(), [["--bg", "--resume", SID, "--settings", self.hook(), "and the docs"]])
 
     def test_enter_copies_here_for_a_hosts_terminal(self):
         asked = {"ok": True, "how": "ask", "message": "Its terminal takes no text from outside"}
@@ -1372,6 +1382,109 @@ class SendTests(PaneFixture):
 HAVE_GIT = shutil.which("git") is not None
 GIT_ENV = {"GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@example.org", "GIT_COMMITTER_NAME": "T",
            "GIT_COMMITTER_EMAIL": "t@example.org", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+
+class TalpyChatHookTests(SendFixture):
+    """Chats Talpy Chat starts, or wakes in the background, get the permission
+    hook for themselves (claude --settings), so what they ask is answered in
+    Talpy Chat: a background chat has no terminal to ask in."""
+
+    JOB = "1a2b3c4d"   # (what the fake claude prints)
+    NEW = JOB + "-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+
+    def start(self, folder=None, text="Fix the tests", **kw):
+        write(self.home / f".claude-work/jobs/{self.JOB}/state.json", {"sessionId": self.NEW, "respawnFlags": []})
+        return pane.start_chat(self.home, [], ".claude-work", str(folder or self.folder), text, claude=str(self.bin / "claude"),
+                               **kw)
+
+    def test_a_new_chat_starts_in_the_background_with_its_own_hook(self):
+        answer = self.start(model="haiku", effort="low", mode="default")
+        self.assertEqual(answer, {"ok": True, "how": "background", "id": self.JOB, "chat": self.NEW,
+                                  "profileDir": ".claude-work", "message": "Started in the background on work"})
+        self.assertEqual(self.calls(), [["--bg", "--settings", self.hook(), "--model", "haiku", "--effort", "low",
+                                         "--permission-mode", "default", "Fix the tests"]])
+        self.assertEqual(self.scopes, ["claude"])   # (in a systemd scope of its own)
+        # the hook's copy is put in place for it (the setting for every chat is off: none was there)
+        hook = self.home / ".local/share/talpy-den/permission-hook.py"
+        self.assertEqual(hook.read_bytes(), (CODE / "permission_hook.py").read_bytes())
+        # nothing of the account's settings changes
+        self.assertFalse((self.home / ".claude-work/settings.json").exists())
+
+    def test_no_hook_of_its_own_where_the_hook_runs_anyway_or_cant(self):
+        # the setting for every chat on: the account's settings have the hook (it would run twice)
+        pane.relay(self.home, [], True)
+        self.start()
+        self.assertEqual(self.calls()[-1], ["--bg", "Fix the tests"])
+        self.assertEqual(self.send()["how"], "background")
+        self.assertEqual(self.calls()[-1], ["--bg", "--resume", SID, "and the docs"])
+        # managed settings that let only their own hooks run (or none)
+        pane.relay(self.home, [], False)
+        with mock.patch.object(cs, "managed_hooks_only", return_value=True):
+            self.start()
+        self.assertEqual(self.calls()[-1], ["--bg", "Fix the tests"])
+
+    def test_a_folder_claude_doesnt_trust_isnt_started(self):
+        other = self.home / "elsewhere"
+        other.mkdir()
+        answer = self.start(other)
+        self.assertFalse(answer["ok"])
+        self.assertIn("Claude doesn't trust ~/elsewhere yet", answer["message"])
+        self.assertEqual(self.calls(), [])
+
+    def test_its_first_message_names_the_plan(self):
+        write(self.home / ".claude-work/plans/calm-red-owl.md", "# Calm plan\n\n1. Do it\n")
+        self.assertTrue(self.start(text="", plan="calm-red-owl")["ok"])
+        self.assertEqual(self.calls()[-1][-1], "Implement this plan.\n\nThe plan (saved as ~/.claude-work/plans/"
+                                               "calm-red-owl.md):\n\n# Calm plan\n\n1. Do it\n")
+        self.assertEqual(self.start(text=" ")["message"], "Write your message first")
+
+    def test_a_stopped_background_job_gets_it_in_its_saved_options(self):
+        # (options given with --resume for a chat with a job record start a copy: they go into what
+        # Claude wakes it with instead, while nothing holds it; the wake gives none)
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "respawnFlags": ["--model", "opus"]})
+        self.assertEqual(self.send()["how"], "background")
+        self.assertEqual(self.calls(), [["--bg", "--resume", SID, "and the docs"]])
+        self.assertEqual(json.loads(state.read_text())["respawnFlags"], ["--model", "opus", "--settings", self.hook()])
+        # once: settings it has are its own (the ones it got before, or yours)
+        write(state, {"sessionId": SID, "respawnFlags": ["--settings", "{}", "--model", "opus"]})
+        self.send()
+        self.assertEqual(json.loads(state.read_text())["respawnFlags"], ["--settings", "{}", "--model", "opus"])
+
+    def test_the_command_line(self):
+        write(self.home / f".claude-work/jobs/{self.JOB}/state.json", {"sessionId": self.NEW})
+        with mock.patch.object(cs, "find_claude", return_value=str(self.bin / "claude")):
+            answer = self.cli("--start", ".claude-work", "--cwd", str(self.folder), "--text", "Fix the tests",
+                              "--model", "sonnet", "--permission-mode", "acceptEdits")
+        self.assertEqual((answer["ok"], answer["chat"]), (True, self.NEW))
+        self.assertEqual(self.calls()[-1], ["--bg", "--settings", self.hook(), "--model", "sonnet",
+                                            "--permission-mode", "acceptEdits", "Fix the tests"])
+        # not on an SSH host yet: its prompts can't reach Talpy Chat
+        with mock.patch("remote.host_answer") as host:
+            answer = self.cli("--start", ".claude-work", "--cwd", "~", "--text", "x", "--host", "lab")
+        self.assertEqual(answer, {"ok": False, "message": "Talpy Chat starts chats on this computer only, for now"})
+        host.assert_not_called()
+
+    def test_a_job_record_that_never_names_its_chat(self):
+        with mock.patch.object(pane, "JOB_RECORD_WAIT_S", 0.2):
+            (self.home / ".claude-work/jobs").mkdir(parents=True, exist_ok=True)
+            answer = pane.start_chat(self.home, [], ".claude-work", str(self.folder), "x", claude=str(self.bin / "claude"))
+        self.assertFalse(answer["ok"])
+        self.assertIn("It started (1a2b3c4d)", answer["message"])
+
+
+class ManagedHooksTests(unittest.TestCase):
+    def test_managed_settings_that_allow_only_their_own_hooks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertFalse(cs.managed_hooks_only([str(root / "none")]))
+            write(root / "managed-settings.json", {"permissions": {}})
+            self.assertFalse(cs.managed_hooks_only([str(root)]))
+            write(root / "managed-settings.d/10-hooks.json", {"allowManagedHooksOnly": True})
+            self.assertTrue(cs.managed_hooks_only([str(root)]))
+            write(root / "managed-settings.d/10-hooks.json", {"allowManagedHooksOnly": False})
+            write(root / "managed-settings.json", {"disableAllHooks": True})
+            self.assertTrue(cs.managed_hooks_only([str(root)]))
 
 
 class ReviewTests(PaneFixture):
