@@ -1756,7 +1756,7 @@ class PaneMarkdownTests(unittest.TestCase):
         # [github.com/…](https://evil.example/) showed the GitHub words and opened the other site
         ui = CODE.parent / "ui"
         pane = (ui / "ChatPane.qml").read_text()
-        self.assertIn("onLinkHovered: link => pane.linkHovered(replyText, link, replyHover.point.position)", pane)
+        self.assertIn("pane.linkHovered(replyText, link, replyHover.point.position)", pane)   # (onLinkHovered, with the Copy frame)
         self.assertIn('active: pane.linkShown !== "" && pane.linkBox !== null', pane)   # (made only while hovered)
         self.assertIn('active: planText.hoveredLink !== ""', (ui / "PermissionAsk.qml").read_text())
 
