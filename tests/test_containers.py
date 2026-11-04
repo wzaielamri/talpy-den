@@ -635,7 +635,7 @@ class VscodeAskTests(FakeEngines):
         from unittest import mock
         self.engine("podman")
         self.put({"shop": self.container("shop")})
-        ask = "Open VS Code attached to podman:shop? Dev Containers shares your SSH agent and Git credentials with it."
+        ask = "Open VS Code attached to shop? Dev Containers shares your SSH agent and Git credentials with it."
         with mock.patch.object(jump, "vscode_connected_to", lambda host: ([], "")), \
                 mock.patch.object(jump.shutil, "which", lambda n: "/bin/true" if n == "xdg-open" else None):
             self.assertEqual(jump.jump_remote_vscode("podman:shop", "abc", "/w"), (None, ask))

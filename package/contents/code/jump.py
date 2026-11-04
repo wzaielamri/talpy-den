@@ -676,7 +676,7 @@ def jump_remote_vscode(host, session_id, folder="", allow=False):
         return True, f"Opened the conversation in VS Code ({remote_label(host)})"
     import remote
     if not remote.vscode_allowed(host, allow):
-        return None, (f"Open VS Code attached to {host}? Dev Containers shares your SSH agent and Git credentials with it."
+        return None, (f"Open VS Code attached to {remote_label(host)}? Dev Containers shares your SSH agent and Git credentials with it."
                       if is_container(host) else
                       f"Open VS Code connected to {host}? Its VS Code server can read your clipboard and open links here.")
     code = next((shutil.which(n) for n in VSCODE_NAMES if shutil.which(n)), None)
