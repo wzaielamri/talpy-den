@@ -6,8 +6,8 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isComparison, type Comparison } from "./changes";
-import { shellQuote } from "./shared/model";
-import type { ContainerInfo, ContainerNote, ProjectsData, FoundChat, FoundMemory, FoundPlan, FoundProject, LimitHistory, PermsData, Status, WeekRecap } from "./shared/types";
+import { hostLabel, shellQuote } from "./shared/model";
+import type { ContainerInfo, ContainerNote, FoundChat, FoundMemory, FoundPlan, FoundProject, LimitHistory, PermsData, ProjectsData, Status, WeekRecap } from "./shared/types";
 
 export const REMOTE_MARK = "@@talpy-den@@";
 const KILL_GRACE_MS = 3000;
@@ -250,7 +250,7 @@ export class Backend {
   // a container's: stopped (Start), gone
   async hostStatus(host: string, args: string[]): Promise<{ ok: boolean; result?: Status; error?: string; login?: boolean; loggedIn?: boolean; stopped?: boolean; gone?: boolean }> {
     const r = await this.json(["remote.py", "--status", host, ...args], 70000);
-    if (!r) return { ok: false, error: `${host}: no answer from the SSH helper` };
+    if (!r) return { ok: false, error: `${hostLabel(host)}: no answer from the SSH helper` };
     if (r.ok && r.result) return { ok: true, result: r.result as Status, loggedIn: !!r.loggedIn };
     return { ok: false, error: String(r.error || r.message || "no answer"), login: !!r.login, stopped: !!r.stopped, gone: !!r.gone };
   }

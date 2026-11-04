@@ -1434,7 +1434,7 @@ Window {
     }
 
     readonly property string routeHint: {
-        const where = host ? " " + i18n("(on %1)", host) : ""
+        const where = host ? " " + i18n("(on %1)", root.hostLabel(host)) : ""
         if (route === "tmux")
             return i18n("Typed into its tmux pane.") + where
         if (route === "vscode")

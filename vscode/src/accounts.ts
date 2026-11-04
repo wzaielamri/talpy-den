@@ -11,7 +11,7 @@ import type { Backend } from "./backend";
 import { configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
-import { accountNameProblem, machineStatus } from "./shared/model";
+import { accountNameProblem, containerOf, hostLabel, machineStatus } from "./shared/model";
 import type { Group } from "./shared/types";
 import type { Place, Terminals } from "./terminals";
 
@@ -69,7 +69,7 @@ export class Accounts {
   }
 
   private where(host?: string): string {
-    return host ? ` on ${host}` : "";
+    return host ? ` on ${hostLabel(host)}` : "";
   }
 
   private call(args: string[], host?: string): Promise<Record<string, any>> {
@@ -108,15 +108,17 @@ export class Accounts {
 
   // This computer, or one of the SSH hosts the view shows
   private async machine(): Promise<{ host?: string } | undefined> {
-    const hosts = this.dash.state().hosts.filter((h) => h.result && !h.error).map((h) => h.name);
+    const hosts = this.dash.state().hosts.filter((h) => h.result && !h.error);
     if (!hosts.length) return {};
     const pick = await vscode.window.showQuickPick(
       [
         { label: "$(device-desktop) This computer", host: undefined as string | undefined },
+        // (a container: its section's line, "podman · ubuntu:22.04 · on lab", as the hosts picker's)
         ...hosts.map((h) => ({
-          label: `$(server) ${h}`,
-          description: h === this.dash.currentHost ? "this window's host" : "over ssh",
-          host: h as string | undefined,
+          label: `$(${containerOf(h.name) ? "package" : "server"}) ${hostLabel(h.name)}`,
+          description: containerOf(h.name) ? (h.name === this.dash.currentHost ? "this window's container" : h.detail ?? "")
+            : h.name === this.dash.currentHost ? "this window's host" : "over ssh",
+          host: h.name as string | undefined,
         })),
       ],
       { title: "Claude Accounts", placeHolder: "Whose accounts? A host's go over ssh; nothing is installed there" },
@@ -132,7 +134,7 @@ export class Accounts {
     if (!accounts) return;
     const items: Item<() => Promise<void>>[] = [
       { label: "$(person-add) Add Account…", detail: "A ~/.claude-NAME folder, logged in with Claude's own login", run: () => this.add(accounts, host) },
-      { label: `Accounts${host ? ` on ${host}` : " on this computer"}`, kind: vscode.QuickPickItemKind.Separator },
+      { label: `Accounts${host ? ` on ${hostLabel(host)}` : " on this computer"}`, kind: vscode.QuickPickItemKind.Separator },
       ...accounts.map((a) => ({
         label: `$(${a.loggedIn ? "account" : "circle-slash"}) ${a.label}`,
         description: a.folder,
@@ -222,7 +224,7 @@ export class Accounts {
     void vscode.window.showInformationMessage(
       noLinks(
         (host
-          ? `Log in to ${name} on ${host} in the terminal: open the address Claude shows in your browser, sign in with the other account, and paste the code you get back.`
+          ? `Log in to ${name} on ${hostLabel(host)} in the terminal: open the address Claude shows in your browser, sign in with the other account, and paste the code you get back.`
           : `Log in to ${name} in the terminal: sign in in your browser with the other account.`) +
           ` Afterwards, Claude Accounts → ${name} → Make Default makes it the account VS Code's Claude and plain claude run on.`,
       ),
@@ -251,7 +253,7 @@ export class Accounts {
       `Remove ${a.label}${this.where(host)}?`,
       {
         modal: true,
-        detail: `It logs out, then moves ${a.folder} to the Trash${host ? ` of ${host}` : ""} with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.${a.handOver ? ` ${a.handOver}` : ""}`,
+        detail: `It logs out, then moves ${a.folder} to the Trash${host ? ` of ${hostLabel(host)}` : ""} with its chats, history and settings (restore it from there if you change your mind). Chats shared with your other accounts stay on them.${a.handOver ? ` ${a.handOver}` : ""}`,
       },
       "Remove",
     );
@@ -273,7 +275,7 @@ export class Accounts {
       if (!group) return this.fail(`${a.label} isn't in the list yet: try again in a moment.`);
       if (host) {
         if (await this.switcher.switchHost({ ...group, host }, true))
-          void vscode.window.showInformationMessage(noLinks(`${a.label} is the default account on ${host} now.`));
+          void vscode.window.showInformationMessage(noLinks(`${a.label} is the default account on ${hostLabel(host)} now.`));
         return;
       }
       return this.switcher.switchTo(group);

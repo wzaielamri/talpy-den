@@ -902,7 +902,7 @@ export class Dashboard implements vscode.Disposable {
   // the chats' folder's .claude/settings.local.json, or taken back
   async weekRule(ask: WeekRuleAsk, host = ""): Promise<{ ok: boolean; message: string }> {
     if (this.demoPhase !== null) return { ok: false, message: "Not in the demo: nothing was changed" };
-    if (host && !this.shownHosts().includes(host)) return { ok: false, message: `${host} isn't one of the SSH hosts shown` };
+    if (host && !this.shownHosts().includes(host)) return { ok: false, message: `${hostLabel(host)} isn't one of the SSH hosts and containers shown` };
     return this.backend.action("week.py", [...(ask.allow ? ["--allow", ask.kind, ask.value, ask.project] : ["--undo", ask.id]),
       ...(host ? ["--on", host] : [])]);
   }
@@ -1013,7 +1013,7 @@ export class Dashboard implements vscode.Disposable {
   // asking) out of its file
   async weekRevoke(id: string, host = ""): Promise<{ ok: boolean; message: string }> {
     if (this.demoPhase !== null) return { ok: false, message: "Not in the demo: nothing was changed" };
-    if (host && !this.shownHosts().includes(host)) return { ok: false, message: `${host} isn't one of the SSH hosts shown` };
+    if (host && !this.shownHosts().includes(host)) return { ok: false, message: `${hostLabel(host)} isn't one of the SSH hosts and containers shown` };
     return this.backend.action("week.py", ["--revoke", id, ...(host ? ["--on", host] : configDirArgs())]);
   }
 

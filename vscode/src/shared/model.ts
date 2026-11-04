@@ -487,7 +487,7 @@ export function accountNameProblem(name: string, folders: string[]): string {
 }
 
 export function groupLabel(g: Group): string {
-  return g.host ? `${g.host}: ${g.name}` : g.name;
+  return g.host ? `${hostLabel(g.host)}: ${g.name}` : g.name;
 }
 
 // Accounts close to their 5-hour limit, e.g. "work: 100% of the 5-hour limit!"
@@ -589,7 +589,7 @@ export function tokensText(t: Tokens): string {
 export function planUsageText(limits: Limits, from: string, now: number, fetchAt?: number | null): string {
   if (fetchingUsage(limits, now, fetchAt)) return "Fetching the plan usage…";
   if (!Number.isFinite(limits.updatedAt)) return "";
-  const on = from ? `, on ${from}` : "";
+  const on = from ? `, on ${hostLabel(from)}` : "";
   return now - limits.updatedAt < 60000 ? `Plan usage updated just now${on}` : `Plan usage as of ${duration(now - limits.updatedAt)} ago${on}`;
 }
 
@@ -623,10 +623,10 @@ export function tooltipLines(groups: Group[], counts: Counts, hosts: HostState[]
   for (const g of groups) {
     if (!g.limits) continue;
     lines.push(
-      (g.host ? g.host + ": " : "") + g.title + ": " + g.limits.windows.map((w) => `${w.label} ${Math.round(w.pct)}%`).join(" · "),
+      (g.host ? hostLabel(g.host) + ": " : "") + g.title + ": " + g.limits.windows.map((w) => `${w.label} ${Math.round(w.pct)}%`).join(" · "),
     );
   }
-  for (const h of hosts) if (h.error) lines.push(`${h.name}: not reachable`);
+  for (const h of hosts) if (h.error) lines.push(`${hostLabel(h.name)}: not reachable`);
   return lines;
 }
 
@@ -1218,7 +1218,7 @@ export function changesTag(c: ChangeSummary): string {
 export function changesTitle(c: ChangeSummary, host?: string): string {
   const more = c.count > c.files.length ? `\n…and ${c.count - c.files.length} more` : "";
   const what = host
-    ? `\nThey're on ${host}: compare them there.`
+    ? `\nThey're ${hostWhere(host)}: compare them there.`
     : "\nClick to compare them with what they were before the chat, side by side (VS Code's changes view).";
   return `${plural(c.count, "%1 file changed", "%1 files changed")}:\n${c.files.join("\n")}${more}${what}`;
 }

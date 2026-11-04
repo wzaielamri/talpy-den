@@ -256,8 +256,8 @@ ColumnLayout {
             text: fetching ? i18n("Fetching the plan usage…")
                   : !section.group.limits ? i18n("No plan usage yet: shows after this account's next reply")
                   : section.group.limitsFrom
-                    ? (root.now - section.group.limits.updatedAt < 60000 ? i18n("Plan usage updated just now, on %1", section.group.limitsFrom)
-                       : i18n("Plan usage as of %1 ago, on %2", root.duration(root.now - section.group.limits.updatedAt), section.group.limitsFrom))
+                    ? (root.now - section.group.limits.updatedAt < 60000 ? i18n("Plan usage updated just now, on %1", root.hostLabel(section.group.limitsFrom))
+                       : i18n("Plan usage as of %1 ago, on %2", root.duration(root.now - section.group.limits.updatedAt), root.hostLabel(section.group.limitsFrom)))
                   : root.now - section.group.limits.updatedAt < 60000 ? i18n("Plan usage updated just now")
                   : i18n("Plan usage as of %1 ago", root.duration(root.now - section.group.limits.updatedAt))
 

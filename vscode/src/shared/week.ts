@@ -442,7 +442,7 @@ export function coldText(recap: WeekRecap): string {
 }
 
 export function footText(recap: WeekRecap): string {
-  const hosts = recap.sources.filter((s) => s.host && s.ok).map((s) => s.host);
+  const hosts = recap.sources.filter((s) => s.host && s.ok).map((s) => hostLabel(s.host));
   const guessed = recap.prices.guessed.length ? ` (${recap.prices.guessed.join(", ")} at the price of its family's newest model)` : "";
   const lines = [
     `Read from the chats on this computer${hosts.length ? ` and on ${hosts.join(", ")}` : ""}, without using any tokens. ` +
@@ -452,7 +452,7 @@ export function footText(recap: WeekRecap): string {
   if (c?.error) lines.push(`Amounts in US dollars: ${c.error}.`);
   else if (c && c.code !== "USD" && c.date)
     lines.push(`Amounts in ${c.code} at the European Central Bank's rate of ${dateText(c.date)}: 1 USD = ${c.rate.toFixed(4)} ${c.code}.`);
-  for (const s of recap.sources) if (!s.ok) lines.push(`${s.host} couldn't be read: ${s.error}`);
+  for (const s of recap.sources) if (!s.ok) lines.push(`${hostLabel(s.host)} couldn't be read: ${s.error}`);
   return lines.join("\n");
 }
 

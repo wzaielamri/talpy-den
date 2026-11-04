@@ -5,6 +5,7 @@
 // has the words. With SSH hosts shown, each source has a heading of its own.
 
 import type { FindAnswer } from "./backend";
+import { hostLabel } from "./shared/model";
 
 export type FoundKind = "projects" | "plans" | "memories" | "chats";
 
@@ -50,7 +51,7 @@ export function foundLines(answers: readonly FindAnswer[], hosts: readonly strin
     const host = source ? hosts[source - 1] : "";
     if (hosts.length) {
       const open = shown(folds, host, "source", answer);
-      const title = (host || "This computer") + (answer.ok ? ` · ${summary(answer)}` : "");
+      const title = (host ? hostLabel(host) : "This computer") + (answer.ok ? ` · ${summary(answer)}` : "");
       lines.push({ fold: `${host}/source`, title, open, source: true });
       if (!open) return;
     }

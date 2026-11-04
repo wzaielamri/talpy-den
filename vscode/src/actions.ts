@@ -34,6 +34,7 @@ import {
   containerPlaces,
   groupLabel,
   hostLabel,
+  hostWhere,
   hasTurn,
   HIDDEN_NOUNS,
   hiddenCount,
@@ -205,7 +206,7 @@ export class Actions {
     // command jump.py has for it (claude --resume, in its folder); an SSH
     // host's can't from here
     if (!chat.pid && !chat.jobId) {
-      if (host) return this.fail(`${chat.name} isn't running on ${host}, and there's no command here to reopen it: find it with Find a Chat.`);
+      if (host) return this.fail(`${chat.name} isn't running ${hostWhere(host)}, and there's no command here to reopen it: find it with Find a Chat.`);
       const profile = chat.profileDir ? ["--profile", chat.profileDir] : [];
       const answer = await this.backend.action("jump.py", ["--resume", chat.chatId || chat.sessionId, ...profile, "--print-command", ...configDirArgs()]);
       if (!answer.ok || !answer.command) return this.fail(`Couldn't reopen ${chat.name}: ${answer.message || "no command for it"}`);
@@ -214,7 +215,7 @@ export class Actions {
     }
     // It runs in a terminal outside VS Code (or in another VS Code window)
     if (await canRaiseWindows()) return this.openSystem(chat);
-    const where = host && chat.vscodeTerminal ? `a terminal of a VS Code window connected to ${host}` : `a terminal outside this VS Code window${host ? ` on ${host}` : ""}`;
+    const where = host && chat.vscodeTerminal ? `a terminal of a VS Code window connected to ${hostLabel(host)}` : `a terminal outside this VS Code window${host ? ` ${hostWhere(host)}` : ""}`;
     this.fail(`${chat.name} runs in ${where}.${noRaiserHint()}`);
   }
 
@@ -450,7 +451,7 @@ export class Actions {
       const state = this.dash.state();
       const items = [
         { label: "This computer", n: hiddenCount(state.status, kind), host: null as string | null },
-        ...state.hosts.map((h) => ({ label: h.name, n: hiddenCount(h.result, kind), host: h.name as string | null })),
+        ...state.hosts.map((h) => ({ label: hostLabel(h.name), n: hiddenCount(h.result, kind), host: h.name as string | null })),
       ].filter((i) => i.n > 0).map((i) => ({ ...i, description: `${i.n} hidden` }));
       if (!items.length) {
         this.dash.setActionInfo(`No ${noun[0]} was hidden`);
@@ -477,8 +478,8 @@ export class Actions {
     const result = this.dash.state().hosts.find((h) => h.name === host)?.result;
     const items = (Object.keys(HIDDEN_NOUNS) as HiddenKind[]).map((kind) => ({ kind, n: hiddenCount(result, kind) }))
       .filter((i) => i.n > 0).map((i) => ({ hidden: i.kind, label: `Show Hidden ${HIDDEN_NOUNS[i.kind][2]} Again (${i.n})` }));
-    if (!items.length) return this.dash.setActionInfo(`Nothing on ${host} is hidden`);
-    const pick = items.length > 1 ? await vscode.window.showQuickPick(items, { placeHolder: `Show hidden ones again on ${host}` }) : items[0];
+    if (!items.length) return this.dash.setActionInfo(`Nothing ${hostWhere(host)} is hidden`);
+    const pick = items.length > 1 ? await vscode.window.showQuickPick(items, { placeHolder: `Show hidden ones again ${hostWhere(host)}` }) : items[0];
     if (pick) await this.showHidden(pick.hidden, host);
   }
 
@@ -566,7 +567,7 @@ export class Actions {
       items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
       for (const g of accounts) items.push({ label: `Keep only on ${g.title}…`, kind2: "keeponly", group: g });
     }
-    const pick = await vscode.window.showQuickPick(items, { placeHolder: host ? `${chat.name} on ${host}` : chat.name });
+    const pick = await vscode.window.showQuickPick(items, { placeHolder: host ? `${chat.name} ${hostWhere(host)}` : chat.name });
     if (!pick?.kind2) return;
     if (pick.kind2 === "keeponly") {
       const others = accounts.filter((g) => g !== pick.group).map((g) => g.title).join(", ");
@@ -624,7 +625,7 @@ export class Actions {
   async openPlan(plan: { slug: string; path: string; profileDir: string }, host?: string, edit = false): Promise<void> {
     if (this.demoOnly()) return;
     if (host && host !== this.dash.currentHost) {
-      if (edit) return this.fail(`That plan is on ${host}: change it from a VS Code window connected to ${host}.`);
+      if (edit) return this.fail(`That plan is ${hostWhere(host)}: change it from a VS Code window connected to ${hostLabel(host)}.`);
       const answer = await this.backend.action("remote.py", ["--plan", host, plan.slug, plan.profileDir, "--no-open"]);
       if (!this.report(answer, "Couldn't open the plan")) return;
       if (!isAgentRunFile(answer.file)) return this.fail("Couldn't open the plan: the helper saved it somewhere unexpected");
@@ -697,7 +698,7 @@ export class Actions {
   // connected to (another host's isn't offered)
   async openMemory(memory: { path: string }, host?: string, edit = false): Promise<void> {
     if (this.demoOnly()) return;
-    if (host && host !== this.dash.currentHost) return this.fail(`That memory is on ${host}: open it from a VS Code window connected to ${host}.`);
+    if (host && host !== this.dash.currentHost) return this.fail(`That memory is ${hostWhere(host)}: open it from a VS Code window connected to ${hostLabel(host)}.`);
     if (!/(\/projects\/[^/]+\/memory\/[^/]+\.md|\/CLAUDE\.md)$/.test(memory.path)) return this.fail("That isn't one of Claude's memories.");
     const uri = (host && windowHostFile(vscode, memory.path)) || vscode.Uri.file(memory.path);
     if (!edit) {
@@ -763,7 +764,7 @@ export class Actions {
       items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
       for (const g of accounts) if (g.shareProfile) items.push({ label: `Keep only on ${g.title}`, keep: g.shareProfile });
     }
-    const pick = await vscode.window.showQuickPick(items, { placeHolder: host ? `${plan.title} on ${host}` : plan.title });
+    const pick = await vscode.window.showQuickPick(items, { placeHolder: host ? `${plan.title} ${hostWhere(host)}` : plan.title });
     if (!pick || (pick.to === undefined && pick.keep === undefined)) return;
     const answer =
       pick.keep !== undefined
@@ -987,7 +988,7 @@ export class Actions {
       if (!group) return;
     }
     host = group.host;
-    const where = host ? `${group.title} on ${host}` : group.title;
+    const where = host ? `${group.title} ${hostWhere(host)}` : group.title;
     if (plan && task === undefined) {
       task = await vscode.window.showInputBox({
         title: `Carry out “${plan.title}” on ${where}`,
@@ -1001,7 +1002,7 @@ export class Actions {
     const cli = this.cliOn(host);
     const panel = await this.panelChoice(group);
     if (!cli && !panel.length) {
-      const why = `Claude Code's claude command isn't installed ${host ? `on ${host}` : "on this computer"}: it isn't on PATH, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.`;
+      const why = `Claude Code's claude command isn't installed ${host ? hostWhere(host) : "on this computer"}: it isn't on PATH, in ~/.local/bin, npm's or nvm's folders, nor on the login shell's PATH.`;
       return this.fail(`Can't start a chat in a terminal: ${why}`);
     }
     const home = group.homeChatCommand ?? "";
@@ -1052,7 +1053,7 @@ export class Actions {
         if (!host) items.push({ label: "$(folder-opened) Choose folder…", description: "one Claude trusts already", start: "queue", choose: "dialog" });
       }
     }
-    if (!cli) items.push({ label: "In a terminal", kind: vscode.QuickPickItemKind.Separator }, { label: "$(warning) No claude command", description: host ? `on ${host}` : "on this computer" });
+    if (!cli) items.push({ label: "In a terminal", kind: vscode.QuickPickItemKind.Separator }, { label: "$(warning) No claude command", description: host ? hostWhere(host) : "on this computer" });
     items.push(...panel.map((p) => ({ ...p, start: p.panel ? ("panel" as const) : undefined })));
     const pick = await vscode.window.showQuickPick(items, {
       title: plan ? `Carry out “${plan.title}” on ${where}` : task ? `“${task.length > 60 ? task.slice(0, 59) + "…" : task}” on ${where}` : undefined,
@@ -1132,7 +1133,7 @@ export class Actions {
     } else if (pick.choose === "type") {
       const remoteHome = folderOf(home);
       const typed = await vscode.window.showInputBox({
-        prompt: `Folder on ${host}`,
+        prompt: `Folder ${hostWhere(host ?? "")}`,
         placeHolder: "/home/you/project",
         validateInput: (v) => (!v.trim() || typedFolder(v, remoteHome) ? null : "The folder's full path, e.g. /home/you/project or ~/project"),
       });
@@ -1263,7 +1264,7 @@ export class Actions {
     let file = plan.path;
     if (host) {
       const answer = await this.backend.action("remote.py", ["--plan", host, plan.slug, plan.profileDir, "--no-open"]);
-      if (!answer.ok || !isAgentRunFile(answer.file)) return `${task || "Implement this plan."}\n\n(The plan is ${plan.path} on ${host}.)`;
+      if (!answer.ok || !isAgentRunFile(answer.file)) return `${task || "Implement this plan."}\n\n(The plan is ${plan.path} ${hostWhere(host)}.)`;
       file = answer.file;
     }
     let body = "";
@@ -1305,8 +1306,8 @@ export class Actions {
     if (host) {
       // (its other account: Claude Code there switches to it, panelChat)
       note += group.vscodeHere || group.configDir === undefined
-        ? ` · the account Claude Code has on ${host}`
-        : ` · switches Claude Code on ${host} to ${group.title}`;
+        ? ` · the account Claude Code has ${hostWhere(host)}`
+        : ` · switches Claude Code ${hostWhere(host)} to ${group.title}`;
     } else {
       const key = localPanelProfileKey();
       if (!group.profileKeys.includes(key)) {
@@ -1346,14 +1347,14 @@ export class Actions {
     if (this.demoOnly()) return;
     const line = [settings.python(), "-I", `${this.backend.codeDir}/remote.py`, "--login-here", host].map(shellQuote).join(" ");
     // (closes once you're in; stays when it didn't work)
-    await this.terminals.run(`ssh-login|${host}`, `log in to ${host}`, `${line} && exit`, { kind: "local" }, { private: true });
+    await this.terminals.run(`ssh-login|${host}`, `log in to ${hostLabel(host)}`, `${line} && exit`, { kind: "local" }, { private: true });
     this.dash.watchLogin(host);
   }
 
   async disconnectHost(host: string): Promise<void> {
     if (this.demoOnly()) return;
     const answer = await this.backend.action("remote.py", ["--disconnect", host], 30000);
-    if (this.report(answer, `Couldn't disconnect from ${host}`)) this.dash.setActionInfo(answer.message);
+    if (this.report(answer, `Couldn't disconnect from ${hostLabel(host)}`)) this.dash.setActionInfo(answer.message);
     this.refresh(host);
   }
 
@@ -1473,7 +1474,7 @@ export class Actions {
   async compareChanges(chat: ChatRef, turn: boolean): Promise<void> {
     if (this.demoOnly()) return;
     if (chat.host) {
-      this.fail(`${chat.name} runs on ${chat.host}: its files are there.`);
+      this.fail(`${chat.name} runs ${hostWhere(chat.host)}: its files are there.`);
       return;
     }
     const answer = await this.backend.changes(chat.chatId || chat.sessionId, chat.profileDir, turn, configDirArgs());
@@ -1521,7 +1522,7 @@ export class Actions {
     if (picked.includes(host)) await setSshHosts(picked.filter((h) => h !== host));
     if (host === this.dash.currentHost && settings.includeCurrentRemote()) {
       void vscode.window.showInformationMessage(
-        noLinks(`${host} is this window's host, so it stays shown. Turn off “Talpy Den: Include Current Remote” to hide it.`),
+        noLinks(`${hostLabel(host)} is this window's ${containerOf(host) ? "container" : "host"}, so it stays shown. Turn off “Talpy Den: Include Current Remote” to hide it.`),
       );
     }
   }

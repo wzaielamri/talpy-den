@@ -3,6 +3,7 @@
 // waits for a permission, and its review (what it changed, Undo, Commit,
 // Mark reviewed). Shared by the extension and the tab's page.
 
+import { hostLabel } from "./model";
 import type { Answers, AskShown, Decision, PermissionAsk, Question, QueuedTask, RecentChat, Review, Session, SessionState, Status } from "./types";
 
 // One item of a chat's conversation (pane.py: conversation_items)
@@ -465,7 +466,7 @@ export function clipboardCode(code: string): string {
 
 // How a reply reaches the chat, in a sentence
 export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: string, host: string): string {
-  const where = host ? ` (on ${host})` : "";
+  const where = host ? ` (on ${hostLabel(host)})` : "";
   switch (route) {
     case "tmux":
       return `Typed into its tmux pane.${where}`;

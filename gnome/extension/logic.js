@@ -395,8 +395,8 @@ export function planUsageText(limits, now, from = '', fetchAt = null) {
     if (!limits)
         return "No plan usage yet: shows after this account's next reply";
     if (from) {
-        return now - limits.updatedAt < 60000 ? fmt('Plan usage updated just now, on %1', from)
-            : fmt('Plan usage as of %1 ago, on %2', duration(now - limits.updatedAt), from);
+        return now - limits.updatedAt < 60000 ? fmt('Plan usage updated just now, on %1', hostLabel(from))
+            : fmt('Plan usage as of %1 ago, on %2', duration(now - limits.updatedAt), hostLabel(from));
     }
     if (now - limits.updatedAt < 60000)
         return 'Plan usage updated just now';

@@ -15,7 +15,7 @@ import type { Backend } from "./backend";
 import { configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
-import { machineStatus } from "./shared/model";
+import { hostLabel, machineStatus } from "./shared/model";
 import type { Group, ViewState } from "./shared/types";
 import { profileDirs } from "./statusline";
 import { configDirFor, withConfigDir } from "./vscodeAccount";
@@ -104,8 +104,8 @@ export class AccountSwitch {
     return {
       name: on ? on.name : "?",
       group: on,
-      tip: `Claude Code on ${host} runs on ${on ? on.title : "an account Talpy Den can't tell"}.`,
-      link: `Change ${host}'s default account…`,
+      tip: `Claude Code on ${hostLabel(host)} runs on ${on ? on.title : "an account Talpy Den can't tell"}.`,
+      link: `Change ${hostLabel(host)}'s default account…`,
     };
   }
 
@@ -256,7 +256,7 @@ export class AccountSwitch {
     }
     const groups = machineStatus(this.dash.state(), host)?.groups ?? [];
     if (groups.length < 2) {
-      void vscode.window.showInformationMessage(noLinks(`There's one Claude account on ${host}, so there's nothing to switch to.`));
+      void vscode.window.showInformationMessage(noLinks(`There's one Claude account on ${hostLabel(host)}, so there's nothing to switch to.`));
       return;
     }
     const pick = await vscode.window.showQuickPick(
@@ -264,7 +264,7 @@ export class AccountSwitch {
         label: g.title,
         description: [
           g.defaultHere ? "$(star-full) default" : "",
-          g.vscodeHere ? `Claude Code on ${host}` : "",
+          g.vscodeHere ? `Claude Code on ${hostLabel(host)}` : "",
           g.plainHere ? "plain claude" : "",
         ]
           .filter((d) => d)
@@ -272,18 +272,18 @@ export class AccountSwitch {
         group: g,
       })),
       {
-        title: `Default Claude account on ${host}`,
+        title: `Default Claude account on ${hostLabel(host)}`,
         placeHolder: "Claude Code there (its new chats, in its other windows too) and plain claude there (~/.claude, where it's a link) run on it",
       },
     );
     if (!pick) return;
     if (pick.group.vscodeHere && pick.group.plainHere !== false) {
-      void vscode.window.showInformationMessage(noLinks(`${pick.group.name} is the default account on ${host} already.`));
+      void vscode.window.showInformationMessage(noLinks(`${pick.group.name} is the default account on ${hostLabel(host)} already.`));
       return;
     }
     if (await this.switchHost(pick.group, true))
       void vscode.window.showInformationMessage(
-        noLinks(`${pick.group.name} is the default account on ${host} now: new chats start there. Chats already open keep their account.`),
+        noLinks(`${pick.group.name} is the default account on ${hostLabel(host)} now: new chats start there. Chats already open keep their account.`),
       );
   }
 
@@ -295,14 +295,14 @@ export class AccountSwitch {
   // link, through accounts.py there; refused while a chat runs through it).
   async switchHost(group: Group, asDefault = false): Promise<boolean> {
     if (group.configDir === undefined) {
-      this.fail(`Can't tell which folder ${group.name} has on ${group.host}: that host's status comes from an older Talpy Den.`);
+      this.fail(`Can't tell which folder ${group.name} has on ${hostLabel(group.host ?? "")}: that host's status comes from an older Talpy Den.`);
       return false;
     }
     let value = group.configDir;
     if (asDefault && this.backend && group.host) {
       const r = await this.backend.accounts(["--default", group.chatProfile, "--no-vscode"], group.host);
       if (!r.ok) {
-        this.fail(String(r.message || `Couldn't make ${group.name} the default on ${group.host}`));
+        this.fail(String(r.message || `Couldn't make ${group.name} the default on ${hostLabel(group.host)}`));
         return false;
       }
       // (~/.claude may lead there now: the name terminals there use)
@@ -313,7 +313,7 @@ export class AccountSwitch {
     try {
       await cc.update("environmentVariables", next.length ? next : undefined, vscode.ConfigurationTarget.Global);
     } catch (err) {
-      this.fail(`Couldn't change Claude Code's settings on ${group.host}: ${(err as Error).message}`);
+      this.fail(`Couldn't change Claude Code's settings on ${hostLabel(group.host ?? "")}: ${(err as Error).message}`);
       return false;
     }
     void this.dash.refreshAll(); // the host's accounts and the status bar item follow

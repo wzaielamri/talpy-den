@@ -647,7 +647,7 @@ class Pane implements vscode.Disposable {
           break;
         }
         if (m.type === "attach" && "picture" in got && got.picture === false) {
-          if (this.host) this.post({ type: "picture", id: m.id, path: "", error: `Only pictures go to ${this.host}'s chat (copied there): that file is on this computer` });
+          if (this.host) this.post({ type: "picture", id: m.id, path: "", error: `Only pictures go to ${hostLabel(this.host)}'s chat (copied there): that file is on this computer` });
           else this.post({ type: "file", id: m.id, path: got.path });
           break;
         }

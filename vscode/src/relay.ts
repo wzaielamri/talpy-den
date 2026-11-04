@@ -8,6 +8,7 @@
 import * as vscode from "vscode";
 import type { Backend } from "./backend";
 import { configDirArgs } from "./config";
+import { hostLabel } from "./shared/model";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 
@@ -15,7 +16,7 @@ export async function answerPermissionsHere(backend: Backend, dash: Dashboard): 
   const status = await backend.pane(["--relay", "status", ...configDirArgs()], 30000);
   const on = !!status.on;
   const hosts = dash.shownHosts();
-  const where = hosts.length ? ` (and on ${hosts.join(", ")})` : "";
+  const where = hosts.length ? ` (and on ${hosts.map(hostLabel).join(", ")})` : "";
   const items: (vscode.QuickPickItem & { on: boolean })[] = [
     {
       label: `${on ? "$(check) " : ""}Answer them from Talpy Den too`,
@@ -40,7 +41,7 @@ export async function answerPermissionsHere(backend: Backend, dash: Dashboard): 
   const failed = results.filter((r) => !r.ok);
   if (failed.length)
     void vscode.window.showErrorMessage(
-      noLinks(`Talpy Den: ${failed.map((r) => `${r.host ? `${r.host}: ` : ""}${String(r.message ?? "no answer")}`).join("; ")}`),
+      noLinks(`Talpy Den: ${failed.map((r) => `${r.host ? `${hostLabel(r.host)}: ` : ""}${String(r.message ?? "no answer")}`).join("; ")}`),
     );
   else void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${String(results[0].message ?? "")}${where}.`));
 }
