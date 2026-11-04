@@ -101,6 +101,7 @@ export interface PaneChat {
   route: Session["reply"] | "vscodeTerminal"; // vscodeTerminal: one of this window's terminals (it types it in)
   busy: boolean; // working or waiting
   atWork: boolean; // working, its turn not over (only a background command after it isn't): a message waits a moment
+  bgStop: boolean; // a background chat Stop can interrupt (its row's: the Claude Code versions that was checked on)
   activity: string; // what it does now
   permission: PermissionAsk | null;
   changes: number; // files it changed
@@ -225,6 +226,7 @@ export type PaneMessage =
   | { type: "commit"; message: string }
   | { type: "reviewed"; on: boolean }
   | { type: "openWindow" }
+  | { type: "stop" } // Stop on its working line: what Claude does now (stopOf)
   | { type: "chatOptions"; model: string; effort: string; mode: string } // a new chat's ⚙ line (kept for the next new chat)
   | { type: "openPlan" } // the plan it made
   | { type: "openAgentRun"; agentId: string } // a subagent's whole run, in the Markdown preview (its strip)
@@ -604,6 +606,26 @@ export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: s
         ? `Goes into the background chat as it runs, as if you typed it there.${where}`
         : `The chat goes on in the background with your message.${where}`;
   }
+}
+
+// Stop on its working line (Plasma ChatPane canStop, the same rule and words): while Claude
+// works on its turn, what it does now stops, as Esc in its terminal, and the chat stays and takes
+// your next message. Where Talpy Chat reaches it: a terminal of this window (Ctrl+C typed in, as
+// Interrupt does), tmux (Ctrl+C in its pane), or a background chat on a Claude Code version that
+// was checked on (its row's bgStop: Esc through Claude's background service). Else no Stop, and
+// elsewhere says where to stop it (the working line's tooltip); title: Stop's own
+export function stopOf(chat: Pick<PaneChat, "state" | "atWork" | "where" | "route" | "bgStop"> | null | undefined): { can: boolean; title: string; elsewhere: string } {
+  const no = { can: false, title: "", elsewhere: "" };
+  if (!chat || chat.state !== "working" || !chat.atWork) return no;
+  if (chat.route === "vscodeTerminal")
+    return { ...no, can: true, title: "Stop what Claude is doing now, as Ctrl+C in its terminal: the chat stays open there and takes your next message." };
+  if (chat.where === "tmux")
+    return { ...no, can: true, title: "Stop what Claude is doing now, as Ctrl+C in its tmux pane: the chat stays open there and takes your next message." };
+  if (chat.where === "background" && chat.bgStop)
+    return { ...no, can: true, title: "Stop what Claude is doing now, as Esc in its terminal: the background chat stays and takes your next message." };
+  return { ...no, elsewhere: chat.where === "claude" ? "To stop it: the stop button in its Claude Code panel."
+    : chat.where === "background" ? "To stop it: open it in a terminal and press Esc there. Talpy Chat's Stop doesn't know the background chats of this Claude Code version yet."
+    : "To stop it: press Esc in its terminal. Talpy Chat can't type into that terminal." };
 }
 
 // A new chat's line under the box (Plasma's routeHint for one, the same words)

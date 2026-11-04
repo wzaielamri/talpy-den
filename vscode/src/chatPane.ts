@@ -269,6 +269,28 @@ export class ChatPanes implements vscode.Disposable {
     return { ok: !!r.ok, message: String(r.message ?? ""), went: !!r.ok && (r.how === "typed" || r.how === "background") };
   }
 
+  // Stop on a chat's working line (shared/pane.ts stopOf): what Claude does
+  // now stops and the chat stays. In one of this window's terminals Ctrl+C is
+  // typed in, as Interrupt does; else pane.py --interrupt (Ctrl+C in its tmux
+  // pane, Esc into a background chat through Claude's background service; an
+  // SSH host's there)
+  async interrupt(chat: ChatRef): Promise<{ ok: boolean; message: string }> {
+    const host = chat.host ?? "";
+    const { session } = findPaneRow(this.dash.state(), host, chat.chatId || chat.sessionId);
+    if (!session || session.state !== "working") return { ok: false, message: "It isn't working any more, so there's nothing to stop" };
+    const terminal = await this.windowTerminal(session, host);
+    if (terminal) {
+      terminal.sendText("\x03", false); // (Ctrl+C, as if pressed in it: Claude's terminal is raw, a key, not a signal)
+      this.refresh(host);
+      return { ok: true, message: "Interrupted (Ctrl+C in its terminal)" };
+    }
+    const chatId = session.chatId || session.sessionId;
+    const r = await this.backend.pane(["--interrupt", chatId, ...(session.sessionId !== chatId ? ["--session", session.sessionId] : []),
+      ...(session.profileDir ? ["--profile", session.profileDir] : []), ...(host ? ["--host", host] : configDirArgs())], host ? 60000 : 20000);
+    this.refresh(host);
+    return { ok: !!r.ok, message: String(r.message ?? "") };
+  }
+
   // The terminal of this window a chat of this computer (or of the host this
   // window is on) runs in, if one does
   private async windowTerminal(session: Session | undefined, host: string): Promise<vscode.Terminal | undefined> {
@@ -446,6 +468,7 @@ class Pane implements vscode.Disposable {
       route: this.terminalHere ? "vscodeTerminal" : (session?.reply ?? "background"),
       busy: session?.state === "working" || session?.state === "waiting",
       atWork: session?.state === "working" && session.reason !== "background shell",
+      bgStop: !!session?.bgStop,
       activity: session ? doingText(session, this.host ? null : liveOf(session, state.live)) : "",
       permission: session?.state === "waiting" ? (session.permission ?? null) : null,
       changes: (session?.changes ?? recent?.changes)?.count ?? 0,
@@ -752,6 +775,9 @@ class Pane implements vscode.Disposable {
       case "openWindow":
         // (a background chat's: a terminal on it, claude attach, also where its window is this tab)
         if (!this.fresh) await actions.open(this.chat, true);
+        break;
+      case "stop":
+        if (!this.fresh) this.result("stop", await this.owner.interrupt(this.chat));
         break;
       case "moveToClaudeCode":
         await actions.moveToClaudeCode(this.chat);

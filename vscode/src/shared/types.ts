@@ -238,6 +238,7 @@ export interface Session {
   jobId: string | null;
   jobSessionId: string | null;
   tmux?: boolean; // runs in a tmux pane: a working one can be interrupted (Ctrl+C)
+  bgStop?: boolean; // a live background session Talpy Chat's Stop can interrupt (Esc through Claude's background service)
   peek?: Peek | null;
   changes?: ChangeSummary | null;
   tasks?: TaskProgress | null;

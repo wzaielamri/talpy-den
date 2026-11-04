@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
+import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -234,6 +234,41 @@ test("the tag under a chat's name says where it runs", () => {
   assert.equal(chatWhere(s, false), "terminal");
   assert.equal(whereTag("claude").tag, "Claude Code panel");
   assert.equal(whereTag("terminal", "Konsole").title, "It runs in a terminal (Konsole).");
+});
+
+test("Stop on the working line: where Talpy Chat reaches a chat at work (Plasma's rule), else where to stop it", async () => {
+  const chat = { state: "working" as const, atWork: true, where: "background" as const, route: "background" as const, bgStop: true };
+  const none = { can: false, title: "", elsewhere: "" };
+  assert.match(stopOf(chat).title, /as Esc in its terminal: the background chat stays/);
+  assert.equal(stopOf({ ...chat, where: "tmux", route: "tmux", bgStop: false }).can, true);
+  assert.equal(stopOf({ ...chat, where: "vscode", route: "vscodeTerminal", bgStop: false }).can, true);   // (one of this window's terminals)
+  // (a background chat of a Claude Code version Stop wasn't checked on, a terminal it can't type into, a Claude Code panel)
+  assert.match(stopOf({ ...chat, bgStop: false }).elsewhere, /^To stop it: open it in a terminal and press Esc there\./);
+  assert.match(stopOf({ ...chat, where: "terminal", route: "terminal" }).elsewhere, /press Esc in its terminal/);
+  assert.match(stopOf({ ...chat, where: "vscode", route: "terminal" }).elsewhere, /press Esc in its terminal/);
+  assert.match(stopOf({ ...chat, where: "claude", route: "vscode" }).elsewhere, /stop button in its Claude Code panel/);
+  assert.equal(stopOf({ ...chat, bgStop: false }).can, false);
+  // only while Claude works on its turn (not a background command after it, nor a question)
+  assert.deepEqual(stopOf({ ...chat, atWork: false }), none);
+  assert.deepEqual(stopOf({ ...chat, state: "waiting" }), none);
+  assert.deepEqual(stopOf(null), none);
+
+  // pane.py --interrupt for the session that has it open; in one of this window's terminals, Ctrl+C typed in
+  const state = demoState(NOW);
+  const row = state.status!.groups.flatMap((g) => g.sessions).find((x) => x.state === "working")!;
+  row.chatId = row.sessionId;
+  const { p, calls } = panes(state);
+  assert.deepEqual(await p.interrupt(chatRefOf(row)), { ok: true, message: "Allowed" });
+  assert.deepEqual(calls, [["--interrupt", row.sessionId, ...(row.profileDir ? ["--profile", row.profileDir] : [])]]);
+  const typed: string[] = [];
+  Object.assign(row, { kind: "interactive", tmux: false, entrypoint: "cli", pid: 4242 });
+  const here = new ChatPanes(vscode.Uri.file("/ext") as never, { pane: async () => assert.fail("not pane.py") } as never,
+    { state: () => state, refresh: async () => undefined, pollHost: async () => undefined } as never, {} as never,
+    { find: async () => ({ sendText: (t: string) => typed.push(t) }) } as never, {} as never);
+  assert.deepEqual(await here.interrupt(chatRefOf(row)), { ok: true, message: "Interrupted (Ctrl+C in its terminal)" });
+  assert.deepEqual(typed, ["\x03"]);
+  row.state = "idle";
+  assert.equal((await p.interrupt(chatRefOf(row))).ok, false);
 });
 
 test("every file a page loads from dist/ is packaged (.vscodeignore names each one)", async () => {

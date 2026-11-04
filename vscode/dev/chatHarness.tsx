@@ -34,6 +34,7 @@ const chat: PaneChat = {
   canMove: params.get("route") === "terminal",
   busy: true,
   atWork: !ask,
+  bgStop: params.get("bgStop") !== "0", // ?where=background&bgStop=0: a Claude Code version Stop doesn't know
   activity: "Bash: npm test -- parser",
   permission: ask === "question"
     ? { tool: "AskUserQuestion", line: questions[0].question, command: "", file: "", diff: [], always: "", questions,
@@ -234,6 +235,10 @@ window.addEventListener("harness-post", (e: Event) => {
     setTimeout(() => send({ type: "picture", id, path: `/home/alice/.cache/talpy-den/images/20261026-1015${id.slice(-2)}.png`, error: "" }), 200);
   } else if (m.type === "review") {
     send({ type: "review", answer: review, error: "" });
+  } else if (m.type === "stop") {
+    // (?stop=fail: it says why not, and Stop is back)
+    setTimeout(() => send({ type: "result", kind: "stop", ok: params.get("stop") !== "fail",
+                            message: params.get("stop") === "fail" ? "Claude's background service didn't answer" : "Stopped" }), 1500);
   } else if (m.type === "complete") {
     send({ type: "offers", offers: {
       commands: [{ name: "/compact", about: "Free up context by summarizing the conversation so far", kind: "Claude" },
@@ -244,6 +249,9 @@ window.addEventListener("harness-post", (e: Event) => {
     } });
   }
 });
+
+// ?stop=1 (or fail): Stop clicked at once ("Stopping…")
+if (params.get("stop")) setTimeout(() => document.querySelector<HTMLButtonElement>(".pane-stop")?.click(), 300);
 
 // ?paste=1: a picture pasted into the reply, as Ctrl+V gives one (a browser
 // leaves out the clipboard of a paste event a page makes: it's put on the event)

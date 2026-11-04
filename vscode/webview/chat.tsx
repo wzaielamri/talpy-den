@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, clipboardCode, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, clipboardCode, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, routeHint, shownAsk, stopOf, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -236,6 +236,7 @@ function ChatApp() {
   const [askHow, setAskHow] = useState(false);
   const [info, setInfo] = useState<{ ok: boolean; message: string } | null>(null);
   const [answering, setAnswering] = useState(0);
+  const [stopping, setStopping] = useState(false); // (Stop clicked: "Stopping…" till its turn ends, it says why not, or 15 s)
   // A message on its way (until its result): no second one meanwhile, so a
   // second Enter doesn't send it twice (the ref: two keys before a redraw)
   const [sending, setSending] = useState(false);
@@ -521,6 +522,14 @@ function ChatApp() {
           setAskHow(true);
           return;
         }
+        if (m.kind === "stop") {
+          // (stopped: the conversation says Interrupted, and its working line goes)
+          if (!m.ok) {
+            setStopping(false);
+            setInfo({ ok: false, message: `Couldn't stop it: ${m.message || "that didn't work"}` });
+          }
+          return;
+        }
         if (m.kind === "answer") {
           setAnswering((n) => Math.max(0, n - 1));
           const said = answeredWith.current;
@@ -571,6 +580,17 @@ function ChatApp() {
     const t = setTimeout(() => setInfo(null), 12000);
     return () => clearTimeout(t);
   }, [info]);
+
+  // Stop's "Stopping…": till its turn ends (or another chat shows), else back in 15 s
+  const stopCan = stopOf(chat).can;
+  useEffect(() => {
+    if (!stopCan) setStopping(false);
+  }, [stopCan, chat?.chatId]);
+  useEffect(() => {
+    if (!stopping) return;
+    const t = setTimeout(() => setStopping(false), 15000);
+    return () => clearTimeout(t);
+  }, [stopping]);
 
   useEffect(() => {
     if (review && !commitEdited) setCommitText(review.message || "");
@@ -733,6 +753,7 @@ function ChatApp() {
   const lastIndex = items.length - 1;
   const last = items[lastIndex];
   const activity = (chat?.activity ?? "").replace(/[….\s]+$/, "");
+  const stop = stopOf(chat);
   const sums = (review?.files ?? []).reduce((a, f) => [a[0] + (f.added ?? 0), a[1] + (f.removed ?? 0)], [0, 0]);
   const tests = testsText(chat?.review ?? (review ? { editedAt: review.editedAt, tests: review.tests } : null));
   const marked = !!chat && chat.reviewed && !!chat.review;
@@ -974,7 +995,13 @@ function ChatApp() {
                 <span class="pane-gutter">
                   <TalpyIcon state="thinking" moving={shown} />
                 </span>
-                <span>{starting && chat?.state !== "working" ? "Starting" : activity && !(tab === "steps" && last?.kind === "tool" && last.status === "open") ? activity : "Working"}…</span>
+                <span class="grow" title={stop.elsewhere || undefined}>{starting && chat?.state !== "working" ? "Starting" : activity && !(tab === "steps" && last?.kind === "tool" && last.status === "open") ? activity : "Working"}…</span>
+                {stop.can ? (
+                  <button type="button" class="btn secondary small pane-stop" title={stop.title} disabled={stopping}
+                          onClick={() => { setStopping(true); post({ type: "stop" }); }}>
+                    <Icon name={I.stopTurn} />{stopping ? "Stopping…" : "Stop"}
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
