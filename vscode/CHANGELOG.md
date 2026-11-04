@@ -4,6 +4,11 @@
 
 ### New
 
+- **Stop in Talpy Chat:** while Claude works, **Stop** on the working line
+  stops what it does now, as Esc in its terminal; the chat stays and takes
+  your next message. For chats in this window's terminals, in tmux and in
+  the background (Claude Code 2.1.318 and later 2.1 versions); elsewhere its
+  tooltip says where to stop it.
 - **Open in: Talpy Chat.** One more choice, listed first, in the switch
   above Recent chats: *Talpy Chat | Terminal | Claude Code panel*
   (`talpyDen.reopenIn`: `talpyChat`; the default stays `terminal`). A chat

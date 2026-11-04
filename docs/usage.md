@@ -32,6 +32,7 @@
 | A queued task under an account | Starts it now, or cancels it (it asks first when it has text you wrote). A chat's go-on isn't listed there while the chat has a row: its **Goes on at …** tag says it. |
 | **⚠ Same files** next to a chat | Goes to the other chat that changes the same files. |
 | Filter button at the top (**Focus**) | Shows only what needs you, the chats that finished a turn you haven't looked at yet and one line for each chat at work; **Show everything** goes back. |
+| **Stop** on Talpy Chat's working line | While Claude works: stops what it does now, as Esc in its terminal; the chat stays and takes your next message. For a chat in tmux or in the background; elsewhere the line's tooltip says where to stop it. |
 | Microphone in Talpy Chat (**Dictate**) | Records your reply and writes it into the box (click again to stop); the first time, it offers to set dictation up. |
 | Magnifier at the top | Finds a chat by the words in its name, folder or your prompts, and project folders, plans and memories with those words. |
 | Hosts button at the top | Picks the SSH hosts and containers to show; **Reload** reads `~/.ssh/config` and the container lists again, the picker staying open (*Reloading…* until they've answered). |
