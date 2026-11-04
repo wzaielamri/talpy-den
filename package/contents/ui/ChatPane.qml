@@ -1937,14 +1937,14 @@ Window {
                     icon.name: attaches ? Icons.plasma.terminal : Icons.plasma.openWindow
                     display: PlasmaComponents3.AbstractButton.IconOnly
                     text: attaches ? i18n("Open in a terminal") : i18n("Open its window")
-                    onClicked: root.openRow(pane.row || pane.chat, pane.host, attaches)
+                    onClicked: root.openRow(pane.row || pane.chat, pane.host, true)
 
                     TipArea {
                         textFormat: Text.PlainText
                         anchors.fill: parent
                         mainText: parent.text
                         subText: parent.attaches ? i18n("The background chat in a terminal too (claude attach): what it shows there, and its own prompts. It goes on running; nothing is lost.")
-                                 : i18n("The terminal or VS Code tab the chat runs in; a chat that isn't open reopens in Talpy Chat, a terminal or VS Code, as the Open in switch of Recent chats says.")
+                                 : i18n("The terminal or VS Code tab the chat runs in; a chat that isn't open reopens in a terminal or in VS Code, as the Open in switch of Recent chats says.")
                     }
                 }
             }

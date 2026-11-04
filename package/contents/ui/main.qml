@@ -4057,7 +4057,7 @@ PlasmoidItem {
                 jumpTo(s.sessionId, s.profileDir, direct)
         } else if (s) {
             const chatId = s.chatId || s.sessionId
-            openChatById(chatId, s.profileDir || "", s.cwd || "", s.openCommand || "", "", host || "")
+            openChatById(chatId, s.profileDir || "", s.cwd || "", s.openCommand || "", "", host || "", direct)
         }
     }
 
@@ -4319,19 +4319,20 @@ PlasmoidItem {
         return other
     }
 
-    function openChatById(chatId, profileDir, cwd, openCommand, groupId, host) {
+    // direct: not in Talpy Chat (its own window's Open its window: a terminal or VS Code, as the switch says)
+    function openChatById(chatId, profileDir, cwd, openCommand, groupId, host, direct) {
         const row = listedRow(chatId, profileDir, host)
         if (row) {
             if (host)
                 remoteShow(host, row)
             else
-                jumpTo(row.sessionId, row.profileDir)
+                jumpTo(row.sessionId, row.profileDir, direct)
             return
         }
         const groupList = hostGroups(host)
         const group = groupList.find(g => g.id === groupId || g.profileKeys.indexOf(profileDir) >= 0) || null
         const where = group ? openIn(group, host, true) : "terminal"
-        if (where === "talpyChat") {
+        if (where === "talpyChat" && !direct) {
             // (its next message goes on with it in the background, from there)
             openPane({ chatId: chatId, sessionId: chatId, profileDir: profileDir, cwd: cwd }, host, "chat")
         } else if (where === "vscode") {
