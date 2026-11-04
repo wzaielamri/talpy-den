@@ -1588,6 +1588,21 @@ class HostTests(FakeSSH):
         self.assertEqual(json.loads((proj / ".claude/settings.local.json").read_text()), {})
         self.assertEqual([g["kind"] for g in week.host_permissions("lab")["granted"]], ["trust"])
 
+    def test_a_hosts_hours_follow_its_clock_as_its_turns_do(self):
+        import remote
+        now = int(time.time() * 1000)
+        h = now // week.HOUR_MS * week.HOUR_MS - 5 * week.HOUR_MS  # (by the host's clock, 2 hours behind)
+        hour = dict(week.new_hour(), p=[[h + 700_000, "Bash", "make", "", 0, True]])
+        chat = {"turns": [[h + 600_000, h + 1200_000, 600_000, []]], "prompts": [h + 600_000], "limits": [],
+                "hours": {week.hour_key(h): hour}}
+        answer = {"ok": True, "now": now - 2 * week.HOUR_MS, "chats": {"c": chat}, "accounts": []}
+        with mock.patch.object(remote, "host_answer", return_value=answer):
+            c = week.host_chats("lab", 0)["chats"]["c"]
+        shift = c["turns"][0][0] - (h + 600_000)
+        self.assertGreaterEqual(shift, 2 * week.HOUR_MS)
+        ((key, agg),) = c["hours"].items()
+        self.assertEqual((week.hour_ms(key), agg["p"][0][0]), (h + shift, h + 700_000 + shift))
+
     def test_a_host_that_turns_you_away(self):
         self.mode("denied")
         source = week.host_chats("lab", 0)

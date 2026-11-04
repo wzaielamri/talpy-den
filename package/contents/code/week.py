@@ -3032,6 +3032,11 @@ def host_chats(host, back, span="week", since=None, until=None):
                           for t in c.get("turns", [])]
             c["prompts"] = [p + shift for p in c.get("prompts", [])]
             c["limits"] = [p + shift for p in c.get("limits", [])]
+            # (its hours too, with the cold resumes and permission prompts in
+            # them: their tokens, costs and tools count when its turns do)
+            c["hours"] = {hour_key(hour_ms(h) + shift): dict(agg, **{k: [[e[0] + shift] + list(e[1:]) for e in agg.get(k, [])]
+                                                                     for k in ("c", "p")})
+                          for h, agg in (c.get("hours") or {}).items()}
     return {"host": host, "ok": True, "chats": chats, "accounts": answer.get("accounts") or []}
 
 
