@@ -322,7 +322,8 @@ function openInSwitch(ctx, group, host, resuming) {
 }
 
 function buildSharedLine(ctx, chat, remoteHost) {
-    const line = box('claude-line claude-indent', {x_expand: true});
+    const wrap = column('claude-recent', {x_expand: true});   // (indented as a recent chat's line, its shade past its text)
+    const line = box('claude-line claude-hover-shade', {x_expand: true, reactive: true, track_hover: true});
     line.add_child(new St.Icon({icon_name: Icons.gnome.share, style_class: `claude-button-icon claude-fg-${L.stateClass(chat.state)}`,
         y_align: Clutter.ActorAlign.CENTER}));
     const name = link(chat.name, () => (remoteHost ? ctx.remoteOpen(remoteHost, chat.openCommand)
@@ -342,7 +343,8 @@ function buildSharedLine(ctx, chat, remoteHost) {
     line.add_child(name);
     line.add_child(label(chat.copy ? L.fmt('copy on %1 · %2', chat.profile, L.stateText(chat, ctx.now))
         : L.fmt('on %1 · %2', chat.profile, L.stateText(chat, ctx.now)), 'claude-small claude-dim claude-side'));
-    return line;
+    wrap.add_child(line);
+    return wrap;
 }
 
 // A recent chat: click to reopen it where the switch above says
@@ -352,7 +354,7 @@ function buildRecentLine(ctx, group, chat, remoteHost) {
     const terminalHere = ctx.cliHere(remoteHost);
     const canOpen = inVscode || (terminalHere && (!remoteHost || !!chat.openCommand));
     const wrap = column('claude-recent', {x_expand: true});
-    const line = box('claude-line', {x_expand: true, reactive: true, track_hover: true});
+    const line = box('claude-line claude-hover-shade', {x_expand: true, reactive: true, track_hover: true});
     const name = link(chat.name, () => {
         if (!canOpen)
             return;

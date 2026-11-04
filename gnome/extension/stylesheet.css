@@ -245,9 +245,13 @@
 .claude-week-folder { width: 8em; text-align: right; }
 .claude-week-chat-numbers { min-width: 9em; text-align: right; }
 .claude-week-tip { spacing: 8px; }
-/* a line shaded while the pointer is on it, as a chat's row (the Permissions tab's) */
-.claude-hover-line { margin: 0 -4px; padding: 2px 4px; border-radius: 6px; }
+/* a line shaded while the pointer is on it, as a chat's row (the Permissions tab's). No
+   negative margin to take its padding back: GNOME Shell then lays the whole popup out wrong */
+.claude-hover-line { padding: 2px 4px; border-radius: 6px; }
 .claude-hover-line:hover { background-color: rgba(127, 127, 127, 0.1); }
+/* the same shade on a line that isn't made taller for it (a recent or starred chat's, a shared chat's) */
+.claude-hover-shade { padding: 0 4px; border-radius: 6px; }
+.claude-hover-shade:hover { background-color: rgba(127, 127, 127, 0.1); }
 .claude-week-tip-pct { min-width: 2.6em; text-align: right; }
 .claude-week-tip-command { min-width: 8em; }
 .claude-week-trend { spacing: 2px; height: 12px; margin-top: 3px; }
