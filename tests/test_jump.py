@@ -1673,6 +1673,16 @@ class ChangesTests(Fixture):
         self.assertEqual((items["~/notes/today.md"]["created"], Path(items["~/notes/today.md"]["original"]).read_text()),
                          (True, ""))
 
+    def test_a_pipe_or_a_huge_file_isnt_read(self):
+        # (a chat can leave a named pipe where it edited a file: opening it waited for good)
+        os.unlink(self.proj / "src/edited.py")
+        os.mkfifo(self.proj / "src/edited.py")
+        write(self.proj / "notes.md", "x" * ((1 << 20) + 1))
+        with Patch(git_original=lambda path, missing=b"": b"committed\n"), mock.patch.object(jump, "CHANGES_FILE_MAX", 1 << 20):
+            ok, message, comparison = self.compare()
+        self.assertEqual([i["label"] for i in comparison["items"]], ["src/gone.py", "src/new.py"])
+        self.assertEqual(message, "2 changed files since it started; 2 more not compared here: over 1 MB, or not a plain file")
+
     def test_a_removed_backup_of_a_file_git_doesnt_have(self):
         # it was there before the chat (Claude backed it up): not empty then;
         # nor was notes.md (no backup, edited: it was there) new

@@ -2108,6 +2108,7 @@ STATUS_EXTENSION = "wzaielamri.talpy-den"
 STATUS_EXTENSION_CHANGES = (1, 8)  # its first version that opens CHANGES_LINK
 STATUS_EXTENSION_TERMINALS = (1, 11)  # its first version that opens TERMINAL_LINK
 CHANGES_LINK = "vscode://wzaielamri.talpy-den/changes"
+CHANGES_FILE_MAX = 50 << 20  # a file compared, at most (VS Code's diff view stops at 50 MB too)
 EXTENSION_FOLDERS = {"code": ".vscode", "code-insiders": ".vscode-insiders", "codium": ".vscode-oss",
                      "code-oss": ".vscode-oss"}
 
@@ -2133,11 +2134,8 @@ def git_original(path, missing=b""):
 
 
 def read_bytes(path):
-    try:
-        with open(path, "rb") as f:
-            return f.read()
-    except OSError:
-        return None
+    """A plain file's content, else None (a pipe put there isn't waited for)."""
+    return cs.bytes_to_compare(path, None)[0]
 
 
 def backup_content(profiles, sessions, name):
@@ -2197,7 +2195,7 @@ def chat_comparison(home, extra_dirs, session_id, profile_dir=None, turn=False):
         import pane
         unbacked = {full for full, backup in wanted.items() if backup is False}
         told = pane.tool_originals([path, *cs.subagent_transcripts(path)], unbacked) if unbacked else {}
-    folder, items, unknown = None, [], 0
+    folder, items, unknown, skipped = None, [], 0, 0
     for full in sorted(wanted):
         backup = wanted[full]
         created = backup is None
@@ -2217,7 +2215,10 @@ def chat_comparison(home, extra_dirs, session_id, profile_dir=None, turn=False):
         if original is None:
             unknown += 1
             continue
-        current = read_bytes(full)
+        current, other = cs.bytes_to_compare(full, CHANGES_FILE_MAX)
+        if other:
+            skipped += 1
+            continue
         if current == original or (current is None and original == b"" and created):
             continue  # unchanged (or made and removed again)
         if folder is None:
@@ -2229,13 +2230,17 @@ def chat_comparison(home, extra_dirs, session_id, profile_dir=None, turn=False):
                       "created": created,  # (one git has empty was there, empty)
                       "deleted": current is None})
     what = "in its last turn" if turn else "since it started"
+    big = f"not compared here: over {CHANGES_FILE_MAX >> 20} MB, or not a plain file"
     if not items:
-        more = f" ({unknown} with no earlier version to compare with)" if unknown else ""
-        return False, f"No changed files {what}{more}", None
+        more = "; ".join(([f"{unknown} with no earlier version to compare with"] if unknown else []) +
+                         ([f"{skipped} {big}"] if skipped else []))
+        return False, f"No changed files {what}" + (f" ({more})" if more else ""), None
     title = f"{name or 'Chat'}: {'last turn' if turn else 'all changes'}"
     message = f"{len(items)} changed file{'s' if len(items) != 1 else ''} {what}"
     if unknown:
         message += f"; {unknown} more with no earlier version to compare with"
+    if skipped:
+        message += f"; {skipped} more {big}"
     return True, message, {"title": title, "folder": cwd, "items": items}
 
 

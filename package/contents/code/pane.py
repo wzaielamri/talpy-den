@@ -1230,11 +1230,8 @@ def copy_to_clipboard(text):
 # ---------------------------------------------------------------- review: what a chat changed
 
 def read_bytes(path):
-    try:
-        with open(path, "rb") as f:
-            return f.read()
-    except OSError:
-        return None
+    """A plain file's content, else None (a pipe put there isn't waited for)."""
+    return cs.bytes_to_compare(path, None)[0]
 
 
 def git(folder, *args, data=None, timeout=20, literal=True):

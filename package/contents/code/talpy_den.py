@@ -2281,11 +2281,12 @@ def read_file(path):
         return None
 
 
-def text_to_compare(path):
-    """A file a prompt's change is shown against: (its text, "") when it's a
-    plain file of at most DIFF_FILE_MAX, else (None, what it is: "a file of
-    18 MB", "something that isn't a plain file"); (None, "") when there's
-    none. (Opened without waiting, so a pipe put there is never read.)"""
+def bytes_to_compare(path, limit):
+    """A file a change is shown against: (its content, "") when it's a
+    plain file of at most limit bytes (None: any size), else (None, what it
+    is: "a file of 18 MB", "something that isn't a plain file"); (None, "")
+    when there's none. (Opened without waiting, so a pipe put there is
+    never read.)"""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOCTTY", 0))
     except OSError:
@@ -2295,12 +2296,20 @@ def text_to_compare(path):
             st = os.fstat(fd)
             if st.st_mode & 0o170000 != 0o100000:  # (stat.S_ISREG)
                 return None, "something that isn't a plain file"
-            data = f.read(DIFF_FILE_MAX + 1) if st.st_size <= DIFF_FILE_MAX else b""
+            if limit is None:
+                return f.read(), ""
+            data = f.read(limit + 1) if st.st_size <= limit else b""
         except OSError:
             return None, ""
-        if st.st_size > DIFF_FILE_MAX or len(data) > DIFF_FILE_MAX:
+        if st.st_size > limit or len(data) > limit:
             return None, "a file of %d MB" % max(1, round(max(st.st_size, len(data)) / (1 << 20)))
-        return data.decode("utf-8", "replace"), ""
+        return data, ""
+
+
+def text_to_compare(path):
+    """bytes_to_compare of a file a prompt's change is shown against (at most DIFF_FILE_MAX), as text."""
+    data, other = bytes_to_compare(path, DIFF_FILE_MAX)
+    return (None, other) if data is None else (data.decode("utf-8", "replace"), "")
 
 
 HUNK_LINE = re.compile(r"^@@ -(\d+)(,\d+)? \+(\d+)(,\d+)? @@")
