@@ -4,6 +4,20 @@
 
 ### New
 
+- **Open in: Talpy Chat.** One more choice, listed first, in the switch
+  above Recent chats: *Talpy Chat | Terminal | Claude Code panel*
+  (`talpyDen.reopenIn`: `talpyChat`; the default stays `terminal`). A chat
+  that isn't running opens in its Talpy Chat tab, where your next message
+  goes on with it in the background, and a background chat no terminal
+  shows opens there too. *New Chat…* lists *In a Talpy Chat tab* first: an
+  empty tab for that account and folder with a ⚙ line (model, effort,
+  permission mode), and your first message starts the chat in the
+  background, shown at once with *Starting…*; a task goes as its first
+  message. What it asks is answered in its tab: chats Talpy Chat starts or
+  wakes get Talpy Den's permission hook for themselves alone, unless it's on
+  for every chat. *Answer it in a terminal* for a prompt it can't answer; a
+  folder Claude doesn't trust yet starts in a terminal. This computer's
+  chats only, for now.
 - **Your answers show in the chat:** an answered question stays in Talpy
   Chat as Claude's (its options folded, the ones you picked ✓), with your
   answer right under it as your message: the options, what you typed and
