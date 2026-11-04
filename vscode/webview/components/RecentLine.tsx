@@ -94,7 +94,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
           icon={I.goOnAt}
           text={startText(goingOn.startAt, view.now)}
           active
-          title={`Goes on by itself at ${startText(goingOn.startAt, view.now)}, in the background, in the permission mode it had, telling Claude that the limit has reset (if it didn't go on before then).\n\nClick to cancel it.`}
+          title={`Goes on by itself at ${startText(goingOn.startAt, view.now)}, in the background, in the permission mode it had, telling Claude that the limit has reset (if it didn't go on before then).\n\nClick to cancel it.${kept ? " It stops keeping going after usage limits too." : ""}`}
           onClick={() => post({ type: "unqueue", id: goingOn.id })}
         />
       ) : c.stopped?.kind === "limit" && !c.stopped.over ? (
