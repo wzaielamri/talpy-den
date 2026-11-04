@@ -698,7 +698,7 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
     except OSError:
         pass
     if not back:  # (a repo can ship them as links: to ~/.claude/rules, to an account's settings.json)
-        if not cs.stays_in(os.path.normpath(dest_dir), folder):
+        if cs.stat_inside(os.path.normpath(dest_dir), folder) is False:
             return dict(out, message=f"{short(dest_dir)} is a link to another folder: Talpy Den doesn't move a plan through a link")
         settings = cs.local_settings_file(ctx, folder)
         linked = cs.linked_settings(settings, os.path.dirname(os.path.dirname(settings)), home, "change a setting") \

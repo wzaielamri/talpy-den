@@ -2298,7 +2298,9 @@ def bytes_to_compare(path, limit):
                 return None, "something that isn't a plain file"
             if limit is None:
                 return f.read(), ""
-            data = f.read(limit + 1) if st.st_size <= limit else b""
+            data = f.read(st.st_size + 1) if st.st_size <= limit else b""  # (not a buffer of limit: sized as the file)
+            if st.st_size < len(data) <= limit:  # (it grew meanwhile)
+                data += f.read(limit + 1 - len(data))
         except OSError:
             return None, ""
         if st.st_size > limit or len(data) > limit:
@@ -5279,25 +5281,34 @@ def inside(path, folder):
     return path == folder or path.startswith(folder.rstrip("/") + "/")
 
 
-def stays_in(path, folder):
-    """Does path (folder or a place inside it, both normalised) stay inside
-    folder once the links on its way are followed (the part of it that's
-    there)? An lstat for each part below folder; the real paths only when
-    one of them is a link."""
+def stat_inside(path, folder):
+    """When path (folder or a place inside it, both normalised) stays inside
+    folder once the links on its way are followed: its os.stat, or None
+    where it isn't there (what's made there is a folder of its own); False
+    when it leads out. An lstat for each part below folder (the last is its
+    stat), the real paths only when one of them is a link."""
     if not inside(path, folder):
         return False
-    there = folder
+    there, st = folder, None
     for part in path[len(folder):].split("/"):
         if not part:
             continue
         there = os.path.join(there, part)
         try:
-            if os.lstat(there).st_mode & 0o170000 != 0o120000:  # (stat.S_ISLNK)
-                continue
+            st = os.lstat(there)
         except OSError:
-            return True  # (not there: what's made there is a folder of its own)
-        return inside(os.path.realpath(path), os.path.realpath(folder))
-    return True
+            return None
+        if st.st_mode & 0o170000 == 0o120000:  # (stat.S_ISLNK)
+            if not inside(os.path.realpath(path), os.path.realpath(folder)):
+                return False
+            st = None
+            break
+    if st is None:
+        try:
+            return os.stat(path)
+        except OSError:
+            return None
+    return st
 
 
 def plans_dir_in(project, value):
@@ -5646,11 +5657,9 @@ def project_plan_files(ctx):
             if d in dirs_seen:
                 continue
             dirs_seen.add(d)
-            if not stays_in(os.path.normpath(d), os.path.normpath(folder)):
-                continue
             try:
-                st = os.stat(d)
-                if (st.st_dev, st.st_ino) in accounts:
+                st = stat_inside(os.path.normpath(d), os.path.normpath(folder))  # (not one that leads out through a link)
+                if not st or (st.st_dev, st.st_ino) in accounts:
                     continue
                 entries = list(os.scandir(d))
             except OSError:
