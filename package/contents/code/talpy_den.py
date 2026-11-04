@@ -5270,6 +5270,27 @@ def inside(path, folder):
     return path == folder or path.startswith(folder.rstrip("/") + "/")
 
 
+def stays_in(path, folder):
+    """Does path (folder or a place inside it, both normalised) stay inside
+    folder once the links on its way are followed (the part of it that's
+    there)? An lstat for each part below folder; the real paths only when
+    one of them is a link."""
+    if not inside(path, folder):
+        return False
+    there = folder
+    for part in path[len(folder):].split("/"):
+        if not part:
+            continue
+        there = os.path.join(there, part)
+        try:
+            if os.lstat(there).st_mode & 0o170000 != 0o120000:  # (stat.S_ISLNK)
+                continue
+        except OSError:
+            return True  # (not there: what's made there is a folder of its own)
+        return inside(os.path.realpath(path), os.path.realpath(folder))
+    return True
+
+
 def plans_dir_in(project, value):
     """The folder (absolute) a plansDirectory value names for the project
     folder, or None where Claude takes the account's plans/ instead: empty,
@@ -5582,7 +5603,9 @@ def plan_folders(ctx):
 def project_plan_files(ctx):
     """[(mtime, project folder, path, stat)] of the plans in the projects'
     plan folders (project_plan_dirs of plan_folders), newest first, each
-    file once; never an account's own plans/ (once per check)."""
+    file once; never an account's own plans/, a folder that leads out of
+    its project through a link, nor a plan that is a link (a repo can ship
+    them: to ~/.claude, a private key) (once per check)."""
     found = getattr(ctx, "project_plan_files", None)
     if found is not None:
         return found
@@ -5604,6 +5627,8 @@ def project_plan_files(ctx):
             if d in dirs_seen:
                 continue
             dirs_seen.add(d)
+            if not stays_in(os.path.normpath(d), os.path.normpath(folder)):
+                continue
             try:
                 st = os.stat(d)
                 if (st.st_dev, st.st_ino) in accounts:
@@ -5615,6 +5640,8 @@ def project_plan_files(ctx):
                 if not e.name.endswith(".md") or not PLAN_SLUG.match(e.name[:-3]):
                     continue
                 try:
+                    if e.is_symlink():
+                        continue
                     st = e.stat()
                 except OSError:
                     continue

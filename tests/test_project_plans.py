@@ -139,6 +139,32 @@ class PlansDirectoryTests(ProjectPlanFixture):
         self.assertEqual([(p["slug"], p["inProject"], p["key"]) for p in listed],
                          [("home-plan", False, ".claude/home-plan/plan")])
 
+    def test_a_link_out_of_the_project_is_never_its_plan(self):
+        # (a repo can ship them: a plan that's a link to a private key, its plans folder a link to an account's)
+        write(self.home / ".ssh/id_test", "SECRETKEY\n")
+        (self.app / ".claude/plans").mkdir(parents=True)
+        os.symlink("../../../../.ssh/id_test", self.app / ".claude/plans/setup-steps.md")
+        web = self.home / "repos/web"
+        (web / ".claude").mkdir(parents=True)
+        write(self.home / ".claude-work/CLAUDE.md", "# My rules\n")
+        os.symlink("../../../.claude-work", web / ".claude/plans")
+        self.chat(".claude-work", self.app, CHAT_A)
+        self.chat(".claude-work", web, CHAT_B, ago=900)
+        self.assertEqual(self.listed("work"), [])
+        profiles = cs.discover_profiles(self.home)
+        for slug in ("setup-steps", "CLAUDE"):
+            self.assertEqual(cs.find_project_plan(profiles, slug, self.home, self.cache), (None, None))
+            with self.assertRaises(ValueError):
+                jump.Task("Carry out this plan", plan=slug).prompt(self.home, profiles)
+        asked = sharing.delete(profiles, "plan", "CLAUDE", None, sharing.store_root(self.home), self.home)
+        self.assertFalse(asked["ok"])
+        self.assertTrue((self.home / ".claude-work/CLAUDE.md").is_file())
+        # a link that stays in the project is followed
+        os.unlink(web / ".claude/plans")
+        self.plan(web / "notes/web-plan.md", "Web")
+        os.symlink("../notes", web / ".claude/plans")
+        self.assertEqual(self.listed("work"), [("web-plan", True, str(web))])
+
 
 class ListedOnceTests(ProjectPlanFixture):
     def test_under_the_account_of_its_chat_else_of_the_newest_chat_there(self):
