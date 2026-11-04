@@ -483,6 +483,7 @@
             },
             "talpyDen.newChatModel": {
               "type": "string",
+              "scope": "application",
               "enum": [
                 "opus",
                 "sonnet",
@@ -503,6 +504,7 @@
             },
             "talpyDen.newChatEffort": {
               "type": "string",
+              "scope": "application",
               "enum": [
                 "low",
                 "medium",
@@ -525,6 +527,7 @@
             },
             "talpyDen.newChatMode": {
               "type": "string",
+              "scope": "application",
               "enum": [
                 "default",
                 "acceptEdits",
@@ -659,6 +662,7 @@
         "properties": {
             "talpyDen.usageCap": {
               "type": "integer",
+              "scope": "application",
               "default": 0,
               "minimum": 0,
               "maximum": 100,

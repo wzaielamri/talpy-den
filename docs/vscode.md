@@ -123,7 +123,7 @@ code --install-extension talpy-den-*.vsix
 
 The gear at the end of the view's title bar opens VS Code's Settings editor at these, in categories under *Talpy Den*, the same and in the same order as Talpy Den's settings on Plasma and GNOME.
 
-The ones that pick what Talpy Den runs or reads on this computer (`talpyDen.pythonPath`, `extraConfigDirs`, `sshHosts`, `recapHistory`) are read only from your own user settings: not from a workspace's `.vscode/settings.json`, nor from the machine settings of the SSH host or container a window is connected to, so a repository or a host can't set them for you (VS Code keeps them in its default profile's settings, for every profile). Settings Sync doesn't carry them to your other computers.
+The ones that pick what Talpy Den runs or reads on this computer (`talpyDen.pythonPath`, `extraConfigDirs`, `sshHosts`, `recapHistory`), how new chats start (`newChatModel`, `newChatEffort`, `newChatMode`: a permission mode can turn Claude's prompts off) and the usage cap that stops chats (`usageCap`) are read only from your own user settings: not from a workspace's `.vscode/settings.json`, nor from the machine settings of the SSH host or container a window is connected to, so a repository or a host can't set them for you (VS Code keeps them in its default profile's settings, for every profile). Settings Sync doesn't carry the first four to your other computers.
 
 ### General
 

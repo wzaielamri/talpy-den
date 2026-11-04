@@ -64,7 +64,8 @@ test("the extension's own manifest names every setting it has", () => {
 });
 
 // A repo's .vscode/settings.json, or the Machine settings of the SSH host or
-// container a window is connected to, named the program run as Python here
+// container a window is connected to, named the program run as Python here,
+// started your new chats with bypassPermissions, or a usage cap of 1%
 test("what runs or is read on this computer comes only from your user settings", () => {
   const manifest = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf8"));
   const properties = Object.assign({}, ...manifest.contributes.configuration.map((s: { properties: object }) => s.properties));
@@ -72,4 +73,6 @@ test("what runs or is read on this computer comes only from your user settings",
     assert.equal(properties[`talpyDen.${name}`].scope, "application", name);
     assert.equal(properties[`talpyDen.${name}`].ignoreSync, true, name);
   }
+  for (const name of ["newChatModel", "newChatEffort", "newChatMode", "usageCap"])
+    assert.equal(properties[`talpyDen.${name}`].scope, "application", name);
 });

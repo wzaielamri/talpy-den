@@ -71,11 +71,12 @@ export function chatOptionArgs(): string[] {
   return [...(model ? ["--model", model] : []), ...(effort ? ["--effort", effort] : []), ...(mode ? ["--permission-mode", mode] : [])];
 }
 
-// (each where it's set: a workspace's own value would win over a global one)
+// (application settings: only your user settings hold them, never a
+// workspace's or a remote's, which could start chats with prompts off)
 export async function setChatOptions(model: string, effort: string, mode: string): Promise<void> {
-  await cfg().update("newChatModel", model, whereSet("newChatModel"));
-  await cfg().update("newChatEffort", effort, whereSet("newChatEffort"));
-  await cfg().update("newChatMode", mode, whereSet("newChatMode"));
+  await cfg().update("newChatModel", model, vscode.ConfigurationTarget.Global);
+  await cfg().update("newChatEffort", effort, vscode.ConfigurationTarget.Global);
+  await cfg().update("newChatMode", mode, vscode.ConfigurationTarget.Global);
 }
 
 // Where a setting's value comes from: its folder's, its workspace's, else the user's
