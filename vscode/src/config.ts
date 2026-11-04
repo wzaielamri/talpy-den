@@ -129,7 +129,7 @@ export function statusArgs(): string[] {
   return args;
 }
 
-// (a "machine" setting: only the user's settings hold it)
+// (an "application" setting: only your user settings hold it)
 export async function setSshHosts(hosts: string[]): Promise<void> {
   await cfg().update("sshHosts", hosts, vscode.ConfigurationTarget.Global);
 }

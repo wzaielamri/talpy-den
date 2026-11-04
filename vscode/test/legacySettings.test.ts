@@ -62,3 +62,14 @@ test("the extension's own manifest names every setting it has", () => {
   assert.ok(names.length >= 40, String(names.length));
   for (const name of ["pollInterval", "openIn", "sshHosts", "playfulTalpy", "pythonPath"]) assert.ok(names.includes(name), name);
 });
+
+// A repo's .vscode/settings.json, or the Machine settings of the SSH host or
+// container a window is connected to, named the program run as Python here
+test("what runs or is read on this computer comes only from your user settings", () => {
+  const manifest = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf8"));
+  const properties = Object.assign({}, ...manifest.contributes.configuration.map((s: { properties: object }) => s.properties));
+  for (const name of ["pythonPath", "extraConfigDirs", "sshHosts", "recapHistory"]) {
+    assert.equal(properties[`talpyDen.${name}`].scope, "application", name);
+    assert.equal(properties[`talpyDen.${name}`].ignoreSync, true, name);
+  }
+});

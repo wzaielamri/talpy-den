@@ -722,7 +722,8 @@
             "talpyDen.recapHistory": {
               "type": "boolean",
               "default": true,
-              "scope": "machine",
+              "scope": "application",
+              "ignoreSync": true,
               "markdownDescription": "Claude Code deletes chats after 30 days (its `cleanupPeriodDays` setting). The Recap tab's **Overall** keeps their numbers past that, in `~/.cache/talpy-den`: times, tokens, costs, folders and chat names. Off, it keeps only what Claude still has. One choice for Talpy Den here and on Plasma or GNOME. **Talpy Den: Delete the Recap's Saved History…** deletes it.",
               "order": 3
             },
@@ -739,7 +740,8 @@
         "order": 7,
         "properties": {
             "talpyDen.sshHosts": {
-              "scope": "machine",
+              "scope": "application",
+              "ignoreSync": true,
               "type": "array",
               "items": {
                 "type": "string"
@@ -815,7 +817,8 @@
               "order": 2
             },
             "talpyDen.extraConfigDirs": {
-              "scope": "machine",
+              "scope": "application",
+              "ignoreSync": true,
               "type": "array",
               "items": {
                 "type": "string"
@@ -825,7 +828,8 @@
               "order": 3
             },
             "talpyDen.pythonPath": {
-              "scope": "machine",
+              "scope": "application",
+              "ignoreSync": true,
               "type": "string",
               "default": "python3",
               "markdownDescription": "Python 3.7+ used to read Claude Code's files on this computer.",
