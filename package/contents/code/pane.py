@@ -251,6 +251,17 @@ def regular_file(path):
         return False
 
 
+def file_pictures(items):
+    """items with only the pictures that are a regular file (regular_file):
+    looked at for the items sent, one stat each."""
+    for item in items:
+        if item.get("pictures"):
+            item["pictures"] = [p for p in item["pictures"] if regular_file(p)]
+            if not item["pictures"]:
+                del item["pictures"]
+    return items
+
+
 def pictures_here(items):
     """A host's chat names its pictures by their paths there, and the pane
     shows each from this computer: the copy of one you pasted, else the file
@@ -268,11 +279,10 @@ def prompt_pictures(text, blocks, uid, folder):
     those pasted into it in Claude's terminal or panel (its image blocks),
     each saved once in folder (cs.images_dir, kept as long as the pane's own,
     IMAGES_KEEP_DAYS), named after its entry. folder None (an SSH host's
-    chat): the files it names only. A named one is kept only when it's a
-    regular file (regular_file)."""
+    chat): the files it names only (conversation keeps the regular files)."""
     out = []
     for path in PICTURE_NAMED.findall(text or ""):
-        if path not in out and regular_file(path):
+        if path not in out:
             out.append(path)
     if folder is None:
         return out
@@ -494,7 +504,7 @@ def conversation(path, limit=PANE_ITEMS, pictures=None):
         lines, whole = tail_lines(path, size, nbytes)
         items = conversation_items(lines, pictures)
         if whole or len(items) > limit or nbytes >= PANE_TAIL_MAX:
-            return within_budget(items[-limit:]), len(items) > limit or not whole
+            return within_budget(file_pictures(items[-limit:])), len(items) > limit or not whole
         nbytes *= 4
 
 
