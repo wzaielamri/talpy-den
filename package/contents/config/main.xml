@@ -114,7 +114,7 @@
       <default>auto</default>
     </entry>
     <entry name="focusView" type="Bool">
-      <label>The Chats tab shows only what needs you and one line for each chat at work</label>
+      <label>The Talpy Den tab shows only what needs you and one line for each chat at work</label>
       <default>false</default>
     </entry>
     <entry name="showPet" type="Bool">
