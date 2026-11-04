@@ -8,7 +8,7 @@ import "icons.mjs" as Icons
 
 // A chat to pick up again: one of an account's recent or starred chats, or
 // of a project's (ProjectsView.qml). A click opens it beside the popup (or
-// reopens it, in a terminal or in VS Code); its tags say what stopped it or
+// reopens it, in Talpy Chat, a terminal or VS Code); its tags say what stopped it or
 // what's to review; on hover (or Tab, or a finger's hold) its buttons:
 // reopen, star, share, delete.
 ColumnLayout {
@@ -24,12 +24,16 @@ ColumnLayout {
     // every list, so what's before them lines up, and the folders and times too
     property real folderWidth: Kirigami.Units.gridUnit * 8
     readonly property real endWidth: root.endWidth(folderWidth)
-    // where it reopens: as the Terminal | VS Code switch of the account's chats says (OpenInSwitch.qml)
-    readonly property bool inVscode: root.openInVscode(group, remoteHost, true)
+    // where it reopens: as the Open in switch of the account's chats says (OpenInSwitch.qml)
+    readonly property string where: root.openIn(group, remoteHost, true)
+    readonly property bool inVscode: where === "vscode"
+    readonly property bool inTalpyChat: where === "talpyChat"
     readonly property bool terminalHere: root.cliHere(remoteHost)
     readonly property string rowKey: (recentLine.remoteHost ? recentLine.remoteHost + "|" : "") + chat.key
-    readonly property bool canOpen: recentLine.inVscode
+    readonly property bool canOpen: recentLine.inVscode || recentLine.inTalpyChat
                                     || (recentLine.terminalHere && (!recentLine.remoteHost || !!chat.openCommand))
+    readonly property string reopenHint: inTalpyChat ? root.talpyChatHint(remoteHost, true)
+                                         : inVscode ? root.vscodeHint(group, remoteHost, true) : root.terminalHint(remoteHost, true)
 
     // a click on its name
     function click() {
@@ -40,7 +44,9 @@ ColumnLayout {
     }
 
     function open() {
-        if (recentLine.remoteHost && recentLine.inVscode)
+        if (recentLine.inTalpyChat)
+            root.openPane(chat, recentLine.remoteHost, "chat")
+        else if (recentLine.remoteHost && recentLine.inVscode)
             root.remoteResumeVscode(recentLine.remoteHost, chat.sessionId, chat.cwd)
         else if (recentLine.remoteHost)
             root.remoteOpen(recentLine.remoteHost, chat.openCommand)
@@ -91,10 +97,8 @@ ColumnLayout {
                 mainText: recentLine.chat.name
                 subText: (Plasmoid.configuration.clickOpensPane
                           ? i18n("Click to open it in Talpy Chat: its conversation, a box to reply, and what it changed.")
-                            + (recentLine.canOpen ? "\n" + i18n("The reopen button (on hover): %1", recentLine.inVscode ? root.vscodeHint(recentLine.group, recentLine.remoteHost, true)
-                                                                                                                         : root.terminalHint(recentLine.remoteHost, true)) : "")
-                          : recentLine.canOpen ? (recentLine.inVscode ? root.vscodeHint(recentLine.group, recentLine.remoteHost, true)
-                                                                        : root.terminalHint(recentLine.remoteHost, true))
+                            + (recentLine.canOpen && !recentLine.inTalpyChat ? "\n" + i18n("The reopen button (on hover): %1", recentLine.reopenHint) : "")
+                          : recentLine.canOpen ? recentLine.reopenHint
                           : root.terminalHint(recentLine.remoteHost, true) + "\n" + root.vscodeHint(recentLine.group, recentLine.remoteHost, true))
                          + (recentLine.chat.cwd ? "\n" + i18n("Folder: %1", (recentLine.remoteHost ? root.hostLabel(recentLine.remoteHost) + ":" : "") + recentLine.chat.cwd) : "")
                          + (recentLine.chat.shared ? "\n" + i18n("Shared between accounts; last used on %1.", recentLine.chat.profile) : "")
@@ -267,8 +271,8 @@ Kirigami.Icon {
                 spacing: 0
 
                 HoverButton {
-                    // with clicks opening the pane: reopen the chat itself
-                    visible: Plasmoid.configuration.clickOpensPane && recentLine.canOpen
+                    // with clicks opening the pane: reopen the chat itself (in Talpy Chat: the click does)
+                    visible: Plasmoid.configuration.clickOpensPane && recentLine.canOpen && !recentLine.inTalpyChat
                     icon.name: Icons.plasma.openWindow
                     text: i18n("Reopen this chat")
                     onClicked: recentLine.open()
@@ -277,8 +281,7 @@ Kirigami.Icon {
                         textFormat: Text.PlainText
                         anchors.fill: parent
                         mainText: i18n("Reopen this chat")
-                        subText: recentLine.inVscode ? root.vscodeHint(recentLine.group, recentLine.remoteHost, true)
-                                                       : root.terminalHint(recentLine.remoteHost, true)
+                        subText: recentLine.reopenHint
                     }
                 }
                 HoverButton {

@@ -413,7 +413,9 @@ RowLayout {
                                 text: row.tag
                                 tooltip: root.movedText(row.session) + (row.session.pid === null ? i18n("No terminal or panel has it open: a reply goes on with it in the background.")
                                          : row.session.kind === "bg"
-                                         ? i18n("A background chat: Claude's background service runs it, with no terminal of its own. Click the name to open it in a terminal (claude attach).")
+                                         ? (root.openChatsIn === "talpyChat" && !row.session.attached
+                                            ? i18n("A background chat: Claude's background service runs it, with no terminal of its own. Its window is Talpy Chat; Open in a terminal there shows it in one too (claude attach).")
+                                            : i18n("A background chat: Claude's background service runs it, with no terminal of its own. Click the name to open it in a terminal (claude attach)."))
                                          : row.session.entrypoint === "claude-vscode"
                                          ? i18n("Runs in VS Code's Claude Code panel. Click the name to open the conversation there.")
                                          : row.session.tmux ? i18n("It runs in a tmux pane.")

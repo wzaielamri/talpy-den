@@ -529,7 +529,7 @@ PlasmoidItem {
     readonly property var sharedKeys: ["pollInterval", "idlePollInterval", "extraConfigDirs", "notifyWaiting", "notifyDone",
         "notifyDoneMinSeconds", "notifySound", "soundVolume", "soundWaiting", "soundDone", "soundFailed", "recentChats",
         "sshHosts", "remotePollSeconds", "sshUsage", "showContainers", "containerDays", "keepDoneHours", "showUsageInPanel", "showPet", "playful", "chatPets", "showTokens",
-        "newChatInVscode", "iconBlink", "awayDigest", "awayMinutes", "phoneWhileAway", "phoneFinished", "phoneDevice",
+        "openChatsIn", "newChatInVscode", "iconBlink", "awayDigest", "awayMinutes", "phoneWhileAway", "phoneFinished", "phoneDevice",
         "markdownApp", "newChatModel", "newChatEffort", "newChatMode", "usageCap", "usageRefreshMinutes", "recapRules", "clickOpensPane",
         "mondayRecap", "recapCurrency", "diffSideBySide", "paneTextPercent", "paneFont", "paneTerminalFont", "dictateLanguage"]
     property real settingsSeenAt: 0     // the newest shared settings this copy has seen
@@ -2024,12 +2024,43 @@ PlasmoidItem {
         return folders
     }
 
-    // Chats open in a terminal or in VS Code (OpenInSwitch.qml): one choice,
-    // newChatInVscode, for new and recent chats.
+    // Chats open in Talpy Chat, in a terminal or in VS Code (OpenInSwitch.qml):
+    // one choice, openChatsIn, for new and recent chats.
     // VS Code's Claude extension runs on the account its own environment and
     // settings say (talpy_den.py: vscode_profile), so its button is only
     // on that account (an SSH host's: the host's ~/.claude)
     readonly property bool vscodeInstalled: status !== null && !!status.vscode && status.vscode.installed === true
+    readonly property string openChatsIn: Plasmoid.configuration.openChatsIn === "talpyChat" ? "talpyChat"
+                                          : Plasmoid.configuration.openChatsIn === "vscode" ? "vscode" : "terminal"
+
+    // Where this account's chats open: "talpyChat", "terminal" or "vscode"
+    // (resuming: a recent chat's, which reopens). Talpy Chat where you picked
+    // it and it can be; VS Code as openInVscode says; else a terminal
+    function openIn(group, host, resuming) {
+        if (openInVscode(group, host, resuming))
+            return "vscode"
+        return openChatsIn === "talpyChat" && talpyChatHere(host, resuming) ? "talpyChat" : "terminal"
+    }
+
+    // Chats can open in Talpy Chat: on this computer, with a claude command;
+    // a new one only where a hook given to one chat runs (it answers what a
+    // background chat asks: managed settings may let only their own run)
+    function talpyChatHere(host, resuming) {
+        return !host && cliHere("") && (resuming || !status || !status.cli || status.cli.hooks !== false)
+    }
+
+    // The Talpy Chat half's tooltip (resuming: for the recent chats' switch)
+    function talpyChatHint(host, resuming) {
+        if (host)
+            return isContainer(host) ? i18n("Talpy Chat can't answer the prompts of a background chat in %1 yet, so its chats open in a terminal or in VS Code.", hostLabel(host))
+                                     : i18n("Talpy Chat can't answer the prompts of a background chat on %1 yet, so its chats open in a terminal or in VS Code.", host)
+        if (!cliHere(""))
+            return terminalHint("", resuming)
+        if (!talpyChatHere(host, resuming))
+            return i18n("Managed settings here let only their own hooks run (allowManagedHooksOnly), and Talpy Chat answers what a background chat asks through a hook of Talpy Den's.")
+        return resuming ? i18n("A chat that isn't running opens in Talpy Chat: your next message goes on with it in the background, and you answer Claude's prompts there. Open one in a terminal any time.")
+                        : i18n("New chats run in the background and open here: reply, answer Claude's prompts, see what changed. Open one in a terminal any time.")
+    }
 
     // There's a claude command here (host: on that SSH host). When unsure
     // (no answer yet, or an error looking), it counts as there.
@@ -2044,7 +2075,7 @@ PlasmoidItem {
     function openInVscode(group, host, resuming) {
         if (!vscodeInstalled || !(group.vscodeHere || (!resuming && vscodeSwitches(group, host))))
             return false
-        return Plasmoid.configuration.newChatInVscode || !cliHere(host)
+        return openChatsIn === "vscode" || !cliHere(host)
     }
 
     // A new chat on an SSH host's other account opens in VS Code too: VS
@@ -2369,6 +2400,11 @@ PlasmoidItem {
     }
 
     Component.onCompleted: {
+        // (the switch held two choices before, newChatInVscode: VS Code stays VS Code)
+        if (Plasmoid.configuration.newChatInVscode) {
+            Plasmoid.configuration.openChatsIn = "vscode"
+            Plasmoid.configuration.newChatInVscode = false
+        }
         loadLastAnswers()
         loadHosts()
         Hub.want(instanceId, "status", command, checkInterval, true)
@@ -3383,8 +3419,16 @@ PlasmoidItem {
                               + profileArg(profileDir) + configDirArgs + " # " + Date.now())
     }
 
-    function jumpTo(sessionId, profileDir) {
+    // The chat's window. A background chat no terminal shows has none: with
+    // Talpy Chat picked in Open in, it's its Talpy Chat window (its pet, Open
+    // its window, its notifications); direct: a terminal on it all the same
+    // (claude attach: Answer it in a terminal, Talpy Chat's Open in a terminal)
+    function jumpTo(sessionId, profileDir, direct) {
         const row = listedRow(sessionId, profileDir, "")
+        if (!direct && row && row.kind === "bg" && row.pid && !row.attached && openChatsIn === "talpyChat") {
+            openPane(row, "", "chat")
+            return
+        }
         if (row)
             forgetFinished(petKeyOf(row, ""))
         // Trailing comment keeps repeated clicks from being deduplicated by the engine.
@@ -3906,22 +3950,30 @@ PlasmoidItem {
         const chat = { chatId: chatId, sessionId: moved ? "" : s.sessionId || "", profileDir: s.profileDir || "",
                        host: host || "", name: s.name || "", cwd: s.cwd || "", tab: tab || "chat", at: Date.now(),
                        key: moved ? "" : s.key || "" }
-        let win = paneWindows.find(w => !w.chat.chatId && w.lastKey === key) || paneWindows.find(w => !w.chat.chatId)
-        if (win) {
-            win.chat = chat
-        } else {
-            if (!paneComponent)
-                paneComponent = Qt.createComponent(Qt.resolvedUrl("ChatPane.qml"))
-            win = paneComponent.status === Component.Ready ? paneComponent.createObject(root, { chat: chat }) : null
-            if (!win) {
-                console.warn("talpy-den: Talpy Chat's window couldn't be made:", paneComponent.errorString())
-                return
-            }
-            paneWindows = paneWindows.concat([win])
-        }
+        const win = paneWindowFor(chat, key)
+        if (!win)
+            return
         paneListChanged()
         placePane(win)
         win.act(then)
+    }
+
+    // A window for chat (key: its paneKeyOf): a closed one (the one it had last, else any), else a new one
+    function paneWindowFor(chat, key) {
+        let win = paneWindows.find(w => !w.chat.chatId && w.lastKey === key) || paneWindows.find(w => !w.chat.chatId)
+        if (win) {
+            win.chat = chat
+            return win
+        }
+        if (!paneComponent)
+            paneComponent = Qt.createComponent(Qt.resolvedUrl("ChatPane.qml"))
+        win = paneComponent.status === Component.Ready ? paneComponent.createObject(root, { chat: chat }) : null
+        if (!win) {
+            console.warn("talpy-den: Talpy Chat's window couldn't be made:", paneComponent.errorString())
+            return null
+        }
+        paneWindows = paneWindows.concat([win])
+        return win
     }
 
     // Closed (ChatPane onClosing): hidden, and free for the next chat
@@ -3995,13 +4047,14 @@ PlasmoidItem {
     }
 
     // The chat's own window: its terminal or VS Code tab; one that isn't open
-    // reopens (as the switch says)
-    function openRow(s, host) {
+    // reopens (as the switch says). direct: a background chat's terminal
+    // (claude attach), also where its window is Talpy Chat (jumpTo)
+    function openRow(s, host, direct) {
         if (s && s.pid !== undefined && s.key && s.key.indexOf("/recent") < 0 && s.key.indexOf("/starred") < 0) {
             if (host)
                 remoteShow(host, s)
             else
-                jumpTo(s.sessionId, s.profileDir)
+                jumpTo(s.sessionId, s.profileDir, direct)
         } else if (s) {
             const chatId = s.chatId || s.sessionId
             openChatById(chatId, s.profileDir || "", s.cwd || "", s.openCommand || "", "", host || "")
@@ -4277,7 +4330,11 @@ PlasmoidItem {
         }
         const groupList = hostGroups(host)
         const group = groupList.find(g => g.id === groupId || g.profileKeys.indexOf(profileDir) >= 0) || null
-        if (group && openInVscode(group, host, true)) {
+        const where = group ? openIn(group, host, true) : "terminal"
+        if (where === "talpyChat") {
+            // (its next message goes on with it in the background, from there)
+            openPane({ chatId: chatId, sessionId: chatId, profileDir: profileDir, cwd: cwd }, host, "chat")
+        } else if (where === "vscode") {
             if (host)
                 remoteResumeVscode(host, chatId, cwd)
             else
@@ -5044,7 +5101,8 @@ PlasmoidItem {
              : i18n("Resets on %1 at %2", Qt.locale().toString(new Date(ms), "ddd d MMM"), clockText(ms))
     }
 
-    function startChat(group, host, folder, inVscode, plan) {
+    // where: "talpyChat", "terminal" or "vscode" (NewChatBox: root.openIn)
+    function startChat(group, host, folder, where, plan) {
         const text = taskText.trim()
         const hasTask = text !== "" || !!plan
         const background = taskBackground && hasTask
@@ -5053,6 +5111,24 @@ PlasmoidItem {
         if (background && taskLater && !later) {
             actionError = i18n("Pick a time that's still to come, e.g. 14:30.")
             actionErrorTimer.restart()
+            return
+        }
+        const inVscode = where === "vscode"
+        // In Talpy Chat: its window opens on a new chat, which your task (if any) starts at once in
+        // the background; a folder you pick is asked for first; one Claude doesn't trust yet opens
+        // in a terminal (a background chat can't ask)
+        if (where === "talpyChat" && !host && !background && (folder.trusted !== false || !folder.path)) {
+            newChatGroup = ""
+            planComposer = ""
+            taskText = ""
+            taskBackground = false
+            taskQueued = false
+            taskLater = false
+            pictureOffer = null
+            if (folder.path)
+                openNewChat(group, folder, text, plan)
+            else
+                pickNewChatFolder(group, text, plan)
             return
         }
         const draft = text ? { text: taskText, background: taskBackground, queued: taskQueued, later: taskLater,
@@ -5108,6 +5184,59 @@ PlasmoidItem {
             taskStarter.connectSource(cmd)
         else
             launcher.connectSource(cmd)
+    }
+
+    // A new chat in Talpy Chat: its window, for that account and folder, with
+    // nothing started yet; your first message there starts it in the
+    // background (ChatPane: fresh), the task you wrote at once. plan: a plan
+    // it carries out (its first message, with what you wrote)
+    property int newChats: 0
+    function openNewChat(group, folder, text, plan) {
+        const id = "new-" + Date.now() + "-" + (++newChats)
+        const chat = { chatId: id, sessionId: "", profileDir: group.chatProfile, host: "", name: "", cwd: folder.path,
+                       tab: "chat", at: Date.now(), key: "",
+                       fresh: { profile: group.chatProfile, account: group.title, cwd: folder.path, short: folder.short || folder.path,
+                                plan: plan ? { slug: plan.slug, profileDir: plan.profileDir, title: plan.title } : null } }
+        const win = paneWindowFor(chat, "|" + id)
+        if (!win)
+            return
+        paneListChanged()
+        placePane(win)
+        if (text || plan)
+            win.startWith(text)
+    }
+
+    // Choose folder… for a new chat in Talpy Chat: the desktop's folder dialog
+    // (jump.py --pick-folder), then its window, or a terminal for a folder
+    // Claude doesn't trust yet
+    property var folderPicks: ({})   // command -> {group, text, plan}
+    function pickNewChatFolder(group, text, plan) {
+        const cmd = "python3 -I " + shellQuote(codeDir + "jump.py") + " --pick-folder " + shellQuote(group.chatProfile)
+                    + configDirArgs + " # " + Date.now()
+        folderPicks = Object.assign({}, folderPicks, { [cmd]: { group: group, text: text, plan: plan } })
+        folderPicker.connectSource(cmd)
+    }
+    Exec {
+        id: folderPicker
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            const pick = root.folderPicks[source]
+            const rest = Object.assign({}, root.folderPicks)
+            delete rest[source]
+            root.folderPicks = rest
+            const result = root.helperResult(data)
+            if (!pick)
+                return
+            if (!result.ok) {
+                root.actionError = i18n("Couldn't open a new chat: %1", result.message)
+                actionErrorTimer.restart()
+            } else if (result.path && result.trusted) {
+                root.openNewChat(pick.group, { path: result.path, short: result.short }, pick.text, pick.plan)
+            } else if (result.path) {
+                root.taskText = pick.text
+                root.startChat(pick.group, "", { path: result.path, short: result.short, trusted: false }, "terminal", pick.plan)
+            }
+        }
     }
 
     // What you wrote for a chat that's starting, by the command that starts

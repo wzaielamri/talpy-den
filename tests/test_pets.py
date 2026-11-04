@@ -1979,7 +1979,8 @@ class NewChatTests(unittest.TestCase):
         # account, so its switch never offers that
         switch = (ROOT / "ui/OpenInSwitch.qml").read_text()
         main = (ROOT / "ui/main.qml").read_text()
-        self.assertIn("root.openInVscode(group, remoteHost, resuming)", switch)
+        self.assertIn("root.openIn(group, remoteHost, resuming)", switch)
+        self.assertIn("if (openInVscode(group, host, resuming))", main[main.index("function openIn("):])
         self.assertIn("readonly property bool switching: !resuming && root.vscodeSwitches(group, remoteHost)", switch)
         self.assertIn('const account = group && !group.vscodeHere ? " --account " + shellQuote(group.configDir || "-") : ""', main)
         self.assertIn("(group.vscodeHere || (!resuming && vscodeSwitches(group, host)))", main)
@@ -1996,7 +1997,7 @@ class NewChatTests(unittest.TestCase):
         rows = box[box.index("delegate: PlasmaComponents3.ItemDelegate"):box.index("Kirigami.Separator")]
         self.assertNotIn("newChatGroup", rows)
         self.assertNotIn("planComposer", rows)
-        self.assertIn("onClicked: root.startChat(box.group, box.remoteHost, folderRow.folder, box.inVscode, box.plan)", rows)
+        self.assertIn("onClicked: root.startChat(box.group, box.remoteHost, folderRow.folder, box.where, box.plan)", rows)
         start = main[main.index("function startChat("):]
         self.assertIn("remoteNewChat(host, folder.newChatCommand ? folder.newChatCommand + chatOptions : folder.newChatCommand)",
                       start[:start.index("\n    }\n")])
@@ -2124,7 +2125,7 @@ class SettingsPageTests(unittest.TestCase):
             found.update(own)
             defaults.update(own_defaults)
         # (the ones set in the popup are ConfigPage's on every page: it puts them back as they are now on Apply)
-        popup = {"focusView", "sshHosts", "newChatInVscode", "newChatModel", "newChatEffort", "newChatMode",
+        popup = {"focusView", "sshHosts", "newChatInVscode", "openChatsIn", "newChatModel", "newChatEffort", "newChatMode",
                  "diffSideBySide", "paneTextPercent", "paneTerminalFont"}
         self.assertEqual(found, {k: v for k, v in kinds.items() if k not in popup})
         self.assertEqual({k + "Default": v for k, v in kinds.items() if k not in popup}, defaults)

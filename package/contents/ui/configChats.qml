@@ -14,7 +14,7 @@ ConfigPage {
     id: page
 
     property alias cfg_clickOpensPane: clickOpensPane.checked
-    // (cfg_newChatInVscode, cfg_newChatModel, cfg_newChatEffort, cfg_newChatMode, set in the
+    // (cfg_openChatsIn, cfg_newChatModel, cfg_newChatEffort, cfg_newChatMode, set in the
     // popup's new-chat box, and cfg_diffSideBySide, cfg_paneTextPercent, set in the chat pane:
     // ConfigPage's, which puts them back as they are now on Apply)
     property alias cfg_dictateLanguage: dictateLanguage.text

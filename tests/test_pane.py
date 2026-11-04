@@ -115,6 +115,12 @@ class CompleteTests(PaneFixture):
         self.assertIn(os.path.join("src", "app.py"), got["files"])
         self.assertFalse(any("node_modules" in f for f in got["files"]))
         self.assertEqual(got["history"], ["old one", "fix it"])
+        # a new chat in Talpy Chat (none to read yet): its folder's, on its account
+        with mock.patch.dict(os.environ, {"PATH": "/nonexistent"}):
+            new = self.cli("--complete", "-", "--cwd", str(self.folder), "--profile", ".claude-work")
+        self.assertEqual((new["cwd"], new["commands"], new["files"], new["history"]),
+                         (str(self.folder), got["commands"], got["files"], got["history"]))
+        self.assertFalse(self.cli("--complete", "-", "--cwd", str(self.folder), "--profile", ".claude-nope")["ok"])
 
     def test_a_command_linked_to_a_device_or_a_pipe_isnt_read(self):
         # (a repo can ship .claude/commands/deploy.md -> /dev/zero: reading it whole took all the memory)

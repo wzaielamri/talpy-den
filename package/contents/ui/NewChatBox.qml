@@ -10,10 +10,13 @@ import "icons.mjs" as Icons
 // A new chat on an account: what Claude should do (optional), then the folder
 // it starts in. The + next to an account opens one; so does a plan's "Carry
 // it out" (plan set: the chat carries out that plan, in its folder first).
-// With a task, the chat starts with it: in a terminal (sent at once), in VS
-// Code (typed in for you to send) or in the background (no window: Claude's
-// background service runs it, and it's listed right away). The background
-// needs a folder Claude trusts already: it can't ask there.
+// With a task, the chat starts with it: in Talpy Chat (in the background, its
+// window open on it with your message sent), in a terminal (sent at once), in
+// VS Code (typed in for you to send) or in the background (no window: Claude's
+// background service runs it, and it's listed right away). Without one, Talpy
+// Chat opens empty, and your first message there starts it. The background
+// needs a folder Claude trusts already: it can't ask there (in Talpy Chat,
+// one it doesn't trust yet opens in a terminal, and its line says so).
 Rectangle {
     id: box
 
@@ -22,7 +25,9 @@ Rectangle {
     property var plan: null
 
     readonly property var folders: visible ? root.newChatFolders(group, remoteHost, plan) : []
-    readonly property bool inVscode: root.openInVscode(group, remoteHost, false)
+    readonly property string where: root.openIn(group, remoteHost, false)   // talpyChat, terminal or vscode
+    readonly property bool inVscode: where === "vscode"
+    readonly property bool inTalpyChat: where === "talpyChat"
     readonly property bool terminalHere: root.cliHere(remoteHost)
     readonly property bool hasTask: root.taskText.trim() !== "" || plan !== null
     readonly property bool background: root.taskBackground && hasTask
@@ -121,7 +126,7 @@ Rectangle {
                         event.accepted = true
                         const first = box.folders.find(f => box.usable(f))
                         if (first)
-                            root.startChat(box.group, box.remoteHost, first, box.inVscode, box.plan)
+                            root.startChat(box.group, box.remoteHost, first, box.where, box.plan)
                     } else if (event.key === Qt.Key_Escape) {
                         event.accepted = true
                         root.newChatGroup = ""
@@ -139,6 +144,7 @@ Rectangle {
                     active: !taskField.activeFocus
                     mainText: box.plan ? i18n("Carry out a plan") : i18n("Start with a task")
                     subText: (box.plan ? i18n("The chat starts with the plan as its first message, and what you add here.")
+                                       : box.inTalpyChat && !box.background ? i18n("With a task, the chat starts with it as its first message, in Talpy Chat. Without one, Talpy Chat opens empty, and your first message there starts it.")
                                        : i18n("With a task, the chat starts with it as its first message. Without one, it opens empty."))
                              + " " + i18n("Then click the folder it's for (Ctrl+Enter: the first one).")
                              + "\n\n" + (box.remoteHost ? i18n("Ctrl+V pastes a picture too: Claude gets it with the task, once you let Talpy Den copy it to %1.", root.hostLabel(box.remoteHost))
@@ -369,7 +375,7 @@ Rectangle {
             }
         }
 
-        // Where it starts otherwise: Terminal | VS Code
+        // Where it starts otherwise: Talpy Chat | Terminal | VS Code
         OpenInSwitch {
             visible: !box.background
             Layout.fillWidth: true
@@ -385,12 +391,15 @@ Rectangle {
                 required property int index
                 readonly property var folder: box.folders[index] || ({ path: "", short: "", newChatCommand: "", trusted: true })
                 readonly property bool untrusted: box.background && folder.trusted === false
+                // (Talpy Chat runs it in the background, where Claude can't ask: in a terminal, where it asks)
+                readonly property bool inTerminal: box.inTalpyChat && !box.background && folder.trusted === false
                 Layout.fillWidth: true
                 icon.name: folderRow.folder.short === "~" ? Icons.plasma.home : Icons.plasma.folder
                 text: (folderRow.folder.short === "~" ? i18n("Home folder (~)") : folderRow.folder.short)
                       + (box.plan && index === 0 && box.plan.cwd ? "  " + i18nc("the folder a plan was made in", "(the plan's)") : "")
+                      + (folderRow.inTerminal ? "  " + i18nc("a folder of a new chat, with Talpy Chat picked", "· in a terminal: Claude doesn't trust it yet") : "")
                 enabled: box.usable(folderRow.folder)
-                onClicked: root.startChat(box.group, box.remoteHost, folderRow.folder, box.inVscode, box.plan)
+                onClicked: root.startChat(box.group, box.remoteHost, folderRow.folder, box.where, box.plan)
                 // (as the delegate's own, but the folder's name as it is: one that looks like markup isn't drawn as it)
                 contentItem: RowLayout {
                     spacing: folderRow.spacing
@@ -415,10 +424,14 @@ Rectangle {
                 // row that had used Plasma's tooltip window took it down after
                 // the event loop had stopped, which held plasmashell's exit
                 // for good, until systemd aborted it)
-                PlasmaComponents3.ToolTip.visible: folderRow.untrusted && folderRow.hovered
+                PlasmaComponents3.ToolTip.visible: (folderRow.untrusted || folderRow.inTerminal) && folderRow.hovered
                 PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                 PlasmaComponents3.ToolTip.text: i18n("Claude doesn't trust this folder yet") + "\n"
-                    + (folderRow.folder.short === "~"
+                    + (folderRow.inTerminal
+                       ? (folderRow.folder.short === "~"
+                          ? i18n("Talpy Chat runs a chat in the background, where Claude can't ask whether you trust a folder, and it never keeps trusting your home folder: this chat opens in a terminal.")
+                          : i18n("Talpy Chat runs a chat in the background, where Claude can't ask whether you trust a folder: this one opens in a terminal, where it asks. Say yes there, and the next one opens in Talpy Chat."))
+                       : folderRow.folder.short === "~"
                        ? i18n("Claude never keeps trusting your home folder, and a background chat can't ask: start it in a terminal, or pick a project folder.")
                        : i18n("A background chat can't ask whether you trust it: start a chat there in a terminal once and say yes."))
             }
@@ -438,7 +451,7 @@ Rectangle {
             Layout.fillWidth: true
             icon.name: Icons.plasma.chooseFolder
             text: i18n("Choose folder…")
-            onClicked: root.startChat(box.group, box.remoteHost, { path: "", short: "" }, box.inVscode, box.plan)
+            onClicked: root.startChat(box.group, box.remoteHost, { path: "", short: "" }, box.where, box.plan)
         }
     }
 }

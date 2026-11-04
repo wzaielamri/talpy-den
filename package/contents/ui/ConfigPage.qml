@@ -183,6 +183,8 @@ KCM.SimpleKCM {
     property var cfg_paneFontDefault
     property var cfg_paneTerminalFont
     property var cfg_paneTerminalFontDefault
+    property var cfg_openChatsIn
+    property var cfg_openChatsInDefault
     property var cfg_newChatInVscode
     property var cfg_newChatInVscodeDefault
     property var cfg_newChatModel

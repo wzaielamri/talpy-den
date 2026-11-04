@@ -24,14 +24,20 @@ Window {
     id: pane
     objectName: "talpyDenChatPane"   // (TipArea: tooltips drawn in this window)
 
-    property var chat: ({})   // {chatId, sessionId, profileDir, host, name, cwd, tab}: none while it's closed
+    property var chat: ({})   // {chatId, sessionId, profileDir, host, name, cwd, tab, fresh, startedAt}: none while it's closed
+    // A new chat (main.qml openNewChat): {profile, account, cwd, short, plan}, till your first
+    // message starts it in the background (pane.py --start); its chatId stands in till then
+    readonly property var fresh: chat.fresh || null
     property string lastKey: ""   // (closed: the chat it showed, opened in it again: main.qml)
     readonly property var row: root.paneRowOf(chat)   // its row in the status now (null: not listed)
     readonly property string host: chat.host || ""
     readonly property string chatId: chat.chatId || ""
     readonly property string profileDir: row && row.profileDir ? row.profileDir : (chat.profileDir || "")
     readonly property string sessionId: row && row.sessionId ? row.sessionId : (chat.sessionId || "")
-    readonly property string chatName: row && row.name ? row.name : (chat.name || "")
+    readonly property string chatName: row && row.name ? row.name : (chat.name || (fresh ? i18n("New chat in %1", fresh.short) : ""))
+    // Your first message started it, and it isn't listed yet: "Starting…" on its working line
+    readonly property bool starting: (!!fresh && pendingSent.some(p => p.chat === chatId && p.state !== "held"))
+                                     || (!!chat.startedAt && !row)
     readonly property string chatState: row ? row.state : "done"
     readonly property bool busy: chatState === "working" || chatState === "waiting"
     readonly property string route: row && row.reply ? row.reply : "background"
@@ -102,11 +108,11 @@ Window {
         agentsOpen = open && agents !== null
     }
     readonly property bool conversationTab: tab === "chat" || tab === "steps"
-    // Where it runs (the tag under its name): "background" (a background
-    // session), "closed" (no process: a reply goes
+    // Where it runs (the tag under its name): "new" (not started yet: fresh),
+    // "background" (a background session), "closed" (no process: a reply goes
     // on in the background), "claude" (VS Code's Claude Code panel), "tmux",
     // "vscode" (a terminal of VS Code) or "terminal" (another terminal)
-    readonly property string where: !row || !row.pid ? "closed" : row.kind === "bg" ? "background"
+    readonly property string where: starting ? "background" : fresh ? "new" : !row || !row.pid ? "closed" : row.kind === "bg" ? "background"
                                     : row.entrypoint === "claude-vscode" ? "claude" : row.tmux ? "tmux"
                                     : row.vscodeTerminal || row.terminalApp === "VS Code" ? "vscode" : "terminal"
 
@@ -433,7 +439,7 @@ Window {
         // its way, which the next ones still wait for)
         for (const m of outbox.concat(pendingSent.filter(p => p.state === "held").map(p => p.out)))
             if (m.asked.draft === was) {
-                Object.assign(m.asked, { chat: chatId, draft: draftKey })
+                Object.assign(m.asked, { chat: chatId, draft: draftKey, fresh: null })
                 m.args = sendArgs(m.asked)
             }
         for (const cmd in runs)
@@ -531,6 +537,10 @@ Window {
     function load() {
         if (!chatId)
             return
+        if (fresh) {   // (nothing to read yet: it's shown empty, ready for your first message)
+            loaded = true
+            return
+        }
         if (loading && Date.now() - loadingSince < staleMs) {
             loadAgain = true
             return
@@ -551,7 +561,7 @@ Window {
     Timer {
         // (with the watcher, only for what it can't see: a moment it wasn't running)
         interval: pane.host ? 5000 : pane.watchOk ? 15000 : pane.followsLive ? 5000 : 1500
-        running: pane.shown && pane.chatId !== ""
+        running: pane.shown && pane.chatId !== "" && !pane.fresh
         repeat: true
         onTriggered: pane.load()
     }
@@ -779,7 +789,9 @@ Window {
         if (!chatId || Date.now() - offersAt < 60000)
             return
         offersAt = Date.now()
-        run("complete", "--complete " + root.shellQuote(chatId) + paneArgs())
+        // (a new chat's: its folder's, and your prompts there)
+        run("complete", fresh ? "--complete - --cwd " + root.shellQuote(fresh.cwd) + paneArgs()
+                              : "--complete " + root.shellQuote(chatId) + paneArgs())
     }
 
     function suggest() {
@@ -925,6 +937,11 @@ Window {
                 Qt.callLater(load)
             }
             if (!result.ok) {
+                // (a chat just started has no transcript for a moment: your message shows meanwhile)
+                if (result.missing && chat.startedAt && Date.now() - chat.startedAt < 60000) {
+                    loadError = ""
+                    return
+                }
                 loadError = result.message || i18n("Can't read this chat")
                 loadMissing = !!result.missing
                 return
@@ -1263,6 +1280,13 @@ Window {
         }
     }
 
+    // A new chat's task, sent as its first message the moment its window opens (main.qml
+    // openNewChat); a plan's alone: Claude's words for it, as a task without any (pane.py --start)
+    function startWith(text) {
+        replyBox.text = text || (fresh && fresh.plan ? "Implement this plan." : "")
+        send("auto", false)
+    }
+
     function send(how, afterTurn) {
         const text = replyBox.text.trim()
         if (!text)
@@ -1295,7 +1319,7 @@ Window {
         const id = ++sentCount
         const asked = { kind: afterTurn ? "later" : "send", chat: chatId, host: host, target: row || chat,
                         sent: shows || afterTurn ? "" : replyBox.text, draft: draftKey, text: text, id: id, startedAt: 0,
-                        how: how || "auto" }
+                        how: how || "auto", fresh: fresh }
         const out = { asked: asked, args: sendArgs(asked) }
         if (!holds)
             outbox = outbox.concat([out])
@@ -1319,8 +1343,15 @@ Window {
         }
         pump()
     }
-    // pane.py --send's arguments for your message (asked), to the chat shown
+    // pane.py --send's arguments for your message (asked), to the chat shown; a new chat's first
+    // one starts it (--start: in the background, on its account, in its folder, with the model,
+    // effort and mode of its ⚙ line, the new-chat ones; with the permission hook for it alone)
     function sendArgs(asked) {
+        const f = asked.fresh
+        if (f)
+            return "--start " + root.shellQuote(f.profile) + " --cwd " + root.shellQuote(f.cwd) + " --text " + root.shellQuote(asked.text)
+                   + root.chatOptions + (f.plan ? " --plan " + root.shellQuote(f.plan.slug) + " --plan-profile " + root.shellQuote(f.plan.profileDir) : "")
+                   + root.configDirArgs
         return "--send " + root.shellQuote(asked.chat) + " --text " + root.shellQuote(asked.text)
                + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + " --how " + asked.how
                + (asked.kind === "later" ? " --after-turn --name " + root.shellQuote(chatName) : "") + paneArgs()
@@ -1408,6 +1439,21 @@ Window {
                 showPending()
         } else if (asked.kind === "later" && !result.ok) {
             giveBack(asked)   // (Send when this turn ends: its box was emptied as you clicked)
+        }
+        // A new chat's first message: it started, and the window goes on with it under its id
+        // (follow()); or it didn't, and the ones written meanwhile are back in the box too
+        if (asked.fresh && result.ok && result.chat && asked.chat === chatId) {
+            chat = Object.assign({}, chat, { chatId: result.chat, sessionId: result.chat, fresh: null, from: asked.chat,
+                                             profileDir: result.profileDir || chat.profileDir, startedAt: Date.now() })
+            root.paneListChanged()
+        } else if (asked.fresh && !result.ok) {
+            const waiting = outbox.filter(m => m.asked.draft === asked.draft)
+            outbox = outbox.filter(m => m.asked.draft !== asked.draft)
+            pendingSent = pendingSent.filter(x => !waiting.some(m => m.asked.id === x.id))
+            for (const m of waiting)
+                giveBack(m.asked)
+            if (asked.chat === chatId)
+                showPending()
         }
         Qt.callLater(pump)
     }
@@ -1613,6 +1659,10 @@ Window {
 
     readonly property string routeHint: {
         const where = host ? " " + i18n("(on %1)", root.hostLabel(host)) : ""
+        if (starting)
+            return i18n("The chat starts in the background with your message.")
+        if (fresh)
+            return i18n("Your first message starts the chat in the background, on %1 in %2: you answer what it asks here.", fresh.account, fresh.short)
         if (replyAnswers === "deny")
             return i18n("It's asking for a permission: your message denies it and goes to Claude with the No, as if you typed it in its prompt.") + where
         if (replyAnswers === "plan")
@@ -1678,7 +1728,7 @@ Window {
     property string undoAsk: ""   // "*": all, else a file's path, asked to confirm
 
     function loadReview() {
-        if (!chatId)
+        if (!chatId || fresh)
             return
         reviewLoading = true
         run("review", "--review " + root.shellQuote(chatId) + paneArgs())
@@ -1828,7 +1878,7 @@ Window {
                     Layout.preferredWidth: Math.round(fm.height * 0.5)
                     Layout.preferredHeight: Layout.preferredWidth
                     radius: width / 2
-                    color: root.stateColor(pane.chatState)
+                    color: pane.row ? root.stateColor(pane.chatState) : pane.starting ? root.stateColor("working") : pane.mutedColor
                 }
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText
@@ -1856,7 +1906,8 @@ Window {
                         id: stateLabel
                         anchors.centerIn: parent
                         textFormat: Text.PlainText
-                        text: pane.row ? root.stateText(pane.row) : i18n("not running")
+                        text: pane.row ? root.stateText(pane.row) : pane.starting ? i18nc("a chat's state", "starting")
+                              : pane.fresh ? i18nc("a chat's state: not started yet", "new") : i18n("not running")
                         color: pane.chatState === "waiting" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
                         font.weight: pane.chatState === "waiting" ? Font.Bold : Font.Normal
                     }
@@ -1880,16 +1931,20 @@ Window {
                     PlasmaComponents3.ToolTip.visible: hovered
                 }
                 PlasmaComponents3.ToolButton {
-                    icon.name: Icons.plasma.openWindow
+                    // (a background chat's: a terminal on it, claude attach, also where its window is this one)
+                    readonly property bool attaches: pane.where === "background" && !!pane.row && !!pane.row.pid
+                    visible: !pane.fresh && !(pane.starting && !pane.row)
+                    icon.name: attaches ? Icons.plasma.terminal : Icons.plasma.openWindow
                     display: PlasmaComponents3.AbstractButton.IconOnly
-                    text: i18n("Open its window")
-                    onClicked: root.openRow(pane.row || pane.chat, pane.host)
+                    text: attaches ? i18n("Open in a terminal") : i18n("Open its window")
+                    onClicked: root.openRow(pane.row || pane.chat, pane.host, attaches)
 
                     TipArea {
                         textFormat: Text.PlainText
                         anchors.fill: parent
-                        mainText: i18n("Open its window")
-                        subText: i18n("The terminal or VS Code tab the chat runs in; a chat that isn't open reopens in a terminal or in VS Code, as the Terminal | VS Code switch of Recent chats says.")
+                        mainText: parent.text
+                        subText: parent.attaches ? i18n("The background chat in a terminal too (claude attach): what it shows there, and its own prompts. It goes on running; nothing is lost.")
+                                 : i18n("The terminal or VS Code tab the chat runs in; a chat that isn't open reopens in Talpy Chat, a terminal or VS Code, as the Open in switch of Recent chats says.")
                     }
                 }
             }
@@ -1900,13 +1955,15 @@ Window {
                 spacing: Kirigami.Units.smallSpacing
 
                 Tag {
-                    text: pane.where === "background" ? i18nc("where a chat runs", "Background")
+                    text: pane.where === "new" ? i18nc("where a chat runs: not started yet", "New")
+                          : pane.where === "background" ? i18nc("where a chat runs", "Background")
                           : pane.where === "closed" ? i18nc("where a chat runs", "Not open")
                           : pane.where === "claude" ? i18nc("where a chat runs: the Claude Code extension's panel", "Claude Code panel")
                           : pane.where === "tmux" ? "Tmux"
                           : pane.where === "vscode" ? i18nc("where a chat runs", "VS Code terminal")
                           : i18nc("where a chat runs", "Terminal")
-                    tooltip: pane.where === "background" ? i18n("A background chat: Claude's background service runs it, with no terminal of its own. Open its window to see it in a terminal (claude attach).")
+                    tooltip: pane.where === "new" ? i18n("Not started yet: your first message starts it in the background, on %1.", pane.fresh ? pane.fresh.account : "")
+                             : pane.where === "background" ? i18n("A background chat: Claude's background service runs it, with no terminal of its own. Open in a terminal shows it in one too (claude attach).")
                              : pane.where === "closed" ? i18n("No terminal or tab has it open: a reply goes on with it in the background.")
                              : pane.where === "claude" ? i18n("It runs in VS Code's Claude Code panel (the Claude Code extension).")
                              : pane.where === "tmux" ? i18n("It runs in a tmux pane.")
@@ -1971,7 +2028,8 @@ Window {
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText
                     Layout.fillWidth: true
-                    text: (pane.host ? root.hostLabel(pane.host) + ":" : "") + (pane.row ? pane.row.cwdShort || pane.row.cwd || "" : pane.chat.cwd || "")
+                    text: (pane.host ? root.hostLabel(pane.host) + ":" : "") + (pane.row ? pane.row.cwdShort || pane.row.cwd || ""
+                                                                                  : pane.fresh ? pane.fresh.short : pane.chat.cwd || "")
                     font.family: pane.monoFamily
                     font.pointSize: pane.pt * 0.85
                     color: pane.mutedColor
@@ -2099,7 +2157,7 @@ Window {
                 spacing: 0
 
                 Repeater {
-                    model: ["chat", "steps", "review"]
+                    model: pane.fresh ? ["chat", "steps"] : ["chat", "steps", "review"]
                     delegate: MouseArea {
                         id: tabButton
                         required property string modelData
@@ -2228,6 +2286,21 @@ Window {
                                 font.pointSize: pane.pt * 0.85
                                 wrapMode: Text.Wrap
                             }
+                            // a new chat, before your first message
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.fillWidth: true
+                                Layout.topMargin: Kirigami.Units.gridUnit
+                                visible: !!pane.fresh && items.count === 0
+                                horizontalAlignment: Text.AlignHCenter
+                                text: pane.fresh ? (pane.fresh.plan ? i18n("A new chat on %1 in %2, to carry out “%3”.", pane.fresh.account, pane.fresh.short, pane.fresh.plan.title)
+                                                                    : i18n("A new chat on %1 in %2.", pane.fresh.account, pane.fresh.short))
+                                                   + "\n" + i18n("Your first message starts it in the background. Here you reply, answer what Claude asks and see what it changed; open it in a terminal any time.")
+                                                 : ""
+                                color: pane.mutedColor
+                                font.pointSize: pane.pt
+                                wrapMode: Text.Wrap
+                            }
                             PlasmaComponents3.Label {
                                 textFormat: Text.PlainText
                                 Layout.fillWidth: true
@@ -2245,8 +2318,8 @@ Window {
                     // it's doing, in the working color
                     footer: Item {
                         width: list.width
-                        implicitHeight: pane.chatState === "working" ? workingLine.implicitHeight + Kirigami.Units.gridUnit : 0
-                        visible: pane.chatState === "working"
+                        implicitHeight: pane.chatState === "working" || pane.starting ? workingLine.implicitHeight + Kirigami.Units.gridUnit : 0
+                        visible: pane.chatState === "working" || pane.starting
 
                         RowLayout {
                             id: workingLine
@@ -2268,7 +2341,8 @@ Window {
                                 // (what it's doing, unless that's the tool call just above)
                                 readonly property bool toolAbove: pane.listTab === "steps" && items.count > 0 && items.get(items.count - 1).status === "open"
                                 readonly property string activity: pane.row ? root.doingText(pane.row, pane.host).replace(/[….\s]+$/, "") : ""
-                                text: (activity && !toolAbove ? activity : i18n("Working")) + "…"
+                                text: pane.starting && pane.chatState !== "working" ? i18n("Starting…")
+                                      : (activity && !toolAbove ? activity : i18n("Working")) + "…"
                                 elide: Text.ElideRight
                                 color: root.stateColor("working")
                                 font.family: pane.chatFamily
@@ -2782,6 +2856,9 @@ Window {
                         diffLines: 12
                         planHeight: Kirigami.Units.gridUnit * 1000   // (the box scrolls)
                         onAnswered: (decision, note, answers) => pane.answer(decision, note, answers)
+                        // (a background chat started without Talpy Den's hook: claude attach on it)
+                        attachable: !pane.host && !!pane.row && pane.row.kind === "bg" && !!pane.row.pid
+                        onInTerminal: root.openRow(pane.row, pane.host, true)
                         // (a plan too long to show whole: its file, by its name)
                         onWholePlan: root.openPlan(permission.plan.file.split("/").pop().replace(/\.md$/, ""), pane.profileDir, pane.host)
                     }
@@ -2888,6 +2965,70 @@ Window {
                         }
                     }
                 }
+                // A new chat's ⚙ line: the model, effort and permission mode it starts with (the
+                // new-chat ones, as the popup's New chat box has them; a change is kept for the next)
+                Loader {
+                    active: pane.fresh !== null && !pane.starting
+                    visible: active
+                    Layout.fillWidth: true
+                    // (made only for a new chat: every other window opens as quickly as before)
+                    sourceComponent: Flow {
+                        spacing: Kirigami.Units.smallSpacing
+
+                        Kirigami.Icon {
+                            source: root.iconDir + "settings-symbolic.svg"
+                            width: Kirigami.Units.iconSizes.small
+                            height: modelPick.height
+                            opacity: 0.7
+                        }
+                        PlasmaComponents3.ComboBox {
+                            id: modelPick
+                            readonly property var values: ["opus", "sonnet", "fable", "haiku", ""]
+                            model: [i18n("Opus"), i18n("Sonnet"), i18n("Fable"), i18n("Haiku"), i18n("Claude's default model")]
+                            currentIndex: Math.max(0, values.indexOf(Plasmoid.configuration.newChatModel))
+                            onActivated: Plasmoid.configuration.newChatModel = values[currentIndex]
+                            TipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: i18n("Model")
+                                subText: i18n("The chat starts with it (claude --model); /model changes it in the chat. The next new chat starts with the same.")
+                            }
+                        }
+                        PlasmaComponents3.ComboBox {
+                            readonly property var values: ["low", "medium", "high", "xhigh", "max", ""]
+                            model: [i18nc("reasoning effort", "Low"), i18nc("reasoning effort", "Medium"), i18nc("reasoning effort", "High"),
+                                    i18nc("reasoning effort", "Extra high"), i18nc("reasoning effort", "Max"), i18n("Claude's default effort")]
+                            currentIndex: Math.max(0, values.indexOf(Plasmoid.configuration.newChatEffort))
+                            onActivated: Plasmoid.configuration.newChatEffort = values[currentIndex]
+                            TipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: i18n("Reasoning effort")
+                                subText: i18n("How hard Claude thinks (claude --effort); /effort changes it in the chat. The next new chat starts with the same.")
+                            }
+                        }
+                        PlasmaComponents3.ComboBox {
+                            id: freshMode
+                            readonly property var values: ["default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions", ""]
+                            model: [i18nc("permission mode", "Manual (asks first)"), i18nc("permission mode", "Accept edits"),
+                                    i18nc("permission mode", "Plan"), i18nc("permission mode", "Auto"), i18nc("permission mode", "Don't ask"),
+                                    i18nc("permission mode", "Bypass permissions"), i18n("Claude's default mode")]
+                            currentIndex: Math.max(0, values.indexOf(Plasmoid.configuration.newChatMode))
+                            onActivated: Plasmoid.configuration.newChatMode = values[currentIndex]
+                            TipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: i18n("Permission mode")
+                                subText: (freshMode.values[freshMode.currentIndex] === "default"
+                                          ? i18n("Manual: Claude asks you before it edits files or runs commands, and you answer here.")
+                                          : freshMode.values[freshMode.currentIndex] === "" ? i18n("The mode your Claude settings start chats in.")
+                                          : root.modeHint(freshMode.values[freshMode.currentIndex]))
+                                         + "\n\n" + i18n("The chat starts in it (claude --permission-mode). The next new chat starts in the same.")
+                                         + " " + i18n("A background chat can start in auto mode or bypass permissions only once you turned that on in a terminal: Claude says so then.")
+                            }
+                        }
+                    }
+                }
                 // a box like Claude's prompt: › and what you type, framed (your accent while you type)
                 Rectangle {
                     Layout.fillWidth: true
@@ -2924,7 +3065,8 @@ Window {
                             id: replyBox
                             background: null
                             placeholderText: pane.permission && !pane.replyAnswers ? i18n("It's asking you something: answer that first")
-                                                             : i18n("Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop: a picture or a file too)")
+                                             : pane.fresh && !pane.starting ? i18n("What should Claude do? (Enter starts the chat, Shift+Enter: new line; Ctrl+V or drop: a picture or a file too)")
+                                             : i18n("Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop: a picture or a file too)")
                             wrapMode: TextEdit.Wrap
                             font.family: pane.chatFamily
                             font.pointSize: pane.pt
@@ -3180,7 +3322,8 @@ Window {
                                   : pane.replyAnswers === "plan" ? i18n("Keep planning with this note")
                                   : pane.replyAnswers === "question" ? i18n("Send as your answer")
                                   : pane.replyAnswers === "decline" ? i18n("Decline with this note")
-                                  : pane.route === "terminal" || pane.askHow ? i18n("Send, go on in the background") : i18n("Send")
+                                  : pane.route === "terminal" || pane.askHow ? i18n("Send, go on in the background")
+                                  : pane.fresh && !pane.starting ? i18nc("a new chat's first message: start the chat with it", "Start") : i18n("Send")
                             onClicked: pane.send(pane.route === "terminal" || pane.askHow ? "background" : "auto", false)
                         }
                     }

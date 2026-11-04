@@ -21,8 +21,12 @@ ColumnLayout {
     property int diffLines: 6
     property bool compact: false     // (in a row)
     property bool denying: false
+    // A background chat's, which a terminal can show (Talpy Chat): where it can't be answered
+    // here, Answer it in a terminal (claude attach: Claude's own prompt), inTerminal
+    property bool attachable: false
     // decision allow|always|deny, or "answer" with answers {question: [labels or text]}
     signal answered(string decision, string note, var answers)
+    signal inTerminal()
 
     readonly property bool canAnswer: !!permission && (permission.answer === "hook" || permission.answer === "keys")
     readonly property var diff: permission && permission.diff ? permission.diff : []
@@ -381,6 +385,14 @@ ColumnLayout {
             onClicked: ask.cancelDeny()
         }
     }
+    // Never stuck: a background chat Talpy Den can't answer (started without its hook) asks in a
+    // terminal, claude attach
+    PlasmaComponents3.Button {
+        visible: !!ask.permission && !ask.canAnswer && ask.attachable
+        icon.name: Icons.plasma.terminal
+        text: i18n("Answer it in a terminal")
+        onClicked: ask.inTerminal()
+    }
     PlasmaComponents3.Label {
         textFormat: Text.PlainText
         visible: !!ask.permission && !ask.canAnswer
@@ -388,7 +400,9 @@ ColumnLayout {
         wrapMode: Text.Wrap
         font.pointSize: ask.smallPt
         opacity: 0.7
-        text: ask.plan
+        text: ask.attachable
+              ? i18n("This background chat started without Talpy Den's hook, so what it asks can't be answered here: answer it in a terminal (claude attach shows Claude's own prompt), or turn on \"Answer permission prompts from Talpy Den\" in the settings for the next ones.")
+              : ask.plan
               ? i18n("Approve it in the chat, or turn on \"Answer permission prompts from Talpy Den\" in the settings (it takes plans too) to approve it here.")
               : ask.asksQuestions
               ? i18n("Answer it in the chat, or turn on \"Answer permission prompts from Talpy Den\" in the settings (it answers Claude's questions too) to answer it here.")

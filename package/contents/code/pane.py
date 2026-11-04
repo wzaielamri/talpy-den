@@ -64,7 +64,8 @@ its permission prompt and its review.
   --complete CHAT [--profile P]
         what the reply box offers as you type: / commands (Claude's own, yours
         and the project's) and skills, the project's files for @, and your
-        past prompts in its folder (newest first) for ↑
+        past prompts in its folder (newest first) for ↑. CHAT "-" with
+        --cwd FOLDER --profile P: a new chat's, in that folder
   --terminal-font
         your terminal's font family, as the pane shows the conversation in
         it: {"ok", "family" ("" if it names none), "terminal"} (terminal_font)
@@ -991,14 +992,22 @@ def past_prompts(profile, cwd):
     return out
 
 
-def completions(home, extra_dirs, chat_id, profile_key=None):
-    if not cs.valid_id(chat_id):
+def completions(home, extra_dirs, chat_id, profile_key=None, cwd=None):
+    """What the reply box offers (--complete). chat_id "-" with cwd: a new
+    chat's in Talpy Chat, in that folder on the profile profile_key."""
+    if chat_id == "-" and cwd:
+        profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
+        if profile is None:
+            return {"ok": False, "message": f"No Claude profile called {profile_key}"}
+        cwd = os.path.expanduser(cwd)
+    elif not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
-    profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
-    if path is None:
-        return {"ok": False, "message": NO_CHAT}
-    _, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
-    cwd = cwd or cs.chat_folder(path) or ""
+    else:
+        profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
+        if path is None:
+            return {"ok": False, "message": NO_CHAT}
+        _, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
+        cwd = cwd or cs.chat_folder(path) or ""
     commands = [{"name": "/" + n, "about": a, "kind": "Claude"} for n, a in BUILTIN_COMMANDS]
     commands += command_files(profile.path / "commands", "yours") + skill_dirs(profile.path / "skills", "your")
     if cwd:
@@ -2404,7 +2413,7 @@ def main(argv=None):
             # (changed: the request you answered is gone; the chat may ask something else now)
             result = {"ok": ok, "message": said, **({"changed": True} if not ok and said in (NOT_ASKING, ASKS_ELSE) else {})}
         elif action == "--complete":
-            result = completions(home, config_dirs, target, profile)
+            result = completions(home, config_dirs, target, profile, cwd)
         elif action == "--terminal-font":
             result = terminal_font(home)
         elif action == "--oldest":

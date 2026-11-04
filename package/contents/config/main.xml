@@ -181,8 +181,12 @@
       <label>Your terminal's font, as last found (pane.py --terminal-font, each time a Talpy Chat window is made): known as it opens</label>
       <default></default>
     </entry>
+    <entry name="openChatsIn" type="String">
+      <label>Where new and recent chats open (the Open in switch at the top of their lists): talpyChat (in the background, in Talpy Chat), terminal or vscode (its Claude Code panel)</label>
+      <default>terminal</default>
+    </entry>
     <entry name="newChatInVscode" type="Bool">
-      <label>New and recent chats open in VS Code (the Terminal | VS Code switch at the top of their lists)</label>
+      <label>(Before openChatsIn) new and recent chats open in VS Code: carried over into openChatsIn once, then off</label>
       <default>false</default>
     </entry>
     <entry name="newChatModel" type="String">
