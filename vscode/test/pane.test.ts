@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answersOf, chatWhere, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
+import { answersOf, chatWhere, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -773,6 +773,17 @@ test("a held message goes when its moment is up, also when its tab closed first;
   }
   await new Promise((r) => setTimeout(r, 10));
   assert.deepEqual(sent, ["also run the linter"]);
+});
+
+// A background chat that asks you something: your reply answers it (never stops the chat)
+test("a reply to a background chat that asks something answers it: a No with your words, or a question's own answer", () => {
+  const ask = { tool: "Bash", line: "Bash: npm publish", command: "npm publish", file: "", diff: [], always: "", request: "1-abcdef01", answer: "hook" as const };
+  const q = (question: string) => ({ question, header: "", multiSelect: false, options: [{ label: "Yes", description: "" }] });
+  const of = (permission: object | null, where = "background") => replyAnswers({ where, permission } as never);
+  assert.deepEqual([of(ask), of({ ...ask, plan: { title: "Plan" } }), of({ ...ask, questions: [q("Which?")] }), of({ ...ask, questions: [q("A?"), q("B?")] })],
+                   ["deny", "plan", "question", "decline"]);
+  assert.deepEqual([of({ ...ask, answer: "" }), of(ask, "tmux"), of(null)], ["", "", ""], "only its own prompt, not in the background, or not asking");
+  assert.match(routeHint("background", true, "bg", "", "deny"), /denies it/);
 });
 
 test("your pictures read as Claude's terminal writes them: [Image #1], [Image #2], one picture named twice the same number", () => {

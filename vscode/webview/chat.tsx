@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { attachedTag, clipboardCode, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, picturesIn, PICTURE_TYPES, promptHistory, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { attachedTag, clipboardCode, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -158,6 +158,7 @@ function ChatApp() {
   // second Enter doesn't send it twice (the ref: two keys before a redraw)
   const [sending, setSending] = useState(false);
   const sendingNow = useRef(false);
+  const answeredWith = useRef(""); // (your reply that answers what a background chat asks: out of the box once it has)
   // Yours on their way, shown after the conversation till it has them (send, pendingTaken)
   const [outgoing, setOutgoing] = useState<PendingSent[]>([]);
   const outgoingNow = useRef<PendingSent[]>([]); // (for the extension's answers: the handler is made once)
@@ -417,7 +418,12 @@ function ChatApp() {
           setAskHow(true);
           return;
         }
-        if (m.kind === "answer") setAnswering((n) => Math.max(0, n - 1));
+        if (m.kind === "answer") {
+          setAnswering((n) => Math.max(0, n - 1));
+          const said = answeredWith.current;
+          answeredWith.current = "";
+          if (m.ok && said) setText((t) => (t.startsWith(said) ? t.slice(said.length).replace(/^\s+/, "") : t));
+        }
         if (m.kind === "send" && typeof m.id === "number") {
           // (one shown as you sent it: gone into the chat, it's shown as sent till the
           // conversation has it; else out of the conversation, and back in the box
@@ -533,6 +539,15 @@ function ChatApp() {
   const send = (how: "auto" | "background" | "copy" | "enter", afterTurn: boolean) => {
     const said = text.trim();
     if (!said) return;
+    // (a background chat that asks you something: your words answer it, as in its own prompt; never stopped for it)
+    const asks = replyAnswers(chat);
+    if (asks && !afterTurn && how !== "copy") {
+      if (answering) return;
+      answeredWith.current = text;
+      if (asks === "question") answer("answer", "", { [chat!.permission!.questions![0].question]: [said] });
+      else answer(asks === "plan" ? "keep" : "deny", said);
+      return;
+    }
     const route = chat?.route;
     const shows = !afterTurn && how !== "copy" && (how === "background" || route === "background" || route === "tmux" || route === "vscodeTerminal");
     if (!shows) {
@@ -605,6 +620,7 @@ function ChatApp() {
   };
 
   const terminal = chat?.route === "terminal" || askHow;
+  const asks = replyAnswers(chat);
   const lastIndex = items.length - 1;
   const last = items[lastIndex];
   const activity = (chat?.activity ?? "").replace(/[….\s]+$/, "");
@@ -839,7 +855,7 @@ function ChatApp() {
             class="pane-reply"
             rows={3}
             ref={reply}
-            placeholder={chat?.permission ? "It's asking you something: answer that first" : "Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop with Shift: a picture or a file too)"}
+            placeholder={chat?.permission && !asks ? "It's asking you something: answer that first" : "Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop with Shift: a picture or a file too)"}
             value={text}
             onInput={(e) => {
               const box = e.target as HTMLTextAreaElement;
@@ -933,7 +949,7 @@ function ChatApp() {
               <button type="button" class="btn secondary" onClick={() => setOfferModel("")}>Not now</button>
             </div>
           ) : null}
-          <div class="pane-hint">{chat ? routeHint(chat.route, chat.state !== "done" || !!chat.busy, chat.where === "background" ? "bg" : "", chat.host) : ""}</div>
+          <div class="pane-hint">{chat ? routeHint(chat.route, chat.state !== "done" || !!chat.busy, chat.where === "background" ? "bg" : "", chat.host, asks) : ""}</div>
           <div class="pane-buttons">
             {/* (icons, as in the widget; what dictation is doing shows beside the microphone) */}
             <button type="button" class={"icon-btn pane-mic" + (dictating === "recording" ? " on" : "")}
@@ -974,10 +990,11 @@ function ChatApp() {
             <button
               type="button"
               class="btn"
-              disabled={!text.trim() || sending || (terminal && !!chat?.busy) || (!!chat?.permission && chat.route === "tmux")}
+              disabled={!text.trim() || sending || (terminal && !!chat?.busy) || (asks ? answering > 0 : !!chat?.permission && (chat.route === "tmux" || chat.where === "background"))}
               onClick={() => send(terminal ? "background" : "auto", false)}
             >
-              <Icon name={I.send} />{sending ? "Sending…" : terminal ? "Send, go on in the background" : "Send"}
+              {asks ? <><Icon name={asks === "plan" ? I.edit : asks === "question" ? I.send : I.deny} tone={asks === "deny" || asks === "decline" ? T.deny : undefined} />{REPLY_ANSWERS[asks].send}</>
+                : <><Icon name={I.send} />{sending ? "Sending…" : terminal ? "Send, go on in the background" : "Send"}</>}
             </button>
           </div>
         </>

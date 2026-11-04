@@ -36,6 +36,19 @@ Window {
     readonly property bool busy: chatState === "working" || chatState === "waiting"
     readonly property string route: row && row.reply ? row.reply : "background"
     readonly property var permission: row && row.permission && chatState === "waiting" ? row.permission : null
+    // A background chat that asks you something you can answer here: your reply answers it, as typing
+    // in its own prompt does, never stopping the chat (VS Code shared/pane.ts replyAnswers): "deny"
+    // (your words go to Claude with the No), "plan" (it keeps planning, with them), "question" (one:
+    // your own words), "decline" (several: declined, with them); "": it goes as routeHint says
+    readonly property string replyAnswers: {
+        const p = permission
+        if (!p || !row || row.kind !== "bg" || !row.pid || (p.answer !== "hook" && p.answer !== "keys"))
+            return ""
+        const n = p.questions ? p.questions.length : 0
+        return n > 1 ? "decline" : n ? "question" : p.plan ? "plan" : "deny"
+    }
+    // (it asks something only its own prompt can answer: a reply waits till that's answered)
+    readonly property bool replyWaits: !!permission && replyAnswers === "" && (route === "tmux" || (!!row && row.kind === "bg"))
     readonly property var queued: root.queuedMessage(chatId, host)
     readonly property bool reviewPending: row ? root.reviewPending(row, host) : false
     // Chat (your messages and Claude's replies), Steps (its tool calls too)
@@ -943,8 +956,11 @@ Window {
             replyBox.text = withoutSent(replyBox.text, asked.sent)
             askHow = false
         }
-        if (kind === "deny" || kind === "answer")
+        if (kind === "deny" || kind === "answer") {
             answering = Math.max(0, answering - 1)
+            if (result.ok && asked.sent)   // (your reply answered it: out of the box)
+                replyBox.text = withoutSent(replyBox.text, asked.sent)
+        }
         if (kind === "commit" && result.ok) {
             commitOpen = false
             commitEdited = false
@@ -1148,6 +1164,13 @@ Window {
             info = i18n("That message is too long")
             infoBad = true
             infoTimer.restart()
+            return
+        }
+        // (a background chat that asks you something: your words answer it, as in its own prompt; never stopped for it)
+        if (replyAnswers && !afterTurn && how !== "copy") {
+            if (answering === 0)
+                answer(replyAnswers === "question" ? "answer" : replyAnswers === "plan" ? "keep" : "deny", replyAnswers === "question" ? "" : text,
+                       replyAnswers === "question" ? { [permission.questions[0].question]: [text] } : null, replyBox.text)
             return
         }
         // (shown at once where it goes to the chat itself: not a copy, put on the clipboard with
@@ -1456,6 +1479,14 @@ Window {
 
     readonly property string routeHint: {
         const where = host ? " " + i18n("(on %1)", root.hostLabel(host)) : ""
+        if (replyAnswers === "deny")
+            return i18n("It's asking for a permission: your message denies it and goes to Claude with the No, as if you typed it in its prompt.") + where
+        if (replyAnswers === "plan")
+            return i18n("It's asking about its plan: your message keeps it planning and goes to Claude as what to change.") + where
+        if (replyAnswers === "question")
+            return i18n("It's asking you a question: your message is your answer, in your own words.") + where
+        if (replyAnswers === "decline")
+            return i18n("It's asking you questions: your message declines them and goes to Claude with the No.") + where
         if (route === "tmux")
             return i18n("Typed into its tmux pane.") + where
         if (route === "vscode")
@@ -1482,7 +1513,7 @@ Window {
     // It answers what the pane shows only: the hook's request, or in tmux
     // the tool call it asks about (--expect: if it asks something else now,
     // nothing is pressed, and the pane says so)
-    function answer(decision, note, answers) {
+    function answer(decision, note, answers, sent) {   // (sent: your reply it is, out of the box once it went)
         const p = permission
         if (!p || (p.answer !== "hook" && p.answer !== "keys"))
             return
@@ -1492,11 +1523,11 @@ Window {
             run(decision === "deny" ? "deny" : "answer", "--answer " + root.shellQuote(p.request) + " --decision " + decision
                 + (note ? " --note " + root.shellQuote(note) : "")
                 + (answers ? " --answers " + root.shellQuote(JSON.stringify(answers)) : "")
-                + (host ? " --host " + root.shellQuote(host) : "") + root.configDirArgs)
+                + (host ? " --host " + root.shellQuote(host) : "") + root.configDirArgs, sent)
         else if (p.answer === "keys")
             run(decision === "deny" ? "deny" : "answer", "--keys " + root.shellQuote(sessionId) + " --decision " + decision
                 + (note ? " --note " + root.shellQuote(note) : "")
-                + (p.toolUse ? " --expect " + root.shellQuote(p.toolUse) : "") + paneArgs())
+                + (p.toolUse ? " --expect " + root.shellQuote(p.toolUse) : "") + paneArgs(), sent)
     }
 
     // ---------------------------------------------------------------- review
@@ -2724,12 +2755,12 @@ Window {
                         PlasmaComponents3.TextArea {
                             id: replyBox
                             background: null
-                            placeholderText: pane.permission ? i18n("It's asking you something: answer that first")
+                            placeholderText: pane.permission && !pane.replyAnswers ? i18n("It's asking you something: answer that first")
                                                              : i18n("Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop: a picture or a file too)")
                             wrapMode: TextEdit.Wrap
                             font.family: pane.chatFamily
                             font.pointSize: pane.pt
-                            enabled: !(pane.permission && pane.route === "tmux")
+                            enabled: !pane.replyWaits
                             // Enter sends, as in Claude's own prompt (Shift+Enter: a new line). For a
                             // terminal that takes no text from outside, Enter copies it and opens its
                             // tab (pane.py how enter): Claude there never quits on an Enter.
@@ -2974,9 +3005,15 @@ Window {
                             // (a terminal that takes no text, known or just found out: not while
                             // Claude works there, it would quit mid-turn; Send when this turn ends)
                             enabled: replyBox.text.trim() !== "" && !((pane.route === "terminal" || pane.askHow) && pane.busy)
-                                     && !(pane.permission && pane.route === "tmux")
-                            icon.name: Icons.plasma.send
-                            text: pane.route === "terminal" || pane.askHow ? i18n("Send, go on in the background") : i18n("Send")
+                                     && !pane.replyWaits && !(pane.replyAnswers && pane.answering > 0)
+                            icon.name: pane.replyAnswers === "plan" ? Icons.plasma.edit : pane.replyAnswers === "deny" || pane.replyAnswers === "decline" ? Icons.plasma.deny
+                                       : Icons.plasma.send
+                            icon.color: pane.replyAnswers === "deny" || pane.replyAnswers === "decline" ? Icons.color("deny", Kirigami.Theme) : "transparent"
+                            text: pane.replyAnswers === "deny" ? i18n("Deny with this note")
+                                  : pane.replyAnswers === "plan" ? i18n("Keep planning with this note")
+                                  : pane.replyAnswers === "question" ? i18n("Send as your answer")
+                                  : pane.replyAnswers === "decline" ? i18n("Decline with this note")
+                                  : pane.route === "terminal" || pane.askHow ? i18n("Send, go on in the background") : i18n("Send")
                             onClicked: pane.send(pane.route === "terminal" || pane.askHow ? "background" : "auto", false)
                         }
                     }

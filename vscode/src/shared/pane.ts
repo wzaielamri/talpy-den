@@ -467,8 +467,9 @@ export function clipboardCode(code: string): string {
 }
 
 // How a reply reaches the chat, in a sentence
-export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: string, host: string): string {
+export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: string, host: string, asks: ReplyAnswer = ""): string {
   const where = host ? ` (on ${hostLabel(host)})` : "";
+  if (asks) return REPLY_ANSWERS[asks].hint + where;
   switch (route) {
     case "tmux":
       return `Typed into its tmux pane.${where}`;
@@ -484,6 +485,27 @@ export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: s
         : `The chat goes on in the background with your message.${where}`;
   }
 }
+
+// A background chat that asks you something you can answer here: your reply
+// answers it, as typing in its own prompt does, and never stops the chat
+// (Plasma ChatPane replyAnswers): "deny" a permission, your words going to
+// Claude with the No; "plan" keeps it planning, with them as what to change;
+// "question" (one): they're your answer, in your own words; "decline"
+// (several): declined, with them. "": your reply goes as routeHint says
+export type ReplyAnswer = "" | "deny" | "plan" | "question" | "decline";
+export function replyAnswers(chat: Pick<PaneChat, "where" | "permission"> | null | undefined): ReplyAnswer {
+  const p = chat?.permission;
+  if (!p || chat.where !== "background" || (p.answer !== "hook" && p.answer !== "keys")) return "";
+  const questions = p.questions ?? [];
+  return questions.length > 1 ? "decline" : questions.length ? "question" : p.plan ? "plan" : "deny";
+}
+// Its Send button, and the line under the box
+export const REPLY_ANSWERS: Record<Exclude<ReplyAnswer, "">, { send: string; hint: string }> = {
+  deny: { send: "Deny with this note", hint: "It's asking for a permission: your message denies it and goes to Claude with the No, as if you typed it in its prompt." },
+  plan: { send: "Keep planning with this note", hint: "It's asking about its plan: your message keeps it planning and goes to Claude as what to change." },
+  question: { send: "Send as your answer", hint: "It's asking you a question: your message is your answer, in your own words." },
+  decline: { send: "Decline with this note", hint: "It's asking you questions: your message declines them and goes to Claude with the No." },
+};
 
 // A recent chat as a row the tab can show (it has no process: finished)
 export function recentAsRow(c: RecentChat): Pick<Session, "sessionId" | "chatId" | "profileDir" | "name" | "cwd" | "state" | "pid" | "kind"> & {

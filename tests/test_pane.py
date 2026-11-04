@@ -1050,12 +1050,13 @@ class SendTests(PaneFixture):
         self.assertEqual(answer, {"ok": True, "how": "typed", "message": "Sent (typed into its background session)"})
         self.assertEqual([(r["short"], r["text"]) for r in service.ops("reply")], [("bgjob1", "and the docs")])
         self.assertEqual((stopped.call_count, self.calls()), (0, []))
-        # one that asks you something stops first, as before (a message typed in would land in its question)
+        # one that asks you something isn't stopped for it, nor typed into (it would land in its
+        # question): it's answered first (the pane's reply answers it)
         self.live(kind="bg", status="waiting", waitingFor="permission prompt", jobId="bgjob1")
         with mock.patch.object(cs, "stop_background", return_value=(True, "Stopped")) as stopped, \
-                mock.patch.object(cs, "continue_chat", return_value={"ok": True, "id": "1a2b3c4d"}):
-            self.assertEqual(self.send()["how"], "background")
-        self.assertEqual((stopped.call_count, len(service.ops("reply"))), (1, 1))
+                mock.patch.object(cs, "continue_chat", return_value={"ok": True, "id": "1a2b3c4d"}) as went_on:
+            self.assertEqual(self.send(), {"ok": False, "message": "It's asking you something: answer that first"})
+        self.assertEqual((stopped.call_count, went_on.call_count, len(service.ops("reply"))), (0, 0, 1))
 
     def test_a_background_session_stops_first(self):
         # (one whose service doesn't take it in: there's none here)
