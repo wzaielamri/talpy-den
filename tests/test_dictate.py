@@ -65,8 +65,11 @@ class DictateTests(unittest.TestCase):
             env["WHISPER_MODEL"] = str(self.model)
         else:
             env.pop("WHISPER_MODEL", None)
-        out = subprocess.run([sys.executable, "-I", str(CODE / "dictate.py"), *args], stdout=subprocess.PIPE, env=env,
-                             timeout=30)
+        line = [sys.executable, "-I", str(CODE / "dictate.py"), *args]
+        if getattr(self, "unpinned", False):
+            line[2:3] = ["-c", "import sys; sys.path.insert(0, sys.argv.pop(1)); import dictate; "
+                               "dictate.FW_PINS.clear(); dictate.GGML_PINS.clear(); dictate.main()", str(CODE)]
+        out = subprocess.run(line, stdout=subprocess.PIPE, env=env, timeout=30)
         return json.loads(out.stdout)
 
     def test_recorded_then_written_down_and_the_recording_goes(self):
@@ -180,6 +183,7 @@ class FasterWhisperTests(DictateTests):
         python.chmod(0o755)
         (self.whisper / "venv/.ready").write_text("faster-whisper")
         self.tool("pw-record", FAKE_RECORDER)
+        self.unpinned = True   # (the stand-in's model.bin isn't the real one: the pins are left out)
 
     def fw_model(self, name):
         (self.whisper / "models" / name).mkdir(parents=True)

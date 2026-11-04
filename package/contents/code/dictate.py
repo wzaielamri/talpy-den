@@ -75,12 +75,31 @@ FW_CONSTRAINTS = "".join('%s; python_version == "3.14"\n' % pin for pin in (
     "typing_extensions==4.16.0"))
 # Each speech model at a fixed revision of its repository, with the sha256 of
 # its file (whisper.cpp's ggml-*.bin; faster-whisper's model.bin), checked
-# before it's kept: {name: (revision, sha256)}. TO FILL IN from huggingface.co
-# (ggerganov/whisper.cpp and Systran/faster-whisper-<name>: the commit, and
-# the file's SHA256 its page shows); a model without them still comes from
-# the repository's newest revision, unchecked but for its size.
-GGML_PINS = {name: None for name in MODELS}
-FW_PINS = {name: None for name in MODELS}
+# before it's kept: {name: (revision, sha256)}, as huggingface.co lists them
+# (ggerganov/whisper.cpp; faster-whisper's repository for each name: Systran's,
+# large-v3-turbo mobiuslabsgmbh's, now dropbox-dash's, which the Hub redirects).
+GGML_REVISION = "5359861c739e955e79d9a303bcbc70fb988958b1"
+GGML_PINS = {name: (GGML_REVISION, sha256) for name, sha256 in (
+    ("tiny", "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"),
+    ("base", "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"),
+    ("base.en", "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"),
+    ("small", "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"),
+    ("medium", "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"),
+    ("large-v3-turbo", "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"))}
+FW_PINS = {
+    "tiny": ("d90ca5fe260221311c53c58e660288d3deb8d356",
+             "dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1"),
+    "base": ("ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66",
+             "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9"),
+    "base.en": ("3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+                "2a166925539a16005f14ff328359f9b9adb9dc4fb631bb3b227526862e93e2ef"),
+    "small": ("536b0662742c02347bc0e980a01041f333bce120",
+              "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671"),
+    "medium": ("08e178d48790749d25932bbc082711ddcfdfbc4f",
+               "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae"),
+    "large-v3-turbo": ("0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+                       "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da"),
+}
 FW_MB = 470   # (faster-whisper's environment, about)
 READY = ".ready"
 # faster-whisper, run in its environment: writes down a 16 kHz mono WAV (read
