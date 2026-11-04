@@ -461,6 +461,33 @@ test("a chat's tab follows the chat Claude moved to the background under a new i
   }
 });
 
+// A message sent while the one before is on its way, to a chat Claude then
+// moves to the background, goes to the new id once that one has gone
+test("a message waiting its turn goes to the chat's new id when Claude moved it meanwhile", async () => {
+  const state = demoState(NOW);
+  const row = state.status!.groups.flatMap((g) => g.sessions).find((x) => x.chatId)!;
+  const old = "0dd0dd00-0000-4000-8000-000000000001";
+  const sent: string[][] = [];
+  let first = () => {};
+  const backend = {
+    pane: async (args: string[]) => {
+      sent.push([args[1], args.includes("--session") ? args[args.indexOf("--session") + 1] : ""]);
+      if (sent.length === 1) await new Promise<void>((r) => (first = r));
+      return { ok: true, how: "background", message: "Sent" };
+    },
+  };
+  const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const ref = { chatId: old, sessionId: old, profileDir: row.profileDir, name: row.name } as never;
+  const one = p.send(ref, "one", "background", false);
+  const two = p.send(ref, "two", "background", false);
+  await new Promise((r) => setTimeout(r, 0));
+  state.status!.moved = { [old]: row.chatId };
+  first();
+  await Promise.all([one, two]);
+  assert.deepEqual(sent, [[old, old], [row.chatId, row.sessionId]]);
+});
+
 test("the pictures a reply names, each once, and taking one out", () => {
   const a = "/cache-here/talpy-den/images/a.png";
   const text = `look [Image: ${a}] and [Image: /x/b.jpg] again [Image: ${a}]`;

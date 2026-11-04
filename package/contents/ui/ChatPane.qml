@@ -409,9 +409,26 @@ Window {
     // the same conversation goes on there, so what's shown, your reply and your
     // messages on their way stay, and its new transcript is read
     function follow() {
+        const was = draftKey
         draftKey = (chat.host || "") + "\n" + chatId
         if (pendingSent.some(p => p.chat === chat.from))
             pendingSent = pendingSent.map(p => p.chat === chat.from ? Object.assign({}, p, { chat: chatId }) : p)
+        // (and to its new id: the ones held or waiting their turn, and the one on
+        // its way, which the next ones still wait for)
+        for (const m of outbox.concat(pendingSent.filter(p => p.state === "held").map(p => p.out)))
+            if (m.asked.draft === was) {
+                Object.assign(m.asked, { chat: chatId, draft: draftKey })
+                m.args = sendArgs(m.asked)
+            }
+        for (const cmd in runs)
+            if ((runs[cmd].kind === "send" || runs[cmd].kind === "later") && runs[cmd].draft === was)
+                Object.assign(runs[cmd], { chat: chatId, draft: draftKey })
+        if (inFlight[was]) {
+            delete inFlight[was]
+            inFlight[draftKey] = true
+        }
+        if (dictateFor === was)
+            dictateFor = draftKey
         stamp = ""   // (another transcript: its first read is taken; the watcher then waits on it)
         watchLine = ""
         watchFailures = 0
@@ -1145,11 +1162,9 @@ Window {
         const holds = shows && chatState === "working" && !(row && row.reason === "background shell")
         const id = ++sentCount
         const asked = { kind: afterTurn ? "later" : "send", chat: chatId, host: host, target: row || chat,
-                        sent: shows || afterTurn ? "" : replyBox.text, draft: draftKey, text: text, id: id, startedAt: 0 }
-        const out = { asked: asked,
-            args: "--send " + root.shellQuote(chatId) + " --text " + root.shellQuote(text)
-                  + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + " --how " + (how || "auto")
-                  + (afterTurn ? " --after-turn --name " + root.shellQuote(chatName) : "") + paneArgs() }
+                        sent: shows || afterTurn ? "" : replyBox.text, draft: draftKey, text: text, id: id, startedAt: 0,
+                        how: how || "auto" }
+        const out = { asked: asked, args: sendArgs(asked) }
         if (!holds)
             outbox = outbox.concat([out])
         if (shows) {
@@ -1171,6 +1186,12 @@ Window {
             replyBox.text = ""
         }
         pump()
+    }
+    // pane.py --send's arguments for your message (asked), to the chat shown
+    function sendArgs(asked) {
+        return "--send " + root.shellQuote(asked.chat) + " --text " + root.shellQuote(asked.text)
+               + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + " --how " + asked.how
+               + (asked.kind === "later" ? " --after-turn --name " + root.shellQuote(chatName) : "") + paneArgs()
     }
     // Held (sent while Claude works): it goes to Claude when its moment is up
     // (Claude takes it in at its next step), or at once with Send now; Edit

@@ -82,6 +82,9 @@ export class ChatPanes implements vscode.Disposable {
   moved(pane: Pane, from: string, to: string): void {
     if (this.panes.get(from) === pane) this.panes.delete(from);
     if (!this.panes.has(to)) this.panes.set(to, pane);
+    // (a message on its way to it under the id it had: the next ones still wait for it)
+    const chain = this.sending.get(from);
+    if (chain && !this.sending.has(to)) this.sending.set(to, chain);
   }
 
   // An answer to what a waiting chat asks (its row, the tab, a notification),
@@ -166,8 +169,10 @@ export class ChatPanes implements vscode.Disposable {
 
   private async sendNow(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<{ ok: boolean; message: string; ask?: boolean; went?: boolean }> {
     const host = chat.host ?? "";
-    const chatId = chat.chatId || chat.sessionId;
-    const { session } = findPaneRow(this.dash.state(), host, chatId);
+    // (to where the chat is now: one Claude moved to the background meanwhile
+    // goes on under its new id, also for a message that waited its turn)
+    const { session, movedTo } = findPaneRow(this.dash.state(), host, chat.chatId || chat.sessionId);
+    const chatId = movedTo ?? (chat.chatId || chat.sessionId);
     const copy = async (said: string) => {
       await vscode.env.clipboard.writeText(text);
       if (session) await this.actions.open(chatRefOf(session, host || undefined));
@@ -184,7 +189,7 @@ export class ChatPanes implements vscode.Disposable {
       this.refresh(host);
       return { ok: true, message: "Sent (typed into its terminal)", went: true };
     }
-    const sid = session?.sessionId ?? chat.sessionId;
+    const sid = session?.sessionId ?? (movedTo ? "" : chat.sessionId);
     // (a long message goes in a file of its own, private to you, that pane.py
     // removes once read: one command-line argument holds 128 KiB at most; a
     // host's too, so it isn't in the process list while the host answers)
@@ -412,6 +417,7 @@ class Pane implements vscode.Disposable {
   private follow(to: string): void {
     this.owner.moved(this, `${this.host}|${this.chatId}`, `${this.host}|${to}`);
     this.chatId = to;
+    if ((this.chat.chatId || this.chat.sessionId) !== to) this.chat = { ...this.chat, chatId: to, sessionId: to }; // (its row may come a check later)
     this.stamp = "";
     void this.load();
   }
