@@ -220,10 +220,12 @@ export class Accounts {
     if (!this.said(r, `Couldn't add ${name}`, host) || typeof r.command !== "string") return;
     await this.terminals.run(`login|${host ?? ""}|${r.key}`, `log in to ${name}`, r.command, this.place(host), { private: true });
     void vscode.window.showInformationMessage(
-      (host
-        ? `Log in to ${name} on ${host} in the terminal: open the address Claude shows in your browser, sign in with the other account, and paste the code you get back.`
-        : `Log in to ${name} in the terminal: sign in in your browser with the other account.`) +
-        ` Afterwards, Claude Accounts → ${name} → Make Default makes it the account VS Code's Claude and plain claude run on.`,
+      noLinks(
+        (host
+          ? `Log in to ${name} on ${host} in the terminal: open the address Claude shows in your browser, sign in with the other account, and paste the code you get back.`
+          : `Log in to ${name} in the terminal: sign in in your browser with the other account.`) +
+          ` Afterwards, Claude Accounts → ${name} → Make Default makes it the account VS Code's Claude and plain claude run on.`,
+      ),
     );
   }
 

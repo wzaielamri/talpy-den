@@ -256,7 +256,7 @@ export class AccountSwitch {
     }
     const groups = machineStatus(this.dash.state(), host)?.groups ?? [];
     if (groups.length < 2) {
-      void vscode.window.showInformationMessage(`There's one Claude account on ${host}, so there's nothing to switch to.`);
+      void vscode.window.showInformationMessage(noLinks(`There's one Claude account on ${host}, so there's nothing to switch to.`));
       return;
     }
     const pick = await vscode.window.showQuickPick(

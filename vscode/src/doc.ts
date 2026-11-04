@@ -11,6 +11,7 @@ import * as crypto from "node:crypto";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { noLinks } from "./notify";
 import { textScale } from "./shared/pane";
 
 let extensionUri: vscode.Uri | undefined;
@@ -128,7 +129,7 @@ class DocView {
       try {
         await vscode.window.showTextDocument(this.uri, { preview: false, viewColumn: this.panel?.viewColumn });
       } catch (e) {
-        void vscode.window.showErrorMessage(`Talpy Den: couldn't open ${this.uri.path}: ${e instanceof Error ? e.message : String(e)}`);
+        void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't open ${this.uri.path}: ${e instanceof Error ? e.message : String(e)}`));
       }
     } else if (msg?.type === "copy" && typeof msg.text === "string") {
       await vscode.env.clipboard.writeText(msg.text);

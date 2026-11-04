@@ -1517,7 +1517,7 @@ export class Actions {
     if (picked.includes(host)) await setSshHosts(picked.filter((h) => h !== host));
     if (host === this.dash.currentHost && settings.includeCurrentRemote()) {
       void vscode.window.showInformationMessage(
-        `${host} is this window's host, so it stays shown. Turn off “Talpy Den: Include Current Remote” to hide it.`,
+        noLinks(`${host} is this window's host, so it stays shown. Turn off “Talpy Den: Include Current Remote” to hide it.`),
       );
     }
   }
@@ -1534,7 +1534,7 @@ export class Actions {
       const file = path.join(folder, name);
       try {
         await fs.writeFile(file, data);
-        const choice = await vscode.window.showInformationMessage(`Saved: ${file}`, "Show It");
+        const choice = await vscode.window.showInformationMessage(noLinks(`Saved: ${file}`), "Show It");
         if (choice === "Show It") await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(file));
       } catch (e) {
         void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't save the card: ${(e as Error).message}`));

@@ -332,7 +332,7 @@ export async function setUpUsageBars(extensionUri: vscode.Uri, remove = false): 
   const { changes, notes } = result;
   if (!changes.length) {
     void vscode.window.showInformationMessage(
-      (remove ? "Nothing to remove." : "Plan usage bars are already set up.") + (notes.length ? " " + notes.join(" ") : ""),
+      noLinks((remove ? "Nothing to remove." : "Plan usage bars are already set up.") + (notes.length ? " " + notes.join(" ") : "")),
     );
     return;
   }

@@ -67,6 +67,28 @@ test("what a chat wrote is no link in a notification", async () => {
   assert.equal(noLinks("deploy [main] asks — npm publish (dry run)"), "deploy [main] asks — npm publish (dry run)");
 });
 
+// The plan tab's Open as text error named a folder a repo can call
+// [Open the plan](command:workbench.action.terminal.sendSequence?…): every
+// notification with a name, a path or an answer in it goes through noLinks
+// (a modal dialog shows no links)
+test("every notification with something in its words goes through noLinks", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const src = path.join(__dirname, "..", "..", "src");
+  const bare: string[] = [];
+  for (const file of fs.readdirSync(src).filter((f) => f.endsWith(".ts"))) {
+    const text = fs.readFileSync(path.join(src, file), "utf8");
+    for (const m of text.matchAll(/show(?:Information|Warning|Error)Message\(/g)) {
+      let depth = 1;
+      let i = m.index + m[0].length;
+      for (; i < text.length && depth; i++) depth += text[i] === "(" ? 1 : text[i] === ")" ? -1 : 0;
+      const call = text.slice(m.index, i);
+      if (call.includes("${") && !call.includes("noLinks(") && !call.includes("modal: true")) bare.push(`${file}: ${call.slice(0, 80)}`);
+    }
+  }
+  assert.deepEqual(bare, []);
+});
+
 // A plan (ExitPlanMode): Approve, accepting edits or not, or Keep planning
 // with what to change
 test("a plan's notification: Approve, accept edits / Approve / Keep planning…", async () => {

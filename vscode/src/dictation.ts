@@ -22,7 +22,7 @@ export async function dictationModels(backend: Backend): Promise<void> {
   }
   const missing = (Array.isArray(st.missing) ? st.missing : []).join(" and ");
   if (!st.engine && !st.canSetup) {
-    void vscode.window.showWarningMessage(`To dictate, install ${missing}.`);
+    void vscode.window.showWarningMessage(noLinks(`To dictate, install ${missing}.`));
     return;
   }
   const items: Item[] = [];
