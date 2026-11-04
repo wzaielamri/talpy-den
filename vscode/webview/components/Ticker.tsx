@@ -11,11 +11,11 @@ import { hostVisible, liveViews, pageVisible } from "../util/stores";
 // comes (at once with live mode, else at each check); with several chats at
 // work, one that did something new goes first, and with nothing new they
 // take turns. A click opens that chat's tab.
-export function Ticker({ groups }: { groups: Group[] }) {
+export function Ticker({ groups, shown: tabShown }: { groups: Group[]; shown: boolean }) {
   const live = useStore(liveViews);
   const viewShown = useStore(hostVisible);
   const pageShown = useStore(pageVisible);
-  const shown = viewShown && pageShown;
+  const shown = viewShown && pageShown && tabShown;
   const items = useMemo(() => tickerItems(groups, live), [groups, live]);
   const turns = useRef(new TickerTurns());
   const [item, setItem] = useState<TickerItem | null>(null);
@@ -34,7 +34,7 @@ export function Ticker({ groups }: { groups: Group[] }) {
   const box = useRef<HTMLButtonElement>(null);
   const key = item?.key;
   useEffect(() => {
-    if (!key || !box.current || reducedMotion() || document.hidden) return;
+    if (!key || !box.current || !shown || reducedMotion()) return;
     box.current.animate([{ opacity: 0.15, transform: "translateY(3px)" }, { opacity: 1, transform: "none" }], { duration: 220, easing: "ease-out" });
   }, [key]);
 

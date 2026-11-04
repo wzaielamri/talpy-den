@@ -18,7 +18,7 @@ export function useFlip(ref: RefObject<HTMLElement>): void {
   const spots = useRef<Map<string, number> | null>(null);
   useLayoutEffect(() => {
     const box = ref.current;
-    if (!box) return;
+    if (!box || !box.offsetParent) return; // (hidden, another tab showing: where they were stays)
     const was = spots.current;
     const now = new Map<string, number>();
     const still = !was || reducedMotion() || document.hidden;

@@ -11,6 +11,7 @@ import {
   stateText,
 } from "../../src/shared/model";
 import { Component, type ComponentChildren } from "preact";
+import type { ViewState } from "../../src/shared/types";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { editorTab } from "../env";
 import { pets } from "../pets";
@@ -67,6 +68,20 @@ class Guarded extends Component<{ what: string; children: ComponentChildren }, {
   }
 }
 
+// The Talpy Den tab's big Talpy and chats while another tab shows: kept,
+// hidden, as Plasma only hides them, so the pets stay where they stand (paused
+// while hidden, as in a hidden view: what happens meanwhile they act out once
+// they show again). Not drawn again until the tab shows, with the newest state
+// then; children read that state from here (ViewContext), not from each poll
+class Kept extends Component<{ shown: boolean; state: ViewState; children: ComponentChildren }> {
+  shouldComponentUpdate(next: { shown: boolean }): boolean {
+    return next.shown || this.props.shown; // (once more as it hides)
+  }
+  render() {
+    return <ViewContext.Provider value={this.props.state}>{this.props.children}</ViewContext.Provider>;
+  }
+}
+
 // The popup's layout: header and the big Talpy on top (they stay while the
 // list scrolls), then this computer's accounts, then each SSH host's.
 export function App() {
@@ -81,6 +96,7 @@ export function App() {
   const week = tab === "week";
   const perms = tab === "perms";
   const projectsTab = tab === "projects";
+  const chatsTab = !week && !perms && !projectsTab;
   // A tab slides in from the side it's on (Talpy Den | Projects | Permissions | Recap)
   const lastTab = useRef(tab);
   const tabFrom = useRef(0);
@@ -133,7 +149,11 @@ export function App() {
             heroShown={state.settings.showPet}
             containers={state.settings.showContainers !== false}
           />
-          {state.settings.showPet && !week && !perms && !projectsTab ? <HeroStage input={hero} groups={groups} /> : null}
+          {state.settings.showPet ? (
+            <Kept shown={chatsTab} state={state}>
+              <HeroStage input={hero} groups={groups} shown={chatsTab} />
+            </Kept>
+          ) : null}
         </div>
         {week ? (
           <main key="week" {...tabIn}>
@@ -154,49 +174,50 @@ export function App() {
               <PermsView rules={state.settings.recapRules !== false} />
             </Guarded>
           </main>
-        ) : (
-        <main key="chats" {...tabIn}>
-          <Messages state={state} />
-          {!state.status && !state.errorText ? <Reading text="Looking for your chats…" /> : null}
-          {focus && state.status ? (
-            <Guarded what="the focus view">
-              <FocusView groups={groups} />
-            </Guarded>
-          ) : null}
-          {(focus ? [] : local).map((g) => (
-            <Guarded key={groupKeyOf(g)} what={g.name}>
-              <GroupSection group={g} accounts={local.length} />
-            </Guarded>
-          ))}
-          {/* chats that keep going and tasks queued on hosts that aren't shown: they go on all the same */}
-          {!focus && state.status ? <UnseenLines shown={state.hosts.map((h) => h.name)} /> : null}
-          {/* No account here, but SSH hosts shown: one quiet line where this computer's accounts go */}
-          {!focus && state.status && local.length === 0 && state.hosts.length > 0 ? (
-            <div class="no-sessions muted">No Claude Code config on this computer</div>
-          ) : null}
-          {(focus ? [] : state.hosts).map((h) => (
-            <Guarded key={h.name} what={h.name}>
-              {/* its last answer, also when the last check failed (dimmed): allGroups leaves that one out */}
-              <HostSection host={h} groups={(h.result?.groups ?? []).map((g) => ({ ...g, host: h.name }))} />
-            </Guarded>
-          ))}
-          {state.status && groups.length === 0 && state.hosts.length === 0 ? (
-            <div class="empty">
-              <p class="empty-title">No Claude Code chats yet</p>
-              <p>
-                Your Claude Code chats show up here once you start <code>claude</code> in a terminal or open
-                Claude in VS Code. Talpy Den looks in ~/.claude and ~/.claude-*; other folders go in its settings
-                (Extra Config Dirs).
-              </p>
-              <p class="muted">
-                {editorTab
-                  ? "Chats on other machines: add SSH hosts with the SSH hosts button above."
-                  : "Chats on other machines: add SSH hosts from the view's title bar."}
-              </p>
-            </div>
-          ) : null}
-        </main>
-        )}
+        ) : null}
+        <Kept shown={chatsTab} state={state}>
+          <main key="chats" hidden={!chatsTab} {...tabIn}>
+            <Messages state={state} />
+            {!state.status && !state.errorText ? <Reading text="Looking for your chats…" /> : null}
+            {focus && state.status ? (
+              <Guarded what="the focus view">
+                <FocusView groups={groups} />
+              </Guarded>
+            ) : null}
+            {(focus ? [] : local).map((g) => (
+              <Guarded key={groupKeyOf(g)} what={g.name}>
+                <GroupSection group={g} accounts={local.length} />
+              </Guarded>
+            ))}
+            {/* chats that keep going and tasks queued on hosts that aren't shown: they go on all the same */}
+            {!focus && state.status ? <UnseenLines shown={state.hosts.map((h) => h.name)} /> : null}
+            {/* No account here, but SSH hosts shown: one quiet line where this computer's accounts go */}
+            {!focus && state.status && local.length === 0 && state.hosts.length > 0 ? (
+              <div class="no-sessions muted">No Claude Code config on this computer</div>
+            ) : null}
+            {(focus ? [] : state.hosts).map((h) => (
+              <Guarded key={h.name} what={h.name}>
+                {/* its last answer, also when the last check failed (dimmed): allGroups leaves that one out */}
+                <HostSection host={h} groups={(h.result?.groups ?? []).map((g) => ({ ...g, host: h.name }))} />
+              </Guarded>
+            ))}
+            {state.status && groups.length === 0 && state.hosts.length === 0 ? (
+              <div class="empty">
+                <p class="empty-title">No Claude Code chats yet</p>
+                <p>
+                  Your Claude Code chats show up here once you start <code>claude</code> in a terminal or open
+                  Claude in VS Code. Talpy Den looks in ~/.claude and ~/.claude-*; other folders go in its settings
+                  (Extra Config Dirs).
+                </p>
+                <p class="muted">
+                  {editorTab
+                    ? "Chats on other machines: add SSH hosts with the SSH hosts button above."
+                    : "Chats on other machines: add SSH hosts from the view's title bar."}
+                </p>
+              </div>
+            ) : null}
+          </main>
+        </Kept>
       </div>
     </ViewContext.Provider>
   );
