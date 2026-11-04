@@ -302,7 +302,7 @@ class RowButtonsTests(unittest.TestCase):
         self.assertRegex(projects, r"Loader \{\s+active: card\.unfolded")
         self.assertIn("model: PageRows { size: inside.chatsShown }", projects)
         self.assertIn("active: due", projects)   # (its plans and memories: the frame after)
-        self.assertIn("root.showProject(projectRow.project.path)", (UI / "WeekView.qml").read_text())
+        self.assertIn("root.showProject(projectRow.project.folder || projectRow.project.path)", (UI / "WeekView.qml").read_text())
 
 
 STAR = """import QtQuick
