@@ -43,8 +43,8 @@ by itself, so install a newer release the same way.
 
 **Needs** Linux, VS Code 1.90 or newer, Python 3.7+ and Claude Code; for the
 plan usage bars, `jq` and a small status-line snippet (**Talpy Den: Set Up
-Plan Usage Bars…** adds it). An SSH host needs key-based login and `python3`;
-nothing is installed there.
+Plan Usage Bars…** adds it). An SSH host needs key-based login (or **Log in…**
+where it wants a password) and `python3`; nothing is installed there.
 
 ## Everything else
 

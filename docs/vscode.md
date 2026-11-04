@@ -59,7 +59,7 @@ The extension always runs on your computer (`"extensionKind": ["ui"]`), even whe
                                                 └────────────────────────┘
 ```
 
-The host your window is connected to is shown without setting anything up. Other hosts: **Talpy Den: Show Claude on SSH Hosts…** lists the ones in `~/.ssh/config`. A host needs key-based login (the check never asks for a password) and `python3` 3.7 or newer; nothing is installed there.
+The host your window is connected to is shown without setting anything up. Other hosts: **Talpy Den: Show Claude on SSH Hosts and Containers…** lists the ones in `~/.ssh/config`. A host needs key-based login, or **Log in…** where it wants a password (Talpy Den never sees it), and `python3` 3.7 or newer; nothing is installed there.
 
 **Clicking a chat opens it in an editor tab:** the conversation as it goes, drawn the way Claude's terminal draws it: a dot before each reply and tool call, Claude's replies rendered (headings, lists, code blocks with a **Copy** button, tables; it says *Copied* once it has, and for a command Claude wrote for its prompt, `! chmod …`, it copies the command without the `!`), each tool call on one line with what came of it under it (*● Bash(pytest) ⎿ 3 passed*, the dot green or red; click it for what it ran and got); **A−** / **A+** (or Ctrl+wheel) set the text size (`talpyDen.chatTextScale`). Below it, a box to reply (Enter sends, Shift+Enter starts a new line, **Ctrl+V** pastes a picture, shown under the box): **Send**, or **Send when this turn ends** (kept, and sent once the turn is over). Your message goes the way the chat can take it: typed into its terminal when it runs in one of this window's terminals, or into its tmux pane; put into the input of its Claude Code panel (press Enter there); into a running background chat, as `claude agents` answers one (while it works, it takes it once it can; a terminal that shows it stays on it); or, for a chat that isn't open, the chat goes on with it in the background (`claude --bg --resume`, the same chat). A terminal outside VS Code takes no text from outside, so there you choose: send it, and Claude there quits and the chat goes on in the background, or copy it and open its terminal. An SSH host's chats work the same way. A notification takes a reply too (**Reply…**).
 
@@ -183,6 +183,8 @@ The ones that pick what Talpy Den runs or reads on this computer (`talpyDen.pyth
 | `talpyDen.includeCurrentRemote` | `true` | Also show the Remote-SSH window's host |
 | `talpyDen.remotePollSeconds` | `30` | How often hosts are checked |
 | `talpyDen.sshUsage` | `once` | Plan usage on hosts' accounts: an account on this computer and a host (or two hosts) shows it once, where it's listed first, with the newest numbers; `all`: under every copy; `none`: on no host |
+| `talpyDen.showContainers` | `true` | Docker, Podman and nerdctl containers (here and on the SSH hosts shown) in the hosts picker; off, Talpy Den never runs `docker`, `podman` or `nerdctl` |
+| `talpyDen.containerDays` | `30` | The containers listed: the running ones and those started or stopped in the last this many days (0: only the running ones); one you picked is always listed |
 
 ### Advanced
 
@@ -204,7 +206,7 @@ All in the Command Palette under **Talpy Den:**; the view's title bar and **⋯*
 | New Chat… | | A new chat: in a terminal, a Claude Code tab or the background, with a task, later, or once a limit resets |
 | Find a Chat… | | Every chat with the words you type, here and on the SSH hosts shown |
 | Open in Editor Tab | | The view as a wide editor tab |
-| Show Claude on SSH Hosts… | | Picks the SSH hosts to show |
+| Show Claude on SSH Hosts and Containers… | | Picks the SSH hosts and containers to show |
 | Show Hidden Chats Again, … Plans …, … Memories …, Show Hidden Projects Again | | Brings back what you hid, kind by kind (each only while something of that kind is hidden) |
 | Answer Permission Prompts from Talpy Den… | | Turns the permission hook on or off |
 | Live Mode… | | Turns the live hook on or off |

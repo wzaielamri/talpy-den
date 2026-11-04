@@ -751,7 +751,7 @@
                 "type": "string"
               },
               "default": [],
-              "markdownDescription": "SSH hosts (names from `~/.ssh/config`) whose Claude Code chats are shown too. Use **Talpy Den: Show Claude on SSH Hosts and Containers…** to pick them (and containers: `docker:NAME`, `podman:NAME`, `nerdctl:NAME`, or `ENGINE:NAME@HOST` for one on an SSH host). Needs key-based login (the check never asks for a password) and `python3` 3.7+ on the host; nothing is installed there.",
+              "markdownDescription": "SSH hosts (names from `~/.ssh/config`) whose Claude Code chats are shown too. Use **Talpy Den: Show Claude on SSH Hosts and Containers…** to pick them (and containers: `docker:NAME`, `podman:NAME`, `nerdctl:NAME`, or `ENGINE:NAME@HOST` for one on an SSH host). Needs key-based login, or **Log in…** where the host wants a password (Talpy Den never sees it), and `python3` 3.7+ on the host; nothing is installed there.",
               "order": 1
             },
             "talpyDen.includeCurrentRemote": {
