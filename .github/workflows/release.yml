@@ -34,12 +34,12 @@ jobs:
         run: |
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a version tag: $TAG"; exit 1; }
           echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
         with:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -136,7 +136,7 @@ jobs:
           **VS Code:** download \`talpy-den-$VERSION.vsix\` below, then in VS Code open the Extensions view, **⋯** → **Install from VSIX…** (or run \`code --install-extension talpy-den-$VERSION.vsix\`). It needs Python 3.7+; [its README](https://github.com/wzaielamri/talpy-den/blob/$TAG/vscode/README.md) explains SSH hosts and the plan usage bars.
           NOTES
       - name: The release's files
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: release
           path: |
@@ -151,7 +151,7 @@ jobs:
       contents: write
     steps:
       - name: The release's files
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: release
       - name: Publish

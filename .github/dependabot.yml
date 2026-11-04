@@ -1,0 +1,8 @@
+# The workflows' actions are pinned to commits: this proposes the new
+# releases' commits once a week
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
