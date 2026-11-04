@@ -2448,7 +2448,8 @@ class UsageRefreshCommandTests(unittest.TestCase):
             self.assertEqual(proc.wait(timeout=30), 0)
             self.assertEqual(out.read_text().splitlines(), [
                 str(folder), str(home / ".claude-work"), "-p", "/usage", "--no-session-persistence",
-                "--settings", '{"disableAllHooks":true}', "--output-format", "json"])
+                "--setting-sources", "user", "--strict-mcp-config", "--settings", '{"disableAllHooks":true}',
+                "--output-format", "json"])
             self.assertEqual(os.listdir(home / ".claude-work/projects"), ["-keep"])
             # without timeout, it runs without a time limit
             with mock.patch("shutil.which", lambda name, *a, **kw: None):
