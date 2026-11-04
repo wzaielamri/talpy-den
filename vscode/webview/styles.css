@@ -3224,11 +3224,6 @@ body.vscode-high-contrast-light .pane {
   font-size: 0.85em;
 }
 
-.doc-note {
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.85em;
-}
-
 .pane-head {
   display: flex;
   flex-wrap: wrap;

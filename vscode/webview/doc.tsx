@@ -8,6 +8,7 @@
 
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import { clipboardCode } from "../src/shared/pane";
 import { Markdown } from "./util/markdown";
 
 declare global {
@@ -23,7 +24,6 @@ const look = { "--pane-scale": String(config.scale ?? 1.15), ...(config.font ? {
 
 function Doc() {
   const [text, setText] = useState(config.text);
-  const [copied, setCopied] = useState(false);
   useEffect(() => {
     const listener = (e: MessageEvent) => {
       const m = e.data as { type?: string; text?: unknown };
@@ -32,23 +32,17 @@ function Doc() {
     window.addEventListener("message", listener);
     return () => window.removeEventListener("message", listener);
   }, []);
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
   return (
     <div class="pane doc-page" style={look}>
       <div class="pane-head">
         <span class="doc-file" title={config.file}>{config.file}</span>
-        <span class="doc-note">{copied ? "Copied" : ""}</span>
         <button type="button" class="btn secondary small" title="Open its file in the editor, to read or change it as text"
           onClick={() => api.postMessage({ type: "openText" })}>
           Open as text
         </button>
       </div>
       <div class="pane-list doc-body">
-        <Markdown text={text} onCopy={(code) => (api.postMessage({ type: "copy", text: code }), setCopied(true))} />
+        <Markdown text={text} onCopy={(code) => api.postMessage({ type: "copy", text: clipboardCode(code) })} />
       </div>
     </div>
   );
