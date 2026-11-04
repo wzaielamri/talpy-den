@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answersOf, chatWhere, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
+import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -878,6 +878,76 @@ test("your message shows at once till the conversation has it; a stamp read befo
   assert.equal(stampFresher("100:4/120", "120:5/120", 120), false, "read before what's shown");
   assert.equal(stampFresher("200:9/120", "100:4/240", 240), false, "read for another length");
   assert.equal(stampFresher("100:4/240", "", 240), true);
+});
+
+// ---------------------------------------------------------------- your answers in the chat (A11)
+
+test("your answer as the conversation will have it: the options, what you typed, one line a question; a plan's; a note", () => {
+  const colour = { question: "Which colour?", header: "Colour", multiSelect: false, options: [{ label: "Teal", description: "" }] };
+  const extras = { question: "Which extras?", header: "Extras", multiSelect: true, options: [{ label: "Basil", description: "" }, { label: "Figs, dried", description: "" }] };
+  const ask = { questions: [colour] };
+  assert.equal(answerText(ask, "answer", "", { "Which colour?": ["Teal"] }), "Teal");
+  assert.equal(answerText(ask, "answer", "", { "Which colour?": [" a soft teal "] }), "a soft teal");
+  // several: Header: answer, a line each (in the questions' order; a multi-select's joined as Claude's dialog joins them)
+  assert.equal(answerText({ questions: [colour, extras] }, "answer", "", { "Which extras?": ["Basil", "Figs, dried", 'a "little" salt'], "Which colour?": ["Teal"] }),
+               'Colour: Teal\nExtras: Basil, "Figs, dried", "a \\"little\\" salt"');
+  assert.equal(joinAnswer(["Basil", "Figs, dried"], true), 'Basil, "Figs, dried"');
+  assert.equal(joinAnswer(["Basil", "Honey"], false), "Basil");
+  // declined with a note: the note; without one, nothing of yours
+  assert.equal(answerText(ask, "deny", " ask me later "), "ask me later");
+  assert.equal(answerText(ask, "deny", ""), "");
+  // a plan
+  const plan = { plan: { text: "# Plan", cut: false, file: "", title: "Plan" } };
+  assert.equal(answerText(plan, "approve-edits", ""), "Approved the plan");
+  assert.equal(answerText(plan, "keep", "fewer colours"), "Keep planning\nfewer colours");
+  assert.equal(answerText(plan, "keep", ""), "Keep planning");
+  // a permission: a Deny's note; Allow, Always allow and a plain Deny show nothing
+  assert.equal(answerText({}, "deny", "use make instead"), "use make instead");
+  assert.deepEqual(["allow", "always", "deny"].map((d) => answerText({}, d as "allow", "")), ["", "", ""]);
+  assert.deepEqual([answerKind(ask), answerKind(plan), answerKind({})], ["question", "plan", "permission"]);
+});
+
+test("your answer shows at once till the conversation has it, after the call it answers; a question shows once answered", () => {
+  const tool = (key: string, name: string, status: "open" | "ok" | "error") => ({ kind: "tool" as const, key, name, status, at: NOW });
+  const items = [tool("t1", "AskUserQuestion", "ok"), tool("t2", "Bash", "open"), tool("t3", "AskUserQuestion", "open")];
+  // its call: the one named, else its tool's newest open call
+  assert.equal(answerFor(items, { tool: "AskUserQuestion", toolUse: "t1" }), "t1");
+  assert.equal(answerFor(items, { tool: "AskUserQuestion", toolUse: null }), "t3");
+  assert.equal(answerFor(items, { tool: "Edit", toolUse: "gone" }), "");
+  const going = (id: number, forKey: string, state: "sending" | "sent", known: string[] = []) =>
+    ({ id, text: "Teal", answered: "question" as const, at: NOW, for: forKey, known, state, sentAt: state === "sent" ? NOW : 0 });
+  assert.deepEqual([...answersTaken(items, [going(1, "t3", "sending")], NOW + 100)], []);
+  // its answer listed, or its call answered with nothing of yours to show
+  const answer = { kind: "you" as const, key: "t3/answer", text: "Teal", at: NOW + 50, answered: "question" as const };
+  assert.deepEqual([...answersTaken([...items, answer], [going(1, "t3", "sent")], NOW + 100)], [1]);
+  assert.deepEqual([...answersTaken([items[0], items[1], tool("t3", "AskUserQuestion", "error")], [going(1, "t3", "sent")], NOW + 100)], [1]);
+  // its call not known: an answer of yours that wasn't there
+  assert.deepEqual([...answersTaken([...items, answer], [going(1, "", "sent", ["t3/answer"])], NOW + 100)], []);
+  assert.deepEqual([...answersTaken([...items, answer], [going(1, "", "sent")], NOW + 100)], [1]);
+  // gone 30 s after it went
+  assert.deepEqual([...answersTaken(items, [going(1, "t3", "sent"), going(2, "t3", "sending")], NOW + 31000)], [1]);
+  // an answer isn't a message you sent, nor one ↑ brings back
+  assert.deepEqual([...pendingTaken([answer], [{ id: 5, text: "Teal", at: NOW, state: "sent", sentAt: NOW, known: [] }], NOW + 100, true)], []);
+  assert.deepEqual(promptHistory([{ kind: "you", key: "p", text: "pick one", at: NOW }, answer], [], []), ["pick one"]);
+  // the question shows as Claude's once answered (or as your answer goes); a failed one, a denied call don't
+  const asked = (state: "open" | "answered" | "failed" | "denied" | "keep", plan = false) =>
+    ({ ...tool("q", plan ? "ExitPlanMode" : "AskUserQuestion", "ok"), asked: plan ? { state, plan: "# P", title: "P" } : { state, questions: [] } });
+  assert.deepEqual([asked("answered"), asked("open"), asked("failed")].map((it) => askedShows(it)), [true, false, false]);
+  assert.equal(askedShows(asked("open"), true), true);
+  assert.equal(askedShows(asked("keep", true)), true);
+  assert.equal(askedShows({ ...tool("e", "Edit", "error"), asked: { state: "denied" } }), false);
+  assert.equal(askedShows(tool("b", "Bash", "ok")), false);
+});
+
+test("an answer from a row or a notification shows at once in the chat's tab, and says when it went", async () => {
+  const state = waitingState("hook");
+  const row = state.status!.groups.flatMap((g) => g.sessions).find((x) => x.state === "waiting")!;
+  const { p } = panes(state);
+  const said: unknown[] = [];
+  (p as unknown as { panes: Map<string, unknown> }).panes.set(`|${row.chatId || row.sessionId}`, { answering: (m: unknown) => said.push(m) });
+  await p.answer(chatRefOf(row), "deny", shownAsk(row.permission), "use make");
+  assert.deepEqual(said, [{ type: "answering", id: 1, ask: row.permission, decision: "deny", note: "use make" },
+                          { type: "answered", id: 1, ok: true }]);
 });
 
 // ---------------------------------------------------------------- the microphone, starting

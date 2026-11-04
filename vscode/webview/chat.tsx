@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { attachedTag, clipboardCode, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, clipboardCode, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -129,10 +129,69 @@ function TaskStrip({ tasks, agents, open, setOpen, host }: {
   );
 }
 
-function gapOf(kind: PaneItem["kind"], prev: PaneItem["kind"] | undefined): string {
+function gapOf(kind: PaneItem["kind"], prev: PaneItem["kind"] | undefined, answer = false): string {
   if (!prev) return "first";
-  if (kind === "you") return "turn";
+  if (kind === "you") return answer ? "" : "turn"; // (your answer: right under what it answers)
   return kind === "tool" && prev === "tool" ? "close" : "";
+}
+
+// What Claude asked, as Claude's (a question, or its plan), once you answered
+// it: the header and the question, its options folded (the ones you picked
+// marked ✓); a plan's title, the plan folded. Your answer comes under it, as
+// yours; a question you declined, or chose to chat about, says so here
+function AskedCard({ item, open, onToggle, gap }: { item: PaneItem; open: boolean; onToggle: () => void; gap: string }) {
+  const a = item.asked!;
+  const state = a.state === "declined" ? "Declined" : a.state === "chat" ? "Chat about this" : "";
+  return (
+    <div data-key={item.key} class={`pane-item pane-claude pane-asked ${gap}`}>
+      <span class="pane-gutter" aria-hidden="true">
+        <span class="pane-dot" />
+      </span>
+      <div class="pane-body">
+        {a.questions ? a.questions.map((q, i) => (
+          <div key={i} class="pane-asked-q">
+            <div class="pane-asked-text">
+              {q.header ? <span class="pane-asked-header">{q.header}</span> : null}
+              {q.question}
+            </div>
+            {open ? (
+              <ul class="pane-asked-options">
+                {q.options.map((o) => {
+                  const picked = q.picked.includes(o.label);
+                  return (
+                    <li key={o.label} class={picked ? "picked" : ""}>
+                      <span class="pane-asked-mark" aria-label={picked ? "Your answer" : undefined}>{picked ? <Icon name={I.picked} /> : null}</span>
+                      <span>
+                        <span class="pane-asked-label">{o.label}</span>
+                        {o.description ? <span class="pane-asked-desc">{o.description}</span> : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </div>
+        )) : (
+          <div class="pane-asked-text">
+            <span class="pane-asked-header">Plan</span>
+            {a.title || "A plan, ready to start"}
+          </div>
+        )}
+        {(a.questions ? a.questions.some((q) => q.options.length) : !!a.plan) ? (
+          <button type="button" class="pane-asked-toggle" aria-expanded={open} onClick={onToggle}>
+            <Icon name={I.folded} class={open ? "open" : ""} />
+            {a.questions ? (open ? "Hide the options" : "Show the options") : open ? "Hide the plan" : "Show the plan"}
+          </button>
+        ) : null}
+        {open && a.plan ? (
+          <div class="pane-asked-plan">
+            <Markdown text={a.plan} onCopy={copyCode} />
+          </div>
+        ) : null}
+        {state ? <div class="pane-asked-state">⎿&nbsp;&nbsp;{state}</div> : null}
+      </div>
+    </div>
+  );
 }
 
 function ChatApp() {
@@ -164,6 +223,10 @@ function ChatApp() {
   const [outgoing, setOutgoing] = useState<PendingSent[]>([]);
   const outgoingNow = useRef<PendingSent[]>([]); // (for the extension's answers: the handler is made once)
   outgoingNow.current = outgoing;
+  // Your answers on their way (to what it asks: from here, its row or a notification), shown at once as yours
+  const [answersOut, setAnswersOut] = useState<PendingAnswer[]>([]);
+  const itemsNow = useRef<PaneItem[]>([]);
+  itemsNow.current = items;
   const sentCount = useRef(0);
   const [review, setReview] = useState<ReviewAnswer | null>(null);
   const [reviewError, setReviewError] = useState("");
@@ -388,6 +451,17 @@ function ChatApp() {
           return t.slice(0, i) + (i > 0 && t.charAt(i - 1).trim() ? " " : "") + `${fileMention(m.path)} ` + t.slice(i);
         });
         reply.current?.focus();
+      }
+      else if (m.type === "answering") {
+        const said = answerText(m.ask, m.decision, m.note, m.answers);
+        const now = itemsNow.current;
+        if (said) setAnswersOut((was) => [...was, { id: m.id, text: said, answered: answerKind(m.ask), at: Date.now(), for: answerFor(now, m.ask),
+                                                    known: now.filter((it) => it.answered).map((it) => String(it.key)), state: "sending", sentAt: 0 }]);
+        follow.current = true;
+      }
+      else if (m.type === "answered") {
+        setAnswersOut((was) => (m.ok ? was.map((p) => (p.id === m.id ? { ...p, state: "sent" as const, sentAt: Date.now() } : p))
+                                     : was.filter((p) => p.id !== m.id)));
       }
       else if (m.type === "conversation") {
         const a: Conversation = m.answer;
@@ -645,12 +719,26 @@ function ChatApp() {
     const tick = setInterval(settle, 1000);
     return () => clearInterval(tick);
   }, [items, outgoing, chat?.host]);
-  const shownItems = useMemo((): PaneItem[] => (outgoing.length
-    ? [...items, ...outgoing.map((p) => ({ kind: "you" as const, key: `pending-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending",
-                                           ...(p.state === "held" ? { until: p.until ?? 0 } : {}) }))]
-    : items), [items, outgoing]);
+  // (your answers too, as they go: each till the conversation has it)
+  useEffect(() => {
+    if (!answersOut.length) return undefined;
+    const settle = () => {
+      const done = answersTaken(items, answersOut, Date.now());
+      if (done.size) setAnswersOut((was) => was.filter((p) => !done.has(p.id)));
+    };
+    settle();
+    const tick = setInterval(settle, 1000);
+    return () => clearInterval(tick);
+  }, [items, answersOut]);
+  const shownItems = useMemo((): PaneItem[] => (outgoing.length || answersOut.length
+    ? [...items,
+       ...answersOut.map((p) => ({ kind: "you" as const, key: `answer-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending", answered: p.answered })),
+       ...outgoing.map((p) => ({ kind: "you" as const, key: `pending-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending",
+                                 ...(p.state === "held" ? { until: p.until ?? 0 } : {}) }))]
+    : items), [items, outgoing, answersOut]);
+  const answeringFor = useMemo(() => new Set(answersOut.map((p) => p.for).filter(Boolean)), [answersOut]);
   const steps = useMemo(() => shownItems.map((it, i) => {
-    const gap = gapOf(it.kind, shownItems[i - 1]?.kind);
+    const gap = gapOf(it.kind, shownItems[i - 1]?.kind, !!it.answered);
     // (queued: grey, as Claude's terminal shows it, with what becomes of it: held a moment,
     // Edit / Send now / Cancel, then in Claude's queue till it takes it in at its next step)
     const id = it.until ? Number(String(it.key).slice("pending-".length)) : 0;
@@ -696,7 +784,9 @@ function ChatApp() {
           <Markdown text={it.text ?? ""} onCopy={copyCode} />
         </div>
       </div>
-    ) : it.kind === "tool" ? (tab !== "steps" ? null :
+    ) : it.kind === "tool" && askedShows(it, answeringFor.has(it.key)) ? (
+      <AskedCard key={it.key} item={it} gap={gap} open={!!open[it.key]} onToggle={() => setOpen((was) => ({ ...was, [it.key]: !was[it.key] }))} />
+    ) : it.kind === "tool" ? (tab !== "steps" && it.asked?.state !== "denied" ? null :
       <ToolLine
         key={it.key}
         item={it}
@@ -713,7 +803,7 @@ function ChatApp() {
         <span>{it.text}</span>
       </div>
     );
-  }), [shownItems, open, asking, going, split, tab, held ? now : 0]);
+  }), [shownItems, open, asking, going, split, tab, held ? now : 0, answeringFor]);
 
   return (
     <div class="pane pane-grow" style={{ "--pane-scale": String(scale), ...(font ? { "--pane-font": font } : {}) }}>

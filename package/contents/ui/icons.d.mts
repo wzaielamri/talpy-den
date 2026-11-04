@@ -104,6 +104,7 @@ export type Meaning =
   | "mcp"
   | "webAccess"
   | "allowed"
+  | "picked"
   | "warning"
   | "error"
   | "failed"

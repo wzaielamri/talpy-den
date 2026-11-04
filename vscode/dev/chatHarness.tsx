@@ -158,6 +158,47 @@ if (params.get("queue") === "1") {
   }, 600);
 }
 
+// ?answers=1: your answers in the chat: one question, several (a multi-select, what you typed, a note), a
+// plan approved and one kept planning, a Deny with a note, a question declined; ?answers=open: unfolded
+if (params.get("answers")) {
+  const picked = (q: (typeof questions)[number], labels: string[]) => ({ ...q, picked: labels });
+  const plan = "# Fix the week numbers\n\n1. Make `isoWeek` count 53 weeks in a long year.\n2. Add a test for 2026-12-31.";
+  items.splice(0, items.length,
+    { kind: "you", key: "u1", text: "Week 53 dates come out as week 1. Find out why and fix it, with a test.", at: now - 400_000 },
+    { kind: "tool", key: "a1", name: "AskUserQuestion", line: "AskUserQuestion: Which weeks should the fix cover?", status: "ok", summary: "Answered", at: now - 390_000,
+      asked: { state: "answered", questions: [picked(questions[0], ["ISO weeks only (Recommended)"])] } },
+    { kind: "you", key: "a1/answer", text: "ISO weeks only (Recommended)", answered: "question", at: now - 385_000 },
+    { kind: "claude", key: "m1", text: "ISO weeks it is. Two more things before I start:", at: now - 380_000 },
+    { kind: "tool", key: "a2", name: "AskUserQuestion", line: "AskUserQuestion: Which tests should run after the fix?", status: "ok", summary: "Answered", at: now - 370_000,
+      asked: { state: "answered", questions: [picked(questions[1], ["Parser tests", "All unit tests"]),
+                                              { question: "Anything else to keep in mind?", header: "Notes", multiSelect: false, options: [{ label: "No", description: "" }], picked: [] }] } },
+    { kind: "you", key: "a2/answer", text: "Tests: Parser tests, All unit tests\nskip the slow ones today\nNotes: keep the old week helper for the reports", answered: "question", at: now - 365_000 },
+    { kind: "tool", key: "p1", name: "ExitPlanMode", line: "ExitPlanMode", status: "error", summary: "Keep planning", at: now - 300_000,
+      asked: { state: "keep", plan, title: "Fix the week numbers" } },
+    { kind: "you", key: "p1/answer", text: "Keep planning\nalso cover week 1 of 2027", answered: "plan", at: now - 295_000 },
+    { kind: "tool", key: "p2", name: "ExitPlanMode", line: "ExitPlanMode", status: "ok", summary: "Approved", at: now - 200_000,
+      asked: { state: "approved", plan: plan + "\n3. Check week 1 of 2027.", title: "Fix the week numbers" } },
+    { kind: "you", key: "p2/answer", text: "Approved the plan", answered: "plan", at: now - 195_000 },
+    { kind: "tool", key: "e1", name: "Edit", line: "Edit: dates.ts", status: "error", summary: "Denied", at: now - 120_000, asked: { state: "denied" },
+      input: "/home/alice/projects/webapp/src/dates.ts", output: "", diff: ["@@ -3,1 +3,1 @@", "-export const WEEKS = 52;", "+export const WEEKS = 53;"] },
+    { kind: "you", key: "e1/answer", text: "Don't change the constant: the reports use it", answered: "permission", at: now - 115_000 },
+    { kind: "tool", key: "a3", name: "AskUserQuestion", line: "AskUserQuestion: Should I also fix the US weeks?", status: "error", summary: "Declined", at: now - 60_000,
+      asked: { state: "declined", questions: [{ question: "Should I also fix the US weeks?", header: "US weeks", multiSelect: false,
+                                                 options: [{ label: "Yes", description: "" }, { label: "No", description: "" }], picked: [] }] } },
+    { kind: "claude", key: "m2", text: "All right: only ISO weeks. Running the parser tests now.", at: now - 50_000 },
+  );
+  if (params.get("answers") === "open")
+    setTimeout(() => document.querySelectorAll<HTMLButtonElement>(".pane-asked-toggle").forEach((b) => b.click()), 900);
+}
+
+// ?ask=question&answering=1: your answer shows at once, as yours, under the question, till the conversation has it
+if (ask === "question" && params.get("answering") === "1") {
+  items.push({ kind: "tool", key: "aq", name: "AskUserQuestion", line: "AskUserQuestion: Which weeks should the fix cover?", status: "open", at: now - 5_000,
+               asked: { state: "open", questions: questions.map((q) => ({ ...q, picked: [] })) } });
+  setTimeout(() => send({ type: "answering", id: 1, ask: chat.permission!, decision: "answer", note: "",
+                          answers: { [questions[0].question]: ["US weeks too"], [questions[1].question]: ["Parser tests", "End-to-end"] } }), 800);
+}
+
 // what the page sends, answered as the extension would
 // ?type=TEXT: typed into the reply box (to see what it offers)
 const typed = params.get("type");

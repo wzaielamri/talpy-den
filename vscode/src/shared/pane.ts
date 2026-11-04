@@ -25,6 +25,27 @@ export interface PaneItem {
   queued?: boolean; // you: waiting in Claude's queue, till it takes it in at its next step (pane.py)
   pictures?: string[]; // you: the pictures in it, their files (pane.py prompt_pictures)
   thumbs?: { path: string; src: string }[]; // you: those the tab can show, with their address in it (the extension's)
+  asked?: Asked; // tool: a question or a plan Claude asked; {state: "denied"}: a call you denied with a note
+  answered?: "question" | "plan" | "permission"; // you: your answer to the call before it (key "<tool id>/answer")
+  answers?: { header: string; question: string; answer: string; notes: string }[]; // you: a question's, each answered
+}
+
+// What Claude asked (pane.py asked_of): its questions, each with the options
+// you picked, or its plan; and how you answered ("open": not yet; "failed":
+// the call failed, nothing was asked)
+export interface Asked {
+  state: "open" | "answered" | "declined" | "chat" | "approved" | "keep" | "denied" | "failed";
+  questions?: (Question & { picked: string[] })[];
+  plan?: string; // Markdown
+  title?: string;
+}
+
+// Is it a question or a plan to show as Claude's, in Chat and Steps: once
+// you answered it (or as your answer to it goes: answering)
+export function askedShows(it: PaneItem, answering = false): boolean {
+  const a = it.asked;
+  if (!a || (!a.questions && a.plan === undefined)) return false;
+  return a.state === "open" ? answering : a.state !== "failed" && a.state !== "denied";
 }
 
 export interface Conversation {
@@ -160,7 +181,11 @@ export type PaneHostMessage =
   // before either
   | { type: "dictation"; state: "" | "starting" | "recording" | "writing" | "model" | "setup"; text?: string; message?: string; offerModel?: boolean;
       engine?: string; offerSetup?: boolean; setupMb?: number; ok?: boolean } // ok: message says it worked (set up, downloaded)
-  | { type: "visible"; visible: boolean }; // the tab shown or hidden (its working Talpy moves only while shown)
+  | { type: "visible"; visible: boolean } // the tab shown or hidden (its working Talpy moves only while shown)
+  // an answer to what the chat asks (from the tab, its row or a notification): on its way (shown at once
+  // as yours: PendingAnswer), then whether it went
+  | { type: "answering"; id: number; ask: PermissionAsk; decision: Decision; note: string; answers?: Answers }
+  | { type: "answered"; id: number; ok: boolean };
 
 // tab -> extension
 export type PaneMessage =
@@ -379,6 +404,77 @@ export interface PendingSent {
   how?: "auto" | "background" | "copy" | "enter"; // held: how it's sent then
 }
 
+// Your answer, at once: as you answer what a chat asks (in the tab, its row or
+// a notification), the tab shows it as yours till the conversation has it
+export interface PendingAnswer {
+  id: number;
+  text: string; // as the conversation will have it (answerText)
+  answered: NonNullable<PaneItem["answered"]>;
+  at: number; // ms, when you answered
+  for: string; // the key of the call it answers ("": not known)
+  known: string[]; // the keys of your answers listed then: the one this becomes is another
+  state: "sending" | "sent";
+  sentAt: number; // ms, when pane.py said it went
+}
+
+// One question's answer as Claude's dialog sends it (pane.py answer_text):
+// the option chosen or what you typed; several, ", " between them (one with
+// ", " or a quote in it quoted)
+export function joinAnswer(values: string[], multi: boolean): string {
+  const given = values.map((v) => v.trim()).filter(Boolean);
+  if (!multi) return given[0] ?? "";
+  return given.map((v) => (v.includes(", ") || v.includes('"') ? JSON.stringify(v) : v)).join(", ");
+}
+
+// What your answer to a prompt says, as the conversation will have it
+// (pane.py your_answer): the options you picked or what you typed, one line a
+// question when there are several ("Header: answer"); Approved the plan, or
+// Keep planning and your note; a Deny's or a Decline's note. "": nothing of
+// yours to show (an Allow, a Deny or a Decline without a note)
+export function answerText(ask: Pick<PermissionAsk, "questions" | "plan">, decision: Decision, note: string, answers?: Answers): string {
+  const said = note.trim();
+  if (ask.plan) {
+    if (decision === "approve" || decision === "approve-edits") return "Approved the plan";
+    return decision === "keep" || decision === "deny" ? "Keep planning" + (said ? "\n" + said : "") : "";
+  }
+  if (decision === "answer" && answers) {
+    const given = (ask.questions ?? []).map((q) => ({ q, text: joinAnswer(answers[q.question] ?? [], q.multiSelect) })).filter((a) => a.text);
+    return given.map((a) => (given.length > 1 ? `${a.q.header || a.q.question}: ` : "") + a.text).join("\n");
+  }
+  return decision === "deny" ? said : "";
+}
+
+// What kind of answer it is (PaneItem answered)
+export function answerKind(ask: Pick<PermissionAsk, "questions" | "plan">): NonNullable<PaneItem["answered"]> {
+  return ask.plan ? "plan" : ask.questions?.length ? "question" : "permission";
+}
+
+// The call an answer is to: the one it asks about (its tool use), else its
+// tool's newest call that has no result yet ("": none listed)
+export function answerFor(items: PaneItem[], ask: Pick<PermissionAsk, "tool" | "toolUse">): string {
+  if (ask.toolUse && items.some((it) => it.key === ask.toolUse)) return ask.toolUse;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "tool" && it.status === "open" && it.name === ask.tool) return it.key;
+  }
+  return "";
+}
+
+// The ids of the answers the conversation has now: its call's answer (or
+// its call has a result, with nothing of yours to show), or, for one whose
+// call isn't known, an answer of yours that wasn't there; or one that went
+// 30 s ago (it went: the conversation just doesn't show it)
+export function answersTaken(items: PaneItem[], pending: PendingAnswer[], now: number): Set<number> {
+  const done = new Set<number>();
+  for (const p of pending) {
+    const found = p.for
+      ? items.some((it) => it.key === `${p.for}/answer` || (it.key === p.for && it.status !== "open"))
+      : items.some((it) => !!it.answered && !p.known.includes(String(it.key)));
+    if (found || (p.state === "sent" && now - p.sentAt > 30000)) done.add(p.id);
+  }
+  return done;
+}
+
 // How long a message sent while Claude works waits, queued, to be taken back
 // (Edit, Cancel, ↑ in an empty box), as ↑ does in Claude's terminal
 export const HOLD_MS = 5000;
@@ -398,7 +494,7 @@ export function pendingTaken(items: PaneItem[], pending: PendingSent[], now: num
     const want = squash(p.text);
     const found = items.find((it) => {
       const key = String(it.key);
-      if (it.kind !== "you" || p.known.includes(key) || claimed.has(key)) return false;
+      if (it.kind !== "you" || it.answered || p.known.includes(key) || claimed.has(key)) return false;
       const said = squash(it.text ?? "");
       const cut = said.endsWith("…") ? said.slice(0, -1).trim() : "";
       return said === want || (cut !== "" && want.startsWith(cut))
@@ -427,7 +523,7 @@ export function promptHistory(items: PaneItem[], pending: PendingSent[], past: s
     }
   };
   for (let i = pending.length - 1; i >= 0; i--) if (pending[i].state !== "held") add(pending[i].text);
-  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "you") add(items[i].text);
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "you" && !items[i].answered) add(items[i].text);
   for (const t of past) add(t);
   return out;
 }

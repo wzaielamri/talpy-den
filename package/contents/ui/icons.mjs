@@ -128,6 +128,7 @@ const TABLE = {
     mcp:             ['network-connect',               'plug',       'network-transmit-receive-symbolic'], // an MCP server
     webAccess:       ['globe',                         'globe',      'web-browser-symbolic'],             // fetching from the web
     allowed:         ['dialog-ok',                     'check',      'object-select-symbolic'],           // a command you allowed
+    picked:          ['dialog-ok',                     'check',      'object-select-symbolic'],           // an option you picked, answering Claude's question
     // ---- states: the only colored ones
     warning:         ['dialog-warning',                'warning',    'dialog-warning-symbolic'],
     error:           ['dialog-error',                  'error',      'dialog-error-symbolic'],

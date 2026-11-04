@@ -54,6 +54,7 @@ export function findPaneRow(state: Pick<ViewState, "status" | "hosts">, host: st
 
 export class ChatPanes implements vscode.Disposable {
   private panes = new Map<string, Pane>(); // "<host>|<chat id>" -> its tab
+  private answers = 0; // (answers given: each one's id, for its tab)
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -112,9 +113,15 @@ export class ChatPanes implements vscode.Disposable {
     const args = request
       ? ["--answer", request]
       : ["--keys", session.sessionId, ...(session.profileDir ? ["--profile", session.profileDir] : []), ...(toolUse ? ["--expect", toolUse] : [])];
+    // (shown at once as yours in its tab, if it's open, till the conversation has it)
+    const tab = this.panes.get(`${host}|${chat.chatId || chat.sessionId}`) ?? this.panes.get(`${host}|${session.chatId || session.sessionId}`);
+    const id = ++this.answers;
+    tab?.answering({ type: "answering", id, ask: p, decision, note, ...(given ? { answers: given } : {}) });
     const r = await this.backend.pane([...args, "--decision", decision, ...(note.trim() ? ["--note", note.trim()] : []),
                                         ...(given ? ["--answers", JSON.stringify(given)] : []),
-                                        ...(host ? ["--host", host] : configDirArgs())], 60000);
+                                        ...(host ? ["--host", host] : configDirArgs())], 60000)
+      .catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as Record<string, unknown>);
+    tab?.answering({ type: "answered", id, ok: !!r.ok });
     const answer = { ok: !!r.ok, message: String(r.message ?? ""), ...(r.changed === true ? { changed: true } : {}) };
     if (!answer.ok) this.dash.setActionError(`Couldn't answer ${session.name}: ${answer.message}`);
     this.refresh(host);
@@ -369,6 +376,11 @@ class Pane implements vscode.Disposable {
   draft(text: string): void {
     if (this.ready) this.post({ type: "result", kind: "draft", ok: true, message: text, ask: true });
     else this.pendingDraft = text;
+  }
+
+  // An answer to what the chat asks, on its way or gone (ChatPanes.answer): shown at once
+  answering(m: Extract<PaneHostMessage, { type: "answering" | "answered" }>): void {
+    if (this.ready) this.post(m);
   }
 
   // (nothing once the tab is closed: its panel's webview, title and visible throw then)
