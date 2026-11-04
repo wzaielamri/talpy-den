@@ -1213,7 +1213,7 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
         # (its session takes it in where it is, as `claude agents` answers one, queued while it works: no
         # stop, so a terminal that shows it stays on it)
         if cs.reply_to_background(runs_on, job_id, text)[0]:
-            return {"ok": True, "how": "typed", "message": "Sent (typed into its background session)"}
+            return {"ok": True, "how": "typed", "message": "Sent (typed into the background chat)"}
         ok, message = cs.stop_background(runs_on, job_id, cs.read_job([runs_on], job_id), home, claude)
         if not ok:
             return {"ok": False, "message": message}

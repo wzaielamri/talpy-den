@@ -481,7 +481,7 @@ export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: s
       return `Its terminal takes no text from outside: send it, and Claude there quits and the chat goes on in the background, or copy it and open its terminal.${where}`;
     default:
       return hasProcess && kind === "bg"
-        ? `Goes into its background session, as if you typed it there.${where}`
+        ? `Goes into the background chat as it runs, as if you typed it there.${where}`
         : `The chat goes on in the background with your message.${where}`;
   }
 }

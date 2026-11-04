@@ -1521,7 +1521,7 @@ Window {
         if (route === "terminal")
             return i18n("Its terminal takes no text from outside: Enter copies your message and opens its tab, to paste it there. Send, go on in the background: Claude there quits and the chat goes on in the background.") + where
         if (row && row.pid && row.kind === "bg")
-            return i18n("Goes into its background session, as if you typed it there.") + where
+            return i18n("Goes into the background chat as it runs, as if you typed it there.") + where
         return i18n("The chat goes on in the background with your message.") + where
     }
 

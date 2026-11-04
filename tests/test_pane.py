@@ -1047,7 +1047,7 @@ class SendTests(PaneFixture):
         service = FakeService(self, profile, lambda r: {"ok": True, "op": r["op"]})
         with mock.patch.object(cs, "stop_background") as stopped:
             answer = self.send()
-        self.assertEqual(answer, {"ok": True, "how": "typed", "message": "Sent (typed into its background session)"})
+        self.assertEqual(answer, {"ok": True, "how": "typed", "message": "Sent (typed into the background chat)"})
         self.assertEqual([(r["short"], r["text"]) for r in service.ops("reply")], [("bgjob1", "and the docs")])
         self.assertEqual((stopped.call_count, self.calls()), (0, []))
         # one that asks you something isn't stopped for it, nor typed into (it would land in its

@@ -713,8 +713,8 @@ test("messages to a chat go one at a time, in the order sent: one sent while the
   const later = p.send(chatRefOf(row), "and the docs", "background", true);
   await tick();
   assert.equal(calls.length, 1, "one at a time");
-  release({ ok: true, how: "typed", message: "Sent (typed into its background session)" });
-  assert.deepEqual(await first, { ok: true, message: "Sent (typed into its background session)", went: true });
+  release({ ok: true, how: "typed", message: "Sent (typed into the background chat)" });
+  assert.deepEqual(await first, { ok: true, message: "Sent (typed into the background chat)", went: true });
   await tick();
   assert.equal(calls.length, 2, "then the next, in order");
   assert.equal(calls[1][calls[1].indexOf("--text") + 1], "and the tests");
@@ -731,13 +731,13 @@ test("messages to a chat go one at a time, in the order sent: one sent while the
   const panel = recorded.panels.at(-1)!;
   panel.receive({ type: "send", text: "hello", how: "auto", afterTurn: false, id: 7 });
   await tick();
-  release({ ok: true, how: "typed", message: "Sent (typed into its background session)" });
+  release({ ok: true, how: "typed", message: "Sent (typed into the background chat)" });
   await tick();
   fail = true;
   panel.receive({ type: "send", text: "hello again", how: "auto", afterTurn: false, id: 8 });
   await tick();
   assert.deepEqual(panel.sent.filter((m) => (m as { type: string }).type === "result"), [
-    { type: "result", kind: "send", ok: true, message: "Sent (typed into its background session)", went: true, id: 7 },
+    { type: "result", kind: "send", ok: true, message: "Sent (typed into the background chat)", went: true, id: 7 },
     { type: "result", kind: "send", ok: false, message: "Couldn't send it: the helper fell over", id: 8 },
   ]);
 });
