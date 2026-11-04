@@ -115,6 +115,7 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
+            textFormat: Text.PlainText   // (a helper's or a host's words, shown as written)
             text: (page.liveMessage ? page.liveMessage + "\n" : "")
                   + i18n("Adds a hook to each Claude profile's settings.json that notes each step of each chat as it happens (Claude doesn't wait for it): rows, the chat pane and the line under the big Talpy follow every tool call at once, and Talpy Den checks the rest less often. Without it, a chat that starts, waits or finishes still shows at once; its steps show at each check. Applies at once.")
         }

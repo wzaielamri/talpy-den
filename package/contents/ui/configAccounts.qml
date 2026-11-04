@@ -34,6 +34,12 @@ ConfigPage {
         const c = containerOf(id)
         return !c ? id : c.host ? i18nc("a container on an SSH host", "%1 on %2", c.name, c.host) : c.name
     }
+    // What a host or a helper said, in a message box (Kirigami's guesses rich
+    // text: an <img src=…> there is fetched): a zero-width space after each <
+    // leaves it as it reads and makes no tag of it, as main.qml's plainLabel
+    function plain(s) {
+        return String(s).replace(/</g, "<\u200b")
+    }
     property var pending: ({})        // command -> the machine it's for
 
     property var accounts: []
@@ -179,7 +185,7 @@ ConfigPage {
             id: messageBox
             Layout.fillWidth: true
             type: page.messageOk ? Kirigami.MessageType.Positive : Kirigami.MessageType.Error
-            text: page.message
+            text: page.plain(page.message)
             showCloseButton: true
             onVisibleChanged: {
                 if (!visible) {
@@ -212,6 +218,7 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
+            textFormat: Text.PlainText   // (a helper's or a host's words, shown as written)
             text: (page.host ? (page.containerOf(page.host)
                                 ? i18n("In %1: nothing is installed there, and its logins open in a terminal here, where you paste the code Claude gives you.", page.hostLabel(page.host))
                                 : i18n("On %1, over ssh: nothing is installed there, and its logins open in a terminal here, where you paste the code Claude gives you.", page.host)) + " " : "")
@@ -231,7 +238,7 @@ ConfigPage {
             visible: page.linked && !!page.defaultAccount && !!page.plainAccount && page.defaultAccount.key !== page.plainAccount.key
             type: Kirigami.MessageType.Information
             text: visible ? i18n("VS Code's Claude runs on %1, the default account, but plain claude on %2 (~/.claude links there). Make Default on %1 points plain claude there too.",
-                                 page.defaultAccount.label, page.plainAccount.label) : ""
+                                 page.plain(page.defaultAccount.label), page.plain(page.plainAccount.label)) : ""
         }
 
         Repeater {
@@ -464,6 +471,7 @@ ConfigPage {
                 wrapMode: Text.Wrap
                 font: Kirigami.Theme.smallFont
                 opacity: 0.7
+                textFormat: Text.PlainText
                 text: shareFrom.currentValue
                       ? i18n("Links settings.json (your status line, so the plan usage bars work), CLAUDE.md, keybindings and your own skills, agents and commands to that account's: a change on one is a change on both. The login, MCP servers, plugins and the skills claude.ai syncs stay per account.")
                       : i18n("A fresh folder: Claude starts with its defaults. Plan usage shows once Claude fetched it (/usage), or after you give the account a status line and run install.sh again.")
@@ -498,6 +506,7 @@ ConfigPage {
                 wrapMode: Text.Wrap
                 font: Kirigami.Theme.smallFont
                 opacity: 0.7
+                textFormat: Text.PlainText
                 text: page.canCheck
                       ? i18n("A terminal opens with Claude's own login: sign in in your browser with the other account. Claude keeps the login in the new folder; Talpy Den never sees it. The account shows up in the popup right away.")
                       : i18n("Needs the claude command, which isn't found (on PATH, in ~/.local/bin, npm's or nvm's folders).")

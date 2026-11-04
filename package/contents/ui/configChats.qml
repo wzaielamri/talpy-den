@@ -225,6 +225,7 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
+            textFormat: Text.PlainText   // (a helper's or a host's words, shown as written)
             text: (page.relayMessage ? page.relayMessage + "\n" : "")
                   + i18n("Adds a hook to each Claude profile's settings.json (and on the SSH hosts shown): a chat that asks for a permission shows Allow once, Always allow and Deny in its row, its pane and its notification, and Claude's questions show their choices there to answer. Claude still asks in the chat too; the first answer counts. Permission prompts of chats in tmux can be answered without it. Applies at once.")
         }
@@ -242,6 +243,7 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
+            textFormat: Text.PlainText
             text: (page.keysMessage ? page.keysMessage + "\n" : "")
                   + i18n("Two global shortcuts answer the chat that has waited longest for a permission, from anywhere: Allow once (a plan: Approve) or Deny (a plan: Keep planning); a note on screen says what was answered. They take \"Answer permission prompts from Talpy Den\"; Claude's questions are answered in the panel. Pick other keys in System Settings → Shortcuts → Talpy Den. Applies at once.")
         }
@@ -272,6 +274,7 @@ ConfigPage {
             Kirigami.FormData.label: i18n("Dictation:")
             Layout.maximumWidth: Kirigami.Units.gridUnit * 20
             wrapMode: Text.Wrap
+            textFormat: Text.PlainText
             text: {
                 const d = page.dictation
                 if (page.dictationBusy === "setup")
@@ -334,6 +337,7 @@ ConfigPage {
                         wrapMode: Text.Wrap
                         font: Kirigami.Theme.smallFont
                         opacity: 0.7
+                        textFormat: Text.PlainText
                         text: modelData.note
                     }
                     QQC2.Button {
@@ -406,6 +410,7 @@ ConfigPage {
             visible: page.dictationMessage !== ""
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
+            textFormat: Text.PlainText
             text: page.dictationMessage
         }
     }

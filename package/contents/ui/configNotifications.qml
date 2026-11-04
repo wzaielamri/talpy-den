@@ -247,6 +247,7 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
+            textFormat: Text.PlainText   // (a helper's or a host's words, shown as written)
             text: (page.phoneStatus ? page.phoneStatus + "\n" : "")
                   + (page.kdeConnect
                      ? i18n("Through KDE Connect, once the screen was locked as long as set above: the phone gets them while it's on the same network as this computer (pair it in System Settings → KDE Connect).")

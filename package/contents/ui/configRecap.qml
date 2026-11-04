@@ -190,6 +190,7 @@ ConfigPage {
             visible: page.historyMessage !== ""
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
+            textFormat: Text.PlainText   // (a helper's or a host's words, shown as written)
             text: page.historyMessage
         }
 

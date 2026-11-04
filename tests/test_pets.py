@@ -2182,6 +2182,19 @@ class SettingsPageTests(unittest.TestCase):
                                                                          "dictate.py")),
                             flag)
 
+    def test_a_hosts_or_helpers_words_in_the_settings_show_as_written(self):
+        # Qt guesses rich text: a host's '<img src="https://…">' answer was fetched when the page opened
+        ui = ROOT / "ui"
+        self.assertIn("text: page.plain(page.message)", (ui / "configAccounts.qml").read_text())
+        for name, shown in (("configChats.qml", "(page.relayMessage"), ("configChats.qml", "(page.keysMessage"),
+                            ("configChats.qml", "page.dictationMessage"), ("configChats.qml", "modelData.note"),
+                            ("configAdvanced.qml", "(page.liveMessage"), ("configNotifications.qml", "(page.phoneStatus"),
+                            ("configRecap.qml", "page.historyMessage")):
+            page = (ui / name).read_text()
+            at = page.index("text: " + shown)
+            label = page[page.rindex("QQC2.Label {", 0, at):at]
+            self.assertIn("textFormat: Text.PlainText", label, (name, shown))
+
     def test_every_setting_the_ui_reads_exists(self):
         # A setting misspelled in the UI reads as undefined, without an error
         names = set(re.findall(r'<entry name="(\w+)"', (ROOT / "config/main.xml").read_text()))
