@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { attachedTag, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, picturesIn, PICTURE_TYPES, promptHistory, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { attachedTag, clipboardCode, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, picturesIn, PICTURE_TYPES, promptHistory, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox, askKey } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -27,7 +27,7 @@ declare global {
 
 const api = acquireVsCodeApi();
 const post = (m: PaneMessage) => api.postMessage(m);
-const copyCode = (code: string) => post({ type: "copy", text: code });
+const copyCode = (code: string) => post({ type: "copy", text: clipboardCode(code) });
 const config = window.CLAUDE_CHAT;
 
 // Chat (your messages and Claude's replies), Steps (its tool calls too) and

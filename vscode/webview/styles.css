@@ -3503,17 +3503,20 @@ body.vscode-high-contrast-light .pane {
   font-size: 0.78em;
 }
 
+/* A code block's Copy: framed thin in the focus colour while the pointer is on
+   it, and while it reads Copied (a moment after a click), as a button */
 .md-copy {
   padding: 0 6px;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 4px;
   background: none;
   color: var(--cs-muted);
   cursor: pointer;
 }
 
-.md-copy:hover {
-  background: var(--cs-hover);
+.md-copy:hover,
+.md-copy.copied {
+  border-color: var(--vscode-focusBorder, #007fd4);
   color: inherit;
 }
 

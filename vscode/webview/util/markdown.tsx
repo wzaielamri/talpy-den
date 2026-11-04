@@ -6,7 +6,32 @@
 // and a Copy button (onCopy).
 
 import type { ComponentChildren, JSX } from "preact";
+import { useEffect, useState } from "preact/hooks";
 import { fenceLanguage, highlight } from "../../vendor/codeview.mjs";
+
+// A code block's Copy: framed thin while the pointer is on it (.md-copy:hover),
+// and Copied for a moment after a click, as in the Plasma pane
+function CopyButton({ onClick }: { onClick: () => void }) {
+  const [copied, setCopied] = useState(0); // (clicks: another click keeps it a moment more)
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(0), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <button
+      type="button"
+      class={copied ? "md-copy copied" : "md-copy"}
+      title="Copy this code"
+      onClick={() => {
+        onClick();
+        setCopied((n) => n + 1);
+      }}
+    >
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
 
 // A code block's text in its language's colors (.cv-kw…; as written for one without)
 function colored(text: string, lang: string): ComponentChildren {
@@ -142,11 +167,7 @@ export function Markdown({ text, onCopy }: { text: string; onCopy?: (code: strin
         <div key={`c${blocks.length}`} class="md-codeblock">
           <div class="md-code-head">
             <span>{fence[3]}</span>
-            {onCopy ? (
-              <button type="button" class="md-copy" title="Copy this code" onClick={() => onCopy(code)}>
-                Copy
-              </button>
-            ) : null}
+            {onCopy ? <CopyButton onClick={() => onCopy(code)} /> : null}
           </div>
           <pre class="md-code cv">
             <code>{colored(code, fence[3])}</code>

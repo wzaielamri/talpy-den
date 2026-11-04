@@ -1745,6 +1745,20 @@ class PaneMarkdownTests(unittest.TestCase):
         html = markdown('Md.toHtml("text with \\\\*escaped\\\\* stars and \\\\_this\\\\_", style)')
         self.assertIn("text with *escaped* stars and _this_", html)
 
+    def test_copy_leaves_out_the_bang_of_a_command_for_claudes_prompt(self):
+        # (Claude writes "! cmd" for you to type in its prompt; the pane shows it, Copy gives the command)
+        cases = {"! chmod 644 scripts/x.py": "chmod 644 scripts/x.py", "! git add a\n\n!  git commit": "git add a\n\ngit commit"}
+        for code in ["if ! grep -q x f; then echo no; fi", "! git add a\ngit commit", "!pip install x", "!", "", "a != b"]:
+            cases[code] = code
+        got = markdown(f"{json.dumps(list(cases))}.map(Md.clipboardCode)")
+        self.assertEqual(got, list(cases.values()))
+        fenced = json.dumps(chr(96) * 3 + chr(10) + "! chmod 644 x" + chr(10) + chr(96) * 3)
+        self.assertIn("! chmod", markdown(f"Md.toHtml({fenced}, style)"))
+        # (Copied a moment after a click: the pane gives that block's index)
+        self.assertIn('href="copy:0"', markdown(f"Md.toHtml({fenced}, style, 0)"))
+        self.assertIn(">Copied</a>", markdown(f"Md.toHtml({fenced}, style, 0)"))
+        self.assertIn(">Copy</a>", markdown(f"Md.toHtml({fenced}, style)"))
+
     def test_a_code_block_in_a_list_item_loses_the_lists_indent(self):
         text = "1. Run:\n   ```python\n   if x:\n       go()\n   ```\n2. Next"
         self.assertEqual(markdown(f"Md.codeBlocks({json.dumps(text)})"), ["if x:\n    go()"])

@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answersOf, chatWhere, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
+import { answersOf, chatWhere, clipboardCode, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -290,6 +290,13 @@ test("Claude's Markdown: ~~struck~~ text, and a code block keeps its text for Co
   const copy = block.props.children[0].props.children[1];
   copy.props.onClick?.();
   assert.deepEqual(copied, ["if (a < b) return 1;"]);
+});
+
+test("a code block's Copy leaves out the ! of a command for Claude's prompt, each line's; else it's as written", () => {
+  assert.equal(clipboardCode("! chmod 644 scripts/x.py"), "chmod 644 scripts/x.py");
+  assert.equal(clipboardCode("! git add a\n\n!  git commit"), "git add a\n\ngit commit");
+  for (const code of ["if ! grep -q x f; then echo no; fi", "! git add a\ngit commit", "!pip install x", "!", "", "a != b"])
+    assert.equal(clipboardCode(code), code);
 });
 
 test("Show earlier goes up to the most a tab shows, then the tab says only the last steps are shown", async () => {

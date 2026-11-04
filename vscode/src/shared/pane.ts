@@ -451,6 +451,18 @@ export function numberedPictures(text: string): string {
   });
 }
 
+// What a code block's Copy puts on the clipboard: its text, without the "! "
+// of a command Claude means for its prompt in a terminal (where a line that
+// starts with ! runs in the chat's shell) when each of its lines has one. The
+// pane shows it as written; pasted in a shell, ! is "not" (the command runs,
+// its exit status turned round, and a && after it goes the other way).
+export function clipboardCode(code: string): string {
+  const lines = code.split("\n");
+  const filled = lines.filter((line) => line.trim() !== "");
+  if (filled.length === 0 || !filled.every((line) => /^!\s+\S/.test(line))) return code;
+  return lines.map((line) => line.replace(/^!\s+/, "")).join("\n");
+}
+
 // How a reply reaches the chat, in a sentence
 export function routeHint(route: PaneChat["route"], hasProcess: boolean, kind: string, host: string): string {
   const where = host ? ` (on ${host})` : "";

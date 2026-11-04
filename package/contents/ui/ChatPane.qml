@@ -221,16 +221,19 @@ Window {
         onActivated: pane.zoom(0)
     }
 
-    // A code block's Copy
+    // A code block's Copy, and Ctrl+C across messages. quiet: no Copied under the
+    // conversation (a code block's Copy says it itself)
     TextEdit {
         id: clipboard
         visible: false
     }
-    function copyText(text) {
+    function copyText(text, quiet) {
         clipboard.text = text
         clipboard.selectAll()
         clipboard.copy()
         clipboard.text = ""
+        if (quiet)
+            return
         info = i18n("Copied")
         infoBad = false
         infoTimer.restart()
@@ -2193,9 +2196,13 @@ Window {
                                 }
                                 TextEdit {
                                     id: replyText
+                                    // a code block's Copy: the one the pointer is on, and the one
+                                    // just clicked, which reads Copied a moment (their index)
+                                    property int copyHovered: -1
+                                    property int copied: -1
                                     Component.onCompleted: entry.textBox = replyText
                                     Layout.fillWidth: true
-                                    text: Md.toHtml(entry.text, pane.mdStyle)
+                                    text: Md.toHtml(entry.text, pane.mdStyle, copied)
                                     textFormat: TextEdit.RichText
                                     readOnly: true
                                     persistentSelection: true   // (selectAcross clears it)
@@ -2208,10 +2215,53 @@ Window {
                                     font.family: pane.chatFamily
                                     font.pointSize: pane.pt
                                     onLinkActivated: link => {
-                                        if (link.indexOf("copy:") === 0)
-                                            pane.copyText(Md.codeBlocks(entry.text)[Number(link.slice(5))] || "")
-                                        else
+                                        if (link.indexOf("copy:") === 0) {
+                                            copied = Number(link.slice(5))
+                                            pane.copyText(Md.clipboardCode(Md.codeBlocks(entry.text)[copied] || ""), true)
+                                            copiedTimer.restart()
+                                        } else
                                             Qt.openUrlExternally(link)
+                                    }
+                                    onLinkHovered: link => copyHovered = link.indexOf("copy:") === 0 ? Number(link.slice(5)) : -1
+
+                                    // Where a code block's Copy (label: Copy or Copied) is drawn: the
+                                    // label's place in the text whose link is that block's (not a
+                                    // "Copy" in the reply's words or in its code)
+                                    function copyRect(block, label) {
+                                        const plain = getText(0, length)
+                                        for (let i = plain.indexOf(label); i >= 0; i = plain.indexOf(label, i + 1)) {
+                                            const r = positionToRectangle(i)
+                                            if (linkAt(r.x + 1, r.y + r.height / 2) === "copy:" + block) {
+                                                const end = positionToRectangle(i + label.length)
+                                                return Qt.rect(r.x, r.y, end.x - r.x, r.height)
+                                            }
+                                        }
+                                        return Qt.rect(0, 0, 0, 0)
+                                    }
+
+                                    Timer {
+                                        id: copiedTimer
+                                        interval: 1500
+                                        onTriggered: replyText.copied = -1
+                                    }
+
+                                    // The Copy the pointer is on (else the one that reads Copied)
+                                    // framed thin in the accent, as a button: rich text has no
+                                    // hover of its own, so the frame is drawn over its link
+                                    Rectangle {
+                                        readonly property int block: replyText.copyHovered >= 0 ? replyText.copyHovered : replyText.copied
+                                        readonly property rect at: block < 0 || replyText.width <= 0 || replyText.contentHeight <= 0
+                                                                   ? Qt.rect(0, 0, 0, 0)
+                                                                   : replyText.copyRect(block, block === replyText.copied ? "Copied" : "Copy")
+                                        visible: at.width > 0
+                                        x: at.x - Kirigami.Units.smallSpacing
+                                        y: at.y - 1
+                                        width: at.width + 2 * Kirigami.Units.smallSpacing
+                                        height: at.height + 2
+                                        radius: Kirigami.Units.cornerRadius
+                                        color: "transparent"
+                                        border.width: 1
+                                        border.color: Kirigami.Theme.focusColor
                                     }
 
                                     HoverHandler {

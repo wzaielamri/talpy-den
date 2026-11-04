@@ -206,6 +206,19 @@ export function codeBlocks(text) {
     return blocks(text).filter(b => b.kind === "code").map(b => b.text);
 }
 
+// What a code block's Copy puts on the clipboard: its text, without the "! "
+// of a command Claude means for its prompt in a terminal (where a line that
+// starts with ! runs in the chat's shell) when each of its lines has one. The
+// pane shows it as written; pasted in a shell, ! is "not" (the command runs,
+// its exit status turned round, and a && after it goes the other way).
+export function clipboardCode(code) {
+    const lines = code.split("\n");
+    const filled = lines.filter(line => line.trim() !== "");
+    if (filled.length === 0 || !filled.every(line => /^!\s+\S/.test(line)))
+        return code;
+    return lines.map(line => line.replace(/^!\s+/, "")).join("\n");
+}
+
 const HEADING_SIZE = [1.5, 1.3, 1.15, 1.05, 1, 1];
 
 // A code block's text in its language's colors (codeview.mjs highlight), as escaped HTML
@@ -242,7 +255,8 @@ function listHtml(items, s, top, bottom) {
     return out;
 }
 
-export function toHtml(text, s) {
+// Claude's reply as Qt rich text; copied: the code block whose Copy reads Copied (its index), if one
+export function toHtml(text, s, copied) {
     const em = s.pt * 1.333;   // (in px)
     const gap = em * 0.7;
     const list = blocks(text);
@@ -259,8 +273,10 @@ export function toHtml(text, s) {
         if (b.kind === "code") {
             const n = code++;
             const small = `font-size:${(s.pt * 0.8).toFixed(1)}pt`;
+            // (its Copy reads Copied a moment after a click: copied, that block's index;
+            // the pane frames it while the pointer is on it, copyFrame)
             const head = `<table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:${px(em * 0.3)}"><tr><td style="${small}; color:${s.muted}">${escape(b.lang)}</td>`
-                + `<td align="right" style="${small}"><a href="copy:${n}" style="color:${s.muted}; text-decoration:none">Copy</a></td></tr></table>`;
+                + `<td align="right" style="${small}"><a href="copy:${n}" style="color:${n === copied ? s.text : s.muted}; text-decoration:none">${n === copied ? "Copied" : "Copy"}</a></td></tr></table>`;
             return spacer(top) + `<table width="100%" cellspacing="0" cellpadding="${Math.round(em * 0.5)}" style="background-color:${s.blockBg}; border-color:${s.border}; border-style:solid; border-width:1px"><tr><td>`
                 + head + `<pre style="font-family:${family(s.mono)}; font-size:${(s.pt * 0.92).toFixed(1)}pt; white-space:pre-wrap; margin:0px">${colored(b.text, b.lang, s)}</pre></td></tr></table>`;
         }

@@ -589,9 +589,13 @@ class Pane implements vscode.Disposable {
           await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(m.path));
         break;
       case "copy":
+        // (a code block's Copy: its button says Copied, so nothing under the conversation)
         if (typeof m.text !== "string") break;
-        await vscode.env.clipboard.writeText(m.text);
-        this.result("copy", { ok: true, message: "Copied" });
+        try {
+          await vscode.env.clipboard.writeText(m.text);
+        } catch (e) {
+          this.result("copy", { ok: false, message: `Couldn't copy it: ${(e as Error).message}` });
+        }
         break;
       case "picture": {
         // saved where the widget keeps pasted pictures; an SSH host's chat gets a copy there
