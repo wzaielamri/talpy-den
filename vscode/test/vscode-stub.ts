@@ -2,6 +2,8 @@
 // settings read as their defaults, no remote window, and a record of what
 // the extension registers (commands, the view, the status bar item).
 
+import * as nodePath from "node:path";
+
 const disposable = () => ({ dispose() {} });
 
 export const recorded = {
@@ -39,7 +41,29 @@ export const workspace = {
   onDidChangeConfiguration: configChanges.on,
   onDidChangeWorkspaceFolders: disposable,
   registerTextDocumentContentProvider: disposable,
+  // files: a test's own (stubFiles, by path)
+  fs: { readFile: async (u: { path: string }) => {
+    if (!stubFiles.has(u.path)) throw new Error(`no file ${u.path}`);
+    return new TextEncoder().encode(stubFiles.get(u.path));
+  } },
+  // a watcher: changeFile fires its change
+  createFileSystemWatcher: (p: { base: { path: string }; pattern: string }) => {
+    const changed = listeners<unknown>();
+    const off = fileChanges.on((file) => file === nodePath.posix.join(p.base.path, p.pattern) && changed.fire(undefined));
+    return { onDidChange: changed.on, onDidCreate: changed.on, onDidDelete: disposable, dispose: () => off.dispose() };
+  },
 };
+
+export const stubFiles = new Map<string, string>();
+const fileChanges = listeners<string>();
+export function changeFile(file: string, text: string): void {
+  stubFiles.set(file, text);
+  fileChanges.fire(file);
+}
+
+export class RelativePattern {
+  constructor(public base: { path: string }, public pattern: string) {}
+}
 
 const logChannel = () => ({
   info() {},
@@ -82,13 +106,13 @@ export const window = {
   // what a page would (panel.receive), to show or hide it (panel.show) and to
   // close it (panel.dispose). As VS Code's, once it's closed its webview,
   // title and visible throw.
-  createWebviewPanel: () => {
+  createWebviewPanel: (_viewType?: string, initialTitle = "") => {
     const sent: unknown[] = [];
     let onMessage: (m: unknown) => void = () => undefined;
     const viewState = listeners<unknown>();
     const closed = listeners<void>();
     let disposed = false;
-    let title = "";
+    let title = initialTitle;
     let visible = false;
     const alive = () => {
       if (disposed) throw new Error("Webview is disposed");

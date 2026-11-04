@@ -141,7 +141,7 @@ ConfigPage {
             readonly property var values: ["auto", "okular", "browser", "vscode", "default"]
             Kirigami.FormData.label: i18n("Open plans and runs in:")
             model: [i18n("Okular if installed, else your browser"), i18n("Okular"), i18n("Your web browser"),
-                    i18n("VS Code (Markdown preview)"), i18n("Your app for Markdown files")]
+                    i18n("VS Code"), i18n("Your app for Markdown files")]
             currentIndex: Math.max(0, values.indexOf(page.cfg_markdownApp))
             onActivated: page.cfg_markdownApp = values[currentIndex]
         }
@@ -151,7 +151,7 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
-            text: i18n("Plans and subagent runs are Markdown. Okular shows it rendered; in your browser Talpy Den shows it as a page of its own (it loads nothing from the internet). VS Code's preview needs the Talpy Den extension for VS Code 1.13 or newer, else the file opens in its editor. Your app for Markdown files is often a text editor: a change you make there to a plan is the plan's. Whatever you pick that isn't installed, your browser shows it.")
+            text: i18n("Plans and subagent runs are Markdown. Okular shows it rendered; in your browser Talpy Den shows it as a page of its own (it loads nothing from the internet). VS Code shows it in a tab of the Talpy Den extension (1.13 or newer; it loads nothing from the internet either), else the file opens in its editor. Your app for Markdown files is often a text editor: a change you make there to a plan is the plan's. Whatever you pick that isn't installed, your browser shows it.")
         }
     }
 }

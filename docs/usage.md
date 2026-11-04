@@ -126,7 +126,7 @@ How often Talpy Den checks, extra Claude folders, where plans open.
 | While no chat works, check every | 20000 ms | For what changes while no chat does anything: plan usage and its forecast, a usage limit resetting, a queued task coming due, a Claude that crashed. A chat that starts, ends, starts working, asks for something or finishes its turn shows at once either way |
 | Live mode | off | A hook that notes each step of each chat as it happens (Claude doesn't wait for it), so rows, the pane and the line under the big Talpy follow every tool call; changes Claude's settings at once |
 | Extra config dirs | – | Claude config folders besides `~/.claude` and `~/.claude-*` |
-| Open plans and runs in | Okular if installed, else your browser | Plans and subagent runs (Markdown): in Okular, your browser (a page Talpy Den makes), VS Code's Markdown preview (with the Talpy Den extension for VS Code 1.13 or newer), or your app for Markdown files |
+| Open plans and runs in | Okular if installed, else your browser | Plans and subagent runs (Markdown): in Okular, your browser (a page Talpy Den makes), VS Code (in a tab of the Talpy Den extension for VS Code, 1.13 or newer), or your app for Markdown files |
 
 ## Accounts
 

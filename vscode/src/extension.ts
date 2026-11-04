@@ -16,6 +16,7 @@ import { dictationModels } from "./dictation";
 import { answerPermissionsHere, liveModeHere } from "./relay";
 import { extraConfigDirs, settings } from "./config";
 import { markdownLinkFile, openAgentRunFile } from "./agentRun";
+import { initDocs } from "./doc";
 import { Dashboard } from "./dashboard";
 import { carryOverSettings, settingNames } from "./legacySettings";
 import { noLinks, Notifier } from "./notify";
@@ -48,6 +49,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel("Talpy Den", { log: true });
   void carryOverOldSettings(context, log);
   const backend = new Backend(context.extensionPath, settings.python);
+  initDocs(context.extensionUri); // (plans, runs and memories open in Talpy Den's own tab)
   // Notifications open chats through the actions, which need the dashboard
   let actions: Actions | undefined;
   const notifier = new Notifier(backend, (chat) => void actions?.open(chat));
@@ -184,7 +186,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerUriHandler({
       handleUri: async (uri) => {
         if (uri.path.replace(/\/+$/, "") === "/markdown") {
-          // a plan or a subagent's run, in the Markdown preview
+          // a plan or a subagent's run, in Talpy Den's tab for Markdown (doc.ts)
           const file = markdownLinkFile(uri, undefined, extraConfigDirs());
           if (!file) {
             log.warn(`Ignored a link that isn't a plan or a run of Talpy Den's: ${uri.toString()}`);

@@ -2355,8 +2355,8 @@ def open_file(path):
 # Okular (it shows Markdown) where it's installed, else as a page in your
 # browser (markdown_page.py, nothing but Python). The widget's setting
 # markdownApp (shared with its other copies: settings.json) can also pick
-# VS Code (its Markdown preview, through the Talpy Den extension 1.13 or
-# newer; else its editor) or your own app for Markdown (often a text editor).
+# VS Code (rendered in the Talpy Den extension's own tab, 1.13 or newer;
+# else its editor) or your own app for Markdown (often a text editor).
 
 MARKDOWN_APPS = ("auto", "okular", "browser", "vscode", "default")
 MARKDOWN_LINK = "vscode://wzaielamri.talpy-den/markdown"

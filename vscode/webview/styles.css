@@ -3213,6 +3213,22 @@ body.vscode-high-contrast-light .pane {
   flex-shrink: 0;
 }
 
+/* A plan, a run or a memory (doc.tsx): the chat tab's look, its text alone */
+.doc-file {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+.doc-note {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
 .pane-head {
   display: flex;
   flex-wrap: wrap;

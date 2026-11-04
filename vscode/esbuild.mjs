@@ -94,7 +94,7 @@ const builds = harness
       },
       {
         ...common,
-        entryPoints: { webview: "webview/main.tsx", chat: "webview/chat.tsx", "webview-style": "webview/styles.css" },
+        entryPoints: { webview: "webview/main.tsx", chat: "webview/chat.tsx", doc: "webview/doc.tsx", "webview-style": "webview/styles.css" },
         outdir: "dist",
         platform: "browser",
         format: "iife",

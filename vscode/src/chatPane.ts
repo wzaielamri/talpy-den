@@ -23,6 +23,7 @@ import { chatRefOf, doingText, liveOf, petKeyOf, recentRef, stateText } from "./
 import { answersOf, askShownOf, chatWhere, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
+import { chatFont } from "./doc";
 import { asPaste, localAncestors, type Terminals } from "./terminals";
 
 export const ASKS_SOMETHING_ELSE = "It asks something else now"; // (pane.py --keys --expect says the same)
@@ -313,15 +314,9 @@ class Pane implements vscode.Disposable {
     return vscode.workspace.getConfiguration("talpyDen").get("diffSideBySide") !== false;
   }
 
-  // The conversation's font (talpyDen.chatFont): the terminal's, as Claude's
-  // terminal shows a chat (terminal.integrated.fontFamily, which falls back to
-  // the editor's), the editor's, or "" (VS Code's own)
+  // The conversation's font (talpyDen.chatFont, doc.ts chatFont)
   static chatFont(): string {
-    const which = vscode.workspace.getConfiguration("talpyDen").get("chatFont");
-    if (which === "ui") return "";
-    const editor = vscode.workspace.getConfiguration("editor").get<string>("fontFamily") || "var(--vscode-editor-font-family, monospace)";
-    const terminal = which === "editor" ? "" : vscode.workspace.getConfiguration("terminal.integrated").get<string>("fontFamily") || "";
-    return terminal || editor;
+    return chatFont();
   }
 
   private static textScale(): number {

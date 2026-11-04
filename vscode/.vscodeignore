@@ -4,6 +4,7 @@
 !dist/extension.js
 !dist/webview.js
 !dist/chat.js
+!dist/doc.js
 !dist/webview-style.css
 !media/**
 # vendor/ by name: in vsce a ! pattern wins over any later exclusion, so with

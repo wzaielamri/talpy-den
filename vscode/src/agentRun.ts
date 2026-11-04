@@ -1,4 +1,4 @@
-// A subagent's whole run, in VS Code's Markdown preview. Claude Code can't
+// A subagent's whole run, in Talpy Den's tab for Markdown (doc.ts). Claude Code can't
 // open a subagent from outside, so the widget's backend renders its
 // transcript as Markdown into the cache (jump.py --agent-run; remote.py
 // --agent-run fetches one from an SSH host) and this opens that file.
@@ -8,6 +8,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { inside } from "./changes";
 import { cacheDir } from "./config";
+import { showDoc } from "./doc";
 import type { ChatRef } from "./shared/types";
 
 // A subagent's id as a webview may ask for its run (the main view's rows, a chat tab's strip)
@@ -33,8 +34,8 @@ export function isAgentRunFile(file: string | undefined, root = agentRunsRoot())
   return !!file && path.isAbsolute(file) && file.endsWith(".md") && inside(file, root);
 }
 
-// The widgets' link to show a plan or a subagent's run in VS Code's Markdown
-// preview (jump.py's MARKDOWN_LINK, the widget's "Open plans and runs in:
+// The widgets' link to show a plan or a subagent's run in VS Code, in Talpy
+// Den's tab for Markdown (jump.py's MARKDOWN_LINK, the widget's "Open plans and runs in:
 // VS Code"): vscode://wzaielamri.talpy-den/markdown?path=<file>. Only a
 // Markdown file of the widget's runs folder, or of a Claude config folder's
 // plans (~/.claude*/plans, or of one named in configDirs), since any page
@@ -56,26 +57,16 @@ export function markdownLinkFile(
   return ownName || configDirs.includes(config) ? file : null;
 }
 
-// Opens it in the Markdown preview (as text where that's missing); the error
-// to report, or "" when it opened
+// Opens it in Talpy Den's tab for Markdown; the error to report, or "" when it opened
 export async function openAgentRunFile(file: string): Promise<string> {
   // a file of this computer: file:, in a Remote-SSH window too (this
   // extension runs here, where VS Code maps no file: to vscode-local)
   return showMarkdown(vscode.Uri.file(file));
 }
 
-// A Markdown file in the preview (its Open Source button edits it), else as
-// text; the error to report, or ""
+// A Markdown file (a plan, a run, a memory) rendered in Talpy Den's tab
+// (doc.ts), not VS Code's Markdown preview, which loads the web pictures it
+// names; its Open as text edits it. The error to report, or ""
 export async function showMarkdown(uri: vscode.Uri): Promise<string> {
-  try {
-    await vscode.commands.executeCommand("markdown.showPreview", uri);
-    return "";
-  } catch (e) {
-    try {
-      await vscode.window.showTextDocument(uri, { preview: true });
-      return "";
-    } catch (e2) {
-      return e2 instanceof Error ? e2.message : String(e2 ?? e);
-    }
-  }
+  return showDoc(uri);
 }

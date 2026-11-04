@@ -617,8 +617,8 @@ export class Actions {
 
   // ---------------------------------------------------------------- plans
 
-  // A plan in the Markdown preview: the file itself (its Open Source button
-  // edits it), also one of the host this window is connected to; with edit,
+  // A plan in Talpy Den's tab for Markdown (doc.ts): the file itself (its Open
+  // as text edits it), also one of the host this window is connected to; with edit,
   // that file in an editor tab, to change it. Another SSH host's comes over
   // ssh as a copy (remote.py --plan), to read.
   async openPlan(plan: { slug: string; path: string; profileDir: string }, host?: string, edit = false): Promise<void> {
@@ -692,7 +692,7 @@ export class Actions {
     this.refresh();
   }
 
-  // One of Claude's memories in the Markdown preview, or (edit) its file in
+  // One of Claude's memories in Talpy Den's tab for Markdown, or (edit) its file in
   // an editor tab, to change it; also one of the host this window is
   // connected to (another host's isn't offered)
   async openMemory(memory: { path: string }, host?: string, edit = false): Promise<void> {
@@ -1485,7 +1485,7 @@ export class Actions {
 
   // ---------------------------------------------------------------- a subagent's run
 
-  // Its task, every step and its report, in the Markdown preview
+  // Its task, every step and its report, in Talpy Den's tab for Markdown
   // (src/agentRun.ts); an SSH host's is fetched over ssh
   async openAgentRun(chat: ChatRef, agentId: string): Promise<void> {
     if (this.demoOnly()) return;
