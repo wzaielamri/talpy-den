@@ -1297,6 +1297,8 @@ Window {
             }
             if (asked.chat === chatId)
                 showPending()
+        } else if (asked.kind === "later" && !result.ok) {
+            giveBack(asked)   // (Send when this turn ends: its box was emptied as you clicked)
         }
         Qt.callLater(pump)
     }
