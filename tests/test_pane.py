@@ -545,8 +545,11 @@ class AskNotificationTests(unittest.TestCase):
         self.assertIn(": choices.length ? [choice0, choice1, choice2, choice3].slice(0, choices.length).concat([otherAction])\n"
                       "                     : [answerAction]", block)
         for i in range(4):
-            self.assertIn(f"label: ask.choices.length > {i} ? ask.choices[{i}].label", block)
+            # (as written, never markup: Plasma's button guesses rich text, an <img src=…> option was fetched)
+            self.assertIn(f"label: ask.choices.length > {i} ? root.plainLabel(ask.choices[{i}].label)", block)
             self.assertIn(f"onActivated: ask.choose({i})", block)
+        self.assertIn('placeholderText = i18n("Reply to %1…", root.plainLabel(session.name))', main)
+        self.assertIn('return String(s).replace(/</g, "<\\u200b")', main)
 
 
 class KeysTests(unittest.TestCase):

@@ -1161,19 +1161,19 @@ PlasmoidItem {
                 root.answerPermission(ask.row, ask.host, "answer", "", { [questions[0].question]: [choices[i].label] })
             }
             property QtObject choice0: NotificationAction {
-                label: ask.choices.length > 0 ? ask.choices[0].label : ""
+                label: ask.choices.length > 0 ? root.plainLabel(ask.choices[0].label) : ""
                 onActivated: ask.choose(0)
             }
             property QtObject choice1: NotificationAction {
-                label: ask.choices.length > 1 ? ask.choices[1].label : ""
+                label: ask.choices.length > 1 ? root.plainLabel(ask.choices[1].label) : ""
                 onActivated: ask.choose(1)
             }
             property QtObject choice2: NotificationAction {
-                label: ask.choices.length > 2 ? ask.choices[2].label : ""
+                label: ask.choices.length > 2 ? root.plainLabel(ask.choices[2].label) : ""
                 onActivated: ask.choose(2)
             }
             property QtObject choice3: NotificationAction {
-                label: ask.choices.length > 3 ? ask.choices[3].label : ""
+                label: ask.choices.length > 3 ? root.plainLabel(ask.choices[3].label) : ""
                 onActivated: ask.choose(3)
             }
             property QtObject otherAction: NotificationAction {
@@ -1715,7 +1715,7 @@ PlasmoidItem {
                 && !(session.permission && kind === "waiting")) {
             // reply in the notification (pane.py --send, as the chat takes one)
             n.replyAction.label = i18n("Reply")
-            n.replyAction.placeholderText = i18n("Reply to %1…", session.name)
+            n.replyAction.placeholderText = i18n("Reply to %1…", root.plainLabel(session.name))
             n.replyAction.submitButtonText = i18n("Send")
             n.replyAction.submitButtonIconName = "document-send"
             n.replyAction.replied.connect(text => root.replyTo(session, host || "", text))
@@ -5158,6 +5158,15 @@ PlasmoidItem {
 
     function escapeHtml(s) {
         return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    }
+
+    // What a chat wrote, for a label Plasma draws guessing rich text (a
+    // notification's buttons, its reply field's placeholder): shown as
+    // written, never as markup (an <img src=…> there is fetched, an <a> is a
+    // link). A zero-width space after each < leaves it as it reads and makes
+    // no tag of it (escaping doesn't do: a button takes & for its shortcut)
+    function plainLabel(s) {
+        return String(s).replace(/</g, "<\u200b")
     }
 
     function shellQuote(s) {
