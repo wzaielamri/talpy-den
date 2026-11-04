@@ -1839,7 +1839,7 @@ export function weekColdText(recap) {
 }
 
 export function weekFootText(recap) {
-    const hosts = recap.sources.filter(s => s.host && s.ok).map(s => s.host);
+    const hosts = recap.sources.filter(s => s.host && s.ok).map(s => hostLabel(s.host));
     const guessed = recap.prices.guessed.length ? ` (${recap.prices.guessed.join(', ')} at the price of its family's newest model)` : '';
     const lines = [`Read from the chats on this computer${hosts.length ? ` and on ${hosts.join(', ')}` : ''}, without using any tokens. ` +
         `Prices: Claude's API list prices of ${dateText(recap.prices.asOf)}${guessed}.`];
@@ -1850,7 +1850,7 @@ export function weekFootText(recap) {
         lines.push(`Amounts in ${c.code} at the European Central Bank's rate of ${dateText(c.date)}: 1 USD = ${c.rate.toFixed(4)} ${c.code}.`);
     for (const s of recap.sources) {
         if (!s.ok)
-            lines.push(`${s.host} couldn't be read: ${s.error}`);
+            lines.push(`${hostLabel(s.host)} couldn't be read: ${s.error}`);
     }
     return lines.join('\n');
 }
@@ -2080,11 +2080,12 @@ export function weekGrantedShown(granted, all) {
 }
 
 export function weekGrantedIntro(granted, host = '') {
+    const name = host ? hostLabel(host) : '';
     if (!granted.length)
-        return `Nothing lets chats on ${host || 'this computer'} skip a permission prompt: they ask you each time.`;
+        return `Nothing lets chats on ${name || 'this computer'} skip a permission prompt: they ask you each time.`;
     return host
-        ? `What lets chats on ${host} go without asking you, as listed there: its settings, its trusted folders, and the .claude ` +
-          `settings of the folders Claude ran in. Revoke takes one out of its file on ${host}.`
+        ? `What lets chats on ${name} go without asking you, as listed there: its settings, its trusted folders, and the .claude ` +
+          `settings of the folders Claude ran in. Revoke takes one out of its file on ${name}.`
         : "What lets chats on this computer go without asking you: your settings and your administrator's, the folders you " +
           'trusted, the .claude settings of the folders Claude ran in, and what you approved in them. Revoke takes one out of its file.';
 }
