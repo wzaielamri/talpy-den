@@ -358,6 +358,16 @@ class LimitTests(Fixture):
         self.assertEqual((seven["label"], seven["pct"], seven["reset"]), ("7d", 0.0, True))
         self.assertIsNone(self.group(r, "personal")["limits"])
 
+    def test_a_run_with_no_status_line_shows_no_earlier_runs_snapshot(self):
+        # resumed in VS Code's panel 2 minutes ago; its terminal run 5 days ago left a snapshot
+        write(self.home / ".claude-work/sessions/30.json",
+              session("panel", entrypoint="claude-vscode", status="busy", startedAt=int((self.now - 120) * 1000)))
+        self.snapshot(".claude-work", "panel", {"model": {"display_name": "Opus 4.5"}, "effort": {"level": "xhigh"},
+                                                "context_window": {"used_percentage": 12}}, age=5 * 86400)
+        write(self.home / ".claude-work/projects/-tmp-proj-panel/panel.jsonl", assistant("m1", self.now - 60, 5, "claude-haiku-4-5"))
+        row = next(s for s in self.group(self.collect(with_tokens=False), "work")["sessions"] if s["sessionId"] == "panel")
+        self.assertEqual((row["model"], row["effort"], row["context"]), ("Haiku 4.5", None, None))
+
     def usage_cache(self, fetched_ago, account="acct-pro"):
         # what Claude Code keeps in .claude.json (2.1.30x): /usage, the VS Code panel
         path = self.home / ".claude-personal/.claude.json"

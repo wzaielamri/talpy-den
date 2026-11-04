@@ -221,7 +221,7 @@ class ProfileLinkTests(World):
 
     def test_context_from_newest_valid_snapshot(self):
         self.link_default("personal", age=600)
-        self.live("personal", "50", "chat-a")
+        self.live("personal", "50", "chat-a", startedAt=int((self.now - 1500) * 1000))  # (its snapshots are this run's)
         self.snapshot(".claude", "chat-a", age=900, context_window={"used_percentage": 90})   # before the switch
         self.snapshot(".claude-personal", "chat-a", age=1200, context_window={"used_percentage": 40})
         self.assertEqual(self.row(self.collect(), "chat-a")["context"], 40)

@@ -572,10 +572,15 @@ def snapshot_paths(snapshot_root, profile, ids):
     return found
 
 
-def attach_snapshot(session, snapshot_root, profile, ids=None):
-    """Add model, context fill and cost from the session's newest status-line snapshot."""
+def attach_snapshot(session, snapshot_root, profile, ids=None, since=None):
+    """Add model, context fill and cost from the session's newest status-line
+    snapshot; with since (ms), only one written since then: a run with no
+    status line (VS Code's panel, a background session) shows nothing of an
+    earlier run's."""
     ids = dict.fromkeys(ids or [session["sessionId"]])
-    for _, path in snapshot_paths(snapshot_root, profile, ids):
+    for t, path in snapshot_paths(snapshot_root, profile, ids):
+        if since is not None and t * 1000 < since:
+            return
         snap = read_json(path)
         if isinstance(snap, dict):
             part = lambda key: snap.get(key) if isinstance(snap.get(key), dict) else {}
@@ -825,7 +830,9 @@ def finish_row(row, job, job_id, profile, ctx, alive):
     row["reply"] = reply_route(row)
     row["jobSessionId"] = job["sessionId"] if isinstance(job, dict) and valid_id(job.get("sessionId")) else None
     row["chatId"], row["shared"] = chat_link(row, job, profile, ctx)
-    attach_snapshot(row, ctx.snapshot_root, profile, [row["sessionId"], row["chatId"], row["jobSessionId"]])
+    # (only the run that's going on now: a chat resumed or gone on keeps its id)
+    attach_snapshot(row, ctx.snapshot_root, profile, [row["sessionId"], row["chatId"], row["jobSessionId"]],
+                    since=row["startedAt"])
     if ctx.agents is not None:  # a session continuing a chat shows that chat's agents
         row["agents"] = ctx.agents.session_agents(profile, row["chatId"], alive=alive,
                                                   since=row["startedAt"] if alive else None)
@@ -842,6 +849,8 @@ def finish_row(row, job, job_id, profile, ctx, alive):
             if rec.get("ultra") and not row["peek"].get("ultracode"):
                 row["peek"] = dict(row["peek"], ultracode=True)
         peek = row["peek"] or {}
+        if row["model"] is None:  # (no status line in this run: the model of its newest reply)
+            row["model"] = peek.get("model")
         row["plan"] = plan_of(profile, peek.get("slug"), ctx)
         went_on = (CONTINUE_PROMPT[:30], RETRY_PROMPT[:30])
         if row["name"].startswith(went_on) and path is not None and getattr(ctx, "links", None) is not None:
@@ -1554,7 +1563,7 @@ PEEK_PROMPT_CHARS = 300
 PEEK_LINE = re.compile(rb'"type":\s*"(?:user|assistant|last-prompt)"')
 PEEK_MORE_LINE = re.compile(rb'"type":\s*"(?:user|assistant|last-prompt|system|permission-mode)"')
 ULTRA_LINE = re.compile(rb'"type":\s*"ultra_effort_(?:enter|exit)"')  # (of all attachments, only these are read)
-PEEK_ADDED = ("recap", "mode", "slug", "stopped", "ultracode")  # a cached peek without them (an older copy's) is read again
+PEEK_ADDED = ("recap", "mode", "slug", "stopped", "ultracode", "model")  # a cached peek without them (an older copy's) is read again
 RECAP_NOTE = re.compile(r"\s*\(disable recaps in /config\)\s*$")
 # Claude's names for the plan windows in "You've hit your … limit" (its
 # rate-limit types: five_hour is the session limit, the 5-hour limit since
@@ -1715,6 +1724,7 @@ def peek_from(entries):
         "ultracode": ultracode_of(entries),
         "slug": next((e["slug"] for e in entries if isinstance(e.get("slug"), str) and PLAN_SLUG.match(e["slug"])), None),
         "stopped": stopped_by(turn) if turn is not None else None,
+        "model": transcript_model(convo),
     }
     return peek, prompt is not None or (bool(parts) and bool(last_prompt))
 
@@ -1788,7 +1798,7 @@ def stopped_by(e):
 
 def chat_peek(path):
     """{"activity", "prompt", "reply", "replyLine", "at", "recap", "mode", "ultracode",
-    "slug", "stopped"} of a chat, read from the end of its transcript (more
+    "slug", "stopped", "model"} of a chat, read from the end of its transcript (more
     of it while that isn't enough)."""
     try:
         size = path.stat().st_size
