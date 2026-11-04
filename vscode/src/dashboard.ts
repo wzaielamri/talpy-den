@@ -324,11 +324,13 @@ export class Dashboard implements vscode.Disposable {
   }
 
   // The SSH hosts and containers picked (with Show containers off, the
-  // containers stay picked but aren't shown, and no engine is asked anything)
+  // containers stay picked but aren't shown, and no engine is asked anything:
+  // a Dev Containers window's own container isn't either)
   shownHosts(): string[] {
     const containers = settings.showContainers();
     const list = settings.sshHosts().filter((h) => containers || !containerOf(h));
-    if (this.windowHost && !this.windowHostOff && settings.includeCurrentRemote() && !list.includes(this.windowHost)) list.unshift(this.windowHost);
+    if (this.windowHost && !this.windowHostOff && settings.includeCurrentRemote() && (containers || !containerOf(this.windowHost))
+        && !list.includes(this.windowHost)) list.unshift(this.windowHost);
     return list;
   }
 

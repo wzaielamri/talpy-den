@@ -302,6 +302,22 @@ test("a host listed twice in the settings is one host", async () => {
   }
 });
 
+test("with Show containers off, a Dev Containers window's own container isn't shown or checked either", async () => {
+  const { overrides } = await import("./vscode-stub");
+  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
+  const dash = new Dashboard({} as unknown as Backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  (dash as unknown as { windowHost: string }).windowHost = "docker:web";
+  overrides.set("sshHosts", ["lab"]);
+  try {
+    assert.deepEqual(dash.shownHosts(), ["docker:web", "lab"]);
+    overrides.set("showContainers", false);
+    assert.deepEqual(dash.shownHosts(), ["lab"]);
+  } finally {
+    overrides.clear();
+    dash.dispose();
+  }
+});
+
 test("the Claude Code extension starting after this one is found without a reload", async () => {
   mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const stub = await import("./vscode-stub");
