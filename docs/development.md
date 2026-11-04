@@ -3,6 +3,7 @@
 ```bash
 python3 -m unittest discover -s tests           # the test suite
 tools/render_popup.sh /tmp/popup.png            # screenshot of the repo's popup (offscreen), QML messages in /tmp/popup.log
+tools/bench/bench.py all                        # Talpy Chat's timings and idle CPU (offscreen, made-up chats); tools/bench/vscode_bench.py: VS Code's
 kpackagetool6 -t Plasma/Applet -u package       # reinstall after changes
 plasmawindowed org.wzaielamri.talpyden      # run the installed widget in a window
 ```
@@ -44,7 +45,7 @@ statusline-snippet.sh     the snippet install.sh adds to your status line
 tests/                    unit tests: they build Claude Code's files in temporary folders
 tools/                    render_popup.sh (offscreen screenshots), talpy_icons.mjs (Talpy's still pictures), talpy_font.py (VS Code's
                           status bar icon font of them: needs potrace and python3-fontforge), gnome/ (headless GNOME Shell test),
-                          check_public.py (nothing private gets committed)
+                          check_public.py (nothing private gets committed), bench/ (Talpy Chat's timings, before and after a change)
 ```
 
 The tests build Claude Code's files (sessions, background jobs, transcripts, shared-chat links, a switched `~/.claude` link) in temporary folders. `tests/test_remote.py` drives the SSH code through a stand-in `ssh` that runs the command locally.

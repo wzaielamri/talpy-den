@@ -10,6 +10,8 @@
 #   SSH_HOSTS=a,b    pick SSH hosts (polled every 10 s)
 #   EXTRA='QML'      extra QML put inside the widget's root item (e.g. a Timer
 #                    that calls root.petEvent("done", "…") to see a reaction)
+#   PATCH='command'  run on the package copy (its folder last) before it's
+#                    installed: tools/bench/ stubs the sends out with it
 # Colors and fonts are your KDE theme's (QT_QPA_PLATFORMTHEME=kde).
 # QML warnings go to OUT.log. The widget runs under a test id with its own
 # config, data, state and cache folders, so nothing of your desktop is touched.
@@ -72,6 +74,7 @@ assert s.count(place) == 1, "main.qml's paneGeometry moved: update render_popup.
 s = s.replace(place, place + "        return null   // (render: never scripts your KWin)\n", 1)
 open(main, "w").write(s)
 PY
+[ -z "${PATCH:-}" ] || bash -c "$PATCH \"\$0\"" "$work/pkg"
 mkdir -p "$work/data" "$work/config" "$work/state" "$work/cache/talpy-den"
 for f in kdeglobals plasmarc; do [ -f "$HOME/.config/$f" ] && cp "$HOME/.config/$f" "$work/config/"; done
 # A copy of the widget's cache (the status-line snapshots for plan usage, and
