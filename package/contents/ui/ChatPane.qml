@@ -2286,27 +2286,18 @@ Window {
                                 font.pointSize: pane.pt * 0.85
                                 wrapMode: Text.Wrap
                             }
-                            // a new chat, before your first message
+                            // (and a new chat's, before your first message: what it is)
                             PlasmaComponents3.Label {
+                                readonly property bool unsent: !!pane.fresh && items.count === 0
                                 textFormat: Text.PlainText
                                 Layout.fillWidth: true
-                                Layout.topMargin: Kirigami.Units.gridUnit
-                                visible: !!pane.fresh && items.count === 0
+                                Layout.topMargin: unsent ? Kirigami.Units.gridUnit : 0
+                                visible: !pane.loaded || pane.loadError !== "" || unsent
                                 horizontalAlignment: Text.AlignHCenter
-                                text: pane.fresh ? (pane.fresh.plan ? i18n("A new chat on %1 in %2, to carry out “%3”.", pane.fresh.account, pane.fresh.short, pane.fresh.plan.title)
-                                                                    : i18n("A new chat on %1 in %2.", pane.fresh.account, pane.fresh.short))
-                                                   + "\n" + i18n("Your first message starts it in the background. Here you reply, answer what Claude asks and see what it changed; open it in a terminal any time.")
-                                                 : ""
-                                color: pane.mutedColor
-                                font.pointSize: pane.pt
-                                wrapMode: Text.Wrap
-                            }
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.fillWidth: true
-                                visible: !pane.loaded || pane.loadError !== ""
-                                horizontalAlignment: Text.AlignHCenter
-                                text: pane.loadError || i18n("Reading the chat…")
+                                text: unsent ? (pane.fresh.plan ? i18n("A new chat on %1 in %2, to carry out “%3”.", pane.fresh.account, pane.fresh.short, pane.fresh.plan.title)
+                                                                : i18n("A new chat on %1 in %2.", pane.fresh.account, pane.fresh.short))
+                                               + "\n" + i18n("Your first message starts it in the background. Here you reply, answer what Claude asks and see what it changed; open it in a terminal any time.")
+                                      : pane.loadError || i18n("Reading the chat…")
                                 color: pane.loadError && !pane.loadMissing ? Kirigami.Theme.negativeTextColor : pane.mutedColor
                                 font.pointSize: pane.pt
                                 wrapMode: Text.Wrap

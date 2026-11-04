@@ -387,11 +387,14 @@ ColumnLayout {
     }
     // Never stuck: a background chat Talpy Den can't answer (started without its hook) asks in a
     // terminal, claude attach
-    PlasmaComponents3.Button {
-        visible: !!ask.permission && !ask.canAnswer && ask.attachable
-        icon.name: Icons.plasma.terminal
-        text: i18n("Answer it in a terminal")
-        onClicked: ask.inTerminal()
+    Loader {   // (made only when it shows: every window and row has a PermissionAsk)
+        active: !!ask.permission && !ask.canAnswer && ask.attachable
+        visible: active
+        sourceComponent: PlasmaComponents3.Button {
+            icon.name: Icons.plasma.terminal
+            text: i18n("Answer it in a terminal")
+            onClicked: ask.inTerminal()
+        }
     }
     PlasmaComponents3.Label {
         textFormat: Text.PlainText
