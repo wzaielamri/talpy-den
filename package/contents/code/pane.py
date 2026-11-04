@@ -76,6 +76,7 @@ Python 3.7+ and the standard library only.
 import base64
 import difflib
 import fcntl
+import itertools
 import json
 import os
 import re
@@ -1417,21 +1418,55 @@ def text_lines(data):
 
 
 def file_diff(original, current, label):
-    """(added, removed, diff lines) between two versions of a file."""
+    """(added, removed, diff lines) between two versions of a file; (None,
+    None, []) for a binary one."""
     if not (is_text(original or b"") and is_text(current or b"")):
         return None, None, []
     old = (original or b"").decode("utf-8", "replace").splitlines()
     new = (current or b"").decode("utf-8", "replace").splitlines()
-    diff = list(difflib.unified_diff(old, new, f"a/{label}", f"b/{label}", lineterm="", n=3))
-    added = sum(1 for l in diff[2:] if l.startswith("+"))
-    removed = sum(1 for l in diff[2:] if l.startswith("-"))
-    shown, size = [], 0
-    for l in diff[2:]:
+    # (difflib's time grows with the square of what it compares: in a long
+    # file only the lines between those both start and end with are, with
+    # the 3 around them it shows; a longer change shows its new lines, as
+    # cs.edit_diff)
+    top, a, b = 0, old, new
+    if len(old) + len(new) > cs.DIFF_COMPARE_LINES:
+        head, most = 0, min(len(old), len(new))
+        while head < most and old[head] == new[head]:
+            head += 1
+        tail = 0
+        while tail < most - head and old[-1 - tail] == new[-1 - tail]:
+            tail += 1
+        top, cut = max(0, head - 3), max(0, tail - 3)
+        a, b = old[top:len(old) - cut], new[top:len(new) - cut]
+    long = len(a) + len(b) > cs.DIFF_COMPARE_LINES
+    if long:
+        def span(n):  # (as difflib writes it)
+            return "%d" % (top + 1) if n == 1 else "%d,%d" % (top + (n > 0), n)
+        note = ["Too long to compare here: %d new lines in place of %d" % (len(b), len(a))] if a and b else []
+        diff = itertools.chain(["@@ -%s +%s @@" % (span(len(a)), span(len(b)))] + note, ("+" + line for line in b))
+    else:
+        diff = difflib.unified_diff(a, b, f"a/{label}", f"b/{label}", lineterm="", n=3)
+        next(diff, None), next(diff, None)  # (its --- and +++ lines)
+    added = removed = more = size = 0
+    shown = []
+    for l in diff:
+        if l.startswith("@@"):
+            if top and not long:  # (at the file's line numbers)
+                m = cs.HUNK_LINE.match(l)
+                l = "@@ -%d%s +%d%s @@" % (int(m.group(1)) + top, m.group(2) or "", int(m.group(3)) + top, m.group(4) or "")
+        elif l.startswith("+"):
+            added += 1
+        elif l.startswith("-"):
+            removed += 1
         if len(shown) >= cs.DIFF_LINES or size > cs.DIFF_CHARS:
-            shown.append(f"… ({len(diff) - 2 - len(shown)} more lines)")
-            break
+            more += 1
+            continue
         shown.append(l[:500])
         size += len(shown[-1])
+    if more:
+        shown.append(f"… ({more} more lines)")
+    if long:
+        removed = len(a)
     return added, removed, shown
 
 
@@ -1461,13 +1496,19 @@ def chat_review(home, extra_dirs, chat_id, profile_key=None, reviewed_at=None):
     cwd = cwd or cs.chat_folder(path) or ""
     files, repos = [], set()
     for full, original, created in originals(profiles, path, cwd):
-        current = read_bytes(full)
-        if original is not None and (current == original or (current is None and original == b"" and created)):
+        current, other = cs.bytes_to_compare(full, cs.DIFF_FILE_MAX)
+        gone = current is None and other in ("", cs.NOT_PLAIN)
+        big = "" if current is not None or gone else other  # ("a file of 18 MB": not read, nor compared)
+        if not big and original is not None and len(original) > cs.DIFF_FILE_MAX:
+            big = "a file of %d MB before the chat" % max(1, round(len(original) / (1 << 20)))
+        if not big and original is not None and (current == original or (gone and original == b"" and created)):
             continue  # unchanged (or made and removed again)
         label = cs.file_label(full, cwd, home)
-        item = {"label": label, "path": full, "created": created, "deleted": current is None,
+        item = {"label": label, "path": full, "created": created, "deleted": gone,
                 "unknown": original is None, "binary": False, "added": None, "removed": None, "diff": []}
-        if original is not None:
+        if big:
+            item.update(diff=["Not compared here: %s" % big])
+        elif original is not None:
             added, removed, diff = file_diff(original, current, label)
             item.update(added=added, removed=removed, diff=diff, binary=added is None)
         elif current is not None:  # (no earlier version: how it is now)

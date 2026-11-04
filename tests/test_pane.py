@@ -1420,6 +1420,19 @@ class ReviewTests(PaneFixture):
         self.assertEqual(pane.undo(self.home, [], SID, None, {str(link)}), (True, "Put back 1 file as before the chat"))
         self.assertEqual((link.is_symlink(), real.read_text()), (True, "alias ll='ls -l'\n"))
 
+    def test_a_long_file_is_compared_only_where_it_changed_and_a_big_one_not_read(self):
+        # (difflib over all of a long file took minutes; a file of GBs was read whole)
+        rows = lambda sign: "".join(f"row {i} = {i if i % 2 else sign * i}\n" for i in range(3000))
+        write(self.home / f".claude-work/file-history/{SID}/aa11@v1", rows(1))
+        write(self.folder / "a.py", rows(-1))
+        review = lambda: next(f for f in pane.chat_review(self.home, [], SID)["files"] if f["label"] == "a.py")
+        f = review()
+        self.assertEqual(f["diff"][:2], ["@@ -1,3000 +1,3000 @@", "Too long to compare here: 3000 new lines in place of 3000"])
+        self.assertEqual((f["added"], f["removed"]), (3000, 3000))
+        write(self.folder / "a.py", "x" * (cs.DIFF_FILE_MAX + 1))
+        f = review()
+        self.assertEqual((f["diff"], f["deleted"], f["binary"]), (["Not compared here: a file of 2 MB"], False, False))
+
     def test_undo_never_writes_through_a_link_put_beside_the_file(self):
         # (a repo could ship a.py.talpy-den-undo -> ~/.bashrc: Undo's new file had that name)
         victim = self.home / ".bashrc"
