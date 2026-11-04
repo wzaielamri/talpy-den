@@ -2000,6 +2000,8 @@ class NewChatTests(unittest.TestCase):
         # a new chat's ⚙ line is made only in a new chat's window (every other opens as quickly)
         pane = (ROOT / "ui/ChatPane.qml").read_text()
         self.assertIn("active: pane.fresh !== null && !pane.starting", pane)
+        self.assertIn('source: active ? "NewChatOptions.qml" : ""', pane)   # (its QML read only then too)
+        self.assertNotIn("ComboBox", pane)
 
     def test_a_folder_row_never_closes_its_own_list(self):
         # Closing the list (newChatGroup = "") destroys its rows: the rest of
