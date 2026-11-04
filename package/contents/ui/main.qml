@@ -1128,7 +1128,8 @@ PlasmoidItem {
                 const change = Math.round((r.workedMs - r.workedBefore) / r.workedBefore * 100)
                 lines.push(change >= 0 ? i18n("%1% more than the week before.", change) : i18n("%1% less than the week before.", -change))
             }
-            recapNotificationComponent.createObject(root, { title: i18n("Your week with Claude"), text: lines.join("\n") }).sendEvent()
+            // (Plasma shows markup in the text: a project's name is shown as written, as in notify())
+            recapNotificationComponent.createObject(root, { title: i18n("Your week with Claude"), text: root.escapeHtml(lines.join("\n")) }).sendEvent()
         }
     }
 

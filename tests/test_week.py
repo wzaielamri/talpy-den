@@ -1661,6 +1661,11 @@ class MondayRecapTests(unittest.TestCase):
         self.assertEqual(week.monday_due(cache, monday + 16 * 86400), "2026-W46")   # (off on Monday: Wednesday)
         self.assertEqual(json.loads((cache / week.MONDAY_FILE).read_text())["week"], "2026-W46")
 
+    def test_the_plasma_notification_shows_a_projects_name_as_written(self):
+        # (a folder named '<a href="file:&#47;&#47;&#47;…">Open the Recap' was a link in the popup)
+        main = (ROOT / "package/contents/ui/main.qml").read_text()
+        self.assertIn('{ title: i18n("Your week with Claude"), text: root.escapeHtml(lines.join("\\n")) }', main)
+
 
 class LaneTests(unittest.TestCase):
     """The Day view's lanes (week.day_lanes): each chat's day, worked, waited for you, paused."""
