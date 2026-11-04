@@ -306,6 +306,30 @@ Window {
         infoTimer.restart()
     }
 
+    // Where a reply's link goes, under the pointer while it's hovered (its
+    // words can say anything): one tooltip for the pane, made only while a
+    // link is hovered (replyText's onLinkHovered), not one in each message
+    property Item linkBox: null   // (the reply whose link it is)
+    property string linkShown: ""
+    property point linkAt: Qt.point(0, 0)
+    function linkHovered(box, link, at) {
+        linkBox = link ? box : null
+        linkAt = at
+        linkShown = link.indexOf("copy:") === 0 ? "" : link   // (a code block's Copy: no address)
+    }
+    Loader {
+        active: pane.linkShown !== "" && pane.linkBox !== null
+        sourceComponent: PlasmaComponents3.ToolTip {
+            parent: pane.linkBox
+            x: pane.linkAt.x
+            y: pane.linkAt.y + Kirigami.Units.gridUnit
+            visible: true
+            delay: Kirigami.Units.toolTipDelay
+            textFormat: Text.PlainText
+            text: pane.linkShown
+        }
+    }
+
     // ---------------------------------------------------------------- the conversation
 
     property string stamp: ""
@@ -2276,7 +2300,10 @@ Window {
                                         } else
                                             Qt.openUrlExternally(link)
                                     }
-                                    onLinkHovered: link => copyHovered = link.indexOf("copy:") === 0 ? Number(link.slice(5)) : -1
+                                    onLinkHovered: link => {
+                                        copyHovered = link.indexOf("copy:") === 0 ? Number(link.slice(5)) : -1
+                                        pane.linkHovered(replyText, link, replyHover.point.position)
+                                    }
 
                                     // Where a code block's Copy (label: Copy or Copied) is drawn: the
                                     // label's place in the text whose link is that block's (not a
@@ -2319,6 +2346,7 @@ Window {
                                     }
 
                                     HoverHandler {
+                                        id: replyHover
                                         cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor
                                     }
                                 }

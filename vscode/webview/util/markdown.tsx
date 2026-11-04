@@ -52,6 +52,9 @@ const QUOTE = /^\s*>\s?(.*)$/;
 const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
 const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 const SAFE_LINK = /^(https?:|mailto:)/i;
+// A link's address as it's opened: a mailto: one to its addresses only (its
+// ?attach=… would put a file of yours in the mail, ?body=… write it); as markdown.mjs
+const linkHref = (url: string): string => (/^mailto:/i.test(url) ? url.split("?")[0] : url);
 const WORD = /\w/;
 const MARK = /[^\w\s]/;
 
@@ -86,7 +89,7 @@ export function inline(text: string, key = "i"): ComponentChildren[] {
     else if (m[2] !== undefined || m[3] !== undefined) out.push(<strong key={k}>{inline(m[2] ?? m[3], k)}</strong>);
     else if (m[4] !== undefined || m[5] !== undefined) out.push(<em key={k}>{inline(m[4] ?? m[5], k)}</em>);
     else if (m[6] !== undefined) {
-      const href = m[7];
+      const href = linkHref(m[7]);
       out.push(SAFE_LINK.test(href) ? <a key={k} href={href} title={href}>{inline(m[6], k)}</a> : <span key={k}>{inline(m[6], k)}</span>);
     } else if (m[8] !== undefined) out.push(<s key={k}>{inline(m[8], k)}</s>);
     else if (m[9] !== undefined) out.push(<a key={k} href={m[9]} title={m[9]}>{m[9]}</a>);

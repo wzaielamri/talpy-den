@@ -25,6 +25,11 @@ const QUOTE = /^\s*>\s?(.*)$/;
 const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
 const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 const SAFE_LINK = /^(https?:|mailto:)/i;
+// A link's address as it's opened: a mailto: one to its addresses only (its
+// ?attach=… would put a file of yours in the mail, ?body=… write it)
+function linkHref(url) {
+    return /^mailto:/i.test(url) ? url.split("?")[0] : url;
+}
 const INLINE = /`([^`]+)`|\*\*(\S(?:(?:(?!\*\*).)*?\S)?)\*\*|__(\S(?:(?:(?!__).)*?\S)?)__|\*([^*\s](?:[^*]*?[^*\s])?)\*|_([^_\s](?:[^_]*?[^_\s])?)_|~~(\S(?:(?:(?!~~).)*?\S)?)~~|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|(https?:\/\/(?:[^\s<>()]|\([^\s<>()]*\))*(?:[^\s<>().,;:!?'"]|\([^\s<>()]*\)))|\\([\\`*_{}\[\]()#+\-.!|~<>])/g;
 const WORD = /\w/;
 const MARK = /[^\w\s]/;
@@ -82,7 +87,7 @@ export function inline(text, s) {
         else if (m[6] !== undefined)
             out += `<s>${inline(m[6], s)}</s>`;
         else if (m[7] !== undefined)
-            out += SAFE_LINK.test(m[8]) ? `<a href="${escape(m[8])}" style="color:${s.link}">${inline(m[7], s)}</a>` : inline(m[7], s);
+            out += SAFE_LINK.test(m[8]) ? `<a href="${escape(linkHref(m[8]))}" style="color:${s.link}">${inline(m[7], s)}</a>` : inline(m[7], s);
         else if (m[9] !== undefined)
             out += `<a href="${escape(m[9])}" style="color:${s.link}">${escape(m[9])}</a>`;
         else

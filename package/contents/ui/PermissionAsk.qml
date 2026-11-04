@@ -201,6 +201,23 @@ ColumnLayout {
             color: Kirigami.Theme.textColor
             selectionColor: Kirigami.Theme.focusColor
             onLinkActivated: link => Qt.openUrlExternally(link)
+
+            // where a link goes, under the pointer while it's hovered (made only then)
+            HoverHandler {
+                id: planHover
+            }
+            Loader {
+                active: planText.hoveredLink !== ""
+                sourceComponent: PlasmaComponents3.ToolTip {
+                    parent: planText
+                    x: planHover.point.position.x
+                    y: planHover.point.position.y + Kirigami.Units.gridUnit
+                    visible: true
+                    delay: Kirigami.Units.toolTipDelay
+                    textFormat: Text.PlainText
+                    text: planText.hoveredLink
+                }
+            }
         }
     }
     PlasmaComponents3.Label {
