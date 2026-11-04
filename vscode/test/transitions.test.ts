@@ -122,8 +122,10 @@ test("a turn a usage limit or the login broke off isn't finished", () => {
   assert.deepEqual(r.notices.map((n) => [n.session.name, n.kind]), [["b", "stopped"], ["c", "stopped"]]);
   assert.deepEqual(r.finished.map((f) => [f.session.name, f.stop]), [["b", "limit"], ["c", "limit"]]);
   assert.equal(r.sound, "failed");
-  // only one poll later: a limit that shows up after that is another turn's
-  assert.deepEqual(t.track("", at(NOW + 60000, stoppedAll({ stopped: limit })), NOW + 64000, undefined, kept).notices, []);
+  // a poll or two later too, for a minute while it stays idle (away.test.ts);
+  // a limit that shows up after that is another turn's
+  t.track("", at(NOW + 60000, stoppedAll(undefined)), NOW + 121000, undefined, kept);
+  assert.deepEqual(t.track("", at(NOW + 60000, stoppedAll({ stopped: limit })), NOW + 123000, undefined, kept).notices, []);
 });
 
 test("a chat keeps its notifications while its row changes, and a chat listed twice counts once", () => {
