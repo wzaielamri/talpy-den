@@ -407,6 +407,28 @@ export function pendingTaken(items: PaneItem[], pending: PendingSent[], now: num
   return done;
 }
 
+// What ↑ / ↓ go through in the reply box: your prompts, newest first, each
+// once. This chat's own first: the ones you just sent (not those held, still
+// in their band to take back), then the conversation's; then your past prompts
+// in its folder (Claude's prompt history, history.jsonl, which has only some
+// of the messages sent from outside its terminal, and is read once a minute)
+export function promptHistory(items: PaneItem[], pending: PendingSent[], past: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (t: string | undefined) => {
+    const text = (t ?? "").trim();
+    const key = squash(text);
+    if (text && !seen.has(key)) {
+      seen.add(key);
+      out.push(text);
+    }
+  };
+  for (let i = pending.length - 1; i >= 0; i--) if (pending[i].state !== "held") add(pending[i].text);
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "you") add(items[i].text);
+  for (const t of past) add(t);
+  return out;
+}
+
 // Is a conversation's stamp ("<size>:<time>/<length>") one to show, after the
 // one shown (current)? Not one read for another length (Show earlier
 // meanwhile), nor one read before it (a transcript only grows): the watcher's

@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { attachedTag, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, picturesIn, PICTURE_TYPES, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { attachedTag, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, picturesIn, PICTURE_TYPES, promptHistory, routeHint, shownAsk, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox, askKey } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -205,7 +205,8 @@ function ChatApp() {
     reader.readAsDataURL(file);
   };
   // What the box offers as you type (/ commands and skills, @ files) and ↑ / ↓
-  // through your past prompts there (pane.py --complete, asked again after a minute)
+  // through your prompts, this chat's first (promptHistory), then your past ones
+  // in its folder (pane.py --complete, asked again after a minute)
   const [offers, setOffers] = useState<Offers | null>(null);
   const offersAt = useRef(0);
   const [cursor, setCursor] = useState(0);
@@ -230,8 +231,11 @@ function ChatApp() {
     setCursor(at);
     requestAnimationFrame(() => reply.current?.setSelectionRange(at, at));
   };
+  // (the list as it was at the first ↑: the conversation can change while you go through it)
+  const historyList = useRef<string[]>([]);
   const historyStep = (step: number): boolean => {
-    const list = offers?.history ?? [];
+    if (historyAt.current < 0) historyList.current = promptHistory(items, outgoing, offers?.history ?? []);
+    const list = historyList.current;
     if (!list.length) return false;
     if (historyAt.current < 0) historyDraft.current = text;
     const next = Math.max(-1, Math.min(list.length - 1, historyAt.current + step));

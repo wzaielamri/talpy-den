@@ -2844,6 +2844,19 @@ body.vscode-high-contrast:not(.vscode-high-contrast-light) .cv {
   margin-top: 4px;
 }
 
+/* A permission's buttons, a question's and a held message's: framed thin, so
+   they read as buttons (the theme's button border is mostly none), the frame
+   in the focus colour while the pointer is on one, as in the Plasma pane */
+.ask-buttons .btn.secondary,
+.pane-you-queue .btn.secondary {
+  border-color: color-mix(in srgb, var(--cs-fg) 30%, transparent);
+}
+
+.ask-buttons .btn.secondary:hover:not(:disabled),
+.pane-you-queue .btn.secondary:hover:not(:disabled) {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
 /* Claude's questions (AskBox: QuestionForm) */
 .ask-question {
   margin-top: 6px;

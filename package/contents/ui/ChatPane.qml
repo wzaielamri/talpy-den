@@ -641,8 +641,8 @@ Window {
     // As you type (pane.py --complete, read once a chat, again after a minute):
     // / at the start: Claude's commands, yours and the project's, and skills; @:
     // the project's files; ↑ / ↓ in an empty box (or on its first / last line):
-    // your past prompts in its folder. Tab or Enter takes the one marked, Esc
-    // closes the list.
+    // your prompts, this chat's first, then your past ones in its folder. Tab or
+    // Enter takes the one marked, Esc closes the list.
     property var offers: null          // {commands, files, history}
     property real offersAt: 0
     property var suggestions: []       // [{text, about, insert}]
@@ -701,9 +701,36 @@ Window {
         suggestions = []
     }
 
-    // ↑ / ↓: your past prompts there, newest first (what you were typing comes back after the last)
+    // ↑ / ↓: your prompts, newest first, each once (what you were typing comes
+    // back after the last). This chat's own first: the ones you just sent, then
+    // the conversation's (Claude's prompt history, history.jsonl, has only some
+    // of the messages sent from outside its terminal, and is read once a
+    // minute); then your past prompts in its folder. (The list as it was at the
+    // first ↑: the conversation can change while you go through it)
+    property var historyList: []
+    function promptHistory() {
+        const out = [], seen = {}
+        const add = t => {
+            const text = String(t || "").trim(), key = norm(text)
+            if (text && !seen[key]) {
+                seen[key] = true
+                out.push(text)
+            }
+        }
+        const mine = pendingSent.filter(p => p.chat === chatId && p.host === (host || "") && p.state !== "held")
+        for (let i = mine.length - 1; i >= 0; i--)
+            add(mine[i].text)
+        for (let i = lastItems.length - 1; i >= 0; i--)
+            if (lastItems[i].kind === "you")
+                add(lastItems[i].text)
+        for (const t of offers ? offers.history : [])
+            add(t)
+        return out
+    }
     function historyStep(step) {
-        const list = offers ? offers.history : []
+        if (historyAt < 0)
+            historyList = promptHistory()
+        const list = historyList
         if (!list.length)
             return false
         if (historyAt < 0)
@@ -2538,7 +2565,7 @@ Window {
                             // Ctrl+V with no text on the clipboard: its picture (an SSH host's
                             // chat asks to copy it there).
                             onTextChanged: {
-                                if (pane.historyAt >= 0 && text !== (pane.offers ? pane.offers.history[pane.historyAt] : ""))
+                                if (pane.historyAt >= 0 && text !== pane.historyList[pane.historyAt])
                                     pane.historyAt = -1   // (typed into a past prompt: it's yours now)
                                 pane.suggest()
                             }

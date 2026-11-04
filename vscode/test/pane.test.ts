@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answersOf, chatWhere, numberedPictures, oneChoice, pendingTaken, picturesIn, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
+import { answersOf, chatWhere, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -633,6 +633,20 @@ test("your pictures read as Claude's terminal writes them: [Image #1], [Image #2
   assert.equal(numberedPictures("look [Image: /c/a.png] and [Image: /c/b.png], then [Image: /c/a.png] again"),
                "look [Image #1] and [Image #2], then [Image #1] again");
   assert.equal(numberedPictures("[Image #1] pasted in the terminal"), "[Image #1] pasted in the terminal");
+});
+
+test("↑ in the reply box: this chat's prompts first, the ones just sent before them, then your past ones there, each once", () => {
+  const you = (key: string, text: string) => ({ kind: "you" as const, key, text, at: NOW });
+  const items = [you("a", "first"), { kind: "claude" as const, key: "c", text: "a reply", at: NOW }, you("b", "did you update the plan?")];
+  const pending = (id: number, text: string, state: "held" | "sending" | "sent") => ({ id, text, at: NOW, state, sentAt: 0, known: [] });
+  // the past prompts (history.jsonl) don't have the ones sent from the tab: the conversation does
+  assert.deepEqual(promptHistory(items, [], ["older one", "first"]), ["did you update the plan?", "first", "older one"]);
+  // one on its way (not in the conversation yet) comes first; one held, still in its band to take back, doesn't
+  assert.deepEqual(promptHistory(items, [pending(1, "what are the shortcuts?", "sent"), pending(2, "not yet", "held")], []),
+                   ["what are the shortcuts?", "did you update the plan?", "first"]);
+  // the same words (spaces as they come) once, at their newest
+  assert.deepEqual(promptHistory([...items, you("d", "first ")], [], ["first"]), ["first", "did you update the plan?"]);
+  assert.deepEqual(promptHistory([], [], []), []);
 });
 
 test("your message shows at once till the conversation has it; a stamp read before the one shown isn't taken", () => {
