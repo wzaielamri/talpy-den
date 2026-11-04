@@ -31,6 +31,11 @@ its permission prompt and its review.
         settings have it (--settings: Talpy Chat answers what it asks), in a
         systemd scope of its own. {"ok", "message", "how": "background",
         "id": its job's short id, "chat": its chat id, "profileDir"}
+  --interrupt CHAT [--session ID] [--profile P]
+        Talpy Chat's Stop: what Claude does now in a chat at work stops, as
+        Esc in its terminal: Ctrl+C in its tmux pane, or Esc into a
+        background chat through Claude's background service. The chat stays
+        where it runs and takes your next message
   --answer REQUEST --decision allow|always|deny|answer|approve|approve-edits|keep [--note T] [--answers JSON]
         answer a permission request the hook relayed (permission_hook.py);
         Claude's questions (AskUserQuestion): answer, with JSON {question:
@@ -1413,6 +1418,20 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
     return answer
 
 
+def interrupt(home, extra_dirs, profile_key, chat_id, session_id=None):
+    """Talpy Chat's Stop for a chat at work (cs.interrupt_chat_by_id: Ctrl+C
+    in its tmux pane, Esc into a background session), found by the session
+    that has it open (session_id) or its chat id: (ok, message)."""
+    ids = [i for i in dict.fromkeys((session_id, chat_id)) if cs.valid_id(i or "")]
+    if not ids:
+        return False, f"Not a chat: {chat_id}"
+    for sid in ids:
+        found = cs.find_chat_live(home, extra_dirs, sid, profile_key)
+        if found is not None:
+            return cs.interrupt_live(*found)
+    return False, "That chat isn't running any more"
+
+
 def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=None, mode=None, plan=None,
                plan_profile=None, claude=None, scoped=True):
     """A new chat Talpy Chat starts with your first message (text; or a
@@ -2276,7 +2295,7 @@ def main(argv=None):
     session, text, stamp, limit, files, config_dirs, answers = None, None, None, PANE_ITEMS, [], [], None
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
-               "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start")
+               "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt")
     osd = False
     cwd, model, effort, mode, plan, plan_profile = None, None, None, None, None, None
     while args:
@@ -2408,6 +2427,9 @@ def main(argv=None):
         elif action == "--start":
             result = start_chat(home, config_dirs, target, cwd, text, model, effort, mode, plan, plan_profile,
                                 scoped=not remote)
+        elif action == "--interrupt":
+            ok, said = interrupt(home, config_dirs, profile, target, session)
+            result = {"ok": ok, "message": said}
         elif action == "--answer":
             ok, said = answer_request(cache_root, target, decision, note, answers)
             # (changed: the request you answered is gone; the chat may ask something else now)

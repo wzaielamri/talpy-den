@@ -622,6 +622,7 @@ def make_session(profile, home, *, sid, pid, name, cwd, kind, entrypoint, state,
         "agents": None,
         "shared": None,
         "tmux": False,  # runs in a tmux pane: it can be interrupted (Esc)
+        "bgStop": False,  # a live background session Talpy Chat's Stop can interrupt (interrupt_background)
         "terminalApp": None,  # the terminal it runs in otherwise, by name (Konsole, kitty…): terminal_name
         "attached": None,  # a background session shown in a terminal (claude attach): {"in", "app"} (attached_in)
         "peek": None,  # what it's doing, your last prompt, Claude's last reply (chat_peek)
@@ -750,6 +751,7 @@ def live_row(entry, profile, holder, home, ctx):
         since=number(entry.get("statusUpdatedAt")) or number(entry.get("startedAt")),
         started_at=number(entry.get("startedAt")))
     row["tmux"] = isinstance(entry.get("tmux"), str) and bool(entry["tmux"])
+    row["bgStop"] = row["kind"] == "bg" and job_id is not None and bg_stop_known(entry.get("version"))
     if not row["tmux"] and row["entrypoint"] != "claude-vscode" and row["kind"] != "bg":
         row["terminalApp"] = terminal_name(row["pid"]) or None
     return finish_row(row, job, job_id, profile, ctx, alive=True)
@@ -7683,13 +7685,19 @@ def find_chat_entry(home, extra_dirs, session_id, profile_key=None):
     """The live session entry of a chat with a process (terminal or VS Code),
     found by its session id and the profile it's listed under (a shared chat
     can run on two), or None."""
+    found = find_chat_live(home, extra_dirs, session_id, profile_key)
+    return found[0] if found else None
+
+
+def find_chat_live(home, extra_dirs, session_id, profile_key=None):
+    """find_chat_entry's entry, with the profile it runs on: (entry, profile), or None."""
     for entry, runs_on, holder in live_entries_all(discover_profiles(home, extra_dirs)):
         if entry.get("sessionId") != session_id or entry.get("kind") not in SESSION_KINDS \
                 or entry.get("spare") or entry.get("parkedJobId"):
             continue
         if profile_key and profile_key not in (runs_on.key, holder.key):
             continue
-        return entry
+        return entry, runs_on
     return None
 
 
@@ -7699,8 +7707,15 @@ def stop_chat_by_id(home, extra_dirs, session_id, profile_key=None, busy_ok=Fals
 
 
 def interrupt_chat_by_id(home, extra_dirs, session_id, profile_key=None):
-    entry = find_chat_entry(home, extra_dirs, session_id, profile_key)
-    return interrupt_chat(entry) if entry else (False, "That chat isn't running any more")
+    """Interrupt a working chat: Ctrl+C in its tmux pane (interrupt_chat), or
+    Esc into a background session (interrupt_background)."""
+    found = find_chat_live(home, extra_dirs, session_id, profile_key)
+    return interrupt_live(*found) if found else (False, "That chat isn't running any more")
+
+
+def interrupt_live(entry, runs_on):
+    """interrupt_chat_by_id for a live session's entry, on the profile it runs on."""
+    return interrupt_background(runs_on, entry) if entry.get("kind") == "bg" else interrupt_chat(entry)
 
 
 # ---------------------------------------------------------------- Claude's background service
@@ -7801,18 +7816,27 @@ def daemon_holds(profiles, shorts):
     return False
 
 
+def daemon_key(profile):
+    """The key of this profile's background service (daemon/control.key in
+    the Claude folder): "" when there's none, None when it isn't one Talpy
+    Den knows (too long)."""
+    key_path = profile.path / "daemon" / "control.key"
+    try:
+        if key_path.stat().st_size > DAEMON_KEY_MAX:
+            return None
+        return key_path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+
+
 def reply_to_background(profile, job_id, text):
     """Your message into a live background session (job_id: its short id),
     through its service's reply: (ok, message). Not ok when the service
     isn't there, doesn't answer within DAEMON_WAIT or won't take it (it
     says why)."""
-    key_path = profile.path / "daemon" / "control.key"
-    try:
-        if key_path.stat().st_size > DAEMON_KEY_MAX:
-            return False, "Claude's background service has a key Talpy Den doesn't know"
-        key = key_path.read_text(encoding="utf-8", errors="replace").strip()
-    except OSError:
-        key = ""
+    key = daemon_key(profile)
+    if key is None:
+        return False, "Claude's background service has a key Talpy Den doesn't know"
     if not key or not valid_id(job_id) or not (text or "").strip():
         return False, "Claude's background service can't be asked"
     answer = None
@@ -7829,6 +7853,134 @@ def reply_to_background(profile, job_id, text):
     error = answer.get("error") if isinstance(answer, dict) else None
     return False, f"Claude's background service didn't take it: {error}" if isinstance(error, str) and error \
         else "Claude's background service didn't take it"
+
+
+# ---------------------------------------------------------------- Stop in a background chat
+#
+# Talpy Chat's Stop for a background session: what Claude does now stops,
+# as when Esc is pressed in its terminal ("[Request interrupted by user]";
+# the chat stays and takes your next message). The service has no interrupt
+# of its own, so Talpy Den attaches to the session for a moment, as `claude
+# attach` does (its "attach" request; after the service's answer, every byte
+# goes into the session as typed), types one Esc and lets go. It attaches at
+# the size the session's terminal has now (read from the worker's tty), so
+# a terminal attached to it isn't resized; once it lets go, the service gives
+# that terminal back what it had (Claude 2.1.318, checked live and in its
+# code). Undocumented: only on the Claude Code versions it was checked on
+# (BG_STOP_FROM up to BG_STOP_BEFORE: a row's "bgStop", or no Stop button),
+# and nothing is typed unless the service answers as expected.
+
+BG_STOP_FROM = (2, 1, 318)
+BG_STOP_BEFORE = (2, 2)
+BG_STOP_ACK_WAIT = 3  # seconds the service gets to answer the attach
+BG_STOP_FRAME_WAIT = 0.5  # for the session's first output (Claude's own client types only after it)
+BG_STOP_LINGER = 0.2  # after the Esc, before letting go
+# What Talpy Den says it is as a terminal: true colour, no theme of its own
+# (the session keeps its own), no browser (Claude 2.1.318 drops the session's
+# BROWSER while it's attached, and gives it back as it lets go)
+BG_STOP_CAPS = {"imark": False, "terminal": None, "mux": None, "ssh": False, "colorLevel": 3}
+
+
+def bg_stop_known(version):
+    """Is version ("2.1.318": a session's, or its job's) one of the Claude
+    Code versions Talpy Chat's Stop was checked on?"""
+    if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        return False
+    return BG_STOP_FROM <= version_key(version) < BG_STOP_BEFORE
+
+
+def tty_size(pid):
+    """(columns, rows) of the terminal a process reads from (its pty), or
+    None: read with TIOCGWINSZ, nothing goes through it."""
+    import struct
+    import termios
+    try:
+        fd = os.open(f"/proc/{int(pid)}/fd/0", os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
+    except (OSError, TypeError, ValueError):
+        return None
+    try:
+        if not os.isatty(fd):
+            return None
+        rows, cols = struct.unpack("HHHH", fcntl.ioctl(fd, termios.TIOCGWINSZ, b"\0" * 8))[:2]
+    except (OSError, struct.error):
+        return None
+    finally:
+        os.close(fd)
+    return (cols, rows) if cols > 0 and rows > 0 else None
+
+
+def interrupt_background(profile, entry):
+    """Talpy Chat's Stop for a live background session (entry: its session
+    file's, profile: the one it runs on): one Esc typed into it through a
+    moment's attach (above). (ok, message)"""
+    import socket
+    import uuid
+    job_id, version = entry.get("jobId"), entry.get("version")
+    if not valid_id(job_id):
+        return False, "Talpy Den can't stop this background chat: stop it in a terminal (Esc)"
+    if not bg_stop_known(version):
+        which = f"Claude Code {version}" if isinstance(version, str) and version else "this Claude Code"
+        return False, f"Talpy Den can't stop a background chat of {which} yet: open it in a terminal and press Esc there"
+    if entry.get("status") == "shell":
+        return False, "Its turn is over (only a background command still runs), so there's nothing to stop"
+    if session_state(entry) != "working":
+        return False, "It isn't working any more, so there's nothing to stop"
+    size = tty_size(entry.get("pid"))
+    if size is None:
+        return False, ("Talpy Den can't read the size of its terminal (a terminal that shows it would be resized): "
+                       "open it in a terminal and press Esc there")
+    key, path = daemon_key(profile), daemon_socket(profile)
+    if not key or path is None:
+        return False, "Claude's background service can't be asked"
+    request = {"proto": DAEMON_PROTO, "op": "attach", "short": job_id, "auth": key, "cols": size[0], "rows": size[1],
+               "attachId": str(uuid.uuid4()), "caps": dict(BG_STOP_CAPS)}
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(BG_STOP_ACK_WAIT)
+            s.connect(str(path))
+            uid = peer_uid(s)  # (only a service of yours: it gets the key)
+            if (os.lstat(str(path)).st_uid if uid is None else uid) != os.getuid():
+                return False, "Claude's background service didn't answer"
+            s.sendall((json.dumps(request) + "\n").encode())
+            data = b""
+            while b"\n" not in data and len(data) < DAEMON_ANSWER_MAX:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+            line, _, shown = data.partition(b"\n")
+            try:
+                answer = json.loads(line.decode("utf-8", "replace"))
+            except ValueError:
+                answer = None
+            if not isinstance(answer, dict) or answer.get("ok") is not True or answer.get("op") != "attach":
+                error = answer.get("error") if isinstance(answer, dict) else None
+                return False, (f"Claude's background service didn't take it: {error}" if isinstance(error, str) and error
+                               else "Claude's background service didn't take it")
+            worker = answer.get("workerCliVersion")
+            if worker and not bg_stop_known(worker):
+                return False, f"Talpy Den can't stop a background chat of Claude Code {worker} yet: open it in a terminal and press Esc there"
+            if answer.get("booting"):
+                return False, "It's starting: stop it in a moment"
+            if not shown:  # (what the session shows first, as `claude attach` waits for it)
+                s.settimeout(BG_STOP_FRAME_WAIT)
+                try:
+                    s.recv(65536)
+                except socket.timeout:
+                    pass
+            s.sendall(b"\x1b")
+            # (a moment for it to go in, then let go: the service gives an attached terminal back its own)
+            end = time.monotonic() + BG_STOP_LINGER
+            try:
+                while time.monotonic() < end:
+                    s.settimeout(max(0.01, end - time.monotonic()))
+                    if not s.recv(65536):
+                        break
+            except OSError:
+                pass
+    except OSError:
+        return False, "Claude's background service didn't answer"
+    return True, "Stopped (Esc in the background chat): it takes your next message"
 
 
 def live_background(profiles, chat_id):
@@ -10685,7 +10837,7 @@ USAGE = """usage: talpy_den.py [--config-dir DIR]... [--done-hours H] [--recent 
                     folder) from its list (--show-hidden KIND shows that kind again)
   --end ID          stop a chat in a terminal or VS Code (it's kept); only an idle one
                     unless --busy (you were told it's working or waiting)
-  --interrupt ID    interrupt a working chat in tmux (Ctrl+C in its pane)
+  --interrupt ID    interrupt a working chat in tmux (Ctrl+C in its pane), or a background one (Esc)
   --agent-run ID    a subagent's whole run (of the chat --chat), as Markdown in the JSON
   --vscode-account  VS Code's Claude on this host runs with that CLAUDE_CONFIG_DIR (- for
                     none: a plain ~/.claude), in its VS Code server's settings (on an SSH host)

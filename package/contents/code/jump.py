@@ -4,7 +4,7 @@ a new chat (used by the Talpy Den widget).
 
     python3 -I jump.py SESSION_ID [--config-dir DIR]...
     python3 -I jump.py --stop SESSION_ID [--profile PROFILE] [--busy] [--and-keep-off CHAT_ID] [--config-dir DIR]...
-    python3 -I jump.py --interrupt SESSION_ID [--profile PROFILE]   (Ctrl+C in its tmux pane)
+    python3 -I jump.py --interrupt SESSION_ID [--profile PROFILE]   (Ctrl+C in its tmux pane, Esc in a background chat)
     python3 -I jump.py --save-settings JSON --by WIDGET [--unless-default]   (settings the widgets share)
     python3 -I jump.py --new-chat PROFILE_DIRNAME [--cwd FOLDER] [--config-dir DIR]...
     python3 -I jump.py --new-chat PROFILE_DIRNAME --choose-folder   (ask for the folder first)
@@ -55,7 +55,8 @@ its conversation is kept, and `claude attach <id>` resumes it. A chat in a
 terminal or in VS Code is stopped too (talpy_den.stop_chat): Claude quits,
 its terminal stays open (VS Code's tab goes on with the next message), and
 `claude --resume <id>` reopens it; only an idle one unless --busy (you were
-told it's working or waiting). `--interrupt` presses Ctrl+C for a chat in tmux.
+told it's working or waiting). `--interrupt` presses Ctrl+C for a chat in tmux,
+and Esc in a background chat (Talpy Chat's Stop: talpy_den.interrupt_background).
 
 - terminal session: switch Konsole to the tab running it (or select its tmux
   pane) and raise that window; in VS Code's terminal, the Talpy Den
@@ -1230,12 +1231,14 @@ def stop_keep_off(home, extra_dirs, session_id, chat_id, profile_dir=None, busy=
 
 
 def interrupt(home, extra_dirs, session_id, profile_dir=None):
-    """Interrupt a working chat in tmux (Ctrl+C in its pane); it stays open."""
+    """Interrupt a working chat in tmux (Ctrl+C in its pane), or a background
+    one (Esc through Claude's background service: cs.interrupt_background);
+    it stays open."""
     profile, entry, _job, job_id = find_session(home, extra_dirs, session_id, profile_dir)
     if profile is None or entry is None:
         return False, "That chat isn't running any more"
     if job_id:
-        return False, "A background chat can only be stopped"
+        return cs.interrupt_background(profile, entry)
     return cs.interrupt_chat(entry)
 
 

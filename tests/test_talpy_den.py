@@ -1551,6 +1551,193 @@ class TmuxFlagTests(Fixture):
         self.assertEqual((flag["in-tmux"], flag["busy"]), (True, False))
 
 
+class FakeAttach:
+    """Claude's background service as Talpy Chat's Stop sees it: a Unix
+    socket at its place (cs.DAEMON_TMP, patched to a folder of the test's),
+    its attach line in, answer(request) as one line out; once that's ok, a
+    bit of what the session shows (frame), and every byte that comes in after
+    the line is kept in typed (what the session got as typed) till the
+    client lets go. Its key is daemon/control.key in the profile."""
+
+    KEY = "0123456789abcdef0123456789abcdef"
+
+    def __init__(self, test, profile, answer, frame=b"\x1b[?1049h\x1b[H> working"):
+        import socket
+        import threading
+        self.requests, self.typed, self.answer, self.frame = [], [], answer, frame
+        self.done = threading.Event()
+        root = Path(tempfile.mkdtemp(prefix="td-", dir="/tmp"))  # (a socket's path: at most 107 bytes)
+        test.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        value = str(profile.path)
+        for p in (mock.patch.object(cs, "DAEMON_TMP", root),
+                  mock.patch.object(cs, "service_config_dir", side_effect=lambda q: value if q.path == profile.path else None)):
+            p.start()
+            test.addCleanup(p.stop)
+        self.path = cs.daemon_socket(profile)
+        self.path.parent.mkdir(parents=True)
+        write(profile.path / "daemon/control.key", self.KEY + "\n")
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(str(self.path))
+        self.server.listen(8)
+        test.addCleanup(self.server.close)
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def serve(self):
+        while True:
+            try:
+                conn, _ = self.server.accept()
+            except OSError:
+                return
+            with conn:
+                data = b""
+                while b"\n" not in data:
+                    chunk = conn.recv(65536)
+                    if not chunk:
+                        break
+                    data += chunk
+                line, _, typed = data.partition(b"\n")
+                if not line:   # (a client that told it nothing)
+                    continue
+                self.requests.append(json.loads(line))
+                answer = self.answer(self.requests[-1])
+                conn.sendall((json.dumps(answer) + "\n").encode())
+                if answer.get("ok"):
+                    conn.sendall(self.frame)
+                    while True:
+                        chunk = conn.recv(65536)
+                        if not chunk:
+                            break
+                        typed += chunk
+                self.typed.append(typed)
+                self.done.set()
+
+    @staticmethod
+    def takes_it(request):
+        return {"ok": True, "op": "attach", "via": "pty", "booting": False, "tempo": "active", "state": "working",
+                "cached": False, "stale": False, "workerCliVersion": "2.1.318"}
+
+
+class BackgroundStopTests(Fixture):
+    """Talpy Chat's Stop in a background chat: Claude's background service
+    has no interrupt, so Talpy Den attaches to the session for a moment as
+    `claude attach` does and types one Esc (checked live on Claude Code
+    2.1.318: "[Request interrupted by user]", the chat stays). It attaches at
+    the size the session's terminal has now, so a terminal that shows it
+    isn't resized. Undocumented: only on the Claude Code versions it was
+    checked on (no Stop button on another), and nothing is typed unless the
+    service answers as expected."""
+
+    def setUp(self):
+        super().setUp()
+        self.profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
+        self.entry = session("bgworking", kind="bg", status="busy", jobId="job3", version="2.1.318")
+        size = mock.patch.object(cs, "tty_size", side_effect=lambda pid: (120, 40) if pid == PID else None)
+        size.start()
+        self.addCleanup(size.stop)
+
+    def test_the_claude_code_versions_it_was_checked_on(self):
+        for version, known in (("2.1.318", True), ("2.1.330", True), ("2.1.317", False), ("2.2.0", False),
+                               ("3.0.1", False), ("2.1.318-beta.1", False), ("", False), (None, False), (2, False)):
+            self.assertEqual(cs.bg_stop_known(version), known, version)
+
+    def test_rows_say_whether_stop_can_interrupt_a_background_chat(self):
+        w = self.home / ".claude-work"
+        write(w / "sessions/17.json", self.entry)
+        write(w / "sessions/30.json", session("bg-old", kind="bg", status="busy", jobId="job6", version="2.1.300"))
+        write(w / "sessions/31.json", session("term-new", status="busy", version="2.1.318"))
+        rows = {s["sessionId"]: s for s in self.group(self.collect(with_tokens=False), "work")["sessions"]}
+        self.assertEqual({sid: rows[sid]["bgStop"] for sid in ("bgworking", "bg-old", "term-new", "bgdone", "busy")},
+                         {"bgworking": True, "bg-old": False, "term-new": False, "bgdone": False, "busy": False})
+
+    def test_esc_goes_in_at_the_size_its_terminal_has_now(self):
+        service = FakeAttach(self, self.profile, FakeAttach.takes_it)
+        ok, message = cs.interrupt_background(self.profile, self.entry)
+        self.assertTrue(ok, message)
+        self.assertTrue(service.done.wait(5))
+        (request,) = service.requests
+        self.assertEqual({k: request[k] for k in ("proto", "op", "short", "auth", "cols", "rows")},
+                         {"proto": 1, "op": "attach", "short": "job3", "auth": FakeAttach.KEY, "cols": 120, "rows": 40})
+        self.assertRegex(request["attachId"], r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+        # (no theme of its own, and no browser: the session keeps its own)
+        self.assertNotIn("systemTheme", request["caps"])
+        self.assertNotIn("browser", request["caps"])
+        self.assertEqual(service.typed, [b"\x1b"], "one Esc, nothing else")
+
+    def test_nothing_is_typed_unless_it_works_on_a_version_it_knows(self):
+        service = FakeAttach(self, self.profile, FakeAttach.takes_it)
+        for entry, said in ((dict(self.entry, version="2.2.0"), "Claude Code 2.2.0"),
+                            (dict(self.entry, version=None), "this Claude Code"),
+                            (dict(self.entry, status="idle"), "nothing to stop"),
+                            (dict(self.entry, status="waiting", waitingFor="permission prompt"), "nothing to stop"),
+                            (dict(self.entry, status="shell"), "Its turn is over"),
+                            (dict(self.entry, pid=os.getppid()), "size of its terminal"),
+                            (dict(self.entry, jobId="../x"), "can't stop")):
+            ok, message = cs.interrupt_background(self.profile, entry)
+            self.assertFalse(ok, entry)
+            self.assertIn(said, message)
+        self.assertEqual(service.requests, [], "never attached")
+
+    def test_nothing_is_typed_when_the_service_answers_otherwise(self):
+        for answer, said in (({"ok": False, "error": "attach rejected: bad key", "code": "EAUTH"}, "attach rejected: bad key"),
+                             ({"ok": True, "op": "has"}, "didn't take it"),
+                             (dict(FakeAttach.takes_it({}), workerCliVersion="2.3.0"), "Claude Code 2.3.0"),
+                             (dict(FakeAttach.takes_it({}), booting=True), "starting")):
+            with self.subTest(answer=answer):
+                service = FakeAttach(self, self.profile, lambda r, a=answer: a)
+                ok, message = cs.interrupt_background(self.profile, self.entry)
+                self.assertFalse(ok)
+                self.assertIn(said, message)
+                self.assertTrue(service.done.wait(5))
+                self.assertEqual(service.typed, [b""])
+
+    def test_no_service_no_key_or_another_users_socket(self):
+        with mock.patch.object(cs, "service_config_dir", return_value=None):
+            self.assertEqual(cs.interrupt_background(self.profile, self.entry),
+                             (False, "Claude's background service can't be asked"))
+        service = FakeAttach(self, self.profile, FakeAttach.takes_it)
+        with mock.patch.object(cs, "peer_uid", return_value=os.getuid() + 1):
+            self.assertEqual(cs.interrupt_background(self.profile, self.entry),
+                             (False, "Claude's background service didn't answer"))
+        (self.profile.path / "daemon/control.key").unlink()
+        self.assertEqual(cs.interrupt_background(self.profile, self.entry),
+                         (False, "Claude's background service can't be asked"))
+        self.assertEqual(service.requests, [], "never told the key")
+
+    def test_interrupt_by_id_types_esc_into_a_background_chat_and_ctrl_c_into_tmux(self):
+        write(self.home / ".claude-work/sessions/17.json", self.entry)
+        write(self.home / ".claude-work/sessions/30.json", session("in-tmux", status="busy", tmux="main:@1.%4"))
+        calls = []
+        with mock.patch.object(cs, "interrupt_background", side_effect=lambda p, e: calls.append((p.label, e["jobId"])) or (True, "bg")), \
+                mock.patch.object(cs, "interrupt_chat", side_effect=lambda e: calls.append(("tmux", e["sessionId"])) or (True, "tmux")):
+            self.assertEqual(cs.interrupt_chat_by_id(self.home, [], "bgworking", ".claude-work"), (True, "bg"))
+            self.assertEqual(cs.interrupt_chat_by_id(self.home, [], "in-tmux"), (True, "tmux"))
+            self.assertEqual(cs.interrupt_chat_by_id(self.home, [], "gone"), (False, "That chat isn't running any more"))
+        self.assertEqual(calls, [("work", "job3"), ("tmux", "in-tmux")])
+
+
+
+class TtySizeTests(unittest.TestCase):
+    def test_the_size_of_a_process_terminal(self):
+        # (read without touching what goes through it: what a Stop attaches at)
+        import fcntl
+        import struct
+        import termios
+        master, slave = os.openpty()
+        self.addCleanup(os.close, master)
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+        proc = subprocess.Popen(["sleep", "30"], stdin=slave, stdout=subprocess.DEVNULL)
+        os.close(slave)
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+        plain = subprocess.Popen(["sleep", "30"], stdin=subprocess.DEVNULL)
+        self.addCleanup(plain.wait)
+        self.addCleanup(plain.kill)
+        self.assertEqual(cs.tty_size(proc.pid), (120, 40))
+        self.assertIsNone(cs.tty_size(plain.pid))   # (no terminal)
+        self.assertIsNone(cs.tty_size(DEAD_PID))
+        self.assertIsNone(cs.tty_size(None))
+
+
 class SeveralWidgetsTests(unittest.TestCase):
     """A panel widget and one in the system tray: one of them notifies, and they share their settings."""
 

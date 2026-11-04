@@ -1390,6 +1390,27 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@example.org", "GIT_COM
            "GIT_COMMITTER_EMAIL": "t@example.org", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
 
+class StopTests(SendFixture):
+    """Talpy Chat's Stop (pane.py --interrupt): the session that has the chat
+    open now, by its own id or the chat's; Esc into a background chat
+    (talpy_den.interrupt_background), Ctrl+C in tmux."""
+
+    def test_it_interrupts_the_session_that_has_the_chat_open(self):
+        calls = []
+        self.live(kind="bg", status="busy", jobId="5c1d7a6e", version="2.1.318")
+        with mock.patch.object(cs, "interrupt_background", side_effect=lambda p, e: calls.append(("bg", p.label, e["jobId"])) or (True, "Stopped")), \
+                mock.patch.object(cs, "interrupt_chat", side_effect=lambda e: calls.append(("tmux", e["sessionId"])) or (True, "Interrupted")):
+            self.assertEqual(self.cli("--interrupt", SID, "--profile", ".claude-work"), {"ok": True, "message": "Stopped"})
+            # (a chat resumed in another session: by that session's id)
+            self.live(sessionId="ab12cd34-0000-4000-8000-000000000000", status="busy", tmux="main:@1.%4")
+            self.assertEqual(self.cli("--interrupt", SID, "--session", "ab12cd34-0000-4000-8000-000000000000"),
+                             {"ok": True, "message": "Interrupted"})
+            (self.home / ".claude-work/sessions/30.json").unlink()
+            self.assertEqual(self.cli("--interrupt", SID), {"ok": False, "message": "That chat isn't running any more"})
+            self.assertFalse(self.cli("--interrupt", "--x")["ok"])
+        self.assertEqual(calls, [("bg", "work", "5c1d7a6e"), ("tmux", "ab12cd34-0000-4000-8000-000000000000")])
+
+
 class TalpyChatHookTests(SendFixture):
     """Chats Talpy Chat starts, or wakes in the background, get the permission
     hook for themselves (claude --settings), so what they ask is answered in

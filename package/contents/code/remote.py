@@ -15,7 +15,7 @@
     python3 -I remote.py --run HOST COMMAND         run COMMAND on HOST (e.g. claude stop)
     python3 -I remote.py --end HOST SESSION_ID [PROFILE] [--busy] [--keep-off CHAT_ID]   stop a chat in a terminal or VS Code there
                      (--keep-off: and once it's stopped, that chat doesn't keep going any more)
-    python3 -I remote.py --interrupt HOST SESSION_ID [PROFILE]      interrupt a working chat in tmux there
+    python3 -I remote.py --interrupt HOST SESSION_ID [PROFILE]      interrupt a working chat in tmux there (or in the background)
     python3 -I remote.py --dismiss HOST SESSION_ID  hide a finished chat of HOST
     python3 -I remote.py --undismiss-all HOST
     python3 -I remote.py --hide HOST KIND ID        hide a chat, plan, memory or project of HOST (KIND
@@ -1065,7 +1065,7 @@ def end_args(args):
 
 
 def interrupt(host, session_id, profile=None):
-    """Interrupt a working chat in tmux on host (talpy_den.interrupt_chat)."""
+    """Interrupt a working chat in tmux on host, or a background one there (talpy_den.interrupt_chat_by_id)."""
     return run_status_script(host, ["--interrupt", session_id] + (["--profile", profile] if profile else []))
 
 
