@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { reducedMotion } from "../pets/motion";
 import { chatRefOf, hostLabel, type TickerItem, tickerItems, TickerTurns } from "../../src/shared/model";
 import type { Group } from "../../src/shared/types";
 import { post } from "../env";
@@ -28,13 +29,22 @@ export function Ticker({ groups }: { groups: Group[] }) {
     return () => clearInterval(timer);
   }, [shown, items.length > 1]);
 
+  // Another chat's turn fades in. The button itself stays (no key), so one
+  // the keyboard is on keeps the focus as the chats take turns
+  const box = useRef<HTMLButtonElement>(null);
+  const key = item?.key;
+  useEffect(() => {
+    if (!key || !box.current || reducedMotion() || document.hidden) return;
+    box.current.animate([{ opacity: 0.15, transform: "translateY(3px)" }, { opacity: 1, transform: "none" }], { duration: 220, easing: "ease-out" });
+  }, [key]);
+
   if (!item) return null;
   const several = items.length > 1 || !!item.host;
   return (
     <button
       type="button"
       class="ticker"
-      key={item.key}
+      ref={box}
       title={`${item.host ? hostLabel(item.host) + ": " : ""}${item.name}\n${item.text}\n\nClick to open it in a tab.`}
       onClick={() => post({ type: "openPane", chat: chatRefOf(item.session, item.host) })}
     >
