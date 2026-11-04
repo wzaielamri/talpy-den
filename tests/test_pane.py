@@ -371,6 +371,152 @@ class ConversationTests(PaneFixture):
                                       name="pane.py")
 
 
+# Claude Code's own fixed sentences around a No (always in English; the note after them is yours)
+REFUSED = ("The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, "
+           "the new_string was NOT written to the file). ")
+SAID_TO_CLAUDE = REFUSED + "To tell you how to proceed, the user said:\n"
+STOPPED = REFUSED + "STOP what you are doing and wait for the user to tell you how to proceed."
+BY_YOU = {"decision": "reject", "source": "user_reject"}
+
+
+def answered(tid, ts, text="ok", error=False, **kw):
+    """A tool result entry, with what Claude Code writes beside it (toolUseResult, permissionDecision…)."""
+    return dict(tool_result(tid, ts, error=error, text=text), **kw)
+
+
+class AnswersInChatTests(PaneFixture):
+    """Your answers in the chat (A11): what Claude asked, on its tool item
+    ("asked"), and what you said, as yours right after it."""
+
+    QUESTION = {"question": "Which colour should the logo be?", "header": "Colour", "multiSelect": False,
+                "options": [{"label": "Teal", "description": "calm"}, {"label": "Amber (Recommended)", "description": "warm"}]}
+    TOPPINGS = {"question": "Which toppings?", "header": "Toppings", "multiSelect": True,
+                "options": [{"label": "Basil"}, {"label": "Figs, dried"}, {"label": "Honey"}]}
+
+    def items(self, *entries):
+        t = self.now - 100
+        self.chat(prompt("make a logo", t, cwd=str(self.folder)), *entries)
+        return pane.conversation(self.transcript)[0]
+
+    def ask(self, ts, *questions, tid="q1"):
+        return tool_use(tid, "AskUserQuestion", {"questions": list(questions)}, ts, "m1")
+
+    def test_one_question(self):
+        t = self.now - 90
+        items = self.items(self.ask(t, self.QUESTION),
+                           answered("q1", t + 5, 'Your questions have been answered: "…"="Teal".', toolUseResult={
+                               "questions": [self.QUESTION], "answers": {self.QUESTION["question"]: "Teal"}}))
+        tool, you = items[1], items[2]
+        self.assertEqual(tool["asked"]["state"], "answered")
+        self.assertEqual([(q["header"], q["question"], q["picked"]) for q in tool["asked"]["questions"]],
+                         [("Colour", "Which colour should the logo be?", ["Teal"])])
+        self.assertEqual([o["label"] for o in tool["asked"]["questions"][0]["options"]], ["Teal", "Amber (Recommended)"])
+        self.assertEqual(tool["summary"], "Answered")
+        self.assertEqual({k: you[k] for k in ("kind", "key", "text", "answered")},
+                         {"kind": "you", "key": "q1/answer", "text": "Teal", "answered": "question"})
+        self.assertEqual(you["answers"], [{"header": "Colour", "question": "Which colour should the logo be?",
+                                           "answer": "Teal", "notes": ""}])
+        self.assertEqual(you["at"], int((t + 5) * 1000))
+
+    def test_still_asking(self):
+        items = self.items(self.ask(self.now - 90, self.QUESTION))
+        self.assertEqual((items[-1]["status"], items[-1]["asked"]["state"], items[-1]["summary"]), ("open", "open", ""))
+        self.assertEqual(items[-1]["asked"]["questions"][0]["picked"], [])
+
+    def test_several_questions_multi_select_typed_and_notes(self):
+        t = self.now - 90
+        third = {"question": "Any slogan?", "header": "", "multiSelect": False, "options": [{"label": "None"}]}
+        given = {self.QUESTION["question"]: "Amber (Recommended)",
+                 self.TOPPINGS["question"]: 'Basil, "Figs, dried", a little salt',   # (as Claude's dialog joins them)
+                 third["question"]: "Bright and simple"}
+        items = self.items(self.ask(t, self.QUESTION, self.TOPPINGS, third),
+                           answered("q1", t + 5, toolUseResult={
+                               "questions": [self.QUESTION, self.TOPPINGS, third], "answers": given,
+                               "annotations": {self.QUESTION["question"]: {"preview": "…", "notes": " a soft one "}}}))
+        tool, you = items[1], items[2]
+        self.assertEqual([q["picked"] for q in tool["asked"]["questions"]], [["Amber (Recommended)"], ["Basil", "Figs, dried"], []])
+        self.assertEqual(you["text"], 'Colour: Amber (Recommended)\na soft one\nToppings: Basil, "Figs, dried", a little salt\n'
+                                      "Any slogan?: Bright and simple")
+        self.assertEqual([(a["header"], a["answer"], a["notes"]) for a in you["answers"]],
+                         [("Colour", "Amber (Recommended)", "a soft one"), ("Toppings", given[self.TOPPINGS["question"]], ""),
+                          ("", "Bright and simple", "")])
+
+    def test_declined(self):
+        t = self.now - 90
+        # with a note, from Talpy Den (the permission hook's No): the note is yours
+        items = self.items(self.ask(t, self.QUESTION),
+                           answered("q1", t + 5, "The user didn't answer and said: ask me after lunch", error=True,
+                                    permissionDecision={"decision": "reject", "source": "hook"}))
+        self.assertEqual((items[1]["asked"]["state"], items[1]["summary"]), ("declined", "Declined"))
+        self.assertEqual((items[2]["text"], items[2]["answered"]), ("ask me after lunch", "question"))
+        # without one (Esc in its dialog, Decline with no note): nothing of yours
+        for result in (answered("q1", t + 5, STOPPED, error=True, toolUseResult="User rejected tool use"),
+                       answered("q1", t + 5, "The user didn't answer.", error=True)):
+            items = self.items(self.ask(t, self.QUESTION), result)
+            self.assertEqual([i["kind"] for i in items], ["you", "tool"])
+            self.assertEqual(items[1]["asked"]["state"], "declined")
+        # "Chat about this": Claude Code's own text, not yours (what you write next is your prompt)
+        items = self.items(self.ask(t, self.QUESTION),
+                           answered("q1", t + 5, SAID_TO_CLAUDE + "The user wants to clarify these questions.\n    Questions asked:\n- …",
+                                    error=True, permissionDecision=BY_YOU),
+                           prompt("which shades of teal?", t + 9))
+        self.assertEqual([i["kind"] for i in items], ["you", "tool", "you"])
+        self.assertEqual((items[1]["asked"]["state"], items[1]["summary"], items[2]["text"]),
+                         ("chat", "Chat about this", "which shades of teal?"))
+        # failed (not answered at all): as any failed call
+        items = self.items(self.ask(t, self.QUESTION), answered("q1", t + 5, "<tool_use_error>bad input</tool_use_error>", error=True))
+        self.assertEqual((items[1]["asked"]["state"], items[1]["summary"], len(items)), ("failed", "bad input", 2))
+
+    def test_plan(self):
+        t = self.now - 90
+        plan = "# Logo plan\n\n1. Sketch\n2. Colour"
+        call = tool_use("p1", "ExitPlanMode", {"plan": plan, "planFilePath": "/tmp/plan.md"}, t, "m1")
+        items = self.items(call, answered("p1", t + 5, "User has approved your plan.", toolUseResult={
+            "plan": plan, "isAgent": False, "filePath": "/tmp/plan.md"}))
+        self.assertEqual({k: items[1]["asked"][k] for k in ("plan", "title", "state")}, {"plan": plan, "title": "Logo plan", "state": "approved"})
+        self.assertEqual((items[1]["summary"], items[2]["key"], items[2]["text"], items[2]["answered"]),
+                         ("Approved", "p1/answer", "Approved the plan", "plan"))
+        # rejected: Keep planning, and your note (in Claude's terminal, or from Talpy Den;
+        # Claude Code's own note after it isn't yours)
+        for text, decided in ((SAID_TO_CLAUDE + "use fewer colours\n\nNote: The user's next message may contain a correction.", BY_YOU),
+                              ("The user wants to keep planning and said: use fewer colours", {"decision": "reject", "source": "hook"})):
+            items = self.items(call, answered("p1", t + 5, text, error=True, permissionDecision=decided))
+            self.assertEqual((items[1]["asked"]["state"], items[1]["summary"], items[2]["text"]),
+                             ("keep", "Keep planning", "Keep planning\nuse fewer colours"))
+        items = self.items(call, answered("p1", t + 5, STOPPED, error=True, toolUseResult="User rejected tool use"))
+        self.assertEqual(items[2]["text"], "Keep planning")
+
+    def test_deny_with_a_note(self):
+        t = self.now - 90
+        a = str(self.folder / "a.py")
+        edit = tool_use("e1", "Edit", {"file_path": a, "old_string": "x = 1", "new_string": "x = 2"}, t, "m1")
+        for text, decided in ((SAID_TO_CLAUDE + "keep x as it is", BY_YOU),
+                              (REFUSED + "The user provided the following reason for the rejection:  keep x as it is", None),
+                              ("The user denied this and said: keep x as it is", {"decision": "reject", "source": "hook"})):
+            items = self.items(edit, answered("e1", t + 5, text, error=True,
+                                              **({"permissionDecision": decided} if decided else {})))
+            self.assertEqual((items[1]["asked"], items[1]["summary"]), ({"state": "denied"}, "Denied"))
+            self.assertEqual({k: items[2][k] for k in ("kind", "key", "text", "answered")},
+                             {"kind": "you", "key": "e1/answer", "text": "keep x as it is", "answered": "permission"})
+        # a plain Deny, a refusal that isn't yours (a rule, auto mode, another's hook): the Steps tab only
+        for result in (answered("e1", t + 5, STOPPED, error=True, toolUseResult="User rejected tool use"),
+                       answered("e1", t + 5, SAID_TO_CLAUDE + "not you", error=True,
+                                permissionDecision={"decision": "reject", "source": "config", "reasonType": "classifier"}),
+                       answered("e1", t + 5, "PreToolUse:Edit hook error: blocked", error=True,
+                                permissionDecision={"decision": "reject", "source": "hook"}),
+                       answered("e1", t + 5, "The user said: something", error=False)):
+            items = self.items(edit, result)
+            self.assertEqual(len(items), 2)
+            self.assertNotIn("asked", items[1])
+
+    def test_split_answer(self):
+        self.assertEqual(pane.split_answer('Basil, "Figs, dried", "say \\"hi\\"", Honey'), ["Basil", "Figs, dried", 'say "hi"', "Honey"])
+        self.assertEqual(pane.split_answer('"unclosed, Basil'), ['"unclosed', "Basil"])
+        self.assertEqual(pane.split_answer("one"), ["one"])
+        # what the pane sends is read back as it was meant
+        self.assertEqual(pane.split_answer(pane.answer_text(["Basil", "Figs, dried", 'a "b"'], True)), ["Basil", "Figs, dried", 'a "b"'])
+
+
 class PermissionViewTests(PaneFixture):
     def test_the_oldest_call_without_a_result(self):
         t = self.now - 10

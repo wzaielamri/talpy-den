@@ -237,6 +237,162 @@ def same_text(a, b):
     return " ".join(a.split()) == " ".join(b.split())
 
 
+# ---------------------------------------------------------------- your answers in the chat
+#
+# What Claude asked (AskUserQuestion, a plan: ExitPlanMode) and what you said
+# to it, read from the transcript's structure wherever you answered (Talpy
+# Chat, a notification, a row, Claude's terminal, the Claude Code panel): the
+# tool result's toolUseResult ({questions, answers {question: text},
+# annotations {question: {notes}}}; an approved plan's {plan}); a note given
+# with a No: what follows Claude Code's own fixed sentence, always in English
+# ("…, the user said:" and its older "…reason for the rejection:"), or the
+# permission hook's (decision_of, plan_decision). Your note is in your words.
+
+REJECTED_USE = "User rejected tool use"   # (Claude Code's toolUseResult for a No without a note)
+REFUSALS = ("The user doesn't want to proceed with this tool use.", "Permission for this tool use was denied.")
+SAID = re.compile(r"(?:the user said:|The user said:|the following reason for the rejection:)[ \t]*\n?")
+OUR_NO = re.compile(r"The user (?:didn't answer|denied this|wants to keep planning)(?P<said> and said: |[.:])")
+CLARIFY = "The user wants to clarify these questions."   # (Claude Code's, as the note: "Chat about this")
+NEXT_NOTE = "\n\nNote: The user's next message may contain"   # (Claude Code's, after some notes: not yours)
+
+
+def rejection(entry, text, error):
+    """Your note, if this tool result is your No to the call ("" for a No
+    without one); None for any other result: one that ran, an error, or a
+    refusal by a rule, auto mode's classifier or a hook of another's."""
+    if not error:
+        return None
+    decided = entry.get("permissionDecision")
+    if isinstance(decided, dict) and (decided.get("decision") != "reject"
+                                      or decided.get("source") not in ("user_reject", "hook")):
+        return None
+    cut = text.find(NEXT_NOTE)
+    text = (text[:cut] if cut >= 0 else text).strip()
+    ours = OUR_NO.match(text)
+    if ours:
+        return text[ours.end():].strip() if ours.group("said") == " and said: " else ""
+    if text.startswith(REFUSALS):
+        said = SAID.search(text.split("\n", 1)[0])
+        if said:
+            return text[said.end():].strip()
+        if isinstance(decided, dict) or entry.get("toolUseResult") == REJECTED_USE:
+            return ""
+    return None
+
+
+def split_answer(text):
+    """A multi-select answer's parts, as Claude's dialog joins them (answer_text):
+    ", " between them, one with ", " or a quote in it JSON-quoted."""
+    parts, at = [], 0
+    while at < len(text):
+        if text[at] == '"':
+            try:
+                value, end = json.JSONDecoder().raw_decode(text, at)
+            except ValueError:
+                value, end = None, at
+            if isinstance(value, str) and (end == len(text) or text.startswith(", ", end)):
+                parts.append(value)
+                at = end + 2
+                continue
+        end = text.find(", ", at)
+        end = len(text) if end < 0 else end
+        parts.append(text[at:end])
+        at = end + 2
+    return parts
+
+
+def picked_labels(answer, question):
+    """The options of question an answer picked (by their labels)."""
+    labels = [o["label"] for o in question["options"]]
+    if answer in labels:
+        return [answer]
+    return [p for p in split_answer(answer) if p in labels] if question["multiSelect"] else []
+
+
+def plan_title(text):
+    for line in text.splitlines():
+        line = line.strip().lstrip("#").strip()
+        if line:
+            return cs.short_text(line, 100)
+    return ""
+
+
+def asked_of(name, inp):
+    """What a question or a plan asks, for the chat to show as Claude's
+    (the tool item's "asked"): {"questions": question_view's, each with
+    "picked" (the labels you chose)} or {"plan" (Markdown), "title"}, with
+    "state" (how you answered: "open" till then)."""
+    if name == cs.ASK_TOOL:
+        return {"questions": [dict(q, picked=[]) for q in cs.question_view(inp)], "state": "open"}
+    text = inp.get("plan") if isinstance(inp.get("plan"), str) else ""
+    return {"plan": clip(text, TEXT_CHARS, 10 ** 6), "title": plan_title(text), "state": "open"}
+
+
+ASKED_SUMMARY = {"answered": "Answered", "declined": "Declined", "chat": "Chat about this",
+                 "approved": "Approved", "keep": "Keep planning", "denied": "Denied"}
+
+
+def your_answer(item, entry, output, error, result):
+    """Your answer to the tool call item, now that it has its result (output,
+    error; result: the entry's toolUseResult when it's this call's): sets
+    the item's "asked" state, and gives your answer as an item of yours
+    ({"kind": "you", "key": "<tool id>/answer", "text", "answered":
+    "question" | "plan" | "permission"}, a question's with "answers":
+    [{"header", "question", "answer", "notes"}]), or None."""
+    asked = item.get("asked")
+    note = rejection(entry, output, error)
+    text, answered, extra = "", "", {}
+    if asked is not None and "questions" in asked:
+        answered = "question"
+        given = result.get("answers") if isinstance(result, dict) else None
+        if note is not None:
+            asked["state"] = "chat" if note.startswith(CLARIFY) else "declined"
+            text = note if asked["state"] == "declined" else ""
+        elif isinstance(given, dict) and given:
+            asked["state"] = "answered"
+            notes = result.get("annotations") if isinstance(result.get("annotations"), dict) else {}
+            asked_now = [dict(q, picked=[]) for q in cs.question_view(result)] or asked["questions"]
+            answers = []
+            for q in asked_now:
+                answer = given.get(q["question"])
+                if not isinstance(answer, str):
+                    continue
+                q["picked"] = picked_labels(answer, q)
+                said = notes.get(q["question"]).get("notes") if isinstance(notes.get(q["question"]), dict) else None
+                answers.append({"header": q["header"], "question": q["question"], "answer": answer,
+                                "notes": said.strip() if isinstance(said, str) else ""})
+            asked["questions"] = asked_now
+            several = len(answers) > 1
+            text = "\n".join((f"{a['header'] or a['question']}: " if several else "") + a["answer"]
+                             + ("\n" + a["notes"] if a["notes"] else "") for a in answers)
+            extra = {"answers": answers}
+        else:   # (no answers, "The user did not answer the questions."; or it failed)
+            asked["state"] = "failed" if error else "declined"
+    elif asked is not None:
+        answered = "plan"
+        if note is not None:
+            asked["state"] = "keep"
+            text = "Keep planning" + ("\n" + note if note else "")
+        elif not error:   # (approved: toolUseResult has the plan, as it was approved)
+            asked["state"] = "approved"
+            text = "Approved the plan"
+            plan = result.get("plan") if isinstance(result, dict) else None
+            if not asked["plan"].strip() and isinstance(plan, str) and plan.strip():
+                asked["plan"], asked["title"] = clip(plan, TEXT_CHARS, 10 ** 6), plan_title(plan)
+        else:
+            asked["state"] = "failed"
+    elif note:
+        answered = "permission"
+        item["asked"] = {"state": "denied"}
+        text = note
+    if item.get("asked"):
+        item["summary"] = ASKED_SUMMARY.get(item["asked"]["state"], item["summary"])
+    if not text:
+        return None
+    return dict({"kind": "you", "key": item["key"] + "/answer", "text": clip(text, TEXT_CHARS, 10 ** 6),
+                 "answered": answered}, **extra)
+
+
 PICTURE_NAMED = re.compile(r"\[Image: (/[^\]\n]+)\]")
 PICTURE_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}
 PICTURE_MAX = 20 << 20  # bytes of one pasted picture saved for the pane
@@ -322,8 +478,10 @@ def conversation_items(lines, pictures=None):
     "note", "text"} for an interruption, a usage limit or a compaction;
     each with "at" (ms) and "key" (the same in the next answer, as long as
     the item is listed); a prompt of yours with pictures has "pictures"
-    (their files: prompt_pictures, saved in the folder pictures). Entries
-    of subagents (sidechains) aren't in it."""
+    (their files: prompt_pictures, saved in the folder pictures). A
+    question or a plan Claude asked has "asked" (asked_of), and your answer
+    to it, or your note to a No, comes after it as yours (your_answer).
+    Entries of subagents (sidechains) aren't in it."""
     items, tools = [], {}
     # Messages sent while Claude works: the transcript has each one when it's
     # sent (queue-operation enqueue) and again once Claude takes it in, after
@@ -410,6 +568,11 @@ def conversation_items(lines, pictures=None):
                         item["diff"] = capped(full)
                         if full:
                             item["summary"] = change_summary(item["name"], full, item["summary"])
+                    said = your_answer(item, e, output, bool(c.get("is_error")),
+                                       e.get("toolUseResult") if len(results) == 1 else None)
+                    if said is not None:
+                        said["at"] = at
+                        items.append(said)
             prompt = cs.human_prompt(e)
             if prompt is not None:
                 if due:
@@ -450,6 +613,8 @@ def conversation_items(lines, pictures=None):
                 item = {"kind": "tool", "key": c["id"], "name": c.get("name") or "tool", "line": cs.describe_tool(c),
                         "status": "open", "input": clip(tool_input_text(c)), "output": "", "summary": "", "at": at,
                         "diff": capped(edit_lines(c.get("name"), inp, None)) if c.get("name") in EDITS else []}
+                if c.get("name") in (cs.ASK_TOOL, cs.PLAN_TOOL):
+                    item["asked"] = asked_of(c["name"], inp)
                 tools[c["id"]] = (item, inp)
                 items.append(item)
     items.extend(due)  # (taken as prompts that aren't written yet)
