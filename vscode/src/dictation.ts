@@ -5,6 +5,7 @@
 
 import * as vscode from "vscode";
 import type { Backend } from "./backend";
+import { noLinks } from "./notify";
 
 type Model = { name: string; mb: number; note: string; installed: boolean; deletable: boolean; used: boolean };
 type Item = vscode.QuickPickItem & { run?: string[]; busy?: string; model?: Model; ask?: string };
@@ -16,7 +17,7 @@ export async function dictationModels(backend: Backend): Promise<void> {
   }
   const st = await backend.dictate(["--status"]);
   if (!Array.isArray(st.models)) {
-    void vscode.window.showErrorMessage(`Talpy Den: dictation can't be asked now (${String(st.message ?? "no answer")})`);
+    void vscode.window.showErrorMessage(noLinks(`Talpy Den: dictation can't be asked now (${String(st.message ?? "no answer")})`));
     return;
   }
   const missing = (Array.isArray(st.missing) ? st.missing : []).join(" and ");
@@ -66,8 +67,8 @@ export async function dictationModels(backend: Backend): Promise<void> {
         () => backend.dictate(action.run!, 3600000))
     : await backend.dictate(action.run);
   const message = String(r.message ?? "");
-  if (r.ok) void vscode.window.showInformationMessage(message);
-  else void vscode.window.showErrorMessage(message || "Talpy Den: that didn't work");
+  if (r.ok) void vscode.window.showInformationMessage(noLinks(message));
+  else void vscode.window.showErrorMessage(noLinks(message) || "Talpy Den: that didn't work");
 }
 
 // What to do with one model: download it (and use it), use it, delete it

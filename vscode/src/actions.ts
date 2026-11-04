@@ -17,7 +17,7 @@ import { isAgentRunFile, openAgentRunFile, showMarkdown } from "./agentRun";
 import type { Dashboard } from "./dashboard";
 import { canRaiseWindows, isGnome } from "./desktop";
 import { allShown, foundLines, showAll } from "./found";
-import { chatRef } from "./notify";
+import { chatRef, noLinks } from "./notify";
 import {
   ago,
   allGroups,
@@ -134,7 +134,7 @@ export class Actions {
   private fail(message: string): void {
     this.log.warn(message);
     this.dash.setActionError(message);
-    if (!this.dash.isVisible()) void vscode.window.showErrorMessage(message);
+    if (!this.dash.isVisible()) void vscode.window.showErrorMessage(noLinks(message));
   }
 
   private report(answer: Answer, failurePrefix: string): boolean {
@@ -685,7 +685,7 @@ export class Actions {
       }
       await vscode.env.clipboard.writeText(text);
       if (chat) await this.open(chat);
-      void vscode.window.showInformationMessage(`Your feedback is in the clipboard. ${answer.message}.`);
+      void vscode.window.showInformationMessage(noLinks(`Your feedback is in the clipboard. ${answer.message}.`));
     } else if (answer.message) {
       this.dash.setActionInfo(answer.message);
     }
@@ -1537,7 +1537,7 @@ export class Actions {
         const choice = await vscode.window.showInformationMessage(`Saved: ${file}`, "Show It");
         if (choice === "Show It") await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(file));
       } catch (e) {
-        void vscode.window.showErrorMessage(`Talpy Den: couldn't save the card: ${(e as Error).message}`);
+        void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't save the card: ${(e as Error).message}`));
       }
       return;
     }
@@ -1550,9 +1550,9 @@ export class Actions {
       await fs.writeFile(file, data, { mode: 0o600 });
       const r = await this.backend.copyImage(file);
       if (r.ok) void vscode.window.setStatusBarMessage("$(check) The card is copied: paste it anywhere", 5000);
-      else void vscode.window.showErrorMessage(`Talpy Den: couldn't copy the card: ${r.message}`);
+      else void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't copy the card: ${r.message}`));
     } catch (e) {
-      void vscode.window.showErrorMessage(`Talpy Den: couldn't copy the card: ${(e as Error).message}`);
+      void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't copy the card: ${(e as Error).message}`));
     } finally {
       if (folder) await fs.rm(folder, { recursive: true, force: true }).catch(() => undefined);
     }

@@ -18,7 +18,7 @@ import { extraConfigDirs, settings } from "./config";
 import { markdownLinkFile, openAgentRunFile } from "./agentRun";
 import { Dashboard } from "./dashboard";
 import { carryOverSettings, settingNames } from "./legacySettings";
-import { Notifier } from "./notify";
+import { noLinks, Notifier } from "./notify";
 import { PlanReview, planFileOf } from "./planReview";
 import { allGroups, countStates, duration, hiddenCount, type HiddenKind } from "./shared/model";
 import { StatusBar } from "./statusBar";
@@ -59,7 +59,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const r = await backend.pane(["--oldest", decision], 20000);
     const message = String(r.message ?? "");
     if (r.ok) void vscode.window.setStatusBarMessage(`$(check) ${message}`, 5000);
-    else void vscode.window.showInformationMessage(`Talpy Den: ${message || "Couldn't answer"}`);
+    else void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${message || "Couldn't answer"}`));
     dash.refreshAll();
   };
   actions = new Actions(backend, dash, terminals, log, account);
@@ -80,7 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const change = Math.round(((r.workedMs - r.workedBefore) / r.workedBefore) * 100);
       parts.push(change >= 0 ? `${change}% more than the week before.` : `${-change}% less than the week before.`);
     }
-    const choice = await vscode.window.showInformationMessage(`Your week with Claude: ${parts.join(" ")}`, "Open the Recap");
+    const choice = await vscode.window.showInformationMessage(noLinks(`Your week with Claude: ${parts.join(" ")}`), "Open the Recap");
     if (choice === "Open the Recap") {
       view.showTab("week");
       await vscode.commands.executeCommand("talpyDen.view.focus");
@@ -191,7 +191,7 @@ export function activate(context: vscode.ExtensionContext): void {
             return;
           }
           const error = await openAgentRunFile(file);
-          if (error) void vscode.window.showErrorMessage(`Talpy Den: couldn't show ${file}: ${error}`);
+          if (error) void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't show ${file}: ${error}`));
           return;
         }
         const link = terminalLinkOf(uri);

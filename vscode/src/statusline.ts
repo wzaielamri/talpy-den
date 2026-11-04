@@ -15,6 +15,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { runProcess } from "./backend";
 import { expandHome, extraConfigDirs } from "./config";
+import { noLinks } from "./notify";
 import { shellQuote } from "./shared/model";
 
 export const MARK_START = "# >>> talpy-den >>>";
@@ -325,7 +326,7 @@ export async function setUpUsageBars(extensionUri: vscode.Uri, remove = false): 
   try {
     result = plan(snippet, remove);
   } catch (e) {
-    void vscode.window.showErrorMessage(`Couldn't read the Claude Code settings: ${(e as Error).message}`);
+    void vscode.window.showErrorMessage(noLinks(`Couldn't read the Claude Code settings: ${(e as Error).message}`));
     return;
   }
   const { changes, notes } = result;
@@ -358,7 +359,7 @@ export async function setUpUsageBars(extensionUri: vscode.Uri, remove = false): 
     // changed in them while this asked is kept
     apply(plan(snippet, remove).changes);
   } catch (e) {
-    void vscode.window.showErrorMessage(`Couldn't change the files: ${(e as Error).message}`);
+    void vscode.window.showErrorMessage(noLinks(`Couldn't change the files: ${(e as Error).message}`));
     return;
   }
   void vscode.window.showInformationMessage(

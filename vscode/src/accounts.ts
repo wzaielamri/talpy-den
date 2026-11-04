@@ -10,6 +10,7 @@ import type { AccountSwitch } from "./accountSwitch";
 import type { Backend } from "./backend";
 import { configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
+import { noLinks } from "./notify";
 import { accountNameProblem, machineStatus } from "./shared/model";
 import type { Group } from "./shared/types";
 import type { Place, Terminals } from "./terminals";
@@ -91,14 +92,14 @@ export class Accounts {
 
   private fail(message: string): void {
     this.log.warn(message);
-    void vscode.window.showErrorMessage(message);
+    void vscode.window.showErrorMessage(noLinks(message));
   }
 
   // What accounts.py said, as a message (and the dashboard looks again)
   private said(r: Record<string, any>, failure: string, host?: string): boolean {
     const message = String(r.message ?? "");
     if (r.ok) {
-      if (message) void vscode.window.showInformationMessage(message);
+      if (message) void vscode.window.showInformationMessage(noLinks(message));
     } else this.fail(`${failure}: ${message || "no answer"}`);
     if (host) void this.dash.pollHost(host);
     else this.dash.refreshAll();
@@ -270,7 +271,7 @@ export class Accounts {
       if (!group) return this.fail(`${a.label} isn't in the list yet: try again in a moment.`);
       if (host) {
         if (await this.switcher.switchHost({ ...group, host }, true))
-          void vscode.window.showInformationMessage(`${a.label} is the default account on ${host} now.`);
+          void vscode.window.showInformationMessage(noLinks(`${a.label} is the default account on ${host} now.`));
         return;
       }
       return this.switcher.switchTo(group);

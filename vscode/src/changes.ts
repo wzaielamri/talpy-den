@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { cacheDir } from "./config";
+import { noLinks } from "./notify";
 
 const ONE_BY_ONE = 25; // diffs opened one by one where the changes view is missing
 
@@ -108,5 +109,5 @@ export async function openChangesLink(uri: vscode.Uri, log: vscode.LogOutputChan
     return;
   }
   const error = await openComparison(comparison);
-  if (error) void vscode.window.showErrorMessage(`Talpy Den: couldn't show the changes: ${error}`);
+  if (error) void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't show the changes: ${error}`));
 }

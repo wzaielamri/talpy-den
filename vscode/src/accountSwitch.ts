@@ -14,6 +14,7 @@ import { localPanelProfileKey, panelConfigDir, profileKey } from "./claudePanel"
 import type { Backend } from "./backend";
 import { configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
+import { noLinks } from "./notify";
 import { machineStatus } from "./shared/model";
 import type { Group, ViewState } from "./shared/types";
 import { profileDirs } from "./statusline";
@@ -85,7 +86,7 @@ export class AccountSwitch {
       this.told = now;
       void vscode.window
         .showInformationMessage(
-          `VS Code's Claude runs on ${group ? group.name : path.basename(now)} now. Reload this window so its Claude Code panel does too.`,
+          noLinks(`VS Code's Claude runs on ${group ? group.name : path.basename(now)} now. Reload this window so its Claude Code panel does too.`),
           "Reload Window",
         )
         .then((c) => c && vscode.commands.executeCommand(RELOAD));
@@ -170,7 +171,7 @@ export class AccountSwitch {
     }
     const moveLink = linked && !group.plainHere && !!this.backend;
     if (onIt && !moveLink) {
-      void vscode.window.showInformationMessage(`${group.name} is the default account already.`);
+      void vscode.window.showInformationMessage(noLinks(`${group.name} is the default account already.`));
       return;
     }
     const dir = profileDirs().find((d) => profileKey(d) === group.chatProfile);
@@ -230,7 +231,7 @@ export class AccountSwitch {
           // it still runs on the account
         }
       }
-      void vscode.window.showInformationMessage(`${group.name} is the default account: plain claude runs on it too now.`);
+      void vscode.window.showInformationMessage(noLinks(`${group.name} is the default account: plain claude runs on it too now.`));
       return;
     }
     this.switching = true;
@@ -277,12 +278,12 @@ export class AccountSwitch {
     );
     if (!pick) return;
     if (pick.group.vscodeHere && pick.group.plainHere !== false) {
-      void vscode.window.showInformationMessage(`${pick.group.name} is the default account on ${host} already.`);
+      void vscode.window.showInformationMessage(noLinks(`${pick.group.name} is the default account on ${host} already.`));
       return;
     }
     if (await this.switchHost(pick.group, true))
       void vscode.window.showInformationMessage(
-        `${pick.group.name} is the default account on ${host} now: new chats start there. Chats already open keep their account.`,
+        noLinks(`${pick.group.name} is the default account on ${host} now: new chats start there. Chats already open keep their account.`),
       );
   }
 
@@ -320,6 +321,6 @@ export class AccountSwitch {
   }
 
   private fail(message: string): void {
-    void vscode.window.showErrorMessage(message);
+    void vscode.window.showErrorMessage(noLinks(message));
   }
 }

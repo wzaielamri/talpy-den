@@ -9,6 +9,7 @@ import * as vscode from "vscode";
 import type { Backend } from "./backend";
 import { configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
+import { noLinks } from "./notify";
 
 export async function answerPermissionsHere(backend: Backend, dash: Dashboard): Promise<void> {
   const status = await backend.pane(["--relay", "status", ...configDirArgs()], 30000);
@@ -39,9 +40,9 @@ export async function answerPermissionsHere(backend: Backend, dash: Dashboard): 
   const failed = results.filter((r) => !r.ok);
   if (failed.length)
     void vscode.window.showErrorMessage(
-      `Talpy Den: ${failed.map((r) => `${r.host ? `${r.host}: ` : ""}${String(r.message ?? "no answer")}`).join("; ")}`,
+      noLinks(`Talpy Den: ${failed.map((r) => `${r.host ? `${r.host}: ` : ""}${String(r.message ?? "no answer")}`).join("; ")}`),
     );
-  else void vscode.window.showInformationMessage(`Talpy Den: ${String(results[0].message ?? "")}${where}.`);
+  else void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${String(results[0].message ?? "")}${where}.`));
 }
 
 // Live Mode…: the widget's live hook (pane.py --live on|off) in each Claude
@@ -68,7 +69,7 @@ export async function liveModeHere(backend: Backend, dash: Dashboard): Promise<v
   const pick = await vscode.window.showQuickPick(items, { title: "Live mode", placeHolder: "When do chats' steps show?" });
   if (!pick) return;
   const result: Record<string, any> = await backend.pane(["--live", pick.on ? "on" : "off", ...configDirArgs()], 30000);
-  if (!result.ok) void vscode.window.showErrorMessage(`Talpy Den: ${String(result.message ?? "no answer")}`);
-  else void vscode.window.showInformationMessage(`Talpy Den: ${String(result.message ?? "")}.`);
+  if (!result.ok) void vscode.window.showErrorMessage(noLinks(`Talpy Den: ${String(result.message ?? "no answer")}`));
+  else void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${String(result.message ?? "")}.`));
   void dash.refresh();
 }

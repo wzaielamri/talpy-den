@@ -35,6 +35,14 @@ export function chatRef(s: Session, host?: string): ChatRef {
   };
 }
 
+// VS Code makes [words](command:…), (https:…) or (file:…) in a notification's
+// text a link, and a click on it runs that command, with its arguments, or
+// opens it: a chat's name, Claude's command or question, a host's answer
+// never becomes one (a zero-width space between ] and ( leaves it as it reads)
+export function noLinks(text: string): string {
+  return text.replace(/\]\(/g, "]\u200b(");
+}
+
 function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -90,7 +98,7 @@ export class Notifier implements vscode.Disposable {
     const notices = opts.holdDone ? changes.notices.filter((n) => n.kind === "waiting" || n.kind === "overlap") : changes.notices;
     if (!notices.length || !this.isLeader()) return;
     for (const n of notices) {
-      const text = `${n.title} — ${n.body}`;
+      const text = noLinks(`${n.title} — ${n.body}`);
       const show = n.kind === "done" || n.kind === "reset" ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
       const chat = chatRef(n.session, n.host);
       const p = n.kind === "waiting" ? n.session.permission : null;
@@ -104,7 +112,7 @@ export class Notifier implements vscode.Disposable {
       // a plan: approve it (accepting edits or not), or plan on with a note
       if (asks && p!.plan) {
         const planText = `${n.session.name} has a plan ready${p!.plan.title ? `: ${p!.plan.title}` : ""}`;
-        void show(planText, "Approve, accept edits", "Approve", "Keep planning…", "Open").then(async (choice) => {
+        void show(noLinks(planText), "Approve, accept edits", "Approve", "Keep planning…", "Open").then(async (choice) => {
           const panes = this.panes;
           if (!panes) return;
           if (choice === "Approve, accept edits") this.told(chat, await panes.answer(chat, "approve-edits", shown));
@@ -126,7 +134,7 @@ export class Notifier implements vscode.Disposable {
         : this.panes && (n.kind === "done" || (n.kind === "waiting" && !p)) ? ["Reply…", "Open"] : ["Open"];
       // (what Always allow lets through from now on, next to the button)
       const always = asks && !cut && p!.answer === "hook" && p!.always ? ` · Always allow: ${p!.always}` : "";
-      void show(text + always, ...buttons).then(async (choice) => {
+      void show(noLinks(text + always), ...buttons).then(async (choice) => {
         const panes = this.panes;
         if (choice === "Open") {
           if (panes && (cut || settings.clickOpensPane())) panes.open(chat, "chat");
@@ -177,7 +185,7 @@ export class Notifier implements vscode.Disposable {
   // something else now, or the helper failed): said, with the chat to open
   private told(chat: ChatRef, answer: { ok: boolean; message: string }): void {
     if (answer.ok) return;
-    void vscode.window.showWarningMessage(`Talpy Den: couldn't answer ${chat.name}: ${answer.message}`, "Open").then((choice) => {
+    void vscode.window.showWarningMessage(noLinks(`Talpy Den: couldn't answer ${chat.name}: ${answer.message}`), "Open").then((choice) => {
       if (choice !== "Open") return;
       if (this.panes && settings.clickOpensPane()) this.panes.open(chat, "chat");
       else this.open(chat);
@@ -188,7 +196,7 @@ export class Notifier implements vscode.Disposable {
   // chat's tab with it as the unsent reply (the box it was typed in is gone)
   private notSent(chat: ChatRef, text: string, answer: { ok: boolean; message: string }): void {
     if (answer.ok) return;
-    void vscode.window.showWarningMessage(`Talpy Den: couldn't send your message to ${chat.name}: ${answer.message}`, "Open").then((choice) => {
+    void vscode.window.showWarningMessage(noLinks(`Talpy Den: couldn't send your message to ${chat.name}: ${answer.message}`), "Open").then((choice) => {
       if (choice === "Open") this.panes?.draft(chat, text);
     });
   }
@@ -236,7 +244,7 @@ export class Notifier implements vscode.Disposable {
   digest(d: Digest, showView: () => void): void {
     if (!this.isLeader()) return;
     const action = d.first ? `Open ${d.first.session.name}` : "Show Chats";
-    void vscode.window.showInformationMessage(d.message, action).then((choice) => {
+    void vscode.window.showInformationMessage(noLinks(d.message), action).then((choice) => {
       if (choice !== action) return;
       if (d.first) this.openChat(chatRef(d.first.session, d.first.host));
       else showView();

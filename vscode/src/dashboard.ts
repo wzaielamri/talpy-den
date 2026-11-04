@@ -17,7 +17,7 @@ import type { Notifier } from "./notify";
 import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
 import { demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
 import { allGroups, containerDetail, containerOf, chatsNeedingYou, findProjectChat, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, withLive, type ChatSpot, type RecentMore } from "./shared/model";
-import { chatRef } from "./notify";
+import { chatRef, noLinks } from "./notify";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
@@ -156,7 +156,7 @@ export class Dashboard implements vscode.Disposable {
     if (off && (!this.windowHostOff || host !== this.windowHost)) {
       const why = `this window reached ${host} on port ${port}, and ssh ${host} goes to ${sshTo ? `port ${sshTo}` : "another port"}, so Talpy Den doesn't list its chats. A Host entry for it with Port ${port} in ~/.ssh/config lets it.`;
       this.log.warn(why);
-      void vscode.window.showInformationMessage(`Talpy Den: ${why}`);
+      void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${why}`));
     }
     this.windowHostOff = off;
     return host;
@@ -609,14 +609,14 @@ export class Dashboard implements vscode.Disposable {
       if (t.afterTurn) {
         // your reply, sent as the chat's turn ended
         if (answer.ok && answer.message && settings.notifyDone() && this.notifier.isLeader() && !this.visible)
-          void vscode.window.showInformationMessage(`Sent to ${t.name || "the chat"}: ${t.prompt} — ${answer.message}`);
+          void vscode.window.showInformationMessage(noLinks(`Sent to ${t.name || "the chat"}: ${t.prompt} — ${answer.message}`));
         else if (!answer.ok) this.setActionError(`Couldn't send your reply to ${t.name || "the chat"}: ${answer.message}`);
       } else if (answer.waits !== undefined) {
         // a chat's go-on waits for its background commands (the queue says
         // so): told once, as it starts waiting, as the widget does
         if (answer.notify) {
           this.setActionInfo(answer.message);
-          if (this.notifier.isLeader() && !this.visible) void vscode.window.showWarningMessage(answer.message);
+          if (this.notifier.isLeader() && !this.visible) void vscode.window.showWarningMessage(noLinks(answer.message));
         }
       } else if (answer.ok && answer.message) {
         // ("": another window, or the widget, started it)
@@ -624,12 +624,12 @@ export class Dashboard implements vscode.Disposable {
         if (answer.ended !== undefined) {
           // (it ended the background commands it waited for: told whatever the settings, as it began to wait)
           this.setActionInfo(answer.message);
-          if (this.notifier.isLeader() && !this.visible) void vscode.window.showInformationMessage(answer.message);
+          if (this.notifier.isLeader() && !this.visible) void vscode.window.showInformationMessage(noLinks(answer.message));
         } else if (settings.notifyDone() && this.notifier.isLeader())
-          void vscode.window.showInformationMessage(`Started on ${t.account}: ${what} — ${answer.message}${t.host ? ` · ${t.host}` : ""}`);
+          void vscode.window.showInformationMessage(noLinks(`Started on ${t.account}: ${what} — ${answer.message}${t.host ? ` · ${t.host}` : ""}`));
       } else if (!answer.ok) {
         this.setActionError(`Couldn't start the queued task: ${answer.message}`);
-        if (!this.visible) void vscode.window.showErrorMessage(`Talpy Den: couldn't start the queued task “${what}”: ${answer.message}`);
+        if (!this.visible) void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't start the queued task “${what}”: ${answer.message}`));
       }
     } finally {
       this.starting.delete(t.id);
@@ -883,8 +883,8 @@ export class Dashboard implements vscode.Disposable {
       }
     }
     const { ok, message } = await this.backend.action("week.py", ["--history", keep ? "on" : "off"]);
-    if (ok) void vscode.window.showInformationMessage(`Talpy Den: ${message}.`);
-    else void vscode.window.showWarningMessage(`Talpy Den: the Recap's history didn't change: ${message}`);
+    if (ok) void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${message}.`));
+    else void vscode.window.showWarningMessage(noLinks(`Talpy Den: the Recap's history didn't change: ${message}`));
   }
 
   // The setting shows the choice week.py keeps (Talpy Den's settings on
@@ -907,8 +907,8 @@ export class Dashboard implements vscode.Disposable {
     }, "Delete");
     if (pick !== "Delete" || this.demoPhase !== null) return;
     const { ok, message } = await this.backend.action("week.py", ["--forget"]);
-    if (ok) void vscode.window.showInformationMessage(`Talpy Den: ${message}.`);
-    else void vscode.window.showWarningMessage(`Talpy Den: nothing was deleted: ${message}`);
+    if (ok) void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${message}.`));
+    else void vscode.window.showWarningMessage(noLinks(`Talpy Den: nothing was deleted: ${message}`));
   }
 
   // The Projects tab's projects (kept: a click on one of its chats, plans
