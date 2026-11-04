@@ -3989,7 +3989,8 @@ def recent_chats(groups, ctx, limit=RECENT_CHATS, starred=frozenset()):
     there are, for "Show N more"), and of those its starred ones (ids in
     starred), however old (group["starred"]). A chat shared across accounts
     shows up under the one it was used on last; of a chat and its copies
-    (same first entry), only the newest; a shared chat that moved on to a
+    (same first entry), only the newest (a starred older one under Starred
+    only); a shared chat that moved on to a
     listed copy, not at all. Past the first limit the chats are only
     counted: the next RECENT_CHECKED of an account by the same rules (what's
     read of them is kept in links.json), the ones after those by their
@@ -4033,7 +4034,8 @@ def recent_chats(groups, ctx, limit=RECENT_CHATS, starred=frozenset()):
         if not messages:
             continue
         first = ctx.links.first_uuid(f, st)
-        if first and first in firsts:  # an older copy of a chat already listed
+        copy = bool(first) and first in firsts  # an older copy of a chat already listed: only under Starred, if starred
+        if copy and not star:
             continue
         firsts.add(first)
         shared = st.st_nlink > 1 and shared_info(sid, p, ctx.profiles)
@@ -4047,9 +4049,9 @@ def recent_chats(groups, ctx, limit=RECENT_CHATS, starred=frozenset()):
                 if home.key not in group_of:
                     home = p
         g = group_of[home.key]
-        if limit > 0:
+        if limit > 0 and not copy:
             g["recentCount"] += 1
-        room = len(g["recent"]) < limit
+        room = len(g["recent"]) < limit and not copy
         if not room and not star:
             continue
         chat = {

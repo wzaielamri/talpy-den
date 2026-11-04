@@ -646,6 +646,14 @@ class RecentChatTests(World):
                     if g["name"] == "work")
         self.assertEqual([c["sessionId"] for c in work["starred"]], ["c1"])
 
+    def test_a_starred_chat_stays_starred_when_a_newer_fork_hides_it_from_recent(self):
+        self.chat("work", "X", 3600)
+        self.chat("work", "Y", 60, [user("X-u", self.now - 3600, "X", text="about X"), reply("Y-a", self.now - 60, "Y")])
+        cs.change_stars(self.cache, "chats", "X")
+        work = next(g for g in self.collect()["groups"] if g["name"] == "work")
+        self.assertEqual(([c["sessionId"] for c in work["recent"]], work["recentCount"]), (["Y"], 1))
+        self.assertEqual([c["sessionId"] for c in work["starred"]], ["X"])
+
     def test_name_precedence(self):
         def base(sid):  # each chat's own entries (same uuids would make them copies of each other)
             return [user(f"{sid}-u", self.now - 9, sid, text="first prompt here"), reply(f"{sid}-a", self.now - 9, sid)]
