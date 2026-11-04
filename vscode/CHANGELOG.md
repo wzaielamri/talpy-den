@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### New
+
+- **Your answers show in the chat:** an answered question stays in Talpy
+  Chat as Claude's (its options folded, the ones you picked ✓), with your
+  answer right under it as your message: the options, what you typed and
+  your notes; *Approved the plan* or *Keep planning* and your note; a
+  Deny's note under its call. The same wherever you answered, and at once
+  when you answer from Talpy Den.
+
 ### Better
 
 - **One name: Talpy Chat.** A chat's tab is called Talpy Chat everywhere:

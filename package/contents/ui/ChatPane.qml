@@ -508,9 +508,9 @@ Window {
     // (the time makes a click run its command again; the conversation, read
     // every 1.5 s, goes without, so its name repeats while nothing changes:
     // every executable DataSource in plasmashell keeps each name, hub/Exec.qml)
-    function run(kind, args, sent) {
+    function run(kind, args, sent, answerId) {   // (answerId: an answer's, shown at once: addAnswer)
         start(args + (kind === "conversation" ? "" : " # " + Date.now()),   // (read again and again: one name)
-              { kind: kind, chat: chatId, host: host, target: row || chat, sent: sent || "", draft: draftKey })
+              { kind: kind, chat: chatId, host: host, target: row || chat, sent: sent || "", draft: draftKey, answerId: answerId || 0 })
     }
     // (asked: what run() keeps of it; a message that waited its turn, outbox, has the chat it was written to)
     function start(args, asked) {
@@ -687,13 +687,14 @@ Window {
                            name: it.name || "", status: it.status || "", input: it.input || "", output: it.output || "",
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
                            diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
-                           pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n") }
+                           pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n"),
+                           asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "" }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
                 if (old.text !== flat.text || old.status !== flat.status || old.output !== flat.output
                         || old.input !== flat.input || old.summary !== flat.summary || old.prev !== flat.prev || old.diff !== flat.diff
                         || old.queued !== flat.queued || old.until !== flat.until || old.pictures !== flat.pictures
-                        || old.here !== flat.here)
+                        || old.here !== flat.here || old.asked !== flat.asked || old.answered !== flat.answered)
                     items.set(i, flat)
             } else if (i < items.count) {
                 items.insert(i, flat)
@@ -843,7 +844,7 @@ Window {
         for (let i = mine.length - 1; i >= 0; i--)
             add(mine[i].text)
         for (let i = lastItems.length - 1; i >= 0; i--)
-            if (lastItems[i].kind === "you")
+            if (lastItems[i].kind === "you" && !lastItems[i].answered)   // (your answers aren't prompts to send again)
                 add(lastItems[i].text)
         for (const t of offers ? offers.history : [])
             add(t)
@@ -875,6 +876,8 @@ Window {
         }
         if (kind === "send" || kind === "later")
             sentDone(asked, result)   // (shown as sent, or back in its box; the next one to that chat goes)
+        if ((kind === "deny" || kind === "answer") && asked.answerId)
+            answerGone(asked.answerId, !!result.ok)   // (your answer, shown at once: it went, or it's taken out)
         // An answer for the chat shown before (another one was opened since,
         // reset()): none of it goes into this one's conversation, review, box
         // or buttons. A message sent there still goes where it was going.
@@ -1139,6 +1142,109 @@ Window {
     property var pendingSent: []  // [{id, chat, host, text, at, state: "sending"|"sent", sentAt, known}]
     property int sentCount: 0
     property var lastItems: []    // pane.py's items as last read (the pending ones go after them)
+
+    // Your answers on their way, to what the chat asks (from here, its row or a notification):
+    // shown at once as yours till the conversation has them (withAnswers; VS Code shared/pane.ts
+    // PendingAnswer): [{id, chat, host, text, answered, at, for: the key of the call it answers
+    // ("": not known), known: your answers' keys then, state: "sending"|"sent", sentAt}]
+    property var answersOut: []
+    property int answerCount: 0
+    readonly property var answeringFor: {   // the calls an answer on its way is to: their question shows
+        const out = {}
+        for (const p of answersOut)
+            if (p.for && p.chat === chatId && p.host === (host || ""))
+                out[p.for] = true
+        return out
+    }
+    // One question's answer as Claude's dialog sends it (pane.py answer_text): the option chosen
+    // or what you typed; several, ", " between them (one with ", " or a quote in it quoted)
+    function joinAnswer(values, multi) {
+        const given = (values || []).map(v => String(v).trim()).filter(v => v !== "")
+        if (!multi)
+            return given.length ? given[0] : ""
+        return given.map(v => v.indexOf(", ") >= 0 || v.indexOf('"') >= 0 ? JSON.stringify(v) : v).join(", ")
+    }
+    // What your answer to a prompt says, as the conversation will have it (pane.py your_answer):
+    // the options you picked or what you typed, one line a question when there are several
+    // ("Header: answer"); Approved the plan, or Keep planning and your note; a Deny's or a
+    // Decline's note. "": nothing of yours to show (an Allow, a Deny or a Decline without a note)
+    function answerText(ask, decision, note, answers) {
+        const said = String(note || "").trim()
+        if (ask.plan) {
+            if (decision === "approve" || decision === "approve-edits")
+                return i18n("Approved the plan")
+            return decision === "keep" || decision === "deny" ? i18n("Keep planning") + (said ? "\n" + said : "") : ""
+        }
+        if (decision === "answer" && answers) {
+            const given = (ask.questions || []).map(q => ({ q: q, text: joinAnswer(answers[q.question], q.multiSelect) }))
+                                               .filter(a => a.text !== "")
+            return given.map(a => (given.length > 1 ? (a.q.header || a.q.question) + ": " : "") + a.text).join("\n")
+        }
+        return decision === "deny" ? said : ""
+    }
+    // The call an answer is to: the one it asks about (its tool use), else its tool's newest call with no result yet
+    function answerFor(list, ask) {
+        if (ask.toolUse && list.some(it => String(it.key) === ask.toolUse))
+            return ask.toolUse
+        for (let i = list.length - 1; i >= 0; i--)
+            if (list[i].kind === "tool" && list[i].status === "open" && list[i].name === ask.tool)
+                return String(list[i].key)
+        return ""
+    }
+    // Your answer to what this chat asks (ask: its permission as answered), shown at once: its id, 0 for none to show
+    function addAnswer(ask, decision, note, answers) {
+        const text = ask ? answerText(ask, decision, note, answers) : ""
+        if (!text)
+            return 0
+        const id = ++answerCount
+        answersOut = answersOut.concat([{ id: id, chat: chatId, host: host || "", text: text, at: Date.now(),
+                                          answered: ask.plan ? "plan" : ask.questions && ask.questions.length ? "question" : "permission",
+                                          for: answerFor(lastItems, ask), known: lastItems.filter(it => !!it.answered).map(it => String(it.key)),
+                                          state: "sending", sentAt: 0 }])
+        const following = loaded && nearEnd()
+        showPending()
+        if (following)
+            keepEnd()
+        return id
+    }
+    // It went (shown as yours till the conversation has it), or it didn't (taken out)
+    function answerGone(id, ok) {
+        if (!answersOut.some(p => p.id === id))
+            return
+        answersOut = ok ? answersOut.map(p => p.id === id ? Object.assign({}, p, { state: "sent", sentAt: Date.now() }) : p)
+                        : answersOut.filter(p => p.id !== id)
+        showPending()
+    }
+    // The conversation with your answers on their way after it: each till the conversation has its
+    // call's answer (or its call a result, with nothing of yours to show), or, its call not known, an
+    // answer of yours that wasn't there; or 30 s after it went (an answer never told: 2 min)
+    function withAnswers(list, handoff) {
+        const mine = answersOut.filter(p => p.chat === chatId && p.host === (host || ""))
+        if (!mine.length)
+            return list
+        const now = Date.now()
+        const done = {}
+        for (const p of mine) {
+            const found = p.for ? list.find(it => String(it.key) === p.for + "/answer" || (String(it.key) === p.for && it.status !== "open"))
+                                : list.find(it => !!it.answered && p.known.indexOf(String(it.key)) < 0)
+            if (found && found.answered && handoff)
+                handoff[String(found.key)] = "answer-" + p.id
+            if (found || (p.state === "sent" && now - p.sentAt > 30000) || now - p.at > staleMs)
+                done[p.id] = true
+        }
+        if (Object.keys(done).length)
+            answersOut = answersOut.filter(p => !done[p.id])
+        return list.concat(answersOut.filter(p => p.chat === chatId && p.host === (host || ""))
+                                     .map(p => ({ kind: "you", key: "answer-" + p.id, text: p.text, at: p.at, answered: p.answered,
+                                                  status: p.state === "sending" ? "sending" : "" })))
+    }
+    // Is it a question or a plan to show as Claude's, in Chat and Steps: once you answered it (or as
+    // your answer to it goes: answering)? (a: its asked, pane.py asked_of)
+    function askedShows(a, answering) {
+        if (!a || (!a.questions && a.plan === undefined))
+            return false
+        return a.state === "open" ? answering : a.state !== "failed" && a.state !== "denied"
+    }
 
     // (one whose answer never comes, plasmashell lost it: given up after
     // staleMs, so the ones after it go, and said)
@@ -1449,6 +1555,7 @@ Window {
         return String(s || "").replace(/\s+/g, " ").trim()
     }
     function withPending(list, handoff) {   // (handoff: {key: "pending-N"}, each one found as key)
+        list = withAnswers(list, handoff)
         const mine = pendingSent.filter(p => p.chat === chatId && p.host === (host || ""))
         if (!mine.length)
             return list
@@ -1461,7 +1568,7 @@ Window {
             const want = norm(p.text)
             const found = list.find(it => {
                 const key = String(it.key)
-                if (it.kind !== "you" || p.known[key] || claimed[key])
+                if (it.kind !== "you" || it.answered || p.known[key] || claimed[key])
                     return false
                 const said = norm(it.text)
                 const cut = said.endsWith("…") ? said.slice(0, -1).trim() : ""
@@ -1546,15 +1653,16 @@ Window {
             return
         answering += 1
         answerStale.restart()
+        const shown = addAnswer(p, decision, note, answers)   // (yours at once, till the conversation has it)
         if (p.answer === "hook")
             run(decision === "deny" ? "deny" : "answer", "--answer " + root.shellQuote(p.request) + " --decision " + decision
                 + (note ? " --note " + root.shellQuote(note) : "")
                 + (answers ? " --answers " + root.shellQuote(JSON.stringify(answers)) : "")
-                + (host ? " --host " + root.shellQuote(host) : "") + root.configDirArgs, sent)
+                + (host ? " --host " + root.shellQuote(host) : "") + root.configDirArgs, sent, shown)
         else if (p.answer === "keys")
             run(decision === "deny" ? "deny" : "answer", "--keys " + root.shellQuote(sessionId) + " --decision " + decision
                 + (note ? " --note " + root.shellQuote(note) : "")
-                + (p.toolUse ? " --expect " + root.shellQuote(p.toolUse) : "") + paneArgs(), sent)
+                + (p.toolUse ? " --expect " + root.shellQuote(p.toolUse) : "") + paneArgs(), sent, shown)
     }
 
     // ---------------------------------------------------------------- review
@@ -2188,14 +2296,21 @@ Window {
                         required property real until    // (yours, held: when it goes to Claude, ms)
                         required property string pictures   // (yours: the pictures in it, "\n"-joined: pane.py prompt_pictures)
                         required property string here       // (a host's: those of them that are a regular file here, pane.py pictures_here)
+                        required property string asked      // (a question or a plan Claude asked, as JSON: pane.py asked_of)
+                        required property string answered   // (yours: your answer to the call before it, pane.py your_answer)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
                         readonly property bool unfolded: pane.openTools[key] === true
-                        // more room before your prompt (a new turn) than between steps
+                        readonly property var askedData: asked !== "" ? JSON.parse(asked) : null
+                        // (a question or a plan you answered: as Claude's, in Chat and Steps)
+                        readonly property bool card: kind === "tool" && pane.askedShows(askedData, pane.answeringFor[key] === true)
+                        // more room before your prompt (a new turn) than between steps; your answer: right under what it answers
                         readonly property real gap: index === 0 ? 0
-                            : kind === "you" ? Kirigami.Units.gridUnit * 1.6
+                            : kind === "you" && answered === "" ? Kirigami.Units.gridUnit * 1.6
                             : kind === "tool" && prev === "tool" ? Kirigami.Units.smallSpacing * 1.5
                             : Kirigami.Units.gridUnit * 0.8
-                        readonly property bool shows: (kind !== "tool" || pane.listTab === "steps") && listed
+                        // (the Chat tab: a call you denied with a note too, its note under it)
+                        readonly property bool shows: (kind !== "tool" || pane.listTab === "steps" || card
+                                                       || (askedData !== null && askedData.state === "denied")) && listed
                         // (its row gone from the model: Qt's ListView can leave a delegate it no
                         // longer lays out where it was, drawn over the rows now there; one shifted
                         // by a row put in before it, then removed, was seen still drawn, twice)
@@ -2209,7 +2324,7 @@ Window {
                             id: body
                             y: entry.gap
                             width: parent.width
-                            sourceComponent: entry.kind === "you" ? youItem : entry.kind === "claude" ? claudeItem
+                            sourceComponent: entry.card ? askedItem : entry.kind === "you" ? youItem : entry.kind === "claude" ? claudeItem
                                            : entry.kind === "tool" ? toolItem : noteItem
                         }
 
@@ -2445,6 +2560,17 @@ Window {
                                         cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor
                                     }
                                 }
+                            }
+                        }
+
+                        // What Claude asked, once you answered it, as Claude's (AskedCard.qml: made
+                        // the first time a card shows, so a window opens as quickly as before)
+                        Component {
+                            id: askedItem
+
+                            Loader {
+                                Component.onCompleted: setSource("AskedCard.qml", { pane: pane, key: entry.key, asked: entry.askedData })
+                                onLoaded: item.asked = Qt.binding(() => entry.askedData)
                             }
                         }
 

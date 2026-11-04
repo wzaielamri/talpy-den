@@ -4167,10 +4167,13 @@ PlasmoidItem {
                     + (note ? " --note " + shellQuote(note) : "")
                     + (answers ? " --answers " + shellQuote(JSON.stringify(answers)) : "")
                     + (host ? " --host " + shellQuote(host) : "") + configDirArgs + " # " + Date.now()
-        answerFor[cmd] = { session: s, host: host || "" }
+        // (shown at once as yours in the chat's Talpy Chat window, if one shows it, till its conversation has it)
+        const win = paneWindows.find(w => w.chatId !== "" && (w.chatId === s.chatId || w.chatId === s.sessionId) && w.host === (host || "")) || null
+        const shown = win ? win.addAnswer(p, decision, note, answers) : 0
+        answerFor[cmd] = { session: s, host: host || "", win: shown ? win : null, shown: shown }
         paneActions.connectSource(cmd)
     }
-    property var answerFor: ({})   // command -> {session, host}: the chat an answer is for
+    property var answerFor: ({})   // command -> {session, host, win, shown}: the chat an answer is for (its window's answer shown at once)
 
     // Other…, from a question's notification: the chat's pane, the field to answer in your own words ready
     function answerInPane(s, host) {
@@ -4210,6 +4213,8 @@ PlasmoidItem {
             const asked = root.answerFor[source]
             delete root.answerFor[source]
             const result = root.helperResult(data)
+            if (asked && asked.win)
+                asked.win.answerGone(asked.shown, !!result.ok)
             if (!result.ok) {
                 root.actionError = result.message
                 actionErrorTimer.restart()
