@@ -16,16 +16,19 @@ on:
         description: "Tag to release, e.g. v1.16.0 (it must exist already)"
         required: true
 
-permissions:
-  contents: write
+env:
+  # The tag: the one pushed, or the one typed in (passed through env, never
+  # into the script itself)
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
+# Two jobs: the build runs the packages and tests with a token that can only
+# read; the publish job, the only one that can write, runs none of them and
+# only publishes what the build made
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
-    env:
-      # The tag: the one pushed, or the one typed in (passed through env, never
-      # into the script itself)
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    permissions:
+      contents: read
     steps:
       - name: A version tag
         run: |
@@ -35,6 +38,7 @@ jobs:
         with:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -58,7 +62,9 @@ jobs:
       - name: The VS Code extension's checks and tests
         working-directory: vscode
         run: |
-          npm ci
+          # (no install scripts: esbuild runs from its locked platform package,
+          # and packing needs neither keytar nor vsce-sign)
+          npm ci --ignore-scripts
           npm run check
           npm test
       - name: Build
@@ -129,7 +135,27 @@ jobs:
 
           **VS Code:** download \`talpy-den-$VERSION.vsix\` below, then in VS Code open the Extensions view, **⋯** → **Install from VSIX…** (or run \`code --install-extension talpy-den-$VERSION.vsix\`). It needs Python 3.7+; [its README](https://github.com/wzaielamri/talpy-den/blob/$TAG/vscode/README.md) explains SSH hosts and the plan usage bars.
           NOTES
+      - name: The release's files
+        uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: |
+            dist/
+            notes.md
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: The release's files
+        uses: actions/download-artifact@v8
+        with:
+          name: release
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$TAG" dist/* --title "Talpy Den $VERSION" --notes-file notes.md --verify-tag
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$TAG" dist/* --title "Talpy Den ${TAG#v}" --notes-file notes.md --verify-tag
