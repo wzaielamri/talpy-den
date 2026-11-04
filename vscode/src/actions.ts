@@ -837,7 +837,10 @@ export class Actions {
         }
         if (line.kind === "memories") {
           const m = answer.memories[line.index];
-          return { label: `$(note) ${m.description || m.name}`, description: `${m.account} · ${m.folderShort || "every folder"}`, alwaysShow: true, memory: m, host };
+          // (another machine's opens only from a VS Code window connected to it, as the view says: picking it does nothing)
+          const elsewhere = !!host && host !== this.dash.currentHost;
+          return { label: `$(note) ${m.description || m.name}`, description: `${m.account} · ${m.folderShort || "every folder"}`,
+                   detail: elsewhere ? `Open it from a VS Code window connected to ${hostLabel(host)}.` : undefined, alwaysShow: true, memory: m, host };
         }
         const c = answer.results[line.index];
         return {
@@ -893,6 +896,7 @@ export class Actions {
           render(it.fold);
           return;
         }
+        if (it?.memory && it.host && it.host !== this.dash.currentHost) return;
         resolve(it);
         qp.hide();
       });
