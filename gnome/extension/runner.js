@@ -19,8 +19,8 @@ export class Runner {
     // Resolves to {stdout, stderr} (empty when it couldn't start). A poll is
     // only reading, so it's ended when the extension is disabled, or when it
     // hangs (else no other check would start); actions (jump, stop, new chat)
-    // are left to finish, and still answer.
-    run(script, args, {poll = false} = {}) {
+    // are left to finish, and still answer. timeout: a poll's own, in seconds.
+    run(script, args, {poll = false, timeout = POLL_TIMEOUT_S} = {}) {
         return new Promise(resolve => {
             let proc;
             try {
@@ -36,7 +36,7 @@ export class Runner {
             let timer = 0;
             if (poll) {
                 this._polls.add(proc);
-                timer = this._after(POLL_TIMEOUT_S, () => {
+                timer = this._after(timeout, () => {
                     timer = 0;
                     this._end(proc);
                 });

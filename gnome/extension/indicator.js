@@ -26,6 +26,7 @@ import * as Icons from './ui/icons.js';
 
 const USAGE_PAGE = 'https://claude.ai/settings/usage';
 const WEEK_REFRESH_S = 600;   // the Recap tab reads again while it's open
+const WEEK_TIMEOUT_S = 180;   // week.py gives each SSH host or container 60 s, and says which didn't answer
 
 export const Indicator = GObject.registerClass(
 class TalpyDenIndicator extends PanelMenu.Button {
@@ -1434,7 +1435,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this._render(true);
         const out = await this._runner.run('week.py',
             L.weekArgs(back, account, this.shownHosts, this.remote, this._configDirArgs, this._settings.get_string('recap-currency'), span),
-            {poll: true});
+            {poll: true, timeout: WEEK_TIMEOUT_S});
         if (this._destroyed || out.cancelled || asked !== this._weekAsked)
             return;   // (other days were asked for since)
         const result = L.helperResult(out.stdout, out.stderr);
@@ -1506,7 +1507,8 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this.perms.busy = true;
         this._permsAgain = false;
         this._render(true);
-        const out = await this._runner.run('week.py', L.permsArgs(this._configDirArgs, this.shownHosts, this.remote), {poll: true});
+        const out = await this._runner.run('week.py', L.permsArgs(this._configDirArgs, this.shownHosts, this.remote),
+            {poll: true, timeout: WEEK_TIMEOUT_S});
         if (this._destroyed || out.cancelled)
             return;
         const result = L.helperResult(out.stdout, out.stderr);
