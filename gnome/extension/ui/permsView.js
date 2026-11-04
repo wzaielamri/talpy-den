@@ -60,7 +60,7 @@ function buildGranted(ctx, data, host) {
     section.add_child(heading(host ? `Permissions you gave on ${L.hostLabel(host)}` : 'Permissions you gave'));
     section.add_child(paragraph(L.weekGrantedIntro(granted, host), 'claude-small claude-dim'));
     for (const g of L.weekGrantedShown(granted, !!week.allGranted[host])) {
-        const line = box('claude-week-tip', {x_expand: true});
+        const line = box('claude-week-tip claude-hover-line', {x_expand: true, reactive: true, track_hover: true});
         line.add_child(kindIcon(L.permsGrantMeaning(g)));
         const text = column('', {x_expand: true});
         text.add_child(paragraph(g.title, ''));
@@ -78,7 +78,7 @@ function buildGranted(ctx, data, host) {
                 : ['Shared through git', "This folder's .claude/settings.json is shared with whoever uses its repository: change it there."]);
             line.add_child(git);
         } else if (week.revoking !== L.permsKey(host, g.id)) {
-            const revoke = textButton('Revoke…', () => ctx.permsRevokeAsk(L.permsKey(host, g.id)), BUTTON);
+            const revoke = textButton('Revoke', () => ctx.permsRevokeAsk(L.permsKey(host, g.id)), BUTTON);
             revoke.y_align = Clutter.ActorAlign.START;
             revoke.reactive = !week.ruleBusy;
             line.add_child(revoke);
@@ -115,7 +115,7 @@ function buildPrompts(ctx, data, host) {
             '.claude/settings.local.json of the folder the chats started in (not shared through git), and only chats started there follow it.',
         'claude-small claude-dim'));
     for (const r of rules) {
-        const line = box('claude-week-tip', {x_expand: true});
+        const line = box('claude-week-tip claude-hover-line', {x_expand: true, reactive: true, track_hover: true});
         line.add_child(kindIcon(L.permsRuleMeaning(r)));
         const text = column('', {x_expand: true});
         text.add_child(paragraph(r.title, ''));
@@ -136,7 +136,7 @@ function buildPrompts(ctx, data, host) {
             undo.reactive = !week.ruleBusy;   // (after its tooltip, which makes it reactive: one change at a time)
             line.add_child(undo);
         } else if (week.asking !== L.permsKey(host, r.id)) {
-            const allow = textButton('Allow…', () => ctx.permsAsk(L.permsKey(host, r.id)), BUTTON);
+            const allow = textButton('Allow', () => ctx.permsAsk(L.permsKey(host, r.id)), BUTTON);
             allow.y_align = Clutter.ActorAlign.START;
             allow.reactive = !week.ruleBusy;
             line.add_child(allow);

@@ -142,7 +142,7 @@ function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, se
                 <button type="button" class="btn secondary small" disabled={busy} onClick={() => change(r, false)}
                   title={"Take this rule back\nYou allowed it here: Undo removes it from the file it went into, as it was before."}><Icon name={I.undo} />Undo</button>
               ) : asking !== r.id ? (
-                <button type="button" class="btn secondary small" disabled={busy} onClick={() => setAsking(r.id)}>Allow…</button>
+                <button type="button" class="btn secondary small" disabled={busy} onClick={() => setAsking(r.id)}>Allow</button>
               ) : null}
           </li>
         ))}
@@ -203,7 +203,7 @@ function Granted({ granted, host, reload, change: busyKey, setChange, said }: {
                 g.managed ? <span class="small muted" title={"Set by your administrator\nIt's in /etc/claude-code: it can't be changed here."}>Administrator's</span>
                 : <span class="small muted" title={"Shared through git\nThis folder's .claude/settings.json is shared with whoever uses its repository: change it there."}>In git</span>
               ) : asking !== g.id ? (
-                <button type="button" class="btn secondary small" disabled={busy} onClick={() => setAsking(g.id)}>Revoke…</button>
+                <button type="button" class="btn secondary small" disabled={busy} onClick={() => setAsking(g.id)}>Revoke</button>
               ) : null}
           </li>
         ))}

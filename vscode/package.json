@@ -729,7 +729,7 @@
             "talpyDen.recapRules": {
               "type": "boolean",
               "default": true,
-              "markdownDescription": "The Permissions tab suggests rules that would have let the permission prompts you answered go without asking, each with an **Allow…** button. Off, it only counts the prompts, and there's nothing to allow by mistake. Either way it lists the permissions you gave, to revoke them.",
+              "markdownDescription": "The Permissions tab suggests rules that would have let the permission prompts you answered go without asking, each with an **Allow** button. Off, it only counts the prompts, and there's nothing to allow by mistake. Either way it lists the permissions you gave, to revoke them.",
               "order": 4
             }
         }

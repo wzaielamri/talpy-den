@@ -204,7 +204,7 @@ ConfigPage {
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
-            text: i18n("The Permissions tab offers rules that would have let those prompts go without asking, each with an Allow… button. Off, it only counts the prompts, and there's nothing to allow by mistake. Either way it lists the permissions you gave, to revoke them.")
+            text: i18n("The Permissions tab offers rules that would have let those prompts go without asking, each with an Allow button. Off, it only counts the prompts, and there's nothing to allow by mistake. Either way it lists the permissions you gave, to revoke them.")
         }
     }
 }

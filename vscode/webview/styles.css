@@ -2520,6 +2520,14 @@ body.vscode-high-contrast .top.scrolled {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  margin: 0 -4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+/* shaded while the pointer is on it, as a chat's row */
+.week-rule:hover {
+  background: var(--cs-hover);
 }
 
 .week-rule-text {

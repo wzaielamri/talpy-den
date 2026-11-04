@@ -128,7 +128,7 @@
     <key name="recap-rules" type="b">
       <default>true</default>
       <summary>Suggest rules for the permission prompts you answered</summary>
-      <description>The Permissions tab offers rules that would have let those prompts go without asking, each with an Allow… button. Off, it only counts the prompts. Either way it lists the permissions you gave, to revoke them.</description>
+      <description>The Permissions tab offers rules that would have let those prompts go without asking, each with an Allow button. Off, it only counts the prompts. Either way it lists the permissions you gave, to revoke them.</description>
     </key>
     <key name="recap-currency" type="s">
       <default>'USD'</default>

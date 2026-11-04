@@ -178,14 +178,28 @@ PlasmaComponents3.ScrollView {
                         spacing: Math.round(view.gu * 0.2)
 
                         RowLayout {
+                            id: grantLine
                             Layout.fillWidth: true
                             spacing: Kirigami.Units.smallSpacing
 
+                            HoverHandler {
+                                id: grantHover
+                            }
                             Kirigami.Icon {
                                 Layout.alignment: Qt.AlignTop
                                 Layout.preferredWidth: Kirigami.Units.iconSizes.small
                                 Layout.preferredHeight: Kirigami.Units.iconSizes.small
                                 source: Icons.plasma[view.grantMeaning(grantRow.grant)]
+
+                                // (the line shaded while the pointer is on it, as a chat's row: in the
+                                // line's first item, under it; in the line, it would take its spacing)
+                                HoverShade {
+                                    z: -1
+                                    target: grantLine
+                                    shown: grantHover.hovered
+                                    side: Kirigami.Units.smallSpacing
+                                    pad: Kirigami.Units.smallSpacing / 2
+                                }
                                 color: view.meaningColor(view.grantMeaning(grantRow.grant))
                                 opacity: 0.8
                             }
@@ -228,7 +242,7 @@ PlasmaComponents3.ScrollView {
                                 Layout.alignment: Qt.AlignTop
                                 visible: !grantRow.grant.shared && !grantRow.asking && root.ruleBusy !== origin.key(grantRow.grant.id)
                                 enabled: root.ruleBusy === ""
-                                text: i18n("Revoke…")
+                                text: i18n("Revoke")
                                 onClicked: view.confirmGrant = origin.key(grantRow.grant.id)
                             }
                             PlasmaComponents3.BusyIndicator {
@@ -337,14 +351,26 @@ PlasmaComponents3.ScrollView {
                         spacing: Math.round(view.gu * 0.2)
 
                         RowLayout {
+                            id: ruleLine
                             Layout.fillWidth: true
                             spacing: Kirigami.Units.smallSpacing
 
+                            HoverHandler {
+                                id: ruleHover
+                            }
                             Kirigami.Icon {
                                 Layout.alignment: Qt.AlignTop
                                 Layout.preferredWidth: Kirigami.Units.iconSizes.small
                                 Layout.preferredHeight: Kirigami.Units.iconSizes.small
                                 source: Icons.plasma[view.ruleMeaning(ruleRow.rule)]
+
+                                HoverShade {   // (as a permission's above)
+                                    z: -1
+                                    target: ruleLine
+                                    shown: ruleHover.hovered
+                                    side: Kirigami.Units.smallSpacing
+                                    pad: Kirigami.Units.smallSpacing / 2
+                                }
                                 opacity: 0.8
                             }
                             ColumnLayout {
@@ -382,7 +408,7 @@ PlasmaComponents3.ScrollView {
                                 Layout.alignment: Qt.AlignTop
                                 visible: ruleRow.rule.state === "new" && !ruleRow.asking
                                 enabled: root.ruleBusy === ""
-                                text: i18n("Allow…")
+                                text: i18n("Allow")
                                 onClicked: view.confirmRule = origin.key(ruleRow.rule.id)
                             }
                             PlasmaComponents3.Button {

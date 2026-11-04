@@ -141,7 +141,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         group(recap).add(this._currencyRow(settings));
         recap.add(this._historyGroup(window));
         group(recap, 'Suggested rules').add(toggle('recap-rules', 'Suggest rules for the permission prompts you answered',
-            "The Permissions tab offers rules that would have let them go without asking, each with an Allow… button. Off, it only counts the prompts, and there's nothing to allow by mistake. Either way it lists the permissions you gave, to revoke them."));
+            "The Permissions tab offers rules that would have let them go without asking, each with an Allow button. Off, it only counts the prompts, and there's nothing to allow by mistake. Either way it lists the permissions you gave, to revoke them."));
 
         // ---- Hosts
         const hostsPage = category('Hosts', 'host');

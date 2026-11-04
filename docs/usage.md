@@ -103,7 +103,7 @@ When to notify, sounds, while you're away, the keyboard shortcut.
 | Monday recap | on | On Mondays, sum up the last 7 days in a notification (it opens the Recap) |
 | Amounts in | US dollars | The Recap tab's amounts: US dollars (Claude's API prices), or another currency at the European Central Bank's rate of the day |
 | Keep a history beyond Claude's 30 days | on | The Recap's **Overall** keeps the numbers of chats Claude Code has deleted. Unticking it asks first when the history holds such chats, since their numbers go for good; **Delete Saved History…** starts it again |
-| Suggest rules for the permission prompts you answered | on | The Permissions tab offers rules that would have let those prompts through, each with **Allow…**; off, it only counts the prompts |
+| Suggest rules for the permission prompts you answered | on | The Permissions tab offers rules that would have let those prompts through, each with **Allow**; off, it only counts the prompts |
 
 ### Hosts
 
