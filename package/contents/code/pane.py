@@ -1079,20 +1079,32 @@ def vscode_prompt_link(session_id, text):
     return "vscode://anthropic.claude-code/open?" + urlencode({"session": session_id, "prompt": text}).replace("%", "%25")
 
 
-def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude):
-    answer = cs.continue_chat(home, extra_dirs, profile.key, chat_id, text=text, claude=claude, force=True)
+def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped=True):
+    """claude --bg --resume with your message. scoped: in a systemd scope of
+    its own (jump.scope_prefix), as the widget's go-ons and tasks start: run
+    from the widget, Claude's background service would be in plasmashell's
+    group of processes, and a restart of plasmashell (by hand, after an update,
+    a crash) would end it, and every background chat it runs, mid-turn. Not on
+    an SSH host (--remote)."""
+    prefix = []
+    if scoped:
+        import jump
+        prefix = jump.scope_prefix("claude")
+    answer = cs.continue_chat(home, extra_dirs, profile.key, chat_id, text=text, claude=claude, prefix=prefix,
+                              force=True)
     if answer.get("ok"):
         answer["message"] = "Sent: the chat goes on with it in the background" + (
             f" ({answer['id']})" if answer.get("id") else "")
     return answer
 
 
-def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None):
+def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None, scoped=True):
     """Send your message to a chat the way it takes one (cs.reply_route):
     {"ok", "message", "how": "typed"|"background"|"vscode"|"copy"|"ask",
     "link" (vscode), "copied" (copy)}. how "ask": the chat runs in a
     terminal that takes no text from outside, and you choose (how
-    background or copy)."""
+    background or copy). scoped: a chat it wakes in the background in a
+    systemd scope of its own (go_on_in_background)."""
     text = (text or "").strip()
     if not text:
         return {"ok": False, "message": "Write your message first"}
@@ -1148,7 +1160,7 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
         ok, message = cs.stop_chat(entry)
         if not ok:
             return {"ok": False, "message": message}
-    answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude)
+    answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped)
     answer["how"] = "background"
     return answer
 
@@ -1986,7 +1998,7 @@ def main(argv=None):
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)
                 result = {"ok": ok, "message": said}
             else:
-                result = send(home, config_dirs, profile, target, text, session, how)
+                result = send(home, config_dirs, profile, target, text, session, how, scoped=not remote)
                 if how == "enter" and result.get("how") == "ask" and not remote:  # (on a host: copied here, above)
                     result = copy_answer((text or "").strip(), ENTER_COPIES)
         elif action == "--answer":

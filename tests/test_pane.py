@@ -953,6 +953,11 @@ class SendTests(PaneFixture):
         write(w / ".claude.json", data)
         self.chat(prompt("fix it", self.now - 100, cwd=str(self.folder)),
                   text_reply("Done.", self.now - 90, "m1", "end_turn"))
+        # (no real systemd scope in the tests: the one a chat woken in the background gets, said)
+        self.scopes = []
+        scoped = mock.patch.object(jump, "scope_prefix", lambda name: self.scopes.append(name) or [])
+        scoped.start()
+        self.addCleanup(scoped.stop)
 
     def send(self, how="auto", text="and the docs"):
         return pane.send(self.home, [], ".claude-work", SID, text, None, how, str(self.bin / "claude"))
@@ -999,6 +1004,17 @@ class SendTests(PaneFixture):
         self.assertEqual(answer["how"], "background")
         self.assertEqual(stopped.call_args[0][1], "bgjob1")
         self.assertEqual(went_on.call_args[1]["text"], "and the docs")
+
+    def test_a_chat_woken_in_the_background_lives_on_its_own(self):
+        # Woken from the widget, Claude's background service would be in plasmashell's group of
+        # processes, ended (with every background chat it runs) when plasmashell restarts: it
+        # starts in a systemd scope of its own, as the widget's go-ons and tasks do; on an SSH host not
+        with mock.patch.object(jump, "scope_prefix", return_value=["systemd-run", "--user", "--scope", "--"]), \
+                mock.patch.object(cs, "continue_chat", return_value={"ok": True, "id": "1a2b3c4d"}) as went_on:
+            self.assertEqual(self.send()["how"], "background")
+            self.assertEqual(went_on.call_args[1]["prefix"], ["systemd-run", "--user", "--scope", "--"])
+            pane.send(self.home, [], ".claude-work", SID, "and the docs", None, "auto", str(self.bin / "claude"), scoped=False)
+            self.assertEqual(went_on.call_args[1]["prefix"], [])
 
     def test_vscode(self):
         self.live(entrypoint="claude-vscode")
