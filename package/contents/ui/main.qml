@@ -3739,18 +3739,48 @@ PlasmoidItem {
         return found
     }
 
-    // s: a session row or a recent chat (sessionId is its chat then); tab: "chat" or "review"
-    function openPane(s, host, tab) {
+    // s: a session row or a recent chat (sessionId is its chat then); tab: "chat" or "review";
+    // then: what the pane does once it shows it ({draft}, {denying}, {typing}: paneAct).
+    // A chat has one window: open in another copy's pane (the panel's, a
+    // desktop's), that one comes forward instead, and does it; open in this
+    // one's, it comes forward (ChatPane: onPaneChatChanged)
+    function openPane(s, host, tab, then) {
         forgetFinished(petKeyOf(s, host))
+        const holder = Hub.paneHolder((host || "") + "|" + (s.chatId || s.sessionId), instanceId)
+        if (holder) {
+            Hub.paneRaise(holder, tab || "chat", then || null)
+            return
+        }
         paneChat = { chatId: s.chatId || s.sessionId, sessionId: s.sessionId || "", profileDir: s.profileDir || "",
                      host: host || "", name: s.name || "", cwd: s.cwd || "", tab: tab || "chat", at: Date.now(), key: s.key || "" }
         if (paneLoader.item && !paneLoader.item.visible)
             placePane()   // (closed before: shown again; the first time, once it's made)
         paneMade = true
+        paneAct(then)
+    }
+    function paneAct(then) {
+        if (!then)
+            return
+        if (then.draft !== undefined)
+            paneDraft = then.draft
+        if (then.denying)
+            paneDenying = true
+        if (then.typing)
+            paneTyping = true
     }
 
     function closePane() {
         paneChat = null
+    }
+    onPaneChatChanged: Hub.paneShown(instanceId, paneChat ? (paneChat.host || "") + "|" + paneChat.chatId : "")
+    Connections {
+        target: Hub
+        function onPaneRaise(id, tab, then) {   // (this copy's pane shows the chat another copy opened)
+            if (id === root.instanceId && root.paneChat) {
+                root.paneChat = Object.assign({}, root.paneChat, { tab: tab, at: Date.now() })
+                root.paneAct(then)
+            }
+        }
     }
 
     // A click on a chat: the pane, or the chat's own window
@@ -3958,8 +3988,7 @@ PlasmoidItem {
     function answerInPane(s, host) {
         if (!s)
             return
-        openPane(s, host, "chat")
-        paneTyping = true
+        openPane(s, host, "chat", { typing: true })
     }
     property bool paneTyping: false   // (the pane readies its question's own-words field)
 
@@ -3967,8 +3996,7 @@ PlasmoidItem {
     function denyWithNote(s, host) {
         if (!s)
             return
-        openPane(s, host, "chat")
-        paneDenying = true
+        openPane(s, host, "chat", { denying: true })
     }
     property bool paneDenying: false   // (the pane opens its ask's note field)
 
@@ -4009,8 +4037,7 @@ PlasmoidItem {
                                 + (asked.host ? " · " + asked.host : ""), "dialog-warning", asked.host, true)
                 }
             } else if (draft && result.how === "ask") {
-                root.openPane(draft.session, draft.host, "chat")   // (its terminal takes no text: you choose there)
-                root.paneDraft = draft.text
+                root.openPane(draft.session, draft.host, "chat", { draft: draft.text })   // (its terminal takes no text: you choose there)
             } else {
                 if (draft && result.how === "vscode" && result.link)
                     root.openVscodeLink(draft.session.sessionId || draft.session.chatId, result.link, draft.host)

@@ -78,7 +78,27 @@ QtObject {
         }
     }
 
+    // ---------------------------------------------------------------- the chat pane
+    // A chat has one window: each copy has a chat pane of its own (the panel's,
+    // each desktop's), so a chat open in one copy's pane and opened again from
+    // another copy brings that window forward (paneRaise), not a second one
+    property var panes: ({})   // copy id -> the chat its pane shows ("host|chatId")
+    signal paneRaise(string id, string tab, var then)   // (then: what the pane does, main.qml paneAct)
+    function paneShown(id, key) {
+        if (key)
+            panes[id] = key
+        else
+            delete panes[id]
+    }
+    function paneHolder(key, except) {   // (the copy whose pane shows that chat, "" for none)
+        for (const id in panes)
+            if (id !== except && panes[id] === key)
+                return id
+        return ""
+    }
+
     function drop(id) {
+        delete panes[id]
         if (!(id in copies))
             return
         delete copies[id]

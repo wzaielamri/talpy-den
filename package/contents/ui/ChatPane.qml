@@ -360,9 +360,11 @@ Window {
                 root.paneTyping = false
             }
         }
-        function onPaneChatChanged() {
+        function onPaneChatChanged() {   // (opened again, here or from another copy: forward, with focus)
             if (root.paneChat && root.paneChat.tab)
                 pane.tab = root.paneChat.tab
+            if (pane.visible && pane.visibility === Window.Minimized)
+                pane.showNormal()
             pane.raise()
             pane.requestActivate()
         }
