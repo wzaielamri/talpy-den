@@ -8252,13 +8252,39 @@ USAGE_PAST_FILE = "usage-past.json"
 USAGE_PAST_VERSION = 1
 USAGE_PAST_DAYS = 90
 USAGE_PAST_STEP = {"five_hour": 5}  # percent; 1 in the weekly windows
-HISTORY_SETTING_FILE = "history.json"  # {"keep": false} once you turn the history off (week.py)
+# {"keep": false} once you turn the history off (week.py); "since": when it was
+# last turned on or off or deleted (ms), for the SSH hosts and containers (history_setting)
+HISTORY_SETTING_FILE = "history.json"
 
 
 def history_kept(cache_root):
     """Does the Recap keep its history (the setting is on unless turned off)?"""
     data = read_json(cache_root / HISTORY_SETTING_FILE)
     return not (isinstance(data, dict) and data.get("keep") is False)
+
+
+def history_setting(cache_root):
+    """(keep, since): history_kept, and when it was last turned on or off or
+    deleted (ms; None: never), what came before going with it."""
+    data = read_json(cache_root / HISTORY_SETTING_FILE)
+    data = data if isinstance(data, dict) else {}
+    since = data.get("since")
+    return data.get("keep") is not False, since if isinstance(since, int) and since > 0 else None
+
+
+def follow_history(cache_root, history):
+    """An SSH host's or a container's usage-past.json follows the history
+    setting of the computer that asks (history: its (keep, since), sent with
+    the status check): off, it goes; written before since, it holds only
+    windows from before then, and goes too (save_usage_past keeps none of those)."""
+    keep, since = history
+    path = cache_root / USAGE_PAST_FILE
+    t = mtime(path)
+    if t is not None and (not keep or (since is not None and t * 1000 < since)):
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
 
 def trimmed_points(points):
@@ -8287,11 +8313,14 @@ def past_points(key, points):
     return kept
 
 
-def save_usage_past(cache_root, ended, now_ms):
+def save_usage_past(cache_root, ended, now_ms, history=None):
     """Add the windows that ended to usage-past.json and drop the ones older
-    than USAGE_PAST_DAYS; with the history off there's none (the file goes)."""
+    than USAGE_PAST_DAYS; with the history off there's none (the file goes).
+    history: (keep, since) of the computer that asks (follow_history), else
+    this one's setting."""
     path = cache_root / USAGE_PAST_FILE
-    if not history_kept(cache_root):
+    keep, since = history if history is not None else (history_kept(cache_root), None)
+    if not keep:
         try:
             path.unlink()
         except OSError:
@@ -8315,7 +8344,7 @@ def save_usage_past(cache_root, ended, now_ms):
                   if isinstance(p, list) and len(p) == 2}
         kept["points"] = past_points(w["key"], [[t, points[t]] for t in sorted(points)])
         kept["plan"] = kept.get("plan") or w.get("plan")
-    cutoff = now_ms - USAGE_PAST_DAYS * 86400_000
+    cutoff = max(now_ms - USAGE_PAST_DAYS * 86400_000, since or 0)
     past = sorted((w for w in past if w["resetsAt"] >= cutoff), key=lambda w: w["resetsAt"])
     write_json_atomic(path, {"version": USAGE_PAST_VERSION, "windows": past}, private=True)
 
@@ -8343,6 +8372,7 @@ class UsageHistory:
         self.changed = False
         self.ended = []  # the windows that ended in this check, for usage-past.json
         self.now_ms = None
+        self.history = None  # (keep, since) from the computer that asks (save_usage_past)
 
     def end(self, gid, key, rec, plan):
         """A window that's over (a new one began, or it reset a day ago)."""
@@ -8399,7 +8429,7 @@ class UsageHistory:
                 pass
         if self.ended:
             try:
-                save_usage_past(self.path.parent, self.ended, self.now_ms or int(time.time() * 1000))
+                save_usage_past(self.path.parent, self.ended, self.now_ms or int(time.time() * 1000), self.history)
             except OSError:
                 pass
             self.ended = []
@@ -9371,11 +9401,13 @@ class Context:
 
 def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_done_hours=KEEP_DONE_HOURS,
             recent=RECENT_CHATS, plans=PLANS_LISTED, usage_cap=0, starred=None, usage_refresh=0,
-            memories=MEMORIES_LISTED, kept=None):
+            memories=MEMORIES_LISTED, kept=None, history=None):
     """starred: {"chats", "plans"} starred here (starred_of), else this
     computer's from the cache. kept: chats here that keep going from the
     computer that asks (an SSH host's run: --kept-chats), listed as this
-    computer's own (list_kept). usage_refresh: have Claude Code fetch the plan
+    computer's own (list_kept). history: the Recap's history setting
+    (keep, since) of the computer that asks (--no-history, --history-since:
+    the plan windows kept here follow it, follow_history), else this one's. usage_refresh: have Claude Code fetch the plan
     usage of an account whose numbers are older than this many minutes while
     one of its chats works, at most that often (refresh_usage; 0: never; the
     status check does)."""
@@ -9407,6 +9439,7 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
     with ScanLock(cache_root / "tokens.lock") as lock:
         # read with the lock: the check holding it is the one that writes it
         usage = UsageHistory(cache_root / "usage.json")
+        usage.history = history
         if lock.held:
             prune_snapshots(snapshot_root, now)
             if with_tokens:
@@ -9499,6 +9532,8 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
                     errors.append(f"{group['title']}: tokens: {exc}")
             groups.append(group)
         usage.save()  # only this check noted anything (lock.held): others mustn't write it now
+        if history is not None:
+            follow_history(cache_root, history)
 
     try:
         refresh_usage(home, cache_root, due, now_ms, refresh_ms)
@@ -10539,7 +10574,7 @@ def add_found_commands(result, home, extra_dirs=()):
 
 
 USAGE = """usage: talpy_den.py [--config-dir DIR]... [--done-hours H] [--recent N] [--plans N] [--memories N] [--no-tokens] [--pretty] [--remote [--local]]
-                    [--usage-refresh N]
+                    [--usage-refresh N] [--no-history | --history-since MS]
        talpy_den.py --fetch-usage [--config-dir DIR]...
        talpy_den.py --dismiss SESSION_ID | --undismiss-all
        talpy_den.py --hide chats|plans|memories|projects ID | --show-hidden chats|plans|memories|projects
@@ -10573,6 +10608,9 @@ USAGE = """usage: talpy_den.py [--config-dir DIR]... [--done-hours H] [--recent 
   --kept-chats C/P,…  (an SSH host's status, asked from the computer that keeps them) these chats (id/
                     profile) keep going: they stay listed, and "keptTurns" says how each stands
   --no-tokens       skip transcript token totals
+  --no-history, --history-since MS  (an SSH host's status, asked from the computer that keeps the
+                    setting) the Recap keeps no history there, or kept none from before MS: the plan
+                    windows that ended kept here (usage-past.json) follow it
   --pretty          indent the JSON output
   --remote          for the widget on another machine: add the shell commands that open
                     each chat here, and print the JSON after a marker line
@@ -10617,6 +10655,7 @@ def main(argv=None):
     fetch_usage = False
     starred_chats, starred_plans = set(), set()
     kept_here, continue_force = [], False  # (--kept-chats: an SSH host's chats that keep going, from the computer that asks)
+    history = None  # (--no-history, --history-since: the Recap's history setting, from the computer that asks)
     container_days, picked = None, []
     while args:
         arg = args.pop(0)
@@ -10715,6 +10754,10 @@ def main(argv=None):
             config_dirs.append(arg.partition("=")[2])
         elif arg == "--no-tokens":
             with_tokens = False
+        elif arg == "--no-history":
+            history = (False, None)
+        elif arg == "--history-since" and args and args[0].isdigit():
+            history = (True, int(args.pop(0)))
         elif arg == "--pretty":
             pretty = True
         elif arg == "--keep-going":
@@ -10807,7 +10850,8 @@ def main(argv=None):
                              usage_cap=usage_cap if not remote or local else 0,
                              # (on an SSH host: the host's stars, from the computer that asks)
                              starred={"chats": starred_chats, "plans": starred_plans} if remote and not local else None,
-                             usage_refresh=usage_refresh, kept=kept_here if remote and not local else None)
+                             usage_refresh=usage_refresh, kept=kept_here if remote and not local else None,
+                             history=history if remote and not local else None)
             try:
                 add_vscode(result, home, config_dirs, remote and not local, cache_root)
             except Exception as exc:

@@ -819,6 +819,12 @@ def status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, 
     kept = [k for k in cs.load_keep(cs.cache_dir(Path.home()))["chats"] if k["host"] == host and "/" not in k["profile"]]
     if kept:
         args += ["--kept-chats", ",".join(f"{k['chat']}/{k['profile']}" for k in kept)]
+    # (and the Recap's history setting: the plan windows that ended kept there follow it, as here)
+    keep, since = cs.history_setting(cs.cache_dir(Path.home()))
+    if not keep:
+        args.append("--no-history")
+    elif since:
+        args += ["--history-since", str(since)]
     started, p = time.time(), place(host)
     try:
         r = ssh(host, "python3 -I - " + " ".join(shlex.quote(a) for a in args), host_script(), STATUS_TIMEOUT)

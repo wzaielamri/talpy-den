@@ -957,7 +957,8 @@ def set_history(cache_root, keep):
     with cache_lock(cache_root) as lock:
         if not lock.held:
             return False, "The Recap is reading your chats: try again in a moment"
-        cs.write_json_atomic(cache_root / HISTORY_FILE, {"keep": bool(keep)})
+        # (since: the SSH hosts' and containers' plan windows from before then go too, cs.follow_history)
+        cs.write_json_atomic(cache_root / HISTORY_FILE, {"keep": bool(keep), "since": int(time.time() * 1000)})
         if keep:
             return True, "The Recap keeps its history"
         windows = forget_past_windows(cache_root)
@@ -996,6 +997,7 @@ def forget_history(cache_root):
             except OSError:
                 pass
         windows = forget_past_windows(cache_root)
+        cs.write_json_atomic(cache_root / HISTORY_FILE, {"keep": keep_history(cache_root), "since": int(time.time() * 1000)})
         return True, ("The saved history and your plan's windows that ended are deleted" if windows else
                       "The saved history is deleted") + ": the Recap starts again from the chats Claude still has"
 

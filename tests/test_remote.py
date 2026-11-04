@@ -325,6 +325,21 @@ class StatusTests(FakeSSH):
             remote.answer_file("lab").write_text(json.dumps({"answer": {"ok": True, "pad": "x" * (4 << 20)}}))
             self.assertEqual(remote.last_answers(["lab"]), {})  # (one kept before the cap)
 
+    def test_the_hosts_plan_windows_follow_the_history_setting_here(self):
+        there = self.fake_home / ".cache/talpy-den" / cs.USAGE_PAST_FILE
+        there.parent.mkdir(parents=True, exist_ok=True)
+        here = cs.cache_dir(Path.home()) / cs.HISTORY_SETTING_FILE
+        here.parent.mkdir(parents=True, exist_ok=True)
+        # turned off here; deleted here (Delete Saved History…) while the setting is on
+        for setting, flag in (({"keep": False}, "--no-history"),
+                              ({"keep": True, "since": int(time.time() * 1000)}, "--history-since")):
+            there.write_text(json.dumps({"version": 1, "windows": []}))
+            os.utime(there, (time.time() - 60, time.time() - 60))
+            here.write_text(json.dumps(setting))
+            self.assertTrue(remote.status("lab", tokens=False)["ok"])
+            self.assertIn(flag, self.calls()[-1][1])
+            self.assertFalse(there.exists(), flag)
+
     def test_login_noise_before_the_answer(self):
         self.mode("noisy")
         self.assertTrue(remote.status("lab")["ok"])
