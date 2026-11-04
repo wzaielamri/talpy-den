@@ -51,6 +51,6 @@ The tests build Claude Code's files (sessions, background jobs, transcripts, sha
 
 **Releases:** the Plasma widget, the GNOME extension and the VS Code extension share one version. Raise it in `package/metadata.json`, `gnome/extension/metadata.json` and `vscode/package.json`, add a `## <version>` entry to `CHANGELOG.md` and `vscode/CHANGELOG.md`, commit, then push a tag (`git tag v<version> && git push origin main v<version>`). The release workflow checks, tests and builds all three and publishes them with those entries as the notes.
 
-**Nothing private:** `tools/check_public.py` refuses commits with tokens, keys, IP addresses, emails, home folders or anything naming the machine it runs on or its SSH hosts (CI runs it on every file and the whole history). Turn it on once per clone with `git config core.hooksPath .githooks`.
+**Nothing private:** `tools/check_public.py` refuses commits with tokens, keys, IP addresses, emails, home folders or anything naming the machine it runs on or its SSH hosts (CI runs it on every file and the whole history). Turn it on once per clone with `git config core.hooksPath .githooks`. The hooks run it as `main` has it committed, so a branch you commit or merge on (a pull request's) can't run its own copy; a change to it checks commits once it is on `main`.
 
 **Contributing:** issues and pull requests are welcome. Please run the tests, and check QML changes with `tools/render_popup.sh`. Keep `talpy_den.py` and `sharing.py` compatible with Python 3.7, because they also run on SSH hosts (a test checks this).

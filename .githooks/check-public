@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs tools/check_public.py for the hooks as main has it committed, not as
+# this working tree has it: a branch you commit or merge on (a pull
+# request's) can't run its own code here. (This tree's copy only while main
+# has none.)
+git show refs/heads/main:tools/check_public.py 2>/dev/null | python3 -I -c '
+import sys
+path = sys.argv[1]
+code = sys.stdin.read() or open(path, encoding="utf-8").read()
+sys.argv = sys.argv[1:]
+exec(compile(code, path, "exec"), {"__name__": "__main__", "__file__": path})
+' tools/check_public.py "$@"
