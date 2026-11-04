@@ -2003,7 +2003,9 @@ def granted_rules(home, folders, profiles, added=()):
     for p in profiles:
         take(p.real / "settings.json", "every chat of %s" % ", ".join(accounts[os.path.realpath(str(p.real / "settings.json"))]), False)
     for folder in folders:
-        for name, shared in (("settings.local.json", False), ("settings.json", True)):
+        # (a folder's settings.json goes with its repository: outside one, it's as its settings.local.json)
+        in_git = os.path.isfile(os.path.join(folder, ".claude", "settings.json")) and cs.git_root(Path(folder)) is not None
+        for name, shared in (("settings.local.json", False), ("settings.json", in_git)):
             take(Path(folder) / ".claude" / name,
                  "chats started in %s" % project_name(folder, home) + (" (shared through git)" if shared else ""), shared)
     # what each account's .claude.json keeps: trusted folders, and what was approved in them

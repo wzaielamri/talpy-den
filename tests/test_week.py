@@ -1429,6 +1429,11 @@ class GrantedTests(Projects):
         self.assertEqual(week.revoke_rule(self.home, self.cache_root, self.profiles(), "0123456789ab"),
                          (False, "That rule isn't in your settings any more"))
 
+    def test_a_folders_settings_outside_a_repository_arent_shared(self):
+        (self.app / ".git").rmdir()
+        g = self.granted()[-1]
+        self.assertEqual((g["value"], g["place"], g["shared"]), ("WebSearch", "chats started in app", False))
+
     def test_the_permissions_tab_has_this_weeks_prompts_and_the_permissions_you_gave(self):
         self.asked()
         out = week.permissions(self.scan(), self.profiles(), self.now, self.home)
