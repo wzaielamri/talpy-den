@@ -116,21 +116,27 @@ export function periodText(recap: WeekRecap): string {
   }
   if (recap.span === "all") return recap.first ? `Everything since ${dateText(recap.first)}` : "Everything";
   const span = `${shortDay(recap.from)} – ${shortDay(recap.to)}`;
-  return recap.back === 0 ? `Last 7 days · ${span}` : span;
+  return recap.back === 0 ? `${recap.span === "month" ? "Last 30 days" : "Last 7 days"} · ${span}` : span;
 }
 
 // What the period line says before the answer for a span comes
 export function periodWaiting(span: WeekSpan, back: number): string {
-  return back !== 0 ? "" : span === "day" ? "Today" : span === "all" ? "Everything" : "Last 7 days";
+  return back !== 0 ? "" : span === "day" ? "Today" : span === "all" ? "Everything" : span === "month" ? "Last 30 days" : "Last 7 days";
 }
 
-// The 7 days before, when there was anything in them
+// The step back and on: "The day before", "The 30 days after", …
+export function stepText(span: WeekSpan, after: boolean): string {
+  const what = span === "day" ? "day" : span === "month" ? "30 days" : "week";
+  return `The ${what} ${after ? "after" : "before"}`;
+}
+
+// The day, 7 or 30 days before, when there was anything in them
 export function previousOf(recap: WeekRecap): WeekNumbers | null {
   const p = recap.previous;
   return p && (p.workedMs || p.prompts || p.cost) ? p : null;
 }
 
-// The change against the 7 days before: "+4h 44m", "−$12"
+// The change against the days before: "+4h 44m", "−$12"
 export function deltaText(now: number, before: number | null, kind: Kind, cur: Currency = USD): string {
   if (before === null) return "";
   const d = now - before;
@@ -173,12 +179,14 @@ export function weekTiles(recap: WeekRecap): WeekTile[] {
   const p = previousOf(recap);
   const cur = currencyOf(recap);
   const shown = (v: number, kind: Kind) => amountText(v, kind, cur);
-  const day = recap.span === "day";
-  const before = (v: number, kind: Kind) => (p ? `\n${day ? "The day before" : "The 7 days before"}: ${shown(v, kind)}` : "");
+  const [beforeText, trendText] = recap.span === "day" ? ["The day before", "Day by day, this day last"]
+    : recap.span === "month" ? ["The 30 days before", "30 days at a time, these 30 days last"]
+      : ["The 7 days before", "Week by week, these 7 days last"];
+  const before = (v: number, kind: Kind) => (p ? `\n${beforeText}: ${shown(v, kind)}` : "");
   const weeks = (key: NumberKey, kind: Kind) => {
     const values = trendOf(recap, key);
     return values.length > 1
-      ? `\n${day ? "Day by day, this day last" : "Week by week, these 7 days last"}: ${values.map((v) => (v === null ? "?" : shown(v, kind))).join(" · ")}`
+      ? `\n${trendText}: ${values.map((v) => (v === null ? "?" : shown(v, kind))).join(" · ")}`
       : "";
   };
   return [
@@ -446,7 +454,7 @@ export function footText(recap: WeekRecap): string {
 export function weekAsked(back: unknown, account: unknown, span: unknown = "week"): { back: number; account: string; span: WeekSpan } {
   const b = typeof back === "number" && Number.isInteger(back) ? Math.min(3650, Math.max(0, back)) : 0;
   const a = typeof account === "string" && /^[0-9a-f]{12}$/.test(account) ? account : "";
-  const sp: WeekSpan = span === "day" || span === "all" ? span : "week";
+  const sp: WeekSpan = span === "day" || span === "month" || span === "all" ? span : "week";
   return { back: b, account: a, span: sp };
 }
 

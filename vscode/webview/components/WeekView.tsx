@@ -16,6 +16,7 @@ import {
   moneyText,
   periodText,
   periodWaiting,
+  stepText,
   planText,
   RECAP_SECTIONS,
   type RecapSection,
@@ -122,9 +123,9 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
 
   return (
     <div class={"week" + (busy && recap ? " busy" : "")}>
-      {/* A day, 7 days or everything kept */}
+      {/* A day, 7 days, 30 days or everything kept */}
       <div class="week-spans" role="radiogroup" aria-label="What to show">
-        {([["day", "Day"], ["week", "Week"], ["all", "Overall"]] as const).map(([sp, text]) => (
+        {([["day", "Day"], ["week", "Week"], ["month", "Month"], ["all", "Overall"]] as const).map(([sp, text]) => (
           <button key={sp} type="button" role="radio" aria-checked={span === sp} class={"chip" + (span === sp ? " on" : "")}
             onClick={() => {
               setSpan(sp);
@@ -136,16 +137,14 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
       </div>
       <div class="week-period">
         {span !== "all" ? (
-          <button type="button" class="icon-btn flip" title={span === "day" ? "The day before" : "The week before"}
-            aria-label={span === "day" ? "The day before" : "The week before"}
+          <button type="button" class="icon-btn flip" title={stepText(span, false)} aria-label={stepText(span, false)}
             disabled={!mine || back >= (recap?.backMax ?? 0)} onClick={() => setBack(back + 1)}>
             <Icon name={I.previous} />
           </button>
         ) : null}
         <span class="week-span">{mine && recap ? periodText({ ...recap, back }) : periodWaiting(span, back)}</span>
         {span !== "all" ? (
-          <button type="button" class="icon-btn" title={span === "day" ? "The day after" : "The week after"}
-            aria-label={span === "day" ? "The day after" : "The week after"} disabled={back <= 0}
+          <button type="button" class="icon-btn" title={stepText(span, true)} aria-label={stepText(span, true)} disabled={back <= 0}
             onClick={() => setBack(back - 1)}>
             <Icon name={I.next} />
           </button>
@@ -180,7 +179,7 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
           <div class="muted">
             {recap.span === "day" ? "None of your chats here (or on the SSH hosts shown) has a prompt or a reply on this day."
               : recap.span === "all" ? "None of your chats here (or on the SSH hosts shown) has a prompt or a reply yet."
-                : "None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these 7 days."}
+                : `None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these ${recap.span === "month" ? "30" : "7"} days.`}
           </div>
         </div>
       ) : null}

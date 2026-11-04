@@ -2,7 +2,7 @@
 // Claude Code) and for the webview's dev harness. Nothing here is real: the
 // accounts, folders, hosts and chats are invented, times are relative to now.
 
-import type { LimitAccount, LimitHistory, LimitPeriod, ProjectsData, WeekLane, Agent, ChatStats, Group, HostState, PermsData, Session, Status, UsageStats, ViewState, WeekChat, WeekDay, WeekRecap, WeekSpan } from "./types";
+import type { LimitAccount, LimitHistory, LimitPeriod, ProjectsData, WeekLane, WeekNumbers, Agent, ChatStats, Group, HostState, PermsData, Session, Status, UsageStats, ViewState, WeekChat, WeekDay, WeekRecap, WeekSpan } from "./types";
 
 const MIN = 60000;
 const HOUR = 60 * MIN;
@@ -425,6 +425,21 @@ function demoLanes(start: number): WeekLane[] {
 }
 
 export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "week"): WeekRecap {
+  if (span === "month") {
+    // the last 30 days: the made-up weeks back to back, a row each day
+    const weeks = [4, 3, 2, 1, 0].map((b) => demoWeek(now, b + 5 * back, account));
+    const days = weeks.flatMap((w) => w.days).slice(-30);
+    const add = (key: keyof WeekNumbers) => days.reduce((t, d) => t + (d[key] || 0), 0);
+    const numbers = (k: number): WeekNumbers => ({ youMs: add("youMs") * k, workedMs: add("workedMs") * k, busyMs: add("busyMs") * k,
+      waitMs: add("waitMs") * k, prompts: Math.round(add("prompts") * k), cost: add("cost") * k, tokenTotal: Math.round(add("tokenTotal") * k) });
+    const week = weeks[weeks.length - 1];
+    const sum = { ...week.sum, ...numbers(1), turns: week.sum.turns * 4, chats: week.sum.chats * 3,
+      busiestDay: days.reduce((b, d) => (d.workedMs > b.workedMs ? d : b), days[0]).day };
+    const start = days[0].start;
+    return { ...week, span, back, backMax: 2, first: days[0].day, from: days[0].day, to: days[days.length - 1].day, days, sum,
+      previous: numbers(0.86),
+      trend: [0.7, 0.78, 0.81, 0.86].map((k, i) => ({ ...numbers(k), start: start - (4 - i) * 30 * 86400000 })).concat([{ ...numbers(1), start }]) };
+  }
   if (span !== "week") {
     // a day: today's (or the one back days before) out of the made-up week;
     // everything: that week and the one before, a row each

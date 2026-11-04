@@ -87,7 +87,7 @@ Rectangle {
             textFormat: Text.PlainText
             Layout.fillWidth: true
             text: card.span === "day" ? i18n("My day with Claude") : card.span === "all" ? i18n("Me and Claude, so far")
-                                                                     : i18n("My week with Claude")
+                : card.span === "month" ? i18n("My month with Claude") : i18n("My week with Claude")
             color: "#ffffff"
             font.pixelSize: 25
             font.bold: true
@@ -131,18 +131,20 @@ Rectangle {
 
         // Claude's work, day by day (or hour blocks of the day)
         Row {
+            id: dayBars
+            readonly property int gap: card.days.length > 20 ? 2 : 5   // (a month's 30 days fit in the same width)
             visible: card.days.length > 1
             Layout.topMargin: 10
-            spacing: 5
+            spacing: gap
             Repeater {
                 model: card.days.length
                 delegate: Rectangle {
                     required property int index
                     readonly property var day: card.days[index] || ({ workedMs: 0 })
                     anchors.bottom: parent.bottom
-                    width: Math.max(6, Math.min(22, 250 / Math.max(1, card.days.length) - 5))
+                    width: Math.max(3, Math.min(22, 250 / Math.max(1, card.days.length) - dayBars.gap))
                     height: 4 + 34 * (day.workedMs || 0) / card.maxDay
-                    radius: 3
+                    radius: Math.min(3, width / 2)
                     color: "#d97757"
                     opacity: 0.55 + 0.45 * (day.workedMs || 0) / card.maxDay
                 }

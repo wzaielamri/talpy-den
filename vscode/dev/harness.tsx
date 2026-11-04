@@ -132,8 +132,13 @@ setTimeout(() => {
   send({ type: "visible", visible: true });
   // ?week=1: the Week tab, its days there from the start (a screenshot doesn't wait)
   // (?span=day or all: the Recap tab starts on it)
-  const span = params.get("span") === "day" || params.get("span") === "all" ? (params.get("span") as "day" | "all") : "week";
+  const asked = params.get("span");
+  const span = asked === "day" || asked === "month" || asked === "all" ? asked : "week";
   if (params.get("week") === "1") send({ type: "week", back: 0, account: "", span, recap: demoWeek(Date.now(), 0, "", span), error: "" });
+  // (the tab picks its span as it appears: the chip of the one asked for, clicked as you would)
+  if (params.get("week") === "1" && span !== "week")
+    setTimeout(() => [...document.querySelectorAll<HTMLButtonElement>(".week-spans .chip")]
+      .find((b) => b.textContent === ({ day: "Day", month: "Month", all: "Overall" } as const)[span])?.click(), 300);
   // &limits=1: How your limits changed unfolded (its answer at once: a screenshot doesn't wait)
   if (params.get("limits") === "1") {
     limitsOpen.set(true);

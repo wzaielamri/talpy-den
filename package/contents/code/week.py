@@ -18,7 +18,8 @@ off: then it keeps only what the transcripts still have.
     python3 -I week.py [--span day|week|all] [--back N] [--account ID] [--host HOST]... [--config-dir DIR]... [--currency C] [--pretty]
 
     --span S      day: one day (back N days); week: 7 days (back N weeks, the
-                  default); all: everything kept, a row per 7 days
+                  default); month: 30 days (back N times 30); all: everything
+                  kept, a row per 7 days
     --back N      the day or 7 days N before today's
     --history-status | --history on|off | --forget
                   whether the history is kept (and since when), keep it or
@@ -84,7 +85,8 @@ OLD_CACHE_FILES = ("week-1.json", "week-2.json")
 HISTORY_FILE = cs.HISTORY_SETTING_FILE  # {"keep": false} once you turn the history off
 CACHE_LOCK = "week.lock"
 LOCK_WAIT_S = 30  # another run reading the transcripts: wait for it this long, then use the cache as it is
-SPANS = ("day", "week", "all")
+SPANS = ("day", "week", "month", "all")
+SPAN_DAYS = {"day": 1, "week": 7, "month": 30}  # (a span's days: a step back, the period before and the trend's)
 BACK_LIMIT = 3650  # (days or weeks back: further than any history)
 DAY_MS = 86_400_000
 HOUR_MS = 3_600_000
@@ -1107,17 +1109,17 @@ def week_days(back, now_ms):
 
 def span_days(span, back, now_ms, first_ms=None):
     """The days a span shows: day: the one back days before today; week:
-    the 7 ending today, back weeks before; all: from the first one with a
-    chat (first_ms) to today. [(day, start ms, end ms)]"""
+    the 7 ending today, back weeks before; month: the 30 ending today, back
+    times 30 days before; all: from the first one with a chat (first_ms) to
+    today. [(day, start ms, end ms)]"""
     today = date.fromtimestamp(now_ms / 1000)
-    if span == "day":
-        days = [today - timedelta(days=back)]
-    elif span == "all":
+    if span == "all":
         first = date.fromtimestamp(first_ms / 1000) if first_ms else today
         days = [first + timedelta(days=i) for i in range(max(1, (today - first).days + 1))]
     else:
-        end = today - timedelta(days=7 * back)
-        days = [end - timedelta(days=i) for i in range(6, -1, -1)]
+        n = SPAN_DAYS.get(span, 7)
+        end = today - timedelta(days=n * back)
+        days = [end - timedelta(days=i) for i in range(n - 1, -1, -1)]
     return [(d.isoformat(), midnight(d), midnight(d + timedelta(days=1))) for d in days]
 
 
@@ -1127,15 +1129,15 @@ def span_since(span, back, now_ms, first_ms=None):
     first_day = date.fromisoformat(span_days(span, back, now_ms, first_ms)[0][0])
     if span == "all":
         return 0
-    return midnight(first_day - timedelta(days=(1 if span == "day" else 7) * (TREND_WEEKS - 1)))
+    return midnight(first_day - timedelta(days=SPAN_DAYS.get(span, 7) * (TREND_WEEKS - 1)))
 
 
 def back_max(span, now_ms, first_ms):
-    """How far back a span can step: to the day or the 7 days with the first chat."""
+    """How far back a span can step: to the day, the 7 or the 30 days with the first chat."""
     if span == "all" or not first_ms:
         return 0
     days = (date.fromtimestamp(now_ms / 1000) - date.fromtimestamp(first_ms / 1000)).days
-    return max(0, days if span == "day" else days // 7)
+    return max(0, days // SPAN_DAYS.get(span, 7))
 
 
 def merged(intervals, join=0):
@@ -1265,13 +1267,13 @@ def day_of(starts, ms):
 def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week", first_ms=None):
     """The Recap tab: sources = [{"host", "chats" (chats_between), "accounts"}];
     usage: this computer's plan windows now (plan_windows); added: the rules
-    this tab added (to undo them); span: day, week or all (span_days), with
+    this tab added (to undo them); span: day, week, month or all (span_days), with
     first_ms when the first chat began (how far back it goes)."""
     days = span_days(span, back, now_ms, first_ms)
     starts = [d[1] for d in days] + [days[-1][2]]
     w0, w1 = starts[0], min(starts[-1], now_ms)
     first_day = date.fromisoformat(days[0][0])
-    step = 1 if span == "day" else 7  # (days a period has: the one before and the trend's)
+    step = SPAN_DAYS.get(span, 7)  # (days a period has: the one before and the trend's)
     p0 = midnight(first_day - timedelta(days=step))
     chats, accounts = [], {}
     for src in sources:
@@ -1393,7 +1395,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
             row.update(to=(date.fromisoformat(day) + timedelta(days=6)).isoformat(), you=[], work=[], wait=[])
         day_rows.append(row)
     total["busiestDay"] = (max(day_rows, key=lambda r: r["workedMs"])["day"]
-                           if span == "week" and any(r["workedMs"] for r in day_rows) else None)
+                           if span in ("week", "month") and any(r["workedMs"] for r in day_rows) else None)
 
     # Where it went: folders (with their chats), chats, models
     folders, models, guessed, saved = {}, {}, set(), 0.0

@@ -280,7 +280,8 @@ PlasmaComponents3.ScrollView {
 
     function periodText() {
         if (!recap || recap.span !== span)
-            return root.weekBack !== 0 ? "" : span === "day" ? i18n("Today") : span === "all" ? i18n("Everything") : i18n("Last 7 days")
+            return root.weekBack !== 0 ? "" : span === "day" ? i18n("Today") : span === "all" ? i18n("Everything")
+                                             : span === "month" ? i18n("Last 30 days") : i18n("Last 7 days")
         if (span === "day") {
             const day = Qt.locale().toString(date(recap.from), "ddd d MMM")
             return recap.back === 0 ? i18n("Today · %1", day) : recap.back === 1 ? i18n("Yesterday · %1", day) : day
@@ -289,7 +290,14 @@ PlasmaComponents3.ScrollView {
             return recap.first ? i18n("Everything since %1", Qt.locale().toString(date(recap.first), "d MMM yyyy")) : i18n("Everything")
         const days = i18nc("from day – to day", "%1 – %2", Qt.locale().toString(date(recap.from), "d MMM"),
                            Qt.locale().toString(date(recap.to), "d MMM"))
-        return recap.back === 0 ? i18n("Last 7 days · %1", days) : days
+        return recap.back !== 0 ? days : span === "month" ? i18n("Last 30 days · %1", days) : i18n("Last 7 days · %1", days)
+    }
+
+    // The step back and on: "The day before", "The 30 days after", …
+    function stepText(after) {
+        return span === "day" ? (after ? i18n("The day after") : i18n("The day before"))
+             : span === "month" ? (after ? i18n("The 30 days after") : i18n("The 30 days before"))
+             : (after ? i18n("The week after") : i18n("The week before"))
     }
 
     // The change against the 7 days before: +4h 44m, −$12
@@ -307,7 +315,8 @@ PlasmaComponents3.ScrollView {
         if (!previous)
             return ""
         const value = shown(before, kind)
-        return "\n" + (span === "day" ? i18n("The day before: %1", value) : i18n("The 7 days before: %1", value))
+        return "\n" + (span === "day" ? i18n("The day before: %1", value) : span === "month" ? i18n("The 30 days before: %1", value)
+                                                                            : i18n("The 7 days before: %1", value))
     }
 
     // The same number over the 5 weeks up to these days (a week older than
@@ -317,7 +326,8 @@ PlasmaComponents3.ScrollView {
             return ""
         const values = trend.map(w => !w ? "?" : shown(w[key], kind))
         return "\n" + (span === "day" ? i18n("Day by day, this day last: %1", values.join(" · "))
-                                      : i18n("Week by week, these 7 days last: %1", values.join(" · ")))
+                      : span === "month" ? i18n("30 days at a time, these 30 days last: %1", values.join(" · "))
+                      : i18n("Week by week, these 7 days last: %1", values.join(" · ")))
     }
 
     readonly property var tiles: !sum ? [] : [
@@ -497,7 +507,7 @@ PlasmaComponents3.ScrollView {
             spacing: Kirigami.Units.smallSpacing
 
             Repeater {
-                model: [["day", i18n("Day")], ["week", i18n("Week")], ["all", i18n("Overall")]]
+                model: [["day", i18n("Day")], ["week", i18n("Week")], ["month", i18n("Month")], ["all", i18n("Overall")]]
                 delegate: PlasmaComponents3.ToolButton {
                     required property var modelData
                     text: modelData[1]
@@ -517,7 +527,7 @@ PlasmaComponents3.ScrollView {
             PlasmaComponents3.ToolButton {
                 icon.name: Icons.plasma.previous
                 display: PlasmaComponents3.AbstractButton.IconOnly
-                text: view.span === "day" ? i18n("The day before") : i18n("The week before")
+                text: view.stepText(false)
                 visible: view.span !== "all"
                 enabled: root.weekBack < (view.recap ? view.recap.backMax : 0)
                 onClicked: root.weekBack += 1
@@ -539,7 +549,7 @@ PlasmaComponents3.ScrollView {
             PlasmaComponents3.ToolButton {
                 icon.name: Icons.plasma.next
                 display: PlasmaComponents3.AbstractButton.IconOnly
-                text: view.span === "day" ? i18n("The day after") : i18n("The week after")
+                text: view.stepText(true)
                 visible: view.span !== "all"
                 enabled: root.weekBack > 0
                 onClicked: root.weekBack -= 1
@@ -623,6 +633,7 @@ PlasmaComponents3.ScrollView {
             text: view.span === "day" ? i18n("No Claude on this day") : view.span === "all" ? i18n("No Claude yet") : i18n("No Claude in these days")
             explanation: view.span === "day" ? i18n("None of your chats here (or on the SSH hosts shown) has a prompt or a reply on this day.")
                          : view.span === "all" ? i18n("None of your chats here (or on the SSH hosts shown) has a prompt or a reply yet.")
+                         : view.span === "month" ? i18n("None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these 30 days.")
                          : i18n("None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these 7 days.")
         }
 
@@ -663,6 +674,9 @@ PlasmaComponents3.ScrollView {
                             Layout.fillWidth: true
                             text: tile.info.value
                             elide: Text.ElideRight
+                            // (a month's bigger numbers, "160h 23m": smaller to fit, not cut off)
+                            fontSizeMode: Text.HorizontalFit
+                            minimumPointSize: Kirigami.Theme.defaultFont.pointSize
                             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.6
                             font.weight: Font.DemiBold
                         }

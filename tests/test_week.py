@@ -435,6 +435,21 @@ class RecapTests(Home):
                          [("2026-10-18", "2026-10-24", 90_000), ("2026-10-11", "2026-10-17", 0), ("2026-10-04", "2026-10-10", 20_000)])
         self.assertEqual(sum(r["workedMs"] for r in everything["days"]), everything["sum"]["workedMs"])
 
+    def test_a_month(self):
+        # the 30 days ending today, a row each; the 30 before to compare; 30 days a step back
+        t0 = self.t0
+        self.write(Transcript().prompt(t0).reply(t0 + 1000, "a").duration(t0 + 60_000, 60_000), "chat-a")
+        old = t0 - 35 * week.DAY_MS
+        self.write(Transcript().prompt(old).reply(old + 1000, "b").duration(old + 30_000, 30_000), "chat-b")
+        month = self.recap(span="month", days=80)
+        self.assertEqual((month["span"], month["from"], month["to"], len(month["days"])), ("month", "2026-09-25", "2026-10-24", 30))
+        self.assertEqual((month["sum"]["workedMs"], month["previous"]["workedMs"]), (60_000, 30_000))
+        self.assertEqual(month["sum"]["busiestDay"], "2026-10-24")
+        self.assertEqual([t and t["workedMs"] for t in month["trend"]][-2:], [30_000, 60_000])
+        self.assertEqual(month["backMax"], 1)  # (35 days back: one step)
+        self.assertEqual(self.recap(span="month", back=1, days=80)["sum"]["workedMs"], 30_000)
+        self.assertEqual(week.span_days("month", 0, self.now)[0][0], "2026-09-25")
+
     def test_the_tokens_of_a_day_a_week_and_everything(self):
         t0 = self.t0
         once = 5 + 100 + 1000  # (a reply: input, output, cache reads)

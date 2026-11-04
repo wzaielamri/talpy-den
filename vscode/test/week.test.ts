@@ -10,7 +10,7 @@ import {
   coldText, currencyOf, dayTip, deltaText, factsText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
   shareText, tipMeaning,
-  dateText, periodWaiting, rowDay, shortDay,
+  dateText, periodWaiting, rowDay, shortDay, stepText,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
   limitWeekBars,
 } from "../src/shared/week";
@@ -156,6 +156,20 @@ test("a day and everything: what the period line says, Overall's rows", () => {
   assert.equal(weekTiles(all)[0].delta, "");
 });
 
+test("a month: the last 30 days, a row each, against the 30 before", () => {
+  const month = demoWeek(NOW, 0, "", "month");
+  assert.equal(month.days.length, 30);
+  assert.match(periodText(month), /^Last 30 days · \d+ \w{3} – \d+ \w{3}$/);
+  assert.doesNotMatch(periodText({ ...month, back: 1 }), /^Last/);
+  assert.equal(periodWaiting("month", 0), "Last 30 days");
+  assert.deepEqual([stepText("month", false), stepText("month", true), stepText("day", false), stepText("week", true)],
+    ["The 30 days before", "The 30 days after", "The day before", "The week after"]);
+  assert.equal(month.sum.workedMs, month.days.reduce((t, d) => t + d.workedMs, 0));
+  const tip = weekTiles(month)[0].tip;
+  assert.match(tip, /\nThe 30 days before: /);
+  assert.match(tip, /\n30 days at a time, these 30 days last: /);
+});
+
 test("a permission you gave is revoked only by an id of week.py's list", () => {
   assert.equal(weekRevokeAsked("a1b2c3d4e5f6"), "a1b2c3d4e5f6");
   for (const bad of ["../x", "A1B2C3D4E5F6", "a1b2c3d4e5f", 12, null]) assert.equal(weekRevokeAsked(bad), null);
@@ -198,6 +212,7 @@ test("the page asks for a span, days or weeks back, for an account id or all", a
   assert.deepEqual(weekAsked(2, "0123456789ab"), { back: 2, account: "0123456789ab", span: "week" });
   assert.deepEqual(weekAsked(99, "../../etc", "day"), { back: 99, account: "", span: "day" });
   assert.deepEqual(weekAsked(-3, null, "all"), { back: 0, account: "", span: "all" });
+  assert.deepEqual(weekAsked(1, null, "month"), { back: 1, account: "", span: "month" });
   assert.deepEqual(weekAsked("1", null, "../x"), { back: 0, account: "", span: "week" });
   assert.deepEqual(weekAsked(1e9, ""), { back: 3650, account: "", span: "week" });
   const { calls, posted, receive } = setup();

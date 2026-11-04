@@ -4241,7 +4241,7 @@ PlasmoidItem {
     property var weekRecap: null
     property bool weekBusy: false
     property string weekError: ""
-    property string weekSpan: "week"  // "day", "week" (the last 7 days) or "all" (everything kept)
+    property string weekSpan: "week"  // "day", "week" (the last 7 days), "month" (the last 30) or "all" (everything kept)
     property int weekBack: 0           // days (or weeks) before today's
     property string weekAccount: ""   // an account's id, or "" for all
     property string weekAsked: ""     // the command whose answer is awaited

@@ -59,7 +59,7 @@ export function drawCard(canvas: HTMLCanvasElement, r: WeekRecap, names: boolean
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = "#ffffff";
   ctx.font = `bold ${25 * k}px system-ui, sans-serif`;
-  ctx.fillText(r.span === "day" ? "My day with Claude" : r.span === "all" ? "Me and Claude, so far" : "My week with Claude", x, 52 * k);
+  ctx.fillText(r.span === "day" ? "My day with Claude" : r.span === "all" ? "Me and Claude, so far" : r.span === "month" ? "My month with Claude" : "My week with Claude", x, 52 * k);
   ctx.fillStyle = "#c9c4ee";
   ctx.font = `${13 * k}px system-ui, sans-serif`;
   ctx.fillText(dates(r), x, 74 * k);
@@ -79,13 +79,14 @@ export function drawCard(canvas: HTMLCanvasElement, r: WeekRecap, names: boolean
   const days = r.span === "all" ? r.days.slice(0, 20).reverse() : r.days;
   if (days.length > 1) {
     const top = Math.max(1, ...days.map((d) => d.workedMs || 0));
-    const w = Math.max(6, Math.min(22, 250 / days.length - 5));
+    const gap = days.length > 20 ? 2 : 5; // (a month's 30 days fit in the same width)
+    const w = Math.max(3, Math.min(22, 250 / days.length - gap));
     days.forEach((d, i) => {
       const h = 4 + (34 * (d.workedMs || 0)) / top;
       ctx.globalAlpha = 0.55 + (0.45 * (d.workedMs || 0)) / top;
       ctx.fillStyle = "#d97757";
       ctx.beginPath();
-      ctx.roundRect(x + i * (w + 5) * k, (262 - h) * k, w * k, h * k, 3 * k);
+      ctx.roundRect(x + i * (w + gap) * k, (262 - h) * k, w * k, h * k, Math.min(3, w / 2) * k);
       ctx.fill();
     });
     ctx.globalAlpha = 1;

@@ -759,6 +759,9 @@ test('amounts in another currency, at the rate week.py sends', () => {
     eq(L.weekArgs(0, '', [], {}, [], '../x'), ['--span', 'week', '--back', '0']);
     eq(L.weekArgs(3, '', [], {}, [], 'USD', 'day'), ['--span', 'day', '--back', '3']);
     eq(L.weekArgs(0, '', [], {}, [], 'USD', '../x'), ['--span', 'week', '--back', '0']);
+    eq(L.weekArgs(1, '', [], {}, [], 'USD', 'month'), ['--span', 'month', '--back', '1']);
+    eq([L.weekPeriodWaiting('month', 0), L.weekStepText('month', false), L.weekStepText('day', true)],
+        ['Last 30 days', 'The 30 days before', 'The day after']);
 });
 
 test('trend lines, what Claude did, where the money went, the prompts you answered', () => {

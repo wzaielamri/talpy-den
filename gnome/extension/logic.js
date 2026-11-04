@@ -1574,15 +1574,20 @@ export function weekPeriodText(recap) {
     if (recap.span === 'all')
         return recap.first ? `Everything since ${dateText(recap.first)}` : 'Everything';
     const span = `${shortDay(recap.from)} – ${shortDay(recap.to)}`;
-    return recap.back === 0 ? `Last 7 days · ${span}` : span;
+    return recap.back === 0 ? `${recap.span === 'month' ? 'Last 30 days' : 'Last 7 days'} · ${span}` : span;
 }
 
 // What the period line says before the answer for a span comes
 export function weekPeriodWaiting(span, back) {
-    return back !== 0 ? '' : span === 'day' ? 'Today' : span === 'all' ? 'Everything' : 'Last 7 days';
+    return back !== 0 ? '' : span === 'day' ? 'Today' : span === 'all' ? 'Everything' : span === 'month' ? 'Last 30 days' : 'Last 7 days';
 }
 
-// The 7 days before, when there was anything in them
+// The step back and on: "The day before", "The 30 days after", …
+export function weekStepText(span, after) {
+    return `The ${span === 'day' ? 'day' : span === 'month' ? '30 days' : 'week'} ${after ? 'after' : 'before'}`;
+}
+
+// The day, 7 or 30 days before, when there was anything in them
 function previousOf(recap) {
     const p = recap.previous;
     return p && (p.workedMs || p.prompts || p.cost) ? p : null;
@@ -1609,11 +1614,13 @@ export function weekTiles(recap) {
     const p = previousOf(recap);
     const cur = weekCurrency(recap);
     const shown = (v, kind) => (kind === 'time' ? hoursText(v) : kind === 'money' ? moneyText(v, cur) : grouped(v));
-    const day = recap.span === 'day';
-    const before = (v, kind) => (p ? `\n${day ? 'The day before' : 'The 7 days before'}: ${shown(v, kind)}` : '');
+    const [beforeText, trendText] = recap.span === 'day' ? ['The day before', 'Day by day, this day last']
+        : recap.span === 'month' ? ['The 30 days before', '30 days at a time, these 30 days last']
+            : ['The 7 days before', 'Week by week, these 7 days last'];
+    const before = (v, kind) => (p ? `\n${beforeText}: ${shown(v, kind)}` : '');
     const weeks = (key, kind) => {
         const values = weekTrend(recap, key);
-        return values.length > 1 ? `\n${day ? 'Day by day, this day last' : 'Week by week, these 7 days last'}: ` +
+        return values.length > 1 ? `\n${trendText}: ` +
             `${values.map(v => (v === null ? '?' : shown(v, kind))).join(' · ')}` : '';
     };
     return [
@@ -1797,7 +1804,7 @@ export function weekFootText(recap) {
 // check answered (one out of reach would hold it up), the currency picked
 export function weekArgs(back, account, shownHosts, remote, configDirArgs, currency = 'USD', span = 'week') {
     const hosts = shownHosts.filter(h => remote[h] && remote[h].ok && remote[h].result);
-    return ['--span', ['day', 'week', 'all'].includes(span) ? span : 'week', '--back', String(back), ...(account ? ['--account', account] : []),
+    return ['--span', ['day', 'week', 'month', 'all'].includes(span) ? span : 'week', '--back', String(back), ...(account ? ['--account', account] : []),
         ...(/^[A-Z]{3}$/.test(currency) && currency !== 'USD' ? ['--currency', currency] : []),
         ...hosts.flatMap(h => ['--host', h]), ...configDirArgs];
 }

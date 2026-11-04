@@ -41,18 +41,17 @@ export function buildWeekView(ctx) {
     if (week.busy && recap)
         view.opacity = 160;   // what it said before, while it reads again
 
-    // A day, 7 days or everything kept
+    // A day, 7 days, 30 days or everything kept
     const spans = box('claude-week-accounts', {x_align: Clutter.ActorAlign.CENTER});
-    for (const [span, text] of [['day', 'Day'], ['week', 'Week'], ['all', 'Overall']])
+    for (const [span, text] of [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['all', 'Overall']])
         spans.add_child(textButton(text, () => ctx.setWeek({span}), `claude-chip${week.span === span ? ' claude-chip-on' : ''}`));
     view.add_child(spans);
 
     // The days shown, one back or on, and whose chats
     const shown = recap && recap.span === week.span;
     const period = box('claude-week-period', {x_expand: true});
-    const day = week.span === 'day';
     const before = iconButton(Icons.gnome.previous, () => ctx.setWeek({back: week.back + 1}));
-    ctx.tips.add(before, day ? 'The day before' : 'The week before');
+    ctx.tips.add(before, L.weekStepText(week.span, false));
     // (after its tooltip, which makes it reactive: greyed out, it does nothing)
     before.reactive = before.can_focus = shown && week.back < recap.backMax;
     before.opacity = before.reactive ? 255 : 90;
@@ -61,7 +60,7 @@ export function buildWeekView(ctx) {
     period.add_child(label(shown ? L.weekPeriodText({...recap, back: week.back}) : L.weekPeriodWaiting(week.span, week.back),
         'claude-week-span', {x_expand: true, x_align: Clutter.ActorAlign.CENTER}));
     const after = iconButton(Icons.gnome.next, () => ctx.setWeek({back: week.back - 1}));
-    ctx.tips.add(after, day ? 'The day after' : 'The week after');
+    ctx.tips.add(after, L.weekStepText(week.span, true));
     after.reactive = after.can_focus = week.back > 0;
     after.opacity = after.reactive ? 255 : 90;
     after.visible = week.span !== 'all';
@@ -91,7 +90,7 @@ export function buildWeekView(ctx) {
             recap.span === 'day' ? 'No Claude on this day' : recap.span === 'all' ? 'No Claude yet' : 'No Claude in these days',
             recap.span === 'day' ? 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply on this day.'
                 : recap.span === 'all' ? 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply yet.'
-                    : 'None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these 7 days.'));
+                    : `None of your chats here (or on the SSH hosts shown) has a prompt or a reply in these ${recap.span === 'month' ? 30 : 7} days.`));
     }
     if (!hasData)
         return view;

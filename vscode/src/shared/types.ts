@@ -804,7 +804,7 @@ export interface PermsData {
 }
 
 // What the Recap tab shows: a day, the last 7 days (or 7 before), or everything kept
-export type WeekSpan = "day" | "week" | "all";
+export type WeekSpan = "day" | "week" | "month" | "all";
 
 // The Projects tab (week.py --projects): each project (a git repository, else
 // a folder), newest first, with all its chats, plans and memories, each with
