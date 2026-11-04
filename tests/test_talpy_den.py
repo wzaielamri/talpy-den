@@ -1631,9 +1631,10 @@ class BackgroundStopTests(Fixture):
         super().setUp()
         self.profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
         self.entry = session("bgworking", kind="bg", status="busy", jobId="job3", version="2.1.318")
-        size = mock.patch.object(cs, "tty_size", side_effect=lambda pid: (120, 40) if pid == PID else None)
-        size.start()
-        self.addCleanup(size.stop)
+        for p in (mock.patch.object(cs, "tty_size", side_effect=lambda pid: (120, 40) if pid == PID else None),
+                  mock.patch.object(cs, "cache_dir", return_value=self.cache)):
+            p.start()
+            self.addCleanup(p.stop)
 
     def test_the_claude_code_versions_it_was_checked_on(self):
         for version, known in (("2.1.318", True), ("2.1.330", True), ("2.1.317", False), ("2.2.0", False),
@@ -1662,6 +1663,17 @@ class BackgroundStopTests(Fixture):
         self.assertNotIn("systemTheme", request["caps"])
         self.assertNotIn("browser", request["caps"])
         self.assertEqual(service.typed, [b"\x1b"], "one Esc, nothing else")
+
+    def test_one_stop_at_a_time(self):
+        # (two Esc in a row open Claude's rewind menu: a second Stop within 2 s, from another
+        # front end say, types nothing)
+        service = FakeAttach(self, self.profile, FakeAttach.takes_it)
+        self.assertTrue(cs.interrupt_background(self.profile, self.entry)[0])
+        self.assertEqual(cs.interrupt_background(self.profile, self.entry), (False, "It was stopped a moment ago"))
+        self.assertEqual(len(service.requests), 1)
+        self.assertTrue(cs.stop_turn("job3", time.time() + cs.BG_STOP_GAP + 0.1))
+        self.assertTrue(cs.stop_turn("other"))
+        self.assertEqual(stat.S_IMODE((self.cache / "stops.json").stat().st_mode), 0o600)
 
     def test_nothing_is_typed_unless_it_works_on_a_version_it_knows(self):
         service = FakeAttach(self, self.profile, FakeAttach.takes_it)

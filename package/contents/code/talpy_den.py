@@ -7875,6 +7875,9 @@ BG_STOP_BEFORE = (2, 2)
 BG_STOP_ACK_WAIT = 3  # seconds the service gets to answer the attach
 BG_STOP_FRAME_WAIT = 0.5  # for the session's first output (Claude's own client types only after it)
 BG_STOP_LINGER = 0.2  # after the Esc, before letting go
+# One Stop at a time a chat: two Esc in a row open Claude's rewind menu, where
+# a background chat would sit with nobody to see it (two front ends, say)
+BG_STOP_GAP = 2  # seconds
 # What Talpy Den says it is as a terminal: true colour, no theme of its own
 # (the session keeps its own), no browser (Claude 2.1.318 drops the session's
 # BROWSER while it's attached, and gives it back as it lets go)
@@ -7909,12 +7912,45 @@ def tty_size(pid):
     return (cols, rows) if cols > 0 and rows > 0 else None
 
 
+def stop_turn(job_id, now=None, forget=False):
+    """May a Stop type its Esc into this job now (none did in the last
+    BG_STOP_GAP s)? Noted for the next one, in the cache folder (stops: the
+    last few, locked while read and written); True where it can't be kept.
+    forget: one that typed nothing after all is forgotten."""
+    now = time.time() if now is None else now
+    path = cache_dir(Path.home()) / "stops.json"
+    try:
+        private_dir(path.parent)
+        f = os.fdopen(os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600), "r+", encoding="utf-8")
+    except OSError:
+        return True
+    with f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                seen = json.loads(f.read() or "{}")
+            except ValueError:
+                seen = {}
+            seen = {k: t for k, t in (seen.items() if isinstance(seen, dict) else ())
+                    if isinstance(t, (int, float)) and 0 <= now - t < BG_STOP_GAP}
+            if forget:
+                seen.pop(job_id, None)
+            elif job_id in seen:
+                return False
+            else:
+                seen[job_id] = now
+            f.seek(0)
+            f.truncate()
+            f.write(json.dumps(seen))
+        except OSError:
+            return True
+    return True
+
+
 def interrupt_background(profile, entry):
     """Talpy Chat's Stop for a live background session (entry: its session
     file's, profile: the one it runs on): one Esc typed into it through a
     moment's attach (above). (ok, message)"""
-    import socket
-    import uuid
     job_id, version = entry.get("jobId"), entry.get("version")
     if not valid_id(job_id):
         return False, "Talpy Den can't stop this background chat: stop it in a terminal (Esc)"
@@ -7932,6 +7968,18 @@ def interrupt_background(profile, entry):
     key, path = daemon_key(profile), daemon_socket(profile)
     if not key or path is None:
         return False, "Claude's background service can't be asked"
+    if not stop_turn(job_id):
+        return False, "It was stopped a moment ago"
+    ok, said = esc_through_attach(path, key, job_id, size)
+    if not ok:
+        stop_turn(job_id, forget=True)   # (nothing typed: the next Stop may go at once)
+    return ok, said
+
+
+def esc_through_attach(path, key, job_id, size):
+    """interrupt_background's attach (path: the service's socket): (ok, message)."""
+    import socket
+    import uuid
     request = {"proto": DAEMON_PROTO, "op": "attach", "short": job_id, "auth": key, "cols": size[0], "rows": size[1],
                "attachId": str(uuid.uuid4()), "caps": dict(BG_STOP_CAPS)}
     try:
