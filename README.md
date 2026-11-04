@@ -10,7 +10,7 @@ And Talpy, a pet that acts out what each chat is doing.
 
 [![Tests](https://github.com/wzaielamri/talpy-den/actions/workflows/tests.yml/badge.svg)](https://github.com/wzaielamri/talpy-den/actions/workflows/tests.yml)
 [![KDE Plasma 6](https://img.shields.io/badge/KDE_Plasma-6-1d99f3?logo=kde&logoColor=white)](https://www.opendesktop.org/p/2380946/)
-[![GNOME Shell 43, 44, 49+](https://img.shields.io/badge/GNOME_Shell-43%20%7C%2044%20%7C%2049%2B-4a86cf?logo=gnome&logoColor=white)](docs/gnome.md)
+[![GNOME Shell 43, 44, 49, 50](https://img.shields.io/badge/GNOME_Shell-43%20%7C%2044%20%7C%2049%20%7C%2050-4a86cf?logo=gnome&logoColor=white)](docs/gnome.md)
 [![VS Code](https://img.shields.io/badge/VS_Code-1.90%2B-007acc)](https://marketplace.visualstudio.com/items?itemName=wzaielamri.talpy-den)
 [![Python 3.7+](https://img.shields.io/badge/python-3.7%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -45,7 +45,7 @@ git clone https://github.com/wzaielamri/talpy-den.git && cd talpy-den && ./insta
 
 The widget is also on [opendesktop.org](https://www.opendesktop.org/p/2380946/). Then right-click your panel → **Add Widgets…** and add **Talpy Den**. It needs Claude Code, python3 and jq; `install.sh` also adds the small status-line snippet that plan usage comes from, and asks whether to add the hooks for answering permission prompts and live mode ([details](docs/install.md)).
 
-**GNOME Shell 49 or newer, or 43 and 44 (Debian 12):** the same `./install.sh` (in a GNOME session it installs the GNOME extension), then log out and back in. [What's different on GNOME](docs/gnome.md).
+**GNOME Shell 49 or 50, or 43 and 44 (Debian 12):** the same `./install.sh` (in a GNOME session it installs the GNOME extension), then log out and back in. [What's different on GNOME](docs/gnome.md).
 
 **VS Code:** install it from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=wzaielamri.talpy-den) (or search for **Talpy Den** in the Extensions view). Or download `talpy-den-<version>.vsix` from the [latest release](https://github.com/wzaielamri/talpy-den/releases/latest), then `code --install-extension talpy-den-<version>.vsix`. It needs Python 3.7+ and works on its own or next to Talpy Den on Plasma or GNOME, also in Remote-SSH windows: see [In VS Code](docs/vscode.md).
 
