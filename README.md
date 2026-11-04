@@ -43,7 +43,7 @@ Everything it does: [Features](docs/features.md).
 git clone https://github.com/wzaielamri/talpy-den.git && cd talpy-den && ./install.sh
 ```
 
-The widget is also on [opendesktop.org](https://www.opendesktop.org/p/2380946/). Then right-click your panel → **Add Widgets…** and add **Talpy Den**. It needs Claude Code, python3 and jq; `install.sh` also adds the small status-line snippet that plan usage comes from ([details](docs/install.md)).
+The widget is also on [opendesktop.org](https://www.opendesktop.org/p/2380946/). Then right-click your panel → **Add Widgets…** and add **Talpy Den**. It needs Claude Code, python3 and jq; `install.sh` also adds the small status-line snippet that plan usage comes from, and asks whether to add the hooks for answering permission prompts and live mode ([details](docs/install.md)).
 
 **GNOME Shell 49 or newer, or 43 and 44 (Debian 12):** the same `./install.sh` (in a GNOME session it installs the GNOME extension), then log out and back in. [What's different on GNOME](docs/gnome.md).
 
