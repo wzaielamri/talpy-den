@@ -416,11 +416,12 @@ export function weekRevokeAsked(id: unknown): string | null {
   return typeof id === "string" && /^[0-9a-f]{12}$/.test(id) ? id : null;
 }
 
-// The SSH host a permission message is for: a plain name or "" (this
+// The SSH host or container a permission message is for: a name as
+// remote.py takes it (its HOST_NAME: docker:web@lab too) or "" (this
 // computer); the extension acts on it only if it's one of the hosts shown
 export function permsHost(host: unknown): string | null {
   if (host === undefined || host === "") return "";
-  return typeof host === "string" && /^[A-Za-z0-9_.@-]{1,255}$/.test(host) && !host.startsWith("-") ? host : null;
+  return typeof host === "string" && /^[A-Za-z0-9_.@][A-Za-z0-9_.@:-]{0,254}$/.test(host) ? host : null;
 }
 
 export function ruleMeta(r: WeekRule): string {

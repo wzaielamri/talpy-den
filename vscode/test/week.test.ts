@@ -241,7 +241,11 @@ test("Allow and Undo reach the backend only as rules; the answer goes back to th
     { name: "weekRule", args: [{ allow: false, id: "a1b2c3d4e5f6" }, "lab"] }, // (the dashboard acts only on a host shown)
   ]);
   await new Promise((r) => setTimeout(r, 0));
+  // (what it refuses is answered too, at once: the page's buttons wait for an answer)
+  const refused = "that isn't something Talpy Den can change";
   assert.deepEqual(posted, [
+    { type: "weekRule", id: "", host: "", ok: false, message: refused },
+    { type: "weekRule", id: "a1b2c3d4e5f6", host: "-oProxyCommand=x", ok: false, message: refused },
     { type: "weekRule", id: "", host: "", ok: true, message: "done" },
     { type: "weekRule", id: "a1b2c3d4e5f6", host: "", ok: true, message: "done" },
     { type: "weekRule", id: "a1b2c3d4e5f6", host: "lab", ok: true, message: "done" },
@@ -266,10 +270,16 @@ test("Revoke reaches the backend only as an id; the answer goes back to the page
   receive({ type: "weekRevoke", id: "a1b2c3d4e5f6" });
   receive({ type: "weekRevoke", id: "a1b2c3d4e5f6", host: "lab" });
   receive({ type: "weekRevoke", id: "a1b2c3d4e5f6", host: "a b" });
-  assert.deepEqual(calls, [{ name: "weekRevoke", args: ["a1b2c3d4e5f6", ""] }, { name: "weekRevoke", args: ["a1b2c3d4e5f6", "lab"] }]);
+  receive({ type: "weekRevoke", id: "a1b2c3d4e5f6", host: "podman:web@lab" }); // (a container's section)
+  assert.deepEqual(calls, [{ name: "weekRevoke", args: ["a1b2c3d4e5f6", ""] }, { name: "weekRevoke", args: ["a1b2c3d4e5f6", "lab"] },
+    { name: "weekRevoke", args: ["a1b2c3d4e5f6", "podman:web@lab"] }]);
   await new Promise((r) => setTimeout(r, 0));
-  assert.deepEqual(posted, [{ type: "weekRevoke", id: "a1b2c3d4e5f6", host: "", ok: true, message: "done" },
-    { type: "weekRevoke", id: "a1b2c3d4e5f6", host: "lab", ok: true, message: "done" }]);
+  const refused = "that isn't something Talpy Den can change";
+  assert.deepEqual(posted, [{ type: "weekRevoke", id: "", host: "", ok: false, message: refused },
+    { type: "weekRevoke", id: "a1b2c3d4e5f6", host: "a b", ok: false, message: refused },
+    { type: "weekRevoke", id: "a1b2c3d4e5f6", host: "", ok: true, message: "done" },
+    { type: "weekRevoke", id: "a1b2c3d4e5f6", host: "lab", ok: true, message: "done" },
+    { type: "weekRevoke", id: "a1b2c3d4e5f6", host: "podman:web@lab", ok: true, message: "done" }]);
 });
 
 test("a week's chat opens only with an id and account folder that are ones; a tip's command is all that's copied", () => {

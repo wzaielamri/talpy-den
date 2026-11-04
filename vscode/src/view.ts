@@ -18,6 +18,8 @@ import { isDecision } from "./shared/types";
 const CHAT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const PROFILE_DIR = /^[A-Za-z0-9._-]{1,100}$/;
 const TIP_COMMAND = /^\/[a-z][a-z-]{0,30}( [a-z0-9-]{1,30})?$/; // what a Recap tab tip suggests, e.g. "/effort xhigh"
+// (a permission change the page asked for that isn't one: "Nothing changed: …")
+const REFUSED = "that isn't something Talpy Den can change";
 
 export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
   static readonly viewId = "talpyDen.view";
@@ -499,7 +501,11 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       case "weekRule": {
         const ask = weekRuleAsked(m);
         const host = permsHost(m.host);
-        if (!ask || host === null) break;
+        if (!ask || host === null) {
+          // (refused: the page still hears back, which frees its buttons)
+          webview.postMessage({ type: "weekRule", id: ask && !ask.allow ? ask.id : "", host: text(m.host) ?? "", ok: false, message: REFUSED } satisfies HostMessage);
+          break;
+        }
         const id = ask.allow ? "" : ask.id;
         void this.dash.weekRule(ask, host).then(({ ok, message }) =>
           webview.postMessage({ type: "weekRule", id, host, ok, message } satisfies HostMessage),
@@ -541,7 +547,10 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       case "weekRevoke": {
         const id = weekRevokeAsked(m.id);
         const host = permsHost(m.host);
-        if (!id || host === null) break;
+        if (!id || host === null) {
+          webview.postMessage({ type: "weekRevoke", id: id ?? "", host: text(m.host) ?? "", ok: false, message: REFUSED } satisfies HostMessage);
+          break;
+        }
         void this.dash.weekRevoke(id, host).then(({ ok, message }) =>
           webview.postMessage({ type: "weekRevoke", id, host, ok, message } satisfies HostMessage),
         );
