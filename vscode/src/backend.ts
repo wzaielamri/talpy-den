@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isComparison, type Comparison } from "./changes";
 import { shellQuote } from "./shared/model";
-import type { ContainerInfo, ContainerNote, ProjectsData, FoundChat, FoundMemory, FoundPlan, FoundProject, PermsData, Status, WeekRecap } from "./shared/types";
+import type { ContainerInfo, ContainerNote, ProjectsData, FoundChat, FoundMemory, FoundPlan, FoundProject, LimitHistory, PermsData, Status, WeekRecap } from "./shared/types";
 
 export const REMOTE_MARK = "@@talpy-den@@";
 const KILL_GRACE_MS = 3000;
@@ -287,6 +287,13 @@ export class Backend {
     const r = await this.json(["week.py", ...args], 180000);
     if (!r || !r.ok) return { error: String(r?.error ?? r?.message ?? "no answer") };
     return { recap: r as WeekRecap };
+  }
+
+  // The Recap's How your limits changed (week.py --limits): read only while it's unfolded
+  async limits(args: string[]): Promise<{ data?: LimitHistory; error?: string }> {
+    const r = await this.json(["week.py", "--limits", ...args], 180000);
+    if (!r || !r.ok) return { error: String(r?.error ?? r?.message ?? "no answer") };
+    return { data: r as LimitHistory };
   }
 
   // The Monday recap (week.py --monday-recap): due once a week for whichever copy asks first

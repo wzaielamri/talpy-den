@@ -2,7 +2,8 @@
 // "ready", then a new one every few seconds with the story moved on.
 
 import "../webview/main";
-import { demoPerms, demoProjects, demoState, demoWeek } from "../src/shared/demo";
+import { demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../src/shared/demo";
+import { limitsOpen } from "../webview/util/stores";
 import type { HostMessage } from "../src/shared/types";
 import { setFocus, setTab, toggleProject, toggleRecent, toggleStarred, uiState } from "../webview/util/ui";
 import { askMove } from "../webview/components/MoveAsk";
@@ -133,6 +134,11 @@ setTimeout(() => {
   // (?span=day or all: the Recap tab starts on it)
   const span = params.get("span") === "day" || params.get("span") === "all" ? (params.get("span") as "day" | "all") : "week";
   if (params.get("week") === "1") send({ type: "week", back: 0, account: "", span, recap: demoWeek(Date.now(), 0, "", span), error: "" });
+  // &limits=1: How your limits changed unfolded (its answer at once: a screenshot doesn't wait)
+  if (params.get("limits") === "1") {
+    limitsOpen.set(true);
+    send({ type: "limits", account: "", data: demoLimits(Date.now()), error: "" });
+  }
   if (params.get("perms") === "1") send({ type: "perms", data: demoPerms(Date.now()), error: "" });
   // ?tab=projects: that tab (&project=webapp: that project opened)
   if (params.get("tab") === "projects") {
@@ -164,6 +170,7 @@ window.addEventListener("harness-post", (event) => {
   const m = (event as CustomEvent).detail as { type: string; back?: number; account?: string; span?: "day" | "week" | "all" };
   if (m.type === "perms") send({ type: "perms", data: demoPerms(Date.now()), error: "" });
   if (m.type === "projects") send({ type: "projects", data: demoProjects(Date.now()), error: "" });
+  if (m.type === "limits") send({ type: "limits", account: m.account ?? "", data: demoLimits(Date.now(), m.account ?? ""), error: "" });
   // (Move to project…: a made-up answer, as jump.py --move-plan --describe gives one)
   if (m.type === "moveDescribe") {
     const d = m as unknown as { key: string; folder?: string; back?: boolean };

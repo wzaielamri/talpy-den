@@ -22,6 +22,10 @@ export const petColorsVersion = createStore(0);
 // The Recap tab's last answer (the extension runs week.py when the tab asks)
 export const weekAnswer = createStore<Extract<HostMessage, { type: "week" }> | null>(null);
 
+// The Recap's How your limits changed, as last read (week.py --limits)
+export const limitsAnswer = createStore<Extract<HostMessage, { type: "limits" }> | null>(null);
+export const limitsOpen = createStore(false); // (folded until you open it; kept while the view lives)
+
 // What allowing (or taking back) a rule of the Recap tab's did
 export const weekRuleAnswer = createStore<Extract<HostMessage, { type: "weekRule" }> | null>(null);
 export const weekRevokeAnswer = createStore<Extract<HostMessage, { type: "weekRevoke" }> | null>(null);

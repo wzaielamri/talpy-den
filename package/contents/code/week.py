@@ -40,6 +40,9 @@ off: then it keeps only what the transcripts still have.
                   that would have let them through, and the permissions you
                   gave (every rule and mode that lets chats go without asking)
     --revoke ID   takes one of those permissions out of its file
+    --limits      the Recap's *How your limits changed* instead: how much a
+                  full 5-hour window and week of each account's plan held,
+                  week by week, at API prices (--account, --currency apply)
     --projects    the Projects tab instead: every project (a chat's git
                   repository, else its folder) with all its chats, plans and
                   memories, newest first, and Claude's last recap of it
@@ -53,11 +56,13 @@ answer (permissionDecision), and each reply's token usage. A chat forked from
 another starts with a copy of its entries: those count once.
 """
 
+import bisect
 import difflib
 import datetime
 import json
 import os
 import re
+import statistics
 import sys
 import time
 from datetime import date, timedelta
@@ -2136,6 +2141,613 @@ def plan_windows_of(plans, account):
     return [p for p in plans if not account or p["account"] == account]
 
 
+# ---------------------------------------------------------------- how your limits changed
+#
+# The Recap's folded *How your limits changed*: how much a full 5-hour window
+# and a full week of each account's plan hold, at API prices, week by week.
+# A window's size is what the account's chats used from its start up to a
+# reading of it, divided by the share of it that reading says was used. The
+# readings are the ones Talpy Den kept (talpy_den.py: usage-past.json,
+# usage.json) and the status-line snapshots; the usage is this cache's, each
+# chat-hour's API cost spread over its 5-minute buckets by their weight. An
+# estimate: use elsewhere (claude.ai, other computers) counts toward the
+# limits but isn't here. Run only by --limits, when you unfold it.
+
+LIMITS_DAYS = cs.USAGE_PAST_DAYS
+LIMIT_FIVE_MIN_PCT = 50  # a 5-hour window read this full or more tells its size
+LIMIT_WEEK_MIN_PCT = 20  # (weekly readings are whole percents: one of 5% could be 4.5 or 5.5)
+LIMIT_CHANGE_PCT = 10  # a smaller difference between two weeks is noise
+LIMIT_CHANGE_WINDOWS = 3  # 5-hour windows each of two weeks needs before they're compared
+LIMIT_UNKNOWN_SHARE = 0.10  # a window with more of its usage in chats no account is known for is left out
+# A reading that went down without a reset: the plan's limits changed then (a
+# plan change, or Anthropic's). Readings of one window from different sources
+# (Claude Code's own copy, the status line) differ by a few points, so only a
+# drop from at least this much, by this many points, to at most this share
+# (and the next reading as low) counts
+LIMIT_DROP_FROM = 10
+LIMIT_DROP_POINTS = 5
+LIMIT_DROP_SHARE = 0.8
+LIMIT_EVENT_JOIN_MS = 2 * HOUR_MS  # drops of several windows this close are one change
+# A reading that went up by more than this computer's usage between it and
+# the one before explains (by at least this much, to at least this share
+# more, within this time): the limits got smaller (a smaller plan). Usage
+# elsewhere (claude.ai) raises a reading too, so a rise counts only when the
+# windows rose by the same factor together (a limit change scales them all
+# alike; usage adds to each by its own size), or the week rose and stayed up
+LIMIT_RISE_POINTS = 5
+LIMIT_RISE_SHARE = 1.25
+LIMIT_RISE_GAP_MS = 30 * 60_000
+LIMIT_RISE_EXPLAINED = 0.25  # usage between that would explain at most this part of the rise
+LIMIT_SAME_FACTOR = 0.25  # factors of two windows this close (relative) are the same change
+FAMILIES = ("fable", "mythos", "opus", "sonnet", "haiku")
+WEEK_MS = 7 * DAY_MS
+UNKNOWN = "?"
+
+
+def family_of(name):
+    """The model family in a price key's model or a window's key, or None."""
+    name = (name or "").lower()
+    return next((f for f in FAMILIES if f in name), None)
+
+
+def limit_readings(cache_root, profiles, now_ms, plans):
+    """{account id: {window key: {2-minute slot of its reset: {"resetsAt",
+    "plan", "points": {ms: pct}}}}}: every reading kept of the accounts'
+    plan windows of the last LIMITS_DAYS, and the ended windows only the
+    snapshots have (to keep in usage-past.json). A snapshot's reading is of
+    when it was written: Claude Code writes the status line again with newer
+    plan usage also when the chat itself didn't reply."""
+    cutoff = now_ms - LIMITS_DAYS * DAY_MS
+    groups = {cs.short_id(gid): members for gid, members in cs.group_profiles(profiles)}
+    out, archived = {}, set()
+
+    def add(aid, key, resets, plan, points):
+        if aid not in groups or not cs.window_hours(key) or not isinstance(resets, (int, float)) or resets < cutoff:
+            return None
+        slot = round(resets / 120_000)
+        w = out.setdefault(aid, {}).setdefault(key, {}).get(slot)
+        if w is None:
+            w = out[aid][key][slot] = {"resetsAt": int(resets), "plan": plan, "points": {}}
+        w["plan"] = w["plan"] or plan
+        start = resets - cs.window_hours(key) * HOUR_MS - 60_000
+        for p in points:  # (one from before the window began is no reading of it)
+            if isinstance(p, (list, tuple)) and len(p) == 2 and all(cs.number(v) is not None for v in p) and p[0] >= start:
+                w["points"][int(p[0])] = float(p[1])
+        return slot
+
+    past = cs.read_json(cache_root / cs.USAGE_PAST_FILE)
+    for w in past.get("windows") or [] if isinstance(past, dict) and isinstance(past.get("windows"), list) else []:
+        if isinstance(w, dict):
+            slot = add(w.get("group"), w.get("key"), w.get("resetsAt"), w.get("plan"), w.get("points") or [])
+            if slot is not None:
+                archived.add((w["group"], w["key"], slot))
+    current = cs.read_json(cache_root / "usage.json")
+    current = current.get("groups") if isinstance(current, dict) and isinstance(current.get("groups"), dict) else {}
+    for aid, keys in current.items():
+        for key, rec in (keys.items() if isinstance(keys, dict) else ()):
+            if isinstance(rec, dict):
+                add(aid, key, rec.get("resetsAt"), plans.get(aid), rec.get("points") or [])
+    for aid, members in groups.items():
+        reals = [p.real for p in members]
+        for mtime, path in cs.snapshot_files(cache_root / "statusline", members):
+            snap = cs.read_json(path)
+            limits = snap.get("rate_limits") if isinstance(snap, dict) else None
+            if not isinstance(limits, dict) or not cs.snapshot_of(snap, reals):
+                continue
+            at = int(mtime * 1000)
+            for key, w in limits.items():  # (a snapshot doesn't say the plan it was on)
+                if isinstance(w, dict) and cs.number(w.get("used_percentage")) is not None:
+                    add(aid, key, cs.to_ms(w.get("resets_at")), None, [[at, w["used_percentage"]]])
+    ended = [{"group": aid, "key": key, "plan": w["plan"], "resetsAt": w["resetsAt"],
+              "points": cs.past_points(key, [[t, w["points"][t]] for t in sorted(w["points"])])}
+             for aid, keys in out.items() for key, slots in keys.items() for slot, w in slots.items()
+             if w["resetsAt"] <= now_ms and (aid, key, slot) not in archived and w["points"]]
+    return out, ended
+
+
+def chat_signs(profiles, by_profile, chat_ids):
+    """{chat id: [(ms, account id)], oldest first}: when an account took up a
+    chat shared between accounts: your prompts to it in each profile's
+    history.jsonl, and its background job's timeline (jobs/<id>/)."""
+    signs = {}
+    if not chat_ids:
+        return signs
+    for p in profiles:
+        aid = by_profile.get(p.key)
+        if aid is None:
+            continue
+        for e in cs.history_all(p):
+            ms = cs.number(e.get("timestamp"))
+            if e.get("sessionId") in chat_ids and ms is not None:
+                signs.setdefault(e["sessionId"], []).append((int(ms), aid))
+        try:
+            jobs = list((p.path / "jobs").iterdir())
+        except OSError:
+            jobs = []
+        for job in jobs:
+            state = cs.read_json(job / "state.json")
+            sid = state.get("sessionId") if isinstance(state, dict) else None
+            if sid not in chat_ids:
+                continue
+            try:
+                with open(job / "timeline.jsonl", encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            ms = cs.to_ms(json.loads(line).get("at"))
+                        except (ValueError, AttributeError):
+                            continue
+                        if ms:
+                            signs.setdefault(sid, []).append((ms, aid))
+            except OSError:
+                pass
+    for v in signs.values():
+        v.sort()
+    return signs
+
+
+class AccountUsage:
+    """One account's usage over time, in 5-minute buckets: API cost (all and
+    by model family), tokens (fresh input and cache writes, output, cache
+    reads), the cost of buckets that may be another account's (a shared chat
+    with no sign of who ran it then), and Claude's turns."""
+
+    def __init__(self):
+        self.entries, self.unknown, self.turns, self.models = [], [], [], {}
+
+    def done(self):
+        self.entries.sort(key=lambda e: e[0])
+        self.times = [e[0] for e in self.entries]
+        self.cum = [(0.0, {}, (0.0, 0.0, 0.0))]
+        for _, usd, fams, tok in self.entries:
+            c, f, k = self.cum[-1]
+            f = dict(f)
+            for fam, v in fams.items():
+                f[fam] = f.get(fam, 0.0) + v
+            self.cum.append((c + usd, f, (k[0] + tok[0], k[1] + tok[1], k[2] + tok[2])))
+        self.unknown.sort()
+        self.unknown_times = [u[0] for u in self.unknown]
+        self.unknown_cum = [0.0]
+        for _, usd in self.unknown:
+            self.unknown_cum.append(self.unknown_cum[-1] + usd)
+        self.turns.sort()
+        self.turn_starts = [t[0] for t in self.turns]
+
+    def upto(self, x, family=None):
+        """(cost, tokens) by time x: the buckets over by then, and of the one
+        it falls in, the share of its 5 minutes gone."""
+        i, j = bisect.bisect_right(self.times, x - BUCKET_MS), bisect.bisect_right(self.times, x)
+        c, f, k = self.cum[i]
+        cost, tok = (c if family is None else f.get(family, 0.0)), list(k)
+        for ms, usd, fams, t in self.entries[i:j]:
+            share = (x - ms) / BUCKET_MS
+            cost += share * (usd if family is None else fams.get(family, 0.0))
+            for n in range(3):
+                tok[n] += share * t[n]
+        return cost, tok
+
+    def used(self, lo, hi, family=None):
+        """(API cost, tokens [fresh, output, cache reads]) between lo and hi."""
+        a, b = self.upto(lo, family), self.upto(hi, family)
+        return b[0] - a[0], [y - x for x, y in zip(a[1], b[1])]
+
+    def unknown_cost(self, lo, hi):
+        i, j = bisect.bisect_left(self.unknown_times, lo), bisect.bisect_right(self.unknown_times, hi)
+        return self.unknown_cum[j] - self.unknown_cum[i]
+
+    def first(self, lo, hi):
+        """When the first bucket in [lo, hi] starts, or None."""
+        i = bisect.bisect_left(self.times, lo)
+        return self.times[i] if i < len(self.times) and self.times[i] <= hi else None
+
+    def worked(self, lo, hi):
+        """Claude's work (ms, every chat's) in [lo, hi]: a turn partly in it, by its share."""
+        total = 0.0
+        for k in range(bisect.bisect_left(self.turn_starts, lo - DAY_MS), bisect.bisect_right(self.turn_starts, hi)):
+            start, end, work = self.turns[k]
+            if end < lo:
+                continue
+            span = end - start
+            total += work if span <= 0 else work * max(0, min(end, hi) - max(start, lo)) / span
+        return total
+
+
+def account_usage(chats, profiles, accounts):
+    """{account id: AccountUsage} of these chats (chats_between's)."""
+    by_profile, _ = account_ids(profiles)
+    shared = {cid for cid, c in chats.items() if len(c["accounts"]) > 1}
+    signs = chat_signs(profiles, by_profile, shared)
+    usage = {a: AccountUsage() for a in accounts}
+    for cid, c in chats.items():
+        accts = [a for a in c["accounts"] if a in usage]
+        if not accts:
+            continue
+        s = signs.get(cid) or []
+        s_times = [x[0] for x in s]
+
+        def who(ms):
+            if len(c["accounts"]) == 1:
+                return accts[0]
+            i = bisect.bisect_right(s_times, ms) - 1
+            return s[i][1] if i >= 0 and s[i][1] in accts else UNKNOWN
+        for h, agg in c["hours"].items():
+            hm = hour_ms(h)
+            costs = []
+            for key, t in agg.get("t", {}).items():
+                usd = request_cost(key, t)
+                if usd > 0:
+                    model = key.partition("|")[0]
+                    costs.append((usd, family_of(model), (t[0] + t[3] + t[4], t[1], t[2]), price_model(model)[0]))
+            if not costs:
+                continue
+            buckets = [(int(k), v) for k, v in agg.get("b", {}).items() if cs.number(v) and v > 0]
+            weight = sum(v for _, v in buckets)
+            for k, v in (buckets if weight else [(0, 1.0)]):
+                ms, share = hm + k * BUCKET_MS, v / (weight or 1.0)
+                acct = who(ms)
+                usd = sum(x[0] for x in costs) * share
+                if acct == UNKNOWN:
+                    for a in accts:
+                        usage[a].unknown.append((ms, usd))
+                    continue
+                fams = {}
+                for x in costs:
+                    if x[1]:
+                        fams[x[1]] = fams.get(x[1], 0.0) + x[0] * share
+                    if x[3]:
+                        usage[acct].models[x[3]] = usage[acct].models.get(x[3], 0.0) + x[0] * share
+                tok = tuple(sum(x[2][i] for x in costs) * share for i in range(3))
+                usage[acct].entries.append((ms, usd, fams, tok))
+        for t in c["turns"]:
+            acct = who(t[0])
+            if acct != UNKNOWN:
+                usage[acct].turns.append((t[0], t[1], t[2]))
+    for u in usage.values():
+        u.done()
+    return usage
+
+
+def week_periods(weekly_resets, now_ms, cutoff):
+    """[(from, until)]: an account's weeks, its weekly windows' where it has
+    them, else 7 days at a time from them (from now, with none)."""
+    spans = sorted({(r - WEEK_MS, r) for r in weekly_resets})
+    out = set()
+    if not spans:
+        end = now_ms
+        while end > cutoff:
+            out.add((end - WEEK_MS, end))
+            end -= WEEK_MS
+        return sorted(out)
+    s = spans[0][0]
+    while s > cutoff:
+        out.add((s - WEEK_MS, s))
+        s -= WEEK_MS
+    for i, (a, b) in enumerate(spans):
+        out.add((a, b))
+        nxt = spans[i + 1][0] if i + 1 < len(spans) else None
+        e = b
+        while (e < now_ms) if nxt is None else (e < nxt):
+            stop = e + WEEK_MS if nxt is None else min(e + WEEK_MS, nxt)
+            out.add((e, stop))
+            e = stop
+    return sorted(out)
+
+
+def counted_from(points, start):
+    """Where a window's usage counts from: its start, or later, its last reading
+    at 0% before it rose (a weekly limit that began in the middle of its
+    window counted from then), to its 5 minutes."""
+    zero = None
+    for t, pct in points:
+        if pct > 0:
+            break
+        zero = t
+    return max(start, zero - zero % BUCKET_MS) if zero is not None else start
+
+
+def window_measure(u, key, w, now_ms, weekly=None, span=(0, float("inf"))):
+    """A window's size and what goes with it, or None: 5-hour: from its
+    fullest reading (LIMIT_FIVE_MIN_PCT or more); weekly: the median of its
+    readings of LIMIT_WEEK_MIN_PCT or more; only the readings in span (an
+    era: the plan's limits the same all through it; a reading after a change
+    gives the window's usage from its start in the new limits). weekly: the
+    week's window, for the share of it this 5-hour window took (measured)."""
+    length = cs.window_hours(key) * HOUR_MS
+    start = w["resetsAt"] - length
+    every = [(t, w["points"][t]) for t in sorted(w["points"]) if start <= t <= min(w["resetsAt"], now_ms)]
+    lo = counted_from(every, start)
+    points = [(t, p) for t, p in every if span[0] <= t < span[1]]
+    if lo < span[0]:  # (begun before the limits changed: a full one may have been more than full)
+        points = [(t, p) for t, p in points if p < 100]
+    if not points:
+        return None
+    family = family_of(key) if key != "five_hour" else None
+    if key == "five_hour":
+        top = max(p for _, p in points)
+        if top < LIMIT_FIVE_MIN_PCT:
+            return None
+        t = next(t for t, p in points if p == top)
+        cost, tok = u.used(lo, t)
+        unknown = u.unknown_cost(lo, t)
+        if cost <= 0 or unknown > LIMIT_UNKNOWN_SHARE * (cost + unknown):
+            return None
+        first = u.first(lo, t) or lo
+        m = {"start": start, "at": t, "pct": top, "cost": cost, "full": cost / top * 100,
+             "wallMs": (t - first) / top * 100, "workMs": u.worked(first, t) / top * 100,
+             "tokens": [v / top * 100 for v in tok], "plan": w["plan"]}
+        if weekly and lo >= span[0]:  # the weekly % this window's usage took, read at the same moments
+            wp = [(x, weekly["points"][x]) for x in sorted(weekly["points"]) if span[0] <= x < span[1]]
+            before = [p for x, p in wp if x <= lo]
+            at = [p for x, p in wp if x <= t]
+            if before and at and at[-1] > before[-1] and lo >= counted_from(wp, weekly["resetsAt"] - WEEK_MS):
+                m["share"] = (at[-1] - before[-1]) / top * 100
+        return m
+    sizes = []
+    for t, pct in points:
+        if pct >= LIMIT_WEEK_MIN_PCT:
+            cost, _ = u.used(lo, t, family)
+            unknown = u.unknown_cost(lo, t)
+            if cost > 0 and unknown <= LIMIT_UNKNOWN_SHARE * (cost + unknown):
+                sizes.append(cost / pct * 100)
+    if not sizes:
+        return None
+    return {"start": start, "cost": statistics.median(sizes), "pct": max(p for _, p in points), "plan": w["plan"],
+            "from": lo, "partial": lo - start > DAY_MS}
+
+
+def limit_events(keys, u=None):
+    """When the plan's limits changed (a plan change, or Anthropic's): a
+    window's reading went down without a reset (bigger limits), or up by
+    more than this computer's usage between explains (smaller ones, u: the
+    account's usage): [{"at", "factors": {window key: how many times what it
+    held before it holds now}}], oldest first. A drop counts when the
+    reading after it is as low, or another window dropped then too (one low
+    reading alone can be a status line written with old numbers); a rise
+    when the windows rose by the same factor together, or a week's rose and
+    stayed up (usage elsewhere raises readings too)."""
+    found = []  # (ms, key, factor, held: the reading after as far off)
+    for key, slots in keys.items():
+        for w in slots.values():
+            pts = sorted(w["points"].items())
+            start = w["resetsAt"] - cs.window_hours(key) * HOUR_MS
+            lo = counted_from(pts, start)
+            for i in range(1, len(pts)):
+                (t0, a), (t, b) = pts[i - 1], pts[i]
+                after = pts[i + 1][1] if i + 1 < len(pts) else None
+                if a >= LIMIT_DROP_FROM and 0 < b <= a - LIMIT_DROP_POINTS and b <= a * LIMIT_DROP_SHARE:
+                    found.append((t, key, a / b, after is not None and after <= a * LIMIT_DROP_SHARE))
+                elif u is not None and a > 0 and b >= a + LIMIT_RISE_POINTS and b >= a * LIMIT_RISE_SHARE \
+                        and t - t0 <= LIMIT_RISE_GAP_MS and t0 > lo:
+                    before, _ = u.used(lo, t0, family_of(key) if key != "five_hour" else None)
+                    between, _ = u.used(t0, t, family_of(key) if key != "five_hour" else None)
+                    # (what the usage between would add, at the size the reading before tells)
+                    if before > 0 and between / before * a <= LIMIT_RISE_EXPLAINED * (b - a):
+                        held = after is not None and after >= a + (b - a) / 2
+                        found.append((t, key, a / b, held and key != "five_hour"))
+    events = []
+    for t, key, f, held in sorted(found):
+        if events and t - events[-1]["at"] <= LIMIT_EVENT_JOIN_MS and (f > 1) == (events[-1]["up"]):
+            e = events[-1]
+            if key not in e["factors"]:
+                e["factors"][key] = round(f, 2)
+                e["held"] = e["held"] or held
+        else:
+            events.append({"at": t, "factors": {key: round(f, 2)}, "held": held, "up": f > 1})
+
+    def together(e):
+        fs = list(e["factors"].values())
+        return len(fs) > 1 and max(fs) / min(fs) - 1 <= LIMIT_SAME_FACTOR
+    def kept(e):
+        return e["held"] or (len(e["factors"]) > 1 if e["up"] else together(e))
+    return [{"at": e["at"], "factors": e["factors"]} for e in events if kept(e)]
+
+
+def limit_eras(events, labels, now_ms, current_plan):
+    """The account's stretches of time with the same limits, oldest first:
+    [{"from", "until", "plan", "factors" (of the change it began with)}],
+    split where a reading went down (events) and where its windows' plan
+    changed between two of them (labels: [(when a window was last seen, the
+    plan it was on)], oldest first; none of its readings saw that change)."""
+    bounds = [e["at"] for e in events]
+    prev = None
+    for start, plan in labels:
+        if prev is not None and not same_plan(prev, plan) and all(abs(start - b) > DAY_MS for b in bounds):
+            bounds.append(start)
+        prev = plan
+    edges = [0] + sorted(set(bounds)) + [now_ms + 1]
+    eras = []
+    for i in range(len(edges) - 1):
+        f, t = edges[i], edges[i + 1]
+        inside = [p for s, p in labels if f <= s < t]
+        newest = i == len(edges) - 2
+        plan = (current_plan or (inside[-1] if inside else None)) if newest else (inside[-1] if inside else None)
+        event = next((e for e in events if e["at"] == f), None)
+        eras.append({"from": f, "until": t, "plan": plan, "factors": event["factors"] if event else {}})
+    return eras
+
+
+def share_factor(f5, f7):
+    """How a change of the limits changed a 5-hour window's share of the week:
+    1 when both changed alike (their readings are whole percents: a few
+    percent apart is the same)."""
+    if not (f5 and f7):
+        return None
+    return 1.0 if abs(f5 / f7 - 1) * 100 < LIMIT_CHANGE_PCT else f5 / f7
+
+
+def same_plan(a, b):
+    """The same plan: equal, or one without its tier ("Team", as windows
+    kept before the tier was noted say, and "Team · standard seat"), or unknown."""
+    return not a or not b or a == b or a.startswith(b + " ") or b.startswith(a + " ")
+
+
+def limit_change(periods, get, enough, eras, factor=None):
+    """How the newest week with a value (get) differs from the one before with
+    one: {"kind": "change"|"same"|"new"|"few", "pct", "against" (that week's
+    start)}; "new": no week before had it, though the account was in use (a
+    limit that began). In the first week after the limits changed (eras):
+    {"kind": "limits", "factor" (factor: of the change's readings, else of
+    the sizes before and after), "at", "from", "to" (the plans)}."""
+    have = [p for p in periods if get(p)]
+    if not have:
+        return None
+    newest = len(eras) - 1
+    mine = [p for p in have if p["era"] == newest]
+    if newest > 0 and len(mine) < 2:
+        before = [p for p in have if p["era"] < newest]
+        f = factor
+        if f is None and mine and before:
+            f = get(mine[-1]) / get(before[-1])
+        if before or f is not None:
+            era = eras[newest]
+            return {"kind": "limits", "factor": round(f, 2) if f else None, "at": era["from"],
+                    "from": eras[newest - 1]["plan"], "to": era["plan"]}
+    have = [p for p in have if p["era"] == have[-1]["era"]]
+    last = have[-1]
+    if len(have) == 1:
+        active = [p for p in periods if p["until"] <= last["from"] and p["fiveHour"] and p["era"] == last["era"]]
+        return {"kind": "new" if active else "few", "against": active[-1]["from"] if active else None}
+    prev = have[-2]
+    if not (enough(prev) and enough(last)):
+        return {"kind": "few", "against": prev["from"]}
+    diff = get(last) / get(prev) - 1 if get(prev) else 0.0
+    return {"kind": "change" if abs(diff) * 100 >= LIMIT_CHANGE_PCT else "same", "pct": round(diff * 100),
+            "against": prev["from"]}
+
+
+def limit_history(cache_root, profiles, now_ms, account="", home=None):
+    """How much a full window of each account's plan holds, week by week, and
+    how that changed (the Recap's *How your limits changed*)."""
+    home = home or Path.home()
+    cutoff = now_ms - LIMITS_DAYS * DAY_MS
+    _, accounts = account_ids(profiles)
+    plans = {}
+    for gid, members in cs.group_profiles(profiles):
+        plans[cs.short_id(gid)] = next((p.plan_detail for p in members if p.plan), None)
+    readings, ended = limit_readings(cache_root, profiles, now_ms, plans)
+    if ended:  # (the snapshots' readings of ended windows, kept before Claude Code's cleanup takes them)
+        with cs.ScanLock(cache_root / "tokens.lock") as lock:
+            if lock.held:
+                try:
+                    cs.save_usage_past(cache_root, ended, now_ms)
+                except OSError:
+                    pass
+    wanted = [a for a in accounts if (not account or a["id"] == account) and readings.get(a["id"])]
+    out = {"ok": True, "generatedAt": now_ms, "since": None, "accounts": []}
+    if not wanted:
+        return out
+    cache = updated_cache(cache_root, profiles, now_ms)
+    chats = chats_between(cache, profiles, cutoff - WEEK_MS, now_ms + 1, home)
+    usage = account_usage(chats, profiles, [a["id"] for a in wanted])
+    firsts = [t for a in wanted for slots in readings[a["id"]].values() for w in slots.values() for t in w["points"]]
+    out["since"] = min(firsts) if firsts else None
+    for a in wanted:
+        aid, u, keys = a["id"], usage[a["id"]], readings[a["id"]]
+        weekly_windows = sorted(keys.get("seven_day", {}).values(), key=lambda w: w["resetsAt"])
+        # (a window's plan is the one it was on when last seen: an ended one's
+        # when it ended, one going on now's today's, also a week begun before)
+        labels = sorted((max(w["points"]) if w["points"] else w["resetsAt"], w["plan"])
+                        for slots in keys.values() for w in slots.values() if w["plan"])
+        events = limit_events(keys, u)
+        eras = limit_eras(events, labels, now_ms, plans.get(aid))
+        periods = []
+        for k, era in enumerate(eras):  # (a week the limits changed in is two: before and after)
+            for f, t in week_periods([w["resetsAt"] for w in weekly_windows], now_ms, cutoff):
+                if max(f, era["from"]) < min(t, era["until"]):
+                    periods.append({"from": max(f, era["from"]), "until": min(t, era["until"]), "era": k,
+                                    "plan": era["plan"], "fiveHour": None, "weeks": {}, "share": None, "fill": None,
+                                    "tokens": None, "fives": []})
+
+        def period_at(ms, k):
+            return next((p for p in periods if p["era"] == k and p["from"] <= ms < p["until"]), None)
+
+        def weekly_at(ms):
+            return next((w for w in weekly_windows if w["resetsAt"] - WEEK_MS <= ms < w["resetsAt"]), None)
+        windows = []
+        for k, era in enumerate(eras):
+            span = (era["from"], era["until"])
+            for w in sorted(keys.get("five_hour", {}).values(), key=lambda w: w["resetsAt"]):
+                m = window_measure(u, "five_hour", w, now_ms, weekly_at(w["resetsAt"] - 5 * HOUR_MS), span)
+                p = period_at(m["at"], k) if m else None
+                if p is not None:
+                    p["fives"].append(m)
+                    windows.append({"start": m["start"], "at": m["at"], "pct": m["pct"], "full": round(m["full"], 2),
+                                    "plan": era["plan"], "era": k})
+            for key, slots in keys.items():
+                if key == "five_hour":
+                    continue
+                for w in slots.values():
+                    m = window_measure(u, key, w, now_ms, span=span)
+                    p = period_at(max(m["start"] + 1, era["from"]), k) if m else None
+                    if p is not None:
+                        p["weeks"][key] = {"cost": round(m["cost"], 2), "pct": m["pct"]}
+                        if m["partial"]:  # (a weekly limit that began during this window: counted from then)
+                            p["weeks"][key].update(partial=True, countedFrom=m["from"])
+        for p in periods:
+            fives = p.pop("fives")
+            if fives:
+                fulls = sorted(m["full"] for m in fives)
+                p["fiveHour"] = {"cost": round(statistics.median(fulls), 2), "n": len(fulls),
+                                 "lo": round(fulls[0], 2), "hi": round(fulls[-1], 2)}
+                p["fill"] = {"wallMs": int(statistics.median(m["wallMs"] for m in fives)),
+                             "workMs": int(statistics.median(m["workMs"] for m in fives))}
+                p["tokens"] = {k: int(statistics.median(m["tokens"][i] for m in fives))
+                               for i, k in enumerate(("fresh", "output", "cacheRead"))}
+                # (from the two sizes when both are known: the weekly steps
+                # a window takes are a few whole percents, too coarse alone)
+                measured = [m["share"] for m in fives if "share" in m]
+                week = p["weeks"].get("seven_day")
+                if week:
+                    p["share"] = {"pct": round(p["fiveHour"]["cost"] / week["cost"] * 100, 1), "how": "sizes",
+                                  "measured": round(statistics.median(measured), 1) if measured else None}
+                elif len(measured) >= 2:
+                    p["share"] = {"pct": round(statistics.median(measured), 1), "how": "measured", "measured": None}
+        periods = [p for p in periods if p["fiveHour"] or p["weeks"]]
+        factors = eras[-1]["factors"]  # (of the change the newest limits began with)
+        f5, f7 = factors.get("five_hour"), factors.get("seven_day")
+        changes = {"fiveHour": limit_change(periods, lambda p: p["fiveHour"] and p["fiveHour"]["cost"],
+                                            lambda p: p["fiveHour"]["n"] >= LIMIT_CHANGE_WINDOWS, eras, f5),
+                   "share": limit_change(periods, lambda p: p["share"] and p["share"]["pct"], lambda p: True, eras,
+                                         share_factor(f5, f7))}
+        for key in sorted({k for p in periods for k in p["weeks"]}, key=lambda k: (cs.WINDOW_ORDER + [k]).index(k)):
+            # (a partial week, one the limit began in, isn't one to compare with)
+            changes[key] = limit_change(periods, lambda p, k=key: p["weeks"].get(k) and not p["weeks"][k].get("partial")
+                                        and p["weeks"][k]["cost"], lambda p: True, eras, factors.get(key))
+
+        def newest(get, factor=None, scale=None):
+            """The newest value in the newest limits; none yet there: the one
+            before times the change (marked "scaled"), when the change's
+            readings tell by how much."""
+            v = next((get(p) for p in reversed(periods) if p["era"] == len(eras) - 1 and get(p)), None)
+            if v is not None or len(eras) == 1:
+                return v
+            v = next((get(p) for p in reversed(periods) if get(p)), None)
+            return scale(v, factor) if v is not None and factor and scale else None
+
+        def scaled(fields):
+            return lambda v, f: dict(v, scaled=f, **{k: round(v[k] * f, 2) for k in fields if v.get(k) is not None})
+        now = {"fiveHour": newest(lambda p: p["fiveHour"], f5, scaled(("cost", "lo", "hi"))),
+               "share": newest(lambda p: p["share"], share_factor(f5, f7), scaled(("pct",))),
+               "fill": newest(lambda p: p["fill"]),
+               "tokens": newest(lambda p: p["tokens"], f5, scaled(("fresh", "output", "cacheRead"))),
+               "weeks": {k: newest(lambda p, k=k: p["weeks"].get(k), factors.get(k), scaled(("cost",)))
+                         for k in changes if k not in ("fiveHour", "share")}}
+        model = max(u.models, key=u.models.get) if u.models else None
+        prices = PRICES.get(model) if model else None
+        equivalents = None
+        if prices and (now["fiveHour"] or now["weeks"].get("seven_day")):
+            def tokens_for(cost):
+                return {"output": int(cost / prices[4] * 1e6), "input": int(cost / prices[0] * 1e6),
+                        "cacheRead": int(cost / prices[3] * 1e6)} if cost else None
+            equivalents = {"model": cs.model_label("claude-" + model) or model,
+                           "fiveHour": tokens_for(now["fiveHour"]["cost"] if now["fiveHour"] else 0),
+                           "week": tokens_for(now["weeks"]["seven_day"]["cost"] if now["weeks"].get("seven_day") else 0)}
+        out["accounts"].append({"id": aid, "name": a["name"], "plan": plans.get(aid) or a["plan"], "periods": periods,
+                                "windows": windows, "changes": changes, "now": now, "equivalents": equivalents,
+                                "events": [{"at": e["from"], "factors": e["factors"], "from": eras[i - 1]["plan"],
+                                            "to": e["plan"]} for i, e in enumerate(eras) if i]})
+    return out
+
+
 # ---------------------------------------------------------------- currency
 # The amounts are API prices in US dollars. In another currency they're
 # turned at the European Central Bank's euro reference rates of the day
@@ -2549,7 +3161,7 @@ def monday_recap(sources, now_ms, home):
 def main(argv=None):
     args = sys.argv[1:] if argv is None else list(argv)
     back, account, hosts, config_dirs, currency, span = 0, "", [], [], "USD", "week"
-    pretty = remote = data = perms = status = forget = monday = projects_asked = False
+    pretty = remote = data = perms = status = forget = monday = projects_asked = limits_asked = False
     allow = undo = revoke = history = on = None
     asked = {}  # --since, --until, --now: the times the computer asking wants (--data)
     while args:
@@ -2594,6 +3206,8 @@ def main(argv=None):
             monday = True
         elif arg == "--projects":
             projects_asked = True
+        elif arg == "--limits":
+            limits_asked = True
         else:
             sys.exit(__doc__)
     os.umask(0o077)  # cache files are private to the user
@@ -2629,6 +3243,13 @@ def main(argv=None):
                 result = {"ok": ok, "message": message}
         except Exception as exc:
             result = {"ok": False, "message": "{}: {}".format(type(exc).__name__, exc)}
+        return emit(result)
+    if limits_asked:   # (the Recap's How your limits changed, unfolded)
+        try:
+            result = limit_history(cache_root, cs.discover_profiles(home, config_dirs), now_ms, account, home)
+            result["currency"] = currency_of(currency, cache_root, now_ms / 1000)
+        except Exception as exc:  # the widget must always get parseable output
+            result = {"ok": False, "error": "{}: {}".format(type(exc).__name__, exc), "generatedAt": now_ms}
         return emit(result)
     if projects_asked:   # (the Projects tab: every chat the cache has, plan and memory, by project)
         try:

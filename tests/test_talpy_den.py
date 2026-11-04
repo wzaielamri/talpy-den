@@ -1878,6 +1878,17 @@ class UsageHistoryTests(Fixture):
         self.assertFalse((self.cache / cs.USAGE_PAST_FILE).exists())
         self.assertEqual(self.history(), [1])
 
+    def test_the_plan_with_its_tier(self):
+        for plan, account, detail in (
+                ("Max", {"organizationRateLimitTier": "default_claude_max_20x"}, "Max 20×"),
+                ("Max", {"userRateLimitTier": "default_claude_max_5x"}, "Max 5×"),
+                ("Max", {}, "Max"),
+                ("Team", {"seatTier": "team_standard"}, "Team · standard seat"),
+                ("Team", {"seatTier": "team_premium"}, "Team · premium seat"),
+                ("Pro", {"organizationRateLimitTier": "default_claude_ai"}, "Pro"),
+                (None, {"seatTier": "team_premium"}, None)):
+            self.assertEqual(cs.plan_detail(plan, account), detail)
+
     def test_a_long_window_drops_repeats_before_its_start(self):
         # a weekly window: its value noted again every 10 minutes while unchanged
         runs = [[i, i // 10] for i in range(400)]  # 40 runs of 10 points

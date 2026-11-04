@@ -4384,6 +4384,49 @@ PlasmoidItem {
             } else {
                 root.weekError = result.message || result.error || i18n("no answer")
             }
+            if (root.limitsOpen && root.weekBack === 0)
+                root.loadLimits()   // (read again with the Recap while unfolded)
+        }
+    }
+
+    // The Recap's Advanced analyses (WeekView.qml, week.py --limits): how much
+    // a full window of each account's plan held, week by week. Folded until
+    // you open it (kept while Plasma runs), read then and with each read of
+    // the Recap while open. limitsData is the answer for limitsAccount.
+    property bool limitsOpen: false
+    property var limitsData: null
+    property string limitsAccount: ""
+    property string limitsError: ""
+    property string limitsAsked: ""
+    function toggleLimits() {
+        limitsOpen = !limitsOpen
+        if (limitsOpen)
+            loadLimits()
+    }
+    function loadLimits() {
+        let cmd = "python3 -I " + shellQuote(codeDir + "week.py") + " --limits"
+        if (weekAccount)
+            cmd += " --account " + shellQuote(weekAccount)
+        if (weekCurrency !== "USD")
+            cmd += " --currency " + shellQuote(weekCurrency)
+        limitsAsked = cmd + configDirArgs + " # " + weekAccount + " " + Date.now()
+        limitsReader.connectSource(limitsAsked)
+    }
+
+    Exec {
+        id: limitsReader
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            if (source !== root.limitsAsked)
+                return   // an answer for another account
+            const result = root.helperResult(data)
+            root.limitsAccount = source.slice(source.lastIndexOf(" # ") + 3).split(" ")[0]
+            if (result.ok) {
+                root.limitsData = result
+                root.limitsError = ""
+            } else {
+                root.limitsError = result.message || result.error || i18n("no answer")
+            }
         }
     }
 

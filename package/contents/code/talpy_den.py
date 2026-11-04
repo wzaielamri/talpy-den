@@ -251,7 +251,28 @@ class Profile:
         self.plan = PLAN_NAMES.get(org_type) or (
             strip_prefix(org_type, "claude_").replace("_", " ").title() if org_type else None
         )
+        self.plan_detail = plan_detail(self.plan, account)
         self.is_default = is_default
+
+
+TIER_TIMES = re.compile(r"(?:^|_)(\d{1,3})x(?:$|_)")  # Max's "…_max_20x": 20 times Pro's usage
+
+
+def plan_detail(plan, account):
+    """The plan with its tier, as its limits differ by it: "Max 20×" (the
+    rate-limit tier), "Team · standard seat" (the seat); else the plan."""
+    if not plan:
+        return None
+    if plan == "Max":
+        for field in ("organizationRateLimitTier", "userRateLimitTier"):
+            m = TIER_TIMES.search(str(account.get(field) or ""))
+            if m:
+                return "Max %s×" % m.group(1)
+    seat = str(account.get("seatTier") or "")
+    for kind in ("premium", "standard"):
+        if kind in seat:
+            return "%s · %s seat" % (plan, kind)
+    return plan
 
 
 def is_profile_dir(path):
@@ -7892,12 +7913,20 @@ def save_usage_past(cache_root, ended, now_ms):
     past = data.get("windows") if isinstance(data, dict) and data.get("version") == USAGE_PAST_VERSION else None
     past = [w for w in past if isinstance(w, dict) and isinstance(w.get("resetsAt"), (int, float))] \
         if isinstance(past, list) else []
-    have = {(w.get("group"), w.get("key"), round(w["resetsAt"] / 120_000)) for w in past}
+    have = {(w.get("group"), w.get("key"), round(w["resetsAt"] / 120_000)): w for w in past}
     for w in ended:
         k = (w["group"], w["key"], round(w["resetsAt"] / 120_000))
-        if k not in have:  # (noted once: a window is kept as it was when it first ended)
-            have.add(k)
+        kept = have.get(k)
+        if kept is None:
+            have[k] = w
             past.append(w)
+            continue
+        # (one ended again, as when its reset time was off for a moment: its
+        # readings joined, the plan it was first kept with stays)
+        points = {p[0]: p[1] for p in (kept.get("points") or []) + w["points"]
+                  if isinstance(p, list) and len(p) == 2}
+        kept["points"] = past_points(w["key"], [[t, points[t]] for t in sorted(points)])
+        kept["plan"] = kept.get("plan") or w.get("plan")
     cutoff = now_ms - USAGE_PAST_DAYS * 86400_000
     past = sorted((w for w in past if w["resetsAt"] >= cutoff), key=lambda w: w["resetsAt"])
     write_json_atomic(path, {"version": USAGE_PAST_VERSION, "windows": past}, private=True)
@@ -8934,12 +8963,14 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
         for gid, members in group_profiles(profiles):
             named = next((p for p in members if not p.is_default), members[0])
             plan = next((p.plan for p in members if p.plan), None)
+            detail = next((p.plan_detail for p in members if p.plan), None)
             group = {
                 # not logged in to an account: "Log in…" (accounts.py --login chatProfile)
                 "loggedOut": all(needs_login(p, logged_out) for p in members),
                 "id": short_id(gid),
                 "name": named.label,
                 "plan": plan,
+                "planDetail": detail,  # with its tier: "Max 20×", "Team · standard seat"
                 "title": f"{named.label} · {plan}" if plan else named.label,
                 "profiles": [p.label for p in members],
                 "profileKeys": [p.key for p in members],
@@ -8966,7 +8997,7 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
                     due.append(stale)
                 if group["limits"]:
                     if lock.held:
-                        usage.record(group["id"], group["limits"], now_ms, plan=plan)
+                        usage.record(group["id"], group["limits"], now_ms, plan=detail)
                     for w in group["limits"]["windows"]:
                         w["forecast"] = usage_forecast(w, usage.points(group["id"], w), now_ms)
             except Exception as exc:

@@ -72,6 +72,11 @@ class TalpyDenIndicator extends PanelMenu.Button {
         // while that tab is open: setTab, loadWeek)
         // (span: day, week or all; open: the day or project whose chats are unfolded)
         this.week = {span: 'week', back: 0, account: '', recap: null, error: '', busy: false, copied: '', open: ''};
+        // The Recap's Advanced analyses (week.py --limits): folded until you
+        // open it, read then and with each read of the Recap while open
+        // (account: whose they are; data, error: its answer)
+        this.limits = {open: false, account: null, data: null, error: '', busy: false};
+        this._limitsAsked = 0;
         // The Permissions tab and what week.py --permissions said (it runs only
         // while that tab is open: setTab, loadPerms)
         // (asking: the rule whose Allow asks first; ruleBusy, ruleMessage: one
@@ -1404,6 +1409,37 @@ class TalpyDenIndicator extends PanelMenu.Button {
         } else {
             this.week.error = result.message || result.error || 'no answer';
         }
+        this._render(true);
+        if (this.limits.open && back === 0)
+            this.loadLimits();
+    }
+
+    // Advanced analyses: how much the plan's windows held, week by week
+    async loadLimits() {
+        const asked = ++this._limitsAsked;
+        const account = this.week.account;
+        this.limits.busy = true;
+        const out = await this._runner.run('week.py',
+            L.limitsArgs(account, this._configDirArgs, this._settings.get_string('recap-currency')), {poll: true});
+        if (this._destroyed || out.cancelled || asked !== this._limitsAsked)
+            return;
+        const result = L.helperResult(out.stdout, out.stderr);
+        this.limits.busy = false;
+        this.limits.account = account;
+        if (result.ok) {
+            this.limits.data = result;
+            this.limits.error = '';
+        } else {
+            this.limits.error = result.message || result.error || 'no answer';
+        }
+        this._render(true);
+    }
+
+    // Unfolds the Advanced analyses (or folds them): read when unfolded
+    limitsToggle() {
+        this.limits.open = !this.limits.open;
+        if (this.limits.open)
+            this.loadLimits();
         this._render(true);
     }
 

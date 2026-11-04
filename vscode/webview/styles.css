@@ -2506,6 +2506,222 @@ body.vscode-high-contrast .top.scrolled {
   color: var(--cs-usage-high);
 }
 
+/* Advanced analyses (how your limits changed): one folded title under the limits now; open, per
+   account its window sizes with how they changed, two small charts (each 5-hour
+   window as a dot with its week's middle as a line; the weeks as bars), then a
+   line each for the 5-hour window's share of the week, how long one lasts, and
+   tokens (what filled one, as a thin bar) */
+/* (one line of text: short of room its hint goes under it, not beside it) */
+.limits-title {
+  cursor: pointer;
+}
+
+.limits-title:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #0078d4);
+  outline-offset: 2px;
+}
+
+.limits-title .icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin: 0 2px 0 -4px;
+  vertical-align: -2px;
+  opacity: 0.6;
+}
+
+.limits-title .icon.turn {
+  transform: rotate(90deg);
+}
+
+.limits-estimate {
+  margin-left: 4px;
+  font-size: 0.75em;
+  font-weight: 400;
+}
+
+.limits-account {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.limits-account + .limits-account {
+  margin-top: 12px;
+}
+
+/* (its titles as the Projects tab's: at the text's size, bold and dimmed) */
+.limits-account h3 {
+  margin: 6px 0 0;
+  font-size: 1em;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.limits-sizes {
+  grid-template-columns: minmax(0, 8em) auto minmax(0, 1fr);
+}
+
+.limits-sizes .week-bar-value {
+  text-align: left;
+}
+
+.limits-value {
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.limits-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 12px;
+  margin-top: 4px;
+}
+
+@container (max-width: 400px) {
+  .limits-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.limits-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+}
+
+.limits-dots,
+.limits-bars {
+  position: relative;
+  height: 48px;
+  border-radius: 2px;
+  background: var(--cs-track);
+}
+
+.limits-dots .dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin: 0 0 -3.5px -3.5px;
+  border-radius: 50%;
+  background: var(--cs-working);
+  box-shadow: 0 0 0 1.5px var(--cs-bg);
+}
+
+/* a change of the plan's limits: a thin line across the chart */
+.limits-dots .mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--cs-waiting);
+}
+
+.limits-event {
+  padding-left: 8px;
+  border-left: 2px solid var(--cs-waiting);
+}
+
+.limits-dots .med {
+  position: absolute;
+  height: 2px;
+  margin-bottom: -1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--cs-fg) 45%, transparent);
+}
+
+.limits-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 0 3px;
+}
+
+.limits-bars span {
+  flex: 1;
+  max-width: 24px;
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--cs-fg) 40%, transparent);
+}
+
+.limits-bars span.now {
+  background: var(--cs-working);
+}
+
+.limits-bars span.partial {
+  opacity: 0.5;
+}
+
+.limits-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+
+.limits-line .week-trend {
+  margin-top: 0;
+}
+
+.limits-mix {
+  display: flex;
+  gap: 2px;
+  width: 8em;
+  height: 6px;
+}
+
+.limits-mix span {
+  min-width: 2px;
+  border-radius: 3px;
+}
+
+.limits-mix .cacheRead {
+  background: color-mix(in srgb, var(--cs-fg) 30%, transparent);
+}
+
+.limits-mix .fresh {
+  background: var(--cs-usage-medium);
+}
+
+.limits-mix .output {
+  background: var(--cs-working);
+}
+
+.limits-compare {
+  margin: 2px 0 4px;
+  border-collapse: collapse;
+}
+
+.limits-compare th,
+.limits-compare td {
+  padding: 2px 0 2px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* (the plan's name wraps short of room; the numbers stay whole) */
+.limits-compare th:first-child,
+.limits-compare td:first-child {
+  padding-left: 0;
+  white-space: normal;
+}
+
+.limits-compare th {
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.limits-compare td + td,
+.limits-compare th + th {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* rules for the permission prompts you answered */
 .week-rules {
   display: flex;

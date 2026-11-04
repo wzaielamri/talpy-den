@@ -1802,6 +1802,196 @@ export function weekArgs(back, account, shownHosts, remote, configDirArgs, curre
         ...hosts.flatMap(h => ['--host', h]), ...configDirArgs];
 }
 
+// ---------------------------------------------------------------- advanced analyses: how your limits changed
+// (the Recap's folded section, week.py --limits; the same words as VS Code's
+// src/shared/week.ts and Plasma's WeekView.qml)
+
+// week.py --limits' arguments: an account's or all, in the Recap's currency
+export function limitsArgs(account, configDirArgs, currency = 'USD') {
+    return ['--limits', ...(/^[0-9a-f]{12}$/.test(account) ? ['--account', account] : []),
+        ...(/^[A-Z]{3}$/.test(currency) && currency !== 'USD' ? ['--currency', currency] : []), ...configDirArgs];
+}
+
+const FAMILIES = ['fable', 'mythos', 'opus', 'sonnet', 'haiku'];
+
+// "5-hour window", "Week", "Week · Opus" (a plan's weekly window of one model)
+export function limitLabel(key) {
+    if (key === 'five_hour')
+        return '5-hour window';
+    if (key === 'seven_day')
+        return 'Week';
+    const family = FAMILIES.find(f => key.includes(f));
+    return family ? `Week · ${family.charAt(0).toUpperCase()}${family.slice(1)}` : key.replace(/_/g, ' ');
+}
+
+// "24 Oct": when a week began
+export function limitDay(ms) {
+    const d = new Date(ms);
+    return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+// "about 5×", "▲ 20%", "▼ 80%", "about the same": how many times what a window held it holds now
+function factorText(f) {
+    if (f >= 1.5)
+        return `about ${Number(f.toFixed(1))}×`;
+    const pct = Math.round(Math.abs(f - 1) * 100);
+    return pct < 10 ? 'about the same' : `${f > 1 ? '▲' : '▼'} ${pct}%`;
+}
+
+// "▼ 14% vs the week before", "about the same as the week before", "new this week", "about 5× since 4 Nov", …
+export function limitChangeText(c) {
+    if (!c)
+        return '';
+    if (c.kind === 'change')
+        return `${(c.pct || 0) < 0 ? '▼' : '▲'} ${Math.abs(c.pct || 0)}% vs the week before`;
+    if (c.kind === 'same')
+        return 'about the same as the week before';
+    if (c.kind === 'new')
+        return 'new this week';
+    if (c.kind === 'limits') {
+        const day = c.at ? limitDay(c.at) : '';
+        return c.factor ? `${factorText(c.factor)} since ${day}` : `your plan changed on ${day}`;
+    }
+    return 'too few readings to compare yet';
+}
+
+// Is a change one to show as bad (the window holds less)?
+export function limitChangeBad(c) {
+    return !!c && ((c.kind === 'change' && (c.pct || 0) < 0) || (c.kind === 'limits' && (c.factor || 1) < 0.9));
+}
+
+// A change of the plan's limits, in a line: "4 Nov 18:52 · your limits grew about 5× · Pro → Max 5×"
+export function limitEventText(e) {
+    const fs = Object.values(e.factors || {}).sort((p, q) => p - q);
+    const f = fs.length ? fs[Math.floor((fs.length - 1) / 2)] : null;
+    const what = f === null ? 'your plan changed'
+        : f >= 1.5 ? `your limits grew about ${Number(f.toFixed(1))}×`
+            : Math.abs(f - 1) < 0.1 ? 'your limits stayed about the same'
+                : `your limits ${f > 1 ? 'grew' : 'shrank'} ${Math.round(Math.abs(f - 1) * 100)}%`;
+    const plans = e.from && e.to && e.from !== e.to ? ` · ${e.from} → ${e.to}` : !e.from && e.to ? ` · now ${e.to}` : '';
+    return `${limitDay(e.at)} ${clock(e.at)} · ${what}${plans}`;
+}
+
+export function limitEventTip(e) {
+    const keys = Object.keys(e.factors || {});
+    return keys.length
+        ? `${keys.map(k => `${limitLabel(k)}: ${Number(e.factors[k].toFixed(2))}× what it held`).join('\n')
+        }\nFrom your readings at that moment: the same usage read as a different share of the window.`
+        : 'Your windows\' plan changed between two of them: what they held before and after tells by how much.';
+}
+
+// "17% of the week · about 6 full windows a week"
+export function limitShareText(pct) {
+    return pct > 0 ? `${Math.round(pct)}% of the week · about ${Math.max(1, Math.round(100 / pct))} full windows a week` : '';
+}
+
+// How long a full 5-hour window lasted at your pace
+export function limitFillText(fill) {
+    if (!fill)
+        return '';
+    const work = fill.workMs >= 60000 ? ` · Claude worked ${hoursText(fill.workMs)} in it, across chats` : '';
+    return (fill.wallMs <= 5 * 3600000 ? `Full after about ${hoursText(fill.wallMs)} at your pace`
+        : "At your pace a 5-hour window doesn't fill in its 5 hours") + work;
+}
+
+// What a full window is worth in tokens, at the API price of the model used most
+export function limitTokensText(a) {
+    const e = a.equivalents;
+    const five = e ? e.fiveHour : null, week = e ? e.week : null;
+    if (!e || !(five || week))
+        return '';
+    const first = five || week;
+    return `${formatTokens(first.output)} output tokens of ${e.model} (or ${formatTokens(first.cacheRead)} cache reads) fill ` +
+        `${five ? 'a 5-hour window' : 'a week'}${five && week ? `; ${formatTokens(week.output)} a week` : ''}, at API prices`;
+}
+
+// What filled a window: its parts (shares of all its tokens) and the line for them
+export function limitMix(t) {
+    const total = t ? t.cacheRead + t.fresh + t.output : 0;
+    if (!t || total <= 0)
+        return {parts: [], text: ''};
+    const parts = ['cacheRead', 'fresh', 'output'].map(kind => ({kind, share: t[kind] / total}));
+    return {
+        parts,
+        text: `${formatTokens(Math.round(total))} tokens filled one: ${weekShareText(parts[0].share)} cache reads, ` +
+            `${weekShareText(parts[1].share)} new input and cache writes, ${weekShareText(parts[2].share)} output`,
+    };
+}
+
+// A window's size: whole amounts from 10 up ("$48", "€1,180")
+export function limitMoney(usd, cur = USD) {
+    const amount = (usd || 0) * cur.rate;
+    if (amount < 10)
+        return moneyText(usd, cur);
+    const symbol = SYMBOLS[cur.code];
+    const text = grouped(Math.round(amount));
+    return symbol ? symbol + text : `${text} ${cur.code}`;
+}
+
+// The dots of the 5-hour windows (x, y: 0 to 1), each week's median and each
+// change of the limits, over the weeks kept; from a little under the
+// smallest to a little over the largest
+export function limitDots(a, now) {
+    const from = a.periods.length ? a.periods[0].from : now;
+    const span = Math.max(1, now - from);
+    const sizes = [...a.windows.map(w => w.full), ...a.periods.map(p => (p.fiveHour ? p.fiveHour.cost : NaN))].filter(v => v > 0);
+    const most = sizes.length ? Math.max(...sizes) : 1;
+    const least = sizes.length ? Math.min(...sizes) : 0;
+    const pad = Math.max((most - least) * 0.15, most * 0.05);
+    const lo = Math.max(0, least - pad);
+    const top = most + pad;
+    const x = ms => Math.max(0, Math.min(1, (ms - from) / span));
+    const y = v => (v - lo) / (top - lo);
+    return {
+        dots: a.windows.map(w => ({x: x(w.at), y: y(w.full), full: w.full,
+            tip: `${weekWhenText(w.start)}: ${Math.round(w.pct)}% used by ${clock(w.at)}`})),
+        medians: a.periods.filter(p => p.fiveHour).map(p => ({x1: x(p.from), x2: x(Math.min(p.until, now)), y: y(p.fiveHour.cost)})),
+        marks: (a.events || []).filter(e => e.at > from && e.at <= now).map(e => x(e.at)),
+        lo,
+        top,
+    };
+}
+
+// The weeks' bars (the main weekly window): height 0 to 1
+export function limitWeekBars(a) {
+    const weeks = a.periods.filter(p => p.weeks.seven_day);
+    const top = Math.max(1e-9, ...weeks.map(p => p.weeks.seven_day.cost));
+    return weeks.map(p => ({from: p.from, cost: p.weeks.seven_day.cost, h: p.weeks.seven_day.cost / top, partial: !!p.weeks.seven_day.partial}));
+}
+
+// The window keys an account has, in the order the Chats tab lists them
+export function limitKeys(a) {
+    const order = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'];
+    const keys = ['five_hour', ...Object.keys(a.now.weeks)].filter(k => (k === 'five_hour' ? a.now.fiveHour : a.now.weeks[k]));
+    return keys.sort((p, q) => (order.indexOf(p) + 1 || 99) - (order.indexOf(q) + 1 || 99));
+}
+
+// A window's size now ({cost, scaled}), its change
+export function limitNow(a, key) {
+    return {value: key === 'five_hour' ? a.now.fiveHour : a.now.weeks[key], change: a.changes[key === 'five_hour' ? 'fiveHour' : key]};
+}
+
+export function limitFootText(h) {
+    return `Estimated from this computer's chats and the limit readings Talpy Den kept${h.since ? ` since ${limitDay(h.since)}` : ''}. ` +
+        "Use on claude.ai, your phone, other computers or SSH hosts counts toward your limits but isn't seen here, so a limit can look smaller than it is.";
+}
+
+export const LIMIT_EMPTY = 'Not enough readings yet: a few 5-hour windows used past half tell how much one holds.';
+
+// A size's tooltip: how it's worked out
+export function limitSizeTip(key, a, cur) {
+    const v = key === 'five_hour' ? a.now.fiveHour : a.now.weeks[key];
+    const since = v && v.scaled ? `\nNone measured since your limits changed yet: what it held before, times ${Number(v.scaled.toFixed(2))}.` : '';
+    if (key === 'five_hour') {
+        const f = a.now.fiveHour;
+        return f ? 'What a full 5-hour window held: the API price of what your chats used by a reading, over the share of the window ' +
+            `it said was used. The middle of ${plural(f.n, '%1 window', '%1 windows')} in the newest week` +
+            `${f.n > 1 ? ` (${moneyText(f.lo, cur)} to ${moneyText(f.hi, cur)})` : ''}.${since}` : '';
+    }
+    return `What a full ${limitLabel(key).toLowerCase()} held: the API price of what your chats used by its readings, over the ` +
+        `share of it they said was used${key === 'seven_day' ? '.' : ' (only that model\'s usage counts).'}${since}`;
+}
+
 // week.py's arguments to allow a rule the tab offers, or take one it added back
 // (on an SSH host: week.py runs there)
 export function weekRuleArgs(rule, allow, host = '') {

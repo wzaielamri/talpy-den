@@ -489,6 +489,13 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         );
         break;
       }
+      case "limits": {
+        const { account } = weekAsked(0, m.account);
+        void this.dash.limits(account).then(({ data, error }) =>
+          webview.postMessage({ type: "limits", account, data: data ?? null, error: error ?? "" } satisfies HostMessage),
+        );
+        break;
+      }
       case "weekRule": {
         const ask = weekRuleAsked(m);
         const host = permsHost(m.host);

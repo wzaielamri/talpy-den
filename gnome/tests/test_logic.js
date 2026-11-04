@@ -836,6 +836,26 @@ test('containers: ids, labels, picker lines and sections', () => {
     eq(L.groupLabel({host: 'podman:web', name: 'work · Team'}), 'web: work · Team');
 });
 
+test('advanced analyses: how a plan\'s limits changed, in words (as VS Code)', () => {
+    eq(L.limitsArgs('0123456789ab', ['--config-dir', '/x'], 'EUR'), ['--limits', '--account', '0123456789ab', '--currency', 'EUR', '--config-dir', '/x']);
+    eq(L.limitsArgs('../x', [], 'USD'), ['--limits']);
+    eq(L.limitLabel('seven_day_opus'), 'Week · Opus');
+    eq(L.limitChangeText({kind: 'change', pct: -14}), '▼ 14% vs the week before');
+    const day = new Date(2026, 10, 4, 18, 52).getTime();
+    eq(L.limitChangeText({kind: 'limits', factor: 4.71, at: day}), 'about 4.7× since 4 Nov');
+    eq(L.limitChangeText({kind: 'limits', factor: 0.2, at: day}), '▼ 80% since 4 Nov');
+    eq(L.limitChangeBad({kind: 'limits', factor: 0.2}), true);
+    eq(L.limitEventText({at: day, factors: {five_hour: 5, seven_day: 4.71}, from: 'Pro', to: 'Max 5×'}),
+        '4 Nov 18:52 · your limits grew about 4.7× · Pro → Max 5×');
+    eq(L.limitShareText(17.2), '17% of the week · about 6 full windows a week');
+    eq(L.limitMoney(47.6), '$48');
+    eq(L.limitMoney(1180.4), '$1,180');
+    eq(L.limitMoney(47.6, {code: 'EUR', rate: 0.9}), '€43');
+    eq(L.limitMix({fresh: 2e6, output: 0.4e6, cacheRead: 112e6}).text,
+        '114.4M tokens filled one: 98% cache reads, 2% new input and cache writes, <1% output');
+    eq(L.limitFillText({wallMs: 97 * 60000, workMs: 155 * 60000}), 'Full after about 1h 37m at your pace · Claude worked 2h 35m in it, across chats');
+});
+
 print(`${count - failures}/${count} passed`);
 if (failures)
     System.exit(1);

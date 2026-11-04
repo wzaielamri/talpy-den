@@ -888,6 +888,74 @@ export interface WeekRecap {
   sources: { host: string; ok: boolean; error: string }[];
 }
 
+// The Recap's How your limits changed (week.py --limits): how much a full
+// window of each account's plan held, at API prices, week by week
+export interface LimitChange {
+  kind: "change" | "same" | "new" | "few" | "limits";
+  pct?: number; // (change, same) the newest week against the one before, in %
+  against?: number | null; // when that week began
+  // (limits: the first week since the plan's limits changed) how many times
+  // what it held it holds now, when they changed, the plans before and after
+  factor?: number | null;
+  at?: number;
+  from?: string | null;
+  to?: string | null;
+}
+
+// When the plan's limits changed: a reading that went down (or up) with
+// nothing used, or the plan of its windows
+export interface LimitEvent {
+  at: number;
+  factors: Record<string, number>; // window key: how many times what it held it holds since
+  from: string | null;
+  to: string | null;
+}
+
+export interface LimitTokens {
+  output: number;
+  input: number;
+  cacheRead: number;
+}
+
+export interface LimitPeriod {
+  from: number;
+  until: number;
+  plan: string | null; // with its tier: "Max 20×", "Team · standard seat"
+  // the median of its 5-hour windows (scaled: none measured since the limits
+  // changed, the one before times the change)
+  fiveHour: { cost: number; n: number; lo: number; hi: number; scaled?: number } | null;
+  weeks: Record<string, { cost: number; pct: number; partial?: boolean; countedFrom?: number; scaled?: number }>; // seven_day, seven_day_opus, …
+  share: { pct: number; how: "sizes" | "measured"; measured: number | null } | null; // a full 5-hour window, in % of the week
+  fill: { wallMs: number; workMs: number } | null; // a full 5-hour window at your pace: your time, Claude's work
+  tokens: { fresh: number; output: number; cacheRead: number } | null; // what filled one
+}
+
+export interface LimitAccount {
+  id: string;
+  name: string;
+  plan: string | null;
+  periods: (LimitPeriod & { era: number })[]; // oldest first (a week the limits changed in: two)
+  windows: { start: number; at: number; pct: number; full: number; plan: string | null; era: number }[]; // each 5-hour window measured
+  events: LimitEvent[]; // the changes of its limits, oldest first
+  changes: Record<string, LimitChange | null>; // fiveHour, share, seven_day, seven_day_opus, …
+  now: {
+    fiveHour: LimitPeriod["fiveHour"];
+    share: LimitPeriod["share"];
+    fill: LimitPeriod["fill"];
+    tokens: LimitPeriod["tokens"];
+    weeks: Record<string, { cost: number; pct: number; scaled?: number } | null>;
+  };
+  equivalents: { model: string; fiveHour: LimitTokens | null; week: LimitTokens | null } | null;
+}
+
+export interface LimitHistory {
+  ok: true;
+  generatedAt: number;
+  since: number | null; // the first reading kept
+  accounts: LimitAccount[];
+  currency?: WeekRecap["currency"];
+}
+
 export interface ChatRef {
   host?: string;
   key: string;
@@ -996,6 +1064,7 @@ export type WebviewMessage =
   | { type: "setupUsageBars" }
   | { type: "openUsagePage" }
   | { type: "week"; back: number; account: string; span?: WeekSpan } // the Recap tab wants these days' recap
+  | { type: "limits"; account: string } // the Recap's How your limits changed, unfolded (week.py --limits)
   | { type: "openWeekChat"; chatId: string; profileDir: string; name: string; cwd?: string } // one of the week's chats here
   | { type: "weekRule"; allow: boolean; kind: string; value: string; project: string; id: string; host?: string } // allow a rule the tab offers, or take one back (on an SSH host shown, if host)
   | { type: "weekRevoke"; id: string; host?: string } // take a permission you gave out of its file
@@ -1015,6 +1084,7 @@ export type HostMessage =
   | { type: "visible"; visible: boolean }
   | { type: "live"; live: Record<string, LiveView> }
   | { type: "week"; back: number; account: string; span: WeekSpan; recap: WeekRecap | null; error: string }
+  | { type: "limits"; account: string; data: LimitHistory | null; error: string }
   | { type: "weekRule"; id: string; host: string; ok: boolean; message: string }
   | { type: "weekRevoke"; id: string; host: string; ok: boolean; message: string }
   | { type: "perms"; data: PermsData | null; error: string }

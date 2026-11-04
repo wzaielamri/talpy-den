@@ -2,7 +2,7 @@
 // Claude Code) and for the webview's dev harness. Nothing here is real: the
 // accounts, folders, hosts and chats are invented, times are relative to now.
 
-import type { ProjectsData, WeekLane, Agent, ChatStats, Group, HostState, PermsData, Session, Status, UsageStats, ViewState, WeekChat, WeekDay, WeekRecap, WeekSpan } from "./types";
+import type { LimitAccount, LimitHistory, LimitPeriod, ProjectsData, WeekLane, Agent, ChatStats, Group, HostState, PermsData, Session, Status, UsageStats, ViewState, WeekChat, WeekDay, WeekRecap, WeekSpan } from "./types";
 
 const MIN = 60000;
 const HOUR = 60 * MIN;
@@ -621,4 +621,57 @@ export function demoProjects(now: number): ProjectsData {
       { ...project("", "", 72 * h, [], null), name: "", short: "", plans: plans.filter((p) => !p.cwd) },
     ],
   };
+}
+
+// The Recap's How your limits changed in the demo: six weeks of each account,
+// the Max one's 5-hour window a little smaller in the newest week, the Team
+// one with a weekly limit from its fourth week
+export function demoLimits(now: number, account = ""): LimitHistory {
+  const day = 86400000;
+  const reset = now + 2 * day;
+  // (changed: the week its limits changed in, from the plan before, which had a fifth of them)
+  const make = (id: string, name: string, plan: string, five: number[], week: (number | null)[], opus: boolean,
+    changed = -1, before = ""): LimitAccount => {
+    const periods: (LimitPeriod & { era: number })[] = five.map((size, i) => {
+      const from = reset - (five.length - i) * 7 * day;
+      const old = i < changed;
+      const cost = old ? size / 5 : size;
+      const w = week[i] && old ? week[i]! / 5 : week[i];
+      return {
+        from, until: from + 7 * day, plan: old ? before : plan, era: old ? 0 : changed >= 0 ? 1 : 0,
+        fiveHour: { cost, n: 4 + (i % 3), lo: cost * 0.92, hi: cost * 1.07 },
+        weeks: w ? { seven_day: { cost: w, pct: i === five.length - 1 ? 46 : 88 }, ...(opus ? { seven_day_opus: { cost: w * 0.8, pct: 51 } } : {}) } : {},
+        share: w ? { pct: (cost / w) * 100, how: "sizes", measured: null } : null,
+        fill: { wallMs: (2.2 + (i % 2) * 0.4) * 3600000, workMs: (3.5 + (i % 3) * 0.3) * 3600000 },
+        tokens: { fresh: cost * 52000, output: cost * 10500, cacheRead: cost * 2.6e6 },
+      };
+    });
+    const windows = periods.flatMap((p, i) => [0.5, 1.6, 2.7, 3.9, 5.2].slice(0, 3 + (i % 3)).map((d, k) => {
+      const start = p.from + d * day;
+      const full = (p.fiveHour?.cost ?? 0) * [0.94, 1.05, 1, 0.97, 1.03][k];
+      return { start, at: start + 2 * 3600000, pct: 60 + k * 9, full, plan: p.plan, era: p.era };
+    })).filter((w) => w.at < now);
+    const last = periods[periods.length - 1];
+    const prev = periods[periods.length - 2];
+    const pct = Math.round((last.fiveHour!.cost / prev.fiveHour!.cost - 1) * 100);
+    return {
+      id, name, plan, periods, windows,
+      events: changed >= 0 ? [{ at: periods[changed].from + 9 * 3600000, factors: { five_hour: 5.1, seven_day: 4.9 }, from: before, to: plan }] : [],
+      changes: {
+        fiveHour: { kind: Math.abs(pct) >= 10 ? "change" : "same", pct, against: prev.from },
+        share: { kind: "same", pct: -2, against: prev.from },
+        seven_day: week.filter(Boolean).length > 1 ? { kind: "same", pct: -3, against: prev.from } : { kind: "new", against: prev.from },
+        ...(opus ? { seven_day_opus: { kind: "same", pct: 1, against: prev.from } } : {}),
+      },
+      now: { fiveHour: last.fiveHour, share: last.share, fill: last.fill, tokens: last.tokens,
+        weeks: { seven_day: last.weeks.seven_day ?? null, ...(opus ? { seven_day_opus: last.weeks.seven_day_opus ?? null } : {}) } },
+      equivalents: { model: "Opus 5.5", fiveHour: { output: (last.fiveHour!.cost / 20) * 1e6, input: (last.fiveHour!.cost / 4) * 1e6, cacheRead: (last.fiveHour!.cost / 0.2) * 1e6 },
+        week: last.weeks.seven_day ? { output: (last.weeks.seven_day.cost / 20) * 1e6, input: (last.weeks.seven_day.cost / 4) * 1e6, cacheRead: (last.weeks.seven_day.cost / 0.2) * 1e6 } : null },
+    };
+  };
+  const accounts = [
+    make("0123456789ab", "personal", "Max 5×", [176, 181, 178, 183, 179, 158], [1250, 1240, 1262, 1255, 1248, 1236], true, 2, "Pro"),
+    make("ba9876543210", "work", "Team · standard seat", [51, 50, 52, 49, 50, 49], [null, null, null, 297, 291, 288], false),
+  ];
+  return { ok: true, generatedAt: now, since: reset - 6 * 7 * day, accounts: accounts.filter((a) => !account || a.id === account) };
 }

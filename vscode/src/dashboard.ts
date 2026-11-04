@@ -15,10 +15,10 @@ import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSet
 import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";
 import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
-import { demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
+import { demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
 import { allGroups, containerDetail, containerOf, chatsNeedingYou, findProjectChat, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef } from "./notify";
-import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
+import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
 
@@ -837,6 +837,18 @@ export class Dashboard implements vscode.Disposable {
       ...(account ? ["--account", account] : []),
       ...(currency !== "USD" ? ["--currency", currency] : []),
       ...hosts.flatMap((h) => ["--host", h]),
+      ...configDirArgs(),
+    ]);
+  }
+
+  // The Recap's How your limits changed, unfolded: this computer's accounts
+  // (week.py --limits; an SSH host's chats aren't counted, its caveat says so)
+  async limits(account: string): Promise<{ data?: LimitHistory; error?: string }> {
+    if (this.demoPhase !== null) return { data: demoLimits(Date.now(), account) };
+    const currency = settings.recapCurrency();
+    return this.backend.limits([
+      ...(account ? ["--account", account] : []),
+      ...(currency !== "USD" ? ["--currency", currency] : []),
       ...configDirArgs(),
     ]);
   }

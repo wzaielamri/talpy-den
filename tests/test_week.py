@@ -876,6 +876,249 @@ class PlanTests(Home):
                          [("five_hour", 0, None, False, 0), ("seven_day", 96, resets, False, 2)])
 
 
+class LimitHistoryTests(Home):
+    """The Recap's How your limits changed: a window's size is its usage (API
+    prices) by a reading over the share of it the reading says was used. An
+    Opus 5.5 reply of 100k output tokens costs $2."""
+
+    def account(self, profile, **oauth):
+        d = self.home / (".claude-" + profile)
+        account = {"accountUuid": "acct-" + profile}
+        account.update(oauth)
+        (d / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
+
+    def gid(self, label):
+        return {m.label: cs.short_id(g) for g, members in cs.group_profiles(self.profiles()) for m in members}[label]
+
+    def window(self, t, start, n, usd=2.0, model="claude-opus-5-5", every=10 * MIN):
+        price = {"claude-opus-5-5": 20, "claude-sonnet-5-5": 10}[model]
+        for i in range(n):
+            t.reply(start + i * every, "%s-%d-%d" % (model[-10:], start, i), output=int(usd / price * 1e6), read=0, inp=0,
+                    model=model)
+        return start + (n - 1) * every
+
+    def past(self, *windows):
+        cs.write_json_atomic(self.cache_root / cs.USAGE_PAST_FILE, {"version": 1, "windows": list(windows)})
+
+    def history(self, account=""):
+        return week.limit_history(self.cache_root, self.profiles(), self.now, account, self.home)
+
+    def of(self, result, label):
+        return next(a for a in result["accounts"] if a["name"] == label)
+
+    def two_weeks(self, plans=("Team", "Team")):
+        """Three 5-hour windows a week: $40 each the week before, $32 this week,
+        and this week's weekly window: 20% at $48 ($240)."""
+        self.account("work", organizationType="claude_team", seatTier="team_standard")
+        reset = self.now + 2 * week.DAY_MS
+        t, past = Transcript(), []
+        for k in range(3):
+            s = reset - (13 - k) * week.DAY_MS
+            self.window(t, s, 10)  # $20 by s + 90 min
+            past.append({"group": self.gid("work"), "key": "five_hour", "plan": plans[0], "resetsAt": s + 5 * 3600_000,
+                         "points": [[s, 0], [s + 95 * MIN, 50]]})
+        for k in range(3):
+            s = reset - (6 - k) * week.DAY_MS
+            self.window(t, s, 8)  # $16 by s + 70 min
+            past.append({"group": self.gid("work"), "key": "five_hour", "plan": plans[1], "resetsAt": s + 5 * 3600_000,
+                         "points": [[s, 0], [s + 75 * MIN, 50]]})
+        self.write(t)
+        self.past(*past)
+        weekly_at = reset - 4 * week.DAY_MS + 2 * 3600_000  # (after the three windows: $48)
+        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
+            "seven_day": {"resetsAt": reset, "points": [[reset - week.WEEK_MS + 3600_000, 0], [weekly_at, 20]]}}}})
+        return reset
+
+    def test_sizes_week_by_week_and_what_changed(self):
+        self.two_weeks()
+        work = self.of(self.history(), "work")
+        self.assertEqual(work["plan"], "Team · standard seat")
+        self.assertEqual([w["full"] for w in work["windows"]], [40, 40, 40, 32, 32, 32])
+        before, now = work["periods"]
+        self.assertEqual(before["fiveHour"], {"cost": 40, "n": 3, "lo": 40, "hi": 40})
+        self.assertEqual(before["weeks"], {})
+        self.assertEqual(now["fiveHour"]["cost"], 32)
+        self.assertEqual(now["weeks"]["seven_day"], {"cost": 240, "pct": 20})
+        self.assertEqual(now["share"]["pct"], round(32 / 240 * 100, 1))
+        self.assertEqual(now["fill"]["wallMs"], 75 * MIN * 2)  # (its first reply to its reading at 50%)
+        self.assertEqual(now["tokens"]["output"], 1_600_000)
+        self.assertEqual(work["changes"]["fiveHour"], {"kind": "change", "pct": -20, "against": before["from"]})
+        self.assertEqual(work["changes"]["seven_day"]["kind"], "new")  # (the account had no weekly limit the week before)
+        self.assertEqual(work["equivalents"]["model"], "Opus 5.5")
+        self.assertEqual(work["equivalents"]["fiveHour"]["output"], 1_600_000)
+        self.assertEqual(work["equivalents"]["week"]["cacheRead"], int(240 / 0.2 * 1e6))
+        self.assertEqual(self.history(self.gid("personal"))["accounts"], [])
+
+    def test_a_plan_change_isnt_a_percentage(self):
+        self.two_weeks(plans=("Pro", "Max 5×"))
+        self.account("work", organizationType="claude_max", organizationRateLimitTier="default_claude_max_5x")
+        # (no reading saw it: between two windows; by how much: their sizes)
+        change = self.of(self.history(), "work")["changes"]["fiveHour"]
+        self.assertEqual((change["kind"], change["from"], change["to"], change["factor"]), ("limits", "Pro", "Max 5×", 0.8))
+
+    def test_limits_that_changed_in_a_window(self):
+        # a bigger plan while at the 5-hour limit: 100% became 20%, the week's
+        # 35% 7%, with nothing used between: about 5 times the limits since
+        self.two_weeks(plans=("Pro", "Pro"))
+        gid = self.gid("work")
+        s = self.now - 3 * 3600_000
+        t = Transcript()
+        self.window(t, s, 10, usd=4.0)  # $40 by s + 90 min
+        self.write(t, chat="today")
+        reset = self.now + 2 * week.DAY_MS
+        weekly = json.loads((self.cache_root / "usage.json").read_text())["groups"][gid]["seven_day"]
+        weekly["points"] += [[s + 100 * MIN, 35], [s + 160 * MIN, 7], [s + 170 * MIN, 7]]
+        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {gid: {
+            "seven_day": weekly,
+            "five_hour": {"resetsAt": s + 5 * 3600_000, "points": [[s, 0], [s + 95 * MIN, 100], [s + 160 * MIN, 20],
+                                                                    [s + 170 * MIN, 20]]}}}})
+        self.account("work", organizationType="claude_max", organizationRateLimitTier="default_claude_max_5x")
+        work = self.of(self.history(), "work")
+        (event,) = work["events"]
+        self.assertEqual((event["at"], event["factors"]), (s + 160 * MIN, {"five_hour": 5, "seven_day": 5}))
+        self.assertEqual((event["from"], event["to"]), ("Pro", "Max 5×"))
+        change = work["changes"]["fiveHour"]
+        self.assertEqual((change["kind"], change["factor"], change["at"]), ("limits", 5, s + 160 * MIN))
+        # (no window measured in the new limits yet: the week's before, times 5)
+        before = work["periods"][-1]
+        self.assertEqual(before["era"], 0)
+        self.assertEqual((work["now"]["fiveHour"]["cost"], work["now"]["fiveHour"]["scaled"]), (32 * 5, 5))
+        self.assertEqual(work["now"]["weeks"]["seven_day"]["cost"], round(before["weeks"]["seven_day"]["cost"] * 5, 2))
+
+    def test_too_few_windows_to_compare(self):
+        self.two_weeks()
+        data = json.loads((self.cache_root / cs.USAGE_PAST_FILE).read_text())
+        self.past(*data["windows"][:-1])  # (two this week)
+        self.assertEqual(self.of(self.history(), "work")["changes"]["fiveHour"]["kind"], "few")
+
+    def test_a_weekly_limit_that_began_in_its_window(self):
+        # a weekly limit that began in the middle of its window: counted from
+        # its first reading at 0%, not from its start a week before
+        reset = self.two_weeks()
+        began = reset - 5 * week.DAY_MS - 3600_000  # (after this week's first window: $32 since)
+        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
+            "seven_day": {"resetsAt": reset, "points": [[began, 0], [reset - 4 * week.DAY_MS + 2 * 3600_000, 20]]}}}})
+        weeks = self.of(self.history(), "work")["periods"][1]["weeks"]
+        self.assertEqual(weeks["seven_day"]["cost"], 160)  # ($32 of two windows since it began)
+        self.assertTrue(weeks["seven_day"]["partial"])
+        self.assertEqual(weeks["seven_day"]["countedFrom"], began)
+
+    def today(self, five, week_points, seat="team_standard"):
+        """$20 used today (10 replies, s to s + 90 min), and the readings of
+        the 5-hour window and the week (minutes after s, percent)."""
+        self.account("work", organizationType="claude_team", seatTier=seat)
+        s = self.now - 3 * 3600_000
+        t = Transcript()
+        self.window(t, s, 10)
+        self.write(t, chat="today")
+        reset = self.now + 2 * week.DAY_MS
+        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
+            "five_hour": {"resetsAt": s + 5 * 3600_000, "points": [[s + m * MIN, p] for m, p in five]},
+            "seven_day": {"resetsAt": reset, "points": [[reset - week.WEEK_MS + 3600_000, 0]] +
+                          [[s + m * MIN, p] for m, p in week_points]}}}})
+        return s, self.of(self.history(), "work")
+
+    def test_a_smaller_plan_in_a_window(self):
+        # a downgrade: both windows' readings went up 5 times with nothing used
+        # between (premium's 10% of the 5-hour window is standard's 50%)
+        s, work = self.today([(0, 0), (95, 10), (120, 50), (130, 50)], [(95, 2), (120, 10), (130, 10)])
+        (event,) = work["events"]
+        self.assertEqual((event["at"], event["factors"]), (s + 120 * MIN, {"five_hour": 0.2, "seven_day": 0.2}))
+        self.assertEqual(event["to"], "Team · standard seat")
+        change = work["changes"]["fiveHour"]
+        self.assertEqual((change["kind"], change["factor"]), ("limits", 0.2))
+        self.assertEqual(work["now"]["fiveHour"]["cost"], 40)  # (measured after it: $20 at 50%)
+        self.assertNotIn("scaled", work["now"]["fiveHour"])
+
+    def test_a_smaller_plan_with_the_5_hour_window_full(self):
+        # the 5-hour window at 100% after it (more than full: no size); the week held up
+        s, work = self.today([(0, 0), (95, 40), (120, 100), (130, 100)], [(95, 4), (120, 10), (130, 10)])
+        (event,) = work["events"]
+        self.assertEqual(event["factors"], {"five_hour": 0.4, "seven_day": 0.4})
+        self.assertIsNone(work["now"]["fiveHour"])  # (40% isn't enough to tell the size before, 100% after)
+
+    def test_what_isnt_a_change_of_the_limits(self):
+        # the 5-hour window alone went up with nothing used here: use on claude.ai
+        self.assertEqual(self.today([(0, 0), (95, 10), (120, 25), (130, 26)], [(95, 2), (120, 4), (130, 4)])[1]["events"], [])
+        # the week went up by what this computer used meanwhile
+        self.assertEqual(self.today([(0, 0)], [(5, 1), (95, 10), (100, 10)])[1]["events"], [])
+        # one low reading at the end (a status line written with old numbers)
+        self.assertEqual(self.today([(0, 0), (95, 60), (100, 30)], [(95, 12)])[1]["events"], [])
+
+    def test_a_max_plans_model_weeks_count_their_own_model(self):
+        self.account("personal", organizationType="claude_max", organizationRateLimitTier="default_claude_max_20x")
+        reset = self.now + 2 * week.DAY_MS
+        s = reset - 3 * week.DAY_MS
+        t = Transcript()
+        self.window(t, s, 5)  # Opus: $10
+        self.window(t, s + 1, 5, usd=1.0, model="claude-sonnet-5-5")  # Sonnet: $5
+        self.write(t, profile="personal")
+        at = s + 2 * 3600_000
+        start = reset - week.WEEK_MS
+        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("personal"): {
+            "seven_day": {"resetsAt": reset, "points": [[start, 0], [at, 30]]},
+            "seven_day_opus": {"resetsAt": reset, "points": [[start, 0], [at, 20]]},
+            "seven_day_sonnet": {"resetsAt": reset, "points": [[start, 0], [at, 25]]}}}})
+        personal = self.of(self.history(), "personal")
+        self.assertEqual(personal["plan"], "Max 20×")
+        self.assertEqual({k: v["cost"] for k, v in personal["now"]["weeks"].items()},
+                         {"seven_day": 50, "seven_day_opus": 50, "seven_day_sonnet": 20})
+
+    def test_a_shared_chat_counts_where_it_was_run(self):
+        s = self.now - 6 * 3600_000
+        t = Transcript()
+        self.window(t, s, 10)
+        path = self.write(t, chat="shared")
+        other = self.home / ".claude-personal/projects/-w/shared.jsonl"
+        os.link(str(path), str(other))  # (one file in both profiles: sharing.py)
+        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("personal"): {
+            "five_hour": {"resetsAt": s + 5 * 3600_000, "points": [[s, 0], [s + 95 * MIN, 50]]}}}})
+        self.assertEqual(self.of(self.history(), "personal")["windows"], [])  # (no sign of who ran it: left out)
+        (self.home / ".claude-personal/history.jsonl").write_text(
+            line({"display": "go on", "timestamp": s - MIN, "project": "/w", "sessionId": "shared"}))
+        self.assertEqual([w["full"] for w in self.of(self.history(), "personal")["windows"]], [40])
+
+    def test_a_snapshots_ended_window_is_kept(self):
+        s = self.now - 6 * 3600_000
+        t = Transcript().prompt(s - 1000)
+        last = self.window(t, s, 10)
+        self.write(t.duration(last + 1000, 60_000), chat="sess")
+        snap = self.cache_root / "statusline/.claude-work/sess.json"
+        cs.write_json_atomic(snap, {"session_id": "sess", "rate_limits": {
+            "five_hour": {"used_percentage": 50, "resets_at": (s + 5 * 3600_000) // 1000}}})
+        os.utime(str(snap), ((last + 5 * MIN) / 1000, (last + 5 * MIN) / 1000))
+        (work,) = [a for a in self.history()["accounts"] if a["name"] == "work"]
+        self.assertEqual(work["windows"][0]["at"], last + 5 * MIN)  # (when it was written)
+        self.assertEqual(work["windows"][0]["full"], 40)
+        kept = json.loads((self.cache_root / cs.USAGE_PAST_FILE).read_text())["windows"]
+        self.assertEqual([(w["key"], w["group"]) for w in kept], [("five_hour", self.gid("work"))])
+        (self.cache_root / cs.USAGE_PAST_FILE).unlink()
+        cs.write_json_atomic(self.cache_root / cs.HISTORY_SETTING_FILE, {"keep": False})
+        self.history()
+        self.assertFalse((self.cache_root / cs.USAGE_PAST_FILE).exists())  # (the history off: none kept)
+
+    def test_main_answers_limits(self):
+        import io
+        import shutil
+        from contextlib import redirect_stdout
+        self.two_weeks()
+        cache = Path(self.tmp.name) / "xdg"
+        shutil.copytree(str(self.cache_root), str(cache / "talpy-den"))
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        os.environ["HOME"], os.environ["XDG_CACHE_HOME"] = str(self.home), str(cache)
+        real_time = week.time.time
+        week.time.time = lambda: self.now / 1000
+        self.addCleanup(setattr, week.time, "time", real_time)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            week.main(["--limits", "--account", self.gid("work")])
+        result = json.loads(out.getvalue())
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["currency"]["code"], "USD")
+        self.assertEqual([a["name"] for a in result["accounts"]], ["work"])
+
+
 class Projects(Home):
     """Two of your projects, ~/repos/app (where the chats start) and ~/repos/lib."""
 
