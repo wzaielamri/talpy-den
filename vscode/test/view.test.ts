@@ -6,14 +6,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
 import { demoProjects, demoState } from "../src/shared/demo";
-import { badgeOf, chatRefOf, findProjectChat } from "../src/shared/model";
-import type { ViewState } from "../src/shared/types";
+import { badgeOf, chatRefOf, findProjectChat, recentRef } from "../src/shared/model";
+import type { RecentChat, ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { recorded } from "./vscode-stub";
 
 const NOW = 1_800_000_000_000;
 
-function setup(state: ViewState = demoState(NOW), projects = demoProjects(NOW)) {
+function setup(state: ViewState = demoState(NOW), projects = demoProjects(NOW), more: { chat: RecentChat; groupId: string }[] = []) {
   const calls: { name: string; args: unknown[] }[] = [];
   const record = (name: string) => (...args: unknown[]) => {
     calls.push({ name, args });
@@ -34,7 +34,12 @@ function setup(state: ViewState = demoState(NOW), projects = demoProjects(NOW)) 
     // (the Projects tab as it was last read; a bigger check's recent chats)
     projects: () => Promise.resolve({ data: projects }),
     projectsRead: () => projects,
-    moreChat: (host: unknown, key: unknown) => (host ? null : findProjectChat(projects, key)),
+    moreChat: (host: unknown, key: unknown) => {
+      const m = host ? undefined : more.find((x) => x.chat.key === key);
+      return m ? recentRef(m.chat) : host ? null : findProjectChat(projects, key);
+    },
+    moreRecentChat: (host: unknown, key: unknown) => (host ? null : (more.find((x) => x.chat.key === key) ?? null)),
+    setActionError: record("setActionError"),
     recentMore: (...args: unknown[]) => (calls.push({ name: "recentMore", args }), Promise.resolve({ recent: [], asked: args[2] })),
   };
   const host = new ViewHost(vscode.Uri.file("/ext") as never, dash as never, actions as never);
@@ -337,4 +342,19 @@ test("the page only runs its own script", () => {
   assert.match(page, /window\.TALPY_DEN = \{"editorTab":true\};/);
   // a nonce for each page
   assert.notEqual(/'nonce-([^']+)'/.exec(html(webview))![1], nonce);
+});
+
+// Show N more: a chat a usage limit stopped, past the recent chats the status
+// lists, goes on by itself as one of those does; a click on a chat nothing
+// lists any more is answered
+test("a bigger check's recent chat a limit stopped is queued to go on, and one not listed says so", () => {
+  const state = demoState(NOW);
+  const g = state.status!.groups[0];
+  const old: RecentChat = { ...g.recent![0], key: "dir/0ld/chat", sessionId: "0ld", stopped: { kind: "limit", window: "five_hour", text: "limit", at: NOW, resetsAt: NOW + 3_600_000 } };
+  const { calls, receive } = setup(state, demoProjects(NOW), [{ chat: old, groupId: g.id }]);
+  receive({ type: "queueContinue", chat: { key: old.key }, keep: true });
+  assert.deepEqual(calls.map((c) => c.name), ["queueContinue"]);
+  assert.deepEqual(calls[0].args.slice(1), [NOW + 3_660_000, g.title, true]);
+  receive({ type: "queueContinue", chat: { key: "dir/gone/chat" } });
+  assert.deepEqual(calls.map((c) => c.name), ["queueContinue", "setActionError"]);
 });

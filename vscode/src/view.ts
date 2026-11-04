@@ -429,16 +429,22 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         if (chat) void this.actions.keepGoing(chat, m.on === true); // (an SSH host's too: kept here)
         break;
       case "queueContinue": {
-        // (found in the extension's own state: the row or recent chat, when it can go on, and its account)
+        // (found in the extension's own state: the row or recent chat, when it can go on, and its account;
+        // or one of the recent chats a bigger check listed, Show N more)
         const state = this.dash.state();
         const where = chat?.host ? state.hosts.find((h) => h.name === chat.host)?.result : state.status;
+        let found: { at: number; account: string } | null = null;
         for (const g of where?.groups ?? []) {
           const item = [...(g.sessions ?? []), ...(g.recent ?? []), ...(g.starred ?? [])].find((x) => x.key === chat?.key);
           if (!item) continue;
-          const at = goOnAt(item);
-          if (chat && at) void this.actions.queueContinue(chat, at, g.title, m.keep === true);
+          found = { at: goOnAt(item), account: g.title };
           break;
         }
+        const more = chat && !found ? this.dash.moreRecentChat(chat.host, chat.key) : null;
+        const group = more && where?.groups.find((g) => g.id === more.groupId);
+        if (more && group) found = { at: goOnAt(more.chat), account: group.title };
+        if (chat && found?.at) void this.actions.queueContinue(chat, found.at, found.account, m.keep === true);
+        else this.dash.setActionError("Couldn't queue it: that chat isn't listed any more, or no usage limit stops it now.");
         break;
       }
       case "loginHost":

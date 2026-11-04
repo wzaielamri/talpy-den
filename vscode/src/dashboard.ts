@@ -18,7 +18,7 @@ import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, port
 import { demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
 import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, unseenHostItems, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
-import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
+import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
 
@@ -992,12 +992,19 @@ export class Dashboard implements vscode.Disposable {
   // recent chats a bigger check listed, or one of the Projects tab's (this computer's)
   moreChat(host: unknown, key: unknown): ChatRef | null {
     if (typeof key !== "string" || !key || (host !== undefined && host !== null && typeof host !== "string")) return null;
+    const more = this.moreRecentChat((host as string) || undefined, key);
+    if (more) return recentRef(more.chat, (host as string) || undefined);
+    return host ? null : findProjectChat(this.projectsData, key);
+  }
+
+  // One of an account's recent chats a bigger check listed, with that account's id
+  moreRecentChat(host: string | undefined, key: string): { chat: RecentChat; groupId: string } | null {
     for (const [where, more] of this.moreRecent)
       if (where.startsWith(`${host ?? ""}|`)) {
         const c = more.recent.find((x) => x.key === key);
-        if (c) return recentRef(c, (host as string) || undefined);
+        if (c) return { chat: c, groupId: where.slice(`${host ?? ""}|`.length) };
       }
-    return host ? null : findProjectChat(this.projectsData, key);
+    return null;
   }
 
   async perms(): Promise<{ data?: PermsData; error?: string }> {
