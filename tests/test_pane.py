@@ -1532,9 +1532,11 @@ class TestsAfterEditTests(PaneFixture):
     def test_what_counts_as_a_test_run(self):
         runs = ["python3 -I -m unittest discover -s tests 2>&1 | tail -3", "cd x && npm test", "make -C build test",
                 "./gradlew test", "pytest -q tests/test_a.py", "node --test", "go test ./...", "bash run_tests.sh",
-                "npm run check && npm test"]
+                "npm run check && npm test", "gjs -m gnome/tests/test_logic.js", "python3 tests/test_week.py",
+                "./run-tests.sh", "uv run pytest -x"]
         others = ['git commit -m "fix pytest run"', "python3 - <<'EOF'\nimport unittest\nEOF", "ls tests/",
-                  "cargo build", 'echo "a \\" pytest"']
+                  "cargo build", 'echo "a \\" pytest"', "pip install pytest", "npm install -D vitest", "which pytest",
+                  "pytest --version", "grep -rn jest src", "test -f x"]
         self.assertEqual([c for c in runs if not cs.is_test_run(c)], [])
         self.assertEqual([c for c in others if cs.is_test_run(c)], [])
 

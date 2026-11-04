@@ -2906,17 +2906,33 @@ def reply_route(row):
 # reviewed (reviewed.json: {"chats": {"[host|]chat id": when}}), or again
 # once it changes files after that. Its row says whether tests ran after its
 # last edit and how they went: a Bash command that looks like a test run
-# (TEST_COMMAND), and its result (an exit code other than 0 is an error).
+# (is_test_run), and its result (an exit code other than 0 is an error).
 
 REVIEWED = "reviewed.json"
 REVIEWED_KEEP_MS = 60 * 86400_000
 TESTS_CACHE_VERSION = 1
-TEST_COMMAND = re.compile(
-    r"(?:^|[\s;&|(/])(?:py\.?test|pytest|unittest|nose2|tox|nox|jest|vitest|mocha|ava|karma|rspec|phpunit|ctest"
-    r"|bats|go\s+test|cargo\s+(?:test|nextest)|deno\s+test|bun\s+test|node\s+--test|dotnet\s+test|mix\s+test"
-    r"|swift\s+test|zig\s+build\s+test|meson\s+test|ninja\s+test|playwright\s+test|cypress\s+run"
-    r"|(?:npm|pnpm|yarn)\s+(?:run\s+)?test\S*|make\s+(?:\S+\s+)*(?:test|check)\b|mvnw?\s+(?:\S+\s+)*test"
-    r"|(?:\./)?gradlew?\s+(?:\S+\s+)*test|(?:run_?)?tests?\.(?:sh|py))(?=$|[\s;&|)'\"])")
+# A test tool run as the command (not one installed, looked up or named):
+# the tool, a tool's test verb ("go test"), a build tool's test target, a
+# package's test script; after cd …&&, env, timeout, uv run, npx, python -m…
+TEST_TOOLS = frozenset(("pytest", "py.test", "unittest", "nose2", "tox", "nox", "jest", "vitest", "mocha", "ava",
+                        "karma", "rspec", "phpunit", "ctest", "bats"))
+TEST_VERBS = {"go": ("test",), "cargo": ("test", "nextest"), "deno": ("test",), "bun": ("test",), "node": ("--test",),
+              "dotnet": ("test",), "mix": ("test",), "swift": ("test",), "meson": ("test",), "ninja": ("test",),
+              "playwright": ("test",), "cypress": ("run",)}
+TEST_TARGETS = frozenset(("make", "zig", "mvn", "mvnw", "gradle", "gradlew"))
+TEST_WRAPPERS = frozenset(("env", "time", "timeout", "nice", "nohup", "sudo", "command", "exec", "xvfb-run",
+                           "dbus-run-session", "stdbuf", "npx", "bunx", "pnpx", "uvx", "if", "then", "else", "do",
+                           "while", "until", "!"))
+TEST_LAUNCHERS = frozenset((("uv", "run"), ("poetry", "run"), ("pipenv", "run"), ("pdm", "run"), ("hatch", "run"),
+                            ("rye", "run"), ("conda", "run"), ("npm", "exec"), ("pnpm", "exec"), ("pnpm", "dlx"),
+                            ("yarn", "exec"), ("yarn", "dlx"), ("bundle", "exec")))
+# ... or a test file run directly: ./run-tests.sh, python3 tests/test_week.py, gjs -m tests/test_logic.js
+SCRIPT_RUNNER = re.compile(r"(?:python|pypy)[\d.]*|nodejs|node|gjs|bash|sh|zsh|dash|ksh|ruby|perl|php|tsx|ts-node")
+SOURCE_FILE = re.compile(r"\.(?:py|[cm]?js|[cm]?ts|sh|bash|rb|pl|php)$")
+INFO_ONLY = frozenset(("--version", "-V", "--help", "-h"))
+SHELL_SPLIT = re.compile(r"&&|\|\||\$\(|[;|&()`]")
+REDIRECT = re.compile(r"\d*[<>]&\d*-?")
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 BASH_LINE = re.compile(rb'"name":\s*"Bash"')
 
 
@@ -2958,10 +2974,56 @@ QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\\\]|\\\\.)*\"")
 
 def is_test_run(command):
     """Does a Bash command run tests? Its first line, quotes left out (not
-    a script it pipes in, nor a commit message that names a test tool)."""
+    a script it pipes in, nor a commit message that names a test tool), each
+    command of it."""
     if not isinstance(command, str):
         return False
-    return bool(TEST_COMMAND.search(QUOTED.sub("''", command.split("\n", 1)[0])))
+    line = REDIRECT.sub(" ", QUOTED.sub("''", command.split("\n", 1)[0]))
+    return any(runs_tests(part.split()) for part in SHELL_SPLIT.split(line))
+
+
+def test_file(path):
+    name = path.rsplit("/", 1)[-1].lower()
+    return "test" in name and name != "test"  # (not the shell's test)
+
+
+def runs_tests(words):
+    """Do these words (one command) run tests (is_test_run)?"""
+    i = 0
+    while i < len(words):  # past VAR=… and what runs the command
+        name = words[i].rsplit("/", 1)[-1]
+        if ASSIGNMENT.match(words[i]):
+            i += 1
+        elif name in TEST_WRAPPERS or tuple(words[i:i + 2]) in TEST_LAUNCHERS:
+            i += 1 if name in TEST_WRAPPERS else 2
+            while i < len(words) and (words[i].startswith("-") or ASSIGNMENT.match(words[i])
+                                      or (name == "timeout" and words[i][:1].isdigit())):
+                i += 1
+        else:
+            break
+    if i >= len(words):
+        return False
+    name, args = words[i].rsplit("/", 1)[-1], words[i + 1:]
+    if args and set(args) <= INFO_ONLY:  # (pytest --version)
+        return False
+    if name in TEST_TOOLS or (args and args[0] in TEST_VERBS.get(name, ())):
+        return True
+    if name in ("npm", "pnpm", "yarn", "bun"):
+        script = args[1:] if args[:1] == ["run"] else args
+        return bool(script) and (script[0].startswith("test") or (name in ("pnpm", "yarn") and script[0] in TEST_TOOLS))
+    if name in TEST_TARGETS:
+        return any(a == "test" or a.endswith(":test") or (name == "make" and re.match(r"(?:test|check)\b", a))
+                   for a in args if not a.startswith("-"))
+    if SCRIPT_RUNNER.fullmatch(name):
+        if name.startswith(("python", "pypy")) and "-c" in args:
+            return False
+        if name.startswith(("python", "pypy")) and "-m" in args:
+            j = args.index("-m")
+            module = args[j + 1] if j + 1 < len(args) else ""
+            return "test" in module.rsplit(".", 1)[-1] or module in TEST_TOOLS
+        script = next((a for a in args if not a.startswith("-") and ("/" in a or SOURCE_FILE.search(a))), None)
+        return script is not None and test_file(script)
+    return "/" in words[i] and test_file(words[i])
 
 
 def fold_tests(rec, e):
