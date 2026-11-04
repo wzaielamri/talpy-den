@@ -112,7 +112,7 @@ function Prompts({ prompts: p, host, rules: suggest, reload, change: busyKey, se
 
   return (
     <section class="week-section">
-      <h2>{host ? `Permission prompts on ${host}, last 7 days` : "Permission prompts, last 7 days"}</h2>
+      <h2>{host ? `Permission prompts on ${hostLabel(host)}, last 7 days` : "Permission prompts, last 7 days"}</h2>
       <div>{p.answered ? promptsText(p) : `You answered no permission prompts on ${host || "this computer"} in the last 7 days.`}</div>
       {p.byTool.length ? <div class="small muted">For: {p.byTool.map(([tool, n]) => `${tool} ${n}`).join(" · ")}</div> : null}
       {rules.length ? (
@@ -181,7 +181,7 @@ function Granted({ granted, host, reload, change: busyKey, setChange, said }: {
   const shown = all ? granted : granted.slice(0, GRANTED_FEW);
   return (
     <section class="week-section">
-      <h2>{host ? `Permissions you gave on ${host}` : "Permissions you gave"}</h2>
+      <h2>{host ? `Permissions you gave on ${hostLabel(host)}` : "Permissions you gave"}</h2>
       <div class="small muted">{grantedIntro(granted, host)}</div>
       <ul class="week-rules">
         {shown.map((g) => (

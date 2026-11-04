@@ -9,6 +9,7 @@ import {
   handoverTarget,
   hasPeek,
   hasTurn,
+  hostLabel,
   keptChat,
   keptTitle,
   machineStatus,
@@ -187,7 +188,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
             <Tag
               icon={I.plan}
               text="Plan"
-              title={`${s.plan.title}\nThe plan this chat made. Click to read it in the Markdown preview${host && host !== view.hosts.find((h) => h.current)?.name ? ` (a copy, fetched from ${host})` : " (its Open Source button edits it)"}.`}
+              title={`${s.plan.title}\nThe plan this chat made. Click to read it in the Markdown preview${host && host !== view.hosts.find((h) => h.current)?.name ? ` (a copy, fetched from ${hostLabel(host)})` : " (its Open Source button edits it)"}.`}
               onClick={() => post({ type: "openPlan", chat })}
             />
           ) : null}

@@ -1,7 +1,7 @@
 // The Recap tab's words and numbers (webview/components/WeekView.tsx), from
 // the recap of the widget's week.py; here, so the tests can read them.
 
-import { clockText, dayLabel, plural } from "./model";
+import { clockText, dayLabel, hostLabel, plural } from "./model";
 import type {
   LimitAccount, LimitChange, LimitEvent, LimitHistory, LimitPeriod, LimitTokens, WeekDay, WeekGrant, WeekNumbers, WeekPlanWindow, WeekRecap, WeekRule,
   WeekSpan, WeekSum,
@@ -397,10 +397,11 @@ export function ruleMeaning(r: { kind: string; value: string }): "folder" | "edi
 }
 
 export function grantedIntro(granted: WeekGrant[], host = ""): string {
-  if (!granted.length) return `Nothing lets chats on ${host || "this computer"} skip a permission prompt: they ask you each time.`;
+  const name = host ? hostLabel(host) : "";
+  if (!granted.length) return `Nothing lets chats on ${name || "this computer"} skip a permission prompt: they ask you each time.`;
   return host
-    ? `What lets chats on ${host} go without asking you, as listed there: its settings, its trusted folders, and the .claude ` +
-      `settings of the folders Claude ran in. Revoke takes one out of its file on ${host}.`
+    ? `What lets chats on ${name} go without asking you, as listed there: its settings, its trusted folders, and the .claude ` +
+      `settings of the folders Claude ran in. Revoke takes one out of its file on ${name}.`
     : "What lets chats on this computer go without asking you: your settings and your administrator's, the folders you " +
       "trusted, the .claude settings of the folders Claude ran in, and what you approved in them. Revoke takes one out of its file.";
 }

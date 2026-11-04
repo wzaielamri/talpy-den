@@ -1,4 +1,4 @@
-import { ago, folderIn } from "../../src/shared/model";
+import { ago, folderIn, hostLabel } from "../../src/shared/model";
 import type { Group, Memory } from "../../src/shared/types";
 import { post } from "../env";
 import { deleteHint, hideHint } from "../util/chat";
@@ -40,8 +40,8 @@ export function MemoryLine({ memory: m, group, project, accountTag }: { memory: 
           `${m.name}\n` +
           (m.description ? `${m.description}\n` : "") +
           (m.type ? `\nKind: ${m.type}` : "") +
-          (m.folder ? `\nFolder: ${host ? `${host}:` : ""}${m.folder}${m.folderGone ? " (not there any more)" : ""}` : "") +
-          (elsewhere ? `\n\nOpen it from a VS Code window connected to ${host}.` : "\n\nClick to read it.")
+          (m.folder ? `\nFolder: ${host ? `${hostLabel(host)}:` : ""}${m.folder}${m.folderGone ? " (not there any more)" : ""}` : "") +
+          (elsewhere ? `\n\nOpen it from a VS Code window connected to ${hostLabel(host)}.` : "\n\nClick to read it.")
         }
         onClick={() => !elsewhere && post(ref())}
       >

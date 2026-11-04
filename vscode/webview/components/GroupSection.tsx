@@ -64,10 +64,10 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
   const statsOpen = !!stats && !!ui.stats[key];
 
   return (
-    <section class="group" aria-label={(host ? host + ": " : "") + g.title}>
+    <section class="group" aria-label={(host ? hostLabel(host) + ": " : "") + g.title}>
       <div class="group-head">
         {/* (a host's name is in its section's head: not again before each of its accounts) */}
-        <h3 class="group-title" title={(host ? host + ": " : "") + g.title}>
+        <h3 class="group-title" title={(host ? hostLabel(host) + ": " : "") + g.title}>
           {g.title}
         </h3>
         {g.defaultHere && accounts > 1 ? (
@@ -117,7 +117,7 @@ export function GroupSection({ group: g, accounts = 1 }: { group: Group; account
                 class="link"
                 title={
                   host
-                    ? `Opens a terminal with Claude's own login on ${host} (over ssh): open the address it shows in your browser, sign in, and paste the code you get back.`
+                    ? `Opens a terminal with Claude's own login on ${hostLabel(host)} (over ssh): open the address it shows in your browser, sign in, and paste the code you get back.`
                     : "Opens a terminal with Claude's own login (claude auth login): sign in in your browser with the account for this folder. Talpy Den never sees the login."
                 }
                 onClick={() => post(host ? { type: "login", groupId: g.id, host } : { type: "login", groupId: g.id })}

@@ -1,4 +1,4 @@
-import { ago, folderIn, machineStatus, shareAccounts } from "../../src/shared/model";
+import { ago, folderIn, hostLabel, machineStatus, shareAccounts } from "../../src/shared/model";
 import type { Group, PlanItem } from "../../src/shared/types";
 import { post } from "../env";
 import { deleteHint, hideHint } from "../util/chat";
@@ -60,9 +60,9 @@ export function PlanLine({ plan: p, group, project, accountTag, chatGoneCard }:
         title={
           `${p.title}\n` +
           (copy
-            ? `Click to read it: a copy, fetched from ${host}.`
+            ? `Click to read it: a copy, fetched from ${hostLabel(host)}.`
             : "Click to read it in the Markdown preview. Its Open Source button edits it: what you change there is the plan.") +
-          (p.cwd ? `\nFolder: ${host ? `${host}:` : ""}${p.cwd}` : "") +
+          (p.cwd ? `\nFolder: ${host ? `${hostLabel(host)}:` : ""}${p.cwd}` : "") +
           (p.shared ? "\nShared with your other accounts." : "") +
           (p.inProject ? "\nIn its project's plans folder: every account has it." : "") +
           (p.chatId ? "" : "\nThe chat that made it isn't here any more.")

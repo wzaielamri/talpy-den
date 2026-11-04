@@ -1,4 +1,4 @@
-import { chatRefOf, doingText, duration, focusLists, liveMatch, petKeyOf, stateText } from "../../src/shared/model";
+import { chatRefOf, doingText, duration, focusLists, hostLabel, liveMatch, petKeyOf, stateText } from "../../src/shared/model";
 import type { Group } from "../../src/shared/types";
 import { post } from "../env";
 import { pets } from "../pets";
@@ -66,7 +66,7 @@ export function FocusLine({ item, finished = false }: { item: FocusItem; finishe
       title={`${s.name}\n${what}\nClick to open this chat`} onClick={() => post({ type: "open", chat: chatRefOf(s, host) })}>
       <span class="pet-bar" style={{ background: color || "transparent" }} aria-hidden="true" />
       <span class={"focus-dot" + (finished ? "" : " " + dotClass(s))} aria-hidden="true" />
-      <span class="focus-name">{(host ? host + ": " : "") + s.name}</span>
+      <span class="focus-name">{(host ? hostLabel(host) + ": " : "") + s.name}</span>
       <span class="focus-what">{what}</span>
       {/* (with no step known, the state's text says how long itself) */}
       {doing && s.since ? <span class="focus-time small muted">{duration(view.now - s.since)}</span> : null}

@@ -62,7 +62,7 @@ export function canShareRecent(status: Status | null | undefined): boolean {
 }
 
 export function shareTitle(host?: string): string {
-  return `Continue on another account…\nShare this chat with your other accounts${host ? ` on ${host}` : ""} and pick it up there, or keep it on one account only.`;
+  return `Continue on another account…\nShare this chat with your other accounts${containerOf(host) ? ` in ${hostLabel(host!)}` : host ? ` on ${host}` : ""} and pick it up there, or keep it on one account only.`;
 }
 
 // Removing only hides a finished row, also one whose process is still there,
@@ -128,7 +128,7 @@ export function sharedTagTitle(s: Session): string {
 
 // Hide's tooltip, after its name: nothing is deleted, and what brings it back
 export function hideHint(kind: HiddenKind, host?: string): string {
-  const back = host ? `The eye button next to ${host}'s name brings it back.`
+  const back = host ? `The eye button next to ${hostLabel(host)}'s name brings it back.`
     : `Show Hidden ${HIDDEN_NOUNS[kind][2]} Again (the view's ⋯ menu) brings it back.`;
   return "Only hides it here; nothing is deleted. " + (kind === "chats" ? "It comes back if the chat runs again. " : "") + back;
 }
