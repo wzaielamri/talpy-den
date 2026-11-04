@@ -3476,8 +3476,21 @@ def finished_reply(e):
             and isinstance(msg, dict) and isinstance(msg.get("stop_reason"), str))
 
 
-def shared_transcripts(folder):
-    """Shared (hard-linked) transcripts in a project folder."""
+def shared_transcripts(folder, ctx):
+    """Shared (hard-linked) transcripts in a project folder, by name. A status
+    check takes them from its list of every transcript (all_transcripts, made
+    before its rows), once per check; else the folder is read."""
+    listed = getattr(ctx, "transcripts", None)
+    if listed is not None:
+        by_folder = getattr(ctx, "shared_files", None)
+        if by_folder is None:
+            by_folder = ctx.shared_files = {}
+            for _t, _p, f, st in listed:
+                if st.st_nlink > 1:
+                    by_folder.setdefault(f.parent, []).append(f)
+            for files in by_folder.values():
+                files.sort()
+        return by_folder.get(folder, [])
     try:
         files = sorted(folder.glob("*.jsonl"))
     except OSError:
@@ -3509,7 +3522,7 @@ def continued_from(profile, ids, cwd, ctx):
     background session that took the chat over gets an id of its own)."""
     wanted = {i for i in ids if valid_id(i)}
     for folder in project_folders(profile, ids, cwd):
-        for t in shared_transcripts(folder):
+        for t in shared_transcripts(folder, ctx):
             rec = ctx.links.transcript(t)
             if rec and any(c[0] in wanted for c in rec["conts"]) and t.stem not in wanted:
                 return t.stem
@@ -3526,7 +3539,7 @@ def copied_from(profile, session_id, ctx):
     uuid = ctx.links.first_uuid(path)
     if not uuid:
         return None
-    for t in shared_transcripts(path.parent):
+    for t in shared_transcripts(path.parent, ctx):
         if t != path and ctx.links.holds(t, uuid):
             return t.stem
     return None
@@ -9335,6 +9348,7 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
             if with_tokens:
                 prune_token_caches(cache_root, profiles, now)
 
+        all_transcripts(ctx)  # (once per check, now: the rows find shared chats in it, shared_transcripts)
         # Every live session process, under the profile it runs on now
         rows = {p.real: [] for p in profiles}
         live_jobs = set()
