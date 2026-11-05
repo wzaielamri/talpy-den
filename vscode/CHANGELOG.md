@@ -4,6 +4,19 @@
 
 ### New
 
+- **Search and folds in Talpy Chat:** **Ctrl+F** (*Talpy Chat: Find in the
+  Chat*) opens a find bar over the conversation's top right: what you type is
+  found in what the tab shows (on Steps, what each step ran and got too), the
+  matches near what you read marked in VS Code's own find colours, and the
+  conversation stays where you read until you go to one: **Enter** or **F3**
+  the next one from what you read, **Shift+Enter** or **Shift+F3** the one
+  before (*3 of 12*); one in a folded part unfolds it first; **Esc** closes
+  it. A message, reply or command output longer than about 40 lines shows its
+  first 24 with *Show more · N more lines* (and *Show less*); a step's long
+  output too. What the tab first read folds, but Claude's last reply then;
+  what comes in while it's open doesn't. **Ctrl+O** (*Talpy Chat: Unfold or
+  Fold Everything*) unfolds everything, each step's details on Steps too, a
+  few a frame, and again folds each back as it was.
 - **Keys in Talpy Chat:** each a command, *Talpy Chat: …*, whose key applies
   only while a Talpy Chat tab has the focus (never with it in the terminal or
   the side bar), and can be changed in Keyboard Shortcuts: **Ctrl+Enter**

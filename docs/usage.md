@@ -65,6 +65,8 @@
 | Alt+Y / Alt+A / Alt+N | Allow once / Always allow / Deny… what it asks (a plan: Approve / Approve, accept edits / Keep planning…; questions: Decline…) |
 | PageUp / PageDown | Scroll the conversation a page, from the box too |
 | Ctrl+↑ / Ctrl+↓ | Your previous / next message (past the last: the end) |
+| Ctrl+F | Search the chat: a find bar over its top right; Enter or F3 the next match, Shift+Enter or Shift+F3 the one before, Esc closes it |
+| Ctrl+O | Unfold or fold everything: long messages, and each step's details on the Steps tab |
 | Ctrl+1 / Ctrl+2 / Ctrl+3 | The Chat, Steps and Review tabs |
 | Ctrl+T | Show or hide the chat's tasks |
 | Ctrl+Shift+C | Copy Claude's last reply, as Markdown (all of it) |
@@ -73,7 +75,7 @@
 | Ctrl+Shift+O | Open its window (a background chat: in a terminal) |
 | Ctrl+W | Close Talpy Chat's window |
 | Ctrl+Tab / Ctrl+Shift+Tab | Your other Talpy Chat windows, the last one in front first |
-| Esc | Closes what's open first, one a press: a menu, the big picture, the `/` and `@` list, the list of keys, the grey completion; then, in an empty box while Claude works, **Stop** |
+| Esc | Closes what's open first, one a press: a menu, the big picture, the `/` and `@` list, the find bar, the list of keys, the grey completion; then, in an empty box while Claude works, **Stop** |
 
 ## Settings
 
