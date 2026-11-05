@@ -3,7 +3,7 @@
 // waits for a permission, and its review (what it changed, Undo, Commit,
 // Mark reviewed). Shared by the extension and the tab's page.
 
-import { formatTokens, hostLabel } from "./model";
+import { clockText, formatTokens, hostLabel } from "./model";
 import type { Answers, AskShown, Decision, PermissionAsk, Question, QueuedTask, RecentChat, Review, Session, SessionState, Status } from "./types";
 
 // One item of a chat's conversation (pane.py: conversation_items)
@@ -766,6 +766,67 @@ export function turnHint(t: TurnSoFar, now: number): string {
 export function turnTickIn(t: TurnSoFar, now: number): number {
   const ms = Math.max(0, now - t.startedAt);
   return ms < 60000 ? 1000 - (ms % 1000) : 60000 - (ms % 60000);
+}
+
+// Times in the conversation (Plasma ChatPane, the same words and rules): a line before the first
+// item of each new day, none before the first item shown ("Today", "Yesterday", "Mon 3 Nov"; the
+// year when it isn't this one), and a message's time on hover ("14:32"; "Yesterday 14:32",
+// "Mon 3 Nov 14:32" for an earlier day). A day starts only with a later day than any before it (a
+// message still in Claude's queue is listed last, with the time you sent it); items with no time
+// start none
+function dayStart(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+export function dayLabel(at: number, now: number): string {
+  const d = new Date(at);
+  const days = Math.round((dayStart(now) - dayStart(at)) / 86_400_000);
+  if (days <= 0) return "Today";   // (a host's clock a little ahead: today too)
+  if (days === 1) return "Yesterday";
+  return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short",
+                                    ...(d.getFullYear() !== new Date(now).getFullYear() ? { year: "numeric" } : {}) });
+}
+export function timeText(at: number, now: number): string {
+  return dayStart(at) >= dayStart(now) ? clockText(at) : `${dayLabel(at, now)} ${clockText(at)}`;
+}
+// The keys of the items a day's line comes before, of those the tab shows (showsOn: on the Chat
+// tab, a day with only tool calls has no line); Date is made once a day, not once an item
+export function dayBreaks(items: readonly PaneItem[], steps: boolean): Set<string> {
+  const out = new Set<string>();
+  let end = 0;   // (when the latest day so far ends, ms)
+  for (const it of items) {
+    if (!it.at || it.at < end || !showsOn(it, steps)) continue;
+    if (end) out.add(it.key);
+    const d = new Date(it.at);
+    end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+  }
+  return out;
+}
+
+// Copy, on a message's hover: Claude's reply as Markdown, as the transcript has it (not as it's
+// shown), yours as you typed it (a command too: "/compact", "!ls"); nothing for other items
+export function copyText(it: PaneItem): string {
+  return it.kind === "claude" || it.kind === "you" ? it.text ?? "" : "";
+}
+
+// Does it show on that tab: Chat leaves out Claude's tool calls, but not a question or a plan you
+// answered, nor a call you denied with a note
+export function showsOn(it: PaneItem, steps: boolean): boolean {
+  return steps || it.kind !== "tool" || askedShows(it) || it.asked?.state === "denied";
+}
+// The "3 new" badge at the list's bottom while you're scrolled up: what came in below since you
+// left its end (seen: the keys there then), after the last of those, that its tab shows (earlier
+// ones, Show earlier's, are above). A click goes to the end; it's gone once you're there
+export function newBelow(seen: ReadonlySet<string>, items: readonly PaneItem[], steps: boolean): number {
+  let n = 0;
+  for (let i = items.length - 1; i >= 0 && !seen.has(items[i].key); i--) if (showsOn(items[i], steps)) n++;
+  return n;
+}
+export function newText(n: number): string {
+  return `${n} new`;
+}
+export function newHint(n: number): string {
+  return `${n === 1 ? "One new item" : `${n} new items`} below, since you scrolled up. Click to go to the end.`;
 }
 
 // Suggested replies (Plasma ChatPane, the same rules and words): small chips above the box once

@@ -3362,6 +3362,7 @@ body.vscode-high-contrast-light .pane {
 }
 
 .pane-list {
+  position: relative; /* (the hovered message's time and Copy scroll with it: .pane-hoverbar) */
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -3803,6 +3804,92 @@ body.vscode-high-contrast-light .pane {
 .pane-note.bad::before,
 .pane-note.bad::after {
   border-color: var(--cs-failed);
+}
+
+/* A line between days: ── Yesterday ── (lighter than a note, upright) */
+.pane-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 1.4em;
+  color: var(--cs-muted);
+  font-size: 0.8em;
+  font-weight: 600;
+  text-align: center;
+}
+
+.pane-day::before,
+.pane-day::after {
+  content: "";
+  flex: 1 1 0;
+  border-top: 1px solid color-mix(in srgb, var(--cs-border) 70%, transparent);
+}
+
+/* The hovered message's time and Copy, over its top right corner (one for the list) */
+.pane-hoverbar {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 3px 4px 0 0;
+  padding: 1px 2px 1px 8px;
+  border: 1px solid var(--cs-border);
+  border-radius: 4px;
+  background: var(--cs-bg);
+  color: var(--cs-muted);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+.pane-hoverbar .pane-when {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* (Copy and Copied in one place: the button is as wide with either) */
+.pane-swap {
+  display: inline-grid;
+}
+
+.pane-swap > span {
+  grid-area: 1 / 1;
+}
+
+.pane-swap > .off {
+  visibility: hidden;
+}
+
+/* "3 new ↓": at the bottom of the list while you're scrolled up and something came in below;
+   held there (sticky, no height of its own), over the list, so nothing moves */
+.pane-below-at {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  align-self: center;
+  width: 0;
+  height: 0;
+}
+
+.pane-below {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  transform: translateX(-50%);
+  padding: 2px 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 999px;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+  font: inherit;
+  font-size: 0.85em;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.pane-below:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
 }
 
 /* While it works: Talpy thinking and what it's doing, in the working color */

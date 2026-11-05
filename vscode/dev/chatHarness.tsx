@@ -314,6 +314,35 @@ if (params.get("commands") === "1") {
   Object.assign(chat, { state: "done", stateText: "done 1 min ago", busy: false, atWork: false, permission: null, queued: null, activity: "" });
 }
 
+// ?days=1: the conversation over three days: a line before each new day's first item (yesterday's
+// before a tool call, which the Chat tab leaves out), none before the first
+if (params.get("days") === "1") {
+  const d = new Date(now);
+  const at = (back: number, h: number, m: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - back, h, m).getTime();
+  const times = [at(9, 10, 2), at(9, 10, 3), at(1, 23, 58), at(1, 23, 59), at(0, 0, 4), at(0, 0, 6), at(0, 0, 7), at(0, 0, 8), at(0, 9, 30), at(0, 9, 31)];
+  items.forEach((it, i) => (it.at = times[i] ?? it.at));
+}
+
+// ?hover=KEY: the pointer on that message (its time and Copy at its top right); &copy=1: Copy clicked
+const hover = params.get("hover");
+if (hover)
+  setTimeout(() => {
+    const row = document.querySelector<HTMLElement>(`[data-key="${CSS.escape(hover)}"]`);
+    row?.querySelector(".pane-you-text, .pane-body")?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    if (params.get("copy") === "1") setTimeout(() => document.querySelector<HTMLButtonElement>(".pane-hoverbar button")?.click(), 1600);
+  }, 700);
+
+// ?below=1: scrolled up to the top, then Claude goes on: "N new ↓" at the list's bottom
+if (params.get("below") === "1")
+  setTimeout(() => {
+    const list = document.querySelector<HTMLElement>(".pane-list");
+    if (list) list.scrollTop = 0;
+    setTimeout(() => send({ type: "conversation", answer: { ok: true, more: true, stamp: "2", items: [...items,
+      { kind: "claude", key: "b1", text: "The parser tests pass now: **14 passed**.", at: Date.now() },
+      { kind: "tool", key: "b2", name: "Bash", line: "Bash: npm test", status: "ok", summary: "120 passed", at: Date.now() },
+      { kind: "claude", key: "b3", text: "And the whole suite too. Shall I commit?", at: Date.now() }] } }), 300);
+  }, 700);
+
 // ?stop=1 (or fail): Stop clicked at once ("Stopping…")
 if (params.get("stop")) setTimeout(() => document.querySelector<HTMLButtonElement>(".pane-stop")?.click(), 300);
 

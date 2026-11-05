@@ -6,7 +6,7 @@
 
 import { Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -55,6 +55,56 @@ function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
     return () => window.clearTimeout(timer);
   }, [turn.startedAt, shown]);
   return <span class="pane-working-meta" title={turnHint(turn, now)}>{turnText(turn, now)}</span>;
+}
+
+// On the message under the pointer (yours, or Claude's reply): its time, and Copy (copyText: a
+// reply as Markdown, yours as you typed it), at its top right corner, over it, so nothing moves.
+// One for the list, moved to the message hovered: a long chat has nothing more for each message
+// (its time is worked out only here), and Copied says it for a moment, as a code block's Copy
+function HoverBar({ list, itemOf }: { list: { current: HTMLDivElement | null }; itemOf: (key: string) => PaneItem | undefined }) {
+  const [on, setOn] = useState<{ key: string; top: number; right: number } | null>(null);
+  const [copied, setCopied] = useState("");
+  useEffect(() => {
+    if (!copied) return undefined;
+    const t = setTimeout(() => setCopied(""), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  useEffect(() => {
+    const el = list.current;
+    if (!el) return undefined;
+    const over = (e: MouseEvent) => {
+      const t = e.target as Element | null;
+      if (!t || t.closest(".pane-hoverbar")) return;
+      const row = t.closest<HTMLElement>(".pane-you[data-key], .pane-claude[data-key]:not(.pane-asked)");
+      const next = row && row.parentElement === el
+        ? { key: row.dataset.key ?? "", top: row.offsetTop, right: el.clientWidth - row.offsetLeft - row.offsetWidth } : null;
+      setOn((was) => (was && next && was.key === next.key && was.top === next.top && was.right === next.right) || was === next ? was : next);
+    };
+    const out = () => setOn(null);
+    el.addEventListener("mouseover", over);
+    el.addEventListener("mouseleave", out);
+    return () => {
+      el.removeEventListener("mouseover", over);
+      el.removeEventListener("mouseleave", out);
+    };
+  }, []);
+  const it = on ? itemOf(on.key) : undefined;
+  if (!on || !it) return null;
+  const done = copied === on.key;
+  return (
+    <div class="pane-hoverbar" style={{ top: `${on.top}px`, right: `${on.right}px` }}>
+      {it.at ? <span class="pane-when">{timeText(it.at, Date.now())}</span> : null}
+      <button type="button" class={done ? "md-copy copied" : "md-copy"}
+        title={it.kind === "claude" ? "Copy this reply, as Markdown" : "Copy your message, as you wrote it"}
+        onClick={() => {
+          post({ type: "copy", text: copyText(it) });
+          setCopied(on.key);
+        }}>
+        {/* (both words in one place: as wide with Copied as with Copy) */}
+        <span class="pane-swap"><span class={done ? "off" : ""}>Copy</span><span class={done ? "" : "off"} aria-hidden={!done}>Copied</span></span>
+      </button>
+    </div>
+  );
 }
 
 // A tool call: ● Bash  npm test in green, red, or (still going) blinking,
@@ -306,6 +356,13 @@ function ChatApp() {
   const [shown, setShown] = useState(true); // (the tab in front: its working Talpy moves only then)
   const list = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
+  // What came in below while you're scrolled up (the "3 new" badge): the keys there when you
+  // left the end, till you're back at it
+  const [seen, setSeen] = useState<ReadonlySet<string> | null>(null);
+  const seenNow = useRef<ReadonlySet<string> | null>(null);
+  // Today, for the lines between days ("Today", "Yesterday"): moved on at midnight, only while
+  // the tab shows (one timer, once a day), and when it shows again on another day
+  const [today, setToday] = useState(() => Date.now());
   const reply = useRef<HTMLTextAreaElement>(null);
 
   // Pictures pasted into the reply: saved by the extension (an SSH host's chat
@@ -689,6 +746,18 @@ function ChatApp() {
     return () => clearTimeout(t);
   }, [info]);
 
+  useEffect(() => {
+    if (!shown) return undefined;
+    const now = new Date();
+    if (new Date(today).toDateString() !== now.toDateString()) {
+      setToday(now.getTime());
+      return undefined;
+    }
+    const t = setTimeout(() => setToday(Date.now()),
+                         new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime() + 1000);
+    return () => clearTimeout(t);
+  }, [shown, today]);
+
   // Stop's "Stopping…": till its turn ends (or another chat shows), else back in 15 s
   const stopCan = stopOf(chat).can;
   useEffect(() => {
@@ -977,7 +1046,29 @@ function ChatApp() {
                                  ...(/^[/!]\S/.test(p.text) ? { command: p.text.startsWith("!") ? { shell: true } : {} } : {}) }))]
     : items), [items, outgoing, answersOut]);
   const answeringFor = useMemo(() => new Set(answersOut.map((p) => p.for).filter(Boolean)), [answersOut]);
+  const shownNow = useRef(shownItems);   // (the hovered message's, HoverBar)
+  shownNow.current = shownItems;
+  // A line before the first item of each new day (dayBreaks), and what came in below since you scrolled up
+  const breaks = useMemo(() => dayBreaks(shownItems, tab === "steps"), [shownItems, tab]);
+  const unseen = useMemo(() => (seen ? newBelow(seen, shownItems, tab === "steps") : 0), [seen, shownItems, tab]);
+  const toEnd = () => {
+    const el = list.current;
+    follow.current = true;
+    seenNow.current = null;
+    setSeen(null);
+    if (el) el.scrollTop = el.scrollHeight;
+  };
   const steps = useMemo(() => shownItems.map((it, i) => {
+    const item = shownStep(it, i);
+    // (the first item of a new day the tab shows: its line before it)
+    return breaks.has(it.key) && it.at ? (
+      <Fragment key={it.key}>
+        <div class="pane-day" role="separator"><span>{dayLabel(it.at, today)}</span></div>
+        {item}
+      </Fragment>
+    ) : item;
+  }), [shownItems, open, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today]);
+  function shownStep(it: PaneItem, i: number) {
     const gap = gapOf(it.kind, shownItems[i - 1]?.kind, !!it.answered);
     // (queued: grey, as Claude's terminal shows it, with what becomes of it: held a moment,
     // Edit / Send now / Cancel, then in Claude's queue till it takes it in at its next step)
@@ -1048,7 +1139,7 @@ function ChatApp() {
         <span>{it.text}</span>
       </div>
     );
-  }), [shownItems, open, asking, going, split, tab, held ? now : 0, answeringFor]);
+  }
 
   return (
     <div class="pane pane-grow" style={{ "--pane-scale": String(scale), ...(font ? { "--pane-font": font } : {}) }}>
@@ -1155,6 +1246,11 @@ function ChatApp() {
               const el = e.currentTarget;
               listTop.current = el.scrollTop;
               follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+              // (left the end: what's there now is what you saw; back at it, nothing is new)
+              if (follow.current === !!seenNow.current) {
+                seenNow.current = follow.current ? null : new Set(shownNow.current.map((it) => String(it.key)));
+                setSeen(seenNow.current);
+              }
             }}
             onWheel={(e) => {
               if (!e.ctrlKey) return;
@@ -1192,6 +1288,15 @@ function ChatApp() {
                     <Icon name={I.stopTurn} />{stopping ? "Stopping…" : "Stop"}
                   </button>
                 ) : null}
+              </div>
+            ) : null}
+            <HoverBar list={list} itemOf={(key) => shownNow.current.find((it) => it.key === key)} />
+            {/* (at the list's bottom, over it: it moves nothing; gone at the end) */}
+            {unseen > 0 ? (
+              <div class="pane-below-at">
+                <button type="button" class="pane-below" title={newHint(unseen)} onClick={toEnd}>
+                  {newText(unseen)}<span aria-hidden="true"> ↓</span>
+                </button>
               </div>
             ) : null}
           </div>

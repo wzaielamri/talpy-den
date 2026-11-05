@@ -9,8 +9,8 @@ import { mock, test } from "node:test";
 import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
-import { chatRefOf } from "../src/shared/model";
-import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { chatRefOf, clockText } from "../src/shared/model";
+import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1305,4 +1305,73 @@ test("completion as you type: the rest of your usual reply that starts so, this 
   for (const none of ["", "  ", "continue", "x", "/co", "!co", "co\nmore"]) assert.equal(completionOf(none, usual), "", none);
   assert.equal(completionOf("co", null), "");
   assert.equal(completionOf("co", usual, null, new Set(["continue"])), "mmit and push");
+});
+
+test("times: a line before each new day (none before the first; Today, Yesterday, Mon 3 Nov, the year when not this one), a message's time on hover", () => {
+  const at = (day: number, h: number, m = 0, month = 10, year = 2026) => new Date(year, month, day, h, m).getTime();
+  const now = at(5, 15);
+  assert.equal(dayLabel(at(5, 0, 1), now), "Today");
+  assert.equal(dayLabel(at(4, 23, 59), now), "Yesterday");
+  assert.equal(dayLabel(at(5, 15, 5), now), "Today");   // (a host's clock a little ahead)
+  const nov3 = new Date(2026, 10, 3, 9);
+  assert.equal(dayLabel(nov3.getTime(), now), nov3.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }));
+  assert.doesNotMatch(dayLabel(nov3.getTime(), now), /2026/);
+  assert.match(dayLabel(at(31, 9, 0, 11, 2025), now), /2025/);
+  assert.equal(timeText(at(5, 9, 30), now), clockText(at(5, 9, 30)));
+  assert.equal(timeText(at(4, 22), now), `Yesterday ${clockText(at(4, 22))}`);
+  assert.equal(timeText(nov3.getTime(), now), `${dayLabel(nov3.getTime(), now)} ${clockText(nov3.getTime())}`);
+  // a line before the first item of each later day; none before the first item, nor for items with no
+  // time, nor for one listed after a later day (a message still queued: the time you sent it)
+  const items = [
+    { kind: "you" as const, key: "a", at: at(3, 23, 50) },
+    { kind: "tool" as const, key: "b", at: at(3, 23, 59) },
+    { kind: "tool" as const, key: "c", at: at(4, 0, 2) },
+    { kind: "claude" as const, key: "d", at: at(4, 0, 5) },
+    { kind: "note" as const, key: "e", at: null },
+    { kind: "you" as const, key: "f", at: at(5, 9) },
+    { kind: "claude" as const, key: "g", at: at(5, 9, 1) },
+    { kind: "you" as const, key: "h", at: at(4, 23), queued: true },
+  ];
+  assert.deepEqual([...dayBreaks(items, true)], ["c", "f"]);
+  assert.deepEqual([...dayBreaks(items, false)], ["d", "f"]);   // (Chat: before the day's first item it shows)
+  assert.deepEqual([...dayBreaks(items.slice(2), true)], ["f"]);
+  assert.deepEqual([...dayBreaks([{ kind: "you", key: "x", at: null }, ...items.slice(5)], true)], []);
+  // (a day of tool calls only: a line on Steps, none on Chat)
+  const night = [items[0], { kind: "tool" as const, key: "n", at: at(4, 1) }, items[5]];
+  assert.deepEqual([...dayBreaks(night, true)], ["n", "f"]);
+  assert.deepEqual([...dayBreaks(night, false)], ["f"]);
+});
+
+test("Copy on a message: Claude's reply as Markdown, yours as you typed it, a command too; nothing for the rest", () => {
+  const md = "Found it: `isoWeek` caps weeks at 52.\n\n## What changes\n\n1. Use `weeksInYear(date)`\n\n```ts\nreturn 1;\n```";
+  assert.equal(copyText({ kind: "claude", key: "m", text: md, at: 1 }), md);
+  assert.equal(copyText({ kind: "you", key: "u", text: "[Image: /tmp/a.png] look at this", at: 1 }), "[Image: /tmp/a.png] look at this");
+  assert.equal(copyText({ kind: "you", key: "c", text: "!ls src", at: 1, command: { shell: true, output: "a\nb" } }), "!ls src");
+  assert.equal(copyText({ kind: "you", key: "c", text: "/model fable", at: 1, command: {} }), "/model fable");
+  assert.equal(copyText({ kind: "tool", key: "t", name: "Bash", line: "Bash: ls", output: "a", at: 1 }), "");
+  assert.equal(copyText({ kind: "note", key: "n", text: "Interrupted", at: 1 }), "");
+});
+
+test("the new-messages badge: what came in below since you scrolled up, as its tab shows it", () => {
+  const seen = new Set(["u1", "m1", "t1"]);
+  const items = [
+    { kind: "you" as const, key: "u1", text: "Fix it", at: 1 },
+    { kind: "claude" as const, key: "m1", text: "On it", at: 2 },
+    { kind: "tool" as const, key: "t1", name: "Read", at: 3 },
+    { kind: "tool" as const, key: "t2", name: "Bash", at: 4 },
+    { kind: "tool" as const, key: "t3", name: "Edit", at: 5, asked: { state: "denied" as const } },
+    { kind: "tool" as const, key: "q1", name: "AskUserQuestion", at: 6, asked: { state: "answered" as const, questions: [] } },
+    { kind: "you" as const, key: "q1/answer", text: "ISO weeks", answered: "question" as const, at: 7 },
+    { kind: "claude" as const, key: "m2", text: "Done", at: 8 },
+  ];
+  assert.equal(newBelow(seen, items, false), 4);   // (Chat: not the tool calls, but a denied one and a question)
+  assert.equal(newBelow(seen, items, true), 5);
+  assert.equal(newBelow(new Set(items.map((it) => it.key)), items, true), 0);
+  // (Show earlier meanwhile: those came in above, not below)
+  const earlier = [{ kind: "you" as const, key: "u0", text: "Before", at: 0 }, { kind: "claude" as const, key: "m0", text: "Sure", at: 0 }];
+  assert.equal(newBelow(seen, [...earlier, ...items], false), 4);
+  assert.equal(newBelow(seen, [...earlier, ...items.slice(0, 3)], false), 0);
+  assert.equal(newText(3), "3 new");
+  assert.equal(newHint(1), "One new item below, since you scrolled up. Click to go to the end.");
+  assert.equal(newHint(4), "4 new items below, since you scrolled up. Click to go to the end.");
 });
