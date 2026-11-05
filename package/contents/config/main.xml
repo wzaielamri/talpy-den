@@ -177,6 +177,10 @@
       <label>Talpy Chat's text: "terminal" in your terminal's font (as Claude's terminal shows it), "desktop" in the desktop's font</label>
       <default>terminal</default>
     </entry>
+    <entry name="suggestReplies" type="Bool">
+      <label>Talpy Chat suggests replies once Claude's turn is over (chips above the box: the answers to its question, your usual replies after a turn that ended the same way) and completes what you type from your usual replies; off: nothing is read for it</label>
+      <default>true</default>
+    </entry>
     <entry name="paneTerminalFont" type="String">
       <label>Your terminal's font, as last found (pane.py --terminal-font, each time a Talpy Chat window is made): known as it opens</label>
       <default></default>

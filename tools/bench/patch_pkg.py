@@ -6,8 +6,9 @@ it renders never acts on a chat, and its popup holds still.
 
 - pane.py answers --send with "sent in the background" without sending
   anything, and refuses every other action that would reach a chat or change
-  a file (answers, keys, undo, commit, hooks): reads (the conversation, what
-  the reply box offers, the review, the terminal's font) run as they are.
+  a file (answers, keys, undo, commit, hooks, a reply hidden): reads (the
+  conversation and how its turn ended, what the reply box offers, your usual
+  replies, the review, the terminal's font) run as they are.
 - The pets are off (showPet, chatPets 0): offscreen, every window is drawn on
   the one thread, and a pet's animation in the popup would be in each number.
 """
@@ -30,7 +31,7 @@ patch(pkg / "contents/code/pane.py", "def main(argv=None):\n    args = sys.argv[
     # (tools/bench: never sent, never answered; reads only)
     acting = [a for a in args if a.startswith("--") and a not in (
         "--conversation", "--complete", "--review", "--terminal-font", "--limit", "--if-changed", "--wait",
-        "--profile", "--host", "--config-dir", "--remote", "--pretty")]
+        "--suggest", "--replies", "--cwd", "--profile", "--host", "--config-dir", "--remote", "--pretty")]
     if "--send" in args:
         print(json.dumps({"ok": True, "how": "background", "message": "bench: not sent"}))
         return

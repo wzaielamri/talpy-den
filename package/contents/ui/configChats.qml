@@ -18,6 +18,7 @@ ConfigPage {
     // popup's new-chat box, and cfg_diffSideBySide, cfg_paneTextPercent, set in the chat pane:
     // ConfigPage's, which puts them back as they are now on Apply)
     property alias cfg_dictateLanguage: dictateLanguage.text
+    property alias cfg_suggestReplies: suggestReplies.checked
     property string cfg_paneFont
     // (cfg_paneTerminalFont: found by the pane, pane.py --terminal-font; ConfigPage's)
 
@@ -26,6 +27,7 @@ ConfigPage {
     // property called cfg_…Default" warnings for them.
     property bool cfg_clickOpensPaneDefault
     property string cfg_dictateLanguageDefault
+    property bool cfg_suggestRepliesDefault
     property string cfg_paneFontDefault
 
     readonly property string codeDir: decodeURIComponent(Qt.resolvedUrl("../code/").toString().replace(/^file:\/\//, ""))
@@ -72,6 +74,31 @@ ConfigPage {
         runRelay([on ? "on" : "off"])
         for (const host of Plasmoid.configuration.sshHosts.split(",").map(h => h.trim()).filter(h => h))
             runRelay([on ? "on" : "off", "--host", host])
+    }
+
+    // The replies hidden with a chip's Don't suggest this (pane.py --hide-reply - --off): suggested
+    // again, here and on each SSH host (each keeps its own), at once (not with Apply)
+    property string hiddenMessage: ""
+    Exec {
+        id: hiddenHelper
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            let result = null
+            try {
+                result = JSON.parse(data["stdout"])
+            } catch (e) {
+                result = null
+            }
+            if (source.indexOf("--host") < 0)
+                page.hiddenMessage = result && result.ok ? i18n("The replies you hid are suggested again.") : i18n("That didn't work")
+        }
+    }
+    function unhideReplies() {
+        const q = s => "'" + String(s).replace(/'/g, "'\\''") + "'"
+        const line = "python3 -I " + q(codeDir + "pane.py") + " --hide-reply - --off"
+        hiddenHelper.connectSource(line + " # " + Date.now())
+        for (const host of Plasmoid.configuration.sshHosts.split(",").map(h => h.trim()).filter(h => h))
+            hiddenHelper.connectSource(line + " --host " + q(host) + " # " + Date.now())
     }
 
     // Keyboard answers (pane.py --shortcuts status|on|off): global shortcuts
@@ -259,6 +286,29 @@ ConfigPage {
             font: Kirigami.Theme.smallFont
             opacity: 0.7
             text: i18n("Side by side changes and the text size are set in Talpy Chat itself: its side-by-side button, and A− / A+ or Ctrl+wheel.")
+        }
+
+        QQC2.CheckBox {
+            id: suggestReplies
+            text: i18n("Suggest replies")
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.text: i18n("Nothing is sent without a click. Off: nothing is read or worked out for it.")
+        }
+        QQC2.Label {
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 20
+            wrapMode: Text.Wrap
+            font: Kirigami.Theme.smallFont
+            opacity: 0.7
+            textFormat: Text.PlainText
+            text: (page.hiddenMessage ? page.hiddenMessage + "\n" : "")
+                  + i18n("Once Claude's turn is over, small chips above the box answer the question it ended with (its options, Yes or No…) or offer what you usually reply after a turn that ended the same way (a usage limit, a chat that stopped…), and what you type is completed in grey (Tab or → takes it). Worked out on this computer, from your own chats on the chat's account. A chip's right-click menu hides one of your usual replies for good.")
+        }
+        QQC2.Button {
+            text: i18n("Suggest Hidden Replies Again")
+            icon.name: Icons.plasma.showHidden
+            onClicked: page.unhideReplies()
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.text: i18n("The usual replies you hid with a chip's Don't suggest this are suggested again. Applies at once.")
         }
 
         QQC2.TextField {

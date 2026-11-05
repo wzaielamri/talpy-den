@@ -2019,6 +2019,34 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("onClicked: pane.stop()", button)
         self.assertIn("Icons.plasma.stopTurn", button)
 
+    def test_suggested_replies_are_made_only_when_there_are_some(self):
+        # Talpy Chat's chips (B2 + B3): their QML is read and made only while there are chips;
+        # nothing is read for them with Suggest replies off; the same rules as VS Code's; and what
+        # you type is completed in grey only while there's a completion
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn("active: pane.chipsShown.length > 0\n", pane)
+        self.assertIn('source: active ? "ReplyChips.qml" : ""', pane)
+        self.assertIn('(suggestOn ? " --suggest" : "")', pane)   # (the read and the watcher)
+        self.assertEqual(pane.count('(suggestOn ? " --suggest" : "")'), 2)
+        self.assertIn("if (!suggestOn || !chatId || Date.now() - usualAt < 60000)", pane)
+        self.assertIn("active: pane.ghost !== \"\"", pane)
+        self.assertIn("Plasmoid.configuration.suggestReplies !== false", pane)
+        # (the same words and limits as VS Code's shared/pane.ts)
+        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        for words in ("Shift+click: put it in the box first, to add to it.", "Claude recommends this one.",
+                      "Right-click: don't suggest it again."):
+            self.assertIn(words, pane)
+            self.assertIn(words, shared)
+        self.assertIn("export const CHIPS_MAX = 4;", shared)
+        self.assertIn("readonly property int chipsMax: 4", pane)
+        chips = (ROOT / "ui/ReplyChips.qml").read_text()
+        self.assertIn("model: pane.chipsShown", chips)
+        self.assertIn("pane.takeChip(chip.modelData, (event.modifiers & Qt.ShiftModifier) !== 0)", chips)
+        self.assertIn("onTriggered: pane.hideChip(menu.chip)", chips)
+        config = (ROOT / "config/main.xml").read_text()
+        self.assertIn('<entry name="suggestReplies" type="Bool">', config)
+        self.assertIn('"suggestReplies"]', (ROOT / "ui/main.qml").read_text())   # (shared with the other copies)
+
     def test_a_folder_row_never_closes_its_own_list(self):
         # Closing the list (newChatGroup = "") destroys its rows: the rest of
         # the row's click handler lost root ("ReferenceError: root is not

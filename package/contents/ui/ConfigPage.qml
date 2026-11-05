@@ -181,6 +181,8 @@ KCM.SimpleKCM {
     property var cfg_paneTextPercentDefault
     property var cfg_paneFont
     property var cfg_paneFontDefault
+    property var cfg_suggestReplies
+    property var cfg_suggestRepliesDefault
     property var cfg_paneTerminalFont
     property var cfg_paneTerminalFontDefault
     property var cfg_openChatsIn
