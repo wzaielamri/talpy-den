@@ -79,9 +79,8 @@
         // The frame the chips above the reply box are drawn in: the one before (seen) if they were
         // made by then, else the first after they are; -1 for none (in 2 s, or a package without them)
         function chipsFrame(win, cb, seen) {
-            const made = () => win.chipsShown !== undefined && win.chipsShown.length > 0
-                               && find(win.contentItem, o => o.objectName === "replyChips") !== null
-            if (win.chipsShown === undefined)
+            const made = () => win.chipsOn === true && find(win.contentItem, o => o.objectName === "replyChips") !== null
+            if (win.chipsOn === undefined)
                 return cb(-1)
             if (made())
                 return cb(seen)

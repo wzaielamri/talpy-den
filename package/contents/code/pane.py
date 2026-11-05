@@ -118,7 +118,6 @@ if os.path.isfile(globals().get("__file__") or ""):  # (on an SSH host it comes 
             sys.dont_write_bytecode = False
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the script dir off sys.path
 import talpy_den as cs  # noqa: E402
-import replies  # noqa: E402  (Talpy Chat's suggested replies, and how a turn ended)
 
 # ---------------------------------------------------------------- the conversation
 
@@ -490,6 +489,30 @@ def prompt_pictures(text, blocks, uid, folder):
     return out
 
 
+class NoTurnEnd:
+    """How a turn ended, when nobody asks (Suggest replies off): nothing is followed,
+    and replies.py isn't even read."""
+    def tool_result(self, error):
+        pass
+
+    def prompt(self):
+        pass
+
+    def interrupted(self):
+        pass
+
+    def assistant(self, e, msg, blocks):
+        pass
+
+
+def turn_end(wanted):
+    """What follows how the turn ended (replies.TurnEnd), or NoTurnEnd."""
+    if not wanted:
+        return NoTurnEnd()
+    import replies   # (a module of its own: compiled once and kept, where this script is compiled at every call)
+    return replies.TurnEnd()
+
+
 def conversation_items(lines, pictures=None, ends=None):
     """The pane's items from transcript lines (oldest first): {"kind": "you",
     "text"} for a prompt of yours (one sent while Claude works shows when you
@@ -506,7 +529,7 @@ def conversation_items(lines, pictures=None, ends=None):
     Entries of subagents (sidechains) aren't in it. ends: a dict given gets
     how the last turn ended (replies.TurnEnd.result)."""
     items, tools = [], {}
-    end = replies.TurnEnd()
+    end = turn_end(ends is not None)
     # Messages sent while Claude works: the transcript has each one when it's
     # sent (queue-operation enqueue) and again once Claude takes it in, after
     # its next tool result (an attachment, queued_command), which can be long
@@ -781,6 +804,7 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
               "items": items, "more": more, "stamp": f"{stamp}/{limit}", "mode": peek.get("mode"),
               "permission": cs.pending_permission(path, cwd)}
     if suggest:
+        import replies
         ended = ends.get("ended")
         result.update(ended=ended, over=bool(ends.get("over")), asks=replies.asks_of(ends.get("reply")) if ended == "asked" else None)
     return result
@@ -1073,6 +1097,7 @@ def chat_replies(home, extra_dirs, cache_root, chat_id, profile_key=None, cwd=No
             return {"ok": False, "message": NO_CHAT}
         _, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
         cwd = cwd or cs.chat_folder(path) or ""
+    import replies
     now = time.time() if now is None else now
     found = replies.usual_replies(replies.reply_history(cache_root, profile, now), now * 1000, replies.project_of(cwd),
                                   replies.hidden_replies(cache_root))
@@ -2493,6 +2518,7 @@ def main(argv=None):
         elif action == "--replies":
             result = chat_replies(home, config_dirs, cache_root, target, profile, cwd)
         elif action == "--hide-reply":
+            import replies
             ok, said = replies.hide_reply(cache_root, target, on=not off)
             result = {"ok": ok, "message": said}
         elif action == "--terminal-font":
