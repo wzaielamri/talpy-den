@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1276,6 +1276,24 @@ test("suggested replies back off: five sends in a row with chips and none of the
   assert.deepEqual(chipsAfterSend(state.ignored, chips, "Continue.", 0), { ignored: 0, restUntil: 0 });   // (typed as a chip says: used)
   assert.deepEqual(chipsAfterSend(CHIPS_IGNORED - 1, chips, "no", 5), { ignored: 0, restUntil: 5 + CHIPS_REST_MS });
   assert.deepEqual(chipsAfterSend(3, [], "no", 5), { ignored: 3, restUntil: 0 });   // (none showed: nothing counts)
+});
+
+test("context left in the header, and Claude's turn so far on the working line (Plasma's words)", () => {
+  const c = { used: 300000, window: 1000000, compactAt: 967000, left: 69, near: false };
+  assert.equal(contextText(c), "Context 69% left");
+  assert.equal(contextHint(c), "300.0k of its 1.0M tokens of context are used. Claude compacts the chat on its own at about 967.0k: it sums up the conversation so far and goes on from that.");
+  assert.match(contextHint({ ...c, left: 2, near: true }), / That's soon: run \/compact now to say what it keeps, if you'd rather choose\.$/);
+  const t = { startedAt: 1_000_000, steps: 12 };
+  assert.equal(turnText(t, 1_000_000 + 9_400), "9s · 12 steps");
+  assert.equal(turnText({ ...t, steps: 1 }, 1_000_000 + 4 * 60000 + 59_000), "4m · 1 step");
+  assert.equal(turnText({ ...t, steps: 0 }, 1_000_000 + 65 * 60000), "1h 5m");
+  assert.equal(turnText(t, 1_000_000 - 5000), "0s · 12 steps");   // (a host's clock a little ahead)
+  assert.equal(turnHint(t, 1_000_000 + 125_000), "Claude's turn so far: 2m since your message, 12 steps (its tool calls, in the Steps tab).");
+  // the next change: the next second for its first minute, then the next minute
+  assert.equal(turnTickIn(t, 1_000_000 + 9_400), 600);
+  assert.equal(turnTickIn(t, 1_000_000 + 59_999), 1);
+  assert.equal(turnTickIn(t, 1_000_000 + 60_000), 60000);
+  assert.equal(turnTickIn(t, 1_000_000 + 4 * 60000 + 59_000), 1000);
 });
 
 test("completion as you type: the rest of your usual reply that starts so, this turn's kind first", () => {

@@ -3,7 +3,7 @@
 // waits for a permission, and its review (what it changed, Undo, Commit,
 // Mark reviewed). Shared by the extension and the tab's page.
 
-import { hostLabel } from "./model";
+import { formatTokens, hostLabel } from "./model";
 import type { Answers, AskShown, Decision, PermissionAsk, Question, QueuedTask, RecentChat, Review, Session, SessionState, Status } from "./types";
 
 // One item of a chat's conversation (pane.py: conversation_items)
@@ -68,6 +68,8 @@ export interface Conversation {
   ended?: TurnEnded | null;
   over?: boolean;
   asks?: Asks | null;
+  context?: ContextLeft | null; // how full its context is (null: not known)
+  turn?: TurnSoFar | null; // Claude's turn so far, while it's going on
 }
 
 // One file a chat changed (pane.py: chat_review)
@@ -720,6 +722,50 @@ export function stopOf(chat: Pick<PaneChat, "state" | "atWork" | "where" | "rout
   return { ...no, elsewhere: chat.where === "claude" ? "To stop it: the stop button in its Claude Code panel."
     : chat.where === "background" ? "To stop it: open it in a terminal and press Esc there. Talpy Chat's Stop doesn't know the background chats of this Claude Code version yet."
     : "To stop it: press Esc in its terminal. Talpy Chat can't type into that terminal." };
+}
+
+// How full the chat's context is (pane.py: talpy_den.context_left), a tag in its header: what's
+// left till Claude compacts the chat on its own (auto-compact), as Claude Code counts it; near: as
+// Claude Code says it's close, in the warning colour. None when it can't be known (Plasma ChatPane:
+// the same words)
+export interface ContextLeft {
+  used: number; // tokens Claude's last message read, cached or not
+  window: number; // its model's context window
+  compactAt: number; // where Claude compacts it
+  left: number; // % till then
+  near: boolean;
+}
+export function contextText(c: ContextLeft): string {
+  return `Context ${c.left}% left`;
+}
+export function contextHint(c: ContextLeft): string {
+  return `${formatTokens(c.used)} of its ${formatTokens(c.window)} tokens of context are used. Claude compacts the chat on its own at about ${formatTokens(c.compactAt)}: it sums up the conversation so far and goes on from that.` +
+    (c.near ? " That's soon: run /compact now to say what it keeps, if you'd rather choose." : "");
+}
+
+// Claude's turn so far (pane.py: talpy_den.TurnSoFar), at the working line's end while it works:
+// the time since your message that started it, and its steps (tool calls) since. The time is
+// shown to the second for its first minute, then to the minute: tickIn says when it changes next
+export interface TurnSoFar {
+  startedAt: number; // ms
+  steps: number;
+}
+export function turnTime(ms: number): string {
+  const s = Math.floor(Math.max(0, ms) / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+export function turnText(t: TurnSoFar, now: number): string {
+  const time = turnTime(now - t.startedAt);
+  return t.steps > 0 ? `${time} · ${t.steps === 1 ? "1 step" : `${t.steps} steps`}` : time;
+}
+export function turnHint(t: TurnSoFar, now: number): string {
+  return `Claude's turn so far: ${turnTime(now - t.startedAt)} since your message, ${t.steps === 1 ? "1 step" : `${t.steps} steps`} (its tool calls, in the Steps tab).`;
+}
+export function turnTickIn(t: TurnSoFar, now: number): number {
+  const ms = Math.max(0, now - t.startedAt);
+  return ms < 60000 ? 1000 - (ms % 1000) : 60000 - (ms % 60000);
 }
 
 // Suggested replies (Plasma ChatPane, the same rules and words): small chips above the box once

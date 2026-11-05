@@ -6,7 +6,7 @@
 
 import { Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -37,6 +37,24 @@ type Tab = "chat" | "steps" | "review";
 
 function plural(n: number, one: string, many = one + "s"): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+// Claude's turn so far, at the working line's end ("4m · 12 steps"): its clock ticks only while
+// the tab is in front, each second for the first minute, then each minute (turnTickIn)
+function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!shown) return;
+    let timer = 0;
+    const tick = () => {
+      const t = Date.now();
+      setNow(t);
+      timer = window.setTimeout(tick, turnTickIn(turn, t) + 20);
+    };
+    tick();
+    return () => window.clearTimeout(timer);
+  }, [turn.startedAt, shown]);
+  return <span class="pane-working-meta" title={turnHint(turn, now)}>{turnText(turn, now)}</span>;
 }
 
 // A tool call: ● Bash  npm test in green, red, or (still going) blinking,
@@ -370,6 +388,8 @@ function ChatApp() {
   // what you type completed in grey from your usual replies (completionOf; Tab or → takes it)
   const [suggest, setSuggest] = useState(config.suggest !== false);
   const [turn, setTurn] = useState<{ ended: TurnEnded | null; over: boolean; asks: Asks | null }>({ ended: null, over: false, asks: null });
+  // How full its context is (the header's tag), Claude's turn so far (the working line's end)
+  const [soFar, setSoFar] = useState<{ context: ContextLeft | null; turn: TurnSoFar | null }>({ context: null, turn: null });
   const [usual, setUsual] = useState<UsualReplies | null>(null);
   const usualAt = useRef(0);
   const askUsual = () => {   // (pane.py --replies: once a tab, again after a send a minute later)
@@ -585,6 +605,7 @@ function ChatApp() {
           if (el) follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; // (on another tab: as when you left)
           setLoadError("");
           setTurn({ ended: a.ended ?? null, over: !!a.over, asks: a.asks ?? null });
+          setSoFar({ context: a.context ?? null, turn: a.turn ?? null });
           setItems(a.items ?? []);
           setMore(!!a.more);
           setCapped(!!a.capped);
@@ -1102,6 +1123,9 @@ function ChatApp() {
               (chat.agents.failed ? `, ${chat.agents.failed} failed` : "") + `. Click to ${strip.agents ? "hide" : "show"} what each one is doing.`}
             onClick={() => setStrip({ ...strip, agents: !strip.agents })} />
         ) : null}
+        {soFar.context && !chat?.fresh ? (
+          <Tag text={contextText(soFar.context)} caution={soFar.context.near} title={`${contextText(soFar.context)}\n${contextHint(soFar.context)}`} />
+        ) : null}
         <span class="pane-path">{(chat?.host ? chat.host + ":" : "") + (chat?.fresh ? chat.fresh.folder : chat?.cwd ?? "")}</span>
       </div>
       {chat?.tasks || (chat?.agents && chat.agents.total > 0) ? (
@@ -1161,6 +1185,7 @@ function ChatApp() {
                   <TalpyIcon state="thinking" moving={shown} />
                 </span>
                 <span class="grow" title={stop.elsewhere || undefined}>{starting && chat?.state !== "working" ? "Starting" : activity && !(tab === "steps" && last?.kind === "tool" && last.status === "open") ? activity : "Working"}…</span>
+                {soFar.turn && chat?.state === "working" ? <TurnMeta turn={soFar.turn} shown={shown} /> : null}
                 {stop.can ? (
                   <button type="button" class="btn secondary small pane-stop" title={stop.title} disabled={stopping}
                           onClick={() => { setStopping(true); post({ type: "stop" }); }}>

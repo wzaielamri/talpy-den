@@ -17,10 +17,11 @@ export function Tag(props: {
   title?: string;
   active?: boolean; // outlined in the accent color
   warning?: boolean; // outlined and written in the error color
+  caution?: boolean; // outlined and written in the warning color (it's close to something: the context to its compaction)
   pressed?: boolean;
   onClick?: () => void;
 }) {
-  const cls = "tag" + (props.icon ? " with-icon" : "") + (props.active ? " active" : "") + (props.warning ? " warning" : "");
+  const cls = "tag" + (props.icon ? " with-icon" : "") + (props.active ? " active" : "") + (props.warning ? " warning" : "") + (props.caution ? " caution" : "");
   if (props.onClick)
     return (
       <button type="button" class={cls + " clickable"} title={props.title} aria-pressed={props.pressed} onClick={props.onClick}>

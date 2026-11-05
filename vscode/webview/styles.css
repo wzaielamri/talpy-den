@@ -477,6 +477,12 @@ button:focus-visible {
   opacity: 1;
 }
 
+.tag.caution {
+  border-color: var(--cs-usage-medium);
+  color: var(--cs-usage-medium);
+  opacity: 1;
+}
+
 /* An icon in a tag: as big as the buttons' (16 px), the tag as high as a button's icon */
 .tag.with-icon {
   gap: 3px;
@@ -3810,10 +3816,18 @@ body.vscode-high-contrast-light .pane {
   height: 1.25em;
 }
 
-/* (its words take the line; Stop at its end, as tall as the line, so nothing moves) */
+/* (its words take the line; Claude's turn so far and Stop at its end, as tall as the line, so nothing moves) */
 .pane-working .grow {
   flex: 1;
   min-width: 0;
+}
+
+.pane-working .pane-working-meta {
+  flex: none;
+  margin-left: 8px;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .pane-working .pane-stop {

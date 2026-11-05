@@ -242,6 +242,14 @@ const turnEnd: Partial<Conversation> = chipsOf === "limit" ? { ended: "limit", o
   : chipsOf ? { ended: "asked", over: true, asks: asks[chipsOf] ?? null } : {};
 if (chipsOf)
   Object.assign(chat, { state: "done", stateText: "done 1 min ago", busy: false, atWork: false, permission: null, queued: null, activity: "" });
+// how full its context is (?context=near: close to Claude compacting it; ?context=0: not known), and
+// Claude's turn so far on the working line (?turn=new: its first seconds; ?turn=0: not known)
+const contextOf = params.get("context");
+turnEnd.context = contextOf === "0" ? null : contextOf === "near"
+  ? { used: 952000, window: 1000000, compactAt: 967000, left: 2, near: true }
+  : { used: 300000, window: 1000000, compactAt: 967000, left: 69, near: false };
+const turnOf = params.get("turn");
+turnEnd.turn = turnOf === "0" ? null : turnOf === "new" ? { startedAt: Date.now() - 7000, steps: 1 } : { startedAt: Date.now() - 252000, steps: 12 };
 if (params.get("chipmenu") === "1")
   setTimeout(() => {
     const all = document.querySelectorAll<HTMLButtonElement>(".pane-chip");
