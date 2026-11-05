@@ -877,6 +877,11 @@ class Pane implements vscode.Disposable {
         if (typeof m.path === "string" && !this.host && inPictures(m.path))
           await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(m.path));
         break;
+      case "paste":
+        // (the right-click menu's Paste in the reply box: what Ctrl+V runs there, so a picture on the
+        // clipboard comes in as a pasted one)
+        await vscode.commands.executeCommand("editor.action.clipboardPasteAction");
+        break;
       case "copy":
         // (a code block's Copy: its button says Copied, so nothing under the conversation)
         if (typeof m.text !== "string") break;

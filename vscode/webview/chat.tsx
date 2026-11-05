@@ -61,6 +61,46 @@ function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
   return <span class="pane-working-meta" title={turnHint(turn, now)}>{turnText(turn, now)}</span>;
 }
 
+// Talpy Chat's right-click menu (Plasma's EditMenu.qml: the same items, words and keys): on the
+// conversation, Copy (what's selected), Copy message (as its Copy button) and Select all (every
+// message); on the reply box, Undo, Redo, Cut, Copy, Paste (VS Code's own, as Ctrl+V: a picture
+// too) and Select all. Elsewhere in the tab, VS Code's own menu (Cut, Copy, Paste)
+type EditAt = { where: "list" | "box"; x: number; y: number; it: PaneItem | null; chosen: string };
+type EditDo = "copy" | "copyMessage" | "selectAll" | "undo" | "redo" | "cut" | "paste";
+const EDIT_KEYS: Record<string, string> = { copy: "Ctrl+C", selectAll: "Ctrl+A", undo: "Ctrl+Z", redo: MAC ? "Ctrl+Shift+Z" : "Ctrl+Y", cut: "Ctrl+X", paste: "Ctrl+V" };
+function EditMenu({ at, onDo }: { at: EditAt; onDo: (what: EditDo) => void }) {
+  const item = (what: EditDo, text: string, enabled = true) => (
+    <button type="button" role="menuitem" disabled={!enabled} onClick={() => onDo(what)}>
+      <span class="grow">{text}</span>
+      {EDIT_KEYS[what] ? <span class="pane-menu-key">{MAC ? EDIT_KEYS[what].replace(/Ctrl\+/g, "Cmd+") : EDIT_KEYS[what]}</span> : null}
+    </button>
+  );
+  // (no focus taken: the box keeps its cursor and the conversation its selection)
+  return (
+    <div class="pane-chip-menu pane-edit-menu" role="menu" style={{ left: `${Math.min(at.x, window.innerWidth - 220)}px`, top: `${Math.min(at.y, window.innerHeight - (at.where === "box" ? 190 : 90))}px` }}
+         onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+      {at.where === "list" ? (
+        <>
+          {item("copy", "Copy", at.chosen !== "")}
+          {at.it ? item("copyMessage", at.it.kind === "claude" ? "Copy message (Markdown)" : "Copy message") : null}
+          {item("selectAll", "Select all")}
+        </>
+      ) : (
+        <>
+          {item("undo", "Undo")}
+          {item("redo", "Redo")}
+          <div class="pane-menu-sep" role="separator" />
+          {item("cut", "Cut", at.chosen !== "")}
+          {item("copy", "Copy", at.chosen !== "")}
+          {item("paste", "Paste")}
+          <div class="pane-menu-sep" role="separator" />
+          {item("selectAll", "Select all")}
+        </>
+      )}
+    </div>
+  );
+}
+
 // On the message under the pointer (yours, or Claude's reply): its time, and Copy (copyText: a
 // reply as Markdown, yours as you typed it), at its top right corner, over it, so nothing moves.
 // One for the list, moved to the message hovered: a long chat has nothing more for each message
@@ -650,16 +690,19 @@ function ChatApp() {
   const sentAt = useRef(0);
   const [focused, setFocused] = useState(false);
   const [chipMenu, setChipMenu] = useState<{ chip: ReplyChip; x: number; y: number } | null>(null);
+  const [editMenu, setEditMenu] = useState<EditAt | null>(null);   // (the right-click menu, EditMenu)
   useEffect(() => {
-    if (!chipMenu) return undefined;
-    const close = () => setChipMenu(null);   // (Esc: escTarget's "menu")
+    if (!chipMenu && !editMenu) return undefined;
+    const close = () => { setChipMenu(null); setEditMenu(null); };   // (Esc: escTarget's "menu")
     window.addEventListener("mousedown", close);
     window.addEventListener("blur", close);
+    window.addEventListener("scroll", close, true);
     return () => {
       window.removeEventListener("mousedown", close);
       window.removeEventListener("blur", close);
+      window.removeEventListener("scroll", close, true);
     };
-  }, [chipMenu]);
+  }, [chipMenu, editMenu]);
 
   // The microphone: record, then whisper writes it down on this computer
   const [dictating, setDictating] = useState<"" | "starting" | "recording" | "writing" | "model" | "setup">("");
@@ -1495,15 +1538,51 @@ function ChatApp() {
   };
   const keyNow = useRef(onKey);
   keyNow.current = onKey;
+  // The right-click menu's actions (EditMenu)
+  const selectAllNow = useRef((): boolean => false);
+  selectAllNow.current = () => {   // (every message, first to last: what's between them too, as a page does)
+    const rows = list.current?.querySelectorAll<HTMLElement>(":scope > [data-key]");
+    if (!rows?.length) return false;
+    const range = document.createRange();
+    range.setStartBefore(rows[0]);
+    range.setEndAfter(rows[rows.length - 1]);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    return true;
+  };
+  const editDo = (what: EditDo) => {
+    const at = editMenu;
+    setEditMenu(null);
+    if (!at) return;
+    const box = reply.current;
+    if (at.where === "list") {
+      if (what === "copy" && at.chosen) {
+        post({ type: "copy", text: at.chosen });
+        setInfo({ ok: true, message: "Copied" });
+      } else if (what === "copyMessage" && at.it) copyItem(at.it, true);
+      else if (what === "selectAll") selectAllNow.current();
+      return;
+    }
+    if (!box) return;
+    box.focus();
+    if (what === "copy" || what === "cut") {
+      if (!at.chosen) return;
+      post({ type: "copy", text: at.chosen });
+      if (what === "cut") document.execCommand("delete");   // (Ctrl+Z brings it back)
+    } else if (what === "paste") post({ type: "paste" });   // (VS Code pastes it as for Ctrl+V: a picture too, pasted)
+    else if (what === "undo" || what === "redo") document.execCommand(what);
+    else if (what === "selectAll") box.select();
+  };
   // Esc does the nearest thing first (escTarget): a menu, the big picture, the / and @ list, the keys,
   // the grey completion; only then, in an empty box while Stop shows, it stops Claude. Nothing to do:
   // VS Code has it
   const escapeNow = useRef((): boolean => false);
   escapeNow.current = () => {
     const inBox = !!reply.current && document.activeElement === reply.current;
-    const what = escTarget({ menu: !!chipMenu, big: !!big, list: inBox && offered.items.length > 0, find: find.open && conversation, help,
+    const what = escTarget({ menu: !!chipMenu || !!editMenu, big: !!big, list: inBox && offered.items.length > 0, find: find.open && conversation, help,
                              ghost: inBox && !!ghost, stop: inBox && text === "" && stop.can && !stopping });
-    if (what === "menu") setChipMenu(null);
+    if (what === "menu") { setChipMenu(null); setEditMenu(null); }
     else if (what === "find") closeFind();
     else if (what === "big") setBig(null);
     else if (what === "list") setDismissed(offered.token);
@@ -1525,6 +1604,18 @@ function ChatApp() {
           e.stopPropagation();
         }
         return;
+      }
+      // Ctrl+A outside a field: the whole conversation, as the right-click menu's Select all (not the
+      // tab's buttons and header: VS Code's own select-all, which it isn't given)
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "a") {
+        const t = e.target as HTMLElement | null;
+        if (!t || !(t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.isContentEditable)) {
+          if (selectAllNow.current()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
       }
       // F3 / Shift+F3: the next / previous match (the find bar closed: it opens)
       if (e.key === "F3" && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -1766,6 +1857,15 @@ function ChatApp() {
               e.preventDefault();
               zoom(e.deltaY < 0 ? 1 : -1);
             }}
+            onContextMenu={(e) => {
+              const t = e.target as HTMLElement;
+              if (t.closest("input, textarea")) return;   // (the find bar's field: VS Code's own menu)
+              e.preventDefault();
+              const row = t.closest<HTMLElement>(".pane-you[data-key], .pane-claude[data-key]:not(.pane-asked)");
+              const it = row ? shownNow.current.find((i) => String(i.key) === row.dataset.key) ?? null : null;
+              setChipMenu(null);
+              setEditMenu({ where: "list", x: e.clientX, y: e.clientY, it, chosen: window.getSelection()?.toString() ?? "" });
+            }}
           >
             {find.open ? (
               <FindBar query={find.query} count={!find.query ? "" : found.query ? findCount(found.hits.length, findAt, found.done) : "…"} input={findInput}
@@ -1857,6 +1957,7 @@ function ChatApp() {
               ))}
             </div>
           ) : null}
+          {editMenu ? <EditMenu at={editMenu} onDo={editDo} /> : null}
           {chipMenu ? (
             <div class="pane-chip-menu" role="menu" style={{ left: `${chipMenu.x}px`, top: `${chipMenu.y}px` }} onMouseDown={(e) => e.stopPropagation()}>
               <button type="button" role="menuitem" onClick={() => takeChip(chipMenu.chip, true)}><Icon name={I.edit} />Edit before sending</button>
@@ -1892,6 +1993,12 @@ function ChatApp() {
             }}
             onBlur={() => setFocused(false)}
             onPaste={pasted}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              const box = e.currentTarget;
+              setChipMenu(null);
+              setEditMenu({ where: "box", x: e.clientX, y: e.clientY, it: null, chosen: box.value.slice(box.selectionStart, box.selectionEnd) });
+            }}
             onKeyDown={(e) => {
               const box = e.target as HTMLTextAreaElement;
               // ? in an empty box: the list of keys

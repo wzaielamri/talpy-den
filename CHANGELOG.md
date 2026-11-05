@@ -4,6 +4,7 @@
 
 ### Highlights
 
+- **Right-click in Talpy Chat:** Copy, Copy message and Select all on the conversation; Undo, Redo, Cut, Copy, Paste (a picture too) and Select all on the reply box, each with its key (Plasma and VS Code).
 - **Talpy Chat has its own icon:** Talpa with a speech bubble, on the *Open in* switch, the buttons that open a chat in Talpy Chat, VS Code's Talpy Chat tabs and, in Plasma, the Talpy Chat window in the taskbar.
 - **Search and folds in Talpy Chat:** Ctrl+F finds anything in the chat (what each step ran and got too, on the Steps tab), with the matches marked and Enter going from one to the next, without moving what you read till you do; long messages, replies and outputs fold to their first lines with *Show more*, and Ctrl+O unfolds every long one (Plasma and VS Code).
 - **Keys in Talpy Chat:** Ctrl+Enter sends now, Alt+Enter when the turn ends, Alt+1…4 a suggested reply, Alt+Y / Alt+A / Alt+N answer what it asks, Ctrl+↑ / Ctrl+↓ go from message to message, Ctrl+Shift+C copies Claude's last reply, Esc closes what's open and then stops Claude, and more; **?** lists them, and Copy copies all of a long reply (Plasma and VS Code).
@@ -48,6 +49,7 @@
 - **Two windows sending to one stopped chat at once wake it once.** Sending from Talpy Chat in Plasma and from its tab in VS Code within a second or two made Claude start a copy of the chat. Now one waits for the other's wake and adds its message to the chat that's running (Keep going and queued go-ons too).
 - **Talpy Chat's icon.** Talpy Chat showed a generic speech bubble, the same as other chat buttons, and VS Code's tab showed Talpa alone. Now it has an icon of its own, Talpa whose antenna light is a yellow speech bubble: in colour on the *Open in* switch (Plasma and VS Code) and VS Code's Talpy Chat tabs, and in one colour on the buttons that open a chat in Talpy Chat. In Plasma the Talpy Chat window shows it in the taskbar too (its window rule's desktop file, written when you install).
 - **No more warnings from the new-chat box at Plasma's start.** Its Model, Effort and Permissions choices logged "Binding loop detected for property implicitWidth" (three each time Plasma started); each is now as wide as its widest choice, measured once.
+- **Right-click in Talpy Chat.** A right-click in Talpy Chat did nothing in Plasma, and in VS Code offered only Cut, Copy and Paste. Now, on the conversation: *Copy* (what you selected, across messages too), *Copy message* (the message you clicked, as its Copy button does: a reply as Markdown, all of it) and *Select all* (every message, as Ctrl+A in the conversation now does); on the reply box: *Undo*, *Redo*, *Cut*, *Copy*, *Paste* (a picture on the clipboard too, as Ctrl+V) and *Select all*. Each item names its key. Plasma makes the menu the first time you right-click a window, one for the window, so it costs a window nothing until then (Plasma and VS Code).
 
 ## 1.18.0 (2026-11-04)
 

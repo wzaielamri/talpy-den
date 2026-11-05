@@ -4,6 +4,10 @@
 
 ### New
 
+- **Right-click in Talpy Chat:** on the conversation, *Copy*, *Copy message*
+  (as its Copy button) and *Select all* (every message; Ctrl+A there too);
+  on the reply box, *Undo*, *Redo*, *Cut*, *Copy*, *Paste* (VS Code's own,
+  as Ctrl+V: a picture too) and *Select all*, each with its key.
 - **Old chats, your stars kept:** `talpyDen.oldChats` picks who deletes old
   chats and plans: Claude Code's own cleanup (the default: everything older
   than its `cleanupPeriodDays`, starred or not, for good) or Talpy Den, once

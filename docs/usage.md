@@ -71,11 +71,14 @@
 | Ctrl+T | Show or hide the chat's tasks |
 | Ctrl+Shift+C | Copy Claude's last reply, as Markdown (all of it) |
 | Ctrl+C | Copy what you selected, across messages too |
+| Ctrl+A | In the conversation: select every message (in the reply box: all of its text) |
 | Ctrl+= / Ctrl+- / Ctrl+0, Ctrl+wheel | Text size |
 | Ctrl+Shift+O | Open its window (a background chat: in a terminal) |
 | Ctrl+W | Close Talpy Chat's window |
 | Ctrl+Tab / Ctrl+Shift+Tab | Your other Talpy Chat windows, the last one in front first |
 | Esc | Closes what's open first, one a press: a menu, the big picture, the `/` and `@` list, the find bar, the list of keys, the grey completion; then, in an empty box while Claude works, **Stop** |
+
+**Right-click** the conversation for *Copy* (what you selected), *Copy message* (the one you clicked, as its Copy button: a reply as Markdown) and *Select all*, or the reply box for *Undo*, *Redo*, *Cut*, *Copy*, *Paste* (a picture too, as Ctrl+V) and *Select all*; each item names its key.
 
 ## Settings
 

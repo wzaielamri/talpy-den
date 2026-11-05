@@ -2053,6 +2053,31 @@ class NewChatTests(unittest.TestCase):
         self.assertEqual(box.count("implicitContentWidthPolicy: T.ComboBox.WidestTextWhenCompleted\n"
                                    "                implicitWidth: implicitContentWidth + leftPadding + rightPadding\n"), 3)
 
+    def test_the_right_click_menu_is_one_for_the_window_made_on_first_use(self):
+        # Talpy Chat's right-click (6e): EditMenu.qml, read and made the first time the window is
+        # right-clicked (nothing on a window's open path, nothing per message), on the conversation and
+        # the reply box; its items name their keys, and Paste takes a picture as Ctrl+V does
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn('id: editMenu\n        active: false\n        source: active ? "EditMenu.qml" : ""', pane)
+        self.assertEqual(pane.count("pane.editMenuAt("), 2)   # (the conversation's handler, the box's)
+        self.assertEqual(pane.count("acceptedButtons: Qt.RightButton"), 2)
+        delegate = pane[pane.index("delegate: Item {\n                        id: entry"):]
+        self.assertNotIn("EditMenu", delegate.split("// A drag in a message")[0])
+        menu = (ROOT / "ui/EditMenu.qml").read_text()
+        for words, keys in (("Copy", "Ctrl+C"), ("Select all", "Ctrl+A"), ("Undo", "Ctrl+Z"), ("Redo", "Ctrl+Shift+Z"),
+                            ("Cut", "Ctrl+X"), ("Paste", "Ctrl+V")):
+            self.assertIn(f'text: i18n("{words}")', menu)
+            self.assertIn(f'keys: i18nc("a key", "{keys}")', menu)
+        self.assertIn('i18n("Copy message")', menu)
+        self.assertIn("onTriggered: pane.pasteInBox()", menu)
+        self.assertIn("root.pasteImage(pane.host, pane.pasteTarget)", pane[pane.index("function pasteInBox"):])
+        # Ctrl+A in a message selects the whole conversation, as the menu's Select all does
+        self.assertIn("event.matches(StandardKey.SelectAll)", pane)
+        # VS Code: the same items and words
+        chat = (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text()
+        for words in ("Copy message", "Select all", "Undo", "Redo", "Cut", "Paste"):
+            self.assertIn(f'"{words}"', chat)
+
     def test_times_copy_and_new_below_add_nothing_per_message(self):
         # Talpy Chat's lines between days (A5), a message's time and Copy on hover (A4, A5) and "3 new ↓"
         # (A2): each in a file of its own, read and made only when there's one to show (a day line is the

@@ -408,6 +408,11 @@ Window {
         asynchronous: true
         source: active ? "PaneKeys.qml" : ""
     }
+    Loader {
+        id: editMenu
+        active: false
+        source: active ? "EditMenu.qml" : ""
+    }
     function keyAction(event) {
         return paneKeys.item ? paneKeys.item.keyAction(event) : ""
     }
@@ -2179,11 +2184,48 @@ Window {
             .map(i => boxAt(i)).filter(b => b && b.selectedText !== "")
             .map(b => b.selectedText.replace(/[\u2028\u2029]/g, "\n")).join("\n\n")
     }
-    function copyAcross(event) {   // (Ctrl+C in a message: with others selected too, all of it)
+    function copyAcross(event) {   // (Ctrl+C in a message: with others selected too, all of it; Ctrl+A: every message)
         if (event.matches(StandardKey.Copy) && Object.keys(selOthers).length > 0) {
             copyText(selectionText())
             event.accepted = true
+        } else if (event.matches(StandardKey.SelectAll)) {
+            selectAllMessages()
+            event.accepted = true
         }
+    }
+    function selectAllMessages() {   // (as on a web page: the whole conversation, each message's text)
+        let first = -1
+        const others = {}
+        for (let i = 0; i < items.count; i++) {
+            const b = boxAt(i)
+            if (!b)
+                continue
+            b.selectAll()
+            if (first < 0)
+                first = i
+            else
+                others[keyAt(i)] = i
+        }
+        selFromAt = first
+        selFrom = keyAt(first)
+        selLast = selFrom
+        selLastAt = first
+        selOthers = others
+    }
+
+    // The right-click menu (EditMenu.qml: Copy, Copy message, Select all on the conversation; Undo,
+    // Redo, Cut, Copy, Paste, Select all on the reply box): one for the window, made the first time
+    function editMenuAt(where, p) {
+        editMenu.active = true
+        if (editMenu.item)
+            editMenu.item.openAt(where, p)
+    }
+    function pasteInBox() {   // (as Ctrl+V: text, else the clipboard's picture)
+        replyBox.forceActiveFocus()
+        if (replyBox.canPaste)
+            replyBox.paste()
+        else
+            root.pasteImage(pane.host, pane.pasteTarget)
     }
 
     // The pictures a text names ([Image: /path]), each once; the text with
@@ -3527,6 +3569,11 @@ Window {
                     onActiveChanged: if (active) pane.selectStart(selectOver.mapToItem(list, point.position.x, point.position.y))
                     onPointChanged: if (active) pane.selectAcross(selectOver.mapToItem(list, point.position.x, point.position.y))
                 }
+                // (a right-click: Copy, Copy message, Select all, EditMenu.qml)
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    onTapped: (point, button) => pane.editMenuAt("list", point.position)
+                }
             }
             // Search (Ctrl+F): FindBar.qml over the list's top right, clear of its scroll bar (nothing
             // moves), read and made only while it's open
@@ -3774,6 +3821,12 @@ Window {
                                     return
                                 }
                                 event.accepted = true
+                            }
+
+                            // (a right-click: Undo, Redo, Cut, Copy, Paste, Select all, EditMenu.qml)
+                            TapHandler {
+                                acceptedButtons: Qt.RightButton
+                                onTapped: (point, button) => pane.editMenuAt("box", null)
                             }
 
                             // What you type, completed in grey from your usual replies, where the

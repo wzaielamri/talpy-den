@@ -5140,6 +5140,32 @@ body.vscode-high-contrast-light .pane {
   color: var(--vscode-menu-selectionForeground, inherit);
 }
 
+/* The right-click menu (EditMenu): each item with its key at its right end, as VS Code's menus */
+.pane-edit-menu button {
+  gap: 24px;
+}
+
+.pane-edit-menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: none;
+}
+
+.pane-edit-menu .grow {
+  flex: 1 1 auto;
+}
+
+.pane-menu-key {
+  opacity: 0.7;
+  text-align: right;
+}
+
+.pane-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--vscode-menu-separatorBackground, var(--cs-border));
+}
+
 /* What you type, completed in grey from your usual replies (Tab or → takes it): a copy of the
    box's text under it, laid out as the box lays it out, with the rest after it */
 .pane-reply-wrap {

@@ -244,6 +244,7 @@ export type PaneMessage =
   | { type: "openAgentRun"; agentId: string } // a subagent's whole run, in the Markdown preview (its strip)
   | { type: "moveToClaudeCode" } // Claude quits in its terminal, the chat reopens in a Claude Code panel (asks first)
   | { type: "copy"; text: string } // a code block of a reply, to the clipboard
+  | { type: "paste" } // the right-click menu's Paste in the reply box: VS Code's paste, as Ctrl+V (a picture too)
   // Copy on a message, or Ctrl+Shift+C: its text (copyText), all of it: one shown cut (copyCut) is
   // read whole from the transcript first; answered with copied once it's on the clipboard
   | { type: "copyItem"; id: number; key: string; text: string }

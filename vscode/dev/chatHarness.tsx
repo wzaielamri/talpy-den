@@ -420,6 +420,22 @@ if (findQuery !== null)
   }, 700);
 
 // ?scroll=top: the list scrolled to its top once it's drawn (&by=N px down from there)
+// ?menu=list|box: the right-click menu, on a reply of Claude's (a word of it selected) or on the reply box
+const menuOn = params.get("menu");
+if (menuOn)
+  setTimeout(() => {
+    const at = document.querySelector<HTMLElement>(menuOn === "box" ? ".pane-reply" : ".pane-claude[data-key]:not(.pane-asked) p");
+    if (!at) return;
+    if (menuOn === "list") {
+      const range = document.createRange();
+      range.selectNodeContents(at);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(range);
+    }
+    const r = at.getBoundingClientRect();
+    at.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + 8 }));
+  }, 1500);
+
 if (params.get("scroll") === "top")
   setTimeout(() => {
     const list = document.querySelector<HTMLElement>(".pane-list");
