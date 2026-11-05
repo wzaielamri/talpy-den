@@ -152,35 +152,48 @@ function FoldMore({ id, fold, whole, onToggle }: { id: string; fold: Fold; whole
   );
 }
 
-// Made a few at a time (Ctrl+O unfolds every step: each one's details are made in the frames after,
-// the ones nearest the middle of the list first, as many a frame as keep it smooth), not all at once
+// Made a few at a time (Ctrl+O unfolds every step: each one's whole change and details are drawn in
+// the frames after, the ones nearest the middle of the list first, as many a frame as keep it
+// smooth), not all at once
 const later: { at: () => HTMLElement | null; go: () => void }[] = [];
-let laterFrame = 0, laterMany = 4, laterAt = 0;
+let laterFrame = 0, laterSorted = 0, laterMany = 8, laterAt = 0;
 function laterRun(t: number) {
   laterFrame = 0;
-  if (laterAt) laterMany = t - laterAt > 24 ? Math.max(1, laterMany >> 1) : t - laterAt < 18 ? Math.min(32, laterMany + 2) : laterMany;
+  if (laterSorted < later.length) {   // (those that came since: nearest the middle of the list first, read once)
+    const list = document.querySelector<HTMLElement>(".pane-list");
+    const mid = list ? list.getBoundingClientRect().top + list.clientHeight / 2 : 0;
+    const far = new Map(later.map((j) => [j, Math.abs((j.at()?.getBoundingClientRect().top ?? 1e9) - mid)]));
+    later.sort((a, b) => far.get(a)! - far.get(b)!);
+    laterSorted = later.length;
+  }
+  // (how many this frame, by how long the last one took: the page draws them all in one go after, and
+  // a long list's own reflow is most of a frame's time, so a few more a frame make it end sooner)
+  if (laterAt) laterMany = t - laterAt > 100 ? Math.max(2, Math.floor(laterMany * 0.7)) : t - laterAt < 60 ? Math.min(64, laterMany + 4) : laterMany;
   laterAt = t;
-  const list = document.querySelector<HTMLElement>(".pane-list");
-  const mid = list ? list.getBoundingClientRect().top + list.clientHeight / 2 : 0;
-  const far = (j: (typeof later)[number]) => Math.abs((j.at()?.getBoundingClientRect().top ?? 1e9) - mid);
-  later.sort((a, b) => far(a) - far(b));
   for (const job of later.splice(0, laterMany)) job.go();
+  laterSorted = Math.max(0, laterSorted - laterMany);
   if (later.length) laterFrame = requestAnimationFrame(laterRun);
   else laterAt = 0;
 }
-function Later({ children }: { children: () => ComponentChildren }) {
+function useLater(want: boolean, at: { current: HTMLElement | null }): boolean {
   const [on, setOn] = useState(false);
-  const at = useRef<HTMLSpanElement>(null);
   useEffect(() => {
+    if (!want) {
+      setOn(false);
+      return undefined;
+    }
     const job = { at: () => at.current, go: () => setOn(true) };
     later.push(job);
     if (!laterFrame) laterFrame = requestAnimationFrame(laterRun);
     return () => {
       const i = later.indexOf(job);
-      if (i >= 0) later.splice(i, 1);
+      if (i >= 0) {
+        later.splice(i, 1);
+        if (i < laterSorted) laterSorted--;
+      }
     };
-  }, []);
-  return on ? <>{children()}</> : <span ref={at} class="pane-later" />;
+  }, [want]);
+  return want && on;
 }
 
 // Search in the chat (Ctrl+F): a bar over the list's top right, so nothing moves, drawn only while
@@ -214,7 +227,7 @@ function FindBar({ query, count, input, onQuery, onStep, onClose }: {
 // Highlight API: nothing moves, nothing is made again), the one gone to in its own colour. A row's
 // text as it shows, without what isn't its words (a code block's language and Copy, a fold's button,
 // line numbers, the gutter's marks, "Sending…")
-const FIND_SKIP = ".pane-gutter, .md-code-head, .pane-fold-more, .cv-no, .cv-prompt, .pane-you-state, .pane-you-queue, .pane-you-pics, .pane-asked-toggle, .pane-asked-mark, .pane-later";
+const FIND_SKIP = ".pane-gutter, .md-code-head, .pane-fold-more, .cv-no, .cv-prompt, .pane-you-state, .pane-you-queue, .pane-you-pics, .pane-asked-toggle, .pane-asked-mark";
 const marking = typeof CSS !== "undefined" && "highlights" in CSS && typeof Highlight !== "undefined";
 function rowsOf(list: HTMLElement, key: string): HTMLElement[] {
   const k = CSS.escape(key);
@@ -254,8 +267,8 @@ function rangesIn(rows: HTMLElement[], query: string, max: number): Range[] {
   }
   return out;
 }
-// (marks the rows with matches within a screen of the view; the nth of the one gone to, or the
-// last one it shows: its Range, to go to)
+// (marks the rows with matches within half a screen of the view, at most about 1000 at once; the
+// nth of the one gone to, or the last one it shows: its Range, to go to)
 function markFound(list: HTMLElement, hits: readonly FindHit[], now: FindHit | null, query: string): Range | null {
   const view = list.getBoundingClientRect();
   const keys = [...new Set(hits.map((h) => h.key))];
@@ -265,12 +278,12 @@ function markFound(list: HTMLElement, hits: readonly FindHit[], now: FindHit | n
     const rows = rowsOf(list, key);
     if (!rows.length) continue;
     const top = rows[0].getBoundingClientRect().top, bottom = rows[rows.length - 1].getBoundingClientRect().bottom;
-    const near = bottom > view.top - view.height && top < view.bottom + view.height;
+    const near = bottom > view.top - view.height / 2 && top < view.bottom + view.height / 2;
     if (!near && now?.key !== key) continue;
     const ranges = rangesIn(rows, query, 400);
     if (now?.key === key && ranges.length) current = ranges[Math.min(now.n, ranges.length - 1)];
     if (near) all.push(...ranges.filter((r) => r !== current));
-    if (all.length > 2000) break;
+    if (all.length > 1000) break;
   }
   if (marking) {
     CSS.highlights.set("talpy-find", new Highlight(...all));
@@ -302,8 +315,8 @@ function viewOf(list: HTMLElement, items: readonly PaneItem[]): { first: number;
 // A tool call: ● Bash  npm test in green, red, or (still going) blinking,
 // under it ⎿ what came of it, and an edit's change (its first lines; open,
 // all of it); click for what it ran and got (CodeView.tsx)
-// (eager: opened with a click, its details made at once; else, as Ctrl+O opens all: a few a frame.
-// Long output folds as a long message does: outWhole, onOut)
+// (eager: opened with a click, its details made at once; else, as Ctrl+O opens all: a few a frame,
+// useLater. Long output folds as a long message does: outWhole, onOut)
 function ToolLine({ item, open, eager, outWhole, onOut, onToggle, asking, going, gap, split, onSplit }: {
   item: PaneItem; open: boolean; eager: boolean; outWhole: boolean; onOut: (e: MouseEvent) => void; onToggle: () => void; asking: boolean; going: boolean; gap: string;
   split: boolean; onSplit: (s: boolean) => void;
@@ -314,6 +327,10 @@ function ToolLine({ item, open, eager, outWhole, onOut, onToggle, asking, going,
   const tone = item.status === "ok" ? "ok" : item.status === "error" ? "error" : asking ? "asking" : going ? "going" : "open";
   const summary = item.summary || (asking ? "Waiting for your answer" : "");
   const diff = item.diff ?? [];
+  const box = useRef<HTMLDivElement>(null);
+  const late = useLater(open && !eager, box);
+  const waiting = open && !eager && !late;   // (its turn hasn't come: data-later)
+  open = eager ? open : late;
   const detail = open && !!(item.input || item.output) && (!diff.length || item.status === "error");
   const fold = detail && item.output ? foldFor(item, item.output, "plain", true) : null;
   const made = () => (
@@ -323,7 +340,7 @@ function ToolLine({ item, open, eager, outWhole, onOut, onToggle, asking, going,
     </>
   );
   return (
-    <div data-key={item.key} class={`pane-item pane-tool ${tone} ${gap}`}>
+    <div ref={box} data-key={item.key} data-later={waiting ? "" : undefined} class={`pane-item pane-tool ${tone} ${gap}`}>
       <button type="button" class="pane-tool-line" aria-expanded={open} title="Click for what it ran and what came back" onClick={onToggle}>
         <span class="pane-gutter" aria-hidden="true">
           <span class="pane-dot" />
@@ -341,7 +358,7 @@ function ToolLine({ item, open, eager, outWhole, onOut, onToggle, asking, going,
           <Diff lines={diff} path={args} max={open ? 0 : 6} split={split} onSplit={open ? onSplit : undefined} />
         </div>
       ) : null}
-      {detail ? (eager ? made() : <Later>{made}</Later>) : null}
+      {detail ? made() : null}
     </div>
   );
 }
