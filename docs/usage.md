@@ -33,6 +33,7 @@
 | **⚠ Same files** next to a chat | Goes to the other chat that changes the same files. |
 | Filter button at the top (**Focus**) | Shows only what needs you, the chats that finished a turn you haven't looked at yet and one line for each chat at work; **Show everything** goes back. |
 | **Stop** on Talpy Chat's working line | While Claude works: stops what it does now, as Esc in its terminal; the chat stays and takes your next message. For a chat in tmux or in the background; elsewhere the line's tooltip says where to stop it. |
+| A chip above Talpy Chat's reply box | Once Claude's turn is over: sends that reply, as if you typed it (an answer to Claude's question, or what you usually reply then). Shift+click, or *Edit before sending* on its right-click menu: in the box first; Alt+1…4 in the box: the first to the fourth; *Don't suggest this* (right-click, one of your usual replies): never again. In the box, Tab or → takes the grey rest of a usual reply you started typing. |
 | Microphone in Talpy Chat (**Dictate**) | Records your reply and writes it into the box (click again to stop); the first time, it offers to set dictation up. |
 | Magnifier at the top | Finds a chat by the words in its name, folder or your prompts, and project folders, plans and memories with those words. |
 | Hosts button at the top | Picks the SSH hosts and containers to show; **Reload** reads `~/.ssh/config` and the container lists again, the picker staying open (*Reloading…* until they've answered). |
@@ -68,6 +69,7 @@ Where chats open, new chats, permission prompts, Talpy Chat.
 | Talpy Chat text | in your terminal's font | The conversation and your reply in Talpy Chat, as Claude's terminal shows them: in the font of the terminal Talpy Den opens chats in (else a fixed-width one), or in the desktop's font. The size: **A−** / **A+** in the window |
 | Answer permission prompts from Talpy Den | off | The hook that lets rows, the pane and notifications answer permission prompts and Claude's questions (see [Features](features.md)); changes Claude's settings at once |
 | Keyboard answers | off | Two global shortcuts that answer the chat that has waited longest for a permission, from anywhere: **Meta+Alt+Y** allows it once (a plan: approves it), **Meta+Alt+N** denies it (a plan: keeps planning). They take *Answer permission prompts from Talpy Den*; pick other keys in System Settings → Shortcuts → Talpy Den |
+| Suggest replies | on | Chips above Talpy Chat's box once Claude's turn is over (the answers to its question, your usual replies after a turn that ended the same way) and what you type completed in grey; off, nothing is read for them. *Suggest Hidden Replies Again* brings back the replies you hid |
 | Dictation language | auto | The language you dictate in (`en`, `de`, `fr`…), or auto to let whisper tell; below it, set up dictation, download, delete or pick a speech model, or remove faster-whisper |
 
 ### Notifications

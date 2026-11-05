@@ -4,6 +4,19 @@
 
 ### New
 
+- **Suggested replies in Talpy Chat:** once Claude's turn is over, small
+  chips above the box answer the question it ended with (its options, the
+  one it recommends in bold; an either/or's halves; Yes or No in its
+  language) or offer what you usually reply after a turn that ended the
+  same way (a usage limit, a chat that stopped…), from your own chats on
+  that account and only when it's a good share of what you sent then. A
+  click sends it; Shift+click (or *Edit before sending* on its right-click
+  menu) puts it in the box; Alt+1…4 picks one; *Don't suggest this* hides
+  one of yours (**Talpy Den: Suggest Hidden Replies Again** brings them
+  back). Never while Claude works or asks, and none for half an hour after
+  five messages in a row that weren't one. What you type is completed in
+  grey from your usual replies (Tab or →). Worked out on this computer;
+  `talpyDen.suggestReplies` (on) turns it off, and then nothing is read.
 - **Stop in Talpy Chat:** while Claude works, **Stop** on the working line
   stops what it does now, as Esc in its terminal; the chat stays and takes
   your next message. For chats in this window's terminals, in tmux and in
