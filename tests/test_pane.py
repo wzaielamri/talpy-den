@@ -2636,6 +2636,37 @@ UI = Path(__file__).resolve().parent.parent / "package/contents/ui"
 
 
 @unittest.skipUnless(shutil.which("node"), "node isn't installed")
+class AnsiTests(unittest.TestCase):
+    """ansi.mjs: what a command printed, its colours as runs (VS Code) and as Qt rich text (Plasma)."""
+
+    def node(self, script):
+        code = f"import * as A from {json.dumps(str(UI / 'ansi.mjs'))};\n" + script
+        out = subprocess.run(["node", "--input-type=module", "-e", code], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_colours_and_the_rest_left_out(self):
+        r = self.node("""
+const t = "\\x1b[1mBold\\x1b[22m \\x1b[31mred\\x1b[39m \\x1b[38;5;196mx\\x1b[0m \\x1b[38;2;1;2;3my\\x1b[0m"
+        + " \\x1b[2mdim\\x1b[22m \\x1b]0;a title\\x07\\x1b[2Kz\\x1b[7mi\\x1b[27m <&>\\n2";
+console.log(JSON.stringify({
+    runs: A.runs(t).map(r => [r.text, r.fg, r.bold, r.dim, r.inverse]),
+    plain: A.plain(t), grey: A.color256(244), cube: A.color256(16 + 36 * 5),
+    html: A.html(t, {fg: "#cccccc", bg: "#000000", dark: true}),
+    light: A.runs("\\x1b[31mr", A.LIGHT)[0].fg, cut: A.plain("ok\\x1b[38;5")
+}));""")
+        self.assertEqual(r["runs"], [["Bold", "", True, False, False], [" ", "", False, False, False], ["red", "#f0726a", False, False, False],
+                                     [" ", "", False, False, False], ["x", "#ff0000", False, False, False], [" ", "", False, False, False],
+                                     ["y", "#010203", False, False, False], [" ", "", False, False, False], ["dim", "", False, True, False],
+                                     [" z", "", False, False, False], ["i", "", False, False, True], [" <&>\n2", "", False, False, False]])
+        self.assertEqual(r["plain"], "Bold red x y dim zi <&>\n2")
+        self.assertEqual((r["grey"], r["cube"], r["light"], r["cut"]), ("#808080", "#ff0000", "#c4372c", "ok"))
+        self.assertTrue(r["html"].startswith('<p style="white-space:pre-wrap;margin:0"><span style="font-weight:600">Bold</span>'))
+        self.assertIn('<span style="color:#707070">dim</span>', r["html"])   # (dim: half over the background)
+        self.assertIn('<span style="color:#000000;background-color:#cccccc">i</span>', r["html"])   # (inverse)
+        self.assertIn(" &lt;&amp;&gt;<br>2</p>", r["html"])
+
+
 class CodeViewTests(unittest.TestCase):
     """codeview.mjs (shared with the VS Code extension) and codehtml.mjs (the pane's rich text)."""
 

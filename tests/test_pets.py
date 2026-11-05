@@ -2050,6 +2050,34 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('<entry name="suggestReplies" type="Bool">', config)
         self.assertIn('"suggestReplies"]', (ROOT / "ui/main.qml").read_text())   # (shared with the other copies)
 
+    def test_commands_run_as_their_kind_and_their_output_is_made_only_when_there_is_some(self):
+        # Talpy Chat's commands (A12): what one printed is read and made only for a command that
+        # printed something (CommandOutput.qml, with ansi.mjs: every other window opens as quickly);
+        # a command for Claude's own panel opens in the chat's terminal (pane.py --type-in), never
+        # sent; /permissions opens Talpy Den's tab; one that can't run on this chat is greyed, saying
+        # why; one sent before the / list's kinds are read waits for them (/model must never be sent)
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn("active: !!entry.commandData && !!entry.commandData.output", pane)
+        self.assertIn('source: active ? "CommandOutput.qml" : ""', pane)
+        self.assertNotIn('"ansi.mjs"', pane)
+        self.assertIn('import "ansi.mjs" as Ansi', (ROOT / "ui/CommandOutput.qml").read_text())
+        send = pane[pane.index("    function send(how, afterTurn) {"):]
+        send = send[:send.index("\n    }\n")]
+        self.assertIn("if (/^\\/\\S/.test(text) && !offers && !offersFailed && !replyAnswers) {", send)
+        self.assertIn('if (ran && ran.run === "terminal") {\n            openWithCommand(text)\n            return', send)
+        self.assertIn('if (ran && ran.run === "page") {', send)
+        self.assertIn("root.openPermissions()", send)
+        self.assertLess(send.index("openWithCommand(text)"), send.index("outbox = outbox.concat"))
+        self.assertIn('"--type-in " + root.shellQuote(chatId)', pane)
+        self.assertIn('if (run === "terminal" && route === "vscode")', pane)
+        self.assertIn('enabled: replyBox.text.trim() !== "" && commandRun !== "off"', pane)
+        for words in ("A chat that isn't running reads ! as a message, not as a shell command: open it in its terminal to run it there.",
+                      "A new chat starts in the background, where Claude reads ! as a message: start it first, then run the command in its terminal.",
+                      "Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat."):
+            self.assertIn(words, pane)
+        main = (ROOT / "ui/main.qml").read_text()
+        self.assertIn('function openPermissions() {\n        popupTab = "perms"\n        expanded = true', main)
+
     def test_a_folder_row_never_closes_its_own_list(self):
         # Closing the list (newChatGroup = "") destroys its rows: the rest of
         # the row's click handler lost root ("ReferenceError: root is not

@@ -401,6 +401,8 @@ Window {
         stopping = false
         offers = null
         offersAt = 0
+        sendAfterOffers = ""
+        commandBusy = false
         suggestions = []
         historyAt = -1
         turnEnded = ""
@@ -738,13 +740,15 @@ Window {
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
                            diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
                            pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n"),
-                           asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "" }
+                           asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "",
+                           command: it.command ? JSON.stringify(it.command) : "" }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
                 if (old.text !== flat.text || old.status !== flat.status || old.output !== flat.output
                         || old.input !== flat.input || old.summary !== flat.summary || old.prev !== flat.prev || old.diff !== flat.diff
                         || old.queued !== flat.queued || old.until !== flat.until || old.pictures !== flat.pictures
-                        || old.here !== flat.here || old.asked !== flat.asked || old.answered !== flat.answered)
+                        || old.here !== flat.here || old.asked !== flat.asked || old.answered !== flat.answered
+                        || old.command !== flat.command)
                     items.set(i, flat)
             } else if (i < items.count) {
                 items.insert(i, flat)
@@ -849,9 +853,20 @@ Window {
         const q = (command ? command[1] : file[3]).toLowerCase()
         let found
         if (command) {
+            // (each with how it runs on this chat: commandRun; one that can't, greyed, says why)
             found = offers.commands.filter(c => c.name.toLowerCase().indexOf(q) >= 0)
-                .sort((a, b) => (a.name.toLowerCase().startsWith("/" + q) ? 0 : 1) - (b.name.toLowerCase().startsWith("/" + q) ? 0 : 1))
-                .map(c => ({ text: c.name, about: c.about + (c.kind === "Claude" ? "" : " · " + c.kind), insert: c.name + " " }))
+                .sort((a, b) => (a.name.toLowerCase().startsWith("/" + q) ? 0 : 1) - (b.name.toLowerCase().startsWith("/" + q) ? 0 : 1)
+                                || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))   // (Qt's sort isn't stable)
+                .slice(0, 8)
+                .map(c => {
+                    const ran = commandRun(c.name) || { run: "here", why: "" }
+                    return { text: c.name, about: ran.run === "off" ? ran.why : c.about + (c.kind === "Claude" ? "" : " · " + c.kind),
+                             insert: c.name + " ", off: ran.run === "off",
+                             tag: ran.run === "terminal" ? i18nc("a command opens in the chat's terminal", "Terminal")
+                                : ran.run === "page" ? i18nc("a command opens Talpy Den's own page for it", "Talpy Den") : "",
+                             tip: ran.run === "terminal" ? i18n("%1 %2: it opens in the chat's terminal, typed in for you there.", c.name, ran.why)
+                                : ran.run === "page" ? i18n("Opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.") : "" }
+                })
         } else {
             const rank = f => {
                 const base = f.slice(f.lastIndexOf("/") + 1).toLowerCase()
@@ -874,6 +889,56 @@ Window {
         replyBox.remove(tokenStart, at)
         replyBox.insert(tokenStart, s.insert)
         suggestions = []
+    }
+
+    // ---------------------------------------------------------------- commands
+    //
+    // A command in the box (/compact, /config, !ls): how Talpy Chat runs it on this chat
+    // (VS Code's shared/pane.ts commandRun: the same rule and words), from the / list's
+    // offers (pane.py --complete: commands.py's kinds, as checked live per route):
+    // {run: "here" (sent as it is: it runs, and what it prints shows under it), "page"
+    // (Talpy Den's own page for it: /permissions, the Permissions tab), "terminal" (it needs
+    // Claude's own panel or dialog, where a background chat would sit unseen: opened in the
+    // chat's terminal, typed in for you there or on the clipboard, to press Enter there) or
+    // "off" (it can't run on this chat: why), name, why}; null: a message (or not known)
+    function commandRun(text) {
+        const t = String(text || "").trim()
+        if (/^![^!]/.test(t)) {   // (Claude's ! mode: a shell command, in its prompt only)
+            if (where === "new")
+                return { run: "off", name: "!", why: i18n("A new chat starts in the background, where Claude reads ! as a message: start it first, then run the command in its terminal.") }
+            if (where === "closed")
+                return { run: "off", name: "!", why: i18n("A chat that isn't running reads ! as a message, not as a shell command: open it in its terminal to run it there.") }
+            return { run: route === "terminal" ? "terminal" : "here", name: "!", why: "" }
+        }
+        const m = /^\/([^\s\/]+)(?:\s+([\s\S]*))?$/.exec(t)
+        if (!m || !offers)
+            return null
+        const c = offers.commands.find(x => x.name === "/" + m[1]) || (offers.typed || {})[m[1]] || null
+        if (!c || !c.run)
+            return null
+        let run = m[2] && m[2].trim() && c.runArgs ? c.runArgs : c.run
+        if (run === "terminal" && route === "vscode")
+            run = "here"   // (its Claude Code panel's input: you press Enter there, in Claude's own)
+        const name = c.of || "/" + m[1]
+        if (run === "terminal" && where === "new")
+            return { run: "off", name: name, why: i18n("%1 %2: start the chat first, then it opens in its terminal.", name, c.why || "") }
+        return { run: run, name: name, why: c.why || "" }
+    }
+    readonly property var commandNow: commandRun(replyBox.text)
+    property string sendAfterOffers: ""   // ("how later"): a / command sent while the offers were being read
+    property bool offersFailed: false
+    property bool commandBusy: false      // (one on its way to its terminal: --type-in)
+    property real commandSince: 0
+    // A command for Claude's own panel: put in the chat's terminal, for you to press Enter there
+    function openWithCommand(text) {
+        if (commandBusy && Date.now() - commandSince < 20000)
+            return   // (a second Enter meanwhile doesn't type it twice)
+        commandBusy = true
+        commandSince = Date.now()
+        const target = row || chat
+        start("--type-in " + root.shellQuote(chatId) + " --text " + root.shellQuote(text)
+              + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + paneArgs() + " # " + Date.now(),
+              { kind: "typein", chat: chatId, host: host, target: target, text: text })
     }
 
     // ↑ / ↓: your prompts, newest first, each once (what you were typing comes
@@ -1026,6 +1091,25 @@ Window {
                 usual = { chips: result.chips || {}, ranked: result.ranked || [] }
             return
         }
+        // (a command opened in its chat's terminal: there, whichever chat this window shows now)
+        if (kind === "typein") {
+            commandBusy = false
+            info = result.message || (result.ok ? "" : i18n("That didn't work"))
+            infoBad = !result.ok
+            infoTimer.restart()
+            if (!result.ok)
+                return
+            if (asked.chat === chatId && replyBox.text.trim() === asked.text)
+                replyBox.text = ""   // (it's there now: out of the box)
+            if (result.how === "vscode" && result.link) {
+                root.openVscodeLink(asked.target ? asked.target.sessionId || asked.chat : asked.chat, result.link, asked.host)
+                return
+            }
+            if (result.how === "copy" && !result.copied && result.text)
+                copyText(result.text, true)   // (an SSH host's chat: this computer's clipboard)
+            root.openRow(asked.target, asked.host, true)
+            return
+        }
         if (kind === "send" || kind === "later")
             sentDone(asked, result)   // (shown as sent, or back in its box; the next one to that chat goes)
         if ((kind === "deny" || kind === "answer") && asked.answerId)
@@ -1066,8 +1150,16 @@ Window {
         }
         if (kind === "complete") {
             if (result.ok)
-                offers = { commands: result.commands || [], files: result.files || [], history: result.history || [] }
+                offers = { commands: result.commands || [], files: result.files || [], history: result.history || [],
+                           typed: result.typed || {} }
             Qt.callLater(suggest)
+            if (sendAfterOffers) {   // (a / command sent before they were in: now, as what it is)
+                const how = sendAfterOffers
+                sendAfterOffers = ""
+                offersFailed = !result.ok
+                send(how.split(" ")[0], how.split(" ")[1] === "later")
+                offersFailed = false
+            }
             return
         }
         if (kind === "conversation") {
@@ -1446,6 +1538,30 @@ Window {
         const text = replyBox.text.trim()
         if (!text)
             return
+        // A command: as its kind says on this chat (commandRun). One typed before the / list's
+        // offers were read waits for them (else /model would go as a message, and save your default)
+        if (/^\/\S/.test(text) && !offers && !offersFailed && !replyAnswers) {
+            sendAfterOffers = (how || "auto") + (afterTurn ? " later" : "")
+            offersAt = 0
+            loadOffers()
+            return
+        }
+        const ran = replyAnswers ? null : commandRun(text)
+        if (ran && ran.run === "off") {
+            info = ran.why
+            infoBad = true
+            infoTimer.restart()
+            return
+        }
+        if (ran && ran.run === "page") {
+            replyBox.text = ""
+            root.openPermissions()
+            return
+        }
+        if (ran && ran.run === "terminal") {
+            openWithCommand(text)
+            return
+        }
         // (it goes on the command line: one too long for it is refused here, as
         // VS Code does, and stays in the box)
         if (text.length > 100000 || utf8Length(text) > 120000) {
@@ -1782,13 +1898,14 @@ Window {
             if (p.state === "held")
                 continue   // (not sent yet: nothing in the conversation is it)
             const want = norm(p.text)
+            const bare = want[0] === "!" ? norm(want.slice(1)) : ""   // (a shell command waits in Claude's queue without its !)
             const found = list.find(it => {
                 const key = String(it.key)
                 if (it.kind !== "you" || it.answered || p.known[key] || claimed[key])
                     return false
                 const said = norm(it.text)
                 const cut = said.endsWith("…") ? said.slice(0, -1).trim() : ""
-                return said === want || (cut !== "" && want.indexOf(cut) === 0)
+                return said === want || (bare !== "" && said === bare) || (cut !== "" && want.indexOf(cut) === 0)
                     || (!p.host && p.state === "sent" && now - p.sentAt > 3000 && (it.at || 0) >= p.at - 2000)
             })
             if (found) {
@@ -1803,7 +1920,8 @@ Window {
             pendingSent = pendingSent.filter(p => !done[p.id])
         return list.concat(pendingSent.filter(p => p.chat === chatId && p.host === (host || ""))
                                       .map(p => ({ kind: "you", key: "pending-" + p.id, text: p.text, status: p.state, at: p.at, until: p.until,
-                                                   pictures: pictureNames(p.text) })))
+                                                   pictures: pictureNames(p.text),
+                                                   command: /^[\/!]\S/.test(p.text) ? (p.text[0] === "!" ? { shell: true } : {}) : null })))
     }
     function showPending() {
         if (loaded) {
@@ -1841,6 +1959,19 @@ Window {
             return i18n("It's asking you a question: your message is your answer, in your own words.") + where
         if (replyAnswers === "decline")
             return i18n("It's asking you questions: your message declines them and goes to Claude with the No.") + where
+        // (a command: where it runs, commandRun)
+        const ran = commandNow
+        if (ran && ran.run === "off")
+            return ran.why
+        if (ran && ran.run === "page")
+            return i18n("Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.")
+        if (ran && ran.run === "terminal" && ran.name === "!")
+            return i18n("Its terminal takes no text from outside: Enter copies the command and opens its terminal, to paste it there.") + where
+        if (ran && ran.run === "terminal")
+            return (route === "tmux" ? i18n("%1 %2: Enter types it into its tmux pane, for you to press Enter there.", ran.name, ran.why)
+                                     : i18n("%1 %2: Enter opens the chat's terminal, with the command on the clipboard to paste there.", ran.name, ran.why)) + where
+        if (ran && ran.name === "!")
+            return i18n("A shell command, as Claude's ! mode: it runs in the chat's folder, then Claude answers what it printed.") + where
         if (route === "tmux")
             return i18n("Typed into its tmux pane.") + where
         if (route === "vscode")
@@ -2552,9 +2683,11 @@ Window {
                         required property string here       // (a host's: those of them that are a regular file here, pane.py pictures_here)
                         required property string asked      // (a question or a plan Claude asked, as JSON: pane.py asked_of)
                         required property string answered   // (yours: your answer to the call before it, pane.py your_answer)
+                        required property string command    // (yours: a command you ran, as JSON: pane.py commands.py)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
                         readonly property bool unfolded: pane.openTools[key] === true
                         readonly property var askedData: asked !== "" ? JSON.parse(asked) : null
+                        readonly property var commandData: command !== "" ? JSON.parse(command) : null
                         // (a question or a plan you answered: as Claude's, in Chat and Steps)
                         readonly property bool card: kind === "tool" && pane.askedShows(askedData, pane.answeringFor[key] === true)
                         // more room before your prompt (a new turn) than between steps; your answer: right under what it answers
@@ -2586,11 +2719,18 @@ Window {
                         // while Claude works), grey, as Claude's terminal shows it, with
                         // what becomes of it: held a moment (Edit, Send now, Cancel; ↑ in the
                         // box), then in Claude's queue till it takes it in at its next step
+                        // A command you ran (/compact, !ls): in the code font ($ before a shell
+                        // command, as Claude's terminal's ! mode), what it printed under it
+                        // (CommandOutput.qml: read and made only for a command that printed something)
                         Component {
                             id: youItem
 
+                            ColumnLayout {
+                            spacing: 0
+
                             Rectangle {
                                 id: youBand
+                                Layout.fillWidth: true
                                 readonly property bool held: entry.status === "held"
                                 readonly property bool waits: held || entry.queued
                                 readonly property color mark: waits ? pane.mutedColor : pane.youColor
@@ -2623,7 +2763,7 @@ Window {
                                         Layout.alignment: Qt.AlignTop
                                         horizontalAlignment: Text.AlignHCenter
                                         textFormat: Text.PlainText
-                                        text: "›"
+                                        text: entry.commandData && entry.commandData.shell ? "$" : "›"
                                         color: youBand.mark
                                         font.pointSize: pane.pt
                                         font.weight: Font.Bold
@@ -2632,7 +2772,7 @@ Window {
                                         id: youText
                                         Component.onCompleted: entry.textBox = youText
                                         Layout.fillWidth: true
-                                        text: pane.shownText(entry.text)
+                                        text: entry.commandData && entry.commandData.shell ? entry.text.replace(/^!\s*/, "") : pane.shownText(entry.text)
                                         textFormat: TextEdit.PlainText
                                         readOnly: true
                                         selectByMouse: true
@@ -2642,7 +2782,7 @@ Window {
                                         color: Kirigami.Theme.textColor
                                         selectionColor: Kirigami.Theme.focusColor
                                         selectedTextColor: Kirigami.Theme.highlightedTextColor
-                                        font.family: pane.chatFamily
+                                        font.family: entry.commandData ? pane.monoFamily : pane.chatFamily
                                         font.pointSize: pane.pt
                                         opacity: entry.status === "sending" ? 0.6 : 1
                                     }
@@ -2721,6 +2861,14 @@ Window {
                                     }
                                 }
                                 }
+                            }
+                            Loader {
+                                active: !!entry.commandData && !!entry.commandData.output
+                                visible: active
+                                Layout.fillWidth: true
+                                Layout.topMargin: Kirigami.Units.smallSpacing
+                                source: active ? "CommandOutput.qml" : ""
+                            }
                             }
                         }
 
@@ -3105,6 +3253,7 @@ Window {
                             delegate: Rectangle {
                                 required property int index
                                 readonly property var offer: pane.suggestions[index] || { text: "", about: "" }
+                                opacity: offer.off ? 0.55 : 1
                                 width: offerList.width
                                 height: offerRow.implicitHeight + Kirigami.Units.smallSpacing
                                 radius: Kirigami.Units.cornerRadius
@@ -3133,14 +3282,35 @@ Window {
                                         font.pointSize: pane.pt * 0.85
                                         elide: Text.ElideRight
                                     }
+                                    // where it runs, when not here: the chat's terminal, Talpy Den's own page
+                                    PlasmaComponents3.Label {
+                                        visible: !!offer.tag
+                                        textFormat: Text.PlainText
+                                        text: offer.tag || ""
+                                        color: pane.mutedColor
+                                        font.pointSize: pane.pt * 0.8
+                                        leftPadding: Kirigami.Units.smallSpacing
+                                        rightPadding: Kirigami.Units.smallSpacing
+                                        background: Rectangle {
+                                            color: "transparent"
+                                            border.width: 1
+                                            border.color: pane.borderColor
+                                            radius: Kirigami.Units.cornerRadius
+                                        }
+                                    }
                                 }
                                 MouseArea {
+                                    id: offerMouse
                                     anchors.fill: parent
+                                    hoverEnabled: !!offer.tip || !!offer.off
                                     onClicked: {
                                         pane.takeSuggestion(index)
                                         replyBox.forceActiveFocus()
                                     }
                                 }
+                                PlasmaComponents3.ToolTip.text: offer.off ? offer.about : offer.tip || ""
+                                PlasmaComponents3.ToolTip.visible: offerMouse.containsMouse && PlasmaComponents3.ToolTip.text !== ""
+                                PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                             }
                         }
                     }
@@ -3465,7 +3635,7 @@ Window {
                         }
                         PlasmaComponents3.Button {
                             visible: pane.busy
-                            enabled: replyBox.text.trim() !== ""
+                            enabled: replyBox.text.trim() !== "" && (!pane.commandNow || pane.commandNow.run === "here")
                             icon.name: Icons.plasma.later
                             text: i18n("Send when this turn ends")
                             onClicked: pane.send(pane.route === "terminal" || pane.askHow ? "background" : "auto", true)
@@ -3480,17 +3650,24 @@ Window {
                         PlasmaComponents3.Button {
                             // (a terminal that takes no text, known or just found out: not while
                             // Claude works there, it would quit mid-turn; Send when this turn ends)
-                            enabled: replyBox.text.trim() !== "" && !((pane.route === "terminal" || pane.askHow) && pane.busy)
+                            // (a command for Claude's own panel: Open in a terminal; one that can't run here: greyed, the line above says why)
+                            readonly property string commandRun: pane.replyAnswers || !pane.commandNow ? "" : pane.commandNow.run
+                            enabled: replyBox.text.trim() !== "" && commandRun !== "off"
+                                     && !((pane.route === "terminal" || pane.askHow) && pane.busy && commandRun !== "terminal" && commandRun !== "page")
                                      && !pane.replyWaits && !(pane.replyAnswers && pane.answering > 0)
-                            icon.name: pane.replyDenies ? Icons.plasma.deny : pane.replyKeepsPlanning ? Icons.plasma.edit : Icons.plasma.send
-                            icon.color: pane.replyDenies ? Icons.color("deny", Kirigami.Theme) : "transparent"
-                            text: pane.replyAnswers === "deny" ? i18n("Deny with this note")
+                            icon.name: commandRun === "terminal" ? Icons.plasma.terminal : commandRun === "page" ? Icons.plasma.permissions
+                                       : pane.replyDenies ? Icons.plasma.deny : pane.replyKeepsPlanning ? Icons.plasma.edit : Icons.plasma.send
+                            icon.color: pane.replyDenies && commandRun === "" ? Icons.color("deny", Kirigami.Theme) : "transparent"
+                            text: commandRun === "terminal" ? i18n("Open in a terminal")
+                                  : commandRun === "page" ? i18n("Open Permissions")
+                                  : pane.replyAnswers === "deny" ? i18n("Deny with this note")
                                   : pane.replyAnswers === "plan" ? i18n("Keep planning with this note")
                                   : pane.replyAnswers === "question" ? i18n("Send as your answer")
                                   : pane.replyAnswers === "decline" ? i18n("Decline with this note")
                                   : pane.route === "terminal" || pane.askHow ? i18n("Send, go on in the background")
                                   : pane.fresh && !pane.starting ? i18nc("a new chat's first message: start the chat with it", "Start") : i18n("Send")
-                            onClicked: pane.send(pane.route === "terminal" || pane.askHow ? "background" : "auto", false)
+                            onClicked: pane.send(commandRun !== "" && commandRun !== "here" ? "auto"
+                                                 : pane.route === "terminal" || pane.askHow ? "background" : "auto", false)
                         }
                     }
                 }

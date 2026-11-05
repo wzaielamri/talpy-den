@@ -1152,6 +1152,11 @@ PlasmoidItem {
         popupTab = "week"
         expanded = true
     }
+    // (Talpy Chat's /permissions: Talpy Den's page for it)
+    function openPermissions() {
+        popupTab = "perms"
+        expanded = true
+    }
     Timer {
         // (the first ask a minute after it starts, as VS Code's: the week is marked as told at the first ask,
         // and right at login no SSH host has answered yet; then every 30 minutes)
