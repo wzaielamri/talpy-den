@@ -262,39 +262,41 @@ ColumnLayout {
 
     // Not logged in to an account (a new one, or logged out): Claude's own
     // login, in a terminal (over ssh for a host's)
-    RowLayout {
-        visible: !!section.group.loggedOut
+    Loader {   // (made only for an account that isn't logged in)
+        active: !!section.group.loggedOut
+        visible: active
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.smallSpacing
         Layout.rightMargin: Kirigami.Units.smallSpacing
-        spacing: Kirigami.Units.smallSpacing
+        sourceComponent: RowLayout {
+            spacing: Kirigami.Units.smallSpacing
 
-        Kirigami.Icon {
-            source: Icons.plasma.accountOut
-            Layout.preferredWidth: Kirigami.Units.iconSizes.small
-            Layout.preferredHeight: Layout.preferredWidth
-        }
-        PlasmaComponents3.Label {
-            textFormat: Text.PlainText
-            Layout.fillWidth: true
-            elide: Text.ElideRight
-            text: i18n("Not logged in")
-            opacity: 0.8
-        }
-        PlasmaComponents3.Button {
-            text: i18n("Log in…")
-            icon.name: Icons.plasma.signIn
-            enabled: !section.remoteHost || !!section.group.loginCommand
-
-            PlasmaCore.ToolTipArea {
-                textFormat: Text.PlainText
-                anchors.fill: parent
-                mainText: i18n("Log in to %1", section.group.title)
-                subText: section.remoteHost
-                         ? i18n("Opens a terminal with Claude's own login on %1 (over ssh): open the address it shows in your browser, sign in, and paste the code you get back.", root.hostLabel(section.remoteHost))
-                         : i18n("Opens a terminal with Claude's own login (claude auth login): sign in in your browser with the account for this folder. Talpy Den never sees the login.")
+            Kirigami.Icon {
+                source: Icons.plasma.accountOut
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Layout.preferredWidth
             }
-            onClicked: root.logIn(section.group, section.remoteHost)
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                text: i18n("Not logged in")
+                opacity: 0.8
+            }
+            PlasmaComponents3.Button {
+                text: i18n("Log in…")
+                icon.name: Icons.plasma.signIn
+                enabled: !section.remoteHost || !!section.group.loginCommand
+
+                PlasmaCore.ToolTipArea {
+                    textFormat: Text.PlainText
+                    anchors.fill: parent
+                    mainText: i18n("Log in to %1", section.group.title)
+                    subText: section.remoteHost
+                             ? i18n("Opens a terminal with Claude's own login on %1 (over ssh): open the address it shows in your browser, sign in, and paste the code you get back.", root.hostLabel(section.remoteHost))
+                             : i18n("Opens a terminal with Claude's own login (claude auth login): sign in in your browser with the account for this folder. Talpy Den never sees the login.")
+                }
+                onClicked: root.logIn(section.group, section.remoteHost)
+            }
         }
     }
 

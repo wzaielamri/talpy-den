@@ -45,9 +45,9 @@ s = s.replace("    collapseMarginsHint: true\n",
               "    leftPadding: 0\n    rightPadding: 0\n", 1)
 only = os.environ.get("ONLY_GROUP")
 if only:
-    s = s.replace("model: root.groups.length", f"model: root.groups.filter(g => g.name === {only!r}).length")
-    s = s.replace("group: root.groups[index] || root.emptyGroup",
-                  f"group: root.groups.filter(g => g.name === {only!r})[index] || root.emptyGroup")
+    sync = "accountRows.sync(root.groups, "
+    assert s.count(sync) == 1, "FullRepresentation.qml's accounts moved: update render_popup.sh"
+    s = s.replace(sync, f"accountRows.sync(root.groups.filter(g => g.name === {only!r}), ")
 open(full, "w").write(s)
 main = f"{pkg}/contents/ui/main.qml"
 s = open(main).read()

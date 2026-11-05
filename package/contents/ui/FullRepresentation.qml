@@ -18,6 +18,21 @@ PlasmaExtras.Representation {
 
     collapseMarginsHint: true
 
+    // The accounts' sections, kept by account (rev: unused, a section reads its account from root.groups)
+    readonly property KeyedRows accountRows: KeyedRows {
+        budgetMs: 1   // (one a frame)
+    }
+    function syncAccounts() {
+        accountRows.sync(root.groups, g => g.id, g => "1")
+    }
+    Connections {
+        target: root
+        function onGroupsChanged() {
+            full.syncAccounts()
+        }
+    }
+    Component.onCompleted: syncAccounts()
+
     // The tabs, in the order they stand: your chats now, then the rest of your
     // work by project, the permissions you gave, and the Recap of your days
     readonly property var tabOrder: ["chats", "projects", "perms", "week"]
@@ -314,21 +329,24 @@ PlasmaExtras.Representation {
                     }
 
                     // What happened while you were away (main.qml: sendDigest), until you've seen it
-                    Kirigami.InlineMessage {
+                    Loader {   // (made only while there is one)
+                        active: root.awayDigest !== null
+                        visible: active
                         Layout.fillWidth: true
                         Layout.margins: Kirigami.Units.smallSpacing
-                        visible: root.awayDigest !== null
-                        type: Kirigami.MessageType.Information
-                        icon.name: Icons.plasma.away
-                        text: root.awayDigest ? "<b>" + root.escapeHtml(root.awayDigest.title) + "</b><br>"
-                                                + root.awayDigest.lines.map(root.escapeHtml).join("<br>") : ""
-                        actions: [
-                            Kirigami.Action {
-                                text: i18n("Dismiss")
-                                icon.name: Icons.plasma.close
-                                onTriggered: root.awayDigest = null
-                            }
-                        ]
+                        sourceComponent: Kirigami.InlineMessage {
+                            type: Kirigami.MessageType.Information
+                            icon.name: Icons.plasma.away
+                            text: root.awayDigest ? "<b>" + root.escapeHtml(root.awayDigest.title) + "</b><br>"
+                                                    + root.awayDigest.lines.map(root.escapeHtml).join("<br>") : ""
+                            actions: [
+                                Kirigami.Action {
+                                    text: i18n("Dismiss")
+                                    icon.name: Icons.plasma.close
+                                    onTriggered: root.awayDigest = null
+                                }
+                            ]
+                        }
                     }
 
                     // (made the first time you search, then kept)
@@ -363,17 +381,19 @@ PlasmaExtras.Representation {
                         sourceComponent: FocusView {}
                     }
 
-                    // Indexed by position so rows survive each poll (a new array every
-                    // 2 s would rebuild them and drop their state).
+                    // Each account keeps its section (by its id: KeyedRows.qml), whose
+                    // rows survive each check; the sections come one a frame when the
+                    // popup is made, after its first frame
                     Repeater {
-                        model: root.groups.length
+                        model: full.accountRows.model
                         delegate: GroupSection {
                             required property int index
+                            required property string key
                             visible: !root.focusView   // (kept, with their pets and what's open, while the focus view shows)
                             Layout.fillWidth: true
-                            group: root.groups[index] || root.emptyGroup
+                            group: root.groups.find(g => g.id === key) || root.emptyGroup
                             accounts: root.groups.length
-                            last: index === root.groups.length - 1
+                            last: index === full.accountRows.model.count - 1
                         }
                     }
 
@@ -411,13 +431,16 @@ PlasmaExtras.Representation {
                         }
                     }
 
-                    PlasmaExtras.PlaceholderMessage {
+                    Loader {   // (made only while there are none)
+                        active: root.status !== null && root.groups.length === 0 && root.shownHosts.length === 0
+                        visible: active
                         Layout.fillWidth: true
                         Layout.margins: Kirigami.Units.gridUnit
-                        visible: root.status !== null && root.groups.length === 0 && root.shownHosts.length === 0
-                        iconName: Icons.plasma.chats   // (the tab's, as the Projects and Recap tabs' have theirs)
-                        text: i18n("No Claude Code chats yet")
-                        explanation: i18n("Your Claude Code chats show up here once you start claude in a terminal or open Claude in VS Code. Talpy Den looks in ~/.claude and ~/.claude-*; other folders go in its settings (Extra config dirs).")
+                        sourceComponent: PlasmaExtras.PlaceholderMessage {
+                            iconName: Icons.plasma.chats   // (the tab's, as the Projects and Recap tabs' have theirs)
+                            text: i18n("No Claude Code chats yet")
+                            explanation: i18n("Your Claude Code chats show up here once you start claude in a terminal or open Claude in VS Code. Talpy Den looks in ~/.claude and ~/.claude-*; other folders go in its settings (Extra config dirs).")
+                        }
                     }
 
                     // (some room under the last line, scrolled to the end too)

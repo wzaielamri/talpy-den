@@ -261,6 +261,49 @@ class KeyedRowsTests(unittest.TestCase):
         self.assertIn("textFormat: Text.PlainText", text)
         self.assertIn("Accessible.name: text", text)
 
+    def test_copies_share_a_check_and_covered_ones_rest(self):
+        main = (UI / "main.qml").read_text()
+        hub = (UI / "hub/Hub.qml").read_text()
+        self.assertIn("function parse(text) {", hub)
+        handle = main[main.index("function handleOutput("):main.index("function celebrateResets(")]
+        self.assertIn("parsed = Hub.parse(stdout)", handle)
+        self.assertNotIn("JSON.parse(stdout)", handle)
+        # a copy on the desktop under windows holds the newest answers back (not the copy that notifies,
+        # nor one with a Talpy Chat window open), and shows them once uncovered, its trackers primed again
+        self.assertIn("readonly property bool holdAnswers: onDesktop && shownInPlace && coveredByWindow && !notifier", main)
+        self.assertIn("&& !paneWindows.some(w => w.visible)", main)
+        hold = main[main.index("function applyHeld(force) {"):main.index("    Connections {\n        target: Hub")]
+        self.assertIn('primedSources = Object.assign({}, primedSources, { "": false })', hold)
+        self.assertIn("handleRemote(host, held[host])", hold)
+        self.assertIn("root.applyHeld(true)", main)   # (the shortcut: what it held back first)
+        # the answer's stamp: what's new is known from its first line
+        self.assertIn('/^\\{"stamp": *"(\\w+)"/', main)
+        code = (UI.parent / "code/talpy_den.py").read_text()
+        self.assertIn("text = stamped(text)", code)
+        self.assertIn('ROW_LISTS = ("sessions", "recent", "starred", "starredPlans", "instructions")', code)
+
+    def test_what_shows_rarely_is_made_when_it_first_shows(self):
+        section = (UI / "GroupSection.qml").read_text()
+        for made in ("sourceComponent: NewChatBox {", "sourceComponent: StatsPanel {", "sourceComponent: OpenInSwitch {",
+                     "sourceComponent: MoreButton {"):
+            self.assertIn(made, section)
+        self.assertNotRegex(section, r"\n    (NewChatBox|StatsPanel|OpenInSwitch|MoreButton) \{")
+        full = (UI / "FullRepresentation.qml").read_text()
+        for made in ("sourceComponent: SearchResults {}", "sourceComponent: FocusView {}", "sourceComponent: Kirigami.InlineMessage {",
+                     "sourceComponent: PlasmaExtras.PlaceholderMessage {"):
+            self.assertIn(made, full)
+        projects = full[full.index('source: "ProjectsView.qml"') - 400:full.index('source: "ProjectsView.qml"')]
+        self.assertIn('active: root.popupTab === "projects" || made', projects)   # (kept once made)
+        view = (UI / "ProjectsView.qml").read_text()
+        self.assertIn("model: view.cardRows.model", view)
+        main = (UI / "main.qml").read_text()
+        self.assertIn("if (text !== root.projectsText || root.projectsData === null)", main)
+        # tooltips' words: worked out while the pointer is on them
+        row = (UI / "SessionRow.qml").read_text()
+        self.assertIn("function openHint() {", row)
+        self.assertIn('mainText: !containsMouse ? "" : Plasmoid.configuration.clickOpensPane', row)
+        self.assertIn("function reopenHint() {", (UI / "RecentLine.qml").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()
