@@ -492,6 +492,16 @@ def session_state(entry, job=None):
         return "idle"  # dispatched without a prompt: nothing for Claude to do yet
     if job.get("tempo") == "blocked" or waiting:
         return "waiting"
+    # Its turn is over: the session is idle and its job's tempo went idle as the turn ended. Claude
+    # writes the tempo at every turn's end, but the outcome (state) only for a turn that ended by
+    # itself, and not always "done": a turn you stopped keeps "working" (stopped while it thought,
+    # nothing is written at all), and so does one whose summary says it goes on. A background task
+    # that just ended leaves the session idle for 15–100 ms before its notification wakes it, still
+    # counted in inFlight then; a recurring job between runs stays as it was.
+    in_flight = job.get("inFlight") if isinstance(job.get("inFlight"), dict) else {}
+    if status == "idle" and job.get("tempo") == "idle" and not (in_flight.get("tasks") or 0) \
+            and not is_recurring(job):
+        return "idle"
     return "working"
 
 
@@ -518,6 +528,10 @@ def parked_job_state(job, present, now_ms, keep_done_ms=0):
         # the job went on working and its process died mid-task)
         if job.get("state") == "blocked" and job.get("tempo") != "active" and not exec_job:
             return "waiting", ""
+        # its turn ended (tempo idle: stopped, or a summary that says it goes on) and the service let
+        # its process go: settled, not died mid-task (a worker that dies mid-turn keeps tempo "active")
+        if job.get("tempo") == "idle" and not exec_job:
+            return ("done", "") if recent_end else None
         return ("done", "failed") if recent_end else None  # its process died mid-task
     return ("waiting" if job.get("tempo") == "blocked" else "working"), ""
 

@@ -274,6 +274,27 @@ class StateMappingTests(unittest.TestCase):
         self.assertEqual(self.state({"status": "idle"}, {"state": "done", "tempo": "active"}), "working")
         self.assertEqual(self.state({"status": "idle"}, {"state": "done", "tempo": "idle", "routine": {}}), "working")
 
+    def test_background_turn_over_but_record_says_working(self):
+        # Stopped (while it thought: nothing written; mid-reply: "[Request interrupted by user]"), or a
+        # turn whose summary says it goes on: the state stays "working", the tempo went idle
+        idle = {"status": "idle"}
+        self.assertEqual(self.state(idle, {"state": "working", "tempo": "idle", "inFlight": {"tasks": 0, "queued": 0}}), "idle")
+        self.assertEqual(self.state(idle, {"state": "working", "tempo": "idle", "inFlight": {"tasks": 0, "queued": 1}}), "idle")
+        self.assertEqual(self.state(idle, {"state": "working", "tempo": "idle"}), "idle")
+        self.assertEqual(self.state(idle, {"state": "blocked", "tempo": "idle"}), "idle")
+
+    def test_background_still_at_work_with_an_idle_tempo_or_status(self):
+        idle = {"status": "idle"}
+        self.assertEqual(self.state(idle, {"state": "working", "tempo": "active"}), "working")  # start-up, a wake
+        self.assertEqual(self.state({"status": "busy"}, {"state": "working", "tempo": "idle"}), "working")  # Stop hooks
+        self.assertEqual(self.state({"status": "shell"}, {"state": "working", "tempo": "idle",
+                                                          "inFlight": {"tasks": 1, "kinds": ["monitor"]}}), "working")
+        self.assertEqual(self.state(idle, {"state": "working"}), "working")  # no tempo: an older Claude Code
+        self.assertEqual(self.state(idle, {"state": "working", "tempo": "idle", "routine": {}}), "working")
+        # a background task just ended: idle for 15-100 ms before its notification wakes the session
+        self.assertEqual(self.state(idle, {"state": "working", "tempo": "idle",
+                                           "inFlight": {"tasks": 1, "queued": 0, "kinds": ["local_bash"]}}), "working")
+
 
 class ParkedJobTests(unittest.TestCase):
     """Job records whose session process is gone (`claude agents --all`)."""
@@ -311,6 +332,13 @@ class ParkedJobTests(unittest.TestCase):
                "createdAt": self.iso(600_000), "updatedAt": self.iso(300_000)}
         self.assertEqual(self.parked(job), ("done", "failed"))
         self.assertIsNone(self.parked({**job, "updatedAt": self.iso(30 * self.DAY)}))
+        self.assertEqual(self.parked(job, present=True), ("working", ""))
+
+    def test_turn_over_then_retired(self):
+        # stopped (or its summary said it goes on), then the service let its process go: settled
+        job = {"state": "working", "tempo": "idle", "createdAt": self.iso(600_000), "updatedAt": self.iso(300_000)}
+        self.assertEqual(self.parked(job), ("done", ""))
+        self.assertIsNone(self.parked(job, keep=0))
         self.assertEqual(self.parked(job, present=True), ("working", ""))
 
     def test_not_started_hidden(self):

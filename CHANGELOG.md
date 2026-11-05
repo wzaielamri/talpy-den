@@ -37,6 +37,7 @@
 - **What could use less of your plan says what its shares are.** A tip's *96%*, beside another's *96%* and *86%*, read like savings adding up to more than everything: it's the share of the usage the tip touches, and says so (*96% of usage*). Its icon says where the tip comes from (Claude Code's `/usage`, or Talpy Den: the time Claude waited, the limits) (Plasma, GNOME and VS Code).
 - **Your plan's limits over time, next to the limits now.** *Advanced analyses*, folded at the very end of the Recap under a name that said nothing, is now *Your plan's limits over time*, right after *Your plan's limits now* (on the other views, where that would be) (Plasma, GNOME and VS Code).
 - **Smaller:** the first tile says *You were at it*; *Where Claude worked* gives the names the room they need (up to a point) rather than cutting *talpy-live-checks-tmp* in the middle (Plasma and VS Code).
+- **A background chat no longer stays *working* after its turn.** A chat you stopped (Stop in Talpy Chat, or Esc in its terminal) and one whose last summary said it goes on kept showing *working*, with Talpy Chat's working line, clock and **Stop**, until your next message, and a second Stop said *It isn't working any more*. Claude marks every turn's end, but writes the outcome only for a turn that ended by itself; Talpy Den now goes by the turn's end. A background task that just ended still counts as working, as before, and once Claude's background service lets such a chat's process go, it's listed as done rather than *failed*.
 
 ## 1.18.0 (2026-11-04)
 
