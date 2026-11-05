@@ -47,6 +47,7 @@
 - **A chat Talpy Chat started keeps answering its prompts there when it goes on as a copy.** Claude makes a copy of a chat it can't wake as it is (its session still held a moment, or no record of its own), and Keep going or a queued go-on gave that copy none of Talpy Chat's permission hook, so what it asked went unanswered in Talpy Chat. The copy now gets the hook its chat had (only Talpy Den's hook: settings of your own stay with the chat).
 - **Two windows sending to one stopped chat at once wake it once.** Sending from Talpy Chat in Plasma and from its tab in VS Code within a second or two made Claude start a copy of the chat. Now one waits for the other's wake and adds its message to the chat that's running (Keep going and queued go-ons too).
 - **Talpy Chat's icon.** Talpy Chat showed a generic speech bubble, the same as other chat buttons, and VS Code's tab showed Talpa alone. Now it has an icon of its own, Talpa whose antenna light is a yellow speech bubble: in colour on the *Open in* switch (Plasma and VS Code) and VS Code's Talpy Chat tabs, and in one colour on the buttons that open a chat in Talpy Chat. In Plasma the Talpy Chat window shows it in the taskbar too (its window rule's desktop file, written when you install).
+- **No more warnings from the new-chat box at Plasma's start.** Its Model, Effort and Permissions choices logged "Binding loop detected for property implicitWidth" (three each time Plasma started); each is now as wide as its widest choice, measured once.
 
 ## 1.18.0 (2026-11-04)
 

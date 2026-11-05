@@ -209,6 +209,10 @@ Rectangle {
                 opacity: 0.8
             }
             PlasmaComponents3.ComboBox {
+                // (as wide as its widest choice; not the style's implicitWidth, which also reads its frame's,
+                // that follows the box's own width in a row: a binding loop at every start)
+                implicitContentWidthPolicy: T.ComboBox.WidestTextWhenCompleted
+                implicitWidth: implicitContentWidth + leftPadding + rightPadding
                 readonly property var values: ["opus", "sonnet", "fable", "haiku", ""]
                 model: [i18n("Opus"), i18n("Sonnet"), i18n("Fable"), i18n("Haiku"), i18n("Claude's default")]
                 currentIndex: Math.max(0, values.indexOf(Plasmoid.configuration.newChatModel))
@@ -220,6 +224,10 @@ Rectangle {
                 opacity: 0.8
             }
             PlasmaComponents3.ComboBox {
+                // (as wide as its widest choice; not the style's implicitWidth, which also reads its frame's,
+                // that follows the box's own width in a row: a binding loop at every start)
+                implicitContentWidthPolicy: T.ComboBox.WidestTextWhenCompleted
+                implicitWidth: implicitContentWidth + leftPadding + rightPadding
                 readonly property var values: ["low", "medium", "high", "xhigh", "max", ""]
                 model: [i18nc("reasoning effort", "Low"), i18nc("reasoning effort", "Medium"), i18nc("reasoning effort", "High"),
                         i18nc("reasoning effort", "Extra high"), i18nc("reasoning effort", "Max"), i18n("Claude's default")]
@@ -247,6 +255,10 @@ Rectangle {
                 opacity: 0.8
             }
             PlasmaComponents3.ComboBox {
+                // (as wide as its widest choice; not the style's implicitWidth, which also reads its frame's,
+                // that follows the box's own width in a row: a binding loop at every start)
+                implicitContentWidthPolicy: T.ComboBox.WidestTextWhenCompleted
+                implicitWidth: implicitContentWidth + leftPadding + rightPadding
                 id: modeBox
                 readonly property var values: ["default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions", ""]
                 model: [i18nc("permission mode", "Manual (asks first)"), i18nc("permission mode", "Accept edits"),

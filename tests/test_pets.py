@@ -2045,6 +2045,14 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("(its tool calls, in the Steps tab).", shared)
         self.assertIn("return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m ${s % 60}s`;", shared)
 
+    def test_the_new_chat_boxs_choices_have_no_binding_loop(self):
+        # (Plasma's ComboBox reads its frame's width, which follows the box's in a row: a binding loop on
+        # implicitWidth each start; as wide as the widest choice instead, measured once)
+        box = (ROOT / "ui/NewChatBox.qml").read_text()
+        self.assertEqual(box.count("PlasmaComponents3.ComboBox {"), 3)
+        self.assertEqual(box.count("implicitContentWidthPolicy: T.ComboBox.WidestTextWhenCompleted\n"
+                                   "                implicitWidth: implicitContentWidth + leftPadding + rightPadding\n"), 3)
+
     def test_times_copy_and_new_below_add_nothing_per_message(self):
         # Talpy Chat's lines between days (A5), a message's time and Copy on hover (A4, A5) and "3 new ↓"
         # (A2): each in a file of its own, read and made only when there's one to show (a day line is the
