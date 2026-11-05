@@ -335,6 +335,7 @@ PlasmaExtras.Representation {
                         Layout.fillWidth: true
                         Layout.margins: Kirigami.Units.smallSpacing
                         sourceComponent: Kirigami.InlineMessage {
+                            visible: true   // (an InlineMessage is hidden till told: the Loader shows it only while it's wanted)
                             type: Kirigami.MessageType.Information
                             icon.name: Icons.plasma.away
                             text: root.awayDigest ? "<b>" + root.escapeHtml(root.awayDigest.title) + "</b><br>"

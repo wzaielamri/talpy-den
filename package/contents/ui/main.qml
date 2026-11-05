@@ -1059,8 +1059,13 @@ PlasmoidItem {
     // the panel's popup and each desktop's dashboard, seen or not. What
     // changed meanwhile is no news then (its trackers are primed again: no
     // pet reacts to it late); the copy that notifies sees it all.
+    // Never the Hub's leader: the one copy that can notify (status.notifier
+    // may say "not you" for a while: another program's widget notified), and
+    // a held copy goes on sharing settings (syncSettings at each held answer:
+    // others' changes taken over, so it doesn't keep checks of its own with
+    // the old ones; its own saved for the others).
     readonly property bool holdAnswers: onDesktop && shownInPlace && coveredByWindow && !notifier
-                                        && !paneWindows.some(w => w.visible)
+                                        && Hub.leaderId !== instanceId && !paneWindows.some(w => w.visible)
     property var heldAnswer: null
     property var heldRemote: ({})   // host -> its answer
     onHoldAnswersChanged: if (!holdAnswers) Qt.callLater(applyHeld)
@@ -1084,9 +1089,17 @@ PlasmoidItem {
     Connections {
         target: Hub
         function onOutput(command, stdout, stderr) {
-            if (command === root.command && root.holdAnswers && root.status !== null)
+            if (command === root.command && root.holdAnswers && root.status !== null) {
                 root.heldAnswer = { stdout: stdout, stderr: stderr }
-            else if (command === root.command)
+                let shared = null
+                try {
+                    shared = Hub.parse(stdout).sharedSettings || null   // (the copies' one parse: no cost here)
+                } catch (e) {
+                    shared = null
+                }
+                if (shared)
+                    root.syncSettings(shared)
+            } else if (command === root.command)
                 root.handleOutput(stdout, stderr)
             const host = root.hostOfCommand(command)
             if (host && root.holdAnswers && root.remote[host] && root.remote[host].result)
@@ -1623,9 +1636,9 @@ PlasmoidItem {
         now = parsed.generatedAt
         liveFromRows(parsed.groups)
         followMovedRows("", parsed.groups)
-        dropHidden("", parsed)
         noteStatusParts(parsed)
         status = parsed   // first: whether this copy notifies
+        dropHidden("", parsed)   // (after: with the old groups, a chat hidden now would come back for a moment)
         followPaneChat("", parsed)
         trackTransitions("", parsed.groups, parsed.generatedAt, "")
         trackLimitStops("", parsed.groups, "")
@@ -2720,12 +2733,12 @@ PlasmoidItem {
             trackOverlaps("ssh:" + host, result.groups, host)
             celebrateResets("ssh:" + host, result.groups)
             followMovedRows(host, result.groups)
-            dropHidden(host, result)
             // clockOffset: what its times were moved by (0: not moved), for
             // the ones left on its clock (reviewPending)
             setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(),
                               login: false, loggedIn: !!answer.loggedIn, clockOffset: result === answer.result ? 0 : offset,
                               stopped: false, gone: false, paused: false, cached: false })
+            dropHidden(host, result)   // (after: see handleOutput)
             followPaneChat(host, result)
             if (status)
                 startDueTasks(status.queue || [])   // (a reply waiting for the end of a turn there: it ended)
@@ -3268,9 +3281,10 @@ PlasmoidItem {
         if (!r)
             return 0
         const prefix = kind + "|" + (host || "") + "|"
+        const since = r.generatedAt || 0
         return ((kind === "chats" ? r.dismissed : kind === "plans" ? r.hiddenPlans
                  : kind === "memories" ? r.hiddenMemories : r.hiddenProjects) || 0)
-               + Object.keys(hidingNow).filter(k => k.startsWith(prefix)).length
+               + Object.keys(hidingNow).filter(k => k.startsWith(prefix) && !(hideDone[k] < since)).length
     }
 
     function showHiddenText(kind, count) {
@@ -3288,6 +3302,15 @@ PlasmoidItem {
     // chat's row; the others at the top). The status itself isn't filtered:
     // what's tracked from it (notifications) sees what's there.
     property var hidingNow: ({})
+    property var hideDone: ({})   // (key -> when jump.py said it's hidden: an answer after that counts it itself)
+    function setHiding(next) {
+        const done = {}
+        for (const k in hideDone)
+            if (k in next)
+                done[k] = hideDone[k]
+        hideDone = done
+        hidingNow = next
+    }
     readonly property var noHideFailed: ({ key: "", message: "" })
     property var hideFailed: noHideFailed
     function isHiding(kind, host, id) {
@@ -3313,13 +3336,14 @@ PlasmoidItem {
                 continue
             const kind = key.slice(0, at), id = key.slice(at + prefix.length)
             if (kind === "chats" && result && result.groups
-                    && !result.groups.some(g => g.sessions.some(s => s.sessionId === id))) {
+                    && (!result.groups.some(g => g.sessions.some(s => s.sessionId === id))
+                        || hideDone[key] < (result.generatedAt || 0))) {
                 next = next || Object.assign({}, hidingNow)
                 delete next[key]
             }
         }
         if (next)
-            hidingNow = next
+            setHiding(next)
     }
     Timer {
         id: hidingExpiry
@@ -3333,13 +3357,21 @@ PlasmoidItem {
                     left = true
                 }
             }
-            root.hidingNow = next
+            root.setHiding(next)
             if (left)
                 restart()
         }
     }
 
     function showHidden(kind, host) {
+        const prefix = kind + "|" + (host || "") + "|"
+        const next = {}
+        for (const k in hidingNow)
+            if (!k.startsWith(prefix))
+                next[k] = hidingNow[k]
+        setHiding(next)
+        if (hideFailed.key.startsWith(prefix))
+            hideFailed = noHideFailed
         hideRun(host ? "remote.py" : "jump.py", "--show-hidden " + (host ? shellQuote(host) + " " : "") + kind,
                 { kind: kind, host: host || "", say: true })
     }
@@ -3362,7 +3394,7 @@ PlasmoidItem {
                 if (what.key && what.key in root.hidingNow) {   // (back in its list)
                     const next = Object.assign({}, root.hidingNow)
                     delete next[what.key]
-                    root.hidingNow = next
+                    root.setHiding(next)
                 }
                 if (what.kind === "chats" && what.key) {   // (its row says why)
                     root.hideFailed = { key: what.key, message: result.message }
@@ -3373,6 +3405,8 @@ PlasmoidItem {
                 }
             } else {
                 root.actionError = ""
+                if (what.key && what.key in root.hidingNow)
+                    root.hideDone = Object.assign({}, root.hideDone, { [what.key]: Date.now() })
                 if (what.say) {   // (Showing 2 hidden plans again)
                     root.actionInfo = result.message
                     actionInfoTimer.restart()
@@ -5379,7 +5413,8 @@ PlasmoidItem {
 
     // Days from today to the day of ms (0 today, 1 tomorrow)
     function daysAway(ms) {
-        const d = new Date(ms), today = new Date()
+        // (today as of the minute clock: what reads it is worked out again once a minute, so tomorrow becomes today)
+        const d = new Date(ms), today = new Date(Math.max(minuteNow, Date.now()))
         return Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate())
                            - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000)
     }

@@ -5,6 +5,7 @@ import org.kde.plasma.components as PlasmaComponents3
 import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import "icons.mjs" as Icons
+import "framebudget.mjs" as Budget
 
 // One Claude account: plan limits, token totals, its sessions (which may
 // come from several config dirs logged into that account) and recent chats.
@@ -79,27 +80,49 @@ ColumnLayout {
     readonly property bool starredPlansOpen: !!root.expandedStarred[groupKey + "|plans"]
     readonly property int starredShown: Math.min(starred.length, root.pageSize * root.pagesShown(groupKey + "|chats"))
     readonly property int starredPlansShown: Math.min(starredPlans.length, root.pageSize * root.pagesShown(groupKey + "|plans"))
-    // (their lines' models: a page more made, none taken away while they show; folded, a list has none)
-    // (many lines at once, as when the section is made with pages of them
-    // unfolded: a page a frame, the first at once; a page you ask for comes
-    // in the next frame)
-    property int linesMade: root.pageSize
-    readonly property int linesWanted: Math.max(recentShown, starredShown, starredPlansShown)
+    // (their lines' models: none taken away while they show; folded, a list has
+    // none, and its rows go once it's folded. A list's lines come a few a frame,
+    // each frame's worth within the budget the lists filling in the same frame
+    // share (framebudget.mjs), from the frame after you unfold it or ask for
+    // more: a page of Recent chats made at once held the popup for a tenth of
+    // a second, and pages of them unfolded in a popup made anew, more)
+    property int recentMade: 0
+    property int starredMade: 0
+    property int starredPlansMade: 0
+    // (after the Repeater let go of them: rows taken from a list it shows are slow to go)
+    onRecentOpenChanged: if (!recentOpen) Qt.callLater(() => { if (!section.recentOpen) section.recentMade = 0 })
+    onStarredOpenChanged: if (!starredOpen) Qt.callLater(() => { if (!section.starredOpen) section.starredMade = 0 })
+    onStarredPlansOpenChanged: if (!starredPlansOpen) Qt.callLater(() => { if (!section.starredPlansOpen) section.starredPlansMade = 0 })
+    readonly property bool linesToMake: (recentOpen && recentMade < recentShown) || (starredOpen && starredMade < starredShown)
+                                        || (starredPlansOpen && starredPlansMade < starredPlansShown)
     FrameAnimation {
-        running: section.linesMade < section.linesWanted
-        onTriggered: section.linesMade = Math.min(section.linesWanted, section.linesMade + root.pageSize)
+        running: section.linesToMake
+        onTriggered: {
+            const until = Budget.begin(8)
+            for (let made = 0; made === 0 || Date.now() < until; made++) {   // (a line at least)
+                if (section.recentOpen && section.recentMade < section.recentShown)
+                    section.recentMade++   // (its line is made here: the Repeater makes it as the row comes)
+                else if (section.starredOpen && section.starredMade < section.starredShown)
+                    section.starredMade++
+                else if (section.starredPlansOpen && section.starredPlansMade < section.starredPlansShown)
+                    section.starredPlansMade++
+                else
+                    break
+            }
+            Budget.end()
+        }
     }
     PageRows {
         id: recentRows
-        size: Math.min(section.recentShown, section.linesMade)
+        size: Math.min(section.recentShown, section.recentMade)
     }
     PageRows {
         id: starredRows
-        size: Math.min(section.starredShown, section.linesMade)
+        size: Math.min(section.starredShown, section.starredMade)
     }
     PageRows {
         id: starredPlanRows
-        size: Math.min(section.starredPlansShown, section.linesMade)
+        size: Math.min(section.starredPlansShown, section.starredPlansMade)
     }
 
     // Its chats (but those you hid, while hiding them: root.hidingNow) as
@@ -287,6 +310,7 @@ ColumnLayout {
             }
             PlasmaComponents3.Label {
                 textFormat: Text.PlainText
+                Layout.fillWidth: true
                 elide: Text.ElideRight
                 text: i18n("Not logged in")
                 opacity: 0.8

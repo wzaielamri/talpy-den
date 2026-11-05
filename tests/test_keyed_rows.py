@@ -220,6 +220,17 @@ class KeyedRowsTests(unittest.TestCase):
         handle = main[main.index("function handleOutput("):main.index("function celebrateResets(")]
         self.assertIn("status = parsed", handle)
         self.assertIn('dropHidden("", parsed)', handle)
+        # (after the status: with the old groups, a chat hidden now came back for a moment, its pet too)
+        self.assertLess(handle.index("status = parsed"), handle.index('dropHidden("", parsed)'))
+        remote = main[main.index("function handleRemote("):]
+        remote = remote[:remote.index("\n    }\n")]
+        self.assertLess(remote.index("setRemote(host, { loading: false, ok: true"), remote.index("dropHidden(host, result)"))
+        # Show hidden again: what's being hidden of that kind there shows at once, not after the minute
+        shown = main[main.index("    function showHidden(kind, host) {"):]
+        shown = shown[:shown.index("\n    }\n")]
+        self.assertLess(shown.index("setHiding(next)"), shown.index("hideRun("))
+        # a hide jump.py confirmed is counted by the answers after it, not twice
+        self.assertIn("!(hideDone[k] < since)", main)
         self.assertNotRegex(handle, r"status = .*hiding")
         hider = main[main.index("id: hider"):main.index("id: hideFailedTimer")]
         self.assertIn("delete next[what.key]", hider)          # (back in its list)
@@ -271,7 +282,10 @@ class KeyedRowsTests(unittest.TestCase):
         # a copy on the desktop under windows holds the newest answers back (not the copy that notifies,
         # nor one with a Talpy Chat window open), and shows them once uncovered, its trackers primed again
         self.assertIn("readonly property bool holdAnswers: onDesktop && shownInPlace && coveredByWindow && !notifier", main)
-        self.assertIn("&& !paneWindows.some(w => w.visible)", main)
+        self.assertIn("&& Hub.leaderId !== instanceId && !paneWindows.some(w => w.visible)", main)   # (the leader notifies)
+        held = main[main.index("function onOutput(command, stdout, stderr) {"):]
+        held = held[:held.index("} else if (command === root.command)")]
+        self.assertIn("root.syncSettings(shared)", held)   # (settings still shared while it rests)
         hold = main[main.index("function applyHeld(force) {"):main.index("    Connections {\n        target: Hub")]
         self.assertIn('primedSources = Object.assign({}, primedSources, { "": false })', hold)
         self.assertIn("handleRemote(host, held[host])", hold)
@@ -303,6 +317,38 @@ class KeyedRowsTests(unittest.TestCase):
         self.assertIn("function openHint() {", row)
         self.assertIn('mainText: !containsMouse ? "" : Plasmoid.configuration.clickOpensPane', row)
         self.assertIn("function reopenHint() {", (UI / "RecentLine.qml").read_text())
+
+    def test_a_message_made_by_a_loader_shows(self):
+        # an InlineMessage is hidden till told: one a Loader makes says visible itself (Stop it?, the away digest)
+        for path in sorted(UI.glob("*.qml")):
+            text = path.read_text()
+            for at in [m.end() for m in re.finditer(r"sourceComponent: Kirigami\.InlineMessage \{\n", text)]:
+                self.assertRegex(text[at:at + 200], r"^\s+visible: ", path.name)
+
+    def test_rows_revs_and_the_answers_stamp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("talpy_den_revs", UI.parent / "code/talpy_den.py")
+        cs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cs)
+        def revs(result):
+            cs.add_revs(result)
+            return [r["rev"] for g in result["groups"] for r in g["sessions"]]
+        rows = lambda detail: {"groups": [{"sessions": [{"sessionId": "a", "detail": detail}, {"sessionId": "b", "detail": "x"}],
+                                           "recent": [{"key": "c", 1: "mixed keys", "two": 2}]}]}
+        first, again, changed = revs(rows("x")), revs(rows("x")), revs(rows("y"))
+        self.assertEqual(first, again)
+        self.assertNotEqual(first[0], changed[0])   # (what it says changed: a new rev)
+        self.assertEqual(first[1], changed[1])      # (the others keep theirs)
+        result = rows("x")
+        cs.add_revs(result)
+        self.assertEqual(revs(result), first)       # (its own rev isn't hashed)
+        self.assertIn("rev", result["groups"][0]["recent"][0])   # (keys of mixed kinds: hashed as they are)
+        a = cs.stamped('{"ok": true, "generatedAt": 1, "forecast": {"x": 1}, "n": 1}')
+        b = cs.stamped('{"ok": true, "generatedAt": 2, "forecast": {"x": 2}, "n": 1}')
+        c = cs.stamped('{"ok": true, "generatedAt": 2, "forecast": {"x": 2}, "n": 2}')
+        stamp = lambda text: re.match(r'\{"stamp": "(\w+)", ', text).group(1)
+        self.assertEqual(stamp(a), stamp(b))      # (only its time and forecast: the same answer)
+        self.assertNotEqual(stamp(b), stamp(c))
 
 
 if __name__ == "__main__":

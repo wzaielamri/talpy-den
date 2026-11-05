@@ -10981,7 +10981,11 @@ def add_revs(result):
             for row in group.get(name) or []:
                 if isinstance(row, dict):
                     row.pop("rev", None)
-                    row["rev"] = hashlib.sha1(json.dumps(row, sort_keys=True).encode()).hexdigest()[:12]
+                    try:
+                        body = json.dumps(row, sort_keys=True)
+                    except TypeError:   # (keys of mixed kinds can't be sorted: as they are)
+                        body = json.dumps(row)
+                    row["rev"] = hashlib.sha1(body.encode()).hexdigest()[:12]
 
 
 STAMP_SKIP = (re.compile(r'"generatedAt": *\d+'), re.compile(r'"forecast": *\{[^{}]*\}'))

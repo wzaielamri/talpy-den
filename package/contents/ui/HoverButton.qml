@@ -43,8 +43,7 @@ Item {
     Layout.preferredHeight: Math.round(iconSize * 1.375)
     readonly property real leftPadding: (Layout.preferredWidth - iconSize) / 2
     readonly property real topPadding: Math.floor((Layout.preferredHeight - iconSize) / 2)
-    activeFocusOnTab: usable
-    focusPolicy: usable ? Qt.StrongFocus : Qt.NoFocus
+    activeFocusOnTab: usable   // (no focusPolicy: an Item has one only from Qt 6.7, and Plasma 6.0 runs on 6.6)
 
     Accessible.role: Accessible.Button
     Accessible.name: text

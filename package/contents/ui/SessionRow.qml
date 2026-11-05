@@ -1234,6 +1234,7 @@ RowLayout {
             visible: active
             Layout.fillWidth: true
             sourceComponent: Kirigami.InlineMessage {
+                visible: true   // (an InlineMessage is hidden till told: the Loader shows it only while it's wanted)
                 type: Kirigami.MessageType.Warning
                 // rich text (an InlineMessage always guesses), so the name is escaped
                 text: "<span>" + (row.canInterrupt
