@@ -408,6 +408,8 @@ Window {
         turnEnded = ""
         turnOver = false
         asks = null
+        contextLeft = null
+        turnNow = null
         usual = null
         usualAt = 0
         chipsSeen = []
@@ -696,6 +698,8 @@ Window {
         turnEnded = result.ended || ""
         turnOver = !!result.over
         asks = result.asks || null
+        contextLeft = result.context || null
+        turnNow = result.turn || null
         if (turnEnded !== "" && usual === null)
             usualSoon.restart()
         loaded = true
@@ -1004,6 +1008,10 @@ Window {
         stamp = ""   // (read again, with or without how its turn ended)
         load()
     }
+    // How full its context is (pane.py: talpy_den.context_left; null: not known), the header's tag; Claude's
+    // turn so far while it's going on (talpy_den.TurnSoFar: {startedAt, steps}), its working line's end
+    property var contextLeft: null
+    property var turnNow: null
     property string turnEnded: ""      // how its last turn ended ("": mid-turn, a message queued, or not asked)
     property bool turnOver: false      // (the transcript says so; else the chat's state does)
     property var asks: null            // the question it ended with, as chips
@@ -2328,6 +2336,17 @@ Window {
                                             + (agents.failed ? i18n(", %1 failed", agents.failed) : "") + ". "
                                             + i18n("Click to %1 what each one is doing.", pane.agentsOpen ? i18n("hide") : i18n("show"))
                 }
+                // how full its context is: what's left till Claude compacts the chat on its own, in the warning
+                // colour once Claude Code says it's close (VS Code shared/pane.ts contextText, contextHint)
+                Tag {
+                    readonly property var ctx: pane.fresh ? null : pane.contextLeft
+                    visible: ctx !== null
+                    text: ctx ? i18n("Context %1% left", ctx.left) : ""
+                    caution: !!ctx && ctx.near
+                    tooltip: !ctx ? "" : i18n("%1 of its %2 tokens of context are used. Claude compacts the chat on its own at about %3: it sums up the conversation so far and goes on from that.",
+                                              root.formatTokens(ctx.used), root.formatTokens(ctx.window), root.formatTokens(ctx.compactAt))
+                                         + (ctx.near ? " " + i18n("That's soon: run /compact now to say what it keeps, if you'd rather choose.") : "")
+                }
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText
                     Layout.fillWidth: true
@@ -2651,6 +2670,13 @@ Window {
                                         subText: pane.stopElsewhere
                                     }
                                 }
+                            }
+                            // Claude's turn so far, at its end before Stop ("4m · 12 steps": WorkingMeta.qml, read
+                            // and made only while a chat works and its turn is known; its clock ticks only then)
+                            Loader {
+                                active: pane.chatState === "working" && pane.turnNow !== null
+                                Layout.leftMargin: active ? Kirigami.Units.smallSpacing : 0
+                                source: active ? "WorkingMeta.qml" : ""
                             }
                             // Stop, at its end (StopButton.qml: read and made only for a chat it can stop,
                             // while it works; as tall with it as without, so nothing moves)
