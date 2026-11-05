@@ -25,6 +25,7 @@ CHATS = {
     "b0000000-0000-4000-8000-000000000003": ("Bench turn chat", 2),
 }
 SHORT, LONG, TURN = list(CHATS)
+FOLDS = "b0000000-0000-4000-8000-000000000004"   # (only for bench.py's find: long replies and messages, make_folds)
 FOLDER = "repos/bench-app"
 MODEL = "claude-opus-5-5"
 
@@ -161,6 +162,26 @@ def make(home):
         path.write_text(dump(lines))
         t = now - 3600 * (len(CHATS) - k)
         os.utime(path, (t, t))
+    return home
+
+
+def make_folds(home):
+    """One more chat, for Talpy Chat's folds (bench.py find): 40 turns whose replies are long (60
+    lines), every third prompt a pasted log (50 lines)."""
+    home = Path(home)
+    w = Writer(FOLDS, str(home / FOLDER), seed=44, start=time.time() - 2 * 86400)
+    lines = [{"type": "ai-title", "aiTitle": "Bench folds chat", "sessionId": FOLDS}]
+    for k in range(40):
+        prompt = w.sentence() + ("\n" + "\n".join(w.sentence() for _ in range(50)) if k % 3 == 0 else "")
+        lines += [w.prompt(prompt), w.text(w.sentence())]
+        for i in range(w.rnd.randint(2, 5)):
+            lines += w.tool(i)
+        lines.append(w.text("## " + w.words(3).capitalize() + "\n\n" + "\n".join("- " + w.sentence() for _ in range(60)), end=True))
+    path = transcript(home, FOLDS)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dump(lines))
+    t = time.time() - 7200
+    os.utime(path, (t, t))
     return home
 
 

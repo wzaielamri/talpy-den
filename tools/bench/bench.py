@@ -7,12 +7,14 @@ bench.qml driving its Talpy Chat windows.
     tools/bench/bench.py [open|send|turn|scroll|idle|find|reads|all ...] [--out DIR] [--idle-seconds N] [--warm]
 
     open    opening a chat's window: first window, a new one, a closed one again (short and long chat)
+    first   the first window only (open's first number, quicker: for comparing two packages often)
     send    Enter → your message shown (5 messages)
     turn    turn's end → shown, and → its chips drawn (5 turns appended line by line to a transcript)
     scroll  a 500-item chat scrolled end → top → end, on the Chat and Steps tabs
     idle    CPU of the offscreen plasmawindowed: no window, a window open, closed (60 s each)
     find    Talpy Chat's search on a 500-item chat (Steps tab): till all is searched, the longest the
-            window waits meanwhile (a 5 ms timer's late ticks), steps to matches, and Ctrl+O
+            window waits meanwhile (a 5 ms timer's late ticks), steps to matches; and Ctrl+O on a chat
+            of long replies and messages (fake_chats.make_folds, made for this scenario only)
     reads   pane.py --conversation from the shell (no window): the read alone
 
     --warm  each scenario runs twice with the widget's QML disk cache and data kept between them
@@ -46,8 +48,8 @@ REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 import fake_chats  # noqa: E402
 
-SCENARIOS = ("open", "send", "turn", "scroll", "idle", "find")
-SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 90, "find": 90}   # (the render's limit; each ends sooner)
+SCENARIOS = ("open", "send", "turn", "scroll", "idle", "find", "first")
+SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 90, "find": 90, "first": 30}   # (the render's limit; each ends sooner)
 TICK = os.sysconf("SC_CLK_TCK")
 RENDER_ID = "org.wzaielamri.talpyden.rendertest"
 
@@ -165,7 +167,9 @@ def render(scenario, out, idle_s, keep=None):
     work = Path(tempfile.mkdtemp(prefix="talpy-bench-"))
     try:
         home = home_for(work)
-        ids = {"short": fake_chats.SHORT, "long": fake_chats.LONG, "turn": fake_chats.TURN}
+        ids = {"short": fake_chats.SHORT, "long": fake_chats.LONG, "turn": fake_chats.TURN, "folds": fake_chats.FOLDS}
+        if scenario == "find":
+            fake_chats.make_folds(home)
         extra = (HERE / "bench.qml").read_text().replace("__SCENARIO__", scenario) \
             .replace("__IDS__", json.dumps(ids)).replace("__IDLE_MS__", str(int(idle_s * 1000)))
         env = env_for(home)
@@ -304,7 +308,7 @@ def main(argv):
             args.append(a)
         else:
             sys.exit(__doc__)
-    todo = [s for s in ("reads",) + SCENARIOS if "all" in args or s in args] or sys.exit(__doc__)
+    todo = [s for s in ("reads",) + SCENARIOS if ("all" in args and s != "first") or s in args] or sys.exit(__doc__)
     out = out or Path(tempfile.mkdtemp(prefix="talpy-bench-out-"))
     out.mkdir(parents=True, exist_ok=True)
     load = os.getloadavg()[0]
@@ -329,7 +333,7 @@ def main(argv):
                 lines, written, sampler = render(s, out, idle_s, keep)
             if keep:
                 shutil.rmtree(keep, ignore_errors=True)
-            results[s] = {"open": lambda: report_open(lines), "send": lambda: report_send(lines),
+            results[s] = {"open": lambda: report_open(lines), "first": lambda: report_open(lines), "send": lambda: report_send(lines),
                           "turn": lambda: report_turn(lines, written), "scroll": lambda: report_scroll(lines),
                           "idle": lambda: report_idle(lines, sampler), "find": lambda: report_find(lines)}[s]()
             if s != "open":

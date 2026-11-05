@@ -11,8 +11,8 @@ with performance.now() (vscode_bench.html).
 - scroll: the 500-item chat, 120 px a frame, end → top → end (Chat tab);
 - send: Enter in the reply box → your message in the list;
 - find: search on the 500 items (a query typed → its count; the longest frame
-  meanwhile), 20 steps to matches, and Ctrl+O on the Steps tab (every step's
-  details made); none in a build without search.
+  meanwhile), 20 steps to matches, and Ctrl+O on a chat of long replies and
+  messages (every long one unfolded, and back); none in a build without search.
 
 It builds the extension and its harness first (node esbuild.mjs, then
 --harness; vscode/node_modules must be there). Firefox runs with a new,
@@ -42,11 +42,11 @@ import fake_chats  # noqa: E402
 
 def conversations(work):
     """{name: pane.py's answer} for the made-up chats, as the extension gets them."""
-    home = fake_chats.make(work / "home")
+    home = fake_chats.make_folds(fake_chats.make(work / "home"))
     env = bench.env_for(home)
     out = {}
     for name, sid, limit in (("short", fake_chats.SHORT, 120), ("long", fake_chats.LONG, 120),
-                             ("long500", fake_chats.LONG, 500)):
+                             ("long500", fake_chats.LONG, 500), ("folds", fake_chats.FOLDS, 500)):
         r = subprocess.run(["python3", "-I", str(REPO / "package/contents/code/pane.py"), "--conversation", sid,
                             "--limit", str(limit)], env=env, stdout=subprocess.PIPE, text=True, check=True)
         out[name] = json.loads(r.stdout)

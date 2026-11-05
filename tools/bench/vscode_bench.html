@@ -118,22 +118,28 @@
           await sleep(100);
         }
         out.steps = { median: median(steps), max: Math.round(Math.max(...steps)) };
-        d.querySelectorAll(".pane-tabs button")[1].click();
+        await show(data.folds);   // (Ctrl+O: every long text unfolded, on a chat of long replies and messages)
         await sleep(1000);
         const gaps = [];
         let last = w.performance.now(), on = true;
         const tick = () => { if (!on) return; const t = w.performance.now(); gaps.push(t - last); last = t; w.requestAnimationFrame(tick); };
         w.requestAnimationFrame(tick);
+        const before = d.querySelectorAll(".pane-fold-more[aria-expanded=true]").length;
         const t0 = w.performance.now();
         w.postMessage({ type: "key", key: "fold" }, "*");
-        await sleep(50);
-        await until(() => !d.querySelector("[data-later]"), 60000);
-        const made = w.performance.now() - t0;
+        await until(() => d.querySelectorAll(".pane-fold-more[aria-expanded=true]").length > before, 20000);
+        void d.body.offsetHeight;
+        const layout = w.performance.now() - t0;
         await frame();
+        const paint = (await frame()) - t0;
         on = false;
-        out.foldAll = { madeMs: Math.round(made), details: d.querySelectorAll(".pane-tool-detail").length, maxFrame: Math.round(Math.max(...gaps)),
-                        over20: gaps.filter((g) => g > 20).length, frames: gaps.length };
+        out.foldAll = { long: d.querySelectorAll(".pane-fold-more").length, layout: Math.round(layout), paint: Math.round(paint),
+                        maxFrame: Math.round(Math.max(...gaps)) };
+        const t1 = w.performance.now();
         w.postMessage({ type: "key", key: "fold" }, "*");
+        await until(() => !d.querySelector(".pane-fold-more[aria-expanded=true]"), 20000);
+        await frame();
+        out.foldAll.back = Math.round((await frame()) - t1);
         return out;
       }
 
@@ -141,7 +147,7 @@
         w = f.contentWindow;
         d = w.document;
         const data = {};
-        for (const k of ["short", "long", "long500"]) data[k] = await (await fetch(`/bench-data/${k}.json`)).json();
+        for (const k of ["short", "long", "long500", "folds"]) data[k] = await (await fetch(`/bench-data/${k}.json`)).json();
         await until(() => d.querySelector(".pane-list .pane-item"));
         await sleep(1000);
         const out = { ua: navigator.userAgent };

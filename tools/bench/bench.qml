@@ -341,7 +341,7 @@
         // Search on a 500-item chat, on the Steps tab (what each step ran and got searched too): a
         // query typed (Talpy Chat's FindBar.qml: none in a package without it), till all is searched,
         // and how late a 5 ms timer ticks meanwhile (the longest the window can't draw); then 20
-        // steps to matches, each till its frame; then Ctrl+O (every step's details made) and back
+        // steps to matches, each till its frame; then Ctrl+O on a chat of long texts, and back
         function lateness(cb) {   // cb() → {max, p95, over16}: the timer's late ticks till then
             const t = Qt.createQmlObject("import QtQuick; Timer { interval: 5; repeat: true }", bench)
             const gaps = []
@@ -371,7 +371,7 @@
                         }
                         win.findOn = true
                         after(1000, () => chain(["parser", "nowhere at all", "a"].map(q => next => searchOnce(win, q, next)).concat([
-                            next => stepsOnce(win, next), next => foldOnce(win, next), next => done()])))
+                            next => stepsOnce(win, next), next => foldsChat(next), next => done()])))
                     })
                 }), 30000, "500 items")
             })
@@ -409,6 +409,15 @@
                 one(0)
             }, 20000, "steps")
         }
+        // (Ctrl+O unfolds long texts: on a chat of long replies and messages, its 500 items, Chat tab)
+        function foldsChat(cb) {
+            open(ids.folds, "folds chat", win => {
+                win.limit = 500
+                win.stamp = ""
+                win.load()
+                when(() => win.loaded && win.lastItems.length >= 200, () => after(3000, () => foldOnce(win, cb)), 30000, "the folds chat")
+            })
+        }
         function foldOnce(win, cb) {
             win.findOn = false
             const list = listOf(win)
@@ -424,7 +433,8 @@
                 }
                 if (Date.now() - still > 1000) {
                     const l = late()
-                    log("foldAll", { call: t1 - t0, settled: still - t0, height: Math.round(h), lateMax: l.max, lateP95: l.p95, over16: l.over16 })
+                    log("foldAll", { items: win.lastItems.length, long: win.shownList.filter(it => it.kind === "claude" || it.kind === "you").length,
+                                     call: t1 - t0, settled: still - t0, height: Math.round(h), lateMax: l.max, lateP95: l.p95, over16: l.over16 })
                     const t2 = Date.now()
                     win.foldAll()
                     log("foldAll", { back: Date.now() - t2 })
@@ -440,7 +450,8 @@
             // widget's first checks to settle
             when(() => rowOf(ids.short) !== null && rowOf(ids.long) !== null, () => {
                 log("start", { scenario: scenario, listed: rowOf(ids.short) !== null })
-                after(3000, () => ({ open: runOpen, send: runSend, turn: runTurn, scroll: runScroll, idle: runIdle, find: runFind })[scenario]())
+                after(3000, () => ({ open: runOpen, send: runSend, turn: runTurn, scroll: runScroll, idle: runIdle, find: runFind,
+                                     first: () => open(ids.short, "first window (short chat)", w => after(1500, done)) })[scenario]())
             }, 60000, "the made-up chats listed")
         }
     }
