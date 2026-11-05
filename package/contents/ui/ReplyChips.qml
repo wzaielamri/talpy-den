@@ -18,8 +18,56 @@ Flow {
     Accessible.role: Accessible.ToolBar
     Accessible.name: i18n("Suggested replies")
 
+    readonly property int chipsMax: 4
+    function endedAfter(ended) {
+        return ({ asked: i18n("Claude's questions"), finished: i18n("a finished turn"), limit: i18n("a usage limit"),
+                  interrupted: i18n("an interruption"), failed: i18n("an error"), stopped: i18n("a chat that stopped") })[ended] || ended
+    }
+    // The chips (VS Code's shared/pane.ts chipsOf, the same rule and words): Claude's question's
+    // (more options than fit: the ones it recommends, then the first ones, in their order), then
+    // your usual replies after a turn that ended so, each once and none you hid; at most chipsMax
+    function chipsOf(asked, ended, yours, hidden) {
+        let choices = asked && asked.choices ? asked.choices : []
+        if (choices.length > chipsMax) {
+            const marked = choices.filter(c => c.recommended).slice(0, chipsMax)
+            const rest = choices.filter(c => !c.recommended).slice(0, chipsMax - marked.length)
+            choices = choices.filter(c => marked.indexOf(c) >= 0 || rest.indexOf(c) >= 0)
+        }
+        const out = [], seen = {}
+        const add = (label, send, recommended, mine) => {
+            const n = out.length + 1
+            out.push({ label: label, send: send, recommended: recommended, usual: mine,
+                       title: mine ? i18n("Your usual reply after %1: sends “%2” (Alt+%3). Shift+click: put it in the box first, to add to it. Right-click: don't suggest it again.", endedAfter(ended), send, n)
+                                   : i18n("Answers Claude's question with “%1” (Alt+%2).", send, n) + (recommended ? " " + i18n("Claude recommends this one.") : "")
+                                     + " " + i18n("Shift+click: put it in the box first, to add to it.") })
+            seen[pane.replyKey(send)] = true
+        }
+        for (const c of choices)
+            add(c.label, c.send, !!c.recommended, false)
+        for (const t of (ended && yours && yours.chips && yours.chips[ended]) || []) {
+            if (out.length >= chipsMax)
+                break
+            const key = pane.replyKey(t)
+            if (!seen[key] && !hidden[key])
+                add(t, t, false, true)
+        }
+        return out
+    }
+    readonly property var chips: chipsOf(pane.asks, pane.turnEnded, pane.usual, pane.hiddenReplies)
+    // (as shown: the same list while they're the same, so no chip is made again; the window's
+    // Alt+1…4 and its backing off go by it)
+    property var shown: []
+    onChipsChanged: {
+        if (JSON.stringify(chips) === JSON.stringify(shown))
+            return
+        shown = chips
+        if (chips.length)
+            pane.chipsSeen = chips
+    }
+    Component.onCompleted: chipsChanged()
+
     Repeater {
-        model: pane.chipsShown
+        model: row.shown
         delegate: Rectangle {
             id: chip
             required property var modelData

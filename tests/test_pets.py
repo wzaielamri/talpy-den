@@ -2020,30 +2020,32 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Icons.plasma.stopTurn", button)
 
     def test_suggested_replies_are_made_only_when_there_are_some(self):
-        # Talpy Chat's chips (B2 + B3): their QML is read and made only while there are chips;
-        # nothing is read for them with Suggest replies off; the same rules as VS Code's; and what
-        # you type is completed in grey only while there's a completion
+        # Talpy Chat's chips (B2 + B3): their list and words (ReplyChips.qml) and the grey completion
+        # (ReplyGhost.qml) are read and made only while there are some, so a window opens as quickly;
+        # nothing is read for them with Suggest replies off; the same rules and words as VS Code's
         pane = (ROOT / "ui/ChatPane.qml").read_text()
-        self.assertIn("active: pane.chipsShown.length > 0\n", pane)
+        self.assertIn("active: pane.chipsOn\n", pane)
         self.assertIn('source: active ? "ReplyChips.qml" : ""', pane)
-        self.assertIn('(suggestOn ? " --suggest" : "")', pane)   # (the read and the watcher)
-        self.assertEqual(pane.count('(suggestOn ? " --suggest" : "")'), 2)
+        self.assertIn("active: pane.ghostOn\n", pane)
+        self.assertIn('source: active ? "ReplyGhost.qml" : ""', pane)
+        self.assertEqual(pane.count('(suggestOn ? " --suggest" : "")'), 2)   # (the read and the watcher)
         self.assertIn("if (!suggestOn || !chatId || Date.now() - usualAt < 60000)", pane)
-        self.assertIn("active: pane.ghost !== \"\"", pane)
-        self.assertIn("source: active ? \"ReplyGhost.qml\" : \"\"", pane)
         self.assertIn("Plasmoid.configuration.suggestReplies !== false", pane)
-        # (the same words and limits as VS Code's shared/pane.ts)
+        self.assertNotIn("function chipsOf(", pane)   # (compiled with every window: in ReplyChips.qml)
+        chips = (ROOT / "ui/ReplyChips.qml").read_text()
+        ghost = (ROOT / "ui/ReplyGhost.qml").read_text()
         shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
         for words in ("Shift+click: put it in the box first, to add to it.", "Claude recommends this one.",
                       "Right-click: don't suggest it again."):
-            self.assertIn(words, pane)
+            self.assertIn(words, chips)
             self.assertIn(words, shared)
         self.assertIn("export const CHIPS_MAX = 4;", shared)
-        self.assertIn("readonly property int chipsMax: 4", pane)
-        chips = (ROOT / "ui/ReplyChips.qml").read_text()
-        self.assertIn("model: pane.chipsShown", chips)
+        self.assertIn("readonly property int chipsMax: 4", chips)
+        self.assertIn("model: row.shown", chips)
         self.assertIn("pane.takeChip(chip.modelData, (event.modifiers & Qt.ShiftModifier) !== 0)", chips)
         self.assertIn("onTriggered: pane.hideChip(menu.chip)", chips)
+        self.assertIn("const menu = menuMaker.createObject(row", chips)   # (its menu: made on a right-click only)
+        self.assertIn("r.toLowerCase().startsWith(low)", ghost)
         config = (ROOT / "config/main.xml").read_text()
         self.assertIn('<entry name="suggestReplies" type="Bool">', config)
         self.assertIn('"suggestReplies"]', (ROOT / "ui/main.qml").read_text())   # (shared with the other copies)

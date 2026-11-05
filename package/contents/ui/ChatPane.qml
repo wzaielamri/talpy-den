@@ -925,8 +925,8 @@ Window {
     // the answers to the question Claude ended with (pane.py --conversation --suggest: asks),
     // then what you usually reply after a turn that ended the same way (pane.py --replies, from
     // your chats on its account: asked once a window, again after a send a minute later). What
-    // you type is completed in grey from your usual replies (Tab or → takes it). VS Code's
-    // shared/pane.ts has the same rules and words (chipsOf, chipsWanted, chipsAfterSend,
+    // you type is completed in grey from your usual replies (Tab or → takes it: ReplyGhost.qml).
+    // VS Code's shared/pane.ts has the same rules and words (chipsOf, chipsWanted, chipsAfterSend,
     // completionOf). Suggest replies off: nothing is read or worked out for it.
     readonly property bool suggestOn: Plasmoid.configuration.suggestReplies !== false
     onSuggestOnChanged: {
@@ -943,11 +943,10 @@ Window {
     property var usual: null           // {chips: {how a turn ended: [your replies then]}, ranked: [all of them]}
     property real usualAt: 0
     property var hiddenReplies: ({})   // reply key -> true: Don't suggest this, gone at once
-    property var chipsSeen: []         // the chips this turn showed (backing off)
+    property var chipsSeen: []         // the chips this turn showed (backing off: ReplyChips.qml says)
     property int chipsIgnored: 0
     property bool chipsResting: false
     property real sentAt: 0
-    readonly property int chipsMax: 4
     Timer {
         id: chipsRest   // (backing off: none for half an hour)
         interval: 30 * 60000
@@ -973,73 +972,24 @@ Window {
         return String(text || "").normalize("NFKC").toLowerCase().trim().replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, "")
             .replace(/[\s.!?,;:…。！？]+$/, "").split(/\s+/).filter(w => w !== "").join(" ")
     }
-    function endedAfter(ended) {
-        return ({ asked: i18n("Claude's questions"), finished: i18n("a finished turn"), limit: i18n("a usage limit"),
-                  interrupted: i18n("an interruption"), failed: i18n("an error"), stopped: i18n("a chat that stopped") })[ended] || ended
-    }
-    // The chips: Claude's question's (more options than fit: the ones it recommends, then the
-    // first ones, in their order), then your usual replies after a turn that ended so, each once
-    // and none you hid; at most chipsMax
-    function chipsOf(asked, ended, yours, hidden) {
-        let choices = asked && asked.choices ? asked.choices : []
-        if (choices.length > chipsMax) {
-            const marked = choices.filter(c => c.recommended).slice(0, chipsMax)
-            const rest = choices.filter(c => !c.recommended).slice(0, chipsMax - marked.length)
-            choices = choices.filter(c => marked.indexOf(c) >= 0 || rest.indexOf(c) >= 0)
-        }
-        const out = [], seen = {}
-        const add = (label, send, recommended, mine) => {
-            const n = out.length + 1
-            out.push({ label: label, send: send, recommended: recommended, usual: mine,
-                       title: mine ? i18n("Your usual reply after %1: sends “%2” (Alt+%3). Shift+click: put it in the box first, to add to it. Right-click: don't suggest it again.", endedAfter(ended), send, n)
-                                   : i18n("Answers Claude's question with “%1” (Alt+%2).", send, n) + (recommended ? " " + i18n("Claude recommends this one.") : "")
-                                     + " " + i18n("Shift+click: put it in the box first, to add to it.") })
-            seen[replyKey(send)] = true
-        }
-        for (const c of choices)
-            add(c.label, c.send, !!c.recommended, false)
-        for (const t of (ended && yours && yours.chips && yours.chips[ended]) || []) {
-            if (out.length >= chipsMax)
-                break
-            const key = replyKey(t)
-            if (!seen[key] && !hidden[key])
-                add(t, t, false, true)
-        }
-        return out
-    }
-    // Shown: Suggest replies on, a chat that's going (not a new one), its turn over (the transcript
-    // says so, else the chat isn't at work and nothing went to it a moment ago), not asking for a
-    // permission, the box empty, nothing of yours on its way or queued, not backed off
+    // Shown (the list itself: ReplyChips.qml): Suggest replies on, a chat that's going (not a
+    // new one), its turn over (the transcript says so, else the chat isn't at work and nothing went
+    // to it a moment ago), not asking for a permission, the box empty, nothing of yours on its way
+    // or queued, not backed off; and Claude asked something, or you have a usual reply for that
     readonly property bool chipsPending: pendingSent.some(p => p.chat === chatId && p.host === (host || "")) || answersOut.some(a => a.chat === chatId)
                                          || queued !== null || lastItems.some(i => !!i.queued)
-    readonly property var chips: {
+    readonly property bool chipsOn: {
         if (!suggestOn || !conversationTab || !!fresh || starting || turnEnded === "" || chipsResting || chipsPending
                 || chatState === "waiting" || replyBox.text.trim() !== "")
-            return []
+            return false
         if (!turnOver && (chatState === "working" || Date.now() - sentAt <= 15000))
-            return []
-        return chipsOf(asks, turnEnded, usual, hiddenReplies)
+            return false
+        return (!!asks && !!asks.choices && asks.choices.length > 0)
+               || ((usual && usual.chips && usual.chips[turnEnded]) || []).some(t => !hiddenReplies[replyKey(t)])
     }
-    property var chipsShown: []   // (the chips as shown: the same list while they're the same, so none is made again)
-    onChipsChanged: {
-        if (JSON.stringify(chips) === JSON.stringify(chipsShown))
-            return
-        const had = chipsShown.length > 0
-        chipsShown = chips
-        if (chips.length)
-            chipsSeen = chips
-        if (had !== chips.length > 0 && loaded && nearEnd())
-            keepEnd()   // (the row above the box comes or goes: the end of the conversation stays in view)
-    }
-    // Backing off, as Claude Code does with its own suggestions: a message you sent while chips
-    // showed this turn, none of them (typed or clicked), counts; 5 in a row, and none for half an hour
-    function chipsAfterSend(ignored, shown, text, now) {
-        const key = replyKey(text)
-        if (shown.some(c => replyKey(c.send) === key))
-            return { ignored: 0, restUntil: 0 }
-        return ignored + 1 >= 5 ? { ignored: 0, restUntil: now + 30 * 60000 } : { ignored: ignored + 1, restUntil: 0 }
-    }
-    // A chip: sent as if typed (Enter); edit: in the box first (Shift+click, Edit before sending)
+    onChipsOnChanged: if (loaded && nearEnd()) keepEnd()   // (the row above the box comes or goes: the end stays in view)
+    // A chip (ReplyChips.qml): sent as if typed (Enter); edit: in the box first (Shift+click, Edit
+    // before sending). Here, not there: the row goes as the box takes its words
     function takeChip(chip, edit) {
         if (!chip)
             return
@@ -1060,21 +1010,9 @@ Window {
         run("hide", "--hide-reply " + root.shellQuote(chip.send) + (host ? " --host " + root.shellQuote(host) : ""))
         replyBox.forceActiveFocus()
     }
-    // Completion as you type: the rest of the first of your usual replies (those after a turn that
-    // ended as this one did first) that starts with what you typed; "" for none. Not for a command,
-    // nor a text of several lines
-    function completionOf(text, yours, ended, hidden) {
-        if (!yours || text.trim() === "" || text.indexOf("\n") >= 0 || /^[\/!]/.test(text))
-            return ""
-        const low = text.toLowerCase()
-        for (const r of ((ended && yours.chips && yours.chips[ended]) || []).concat(yours.ranked || []))
-            if (r.length > text.length && r.toLowerCase().startsWith(low) && !hidden[replyKey(r)])
-                return r.slice(text.length)
-        return ""
-    }
-    readonly property string ghost: suggestOn && conversationTab && replyBox.activeFocus && suggestions.length === 0
-                                    && replyBox.cursorPosition === replyBox.length && replyBox.preeditText === ""
-                                    ? completionOf(replyBox.text, usual, turnEnded, hiddenReplies) : ""
+    // (what you type, completed in grey from your usual replies: ReplyGhost.qml, while one can be)
+    readonly property bool ghostOn: suggestOn && usual !== null && conversationTab && replyBox.activeFocus && suggestions.length === 0
+                                    && replyBox.text !== "" && replyBox.cursorPosition === replyBox.length && replyBox.preeditText === ""
 
     // asked: the run it answers ({kind, chat, host, target}: run())
     function handle(kind, result, asked) {
@@ -1516,14 +1454,18 @@ Window {
             infoTimer.restart()
             return
         }
-        if (chipsSeen.length) {   // (backing off: chips showed this turn, and you sent none of them)
-            const next = chipsAfterSend(chipsIgnored, chipsSeen, text, Date.now())
-            chipsIgnored = next.ignored
-            chipsSeen = []
-            if (next.restUntil) {
+        // (backing off, as Claude Code does with its own suggestions: chips showed this turn, and
+        // you sent none of them, typed or clicked; 5 in a row, and none for half an hour)
+        if (chipsSeen.length) {
+            const key = replyKey(text)
+            if (chipsSeen.some(c => replyKey(c.send) === key)) {
+                chipsIgnored = 0
+            } else if (++chipsIgnored >= 5) {
+                chipsIgnored = 0
                 chipsResting = true
                 chipsRest.restart()
             }
+            chipsSeen = []
         }
         sentAt = Date.now()
         loadUsual()
@@ -3213,7 +3155,8 @@ Window {
                 }
                 // Suggested replies (ReplyChips.qml: made, and read, only while there are chips)
                 Loader {
-                    active: pane.chipsShown.length > 0
+                    id: chipsRow
+                    active: pane.chipsOn
                     visible: active
                     Layout.fillWidth: true
                     Layout.leftMargin: pane.gutter
@@ -3281,15 +3224,16 @@ Window {
                             }
                             Keys.onPressed: event => {
                                 // Alt+1…4: a chip (with Shift: in the box first)
-                                if (pane.chipsShown.length && (event.modifiers & Qt.AltModifier) && !(event.modifiers & Qt.ControlModifier)
-                                        && event.key >= Qt.Key_1 && event.key <= Qt.Key_9 && pane.chipsShown[event.key - Qt.Key_1]) {
-                                    pane.takeChip(pane.chipsShown[event.key - Qt.Key_1], (event.modifiers & Qt.ShiftModifier) !== 0)
+                                if (chipsRow.item && (event.modifiers & Qt.AltModifier) && !(event.modifiers & Qt.ControlModifier)
+                                        && event.key >= Qt.Key_1 && event.key <= Qt.Key_9 && chipsRow.item.shown[event.key - Qt.Key_1]) {
+                                    pane.takeChip(chipsRow.item.shown[event.key - Qt.Key_1], (event.modifiers & Qt.ShiftModifier) !== 0)
                                     event.accepted = true
                                     return
                                 }
                                 // Tab or → at the end: the grey rest of your usual reply
-                                if (pane.ghost !== "" && (event.key === Qt.Key_Tab || event.key === Qt.Key_Right) && event.modifiers === Qt.NoModifier) {
-                                    insert(length, pane.ghost)
+                                if (ghostLine.item && ghostLine.item.rest !== "" && (event.key === Qt.Key_Tab || event.key === Qt.Key_Right)
+                                        && event.modifiers === Qt.NoModifier) {
+                                    insert(length, ghostLine.item.rest)
                                     cursorPosition = length
                                     event.accepted = true
                                     return
@@ -3348,7 +3292,8 @@ Window {
                             // What you type, completed in grey from your usual replies, where the
                             // cursor is at its end (made only while there's some)
                             Loader {
-                                active: pane.ghost !== ""
+                                id: ghostLine
+                                active: pane.ghostOn
                                 readonly property rect at: active && replyBox.length >= 0 ? replyBox.positionToRectangle(replyBox.length) : Qt.rect(0, 0, 0, 0)
                                 x: at.x
                                 y: at.y
