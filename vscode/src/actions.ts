@@ -47,6 +47,7 @@ import {
   shareAccounts,
   shellQuote,
   talpyChatHere,
+  talpyChatOff,
 } from "./shared/model";
 import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "./shared/types";
 import { asPaste, attachClients, localAncestors, type Place, type Terminals } from "./terminals";
@@ -1052,6 +1053,12 @@ export class Actions {
           : { label: label(f), description: hasTask ? "in the background, its tab open on it" : "your first message there starts it, in the background",
               start: "talpy", folder: f });
       items.push({ label: "$(folder-opened) Choose folder…", start: "talpy", choose: "dialog" });
+    } else {
+      // Not offered here (an SSH host, a container, hooks off): a line in its place says so and why
+      const off = talpyChatOff(machineStatus(state, host), host);
+      if (off)
+        items.push({ label: "In a Talpy Chat tab", kind: vscode.QuickPickItemKind.Separator },
+                   { label: `$(info) Talpy Chat: ${off.title[0].toLowerCase()}${off.title.slice(1)}`, description: off.why });
     }
     if (cli) {
       items.push({ label: "In a terminal", kind: vscode.QuickPickItemKind.Separator });

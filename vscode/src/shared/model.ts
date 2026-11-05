@@ -222,10 +222,19 @@ export function talpyChatHint(status: Pick<Status, "cli"> | null | undefined, ho
 
 // The Talpy Chat half's title: what it does, or why it's greyed out
 export function talpyChatTitle(status: Pick<Status, "cli"> | null | undefined, host: string | undefined, resuming: boolean): string {
-  if (host) return containerOf(host) ? "Not in containers yet" : "Not on SSH hosts yet";
+  if (host) return "This computer's chats for now";
   if (!cliInstalled(status)) return "No claude command";
   if (!talpyChatHere(status, host, resuming)) return "Hooks are off here";
   return resuming ? "Reopen chats in Talpy Chat" : "New chats in Talpy Chat";
+}
+
+// New Chat… where its Talpy Chat section isn't offered: a line in its place,
+// the switch's title and a short why (none without a claude command: the
+// terminal's section says that)
+export function talpyChatOff(status: Pick<Status, "cli"> | null | undefined, host: string | undefined): { title: string; why: string } | null {
+  if (!cliInstalled(status) || talpyChatHere(status, host, false)) return null;
+  if (host) return { title: talpyChatTitle(status, host, false), why: `it can't answer the prompts of a chat ${hostWhere(host)} yet` };
+  return { title: talpyChatTitle(status, host, false), why: "managed settings here let only their own hooks run" };
 }
 
 // A chat running in a terminal (VS Code's or another, here or on an SSH
@@ -351,6 +360,12 @@ export function hostLabel(id: string): string {
 // on lab, in web, in web on lab
 export function hostWhere(id: string): string {
   return containerOf(id) ? `in ${hostLabel(id)}` : `on ${id}`;
+}
+
+// The view's sections in a Remote-SSH window: the host it's connected to
+// first ("this window"), then this computer's accounts, then the other hosts
+export function thisWindowFirst<H extends { current: boolean }>(hosts: H[]): { first: H[]; rest: H[] } {
+  return { first: hosts.filter((h) => h.current), rest: hosts.filter((h) => !h.current) };
 }
 
 // "stopped 3 days ago", "stopped 5h 10m ago", "stopped"

@@ -105,7 +105,9 @@
   wakes get Talpy Den's permission hook for themselves alone, unless it's on
   for every chat. *Answer it in a terminal* for a prompt it can't answer; a
   folder Claude doesn't trust yet starts in a terminal. This computer's
-  chats only, for now.
+  chats only, for now: on an SSH host or in a container, *New Chat…* says
+  *Talpy Chat: this computer's chats for now* and why in its section's
+  place, as the switch's tooltip does.
 - **Your answers show in the chat:** an answered question stays in Talpy
   Chat as Claude's (its options folded, the ones you picked ✓), with your
   answer right under it as your message: the options, what you typed and
@@ -123,6 +125,9 @@
 
 ### Better
 
+- **A Remote-SSH window's host comes first** in the view, tagged *this
+  window*, then this computer's accounts under a *This computer* head, then
+  the other hosts.
 - **One name: Talpy Chat.** A chat's tab is called Talpy Chat everywhere:
   *Open in Talpy Chat* on a row, in tooltips, settings and the docs.
 

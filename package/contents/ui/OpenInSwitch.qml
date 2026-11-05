@@ -44,7 +44,7 @@ ColumnLayout {
             checked: openIn.where === "talpyChat"
             iconName: Icons.plasma.openPane
             text: i18n("Talpy Chat")
-            tipTitle: openIn.remoteHost ? (root.isContainer(openIn.remoteHost) ? i18n("Not in containers yet") : i18n("Not on SSH hosts yet"))
+            tipTitle: openIn.remoteHost ? i18n("This computer's chats for now")
                       : !openIn.terminalHere ? i18n("No claude command")
                       : !openIn.talpyHere ? i18n("Hooks are off here")
                       : openIn.resuming ? i18n("Reopen chats in Talpy Chat") : i18n("New chats in Talpy Chat")

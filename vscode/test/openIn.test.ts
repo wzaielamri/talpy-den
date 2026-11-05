@@ -19,8 +19,10 @@ import {
   reopensInClaudeCode,
   talpyChatHere,
   talpyChatHint,
+  talpyChatOff,
   talpyChatTitle,
   terminalReopenHint,
+  thisWindowFirst,
 } from "../src/shared/model";
 import type { Group, PlanItem } from "../src/shared/types";
 import * as vscode from "vscode";
@@ -95,8 +97,53 @@ test("Talpy Chat is one more choice: this computer's chats, a new one where a ho
   assert.equal(talpyChatTitle(here, undefined, false), "New chats in Talpy Chat");
   assert.equal(talpyChatHint(here, undefined, false),
                "New chats run in the background and open here: reply, answer Claude's prompts, see what changed. Open one in a terminal any time.");
-  assert.equal(talpyChatTitle(here, "lab", true), "Not on SSH hosts yet");
+  assert.equal(talpyChatTitle(here, "lab", true), "This computer's chats for now");
+  assert.equal(talpyChatTitle(here, "podman:web", false), "This computer's chats for now");
   assert.match(talpyChatHint(managed, undefined, false), /allowManagedHooksOnly/);
+  // New Chat…'s line where its Talpy Chat section isn't offered: the switch's title and why
+  assert.deepEqual(talpyChatOff(here, "lab"), { title: "This computer's chats for now", why: "it can't answer the prompts of a chat on lab yet" });
+  assert.deepEqual(talpyChatOff(here, "podman:web"), { title: "This computer's chats for now", why: "it can't answer the prompts of a chat in web yet" });
+  assert.deepEqual(talpyChatOff(managed, undefined), { title: "Hooks are off here", why: "managed settings here let only their own hooks run" });
+  assert.equal(talpyChatOff(here, undefined), null, "offered");
+  assert.equal(talpyChatOff({ cli: { installed: false } }, "lab"), null, "no claude command: the terminal's section says so");
+});
+
+test("in a Remote-SSH window, the section of its host comes first, then this computer's, then the other hosts", () => {
+  const h = (name: string, current = false) => ({ name, current });
+  assert.deepEqual(thisWindowFirst([h("lab"), h("build-server", true), h("podman:web")]), { first: [h("build-server", true)], rest: [h("lab"), h("podman:web")] });
+  assert.deepEqual(thisWindowFirst([h("lab"), h("podman:web")]), { first: [], rest: [h("lab"), h("podman:web")] }, "a local window: as before");
+});
+
+test("New Chat… on an SSH host says where Talpy Chat isn't offered, in its section's place", async () => {
+  const stub = vscode as unknown as typeof import("./vscode-stub");
+  const window = stub.window as unknown as Record<string, unknown>;
+  const pick = window.showQuickPick;
+  const shown: { label: string; description?: string; kind?: number }[][] = [];
+  window.showQuickPick = async (items: { label: string; description?: string; kind?: number }[]) => (shown.push(items), undefined);
+  try {
+    const group = (host: string) => ({
+      id: host || "w", title: "work", chatProfile: ".claude", profileKeys: [".claude"], sessions: [], homeChatCommand: "cd ~ 2>/dev/null; claude", host: host || undefined,
+      projects: [{ path: "/srv/app", short: "~/app", newChatCommand: "cd /srv/app 2>/dev/null; claude", trusted: true }],
+    } as unknown as Group);
+    const dash = { opened() {}, demo: false, currentHost: "build-server",
+      state: () => ({ status: { groups: [group("")], cli: { installed: true } }, hosts: [{ name: "build-server", current: true, result: { groups: [group("build-server")], cli: { installed: true } } }] }),
+      setActionError: () => undefined, isVisible: () => true };
+    const actions = new Actions({ action: async () => ({ ok: true, message: "" }) } as unknown as Backend, dash as unknown as Dashboard,
+      {} as unknown as Terminals, { warn: () => undefined } as unknown as vscode.LogOutputChannel, {} as AccountSwitch);
+    await actions.newChat("build-server", "build-server");
+    const labels = shown[0].map((i) => i.label);
+    const at = labels.indexOf("In a Talpy Chat tab");
+    assert.ok(at >= 0, labels.join(" | "));
+    assert.equal(labels[at + 1], "$(info) Talpy Chat: this computer's chats for now");
+    assert.equal(shown[0][at + 2].label, "In a terminal", "only the line");
+    assert.equal(shown[0][at + 1].description, "it can't answer the prompts of a chat on build-server yet");
+    await actions.newChat("w");
+    const here = shown[1].map((i) => i.label);
+    assert.ok(!here.some((l) => l.startsWith("$(info) Talpy Chat")), "offered on this computer");
+    assert.equal(here[here.indexOf("In a Talpy Chat tab") + 1], "$(folder) ~/app");
+  } finally {
+    window.showQuickPick = pick;
+  }
 });
 
 test("each half says what it does, or why it's greyed out", () => {

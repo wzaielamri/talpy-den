@@ -9,9 +9,10 @@ import {
   maxFiveHour,
   overallState,
   stateText,
+  thisWindowFirst,
 } from "../../src/shared/model";
 import { Component, type ComponentChildren } from "preact";
-import type { ViewState } from "../../src/shared/types";
+import type { HostState, ViewState } from "../../src/shared/types";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { editorTab } from "../env";
 import { pets } from "../pets";
@@ -28,6 +29,7 @@ import { UnseenLines } from "./UnseenLines";
 import { Header } from "./Header";
 import { HeroStage } from "./HeroStage";
 import { HostSection } from "./HostSection";
+import { I, Icon } from "../util/icons";
 import { Messages } from "./Messages";
 import { PermsView } from "./PermsView";
 import { Reading } from "./Reading";
@@ -131,6 +133,13 @@ export function App() {
     waitingState: waiting ? stateText(waiting.session, Date.now()) : "",
   };
   const local = state.status ? state.status.groups : [];
+  const hostsInOrder = thisWindowFirst(state.hosts);
+  const hostSection = (h: HostState) => (
+    <Guarded key={h.name} what={h.name}>
+      {/* its last answer, also when the last check failed (dimmed): allGroups leaves that one out */}
+      <HostSection host={h} groups={(h.result?.groups ?? []).map((g) => ({ ...g, host: h.name }))} />
+    </Guarded>
+  );
   // the plan usage bars' label column: one width in every account (the widest
   // window label shown), so their bars line up
   const labelChars = Math.max(2, ...groups.flatMap((g) => (g.limits?.windows ?? []).map((w) => w.label.length)));
@@ -184,6 +193,18 @@ export function App() {
                 <FocusView groups={groups} />
               </Guarded>
             ) : null}
+            {/* a Remote-SSH window's host first ("this window"), then this computer's accounts, then the other hosts */}
+            {(focus ? [] : hostsInOrder.first).map(hostSection)}
+            {/* (then this computer's accounts get a head of their own, so they don't read as that host's) */}
+            {!focus && hostsInOrder.first.length > 0 && local.length > 0 ? (
+              <div class="host this-computer" aria-label="This computer">
+                <div class="host-head">
+                  <Icon name={I.computer} class="host-icon" />
+                  <h2 class="host-name">This computer</h2>
+                  {state.status?.host ? <span class="host-machine small muted">{state.status.host.split(".")[0]}</span> : null}
+                </div>
+              </div>
+            ) : null}
             {(focus ? [] : local).map((g) => (
               <Guarded key={groupKeyOf(g)} what={g.name}>
                 <GroupSection group={g} accounts={local.length} />
@@ -195,12 +216,7 @@ export function App() {
             {!focus && state.status && local.length === 0 && state.hosts.length > 0 ? (
               <div class="no-sessions muted">No Claude Code config on this computer</div>
             ) : null}
-            {(focus ? [] : state.hosts).map((h) => (
-              <Guarded key={h.name} what={h.name}>
-                {/* its last answer, also when the last check failed (dimmed): allGroups leaves that one out */}
-                <HostSection host={h} groups={(h.result?.groups ?? []).map((g) => ({ ...g, host: h.name }))} />
-              </Guarded>
-            ))}
+            {(focus ? [] : hostsInOrder.rest).map(hostSection)}
             {state.status && groups.length === 0 && state.hosts.length === 0 ? (
               <div class="empty">
                 <p class="empty-title">No Claude Code chats yet</p>
