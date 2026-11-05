@@ -2077,14 +2077,20 @@ class NewChatTests(unittest.TestCase):
     def test_keys_take_no_shortcut_and_the_list_is_made_only_when_shown(self):
         # Talpy Chat's keys (A10): one table (keys.mjs) for Plasma and VS Code; Plasma takes them at the
         # ShortcutOverride on surface and the reply box (Kirigami gives every button an Alt+letter, so a
-        # Shortcut on Alt+A would be one of two), never per message; the ? list in a file of its own, read
-        # and made only while it shows; Esc in the order keys.mjs gives; the tooltips name keys of the table
+        # Shortcut on Alt+A would be one of two), never per message; what they do in a file of its own
+        # (PaneKeys.qml) made once the window shows, the ? list (KeysHelp.qml) only while it shows: a
+        # window opens as quickly; Esc in the order keys.mjs gives; the tooltips name keys of the table
         pane = (ROOT / "ui/ChatPane.qml").read_text()
+        logic = (ROOT / "ui/PaneKeys.qml").read_text()
         keys = (ROOT / "ui/keys.mjs").read_text()
-        self.assertIn('import "keys.mjs" as PaneKeys', pane)
+        self.assertNotIn('"keys.mjs"', pane)
+        self.assertIn('import "keys.mjs" as PaneKeys', logic)
+        self.assertIn("PaneKeys.escTarget(", logic)
         self.assertIn("Keys.onShortcutOverride: event => event.accepted = pane.keyAction(event) !== \"\"", pane)
         self.assertEqual(pane.count("pane.takeKey(event)"), 2)   # (surface, and the reply box first)
-        self.assertIn("PaneKeys.escTarget(", pane)
+        self.assertIn('source: active ? "PaneKeys.qml" : ""', pane)
+        self.assertRegex(pane, r"id: paneKeys\n\s+active: false\n\s+asynchronous: true\n")
+        self.assertIn("paneKeys.active = true", pane[pane.index("    onShownChanged: {"):])
         self.assertIn('source: active ? "KeysHelp.qml" : ""', pane)
         self.assertIn("active: pane.helpOn", pane)
         for shortcut in re.findall(r"Shortcut \{[^}]*\}", pane):

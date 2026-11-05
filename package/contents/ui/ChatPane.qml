@@ -8,7 +8,6 @@ import "hub"
 import "markdown.mjs" as Md
 import "codehtml.mjs" as Code
 import "icons.mjs" as Icons
-import "keys.mjs" as PaneKeys
 
 // A chat beside the popup (main.qml: openPane): its conversation, updating
 // while it works, drawn the way Claude's terminal draws it (a dot before each
@@ -401,171 +400,26 @@ Window {
     // list for all of Plasma), so a Shortcut on Alt+A would be one of two and work every other
     // press. surface and the reply box take them first, at the ShortcutOverride, only when they're
     // Talpy Chat's and do something now; the box keeps the editing keys it takes itself (Ctrl+Home,
-    // Shift+arrows…). keyAction: the key's id, or "" (not ours, or nothing to do with it now)
+    // Shift+arrows…). What each does: PaneKeys.qml, read and made once the window shows (so a
+    // window opens as quickly); keyAction: the key's id, or "" (not ours, or nothing to do now)
+    Loader {
+        id: paneKeys
+        active: false
+        asynchronous: true
+        source: active ? "PaneKeys.qml" : ""
+    }
+    function keyAction(event) {
+        return paneKeys.item ? paneKeys.item.keyAction(event) : ""
+    }
+    function takeKey(event) {
+        return !!paneKeys.item && paneKeys.item.takeKey(event)
+    }
     property bool helpOn: false
     property var ghostOff: null   // (Esc on the grey completion: none for that text)
     property real activeAt: 0     // (when it was last in front: Ctrl+Tab, main.qml nextPaneWindow)
     onActiveChanged: if (active) activeAt = Date.now()
     // (focus that falls back to the window, a field gone or turned off: surface's, so the keys still work)
     onActiveFocusItemChanged: if (active && activeFocusItem === contentItem) surface.forceActiveFocus()
-    function keyAction(event) {
-        const k = event.key, m = event.modifiers & ~Qt.KeypadModifier
-        const ctrl = m === Qt.ControlModifier, alt = m === Qt.AltModifier, plain = m === Qt.NoModifier
-        const ctrlShift = m === (Qt.ControlModifier | Qt.ShiftModifier)
-        if (k === Qt.Key_Escape && plain)
-            return escapeTarget() !== "" ? "escape" : ""
-        if (ctrl && k >= Qt.Key_1 && k <= Qt.Key_3)
-            return k === Qt.Key_3 && fresh ? "" : ["tabChat", "tabSteps", "tabReview"][k - Qt.Key_1]
-        if (ctrl && k === Qt.Key_W)
-            return "close"
-        if ((ctrl && k === Qt.Key_Tab) || (ctrlShift && k === Qt.Key_Backtab))
-            return k === Qt.Key_Tab ? "nextWindow" : "previousWindow"
-        if (ctrlShift && k === Qt.Key_O)
-            return fresh || starting ? "" : "openWindow"
-        if (ctrl && k === Qt.Key_T)
-            return tasks !== null || agents !== null ? "tasks" : ""
-        if (ctrlShift && k === Qt.Key_C)
-            return "copyLast"
-        if (alt && (k === Qt.Key_Y || k === Qt.Key_A || k === Qt.Key_N))
-            return permission && askColumn.canAnswer ? (k === Qt.Key_Y ? "allow" : k === Qt.Key_A ? "always" : "deny") : ""
-        if (!conversationTab)
-            return ""
-        const enter = k === Qt.Key_Return || k === Qt.Key_Enter
-        if (enter && (ctrl || alt || ctrlShift))
-            return ctrl ? "sendNow" : alt ? "sendLater" : "sendBackground"
-        // (Alt+1…: a chip; with Shift, into the box first: the digit by its key, whatever the layout makes of it)
-        const digit = k >= Qt.Key_1 && k <= Qt.Key_9 ? k - Qt.Key_0 : event.nativeScanCode >= 10 && event.nativeScanCode <= 18 ? event.nativeScanCode - 9 : 0
-        if ((alt || m === (Qt.AltModifier | Qt.ShiftModifier)) && digit > 0)
-            return chipsRow.item && chipsRow.item.shown[digit - 1] ? (alt ? "chip" : "edit") + digit : ""
-        if (plain && (k === Qt.Key_PageUp || k === Qt.Key_PageDown))
-            return k === Qt.Key_PageUp ? "pageUp" : "pageDown"
-        if (ctrl && (k === Qt.Key_Up || k === Qt.Key_Down))
-            return k === Qt.Key_Up ? "promptUp" : "promptDown"
-        if (ctrl && k === Qt.Key_L)
-            return replyBox.text !== "" ? "clear" : ""
-        if (event.text === "?" && !(m & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) && replyBox.activeFocus && replyBox.text === "")
-            return "help"
-        return ""
-    }
-    function takeKey(event) {
-        const id = keyAction(event)
-        if (id === "")
-            return false
-        event.accepted = true
-        doKey(id)
-        return true
-    }
-    // Esc does the nearest thing first, one a press (keys.mjs escTarget): the big picture, the / and
-    // @ list, the keys, the grey completion; only then, in an empty box while Stop shows, it stops
-    // Claude (a chip's menu closes itself first)
-    function escapeTarget() {
-        return PaneKeys.escTarget({ big: bigPicture !== "", list: suggestions.length > 0 && replyBox.activeFocus, help: helpOn,
-                                    ghost: !!ghostLine.item && ghostLine.item.rest !== "",
-                                    stop: replyBox.activeFocus && replyBox.text === "" && canStop && !stopping })
-    }
-    function doKey(id) {
-        const text = replyBox.text.trim()
-        const terminal = route === "terminal" || askHow
-        const elsewhere = !replyAnswers && commandNow && commandNow.run !== "here"
-        switch (id) {
-        case "escape": {
-            const what = escapeTarget()
-            if (what === "big")
-                bigPicture = ""
-            else if (what === "list") {
-                dismissed = replyBox.text.slice(tokenStart, replyBox.cursorPosition)
-                suggestions = []
-            } else if (what === "help")
-                helpOn = false
-            else if (what === "ghost")
-                ghostOff = replyBox.text
-            else if (what === "stop")
-                stop()
-            return
-        }
-        case "sendNow": {   // (no 5 s wait; in an empty box, the message waiting goes now)
-            if (text !== "")
-                return send("enter", false, true)
-            const mine = pendingSent.filter(p => p.state === "held" && p.chat === chatId && p.host === (host || ""))
-            if (mine.length)
-                release("pending-" + mine[mine.length - 1].id)
-            return
-        }
-        case "sendLater":
-            if (busy && text !== "" && !elsewhere)
-                send(terminal ? "background" : "auto", true)
-            return
-        case "sendBackground":
-            if (terminal && !busy && text !== "" && !elsewhere)
-                send("background", false)
-            return
-        case "clear":   // (an edit: Ctrl+Z brings it back)
-            replyBox.remove(0, replyBox.length)
-            replyBox.forceActiveFocus()
-            return
-        case "allow":
-        case "always":
-        case "deny":
-            askColumn.pressKey(id)
-            return
-        case "pageUp":
-        case "pageDown":
-            settle.stop()
-            holdTop.stop()
-            list.contentY = Math.max(list.originY, Math.min(list.originY + list.contentHeight - list.height,
-                                                            list.contentY + (id === "pageUp" ? -1 : 1) * Math.max(fm.height * 2, list.height - fm.height * 2)))
-            return
-        case "promptUp":
-        case "promptDown":
-            return jumpPrompt(id === "promptDown")
-        case "tabChat":
-        case "tabSteps":
-        case "tabReview":
-            tab = id === "tabChat" ? "chat" : id === "tabSteps" ? "steps" : "review"
-            return
-        case "tasks":
-            return toggleStrip()
-        case "copyLast":
-            return copyLast()
-        case "openWindow":
-            return root.openRow(row || chat, host, true)
-        case "close":
-            return close()
-        case "nextWindow":
-        case "previousWindow":
-            return root.nextPaneWindow(pane, id === "previousWindow")
-        case "help":
-            helpOn = true
-            return
-        }
-        const chip = /^(chip|edit)([1-9])$/.exec(id)
-        if (chip && chipsRow.item && chipsRow.item.shown[Number(chip[2]) - 1])
-            takeChip(chipsRow.item.shown[Number(chip[2]) - 1], chip[1] === "edit")
-    }
-    // Ctrl+↑ / Ctrl+↓: your previous / next message at the list's top (past the last: the end)
-    function jumpPrompt(down) {
-        settle.stop()
-        holdTop.stop()
-        const top = list.contentY
-        let to = null
-        for (let i = 0; i < items.count; i++) {
-            if (items.get(i).kind !== "you")
-                continue
-            const it = list.itemAtIndex(i)
-            if (!it || !it.visible || it.height <= 0)
-                continue
-            const at = it.y + (it.gap || 0) - fm.height * 0.5
-            if (down ? at > top + 4 : at < top - 4) {
-                to = at
-                if (down)
-                    break
-            }
-        }
-        if (to !== null)
-            list.contentY = Math.max(list.originY, Math.min(list.originY + list.contentHeight - list.height, to))
-        else if (down)
-            toEnd()
-    }
 
     // Where a reply's link goes, under the pointer while it's hovered (its
     // words can say anything): one tooltip for the pane, made only while a
@@ -812,6 +666,8 @@ Window {
     // (minimized, it reads nothing: once it's back, the conversation now)
     readonly property bool shown: visible && visibility !== Window.Minimized
     onShownChanged: {
+        if (shown)
+            paneKeys.active = true   // (its keys: made once it shows)
         if (shown)
             newDay()
         if (shown && loaded)
