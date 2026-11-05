@@ -65,6 +65,7 @@ CHANGED_FILE = "cleanup-claude.json"  # (state folder: the settings files change
 RUNS_FILE = "cleanup-runs.json"  # (cache: each place's last run, "" this computer's, as the settings show it)
 HOSTS_FILE = "cleanup-hosts.json"  # (state folder: the SSH hosts and containers it kept Claude's from cleaning on)
 HOST_MODULES = ("accounts.py", "sharing.py")  # (loaded before this file on a host: the Trash, the shared chats' store)
+HOST_TIMEOUT = 600  # s a host's run may take (a first one with much to delete: not cut off halfway at the usual 60)
 LOCK_FILE = "cleanup.lock"
 HOST_FRESH_S = 86400  # a host is cleaned when it answered a check in the last day
 ERRORS_KEPT = 5
@@ -105,16 +106,19 @@ def load_setting(cache_root):
             "at": int(cs.number(data.get("at")) or 0)}
 
 
-def change_setting(cache_root, change):
+def change_setting(cache_root, change, chosen=True):
     """Change the setting under a lock (every copy may write it): change(s)
-    changes it in place, or returns False to leave it. The setting after."""
+    changes it in place, or returns False to leave it. The setting after;
+    chosen: a choice of yours ("at" says when: a run going on runs again),
+    not a run's own note ("pending" done)."""
     state = cs.state_dir(cache_root)
     cs.private_dir(state)
     with open(str(state / "cleanup-setting.lock"), "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         s = load_setting(cache_root)
         if change(s) is not False:
-            s["at"] = int(time.time() * 1000)
+            if chosen:
+                s["at"] = int(time.time() * 1000)
             cs.write_json_atomic(setting_path(cache_root), s, private=True)
         return s
 
@@ -138,16 +142,7 @@ def save_changed(cache_root, files):
     cs.write_json_atomic(changed_path(cache_root), {"files": files}, private=True)
 
 
-def settings_files(home, profiles):
-    """Each account's settings.json, once per real file (accounts often share one through links)."""
-    seen, out = set(), []
-    folders = [p.path for p in profiles] + ([home / ".claude"] if cs.is_dir(home / ".claude") else [])
-    for folder in folders:
-        real = os.path.realpath(str(folder / "settings.json"))
-        if real not in seen:
-            seen.add(real)
-            out.append(Path(real))
-    return out
+settings_files = cs.claude_settings_files  # (each account's, once per real file: they often share one through links)
 
 
 def read_settings(path):
@@ -171,22 +166,23 @@ def keep_claude_from_cleaning(home, cache_root, profiles):
     said before: the problems (one that isn't JSON is left as it is: Claude
     keeps cleaning there)."""
     changed, problems = load_changed(cache_root), []
-    for path in settings_files(home, profiles):
-        data, there = read_settings(path)
-        if data is None:
-            problems.append(f"{cs.short_path(str(path), str(home))} isn't a JSON object: Claude Code keeps cleaning up there")
-            continue
-        if data.get(SETTING_KEY) == CLAUDE_KEEPS:
-            continue
-        key = str(path)
-        if key not in changed:
-            changed[key] = {"had": SETTING_KEY in data, "value": data.get(SETTING_KEY), "made": not there}
-            save_changed(cache_root, changed)  # (noted first: a write that half fails is still put back)
-        data[SETTING_KEY] = CLAUDE_KEEPS
-        try:
-            write_settings(path, data)
-        except OSError as exc:
-            problems.append(f"{cs.short_path(str(path), str(home))}: {exc.strerror or exc}")
+    with cs.claude_settings_lock(home):  # (read to written: a hook turned on meanwhile isn't lost)
+        for path in settings_files(home, profiles):
+            data, there = read_settings(path)
+            if data is None:
+                problems.append(f"{cs.short_path(str(path), str(home))} isn't a JSON object: Claude Code keeps cleaning up there")
+                continue
+            if data.get(SETTING_KEY) == CLAUDE_KEEPS:
+                continue
+            key = str(path)
+            if key not in changed:
+                changed[key] = {"had": SETTING_KEY in data, "value": data.get(SETTING_KEY), "made": not there}
+                save_changed(cache_root, changed)  # (noted first: a write that half fails is still put back)
+            data[SETTING_KEY] = CLAUDE_KEEPS
+            try:
+                write_settings(path, data)
+            except OSError as exc:
+                problems.append(f"{cs.short_path(str(path), str(home))}: {exc.strerror or exc}")
     return problems
 
 
@@ -194,32 +190,68 @@ def let_claude_clean(home, cache_root):
     """Put cleanupPeriodDays back where Talpy Den changed it (unless it was
     changed since): (problems, whether some are still left to put back)."""
     changed, left, problems = load_changed(cache_root), {}, []
-    for key, was in changed.items():
-        path = Path(key)
-        data, there = read_settings(path)
-        if not there:
-            continue
-        if data is None:
-            problems.append(f"{cs.short_path(key, str(home))} isn't a JSON object: put cleanupPeriodDays back yourself")
-            left[key] = was
-            continue
-        if data.get(SETTING_KEY) != CLAUDE_KEEPS:
-            continue  # (someone changed it since: theirs)
-        if was.get("had"):
-            data[SETTING_KEY] = was.get("value")
-        else:
-            data.pop(SETTING_KEY, None)
-        try:
-            if not data and was.get("made"):
-                os.unlink(key)  # (Talpy Den made the file for it)
-            else:
-                write_settings(path, data)
-        except OSError as exc:
-            problems.append(f"{cs.short_path(key, str(home))}: {exc.strerror or exc}")
-            left[key] = was
+    with cs.claude_settings_lock(home):
+        for key, was in changed.items():
+            put_back(home, key, was, left, problems)
     if left != changed:
         save_changed(cache_root, left)
     return problems, bool(left)
+
+
+def put_back(home, key, was, left, problems):
+    """One settings file's cleanupPeriodDays as it was, unless it went or
+    was changed since (left: the ones still to put back)."""
+    path = Path(key)
+    data, there = read_settings(path)
+    if not there:
+        return
+    if data is None:
+        problems.append(f"{cs.short_path(key, str(home))} isn't a JSON object: put cleanupPeriodDays back yourself")
+        left[key] = was
+        return
+    if data.get(SETTING_KEY) != CLAUDE_KEEPS:
+        return  # (someone changed it since: theirs)
+    if was.get("had"):
+        data[SETTING_KEY] = was.get("value")
+    else:
+        data.pop(SETTING_KEY, None)
+    try:
+        if not data and was.get("made"):
+            os.unlink(key)  # (Talpy Den made the file for it)
+        else:
+            write_settings(path, data)
+    except OSError as exc:
+        problems.append(f"{cs.short_path(key, str(home))}: {exc.strerror or exc}")
+        left[key] = was
+
+
+MANAGED_SETTINGS = "/etc/claude-code"  # (managed-settings.json and managed-settings.d/*.json: they win over every other)
+
+
+def claude_overrides(home, profiles):
+    """[{"path", "days"}]: the settings besides the accounts' own that set a
+    cleanupPeriodDays under 3650, which Claude Code cleans up by when it runs
+    there: a project's .claude/settings.json or settings.local.json (of the
+    folders it ran in), a managed one. Talpy Den doesn't change those (a
+    repository's, an administrator's): it says so."""
+    paths = [os.path.join(MANAGED_SETTINGS, "managed-settings.json")]
+    paths += sorted(e.path for e in entries(os.path.join(MANAGED_SETTINGS, "managed-settings.d")) if e.name.endswith(".json"))
+    for p in profiles:
+        for folder in getattr(p, "project_folders", ()):
+            paths += [os.path.join(folder, ".claude", "settings.json"), os.path.join(folder, ".claude", "settings.local.json")]
+    found, seen = [], set()
+    for path in paths:
+        if not os.path.isfile(path):
+            continue
+        real = os.path.realpath(path)
+        if real in seen:
+            continue
+        seen.add(real)
+        data, _there = read_settings(Path(real))
+        days = (data or {}).get(SETTING_KEY)
+        if isinstance(days, (int, float)) and not isinstance(days, bool) and days < CLAUDE_KEEPS:
+            found.append({"path": cs.short_path(path, str(home)), "days": int(days)})
+    return found
 
 
 def claude_days(home, profiles):
@@ -483,11 +515,15 @@ def sweep_jobs(root, cutoff, keep, live_jobs, t, dry):
         if not e.is_dir(follow_symlinks=False) or e.name in live_jobs:
             continue
         state = os.path.join(e.path, "state.json")
-        when = max(mtime_of(e) or 0, os.path.getmtime(state) if os.path.isfile(state) else 0)
-        if not when or when >= cutoff:
+        try:  # (Claude's service may replace or remove it meanwhile: that job is looked at next time)
+            when = max(mtime_of(e) or 0, os.stat(state).st_mtime)
+        except OSError:
+            continue
+        if when >= cutoff:
             continue
         job = cs.read_json(Path(state))
-        if not isinstance(job, dict) or not cs.job_finished(job) or job.get("sessionId") in keep:
+        # (a routine, a self-waking or /loop job is "done" between its runs: it's never deleted, as Claude's isn't)
+        if not isinstance(job, dict) or not cs.job_finished(job) or cs.is_recurring(job) or job.get("sessionId") in keep:
             continue
         size = size_of(e.path)
         try:
@@ -595,7 +631,8 @@ def place(home, cache_root, profiles, mode, days, keep_chats, keep_plans, now, d
     t = sweep(home, cache_root, profiles, days, keep_chats, keep_plans, now, dry)
     for p in problems:
         t.error(p)
-    return dict(out, ok=not t.errors, raised=bool(load_changed(cache_root)), **t.out())
+    return dict(out, ok=not t.errors, raised=bool(load_changed(cache_root)), overrides=claude_overrides(home, profiles),
+                **t.out())
 
 
 # ---------------------------------------------------------------- the run: here, then the hosts
@@ -646,7 +683,7 @@ def on_host(host, cache_root, mode, days, dry=False):
         args += ["--keep-plans", ",".join(sorted(plans))]
     if dry:
         args.append("--dry-run")
-    return remote.host_answer(host, args, name="cleanup.py", also=HOST_MODULES)
+    return remote.host_answer(host, args, name="cleanup.py", also=HOST_MODULES, timeout=HOST_TIMEOUT)
 
 
 def run(home, cache_root, extra_dirs=(), now=None, wait=False):
@@ -685,7 +722,8 @@ def run(home, cache_root, extra_dirs=(), now=None, wait=False):
                     runs[host] = dict(before, ok=False, at=int(at * 1000), message=answer.get("message") or "no answer")
             cs.write_json_atomic(Path(cache_root) / RUNS_FILE, runs)
             if setting["mode"] == "claude" and setting["pending"] and not raised and not load_changed(cache_root):
-                change_setting(cache_root, lambda s: s.update(pending=False) if s["at"] == setting["at"] else False)
+                change_setting(cache_root, lambda s: s.update(pending=False) if s["at"] == setting["at"] else False,
+                               chosen=False)
             if load_setting(cache_root)["at"] == setting["at"]:
                 break
         return {"ok": all(r.get("ok") for r in runs.values()), "message": "", "runs": runs}
@@ -739,7 +777,7 @@ def status(home, cache_root, extra_dirs=(), now=None, days=None):
     return {"ok": True, "mode": setting["mode"], "days": setting["days"], "defaultDays": DEFAULT_DAYS,
             "maxDays": MAX_DAYS, "pending": setting["pending"], "claudeDays": claude_days(home, profiles),
             "runs": load_runs(cache_root), "checkedAt": int(ran * 1000) if ran else None, "preview": preview,
-            "previewDays": days, "claudeRisk": risk}
+            "previewDays": days, "claudeRisk": risk, "overrides": claude_overrides(home, profiles)}
 
 
 def claude_days_back(cache_root):

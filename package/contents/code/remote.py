@@ -951,7 +951,7 @@ def run(host, command, stdin=None):
     return outcome(host, r)
 
 
-def host_answer(host, args, name="talpy_den.py", also=()):
+def host_answer(host, args, name="talpy_den.py", also=(), timeout=RUN_TIMEOUT):
     """Run a script of this folder on host with args (it goes to python3's
     stdin, as for --status): its answer, {"ok", "message", ...}; "reached":
     False when the host (or the container) couldn't be reached, not when
@@ -967,9 +967,9 @@ def host_answer(host, args, name="talpy_den.py", also=()):
     command = "python3 -I - --remote " + " ".join(shlex.quote(a) for a in args)
     p = place(host)
     try:
-        r = ssh(host, command, script)
+        r = ssh(host, command, script, timeout)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "message": f"{p.label} didn't answer within {RUN_TIMEOUT} s"}
+        return {"ok": False, "message": f"{p.label} didn't answer within {timeout} s"}
     except OSError as exc:
         return {"ok": False, "reached": False, "message": cant_run(p, exc)}
     answer = answer_after_mark(r.stdout)

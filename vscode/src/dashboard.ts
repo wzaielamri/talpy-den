@@ -18,7 +18,7 @@ import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, port
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
 import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
-import { cleanupText, oldChatsDetail, riskText, SETTING_OF } from "./oldChats";
+import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "./oldChats";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
@@ -121,6 +121,11 @@ export class Dashboard implements vscode.Disposable {
       // looking at the view: what finished is seen
       vscode.window.onDidChangeWindowState((s) => {
         if (s.focused && this.visible) this.clearUnseen();
+        // (the old-chats settings follow a choice made on Plasma or GNOME meanwhile: once a minute at most)
+        if (s.focused && Date.now() - this.oldChatsSyncedAt > 60000) {
+          this.oldChatsSyncedAt = Date.now();
+          void this.syncOldChats();
+        }
       }),
       this.onStateEmitter,
       this.onUnseenEmitter,
@@ -130,7 +135,8 @@ export class Dashboard implements vscode.Disposable {
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (!e.affectsConfiguration("talpyDen")) return;
         if (e.affectsConfiguration("talpyDen.recapHistory")) void this.setRecapHistory(settings.recapHistory());
-        if (e.affectsConfiguration("talpyDen.oldChats") || e.affectsConfiguration("talpyDen.oldChatsDays")) this.oldChatsChanged();
+        if (e.affectsConfiguration("talpyDen.oldChats") || e.affectsConfiguration("talpyDen.oldChatsDays"))
+          this.oldChatsChanged(e.affectsConfiguration("talpyDen.oldChats"));
         this.settingsChanged();
       }),
       // the Claude Code extension installed, removed or (in a new folder) enabled
@@ -985,17 +991,22 @@ export class Dashboard implements vscode.Disposable {
   // (Talpy Den's, or fewer days), with what its first run deletes
   private oldChatsChain: Promise<void> = Promise.resolve();
   private oldChatsSyncing = false; // (the settings changed by syncOldChats: not a choice of yours)
+  private oldChatsSyncedAt = 0;
 
-  private oldChatsChanged(): void {
+  private oldChatsChanged(choice: boolean): void {
     if (this.oldChatsSyncing) return;
-    this.oldChatsChain = this.oldChatsChain.then(() => this.setOldChats()).catch(() => undefined);
+    this.oldChatsChain = this.oldChatsChain.then(() => this.setOldChats(choice)).catch(() => undefined);
   }
 
-  async setOldChats(): Promise<void> {
+  // choice: the choice itself changed (else only the days: they never switch it, whatever the
+  // setting says, which another window or Plasma may have left behind)
+  async setOldChats(choice = true): Promise<void> {
     if (this.demoPhase !== null || !vscode.window.state.focused) return;
-    const want = settings.oldChats(), days = settings.oldChatsDays(), dirs = configDirArgs();
+    const days = settings.oldChatsDays(), dirs = configDirArgs();
     const now = await this.backend.cleanupSetting(); // (only the choice: a run's preview only when it's asked)
     if (!now) return;
+    const want = choice ? settings.oldChats() : SETTING_OF[now.mode];
+    if (!choice && now.mode !== "talpy") return; // (the days of Talpy Den's cleanup, which isn't chosen: kept for when it is)
     let args: string[];
     if (want === "claude") {
       if (now.mode === "claude") return; // (the setting caught up with cleanup.py's choice: syncOldChats)
@@ -1019,7 +1030,8 @@ export class Dashboard implements vscode.Disposable {
             modal: true,
             detail: `Talpy Den's first run deletes ${preview ? cleanupText(preview.preview) : "what's that old"} here, then once a day ` +
               "what you haven't used for that long, on the SSH hosts and containers shown too; old plans go to the Trash. What you " +
-              "starred stays, and so do chats that are open, queued or keep going. Claude Code's own cleanup is off meanwhile.",
+              "starred stays, and so do chats that are open, queued or keep going. Claude Code's own cleanup is off meanwhile." +
+              (preview && preview.overrides.length ? `\n\n${overridesNote(preview.overrides)}` : ""),
           }, "Use It");
         if (pick !== "Use It") return void this.syncOldChats();
       }

@@ -130,6 +130,37 @@ class ChatTests(Home):
         self.assertTrue(memory.is_dir() and index.exists() and odd.is_dir() and agent.exists())
         self.assertEqual((r["chats"], r["files"]), (0, 0))
 
+    def test_a_routine_or_loop_between_its_runs_stays(self):
+        for name, extra in (("r1", {"routine": {"cron": "0 9 * * 1"}}), ("r2", {"intent": "/loop 5m check the build"}),
+                            ("r3", {"selfWake": True})):
+            d = self.thing("jobs/" + name, 40, folder=True)
+            (d / "state.json").write_text(json.dumps(dict({"state": "done", "tempo": "idle", "sessionId": name}, **extra)))
+            aged(d / "state.json", 40, self.now)
+            aged(d, 40, self.now)
+        self.talpy()
+        self.assertEqual(self.run_here()["backgroundChats"], 0)
+        self.assertEqual(sorted(os.listdir(str(self.work / "jobs"))), ["r1", "r2", "r3"])
+
+    def test_a_projects_or_managed_setting_that_still_cleans_is_told(self):
+        repo = self.home / "repo"
+        (repo / ".claude").mkdir(parents=True)
+        (repo / ".claude/settings.json").write_text(json.dumps({"cleanupPeriodDays": 7}))
+        (repo / ".claude/settings.local.json").write_text(json.dumps({"cleanupPeriodDays": 9000}))  # (keeps longer: fine)
+        data = json.loads((self.work / ".claude.json").read_text())
+        data["projects"] = {str(repo): {}}
+        (self.work / ".claude.json").write_text(json.dumps(data))
+        managed = self.home / "etc-claude-code"
+        (managed / "managed-settings.d").mkdir(parents=True)
+        (managed / "managed-settings.d/10-retention.json").write_text(json.dumps({"cleanupPeriodDays": 14}))
+        with mock.patch.object(cleanup, "MANAGED_SETTINGS", str(managed)):
+            self.talpy()
+            r = self.run_here()
+            st = cleanup.status(self.home, self.cache, now=self.now)
+        want = [{"path": "~/etc-claude-code/managed-settings.d/10-retention.json", "days": 14},
+                {"path": "~/repo/.claude/settings.json", "days": 7}]
+        self.assertEqual((r["overrides"], st["overrides"]), (want, want))
+        self.assertEqual(json.loads((repo / ".claude/settings.json").read_text()), {"cleanupPeriodDays": 7})  # (not changed)
+
     def test_a_background_chat_whose_chat_stays_stays(self):
         self.chat(B, 2)
         d = self.thing("jobs/j9", 40, folder=True)
@@ -324,9 +355,13 @@ class ClaudeSettingTests(Home):
     def test_pending_until_every_place_has_claudes_cleanup_back(self):
         self.talpy()
         cleanup.set_mode(self.home, self.cache, (), "claude", start=False)
-        self.assertTrue(cleanup.load_setting(self.cache)["pending"])
-        self.run_here()
-        self.assertFalse(cleanup.load_setting(self.cache)["pending"])
+        before = cleanup.load_setting(self.cache)
+        self.assertTrue(before["pending"])
+        with mock.patch.object(cleanup, "place", wraps=cleanup.place) as placed:
+            self.run_here()
+        self.assertEqual(placed.call_count, 1)  # (its own note isn't a new choice: no second pass)
+        after = cleanup.load_setting(self.cache)
+        self.assertEqual((after["pending"], after["at"]), (False, before["at"]))
 
 
 class DueTests(Home):
@@ -397,7 +432,7 @@ class HostsTests(Home):
             cleanup.on_host("lab", self.cache, "talpy", 21)
         host, args = asked.call_args[0][:2]
         self.assertEqual((host, args), ("lab", ["--place", "21", "--keep-chats", A, "--keep-plans", "my-plan"]))
-        self.assertEqual(asked.call_args[1], {"name": "cleanup.py", "also": ("accounts.py", "sharing.py")})
+        self.assertEqual(asked.call_args[1], {"name": "cleanup.py", "also": ("accounts.py", "sharing.py"), "timeout": 600})
 
     def test_a_host_out_of_reach_keeps_what_it_did_before(self):
         import remote

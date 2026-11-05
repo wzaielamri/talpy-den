@@ -592,6 +592,10 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
                 ? `When it starts, Claude Code deletes every chat, and every plan of an account's plans folder, older than its cleanupPeriodDays (${
                     st.claudeDays.map(a => `${a.account}: ${a.days} days`).join(', ')}): starred or not, for good.`
                 : 'Once a day Talpy Den deletes the chats you haven\'t used for that long, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code\'s own cleanup is off on every account, here and on the SSH hosts and containers shown (cleanupPeriodDays 3650); choosing it again puts it back.'];
+            const overrides = list => (list || []).map(o => `${o.path} (${o.days} days)`).join(', ');
+            if ((st.mode === 'talpy' || ask.visible) && (st.overrides || []).length)
+                lines.push('', `These settings still have Claude Code delete old chats, starred or not, when it runs there: ${overrides(st.overrides)}. ` +
+                    "Talpy Den doesn't change them: set their cleanupPeriodDays higher, or take it out, to keep what you starred.");
             if (st.mode === 'talpy' && !ask.visible)
                 lines.push('', `Its next run would delete ${what(st.preview)} here.${kept(st.preview) ? ` ${kept(st.preview)}.` : ''}`);
             const places = Object.keys(st.runs || {}).sort();
@@ -607,6 +611,8 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
                     text += ` · ${r.message || errors}`;
                 else if (!r.ok && !r.message && errors)
                     text += ` · ${errors}`;
+                if (place && r.overrides && r.overrides.length)   // (this computer's: said above)
+                    text += ` · Claude Code still cleans up by ${overrides(r.overrides)}`;
                 lines.push(`${place || 'This computer'}, ${r.at ? new Date(r.at).toLocaleString() : ''}: ${text}`);
             }
             about.subtitle = GLib.markup_escape_text(lines.join('\n'), -1);
@@ -621,15 +627,30 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             who.sensitive = true;
             show();
         };
+        let previewId = 0;
         const askFor = n => {   // (Talpy Den's at n days: what its first run deletes, read first)
             asked = n;
             back.visible = false;
             show();
-            if (ask.visible)
-                sync(n);
-            else if (st.mode === 'talpy' && n > st.days)
+            if (previewId)
+                GLib.source_remove(previewId);
+            previewId = 0;
+            if (ask.visible) {   // (read once the days stop changing, not at each step)
+                previewId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+                    previewId = 0;
+                    if (asked === n)
+                        sync(n);
+                    return GLib.SOURCE_REMOVE;
+                });
+            } else if (st.mode === 'talpy' && n > st.days) {
                 applyLater(n);
+            }
         };
+        group.connect('destroy', () => {
+            if (previewId)
+                GLib.source_remove(previewId);
+            previewId = 0;
+        });
         who.connect('notify::selected', async () => {
             if (syncing || !st)
                 return;

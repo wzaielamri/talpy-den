@@ -16,6 +16,12 @@ export interface CleanupCounts {
   errors?: string[];
 }
 
+// A settings file besides the accounts' own that still has Claude Code clean up there (a project's, a managed one)
+export interface CleanupOverride {
+  path: string;
+  days: number;
+}
+
 // A place's last run ("" this computer, else an SSH host or a container)
 export interface CleanupRun extends CleanupCounts {
   ok?: boolean;
@@ -23,6 +29,19 @@ export interface CleanupRun extends CleanupCounts {
   mode?: "claude" | "talpy";
   message?: string;
   raised?: boolean;
+  overrides?: CleanupOverride[];
+}
+
+// "~/repo/.claude/settings.json (7 days)"
+export function overridesText(list: CleanupOverride[] | undefined): string {
+  return (list || []).map((o) => `${o.path} (${o.days} days)`).join(", ");
+}
+
+export function overridesNote(list: CleanupOverride[] | undefined): string {
+  return list && list.length
+    ? `These settings still have Claude Code delete old chats, starred or not, when it runs there: ${overridesText(list)}. ` +
+      "Talpy Den doesn't change them: set their cleanupPeriodDays higher, or take it out, to keep what you starred."
+    : "";
 }
 
 // The choice alone (cleanup.py --setting)
@@ -40,6 +59,7 @@ export interface CleanupStatus extends CleanupSetting {
   previewDays: number;
   // Talpy Den's: what Claude Code's own cleanup would delete of what it keeps, if chosen again
   claudeRisk: { days: number; chats: number; plans: number } | null;
+  overrides: CleanupOverride[];
 }
 
 export function cleanupSettingOf(r: Record<string, any> | null): CleanupSetting | null {
@@ -57,6 +77,9 @@ export function cleanupStatusOf(r: Record<string, any> | null): CleanupStatus | 
     runs: r.runs && typeof r.runs === "object" ? r.runs : {}, preview: r.preview, previewDays: Number(r.previewDays) || 0,
     claudeRisk: risk && typeof risk === "object"
       ? { days: Number(risk.days) || 30, chats: Number(risk.chats) || 0, plans: Number(risk.plans) || 0 } : null,
+    overrides: Array.isArray(r.overrides)
+      ? r.overrides.filter((o: any) => o && typeof o.path === "string").map((o: any) => ({ path: o.path, days: Number(o.days) || 0 }))
+      : [],
   };
 }
 
@@ -102,6 +125,7 @@ export function runsLines(status: CleanupStatus, when: (ms: number) => string): 
       : r.raised ? "Claude Code's cleanup isn't back yet" : "Claude Code's cleanup is back";
     if (r.ok && (r.message || errors)) what += ` · ${r.message || errors}`;
     else if (!r.ok && !r.message && errors) what += ` · ${errors}`;
+    if (place && r.overrides && r.overrides.length) what += ` · Claude Code still cleans up by ${overridesText(r.overrides)}`; // (this computer's: said above)
     return `${place || "This computer"}, ${r.at ? when(r.at) : ""}: ${what}`;
   });
 }
@@ -113,6 +137,7 @@ export function oldChatsDetail(status: CleanupStatus, when: (ms: number) => stri
       `Its next run would delete ${cleanupText(status.preview)} here.${keptText(status.preview) ? ` ${keptText(status.preview)}.` : ""}`
     : `Claude Code's own cleanup deletes every chat, and every plan of an account's plans folder, older than its cleanupPeriodDays (${
       status.claudeDays.map((a) => `${a.account}: ${a.days} days`).join(", ") || "30 days"}): starred or not, for good.`];
+  if (status.mode === "talpy" && status.overrides.length) lines.push("", overridesNote(status.overrides));
   const runs = runsLines(status, when);
   if (runs.length) lines.push("", ...runs);
   return lines.join("\n");

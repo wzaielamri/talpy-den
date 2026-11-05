@@ -1977,18 +1977,8 @@ def hook_command(path, kind="relay"):
 
 def settings_files(home, extra_dirs):
     """Each Claude profile's settings.json, once per real file (also of a
-    ~/.claude that Claude has had no chat in yet)."""
-    seen, out = set(), []
-    folders = [p.path for p in cs.discover_profiles(home, extra_dirs)]
-    if (home / ".claude").is_dir():
-        folders.append(home / ".claude")
-    for folder in folders:
-        path = folder / "settings.json"
-        real = os.path.realpath(path)
-        if real not in seen:
-            seen.add(real)
-            out.append(Path(real))
-    return out
+    ~/.claude that Claude has had no chat in yet): cs.claude_settings_files."""
+    return cs.claude_settings_files(home, cs.discover_profiles(home, extra_dirs))
 
 
 def is_ours(hook, kind="relay"):
@@ -2044,20 +2034,21 @@ def upgrade_hooks(home, extra_dirs=()):
     today's (hook_command) in each of its events, as turning it on again
     would do: how many files changed."""
     changed = 0
-    for path in settings_files(home, extra_dirs):
-        data = cs.read_json(path)
-        if not isinstance(data, dict):
-            continue
-        hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
-        before = json.dumps(data, sort_keys=True)
-        for kind in HOOKS:
-            command = hook_command(hook_path(home, kind), kind)
-            if any(is_ours(h, kind) and h.get("command") != command for event in HOOKS[kind]["events"]
-                   for g in hooks.get(event) or [] if isinstance(g, dict) for h in g.get("hooks") or []):
-                set_hook(data, command, True, kind)
-        if json.dumps(data, sort_keys=True) != before:
-            write_settings(path, data)
-            changed += 1
+    with cs.claude_settings_lock(home):  # (read to written: another helper's change isn't lost)
+        for path in settings_files(home, extra_dirs):
+            data = cs.read_json(path)
+            if not isinstance(data, dict):
+                continue
+            hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+            before = json.dumps(data, sort_keys=True)
+            for kind in HOOKS:
+                command = hook_command(hook_path(home, kind), kind)
+                if any(is_ours(h, kind) and h.get("command") != command for event in HOOKS[kind]["events"]
+                       for g in hooks.get(event) or [] if isinstance(g, dict) for h in g.get("hooks") or []):
+                    set_hook(data, command, True, kind)
+            if json.dumps(data, sort_keys=True) != before:
+                write_settings(path, data)
+                changed += 1
     return changed
 
 
@@ -2075,20 +2066,21 @@ def install_hook(home, extra_dirs, on, kind, source=None):
             tmp.write_text(source, encoding="utf-8")
             os.replace(tmp, target)
     changed = 0
-    for path in settings_files(home, extra_dirs):
-        data = cs.read_json(path)
-        if data is None and not path.exists():
-            if not on:
-                continue
-            data = {}
-        if not isinstance(data, dict):
-            raise ValueError(f"{cs.short_path(str(path), home)} isn't JSON Talpy Den can change")
-        before = json.dumps(data, sort_keys=True)
-        set_hook(data, hook_command(target, kind), on, kind)
-        if json.dumps(data, sort_keys=True) == before:
-            continue  # (as it was: the file isn't touched)
-        write_settings(path, data)
-        changed += 1
+    with cs.claude_settings_lock(home):  # (read to written: another helper's change isn't lost)
+        for path in settings_files(home, extra_dirs):
+            data = cs.read_json(path)
+            if data is None and not path.exists():
+                if not on:
+                    continue
+                data = {}
+            if not isinstance(data, dict):
+                raise ValueError(f"{cs.short_path(str(path), home)} isn't JSON Talpy Den can change")
+            before = json.dumps(data, sort_keys=True)
+            set_hook(data, hook_command(target, kind), on, kind)
+            if json.dumps(data, sort_keys=True) == before:
+                continue  # (as it was: the file isn't touched)
+            write_settings(path, data)
+            changed += 1
     if not on:
         try:
             target.unlink()

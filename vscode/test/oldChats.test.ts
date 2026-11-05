@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { test } from "node:test";
-import { cleanupSettingOf, cleanupStatusOf, cleanupText, keptText, oldChatsDetail, riskText, runsLines, sizeText, SETTING_OF } from "../src/oldChats";
+import { cleanupSettingOf, cleanupStatusOf, cleanupText, keptText, oldChatsDetail, overridesNote, riskText, runsLines, sizeText, SETTING_OF } from "../src/oldChats";
 
 const when = (ms: number) => `t${ms}`;
 
@@ -24,6 +24,19 @@ test("the choice alone, and what Claude's cleanup would delete of what Talpy Den
   const st = cleanupStatusOf({ ok: true, mode: "talpy", days: 30, preview: {}, claudeRisk: { days: 45, chats: 1, plans: 0 } })!;
   assert.deepEqual(st.claudeRisk, { days: 45, chats: 1, plans: 0 });
   assert.equal(cleanupStatusOf({ ok: true, mode: "claude", days: 30, preview: {}, claudeRisk: null })!.claudeRisk, null);
+});
+
+test("settings that still have Claude Code clean up are told, a host's on its line", () => {
+  const st = cleanupStatusOf({
+    ok: true, mode: "talpy", days: 30, preview: {}, previewDays: 30, claudeDays: [],
+    overrides: [{ path: "~/repo/.claude/settings.json", days: 7 }, { nope: 1 }],
+    runs: { lab: { ok: true, at: 5, mode: "talpy", overrides: [{ path: "/etc/claude-code/managed-settings.json", days: 14 }] } },
+  })!;
+  assert.deepEqual(st.overrides, [{ path: "~/repo/.claude/settings.json", days: 7 }]);
+  assert.match(overridesNote(st.overrides), /^These settings still have Claude Code delete old chats.*~\/repo\/\.claude\/settings\.json \(7 days\)/);
+  assert.equal(overridesNote([]), "");
+  assert.deepEqual(runsLines(st, when), ["lab, t5: nothing · Claude Code still cleans up by /etc/claude-code/managed-settings.json (14 days)"]);
+  assert.match(oldChatsDetail(st, when), /These settings still have/);
 });
 
 test("cleanup.py's status is read only when it's one", () => {

@@ -150,18 +150,61 @@ def write_json_atomic(path, data, private=False):
         raise
 
 
+def claude_settings_files(home, profiles):
+    """Each Claude profile's settings.json, once per real file (also of a
+    ~/.claude that Claude has had no chat in yet): the files Talpy Den
+    changes (pane.py's hooks, cleanup.py's cleanupPeriodDays)."""
+    seen, out = set(), []
+    folders = [p.path for p in profiles]
+    if (Path(home) / ".claude").is_dir():
+        folders.append(Path(home) / ".claude")
+    for folder in folders:
+        real = os.path.realpath(str(folder / "settings.json"))
+        if real not in seen:
+            seen.add(real)
+            out.append(Path(real))
+    return out
+
+
+class claude_settings_lock:
+    """Held while a helper reads, changes and writes Claude's settings
+    (with): a hook turned on while the cleanup writes cleanupPeriodDays
+    mustn't lose either change."""
+
+    def __init__(self, home):
+        self.path = cache_dir(Path(home)) / "claude-settings.lock"
+        self.file = None
+
+    def __enter__(self):
+        private_dir(self.path.parent)
+        self.file = open(str(self.path), "a")
+        fcntl.flock(self.file, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        self.file.close()  # (the lock goes with it)
+        return False
+
+
 def write_claude_settings(path, data):
     """Write one of Claude's settings.json in one go (the real file, not a
     link to it: what it points to stays one), keeping its mode; its folder
-    made if it isn't there (pane.py's hooks, cleanup.py's cleanupPeriodDays)."""
+    made if it isn't there. Under claude_settings_lock, read to written."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".talpy-den.tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    if path.exists():
-        import shutil
-        shutil.copymode(str(path), str(tmp))
-    os.replace(str(tmp), str(path))
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.talpy-den.tmp")
+    try:
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        if path.exists():
+            import shutil
+            shutil.copymode(str(path), str(tmp))
+        os.replace(str(tmp), str(path))
+    except BaseException:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def write_atomic(path, data, mode=None, times=None, new=False):
