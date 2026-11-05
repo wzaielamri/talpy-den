@@ -4,7 +4,7 @@ its permission prompt and its review.
 
     python3 -I pane.py ACTION [--host HOST] [--config-dir DIR]... [--remote] [--pretty]
 
-  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP [--wait S]]
+  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP [--wait S]] [--suggest]
         the chat as the pane shows it: your prompts, Claude's replies
         (markdown), each tool call as one line with how it went, and notes
         (a usage limit, an interruption); the newest N items. STAMP: the
@@ -13,6 +13,14 @@ its permission prompt and its review.
         wait up to S seconds (at most WAIT_MAX_S) for it to change, and answer
         the moment it does (the pane's watcher: what Claude writes shows at
         once, not at the next look). Not on an SSH host (it's left out there).
+        --suggest (Suggest replies): how its last turn ended, "ended" and
+        "over", and the question it ends with as chips, "asks" (asks_of)
+  --replies CHAT [--profile P]
+        your usual replies for the chat (usual_replies): {"ok", "chips": {how
+        a turn ended: [replies]}, "ranked": [replies, to complete what you
+        type]}; CHAT "-" with --cwd FOLDER --profile P: a new chat's
+  --hide-reply TEXT [--off]
+        don't suggest TEXT again (--off: do again; "-" --off: all of them)
   --send CHAT --profile P --text T [--session ID] [--how auto|background|copy|enter] [--after-turn] [--name N]
         your message to the chat, the way it can take one (send) (or
         --text-file F: a long one in F, a text-*.txt of the cache folder,
@@ -481,7 +489,96 @@ def prompt_pictures(text, blocks, uid, folder):
     return out
 
 
-def conversation_items(lines, pictures=None):
+QUESTION_END = re.compile(r"[?？؟](?:\s|$)")
+REPLY_TAIL = 4000   # of Claude's last words: what tells how its turn ended, and its question
+REPLY_KEPT = 1500   # of them, kept between reads of a transcript (whether its last paragraph asks)
+
+
+def ends_with_question(text):
+    """Claude's reply asks something: its last paragraph has a sentence that
+    ends with a question mark (any script's)."""
+    paras = [p for p in re.split(r"\n\s*\n", (text or "").strip()) if p.strip()]
+    return bool(paras) and bool(QUESTION_END.search(re.sub(r"[*_`)\]]+", "", paras[-1]).strip()))
+
+
+class TurnEnd:
+    """How Claude's turn ended, followed entry by entry: what ended it
+    (turn: "api:<its message>", "interrupted", "tool_error", "stopped" or
+    None), Claude's last words since your prompt (reply, its message id), a
+    tool call after them (tool), and what the last entry was (last:
+    "prompt", "step" (a tool call or its result, mid-turn), "tool_error",
+    "open" (a reply with no stop reason), "end" (Claude's turn is over:
+    its stop reason, or Claude Code's stand-in reply), "error" (an API
+    error: a usage limit…) or "interrupted"). As the offline check on real
+    chats: a turn's end state is what Talpy Chat's chips go by."""
+    __slots__ = ("turn", "reply", "reply_id", "tool", "started", "last")
+
+    def __init__(self, kept=None):
+        self.turn, self.reply, self.reply_id, self.tool, self.started, self.last = None, "", None, False, False, None
+        if isinstance(kept, list) and len(kept) == 6:
+            self.turn, self.reply, self.reply_id, self.tool, self.started, self.last = kept
+
+    def kept(self):   # (to go on reading later: of Claude's words, the end that tells whether it asked)
+        return [self.turn, self.reply[-REPLY_KEPT:], self.reply_id, self.tool, self.started, self.last]
+
+    def prompt(self):
+        self.reply, self.reply_id, self.turn, self.tool, self.started, self.last = "", None, None, False, True, "prompt"
+
+    def tool_result(self, error):
+        self.turn, self.started, self.last = ("tool_error", True, "tool_error") if error else (None, True, "step")
+
+    def interrupted(self):
+        self.turn, self.started, self.last = "interrupted", True, "interrupted"
+
+    def assistant(self, e, msg, blocks):
+        self.started = True
+        if e.get("isApiErrorMessage"):
+            self.turn, self.last = "api:" + " ".join(cs.message_text(msg).split())[:200], "error"
+            return
+        if msg.get("model") == "<synthetic>":   # (Claude Code's "No response requested." for a chat it stopped)
+            self.reply, self.reply_id, self.tool = cs.message_text(msg).strip()[-REPLY_TAIL:], msg.get("id"), False
+            self.turn, self.last = "stopped", "end"
+            return
+        mid = msg.get("id")
+        updates = e.get("thinkingDisplay") == "updates"
+        calls = False
+        for c in blocks:
+            said = c.get("text") if c.get("type") == "text" else c.get("thinking") if c.get("type") == "thinking" and updates else None
+            if isinstance(said, str) and said.strip():
+                both = mid is not None and mid == self.reply_id and not self.tool
+                self.reply = (self.reply + "\n\n" + said.strip() if both else said.strip())[-REPLY_TAIL:]
+                self.reply_id, self.tool, self.turn = mid, False, None
+            elif c.get("type") == "tool_use":
+                self.tool, self.turn, calls = True, None, True
+        stop = msg.get("stop_reason")
+        # (a tool call never ends a turn: its result comes, and Claude goes on)
+        self.last = "step" if calls or stop in ("tool_use", "pause_turn") else "open" if stop is None else "end"
+
+    def state(self):
+        """asked | finished | limit (a usage limit) | interrupted | failed (an API error, or a tool
+        call that failed last) | stopped (Claude Code's stand-in reply, or no reply at all)"""
+        turn = self.turn or ""
+        if turn.startswith("api:"):
+            return "limit" if turn[4:].startswith(cs.LIMIT_STARTS + cs.OUT_OF_USAGE) else "failed"
+        if turn == "interrupted":
+            return "interrupted"
+        if turn == "stopped" or not self.reply:
+            return "stopped"
+        if turn == "tool_error" and self.tool:
+            return "failed"
+        return "asked" if ends_with_question(self.reply) else "finished"
+
+    def result(self, waiting=False):
+        """(ended, over): how the last turn ended (state), None mid-turn or
+        with a message of yours waiting in Claude's queue; over: the
+        transcript itself says the turn is over (else the chat's state does:
+        your prompt with no reply yet, a reply with no stop reason)."""
+        if not self.started or waiting or self.last == "step":
+            return None, False
+        return self.state(), self.last in ("end", "error", "interrupted")
+
+
+def conversation_items(lines, pictures=None, ends=None):
     """The pane's items from transcript lines (oldest first): {"kind": "you",
     "text"} for a prompt of yours (one sent while Claude works shows when you
     send it, not once Claude takes it in), {"kind": "claude", "text"} for Claude's
@@ -494,8 +591,10 @@ def conversation_items(lines, pictures=None):
     (their files: prompt_pictures, saved in the folder pictures). A
     question or a plan Claude asked has "asked" (asked_of), and your answer
     to it, or your note to a No, comes after it as yours (your_answer).
-    Entries of subagents (sidechains) aren't in it."""
+    Entries of subagents (sidechains) aren't in it. ends: a dict given gets
+    how the last turn ended (TurnEnd.result)."""
     items, tools = [], {}
+    end = TurnEnd()
     # Messages sent while Claude works: the transcript has each one when it's
     # sent (queue-operation enqueue) and again once Claude takes it in, after
     # its next tool result (an attachment, queued_command), which can be long
@@ -568,6 +667,7 @@ def conversation_items(lines, pictures=None):
                 continue
             results = [c for c in blocks if c.get("type") == "tool_result"]
             for c in results:
+                end.tool_result(c.get("is_error"))
                 if c.get("tool_use_id") in tools:
                     item, inp = tools.pop(c["tool_use_id"])
                     output = result_text(c)
@@ -588,6 +688,7 @@ def conversation_items(lines, pictures=None):
                         items.append(said)
             prompt = cs.human_prompt(e)
             if prompt is not None:
+                end.prompt()
                 if due:
                     shown = due.pop(0)
                     if same_text(shown["text"], prompt):
@@ -598,10 +699,12 @@ def conversation_items(lines, pictures=None):
                 continue
             text = cs.message_text(msg).strip()
             if text.startswith(INTERRUPTED):
+                end.interrupted()
                 items.append({"kind": "note", "key": uid, "text": "Interrupted", "at": at})
             continue
         if kind != "assistant":
             continue
+        end.assistant(e, msg, blocks)
         if e.get("isApiErrorMessage"):
             text = " ".join(cs.message_text(msg).split())
             if text:
@@ -643,6 +746,9 @@ def conversation_items(lines, pictures=None):
                 data = None
             if data is not None:
                 item["diff"] = capped(edit_lines("Edit", inp, None, data.decode("utf-8", "replace")))
+    if ends is not None:
+        ends["ended"], ends["over"] = end.result(bool(waiting or due))
+        ends["reply"] = end.reply
     return items
 
 
@@ -674,14 +780,15 @@ def tail_lines(path, size, nbytes):
     return lines, whole
 
 
-def conversation(path, limit=PANE_ITEMS, pictures=None):
+def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None):
     """(items, more) of a chat: its newest limit items (conversation_items,
-    pasted pictures saved in pictures), and whether there are older ones."""
+    pasted pictures saved in pictures; ends: how its last turn ended), and
+    whether there are older ones."""
     size = path.stat().st_size
     nbytes = PANE_TAIL_BYTES
     while True:
         lines, whole = tail_lines(path, size, nbytes)
-        items = conversation_items(lines, pictures)
+        items = conversation_items(lines, pictures, ends)
         if whole or len(items) > limit or nbytes >= PANE_TAIL_MAX:
             return within_budget(file_pictures(items[-limit:])), len(items) > limit or not whole
         nbytes *= 4
@@ -734,7 +841,11 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
     return None, None
 
 
-def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None):
+def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None,
+                      suggest=False):
+    """--conversation. suggest (Suggest replies on): how its last turn ended,
+    "ended" and "over" (TurnEnd.result), and the question it ends with as
+    chips, "asks" (asks_of)."""
     if not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
@@ -750,12 +861,17 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
             stamp = stamp_of(path)  # (before it's read: what's written meanwhile is a change the next time)
         except (OSError, AttributeError):
             return {"ok": False, "missing": True, "message": NO_CHAT}
-    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures)
+    ends = {} if suggest else None
+    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends)
     name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
     peek = cs.chat_peek(path) or {}
-    return {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or cs.chat_folder(path) or "",
-            "items": items, "more": more, "stamp": f"{stamp}/{limit}", "mode": peek.get("mode"),
-            "permission": cs.pending_permission(path, cwd)}
+    result = {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or cs.chat_folder(path) or "",
+              "items": items, "more": more, "stamp": f"{stamp}/{limit}", "mode": peek.get("mode"),
+              "permission": cs.pending_permission(path, cwd)}
+    if suggest:
+        ended = ends.get("ended")
+        result.update(ended=ended, over=bool(ends.get("over")), asks=asks_of(ends.get("reply")) if ended == "asked" else None)
+    return result
 
 
 # ---------------------------------------------------------------- permission requests the hook relays
@@ -1026,6 +1142,504 @@ def completions(home, extra_dirs, chat_id, profile_key=None, cwd=None):
     files, cut = project_files(cwd)
     return {"ok": True, "cwd": cwd, "commands": sorted(unique, key=lambda c: c["name"]), "files": files, "filesCut": cut,
             "history": past_prompts(profile, cwd)}
+
+
+# ---------------------------------------------------------------- suggested replies
+#
+# Talpy Chat's chips under a turn that's over, each sent only with a click:
+# - Claude's question, by its shape (asks_of): the options of a short list
+#   before the one question it ends with, the two halves of an either/or, or
+#   Yes and No. Any language: the few words it looks at are a table per
+#   language in reply_words.py.
+# - Your usual replies (usual_replies, --replies): what you sent in your
+#   chats on that account after a turn that ended the same way (a usage
+#   limit, a chat Claude stopped, a question…), each counted once a chat,
+#   older uses less, this project's more; a chip only when one reply is a
+#   good share of what you sent then. Read from the transcripts (every
+#   message, however it was sent), what's read kept per transcript by its
+#   size and time, so a transcript is read once, and from where it was left
+#   once it grows. The same list completes what you type.
+# The rules and weights were measured on real chats (753 turn ends): a
+# yes/no question wins over a list before it (lists of what was done aren't
+# options); history alone was wrong 93% of the time, with the share rule
+# right 43% of the times it shows.
+
+ASK_LIST_ITEM = re.compile(r"^\s{0,3}(?:[-*•+]|\(?(\d{1,2}|[a-hA-H])[.)])\s+(.*)$")
+ASK_BOLD_NUM = re.compile(r"^\s{0,3}\*\*(\d{1,2})[.)]?\s*(.*)$")
+ASK_SENTENCE = re.compile(r"(?<=[.!?？؟。])\s+")
+ASK_LABEL_CUT = re.compile(r"\s[—–-]\s|:\s|\s\(")
+QMARK = re.compile(r"[?？؟]")
+ASK_TAIL = 8000            # of a reply: its end is where its question is
+ASK_OPTIONS_MAX = 6        # options: 2 to 6 items…
+ASK_OPTION_WORDS = 20      # …the middle one at most this many words (a list of what was done is longer)
+ASK_SHORT_QUESTION = 8     # "Merge to main and install?": a question of a few words, with no question word, is a yes/no one
+ASK_HALF_WORDS = 10        # an either/or's halves: at most this many words each
+ASK_LABEL_CHARS = 60       # of a chip's words (it sends them all, up to ASK_SEND_CHARS)
+ASK_SEND_CHARS = 300
+RECOMMEND_SAID = re.compile(r"\b(?:recommend(?:ed)?|i['’]?d (?:go with|pick|suggest|lean)|my (?:pick|vote|suggestion)|suggest(?:ed)?)\b",
+                            re.I)
+RECOMMEND_NUM = re.compile(r"(?:option|#|number)\s*([1-9a-h])\b|\b([1-9])\b(?=[^.?!]*\b(?:recommend|i['’]d go|my pick))", re.I)
+_ASK_RULES = {}
+
+
+def ask_rules():
+    """reply_words.py's tables as patterns (made once): each language's
+    yes/no starts and verbs, and every language's question words, or-words,
+    either/or starts, lead words and recommended marks together."""
+    if not _ASK_RULES:
+        import reply_words
+        langs = reply_words.WORDS
+
+        def every(key):
+            return list(dict.fromkeys(w for t in langs.values() for w in t.get(key, ())))
+
+        def alt(words):
+            return "|".join(re.escape(w) for w in sorted(set(words), key=len, reverse=True))
+        _ASK_RULES.update(
+            langs=langs,
+            starts=[(code, tuple(s if s.endswith("?") else s + " " for s in t.get("yesno", ()))) for code, t in langs.items()],
+            verbs=[(code, re.compile(r"^¿?(?:%s)\b" % alt(t["verbs"]))) for code, t in langs.items() if t.get("verbs")],
+            wh=re.compile(r"^¿?(?:%s)\b" % alt(every("wh"))),
+            ors=[" %s " % w for w in every("or")],
+            or_not=re.compile(r"\b(?:%s) (?:%s)\b" % (alt(every("or")), alt(every("or_not")))),
+            either=re.compile(r"^¿?(?:%s)\s+" % alt(every("either")), re.I),
+            lead=re.compile(r"^(?:%s)[,:]?\s+" % alt(every("lead")), re.I),
+            recommended=re.compile(r"\b(?:%s)\b" % alt(every("recommended")), re.I),
+            common={code: set(t.get("common", ())) for code, t in langs.items()})
+    return _ASK_RULES
+
+
+def plain_md(text):
+    """Markdown's marks (code, bold, links) out of a line of text, its spaces squeezed."""
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"\*\*|\*|(?<!\w)__?|__?(?!\w)", "", text)
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    return " ".join(text.split())
+
+
+def final_block(reply):
+    """(the lines of a reply's last paragraph, the list items just before it:
+    [(its number or letter, or None for a bullet; its text)])."""
+    lines = [line.rstrip() for line in reply.strip().splitlines()]
+    i, last = len(lines), []
+    while i > 0 and lines[i - 1].strip() and not ASK_LIST_ITEM.match(lines[i - 1]) and not ASK_BOLD_NUM.match(lines[i - 1]):
+        i -= 1
+        last.insert(0, lines[i])
+    while i > 0 and not lines[i - 1].strip():
+        i -= 1
+    items = []
+    while i > 0:
+        line = lines[i - 1]
+        m = ASK_LIST_ITEM.match(line) or ASK_BOLD_NUM.match(line)
+        if m:
+            items.insert(0, (m.group(1), m.group(2)))
+        elif line.strip() and line.startswith(("  ", "\t")):
+            pass   # (an item's next line)
+        elif not line.strip() and i > 1 and (ASK_LIST_ITEM.match(lines[i - 2]) or lines[i - 2].startswith("  ")):
+            pass   # (a loose list)
+        else:
+            break
+        i -= 1
+    return last, items
+
+
+def yesno_langs(ql, rules):
+    """The languages whose yes/no start, else verb, the question (lowercase) starts with."""
+    found = [code for code, starts in rules["starts"] if ql.startswith(starts)]
+    return found or [code for code, verb in rules["verbs"] if verb.match(ql)]
+
+
+def is_yesno(ql, rules):
+    return bool(yesno_langs(ql, rules)) or (len(ql.split()) <= ASK_SHORT_QUESTION and not rules["wh"].match(ql))
+
+
+def ask_lang(ql, par, rules):
+    """The language of a yes/no question: its start's, else the one of most of
+    its paragraph's common words (the first table's when none tells)."""
+    found = yesno_langs(ql, rules)
+    if len(found) == 1:
+        return found[0]
+    words = re.findall(r"[^\W\d_]+", par.lower())
+    pool = found or list(rules["langs"])
+    return max(pool, key=lambda code: (sum(1 for w in words if w in rules["common"][code]), -pool.index(code)))
+
+
+def short_label(text, chars=ASK_LABEL_CHARS):
+    """text as a chip shows it: at most chars characters, cut after a whole word (…)."""
+    if len(text) <= chars:
+        return text
+    cut = text[:chars - 1].rsplit(" ", 1)[0] if " " in text[:chars - 1] else text[:chars - 1]
+    return cut.rstrip(" ,.;:") + "…"
+
+
+def chip(label, send=None, recommended=False):
+    return {"label": label, "send": label if send is None else send, "recommended": recommended}
+
+
+def first_up(text):
+    return text[:1].upper() + text[1:]
+
+
+def asks_of(reply):
+    """The question Claude's reply ends with, as chips: {"kind": "options"
+    (a short list before it: one chip each, "1 · its words", sending "1. its
+    words"; recommended: marked so, or the one Claude says it would take),
+    "either" (two short halves of an either/or), or "yesno" (Yes and No in
+    its language), "choices": [{"label", "send", "recommended"}]}. None:
+    no question, several (one click can't answer them), an open one, or
+    unsure."""
+    if not isinstance(reply, str) or not reply.strip():
+        return None
+    rules = ask_rules()
+    last, items = final_block(reply[-ASK_TAIL:])
+    par = plain_md(" ".join(line.strip() for line in last))
+    if not par or not QMARK.search(par):
+        return None
+    sents = [s.strip() for s in ASK_SENTENCE.split(par) if s.strip()]
+    questions = [s for s in sents if QMARK.search(s)]
+    if len(questions) != 1:
+        return None
+    q = rules["lead"].sub("", questions[0]).strip()
+    ql = q.lower()
+    ors = [w for w in rules["ors"] if w in ql]
+    # (a yes/no question wins over a list before it, unless it asks either/or; long items are what was done)
+    if 2 <= len(items) <= ASK_OPTIONS_MAX and (ors or not is_yesno(ql, rules)):
+        words = sorted(len(plain_md(text).split()) for _, text in items)
+        if words[len(words) // 2] <= ASK_OPTION_WORDS:
+            said = " ".join(sents)
+            m = RECOMMEND_NUM.search(said)
+            named = (m.group(1) or m.group(2)).lower() if m and RECOMMEND_SAID.search(said) else None
+            choices = []
+            for n, (num, text) in enumerate(items, 1):
+                said = ASK_LABEL_CUT.split(plain_md(text), 1)[0].strip()[:ASK_SEND_CHARS]
+                label = short_label(said)
+                marked = bool(rules["recommended"].search(text)) or (num or str(n)).lower() == named
+                choices.append(chip("%s · %s" % (num, label), "%s. %s" % (num, said), marked) if num else chip(label, said, marked))
+            return {"kind": "options", "choices": choices}
+    for w in ors:
+        if rules["or_not"].search(ql):
+            break
+        at = list(re.finditer(r"\s%s\s" % re.escape(w.strip()), q, re.I))[-1]
+        left = rules["either"].sub("", q[:at.start()].strip())
+        if len(left.split()) > ASK_HALF_WORDS:
+            left = re.split(r",\s*", left)[-1]
+        left, right = left.strip(" ,."), QMARK.sub("", q[at.end():]).strip(" ,.")
+        if not (1 <= len(left.split()) <= ASK_HALF_WORDS and 1 <= len(right.split()) <= ASK_HALF_WORDS):
+            return None   # (a long either/or)
+        return {"kind": "either", "choices": [chip(short_label(first_up(half)), first_up(half)) for half in (left, right)]}
+    if rules["wh"].match(ql) or not is_yesno(ql, rules):
+        return None
+    words = rules["langs"][ask_lang(ql, par, rules)]
+    return {"kind": "yesno", "choices": [chip(words["yes"]), chip(words["no"])]}
+
+
+REPLY_CHARS = 40             # a usual reply: one line you typed, at most this many characters…
+REPLY_PATH = re.compile(r"""(?:^|[\s("'`])(?:~|\.{1,2})?/[\w.~-]|\b[\w.-]+/[\w.-]+|(?:^|\s)@\S"""
+                        r"""|\b\w+\.(?:py|js|ts|qml|md|json|sh|txt|html|css|mjs|yml|yaml|toml|cfg|ini)\b""")   # …with no path or file
+REPLY_DAYS = 60              # what you sent this long ago counts (older uses weigh under 1/16 by then)
+REPLY_HALF_LIFE_DAYS = 14.0
+REPLY_PROJECT_BOOST = 2.0    # used in this chat's project: counts twice
+REPLY_SHARE = 0.2            # a chip: at least this share of what you sent after turns that ended the same way…
+REPLY_MIN_CHATS = 2          # …in at least this many chats
+REPLY_CHIPS = 4
+REPLY_RANKED = 200           # the ones completing what you type
+REPLY_BIG_READ = 32 << 20    # a first read this big runs at a low priority
+REPLY_CACHE_VERSION = 1
+REPLY_USER_LINE = re.compile(rb'"type":\s*"user"')
+REPLY_ASSISTANT_LINE = re.compile(rb'"type":\s*"assistant"')
+REPLY_STOP = re.compile(rb'"stop_reason":\s*(?:null|"(\w+)")')
+REPLY_SIDECHAIN = re.compile(rb'"isSidechain":\s*true')
+REPLY_META = re.compile(rb'"isMeta":\s*true')
+REPLY_FAILED = re.compile(rb'"is_error":\s*true')
+REPLY_WORDS = re.compile(rb'"type":\s*"text"|"thinkingDisplay":\s*"updates"|"isApiErrorMessage"|<synthetic>')
+REPLY_CALL = re.compile(rb'"type":\s*"tool_use"')
+REPLY_END = re.compile(r"[\s.!?,;:…。！？]+$")
+DAY_MS = 86400000
+
+
+def usual_reply(text, picture=False):
+    """A prompt of yours that can be a usual reply: one short line you typed,
+    with no picture, path or file, not a / or ! command, nor pasted text, nor
+    what Talpy Den sends to keep a chat going."""
+    return (len(text) <= REPLY_CHARS and "\n" not in text and not picture and not text.startswith(("/", "!"))
+            and "[Pasted text" not in text and "[Image" not in text and text not in (cs.CONTINUE_PROMPT, cs.RETRY_PROMPT)
+            and not REPLY_PATH.search(text))
+
+
+def reply_key(text):
+    """A reply as replies are compared: case, outer quotes, final
+    punctuation and extra spaces left out."""
+    import unicodedata
+    t = unicodedata.normalize("NFKC", text).casefold().strip().strip("\"'`“”‘’")
+    return " ".join(REPLY_END.sub("", t).split())
+
+
+def typos_apart(a, b, cap):
+    """Damerau (optimal string alignment) distance of a and b, stopping above cap."""
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    before, prev = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        best = i
+        for j in range(1, len(b) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], before[j - 2] + 1)
+            best = min(best, cur[j])
+        if best > cap:
+            return cap + 1
+        before, prev = prev, cur
+    return prev[-1]
+
+
+def same_reply(a, b):
+    """Two spellings of one reply (reply_key'd): a few typos apart, more for
+    a longer one; words under 5 letters only as they are."""
+    if a == b:
+        return True
+    n = min(len(a), len(b))
+    if n < 5:
+        return False
+    allowed = 1 if n < 12 else 2 if n < 25 else 3
+    return typos_apart(a, b, allowed) <= allowed
+
+
+def project_of(folder):
+    """The repository a chat's folder belongs to (a worktree's is its repository's)."""
+    p = re.sub(r"/\.claude/worktrees/[^/]+.*$", "", folder or "")
+    return re.sub(r"/\.git/.*$", "", p)
+
+
+def reply_records(path, start, kept):
+    """Your prompts that can be usual replies in a transcript, from byte
+    start on: ([[at ms, chat, how the turn before it ended (TurnEnd.state),
+    the text, its entry's id, its project]], where it was read to (after its
+    last whole line), the turn there (TurnEnd.kept), for the next read).
+    Only what tells a turn's end is read: a tool call's or result's line
+    isn't parsed."""
+    with open(path, "rb") as f:
+        f.seek(start)
+        data = f.read()
+    whole = data.rfind(b"\n") + 1
+    end, out = TurnEnd(kept), []
+    for line in data[:whole].split(b"\n"):
+        user = REPLY_USER_LINE.search(line) is not None
+        if not user and not REPLY_ASSISTANT_LINE.search(line):
+            continue
+        if REPLY_SIDECHAIN.search(line):
+            continue
+        if user and b'"tool_result"' in line and not REPLY_META.search(line):
+            end.tool_result(REPLY_FAILED.search(line) is not None)
+            continue
+        if not user and not REPLY_WORDS.search(line):
+            # (a tool call or a thinking block with no words for you: none of Claude's words)
+            calls = REPLY_CALL.search(line) is not None
+            stop = REPLY_STOP.search(line)
+            reason = stop.group(1).decode() if stop and stop.group(1) else None
+            end.started = True
+            if calls:
+                end.tool, end.turn = True, None
+            end.last = "step" if calls or reason in ("tool_use", "pause_turn") else "open" if reason is None else "end"
+            continue
+        try:
+            e = json.loads(line)
+        except (ValueError, RecursionError):
+            continue
+        if not isinstance(e, dict) or e.get("isSidechain"):
+            continue
+        msg, blocks = cs.blocks_of(e)
+        if not user:
+            end.assistant(e, msg, blocks)
+            continue
+        if e.get("isCompactSummary") or e.get("isMeta"):
+            continue
+        if any(c.get("type") == "tool_result" for c in blocks):
+            end.tool_result(any(c.get("type") == "tool_result" and c.get("is_error") for c in blocks))
+            continue
+        text = cs.human_prompt(e)
+        if text is None:
+            if cs.message_text(msg).strip().startswith(INTERRUPTED):
+                end.interrupted()
+            continue
+        if end.started and usual_reply(text, any(c.get("type") == "image" for c in blocks)):
+            cwd = e.get("cwd") if isinstance(e.get("cwd"), str) else ""
+            out.append([cs.to_ms(e.get("timestamp")), e.get("sessionId") if isinstance(e.get("sessionId"), str) else path.stem,
+                        end.state(), text, e.get("uuid") if isinstance(e.get("uuid"), str) else "", project_of(cwd)])
+        end.prompt()
+    return out, start + whole, end.kept()
+
+
+def lower_priority():
+    """This run, nice'd and at idle I/O (a long first read: nothing else waits on it)."""
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+    ionice = shutil.which("ionice")
+    if ionice:
+        try:
+            subprocess.run([ionice, "-c3", "-p", str(os.getpid())], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
+def reply_history(cache_root, profile, now=None):
+    """The usual-reply prompts of a profile's chats of the last REPLY_DAYS
+    (reply_records), each once (a resumed copy repeats its chat's entries).
+    What each transcript gave is kept in the cache folder (replies/, only
+    yours to read) by its size and time: one that grew is read from where
+    it was left, one that changed otherwise is read again."""
+    now = time.time() if now is None else now
+    since = now - REPLY_DAYS * 86400
+    kept_path = Path(cache_root) / "replies" / ("%s.json" % cs.short_id(str(profile.path)))
+    kept = cs.read_json(kept_path)
+    files = kept.get("files") if isinstance(kept, dict) and kept.get("version") == REPLY_CACHE_VERSION else None
+    files = files if isinstance(files, dict) else {}
+    found = {}
+    try:
+        folders = [d for d in os.scandir(str(profile.path / "projects")) if d.is_dir(follow_symlinks=False)]
+    except OSError:
+        folders = []
+    for d in folders:
+        try:
+            for f in os.scandir(d.path):
+                if f.name.endswith(".jsonl") and f.is_file(follow_symlinks=False):
+                    st = f.stat(follow_symlinks=False)
+                    if st.st_mtime >= since:
+                        found[f.path] = st
+        except OSError:
+            continue
+    todo = []
+    for name, st in found.items():
+        was = files.get(name)
+        if not isinstance(was, dict) or was.get("ino") != st.st_ino or st.st_size < was.get("offset", 0) \
+                or (st.st_size == was.get("size") and st.st_mtime_ns != was.get("mtime")):
+            todo.append((name, st, 0, None, []))   # (new, or written again)
+        elif st.st_size != was.get("size") or st.st_mtime_ns != was.get("mtime"):
+            todo.append((name, st, was.get("offset", 0), was.get("turn"), was.get("records") or []))
+    if sum(st.st_size - start for _, st, start, _, _ in todo) > REPLY_BIG_READ:
+        lower_priority()
+    changed = len(files) != len(found) or bool(todo)
+    files = {name: was for name, was in files.items() if name in found}
+    for name, st, start, turn, records in todo:
+        try:
+            more, offset, turn = reply_records(Path(name), start, turn)
+        except OSError:
+            files.pop(name, None)
+            continue
+        files[name] = {"ino": st.st_ino, "size": st.st_size, "mtime": st.st_mtime_ns, "offset": offset, "turn": turn,
+                       "records": records + more}
+    if changed:
+        try:
+            cs.private_dir(kept_path.parent)
+            cs.write_json_atomic(kept_path, {"version": REPLY_CACHE_VERSION, "files": files}, private=True)
+        except OSError:
+            pass
+    seen, out = set(), []
+    for was in files.values():
+        for r in was.get("records") or []:
+            if not (isinstance(r, list) and len(r) == 6) or r[0] < since * 1000 or (r[4] and r[4] in seen):
+                continue
+            seen.add(r[4])
+            out.append(r)
+    out.sort(key=lambda r: r[0])
+    return out
+
+
+def usual_replies(records, now_ms, project, hidden=()):
+    """Your usual replies from records (reply_history, oldest first) at
+    now_ms, for a chat in project: {"chips": {how a turn ended: [the replies
+    to show after one, the most used first]}, "ranked": [every reply, the most
+    used first: what you type is completed from them]}. A reply weighs, in
+    each chat it was sent in, its last use there, halved every
+    REPLY_HALF_LIFE_DAYS, twice in this project; near-identical spellings are
+    one reply, shown as you usually type it. A chip: sent after turns that
+    ended that way in REPLY_MIN_CHATS chats or more, and at least REPLY_SHARE
+    of all that was sent then. hidden: replies you don't want suggested."""
+    merged, keys = {}, []        # reply_key -> its reply's key; the keys, oldest first
+    per, pooled, spellings = {}, {}, {}
+    for at, chat, state, text, _, where in records:
+        k = reply_key(text)
+        if k not in merged:
+            merged[k] = next((key for key in keys if same_reply(k, key)), k)
+            if merged[k] == k:
+                keys.append(k)
+        key = merged[k]
+        w = 0.5 ** (max(0, now_ms - at) / DAY_MS / REPLY_HALF_LIFE_DAYS) * (REPLY_PROJECT_BOOST if where == project else 1.0)
+        for table, slot in ((per, (state, key)), (pooled, key)):
+            chats = table.setdefault(slot, {})
+            chats[chat] = max(chats.get(chat, 0.0), w)
+        spellings.setdefault(key, {})
+        spellings[key][text] = spellings[key].get(text, 0) + 1
+
+    def shown(key):
+        said = spellings[key]
+        return max(said, key=lambda t: said[t])   # (the usual spelling; the first one of those as often)
+
+    def allowed(key):
+        return key not in hidden and reply_key(shown(key)) not in hidden
+    totals = {}
+    for (state, key), chats in per.items():
+        totals[state] = totals.get(state, 0.0) + sum(chats.values())
+    found = {}
+    for (state, key), chats in per.items():
+        score = sum(chats.values())
+        if len(chats) >= REPLY_MIN_CHATS and totals[state] and score / totals[state] >= REPLY_SHARE and allowed(key):
+            found.setdefault(state, []).append((score, key))
+    chips = {state: [shown(key) for _, key in sorted(got, key=lambda s: -s[0])[:REPLY_CHIPS]] for state, got in found.items()}
+    ranked = sorted(pooled, key=lambda key: -sum(pooled[key].values()))
+    return {"chips": chips, "ranked": [shown(key) for key in ranked if allowed(key)][:REPLY_RANKED]}
+
+
+def hidden_path(cache_root):
+    return cs.state_dir(cache_root) / "replies-hidden.json"
+
+
+def hidden_replies(cache_root):
+    data = cs.read_json(hidden_path(cache_root), 1 << 20)
+    return {h for h in data.get("hidden", []) if isinstance(h, str)} if isinstance(data, dict) else set()
+
+
+def hide_reply(cache_root, text, on=True):
+    """Don't suggest text again (on), or do again ("-": all of them). Kept
+    for this computer, beside its other settings."""
+    hidden = hidden_replies(cache_root)
+    key = reply_key(text or "")
+    if on and not key:
+        return False, "Nothing to hide"
+    if on:
+        hidden.add(key)
+    elif text == "-":
+        hidden = set()
+    else:
+        hidden.discard(key)
+    path = hidden_path(cache_root)
+    cs.private_dir(path.parent)
+    cs.write_json_atomic(path, {"version": 1, "hidden": sorted(hidden)}, private=True)
+    return True, ("It won't be suggested again" if on else "Suggested again")
+
+
+def chat_replies(home, extra_dirs, cache_root, chat_id, profile_key=None, cwd=None, now=None):
+    """--replies: your usual replies for a chat (usual_replies), from the
+    chats on its account. chat_id "-" with cwd: a new chat's, in that folder
+    on the profile profile_key."""
+    if chat_id == "-" and cwd:
+        profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
+        if profile is None:
+            return {"ok": False, "message": f"No Claude profile called {profile_key}"}
+        cwd = os.path.expanduser(cwd)
+    elif not cs.valid_id(chat_id):
+        return {"ok": False, "message": f"Not a chat: {chat_id}"}
+    else:
+        profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
+        if path is None:
+            return {"ok": False, "message": NO_CHAT}
+        _, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
+        cwd = cwd or cs.chat_folder(path) or ""
+    now = time.time() if now is None else now
+    found = usual_replies(reply_history(cache_root, profile, now), now * 1000, project_of(cwd), hidden_replies(cache_root))
+    return dict(ok=True, **found)
 
 
 # ---------------------------------------------------------------- keyboard answers
@@ -2274,7 +2888,7 @@ def take_text(cache_root, name):
 def forward(host, args):
     """Run this file on an SSH host with args: its answer."""
     import remote
-    return remote.host_answer(host, args, name="pane.py")
+    return remote.host_answer(host, args, name="pane.py", also=("reply_words.py",))   # (its words for Claude's questions)
 
 
 def main(argv=None):
@@ -2295,8 +2909,9 @@ def main(argv=None):
     session, text, stamp, limit, files, config_dirs, answers = None, None, None, PANE_ITEMS, [], [], None
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
-               "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt")
-    osd = False
+               "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
+               "--hide-reply")
+    osd, suggest = False, False
     cwd, model, effort, mode, plan, plan_profile = None, None, None, None, None, None
     while args:
         arg = args.pop(0)
@@ -2362,6 +2977,8 @@ def main(argv=None):
             after = True
         elif arg == "--osd":
             osd = True
+        elif arg == "--suggest":
+            suggest = True
         elif arg == "--off":
             off = True
         elif arg == "--remote":
@@ -2415,7 +3032,7 @@ def main(argv=None):
         if action == "--conversation":
             # (pasted pictures saved for the thumbnails: not on an SSH host, where the pane doesn't look)
             result = chat_conversation(home, config_dirs, target, profile, limit, stamp, wait,
-                                       None if remote else cs.images_dir(home))
+                                       None if remote else cs.images_dir(home), suggest)
         elif action == "--send":
             if after:
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)
@@ -2436,6 +3053,11 @@ def main(argv=None):
             result = {"ok": ok, "message": said, **({"changed": True} if not ok and said in (NOT_ASKING, ASKS_ELSE) else {})}
         elif action == "--complete":
             result = completions(home, config_dirs, target, profile, cwd)
+        elif action == "--replies":
+            result = chat_replies(home, config_dirs, cache_root, target, profile, cwd)
+        elif action == "--hide-reply":
+            ok, said = hide_reply(cache_root, target, on=not off)
+            result = {"ok": ok, "message": said}
         elif action == "--terminal-font":
             result = terminal_font(home)
         elif action == "--oldest":

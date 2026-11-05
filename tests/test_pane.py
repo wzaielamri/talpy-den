@@ -373,8 +373,9 @@ class ConversationTests(PaneFixture):
         with mock.patch("remote.host_answer", return_value={"ok": True, "items": []}) as asked:
             answer = self.cli("--conversation", SID, "--host", "gpu", "--profile", ".claude-work", "--limit", "40")
         self.assertEqual(answer, {"ok": True, "items": []})
+        # (with its word tables for Claude's questions: --suggest reads them there)
         asked.assert_called_once_with("gpu", ["--conversation", SID, "--profile", ".claude-work", "--limit", "40"],
-                                      name="pane.py")
+                                      name="pane.py", also=("reply_words.py",))
 
 
 # Claude Code's own fixed sentences around a No (always in English; the note after them is yours)
@@ -872,7 +873,7 @@ class ToolUseTests(PaneFixture):
             answer = self.cli("--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1", "--host", "gpu")
         self.assertTrue(answer["changed"])
         self.assertEqual(asked.call_args[0][1], ["--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1"])
-        self.assertEqual(asked.call_args[1], {"name": "pane.py"})
+        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py",)})
 
 
 class HookTests(unittest.TestCase):
@@ -1926,6 +1927,229 @@ class QuickChatTests(PaneFixture):
             write(cfg / "xfce4/terminal/terminalrc", "[Configuration]\nFontName=DejaVu Sans Mono 12\n")
             self.assertEqual(pane.terminal_font(self.home)["family"], "DejaVu Sans Mono")
         self.assertEqual(self.cli("--terminal-font")["ok"], True)
+
+
+def limit_hit(ts):
+    return {"type": "assistant", "timestamp": iso(ts), "isApiErrorMessage": True,
+            "message": {"id": "e%d" % ts, "model": "<synthetic>", "role": "assistant",
+                        "content": [{"type": "text", "text": "You've hit your session limit · resets 7pm"}]}}
+
+
+def stand_in(ts):
+    """Claude Code's reply when a chat it stopped is resumed."""
+    return {"type": "assistant", "timestamp": iso(ts),
+            "message": {"id": "s%d" % ts, "model": "<synthetic>", "role": "assistant", "stop_reason": "stop_sequence",
+                        "content": [{"type": "text", "text": "No response requested."}]}}
+
+
+def chips(asks):
+    return None if asks is None else (asks["kind"], [(c["label"], c["send"], c["recommended"]) for c in asks["choices"]])
+
+
+class AsksTests(unittest.TestCase):
+    """B2: the question Claude ends its reply with, as chips, by its shape (made-up replies)."""
+
+    def test_yes_no(self):
+        self.assertEqual(chips(pane.asks_of("I fixed the parser.\n\nShould I commit it?")),
+                         ("yesno", [("Yes", "Yes", False), ("No", "No", False)]))
+        self.assertEqual(chips(pane.asks_of("Done.\n\nMerge to main and install?")),   # (a few words, no question word)
+                         ("yesno", [("Yes", "Yes", False), ("No", "No", False)]))
+        # in the question's language
+        self.assertEqual(chips(pane.asks_of("Der Test läuft jetzt durch.\n\nSoll ich das mergen?"))[1][0][0], "Ja")
+        self.assertEqual(chips(pane.asks_of("C'est corrigé.\n\nVeux-tu que je le pousse ?"))[1][:1], [("Oui", "Oui", False)])
+        self.assertEqual(chips(pane.asks_of("Listo.\n\n¿Quieres que lo suba ahora?"))[1][0][0], "Sí")
+
+    def test_no_chips(self):
+        for reply in ("All tests pass.",                                       # (no question)
+                      "Two things:\n\nShould I merge it? And should I tag it too?",   # (several: one click can't answer)
+                      "What should the new command be called?",                # (an open question)
+                      # (a long either/or)
+                      "Should I rewrite the whole parser from scratch with the new grammar and its tests, or keep patching the old one?",
+                      "", "   "):
+            self.assertIsNone(pane.asks_of(reply), reply)
+
+    def test_options(self):
+        reply = ("Two ways to go:\n\n1. Run the screening first\n2. Start the rename on a branch (Recommended)\n"
+                 "3. Leave it as it is\n\nWhich one?")
+        self.assertEqual(chips(pane.asks_of(reply)), ("options", [
+            ("1 · Run the screening first", "1. Run the screening first", False),
+            ("2 · Start the rename on a branch", "2. Start the rename on a branch", True),
+            ("3 · Leave it as it is", "3. Leave it as it is", False)]))
+        # the one Claude names, a letter list, bold numbers, an option's details after a dash
+        said = "a) **Keep** — the old name stays\nb) **Rename** — everywhere\n\nI'd go with option b. Which do you prefer?"
+        self.assertEqual(chips(pane.asks_of(said)), ("options", [("a · Keep", "a. Keep", False), ("b · Rename", "b. Rename", True)]))
+        bold = "**1.** Squash them\n**2.** Keep each commit\n\nWhich way?"
+        self.assertEqual([c[1] for c in chips(pane.asks_of(bold))[1]], ["1. Squash them", "2. Keep each commit"])
+        # bullets: the words alone
+        self.assertEqual([c[:2] for c in chips(pane.asks_of("- Opus\n- Sonnet\n\nWhich model?"))[1]],
+                         [("Opus", "Opus"), ("Sonnet", "Sonnet")])
+        # another language's list
+        self.assertEqual(chips(pane.asks_of("1. Zuerst testen\n2. Gleich mergen\n\nWelche Variante?"))[0], "options")
+
+    def test_a_list_of_finished_work_isnt_options(self):
+        done = ("I changed three things:\n\n"
+                "1. The parser now reads every kind of header that the old files had, including the ones that start with tabs or spaces\n"
+                "2. The writer keeps the order of the keys exactly as they were in the file it read, so the diffs stay small and easy to read\n"
+                "3. The tests cover both of them, with files made up for each case that used to fail before this change went in\n\n")
+        self.assertEqual(chips(pane.asks_of(done + "Should I merge it?"))[0], "yesno")
+        self.assertIsNone(pane.asks_of(done + "Which one should go in first?"))   # (long items: not options)
+        # a yes/no question wins over a short list before it too; seven items aren't options
+        self.assertEqual(chips(pane.asks_of("1. Lint\n2. Tests\n\nShould I run both?"))[0], "yesno")
+        seven = "\n".join("%d. Step %d" % (i, i) for i in range(1, 8)) + "\n\nWhich one first?"
+        self.assertIsNone(pane.asks_of(seven))
+
+    def test_either_or(self):
+        self.assertEqual(chips(pane.asks_of("The tests are slow.\n\nShould I run the screening first, or start the rename on a branch?")),
+                         ("either", [("Run the screening first", "Run the screening first", False),
+                                     ("Start the rename on a branch", "Start the rename on a branch", False)]))
+        self.assertEqual(chips(pane.asks_of("Soll ich zuerst testen oder gleich mergen?"))[1][1][0], "Gleich mergen")
+        # "or not" isn't a choice
+        self.assertEqual(chips(pane.asks_of("Should I keep it or not?"))[0], "yesno")
+
+
+class SuggestedRepliesTests(PaneFixture):
+    """The turn's end (--conversation --suggest: ended, asks) and your usual replies (--replies, B3)."""
+
+    def answer(self, *entries):
+        self.chat(*entries)
+        got = self.cli("--conversation", SID, "--suggest")
+        return got.get("ended"), got.get("over"), chips(got.get("asks"))
+
+    def test_how_the_turn_ended(self):
+        t, cwd = self.now - 100, str(self.folder)
+        start = prompt("fix it", t, cwd=cwd)
+        self.assertEqual(self.answer(start, text_reply("Fixed.\n\nShould I commit it?", t + 1, "m1", "end_turn")),
+                         ("asked", True, ("yesno", [("Yes", "Yes", False), ("No", "No", False)])))
+        self.assertEqual(self.answer(start, text_reply("Fixed.", t + 1, "m1", "end_turn")), ("finished", True, None))
+        self.assertEqual(self.answer(start, limit_hit(t + 1)), ("limit", True, None))
+        self.assertEqual(self.answer(start, text_reply("Looking.", t + 1, "m1", "tool_use"), prompt("[Request interrupted by user]", t + 2)),
+                         ("interrupted", True, None))
+        self.assertEqual(self.answer(start, stand_in(t + 1)), ("stopped", True, None))
+        failed = dict(limit_hit(t + 1), message={"id": "x", "role": "assistant", "model": "<synthetic>",
+                                                  "content": [{"type": "text", "text": "API Error: 500 Internal server error"}]})
+        self.assertEqual(self.answer(start, failed), ("failed", True, None))
+        # (your prompt with no reply: stopped before Claude's first words, or it's thinking: the chat's state tells)
+        self.assertEqual(self.answer(start), ("stopped", False, None))
+        # mid-turn: a tool call, its result, or a message waiting in Claude's queue: nothing yet
+        self.assertEqual(self.answer(start, text_reply("Running them?", t + 1, "m1", "tool_use"),
+                                     tool_use("t1", "Bash", {"command": "ls"}, t + 2, "m1")), (None, False, None))
+        self.assertEqual(self.answer(start, tool_use("t1", "Bash", {"command": "ls"}, t + 1, "m1"), tool_result("t1", t + 2)),
+                         (None, False, None))
+        self.assertEqual(self.answer(start, text_reply("Fixed?", t + 1, "m1", "end_turn"),
+                                     {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(t + 2), "content": "and the docs"}),
+                         (None, False, None))
+        # (only when asked: without --suggest none of it)
+        got = self.cli("--conversation", SID)
+        self.assertFalse({"ended", "over", "asks"} & set(got))
+
+    def turns(self, profile, sid, cwd, *steps, ago=0.0):
+        """A transcript of made-up turns: steps are ("you", text), ("reply", text), ("ask", text),
+        ("limit",), ("stopped",), ("interrupted",); ago: days back."""
+        t = self.now - ago * 86400 - 1000
+        entries = [prompt("start", t, cwd=cwd, sessionId=sid, uuid="%s-0" % sid)]
+        for i, step in enumerate(steps, 1):
+            ts = t + i
+            if step[0] == "you":
+                entries.append(prompt(step[1], ts, cwd=cwd, sessionId=sid, uuid="%s-%d" % (sid, i)))
+            elif step[0] in ("reply", "ask"):
+                entries.append(text_reply(step[1], ts, "%s-m%d" % (sid, i), "end_turn"))
+            elif step[0] == "limit":
+                entries.append(limit_hit(ts))
+            elif step[0] == "stopped":
+                entries.append(stand_in(ts))
+            elif step[0] == "interrupted":
+                entries.append(prompt("[Request interrupted by user]", ts))
+        path = self.home / profile / "projects" / cwd.replace("/", "-") / ("%s.jsonl" % sid)
+        write(path, lines(*entries))
+        return path
+
+    def replies(self, *args):
+        got = self.cli("--replies", SID, *args)
+        self.assertTrue(got["ok"], got)
+        return got
+
+    def test_your_usual_replies(self):
+        app, other = str(self.folder), str(self.home / "repos/other")
+        self.chat(prompt("start", self.now - 50, cwd=app, sessionId=SID))
+        # after a usage limit you go on with the same word, in three chats (one misspelled: merged, shown as usual)
+        self.turns(".claude-work", "c1", app, ("reply", "Half done."), ("limit",), ("you", "continue"),
+                   ("ask", "Done.\n\nShould I commit it?"), ("you", "yes"), ("reply", "Committed."), ("you", "push"))
+        self.turns(".claude-work", "c2", app, ("limit",), ("you", "continue"), ("stopped",), ("you", "go on"))
+        self.turns(".claude-work", "c3", other, ("limit",), ("you", "Contniue"), ("stopped",), ("you", "go on"),
+                   ("reply", "Pushed."), ("you", "push"))
+        # what isn't a usual reply: long, several lines, a command, a path, a picture, Keep going's own words
+        self.turns(".claude-work", "c4", app, ("limit",), ("you", "please also rewrite the parser while you're at it"),
+                   ("reply", "x"), ("you", "one\ntwo"), ("reply", "x"), ("you", "/compact"), ("reply", "x"), ("you", "look at src/app.py"),
+                   ("reply", "x"), ("you", "[Image #1] this"), ("limit",), ("you", cs.CONTINUE_PROMPT))
+        # another account's: not in this one's
+        self.turns(".claude-personal", "p1", app, ("limit",), ("you", "weiter"))
+        self.turns(".claude-personal", "p2", app, ("limit",), ("you", "weiter"))
+        got = self.replies("--profile", ".claude-work")
+        self.assertEqual(got["chips"].get("limit"), ["continue"])
+        self.assertEqual(got["chips"].get("stopped"), ["go on"])   # (two chats)
+        self.assertNotIn("asked", got["chips"])                     # (yes: one chat only)
+        self.assertEqual(got["chips"].get("finished"), ["push"])
+        self.assertEqual(got["ranked"][0], "continue")
+        self.assertEqual(set(got["ranked"]), {"continue", "go on", "push", "yes"})   # (a chat's first prompt answers no turn)
+        personal = self.cli("--replies", "p1", "--profile", ".claude-personal")
+        self.assertEqual(personal["chips"], {"limit": ["weiter"]})
+
+    def test_recent_and_this_projects_first(self):
+        app, other = str(self.folder), str(self.home / "repos/other")
+        self.chat(prompt("start", self.now - 50, cwd=app, sessionId=SID))
+        for n in range(2):   # (a month ago, in two chats: it weighs a fifth of today's)
+            self.turns(".claude-work", "old%d" % n, app, ("reply", "Done."), ("you", "ship it"), ago=30)
+            self.turns(".claude-work", "new%d" % n, app, ("reply", "Done."), ("you", "push"))
+        got = self.replies("--profile", ".claude-work")
+        self.assertEqual(got["chips"]["finished"], ["push"])          # ("ship it": under the share it needs)
+        self.assertEqual(got["ranked"][:2], ["push", "ship it"])
+        # long ago (over two months): not counted at all
+        self.turns(".claude-work", "older", app, ("reply", "Done."), ("you", "deploy"), ago=90)
+        self.assertNotIn("deploy", self.replies("--profile", ".claude-work")["ranked"])
+        # this project's first: the same use elsewhere counts half
+        for n in range(2):
+            self.turns(".claude-work", "o%d" % n, other, ("ask", "Ok?"), ("you", "fine"))
+        self.turns(".claude-work", "h0", app, ("ask", "Ok?"), ("you", "sure"))
+        self.turns(".claude-work", "h1", app, ("ask", "Ok?"), ("you", "sure"))
+        got = self.replies("--profile", ".claude-work")
+        self.assertEqual(got["chips"]["asked"], ["sure", "fine"])
+
+    def test_dont_suggest_this(self):
+        app = str(self.folder)
+        self.chat(prompt("start", self.now - 50, cwd=app, sessionId=SID))
+        for n in range(2):
+            self.turns(".claude-work", "c%d" % n, app, ("limit",), ("you", "continue"))
+        self.assertEqual(self.replies("--profile", ".claude-work")["chips"], {"limit": ["continue"]})
+        self.assertTrue(self.cli("--hide-reply", "Continue.")["ok"])   # (as you'd type it: one reply)
+        got = self.replies("--profile", ".claude-work")
+        self.assertEqual((got["chips"], got["ranked"]), ({}, []))
+        hidden = cs.state_dir(self.cache) / "replies-hidden.json"
+        self.assertEqual(hidden.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(self.cli("--hide-reply", "-", "--off")["ok"])   # (all of them again)
+        self.assertEqual(self.replies("--profile", ".claude-work")["chips"], {"limit": ["continue"]})
+
+    def test_a_transcript_is_read_once(self):
+        # what was read is kept by the transcript's size and time; one that grew is read from where it was left
+        app = str(self.folder)
+        self.chat(prompt("start", self.now - 50, cwd=app, sessionId=SID))
+        c1 = self.turns(".claude-work", "c1", app, ("limit",), ("you", "continue"))
+        self.turns(".claude-work", "c2", app, ("limit",), ("you", "continue"))
+        self.assertEqual(self.replies("--profile", ".claude-work")["chips"], {"limit": ["continue"]})
+        kept = list((self.cache / "replies").glob("*.json"))
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0].stat().st_mode & 0o777, 0o600)
+        # (what was read stays as it was read: the same bytes changed now aren't read again)
+        data = c1.read_text().replace('"continue"', '"cxntinue"')
+        write(c1, data + lines(text_reply("More.", self.now - 10, "c1-mz", "end_turn"),
+                               prompt("ok", self.now - 9, cwd=app, sessionId="c1", uuid="c1-z")))
+        got = self.replies("--profile", ".claude-work")
+        self.assertEqual(got["chips"]["limit"], ["continue"])
+        self.assertIn("ok", got["ranked"])
+        # (one that's shorter now was written again: read whole)
+        write(c1, data)
+        self.assertNotIn("ok", self.replies("--profile", ".claude-work")["ranked"])
+        with mock.patch.object(pane, "reply_records", side_effect=AssertionError("read again")):
+            self.replies("--profile", ".claude-work")   # (nothing changed: nothing read)
 
 
 class RelayTests(PaneFixture):
