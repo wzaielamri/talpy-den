@@ -1483,6 +1483,99 @@ class TalpyChatHookTests(SendFixture):
         self.send()
         self.assertEqual(json.loads(state.read_text())["respawnFlags"], ["--settings", "{}", "--model", "opus"])
 
+    def go_on(self, **kw):
+        """Keep going's or a queued go-on's way (jump.py): no settings of its own given."""
+        return cs.continue_chat(self.home, [], ".claude-work", SID, text="go on", claude=str(self.bin / "claude"),
+                                force=True, **kw)
+
+    def test_a_copy_of_a_hooked_chat_keeps_its_hook(self):
+        # (R16: Keep going, a queued go-on, or a wake of a job still held after the wait give no settings
+        # of their own; the copy Claude makes then is given the hook the chat's job saved, so its prompts
+        # still reach Talpy Chat. A job that wakes has it in its saved options already)
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "respawnFlags": ["--model", "opus", "--settings", self.hook()]})
+        with mock.patch.object(cs, "daemon_holds", return_value=True):   # (still held: Claude copies it)
+            self.assertTrue(self.go_on(wait=0)["ok"])
+            argv = self.calls()[-1]
+            self.assertEqual(argv[:3], ["--bg", "--resume", SID])
+            self.assertEqual(argv[argv.index("--settings") + 1], self.hook())
+            self.assertEqual(argv.count("--settings"), 1)
+            # the --settings=… spelling too
+            write(state, {"sessionId": SID, "respawnFlags": ["--settings=" + self.hook()]})
+            self.go_on(wait=0)
+            argv = self.calls()[-1]
+            self.assertEqual(argv[argv.index("--settings") + 1], self.hook())
+            # settings of your own (not the hook) stay with the job: the copy isn't given them
+            write(state, {"sessionId": SID, "respawnFlags": ["--settings", '{"env":{"X":"1"}}']})
+            self.go_on(wait=0)
+            self.assertNotIn("--settings", self.calls()[-1])
+            # nor another chat's job under the same short id
+            other = SID[:8] + "-0000-4000-8000-000000000000"
+            write(state, {"sessionId": other, "respawnFlags": ["--settings", self.hook()]})
+            self.go_on(wait=0)
+            self.assertNotIn("--settings", self.calls()[-1])
+        # settled, its job wakes with what it saved: given nothing (anything given would start a copy)
+        write(state, {"sessionId": SID, "respawnFlags": ["--settings", self.hook()]})
+        self.go_on(wait=0)
+        self.assertEqual(self.calls()[-1], ["--bg", "--resume", SID, "go on"])
+
+    def test_one_wake_of_a_chat_at_a_time(self):
+        # (R17: the lock around a wake: none waited for, the same thread takes it again (send's
+        # continue_chat), and another one waits till it's let go)
+        import threading
+        with cs.wake_lock(self.home, SID) as waited:
+            self.assertFalse(waited)
+            with cs.wake_lock(self.home, SID) as again:
+                self.assertFalse(again)
+            took = []
+            other = threading.Thread(target=lambda: took.append(cs.wake_lock(self.home, SID).__enter__()))
+            other.start()
+            other.join(0.3)
+            self.assertTrue(other.is_alive(), "it waits")
+        other.join(5)
+        self.assertEqual(took, [True])
+        # another chat's isn't held up; nor is a chat id that isn't one (nothing is locked)
+        with cs.wake_lock(self.home, "not-an-id") as waited:
+            self.assertFalse(waited)
+
+    def test_two_front_ends_waking_one_chat_make_no_copy(self):
+        # R17: Talpy Chat's window in Plasma and its tab in VS Code send to one stopped chat within a
+        # second: the first wakes it; the second waits for that, finds its session and replies to it,
+        # rather than claude --bg --resume while the service holds it (which starts a copy)
+        import threading
+        from test_tasks import FakeService
+        profile = next(p for p in cs.discover_profiles(self.home) if p.key == ".claude-work")
+        service = FakeService(self, profile, lambda r: {"ok": True, "op": r["op"]})
+        started = []
+
+        def start_background(*args, **kw):
+            time.sleep(0.4)   # (claude --bg answers once its job is written; its session shows a moment later)
+            started.append(args[2])
+            threading.Timer(0.3, lambda: self.live(kind="bg", status="busy", jobId="1a2b3c4d")).start()
+            return True, "Started in the background on work (1a2b3c4d)", "1a2b3c4d"
+
+        answers = []
+        with mock.patch.object(cs, "start_background", side_effect=start_background):
+            sends = [threading.Thread(target=lambda t=t: answers.append(self.send(text=t))) for t in ("from Plasma", "from VS Code")]
+            for t in sends:
+                t.start()
+            for t in sends:
+                t.join(30)
+        self.assertEqual(len(started), 1, ("one wake", answers))
+        replied = [r["text"] for r in service.ops("reply")]
+        self.assertEqual(sorted(started + replied), ["from Plasma", "from VS Code"], answers)
+        self.assertEqual(sorted(a["how"] for a in answers), ["background", "typed"])
+        # a go-on that comes meanwhile (Keep going, a queued one) waits too, then leaves the chat at work alone
+        with cs.wake_lock(self.home, SID):
+            late = []
+            go = threading.Thread(target=lambda: late.append(self.go_on()))
+            go.start()
+            go.join(0.3)
+            self.assertTrue(go.is_alive(), "it waits for the wake")
+        go.join(30)
+        self.assertEqual((late[0]["ok"], late[0]["message"]), (False, "It's at work again, so it stays where it is"))
+        self.assertEqual(len(self.calls()), 0, "no claude --bg of its own")
+
     def test_the_command_line(self):
         write(self.home / f".claude-work/jobs/{self.JOB}/state.json", {"sessionId": self.NEW})
         with mock.patch.object(cs, "find_claude", return_value=str(self.bin / "claude")):

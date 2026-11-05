@@ -1344,6 +1344,17 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
         return {"ok": False, "message": NO_CHAT}
     if how == "copy":
         return copy_answer(text)
+    # (one wake of a chat at a time: Talpy Chat's window and VS Code's tab sending to one stopped chat
+    # within a second or two would make Claude start a copy; the second waits for the first's wake,
+    # then finds its session and replies to it)
+    with cs.wake_lock(home, chat_id) as waited:
+        if waited:
+            cs.wake_settle(home, extra_dirs, chat_id)
+        return send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile)
+
+
+def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile):
+    """send's sending, under its lock."""
     entry = None
     for sid in (session_id, chat_id):
         if cs.valid_id(sid or ""):

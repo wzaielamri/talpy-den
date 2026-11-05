@@ -156,6 +156,10 @@
 - **Your plan's limits over time** (was *Advanced analyses*) sits right after
   the limits now; the first tile says *You were at it*; project names get the
   room they need.
+- **A copy keeps Talpy Chat's hook:** a chat Talpy Chat started that goes on
+  as a copy (Keep going, a queued go-on) still has its prompts answered there.
+- **One wake for two windows:** sending from Plasma's Talpy Chat and this
+  tab to one stopped chat at once wakes it once (no copy of the chat).
 
 ## 1.18.0
 

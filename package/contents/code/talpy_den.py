@@ -28,6 +28,7 @@ VS Code panel runs no status line), it has Claude Code fetch it, the way
 /usage does (refresh_usage; ~/.cache/talpy-den/usage-check.json notes when).
 """
 
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -7198,6 +7199,27 @@ def has_settings_flag(flags):
     return any(f == "--settings" or f.startswith("--settings=") for f in flags if isinstance(f, str))
 
 
+def hook_settings(flags):
+    """The settings of its own (--settings) a background job's saved options
+    (respawnFlags) give it when they're Talpy Chat's permission hook for it
+    (they name PERMISSION_HOOK_FILE), or None: a copy Claude makes of that
+    chat is given them too, so its prompts still reach Talpy Chat. Settings
+    of your own aren't carried."""
+    if not isinstance(flags, list):
+        return None
+    for i, flag in enumerate(flags):
+        if not isinstance(flag, str):
+            continue
+        name, eq, value = flag.partition("=")
+        if name != "--settings":
+            continue
+        if not eq:
+            value = flags[i + 1] if i + 1 < len(flags) and isinstance(flags[i + 1], str) else ""
+        if PERMISSION_HOOK_FILE in value:
+            return value
+    return None
+
+
 def saved_options(state_path, chat_id, mode, model, effort, settings=None):
     """Have a chat's background job (its state.json) wake in its permission
     mode, on its model and effort: those its saved options (respawnFlags)
@@ -7234,6 +7256,71 @@ def saved_options(state_path, chat_id, mode, model, effort, settings=None):
     return True
 
 
+WAKE_WAIT = 8  # seconds a wake that waited for another one gives that one's session to show
+_WAKES = {}  # (chat id, thread) -> how many times that thread holds wake_lock for it
+
+
+@contextlib.contextmanager
+def wake_lock(home, chat_id):
+    """One wake of a chat at a time: claude --bg --resume while another
+    wake's session isn't listed yet, or is held by Claude's background
+    service, starts a copy (Talpy Chat's window in Plasma and its tab in VS
+    Code sending to one stopped chat within a second or two, Keep going, a
+    queued go-on). An flock on <state>/wake-<chat id>.lock around the wake
+    (pane.py send, continue_chat), which the thread holding it takes again
+    without waiting (send's continue_chat). Yields whether it waited for
+    another: that one may just have woken the chat, so the caller looks for
+    its session first (wake_settle) and replies to it. No lock (nothing
+    waits) when its file can't be made, or for what isn't a chat id."""
+    import threading
+    key = (chat_id, threading.get_ident())
+    if _WAKES.get(key) or not valid_id(chat_id or "") or len(chat_id) < 36:
+        _WAKES[key] = _WAKES.get(key, 0) + 1
+        try:
+            yield False
+        finally:
+            _WAKES[key] -= 1
+            if not _WAKES[key]:
+                del _WAKES[key]
+        return
+    fd = None
+    try:
+        state = state_dir(cache_dir(home))
+        private_dir(state)
+        fd = os.open(str(state / f"wake-{chat_id}.lock"), os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0), 0o600)
+    except OSError:
+        pass
+    waited = False
+    if fd is not None:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            waited = True
+            fcntl.flock(fd, fcntl.LOCK_EX)
+    _WAKES[key] = 1
+    try:
+        yield waited
+    finally:
+        del _WAKES[key]
+        if fd is not None:
+            os.close(fd)  # (lets go of the lock; the file stays, a few bytes a chat, as the hook's requests do)
+
+
+def wake_settle(home, extra_dirs, chat_id, wait=WAKE_WAIT):
+    """After waiting for another wake of a chat (wake_lock): wait (at most
+    wait seconds) for a session that has it open to be listed, as Claude
+    lists a chat it just woke a moment after claude --bg answers. Whether
+    one is."""
+    deadline = time.time() + wait
+    profiles = discover_profiles(home, extra_dirs)
+    while True:
+        if any(e.get("sessionId") == chat_id and not e.get("spare") for e, _, _ in live_entries_all(profiles)):
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(0.1)
+
+
 def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", claude=None, prefix=(),
                   wait=None, force=False, ends_at=None, settings=None):
     """Go on with a chat a usage limit stopped, now that the limit has reset
@@ -7257,7 +7344,21 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     settings: settings of its own it goes on with (claude --settings, JSON:
     Talpy Chat's permission hook for it), unless its background job has some
     already: written into the job's saved options when it's woken (any
-    option given would start a copy), else given."""
+    option given would start a copy), else given. None given, a copy Claude
+    makes of it gets the hook its job saved (hook_settings).
+    One wake of a chat at a time (wake_lock): one that came while another
+    woke it waits for that one's session (wake_settle), and takes the
+    message in there or leaves it at work."""
+    with wake_lock(home, chat_id) as waited:
+        if waited:
+            wake_settle(home, extra_dirs, chat_id)
+        return go_on_with(home, extra_dirs, profile_key, chat_id, folder, text, claude, prefix, wait, force,
+                          ends_at, settings)
+
+
+def go_on_with(home, extra_dirs, profile_key, chat_id, folder, text, claude, prefix, wait, force, ends_at,
+               settings):
+    """continue_chat's go-on, under its lock."""
     profiles = discover_profiles(home, extra_dirs)
     profile = next((p for p in profiles if matches_profile(p, profile_key)), None)
     if profile is None:
@@ -7336,6 +7437,8 @@ def continue_chat(home, extra_dirs, profile_key, chat_id, folder=None, text="", 
     mode = flags.get("mode") or mode
     model, effort = flags.get("model") or guess_model, flags.get("effort") or guess_effort
     wakes = own_job and settled
+    if settings is None and own_job and not wakes:
+        settings = hook_settings(record.get("respawnFlags"))   # (a copy of a chat Talpy Chat hooked keeps the hook)
     carried = not wakes or not (mode or model or effort or settings) \
         or saved_options(state, chat_id, mode, model, effort, settings)
     options = [] if wakes else go_on_options(mode, model, effort) + (["--settings", settings] if settings else []) \
