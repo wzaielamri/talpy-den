@@ -1649,6 +1649,55 @@ class HostTests(FakeSSH):
         source = week.host_chats("lab", 0)
         self.assertFalse(source["ok"])
         self.assertIn("refused", source["error"])
+        projects = week.host_projects("lab")
+        self.assertEqual((projects["ok"], projects["projects"], projects["host"]), (False, [], "lab"))
+        self.assertIn("refused", projects["error"])
+
+    def test_an_ssh_hosts_projects_with_what_opens_them_there(self):
+        now = int(time.time() * 1000)
+        t0 = now - 3600_000
+        (self.fake_home / "srv/api").mkdir(parents=True)
+        tr = Transcript(str(self.fake_home / "srv/api")).prompt(t0).reply(t0 + 1000, "r").duration(t0 + 60_000, 60_000)
+        (self.fake_home / ".claude/projects/-p/chat-r.jsonl").write_text(tr.text())
+        source = week.host_projects("lab")
+        self.assertTrue(source["ok"], source)
+        (row,) = source["projects"]
+        self.assertEqual((row["path"], row["short"], row["gone"], row["chatCount"]),
+                         (str(self.fake_home / "srv/api"), "~/srv/api", False, 1))
+        (chat,) = row["chats"]
+        self.assertEqual(chat["sessionId"], "chat-r")
+        # (the host's: its commands run there over ssh, as its Chats tab's lines do)
+        self.assertIn("--resume chat-r", chat["openCommand"])
+        self.assertTrue(chat["openCommand"].startswith("cd " + str(self.fake_home / "srv/api")), chat["openCommand"])
+        self.assertIn("CLAUDE_CODE_DISABLE_AGENT_VIEW=1", row["newChatCommand"])
+        self.assertTrue(row["newChatCommand"].startswith("cd " + str(self.fake_home / "srv/api")), row["newChatCommand"])
+        self.assertLessEqual(abs(row["lastAt"] - (t0 + 60_000)), 5000)   # (the same clock here: as it was)
+        self.assertEqual((source["hidden"], source["hiddenPaths"]), (0, []))
+
+    def test_a_hosts_projects_follow_its_clock(self):
+        import remote
+        now = int(time.time() * 1000)
+        late = 2 * week.HOUR_MS   # (the host's clock is 2 hours behind)
+        row = {"name": "api", "path": "/srv/api", "short": "/srv/api", "lastAt": now - late - 60_000, "accounts": [],
+               "chatCount": 1, "chats": [{"sessionId": "c", "lastActive": now - late - 60_000}],
+               "plans": [{"slug": "p", "updatedAt": now - late - 120_000}], "memories": [{"key": "m", "updatedAt": 0}],
+               "recap": {"text": "done", "at": now - late - 60_000}}
+        answer = {"ok": True, "now": now - late, "generatedAt": now - late - 30_000, "projects": [row],
+                  "hidden": 1, "hiddenPaths": ["/srv/old"]}
+        with mock.patch.object(remote, "host_answer", return_value=answer) as asked:
+            source = week.host_projects("lab")
+        self.assertEqual(asked.call_args[0][:2], ("lab", ["--projects"]))
+        (p,) = source["projects"]
+        shift = p["lastAt"] - (now - late - 60_000)
+        self.assertGreaterEqual(shift, late)
+        self.assertLess(shift, late + 5000)
+        self.assertEqual((p["chats"][0]["lastActive"], p["recap"]["at"]), (p["lastAt"], p["lastAt"]))
+        self.assertEqual(p["plans"][0]["updatedAt"], now - late - 120_000 + shift)
+        self.assertEqual(p["memories"][0]["updatedAt"], 0)   # (no time: none made up)
+        self.assertEqual((source["hidden"], source["hiddenPaths"]), (1, ["/srv/old"]))
+        # (the same clock, give or take a slow answer: as it is)
+        with mock.patch.object(remote, "host_answer", return_value=dict(answer, now=now, projects=[dict(row, lastAt=5)])):
+            self.assertEqual(week.host_projects("lab")["projects"][0]["lastAt"], 5)
 
 
 class OutputTests(Home):
@@ -1736,6 +1785,33 @@ class OutputTests(Home):
         # (a hidden project's folder is said, so its open chats show in no other project)
         self.assertEqual((result["projects"], result["hidden"], result["hiddenPaths"]), ([], 1, [hid]))
 
+    def test_the_projects_tab_reads_each_ssh_host_on_its_own(self):
+        import io
+        from contextlib import redirect_stdout
+        self.write(Transcript().prompt(self.t0).reply(self.t0 + 1000, "a").duration(self.t0 + 2000, 2000))
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        os.environ["HOME"], os.environ["XDG_CACHE_HOME"] = str(self.home), str(self.cache_root)
+
+        def host(name):   # (lab answers; far is out of reach)
+            if name == "far":
+                raise OSError("no route to far")
+            return {"host": name, "ok": True, "error": "", "projects": [{"name": "api", "path": "/srv/api"}],
+                    "hidden": 0, "hiddenPaths": []}
+
+        def projects(*args):
+            out = io.StringIO()
+            with mock.patch.object(week, "host_projects", side_effect=host) as read, redirect_stdout(out):
+                week.main(["--projects", *args])
+            return json.loads(out.getvalue()), [c[0][0] for c in read.call_args_list]
+        here, asked = projects()
+        self.assertEqual((asked, here["projects"][0]["chats"][0]["sessionId"]), ([], "chat-a"))
+        self.assertNotIn("openCommand", here["projects"][0]["chats"][0])   # (this computer's open here)
+        lab, asked = projects("--on", "lab")
+        self.assertEqual((asked, lab["host"], lab["ok"], lab["projects"][0]["path"]), (["lab"], "lab", True, "/srv/api"))
+        far, _ = projects("--on", "far")
+        self.assertEqual((far["host"], far["ok"]), ("far", False))
+        self.assertIn("no route to far", far["error"])
 
 if __name__ == "__main__":
     unittest.main()

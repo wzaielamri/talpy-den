@@ -101,4 +101,4 @@ export interface MoveAsk {
 export const moveAsk = createStore<MoveAsk | null>(null);
 
 // A plan dragged by its name in the Projects tab: {key, groupId, from (its card's folder)}
-export const planDrag = createStore<{ id: string; groupId: string; from: string } | null>(null);
+export const planDrag = createStore<{ id: string; groupId: string; host: string; from: string } | null>(null); // (host: its machine's, "" this computer)

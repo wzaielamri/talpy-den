@@ -91,6 +91,14 @@
   your notes; *Approved the plan* or *Keep planning* and your note; a
   Deny's note under its call. The same wherever you answered, and at once
   when you answer from Talpy Den.
+- **SSH hosts' projects in the Projects tab:** each SSH host and container
+  shown follows this computer's projects, under its name, with its projects
+  as read there (week.py --projects --on HOST, over your ssh connection; each
+  host on its own, so a slow one holds up no other): its open chats, recap,
+  chats, plans and memories on the accounts they're on there, whose buttons
+  act on that host (reopen, star, move, hide, delete); *New chat here* starts
+  on it, with the command its read sent; a plan drags only onto a project of
+  its own machine; the eye button next to its name shows what you hid there.
 
 ### Better
 

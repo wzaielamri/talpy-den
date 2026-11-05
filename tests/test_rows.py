@@ -243,6 +243,31 @@ class RowButtonsTests(unittest.TestCase):
         self.assertIn("position: absolute;", actions[:200])
         self.assertIn("bottom: 2px;", actions[:200])
 
+    def test_the_projects_tab_reads_each_ssh_host_shown_on_its_own(self):
+        # The Projects tab listed only this computer's projects (2026-11-05):
+        # each host shown is read there, on its own, and its lines act there
+        repo = UI.parent.parent.parent
+        main = (UI / "main.qml").read_text()
+        load = main[main.index("function loadProjects()"):main.index("function loadLocalProjects()")]
+        self.assertIn("for (const host of answeredHosts)", load)
+        self.assertIn("loadHostProjects(host)", load)
+        self.assertIn('" --projects --on " + shellQuote(host)', main)
+        self.assertNotIn("if (!what.host && root.projectsShown)", main)   # (a host's change reads that host again)
+        self.assertEqual(main.count("root.reloadProjects(what.host)"), 3)
+        qml = (UI / "ProjectsView.qml").read_text()
+        for wired in ("remoteHost: card.host", "root.groupOfProfile(chat.profileDir, card.host)", "root.newChatInProject(card.project, card.host)",
+                      'root.hideItem("projects", card.project.path, card.host)', "c.host === dragged.host", '"drop|" + card.key'):
+            self.assertIn(wired, qml)
+        self.assertEqual(qml.count("remoteHost: card.host"), 3)   # (its chats, plans and memories)
+        view = (repo / "vscode/src/view.ts").read_text()
+        self.assertIn("this.dash.answeringHosts().map((h) => this.dash.readHostProjects(h))", view)
+        self.assertNotIn("m.host ? null : findProject", view)
+        backend = (repo / "vscode/src/backend.ts").read_text()
+        self.assertIn('["week.py", "--projects", "--on", host]', backend)
+        tsx = (repo / "vscode/webview/components/ProjectsView.tsx").read_text()
+        self.assertIn("<HostProjectsSection", tsx)
+        self.assertIn("drag.host === host", tsx)
+
     def test_a_projects_dots_take_the_rows_colour_red_for_a_limit(self):
         # Two chats a usage limit stopped showed as two green dots on their
         # project (their state is idle), where their rows are red (2026-11-01)

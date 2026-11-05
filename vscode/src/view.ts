@@ -12,7 +12,7 @@ import type { Dashboard } from "./dashboard";
 import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, shareAccounts } from "./shared/model";
 import { answersOf, askShownOf } from "./shared/pane";
 import { permsHost, weekAsked, weekRevokeAsked, weekRuleAsked } from "./shared/week";
-import type { ChatRef, Group, HostMessage, Memory, PlanItem, WebviewMessage } from "./shared/types";
+import type { ChatRef, Group, HostMessage, Memory, PlanItem, ProjectsData, WebviewMessage } from "./shared/types";
 import { isDecision } from "./shared/types";
 
 const CHAT_ID = /^[A-Za-z0-9_-]{1,80}$/;
@@ -194,31 +194,66 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
   }
 
   // One of an account's memories (or its CLAUDE.md), or of the Projects tab's
+  // (an SSH host's shown: as read there, on that host's account)
   private memoryOf(m: { groupId?: unknown; host?: unknown; memory?: unknown }): { memory: Memory; group: Group } | null {
     const state = this.dash.state();
+    const host = this.projectHost(m.host);
     return findMemory(state.status, state.hosts, m.host, m.groupId, m.memory)
-      ?? (m.host ? null : findProjectMemory(this.dash.projectsRead(), state.status, m.memory));
+      ?? (host === null ? null : findProjectMemory(this.dash.projectsOn(host), this.statusOn(host), m.memory, host));
+  }
+
+  // A machine the page names for the Projects tab: undefined (this computer),
+  // an SSH host shown, or null (anything else)
+  private projectHost(host: unknown): string | undefined | null {
+    if (host === undefined || host === null || host === "") return undefined;
+    return typeof host === "string" && this.dash.shownHosts().includes(host) ? host : null;
+  }
+
+  // A machine's status as the view has it (a host's: its last answer)
+  private statusOn(host: string | undefined) {
+    const state = this.dash.state();
+    return host ? state.hosts.find((h) => h.name === host)?.result ?? null : state.status;
   }
 
   // The Projects tab's chats, plans and memories (week.py --projects), to the
-  // view that shows it; read again for the views that show it after a star,
-  // a hide or a delete
+  // view that shows it: this computer's, and each SSH host's shown that
+  // answered its last check (week.py --projects --on HOST, each on its own,
+  // so a slow host holds up no other: what's read goes to the view as it
+  // comes, once this computer's is in); read again for the views that show it
+  // after a star, a hide, a move or a delete (only the machine it was on:
+  // which, "" this computer, else that host; none: every one)
   private projectsShown = new Set<vscode.Webview>();
-  private async sendProjects(webview: vscode.Webview): Promise<void> {
-    const { data, error } = await this.dash.projects();
-    void webview.postMessage({ type: "projects", data: data ?? null, error: error ?? "" } satisfies HostMessage);
+  private async sendProjects(webview: vscode.Webview, which?: string): Promise<void> {
+    let local: { data?: ProjectsData; error?: string } = { data: this.dash.projectsRead() ?? undefined };
+    const send = () => void webview.postMessage({ type: "projects", data: local.data ?? null, error: local.error ?? "",
+                                                  hosts: this.dash.hostProjectsRead() } satisfies HostMessage);
+    if (which) {
+      const read = this.dash.readHostProjects(which);
+      send();   // (its read on its way)
+      await read;
+      send();
+      return;
+    }
+    const hosts = which === "" ? [] : this.dash.answeringHosts().map((h) => this.dash.readHostProjects(h));
+    const here = this.dash.projects().then((answer) => {
+      local = answer;
+      send();
+    });
+    await Promise.all(hosts.map((read) => Promise.all([read, here]).then(send)));
+    await here;
   }
 
-  private projectsChanged(): void {
-    for (const w of this.projectsShown) if (this.webviews.has(w)) void this.sendProjects(w);
+  private projectsChanged(host?: string): void {
+    for (const w of this.projectsShown) if (this.webviews.has(w)) void this.sendProjects(w, host ?? "");
   }
 
   // One of an account's plans the page names, as the extension knows it now
-  // (else one of the Projects tab's)
+  // (else one of the Projects tab's, an SSH host's shown too)
   private planOf(m: { groupId?: unknown; host?: unknown; plan?: unknown }): { plan: PlanItem; group: Group } | null {
     const state = this.dash.state();
+    const host = this.projectHost(m.host);
     return findPlan(state.status, state.hosts, m.host, m.groupId, m.plan)
-      ?? (m.host ? null : findProjectPlan(this.dash.projectsRead(), state.status, m.plan));
+      ?? (host === null ? null : findProjectPlan(this.dash.projectsOn(host), this.statusOn(host), m.plan, host));
   }
 
   // What a Delete names, as the extension knows it: a chat by its id,
@@ -285,22 +320,22 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         if (chat) void this.actions.dismiss(chat);
         break;
       case "hide": {
-        // (a plan or memory by its key, as the extension knows it; a project by its folder: this computer's)
-        const state = this.dash.state();
+        // (a plan or memory by its key, as the extension knows it; a project by its folder, this computer's or a host's shown)
         const id = m.kind === "plans" ? this.planOf({ groupId: m.groupId, host: m.host, plan: m.id })?.plan.slug
           : m.kind === "memories" ? this.memoryOf({ groupId: m.groupId, host: m.host, memory: m.id })?.memory.key
-          : m.kind === "projects" && typeof m.id === "string" && m.id ? m.id : undefined;
-        if (!id) break;
-        void this.actions.hide(m.kind, id, m.kind === "projects" ? undefined : text(m.host)).then((ok) => {
-          if (ok && m.kind === "projects") return this.sendProjects(webview);
-          if (ok) this.projectsChanged();
+          : m.kind === "projects" && typeof m.id === "string" && m.id.startsWith("/") ? m.id : undefined;
+        const host = this.projectHost(m.host);
+        if (!id || (m.kind === "projects" && host === null)) break;
+        void this.actions.hide(m.kind, id, m.kind === "projects" ? host ?? undefined : text(m.host)).then((ok) => {
+          if (ok && m.kind === "projects") return this.sendProjects(webview, host ?? "");
+          if (ok) this.projectsChanged(text(m.host));
         });
         break;
       }
       case "delete": {
         // (the line asked first)
         const what = this.deleteTarget(m, chat);
-        if (what) void this.actions.delete(what.kind, what.id, what.profileDir, what.host).then(() => this.projectsChanged());
+        if (what) void this.actions.delete(what.kind, what.id, what.profileDir, what.host).then(() => this.projectsChanged(what.host));
         break;
       }
       case "deleteDescribe": {
@@ -335,7 +370,7 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         const ifExists = m.ifExists === "keep" || m.ifExists === "replace" ? m.ifExists : undefined;
         if (found && (!folder || folder.startsWith("/")))
           void this.actions.movePlan(found.plan, found.group.host, folder, m.back === true, m.keepThere !== false, ifExists)
-            .then(() => this.projectsChanged());
+            .then(() => this.projectsChanged(found.group.host));
         break;
       }
       case "share":
@@ -422,7 +457,7 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       case "star": {
         // (its id from the extension's own state: a chat, or one of an account's plans)
         const found = chat ? null : this.planOf(m);
-        const done = () => this.projectsChanged();
+        const done = () => this.projectsChanged(chat ? chat.host : found?.group.host);
         if (chat) void this.actions.star("chats", chat.chatId || chat.sessionId, chat.host, m.on === true).then(done);
         else if (found) void this.actions.star("plans", found.plan.slug, found.group.host, m.on === true).then(done);
         break;
@@ -538,13 +573,18 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         break;
       }
       case "newChatIn": {
-        // (a folder the projects list named, on an account of this computer's)
-        const state = this.dash.state();
-        const group = state.status?.groups.find((g) => (g.profileKeys ?? []).includes(m.profileDir)) ?? state.status?.groups[0];
+        // (a folder the projects list named, on an account of this computer's, or of the SSH host shown it's on:
+        // started there with the command its read sent, never one from the page)
+        const host = this.projectHost(m.host);
+        if (host === null || typeof m.path !== "string" || !m.path.startsWith("/")) break;
+        const status = this.statusOn(host);
+        const group = status?.groups.find((g) => (g.profileKeys ?? []).includes(m.profileDir)) ?? status?.groups[0];
         // (its folder as week.py says it, from your home wherever that is)
         const short = typeof m.short === "string" && m.short && m.short.length < 4096 ? m.short : m.path.replace(/^\/home\/[^/]+/, "~");
-        if (group && typeof m.path === "string" && m.path.startsWith("/"))
-          void this.actions.newChat(group.id, undefined, undefined, undefined, { path: m.path, short });
+        const row = host ? this.dash.projectsOn(host)?.projects.find((p) => p.path === m.path) : undefined;
+        if (group && (!host || row))
+          void this.actions.newChat(group.id, host, undefined, undefined,
+                                    { path: m.path, short, ...(row?.newChatCommand ? { newChatCommand: row.newChatCommand } : {}) });
         break;
       }
       case "perms":

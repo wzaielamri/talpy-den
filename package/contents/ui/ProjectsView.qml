@@ -14,26 +14,51 @@ import "icons.mjs" as Icons
 // line as under an account, with the account it's on when the project is
 // on several. Everything of it comes from week.py --projects (main.qml:
 // loadProjects), what goes on now from the status. No time or money here:
-// the Recap has them, by project. A plan dragged by its name onto another
-// project's card asks to move it there (the card it would go to lights up,
-// and the list scrolls near its top and bottom edges); the question shows
-// at the top of that card (MoveAsk.qml), and nothing moves without it.
+// the Recap has them, by project. Then each SSH host's (and container's)
+// shown, under its name, as read there (main.qml: hostProjects), with its
+// open chats from its status: everything on its lines opens and changes it
+// there, as in its section of the Chats tab. A plan dragged by its name onto
+// another project's card (of the same machine) asks to move it there (the
+// card it would go to lights up, and the list scrolls near its top and
+// bottom edges); the question shows at the top of that card (MoveAsk.qml),
+// and nothing moves without it.
 PlasmaComponents3.ScrollView {
     id: view
 
     readonly property var projects: root.projectsData ? root.projectsData.projects || [] : []
+    // the SSH hosts shown whose projects were read (or are being read the first time), in the Chats tab's order
+    readonly property var hosts: root.shownHosts.filter(h => !!root.hostProjects[h] || !!root.hostProjectsBusy[h])
+    // the cards, one list: this computer's projects, then each host's under its name ({host, project,
+    // first: its host's first card, whose name shows above it}; project null: the host has none to show)
+    readonly property var entries: {
+        const out = projects.map(p => ({ host: "", project: p, first: false }))
+        for (const host of hosts) {
+            const rows = (root.hostProjects[host] || {}).projects || []
+            if (!rows.length)
+                out.push({ host: host, project: null, first: true })
+            rows.forEach((p, i) => out.push({ host: host, project: p, first: i === 0 }))
+        }
+        return out
+    }
     readonly property real folderWidth: Kirigami.Units.gridUnit * 8
     // a project's buttons, as a row's (HoverButton.qml): 22 px high, 16 px icons, packed close
     readonly property real buttonSize: Math.round(Kirigami.Units.iconSizes.small * 1.375)
-    // the chats listed now (open, or kept for the record): not again under Chats
+    // the accounts on this computer ("") and on each host, as the Chats tab shows them
+    function groupsOn(host) {
+        return host ? (((root.remote[host] || {}).result || {}).groups || []) : root.groups
+    }
+    // the chats listed now (open, or kept for the record), by host: not again under Chats
     readonly property var listed: {
-        const ids = {}
-        for (const g of root.groups)
-            for (const s of g.sessions)
-                for (const id of [s.chatId, s.sessionId, s.jobSessionId])
-                    if (id)
-                        ids[id] = true
-        return ids
+        const out = {}
+        for (const host of [""].concat(hosts)) {
+            const ids = out[host] = {}
+            for (const g of groupsOn(host))
+                for (const s of g.sessions)
+                    for (const id of [s.chatId, s.sessionId, s.jobSessionId])
+                        if (id)
+                            ids[id] = true
+        }
+        return out
     }
     contentWidth: availableWidth
     PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
@@ -41,35 +66,40 @@ PlasmaComponents3.ScrollView {
     function under(folder, path) {
         return !!folder && !!path && (folder === path || folder.startsWith(path + "/"))
     }
-    // What goes on in each project now (the status' open chats), by its path: each
-    // chat in one project only, the closest one whose folder holds the chat's (one
-    // in ~/repos/app is app's, not also ~/repos's and ~'s when chats once ran
-    // there too); a project you hid counts, so its chats show in no other
+    // What goes on in each project now (the status' open chats; a host's, its own), by its
+    // key (root.projectKey): each chat in one project only, the closest one of its machine
+    // whose folder holds the chat's (one in ~/repos/app is app's, not also ~/repos's and
+    // ~'s when chats once ran there too); a project you hid counts, so its chats show in no other
     readonly property var openByProject: {
-        const paths = projects.map(p => p.path).concat((root.projectsData && root.projectsData.hiddenPaths) || [])
         const out = {}
-        for (const g of root.groups)
-            for (const s of g.sessions) {
-                let best = ""
-                for (const p of paths)
-                    if (p && p.length > best.length && under(s.cwd, p))
-                        best = p
-                if (best)
-                    (out[best] = out[best] || []).push({ key: root.petKeyOf(s, ""), session: s, host: "", account: g.title })
-            }
+        for (const host of [""].concat(hosts)) {
+            const read = host ? root.hostProjects[host] || {} : root.projectsData || {}
+            const paths = (read.projects || []).map(p => p.path).concat(read.hiddenPaths || [])
+            for (const g of groupsOn(host))
+                for (const s of g.sessions) {
+                    let best = ""
+                    for (const p of paths)
+                        if (p && p.length > best.length && under(s.cwd, p))
+                            best = p
+                    if (best) {
+                        const key = root.projectKey(best, host)
+                        if (!out[key])
+                            out[key] = []
+                        out[key].push({ key: root.petKeyOf(s, host), session: s, host: host, account: g.title })
+                    }
+                }
+        }
         return out
     }
-    function openChats(project) {
-        return openByProject[project.path] || []
-    }
-    function isOpen(project) {
-        return !!root.openProjects[project.path]
+    function openChats(project, host) {
+        return openByProject[root.projectKey(project.path, host)] || []
     }
 
     // A plan dragged onto another project (PlanLine.qml's name: dragMoved,
-    // dragEnded): {plan, from: its card's folder}; dropCard, the card under
-    // it that would take it (not its own, nor the card of plans whose chat is
-    // gone); a drop there asks (root.askMove), anywhere else does nothing
+    // dragEnded): {plan, host: its machine's ("": this computer), from: its
+    // card's folder}; dropCard, the card under it that would take it (another
+    // project of the same machine, not the card of plans whose chat is gone);
+    // a drop there asks (root.askMove), anywhere else does nothing
     property var dragged: null
     property point dragScene: Qt.point(0, 0)
     property Item dropCard: null
@@ -77,12 +107,12 @@ PlasmaComponents3.ScrollView {
     readonly property real flickY: view.contentItem ? view.contentItem.contentY : 0
     readonly property real edge: Kirigami.Units.gridUnit * 2   // (this near the top or bottom, the list scrolls)
     readonly property int edgeScroll: !dragged ? 0 : dragAt.y < edge ? -1 : dragAt.y > height - edge ? 1 : 0
-    function dragMove(plan, from, scenePosition) {
+    function dragMove(plan, host, from, scenePosition) {
         if (!dragged) {
             root.cancelMove()
             root.deleteAsk = root.noDeleteAsk
         }
-        dragged = { plan: plan, from: from }
+        dragged = { plan: plan, host: host, from: from }
         dragScene = scenePosition
         findDropCard()
     }
@@ -94,7 +124,7 @@ PlasmaComponents3.ScrollView {
                 continue
             const q = c.mapFromItem(null, dragScene.x, dragScene.y)
             if (q.x >= 0 && q.y >= 0 && q.x < c.width && q.y < c.height) {
-                found = c.project.path && c.project.path !== dragged.from && !c.project.gone ? c : null
+                found = c.project.path && c.host === dragged.host && c.project.path !== dragged.from && !c.project.gone ? c : null
                 break
             }
         }
@@ -105,7 +135,7 @@ PlasmaComponents3.ScrollView {
         dragged = null
         dropCard = null
         if (card && d)
-            root.askMove("drop|" + card.project.path, d.plan, "", card.project.path, false, false)
+            root.askMove("drop|" + card.key, d.plan, card.host, card.project.path, false, false)
     }
     Timer {   // (near an edge: the list scrolls, and what's under the plan is looked at again)
         interval: 30
@@ -235,7 +265,7 @@ PlasmaComponents3.ScrollView {
         PlasmaExtras.PlaceholderMessage {
             Layout.fillWidth: true
             Layout.margins: Kirigami.Units.gridUnit
-            visible: !root.projectsBusy && root.projectsData !== null && view.projects.length === 0
+            visible: !root.projectsBusy && root.projectsData !== null && view.entries.length === 0
             iconName: Icons.plasma.project
             text: i18n("No projects yet")
             explanation: i18n("A project is a folder (or the git repository it's in) where you chatted with Claude.")
@@ -243,17 +273,22 @@ PlasmaComponents3.ScrollView {
 
         Repeater {
             id: cards
-            model: view.projects.length
+            model: view.entries.length
             delegate: ColumnLayout {
                 id: card
                 required property int index
-                readonly property var project: view.projects[index]
+                readonly property var entry: view.entries[index] || ({ host: "", project: null, first: false })
+                readonly property string host: entry.host   // ("": this computer's)
+                // (a host with no projects to show: only its name, and why)
+                readonly property bool empty: entry.project === null
+                readonly property var project: entry.project
                                                || ({ name: "", path: "", short: "", gone: false, lastAt: 0, accounts: [], chats: [],
                                                      chatCount: 0, plans: [], memories: [], recap: null })
+                readonly property string key: root.projectKey(project.path, host)
                 // (a plan whose chat is gone: its folder isn't known)
                 readonly property bool unfiled: project.path === ""
-                readonly property bool unfolded: view.isOpen(project)
-                readonly property var here: unfiled ? [] : view.openChats(project)
+                readonly property bool unfolded: !empty && !!root.openProjects[key]
+                readonly property var here: unfiled || empty ? [] : view.openChats(project, host)
                 // its buttons (new chat here, hide): on hover, while the keyboard is on its line
                 // (Tab), or after a press and hold with a finger (TouchHold.qml)
                 readonly property bool buttonsShown: cardHover.hovered || projectName.activeFocus
@@ -270,11 +305,11 @@ PlasmaComponents3.ScrollView {
                     }
                 }
                 function fold() {
-                    root.toggleProject(project.path, unfolded)
+                    root.toggleProject(key, unfolded)
                 }
                 // (opened from the Recap: brought into view, once the list is laid out)
                 function bringUp() {
-                    if (root.projectToShow !== "" && root.projectToShow === project.path) {
+                    if (root.projectToShow !== "" && !empty && root.projectToShow === key) {
                         root.projectToShow = ""
                         view.scrollTarget = card
                         scroller.restart()
@@ -294,11 +329,85 @@ PlasmaComponents3.ScrollView {
 
                 Kirigami.Separator {
                     Layout.fillWidth: true
-                    visible: card.index > 0
+                    visible: card.index > 0 && !(card.host && card.entry.first)
+                }
+                // A host's name above its first card (made only there): as its section's in the Chats tab,
+                // with what was read there: still reading, why it couldn't, or that it has none
+                Loader {
+                    active: card.host !== "" && card.entry.first
+                    visible: active
+                    Layout.fillWidth: true
+                    sourceComponent: ColumnLayout {
+                        id: hostHead
+                        readonly property var read: root.hostProjects[card.host] || null
+                        readonly property bool busy: !!root.hostProjectsBusy[card.host]
+                        spacing: Kirigami.Units.smallSpacing
+
+                        Kirigami.Separator {
+                            Layout.fillWidth: true
+                            Layout.topMargin: card.index > 0 ? Kirigami.Units.gridUnit : 0
+                            Layout.bottomMargin: Kirigami.Units.smallSpacing
+                            visible: card.index > 0
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Kirigami.Units.smallSpacing
+
+                            Kirigami.Icon {
+                                source: root.hostIcon(card.host)
+                                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                            }
+                            Kirigami.Heading {
+                                textFormat: Text.PlainText
+                                level: 1   // (above its projects' names)
+                                font.weight: Font.Bold
+                                text: root.hostLabel(card.host)
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                            PlasmaComponents3.BusyIndicator {
+                                visible: hostHead.busy
+                                running: visible
+                                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                            }
+                            // what you hid there (its projects too): a menu to show a kind again, as in its section
+                            PlasmaComponents3.ToolButton {
+                                id: hostHidden
+                                readonly property var kinds: root.hiddenKinds.filter(k => root.hiddenCount(k, card.host) > 0)
+                                icon.name: Icons.plasma.showHidden
+                                visible: kinds.length > 0
+                                display: PlasmaComponents3.AbstractButton.IconOnly
+                                text: i18n("Show hidden ones again…")
+                                onClicked: root.openHiddenMenu(hostHidden, card.host)
+                                PlasmaCore.ToolTipArea {
+                                    textFormat: Text.PlainText
+                                    anchors.fill: parent
+                                    mainText: i18n("Show hidden ones again")
+                                    subText: hostHidden.kinds.map(k => root.showHiddenText(k, root.hiddenCount(k, card.host))).join("\n")
+                                }
+                            }
+                        }
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            Layout.fillWidth: true
+                            visible: text !== ""
+                            text: hostHead.read && !hostHead.read.ok
+                                  ? i18n("Couldn't read the projects on %1: %2", root.hostLabel(card.host), hostHead.read.error)
+                                  : !card.empty ? ""
+                                  : hostHead.read ? i18n("No projects on %1 yet", root.hostLabel(card.host))
+                                  : i18n("Reading the chats on %1 by project…", root.hostLabel(card.host))
+                            color: hostHead.read && !hostHead.read.ok ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                            opacity: hostHead.read && !hostHead.read.ok ? 1 : 0.65
+                            wrapMode: Text.Wrap
+                        }
+                    }
                 }
                 RowLayout {
                     id: head
                     Layout.fillWidth: true
+                    visible: !card.empty
                     spacing: Kirigami.Units.smallSpacing
 
                     HoverHandler {
@@ -423,26 +532,26 @@ PlasmaComponents3.ScrollView {
                                         id: newHere
                                         icon.source: root.iconDir + Icons.plasma.newChat   // (as an account's: at 16 px)
                                         text: i18n("New chat here")
-                                        onClicked: root.newChatInProject(card.project)
+                                        onClicked: root.newChatInProject(card.project, card.host)
 
                                         PlasmaCore.ToolTipArea {
                                             textFormat: Text.PlainText
                                             anchors.fill: parent
                                             mainText: i18n("New chat here")
-                                            subText: card.project.short
+                                            subText: (card.host ? root.hostLabel(card.host) + ":" : "") + card.project.short
                                         }
                                     }
                                     HoverButton {
                                         id: hideHere
                                         icon.name: Icons.plasma.hide
                                         text: i18n("Hide this project")
-                                        onClicked: root.hideItem("projects", card.project.path, "")
+                                        onClicked: root.hideItem("projects", card.project.path, card.host)
 
                                         PlasmaCore.ToolTipArea {
                                             textFormat: Text.PlainText
                                             anchors.fill: parent
                                             mainText: i18n("Hide this project")
-                                            subText: root.hideHint("projects", "")
+                                            subText: root.hideHint("projects", card.host)
                                         }
                                     }
                                 }
@@ -458,7 +567,7 @@ PlasmaComponents3.ScrollView {
                 MoveAsk {
                     Layout.fillWidth: true
                     Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
-                    itemKey: card.unfiled ? "" : "drop|" + card.project.path
+                    itemKey: card.unfiled || card.empty ? "" : "drop|" + card.key
                 }
                 // Opened: what's in it (made only then)
                 Loader {
@@ -469,8 +578,8 @@ PlasmaComponents3.ScrollView {
                         id: inside
                         readonly property var project: card.project
                         readonly property bool tagged: (project.accounts || []).length > 1
-                        readonly property var chats: (project.chats || []).filter(c => !view.listed[c.sessionId])
-                        readonly property string pageKey: "project|" + project.path
+                        readonly property var chats: (project.chats || []).filter(c => !(view.listed[card.host] || {})[c.sessionId])
+                        readonly property string pageKey: "project|" + card.key
                         readonly property int chatsShown: Math.min(chats.length, root.pageSize * root.pagesShown(pageKey))
                         readonly property var plans: project.plans || []
                         readonly property int plansShown: Math.min(plans.length, root.pageSize * root.pagesShown(pageKey + "|plans"))
@@ -535,7 +644,8 @@ PlasmaComponents3.ScrollView {
                                 required property int index
                                 Layout.leftMargin: inside.lineIndent
                                 chat: inside.chats[index] || root.emptyRecent
-                                group: root.groupOfProfile(chat.profileDir)
+                                group: root.groupOfProfile(chat.profileDir, card.host)
+                                remoteHost: card.host
                                 accountTag: inside.tagged ? chat.account || "" : ""
                                 project: inside.project.path
                                 folderWidth: inside.folderWidth
@@ -585,12 +695,13 @@ PlasmaComponents3.ScrollView {
                                         required property int index
                                         Layout.leftMargin: inside.lineIndent
                                         plan: inside.plans[index] || root.emptyPlan
-                                        group: root.groupOfProfile(plan.profileDir)
+                                        group: root.groupOfProfile(plan.profileDir, card.host)
+                                        remoteHost: card.host
                                         accountTag: inside.tagged ? plan.account || "" : ""
                                         project: inside.project.path
                                         chatGoneCard: inside.project.path === ""
                                         draggable: true
-                                        onDragMoved: at => view.dragMove(plan, inside.project.path, at)
+                                        onDragMoved: at => view.dragMove(plan, card.host, inside.project.path, at)
                                         onDragEnded: view.dragEnd()
                                         folderWidth: inside.folderWidth
                                     }
@@ -615,6 +726,7 @@ PlasmaComponents3.ScrollView {
                                         required property int index
                                         Layout.leftMargin: inside.lineIndent
                                         memory: inside.memories[index] || root.emptyMemory
+                                        remoteHost: card.host
                                         accountTag: inside.tagged ? memory.account || "" : ""
                                         project: inside.project.path
                                         folderWidth: inside.folderWidth

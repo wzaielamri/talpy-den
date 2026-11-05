@@ -135,6 +135,12 @@ export function toggleStarred(key: string): void {
 }
 
 // A project of the Projects tab, unfolded or folded (then its lists show their first page again)
+// A project's key in the view: its folder, an SSH host's after the host's
+// name (the same folder there is another project)
+export function projectKey(path: string, host?: string): string {
+  return host ? `${host}|${path}` : path;
+}
+
 export function toggleProject(path: string): void {
   const s = uiState.get();
   if (s.projects[path]) firstPage(...PROJECT_LISTS.map((l) => projectListKey(path, l)));
