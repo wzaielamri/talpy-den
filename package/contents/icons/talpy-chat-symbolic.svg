@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Talpy Chat: Talpa's dome (a 1 px outline with two tall eyes) on the burrow line, speaking: a bubble with three dots whose tail stands on his head. In the theme's text color: Plasma reads the ColorScheme-Text stylesheet, GNOME recolors a -symbolic icon -->
+  <defs>
+    <style type="text/css" id="current-color-scheme">.ColorScheme-Text { color:#232629; }</style>
+  </defs>
+  <path class="ColorScheme-Text" style="fill:currentColor" fill-rule="evenodd" d="M7 1H14V2H15V5H14V6H8V7H7V5H6V2H7ZM7 2V5H14V2ZM8 3H9V4H8ZM10 3H11V4H10ZM12 3H13V4H12Z"/>
+  <path class="ColorScheme-Text" style="fill:currentColor" fill-rule="evenodd" d="M2 14V10.5C2 8.3 3.6 7 5.6 7H8.4C10.4 7 12 8.3 12 10.5V14ZM3 14V10.5C3 8.9 4.2 8 5.6 8H8.4C9.8 8 11 8.9 11 10.5V14Z"/>
+  <path class="ColorScheme-Text" style="fill:currentColor" d="M5 10H6V12H5ZM8 10H9V12H8ZM1 14H13V15H1Z"/>
+</svg>

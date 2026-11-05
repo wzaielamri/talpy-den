@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Talpy Chat: Talpa in his burrow, speaking: his antenna opens into a speech bubble. Palette of talpy.svg.
+       Drawn on the 16 px grid (2 units a pixel): edges, eyes, dots and the tail sit on even coordinates, so 16, 32 and 48 px land on whole pixels.
+       At 16 px: bubble 9x5 px (cols 7-15, rows 0-4), tail col 8 row 5, dome 12x8 px (cols 2-13, rows 6-13), eyes 2x3 px, rim rows 14-15. -->
+  <defs>
+    <linearGradient id="shade" gradientUnits="userSpaceOnUse" x1="0" y1="12" x2="0" y2="28">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.18"/>
+      <stop offset="0.45" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#1a1028" stop-opacity="0.22"/>
+    </linearGradient>
+    <clipPath id="eyes">
+      <rect x="10" y="20" width="4" height="6" rx="1.7" ry="2.2"/>
+      <rect x="18" y="20" width="4" height="6" rx="1.7" ry="2.2"/>
+    </clipPath>
+  </defs>
+  <!-- the tail, solid like his antenna: from the bubble's lower left down onto his head -->
+  <path d="M16 8H22L18 12V14H16Z" fill="#6b6190"/>
+  <!-- the speech bubble, outer edge x14..32 y0..10, three dots and a glint -->
+  <rect x="15" y="1" width="16" height="8" rx="2" fill="#ffd86b" stroke="#6b6190" stroke-width="2"/>
+  <circle cx="17" cy="3" r="0.9" fill="#fff" fill-opacity="0.8"/>
+  <circle cx="19" cy="5" r="1.15" fill="#6b6190"/>
+  <circle cx="23" cy="5" r="1.15" fill="#6b6190"/>
+  <circle cx="27" cy="5" r="1.15" fill="#6b6190"/>
+  <!-- the dome, outer edge x4..28 from y12, its shading and a full-strength edge -->
+  <path d="M4.8 30V23C4.8 16.9 9.7 12.8 16 12.8C22.3 12.8 27.2 16.9 27.2 23V30Z" fill="#998fbe"/>
+  <path d="M4.8 30V23C4.8 16.9 9.7 12.8 16 12.8C22.3 12.8 27.2 16.9 27.2 23V30Z" fill="url(#shade)"/>
+  <path d="M4.8 30V23C4.8 16.9 9.7 12.8 16 12.8C22.3 12.8 27.2 16.9 27.2 23V30" fill="none" stroke="#6b6190" stroke-width="1.6"/>
+  <!-- eyes, a whole-pixel glint each, and the smile -->
+  <rect x="10" y="20" width="4" height="6" rx="1.7" ry="2.2" fill="#1b2143"/>
+  <rect x="18" y="20" width="4" height="6" rx="1.7" ry="2.2" fill="#1b2143"/>
+  <g clip-path="url(#eyes)" fill="#fff">
+    <circle cx="13" cy="21" r="1"/>
+    <circle cx="21" cy="21" r="1"/>
+  </g>
+  <path d="M14.6 26.6C15.5 27.4 16.5 27.4 17.4 26.6" fill="none" stroke="#1b2143" stroke-width="0.9" stroke-linecap="round"/>
+  <!-- the burrow's front rim, lit on top -->
+  <path d="M2 29.6C2 28.5 8 27.8 16 27.8C24 27.8 30 28.5 30 29.6V30.4C30 31.4 24 32 16 32C8 32 2 31.4 2 30.4Z" fill="#8d6e57"/>
+  <path d="M2 29.6C2 28.5 8 27.8 16 27.8C24 27.8 30 28.5 30 29.6V30.4C26 29.9 21 29.8 16 29.8C11 29.8 6 29.9 2 30.4Z" fill="#b29276"/>
+</svg>

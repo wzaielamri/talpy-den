@@ -3,7 +3,7 @@ import { pagedTitle, pageSizeOf, recentPage } from "../../src/shared/model";
 import type { Group, ReopenIn } from "../../src/shared/types";
 import { post } from "../env";
 import { groupKeyOf } from "../util/chat";
-import { I, Icon, type IconName } from "../util/icons";
+import { I, Icon, type IconName, TalpyChatLogo } from "../util/icons";
 import { useStore } from "../util/store";
 import { askRecentMore, pages, pagesShown, recentMore, showMore, toggleRecent, toggleStarred, uiState } from "../util/ui";
 import { useView } from "./context";
@@ -97,7 +97,7 @@ export function RecentChats({ group }: { group: Group }) {
 
 // Where an account's chats reopen: Talpy Chat | Terminal | Claude Code panel
 function OpenIn({ how }: { how: Reopen }) {
-  const half = (where: ReopenIn, icon: IconName, text: string, available: boolean, checked: boolean, title: string) => (
+  const half = (where: ReopenIn, icon: IconName | "logo", text: string, available: boolean, checked: boolean, title: string) => (
     <button
       type="button"
       class={"tag with-icon open-in-half" + (available ? " clickable" : " unavailable")}
@@ -106,7 +106,7 @@ function OpenIn({ how }: { how: Reopen }) {
       title={title}
       onClick={() => available && post({ type: "setReopenIn", where })}
     >
-      <Icon name={icon} />
+      {icon === "logo" ? <TalpyChatLogo /> : <Icon name={icon} />}
       {text}
     </button>
   );
@@ -115,7 +115,7 @@ function OpenIn({ how }: { how: Reopen }) {
     <>
       <div class="open-in small" role="group" aria-label="Where recent chats reopen">
         <span class="muted">Open in:</span>
-        {half("talpyChat", I.openPane, "Talpy Chat", talpyHere, inTalpy, `${talpyTitle}\n${talpyHint}`)}
+        {half("talpyChat", "logo", "Talpy Chat", talpyHere, inTalpy, `${talpyTitle}\n${talpyHint}`)}
         {half("terminal", I.terminal, "Terminal", cliHere, cliHere && !inCode && !inTalpy, (cliHere ? "Reopen chats in a terminal\n" : "No claude command\n") + terminalHint)}
         {half("claudeCode", I.openWindow, "Claude Code panel", codeHere, inCode, (codeHere ? "Reopen chats in a Claude Code panel\n" : "Not here\n") + codeHint)}
       </div>

@@ -78,6 +78,7 @@ export type Meaning =
   | "accounts"
   | "chooseFile"
   | "vscodeApp"
+  | "talpyChatLogo"
   | "chats"
   | "account"
   | "accountOut"

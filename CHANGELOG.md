@@ -4,6 +4,7 @@
 
 ### Highlights
 
+- **Talpy Chat has its own icon:** Talpa with a speech bubble, on the *Open in* switch, the buttons that open a chat in Talpy Chat, VS Code's Talpy Chat tabs and, in Plasma, the Talpy Chat window in the taskbar.
 - **Search and folds in Talpy Chat:** Ctrl+F finds anything in the chat (what each step ran and got too, on the Steps tab), with the matches marked and Enter going from one to the next, without moving what you read till you do; long messages, replies and outputs fold to their first lines with *Show more*, and Ctrl+O unfolds every long one (Plasma and VS Code).
 - **Keys in Talpy Chat:** Ctrl+Enter sends now, Alt+Enter when the turn ends, Alt+1…4 a suggested reply, Alt+Y / Alt+A / Alt+N answer what it asks, Ctrl+↑ / Ctrl+↓ go from message to message, Ctrl+Shift+C copies Claude's last reply, Esc closes what's open and then stops Claude, and more; **?** lists them, and Copy copies all of a long reply (Plasma and VS Code).
 - **Times, Copy and new messages in Talpy Chat:** a line between days, a message's time and **Copy** on hover (a reply as Markdown), and *2 new ↓* when Claude goes on below while you read further up (Plasma and VS Code).
@@ -45,6 +46,7 @@
 - **VS Code: a Remote-SSH window's host comes first.** In a window connected to an SSH host, the view listed this computer's accounts first and that host last. Now the host the window is on comes first (tagged *this window*), then this computer's accounts under a *This computer* head, then the other hosts.
 - **A chat Talpy Chat started keeps answering its prompts there when it goes on as a copy.** Claude makes a copy of a chat it can't wake as it is (its session still held a moment, or no record of its own), and Keep going or a queued go-on gave that copy none of Talpy Chat's permission hook, so what it asked went unanswered in Talpy Chat. The copy now gets the hook its chat had (only Talpy Den's hook: settings of your own stay with the chat).
 - **Two windows sending to one stopped chat at once wake it once.** Sending from Talpy Chat in Plasma and from its tab in VS Code within a second or two made Claude start a copy of the chat. Now one waits for the other's wake and adds its message to the chat that's running (Keep going and queued go-ons too).
+- **Talpy Chat's icon.** Talpy Chat showed a generic speech bubble, the same as other chat buttons, and VS Code's tab showed Talpa alone. Now it has an icon of its own, Talpa whose antenna light is a yellow speech bubble: in colour on the *Open in* switch (Plasma and VS Code) and VS Code's Talpy Chat tabs, and in one colour on the buttons that open a chat in Talpy Chat. In Plasma the Talpy Chat window shows it in the taskbar too (its window rule's desktop file, written when you install).
 
 ## 1.18.0 (2026-11-04)
 

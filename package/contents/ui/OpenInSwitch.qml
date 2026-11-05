@@ -42,7 +42,7 @@ ColumnLayout {
         OpenInButton {
             available: openIn.talpyHere
             checked: openIn.where === "talpyChat"
-            iconName: Icons.plasma.openPane
+            iconName: root.iconDir + Icons.plasma.talpyChatLogo   // (Talpa with a speech bubble, in colour)
             text: i18n("Talpy Chat")
             tipTitle: openIn.remoteHost ? i18n("This computer's chats for now")
                       : !openIn.terminalHere ? i18n("No claude command")

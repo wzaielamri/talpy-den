@@ -6,8 +6,9 @@
 
 import type { JSX } from "preact";
 import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
+import talpyChatSvg from "../../media/talpy-chat.svg";   // (a data: URL: esbuild's dataurl loader)
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit" | "export" | "import";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit" | "export" | "import" | "talpyChat";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -182,6 +183,15 @@ const shapes: Record<IconName, JSX.Element> = {
     </>
   ),
   chat: <path d="M2.5 3.75c0-.7.55-1.25 1.25-1.25h8.5c.7 0 1.25.55 1.25 1.25v5.5c0 .7-.55 1.25-1.25 1.25H7l-3 2.75V10.5h-.25c-.7 0-1.25-.55-1.25-1.25z" />,
+  // Talpy Chat: Talpa's dome on the burrow line, a speech bubble on his head (media/talpy-chat.svg's
+  // plain 16 px one, Plasma's talpy-chat-symbolic.svg: filled on its pixel grid, not a line)
+  talpyChat: (
+    <g fill="currentColor" stroke="none">
+      <path fill-rule="evenodd" d="M7 1H14V2H15V5H14V6H8V7H7V5H6V2H7ZM7 2V5H14V2ZM8 3H9V4H8ZM10 3H11V4H10ZM12 3H13V4H12Z" />
+      <path fill-rule="evenodd" d="M2 14V10.5C2 8.3 3.6 7 5.6 7H8.4C10.4 7 12 8.3 12 10.5V14ZM3 14V10.5C3 8.9 4.2 8 5.6 8H8.4C9.8 8 11 8.9 11 10.5V14Z" />
+      <path d="M5 10H6V12H5ZM8 10H9V12H8ZM1 14H13V15H1Z" />
+    </g>
+  ),
   // (a bubble with a plus: a new chat, not a new account)
   newChat: (
     <>
@@ -249,6 +259,12 @@ const shapes: Record<IconName, JSX.Element> = {
     </>
   ),
 };
+
+// Talpy Chat's own icon, in colour (icons.mjs talpyChatLogo: Plasma's talpy-chat.svg), where the
+// Open in switch names it: an image, so its shading stays its own
+export function TalpyChatLogo({ class: cls }: { class?: string }) {
+  return <img class={"icon" + (cls ? " " + cls : "")} src={talpyChatSvg} width={16} height={16} alt="" aria-hidden="true" />;
+}
 
 // The icon of each meaning (only those VS Code has a button or mark for are
 // asked for: tests/test_icons.py)

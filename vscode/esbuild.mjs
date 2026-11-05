@@ -52,6 +52,7 @@ function vendor() {
 
 const common = {
   bundle: true,
+  loader: { ".svg": "dataurl" },   // (an icon the webview imports: media/talpy-chat.svg)
   minify: production,
   sourcemap: production ? false : "linked",
   logLevel: "info",

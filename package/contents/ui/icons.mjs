@@ -47,7 +47,7 @@ const TABLE = {
     undo:            ['edit-undo',                     'undo',       'edit-undo-symbolic'],
     refresh:         ['view-refresh',                  'refresh',    'view-refresh-symbolic'],
     openWindow:      ['window',                        'window',     'window-new-symbolic'],              // its window, terminal or tab; reopen a recent chat
-    openPane:        ['dialog-messages',               'chat',       'chat-bubbles-symbolic'],            // the chat pane
+    openPane:        ['talpy-chat-symbolic.svg',       'talpyChat',  'chat-bubbles-symbolic'],            // Talpy Chat: Talpa with a speech bubble (one colour)
     openRun:         ['document-preview',              'external',   'document-open-symbolic'],           // a subagent's whole run
     newChat:         ['chat-new-symbolic.svg',         'newChat',    'chat-new-symbolic'],
     allow:           ['dialog-ok',                     'check',      'object-select-symbolic'],
@@ -100,6 +100,7 @@ const TABLE = {
     advanced:        ['tools',                         null,         'preferences-other-symbolic'],
     chooseFile:      ['document-open',                 null,         'document-open-symbolic'],
     vscodeApp:       ['vscode',                        null,         'text-editor-symbolic'],             // VS Code's own icon (GNOME: if it has none)
+    talpyChatLogo:   ['talpy-chat.svg',                null,         'chat-bubbles-symbolic'],            // Talpy Chat's own icon, in colour: the Open in switch (VS Code: an image, TalpyChatLogo in icons.tsx)
     // ---- things
     chats:           ['dialog-messages',               'chat',       'user-available-symbolic'],          // the Talpy Den tab (GNOME: a speech bubble Adwaita and Yaru have)
     account:         ['user-identity',                 'user',       'avatar-default-symbolic'],

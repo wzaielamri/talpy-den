@@ -125,6 +125,8 @@
 
 ### Better
 
+- **Talpy Chat's icon:** Talpa with a speech bubble, on its tabs and the
+  *Open in* switch (in colour) and on the buttons that open a chat in it.
 - **A Remote-SSH window's host comes first** in the view, tagged *this
   window*, then this computer's accounts under a *This computer* head, then
   the other hosts.

@@ -155,8 +155,9 @@ class InstallTests(unittest.TestCase):
         self.assertIn("desktopfile=org.wzaielamri.talpyden.chat\ndesktopfilerule=2\n", text)
         self.assertIn("[mine]\nDescription=my rule\n", text)
         desktop = self.home / ".local/share/applications/org.wzaielamri.talpyden.chat.desktop"
-        self.assertIn(f"Icon={self.home}/.local/share/plasma/plasmoids/org.wzaielamri.talpyden/contents/pets/window.svg\n",
+        self.assertIn(f"Icon={self.home}/.local/share/plasma/plasmoids/org.wzaielamri.talpyden/contents/icons/talpy-chat.svg\n",
                       desktop.read_text())
+        self.assertTrue((ROOT / "package/contents/icons/talpy-chat.svg").is_file())   # (Talpy Chat's icon: Talpa with a speech bubble)
         self.assertIn("org.kde.KWin.reconfigure", self.log.read_text())
         out = self.install()  # (an upgrade: the same rule, once)
         self.assertNotIn("The chat pane shows Talpy", out.stdout)

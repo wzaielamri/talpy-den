@@ -602,7 +602,7 @@ RowLayout {
 
                     HoverButton {
                         // the other way to open it than a click on its name: its window, or the pane
-                        icon.name: Plasmoid.configuration.clickOpensPane ? Icons.plasma.openWindow : Icons.plasma.openPane
+                        icon.name: Plasmoid.configuration.clickOpensPane ? Icons.plasma.openWindow : root.iconDir + Icons.plasma.openPane
                         text: Plasmoid.configuration.clickOpensPane ? i18n("Open its window") : i18n("Open in Talpy Chat")
                         Layout.alignment: Qt.AlignTop
                         onClicked: Plasmoid.configuration.clickOpensPane ? row.open() : root.openPane(row.session, row.remoteHost, "chat")

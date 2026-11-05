@@ -25,6 +25,9 @@ function sendState(): void {
       at: Date.now(),
       first: { key: "demo-2", sessionId: "demo-2", profileDir: ".claude", name: "Release notes for 2.0" },
     };
+  // ?reopenIn=talpyChat: where recent chats reopen (the Open in switch's half that's on)
+  const reopenIn = params.get("reopenIn");
+  if (reopenIn === "talpyChat" || reopenIn === "claudeCode" || reopenIn === "terminal") state.settings.reopenIn = reopenIn;
   // ?rules=0: the Recap tab's rule suggestions left out (the recapRules setting)
   if (params.get("rules") === "0") state.settings.recapRules = false;
   // ?loggedOut=1: the last account isn't logged in (Log in…)

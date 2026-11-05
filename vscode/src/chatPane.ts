@@ -438,7 +438,7 @@ class Pane implements vscode.Disposable {
       // (and the pictures in your messages, shown small: Talpy Den's folder of them)
       localResourceRoots: [vscode.Uri.joinPath(uri, "dist"), vscode.Uri.file(picturesDir())],
     });
-    this.panel.iconPath = vscode.Uri.joinPath(uri, "media", "talpy.svg");
+    this.panel.iconPath = vscode.Uri.joinPath(uri, "media", "talpy-chat.svg");   // (Talpa with a speech bubble, in colour: both themes)
     this.shown = this.panel.visible;
     this.panel.webview.html = this.html(tab);
     this.disposables.push(
