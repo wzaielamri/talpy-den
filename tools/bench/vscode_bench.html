@@ -83,7 +83,7 @@
       // Search on the 500 items (Chat tab): a query typed, till the count says what it found, the
       // longest frame meanwhile; 20 steps (Enter), each till its frame; then Ctrl+O on the Steps tab
       // (every step's details made a few a frame), till they're all made. None in a build without it
-      async function findBench() {
+      async function findBench(data) {
         w.postMessage({ type: "key", key: "find" }, "*");
         await sleep(400);
         const input = d.querySelector(".pane-find-text");
@@ -169,7 +169,7 @@
         out.send = { runs: sends.length, layout: median(sends.map((x) => x.layout)), paint: median(sends.map((x) => x.paint)) };
         await show(data.long500);
         await sleep(1000);
-        out.find = await findBench();
+        out.find = await findBench(data);
         await fetch("/result?" + encodeURIComponent(JSON.stringify(out)));
       }
       f.addEventListener("load", () => run().catch((e) => fetch("/result?" + encodeURIComponent(JSON.stringify({ error: String(e) })))));
