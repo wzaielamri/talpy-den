@@ -6,7 +6,7 @@
 
 import { Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -19,6 +19,7 @@ import { TalpyIcon } from "./components/TalpyIcon";
 import { I, Icon, T } from "./util/icons";
 import { Markdown } from "./util/markdown";
 import { DARK, LIGHT, runs as ansiRuns } from "../vendor/ansi.mjs";
+import { escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mjs";
 
 declare global {
   interface Window {
@@ -30,6 +31,9 @@ const api = acquireVsCodeApi();
 const post = (m: PaneMessage) => api.postMessage(m);
 const copyCode = (code: string) => post({ type: "copy", text: clipboardCode(code) });
 const config = window.CLAUDE_CHAT;
+// (VS Code's keys on a Mac: Cmd for Ctrl)
+const MAC = /Mac/.test(navigator.platform);
+const keyed = (title: string, id: string) => withKey(title, id, "vscode", MAC);
 
 // Chat (your messages and Claude's replies), Steps (its tool calls too) and
 // Review; its screen is in its window (Open its window)
@@ -61,14 +65,9 @@ function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
 // reply as Markdown, yours as you typed it), at its top right corner, over it, so nothing moves.
 // One for the list, moved to the message hovered: a long chat has nothing more for each message
 // (its time is worked out only here), and Copied says it for a moment, as a code block's Copy
-function HoverBar({ list, itemOf }: { list: { current: HTMLDivElement | null }; itemOf: (key: string) => PaneItem | undefined }) {
+function HoverBar({ list, itemOf, copied, onCopy }: { list: { current: HTMLDivElement | null }; itemOf: (key: string) => PaneItem | undefined;
+                    copied: string; onCopy: (it: PaneItem) => void }) {
   const [on, setOn] = useState<{ key: string; top: number; right: number } | null>(null);
-  const [copied, setCopied] = useState("");
-  useEffect(() => {
-    if (!copied) return undefined;
-    const t = setTimeout(() => setCopied(""), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
   useEffect(() => {
     const el = list.current;
     if (!el) return undefined;
@@ -96,13 +95,39 @@ function HoverBar({ list, itemOf }: { list: { current: HTMLDivElement | null }; 
       {it.at ? <span class="pane-when">{timeText(it.at, Date.now())}</span> : null}
       <button type="button" class={done ? "md-copy copied" : "md-copy"}
         title={it.kind === "claude" ? "Copy this reply, as Markdown" : "Copy your message, as you wrote it"}
-        onClick={() => {
-          post({ type: "copy", text: copyText(it) });
-          setCopied(on.key);
-        }}>
+        onClick={() => onCopy(it)}>
         {/* (both words in one place: as wide with Copied as with Copy) */}
         <span class="pane-swap"><span class={done ? "off" : ""}>Copy</span><span class={done ? "" : "off"} aria-hidden={!done}>Copied</span></span>
       </button>
+    </div>
+  );
+}
+
+// The keys of Talpy Chat (? in an empty box, or Talpy Chat: Keys): keys.mjs's table, VS Code's
+// default keys (a Mac's with Cmd); drawn only while it's open. Esc or a click outside closes it
+function KeysHelp({ onClose }: { onClose: () => void }) {
+  return (
+    <div class="pane-keys-at" onClick={onClose}>
+      <div class="pane-keys" role="dialog" aria-label="Talpy Chat's keys" onClick={(e) => e.stopPropagation()}>
+        <div class="pane-keys-head">
+          <strong>Keys</strong>
+          <button type="button" class="icon-btn" title="Close (Esc)" aria-label="Close" onClick={onClose}><Icon name={I.close} /></button>
+        </div>
+        <dl>
+          {KEY_GROUPS.map((g) => (
+            <Fragment key={g}>
+              <div class="pane-keys-group">{g}</div>
+              {KEYS.filter((k) => k.group === g && k.vscode).map((k) => (
+                <Fragment key={k.id}>
+                  <dt><kbd>{keyText(k.id, "vscode", MAC)}</kbd></dt>
+                  <dd>{k.what}</dd>
+                </Fragment>
+              ))}
+            </Fragment>
+          ))}
+        </dl>
+        <div class="muted small">Each is a command, “Talpy Chat: …”: pick other keys for them in Keyboard Shortcuts.</div>
+      </div>
     </div>
   );
 }
@@ -169,7 +194,7 @@ function TaskStrip({ tasks, agents, open, setOpen, host }: {
     <div class="pane-tasks">
       <button type="button" class="pane-tasks-line" aria-expanded={unfolded}
         onClick={() => setOpen(unfolded ? { tasks: false, agents: false } : { tasks: !!tasks, agents: !!agents })}
-        title={unfolded ? "Fold it" : tasks ? "Its tasks and subagents" : "What each of its subagents is doing"}>
+        title={keyed(unfolded ? "Fold it" : tasks ? "Its tasks and subagents" : "What each of its subagents is doing", "tasks")}>
         <Icon name={I.folded} class={"chevron" + (unfolded ? " open" : "")} />
         <span class="pane-tasks-bar" aria-hidden="true">
           <span style={{ width: `${Math.round((done / Math.max(1, total)) * 100)}%` }} />
@@ -468,16 +493,11 @@ function ChatApp() {
   const [chipMenu, setChipMenu] = useState<{ chip: ReplyChip; x: number; y: number } | null>(null);
   useEffect(() => {
     if (!chipMenu) return undefined;
-    const close = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-      setChipMenu(null);
-    };
+    const close = () => setChipMenu(null);   // (Esc: escTarget's "menu")
     window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", close);
     window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", close);
       window.removeEventListener("blur", close);
     };
   }, [chipMenu]);
@@ -604,6 +624,8 @@ function ChatApp() {
         }
       }
       else if (m.type === "replies") setUsual(m.replies);
+      else if (m.type === "key") keyNow.current(m.key);
+      else if (m.type === "copied") copiedNow.current(m);
       else if (m.type === "suggest") {
         setSuggest(m.on);
         if (!m.on) setUsual(null);
@@ -837,7 +859,7 @@ function ChatApp() {
   // next one (the extension sends each in turn). A copy, one for VS Code's
   // input, Enter for a terminal that takes no text: the box keeps it till then.
   // (given: a chip's words, sent as if you typed them)
-  const send = (how: "auto" | "background" | "copy" | "enter", afterTurn: boolean, given?: string) => {
+  const send = (how: "auto" | "background" | "copy" | "enter", afterTurn: boolean, given?: string, now = false) => {
     const typed = given ?? text;
     const said = typed.trim();
     if (!said) return;
@@ -893,7 +915,7 @@ function ChatApp() {
       return;
     }
     // (Claude at work: it waits a moment, queued, to be taken back, as ↑ does in Claude's terminal)
-    const holds = !!chat?.atWork;
+    const holds = !!chat?.atWork && !now;
     const id = ++sentCount.current;
     setOutgoing((was) => [...was, { id, text: said, at: Date.now(), state: holds ? "held" : "sending", sentAt: 0,
                                     known: items.filter((it) => it.kind === "you").map((it) => String(it.key)),
@@ -921,14 +943,6 @@ function ChatApp() {
   const [now, setNow] = useState(0);
   // A picture of yours, big (its thumbnail clicked): over the tab, till a click, × or Esc
   const [big, setBig] = useState<{ path: string; src: string } | null>(null);
-  useEffect(() => {
-    if (!big) return undefined;
-    const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setBig(null);
-    };
-    window.addEventListener("keydown", esc);
-    return () => window.removeEventListener("keydown", esc);
-  }, [big]);
   const release = (id: number) => {
     const p = outgoingNow.current.find((x) => x.id === id && x.state === "held");
     if (!p) return;
@@ -956,6 +970,37 @@ function ChatApp() {
     }, 250);
     return () => clearInterval(tick);
   }, [held]);
+  // Copy (a message's, or Ctrl+Shift+C: Claude's last reply): all of it, through the extension (a
+  // reply shown cut is read whole first); Copied is said once it's on the clipboard, on the message
+  // (copiedKey) or, from the key, under the conversation
+  const copyId = useRef(0);
+  const copying = useRef(new Map<number, { key: string; hover: boolean }>());
+  const [copiedKey, setCopiedKey] = useState("");
+  useEffect(() => {
+    if (!copiedKey) return undefined;
+    const t = setTimeout(() => setCopiedKey(""), 1500);
+    return () => clearTimeout(t);
+  }, [copiedKey]);
+  const copyItem = (it: PaneItem, hover: boolean) => {
+    const said = copyText(it);
+    if (!said) return;
+    const id = ++copyId.current;
+    copying.current.set(id, { key: String(it.key), hover });
+    post({ type: "copyItem", id, key: String(it.key), text: said });
+  };
+  const copiedNow = useRef((m: { id: number; ok: boolean; message: string }) => {
+    const c = copying.current.get(m.id);
+    copying.current.delete(m.id);
+    if (!m.ok) setInfo({ ok: false, message: m.message });
+    else if (c?.hover) setCopiedKey(c.key);
+    else if (c) setInfo({ ok: true, message: "Copied Claude's last reply" });
+  });
+
+  // The ? list of Talpy Chat's keys; Alt+Y / Alt+A / Alt+N for what it asks (AskBox does it, as a click)
+  const [help, setHelp] = useState(false);
+  const [askKey, setAskKey] = useState<{ key: "allow" | "always" | "deny"; at: number } | null>(null);
+  const [ghostOff, setGhostOff] = useState<string | null>(null);   // (Esc on the grey completion: none for that text)
+
   // (to the prompt shown now: if the chat asks something else by then, it isn't answered)
   const answer = (decision: Decision, note: string, answers?: Answers) => {
     setAnswering((n) => n + 1);
@@ -1019,7 +1064,7 @@ function ChatApp() {
     if (!suggest) usualAt.current = 0;
     else if (chat) askUsual();
   }, [suggest, !!chat]);
-  const ghost = suggest && conversation && focused && !offered.items.length && cursor === text.length
+  const ghost = suggest && conversation && focused && !offered.items.length && cursor === text.length && text !== ghostOff
     ? completionOf(text, usual, turn.ended, hidden) : "";
   // A chip: sent as if typed (Enter); Shift+click (or Edit before sending) puts it in the box
   const takeChip = (c: ReplyChip, edit: boolean) => {
@@ -1068,6 +1113,146 @@ function ChatApp() {
       </Fragment>
     ) : item;
   }), [shownItems, open, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today]);
+  // Talpy Chat's keys (keys.mjs): VS Code's commands send them here (talpyDen.chat.*, bound only
+  // while this tab has the focus); each does what its button does, where that button shows
+  const jumpPrompt = (down: boolean) => {   // (Ctrl+↑ / Ctrl+↓: your previous / next message, at the list's top)
+    const el = list.current;
+    if (!el) return;
+    const top = el.scrollTop;
+    const yours = [...el.querySelectorAll<HTMLElement>(".pane-you[data-key]")].filter((m) => m.parentElement === el);
+    const at = (m: HTMLElement) => m.offsetTop - 8;
+    const to = down ? yours.find((m) => at(m) > top + 4) : yours.filter((m) => at(m) < top - 4).at(-1);
+    if (to) el.scrollTop = at(to);
+    else if (down) toEnd();
+  };
+  const onKey = (k: string) => {
+    const box = reply.current;
+    switch (k) {
+      case "sendNow": {   // (in an empty box: the message waiting goes now)
+        if (text.trim()) send("enter", false, undefined, true);
+        else {
+          const last = outgoingNow.current.filter((x) => x.state === "held").at(-1);
+          if (last) release(last.id);
+        }
+        return;
+      }
+      case "sendLater":
+        if (chat?.busy && text.trim() && !sending && !elsewhere) send(terminal ? "background" : "auto", true);
+        return;
+      case "sendBackground":
+        if (terminal && text.trim() && !sending && !chat?.busy && !elsewhere) send("background", false);
+        return;
+      case "clear":   // (as an edit: Ctrl+Z brings it back)
+        if (box && box.value) {
+          box.focus();
+          box.select();
+          if (!document.execCommand("delete")) setText("");
+        }
+        return;
+      case "stop":
+        if (stop.can && !stopping) {
+          setStopping(true);
+          post({ type: "stop" });
+        }
+        return;
+      case "allow":
+      case "always":
+      case "deny":
+        if (chat?.permission) setAskKey({ key: k, at: Date.now() });
+        return;
+      case "promptUp":
+      case "promptDown":
+        if (conversation) jumpPrompt(k === "promptDown");
+        return;
+      case "tabChat":
+      case "tabSteps":
+        showTab(k === "tabChat" ? "chat" : "steps");
+        return;
+      case "tabReview":
+        if (chat && !chat.fresh) showTab("review");
+        return;
+      case "tasks": {
+        const agents = chat?.agents && chat.agents.total > 0 ? chat.agents : null;
+        if (!chat?.tasks && !agents) return;
+        const unfolded = (strip.tasks && !!chat?.tasks) || (strip.agents && !!agents);
+        setStrip(unfolded ? { tasks: false, agents: false } : { tasks: !!chat?.tasks, agents: !!agents });
+        return;
+      }
+      case "copyLast": {
+        const it = lastReply(items);
+        if (it) copyItem(it, false);
+        else setInfo({ ok: false, message: "Claude hasn't replied in this chat yet" });
+        return;
+      }
+      case "openWindow":
+        if (chat && !chat.fresh && !chat.starting) post({ type: "openWindow" });
+        return;
+      case "help":
+        setHelp(true);
+        return;
+      default: {
+        const n = /^(chip|edit)([1-9])$/.exec(k);
+        if (n && chips[Number(n[2]) - 1]) takeChip(chips[Number(n[2]) - 1], n[1] === "edit");
+      }
+    }
+  };
+  const keyNow = useRef(onKey);
+  keyNow.current = onKey;
+  // Esc does the nearest thing first (escTarget): a menu, the big picture, the / and @ list, the keys,
+  // the grey completion; only then, in an empty box while Stop shows, it stops Claude. Nothing to do:
+  // VS Code has it
+  const escapeNow = useRef((): boolean => false);
+  escapeNow.current = () => {
+    const inBox = !!reply.current && document.activeElement === reply.current;
+    const what = escTarget({ menu: !!chipMenu, big: !!big, list: inBox && offered.items.length > 0, help, ghost: inBox && !!ghost,
+                             stop: inBox && text === "" && stop.can && !stopping });
+    if (what === "menu") setChipMenu(null);
+    else if (what === "big") setBig(null);
+    else if (what === "list") setDismissed(offered.token);
+    else if (what === "help") setHelp(false);
+    else if (what === "ghost") setGhostOff(text);
+    else if (what === "stop") onKey("stop");
+    return what !== "";
+  };
+  const chipsNow = useRef(chips);
+  chipsNow.current = chips;
+  const askingNow = useRef(false);
+  askingNow.current = !!chat?.permission;
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const plain = !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey;
+      if (e.key === "Escape" && plain) {
+        if (escapeNow.current()) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+      // PageUp / PageDown: the conversation a page, from the reply box too (not from another field)
+      if ((e.key === "PageUp" || e.key === "PageDown") && plain) {
+        const t = e.target as HTMLElement | null;
+        const el = list.current;
+        if (!el || (t && t !== reply.current && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.isContentEditable))) return;
+        e.preventDefault();
+        e.stopPropagation();
+        el.scrollTop += (e.key === "PageUp" ? -1 : 1) * Math.max(40, el.clientHeight - 40);
+        return;
+      }
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const chip = /^Digit([1-9])$/.exec(e.code);
+      const shown = chip ? chipsNow.current[Number(chip[1]) - 1] : undefined;
+      if (shown && e.shiftKey) {   // (Alt+Shift+1…: the chip in the box first; no command of its own)
+        e.preventDefault();
+        e.stopPropagation();
+        keyNow.current(`edit${chip![1]}`);
+      } else if (shown || (askingNow.current && /^Key[YAN]$/.test(e.code))) {
+        e.preventDefault();   // (a Mac types nothing for it; VS Code's command still runs)
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
   function shownStep(it: PaneItem, i: number) {
     const gap = gapOf(it.kind, shownItems[i - 1]?.kind, !!it.answered);
     // (queued: grey, as Claude's terminal shows it, with what becomes of it: held a moment,
@@ -1098,7 +1283,7 @@ function ChatApp() {
                 <>
                   <button type="button" class="btn secondary small" title="Back in the box, to change it (↑ in an empty box too)"
                           onClick={() => takeBack(id, true)}><Icon name={I.edit} />Edit</button>
-                  <button type="button" class="btn secondary small" title="To Claude now: it takes it in at its next step"
+                  <button type="button" class="btn secondary small" title={keyed("To Claude now: it takes it in at its next step", "sendNow").replace(")", ", in an empty box)")}
                           onClick={() => release(id)}><Icon name={I.send} />Send now</button>
                   <button type="button" class="btn secondary small" title="Don't send it"
                           onClick={() => takeBack(id, false)}><Icon name={I.cancel} tone={T.cancel} />Cancel</button>
@@ -1156,6 +1341,7 @@ function ChatApp() {
           </div>
         </div>
       ) : null}
+      {help ? <KeysHelp onClose={() => setHelp(false)} /> : null}
       <div class="pane-head">
         <span class={`state-dot st-${headState}`} aria-hidden="true" />
         <h2 class="pane-name">{chat?.name ?? ""}</h2>
@@ -1178,14 +1364,14 @@ function ChatApp() {
             <IconButton
               icon={I.terminal}
               label="Open in a terminal"
-              title={"Open in a terminal\nThe background chat in a terminal too (claude attach): what it shows there, and its own prompts. It goes on running; nothing is lost."}
+              title={keyed("Open in a terminal", "openWindow") + "\nThe background chat in a terminal too (claude attach): what it shows there, and its own prompts. It goes on running; nothing is lost."}
               onClick={() => post({ type: "openWindow" })}
             />
           ) : (
             <IconButton
               icon={I.openWindow}
               label="Open its window"
-              title={"Open its window\nThe terminal or Claude Code panel the chat runs in; a chat that isn't open reopens in a terminal or a Claude Code panel, as the switch of Recent chats says."}
+              title={keyed("Open its window", "openWindow") + "\nThe terminal or Claude Code panel the chat runs in; a chat that isn't open reopens in a terminal or a Claude Code panel, as the switch of Recent chats says."}
               onClick={() => post({ type: "openWindow" })}
             />
           )
@@ -1225,12 +1411,14 @@ function ChatApp() {
       ) : null}
       <div class="pane-tabs" role="tablist">
         {(["chat", "steps"] as const).map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} class={tab === t ? "on" : ""} onClick={() => showTab(t)}>
+          <button key={t} type="button" role="tab" aria-selected={tab === t} class={tab === t ? "on" : ""} onClick={() => showTab(t)}
+            title={`${t === "chat" ? "Your messages and Claude's replies" : "Claude's steps too: each tool call"} (${MAC ? "Cmd" : "Ctrl"}+${t === "chat" ? 1 : 2})`}>
             {t === "chat" ? "Chat" : "Steps"}
           </button>
         ))}
         {chat?.fresh ? null : (
-          <button type="button" role="tab" aria-selected={tab === "review"} class={tab === "review" ? "on" : ""} onClick={() => showTab("review")}>
+          <button type="button" role="tab" aria-selected={tab === "review"} class={tab === "review" ? "on" : ""} onClick={() => showTab("review")}
+            title={`The files it changed (${MAC ? "Cmd" : "Ctrl"}+3)`}>
             {chat?.changes ? `Review ±${chat.changes}${chat.reviewPending ? " •" : ""}` : "Review"}
           </button>
         )}
@@ -1283,14 +1471,14 @@ function ChatApp() {
                 <span class="grow" title={stop.elsewhere || undefined}>{starting && chat?.state !== "working" ? "Starting" : activity && !(tab === "steps" && last?.kind === "tool" && last.status === "open") ? activity : "Working"}…</span>
                 {soFar.turn && chat?.state === "working" ? <TurnMeta turn={soFar.turn} shown={shown} /> : null}
                 {stop.can ? (
-                  <button type="button" class="btn secondary small pane-stop" title={stop.title} disabled={stopping}
+                  <button type="button" class="btn secondary small pane-stop" title={`${stop.title} (Esc, in an empty box)`} disabled={stopping}
                           onClick={() => { setStopping(true); post({ type: "stop" }); }}>
                     <Icon name={I.stopTurn} />{stopping ? "Stopping…" : "Stop"}
                   </button>
                 ) : null}
               </div>
             ) : null}
-            <HoverBar list={list} itemOf={(key) => shownNow.current.find((it) => it.key === key)} />
+            <HoverBar list={list} itemOf={(key) => shownNow.current.find((it) => it.key === key)} copied={copiedKey} onCopy={(it) => copyItem(it, true)} />
             {/* (at the list's bottom, over it: it moves nothing; gone at the end) */}
             {unseen > 0 ? (
               <div class="pane-below-at">
@@ -1300,7 +1488,7 @@ function ChatApp() {
               </div>
             ) : null}
           </div>
-          {chat?.permission ? <AskBox ask={chat.permission} onAnswer={answer} busy={answering > 0}
+          {chat?.permission ? <AskBox ask={chat.permission} onAnswer={answer} busy={answering > 0} pressed={askKey} keyed={keyed}
             onTerminal={chat.where === "background" && !chat.host ? () => post({ type: "openWindow" }) : undefined} /> : null}
           {chat?.queued ? (
             <div class="pane-queued">
@@ -1332,8 +1520,8 @@ function ChatApp() {
           {chat?.fresh && !starting ? <NewChatOptions fresh={chat.fresh} /> : null}
           {chips.length ? (
             <div class="pane-chips" role="toolbar" aria-label="Suggested replies">
-              {chips.map((c) => (
-                <button key={c.send} type="button" title={c.title} aria-label={`${c.usual ? "Your usual reply" : "Answer"}: ${c.send}`}
+              {chips.map((c, i) => (
+                <button key={c.send} type="button" title={i < 4 ? `${c.title} (Alt+${i + 1}; with Shift: in the box first)` : c.title} aria-label={`${c.usual ? "Your usual reply" : "Answer"}: ${c.send}`}
                   class={`btn secondary small pane-chip${c.usual ? "" : " asked"}${c.recommended ? " recommended" : ""}`}
                   onClick={(e) => takeChip(c, e.shiftKey)}
                   onContextMenu={(e) => { e.preventDefault(); setChipMenu({ chip: c, x: e.clientX, y: e.clientY }); }}>
@@ -1362,7 +1550,7 @@ function ChatApp() {
             ref={reply}
             placeholder={chat?.permission && !asks ? "It's asking you something: answer that first"
               : chat?.fresh && !starting ? "What should Claude do? (Enter starts the chat, Shift+Enter: new line; Ctrl+V or drop with Shift: a picture or a file too)"
-              : "Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop with Shift: a picture or a file too)"}
+              : "Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop with Shift: a picture or a file too; ?: the keys)"}
             value={text}
             onInput={(e) => {
               const box = e.target as HTMLTextAreaElement;
@@ -1379,11 +1567,10 @@ function ChatApp() {
             onPaste={pasted}
             onKeyDown={(e) => {
               const box = e.target as HTMLTextAreaElement;
-              // Alt+1…4: a chip (Shift too: in the box first); kept from VS Code, where Alt+1 opens an editor
-              if (chips.length && e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-9]$/.test(e.code) && chips[Number(e.code.slice(5)) - 1]) {
+              // ? in an empty box: the list of keys
+              if (e.key === "?" && box.value === "" && !e.ctrlKey && !e.altKey && !e.metaKey) {
                 e.preventDefault();
-                e.stopPropagation();
-                takeChip(chips[Number(e.code.slice(5)) - 1], e.shiftKey);
+                setHelp(true);
                 return;
               }
               // Tab or → at the end: the grey rest of your usual reply
@@ -1407,11 +1594,6 @@ function ChatApp() {
                   take(offered.items[Math.min(offerAt, offered.items.length - 1)]);
                   return;
                 }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setDismissed(offered.token);
-                  return;
-                }
               }
               const firstLine = box.value.lastIndexOf("\n", box.selectionStart - 1) < 0;
               const lastLine = box.value.indexOf("\n", box.selectionStart) < 0;
@@ -1433,7 +1615,8 @@ function ChatApp() {
               // Enter sends, as in Claude's own prompt (Shift+Enter: a new line). For a
               // terminal that takes no text from outside, Enter copies it and opens its
               // terminal: Claude there never quits on an Enter.
-              if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+              // (Ctrl+Enter, Alt+Enter, Ctrl+Shift+Enter: VS Code's commands, talpyDen.chat.*)
+              if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing) {
                 e.preventDefault();
                 send("enter", false);
               }
@@ -1514,7 +1697,7 @@ function ChatApp() {
                 type="button"
                 class="btn secondary"
                 disabled={!text.trim() || sending || !!elsewhere}
-                title="Kept, and sent once Claude's turn is over."
+                title={keyed("Kept, and sent once Claude's turn is over", "sendLater")}
                 onClick={() => send(terminal ? "background" : "auto", true)}
               >
                 <Icon name={I.later} />Send when this turn ends
@@ -1523,6 +1706,8 @@ function ChatApp() {
             <button
               type="button"
               class="btn"
+              title={elsewhere ? undefined : terminal && !asks ? keyed("Send, go on in the background", "sendBackground")
+                : chat?.atWork && !asks ? `Send (Enter; ${keyText("sendNow", "vscode", MAC)}: without the 5 s wait while Claude works)` : "Enter"}
               disabled={!text.trim() || sending || elsewhere === "off" || (terminal && !!chat?.busy && !elsewhere)
                         || (asks ? answering > 0 : !elsewhere && !!chat?.permission && (chat.route === "tmux" || chat.where === "background"))}
               onClick={() => send(terminal && !elsewhere ? "background" : "auto", false)}

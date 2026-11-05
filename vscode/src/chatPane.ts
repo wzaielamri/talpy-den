@@ -21,11 +21,37 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, chatWhere, HOLD_MS, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
+import { answersOf, askShownOf, chatWhere, copyCut, HOLD_MS, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
 import { asPaste, localAncestors, type Terminals } from "./terminals";
+
+// Talpy Chat's keys (keys.mjs): each a command (package.json binds its key while a chat tab has
+// the focus), and what it tells the tab in front to do
+export const CHAT_KEYS: Record<string, string> = {
+  "talpyDen.chat.sendNow": "sendNow",
+  "talpyDen.chat.sendWhenTurnEnds": "sendLater",
+  "talpyDen.chat.sendInBackground": "sendBackground",
+  "talpyDen.chat.clear": "clear",
+  "talpyDen.chat.stop": "stop",
+  "talpyDen.chat.reply1": "chip1",
+  "talpyDen.chat.reply2": "chip2",
+  "talpyDen.chat.reply3": "chip3",
+  "talpyDen.chat.reply4": "chip4",
+  "talpyDen.chat.allow": "allow",
+  "talpyDen.chat.alwaysAllow": "always",
+  "talpyDen.chat.deny": "deny",
+  "talpyDen.chat.previousPrompt": "promptUp",
+  "talpyDen.chat.nextPrompt": "promptDown",
+  "talpyDen.chat.showChat": "tabChat",
+  "talpyDen.chat.showSteps": "tabSteps",
+  "talpyDen.chat.showReview": "tabReview",
+  "talpyDen.chat.toggleTasks": "tasks",
+  "talpyDen.chat.copyLastReply": "copyLast",
+  "talpyDen.chat.openWindow": "openWindow",
+  "talpyDen.chat.keys": "help",
+};
 
 export const ASKS_SOMETHING_ELSE = "It asks something else now"; // (pane.py --keys --expect says the same)
 const TEXT_MAX = 100_000; // (as a queued task's prompt may be)
@@ -344,6 +370,15 @@ export class ChatPanes implements vscode.Disposable {
     return { uri: this.extensionUri, backend: this.backend, dash: this.dash, actions: this.actions, log: this.log, panes: this };
   }
 
+  // A key's command (talpyDen.chat.*, bound only while a chat tab has the focus): to the tab in
+  // front, whose page does what it says (keys.mjs's id); false: no chat tab is in front
+  key(key: string): boolean {
+    const pane = [...new Set(this.panes.values())].find((p) => p.active);
+    if (!pane) return false;
+    pane.key(key);
+    return true;
+  }
+
   async routeHere(session: Session | undefined, host: string): Promise<boolean> {
     return !!(await this.windowTerminal(session, host));
   }
@@ -464,6 +499,14 @@ class Pane implements vscode.Disposable {
     this.panel.reveal();
     // (on tab:review the page shows its Review tab and asks for the review, once)
     this.post({ type: "result", kind: "tab:" + tab, ok: true, message: "" });
+  }
+
+  // In front, with the focus (its keys go to it)
+  get active(): boolean {
+    return !this.disposed && this.panel.active;
+  }
+  key(key: string): void {
+    if (this.ready) this.post({ type: "key", key });
   }
 
   // It's on screen with the chat id (petKeyOf) names
@@ -841,6 +884,27 @@ class Pane implements vscode.Disposable {
           this.result("copy", { ok: false, message: `Couldn't copy it: ${(e as Error).message}` });
         }
         break;
+      case "copyItem": {
+        // all of it: a text shown cut is read whole from the transcript first (pane.py --reply-text);
+        // Copied is said once it's on the clipboard
+        if (typeof m.text !== "string" || typeof m.key !== "string" || typeof m.id !== "number") break;
+        let text = m.text;
+        if (copyCut(text) && !this.fresh) {
+          const r = await backend.pane(["--reply-text", this.chatId, "--key", m.key, ...profile, ...where], this.host ? 30000 : 15000);
+          if (!r.ok || typeof r.text !== "string") {
+            this.post({ type: "copied", id: m.id, ok: false, message: `Couldn't copy all of it: ${String(r.message ?? "it couldn't be read")}` });
+            break;
+          }
+          text = r.text;
+        }
+        try {
+          await vscode.env.clipboard.writeText(text);
+          this.post({ type: "copied", id: m.id, ok: true, message: "" });
+        } catch (e) {
+          this.post({ type: "copied", id: m.id, ok: false, message: `Couldn't copy it: ${(e as Error).message}` });
+        }
+        break;
+      }
       case "picture": {
         // saved where the widget keeps pasted pictures; an SSH host's chat gets a copy there
         // (the tab asked you first)

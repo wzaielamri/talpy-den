@@ -13,7 +13,7 @@ export const recorded = {
   uriHandlers: [] as unknown[],
   statusBarItems: [] as { text: string; tooltip: unknown; backgroundColor: unknown; show(): void; dispose(): void }[],
   messages: [] as string[],
-  panels: [] as { sent: unknown[]; receive(m: unknown): void; show(visible: boolean): void; dispose(): void; readonly disposed: boolean }[],
+  panels: [] as { sent: unknown[]; receive(m: unknown): void; show(visible: boolean): void; activate(on: boolean): void; dispose(): void; readonly disposed: boolean }[],
 };
 
 // Listeners of a kind of event, each with a disposable that takes it off
@@ -114,6 +114,7 @@ export const window = {
     let disposed = false;
     let title = initialTitle;
     let visible = false;
+    let active = false;
     const alive = () => {
       if (disposed) throw new Error("Webview is disposed");
     };
@@ -138,6 +139,10 @@ export const window = {
         alive();
         return visible;
       },
+      get active() {
+        alive();
+        return active;
+      },
       get disposed() {
         return disposed;
       },
@@ -149,6 +154,12 @@ export const window = {
       receive: (m: unknown) => onMessage(m),
       show(v: boolean) {
         visible = v;
+        viewState.fire(undefined);
+      },
+      // (in front, with the focus: its keys go to it)
+      activate(v: boolean) {
+        active = v;
+        visible = visible || v;
         viewState.fire(undefined);
       },
       onDidChangeViewState: viewState.on,

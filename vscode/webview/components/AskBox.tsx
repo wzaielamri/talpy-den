@@ -28,8 +28,12 @@ const ARG_ROWS = 3;
 
 // What a waiting chat asks, with Allow once / Always allow / Deny (a note);
 // Claude's questions: each with its options, Send answers / Decline (a note)
-export function AskBox({ ask, onAnswer, onWholePlan, onTerminal, busy = false, max = 12, compact = false }: {
+export function AskBox({ ask, onAnswer, onWholePlan, onTerminal, busy = false, max = 12, compact = false, pressed = null, keyed }: {
   ask: PermissionAsk;
+  // (Talpy Chat's tab: Alt+Y / Alt+A / Alt+N pressed, as a click on Allow once / Always allow / Deny… (a plan: Approve /
+  // Approve, accept edits / Keep planning…; questions: Decline…); keyed: a button's tooltip with its key)
+  pressed?: { key: "allow" | "always" | "deny"; at: number } | null;
+  keyed?: (title: string, id: string) => string;
   onTerminal?: () => void; // (a background chat's, in its tab: where it can't be answered here, a terminal on it, claude attach)
   onWholePlan?: () => void; // (a row: the chat's tab shows all of it)
   onAnswer: (d: Decision, note: string, answers?: Answers) => void;
@@ -62,6 +66,8 @@ export function AskBox({ ask, onAnswer, onWholePlan, onTerminal, busy = false, m
     setDenyingFor(on ? k : "");
   };
   const [note, setNote] = useState("");
+  const noteBox = useRef<HTMLInputElement>(null);
+  const tip = (title: string, id: string) => (keyed ? keyed(title, id) : title);
   const canAnswer = ask.answer === "hook" || ask.answer === "keys";
   const questions = ask.questions ?? [];
   const plan = ask.plan ?? null;
@@ -69,6 +75,17 @@ export function AskBox({ ask, onAnswer, onWholePlan, onTerminal, busy = false, m
   const title = plan ? "Claude has a plan, ready to start:" : questions.length
     ? questions.length > 1 ? `Claude asks you ${questions.length} questions:` : "Claude asks you:"
     : ask.command ? "Claude asks to run:" : ask.file ? `Claude asks to change ${ask.file}:` : `Claude asks: ${ask.line}`;
+  // A key, as its button's click (none while the buttons wait, or where that button doesn't show)
+  useEffect(() => {
+    if (!pressed || off || !canAnswer || denying) return;
+    if (pressed.key === "deny") {
+      setDenying(true);
+      requestAnimationFrame(() => noteBox.current?.focus());
+    } else if (plan) onAnswer(pressed.key === "always" ? "approve-edits" : "approve", "");
+    else if (questions.length) return;
+    else if (pressed.key === "allow") onAnswer("allow", "");
+    else if (ask.answer === "keys" || ask.always) onAnswer("always", "");
+  }, [pressed?.at]);
   const deny = () => {
     if (off) return;
     onAnswer(plan ? "keep" : "deny", note);
@@ -96,14 +113,14 @@ export function AskBox({ ask, onAnswer, onWholePlan, onTerminal, busy = false, m
       {canAnswer && !denying && plan ? (
         <div class="ask-buttons">
           <button type="button" class="btn secondary" disabled={off} onClick={() => onAnswer("approve-edits", "")}
-            title="It starts on the plan and changes files without asking for the rest of this chat (accept edits mode); commands still ask.">
+            title={tip("It starts on the plan and changes files without asking for the rest of this chat (accept edits mode); commands still ask.", "always")}>
             <Icon name={I.always} tone={T.always} /><strong>Approve, accept edits</strong>
           </button>
           <button type="button" class="btn secondary" disabled={off} onClick={() => onAnswer("approve", "")}
-            title="It starts on the plan and asks before each change, as “Yes, manually approve edits” in its dialog.">
+            title={tip("It starts on the plan and asks before each change, as “Yes, manually approve edits” in its dialog.", "allow")}>
             <Icon name={I.allow} tone={T.allow} />Approve
           </button>
-          <button type="button" class="btn secondary" disabled={off} onClick={() => setDenying(true)}><Icon name={I.edit} />Keep planning…</button>
+          <button type="button" class="btn secondary" disabled={off} onClick={() => setDenying(true)} title={keyed ? tip("Say what should change", "deny") : undefined}><Icon name={I.edit} />Keep planning…</button>
         </div>
       ) : null}
       {ask.diff.length ? <Diff lines={ask.diff} max={max} path={ask.file} /> : null}
@@ -120,25 +137,26 @@ export function AskBox({ ask, onAnswer, onWholePlan, onTerminal, busy = false, m
       ) : null}
       {canAnswer && !denying && !questions.length && !plan ? (
         <div class="ask-buttons">
-          <button type="button" class="btn secondary" disabled={off} onClick={() => onAnswer("allow", "")}><Icon name={I.allow} tone={T.allow} />Allow once</button>
+          <button type="button" class="btn secondary" disabled={off} onClick={() => onAnswer("allow", "")} title={keyed ? tip("Allow once", "allow") : undefined}><Icon name={I.allow} tone={T.allow} />Allow once</button>
           {ask.answer === "keys" || ask.always ? (
             <button
               type="button"
               class="btn secondary"
               disabled={off}
-              title={ask.answer === "keys" ? "Like “Yes, and don't ask again” in its dialog (for an edit, “Yes, allow all edits during this session”)."
-                : `From now on, without asking: ${ask.always}.`}
+              title={tip(ask.answer === "keys" ? "Like “Yes, and don't ask again” in its dialog (for an edit, “Yes, allow all edits during this session”)."
+                : `From now on, without asking: ${ask.always}.`, "always")}
               onClick={() => onAnswer("always", "")}
             >
               <Icon name={I.always} tone={T.always} />Always allow
             </button>
           ) : null}
-          <button type="button" class="btn secondary" disabled={off} onClick={() => setDenying(true)}><Icon name={I.deny} tone={T.deny} />Deny…</button>
+          <button type="button" class="btn secondary" disabled={off} onClick={() => setDenying(true)} title={keyed ? tip("Deny, with a note", "deny") : undefined}><Icon name={I.deny} tone={T.deny} />Deny…</button>
         </div>
       ) : null}
       {canAnswer && denying ? (
         <div class="ask-buttons">
           <input
+            ref={noteBox}
             type="text"
             class="ask-note"
             placeholder={plan ? "What should change in the plan? (optional)" : "What should Claude do instead? (optional)"}

@@ -10,11 +10,12 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
 import { inline, Markdown } from "../webview/util/markdown";
+import { ESC_ORDER, escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mjs";
 
 const NOW = 1_800_000_000_000;
 
@@ -1375,4 +1376,109 @@ test("the new-messages badge: what came in below since you scrolled up, as its t
   assert.equal(newText(3), "3 new");
   assert.equal(newHint(1), "One new item below, since you scrolled up. Click to go to the end.");
   assert.equal(newHint(4), "4 new items below, since you scrolled up. Click to go to the end.");
+});
+
+// Talpy Chat's keys (A10): one table for the ? list and the tooltips (keys.mjs, the
+// widget's too); each action is a command whose key applies only while a chat tab has
+// the focus (not with it in the terminal or the side bar: editorAreaFocus)
+test("the keys table: each command's key is its default keybinding, in a chat tab only", async () => {
+  const fs = await import("node:fs");
+  const manifest = JSON.parse(fs.readFileSync("package.json", "utf8"));
+  const bindings: { command: string; key: string; mac?: string; when?: string }[] = manifest.contributes.keybindings;
+  const commands = new Set((manifest.contributes.commands as { command: string }[]).map((c) => c.command));
+  assert.equal(new Set(KEYS.map((k) => k.id)).size, KEYS.length);
+  const named = new Set<string>();
+  for (const k of KEYS) {
+    assert.ok(KEY_GROUPS.includes(k.group), k.id);
+    assert.ok(k.what && (k.plasma || k.vscode), k.id);
+    for (const [command, key] of k.commands ?? []) {
+      named.add(command);
+      assert.ok(commands.has(command), `${command} is a command`);
+      const b = bindings.find((x) => x.command === command);
+      assert.ok(b, `${command} has a key`);
+      assert.equal(b!.key, key);
+      assert.equal(b!.mac, key.replace(/ctrl\+/g, "cmd+"));
+      if (command.startsWith("talpyDen.chat.")) assert.equal(b!.when, "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus", command);
+    }
+  }
+  // (each of the tab's commands is in the table, but Stop and the list itself: Esc and ? are the page's)
+  for (const c of commands) if (c.startsWith("talpyDen.chat.")) assert.ok(named.has(c) || ["talpyDen.chat.stop", "talpyDen.chat.keys"].includes(c), c);
+  // (in the command palette only where they act)
+  const palette: { command: string; when: string }[] = manifest.contributes.menus.commandPalette;
+  for (const c of commands) if (c.startsWith("talpyDen.chat.")) assert.equal(palette.find((m) => m.command === c)?.when, "activeWebviewPanelId == 'talpyDen.chat'", c);
+  assert.equal(keyText("sendNow", "vscode"), "Ctrl+Enter");
+  assert.equal(keyText("sendNow", "vscode", true), "Cmd+Enter");
+  assert.equal(withKey("Send now", "sendNow", "plasma"), "Send now (Ctrl+Enter)");
+  assert.equal(withKey("Your other windows", "chats", "vscode"), "Your other windows");   // (none there: VS Code's own)
+});
+
+test("Esc does the nearest thing first, one thing a press: Stop only once nothing is open", () => {
+  assert.equal(escTarget({ menu: true, big: true, list: true, help: true, ghost: true, stop: true }), "menu");
+  assert.equal(escTarget({ big: true, list: true, stop: true }), "big");
+  assert.equal(escTarget({ list: true, help: true, stop: true }), "list");
+  assert.equal(escTarget({ help: true, ghost: true, stop: true }), "help");
+  assert.equal(escTarget({ ghost: true, stop: true }), "ghost");
+  assert.equal(escTarget({ stop: true }), "stop");
+  assert.equal(escTarget({ stop: false }), "");
+  assert.equal(escTarget({}), "");
+  assert.deepEqual([...ESC_ORDER], ["menu", "big", "list", "find", "help", "ghost", "stop"]);
+});
+
+test("a key's command goes to the chat tab in front, and only to it", async () => {
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, { pane: async () => ({ ok: true, unchanged: true }) } as never, dash as never, {} as never,
+                          { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: "k-1", sessionId: "k-1", profileDir: ".claude", name: "one" } as never);
+  const one = recorded.panels.at(-1)!;
+  p.open({ chatId: "k-2", sessionId: "k-2", profileDir: ".claude", name: "two" } as never);
+  const two = recorded.panels.at(-1)!;
+  one.receive({ type: "ready" });
+  two.receive({ type: "ready" });
+  await new Promise((r) => setTimeout(r, 10));
+  const keys = (panel: typeof one) => panel.sent.filter((m) => (m as { type: string }).type === "key");
+  assert.equal(p.key("sendNow"), false, "none in front");
+  two.activate(true);
+  assert.equal(p.key("sendNow"), true);
+  assert.deepEqual(keys(two), [{ type: "key", key: "sendNow" }]);
+  assert.deepEqual(keys(one), []);
+  two.dispose();
+  one.activate(true);
+  p.key("copyLast");
+  assert.deepEqual(keys(one), [{ type: "key", key: "copyLast" }]);
+  p.dispose();
+});
+
+test("Copy copies all of it: a reply shown cut is read whole first, and Copied is said once it's on the clipboard", async () => {
+  const state = demoState(NOW);
+  const answers: Record<string, unknown> = { ok: true, text: "the whole reply, all 30000 characters of it" };
+  const calls: string[][] = [];
+  const backend = { pane: async (args: string[]) => (calls.push(own(args)), args[0] === "--reply-text" ? answers : { ok: true, unchanged: true }) };
+  const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: "copy-1", sessionId: "copy-1", profileDir: ".claude-work", name: "x" } as never);
+  const panel = recorded.panels.at(-1)!;
+  const copied = () => panel.sent.filter((m) => (m as { type: string }).type === "copied");
+  const done = () => new Promise((r) => setTimeout(r, 10));
+  panel.receive({ type: "copyItem", id: 1, key: "m1", text: "A short reply." });
+  await done();
+  assert.equal(clipboardWrites.at(-1), "A short reply.");
+  assert.deepEqual(copied(), [{ type: "copied", id: 1, ok: true, message: "" }]);
+  assert.deepEqual(calls.filter((c) => c[0] === "--reply-text"), [], "not cut: as shown");
+  panel.receive({ type: "copyItem", id: 2, key: "m2", text: "Lorem ipsum…\n…" });
+  await done();
+  assert.deepEqual(calls.filter((c) => c[0] === "--reply-text"), [["--reply-text", "copy-1", "--key", "m2", "--profile", ".claude-work"]]);
+  assert.equal(clipboardWrites.at(-1), "the whole reply, all 30000 characters of it");
+  assert.deepEqual(copied().at(-1), { type: "copied", id: 2, ok: true, message: "" });
+  // (it can't be read: nothing copied, and it says why)
+  Object.assign(answers, { ok: false, text: undefined, message: "That message isn't in the chat any more" });
+  panel.receive({ type: "copyItem", id: 3, key: "m3", text: "cut\n…" });
+  await done();
+  assert.equal(clipboardWrites.at(-1), "the whole reply, all 30000 characters of it");
+  assert.deepEqual(copied().at(-1), { type: "copied", id: 3, ok: false, message: "Couldn't copy all of it: That message isn't in the chat any more" });
+  assert.equal(copyCut("cut\n…"), true);
+  assert.equal(copyCut("Wait…"), false);
+  assert.equal(lastReply([{ kind: "claude", key: "m1", text: "one", at: 1 }, { kind: "you", key: "u2", text: "two", at: 2 },
+                          { kind: "claude", key: "m3", text: "three", at: 3 }, { kind: "tool", key: "t4", name: "Bash", at: 4 }])?.key, "m3");
+  assert.equal(lastReply([{ kind: "you", key: "u2", text: "two", at: 2 }]), null);
+  p.dispose();
 });

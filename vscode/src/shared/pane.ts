@@ -219,7 +219,9 @@ export type PaneHostMessage =
   // an answer to what the chat asks (from the tab, its row or a notification): on its way (shown at once
   // as yours: PendingAnswer), then whether it went
   | { type: "answering"; id: number; ask: PermissionAsk; decision: Decision; note: string; answers?: Answers }
-  | { type: "answered"; id: number; ok: boolean };
+  | { type: "answered"; id: number; ok: boolean }
+  | { type: "copied"; id: number; ok: boolean; message: string } // a copyItem on the clipboard (ok), or why not
+  | { type: "key"; key: string }; // a key's command (talpyDen.chat.*, package.json): an id of keys.mjs's table
 
 // tab -> extension
 export type PaneMessage =
@@ -242,6 +244,9 @@ export type PaneMessage =
   | { type: "openAgentRun"; agentId: string } // a subagent's whole run, in the Markdown preview (its strip)
   | { type: "moveToClaudeCode" } // Claude quits in its terminal, the chat reopens in a Claude Code panel (asks first)
   | { type: "copy"; text: string } // a code block of a reply, to the clipboard
+  // Copy on a message, or Ctrl+Shift+C: its text (copyText), all of it: one shown cut (copyCut) is
+  // read whole from the transcript first; answered with copied once it's on the clipboard
+  | { type: "copyItem"; id: number; key: string; text: string }
   | { type: "openPicture"; path: string } // a picture of yours, in VS Code's image viewer
   | { type: "textSize"; scale: number } // A− / A+: talpyDen.chatTextScale
   | { type: "diffLayout"; split: boolean } // side by side or one after the other: talpyDen.diffSideBySide
@@ -807,6 +812,16 @@ export function dayBreaks(items: readonly PaneItem[], steps: boolean): Set<strin
 // shown), yours as you typed it (a command too: "/compact", "!ls"); nothing for other items
 export function copyText(it: PaneItem): string {
   return it.kind === "claude" || it.kind === "you" ? it.text ?? "" : "";
+}
+// A text Talpy Chat keeps cut (pane.py's TEXT_CHARS: "…" on a line of its own at its end): Copy
+// reads it whole from the transcript first (pane.py --reply-text), else it's copied as it is
+export function copyCut(text: string): boolean {
+  return text.endsWith("\n…");
+}
+// Claude's last reply (Ctrl+Shift+C copies it)
+export function lastReply(items: readonly PaneItem[]): PaneItem | null {
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "claude") return items[i];
+  return null;
 }
 
 // Does it show on that tab: Chat leaves out Claude's tool calls, but not a question or a plan you

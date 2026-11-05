@@ -291,6 +291,12 @@ window.addEventListener("harness-post", (e: Event) => {
       history: ["Fix the date parser", "Run the tests again"],
       typed: { settings: { run: "terminal", of: "/config", why: "opens Claude's settings panel" } },
     } });
+  } else if (m.type === "copyItem") {
+    // (a reply shown cut is read whole first: a moment; ?copy=fail: it couldn't be)
+    const c = m as unknown as { id: number; text: string };
+    setTimeout(() => send({ type: "copied", id: c.id, ok: params.get("copy") !== "fail",
+                            message: params.get("copy") === "fail" ? "Couldn't copy all of it: That message isn't in the chat any more" : "" }),
+               c.text.endsWith("\n…") ? 300 : 0);
   } else if (m.type === "typeIn") {
     setTimeout(() => send({ type: "result", kind: "typein", ok: true, message: "It's in the clipboard. Paste it into its terminal" }), 300);
   }
@@ -370,3 +376,9 @@ if (params.get("paste") === "1") {
     });
   }, 100);
 }
+
+// ?keys=1: the list of keys (? in an empty box); ?key=ID: a key's command, as VS Code sends it (keys.mjs ids:
+// sendNow, copyLast, tabSteps, tasks, promptUp, allow, chip1…), 900 ms after the page is up
+if (params.get("keys") === "1") setTimeout(() => send({ type: "key", key: "help" }), 600);
+const key = params.get("key");
+if (key) setTimeout(() => key.split(",").forEach((k, i) => setTimeout(() => send({ type: "key", key: k }), i * 400)), 900);

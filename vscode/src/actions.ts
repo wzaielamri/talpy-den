@@ -1497,8 +1497,9 @@ export class Actions {
   // The shortcut (talpyDen.nextChat): the chat waiting longest, then the
   // other waiting ones and the ones that finished while you weren't looking,
   // one per press; with none, the view. Chats it went to count as seen once
-  // a round of presses is over.
-  async nextChat(): Promise<void> {
+  // a round of presses is over. inTalpyChat (talpyDen.talpyChatNeedsYou): in
+  // its Talpy Chat tab, wherever it runs.
+  async nextChat(inTalpyChat = false): Promise<void> {
     const now = Date.now();
     if (!this.lastNext || now - this.lastNext.at > AGAIN_MS) {
       for (const id of this.visited) this.dash.seen(id);
@@ -1514,7 +1515,8 @@ export class Actions {
     const spot = list[i];
     this.lastNext = { id: spot.id, at: now };
     this.visited.add(spot.id);
-    await this.open(chatRef(spot.session, spot.host));
+    if (inTalpyChat && this.panes) this.panes.open(chatRef(spot.session, spot.host), "chat");
+    else await this.open(chatRef(spot.session, spot.host));
   }
 
   // ---------------------------------------------------------------- what a chat changed

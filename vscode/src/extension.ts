@@ -11,7 +11,7 @@ import { Actions } from "./actions";
 import { Backend } from "./backend";
 import { configDirArgs } from "./config";
 import { openChangesLink } from "./changes";
-import { ChatPanes } from "./chatPane";
+import { CHAT_KEYS, ChatPanes } from "./chatPane";
 import { dictationModels } from "./dictation";
 import { answerPermissionsHere, liveModeHere } from "./relay";
 import { extraConfigDirs, settings } from "./config";
@@ -182,6 +182,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("talpyDen.accounts", () => accounts.manage()),
     vscode.commands.registerCommand("talpyDen.addAccount", () => accounts.add()),
     vscode.commands.registerCommand("talpyDen.nextChat", () => a.nextChat()),
+    vscode.commands.registerCommand("talpyDen.talpyChatNeedsYou", () => a.nextChat(true)),
+    // Talpy Chat's keys (keys.mjs): each a command, bound only while a chat tab has the focus;
+    // the tab in front does it (Esc and ? are the page's own: Stop and the list have no key here)
+    ...Object.entries(CHAT_KEYS).map(([command, key]) => vscode.commands.registerCommand(command, () => void panes.key(key))),
     // Keyboard answers: the chat that has waited longest for a permission (a
     // plan: approve it, or keep planning), through the hook (pane.py --oldest)
     vscode.commands.registerCommand("talpyDen.allowOldest", () => answerOldest("allow")),
