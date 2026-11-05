@@ -3235,13 +3235,22 @@ def project_commands(rows, home, profiles):
 def host_projects(host):
     """An SSH host's (or a container's) Projects tab, this file run there:
     {"host", "ok", "error", "projects", "hidden", "hiddenPaths"}, its times
-    moved to this computer's clock when the host's differs."""
+    moved to this computer's clock when the host's differs, and its chats
+    and plans starred as you starred them: a host's stars are kept here
+    (talpy_den.py change_stars; remote.status hands them to its check),
+    never in the host's own stars.json, which this file read there."""
     import remote
     answer = remote.host_answer(host, ["--projects"], name="week.py")
     if not answer.get("ok") or not isinstance(answer.get("projects"), list):
         return {"host": host, "ok": False, "error": answer.get("message") or answer.get("error") or "no answer",
                 "projects": [], "hidden": 0, "hiddenPaths": []}
-    rows = answer["projects"]
+    rows = [p for p in answer["projects"] if isinstance(p, dict)]
+    starred = cs.starred_of(cs.load_stars(cs.cache_dir(Path.home())), host)
+    for p in rows:
+        for kind, field in (("chats", "sessionId"), ("plans", "slug")):
+            for item in p.get(kind) or []:
+                if isinstance(item, dict):
+                    item["starred"] = item.get(field) in starred[kind]
     sent = int(cs.number(answer.get("now")) or 0)   # (its clock as it answered)
     shift = int(time.time() * 1000) - sent if sent else 0
     if abs(shift) > 5000:

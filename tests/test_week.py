@@ -1727,6 +1727,23 @@ class HostTests(FakeSSH):
         with mock.patch.object(remote, "host_answer", return_value=dict(answer, now=now, projects=[dict(row, lastAt=5)])):
             self.assertEqual(week.host_projects("lab")["projects"][0]["lastAt"], 5)
 
+    def test_a_hosts_projects_show_what_you_starred_there(self):
+        # (a host's stars are kept here: its own stars.json, which --projects reads there, knows none of them)
+        import remote
+        row = {"path": "/srv/api", "lastAt": 0,
+               "chats": [{"sessionId": "c1", "starred": False}, {"sessionId": "c2", "starred": True}],
+               "plans": [{"slug": "p1", "starred": False}, {"slug": "p2", "starred": True}], "memories": []}
+        answer = {"ok": True, "projects": [row, "junk"], "hidden": 0, "hiddenPaths": []}
+        cache = cs.cache_dir(Path.home())   # (this computer's: the stand-in ssh's home is the host's)
+        cs.change_stars(cache, "chats", "c1", "lab")
+        cs.change_stars(cache, "plans", "p1", "lab")
+        cs.change_stars(cache, "chats", "c2", "")       # (this computer's, and another host's: not these)
+        cs.change_stars(cache, "plans", "p2", "other")
+        with mock.patch.object(remote, "host_answer", return_value=json.loads(json.dumps(answer))):
+            (p,) = week.host_projects("lab")["projects"]
+        self.assertEqual([c["starred"] for c in p["chats"]], [True, False])
+        self.assertEqual([x["starred"] for x in p["plans"]], [True, False])
+
 
 class OutputTests(Home):
     def test_main_prints_the_recap(self):
