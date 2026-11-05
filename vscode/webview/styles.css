@@ -3940,11 +3940,6 @@ body.vscode-high-contrast-light .pane {
   visibility: hidden;
 }
 
-.pane-later {
-  display: block;
-  height: 0;
-}
-
 /* Search in Talpy Chat (Ctrl+F): a bar over the list's top right, held there (sticky, no height of
    its own), so nothing moves; the matches marked without touching the page (::highlight), in VS
    Code's own find colours */
