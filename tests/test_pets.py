@@ -2098,8 +2098,10 @@ class NewChatTests(unittest.TestCase):
         delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
         for per_row in ("keyAction", "KeysHelp", "takeKey", "onShortcutOverride"):
             self.assertNotIn(per_row, delegate)
-        table = set(re.findall(r'(?:plasma|vscode): "([^"]+)"', keys))
-        named = {k for text in re.findall(r'i18n\("[^"]*\(([^)"]*)\)', pane) for k in re.findall(r"(?:Ctrl\+|Alt\+|Shift\+)+[^\s;,:)]+|\bEsc\b", text)}
+        table = set(re.findall(r'(?:plasma|vscode|what): "([^"]+)"', keys))   # (F3: in the find key's words)
+        # (ChatPane.qml's tooltips, and those of its parts made only when they show)
+        tips = pane + "".join((ROOT / "ui" / f).read_text() for f in ("BigPicture.qml", "QueueLine.qml", "FindBar.qml"))
+        named = {k for text in re.findall(r'i18n\("[^"]*\(([^)"]*)\)', tips) for k in re.findall(r"(?:Ctrl\+|Alt\+|Shift\+)+[^\s;,:)]+|\bEsc\b|\bF3\b", text)}
         self.assertTrue({"Ctrl+Enter", "Ctrl+Shift+Enter", "Alt+Enter", "Ctrl+Shift+O", "Ctrl+1", "Esc"} <= named, named)
         for key in named:
             self.assertTrue(any(key in t for t in table), key)
@@ -2150,6 +2152,23 @@ class NewChatTests(unittest.TestCase):
         for words in ("Show less", "Show more · ", " more lines", "Fold it again", "Show all of it", ": unfold or fold everything)"):
             self.assertIn(words, more)
             self.assertIn(words, chat)
+
+    def test_a_window_makes_only_what_its_first_frame_shows(self):
+        # Talpy Chat's parts a window's first frame doesn't show are files of their own, read and made only
+        # when they show (each step measures the first window ever against step 0's): the Review tab (then
+        # kept), the / and @ list, the asks under the box, the big picture, a waiting message's queue line,
+        # a message's pictures, Ctrl+O's turns
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        for source, active in (("ReviewPage.qml", "active: false"), ("OfferList.qml", "active: pane.suggestions.length > 0 && replyBox.activeFocus"),
+                               ("ReplyAsks.qml", "active: pane.offerSetup || pane.offerModel"), ("BigPicture.qml", 'active: pane.bigPicture !== ""'),
+                               ("QueueLine.qml", "active: youBand.waits"), ("FoldAll.qml", "active: false")):
+            self.assertIn(f'source: active ? "{source}" : ""', pane)
+            self.assertIn(active, pane)
+        self.assertIn("reviewPage.active = true", pane[pane.index("    onTabChanged: {"):])
+        self.assertIn('active: entry.pictures !== ""', pane)
+        for gone in ("id: bigView", "id: offerList", "id: commitText", "id: replyPictures"):
+            self.assertNotIn(gone, pane)
+        self.assertIn("text: pane.commitMessage", (ROOT / "ui/ReviewPage.qml").read_text())
 
     def test_suggested_replies_are_made_only_when_there_are_some(self):
         # Talpy Chat's chips (B2 + B3): their list and words (ReplyChips.qml) and the grey completion

@@ -184,7 +184,7 @@ Rectangle {
     function placesIn(box) {
         const out = []
         const rich = box.textFormat === TextEdit.RichText
-        for (const m of Find.allIn(box.getText(0, box.length), pane.findQuery, 200)) {
+        for (const m of Find.allIn(box.getText(0, box.length), pane.findQuery, 300)) {
             if (rich) {   // (not a code block's Copy)
                 const r = box.positionToRectangle(m[0])
                 if (box.linkAt(r.x + 1, r.y + r.height / 2).indexOf("copy:") === 0)
@@ -225,7 +225,8 @@ Rectangle {
         return { item: row, rect: Qt.rect(0, row.gap, row.width, Math.min(row.height - row.gap, fm.height * 2)) }
     }
 
-    // The marks on the rows with matches within a screen of what you read (and the one gone to)
+    // The marks on the rows with matches within half a screen of what you read (and the one gone to;
+    // at most 600: a one-letter search marks only so many at once, again as you scroll)
     function unmark() {
         for (const m of marks)
             if (m)
@@ -245,7 +246,7 @@ Rectangle {
         let many = 0
         for (const key of keys) {
             const row = rowOf(key)
-            if (!row || row.y + row.height < list.contentY - list.height || row.y > list.contentY + list.height * 2)
+            if (!row || row.y + row.height < list.contentY - list.height / 2 || row.y > list.contentY + list.height * 1.5)
                 continue
             const now = hit && hit.key === key ? hit.n : -1
             const head = headOf(row)
@@ -260,7 +261,7 @@ Rectangle {
                 n -= places.length
                 many += places.length
             }
-            if (many > 1500)
+            if (many > 600)
                 break
         }
         marks = made

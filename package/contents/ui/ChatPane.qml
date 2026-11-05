@@ -460,6 +460,8 @@ Window {
     // comes in while it shows doesn't (you watch it come); only a click, a search's step into it and
     // Ctrl+O change one. Ctrl+O unfolds everything (allOpen), again: each back as it was
     property bool allOpen: false
+    property int allGen: 0         // (each Ctrl+O's: a row is unfolded once its turn came, late === allGen: FoldAll.qml)
+    property int lateDefault: 0    // (and a row made after its turns: at once)
     property var openBefore: ({})
     property var firstRead: null   // {at, last}: when it first read the chat, Claude's last reply then
     function foldText(text, how) {   // (FoldHelp.qml, find.mjs: read only once a text may be long)
@@ -476,6 +478,11 @@ Window {
         active: false
         source: active ? "FoldHelp.qml" : ""
     }
+    Loader {
+        id: foldAllRows   // (Ctrl+O: the rows unfolded a few at a time, nearest what you read first)
+        active: false
+        source: active ? "FoldAll.qml" : ""
+    }
     function foldAll() {   // (Ctrl+O: what you read stays where it is while it's laid out again)
         const end = !loaded || nearEnd()
         chatTop = end ? null : topMessage(true)
@@ -485,7 +492,10 @@ Window {
         } else {
             openBefore = openTools
             openTools = {}
+            allGen++
             allOpen = true
+            foldAllRows.active = true
+            foldAllRows.item.unfoldAll()
         }
         if (end)
             keepEnd()
@@ -587,7 +597,7 @@ Window {
         reviewFor = ""
         reviewLoading = false
         commitOpen = false
-        commitText.text = ""   // (the chat before's message: this one's comes with its review)
+        commitMessage = ""   // (the chat before's message: this one's comes with its review)
         commitEdited = false
         undoAsk = ""
         // (the reply you were typing stays with its chat, for when you're back)
@@ -1496,7 +1506,7 @@ Window {
             reviewFor = result.ok ? asked.chat : ""
             reviewError = result.ok ? "" : (result.message || "")
             if (result.ok && !commitEdited)
-                commitText.text = result.message || ""
+                commitMessage = result.message || ""
             return
         }
         if (kind === "interrupt") {
@@ -2328,6 +2338,7 @@ Window {
     property bool reviewLoading: false
     property string reviewError: ""
     property var openFiles: ({})
+    property string commitMessage: ""   // (Commit these files…'s message: ReviewPage.qml)
     property bool commitOpen: false
     property bool commitEdited: false
     property string undoAsk: ""   // "*": all, else a file's path, asked to confirm
@@ -2345,6 +2356,8 @@ Window {
     // the view, and for a few frames it showed an older part of the chat)
     property string listTab: "chat"
     onTabChanged: {
+        if (tab === "review")
+            reviewPage.active = true   // (its page: made now, then kept)
         if (tab === "review" && review === null)
             loadReview()
         if (chatTab) {   // (leaving the Chat or Steps tab)
@@ -2383,11 +2396,16 @@ Window {
         for (let i = Math.max(0, list.indexAt(list.width / 2, list.contentY)); i < items.count; i++) {
             const entry = list.itemAtIndex(i)
             if (entry && (here ? entry.shows : entry.kind !== "tool") && entry.y + entry.height > list.contentY)
-                return [entry.key, entry.y - list.contentY]
+                return [entry.key, entry.y - list.contentY, i]
         }
         return null
     }
     function showTop() {
+        const at = chatTop && chatTop[2] !== undefined && chatTop[2] < items.count && items.get(chatTop[2]).key === chatTop[0] ? list.itemAtIndex(chatTop[2]) : null
+        if (at) {
+            list.contentY = Math.max(list.originY, Math.min(at.y - chatTop[1], list.originY + list.contentHeight - list.height))
+            return
+        }
         for (let i = 0; chatTop && i < items.count; i++) {
             const entry = items.get(i).key === chatTop[0] ? list.itemAtIndex(i) : null
             if (entry) {
@@ -3056,11 +3074,12 @@ Window {
                         required property string command    // (yours: a command you ran, as JSON: pane.py commands.py)
                         required property string fold       // (a long one: where it folds, as JSON: withFold; "" for the rest)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
-                        readonly property bool unfolded: pane.openTools[key] !== undefined ? pane.openTools[key] : pane.allOpen
+                        property int late: pane.lateDefault   // (Ctrl+O: its turn came, FoldAll.qml)
+                        readonly property bool unfolded: pane.openTools[key] !== undefined ? pane.openTools[key] : pane.allOpen && late === pane.allGen
                         readonly property var foldData: fold !== "" ? JSON.parse(fold) : null
-                        readonly property bool whole: !foldData || !foldData.cut || (pane.openTools[key] !== undefined ? pane.openTools[key] : pane.allOpen || foldData.open)
+                        readonly property bool whole: !foldData || !foldData.cut || (pane.openTools[key] !== undefined ? pane.openTools[key] : unfolded || foldData.open)
                         readonly property bool outWhole: !foldData || !foldData.outCut
-                                                         || (pane.openTools[key + "/out"] !== undefined ? pane.openTools[key + "/out"] : pane.allOpen || foldData.open)
+                                                         || (pane.openTools[key + "/out"] !== undefined ? pane.openTools[key + "/out"] : unfolded || foldData.open)
                         readonly property var askedData: asked !== "" ? JSON.parse(asked) : null
                         readonly property var commandData: command !== "" ? JSON.parse(command) : null
                         // (a question or a plan you answered: as Claude's, in Chat and Steps)
@@ -3181,68 +3200,29 @@ Window {
                                     Layout.leftMargin: pane.gutter
                                     source: active ? "FoldMore.qml" : ""
                                 }
-                                // Its pictures, small: a click shows one big (bigView)
-                                PictureStrip {
+                                // Its pictures, small: a click shows one big (BigPicture.qml); made only for one with pictures
+                                Loader {
+                                    active: entry.pictures !== ""
+                                    visible: active
                                     Layout.fillWidth: true
                                     Layout.leftMargin: pane.gutter
-                                    pictures: entry.pictures ? entry.pictures.split("\n") : []
-                                    here: pane.host ? (entry.here ? entry.here.split("\n") : []) : null
-                                    host: pane.host
-                                    removable: false
-                                    opensHere: true
-                                    thumbHeight: Kirigami.Units.gridUnit * 4
-                                    onOpenRequested: path => pane.bigPicture = path
+                                    sourceComponent: PictureStrip {
+                                        pictures: entry.pictures ? entry.pictures.split("\n") : []
+                                        here: pane.host ? (entry.here ? entry.here.split("\n") : []) : null
+                                        host: pane.host
+                                        removable: false
+                                        opensHere: true
+                                        thumbHeight: Kirigami.Units.gridUnit * 4
+                                        onOpenRequested: path => pane.bigPicture = path
+                                    }
                                 }
-                                // Queued: what becomes of it
-                                RowLayout {
-                                    visible: youBand.waits
+                                // Queued: what becomes of it (QueueLine.qml: made only for one that waits)
+                                Loader {
+                                    active: youBand.waits
+                                    visible: active
                                     Layout.fillWidth: true
                                     Layout.leftMargin: pane.gutter
-                                    spacing: Kirigami.Units.smallSpacing
-
-                                    PlasmaComponents3.Label {
-                                        Layout.fillWidth: true
-                                        textFormat: Text.PlainText
-                                        wrapMode: Text.Wrap
-                                        text: youBand.held
-                                              ? i18n("Queued · goes to Claude in %1 s", Math.max(1, Math.ceil((entry.until - pane.now) / 1000)))
-                                              : i18n("Queued · Claude takes it in at its next step")
-                                        color: pane.mutedColor
-                                        font.family: pane.chatFamily
-                                        font.pointSize: pane.pt * 0.85
-                                    }
-                                    // (framed thin, so they read as buttons; Cancel last, at the end)
-                                    IconTextButton {
-                                        visible: youBand.held
-                                        Layout.preferredHeight: pane.queueButtonHeight
-                                        icon.name: Icons.plasma.edit
-                                        text: i18n("Edit")
-                                        onClicked: pane.takeBack(entry.key, true)
-                                        PlasmaComponents3.ToolTip.text: i18n("Back in the box, to change it (↑ in an empty box too)")
-                                        PlasmaComponents3.ToolTip.visible: hovered
-                                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
-                                    }
-                                    IconTextButton {
-                                        visible: youBand.held
-                                        Layout.preferredHeight: pane.queueButtonHeight
-                                        icon.name: Icons.plasma.send
-                                        text: i18n("Send now")
-                                        onClicked: pane.release(entry.key)
-                                        PlasmaComponents3.ToolTip.text: i18n("To Claude now: it takes it in at its next step (Ctrl+Enter, in an empty box)")
-                                        PlasmaComponents3.ToolTip.visible: hovered
-                                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
-                                    }
-                                    IconTextButton {
-                                        visible: youBand.held
-                                        Layout.preferredHeight: pane.queueButtonHeight
-                                        icon.name: Icons.plasma.cancel
-                                        icon.color: Icons.color("cancel", Kirigami.Theme)
-                                        text: i18n("Cancel")
-                                        onClicked: pane.takeBack(entry.key, false)
-                                        PlasmaComponents3.ToolTip.text: i18n("Don't send it")
-                                        PlasmaComponents3.ToolTip.visible: hovered
-                                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
-                                    }
+                                    source: active ? "QueueLine.qml" : ""
                                 }
                                 }
                             }
@@ -3635,88 +3615,14 @@ Window {
                     }
                     onCancelled: pane.unqueueAsk = ""
                 }
-                // What it offers for what you're typing (/ commands, @ files)
-                Rectangle {
-                    visible: pane.suggestions.length > 0 && replyBox.activeFocus
+                // What it offers for what you're typing (/ commands, @ files): OfferList.qml, read and
+                // made only while there's something to offer
+                Loader {
+                    active: pane.suggestions.length > 0 && replyBox.activeFocus
+                    visible: active
                     Layout.fillWidth: true
                     Layout.leftMargin: pane.gutter
-                    implicitHeight: offerList.implicitHeight + 2
-                    radius: Kirigami.Units.cornerRadius
-                    color: pane.mix(pane.textColor, 0.06)
-                    border.width: 1
-                    border.color: pane.borderColor
-
-                    Column {
-                        id: offerList
-                        x: 1
-                        y: 1
-                        width: parent.width - 2
-                        Repeater {
-                            model: pane.suggestions.length
-                            delegate: Rectangle {
-                                required property int index
-                                readonly property var offer: pane.suggestions[index] || { text: "", about: "" }
-                                opacity: offer.off ? 0.55 : 1
-                                width: offerList.width
-                                height: offerRow.implicitHeight + Kirigami.Units.smallSpacing
-                                radius: Kirigami.Units.cornerRadius
-                                color: index === pane.suggestion ? Qt.rgba(pane.youColor.r, pane.youColor.g, pane.youColor.b, 0.22) : "transparent"
-                                RowLayout {
-                                    id: offerRow
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.leftMargin: Kirigami.Units.smallSpacing
-                                    anchors.rightMargin: Kirigami.Units.smallSpacing
-                                    PlasmaComponents3.Label {
-                                        textFormat: Text.PlainText
-                                        text: offer.text
-                                        font.family: pane.monoFamily
-                                        font.pointSize: pane.pt * 0.95
-                                        color: index === pane.suggestion ? pane.youColor : pane.textColor
-                                        elide: Text.ElideMiddle
-                                        Layout.maximumWidth: offerList.width * 0.6
-                                    }
-                                    PlasmaComponents3.Label {
-                                        textFormat: Text.PlainText
-                                        Layout.fillWidth: true
-                                        text: offer.about
-                                        color: pane.mutedColor
-                                        font.pointSize: pane.pt * 0.85
-                                        elide: Text.ElideRight
-                                    }
-                                    // where it runs, when not here: the chat's terminal, Talpy Den's own page
-                                    PlasmaComponents3.Label {
-                                        visible: !!offer.tag
-                                        textFormat: Text.PlainText
-                                        text: offer.tag || ""
-                                        color: pane.mutedColor
-                                        font.pointSize: pane.pt * 0.8
-                                        leftPadding: Kirigami.Units.smallSpacing
-                                        rightPadding: Kirigami.Units.smallSpacing
-                                        background: Rectangle {
-                                            color: "transparent"
-                                            border.width: 1
-                                            border.color: pane.borderColor
-                                            radius: Kirigami.Units.cornerRadius
-                                        }
-                                    }
-                                }
-                                MouseArea {
-                                    id: offerMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: !!offer.tip || !!offer.off
-                                    onClicked: {
-                                        pane.takeSuggestion(index)
-                                        replyBox.forceActiveFocus()
-                                    }
-                                }
-                                PlasmaComponents3.ToolTip.text: offer.off ? offer.about : offer.tip || ""
-                                PlasmaComponents3.ToolTip.visible: offerMouse.containsMouse && PlasmaComponents3.ToolTip.text !== ""
-                                PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
-                            }
-                        }
-                    }
+                    source: active ? "OfferList.qml" : ""
                 }
                 // A new chat's ⚙ line: the model, effort and permission mode it starts with
                 // (NewChatOptions.qml: made, and read, only for a new chat)
@@ -3870,72 +3776,28 @@ Window {
                         }
                     }
                 }
-                // The pictures your reply names, small (× takes one out)
-                PictureStrip {
-                    id: replyPictures
+                // The pictures your reply names, small (× takes one out): made only for a reply that names one
+                Loader {
+                    active: replyBox.text.indexOf("[Image: ") >= 0
+                    visible: active
                     Layout.fillWidth: true
                     Layout.leftMargin: pane.gutter
-                    pictures: named(replyBox.text)
-                    host: pane.host
-                    removeText: i18n("Take it out of your reply")
-                    onRemoveRequested: path => replyBox.text = without(replyBox.text, path)
+                    sourceComponent: PictureStrip {
+                        pictures: named(replyBox.text)
+                        host: pane.host
+                        removeText: i18n("Take it out of your reply")
+                        onRemoveRequested: path => replyBox.text = without(replyBox.text, path)
+                    }
                 }
-                // A picture for an SSH host's chat: copied there once you say so
-                RowLayout {
+                // Copy a picture to an SSH host, set dictation up, download a speech model: asked first
+                // (ReplyAsks.qml, read and made only while one is asked)
+                Loader {
+                    active: pane.offerSetup || pane.offerModel
+                            || (!!pane.host && ((!!root.pictureOffer && root.pictureOffer.host === pane.host && root.pictureOffer.target === pane.pasteTarget)
+                                                || (root.pictureCopyingTo === pane.host && root.pictureCopyTarget === pane.pasteTarget)))
+                    visible: active
                     Layout.fillWidth: true
-                    visible: !!pane.host && !!root.pictureOffer && root.pictureOffer.host === pane.host
-                             && root.pictureOffer.target === pane.pasteTarget
-                    spacing: Kirigami.Units.smallSpacing
-
-                    Image {
-                        source: root.pictureOffer ? "file://" + encodeURI(root.pictureOffer.path) : ""
-                        Layout.preferredHeight: Kirigami.Units.gridUnit * 2
-                        Layout.preferredWidth: Kirigami.Units.gridUnit * 3
-                        sourceSize.height: Kirigami.Units.gridUnit * 2 * Screen.devicePixelRatio
-                        fillMode: Image.PreserveAspectFit
-                        asynchronous: true
-                    }
-                    ConfirmLine {
-                        Layout.fillWidth: true
-                        text: i18n("Copy this picture to %1? Claude there can only open it there.", root.hostLabel(pane.host))
-                        confirmText: i18n("Copy")
-                        onConfirmed: root.copyPicture()
-                        onCancelled: root.pictureOffer = null
-                    }
-                }
-                PlasmaComponents3.Label {
-                    visible: !!pane.host && root.pictureCopyingTo === pane.host && root.pictureCopyTarget === pane.pasteTarget
-                    textFormat: Text.PlainText
-                    text: i18n("Copying the picture to %1…", root.hostLabel(pane.host))
-                    color: pane.mutedColor
-                }
-                // Nothing to write it down with: dictation is set up once you say so
-                ConfirmLine {
-                    Layout.fillWidth: true
-                    visible: pane.offerSetup
-                    text: i18n("Set up dictation? It installs faster-whisper, speech to text that runs on this computer, and its base speech model: about %1 MB from pypi.org and huggingface.co into ~/.local/share/talpy-den/whisper, no sudo needed; a few minutes. What you say never leaves the computer. Other models: in the settings.",
-                               pane.dictateState ? pane.dictateState.setupMb : 612)
-                    confirmText: i18n("Set up")
-                    onConfirmed: {
-                        pane.offerSetup = false
-                        pane.dictating = "setup"
-                        pane.dictateRun("--setup")
-                    }
-                    onCancelled: pane.offerSetup = false
-                }
-                // whisper is there but no speech model: one is downloaded once you say so
-                ConfirmLine {
-                    Layout.fillWidth: true
-                    visible: pane.offerModel
-                    text: i18n("To dictate, %1 needs a speech model: download its base model (142 MB) from huggingface.co? It's kept in ~/.local/share/talpy-den/whisper; what you say never leaves the computer. Other models: in the settings.",
-                               pane.dictateState && pane.dictateState.engine ? pane.dictateState.engine : "whisper")
-                    confirmText: i18n("Download")
-                    onConfirmed: {
-                        pane.offerModel = false
-                        pane.dictating = "model"
-                        pane.dictateRun("--get-model base")
-                    }
-                    onCancelled: pane.offerModel = false
+                    source: active ? "ReplyAsks.qml" : ""
                 }
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText
@@ -4077,280 +3939,14 @@ Window {
             }
 
             // ---------------------------------------------------------------- Review
-            PlasmaComponents3.ScrollView {
+            // (ReviewPage.qml: made the first time the tab shows, then kept)
+            Loader {
+                id: reviewPage
                 visible: pane.tab === "review"
+                active: false
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                contentWidth: availableWidth
-                PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
-
-                ColumnLayout {
-                    width: parent.width
-                    spacing: Kirigami.Units.smallSpacing
-
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        visible: pane.review === null
-                        text: pane.reviewLoading ? i18n("Comparing its files with how they were before the chat…")
-                                                 : pane.reviewError || i18n("Nothing to review yet")
-                        color: pane.reviewError ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-                        font.pointSize: pane.pt
-                        opacity: 0.7
-                        wrapMode: Text.Wrap
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        visible: pane.review !== null && pane.review.files.length === 0
-                        text: i18n("No changed files: they're as they were before this chat.")
-                        font.pointSize: pane.pt
-                        opacity: 0.7
-                        wrapMode: Text.Wrap
-                    }
-
-                    // the files, +/- lines, their diffs
-                    RowLayout {
-                        visible: pane.review !== null && pane.review.files.length > 0
-                        Layout.fillWidth: true
-
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            readonly property var sums: pane.totals(pane.review ? pane.review.files : [])
-                            text: pane.review ? i18np("%1 file changed since the chat started", "%1 files changed since the chat started",
-                                                     pane.review.files.length) + "  +" + sums[0] + " −" + sums[1] : ""
-                            font.bold: true
-                            font.pointSize: pane.pt
-                        }
-                        TestsBadge {
-                            review: pane.row ? pane.row.review : (pane.review ? { tests: pane.review.tests } : null)
-                        }
-                        PlasmaComponents3.ToolButton {
-                            icon.name: Icons.plasma.sideBySide
-                            checkable: true
-                            checked: Plasmoid.configuration.diffSideBySide
-                            display: PlasmaComponents3.AbstractButton.IconOnly
-                            text: i18n("Side by side")
-                            onToggled: Plasmoid.configuration.diffSideBySide = checked
-
-                            TipArea {
-                                textFormat: Text.PlainText
-                                anchors.fill: parent
-                                mainText: i18n("Side by side")
-                                subText: i18n("Each change as before | after, where the window is wide enough; else removed and added lines one after the other.")
-                            }
-                        }
-                    }
-                    Repeater {
-                        model: pane.review ? pane.review.files.length : 0
-                        delegate: ColumnLayout {
-                            id: fileItem
-                            required property int index
-                            readonly property var file: pane.review && pane.review.files[index] ? pane.review.files[index] : ({ label: "", path: "", diff: [] })
-                            readonly property bool unfolded: pane.openFiles[file.path] === true
-                            Layout.fillWidth: true
-                            spacing: 0
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: Kirigami.Units.smallSpacing
-
-                                Kirigami.Icon {
-                                    source: fileItem.unfolded ? Icons.plasma.unfolded : Icons.plasma.folded
-                                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                                    Layout.preferredHeight: Layout.preferredWidth
-                                    opacity: 0.6
-                                }
-                                PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
-                                    Layout.fillWidth: true
-                                    text: fileItem.file.label + (fileItem.file.created ? "  " + i18nc("a file the chat made", "(new)") : "")
-                                          + (fileItem.file.deleted ? "  " + i18nc("a file the chat removed", "(removed)") : "")
-                                    elide: Text.ElideMiddle
-                                    font.family: pane.monoFamily
-                                    font.pointSize: pane.pt
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            const next = Object.assign({}, pane.openFiles)
-                                            next[fileItem.file.path] = !fileItem.unfolded
-                                            pane.openFiles = next
-                                        }
-                                    }
-                                }
-                                PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
-                                    visible: fileItem.file.added !== null && fileItem.file.added !== undefined
-                                    text: "+" + fileItem.file.added
-                                    color: Kirigami.Theme.positiveTextColor
-                                    font.family: pane.monoFamily
-                                    font.pointSize: pane.pt
-                                }
-                                PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
-                                    visible: fileItem.file.removed !== null && fileItem.file.removed !== undefined
-                                    text: "−" + fileItem.file.removed
-                                    color: Kirigami.Theme.negativeTextColor
-                                    font.family: pane.monoFamily
-                                    font.pointSize: pane.pt
-                                }
-                                PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
-                                    visible: !!fileItem.file.binary || !!fileItem.file.unknown
-                                    text: fileItem.file.binary ? i18n("binary") : i18n("no earlier version kept")
-                                    opacity: 0.6
-                                    font.pointSize: pane.pt * 0.85
-                                }
-                                PlasmaComponents3.ToolButton {
-                                    visible: !fileItem.file.unknown
-                                    icon.name: Icons.plasma.undo
-                                    display: PlasmaComponents3.AbstractButton.IconOnly
-                                    text: i18n("Undo this file")
-                                    onClicked: pane.undoAsk = fileItem.file.path
-
-                                    TipArea {
-                                        textFormat: Text.PlainText
-                                        anchors.fill: parent
-                                        mainText: i18n("Undo this file")
-                                        subText: i18n("Asks first. Puts it back as it was before this chat.")
-                                    }
-                                }
-                            }
-                            ConfirmLine {
-                                visible: pane.undoAsk === fileItem.file.path
-                                Layout.fillWidth: true
-                                text: fileItem.file.created ? i18n("Delete %1 for good? The chat made it; what you changed in it since is lost too.", fileItem.file.label)
-                                                            : i18n("Put %1 back as it was before this chat? Later changes to it are lost too.", fileItem.file.label)
-                                confirmText: i18n("Undo")
-                                confirmIcon: "undo"
-                                onConfirmed: pane.undo(fileItem.file.path)
-                                onCancelled: pane.undoAsk = ""
-                            }
-                            PlasmaComponents3.Label {
-                                visible: fileItem.unfolded && !!fileItem.file.unknown && !!fileItem.file.now && fileItem.file.now.length > 0
-                                Layout.fillWidth: true
-                                Layout.leftMargin: Kirigami.Units.gridUnit
-                                textFormat: Text.PlainText
-                                text: i18n("No earlier version was kept, so this is how it is now:")
-                                font.pointSize: pane.pt * 0.85
-                                opacity: 0.7
-                                wrapMode: Text.Wrap
-                            }
-                            Loader {
-                                active: fileItem.unfolded && ((fileItem.file.diff || []).length > 0 || (fileItem.file.now || []).length > 0)
-                                visible: active
-                                Layout.fillWidth: true
-                                Layout.leftMargin: Kirigami.Units.gridUnit
-                                sourceComponent: DiffView {
-                                    lines: fileItem.file.diff || []
-                                    now: fileItem.file.unknown ? fileItem.file.now || [] : []
-                                    path: fileItem.file.path
-                                    pt: pane.pt
-                                    mono: pane.monoFamily
-                                    base: pane.mdStyle.blockBg
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            // Commit only these files, with a message from its name and recap
-            // (over the buttons that open them, not at the end of a long list, out of sight)
-            ColumnLayout {
-                visible: pane.tab === "review" && pane.commitOpen && pane.review !== null
-                Layout.fillWidth: true
-
-                PlasmaComponents3.Label {
-                    textFormat: Text.PlainText
-                    Layout.fillWidth: true
-                    text: pane.review && pane.review.repos.length
-                          ? i18n("Commit only these files in %1 (yours that aren't this chat's stay as they are):", pane.review.repos.join(", "))
-                          : i18n("None of these files is in a git repository.")
-                    wrapMode: Text.Wrap
-                    font.pointSize: pane.pt
-                }
-                PlasmaComponents3.TextArea {
-                    id: commitText
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: Kirigami.Units.gridUnit * 6
-                    wrapMode: TextEdit.Wrap
-                    font.family: pane.monoFamily
-                    font.pointSize: pane.pt
-                    onTextChanged: if (activeFocus) pane.commitEdited = true
-                }
-                RowLayout {
-                    Item {
-                        Layout.fillWidth: true
-                    }
-                    PlasmaComponents3.Button {
-                        text: i18n("Cancel")
-                        onClicked: pane.commitOpen = false
-                    }
-                    PlasmaComponents3.Button {
-                        enabled: commitText.text.trim() !== "" && pane.reviewIsThis && pane.review.repos.length > 0
-                        icon.name: Icons.plasma.commit
-                        text: i18n("Commit")
-                        onClicked: pane.run("commit", "--commit " + root.shellQuote(pane.chatId) + " --message "
-                                            + root.shellQuote(commitText.text) + pane.paneArgs())
-                    }
-                }
-            }
-            ConfirmLine {
-                visible: pane.tab === "review" && pane.undoAsk === "*"
-                Layout.fillWidth: true
-                text: i18n("Put all of them back as they were before this chat? Files it made are deleted for good; later changes to them are lost too.")
-                confirmText: i18n("Undo all")
-                confirmIcon: "undo"
-                onConfirmed: pane.undo("*")
-                onCancelled: pane.undoAsk = ""
-            }
-            RowLayout {
-                visible: pane.tab === "review"
-                Layout.fillWidth: true
-                spacing: Kirigami.Units.smallSpacing
-
-                PlasmaComponents3.ToolButton {
-                    icon.name: Icons.plasma.refresh
-                    display: PlasmaComponents3.AbstractButton.IconOnly
-                    text: i18n("Compare again")
-                    onClicked: pane.loadReview()
-                }
-                Item {
-                    Layout.fillWidth: true
-                }
-                PlasmaComponents3.Button {
-                    enabled: pane.reviewIsThis && pane.review.files.length > 0
-                    icon.name: Icons.plasma.undo
-                    text: i18n("Undo all…")
-                    onClicked: pane.undoAsk = "*"
-                }
-                PlasmaComponents3.Button {
-                    enabled: pane.reviewIsThis && pane.review.files.length > 0 && pane.review.repos.length > 0
-                    icon.name: Icons.plasma.commit
-                    text: i18n("Commit these files…")
-                    onClicked: pane.commitOpen = !pane.commitOpen
-                }
-                PlasmaComponents3.Button {
-                    // (by the mark itself: while the chat works it isn't "to review", nor reviewed)
-                    readonly property bool marked: !!pane.row && !!pane.row.review && root.reviewSeen(pane.row, pane.host)
-                    icon.name: marked ? Icons.plasma.reviewed : Icons.plasma.markReviewed
-                    icon.color: marked ? Icons.color("reviewed", Kirigami.Theme) : "transparent"
-                    text: marked ? i18n("Reviewed") : i18n("Mark reviewed")
-                    checkable: false
-                    onClicked: pane.run("reviewed", "--reviewed " + root.shellQuote(pane.chatId) + (marked ? " --off" : "")
-                                        + (pane.host ? " --host " + root.shellQuote(pane.host) : "") + root.configDirArgs)
-
-                    TipArea {
-                        textFormat: Text.PlainText
-                        anchors.fill: parent
-                        mainText: parent.marked ? i18n("Reviewed") : i18n("Mark reviewed")
-                        subText: parent.marked ? i18n("Click to mark it not reviewed.")
-                                               : i18n("Its row stops saying \"to review\", until it changes files again.")
-                    }
-                }
+                source: active ? "ReviewPage.qml" : ""
             }
         }
 
@@ -4362,53 +3958,13 @@ Window {
             source: active ? "KeysHelp.qml" : ""
         }
 
-        // A picture of yours, big: a click anywhere (or × or Esc) closes it,
-        // Open shows it in your picture viewer
-        Rectangle {
-            id: bigView
+        // A picture of yours, big: a click anywhere (or × or Esc) closes it, Open shows it in
+        // your picture viewer (BigPicture.qml, read and made only while one shows)
+        Loader {
             anchors.fill: parent
-            visible: pane.bigPicture !== ""
             z: 100
-            color: Qt.rgba(0, 0, 0, 0.85)
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked: pane.bigPicture = ""
-            }
-            Image {
-                anchors.fill: parent
-                anchors.margins: Kirigami.Units.gridUnit * 2
-                source: pane.bigPicture ? "file://" + encodeURI(pane.bigPicture) : ""
-                sourceSize.width: width * Screen.devicePixelRatio
-                sourceSize.height: height * Screen.devicePixelRatio
-                fillMode: Image.PreserveAspectFit
-                asynchronous: true
-                smooth: true
-            }
-            RowLayout {
-                anchors.top: parent.top
-                anchors.right: parent.right
-                anchors.margins: Kirigami.Units.smallSpacing
-                spacing: Kirigami.Units.smallSpacing
-
-                PlasmaComponents3.ToolButton {
-                    icon.name: Icons.plasma.openRun
-                    text: i18n("Open")
-                    onClicked: Qt.openUrlExternally("file://" + encodeURI(pane.bigPicture))
-                    PlasmaComponents3.ToolTip.text: i18n("In your picture viewer")
-                    PlasmaComponents3.ToolTip.visible: hovered
-                    PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
-                }
-                PlasmaComponents3.ToolButton {
-                    icon.name: Icons.plasma.close
-                    display: PlasmaComponents3.AbstractButton.IconOnly
-                    text: i18n("Close (Esc)")
-                    onClicked: pane.bigPicture = ""
-                    PlasmaComponents3.ToolTip.text: text
-                    PlasmaComponents3.ToolTip.visible: hovered
-                    PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
-                }
-            }
+            active: pane.bigPicture !== ""
+            source: active ? "BigPicture.qml" : ""
         }
     }
 }
