@@ -750,7 +750,7 @@ export function contextHint(c: ContextLeft): string {
 
 // Claude's turn so far (pane.py: talpy_den.TurnSoFar), at the working line's end while it works:
 // the time since your message that started it, and its steps (tool calls) since. The time is
-// shown to the second for its first minute, then to the minute: tickIn says when it changes next
+// shown to the second ("8m 12s", "1h 5m 7s"): tickIn says when it changes next
 export interface TurnSoFar {
   startedAt: number; // ms
   steps: number;
@@ -759,7 +759,7 @@ export function turnTime(ms: number): string {
   const s = Math.floor(Math.max(0, ms) / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
-  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m ${s % 60}s`;
 }
 export function turnText(t: TurnSoFar, now: number): string {
   const time = turnTime(now - t.startedAt);
@@ -769,8 +769,7 @@ export function turnHint(t: TurnSoFar, now: number): string {
   return `Claude's turn so far: ${turnTime(now - t.startedAt)} since your message, ${t.steps === 1 ? "1 step" : `${t.steps} steps`} (its tool calls, in the Steps tab).`;
 }
 export function turnTickIn(t: TurnSoFar, now: number): number {
-  const ms = Math.max(0, now - t.startedAt);
-  return ms < 60000 ? 1000 - (ms % 1000) : 60000 - (ms % 60000);
+  return 1000 - (Math.max(0, now - t.startedAt) % 1000);
 }
 
 // Times in the conversation (Plasma ChatPane, the same words and rules): a line before the first

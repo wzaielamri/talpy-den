@@ -43,8 +43,8 @@ function plural(n: number, one: string, many = one + "s"): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-// Claude's turn so far, at the working line's end ("4m · 12 steps"): its clock ticks only while
-// the tab is in front, each second for the first minute, then each minute (turnTickIn)
+// Claude's turn so far, at the working line's end ("8m 12s · 58 steps"): its clock ticks each
+// second (turnTickIn), only while Claude works (it's made only then) and the tab is in front
 function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

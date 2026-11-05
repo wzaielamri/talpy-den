@@ -3046,7 +3046,7 @@ Window {
                                     }
                                 }
                             }
-                            // Claude's turn so far, at its end before Stop ("4m · 12 steps": WorkingMeta.qml, read
+                            // Claude's turn so far, at its end before Stop ("8m 12s · 58 steps": WorkingMeta.qml, read
                             // and made only while a chat works and its turn is known; its clock ticks only then)
                             Loader {
                                 active: pane.chatState === "working" && pane.turnNow !== null

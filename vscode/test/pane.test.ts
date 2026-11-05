@@ -1286,15 +1286,18 @@ test("context left in the header, and Claude's turn so far on the working line (
   assert.match(contextHint({ ...c, left: 2, near: true }), / That's soon: run \/compact now to say what it keeps, if you'd rather choose\.$/);
   const t = { startedAt: 1_000_000, steps: 12 };
   assert.equal(turnText(t, 1_000_000 + 9_400), "9s · 12 steps");
-  assert.equal(turnText({ ...t, steps: 1 }, 1_000_000 + 4 * 60000 + 59_000), "4m · 1 step");
-  assert.equal(turnText({ ...t, steps: 0 }, 1_000_000 + 65 * 60000), "1h 5m");
+  assert.equal(turnText({ ...t, steps: 1 }, 1_000_000 + 4 * 60000 + 59_000), "4m 59s · 1 step");
+  assert.equal(turnText({ ...t, steps: 58 }, 1_000_000 + 8 * 60000 + 12_700), "8m 12s · 58 steps");
+  assert.equal(turnText({ ...t, steps: 0 }, 1_000_000 + 60_000), "1m 0s");
+  assert.equal(turnText({ ...t, steps: 0 }, 1_000_000 + 65 * 60000 + 7_000), "1h 5m 7s");
   assert.equal(turnText(t, 1_000_000 - 5000), "0s · 12 steps");   // (a host's clock a little ahead)
-  assert.equal(turnHint(t, 1_000_000 + 125_000), "Claude's turn so far: 2m since your message, 12 steps (its tool calls, in the Steps tab).");
-  // the next change: the next second for its first minute, then the next minute
+  assert.equal(turnHint(t, 1_000_000 + 125_000), "Claude's turn so far: 2m 5s since your message, 12 steps (its tool calls, in the Steps tab).");
+  // the next change: the next second, all along
   assert.equal(turnTickIn(t, 1_000_000 + 9_400), 600);
   assert.equal(turnTickIn(t, 1_000_000 + 59_999), 1);
-  assert.equal(turnTickIn(t, 1_000_000 + 60_000), 60000);
-  assert.equal(turnTickIn(t, 1_000_000 + 4 * 60000 + 59_000), 1000);
+  assert.equal(turnTickIn(t, 1_000_000 + 60_000), 1000);
+  assert.equal(turnTickIn(t, 1_000_000 + 4 * 60000 + 59_300), 700);
+  assert.equal(turnTickIn(t, 1_000_000 - 5000), 1000);
 });
 
 test("completion as you type: the rest of your usual reply that starts so, this turn's kind first", () => {

@@ -2020,9 +2020,9 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Icons.plasma.stopTurn", button)
 
     def test_context_left_and_the_turn_so_far_cost_nothing_while_idle(self):
-        # Talpy Chat's header tag (A7) and the working line's "4m · 12 steps" (A8): the turn's QML is
-        # read and made only while a chat works and its turn is known, its clock ticks only while the
-        # window shows that tab (each second, then each minute), and both say what VS Code's say
+        # Talpy Chat's header tag (A7) and the working line's "8m 12s · 58 steps" (A8): the turn's QML is
+        # read and made only while a chat works and its turn is known, its one clock ticks each second
+        # only while the window shows that tab ("8m 12s · 58 steps"), and both say what VS Code's say
         pane = (ROOT / "ui/ChatPane.qml").read_text()
         self.assertIn('active: pane.chatState === "working" && pane.turnNow !== null\n', pane)
         self.assertIn('source: active ? "WorkingMeta.qml" : ""', pane)
@@ -2030,7 +2030,10 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("caution: !!ctx && ctx.near", pane)
         meta = (ROOT / "ui/WorkingMeta.qml").read_text()
         self.assertIn("running: meta.visible && pane.shown && pane.conversationTab", meta)
-        self.assertIn("interval: (meta.ms < 60000 ? 1000 - meta.ms % 1000 : 60000 - meta.ms % 60000) + 20", meta)
+        self.assertIn("interval: 1000 - meta.ms % 1000 + 20", meta)
+        self.assertEqual(meta.count("Timer {"), 1)
+        self.assertIn('"%1m %2s", m, s % 60)', meta)
+        self.assertIn('"%1h %2m %3s", Math.floor(m / 60), m % 60, s % 60)', meta)
         self.assertIn("property bool caution: false", (ROOT / "ui/Tag.qml").read_text())
         shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
         for words in ("Context %1% left", "tokens of context are used. Claude compacts the chat on its own at about %3: it sums up the conversation so far and goes on from that.",
@@ -2040,6 +2043,7 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Claude's turn so far: %2 since your message, %1 steps (its tool calls, in the Steps tab).", meta)
         self.assertIn("Claude's turn so far: ${turnTime(now - t.startedAt)} since your message,", shared)
         self.assertIn("(its tool calls, in the Steps tab).", shared)
+        self.assertIn("return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m ${s % 60}s`;", shared)
 
     def test_times_copy_and_new_below_add_nothing_per_message(self):
         # Talpy Chat's lines between days (A5), a message's time and Copy on hover (A4, A5) and "3 new ↓"

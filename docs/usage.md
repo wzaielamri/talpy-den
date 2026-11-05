@@ -33,7 +33,7 @@
 | **⚠ Same files** next to a chat | Goes to the other chat that changes the same files. |
 | Filter button at the top (**Focus**) | Shows only what needs you, the chats that finished a turn you haven't looked at yet and one line for each chat at work; **Show everything** goes back. |
 | *Context 69% left* in Talpy Chat's header | What's left of the chat's context before Claude compacts it on its own (auto-compact), counted as Claude Code counts it; in the warning colour once that's close. Hover it for the tokens used and where Claude compacts it. |
-| *4m · 12 steps* on Talpy Chat's working line | While Claude works: the time since your message and the steps (tool calls) it took since. |
+| *8m 12s · 58 steps* on Talpy Chat's working line | While Claude works: the time since your message and the steps (tool calls) it took since. |
 | **Copy** on a message in Talpy Chat | With the pointer on it, beside its time: puts Claude's reply on the clipboard as Markdown, as Claude wrote it, all of it (one Talpy Chat shows cut is read whole first), or your message as you wrote it; *Copied* once it's there. |
 | *2 new ↓* at the bottom of Talpy Chat | Scrolled up while new messages came in below: goes to the end. |
 | **Stop** on Talpy Chat's working line | While Claude works: stops what it does now, as Esc in its terminal; the chat stays and takes your next message. For a chat in tmux or in the background; elsewhere the line's tooltip says where to stop it. |
