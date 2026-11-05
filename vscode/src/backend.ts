@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isComparison, type Comparison } from "./changes";
-import { cleanupStatusOf, type CleanupStatus } from "./oldChats";
+import { cleanupSettingOf, cleanupStatusOf, type CleanupSetting, type CleanupStatus } from "./oldChats";
 import { hostLabel, shellQuote } from "./shared/model";
 import type { ContainerInfo, ContainerNote, FoundChat, FoundMemory, FoundPlan, FoundProject, HostProjects, LimitHistory, PermsData, ProjectRow, ProjectsData, Status, WeekRecap } from "./shared/types";
 
@@ -317,6 +317,11 @@ export class Backend {
   // run would delete here now at those days (nothing is deleted; it reads every account's chats)
   async cleanupStatus(configArgs: string[], days?: number): Promise<CleanupStatus | null> {
     return cleanupStatusOf(await this.json(["cleanup.py", "--status", ...(days ? ["--days", String(days)] : []), ...configArgs], 120000));
+  }
+
+  // Only the choice (cleanup.py --setting): no run, dry or not
+  async cleanupSetting(): Promise<CleanupSetting | null> {
+    return cleanupSettingOf(await this.json(["cleanup.py", "--setting"], 30000));
   }
 
   async mondayRecap(args: string[]): Promise<Record<string, any> | null> {

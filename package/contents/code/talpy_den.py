@@ -150,6 +150,20 @@ def write_json_atomic(path, data, private=False):
         raise
 
 
+def write_claude_settings(path, data):
+    """Write one of Claude's settings.json in one go (the real file, not a
+    link to it: what it points to stays one), keeping its mode; its folder
+    made if it isn't there (pane.py's hooks, cleanup.py's cleanupPeriodDays)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".talpy-den.tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if path.exists():
+        import shutil
+        shutil.copymode(str(path), str(tmp))
+    os.replace(str(tmp), str(path))
+
+
 def write_atomic(path, data, mode=None, times=None, new=False):
     """Write data (bytes) as path in one go, safely in a folder whose content
     isn't yours alone (a project, a repository: it can ship links): through
@@ -8330,14 +8344,22 @@ def cleanup_due(cache_root, now):
     return due
 
 
-def start_cleanup(extra_dirs=()):
+def start_cleanup(cache_root, extra_dirs=()):
     """Start cleanup.py --run in the background, on its own (not a child the
-    check waits for): whether it started. Not on an SSH host, where this
-    file comes on stdin: the computer that asks runs it there."""
+    check waits for): whether it started. The stamp first, so a check right
+    after a change of the setting doesn't start another. Not on an SSH host,
+    where this file comes on stdin: the computer that asks runs it there."""
     here = globals().get("__file__")
     script = os.path.join(os.path.dirname(os.path.abspath(here)), "cleanup.py") if here else ""
     if not script or not os.path.isfile(script):
         return False
+    stamp = Path(cache_root) / CLEANUP_STAMP
+    try:
+        private_dir(Path(cache_root))
+        os.close(os.open(str(stamp), os.O_CREAT | os.O_WRONLY, 0o600))
+        os.utime(str(stamp), None)
+    except OSError:
+        pass
     import subprocess
     subprocess.Popen([sys.executable or "python3", "-I", script, "--run", *("--config-dir=" + str(d) for d in extra_dirs)],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -11250,7 +11272,7 @@ def main(argv=None):
             if (not remote or local) and (keep_going or cleanup_check or result.get("notifier") is True):
                 try:  # (old chats: Talpy Den's daily cleanup, when it's the one that cleans, cleanup.py)
                     if cleanup_due(cache_root, time.time()):
-                        start_cleanup(config_dirs)
+                        start_cleanup(cache_root, config_dirs)
                 except Exception as exc:
                     result["errors"].append(f"old chats: {exc}")
             if remote and not local and kept_here:  # (how each stands: the computer that asks keeps them going)

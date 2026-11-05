@@ -25,25 +25,45 @@ export interface CleanupRun extends CleanupCounts {
   raised?: boolean;
 }
 
-export interface CleanupStatus {
-  ok: boolean;
+// The choice alone (cleanup.py --setting)
+export interface CleanupSetting {
   mode: "claude" | "talpy";
   days: number;
+}
+
+export interface CleanupStatus extends CleanupSetting {
+  ok: boolean;
   maxDays: number;
   claudeDays: { account: string; days: number }[];
   runs: Record<string, CleanupRun>;
   preview: CleanupCounts;
   previewDays: number;
+  // Talpy Den's: what Claude Code's own cleanup would delete of what it keeps, if chosen again
+  claudeRisk: { days: number; chats: number; plans: number } | null;
+}
+
+export function cleanupSettingOf(r: Record<string, any> | null): CleanupSetting | null {
+  return r && r.ok && (r.mode === "claude" || r.mode === "talpy") ? { mode: r.mode, days: Number(r.days) || 30 } : null;
 }
 
 // cleanup.py --status's answer, or null for one that isn't
 export function cleanupStatusOf(r: Record<string, any> | null): CleanupStatus | null {
-  if (!r || !r.ok || (r.mode !== "claude" && r.mode !== "talpy") || typeof r.preview !== "object" || !r.preview) return null;
+  const setting = cleanupSettingOf(r);
+  if (!r || !setting || typeof r.preview !== "object" || !r.preview) return null;
+  const risk = r.claudeRisk;
   return {
-    ok: true, mode: r.mode, days: Number(r.days) || 30, maxDays: Number(r.maxDays) || 3649,
+    ...setting, ok: true, maxDays: Number(r.maxDays) || 3649,
     claudeDays: Array.isArray(r.claudeDays) ? r.claudeDays.filter((a: any) => a && typeof a.account === "string") : [],
     runs: r.runs && typeof r.runs === "object" ? r.runs : {}, preview: r.preview, previewDays: Number(r.previewDays) || 0,
+    claudeRisk: risk && typeof risk === "object"
+      ? { days: Number(risk.days) || 30, chats: Number(risk.chats) || 0, plans: Number(risk.plans) || 0 } : null,
   };
+}
+
+// "2 chats you keep and 1 plan you keep"
+export function riskText(risk: { chats: number; plans: number }): string {
+  return [risk.chats ? `${n(risk.chats, "chat", "chats")} you keep` : "", risk.plans ? `${n(risk.plans, "plan", "plans")} you keep` : ""]
+    .filter((x) => x).join(" and ");
 }
 
 // The setting's value for cleanup.py's mode

@@ -32,6 +32,7 @@ CLAUDE.md and what Claude keeps outside an account's folder aren't touched.
     cleanup.py --status [--days N] [--config-dir DIR]...
                                                 the setting, the last runs, and what a run would
                                                 delete here now, at N days (nothing is deleted)
+    cleanup.py --setting                        only the choice (no run, dry or not)
     cleanup.py --set claude | --set talpy DAYS  choose; it takes effect at once
     cleanup.py --run [--config-dir DIR]...      the run: here, then the SSH hosts and containers
     cleanup.py --place claude|DAYS [--keep-chats IDS] [--keep-plans SLUGS] [--dry-run] [--remote]
@@ -61,7 +62,9 @@ MAX_DAYS = 3649
 CLAUDE_KEEPS = 3650  # cleanupPeriodDays while Talpy Den cleans: Claude's "3650 for ~10 years"
 SETTING_KEY = "cleanupPeriodDays"
 CHANGED_FILE = "cleanup-claude.json"  # (state folder: the settings files changed, and what they said before)
-RUNS_FILE = "cleanup-runs.json"  # (cache: each place's last run, "" this computer's)
+RUNS_FILE = "cleanup-runs.json"  # (cache: each place's last run, "" this computer's, as the settings show it)
+HOSTS_FILE = "cleanup-hosts.json"  # (state folder: the SSH hosts and containers it kept Claude's from cleaning on)
+HOST_MODULES = ("accounts.py", "sharing.py")  # (loaded before this file on a host: the Trash, the shared chats' store)
 LOCK_FILE = "cleanup.lock"
 HOST_FRESH_S = 86400  # a host is cleaned when it answered a check in the last day
 ERRORS_KEPT = 5
@@ -69,6 +72,8 @@ HEAD_BYTES = 16384  # read of a transcript's start, for its entrypoint
 # A chat Claude Desktop keeps is Claude's own exception (entrypoint claude-desktop…, local-agent)
 DESKTOP = re.compile(rb'"entrypoint"\s*:\s*"(?:claude-desktop[^"]*|local[-_]agent)"')
 LEAD_ID = re.compile(r"^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})")
+# A chat's id is a UUID: what else is in a project's folder (its memory/, …) is never taken for a chat
+CHAT_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 # The account folders Claude empties of what's older than its cleanupPeriodDays, and Talpy Den in its
 # place: (folder, whether its entries are folders). An entry named after a chat (a chat's undo history,
 # its environment, pictures, tasks, todos, log) goes with its chat, and stays while its chat does.
@@ -76,7 +81,8 @@ AGED = (("file-history", True), ("session-env", True), ("image-cache", True), ("
         ("todos", False), ("debug", False), ("shell-snapshots", False), ("paste-cache", False))
 COMPANIONS = (".ccr-tip.json", ".precompact.json")  # (beside a transcript: Claude deletes them with it)
 # (on an SSH host this file comes on stdin after talpy_den.py: no __doc__ there)
-USAGE = ("usage: cleanup.py --status [--days N] | --set claude | --set talpy DAYS | --run | --uninstall [--config-dir DIR]...\n"
+USAGE = ("usage: cleanup.py --status [--days N] | --setting | --set claude | --set talpy DAYS | --run | --uninstall\n"
+         "                  [--config-dir DIR]...\n"
          "       cleanup.py --place claude|DAYS [--keep-chats IDS] [--keep-plans SLUGS] [--dry-run] [--remote]")
 
 
@@ -157,14 +163,7 @@ def read_settings(path):
     return (data if isinstance(data, dict) else None), True
 
 
-def write_settings(path, data):
-    """Write a settings.json in one go, keeping its mode (as pane.write_settings)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".talpy-den.tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    if path.exists():
-        shutil.copymode(str(path), str(tmp))
-    os.replace(str(tmp), str(path))
+write_settings = cs.write_claude_settings  # (the one writer of Claude's settings: pane.py's hooks use it too)
 
 
 def keep_claude_from_cleaning(home, cache_root, profiles):
@@ -383,12 +382,12 @@ def sweep(home, cache_root, profiles, days, keep_chats, keep_plans, now, dry=Fal
         sweep_chats(root, cutoff, keep, gone, stays, t, dry)
     sweep_shared(home, cutoff, keep, gone, stays, t, dry)
     for root in roots:
-        sweep_jobs(root, cutoff, keep, live_jobs, t, dry)
+        sweep_jobs(root, cutoff, keep | stays, live_jobs, t, dry)  # (a background chat's folder stays with its chat)
         sweep_aged(root, cutoff, keep | stays, gone, t, dry)
     noted = cs.load_plan_projects(cache_root)  # (the chat that made each plan, as the status noted it)
     living = keep | stays  # (a plan stays while its chat does)
     plans = set(keep_plans) | {slug for slug, e in noted.items() if e.get("chat") in living}
-    sweep_plans(home, roots, cutoff, plans, set(keep_plans), t, dry)  # (counted kept: the ones you starred or queued)
+    sweep_plans(home, roots, cutoff, plans, t, dry)
     return t
 
 
@@ -403,7 +402,7 @@ def sweep_chats(root, cutoff, keep, gone, stays, t, dry):
         for e in listed:
             if e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False):
                 chat = e.name[:-6]
-                if not cs.valid_id(chat):
+                if not CHAT_ID.match(chat):
                     continue
                 when = mtime_of(e)
                 if when is None or when >= cutoff or chat in keep or from_desktop(e.path):
@@ -423,8 +422,9 @@ def sweep_chats(root, cutoff, keep, gone, stays, t, dry):
                     t.bytes += size
                 except OSError as exc:
                     t.error(f"chat {chat[:8]}: {exc.strerror or exc}")
-            elif e.is_dir(follow_symlinks=False) and cs.valid_id(e.name) and e.name + ".jsonl" not in names:
-                # (a chat's folder without its transcript: Claude's sweep goes by the folder's own date)
+            elif e.is_dir(follow_symlinks=False) and CHAT_ID.match(e.name) and e.name + ".jsonl" not in names:
+                # (a chat's folder without its transcript: Claude's sweep goes by the folder's own date;
+                # never memory/ nor any other folder that isn't named after a chat)
                 when = mtime_of(e)
                 if when is None or when >= cutoff or e.name in keep:
                     continue
@@ -447,17 +447,15 @@ def sweep_shared(home, cutoff, keep, gone, stays, t, dry):
     """A chat shared between accounts (sharing.py) keeps its transcript's
     one more link and its folders in a store: they go with the chat, or once
     every account's copy is gone and they're old."""
-    data = os.environ.get("XDG_DATA_HOME", "")
-    store = os.path.join(data if os.path.isabs(data) else os.path.join(str(home), ".local", "share"),
-                         "claude-status", "shared-chats")
-    for d in entries(store):
+    import sharing  # (on an SSH host it's loaded before this file)
+    for d in entries(str(sharing.store_root(Path(home)))):
         if not d.is_dir(follow_symlinks=False):
             continue
         for e in entries(d.path):
             if not (e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False)):
                 continue
             chat = e.name[:-6]
-            if not cs.valid_id(chat) or chat in keep or chat in stays:
+            if not CHAT_ID.match(chat) or chat in keep or chat in stays:
                 continue
             try:
                 st = e.stat(follow_symlinks=False)
@@ -534,7 +532,7 @@ def sweep_aged(root, cutoff, stays, gone, t, dry):
                 t.error(f"{name}/{e.name[:20]}: {exc.strerror or exc}")
 
 
-def sweep_plans(home, roots, cutoff, keep, starred, t, dry):
+def sweep_plans(home, roots, cutoff, keep, t, dry):
     """The accounts' own plans (plans/*.md) to the Trash, once each (a plan
     shared between accounts is one file, linked: the other links go)."""
     by_file, seen = {}, set()
@@ -561,7 +559,7 @@ def sweep_plans(home, roots, cutoff, keep, starred, t, dry):
             if not cs.PLAN_SLUG.match(slug):
                 continue
             if slug in keep:
-                t.kept_plans += slug in starred
+                t.kept_plans += 1  # (old: it stays because it's starred, queued or its chat stays)
                 continue
             try:
                 st = e.stat(follow_symlinks=False)
@@ -607,20 +605,34 @@ def load_runs(cache_root):
     return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, dict)} if isinstance(data, dict) else {}
 
 
-def hosts_to_visit(cache_root, runs, mode, now):
+def raised_hosts(cache_root):
+    """The SSH hosts and containers where Talpy Den kept Claude's cleanup
+    from cleaning (or may have: one is noted before it's asked), in the
+    state folder: a cache cleared mustn't leave one so for good."""
+    data = cs.read_json(cs.state_dir(cache_root) / HOSTS_FILE)
+    hosts = data.get("hosts") if isinstance(data, dict) else None
+    return {h for h in hosts if isinstance(h, str) and h} if isinstance(hosts, list) else set()
+
+
+def save_raised_hosts(cache_root, hosts):
+    cs.private_dir(cs.state_dir(cache_root))
+    cs.write_json_atomic(cs.state_dir(cache_root) / HOSTS_FILE, {"hosts": sorted(hosts)}, private=True)
+
+
+def hosts_to_visit(cache_root, mode, now):
     """The SSH hosts and containers a run goes to: those that answered a
     check in the last day (Talpy Den's cleanup), and those Talpy Den kept
-    Claude's from cleaning on (to put it back)."""
+    Claude's from cleaning on (Claude's: to put it back)."""
     import remote
+    if mode != "talpy":
+        return sorted(h for h in raised_hosts(cache_root) if remote.HOST_NAME.match(h))
     hosts = []
     for f in entries(os.path.join(str(cache_root), remote.ANSWERS_DIR)):
         host = f.name[:-5] if f.name.endswith(".json") else ""
         when = mtime_of(f)
         if host and remote.HOST_NAME.match(host) and when is not None and now - when < HOST_FRESH_S:
             hosts.append(host)
-    if mode == "talpy":
-        return sorted(hosts)
-    return sorted(h for h, r in runs.items() if h and r.get("raised") and remote.HOST_NAME.match(h))
+    return sorted(hosts)
 
 
 def on_host(host, cache_root, mode, days, dry=False):
@@ -634,7 +646,7 @@ def on_host(host, cache_root, mode, days, dry=False):
         args += ["--keep-plans", ",".join(sorted(plans))]
     if dry:
         args.append("--dry-run")
-    return remote.host_answer(host, args, name="cleanup.py", also=("accounts.py",))
+    return remote.host_answer(host, args, name="cleanup.py", also=HOST_MODULES)
 
 
 def run(home, cache_root, extra_dirs=(), now=None, wait=False):
@@ -657,15 +669,22 @@ def run(home, cache_root, extra_dirs=(), now=None, wait=False):
             except Exception as exc:  # (written down: the settings say why)
                 runs[""] = {"ok": False, "at": int(at * 1000), "message": f"{type(exc).__name__}: {exc}",
                             "raised": bool(load_changed(cache_root))}
-            for host in hosts_to_visit(cache_root, runs, setting["mode"], at):
+            raised = raised_hosts(cache_root)
+            for host in hosts_to_visit(cache_root, setting["mode"], at):
                 before = runs.get(host) or {}
+                if setting["mode"] == "talpy" and host not in raised:
+                    raised.add(host)  # (noted first: an answer lost on its way still gets it put back)
+                    save_raised_hosts(cache_root, raised)
                 answer = on_host(host, cache_root, setting["mode"], setting["days"])
+                if isinstance(answer.get("raised"), bool):  # (it got there and says how Claude's stands)
+                    (raised.add if answer["raised"] else raised.discard)(host)
+                    save_raised_hosts(cache_root, raised)
                 if answer.get("ok") or "raised" in answer:
                     runs[host] = {k: v for k, v in answer.items() if k != "reached"}
                 else:  # (not reached, or it failed there: what it did before stays known)
                     runs[host] = dict(before, ok=False, at=int(at * 1000), message=answer.get("message") or "no answer")
             cs.write_json_atomic(Path(cache_root) / RUNS_FILE, runs)
-            if setting["mode"] == "claude" and setting["pending"] and not any(r.get("raised") for r in runs.values()):
+            if setting["mode"] == "claude" and setting["pending"] and not raised and not load_changed(cache_root):
                 change_setting(cache_root, lambda s: s.update(pending=False) if s["at"] == setting["at"] else False)
             if load_setting(cache_root)["at"] == setting["at"]:
                 break
@@ -689,7 +708,7 @@ def set_mode(home, cache_root, extra_dirs, mode, days=None, start=True):
     profiles = cs.discover_profiles(home, extra_dirs)
     problems = keep_claude_from_cleaning(home, cache_root, profiles) if mode == "talpy" else let_claude_clean(home, cache_root)[0]
     if start:
-        cs.start_cleanup(extra_dirs)
+        cs.start_cleanup(cache_root, extra_dirs)
     if mode == "talpy":
         message = ("Talpy Den cleans up from now on: chats you haven't used for %d days, and old plans to the Trash; "
                    "the starred ones stay" % s["days"])
@@ -708,6 +727,11 @@ def status(home, cache_root, extra_dirs=(), now=None, days=None):
     chats, plans = kept_here(cache_root)
     days = days if days is not None else setting["days"]
     preview = sweep(home, cache_root, profiles, days, chats, plans, now, dry=True).out()
+    risk = None  # (Talpy Den's: what Claude Code's own cleanup would delete of what it keeps, if chosen again)
+    if setting["mode"] == "talpy":
+        back = claude_days_back(cache_root)
+        at = preview if back == days else sweep(home, cache_root, profiles, back, chats, plans, now, dry=True).out()
+        risk = {"days": back, "chats": at["keptChats"], "plans": at["keptPlans"]}
     try:
         ran = os.stat(str(Path(cache_root) / cs.CLEANUP_STAMP)).st_mtime
     except OSError:
@@ -715,7 +739,15 @@ def status(home, cache_root, extra_dirs=(), now=None, days=None):
     return {"ok": True, "mode": setting["mode"], "days": setting["days"], "defaultDays": DEFAULT_DAYS,
             "maxDays": MAX_DAYS, "pending": setting["pending"], "claudeDays": claude_days(home, profiles),
             "runs": load_runs(cache_root), "checkedAt": int(ran * 1000) if ran else None, "preview": preview,
-            "previewDays": days}
+            "previewDays": days, "claudeRisk": risk}
+
+
+def claude_days_back(cache_root):
+    """The days Claude Code's own cleanup keeps once it's put back: the
+    fewest of what the accounts said before (30 where they said nothing)."""
+    days = [was.get("value") if was.get("had") and isinstance(was.get("value"), int) and was.get("value") >= 1
+            else DEFAULT_DAYS for was in load_changed(cache_root).values()]
+    return min(days) if days else DEFAULT_DAYS
 
 
 def ids(text, check):
@@ -733,7 +765,7 @@ def main(argv=None):
             config_dirs.append(args.pop(0))
         elif arg.startswith("--config-dir="):
             config_dirs.append(arg.partition("=")[2])
-        elif arg in ("--status", "--run", "--uninstall"):
+        elif arg in ("--status", "--setting", "--run", "--uninstall"):
             action = arg
         elif arg == "--days" and args and args[0].isdigit() and 1 <= int(args[0]) <= MAX_DAYS:
             days = int(args.pop(0))
@@ -759,6 +791,9 @@ def main(argv=None):
     try:
         if action == "--status":
             result = status(home, cache_root, config_dirs, days=days)
+        elif action == "--setting":  # (only the choice: no run, dry or not)
+            s = load_setting(cache_root)
+            result = {"ok": True, "mode": s["mode"], "days": s["days"], "pending": s["pending"], "maxDays": MAX_DAYS}
         elif action == "--set":
             result = set_mode(home, cache_root, config_dirs, value, days)
         elif action == "--run":
@@ -770,7 +805,7 @@ def main(argv=None):
             else:
                 set_mode(home, cache_root, config_dirs, "claude", start=False)
                 result = run(home, cache_root, config_dirs, wait=True)
-                left = sorted(h or "this computer" for h, r in result.get("runs", {}).items() if r.get("raised"))
+                left = (["this computer"] if load_changed(cache_root) else []) + sorted(raised_hosts(cache_root))
                 result["message"] = ("Claude Code cleans up old chats again" if not left else
                                      "Claude Code cleans up old chats again, but not yet on " + ", ".join(left)
                                      + ": choose its cleanup in Talpy Den's settings there, or set cleanupPeriodDays back yourself")

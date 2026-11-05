@@ -515,8 +515,42 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         });
         ask.add_suffix(use);
         ask.add_suffix(cancel);
+        // Claude Code's own cleanup again: what it would delete of what Talpy Den keeps, asked first
+        const back = new Adw.ActionRow({visible: false});
+        const letClaude = iconTextButton('Let Claude Code Delete', 'erase', async () => {
+            back.visible = false;
+            said(await run(['--set', 'claude']));
+            sync();
+        });
+        const keep = new Gtk.Button({label: 'Cancel', valign: Gtk.Align.CENTER});
+        keep.connect('clicked', () => {
+            back.visible = false;
+            show();
+        });
+        back.add_suffix(letClaude);
+        back.add_suffix(keep);
         const said = result => window.add_toast(new Adw.Toast({title: GLib.markup_escape_text(result.message || '', -1), timeout: 5}));
-        let st = null, asked = 0, syncing = false;
+        let st = null, asked = 0, syncing = false, applyId = 0;
+        // (more days delete nothing more: applied after the last change, not asked)
+        const applyLater = n => {
+            if (applyId)
+                GLib.source_remove(applyId);
+            applyId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 800, () => {
+                applyId = 0;
+                if (st && st.mode === 'talpy' && n > st.days)
+                    run(['--set', 'talpy', String(n)]).then(r => {
+                        said(r);
+                        asked = 0;
+                        sync();
+                    });
+                return GLib.SOURCE_REMOVE;
+            });
+        };
+        group.connect('destroy', () => {
+            if (applyId)
+                GLib.source_remove(applyId);
+            applyId = 0;
+        });
         const size = bytes => GLib.format_size(bytes || 0);
         const what = r => {   // ("3 chats, 1 background chat, 12 other files (412 MB), 1 plan to the Trash", as Plasma's)
             const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
@@ -535,12 +569,21 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             if (!st)
                 return;
             syncing = true;
-            const talpy = asked > 0 || st.mode === 'talpy';
+            const talpy = asked > 0 || (st.mode === 'talpy' && !back.visible);
             who.selected = talpy ? 1 : 0;
             days.visible = talpy;
             days.value = asked > 0 ? asked : st.days;
             syncing = false;
-            ask.visible = asked > 0 && (st.mode !== 'talpy' || asked !== st.days);
+            // (Talpy Den's, or fewer days: what its first run deletes is asked first)
+            ask.visible = asked > 0 && (st.mode !== 'talpy' || asked < st.days);
+            const risk = st.claudeRisk;
+            if (back.visible && risk) {
+                const counts = [risk.chats ? `${risk.chats} ${risk.chats === 1 ? 'chat' : 'chats'} you keep` : '',
+                    risk.plans ? `${risk.plans} ${risk.plans === 1 ? 'plan' : 'plans'} you keep` : ''].filter(x => x).join(' and ');
+                back.title = `<span foreground="${QUESTION}">${GLib.markup_escape_text(
+                    `Let Claude Code delete old chats again? When it next starts, it deletes what's older than ${risk.days} ` +
+                    `${risk.days === 1 ? 'day' : 'days'}, starred or not: here that's ${counts}.`, -1)}</span>`;
+            }
             if (ask.visible)
                 ask.title = `<span foreground="${QUESTION}">${GLib.markup_escape_text(st.previewDays !== asked ? 'Looking at what it would delete…'
                     : `Delete chats you haven't used for ${asked} ${asked === 1 ? 'day' : 'days'}? Its first run deletes ${what(st.preview)} here.`, -1)}</span>`;
@@ -580,20 +623,34 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         };
         const askFor = n => {   // (Talpy Den's at n days: what its first run deletes, read first)
             asked = n;
+            back.visible = false;
             show();
             if (ask.visible)
                 sync(n);
+            else if (st.mode === 'talpy' && n > st.days)
+                applyLater(n);
         };
         who.connect('notify::selected', async () => {
             if (syncing || !st)
                 return;
             if (who.selected === 1 && st.mode !== 'talpy') {
                 askFor(st.days);
-            } else if (who.selected === 0) {
+            } else if (who.selected === 1) {
+                back.visible = false;
+                show();
+            } else if (st.mode === 'talpy') {
                 asked = 0;
-                if (st.mode === 'talpy')
+                const risk = st.claudeRisk;
+                if (risk && risk.chats + risk.plans > 0) {   // (it would delete what Talpy Den keeps: asked first)
+                    back.visible = true;
+                    show();
+                } else {
                     said(await run(['--set', 'claude']));
-                sync();
+                    sync();
+                }
+            } else {
+                asked = 0;
+                show();
             }
         });
         days.connect('notify::value', () => {
@@ -603,6 +660,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         group.add(who);
         group.add(days);
         group.add(ask);
+        group.add(back);
         group.add(about);
         sync();
         return group;

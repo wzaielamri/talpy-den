@@ -18,7 +18,7 @@ import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, port
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
 import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
-import { cleanupText, oldChatsDetail, SETTING_OF } from "./oldChats";
+import { cleanupText, oldChatsDetail, riskText, SETTING_OF } from "./oldChats";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
@@ -984,19 +984,31 @@ export class Dashboard implements vscode.Disposable {
   // one at a time (changing both settings is one change), and asked first when it deletes sooner
   // (Talpy Den's, or fewer days), with what its first run deletes
   private oldChatsChain: Promise<void> = Promise.resolve();
+  private oldChatsSyncing = false; // (the settings changed by syncOldChats: not a choice of yours)
 
   private oldChatsChanged(): void {
+    if (this.oldChatsSyncing) return;
     this.oldChatsChain = this.oldChatsChain.then(() => this.setOldChats()).catch(() => undefined);
   }
 
   async setOldChats(): Promise<void> {
     if (this.demoPhase !== null || !vscode.window.state.focused) return;
     const want = settings.oldChats(), days = settings.oldChatsDays(), dirs = configDirArgs();
-    const now = await this.backend.cleanupStatus(dirs);
+    const now = await this.backend.cleanupSetting(); // (only the choice: a run's preview only when it's asked)
     if (!now) return;
     let args: string[];
     if (want === "claude") {
       if (now.mode === "claude") return; // (the setting caught up with cleanup.py's choice: syncOldChats)
+      // it would delete what Talpy Den keeps (starred, queued…): asked first
+      const risk = (await this.backend.cleanupStatus(dirs))?.claudeRisk;
+      if (risk && risk.chats + risk.plans > 0) {
+        const pick = await vscode.window.showWarningMessage("Let Claude Code delete old chats again?", {
+          modal: true,
+          detail: `When it next starts, Claude Code deletes what's older than ${risk.days} ${risk.days === 1 ? "day" : "days"}, ` +
+            `starred or not, for good: here that's ${riskText(risk)}.`,
+        }, "Let Claude Code Delete");
+        if (pick !== "Let Claude Code Delete") return void this.syncOldChats();
+      }
       args = ["--set", "claude"];
     } else {
       if (now.mode === "talpy" && now.days === days) return;
@@ -1022,16 +1034,24 @@ export class Dashboard implements vscode.Disposable {
   // The settings show the choice cleanup.py keeps (Talpy Den's settings on Plasma or GNOME may have changed it)
   async syncOldChats(): Promise<void> {
     if (this.demoPhase !== null) return;
+    let now = null;
     try {
-      const now = await this.backend.cleanupStatus(configDirArgs());
-      if (!now) return;
-      const config = vscode.workspace.getConfiguration("talpyDen");
-      if (SETTING_OF[now.mode] !== settings.oldChats())
-        await config.update("oldChats", SETTING_OF[now.mode], vscode.ConfigurationTarget.Global);
-      if (now.mode === "talpy" && now.days !== settings.oldChatsDays())
-        await config.update("oldChatsDays", now.days, vscode.ConfigurationTarget.Global);
+      now = await this.backend.cleanupSetting();
     } catch {
       // (no answer: the settings stay as they are)
+    }
+    if (!now) return;
+    const config = vscode.workspace.getConfiguration("talpyDen");
+    this.oldChatsSyncing = true;
+    try { // (the days first: a change of the choice read with the days of before could set those)
+      if (now.mode === "talpy" && now.days !== settings.oldChatsDays())
+        await config.update("oldChatsDays", now.days, vscode.ConfigurationTarget.Global);
+      if (SETTING_OF[now.mode] !== settings.oldChats())
+        await config.update("oldChats", SETTING_OF[now.mode], vscode.ConfigurationTarget.Global);
+    } catch {
+      // (it can't be written: the settings stay as they are)
+    } finally {
+      this.oldChatsSyncing = false;
     }
   }
 

@@ -2034,12 +2034,9 @@ def hook_path(home, kind="relay"):
 
 
 def write_settings(path, data):
-    """Write a settings.json (through a link, keeping its mode)."""
-    tmp = path.with_name(path.name + ".talpy-den.tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    if path.exists():
-        shutil.copymode(path, tmp)
-    os.replace(tmp, path)
+    """Write a settings.json (through a link, keeping its mode): one writer
+    of Claude's settings for every helper (talpy_den.write_claude_settings)."""
+    cs.write_claude_settings(path, data)
 
 
 def upgrade_hooks(home, extra_dirs=()):

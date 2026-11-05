@@ -180,9 +180,12 @@ ConfigPage {
     // Apply), and Talpy Den's, or fewer days, only once you saw what its first run deletes
     property var cleanup: null           // cleanup.py --status
     property string cleanupMessage: ""
-    property int cleanupDays: 0          // the days picked, asked first (0: none)
+    property int cleanupDays: 0          // the days picked, not applied yet (0: none)
+    property bool cleanupToClaude: false // Claude Code's own cleanup again, asked first: it would delete what Talpy Den keeps
+    // (Talpy Den's, or fewer days: what its first run deletes is asked first; more days delete nothing more)
     readonly property bool cleanupAsking: cleanup !== null && cleanupDays > 0
-                                          && (cleanup.mode !== "talpy" || cleanupDays !== cleanup.days)
+                                          && (cleanup.mode !== "talpy" || cleanupDays < cleanup.days)
+    readonly property int cleanupRisk: cleanup && cleanup.claudeRisk ? cleanup.claudeRisk.chats + cleanup.claudeRisk.plans : 0
 
     Exec {
         id: cleanupHelper
@@ -197,12 +200,22 @@ ConfigPage {
             }
             if (result.preview !== undefined) {
                 page.cleanup = result
+            } else if (source.indexOf("--status") >= 0) {
+                page.cleanupMessage = result.message || i18n("Couldn't ask about old chats")   // (not asked again: it'd fail again)
             } else {
                 page.cleanupMessage = result.message || ""
                 page.cleanupDays = 0
+                page.cleanupToClaude = false
                 page.runCleanup(["--status"])
             }
         }
+    }
+
+    Timer {   // (more days: applied after the last click)
+        id: cleanupApply
+        interval: 800
+        onTriggered: if (page.cleanup && page.cleanupDays > 0 && !page.cleanupAsking && page.cleanupDays !== page.cleanup.days)
+                         page.runCleanup(["--set", "talpy", String(page.cleanupDays)])
     }
 
     function runCleanup(args) {
@@ -213,8 +226,20 @@ ConfigPage {
     // Talpy Den's cleanup at days: what its first run deletes is read first (the question shows it)
     function askCleanup(days) {
         cleanupDays = days
+        cleanupToClaude = false
         if (cleanupAsking)
             runCleanup(["--status", "--days", String(days)])
+        else
+            cleanupApply.restart()
+    }
+
+    // Claude Code's own cleanup again: at once, unless it would delete what Talpy Den keeps (asked first)
+    function backToClaude() {
+        cleanupDays = 0
+        if (cleanupRisk > 0)
+            cleanupToClaude = true
+        else
+            runCleanup(["--set", "claude"])
     }
 
     function sizeText(bytes) {
@@ -374,16 +399,19 @@ ConfigPage {
             Kirigami.FormData.label: i18n("Deleted by:")
             enabled: page.cleanup !== null
             model: [i18n("Claude Code's own cleanup"), i18n("Talpy Den, keeping what you starred")]
-            currentIndex: page.cleanupAsking || (page.cleanup !== null && page.cleanup.mode === "talpy") ? 1 : 0
+            readonly property int shown: page.cleanupAsking
+                                         || (page.cleanup !== null && page.cleanup.mode === "talpy" && !page.cleanupToClaude) ? 1 : 0
+            currentIndex: shown
             onActivated: index => {
                 if (index === 1 && page.cleanup.mode !== "talpy")
                     page.askCleanup(page.cleanup.days)   // (asked first: what its first run deletes)
-                else if (index === 0) {
+                else if (index === 1)
+                    page.cleanupToClaude = false
+                else if (page.cleanup.mode === "talpy")
+                    page.backToClaude()
+                else
                     page.cleanupDays = 0
-                    if (page.cleanup.mode === "talpy")
-                        page.runCleanup(["--set", "claude"])
-                }
-                currentIndex = Qt.binding(() => page.cleanupAsking || (page.cleanup !== null && page.cleanup.mode === "talpy") ? 1 : 0)
+                currentIndex = Qt.binding(() => shown)
             }
         }
 
@@ -433,6 +461,35 @@ ConfigPage {
                     page.cleanupDays = 0
                     page.runCleanup(["--status"])
                 }
+            }
+        }
+
+        // Claude Code's own cleanup again: what it would delete of what Talpy Den keeps, asked first
+        RowLayout {
+            visible: page.cleanupToClaude
+            spacing: Kirigami.Units.smallSpacing
+
+            QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 14
+                wrapMode: Text.Wrap
+                color: Kirigami.Theme.neutralTextColor
+                text: !page.cleanup || !page.cleanup.claudeRisk ? ""
+                      : i18np("Let Claude Code delete old chats again? When it next starts, it deletes what's older than %1 day, starred or not: here that's %2.",
+                              "Let Claude Code delete old chats again? When it next starts, it deletes what's older than %1 days, starred or not: here that's %2.",
+                              page.cleanup.claudeRisk.days,
+                              [page.cleanup.claudeRisk.chats ? i18np("%1 chat you keep", "%1 chats you keep", page.cleanup.claudeRisk.chats) : "",
+                               page.cleanup.claudeRisk.plans ? i18np("%1 plan you keep", "%1 plans you keep", page.cleanup.claudeRisk.plans) : ""]
+                              .filter(s => s).join(i18nc("joins two counts", " and ")))
+            }
+            QQC2.Button {
+                icon.name: Icons.plasma.erase
+                icon.color: Icons.color("erase", Kirigami.Theme)
+                text: i18n("Let Claude Code Delete")
+                onClicked: page.runCleanup(["--set", "claude"])
+            }
+            QQC2.Button {
+                text: i18n("Cancel")
+                onClicked: page.cleanupToClaude = false
             }
         }
 

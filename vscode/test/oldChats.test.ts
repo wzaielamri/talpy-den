@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { test } from "node:test";
-import { cleanupStatusOf, cleanupText, keptText, oldChatsDetail, runsLines, sizeText, SETTING_OF } from "../src/oldChats";
+import { cleanupSettingOf, cleanupStatusOf, cleanupText, keptText, oldChatsDetail, riskText, runsLines, sizeText, SETTING_OF } from "../src/oldChats";
 
 const when = (ms: number) => `t${ms}`;
 
@@ -14,6 +14,16 @@ test("what a run deletes says each kind once, its size, and plans to the Trash",
   assert.equal(keptText({ keptChats: 1 }), "1 old starred, open or queued one stays");
   assert.equal(keptText({}), "");
   assert.deepEqual([sizeText(500), sizeText(3 * 1024 ** 3)], ["0 KB", "3.0 GB"]);
+});
+
+test("the choice alone, and what Claude's cleanup would delete of what Talpy Den keeps", () => {
+  assert.deepEqual(cleanupSettingOf({ ok: true, mode: "talpy", days: 9, pending: false }), { mode: "talpy", days: 9 });
+  assert.equal(cleanupSettingOf({ ok: true, mode: "x" }), null);
+  assert.equal(riskText({ chats: 2, plans: 1 }), "2 chats you keep and 1 plan you keep");
+  assert.equal(riskText({ chats: 0, plans: 3 }), "3 plans you keep");
+  const st = cleanupStatusOf({ ok: true, mode: "talpy", days: 30, preview: {}, claudeRisk: { days: 45, chats: 1, plans: 0 } })!;
+  assert.deepEqual(st.claudeRisk, { days: 45, chats: 1, plans: 0 });
+  assert.equal(cleanupStatusOf({ ok: true, mode: "claude", days: 30, preview: {}, claudeRisk: null })!.claudeRisk, null);
 });
 
 test("cleanup.py's status is read only when it's one", () => {

@@ -120,6 +120,26 @@ class ChatTests(Home):
         self.assertGreaterEqual(r["files"], 4)
         self.assertGreater(r["bytes"], 0)
 
+    def test_claudes_memories_and_what_isnt_a_chat_stay_however_old(self):
+        memory = self.thing("projects/-w/memory", 400, folder=True)
+        index = self.thing("projects/-w/memory/MEMORY.md", 400)
+        odd = self.thing("projects/-w/notes", 400, folder=True)
+        agent = self.chat("agent-a1b2c3", 400)  # (an older Claude's sidechain: not a chat id)
+        self.talpy()
+        r = self.run_here()
+        self.assertTrue(memory.is_dir() and index.exists() and odd.is_dir() and agent.exists())
+        self.assertEqual((r["chats"], r["files"]), (0, 0))
+
+    def test_a_background_chat_whose_chat_stays_stays(self):
+        self.chat(B, 2)
+        d = self.thing("jobs/j9", 40, folder=True)
+        (d / "state.json").write_text(json.dumps({"state": "done", "tempo": "idle", "sessionId": B}))
+        aged(d / "state.json", 40, self.now)
+        aged(d, 40, self.now)
+        self.talpy()
+        self.assertEqual(self.run_here()["backgroundChats"], 0)
+        self.assertTrue(d.exists())
+
     def test_a_chat_shared_between_accounts_goes_whole_once_every_copy_is_old(self):
         store = self.home / ".local/share/claude-status/shared-chats/-w"
         store.mkdir(parents=True)
@@ -180,6 +200,37 @@ class ChatTests(Home):
                          [{"account": "work", "days": 30}, {"account": "personal", "days": 30}])
         self.assertNotIn(cleanup.SETTING_KEY, json.loads(self.shared_settings.read_text()))  # (nothing changed)
 
+    def test_the_status_says_what_claudes_cleanup_would_delete_of_what_stays(self):
+        self.chat(S, 40)
+        self.thing("plans/starred.md", 40)
+        cs.change_stars(self.cache, "chats", S)
+        cs.change_stars(self.cache, "plans", "starred")
+        self.shared_settings.write_text(json.dumps({"cleanupPeriodDays": 45}))
+        self.talpy(60)
+        st = cleanup.status(self.home, self.cache, now=self.now)
+        self.assertEqual(st["claudeRisk"], {"days": 45, "chats": 0, "plans": 0})  # (none older than its 45 days)
+        self.shared_settings.write_text(json.dumps({"cleanupPeriodDays": 3650}))
+        cs.write_json_atomic(cleanup.changed_path(self.cache), {"files": {str(self.shared_settings): {"had": False}}})
+        st = cleanup.status(self.home, self.cache, now=self.now)
+        self.assertEqual(st["claudeRisk"], {"days": 30, "chats": 1, "plans": 1})
+        cleanup.set_mode(self.home, self.cache, (), "claude", start=False)
+        self.assertIsNone(cleanup.status(self.home, self.cache, now=self.now)["claudeRisk"])
+
+    def test_the_setting_alone_reads_nothing_else(self):
+        import contextlib
+        import io
+        self.talpy(12)
+        out, mask = io.StringIO(), os.umask(0o022)
+        os.umask(mask)
+        try:
+            with mock.patch.object(cleanup, "sweep") as swept, contextlib.redirect_stdout(out):
+                cleanup.main(["--setting"])
+        finally:
+            os.umask(mask)
+        swept.assert_not_called()
+        self.assertEqual(json.loads(out.getvalue()), {"ok": True, "mode": "talpy", "days": 12, "pending": False,
+                                                      "maxDays": cleanup.MAX_DAYS})
+
     def test_claudes_own_cleanup_deletes_nothing_of_ours(self):
         old = self.chat(A, 40)
         cleanup.set_mode(self.home, self.cache, (), "claude", start=False)
@@ -211,7 +262,7 @@ class PlanTests(Home):
         self.assertIn("Path=", (trash / "info/old-plan.md.trashinfo").read_text())
         self.assertTrue(all(p.exists() for p in (starred, queued, living, recent)))
         self.assertFalse(half.exists())
-        self.assertEqual((r["plans"], r["keptPlans"]), (1, 2))  # (kept: starred and queued; living goes with its chat)
+        self.assertEqual((r["plans"], r["keptPlans"]), (1, 3))  # (kept: starred, queued, and living with its chat)
 
 
 class ClaudeSettingTests(Home):
@@ -311,6 +362,13 @@ class DueTests(Home):
             cs.main(["--cleanup-check"])  # (not due again until tomorrow)
             self.assertEqual(start.call_count, 1)
 
+    def test_choosing_starts_one_run_and_the_next_check_none(self):
+        with mock.patch("subprocess.Popen") as popen:
+            cleanup.set_mode(self.home, self.cache, (), "talpy", 30)
+        self.assertEqual(popen.call_count, 1)
+        self.assertEqual(popen.call_args[0][0][-1:], ["--run"])
+        self.assertFalse(cs.cleanup_due(self.cache, time.time()))  # (the stamp went with the start)
+
     def test_the_run_is_one_at_a_time(self):
         self.talpy()
         with open(str(self.cache / cleanup.LOCK_FILE), "a") as held:
@@ -326,9 +384,9 @@ class HostsTests(Home):
         for host, days in (("lab", 0.2), ("old-box", 3), ("docker:web", 0.1)):
             (answers / (host + ".json")).write_text("{}")
             aged(answers / (host + ".json"), days, self.now)
-        self.assertEqual(cleanup.hosts_to_visit(self.cache, {}, "talpy", self.now), ["docker:web", "lab"])
-        runs = {"": {"raised": True}, "old-box": {"raised": True}, "lab": {"raised": False}}
-        self.assertEqual(cleanup.hosts_to_visit(self.cache, runs, "claude", self.now), ["old-box"])
+        self.assertEqual(cleanup.hosts_to_visit(self.cache, "talpy", self.now), ["docker:web", "lab"])
+        cleanup.save_raised_hosts(self.cache, {"old-box"})  # (in the state folder: a cache cleared keeps it)
+        self.assertEqual(cleanup.hosts_to_visit(self.cache, "claude", self.now), ["old-box"])
 
     def test_a_hosts_stars_go_with_its_run(self):
         import remote
@@ -339,7 +397,7 @@ class HostsTests(Home):
             cleanup.on_host("lab", self.cache, "talpy", 21)
         host, args = asked.call_args[0][:2]
         self.assertEqual((host, args), ("lab", ["--place", "21", "--keep-chats", A, "--keep-plans", "my-plan"]))
-        self.assertEqual(asked.call_args[1], {"name": "cleanup.py", "also": ("accounts.py",)})
+        self.assertEqual(asked.call_args[1], {"name": "cleanup.py", "also": ("accounts.py", "sharing.py")})
 
     def test_a_host_out_of_reach_keeps_what_it_did_before(self):
         import remote
@@ -351,6 +409,13 @@ class HostsTests(Home):
             runs = cleanup.run(self.home, self.cache, now=self.now)["runs"]
         self.assertEqual((runs["lab"]["ok"], runs["lab"]["chats"], runs["lab"]["raised"], runs["lab"]["message"]),
                          (False, 3, True, "down"))
+        self.assertEqual(cleanup.raised_hosts(self.cache), {"lab"})  # (noted before it was asked)
+        cleanup.set_mode(self.home, self.cache, (), "claude", start=False)
+        with mock.patch.object(remote, "host_answer", return_value={"ok": True, "raised": False}) as asked:
+            cleanup.run(self.home, self.cache, now=self.now)
+        self.assertEqual(asked.call_args[0][:2], ("lab", ["--place", "claude"]))
+        self.assertEqual(cleanup.raised_hosts(self.cache), set())
+        self.assertFalse(cleanup.load_setting(self.cache)["pending"])
 
 
 from test_remote import FakeSSH  # noqa: E402  (a stand-in ssh: runs the command here, in a made-up home)
