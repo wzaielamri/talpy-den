@@ -13,9 +13,9 @@ its permission prompt and its review.
         wait up to S seconds (at most WAIT_MAX_S) for it to change, and answer
         the moment it does (the pane's watcher: what Claude writes shows at
         once, not at the next look). Not on an SSH host (it's left out there).
-        Also how full its context is, "context" (talpy_den.context_left), and
+        Also how full its context is, "context" (turns.context_left), and
         Claude's turn so far while it's going on, "turn": {"startedAt",
-        "steps"} (talpy_den.TurnSoFar).
+        "steps"} (turns.TurnSoFar).
         --suggest (Suggest replies): how its last turn ended, "ended" and
         "over", and the question it ends with as chips, "asks" (replies.asks_of)
   --replies CHAT [--profile P]
@@ -499,26 +499,11 @@ def prompt_pictures(text, blocks, uid, folder):
     return out
 
 
-class NoTurnEnd:
-    """How a turn ended, when nobody asks (Suggest replies off): nothing is followed,
-    and replies.py isn't even read."""
-    def tool_result(self, error):
-        pass
-
-    def prompt(self):
-        pass
-
-    def interrupted(self):
-        pass
-
-    def assistant(self, e, msg, blocks):
-        pass
-
-
 def turn_end(wanted):
-    """What follows how the turn ended (replies.TurnEnd), or NoTurnEnd."""
+    """What follows how the turn ended (replies.TurnEnd), or None when nobody asks (Suggest
+    replies off): nothing is followed, and replies.py isn't even read."""
     if not wanted:
-        return NoTurnEnd()
+        return None
     import replies   # (a module of its own: compiled once and kept, where this script is compiled at every call)
     return replies.TurnEnd()
 
@@ -550,10 +535,11 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
     what it printed on it).
     Entries of subagents (sidechains) aren't in it. ends: a dict given gets
     how the last turn ended (replies.TurnEnd.result); so_far: one given gets
-    Claude's turn so far ("turn": cs.TurnSoFar, also how full its context is)."""
+    Claude's turn so far ("turn": turns.TurnSoFar, also how full its context is)."""
     items, tools = [], {}
+    import turns   # (a module of its own, as replies.py: compiled once and kept)
     ending = turn_end(ends is not None)
-    end = cs.TurnSoFar(ending)
+    end = turns.TurnSoFar(ending)
     # Messages sent while Claude works: the transcript has each one when it's
     # sent (queue-operation enqueue) and again once Claude takes it in, after
     # its next tool result (an attachment, queued_command), which can be long
@@ -696,6 +682,7 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
                     items.append({"kind": "claude", "key": mid or uid, "text": clip(said.strip(), TEXT_CHARS, 10 ** 6),
                                   "at": at})
             elif c.get("type") == "tool_use" and isinstance(c.get("id"), str):
+                end.steps += 1
                 inp = c.get("input") if isinstance(c.get("input"), dict) else {}
                 item = {"kind": "tool", "key": c["id"], "name": c.get("name") or "tool", "line": cs.describe_tool(c),
                         "status": "open", "input": clip(tool_input_text(c)), "output": "", "summary": "", "at": at,
@@ -821,9 +808,9 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
 
 def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None,
                       suggest=False):
-    """--conversation. "context": how full its context is (cs.context_left),
-    "turn": Claude's turn so far, while it's going on (cs.TurnSoFar.now: the
-    start of a long one kept in the cache folder's turns/). suggest (Suggest
+    """--conversation. "context": how full its context is (turns.context_left),
+    "turn": Claude's turn so far, while it's going on (turns.TurnSoFar.now:
+    the start of a long one kept in the cache folder's turns/). suggest (Suggest
     replies on): how its last turn ended, "ended" and "over"
     (replies.TurnEnd.result), and the question it ends with as chips, "asks"
     (replies.asks_of)."""
@@ -846,11 +833,12 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends, so_far)
     name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
     peek = cs.chat_peek(path) or {}
+    import turns
     turn = so_far["turn"]
     result = {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or cs.chat_folder(path) or "",
               "items": items, "more": more, "stamp": f"{stamp}/{limit}", "mode": peek.get("mode"),
               "permission": cs.pending_permission(path, cwd),
-              "context": cs.context_left(turn.usage, turn.model, lambda: cs.status_window(home, profile, chat_id, turn.model)),
+              "context": turns.context_left(turn.usage, turn.model, lambda: turns.status_window(home, profile, chat_id, turn.model)),
               "turn": turn.now(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")}
     if suggest:
         import replies
@@ -2292,7 +2280,7 @@ def take_text(cache_root, name):
 def forward(host, args):
     """Run this file on an SSH host with args: its answer."""
     import remote
-    return remote.host_answer(host, args, name="pane.py", also=("reply_words.py", "replies.py", "commands.py"))
+    return remote.host_answer(host, args, name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py"))
 
 
 def main(argv=None):

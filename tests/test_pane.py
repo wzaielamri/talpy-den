@@ -26,6 +26,7 @@ import pane  # noqa: E402
 import permission_hook  # noqa: E402
 import replies  # noqa: E402
 import commands as commands_py  # noqa: E402
+import turns  # noqa: E402
 
 cs = pane.cs
 
@@ -378,7 +379,7 @@ class ConversationTests(PaneFixture):
         self.assertEqual(answer, {"ok": True, "items": []})
         # (with its word tables for Claude's questions: --suggest reads them there)
         asked.assert_called_once_with("gpu", ["--conversation", SID, "--profile", ".claude-work", "--limit", "40"],
-                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py"))
+                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py"))
 
 
 # Claude Code's own fixed sentences around a No (always in English; the note after them is yours)
@@ -876,7 +877,7 @@ class ToolUseTests(PaneFixture):
             answer = self.cli("--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1", "--host", "gpu")
         self.assertTrue(answer["changed"])
         self.assertEqual(asked.call_args[0][1], ["--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1"])
-        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py", "commands.py")})
+        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py", "commands.py", "turns.py")})
 
 
 class HookTests(unittest.TestCase):
@@ -2399,7 +2400,7 @@ class ContextAndTurnTests(PaneFixture):
     """Talpy Chat's header says how much of the chat's context is left till
     Claude compacts it (A7), its working line how long Claude's turn has run
     and its steps so far (A8): both from the transcript, in the
-    --conversation answer (talpy_den.py: context_left, TurnSoFar)."""
+    --conversation answer (turns.py: context_left, TurnSoFar)."""
 
     def answer(self, *entries, limit=None):
         self.chat(*entries)
@@ -2415,11 +2416,11 @@ class ContextAndTurnTests(PaneFixture):
         self.assertEqual((a["context"]["left"], a["context"]["near"]), (2, True))   # (Claude Code says so 20k before)
 
     def test_the_window_by_model(self):
-        left, u = cs.context_left, (lambda n: {"input_tokens": n})
+        left, u = turns.context_left, (lambda n: {"input_tokens": n})
         self.assertEqual(left(u(150000), "claude-sonnet-4-5-20250929"),
                          {"used": 150000, "window": 200000, "compactAt": 167000, "left": 10, "near": True})
         for model in ("claude-opus-4-20250514", "claude-opus-4-1-20250805", "claude-haiku-4-5-20251001",
-                      "us.anthropic.claude-sonnet-4-6", "claude-opus-4-6"):
+                      "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "claude-opus-4-1@20250805", "claude-opus-4-6"):
             self.assertEqual(left(u(1000), model)["window"], 200000, model)
         for model in ("claude-opus-5-5", "claude-opus-4-7", "claude-sonnet-5", "claude-haiku-5-5", "claude-fable-5-1"):
             self.assertEqual(left(u(1000), model)["window"], 1000000, model)
@@ -2501,7 +2502,7 @@ class ContextAndTurnTests(PaneFixture):
             self.assertTrue(a["more"])
             self.assertEqual(a["turn"], {"startedAt": cs.to_ms(iso(t - 5)), "steps": 40})
             self.assertEqual(cs.read_json(self.cache / "turns" / f"{SID}.json")["at"], cs.to_ms(iso(t - 5)))
-            with mock.patch.object(cs, "turn_backward", side_effect=AssertionError("read again")):
+            with mock.patch.object(turns, "turn_backward", side_effect=AssertionError("read again")):
                 self.assertEqual(self.answer(*chat, *steps(3, t + 40, start=40), limit=10)["turn"]["steps"], 43)
                 # a prompt of yours since: its turn
                 self.assertEqual(self.answer(*chat, *steps(3, t + 40, start=40), prompt("next", t + 50),
