@@ -419,6 +419,27 @@ class RecapTests(Home):
         self.assertEqual(r["trend"][3]["workedMs"], r["previous"]["workedMs"])
         self.assertEqual(self.recap(back=4, days=40)["trend"][:4], [None] * 4)  # (before the first chat kept)
 
+    def test_today_is_compared_up_to_this_time(self):
+        # 18:00: what yesterday (and the days before) did after 18:00 isn't
+        # what today missed yet, or every number looked down until midnight
+        t0 = self.t0  # (10:00 today)
+        self.write(Transcript().prompt(t0).reply(t0 + 1000, "a").duration(t0 + 60_000, 60_000), "chat-a")
+        for k in (1, 2):
+            morning, evening = t0 - k * week.DAY_MS, t0 - k * week.DAY_MS + 11 * 3600_000  # (10:00 and 21:00)
+            self.write(Transcript().prompt(morning).reply(morning + 1000, "b").duration(morning + 30_000, 30_000)
+                       .prompt(evening).reply(evening + 1000, "c").duration(evening + 40_000, 40_000), "chat-b%d" % k)
+        day = self.recap(span="day", days=40)
+        self.assertTrue(day["sameTime"])
+        self.assertEqual(day["previous"]["workedMs"], 30_000)  # (not the 21:00 turn)
+        self.assertEqual([t and t["workedMs"] for t in day["trend"]][-3:], [30_000, 30_000, 60_000])
+        # a day that's over is compared whole
+        yesterday = self.recap(span="day", back=1, days=40)
+        self.assertFalse(yesterday["sameTime"])
+        self.assertEqual((yesterday["sum"]["workedMs"], yesterday["previous"]["workedMs"]), (70_000, 70_000))
+        # the 7 days ending today: the 7 before up to this time of their last day
+        self.assertEqual(self.recap(days=40)["previous"]["workedMs"], 0)
+        self.assertFalse(self.recap(span="all", days=40)["sameTime"])
+
     def test_a_day_and_everything(self):
         t0 = self.t0
         self.write(Transcript().prompt(t0).reply(t0 + 1000, "a").duration(t0 + 60_000, 60_000), "chat-a")
@@ -431,15 +452,20 @@ class RecapTests(Home):
         self.assertEqual((day["sum"]["workedMs"], day["previous"]["workedMs"]), (60_000, 30_000))  # (the day before)
         self.assertEqual([t and t["workedMs"] for t in day["trend"]], [0, 0, 0, 30_000, 60_000])
         self.assertEqual(day["backMax"], 16)  # (back to the first chat's day)
+        # each lane ends with its chat's numbers, as Chats it worked on most has them
+        (lane,) = day["lanes"]
+        (chat,) = [c for c in day["chats"] if c["chatId"] == lane["id"]]
+        self.assertEqual((lane["claudeMs"], lane["cost"]), (chat["workedMs"], chat["cost"]))
+        self.assertGreater(lane["cost"], 0)
         self.assertEqual(self.recap(span="day", back=1, days=40)["sum"]["workedMs"], 30_000)
         everything = self.recap(span="all", days=40)
         self.assertEqual((everything["from"], everything["to"], everything["first"]), ("2026-10-08", "2026-10-24", "2026-10-08"))
         self.assertEqual(everything["sum"]["workedMs"], 110_000)
         self.assertIsNone(everything["previous"])
         self.assertEqual(everything["trend"], [])
-        # a row per 7 days, newest first, ending today, back to the first chat
+        # a row per 7 days, newest first, ending today, back to the first chat's day (the oldest: from it)
         self.assertEqual([(r["day"], r["to"], r["workedMs"]) for r in everything["days"]],
-                         [("2026-10-18", "2026-10-24", 90_000), ("2026-10-11", "2026-10-17", 0), ("2026-10-04", "2026-10-10", 20_000)])
+                         [("2026-10-18", "2026-10-24", 90_000), ("2026-10-11", "2026-10-17", 0), ("2026-10-08", "2026-10-10", 20_000)])
         self.assertEqual(sum(r["workedMs"] for r in everything["days"]), everything["sum"]["workedMs"])
 
     def test_a_month(self):
@@ -882,6 +908,8 @@ class WorkTests(Home):
                           w["webFetches"]), (7, 1, 3, 2, 1, 1, 1))
         self.assertEqual((w["linesAdded"], w["linesRemoved"]), (2 + 2 + 2, 1 + 0 + 0))
         self.assertIn(["MCP: github", 1], w["tools"])
+        # (the line above counts the commands, edits, subagents and web fetches: only the other tools are listed)
+        self.assertEqual(sorted(t for t, _ in w["tools"]), ["MCP: github"])
         self.assertEqual(week.edit_lines("Write", {"content": "1\n2\n3"}), (3, 0))
         self.assertEqual(week.edit_lines("MultiEdit", {"edits": [edit, edit]}), (4, 2))
 

@@ -4690,7 +4690,7 @@ PlasmoidItem {
         }
     }
 
-    // The Recap's Advanced analyses (WeekView.qml, week.py --limits): how much
+    // The Recap's plan limits over time (WeekView.qml, week.py --limits): how much
     // a full window of each account's plan held, week by week. Folded until
     // you open it (kept while Plasma runs), read then and with each read of
     // the Recap while open. limitsData is the answer for limitsAccount.

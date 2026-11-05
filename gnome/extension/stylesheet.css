@@ -238,8 +238,10 @@
 .claude-week-swatch-you { background-color: rgba(154, 153, 150, 0.85); }
 .claude-week-row { spacing: 6px; }
 .claude-week-day { width: 3.6em; }
+.claude-week-days { width: 6.8em; }
 .claude-week-num { width: 4em; text-align: right; }
 .claude-week-readout { padding-left: 4.2em; }
+.claude-week-readout-days { padding-left: 7.4em; }
 .claude-week-name { width: 8em; }
 .claude-week-chat { spacing: 8px; }
 .claude-week-folder { width: 8em; text-align: right; }
@@ -261,7 +263,7 @@
 .claude-week-sub { padding-left: 4.2em; }
 .claude-week-fold { icon-size: 16px; }
 .claude-week-more { padding-left: 22px; }
-/* Advanced analyses (the Recap's How your limits changed) */
+/* Your plan's limits over time (the Recap's How your limits changed) */
 .claude-limits-account { spacing: 3px; margin-top: 6px; }
 .claude-limits-title { margin-top: 6px; }
 .claude-limits-num { min-width: 4.5em; text-align: right; }

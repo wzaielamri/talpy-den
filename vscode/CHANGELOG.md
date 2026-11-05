@@ -106,6 +106,22 @@
 - **Refresh brings the Recap the plan usage it fetched.** The Recap reads
   once more when the numbers Refresh asked for have come in, rather than
   keeping the old ones until you open it again.
+- **Today against the days before by this time.** While today isn't over,
+  the Recap compares it with the day (7 or 30 days) before up to this time
+  of day, so its numbers don't look down until midnight.
+- **One timeline on the Day.** *Chat by chat* has the day's own row, *All
+  chats*, on top, on the same hours, and each chat's time and cost at its
+  lane's end; *Through the day* and *Chats it worked on most* are gone from
+  the Day, which said it again.
+- **Rows of 7 days say their days** (*23–29 Oct*, *7–8 Oct*), and
+  everything's oldest starts with your first chat's day.
+- **What Claude did** lists only its *Other tools*, not the commands, edits
+  and subagents counted above them.
+- **Tips' shares** say what they are (*96% of usage*); their icons say where
+  each tip comes from.
+- **Your plan's limits over time** (was *Advanced analyses*) sits right after
+  the limits now; the first tile says *You were at it*; project names get the
+  room they need.
 
 ## 1.18.0
 

@@ -1607,10 +1607,16 @@ export function weekDayMoment(d, place) {
     return Math.max(d.start, Math.min(d.end, ms));
 }
 
-// "Sat 24": a timeline row's day
-export function weekRowDay(day, weeks = false) {
+// "Sat 24": a timeline row's day; a row of 7 days says them: "23–29 Oct",
+// "30 Oct – 5 Nov" (a month's oldest row and everything's fewer: "7–8 Oct")
+export function weekRowDay(day, weeks = false, to = '') {
     const d = dayDate(day);
-    return weeks ? shortDay(day) : `${WEEKDAYS[d.getDay()]} ${d.getDate()}`;
+    if (!weeks)
+        return `${WEEKDAYS[d.getDay()]} ${d.getDate()}`;
+    if (!to || to === day)
+        return shortDay(day);
+    const e = dayDate(to);
+    return d.getMonth() === e.getMonth() ? `${d.getDate()}–${shortDay(to)}` : `${shortDay(day)} – ${shortDay(to)}`;
 }
 
 // "Wed 14:05": when a turn started
@@ -1685,14 +1691,17 @@ export function weekTiles(recap) {
     const [beforeText, trendText] = recap.span === 'day' ? ['The day before', 'Day by day, this day last']
         : recap.span === 'month' ? ['The 30 days before', '30 days at a time, these 30 days last']
             : ['The 7 days before', 'Week by week, these 7 days last'];
-    const before = (v, kind) => (p ? `\n${beforeText}: ${shown(v, kind)}` : '');
+    // (today isn't over: the days before are counted up to this time of day)
+    const by = recap.sameTime ? ', by this time' : '';
+    const trendSaid = recap.sameTime ? trendText.replace(/^([^,]+),/, '$1, each by this time,') : trendText;
+    const before = (v, kind) => (p ? `\n${beforeText}${by}: ${shown(v, kind)}` : '');
     const weeks = (key, kind) => {
         const values = weekTrend(recap, key);
-        return values.length > 1 ? `\n${trendText}: ` +
+        return values.length > 1 ? `\n${trendSaid}: ` +
             `${values.map(v => (v === null ? '?' : shown(v, kind))).join(' · ')}` : '';
     };
     return [
-        {label: 'You', value: hoursText(s.youMs), delta: weekDeltaText(s.youMs, p ? p.youMs : null, 'time'), trend: weekTrend(recap, 'youMs'),
+        {label: 'You were at it', value: hoursText(s.youMs), delta: weekDeltaText(s.youMs, p ? p.youMs : null, 'time'), trend: weekTrend(recap, 'youMs'),
             tip: 'The time you spent writing to Claude, reading its replies and answering its questions, in all your chats and ' +
                 "accounts: the time between your prompts and its replies counts when it's under 15 minutes." + before(p ? p.youMs : 0, 'time') +
                 weeks('youMs', 'time')},
@@ -1776,6 +1785,13 @@ export function weekShareText(share) {
 
 // A tip's icon (icons.mjs meanings, as Plasma's): the time chats waited for
 // you, usage limits, else a tip of Claude Code's /usage
+// What a tip's icon means: where the tip comes from
+export function weekTipSource(key) {
+    return key === 'waits' ? 'From Talpy Den: the time Claude waited for your answers'
+        : key === 'limits' ? 'From Talpy Den: the usage limits that stopped your chats'
+            : "From Claude Code's /usage: a habit that took a good share of your usage";
+}
+
 export function weekTipMeaning(key) {
     return key === 'waits' ? 'tipWaits' : key === 'limits' ? 'tipLimits' : 'tip';
 }
@@ -1802,7 +1818,7 @@ export function weekWorkText(w) {
 }
 
 export function weekToolsText(w) {
-    return w && w.tools && w.tools.length ? `Its tools: ${w.tools.map(([name, n]) => `${name} ${grouped(n)}`).join(' · ')}` : '';
+    return w && w.tools && w.tools.length ? `Other tools: ${w.tools.map(([name, n]) => `${name} ${grouped(n)}`).join(' · ')}` : '';
 }
 
 // A plan window, from its start (its reset less its length) to its reset

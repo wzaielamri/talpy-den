@@ -76,7 +76,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         // while that tab is open: setTab, loadWeek)
         // (span: day, week or all; open: the day or project whose chats are unfolded)
         this.week = {span: 'week', back: 0, account: '', recap: null, error: '', busy: false, copied: '', open: ''};
-        // The Recap's Advanced analyses (week.py --limits): folded until you
+        // The Recap's plan limits over time (week.py --limits): folded until you
         // open it, read then and with each read of the Recap while open
         // (account: whose they are; data, error: its answer)
         this.limits = {open: false, account: null, data: null, error: '', busy: false};
@@ -1487,7 +1487,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
             this.loadLimits();
     }
 
-    // Advanced analyses: how much the plan's windows held, week by week
+    // Your plan's limits over time: how much the plan's windows held, week by week
     async loadLimits() {
         const asked = ++this._limitsAsked;
         const account = this.week.account;
@@ -1508,7 +1508,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this._render(true);
     }
 
-    // Unfolds the Advanced analyses (or folds them): read when unfolded
+    // Unfolds your plan's limits over time (or folds them): read when unfolded
     limitsToggle() {
         this.limits.open = !this.limits.open;
         if (this.limits.open)

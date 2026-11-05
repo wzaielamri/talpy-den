@@ -755,10 +755,17 @@ test("the week's days, tiles and facts", () => {
     eq(L.weekPeriodText({...r, span: 'all', first: '2026-10-14'}), 'Everything since 14 Oct 2026');
     eq([L.weekPeriodWaiting('day', 0), L.weekPeriodWaiting('all', 0), L.weekPeriodWaiting('week', 2)], ['Today', 'Everything', '']);
     eq([L.weekRowDay('2026-10-19'), L.weekRowDay('2026-10-19', true)], ['Mon 19', '19 Oct']);
+    // a row of 7 days says them; a short one fewer
+    eq([L.weekRowDay('2026-10-23', true, '2026-10-29'), L.weekRowDay('2026-10-30', true, '2026-11-05'), L.weekRowDay('2026-10-07', true, '2026-10-08')],
+        ['23–29 Oct', '30 Oct – 5 Nov', '7–8 Oct']);
     const tiles = L.weekTiles(r);
-    eq(tiles.map(t => [t.label, t.value, t.delta]), [['You', '18h 0m', '+4h 44m'], ['Claude worked', '32h 6m', '+17h 6m'],
+    eq(tiles.map(t => [t.label, t.value, t.delta]), [['You were at it', '18h 0m', '+4h 44m'], ['Claude worked', '32h 6m', '+17h 6m'],
         ['Prompts', '219', '+16'], ['At API prices', '$906', '+$509']]);
     eq(L.weekTiles({...r, previous: {youMs: 0, workedMs: 0, prompts: 0, cost: 0}})[0].delta, '');
+    // today isn't over: the days before are counted up to this time of day, and say so
+    const two = [{youMs: 60000, workedMs: 0, prompts: 0, cost: 0}, {youMs: 120000, workedMs: 0, prompts: 0, cost: 0}];
+    const soFar = L.weekTiles({...r, sameTime: true, trend: two})[0].tip;
+    eq([soFar.includes('\nThe 7 days before, by this time: '), soFar.includes('\nWeek by week, each by this time, these 7 days last: ')], [true, true]);
     eq(L.weekFactsText(r.sum), 'longest turn 1h 13m (startup hang) · up to 3 chats at once · busiest day Tuesday · usage limits stopped you 2 times');
     eq(L.weekFootText(r).split('\n')[1], "lab couldn't be read: no answer");
     eq(L.weekArgs(1, 'abc', ['lab', 'gpu'], {lab: {ok: true, result: {}}, gpu: {ok: false, result: null}}, ['--config-dir', '/x']),
@@ -806,7 +813,8 @@ test('trend lines, what Claude did, where the money went, the prompts you answer
     eq(L.weekWorkText({toolCalls: 3184, commands: 1410, edits: 699, files: 143, linesAdded: 9412, linesRemoved: 2210, subagents: 1,
         webSearches: 0, webFetches: 0, compactions: 2, tools: [['Bash', 1410]]}),
     '3,184 tool calls · 1,410 commands run · 699 edits in 143 files (+9,412 −2,210) · 1 subagent started · 2 compactions');
-    eq(L.weekToolsText({tools: [['Bash', 1410], ['Read', 9]]}), 'Its tools: Bash 1,410 · Read 9');
+    eq(L.weekToolsText({tools: [['Read', 1410], ['Grep', 9]]}), 'Other tools: Read 1,410 · Grep 9');
+    eq(['waits', 'limits', 'clear'].map(k => L.weekTipSource(k).split(':')[0]), ['From Talpy Den', 'From Talpy Den', "From Claude Code's /usage"]);
     const spend = {turns: [], chats: [{name: 'a', cost: 12}], cold: {count: 2, cost: 3.5, chats: [{name: 'b', resumes: 2, cost: 3.5}]}};
     eq(L.weekColdText(weekRecap({spend})), 'You came back to chats after their cache had expired (an hour without a reply) 2 times: writing ' +
         'their context again cost $3.50 more than reading it from the cache. Most in: b (2×, $3.50).');

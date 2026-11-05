@@ -24,7 +24,10 @@ import {
   rowDay,
   shareText,
   tipMeaning,
+  tipSource,
   toolsText,
+  dayLanes,
+  laneNumbers,
   weekTiles,
   workText,
   type Currency,
@@ -107,11 +110,12 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
   // (in the order of RECAP_SECTIONS: what Claude did, when, where, then the money)
   const sections: Record<RecapSection, () => JSX.Element | null> = {
     work: () => <Work recap={recap!} />,
-    days: () => <Timeline recap={recap!} />,
+    days: () => (dayLanes(recap!) ? null : <Timeline recap={recap!} />),
     plan: () => <Plan recap={recap!} />,
+    limits: () => <Limits recap={recap!} account={account} />,
     lanes: () => <Lanes recap={recap!} />,
     projects: () => <Projects recap={recap!} />,
-    chats: () => <Chats recap={recap!} />,
+    chats: () => (dayLanes(recap!) ? null : <Chats recap={recap!} />),
     models: () => <Models recap={recap!} />,
     tips: () => <Tips recap={recap!} copied={copied} onCopy={copy} />,
   };
@@ -200,7 +204,6 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
           {factsText(s) ? <div class="week-facts small muted">{factsText(s)}</div> : null}
           {RECAP_SECTIONS.map((k) => <Fragment key={k}>{sections[k]()}</Fragment>)}
           <div class="week-foot small muted">{footText(recap)}</div>
-          <Limits recap={recap} account={account} />
         </>
       ) : null}
     </div>
@@ -292,7 +295,7 @@ function Timeline({ recap }: { recap: WeekRecap }) {
   const width = (d: WeekDay, a: number, b: number) => `max(1px, ${Math.max(0, 100 * (dayPlace(d, b) - dayPlace(d, a)))}%)`;
   const limits = recap.days.some((d) => d.limits?.length);
   return (
-    <section class="week-section">
+    <section class={"week-section" + (weeks ? " week-weeks" : "")}>
       <div class="week-heading">
         <h2>{weeks ? "Week by week" : recap.span === "day" ? "Through the day" : "Day by day"}</h2>
         <span class="week-legend small muted">
@@ -318,7 +321,7 @@ function Timeline({ recap }: { recap: WeekRecap }) {
           <div key={d.day}>
             <div class={"week-row" + (i === last && recap.back === 0 ? " today" : "") + (d.chats?.length ? " opens" : "") + (shown ? " open" : "")}
               title={dayTip(d, cur)} {...(d.chats?.length ? opens(shown, () => setOpen(shown ? "" : d.day)) : { onClick: () => setOpen("") })}>
-              <span class="week-day small">{rowDay(d.day, weeks)}</span>
+              <span class="week-day small">{rowDay(d.day, weeks, d.to)}</span>
               {weeks ? (
                 <span class="week-track">
                   {d.youMs > 0 ? <span class="week-you" style={{ left: 0, width: `max(1px, ${(100 * d.youMs) / most}%)` }} /> : null}
@@ -389,7 +392,7 @@ function Plan({ recap }: { recap: WeekRecap }) {
   );
 }
 
-// Advanced analyses, for now how your limits changed (week.py --limits):
+// Your plan's limits over time, how your limits changed among them (week.py --limits):
 // folded until you open it (it
 // stays open while the view lives), read then, and again with each read of
 // the Recap while open; with today's days only, as the limits now
@@ -409,7 +412,7 @@ function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
     <section class="week-section week-limits">
       <h2 class="limits-title" {...opens(open, () => limitsOpen.set(!open))}>
         <Icon name={I.folded} class={open ? "turn" : ""} />
-        Advanced analyses <span class="limits-estimate muted">· your plan's limits over time · estimates</span>
+        Your plan's limits over time <span class="limits-estimate muted">· estimates</span>
       </h2>
       {!open ? null : !mine ? (
         <Reading text="Working out how much your plan's windows held, from your chats and the limit readings kept." />
@@ -564,7 +567,7 @@ function Projects({ recap }: { recap: WeekRecap }) {
   return (
     <section class="week-section">
       <h2>Where Claude worked</h2>
-      <ul class="week-bars">
+      <ul class="week-bars week-projects">
         {recap.projects.map((p) => {
           const key = p.host + "|" + p.path;
           const shown = open === key;
@@ -600,22 +603,49 @@ function Projects({ recap }: { recap: WeekRecap }) {
 
 // The Day view, chat by chat: when each chat worked, waited for you (a
 // permission, a question) or was paused (asleep, a usage limit); between
-// those it was your turn. A name brings the chat up.
+// those it was your turn. A name brings the chat up. On top, the day's own
+// row (when you were at it, when Claude worked, waited, a usage limit), on
+// the same hours; at each lane's end its chat's time and cost.
 function Lanes({ recap }: { recap: WeekRecap }) {
   const lanes = recap.lanes ?? [];
   if (!lanes.length) return null;
-  const t0 = Math.min(...lanes.map((l) => l.parts[0][0]));
-  const t1 = Math.max(...lanes.map((l) => l.parts[l.parts.length - 1][1]));
+  const cur = currencyOf(recap);
+  const day = recap.span === "day" ? recap.days[0] : undefined;
+  const dayParts: [number, number][] = day ? [...day.you, ...day.work, ...day.wait].map(([a, b]) => [a, b]) : [];
+  const t0 = Math.min(...lanes.map((l) => l.parts[0][0]), ...dayParts.map((p) => p[0]));
+  const t1 = Math.max(...lanes.map((l) => l.parts[l.parts.length - 1][1]), ...dayParts.map((p) => p[1]));
   const span = Math.max(60000, t1 - t0);
+  const at = (ms: number) => `${((ms - t0) / span) * 100}%`;
+  const along = (a: number, b: number) => `max(1.5px, ${((b - a) / span) * 100}%)`;
   const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const kinds = { w: "Claude worked", y: "Waited for you", p: "Paused (asleep, a limit)" };
+  const paused = lanes.some((l) => l.parts.some((p) => p[2] === "p"));
+  const limits = day?.limits ?? [];
+  // (only what's drawn: you and the limits on the day's row, a pause on a chat's)
+  const kinds: [string, string][] = [
+    ...(dayParts.length ? [["u", "You"] as [string, string]] : []),
+    ["w", "Claude worked"], ["y", "Waited for you"],
+    ...(paused ? [["p", "Paused (asleep, a limit)"] as [string, string]] : []),
+    ...(limits.length ? [["l", "A usage limit stopped a chat"] as [string, string]] : []),
+  ];
   return (
     <section class="week-section">
       <h2>Chat by chat</h2>
       <div class="week-lanes-legend small muted">
-        {(["w", "y", "p"] as const).map((k) => <span key={k}><i class={`lane-${k}`} aria-hidden="true" />{kinds[k]}</span>)}
+        {kinds.map(([k, text]) => <span key={k}><i class={`lane-${k}`} aria-hidden="true" />{text}</span>)}
       </div>
       <ul class="week-lanes">
+        {day && dayParts.length ? (
+          <li key="day">
+            <span class="week-lane-name small strong">All chats</span>
+            <span class="week-lane week-lane-day" title={`All chats\n${dayTip(day, cur)}`}>
+              {day.wait.map(([a, b]) => <i key={"y" + a} class="lane-y" style={{ left: at(a), width: along(a, b) }} />)}
+              {day.work.map(([a, b, n]) => <i key={"w" + a} class={"lane-w" + (n >= 3 ? " many" : n === 2 ? " two" : "")} style={{ left: at(a), width: along(a, b) }} />)}
+              {day.you.map(([a, b]) => <i key={"u" + a} class="lane-u" style={{ left: at(a), width: along(a, b) }} />)}
+              {limits.map((t) => <i key={"l" + t} class="lane-l" style={{ left: at(t) }} />)}
+            </span>
+            <span />
+          </li>
+        ) : null}
         {lanes.map((l) => (
           <li key={l.key}>
             <button type="button" class="week-lane-name small" disabled={!!l.host || !l.id}
@@ -624,14 +654,17 @@ function Lanes({ recap }: { recap: WeekRecap }) {
               {(l.host ? hostLabel(l.host) + ": " : "") + l.name}
             </button>
             <span class="week-lane" title={`${l.name}\nClaude worked ${hoursText(l.workedMs)}, waited for you ${hoursText(l.waitedMs)}${l.project ? `\n${l.project}` : ""}`}>
-              {l.parts.map(([a, b, k], i) => (
-                <i key={i} class={`lane-${k}`} style={{ left: `${((a - t0) / span) * 100}%`, width: `max(1.5px, ${((b - a) / span) * 100}%)` }} />
-              ))}
+              {l.parts.map(([a, b, k], i) => <i key={i} class={`lane-${k}`} style={{ left: at(a), width: along(a, b) }} />)}
             </span>
+            <span class="week-lane-num small muted">{laneNumbers(l, cur)}</span>
           </li>
         ))}
+        <li class="week-lanes-times small muted" aria-hidden="true">
+          <span />
+          <span><span>{time(t0)}</span><span>{time(t1)}</span></span>
+          <span />
+        </li>
       </ul>
-      <div class="week-lanes-times small muted"><span>{time(t0)}</span><span>{time(t1)}</span></div>
     </section>
   );
 }
@@ -695,7 +728,7 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
       <ul class="week-tips">
         {recap.tips.map((t) => (
           <li key={t.key} class="week-tip">
-            <Icon name={I[tipMeaning(t.key)]} class="week-tip-icon" />
+            <span class="week-tip-icon" title={tipSource(t.key)}><Icon name={I[tipMeaning(t.key)]} /></span>
             <span class="week-tip-text">
               <span class="week-tip-title">{t.title}</span>
               {t.detail ? <span class="small muted">{t.detail}</span> : null}
@@ -703,7 +736,7 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
             {t.pct !== null ? (
               <span class="week-tip-pct small"
                 title={`${t.pct}% of the usage shown: of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. A request can count for several of these.`}>
-                {t.pct}%
+                {t.pct}% of usage
               </span>
             ) : null}
             {t.command ? (

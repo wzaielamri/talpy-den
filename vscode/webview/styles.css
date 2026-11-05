@@ -2120,6 +2120,15 @@ body.vscode-high-contrast .top.scrolled {
   align-items: center;
 }
 
+/* (a row of 7 days says them: "30 Oct – 5 Nov") */
+.week-weeks .week-row {
+  grid-template-columns: 6.6em minmax(0, 1fr) 3.9em 3.9em;
+}
+
+.week-weeks .week-readout {
+  padding-left: calc(6.6em + 6px);
+}
+
 .week-row.today .week-day {
   font-weight: 600;
 }
@@ -2225,6 +2234,11 @@ body.vscode-high-contrast .top.scrolled {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* (the projects' names: as wide as the longest, up to 13em or 45%; the bars get the rest) */
+.week-bars.week-projects {
+  grid-template-columns: fit-content(min(13em, 45%)) minmax(2em, 1fr) auto;
 }
 
 .week-bars li {
@@ -2503,7 +2517,7 @@ body.vscode-high-contrast .top.scrolled {
   color: var(--cs-usage-high);
 }
 
-/* Advanced analyses (how your limits changed): one folded title under the limits now; open, per
+/* Your plan's limits over time (how your limits changed among them): one folded title under the limits now; open, per
    account its window sizes with how they changed, two small charts (each 5-hour
    window as a dot with its week's middle as a line; the weeks as bars), then a
    line each for the 5-hour window's share of the week, how long one lasts, and
@@ -4581,6 +4595,9 @@ body.vscode-high-contrast-light .pane {
 
 /* The Day view, chat by chat (WeekView.tsx Lanes) */
 .week-lanes {
+  display: grid;
+  grid-template-columns: 12em minmax(0, 1fr) auto; /* (the numbers' column as wide as the widest) */
+  gap: 4px 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -4588,10 +4605,18 @@ body.vscode-high-contrast-light .pane {
 
 .week-lanes li {
   display: grid;
-  grid-template-columns: 12em minmax(0, 1fr);
-  gap: 6px;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  margin: 2px 0;
+}
+
+.week-lane-name.strong {
+  font-weight: 600;
+}
+
+.week-lane-num {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .week-lane-name {
@@ -4656,10 +4681,49 @@ body.vscode-high-contrast-light .pane {
   background: color-mix(in srgb, var(--cs-fg) 30%, transparent);
 }
 
-.week-lanes-times {
+/* (the day's own row: you as a thin bar on top, Claude below it, darker where several chats worked) */
+.week-lane-day .lane-w,
+.week-lane-day .lane-y {
+  top: 35%;
+}
+
+.week-lane-day .lane-w {
+  opacity: 0.55;
+}
+
+.week-lane-day .lane-w.two {
+  opacity: 0.8;
+}
+
+.week-lane-day .lane-w.many {
+  opacity: 1;
+}
+
+.lane-u {
+  background: color-mix(in srgb, var(--cs-fg) 45%, transparent);
+}
+
+.week-lane .lane-u {
+  bottom: auto;
+  height: 25%;
+}
+
+.lane-l {
+  background: var(--cs-failed);
+}
+
+.week-lane .lane-l {
+  width: 2px;
+  margin-left: -1px;
+}
+
+.week-lanes-legend .lane-l {
+  width: 2px;
+}
+
+.week-lanes-times > span:nth-child(2) {
   display: flex;
   justify-content: space-between;
-  margin-left: calc(12em + 6px); /* (under the lanes: their names' column) */
 }
 
 /* The Recap's card to share (WeekView.tsx ShareCard) */

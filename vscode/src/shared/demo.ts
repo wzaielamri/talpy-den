@@ -415,6 +415,9 @@ function demoLanes(start: number): WeekLane[] {
     parts: parts.map(([a, b, k]) => [at(a), at(b), k] as [number, number, "w" | "y" | "p"]),
     workedMs: parts.filter((p) => p[2] === "w").reduce((n, p) => n + (p[1] - p[0]) * h, 0),
     waitedMs: parts.filter((p) => p[2] === "y").reduce((n, p) => n + (p[1] - p[0]) * h, 0),
+    // (Claude's own count, a little over the clock's where subagents helped; about $9 an hour)
+    claudeMs: Math.round(parts.filter((p) => p[2] === "w").reduce((n, p) => n + (p[1] - p[0]) * h, 0) * 1.1),
+    cost: Math.round(parts.filter((p) => p[2] === "w").reduce((n, p) => n + (p[1] - p[0]) * 9, 0) * 100) / 100,
   });
   return [
     lane("demo-1", "Fix the date parser", "webapp", [[9, 9.6, "w"], [9.6, 10.4, "y"], [10.4, 11.2, "w"], [14, 15.1, "w"]]),
@@ -545,7 +548,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       cold: { count: 5, cost: 11.4, chats: [{ ...DEMO_CHATS[1], resumes: 3, cost: 7.1 }] },
     },
     work: {
-      toolCalls: 3184, tools: [["Bash", 1410], ["Read", 902], ["Edit", 611], ["Write", 88], ["Agent", 21], ["WebFetch", 9]],
+      toolCalls: 3184, tools: [["Read", 902], ["Grep", 98], ["Glob", 41], ["MCP: github", 3]], // (the ones not counted above)
       commands: 1410, edits: 699, files: 143, linesAdded: 9412, linesRemoved: 2210, subagents: 21, compactions: 3, webSearches: 6, webFetches: 9,
     },
     plan: back ? [] : [

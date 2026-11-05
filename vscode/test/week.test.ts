@@ -10,8 +10,8 @@ import type { WeekDay } from "../src/shared/types";
 import {
   coldText, currencyOf, dayTip, deltaText, factsText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
-  shareText, tipMeaning,
-  dateText, periodWaiting, rowDay, shortDay, stepText, weekRows,
+  shareText, tipMeaning, tipSource,
+  dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
   limitStart, limitWeekBars,
 } from "../src/shared/week";
@@ -41,15 +41,15 @@ test("the days shown, and the week's facts", () => {
   assert.equal(periodText(demoWeek(NOW, 1)), "11 Oct – 17 Oct");
   assert.match(factsText(recap.sum), /^longest turn 48m \(Port the date parser\) · up to 2 chats at once · busiest day \w+day · usage limits stopped you 2 times$/);
   const tiles = weekTiles(recap);
-  assert.deepEqual(tiles.map((t) => t.label), ["You", "Claude worked", "Prompts", "Tokens", "At API prices"]);
+  assert.deepEqual(tiles.map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens", "At API prices"]);
   assert.match(tiles[1].tip, /On the clock it worked .*, and it waited 3h 18m for your answers\.\nThe 7 days before: /);
   assert.equal(weekTiles({ ...recap, previous: { youMs: 0, workedMs: 0, busyMs: 0, waitMs: 0, prompts: 0, cost: 0, tokenTotal: 0 } })[0].delta, "");
 });
 
 test("the Recap reads as a story: the tiles, what Claude did, when, where, then the money", () => {
-  assert.deepEqual(weekTiles(demoWeek(NOW)).map((t) => t.label), ["You", "Claude worked", "Prompts", "Tokens", "At API prices"]);
+  assert.deepEqual(weekTiles(demoWeek(NOW)).map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens", "At API prices"]);
   // (Turns that cost the most is gone: Chats it worked on most says it; the cold-cache note is with the tips)
-  assert.deepEqual([...RECAP_SECTIONS], ["work", "days", "plan", "lanes", "projects", "chats", "models", "tips"]);
+  assert.deepEqual([...RECAP_SECTIONS], ["work", "days", "plan", "limits", "lanes", "projects", "chats", "models", "tips"]);
 });
 
 test("the tokens used: a tile with its change and trend, and a row's tokens", () => {
@@ -109,6 +109,9 @@ test("trend lines, what Claude did, where the money went, the prompts you answer
   assert.equal(tiles[1].trend.length, 5);
   assert.equal(tiles[1].trend[4], recap.sum.workedMs);
   assert.match(tiles[1].tip, /\nWeek by week, these 7 days last: .* · .* · .* · .* · /);
+  // today isn't over: the days before are counted up to this time of day, and say so
+  const soFar = weekTiles({ ...recap, sameTime: true })[1].tip;
+  assert.match(soFar, /\nThe 7 days before, by this time: .*\nWeek by week, each by this time, these 7 days last: /);
   assert.deepEqual(weekTiles(demoWeek(NOW, 3))[0].trend.slice(0, 2), [null, null]);
   assert.match(weekTiles(demoWeek(NOW, 3))[0].tip, /these 7 days last: \? · \? · /);
   assert.equal(workText(recap.work), "3,184 tool calls · 1,410 commands run · 699 edits in 143 files (+9,412 −2,210) · 21 subagents started · 6 web searches · 9 pages fetched · 3 compactions");
@@ -154,7 +157,20 @@ test("a day and everything: what the period line says, Overall's rows", () => {
   assert.equal(periodText(all), `Everything since ${dateText(all.first!)}`);
   assert.deepEqual([periodWaiting("day", 0), periodWaiting("all", 0), periodWaiting("week", 1)], ["Today", "Everything", ""]);
   assert.equal(rowDay(all.days[0].day, true), shortDay(all.days[0].day));
+  // a row of 7 days says them; a short one fewer
+  assert.deepEqual([rowDay("2026-10-23", true, "2026-10-29"), rowDay("2026-10-30", true, "2026-11-05"), rowDay("2026-10-07", true, "2026-10-08")],
+    ["23–29 Oct", "30 Oct – 5 Nov", "7–8 Oct"]);
   assert.equal(weekTiles(all)[0].delta, "");
+});
+
+// The Day with chats: one timeline, the chats' numbers at their lanes' ends
+test("the Day's lanes: the day's own row on top, each chat's time and cost at its end", () => {
+  const day = demoWeek(NOW, 0, "", "day");
+  assert.ok(dayLanes(day));
+  assert.ok(!dayLanes(demoWeek(NOW)) && !dayLanes({ span: "day", lanes: [] }));
+  assert.deepEqual([laneNumbers({ claudeMs: 27_180_000, cost: 258.2 }), laneNumbers({ claudeMs: 20_000, cost: 0.05 }), laneNumbers({ claudeMs: 30_000, cost: 0 }), laneNumbers({})],
+    ["7h 33m · $258", "<1m · $0.05", "–", "–"]);
+  assert.match(laneNumbers(day.lanes![0]), /^\d+h \d+m · \$\d/);
 });
 
 test("a month: the last 30 days, a row per 7 days, against the 30 before", () => {
@@ -392,6 +408,8 @@ test("a day the clock changes on draws its times by its own clock: 18:00 under t
 test("a model's share, a tip's icon and Overall's row tooltip say it as Plasma's", () => {
   assert.deepEqual([0, 0.004, 0.42, 0.996, 1].map(shareText), ["0%", "<1%", "42%", ">99%", "100%"]);
   assert.deepEqual(["waits", "limits", "clear"].map(tipMeaning), ["tipWaits", "tipLimits", "tip"]);
+  // (an icon says where its tip comes from)
+  assert.deepEqual(["waits", "limits", "clear"].map((k) => tipSource(k).split(":")[0]), ["From Talpy Den", "From Talpy Den", "From Claude Code's /usage"]);
   const row = { day: "2026-10-19", to: "2026-10-25", start: 0, end: 1, you: [], work: [], wait: [], limits: [], youMs: 0, workedMs: 0,
     busyMs: 0, waitMs: 0, prompts: 1, cost: 0, tokenTotal: 0, chats: [] };
   assert.match(dayTip(row as never), /^19 October – 25 October\n/);

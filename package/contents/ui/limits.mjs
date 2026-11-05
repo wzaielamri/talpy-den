@@ -1,4 +1,4 @@
-// The Recap's Advanced analyses (WeekView.qml, week.py --limits): the
+// The Recap's plan limits over time (WeekView.qml, week.py --limits): the
 // charts' places and the parts of what filled a window, as VS Code's
 // src/shared/week.ts and GNOME's logic.js work them out. The words are
 // WeekView.qml's (translated there).

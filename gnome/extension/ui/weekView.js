@@ -126,6 +126,7 @@ export function buildWeekView(ctx) {
     }
     view.add_child(buildTimeline(ctx, recap, cur));
     view.add_child(buildPlan(ctx, recap));
+    view.add_child(buildLimits(ctx, recap));   // (folded: your plan's limits over time, after the limits now)
     view.add_child(buildProjects(ctx, recap, cur));
     if (recap.chats.length) {
         const chats = column('claude-week-section', {x_expand: true});
@@ -144,7 +145,6 @@ export function buildWeekView(ctx) {
     view.add_child(models);
     view.add_child(buildTips(ctx, recap));
     view.add_child(paragraph(L.weekFootText(recap), 'claude-small claude-dim claude-week-foot'));
-    view.add_child(buildLimits(ctx, recap));   // (under it all: the folded Advanced analyses)
     return view;
 }
 
@@ -205,7 +205,7 @@ function buildTimeline(ctx, recap, cur) {
     section.add_child(legend);
 
     const axis = box('claude-week-row', {x_expand: true});
-    axis.add_child(label('', 'claude-week-day'));
+    axis.add_child(label('', weeks ? 'claude-week-day claude-week-days' : 'claude-week-day'));
     const hours = box('claude-week-hours', {x_expand: true});
     (weeks ? [] : [0, 6, 12, 18, 24]).forEach((h, i) => {
         hours.add_child(label(String(h), 'claude-small claude-dim', {x_expand: i < 4}));
@@ -216,7 +216,7 @@ function buildTimeline(ctx, recap, cur) {
     section.add_child(axis);
 
     const hint = weeks ? 'Click a week for its chats.' : 'Point at a day to see what went on then; click it for its chats.';
-    const readout = label(hint, 'claude-small claude-dim claude-week-readout', {x_expand: true});
+    const readout = label(hint, `claude-small claude-dim claude-week-readout${weeks ? ' claude-week-readout-days' : ''}`, {x_expand: true});
     const areas = [];
     const last = weeks ? 0 : recap.days.length - 1;
     const most = Math.max(1, ...recap.days.map(d => Math.max(d.youMs, d.workedMs)));
@@ -224,7 +224,7 @@ function buildTimeline(ctx, recap, cur) {
         const today = i === last && recap.back === 0;
         const open = ctx.week.open === `day:${d.day}` && d.chats && d.chats.length > 0;
         const row = box('claude-week-row', {x_expand: true});
-        const dayLabel = label(L.weekRowDay(d.day, weeks), `claude-small claude-week-day${today || open ? ' claude-strong' : ''}`);
+        const dayLabel = label(L.weekRowDay(d.day, weeks, d.to), `claude-small claude-week-day${weeks ? ' claude-week-days' : ''}${today || open ? ' claude-strong' : ''}`);
         row.add_child(dayLabel);
         const area = new St.DrawingArea({x_expand: true, height: ROW_PX * scaleFactor(), reactive: true, track_hover: true});
         area._week = {day: d, today, hoverX: -1, most};
@@ -374,7 +374,7 @@ function buildPlan(ctx, recap) {
     return section;
 }
 
-// Advanced analyses (week.py --limits, the indicator's loadLimits): folded
+// Your plan's limits over time (week.py --limits, the indicator's loadLimits): folded
 // until you open it; open, per account its window sizes and how they
 // changed, a chart of its 5-hour windows and one of its weeks, the 5-hour
 // window's share of the week, how long one lasts, and tokens
@@ -387,8 +387,8 @@ function buildLimits(ctx, recap) {
     title.add_child(new St.Widget({style_class: 'claude-week-rule', x_expand: true}));
     const line = box('claude-week-head', {x_expand: true});
     line.add_child(new St.Icon({icon_name: lim.open ? Icons.gnome.unfolded : Icons.gnome.folded, style_class: 'claude-week-fold'}));
-    line.add_child(label('Advanced analyses', 'claude-week-heading'));
-    line.add_child(label("· your plan's limits over time · estimates", 'claude-small claude-dim', {y_align: Clutter.ActorAlign.CENTER}));
+    line.add_child(label("Your plan's limits over time", 'claude-week-heading'));
+    line.add_child(label('· estimates', 'claude-small claude-dim', {y_align: Clutter.ActorAlign.CENTER}));
     const button = new St.Button({style_class: 'claude-row-button', child: line, x_expand: true, can_focus: true, reactive: true});
     button.connect('clicked', () => ctx.limitsToggle());
     title.add_child(button);
@@ -671,8 +671,10 @@ function buildTips(ctx, recap) {
         section.add_child(paragraph('Nothing stands out: no habit takes a tenth of the usage shown.', 'claude-dim'));
     for (const t of recap.tips) {
         const line = box('claude-week-tip', {x_expand: true});
-        line.add_child(new St.Icon({icon_name: Icons.gnome[L.weekTipMeaning(t.key)], style_class: 'claude-button-icon claude-dim',
-            y_align: Clutter.ActorAlign.START}));
+        const icon = new St.Icon({icon_name: Icons.gnome[L.weekTipMeaning(t.key)], style_class: 'claude-button-icon claude-dim',
+            y_align: Clutter.ActorAlign.START, reactive: true});
+        ctx.tips.add(icon, L.weekTipSource(t.key));
+        line.add_child(icon);
         const text = column('', {x_expand: true});
         text.add_child(paragraph(t.title, ''));
         if (t.detail)
@@ -681,7 +683,7 @@ function buildTips(ctx, recap) {
         // (its share and command in columns of one width, empty where it has
         // none, so the shares line up, as Plasma's)
         const hasPct = t.pct !== null && t.pct !== undefined;
-        const pct = label(hasPct ? `${t.pct}%` : '', 'claude-small claude-week-tip-pct', {y_align: Clutter.ActorAlign.START});
+        const pct = label(hasPct ? `${t.pct}% of usage` : '', 'claude-small claude-week-tip-pct', {y_align: Clutter.ActorAlign.START});
         if (hasPct) {
             ctx.tips.add(pct, [`${t.pct}% of the usage shown`, "Of the usage of these days, as Claude Code's /usage weighs it " +
                 "toward your plan's limits. A request can count for several of these."]);

@@ -100,8 +100,16 @@ export function dateText(day: string): string {
 }
 
 // "Sat 24": a timeline row's day ("19 Oct": a month's or Overall's 7 days)
-export function rowDay(day: string, weeks = false): string {
-  return weeks ? shortDay(day) : dayLabel(day).split(" ").slice(0, 2).join(" ");
+export function rowDay(day: string, weeks = false, to = ""): string {
+  if (!weeks) return dayLabel(day).split(" ").slice(0, 2).join(" ");
+  return !to || to === day ? shortDay(day) : rangeText(day, to);
+}
+
+// "23–29 Oct", "30 Oct – 5 Nov": a row of 7 days (a month's oldest row and
+// everything's fewer: "7–8 Oct")
+export function rangeText(from: string, to: string): string {
+  const a = localDate(from), b = localDate(to);
+  return a.getMonth() === b.getMonth() ? `${a.getDate()}–${shortDay(to)}` : `${shortDay(from)} – ${shortDay(to)}`;
 }
 
 // "Wed 14:05": when a turn started
@@ -157,8 +165,8 @@ function amountText(v: number, kind: Kind, cur: Currency): string {
 // front end): what Claude did; when (the day-by-day graph, your plan's
 // limits now, chat by chat); where (by project, the chats it worked on
 // most); then the money (at API prices, what could use less of your plan).
-// Under them all, after the closing note, the folded Advanced analyses.
-export const RECAP_SECTIONS = ["work", "days", "plan", "lanes", "projects", "chats", "models", "tips"] as const;
+// Right after the limits now, folded: your plan's limits over time.
+export const RECAP_SECTIONS = ["work", "days", "plan", "limits", "lanes", "projects", "chats", "models", "tips"] as const;
 
 // Spans whose timeline has a row per 7 days, not per day
 export function weekRows(span: WeekSpan | undefined): boolean {
@@ -187,16 +195,19 @@ export function weekTiles(recap: WeekRecap): WeekTile[] {
   const [beforeText, trendText] = recap.span === "day" ? ["The day before", "Day by day, this day last"]
     : recap.span === "month" ? ["The 30 days before", "30 days at a time, these 30 days last"]
       : ["The 7 days before", "Week by week, these 7 days last"];
-  const before = (v: number, kind: Kind) => (p ? `\n${beforeText}: ${shown(v, kind)}` : "");
+  // (today isn't over: the days before are counted up to this time of day)
+  const by = recap.sameTime ? ", by this time" : "";
+  const trendSaid = recap.sameTime ? trendText.replace(/^([^,]+),/, "$1, each by this time,") : trendText;
+  const before = (v: number, kind: Kind) => (p ? `\n${beforeText}${by}: ${shown(v, kind)}` : "");
   const weeks = (key: NumberKey, kind: Kind) => {
     const values = trendOf(recap, key);
     return values.length > 1
-      ? `\n${trendText}: ${values.map((v) => (v === null ? "?" : shown(v, kind))).join(" · ")}`
+      ? `\n${trendSaid}: ${values.map((v) => (v === null ? "?" : shown(v, kind))).join(" · ")}`
       : "";
   };
   return [
     {
-      label: "You",
+      label: "You were at it",
       value: hoursText(s.youMs),
       delta: deltaText(s.youMs, p ? p.youMs : null, "time"),
       tip:
@@ -314,6 +325,13 @@ export function tipMeaning(key: string): "tipWaits" | "tipLimits" | "tip" {
   return key === "waits" ? "tipWaits" : key === "limits" ? "tipLimits" : "tip";
 }
 
+// What a tip's icon means: where the tip comes from
+export function tipSource(key: string): string {
+  return key === "waits" ? "From Talpy Den: the time Claude waited for your answers"
+    : key === "limits" ? "From Talpy Den: the usage limits that stopped your chats"
+      : "From Claude Code's /usage: a habit that took a good share of your usage";
+}
+
 // What Claude did, in a line: its tool calls, commands, edits, subagents
 export function workText(w: WeekRecap["work"] | undefined): string {
   if (!w || !w.toolCalls) return "";
@@ -330,7 +348,7 @@ export function workText(w: WeekRecap["work"] | undefined): string {
 }
 
 export function toolsText(w: WeekRecap["work"] | undefined): string {
-  return w && w.tools.length ? `Its tools: ${w.tools.map(([name, n]) => `${name} ${count(n)}`).join(" · ")}` : "";
+  return w && w.tools.length ? `Other tools: ${w.tools.map(([name, n]) => `${name} ${count(n)}`).join(" · ")}` : "";
 }
 
 // A plan window, from its start (its reset less its length) to its reset
@@ -355,6 +373,22 @@ export function fillPaths(w: WeekPlanWindow, now: number, width: number, height:
   const last = points[points.length - 1][1];
   const line = points.map((p, i) => `${i ? "L" : "M"}${x(p[0])},${y(p[1])}`).join(" ") + ` L${x(end)},${y(last)}`;
   return { line, area: `M${x(points[0][0])},${height} L${line.slice(1)} L${x(end)},${height} Z` };
+}
+
+// The Day with chats: one timeline (the lanes, with the day's own row on
+// top) and the chats' numbers at their lanes' ends, rather than the day's
+// row and Chats it worked on most saying it again
+export function dayLanes(recap: Pick<WeekRecap, "span" | "lanes">): boolean {
+  return recap.span === "day" && (recap.lanes?.length ?? 0) > 0;
+}
+
+// At a lane's end: what Claude worked on that chat, by its own count, and
+// its cost ("7h 33m · $258", "<1m · $0.05"; "–" for neither)
+export function laneNumbers(l: { claudeMs?: number; cost?: number }, cur: Currency = USD): string {
+  const ms = l.claudeMs ?? 0;
+  const cost = l.cost ?? 0;
+  if (ms < 60000 && cost < 0.01) return "–";
+  return `${ms < 60000 ? "<1m" : hoursText(ms)} · ${moneyText(cost, cur)}`;
 }
 
 export function resetText(ms: number | null, now: number): string {

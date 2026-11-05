@@ -852,6 +852,8 @@ export interface WeekLane {
   parts: [number, number, "w" | "y" | "p"][];
   workedMs: number;
   waitedMs: number;
+  claudeMs?: number; // what Claude worked on the chat that day, by its own count
+  cost?: number; // and its cost
 }
 
 export interface WeekRecap {
@@ -868,6 +870,7 @@ export interface WeekRecap {
   days: WeekDay[];
   sum: WeekSum;
   previous: WeekNumbers | null; // the day or 7 days before (none for everything)
+  sameTime?: boolean; // (today isn't over: previous and the trend's are up to this time of day)
   trend: ((WeekNumbers & { start: number }) | null)[]; // the 5 weeks up to these days (null: older than what's kept)
   projects: WeekProject[];
   chats: WeekChat[];

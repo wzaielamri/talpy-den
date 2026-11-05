@@ -103,6 +103,8 @@ USER_TOOLS = ("AskUserQuestion", "ExitPlanMode")  # tools that wait for your ans
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 FILE_TOOLS = ("Read", "Grep", "Glob", "NotebookRead", "LSP")
 SUBAGENT_TOOLS = ("Agent", "Task")
+# (counted in What Claude did's line: its other tools are listed under it)
+COUNTED_TOOLS = ("Bash", "WebSearch", "WebFetch") + EDIT_TOOLS + SUBAGENT_TOOLS
 FILES_KEPT = 100  # edited files a chat's hour remembers (to count them)
 EDIT_DIFF_LINES = 4000  # an edit bigger than this counts its lines without a diff
 COLD_MS = 60 * 60_000  # a reply this long after the chat's last one finds its cache gone (an hour on a plan)
@@ -1132,6 +1134,13 @@ def midnight(day):
     return int(time.mktime(day.timetuple()) * 1000)
 
 
+def same_time(day, now_ms):
+    """now_ms's time of day on day (a date), in ms (by that day's clock):
+    where a period still going on cuts the ones it's compared with."""
+    t = time.localtime(now_ms / 1000)
+    return int(time.mktime((day.year, day.month, day.day, t.tm_hour, t.tm_min, t.tm_sec, 0, 0, -1)) * 1000)
+
+
 def week_days(back, now_ms):
     """The 7 days ending today, back weeks before: [(day, start ms, end ms)]."""
     return span_days("week", back, now_ms)
@@ -1305,6 +1314,16 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
     first_day = date.fromisoformat(days[0][0])
     step = SPAN_DAYS.get(span, 7)  # (days a period has: the one before and the trend's)
     p0 = midnight(first_day - timedelta(days=step))
+    # Today isn't over: the periods before count up to this time of their
+    # last day, or every number would look down until midnight
+    going_on = w1 < starts[-1] and span != "all"
+    today = date.fromtimestamp(w1 / 1000)
+
+    def until(k):
+        """Where the period k before this one ends, as it's compared."""
+        hi = midnight(first_day - timedelta(days=step * (k - 1)))
+        return min(hi, same_time(today - timedelta(days=step * k), w1)) if going_on else hi
+
     chats, accounts = [], {}
     for src in sources:
         host = src.get("host") or ""
@@ -1373,7 +1392,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         return out, {"stretches": stretches, "waits": waits, "yours": yours, "worked": worked}
 
     total, parts = period(w0, w1, True)
-    previous = period(p0, w0, False) if span != "all" else None   # (everything has nothing before it)
+    previous = period(p0, until(1), False) if span != "all" else None   # (everything has nothing before it)
     running = at_once([s[:3] for s in clipped(parts["stretches"], w0, w1)])
     total["peakAtOnce"] = max((n for _, _, n in running), default=0)
 
@@ -1382,15 +1401,15 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
     trend = []
     if span != "all":
         for k in range(TREND_WEEKS - 1, 0, -1):
-            lo, hi = midnight(first_day - timedelta(days=step * k)), midnight(first_day - timedelta(days=step * (k - 1)))
+            lo, hi = midnight(first_day - timedelta(days=step * k)), until(k)
             trend.append(dict(period(lo, hi, False), start=lo) if first_ms is not None and hi > first_ms else None)
         trend.append({key: total[key] for key in ("youMs", "workedMs", "busyMs", "waitMs", "prompts", "cost", "tokenTotal")})
         trend[-1]["start"] = w0
 
     # The timeline, a day per row, with each day's chats (to unfold) and the
     # moments a usage limit stopped one; for a month and everything, a row
-    # per 7 days (newest first, ending today, the oldest from the span's
-    # first day) with their numbers
+    # per 7 days (newest first, ending today; the oldest only from the span's
+    # first day, so its days say how short it is) with their numbers
     hits = sorted({t for c in chats for t in c["limits"] if w0 <= t < w1})
     day_rows, row_days = [], days
     by_week = span in WEEK_ROWS
@@ -1399,9 +1418,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         first = date.fromisoformat(days[0][0])
         end = date.fromisoformat(days[-1][0])
         while end >= first:
-            start = end - timedelta(days=6)
-            if span == "month":  # (its oldest row only its own days; everything's are 7 days each)
-                start = max(first, start)
+            start = max(first, end - timedelta(days=6))
             row_days.append((start.isoformat(), midnight(start), midnight(end + timedelta(days=1))))
             end = start - timedelta(days=1)
     for day, ds, row_end in row_days:
@@ -1464,6 +1481,14 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         f["prompts"] += prompts
         f["chats"].append(row)
         chat_rows.append(row)
+    # The Day's lanes, each with its chat's numbers at its end (what Claude
+    # worked on it, by its own count, and its cost), as Chats it worked on most had them
+    lanes = day_lanes(chats, w0, w1, home) if span == "day" else []
+    if lanes:
+        rows = {(r["host"], r["chatId"]): r for r in chat_rows}
+        for lane in lanes:
+            row = rows.get((lane["host"], lane["id"]))
+            lane["claudeMs"], lane["cost"] = (row["workedMs"], row["cost"]) if row else (0, 0.0)
     for f in folders.values():
         f["workedMs"] = int(f["workedMs"])
         f["cost"] = round(f["cost"], 4)
@@ -1487,6 +1512,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "days": day_rows,
         "sum": total,
         "previous": previous,
+        "sameTime": going_on,  # (previous and the trend's are up to this time of day)
         "trend": trend,
         "projects": sorted(folders.values(), key=lambda f: (-f["workedMs"], -f["cost"]))[:TOP_PROJECTS],
         "chats": sorted(chat_rows, key=lambda r: (-r["workedMs"], -r["cost"]))[:TOP_CHATS],
@@ -1498,7 +1524,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "prompts": permission_prompts(chats, w0, w1, home, added),
         "tips": tips(chats, w0, w1, total, parts["waits"]),
         "prices": {"asOf": PRICES_AS_OF, "guessed": sorted(guessed)},
-        "lanes": day_lanes(chats, w0, w1, home) if span == "day" else [],
+        "lanes": lanes,
         "sources": [{"host": s.get("host") or "", "ok": s.get("ok", True), "error": s.get("error") or ""}
                     for s in sources],
     }
@@ -1557,9 +1583,9 @@ def spending(chats, lo, hi, home):
 
 
 def claude_did(chats, lo, hi):
-    """What Claude did: its tool calls (by tool; an MCP server's tools as one),
-    the commands it ran, its edits and the files and lines they changed, the
-    subagents it started, compactions, web searches."""
+    """What Claude did: its tool calls, the commands it ran, its edits and the
+    files and lines they changed, the subagents it started, compactions, web
+    searches, and the other tools it used most (an MCP server's tools as one)."""
     tools, files, added, removed, compactions = {}, set(), 0, 0, 0
     searches = 0
     for c in chats:
@@ -1576,7 +1602,7 @@ def claude_did(chats, lo, hi):
             searches += sum(t[5] for t in agg["t"].values())
     return {
         "toolCalls": sum(tools.values()),
-        "tools": sorted(([n, c] for n, c in tools.items()), key=lambda nc: (-nc[1], nc[0]))[:8],
+        "tools": sorted(([n, c] for n, c in tools.items() if n not in COUNTED_TOOLS), key=lambda nc: (-nc[1], nc[0]))[:8],
         "commands": tools.get("Bash", 0),
         "edits": sum(tools.get(t, 0) for t in EDIT_TOOLS),
         "files": len(files),
