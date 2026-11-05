@@ -124,12 +124,13 @@ class Writer:
                                                          "is_error": out.endswith("FAILED")}]}
         return [use, res]
 
-    def turn(self, marker="", prompt=None):
-        """A whole turn: your prompt, Claude's first words, tool calls, its reply (end_turn)."""
+    def turn(self, marker="", prompt=None, asks=""):
+        """A whole turn: your prompt, Claude's first words, tool calls, its reply (end_turn; asks: the
+        question it ends with)."""
         lines = [self.prompt(prompt), self.text(self.sentence())]
         for i in range(self.rnd.randint(2, 7)):
             lines += self.tool(i)
-        lines.append(self.text(self.reply(marker), end=True))
+        lines.append(self.text(self.reply(marker) + ("\n\n" + asks if asks else ""), end=True))
         return lines
 
 
@@ -164,11 +165,12 @@ def make(home):
 
 
 def turn_lines(home, n):
-    """Turn n of the turn test (its reply says BENCH-END-n): the lines, oldest first."""
+    """Turn n of the turn test (its reply says BENCH-END-n, and ends with a question): the lines, oldest first."""
     w = Writer(TURN, str(Path(home) / FOLDER), seed=1000 + n, start=time.time() - 90)
     w.n = 10000 * n   # (keys not used before)
     return [json.dumps(e, separators=(",", ":")) + "\n"
-            for e in w.turn(marker="BENCH-END-%d" % n, prompt="Bench turn %d: %s" % (n, w.sentence()))]
+            for e in w.turn(marker="BENCH-END-%d" % n, prompt="Bench turn %d: %s" % (n, w.sentence()),
+                            asks="Should I commit these changes?")]   # (Talpy Chat's chips: Yes, No)
 
 
 if __name__ == "__main__":

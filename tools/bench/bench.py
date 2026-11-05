@@ -8,7 +8,7 @@ bench.qml driving its Talpy Chat windows.
 
     open    opening a chat's window: first window, a new one, a closed one again (short and long chat)
     send    Enter → your message shown (5 messages)
-    turn    turn's end → shown (5 turns appended line by line to a transcript)
+    turn    turn's end → shown, and → its chips drawn (5 turns appended line by line to a transcript)
     scroll  a 500-item chat scrolled end → top → end, on the Chat and Steps tabs
     idle    CPU of the offscreen plasmawindowed: no window, a window open, closed (60 s each)
     reads   pane.py --conversation from the shell (no window): the read alone
@@ -215,9 +215,12 @@ def report_turn(lines, written):
     runs = [d for k, d in lines if k == "turn"]
     ins = [d["in"] - written[d["n"]] for d in runs if "in" in d and d["n"] in written]
     frames = [d["frame"] - written[d["n"]] for d in runs if d.get("frame", -1) > 0 and d["n"] in written]
+    # (Talpy Chat's chips for the reply's question: the frame they're drawn in; none before step 2)
+    chips = [d["frame"] - written[d["n"]] for k, d in lines if k == "chips" and d["n"] in written]
     return {"runs": len(runs), "timeouts": sum(1 for d in runs if d.get("timeout")),
             "in_ms": median(ins), "frame_ms": median(frames), "max_frame_ms": round(max(frames), 1) if frames else None,
-            "all_frame_ms": [round(x) for x in frames]}
+            "all_frame_ms": [round(x) for x in frames], "chips_frame_ms": median(chips),
+            "max_chips_frame_ms": round(max(chips), 1) if chips else None, "chips_runs": len(chips)}
 
 
 def report_scroll(lines):

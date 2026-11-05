@@ -13,6 +13,7 @@ import "icons.mjs" as Icons
 // this for one of your usual replies.
 Flow {
     id: row
+    objectName: "replyChips"   // (tools/bench: the frame they're drawn in)
     spacing: Kirigami.Units.smallSpacing
     Accessible.role: Accessible.ToolBar
     Accessible.name: i18n("Suggested replies")

@@ -76,6 +76,32 @@
             }
         }
         // cb(time) at win's next frame, -1 if none comes in 3 s
+        // The frame the chips above the reply box are drawn in: the one before (seen) if they were
+        // made by then, else the first after they are; -1 for none (in 2 s, or a package without them)
+        function chipsFrame(win, cb, seen) {
+            const made = () => win.chipsShown !== undefined && win.chipsShown.length > 0
+                               && find(win.contentItem, o => o.objectName === "replyChips") !== null
+            if (win.chipsShown === undefined)
+                return cb(-1)
+            if (made())
+                return cb(seen)
+            let over = false
+            const f = function() {
+                if (over || !made())
+                    return
+                over = true
+                win.frameSwapped.disconnect(f)
+                cb(Date.now())
+            }
+            win.frameSwapped.connect(f)
+            after(2000, () => {
+                if (!over) {
+                    over = true
+                    win.frameSwapped.disconnect(f)
+                    cb(-1)
+                }
+            })
+        }
         function nextFrame(win, cb) {
             let over = false
             const f = function() {
@@ -210,7 +236,12 @@
                 win.lastItemsChanged.disconnect(onItems)
                 nextFrame(win, tFrame => {
                     log("turn", { n: n, in: tIn, frame: tFrame })
-                    after(2000, () => turnOne(win, n + 1))
+                    // (and the reply's chips, drawn: the frame they're in; a package without them: none)
+                    chipsFrame(win, tChips => {
+                        if (tChips > 0)
+                            log("chips", { n: n, frame: tChips })
+                        after(2000, () => turnOne(win, n + 1))
+                    }, tFrame)
                 })
             }
             win.lastItemsChanged.connect(onItems)
