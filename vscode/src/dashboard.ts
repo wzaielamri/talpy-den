@@ -15,10 +15,10 @@ import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSet
 import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";
 import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
-import { demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
+import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
 import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
-import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
+import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
 
@@ -56,6 +56,9 @@ export class Dashboard implements vscode.Disposable {
   private demoTimer?: NodeJS.Timeout;
   private demoPhase: number | null = null;
   private projectsData: ProjectsData | null = null; // the Projects tab's, as last read
+  // each SSH host's (week.py --projects --on HOST), as last read; the reads on their way
+  private hostProjectsData = new Map<string, HostProjects>();
+  private hostProjectsReads = new Map<string, Promise<void>>();
   private moreRecent = new Map<string, RecentMore>(); // "host|account id": its recent chats as a bigger check listed them
   private tracker = new TransitionTracker();
   private disposables: vscode.Disposable[] = [];
@@ -998,6 +1001,39 @@ export class Dashboard implements vscode.Disposable {
     return this.projectsData;
   }
 
+  // An SSH host's projects (or a container's), read there on its own: a slow
+  // host holds up no other, nor this computer's. A read already on its way is
+  // the one waited for; one that failed keeps the projects read before, with why
+  readHostProjects(host: string): Promise<void> {
+    if (this.demoPhase !== null || !this.shownHosts().includes(host)) return Promise.resolve();
+    const running = this.hostProjectsReads.get(host);
+    if (running) return running;
+    const read = this.backend.hostProjects(host).then(({ data, error }) => {
+      const before = this.hostProjectsData.get(host);
+      this.hostProjectsData.set(host, data ?? { host, ok: false, error: error ?? "no answer", projects: before?.projects ?? [],
+                                                hidden: before?.hidden ?? 0, hiddenPaths: before?.hiddenPaths ?? [] });
+    }, () => undefined).finally(() => this.hostProjectsReads.delete(host));
+    this.hostProjectsReads.set(host, read);
+    return read;
+  }
+
+  // The hosts' projects for the view: of the hosts shown, each read (or being read the first time), in their order
+  hostProjectsRead(): HostProjects[] {
+    if (this.demoPhase !== null) return demoHostProjects(Date.now());
+    return this.shownHosts().flatMap((host) => {
+      const read = this.hostProjectsData.get(host), busy = this.hostProjectsReads.has(host);
+      return read || busy ? [{ ...(read ?? { host, ok: true, error: "", projects: [] }), busy }] : [];
+    });
+  }
+
+  // A machine's projects as read last ("" or none: this computer's; a host's only while it's shown)
+  projectsOn(host: string | undefined): Pick<ProjectsData, "projects"> | null {
+    if (this.demoPhase !== null && host) return demoHostProjects(Date.now()).find((h) => h.host === host) ?? null;
+    if (!host) return this.projectsData;
+    return this.shownHosts().includes(host) ? this.hostProjectsData.get(host) ?? null : null;
+  }
+
+
   // An account's first count recent chats, past what the status lists
   // ("Show N more"): the status run once more, listing that many (a host's
   // there), without the tokens or a usage fetch. Kept, so a click on one is
@@ -1018,12 +1054,13 @@ export class Dashboard implements vscode.Disposable {
   }
 
   // A chat a click names that the status doesn't list: one of an account's
-  // recent chats a bigger check listed, or one of the Projects tab's (this computer's)
+  // recent chats a bigger check listed, or one of the Projects tab's (this
+  // computer's, or the host's shown it's on)
   moreChat(host: unknown, key: unknown): ChatRef | null {
     if (typeof key !== "string" || !key || (host !== undefined && host !== null && typeof host !== "string")) return null;
     const more = this.moreRecentChat((host as string) || undefined, key);
     if (more) return recentRef(more.chat, (host as string) || undefined);
-    return host ? null : findProjectChat(this.projectsData, key);
+    return findProjectChat(this.projectsOn((host as string) || undefined), key, (host as string) || undefined);
   }
 
   // One of an account's recent chats a bigger check listed, with that account's id

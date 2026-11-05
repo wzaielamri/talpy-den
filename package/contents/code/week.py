@@ -48,7 +48,8 @@ off: then it keeps only what the transcripts still have.
                   repository, else its folder) with all its chats, plans and
                   memories, newest first, and Claude's last recap of it
     --host HOST   (with --permissions) an SSH host's too; --on HOST: an
-                  --allow, --undo or --revoke there
+                  --allow, --undo or --revoke there, or (with --projects)
+                  that host's Projects tab instead, read there
 
 What it reads, per turn of a chat: your prompt, Claude's own count of its
 work (the turn_duration record Claude Code writes when a turn ends, which
@@ -3205,6 +3206,59 @@ def project_recaps(rows, ctx, paths):
                 break
 
 
+def project_commands(rows, home, profiles):
+    """On an SSH host (or in a container: --remote), the shell commands the
+    computer asking runs there over ssh, as talpy_den.py add_remote_commands
+    gives the status' lines: a chat's "openCommand" (it reopens), a plan's
+    (its chat reopens), and the project's "newChatCommand": a new chat in its
+    folder, on the account the front ends start it on (that of its newest
+    chat, else plan or memory: Plasma main.qml newChatInProject)."""
+    claude = cs.find_claude(home)
+    by_key, named = {p.key: p for p in profiles}, {}
+    for _gid, members in cs.group_profiles(profiles):
+        first = next((p for p in members if not p.is_default), members[0])
+        for p in members:
+            named[p.key] = first
+    for row in rows:
+        for c in row["chats"]:
+            p = by_key.get(c["profileDir"])
+            c["openCommand"] = cs.in_folder(c["cwd"], cs.resume_command(p, c["sessionId"], home, c["cwd"], claude)) if p else None
+        for pl in row["plans"]:
+            p = by_key.get(pl.get("chatProfileDir"))
+            pl["openCommand"] = (cs.in_folder(pl["cwd"], cs.resume_command(p, pl["chatId"], home, pl["cwd"], claude))
+                                 if p is not None and pl.get("chatId") else None)
+        newest = (row["chats"] or row["plans"] or row["memories"] or [{}])[0]
+        p = named.get(newest.get("profileDir"))
+        row["newChatCommand"] = cs.in_folder(row["path"], cs.new_chat_command(p, home, claude)) if p and row["path"] else None
+
+
+def host_projects(host):
+    """An SSH host's (or a container's) Projects tab, this file run there:
+    {"host", "ok", "error", "projects", "hidden", "hiddenPaths"}, its times
+    moved to this computer's clock when the host's differs."""
+    import remote
+    answer = remote.host_answer(host, ["--projects"], name="week.py")
+    if not answer.get("ok") or not isinstance(answer.get("projects"), list):
+        return {"host": host, "ok": False, "error": answer.get("message") or answer.get("error") or "no answer",
+                "projects": [], "hidden": 0, "hiddenPaths": []}
+    rows = answer["projects"]
+    sent = int(cs.number(answer.get("now")) or 0)   # (its clock as it answered)
+    shift = int(time.time() * 1000) - sent if sent else 0
+    if abs(shift) > 5000:
+        def moved(item, field):
+            if isinstance(item, dict) and cs.number(item.get(field)):
+                item[field] = int(item[field]) + shift
+        for p in rows:
+            moved(p, "lastAt")
+            moved(p.get("recap"), "at")
+            for c in p.get("chats") or []:
+                moved(c, "lastActive")
+            for item in (p.get("plans") or []) + (p.get("memories") or []):
+                moved(item, "updatedAt")
+    return {"host": host, "ok": True, "error": "", "projects": rows, "hidden": int(cs.number(answer.get("hidden")) or 0),
+            "hiddenPaths": answer.get("hiddenPaths") if isinstance(answer.get("hiddenPaths"), list) else []}
+
+
 # ---------------------------------------------------------------- the Monday recap
 #
 # Once a week (Monday from 9 o'clock, or the first check after it that week)
@@ -3341,6 +3395,11 @@ def main(argv=None):
         except Exception as exc:  # the widget must always get parseable output
             result = {"ok": False, "error": "{}: {}".format(type(exc).__name__, exc), "generatedAt": now_ms}
         return emit(result)
+    if projects_asked and on:   # (an SSH host's Projects tab: this file run there; each host on its own, so none waits for another)
+        try:
+            return emit(host_projects(on))
+        except Exception as exc:
+            return emit({"host": on, "ok": False, "error": "{}: {}".format(type(exc).__name__, exc)})
     if projects_asked:   # (the Projects tab: every chat the cache has, plan and memory, by project)
         try:
             profiles = cs.discover_profiles(home, config_dirs)
@@ -3357,7 +3416,11 @@ def main(argv=None):
             project_recaps(rows, ctx, items["paths"])
             for saved in (ctx.links, ctx.slugs, ctx.chats, ctx.plan_dirs, ctx.plan_projects, ctx.plan_writes):
                 saved.save()
+            if remote:   # (on an SSH host: what opens its chats there; its clock as it answers)
+                project_commands(rows, home, profiles)
             result = {"ok": True, "generatedAt": now_ms, "projects": rows, "hidden": len(hidden_paths), "hiddenPaths": hidden_paths}
+            if remote:
+                result["now"] = int(time.time() * 1000)
         except Exception as exc:
             result = {"ok": False, "error": "{}: {}".format(type(exc).__name__, exc)}
         return emit(result)

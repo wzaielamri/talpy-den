@@ -2,7 +2,7 @@
 // Claude Code) and for the webview's dev harness. Nothing here is real: the
 // accounts, folders, hosts and chats are invented, times are relative to now.
 
-import type { LimitAccount, LimitHistory, LimitPeriod, ProjectsData, WeekLane, WeekNumbers, Agent, ChatStats, Group, HostState, PermsData, Session, Status, UsageStats, ViewState, WeekChat, WeekDay, WeekRecap, WeekSpan } from "./types";
+import type { HostProjects, LimitAccount, LimitHistory, LimitPeriod, ProjectsData, WeekLane, WeekNumbers, Agent, ChatStats, Group, HostState, PermsData, Session, Status, UsageStats, ViewState, WeekChat, WeekDay, WeekRecap, WeekSpan } from "./types";
 
 const MIN = 60000;
 const HOUR = 60 * MIN;
@@ -644,6 +644,27 @@ export function demoProjects(now: number): ProjectsData {
       { ...project("", "", 72 * h, [], null), name: "", short: "", plans: plans.filter((p) => !p.cwd) },
     ],
   };
+}
+
+// The demo's SSH host's projects (build-server's, as read there): its
+// ranking experiments, with its two open chats and an older one, and the
+// commands that open them there
+export function demoHostProjects(now: number): HostProjects[] {
+  const h = 3_600_000;
+  const path = "/home/alice/experiments/ranking";
+  const chat = (id: string, name: string, ago: number) =>
+    ({ key: `.claude/${id}/project`, sessionId: id, name, cwd: path, cwdShort: "~/experiments/ranking", lastActive: now - ago, profile: "team",
+       profileDir: ".claude", account: "team", shared: false, starred: false, openCommand: "echo 'Demo mode'" });
+  return [{
+    host: "build-server", ok: true, error: "", hidden: 0, hiddenPaths: [],
+    projects: [{
+      name: "ranking", path, short: "~/experiments/ranking", gone: false, lastAt: now - 0.1 * h, accounts: ["team"], chatCount: 3,
+      chats: [chat("demo-4", "Train the ranking model", 0.1 * h), chat("demo-5", "Evaluate on the holdout set", 0.3 * h),
+              chat("demo-h1", "Clean the click data", 28 * h)],
+      plans: [], memories: [], recap: { text: "Cleaned the click data: 3% of the sessions were bots. Next: train on what's left.", at: now - 28 * h },
+      newChatCommand: "echo 'Demo mode'",
+    }],
+  }];
 }
 
 // The Recap's How your limits changed in the demo: six weeks of each account,

@@ -1134,31 +1134,36 @@ export function findMemory(status: Status | null, hosts: HostState[], host: unkn
 
 // ---------------------------------------------------------------- the Projects tab's
 // Its chats, plans and memories are this computer's, from week.py
-// --projects: the extension finds the one a click names in what it last read
+// --projects, or an SSH host's (week.py --projects --on HOST, read there):
+// the extension finds the one a click names in what it last read of that
+// machine, and its account in that machine's status
 
-// The account (of this computer) a project's chat, plan or memory is on
+// The account a project's chat, plan or memory is on, in its machine's status
 export function groupOfProfile(status: Pick<Status, "groups"> | null | undefined, profileDir: string): Group | undefined {
   return status?.groups.find((g) => (g.profileKeys ?? []).includes(profileDir));
 }
 
-export function findProjectChat(data: ProjectsData | null | undefined, key: unknown): ChatRef | null {
+export function findProjectChat(data: Pick<ProjectsData, "projects"> | null | undefined, key: unknown, host?: string): ChatRef | null {
   if (typeof key !== "string" || !key) return null;
-  for (const p of data?.projects ?? []) for (const c of p.chats ?? []) if (c.key === key) return recentRef(c);
+  for (const p of data?.projects ?? []) for (const c of p.chats ?? []) if (c.key === key) return recentRef(c, host);
   return null;
 }
 
-export function findProjectPlan(data: ProjectsData | null | undefined, status: Status | null, key: unknown): { plan: PlanItem; group: Group } | null {
+// (status: the machine's, host's when it's an SSH host's)
+export function findProjectPlan(data: Pick<ProjectsData, "projects"> | null | undefined, status: Status | null | undefined, key: unknown, host?: string):
+    { plan: PlanItem; group: Group } | null {
   if (typeof key !== "string" || !key) return null;
   const plan = (data?.projects ?? []).flatMap((p) => p.plans ?? []).find((x) => x.key === key);
   const group = plan ? groupOfProfile(status, plan.profileDir) : undefined;
-  return plan && group ? { plan, group } : null;
+  return plan && group ? { plan, group: host ? { ...group, host } : group } : null;
 }
 
-export function findProjectMemory(data: ProjectsData | null | undefined, status: Status | null, key: unknown): { memory: Memory; group: Group } | null {
+export function findProjectMemory(data: Pick<ProjectsData, "projects"> | null | undefined, status: Status | null | undefined, key: unknown, host?: string):
+    { memory: Memory; group: Group } | null {
   if (typeof key !== "string" || !key) return null;
   const memory = (data?.projects ?? []).flatMap((p) => p.memories ?? []).find((m) => m.key === key);
   const group = memory ? groupOfProfile(status, memory.profileDir) : undefined;
-  return memory && group ? { memory, group } : null;
+  return memory && group ? { memory, group: host ? { ...group, host } : group } : null;
 }
 
 // A line's folder inside a project: only its part below the project's

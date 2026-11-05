@@ -3224,8 +3224,8 @@ PlasmoidItem {
                 root.pollHost(what.host)
             else
                 root.refresh()
-            if (!what.host && (what.kind === "projects" || root.projectsShown))
-                root.loadProjects()   // (a plan or memory there, or a project)
+            if (what.kind === "projects" || root.projectsShown)
+                root.reloadProjects(what.host)   // (a plan or memory there, or a project)
         }
     }
 
@@ -3341,8 +3341,8 @@ PlasmoidItem {
                 root.pollHost(what.host)
             else
                 root.refresh()
-            if (!what.host && root.projectsShown)
-                root.loadProjects()
+            if (root.projectsShown)
+                root.reloadProjects(what.host)
         }
     }
 
@@ -3427,8 +3427,8 @@ PlasmoidItem {
                 root.pollHost(what.host)
             else
                 root.refresh()
-            if (!what.host && root.projectsShown)
-                root.loadProjects()
+            if (root.projectsShown)
+                root.reloadProjects(what.host)
         }
     }
 
@@ -4572,21 +4572,29 @@ PlasmoidItem {
     }
 
     // The Projects tab (ProjectsView.qml, week.py --projects): every project
-    // with all its chats, plans and memories; read when the tab opens and
-    // every 10 minutes while it shows (what goes on now comes from the
-    // status). Each project is folded until you open it (kept while
-    // Plasma runs); a project row of the Recap opens it here (showProject).
-    property var openProjects: ({})   // project folder -> unfolded
-    property string projectToShow: ""   // (opened from the Recap: scrolled to)
-    function toggleProject(path, wasOpen) {
-        openProjects = Object.assign({}, openProjects, { [path]: !wasOpen })
+    // with all its chats, plans and memories, this computer's, then each SSH
+    // host's (and container's) shown, read there (week.py --projects --on
+    // HOST, each on its own: a slow host holds up no other); read when the
+    // tab opens and every 10 minutes while it shows, a host also once it
+    // answers its first check meanwhile (what goes on now comes from the
+    // status). Each project is folded until you open it (kept while Plasma
+    // runs); a project row of the Recap opens it here (showProject).
+    property var openProjects: ({})   // project key (projectKey) -> unfolded
+    property string projectToShow: ""   // (opened from the Recap: scrolled to; its key)
+    // A project's key: its folder, an SSH host's after its name (the same folder there is another project)
+    function projectKey(path, host) {
+        return (host ? host + "|" : "") + path
+    }
+    function toggleProject(key, wasOpen) {
+        openProjects = Object.assign({}, openProjects, { [key]: !wasOpen })
         if (wasOpen)
             for (const list of ["", "|plans", "|memories"])
-                firstPage("project|" + path + list)
+                firstPage("project|" + key + list)
     }
-    function showProject(path) {
-        openProjects = Object.assign({}, openProjects, { [path]: true })
-        projectToShow = path
+    function showProject(path, host) {
+        const key = projectKey(path, host || "")
+        openProjects = Object.assign({}, openProjects, { [key]: true })
+        projectToShow = key
         popupTab = "projects"
     }
     // A line's folder in a project: only its part below the project's folder
@@ -4599,9 +4607,11 @@ PlasmoidItem {
             return ""
         return folder.startsWith(project + "/") ? folder.slice(project.length + 1) : short
     }
-    // The account (of this computer) a chat, plan or memory of a project is on
-    function groupOfProfile(profileDir) {
-        return groups.find(g => (g.profileKeys || []).indexOf(profileDir) >= 0) || groups[0] || emptyGroup
+    // The account a chat, plan or memory of a project is on (this computer's, or host's: as its section shows it)
+    function groupOfProfile(profileDir, host) {
+        const list = host ? (((remote[host] || {}).result || {}).groups || []) : groups
+        const g = list.find(x => (x.profileKeys || []).indexOf(profileDir) >= 0) || list[0]
+        return !g ? emptyGroup : host ? withUsage(g, host) : g
     }
     property var projectsData: null
     property string projectsError: ""
@@ -4609,7 +4619,13 @@ PlasmoidItem {
     readonly property bool projectsShown: popupTab === "projects" && dashboardShown && !coveredByWindow
     onProjectsShownChanged: if (projectsShown) loadProjects()
     property bool projectsAgain: false  // read again once the read on its way is in (it may have read before a change)
+    // This computer's projects and those of each SSH host shown that answered its last check
     function loadProjects() {
+        loadLocalProjects()
+        for (const host of answeredHosts)
+            loadHostProjects(host)
+    }
+    function loadLocalProjects() {
         const cmd = "python3 -I " + shellQuote(codeDir + "week.py") + " --projects" + configDirArgs
         if (projectsReader.has(cmd)) {   // (the same command isn't run twice at once)
             projectsAgain = true
@@ -4618,6 +4634,13 @@ PlasmoidItem {
         projectsBusy = true
         projectsAgain = false
         projectsReader.connectSource(cmd)
+    }
+    // After a change to a chat, plan, memory or project (here, or on host): its projects read again
+    function reloadProjects(host) {
+        if (host)
+            loadHostProjects(host)
+        else
+            loadLocalProjects()
     }
     Exec {
         id: projectsReader
@@ -4632,7 +4655,54 @@ PlasmoidItem {
                 root.projectsError = i18n("Couldn't read your projects: %1", r.error || r.message || i18n("no answer"))
             }
             if (root.projectsAgain)
-                root.loadProjects()
+                root.loadLocalProjects()
+        }
+    }
+    // Each SSH host's: host -> {ok, error, projects, hidden, hiddenPaths} (after a read that
+    // failed, the projects read before, with its error); the ones on their way, and to read again
+    property var hostProjects: ({})
+    property var hostProjectsBusy: ({})
+    property var hostProjectsAgain: ({})
+    // (the hosts shown that answered their last check: no waiting on one out of reach)
+    readonly property var answeredHosts: shownHosts.filter(h => remote[h] && remote[h].result && !remote[h].error)
+    readonly property string answeredHostsKey: answeredHosts.join(",")
+    onAnsweredHostsKeyChanged: {
+        if (projectsShown)   // (one that answered for the first time, or again after its read failed)
+            for (const host of answeredHosts)
+                if (!hostProjects[host] || !hostProjects[host].ok)
+                    loadHostProjects(host)
+    }
+    function hostProjectsCommand(host) {
+        return "python3 -I " + shellQuote(codeDir + "week.py") + " --projects --on " + shellQuote(host)
+    }
+    function loadHostProjects(host) {
+        if (shownHosts.indexOf(host) < 0)
+            return
+        if (hostProjectsReader.has(hostProjectsCommand(host))) {   // (the same command isn't run twice at once)
+            hostProjectsAgain[host] = true
+            return
+        }
+        delete hostProjectsAgain[host]
+        hostProjectsBusy = Object.assign({}, hostProjectsBusy, { [host]: true })
+        hostProjectsReader.connectSource(hostProjectsCommand(host))
+    }
+    Exec {
+        id: hostProjectsReader
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            const host = Object.keys(root.hostProjectsBusy).find(h => root.hostProjectsCommand(h) === source)
+            if (host === undefined)
+                return
+            const busy = Object.assign({}, root.hostProjectsBusy)
+            delete busy[host]
+            root.hostProjectsBusy = busy
+            const r = root.helperResult(data)
+            const before = root.hostProjects[host] || { projects: [], hidden: 0, hiddenPaths: [] }
+            root.hostProjects = Object.assign({}, root.hostProjects, { [host]: r.ok
+                ? { ok: true, error: "", projects: r.projects || [], hidden: r.hidden || 0, hiddenPaths: r.hiddenPaths || [] }
+                : Object.assign({}, before, { ok: false, error: r.error || r.message || i18n("no answer") }) })
+            if (root.hostProjectsAgain[host])
+                root.loadHostProjects(host)
         }
     }
     Timer {
@@ -4642,16 +4712,18 @@ PlasmoidItem {
         onTriggered: root.loadProjects()
     }
     // New chat here: the new-chat box of the account its newest chat is on (else its plans' or memories'), with
-    // that folder first
-    function newChatInProject(project) {
+    // that folder first (an SSH host's: in its section, started there with the command it sent)
+    function newChatInProject(project, host) {
         const newest = project.chats[0] || (project.plans || [])[0] || (project.memories || [])[0] || null
-        const g = groups.find(x => newest && (x.profileKeys || []).indexOf(newest.profileDir) >= 0) || groups[0]
+        const list = host ? (((remote[host] || {}).result || {}).groups || []) : groups
+        const g = list.find(x => newest && (x.profileKeys || []).indexOf(newest.profileDir) >= 0) || list[0]
         if (!g)
             return
+        const key = (host ? host + "/" : "") + g.id
         popupTab = "chats"
-        newChatFolder = { groupKey: g.id, path: project.path, short: project.short, newChatCommand: "" }
+        newChatFolder = { groupKey: key, path: project.path, short: project.short, newChatCommand: host ? project.newChatCommand || "" : "" }
         planComposer = ""
-        newChatGroup = g.id
+        newChatGroup = key
         setFocusView(false)   // (the box is in its account's section, which the focus view leaves out)
     }
 
@@ -4913,8 +4985,8 @@ PlasmoidItem {
                 root.pollHost(host)
             else
                 root.refresh()
-            if (!host && root.projectsShown)
-                root.loadProjects()
+            if (root.projectsShown)
+                root.reloadProjects(host)
         }
     }
 

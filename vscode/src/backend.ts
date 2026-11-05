@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isComparison, type Comparison } from "./changes";
 import { hostLabel, shellQuote } from "./shared/model";
-import type { ContainerInfo, ContainerNote, FoundChat, FoundMemory, FoundPlan, FoundProject, LimitHistory, PermsData, ProjectsData, Status, WeekRecap } from "./shared/types";
+import type { ContainerInfo, ContainerNote, FoundChat, FoundMemory, FoundPlan, FoundProject, HostProjects, LimitHistory, PermsData, ProjectRow, ProjectsData, Status, WeekRecap } from "./shared/types";
 
 export const REMOTE_MARK = "@@talpy-den@@";
 const KILL_GRACE_MS = 3000;
@@ -320,6 +320,15 @@ export class Backend {
   async projects(args: string[]): Promise<{ data?: ProjectsData; error?: string }> {
     const r = await this.json(["week.py", "--projects", ...args], 180000);
     if (r?.ok && Array.isArray(r.projects)) return { data: r as ProjectsData };
+    return { error: String(r?.error ?? r?.message ?? "the helper gave no answer") };
+  }
+
+  // An SSH host's (or a container's) projects, read there (week.py --projects --on HOST)
+  async hostProjects(host: string): Promise<{ data?: Omit<HostProjects, "busy">; error?: string }> {
+    const r = await this.json(["week.py", "--projects", "--on", host], 180000);
+    if (r?.ok && Array.isArray(r.projects))
+      return { data: { host, ok: true, error: "", projects: r.projects as ProjectRow[], hidden: Number(r.hidden) || 0,
+                       hiddenPaths: Array.isArray(r.hiddenPaths) ? r.hiddenPaths.filter((p: unknown) => typeof p === "string") : [] } };
     return { error: String(r?.error ?? r?.message ?? "the helper gave no answer") };
   }
 

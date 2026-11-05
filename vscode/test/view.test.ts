@@ -7,13 +7,14 @@ import { test } from "node:test";
 import * as vscode from "vscode";
 import { demoProjects, demoState } from "../src/shared/demo";
 import { badgeOf, chatRefOf, findProjectChat, recentRef } from "../src/shared/model";
-import type { RecentChat, ViewState } from "../src/shared/types";
+import type { ProjectsData, RecentChat, ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { recorded } from "./vscode-stub";
 
 const NOW = 1_800_000_000_000;
 
-function setup(state: ViewState = demoState(NOW), projects = demoProjects(NOW), more: { chat: RecentChat; groupId: string }[] = []) {
+function setup(state: ViewState = demoState(NOW), projects = demoProjects(NOW), more: { chat: RecentChat; groupId: string }[] = [],
+               hostProjects: Record<string, Pick<ProjectsData, "projects">> = {}) {
   const calls: { name: string; args: unknown[] }[] = [];
   const record = (name: string) => (...args: unknown[]) => {
     calls.push({ name, args });
@@ -31,12 +32,16 @@ function setup(state: ViewState = demoState(NOW), projects = demoProjects(NOW), 
     pollHost: record("pollHost"),
     refreshAll: record("refreshAll"),
     startQueued: (t: { id: string }) => record("startQueued")(t.id),
-    // (the Projects tab as it was last read; a bigger check's recent chats)
+    // (the Projects tab as it was last read, an SSH host's as read there; a bigger check's recent chats)
     projects: () => Promise.resolve({ data: projects }),
     projectsRead: () => projects,
+    projectsOn: (host?: string) => (host ? hostProjects[host] ?? null : projects),
+    answeringHosts: () => Object.keys(hostProjects),
+    hostProjectsRead: () => Object.entries(hostProjects).map(([host, read]) => ({ host, ok: true, error: "", projects: read.projects })),
+    readHostProjects: record("readHostProjects"),
     moreChat: (host: unknown, key: unknown) => {
       const m = host ? undefined : more.find((x) => x.chat.key === key);
-      return m ? recentRef(m.chat) : host ? null : findProjectChat(projects, key);
+      return m ? recentRef(m.chat) : findProjectChat(host ? hostProjects[host as string] : projects, key, (host as string) || undefined);
     },
     moreRecentChat: (host: unknown, key: unknown) => (host ? null : (more.find((x) => x.chat.key === key) ?? null)),
     setActionError: record("setActionError"),
@@ -282,10 +287,50 @@ test("a project's chat, plan and memory are found in what the Projects tab last 
   receive({ type: "deleteDescribe", kind: "memory", groupId: g.id, id: "demo-mem-2" }); // (no line to answer: nothing)
   const asked = calls.splice(0);
   assert.deepEqual(asked.map((c) => [c.name, ...c.args]), [["describeDelete", "memory", "demo-mem-2", "", undefined]]);
-  // (an SSH host's are never looked for there, nor what it doesn't list)
+  // (this computer's are never looked for in an SSH host's, nor what it doesn't list)
   receive({ type: "openPlan", groupId: g.id, host: state.hosts[0]?.name ?? "box", plan: "demo-plan-1" });
   receive({ type: "open", chat: { host: state.hosts[0]?.name ?? "box", key: ".claude/demo-6/project" } });
   receive({ type: "openMemory", groupId: g.id, memory: "nope" });
+  assert.deepEqual(calls, []);
+});
+
+// An SSH host's projects (week.py --projects --on HOST, read there): a click
+// on one of their lines is found in what was read on that host, and acts
+// there, on that host's account; New chat here starts there with the command
+// its read sent, never one from the page
+test("an SSH host's project lines are found in what was read there, and act there", () => {
+  const state = demoState(NOW);
+  const host = state.hosts[0].name;   // (build-server: answered its check)
+  const g = state.hosts[0].result!.groups[0];
+  const path = "/srv/api";
+  const chat = { key: ".claude/h-1/project", sessionId: "h-1", name: "Tune it", cwd: path, cwdShort: path, lastActive: NOW,
+                 profile: "team", profileDir: ".claude", account: "team", shared: false, starred: false, openCommand: "cd /srv/api; claude --resume h-1" };
+  const plan = { ...demoProjects(NOW).projects.flatMap((p) => p.plans)[0], key: "h-plan", slug: "host-plan", account: "team" };
+  const memory = { ...(demoProjects(NOW).projects.flatMap((p) => p.memories)[0] ?? state.status!.groups[0].memories![0]),
+                   key: "h-mem", type: "project", account: "team" };
+  const row = { name: "api", path, short: path, lastAt: NOW, accounts: ["team"], chatCount: 1, chats: [chat], plans: [plan],
+                memories: [memory], recap: null, newChatCommand: "cd /srv/api 2>/dev/null; claude" } as ProjectsData["projects"][number];
+  const { calls, receive } = setup(state, demoProjects(NOW), [], { [host]: { projects: [row] } });
+  receive({ type: "open", chat: { host, key: chat.key } });
+  receive({ type: "openPlan", groupId: g.id, host, plan: "h-plan" });
+  receive({ type: "openMemory", groupId: g.id, host, memory: "h-mem" });
+  receive({ type: "hide", kind: "projects", host, id: path });
+  receive({ type: "newChatIn", host, path, short: path, profileDir: ".claude" });
+  const got = calls.splice(0);
+  assert.deepEqual(got.map((c) => c.name), ["open", "openPlan", "openMemory", "hide", "newChat"]);
+  assert.deepEqual([(got[0].args[0] as { sessionId: string; host: string; openCommand: string }).sessionId, (got[0].args[0] as { host: string }).host,
+                    (got[0].args[0] as { openCommand: string }).openCommand], ["h-1", host, chat.openCommand]);
+  assert.deepEqual([(got[1].args[0] as { slug: string }).slug, got[1].args[1]], ["host-plan", host]);
+  assert.deepEqual([(got[2].args[0] as { key: string }).key, got[2].args[1]], ["h-mem", host]);
+  assert.deepEqual(got[3].args, ["projects", path, host]);
+  assert.deepEqual(got[4].args, [g.id, host, undefined, undefined, { path, short: path, newChatCommand: row.newChatCommand }]);
+  // (a host that isn't shown, a folder its read doesn't list, a project's folder that isn't one: nothing)
+  receive({ type: "hide", kind: "projects", host: "elsewhere", id: path });
+  receive({ type: "newChatIn", host: "elsewhere", path, profileDir: ".claude" });
+  receive({ type: "newChatIn", host, path: "/srv/other", profileDir: ".claude" });
+  receive({ type: "hide", kind: "projects", id: "relative/path" });
+  receive({ type: "openPlan", groupId: g.id, plan: "h-plan" });   // (this computer's: not the host's)
+  receive({ type: "open", chat: { host: "elsewhere", key: chat.key } });
   assert.deepEqual(calls, []);
 });
 

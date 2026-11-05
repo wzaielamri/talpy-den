@@ -40,7 +40,7 @@ export function PlanLine({ plan: p, group, project, accountTag, chatGoneCard }:
   const folder = project !== undefined ? folderIn(p.cwd, project, p.cwdShort) : p.cwdShort;
   const askKey = `plan|${host ?? ""}|${group.id}|${p.key}`; // (Delete?'s line, and Move?'s)
   const account = group.name || p.profile;
-  const draggable = project !== undefined && !host;
+  const draggable = project !== undefined;   // (onto a project of its own machine: ProjectsView)
   const asking = useStore(moveAsk)?.key === askKey;
   return (
     <>
@@ -54,7 +54,7 @@ export function PlanLine({ plan: p, group, project, accountTag, chatGoneCard }:
           e.dataTransfer?.setData("text/plain", p.title);
           if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
           moveAsk.set(null);
-          planDrag.set({ id: p.key, groupId: group.id, from: project ?? "" });
+          planDrag.set({ id: p.key, groupId: group.id, host: host ?? "", from: project ?? "" });
         } : undefined}
         onDragEnd={draggable ? () => planDrag.set(null) : undefined}
         title={

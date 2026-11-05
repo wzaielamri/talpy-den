@@ -7,11 +7,15 @@
 // several. Everything of it comes from week.py --projects (asked when the tab
 // is in sight, again every 10 minutes, at the view's Refresh, and after a
 // star, a hide or a delete); what goes on now from the status (the view's
-// state). No time or money here: the Recap has them, by project.
+// state). No time or money here: the Recap has them, by project. Then each
+// SSH host's (and container's) shown, under its name, as read there (week.py
+// --projects --on HOST), its open chats from its status: its lines open and
+// change it there, as in its section of the Chats tab, and a plan drags only
+// onto a project of its own machine.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Group, ProjectRow, Session } from "../../src/shared/types";
-import { duration, folderIn, groupOfProfile, listedChats, openChatsByProject, pagedTitle, pageSizeOf, projectLists, stateText } from "../../src/shared/model";
+import type { Group, HostProjects, ProjectRow, Session } from "../../src/shared/types";
+import { containerOf, duration, folderIn, groupOfProfile, hiddenCount, hostLabel, listedChats, openChatsByProject, pagedTitle, pageSizeOf, projectLists, stateText } from "../../src/shared/model";
 import { post } from "../env";
 import { hideHint } from "../util/chat";
 import { I, Icon } from "../util/icons";
@@ -19,9 +23,10 @@ import { useAfterFrame } from "../util/lazy";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
 import { planDrag, projectsAnswer, useReadAgain } from "../util/stores";
-import { pages, pagesShown, projectListKey, projectToShow, showMore, toggleProject, uiState } from "../util/ui";
+import { pages, pagesShown, projectKey, projectListKey, projectToShow, showMore, toggleProject, uiState } from "../util/ui";
 import { useView } from "./context";
 import { FocusLine } from "./FocusView";
+import { IconButton } from "./IconButton";
 import { MemoryLine } from "./MemoryLine";
 import { MoreButton } from "./MoreButton";
 import { askMove, MoveAsk } from "./MoveAsk";
@@ -57,9 +62,10 @@ export function ProjectsView() {
     document.addEventListener("dragover", over);
     return () => document.removeEventListener("dragover", over);
   }, [dragging]);
-  // Shown again (Show Hidden Projects, Plans or Memories Again): read again,
-  // as a hide from here is (Plasma reads again after either)
-  const hidden = (view.status?.hiddenProjects ?? 0) + (view.status?.hiddenPlans ?? 0) + (view.status?.hiddenMemories ?? 0);
+  // Shown again (Show Hidden Projects, Plans or Memories Again, here or on a
+  // host): read again, as a hide from here is (Plasma reads again after either)
+  const hidden = [view.status, ...view.hosts.map((h) => h.result)]
+    .reduce((n, s) => n + (s?.hiddenProjects ?? 0) + (s?.hiddenPlans ?? 0) + (s?.hiddenMemories ?? 0), 0);
   const hiddenBefore = useRef(hidden);
   useEffect(() => {
     if (visible && hidden < hiddenBefore.current) post({ type: "projects" });
@@ -67,9 +73,10 @@ export function ProjectsView() {
   }, [hidden]);
   if (!answer) return <Reading text="Reading your chats by project…" />;
   const projects = answer.data?.projects ?? [];
+  const hosts = answer.hosts ?? [];
   // (a read that failed says why, above the projects read before it, as Plasma's)
   const error = answer.error ? <div class="msg error" role="alert">Couldn't read your projects: {answer.error}</div> : null;
-  if (!projects.length) {
+  if (!projects.length && !hosts.length) {
     return error ?? (
       <div class="empty">
         <p class="empty-title">No projects yet</p>
@@ -86,19 +93,63 @@ export function ProjectsView() {
     <div class="projects">
       {error}
       {projects.map((p) => (
-        <Project key={p.path} p={p} open={!!ui.projects[p.path]} now={now} here={(p.path && open.get(p.path)) || []} />
+        <Project key={p.path} p={p} groups={groups} open={!!ui.projects[p.path]} now={now} here={(p.path && open.get(p.path)) || []} />
       ))}
+      {hosts.map((h) => <HostProjectsSection key={h.host} read={h} now={now} />)}
     </div>
   );
 }
 
-// One project: its line, and opened, what's in it
-function Project({ p, open, here, now }: { p: ProjectRow; open: boolean; here: Session[]; now: number }) {
+// An SSH host's projects (or a container's), under its name as its section
+// in the Chats tab: what was read there (still reading, why it couldn't, or
+// that it has none), each project with its open chats from the host's status
+function HostProjectsSection({ read, now }: { read: HostProjects; now: number }) {
+  const view = useView();
+  const ui = useStore(uiState);
+  const result = view.hosts.find((h) => h.name === read.host)?.result ?? null;
+  const groups = (result?.groups ?? []).map((g) => ({ ...g, host: read.host }));
+  const open = openChatsByProject([...read.projects, ...(read.hiddenPaths ?? []).map((path) => ({ path }))],
+    groups.flatMap((g) => g.sessions));
+  const name = hostLabel(read.host);
+  const container = containerOf(read.host);
+  const hidden = (["chats", "plans", "memories", "projects"] as const).reduce((n, kind) => n + hiddenCount(result, kind), 0);
+  return (
+    <section class="host project-host" aria-label={container ? `Container ${name}` : `SSH host ${read.host}`}>
+      <div class="host-head">
+        <Icon name={container ? I.container : I.host} class="host-icon" />
+        <h2 class="host-name" title={name}>{container ? container.name : read.host}</h2>
+        <span class="spacer" />
+        {read.busy ? <span class="spinner" role="status" aria-label={`Reading the projects on ${name}…`} /> : null}
+        {hidden > 0 ? (
+          <IconButton
+            icon={I.showHidden}
+            label="Show hidden ones again…"
+            title={`Show hidden ones again…\nThe chats, plans, memories or projects of ${name} you hid (${hidden})`}
+            onClick={() => post({ type: "showHidden", host: read.host })}
+          />
+        ) : null}
+      </div>
+      {!read.ok ? <div class="msg error" role="alert">Couldn't read the projects on {name}: {read.error}</div> : null}
+      {read.projects.length ? null : read.busy ? <Reading text={`Reading the chats on ${name} by project…`} />
+        : read.ok ? <div class="muted host-empty">{`No projects on ${name} yet`}</div> : null}
+      {read.projects.map((p) => {
+        const key = projectKey(p.path, read.host);
+        return <Project key={key} p={p} host={read.host} groups={groups} open={!!ui.projects[key]} now={now} here={(p.path && open.get(p.path)) || []} />;
+      })}
+    </section>
+  );
+}
+
+// One project: its line, and opened, what's in it (host: an SSH host's, its
+// accounts in groups as that host's status has them; "" this computer's)
+function Project({ p, host = "", groups, open, here, now }:
+  { p: ProjectRow; host?: string; groups: Group[]; open: boolean; here: Session[]; now: number }) {
   const card = useRef<HTMLElement>(null);
+  const key = projectKey(p.path, host);
   // (opened from the Recap: brought into view)
   const toShow = useStore(projectToShow);
   useEffect(() => {
-    if (toShow && toShow === p.path && card.current) {
+    if (toShow && toShow === key && card.current) {
       card.current.scrollIntoView({ block: "start" });
       projectToShow.set("");
     }
@@ -106,13 +157,13 @@ function Project({ p, open, here, now }: { p: ProjectRow; open: boolean; here: S
   // (a plan whose chat is gone: its folder isn't known)
   const unfiled = !p.path;
   const profileDir = p.chats[0]?.profileDir ?? p.plans[0]?.profileDir ?? p.memories[0]?.profileDir ?? "";
-  // A plan dragged here from another project (or the plans whose chat is
-  // gone): this card lights up, and a drop asks to move it here (MoveAsk at
-  // its top); its own project, a folder that's gone and the plans whose chat
-  // is gone take none
+  // A plan dragged here from another project of the same machine (or the
+  // plans whose chat is gone): this card lights up, and a drop asks to move it
+  // here (MoveAsk at its top); its own project, a folder that's gone and the
+  // plans whose chat is gone take none
   const drag = useStore(planDrag);
   const [over, setOver] = useState(false);
-  const takes = !!drag && !!p.path && !p.gone && drag.from !== p.path;
+  const takes = !!drag && !!p.path && !p.gone && drag.host === host && drag.from !== p.path;
   useEffect(() => {
     if (!drag) setOver(false);
   }, [drag]);
@@ -133,11 +184,11 @@ function Project({ p, open, here, now }: { p: ProjectRow; open: boolean; here: S
         setOver(false);
         const d = planDrag.get();
         planDrag.set(null);
-        if (d) askMove("drop|" + p.path, { groupId: d.groupId, id: d.id, folder: p.path }, false);
+        if (d) askMove("drop|" + key, { groupId: d.groupId, ...(host ? { host } : {}), id: d.id, folder: p.path }, false);
       } : undefined}
     >
       <div class="project-head">
-        <button type="button" class="project-name" aria-expanded={open} onClick={() => toggleProject(p.path)}>
+        <button type="button" class="project-name" aria-expanded={open} onClick={() => toggleProject(key)}>
           <span class={"chevron" + (open ? " open" : "")} aria-hidden="true"><Icon name={I.folded} /></span>
           <span class="project-title">
             <strong>{unfiled ? "Plans whose chat is gone" : p.name}</strong>
@@ -156,38 +207,37 @@ function Project({ p, open, here, now }: { p: ProjectRow; open: boolean; here: S
         {/* on hover (or Tab), over the end of its folder's line: the dots stay in sight, and nothing moves */}
         {unfiled ? null : (
           <span class="project-actions">
-            <button type="button" class="icon-btn" title={`New chat here\n${p.short}`} aria-label="New chat here"
-              onClick={() => post({ type: "newChatIn", path: p.path, short: p.short, profileDir })}>
+            <button type="button" class="icon-btn" title={`New chat here\n${host ? hostLabel(host) + ":" : ""}${p.short}`} aria-label="New chat here"
+              onClick={() => post({ type: "newChatIn", path: p.path, short: p.short, profileDir, ...(host ? { host } : {}) })}>
               <Icon name={I.newChat} />
             </button>
-            <button type="button" class="icon-btn" title={`Hide this project\n${hideHint("projects")}`} aria-label="Hide this project"
-              onClick={() => post({ type: "hide", kind: "projects", id: p.path })}>
+            <button type="button" class="icon-btn" title={`Hide this project\n${hideHint("projects", host || undefined)}`} aria-label="Hide this project"
+              onClick={() => post({ type: "hide", kind: "projects", id: p.path, ...(host ? { host } : {}) })}>
               <Icon name={I.hide} />
             </button>
           </span>
         )}
       </div>
-      {unfiled ? null : <MoveAsk itemKey={"drop|" + p.path} />}
-      {open ? <ProjectDetails p={p} here={here} /> : null}
+      {unfiled ? null : <MoveAsk itemKey={"drop|" + key} />}
+      {open ? <ProjectDetails p={p} projectKey={key} groups={groups} here={here} /> : null}
     </section>
   );
 }
 
 // An opened project: its open chats now, Claude's last recap of it, then its
 // chats (not the ones listed as running chats), plans and memories
-function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
+function ProjectDetails({ p, projectKey: pk, groups, here }: { p: ProjectRow; projectKey: string; groups: Group[]; here: Session[] }) {
   const view = useView();
   const shownPages = useStore(pages);
   const size = pageSizeOf(view.settings.recentChats);
-  const groups = view.status?.groups ?? [];
   const lists = projectLists(p, listedChats(groups), {
-    chats: pagesShown(shownPages, projectListKey(p.path, "chats")),
-    plans: pagesShown(shownPages, projectListKey(p.path, "plans")),
-    memories: pagesShown(shownPages, projectListKey(p.path, "memories")),
+    chats: pagesShown(shownPages, projectListKey(pk, "chats")),
+    plans: pagesShown(shownPages, projectListKey(pk, "plans")),
+    memories: pagesShown(shownPages, projectListKey(pk, "memories")),
   }, size);
-  // (each line on its account here: how its chats reopen, once for each)
+  // (each line on its account there: how its chats reopen, once for each)
   const hows = new Map<string, Reopen>();
-  const groupOf = (profileDir: string): Group | undefined => groupOfProfile(view.status, profileDir) ?? groups[0];
+  const groupOf = (profileDir: string): Group | undefined => groupOfProfile({ groups }, profileDir) ?? groups[0];
   const howOf = (g: Group): Reopen => hows.get(g.id) ?? hows.set(g.id, reopenOf(view, g)).get(g.id)!;
   const tag = (account: string) => (lists.tagged ? account : undefined);
   // (its plans and memories a frame after its chats: the project opens at once)
@@ -223,7 +273,7 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
               return g ? <RecentLine key={c.key} chat={c} group={g} how={howOf(g)} project={p.path} accountTag={tag(c.account)} /> : null;
             })}
           </ul>
-          <MoreButton shown={lists.chatsShown} count={lists.chats.length} size={size} onClick={() => showMore(projectListKey(p.path, "chats"))} />
+          <MoreButton shown={lists.chatsShown} count={lists.chats.length} size={size} onClick={() => showMore(projectListKey(pk, "chats"))} />
         </>
       ) : null}
       {rest && lists.plans.length ? (
@@ -235,7 +285,7 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
               return g ? <PlanLine key={x.key} plan={x} group={g} project={p.path} accountTag={tag(x.account)} chatGoneCard={!p.path} /> : null;
             })}
           </ul>
-          <MoreButton shown={lists.plansShown} count={lists.plans.length} size={size} onClick={() => showMore(projectListKey(p.path, "plans"))} />
+          <MoreButton shown={lists.plansShown} count={lists.plans.length} size={size} onClick={() => showMore(projectListKey(pk, "plans"))} />
         </>
       ) : null}
       {rest && lists.memories.length ? (
@@ -247,7 +297,7 @@ function ProjectDetails({ p, here }: { p: ProjectRow; here: Session[] }) {
               return g ? <MemoryLine key={m.key} memory={m} group={g} project={p.path} accountTag={tag(m.account)} /> : null;
             })}
           </ul>
-          <MoreButton shown={lists.memoriesShown} count={lists.memories.length} size={size} onClick={() => showMore(projectListKey(p.path, "memories"))} />
+          <MoreButton shown={lists.memoriesShown} count={lists.memories.length} size={size} onClick={() => showMore(projectListKey(pk, "memories"))} />
         </>
       ) : null}
     </div>

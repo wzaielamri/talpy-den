@@ -819,7 +819,8 @@ export type WeekSpan = "day" | "week" | "month" | "all";
 
 // The Projects tab (week.py --projects): each project (a git repository, else
 // a folder), newest first, with all its chats, plans and memories, each with
-// the account it's on (this computer's)
+// the account it's on (this computer's; an SSH host's: week.py --projects --on
+// HOST, read there, HostProjects)
 export interface ProjectsData {
   ok: true;
   generatedAt: number;
@@ -840,6 +841,19 @@ export interface ProjectRow {
   plans: (PlanItem & { account: string })[];
   memories: (Memory & { account: string })[];
   recap: { text: string; at: number | null } | null; // Claude's last recap of it
+  newChatCommand?: string | null; // an SSH host's: a new chat in its folder there, on its newest chat's account (its chats and plans have their openCommand)
+}
+
+// An SSH host's (or a container's) projects, as read there; after a read that
+// failed, the ones read before with its error; busy: a read is on its way
+export interface HostProjects {
+  host: string;
+  ok: boolean;
+  error: string;
+  projects: ProjectRow[];
+  hidden?: number;
+  hiddenPaths?: string[];
+  busy?: boolean;
 }
 
 export interface WeekLane {
@@ -1086,7 +1100,7 @@ export type WebviewMessage =
   | { type: "perms" } // the Permissions tab wants what it shows
   | { type: "projects"; shown?: boolean } // the Projects tab wants its projects (week.py --projects); shown false: it's gone
   | { type: "recentMore"; groupId: string; host?: string; count: number } // an account's first count recent chats, past the status
-  | { type: "newChatIn"; path: string; short?: string; profileDir: string } // + of a project: a new chat there, on the account of its newest chat (short: its folder from ~, week.py's)
+  | { type: "newChatIn"; path: string; short?: string; profileDir: string; host?: string } // + of a project: a new chat there, on the account of its newest chat (short: its folder from ~, week.py's; host: an SSH host's project)
   | { type: "copy"; text: string }; // a tip's command, to the clipboard
 
 // extension -> webview
@@ -1105,5 +1119,5 @@ export type HostMessage =
   | { type: "perms"; data: PermsData | null; error: string }
   | { type: "deleteAsk"; key: string; ok: boolean; question: string; message: string } // (deleteDescribe's answer: the question, or why it can't)
   | { type: "moveAsk"; key: string; ok: boolean; answer: MoveAnswer | null; message: string } // (moveDescribe's answer)
-  | { type: "projects"; data: ProjectsData | null; error: string }
+  | { type: "projects"; data: ProjectsData | null; error: string; hosts?: HostProjects[] } // (hosts: the SSH hosts shown whose projects were read, or are being read)
   | { type: "recentMore"; groupId: string; host?: string; recent: RecentChat[]; asked: number }; // (none: the check failed)

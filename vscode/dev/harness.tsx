@@ -2,10 +2,10 @@
 // "ready", then a new one every few seconds with the story moved on.
 
 import "../webview/main";
-import { demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../src/shared/demo";
+import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../src/shared/demo";
 import { limitsOpen } from "../webview/util/stores";
 import type { HostMessage } from "../src/shared/types";
-import { setFocus, setTab, toggleProject, toggleRecent, toggleStarred, uiState } from "../webview/util/ui";
+import { projectKey, setFocus, setTab, toggleProject, toggleRecent, toggleStarred, uiState } from "../webview/util/ui";
 import { askMove } from "../webview/components/MoveAsk";
 
 const params = new URLSearchParams(location.search);
@@ -148,10 +148,14 @@ setTimeout(() => {
   // ?tab=projects: that tab (&project=webapp: that project opened)
   if (params.get("tab") === "projects") {
     setTab("projects");
-    send({ type: "projects", data: demoProjects(Date.now()), error: "" });   // (at once: a screenshot doesn't wait)
+    send({ type: "projects", data: demoProjects(Date.now()), error: "", hosts: demoHostProjects(Date.now()) });   // (at once: a screenshot doesn't wait)
   }
   const project = demoProjects(Date.now()).projects.find((p) => p.name === params.get("project"));
   if (project && !uiState.get().projects[project.path]) toggleProject(project.path);
+  // (&project=ranking: build-server's, opened)
+  for (const h of demoHostProjects(Date.now()))
+    for (const p of h.projects)
+      if (p.name === params.get("project") && !uiState.get().projects[projectKey(p.path, h.host)]) toggleProject(projectKey(p.path, h.host));
   // ?drop=webapp: a plan of the plans whose chat is gone dropped on that project: its question
   const dropOn = demoProjects(Date.now()).projects.find((p) => p.name === params.get("drop"));
   const gone = demoProjects(Date.now()).projects.find((p) => !p.path)?.plans[0];
@@ -174,7 +178,7 @@ setTimeout(() => send({ type: "petEvent", kind: "done", text: "Fix the date pars
 window.addEventListener("harness-post", (event) => {
   const m = (event as CustomEvent).detail as { type: string; back?: number; account?: string; span?: "day" | "week" | "all" };
   if (m.type === "perms") send({ type: "perms", data: demoPerms(Date.now()), error: "" });
-  if (m.type === "projects") send({ type: "projects", data: demoProjects(Date.now()), error: "" });
+  if (m.type === "projects") send({ type: "projects", data: demoProjects(Date.now()), error: "", hosts: demoHostProjects(Date.now()) });
   if (m.type === "limits") send({ type: "limits", account: m.account ?? "", data: demoLimits(Date.now(), m.account ?? ""), error: "" });
   // (Move to project…: a made-up answer, as jump.py --move-plan --describe gives one)
   if (m.type === "moveDescribe") {
