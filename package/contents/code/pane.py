@@ -44,6 +44,11 @@ its permission prompt and its review.
         Esc in its terminal: Ctrl+C in its tmux pane, or Esc into a
         background chat through Claude's background service. The chat stays
         where it runs and takes your next message
+  --type-in CHAT --text T [--session ID] [--profile P]
+        a command that needs Claude's own panel (commands.py), put in the
+        chat's own prompt for you to press Enter there: typed into its tmux
+        pane (not sent), its VS Code panel's input (link), else the clipboard
+        ("how": "typed", "vscode" or "copy"); the caller opens its terminal
   --answer REQUEST --decision allow|always|deny|answer|approve|approve-edits|keep [--note T] [--answers JSON]
         answer a permission request the hook relayed (permission_hook.py);
         Claude's questions (AskUserQuestion): answer, with JSON {question:
@@ -76,9 +81,10 @@ its permission prompt and its review.
         settings.json, so the widget shows each step of each chat as it happens
   --complete CHAT [--profile P]
         what the reply box offers as you type: / commands (Claude's own, yours
-        and the project's) and skills, the project's files for @, and your
-        past prompts in its folder (newest first) for ↑. CHAT "-" with
-        --cwd FOLDER --profile P: a new chat's, in that folder
+        and the project's) and skills, each with how Talpy Chat runs it
+        (commands.py: "run" here, a page of Talpy Den's or the terminal), the
+        project's files for @, and your past prompts in its folder (newest
+        first) for ↑. CHAT "-" with --cwd FOLDER --profile P: a new chat's
   --terminal-font
         your terminal's font family, as the pane shows the conversation in
         it: {"ok", "family" ("" if it names none), "terminal"} (terminal_font)
@@ -513,6 +519,16 @@ def turn_end(wanted):
     return replies.TurnEnd()
 
 
+COMMAND_TAGS = ("<command-", "<local-command-", "<bash-")   # (a command you ran, what it printed: commands.py)
+UNKNOWN_COMMAND = ("Unknown command: /", "Unknown skill: /")
+
+
+def commands_of(items, due, end):
+    """What follows the commands you ran (commands.Commands), read only for a chat that has one."""
+    import commands   # (a module of its own, as replies.py: compiled once and kept)
+    return commands.Commands(items, due, end)
+
+
 def conversation_items(lines, pictures=None, ends=None):
     """The pane's items from transcript lines (oldest first): {"kind": "you",
     "text"} for a prompt of yours (one sent while Claude works shows when you
@@ -525,7 +541,9 @@ def conversation_items(lines, pictures=None, ends=None):
     the item is listed); a prompt of yours with pictures has "pictures"
     (their files: prompt_pictures, saved in the folder pictures). A
     question or a plan Claude asked has "asked" (asked_of), and your answer
-    to it, or your note to a No, comes after it as yours (your_answer).
+    to it, or your note to a No, comes after it as yours (your_answer). A
+    command you ran (/compact, !ls) is yours with "command" (commands.py:
+    what it printed on it).
     Entries of subagents (sidechains) aren't in it. ends: a dict given gets
     how the last turn ended (replies.TurnEnd.result)."""
     items, tools = [], {}
@@ -538,6 +556,7 @@ def conversation_items(lines, pictures=None, ends=None):
     # taken in goes where Claude took it, with the same key; taken: the ids of
     # those that were; due: those made the chat's own prompts (dequeue), in turn
     waiting, taken, due = [], set(), []
+    ran = None   # the commands you ran in it (commands.Commands), once there's one
 
     def you(key, text, at, content):
         """A prompt of yours as an item (content: its message's, for the pictures in it)"""
@@ -593,8 +612,15 @@ def conversation_items(lines, pictures=None, ends=None):
                 items.append(you(uid, text, at, a.get("prompt")))
             continue
         if kind == "system":
-            if e.get("subtype") == "compact_boundary":
+            sub, content = e.get("subtype"), e.get("content")
+            if sub == "compact_boundary":
                 items.append({"kind": "note", "key": uid, "text": "The conversation was compacted", "at": at})
+            elif sub == "local_command" and isinstance(content, str):
+                ran = ran or commands_of(items, due, end)
+                ran.entry(content, uid, at)
+            elif sub == "informational" and isinstance(content, str) and content.startswith(UNKNOWN_COMMAND):
+                ran = ran or commands_of(items, due, end)
+                ran.unknown(content, uid, at)
             continue
         msg, blocks = cs.blocks_of(e)
         if kind == "user":
@@ -636,6 +662,9 @@ def conversation_items(lines, pictures=None, ends=None):
             if text.startswith(INTERRUPTED):
                 end.interrupted()
                 items.append({"kind": "note", "key": uid, "text": "Interrupted", "at": at})
+            elif text.startswith(COMMAND_TAGS):
+                ran = ran or commands_of(items, due, end)
+                ran.entry(text, uid, at)
             continue
         if kind != "assistant":
             continue
@@ -923,180 +952,40 @@ def answer_request(cache_root, request_id, decision, note="", answers=None):
 
 
 # ---------------------------------------------------------------- what the reply box offers
-#
-# Claude's own commands (as of Claude Code 2.1.311, the ones that make sense
-# typed into a chat), your commands and skills (the profile's commands/ and
-# skills/), the project's (.claude/commands, .claude/skills), its files (git
-# ls-files, else a walk) and your past prompts there (history.jsonl).
 
-BUILTIN_COMMANDS = (
-    ("add-dir", "Add a new working directory"), ("agents", "Manage subagents"), ("branch", "Branch the conversation here"),
-    ("btw", "Ask a quick side question without interrupting"), ("clear", "Start a new chat with empty context"),
-    ("compact", "Free up context by summarizing the conversation so far"), ("config", "Open settings"),
-    ("context", "Show how full the context is"), ("copy", "Copy Claude's last response"), ("cost", "Show what this chat cost"),
-    ("doctor", "Check Claude Code's installation"), ("effort", "Set the effort level"), ("export", "Export the conversation"),
-    ("fork", "Copy this conversation into a new background chat"), ("goal", "Set a goal Claude checks before stopping"),
-    ("help", "Show help and the commands"), ("hooks", "Show the hooks"), ("init", "Write a CLAUDE.md for this project"),
-    ("insights", "A report about your Claude Code chats"), ("mcp", "Manage MCP servers"), ("memory", "Edit CLAUDE.md and memory"),
-    ("model", "Set the model"), ("permissions", "Manage what Claude may do without asking"),
-    ("plan", "Plan mode, or the chat's plan"), ("pr-comments", "Get the comments of a pull request"),
-    ("recap", "A one-line recap of the chat"), ("resume", "Resume another conversation"), ("review", "Review a pull request"),
-    ("rewind", "Go back to an earlier point"), ("security-review", "Review the pending changes for security"),
-    ("skills", "List the skills"), ("status", "Version, model, account and connections"),
-    ("subtask", "Send a subagent off with your full context"), ("todos", "Show the task list"), ("usage", "Show plan usage"),
-)
-COMPLETE_FILES_MAX = 20000
-COMPLETE_HISTORY_MAX = 200
-COMMAND_FILES_MAX = 500
-SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", "dist", "build", ".tox",
-             ".cache", "target", ".gradle", ".idea"}
-
-
-def front_matter(text):
-    """{key: value} of a Markdown file's front matter (--- … ---), and its first line of text after it."""
-    lines, meta, first = text.splitlines(), {}, ""
-    i = 0
-    if lines and lines[0].strip() == "---":
-        for i in range(1, len(lines)):
-            if lines[i].strip() == "---":
-                break
-            key, sep, value = lines[i].partition(":")
-            if sep and key.strip():
-                meta[key.strip().lower()] = value.strip().strip("'\"")
-        i += 1
-    for line in lines[i:]:
-        line = line.strip().lstrip("#").strip()
-        if line:
-            first = line
-            break
-    return meta, first
-
-
-def command_files(folder, scope):
-    """Commands in a commands/ folder: [{name, about, kind}] (a file in a subfolder: dir:name)."""
-    out = []
-    try:
-        files = sorted(folder.rglob("*.md"))[:COMMAND_FILES_MAX]
-    except OSError:
-        return out
-    for f in files:
-        head = cs.read_plain(f, 4000, head=True)  # (only its start: a plain file, a repository's link to a device isn't read)
-        if head is None:
-            continue
-        meta, first = front_matter(head.decode("utf-8", "replace"))
-        name = ":".join(f.relative_to(folder).with_suffix("").parts)
-        out.append({"name": "/" + name, "about": cs.short_text(meta.get("description") or first, 100), "kind": scope})
-    return out
-
-
-def skill_dirs(folder, scope):
-    """Skills in a skills/ folder (each its SKILL.md): [{name, about, kind}]."""
-    out = []
-    try:
-        dirs = sorted(d for d in folder.iterdir() if d.is_dir())[:COMMAND_FILES_MAX]
-    except OSError:
-        return out
-    for d in dirs:
-        head = cs.read_plain(d / "SKILL.md", 4000, head=True)
-        if head is None:
-            continue
-        meta, first = front_matter(head.decode("utf-8", "replace"))
-        out.append({"name": "/" + (meta.get("name") or d.name), "about": cs.short_text(meta.get("description") or first, 100),
-                    "kind": scope + " skill"})
-    return out
-
-
-def project_files(cwd):
-    """The project's files, relative to cwd (git ls-files: tracked and new, not ignored; else a walk
-    that leaves out dependencies and build output), at most COMPLETE_FILES_MAX: (files, cut)."""
-    git = shutil.which("git")
-    if git and cwd:
-        try:
-            r = subprocess.run([git, "-C", cwd, "ls-files", "-co", "--exclude-standard", "-z"], stdout=subprocess.PIPE,
-                               stderr=subprocess.DEVNULL, timeout=10)
-            if r.returncode == 0:
-                files = [f for f in r.stdout.decode("utf-8", "replace").split("\0") if f]
-                return files[:COMPLETE_FILES_MAX], len(files) > COMPLETE_FILES_MAX
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-    files = []
-    if not cwd or not os.path.isdir(cwd) or os.path.realpath(cwd) == str(Path.home()):
-        return files, False   # (not all of your home)
-    for top, dirs, names in os.walk(cwd):
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not d.startswith("."))
-        rel = os.path.relpath(top, cwd)
-        for n in sorted(names):
-            files.append(n if rel == "." else os.path.join(rel, n))
-            if len(files) >= COMPLETE_FILES_MAX:
-                return files, True
-    return files, False
-
-
-def past_prompts(profile, cwd):
-    """Your prompts in that folder (or the one it's in: a chat that started
-    there and went into it), newest first, each once (history.jsonl)."""
-    out, seen = [], set()
-    for e in reversed(cs.history_tail(profile)):
-        text, project = e.get("display"), e.get("project")
-        if not isinstance(text, str) or not text.strip() or text in seen:
-            continue
-        if cwd and not (isinstance(project, str) and (cwd == project or cwd.startswith(project.rstrip("/") + "/"))):
-            continue
-        seen.add(text)
-        out.append(text)
-        if len(out) >= COMPLETE_HISTORY_MAX:
-            break
-    return out
-
-
-def completions(home, extra_dirs, chat_id, profile_key=None, cwd=None):
-    """What the reply box offers (--complete). chat_id "-" with cwd: a new
-    chat's in Talpy Chat, in that folder on the profile profile_key."""
+def chat_place(home, extra_dirs, chat_id, profile_key=None, cwd=None):
+    """(profile, folder) of a chat, or (None, its error answer). chat_id "-"
+    with cwd: a new chat's, in that folder on the profile profile_key."""
     if chat_id == "-" and cwd:
         profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
         if profile is None:
-            return {"ok": False, "message": f"No Claude profile called {profile_key}"}
-        cwd = os.path.expanduser(cwd)
-    elif not cs.valid_id(chat_id):
-        return {"ok": False, "message": f"Not a chat: {chat_id}"}
-    else:
-        profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
-        if path is None:
-            return {"ok": False, "message": NO_CHAT}
-        _, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
-        cwd = cwd or cs.chat_folder(path) or ""
-    commands = [{"name": "/" + n, "about": a, "kind": "Claude"} for n, a in BUILTIN_COMMANDS]
-    commands += command_files(profile.path / "commands", "yours") + skill_dirs(profile.path / "skills", "your")
-    if cwd:
-        commands += command_files(Path(cwd) / ".claude" / "commands", "project")
-        commands += skill_dirs(Path(cwd) / ".claude" / "skills", "project")
-    seen, unique = set(), []
-    for c in reversed(commands):   # (yours and the project's before Claude's of the same name)
-        if c["name"] not in seen:
-            seen.add(c["name"])
-            unique.append(c)
-    files, cut = project_files(cwd)
-    return {"ok": True, "cwd": cwd, "commands": sorted(unique, key=lambda c: c["name"]), "files": files, "filesCut": cut,
-            "history": past_prompts(profile, cwd)}
+            return None, {"ok": False, "message": f"No Claude profile called {profile_key}"}
+        return profile, os.path.expanduser(cwd)
+    if not cs.valid_id(chat_id):
+        return None, {"ok": False, "message": f"Not a chat: {chat_id}"}
+    profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
+    if path is None:
+        return None, {"ok": False, "message": NO_CHAT}
+    _, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
+    return profile, cwd or cs.chat_folder(path) or ""
+
+
+def completions(home, extra_dirs, chat_id, profile_key=None, cwd=None):
+    """What the reply box offers (--complete: commands.completions)."""
+    profile, place = chat_place(home, extra_dirs, chat_id, profile_key, cwd)
+    if profile is None:
+        return place
+    import commands   # (a module of its own, as replies.py: compiled once and kept)
+    return commands.completions(profile, place)
 
 
 def chat_replies(home, extra_dirs, cache_root, chat_id, profile_key=None, cwd=None, now=None):
     """--replies: your usual replies for a chat (replies.usual_replies), from the
     chats on its account. chat_id "-" with cwd: a new chat's, in that folder
     on the profile profile_key."""
-    if chat_id == "-" and cwd:
-        profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
-        if profile is None:
-            return {"ok": False, "message": f"No Claude profile called {profile_key}"}
-        cwd = os.path.expanduser(cwd)
-    elif not cs.valid_id(chat_id):
-        return {"ok": False, "message": f"Not a chat: {chat_id}"}
-    else:
-        profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
-        if path is None:
-            return {"ok": False, "message": NO_CHAT}
-        _, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
-        cwd = cwd or cs.chat_folder(path) or ""
+    profile, cwd = chat_place(home, extra_dirs, chat_id, profile_key, cwd)
+    if profile is None:
+        return cwd
     import replies
     now = time.time() if now is None else now
     found = replies.usual_replies(replies.reply_history(cache_root, profile, now), now * 1000, replies.project_of(cwd),
@@ -1292,8 +1181,9 @@ def as_typed(text):
     return TYPED_OUT.sub("", text.replace("\r\n", "\n").replace("\r", "\n"))
 
 
-def tmux_type(entry, text):
-    """Paste text into a chat's tmux pane and send it (Enter): (ok, message)."""
+def tmux_type(entry, text, enter=True):
+    """Paste text into a chat's tmux pane and send it (Enter; not with enter
+    False: it waits in Claude's prompt for yours): (ok, message)."""
     base, target = tmux_base(entry)
     if base is None:
         return False, "It doesn't run in tmux (or tmux isn't installed)"
@@ -1303,7 +1193,7 @@ def tmux_type(entry, text):
     buffer = f"talpy-den-{os.getpid()}-{_pastes[0]}"
     for args, data in ((["load-buffer", "-b", buffer, "-"], as_typed(text).encode()),
                        (["paste-buffer", "-p", "-d", "-b", buffer, "-t", target], None),
-                       (["send-keys", "-t", target, "Enter"], None)):
+                       (["send-keys", "-t", target, "Enter"], None))[:3 if enter else 2]:
         if args[0] == "send-keys":
             time.sleep(0.3)  # (Claude takes the paste in first)
         ok, out = tmux_run(base, args, data)
@@ -1506,6 +1396,38 @@ def interrupt(home, extra_dirs, profile_key, chat_id, session_id=None):
         if found is not None:
             return cs.interrupt_live(*found)
     return False, "That chat isn't running any more"
+
+
+def type_in(home, extra_dirs, profile_key, chat_id, text, session_id=None, copy=True):
+    """A command that needs Claude's own panel or dialog (commands.py: kind
+    "terminal"), put where Claude's prompt is, for you to press Enter there:
+    typed into its tmux pane (not sent), into its Claude Code panel's input
+    (the link), else on the clipboard (copy False: not here, on an SSH host:
+    the text comes back), and the caller opens the chat's terminal. {"ok",
+    "how": "typed"|"vscode"|"copy", "message", "link", "copied", "text"}."""
+    text = (text or "").strip()
+    if not text:
+        return {"ok": False, "message": "Write the command first"}
+    if not cs.valid_id(chat_id):
+        return {"ok": False, "message": f"Not a chat: {chat_id}"}
+    entry = None
+    for sid in (session_id, chat_id):
+        if cs.valid_id(sid or ""):
+            entry = cs.find_chat_entry(home, extra_dirs, sid, profile_key)
+            if entry is not None:
+                break
+    asks = entry is not None and cs.session_state(entry) == "waiting"
+    if entry is not None and entry.get("kind") == "interactive" and entry.get("tmux") and not asks:
+        ok, message = tmux_type(entry, text, enter=False)
+        if ok:
+            return {"ok": True, "how": "typed", "message": "It's typed into its terminal: press Enter there"}
+    if entry is not None and entry.get("entrypoint") == "claude-vscode":
+        return {"ok": True, "how": "vscode", "link": vscode_prompt_link(entry["sessionId"], text),
+                "message": "It's in the chat's input in VS Code: press Enter there"}
+    copied = copy and copy_to_clipboard(text)
+    first = "It's asking you something: answer that first, then paste it there" if asks else "Paste it into its terminal"
+    return {"ok": True, "how": "copy", "copied": copied, "text": "" if copied else text,
+            "message": ("It's in the clipboard. " + first) if copied else first}
 
 
 def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=None, mode=None, plan=None,
@@ -2350,7 +2272,7 @@ def take_text(cache_root, name):
 def forward(host, args):
     """Run this file on an SSH host with args: its answer."""
     import remote
-    return remote.host_answer(host, args, name="pane.py", also=("reply_words.py", "replies.py"))
+    return remote.host_answer(host, args, name="pane.py", also=("reply_words.py", "replies.py", "commands.py"))
 
 
 def main(argv=None):
@@ -2372,7 +2294,7 @@ def main(argv=None):
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
-               "--hide-reply")
+               "--hide-reply", "--type-in")
     osd, suggest = False, False
     cwd, model, effort, mode, plan, plan_profile = None, None, None, None, None, None
     while args:
@@ -2486,7 +2408,7 @@ def main(argv=None):
                 answer["reviewedAt"] = cs.load_reviewed(cache_root).get(cs.review_key(target, host))
             if action == "--conversation" and answer.get("ok"):
                 pictures_here(answer.get("items"))
-            if action == "--send":
+            if action in ("--send", "--type-in"):
                 answer = host_vscode_link(answer, (session, target), text)
             if action == "--send" and how == "enter" and answer.get("how") == "ask":
                 answer = copy_answer((text or "").strip(), ENTER_COPIES)  # (here, as above)
@@ -2509,6 +2431,8 @@ def main(argv=None):
         elif action == "--interrupt":
             ok, said = interrupt(home, config_dirs, profile, target, session)
             result = {"ok": ok, "message": said}
+        elif action == "--type-in":
+            result = type_in(home, config_dirs, profile, target, text, session, copy=not remote)
         elif action == "--answer":
             ok, said = answer_request(cache_root, target, decision, note, answers)
             # (changed: the request you answered is gone; the chat may ask something else now)

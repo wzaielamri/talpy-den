@@ -25,6 +25,7 @@ import jump  # noqa: E402
 import pane  # noqa: E402
 import permission_hook  # noqa: E402
 import replies  # noqa: E402
+import commands as commands_py  # noqa: E402
 
 cs = pane.cs
 
@@ -111,8 +112,9 @@ class CompleteTests(PaneFixture):
         self.assertEqual(names["/git:sync"]["about"], "Pull and rebase")
         self.assertEqual(names["/notes"]["kind"], "your skill")
         self.assertEqual(names["/test"]["kind"], "project")
-        self.assertEqual(names["/review"], {"name": "/review", "about": "Our own review", "kind": "project"})
-        self.assertEqual(names["/compact"]["kind"], "Claude")
+        self.assertEqual(names["/review"], {"name": "/review", "about": "Our own review", "kind": "project", "run": "here"})
+        self.assertEqual((names["/compact"]["kind"], names["/compact"]["run"]), ("Claude", "here"))
+        self.assertEqual(got["typed"]["settings"], {"run": "terminal", "of": "/config", "why": "opens Claude's settings panel"})
         self.assertIn(os.path.join("src", "app.py"), got["files"])
         self.assertFalse(any("node_modules" in f for f in got["files"]))
         self.assertEqual(got["history"], ["old one", "fix it"])
@@ -132,8 +134,8 @@ class CompleteTests(PaneFixture):
         os.mkfifo(commands / "wait.md")
         os.mkfifo(skills / "x/SKILL.md")
         write(commands / "test.md", "Run the tests" + "x" * 9000)
-        self.assertEqual([c["name"] for c in pane.command_files(commands, "project")], ["/test"])
-        self.assertEqual(pane.skill_dirs(skills, "project"), [])
+        self.assertEqual([c["name"] for c in commands_py.command_files(commands, "project")], ["/test"])
+        self.assertEqual(commands_py.skill_dirs(skills, "project"), [])
 
     def test_a_git_projects_files_leave_out_whats_ignored(self):
         if not shutil.which("git"):
@@ -376,7 +378,7 @@ class ConversationTests(PaneFixture):
         self.assertEqual(answer, {"ok": True, "items": []})
         # (with its word tables for Claude's questions: --suggest reads them there)
         asked.assert_called_once_with("gpu", ["--conversation", SID, "--profile", ".claude-work", "--limit", "40"],
-                                      name="pane.py", also=("reply_words.py", "replies.py"))
+                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py"))
 
 
 # Claude Code's own fixed sentences around a No (always in English; the note after them is yours)
@@ -874,7 +876,7 @@ class ToolUseTests(PaneFixture):
             answer = self.cli("--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1", "--host", "gpu")
         self.assertTrue(answer["changed"])
         self.assertEqual(asked.call_args[0][1], ["--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1"])
-        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py")})
+        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py", "commands.py")})
 
 
 class HookTests(unittest.TestCase):
@@ -2151,6 +2153,224 @@ class SuggestedRepliesTests(PaneFixture):
         self.assertNotIn("ok", self.replies("--profile", ".claude-work")["ranked"])
         with mock.patch.object(replies, "reply_records", side_effect=AssertionError("read again")):
             self.replies("--profile", ".claude-work")   # (nothing changed: nothing read)
+
+
+# Commands as Claude Code writes them (made-up words): a command's own entry, as a user
+# entry or a system local_command one, and what it printed in the next one
+def ran(name, args, ts, system=False, message=None, **kw):
+    text = (f"<command-name>/{name}</command-name>\n            <command-message>{message or name}</command-message>\n"
+            f"            <command-args>{args}</command-args>")
+    if system:
+        return {"type": "system", "subtype": "local_command", "level": "info", "timestamp": iso(ts), "content": text,
+                "isMeta": False, **kw}
+    return {"type": "user", "timestamp": iso(ts), "message": {"role": "user", "content": text}, **kw}
+
+
+def printed(text, ts, system=False, tag="stdout"):
+    body = f"<local-command-{tag}>{text}</local-command-{tag}>"
+    if system:
+        return {"type": "system", "subtype": "local_command", "level": "info", "timestamp": iso(ts), "content": body}
+    return {"type": "user", "timestamp": iso(ts), "message": {"role": "user", "content": body}}
+
+
+def caveat(ts):
+    return {"type": "user", "timestamp": iso(ts), "isMeta": True, "message": {"role": "user", "content":
+            "<local-command-caveat>The command below was run directly.</local-command-caveat>"}}
+
+
+def queued(op, text, ts):
+    return {"type": "queue-operation", "operation": op, "timestamp": iso(ts), **({"content": text} if text else {})}
+
+
+class CommandsInChatTests(PaneFixture):
+    """A command you ran shows in the chat (commands.Commands), wherever you
+    ran it: as yours, in the code font, with what it printed under it."""
+
+    def items(self, *entries, ends=None):
+        self.chat(*entries)
+        return pane.conversation(self.transcript, ends=ends)[0]
+
+    def test_a_command_with_and_without_arguments_and_what_it_printed(self):
+        t = self.now - 100
+        panel = "\x1b[1mFill level\x1b[22m\n\x1b[38;5;244m■ ■ □\x1b[39m  12k of 200k"
+        items = self.items(prompt("hello", t, cwd=str(self.folder)), text_reply("Hi.", t + 1, "m1", "end_turn"),
+                           ran("context", "", t + 2, system=True), printed(panel, t + 2, system=True),
+                           {"type": "user", "timestamp": iso(t + 2), "isMeta": True,
+                            "message": {"role": "user", "content": "## Fill level\n| a | b |"}},
+                           caveat(t + 3), ran("model", "fable", t + 3), printed("Set model to Fable", t + 3),
+                           caveat(t + 4), ran("exit", "", t + 4), printed("(no content)", t + 4),
+                           ran("clear", "", t + 5), printed("", t + 5, system=True))
+        self.assertEqual([(i["kind"], i["text"], i.get("command")) for i in items], [
+            ("you", "hello", None), ("claude", "Hi.", None),
+            ("you", "/context", {"output": panel}),     # (its colours kept: the chat draws them)
+            ("you", "/model fable", {"output": "Set model to Fable"}),
+            ("you", "/exit", {}), ("you", "/clear", {})])
+        self.assertEqual(len({i["key"] for i in items}), len(items))
+        # (what it printed on its own, with no command before it, isn't shown)
+        self.assertEqual(self.items(printed("stray", t)), [])
+
+    def test_compact_keeps_its_note(self):
+        t = self.now - 100
+        summary = {"type": "user", "timestamp": iso(t + 2), "isCompactSummary": True,
+                   "message": {"role": "user", "content": "A summary of it all."}}
+        boundary = {"type": "system", "subtype": "compact_boundary", "timestamp": iso(t + 2), "content": "Conversation compacted"}
+        items = self.items(prompt("/compact", t + 1, cwd=str(self.folder)), boundary, summary, caveat(t + 3),
+                           ran("compact", "", t + 3), printed("\x1b[2mCompacted (ctrl+o to see more)\x1b[22m", t + 4))
+        self.assertEqual([(i["kind"], i["text"], i.get("command")) for i in items],
+                         [("you", "/compact", {}), ("note", "The conversation was compacted", None)])
+        # (its prompt and its command entry are one: the prompt's key)
+        self.assertEqual(items[0]["key"], self.items(prompt("/compact", t + 1, cwd=str(self.folder)))[0]["key"])
+        # failed: why, as what it printed
+        items = self.items(prompt("/compact", t + 1), caveat(t + 2), ran("compact", "", t + 2),
+                           printed("Error during compaction: out of usage", t + 3, system=True, tag="stderr"))
+        self.assertEqual(items[0]["command"], {"output": "Error during compaction: out of usage", "error": True})
+
+    def test_a_shell_command(self):
+        t = self.now - 100
+
+        def shell(text, ts):
+            return {"type": "user", "timestamp": iso(ts), "message": {"role": "user", "content": text}}
+        items = self.items(shell("<bash-input>ls docs</bash-input>", t), shell("<bash-stdout>a.md\nb.md</bash-stdout><bash-stderr></bash-stderr>", t + 1),
+                           text_reply("Two files.", t + 2, "m1", "end_turn"),
+                           shell("<bash-input>cat nope</bash-input>", t + 3), shell("<bash-stdout></bash-stdout><bash-stderr>cat: nope: No such file</bash-stderr>", t + 4))
+        self.assertEqual([(i["kind"], i["text"], i.get("command")) for i in items], [
+            ("you", "!ls docs", {"shell": True, "output": "a.md\nb.md"}), ("claude", "Two files.", None),
+            ("you", "!cat nope", {"shell": True, "output": "cat: nope: No such file", "error": True})])
+        # sent through Claude's queue (a background chat's reply), it's queued without its !: one item, its key kept
+        items = self.items(queued("enqueue", "ls docs", t), queued("dequeue", None, t + 1),
+                           shell("<bash-input>ls docs</bash-input>", t + 1), shell("<bash-stdout>a.md</bash-stdout><bash-stderr></bash-stderr>", t + 2))
+        waiting = self.items(queued("enqueue", "ls docs", t))   # (while it waits in the queue: as it was queued)
+        self.assertEqual([(i["text"], i.get("queued")) for i in waiting], [("ls docs", True)])
+        self.assertEqual([(i["key"], i["text"], i["command"]) for i in items],
+                         [(waiting[0]["key"], "!ls docs", {"shell": True, "output": "a.md"})])
+        # a chat woken with it on claude's command line: Claude reads it as a message (not a command)
+        self.assertEqual([(i["text"], i.get("command")) for i in self.items(prompt("!ls docs", t))], [("!ls docs", None)])
+
+    def test_a_command_through_claudes_queue_keeps_its_key(self):
+        t = self.now - 100
+        items = self.items(prompt("hello", t - 5, cwd=str(self.folder)), text_reply("Hi.", t - 4, "m1", "end_turn"),
+                           queued("enqueue", "/recap", t), queued("dequeue", None, t + 1),
+                           ran("recap", "", t + 2), printed("Said hello, nothing else yet.", t + 2, system=True))
+        self.assertEqual([(i["key"], i["text"], i.get("command")) for i in items[2:]],
+                         [(self.items(queued("enqueue", "/recap", t))[0]["key"], "/recap", {"output": "Said hello, nothing else yet."})])
+
+    def test_prompt_commands_skills_and_claudes_own(self):
+        t = self.now - 100
+        skill = {"type": "user", "timestamp": iso(t), "message": {"role": "user", "content":
+                 "<command-message>ship</command-message>\n<command-name>/ship</command-name>\n<command-args>v2</command-args>"}}
+        expanded = {"type": "user", "timestamp": iso(t), "isMeta": True, "message": {"role": "user", "content": "Ship it: v2"}}
+        loaded = {"type": "user", "timestamp": iso(t + 1), "isMeta": True, "message": {"role": "user", "content":
+                  "<command-message>notes</command-message>\n<command-name>notes</command-name>"}}
+        ends = {}
+        items = self.items(skill, expanded, loaded, text_reply("Shipped.", t + 2, "m1", "end_turn"),
+                           caveat(t + 3), ran("rate-limit-options", "", t + 3), printed("It goes on at 2pm. Press esc.", t + 3), ends=ends)
+        # (yours: the skill you ran; not Claude's own: a skill it loaded, a limit's options)
+        self.assertEqual([(i["kind"], i["text"], i.get("command")) for i in items],
+                         [("you", "/ship v2", {}), ("claude", "Shipped.", None)])
+        self.assertEqual(ends["ended"], "finished")
+        # (a prompt command starts Claude's turn: no reply to it yet)
+        self.items(skill, ends=ends)
+        self.assertEqual((ends["ended"], ends["over"]), ("stopped", False))
+
+    def test_a_command_claude_doesnt_know(self):
+        t = self.now - 100
+        unknown = {"type": "system", "subtype": "informational", "timestamp": iso(t + 1),
+                   "content": "Unknown command: /skil. Did you mean /skills?"}
+        items = self.items(queued("enqueue", "/skil all", t), queued("dequeue", None, t + 1), unknown)
+        self.assertEqual([(i["key"], i["text"], i["command"]) for i in items], [
+            (self.items(queued("enqueue", "/skil all", t))[0]["key"], "/skil all",
+             {"output": "Unknown command: /skil. Did you mean /skills?", "error": True})])
+        self.assertEqual([i["text"] for i in self.items(unknown)], ["/skil"])
+        self.assertEqual(self.items({**unknown, "content": "Something else"}), [])
+
+    def test_long_output_is_cut(self):
+        t = self.now - 100
+        long = "\n".join(f"\x1b[32mline {n}\x1b[39m" for n in range(200))
+        items = self.items(ran("context", "", t, system=True), printed(long, t, system=True))
+        out = items[0]["command"]["output"]
+        self.assertEqual(len(out.split("\n")), commands_py.OUTPUT_LINES + 1)
+        self.assertTrue(out.endswith("\x1b[0m\n…"))
+        # (an escape cut at the end isn't left half there)
+        self.assertEqual(commands_py.clip_output("x" * (commands_py.OUTPUT_CHARS - 2) + "\x1b[38;5;2m" + "y" * 50),
+                         "x" * (commands_py.OUTPUT_CHARS - 2) + "\x1b[0m\n…")
+
+    def test_no_command_no_module(self):
+        # (commands.py is read only for a chat that has a command in it)
+        t = self.now - 100
+        with mock.patch.object(pane, "commands_of", side_effect=AssertionError("read")):
+            self.assertEqual(len(self.items(prompt("hello", t), text_reply("Hi.", t + 1, "m1", "end_turn"))), 2)
+
+
+class CommandKindsTests(unittest.TestCase):
+    """Claude's commands in the / list (Claude Code 2.1.318), each with how
+    Talpy Chat runs it: here, a page of Talpy Den's, or in its terminal."""
+
+    def test_each_builtin_commands_kind(self):
+        offers = {c["name"]: c for c in commands_py.builtin_offers()}
+        self.assertEqual(len(offers), len(commands_py.BUILTIN_COMMANDS))
+        for c in offers.values():
+            self.assertIn(c["run"], ("here", "page", "terminal"), c)
+            self.assertEqual(bool(c.get("why")), c["run"] == "terminal", c)   # (each one that opens there says why)
+        here = {"/compact", "/context", "/recap", "/rename", "/plan", "/fork", "/subtask", "/init", "/insights",
+                "/code-review", "/security-review", "/simplify", "/debug", "/doctor"}
+        self.assertEqual({n for n, c in offers.items() if c["run"] == "here"}, here)
+        self.assertEqual({n for n, c in offers.items() if c["run"] == "page"}, {"/permissions"})
+        # (with an argument: /export FILE writes it, /goal COND sets it; without, Claude asks or shows a box)
+        self.assertEqual({n: c["runArgs"] for n, c in offers.items() if "runArgs" in c}, {"/export": "here", "/goal": "here"})
+        # /model and /effort save your default for every new chat: never sent from here, with or without a name
+        for name in ("/model", "/effort"):
+            self.assertEqual((offers[name]["run"], offers[name].get("runArgs")), ("terminal", None))
+        # (gone in 2.1.318: no longer offered)
+        self.assertFalse({"/pr-comments", "/todos", "/cost", "/review", "/agents"} & set(offers))
+
+    def test_typed_names_not_listed(self):
+        typed = commands_py.typed_kinds()
+        self.assertEqual(typed["review"], {"run": "here", "of": "/code-review"})
+        self.assertEqual(typed["allowed-tools"], {"run": "page", "of": "/permissions"})
+        self.assertEqual(typed["theme"]["run"], "terminal")
+        listed = {c["name"][1:] for c in commands_py.builtin_offers()}
+        self.assertFalse(listed & set(typed))
+
+
+class TypeInTests(SendFixture):
+    """A command that needs Claude's own panel (pane.py --type-in): typed
+    into its tmux pane, not sent; in its Claude Code panel's input; else on
+    the clipboard. The front end opens its terminal then."""
+
+    def test_tmux_types_it_without_enter(self):
+        self.live(tmux="main:1.%3")
+        with mock.patch.object(pane, "tmux_run", return_value=(True, "")) as tmux:
+            answer = self.cli("--type-in", SID, "--text", "/config ", "--profile", ".claude-work")
+        self.assertEqual(answer, {"ok": True, "how": "typed", "message": "It's typed into its terminal: press Enter there"})
+        self.assertEqual([c[0][1][0] for c in tmux.call_args_list], ["load-buffer", "paste-buffer"])   # (no Enter)
+        self.assertEqual(tmux.call_args_list[0][0][2], b"/config")
+        # one that asks something: not typed into its question
+        self.live(tmux="main:1.%3", status="waiting")
+        with mock.patch.object(pane, "tmux_run") as tmux, mock.patch.object(pane, "copy_to_clipboard", return_value=True):
+            answer = self.cli("--type-in", SID, "--text", "/config")
+        self.assertEqual((answer["how"], answer["message"], tmux.call_count),
+                         ("copy", "It's in the clipboard. It's asking you something: answer that first, then paste it there", 0))
+
+    def test_vscode_and_the_clipboard(self):
+        self.live(entrypoint="claude-vscode")
+        answer = self.cli("--type-in", SID, "--text", "/model fable")
+        self.assertEqual(answer["how"], "vscode")
+        self.assertTrue(answer["link"].endswith("&prompt=%252Fmodel+fable"), answer)
+        # a background chat, one in a terminal, one that isn't running: the clipboard
+        (self.home / ".claude-work/sessions/30.json").unlink()
+        with mock.patch.object(pane, "copy_to_clipboard", return_value=True) as copied:
+            self.assertEqual(self.cli("--type-in", SID, "--text", "/btw why?"),
+                             {"ok": True, "how": "copy", "copied": True, "text": "", "message": "It's in the clipboard. Paste it into its terminal"})
+        copied.assert_called_once_with("/btw why?")
+        # on an SSH host: the text back, for this computer's clipboard
+        with mock.patch.object(pane, "copy_to_clipboard") as copied:
+            self.assertEqual(self.cli("--type-in", SID, "--text", "/btw why?", "--remote"),
+                             {"ok": True, "how": "copy", "copied": False, "text": "/btw why?", "message": "Paste it into its terminal"})
+        self.assertEqual(copied.call_count, 0)
+        self.assertFalse(self.cli("--type-in", SID, "--text", " ")["ok"])
+        self.assertFalse(self.cli("--type-in", "--x", "--text", "/x")["ok"])
+        # (never sent: nothing ran)
+        self.assertEqual(self.calls(), [])
 
 
 class RelayTests(PaneFixture):
