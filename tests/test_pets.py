@@ -2111,6 +2111,46 @@ class NewChatTests(unittest.TestCase):
         help = (ROOT / "ui/KeysHelp.qml").read_text()
         self.assertIn("PaneKeys.KEYS", help)
 
+    def test_search_and_folds_are_made_only_when_wanted(self):
+        # Talpy Chat's search (A3) and folds (A6): the find bar (FindBar.qml), its marks (FindMarks.qml,
+        # made on matched rows near the view only), a fold's Show more (FoldMore.qml), find.mjs (read only
+        # once a text may be long: FoldHelp.qml) and a step's details (ToolDetail.qml, asynchronous for
+        # Ctrl+O) are files of their own, read and made only when wanted, so a window opens as quickly;
+        # nothing of them is in each row; Ctrl+O keeps what you read in place; the same words as VS Code's
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertNotIn('"find.mjs"', pane)
+        self.assertIn('import "find.mjs" as Find', (ROOT / "ui/FindBar.qml").read_text())
+        self.assertIn('import "find.mjs" as Find', (ROOT / "ui/FoldHelp.qml").read_text())
+        self.assertIn("active: pane.findOn && pane.conversationTab\n", pane)
+        self.assertIn('source: active ? "FindBar.qml" : ""', pane)
+        self.assertIn('source: active ? "FoldHelp.qml" : ""', pane)
+        self.assertEqual(pane.count('source: active ? "FoldMore.qml" : ""'), 2)   # (yours, Claude's reply)
+        self.assertIn('source: active ? "FoldMore.qml" : ""', (ROOT / "ui/CommandOutput.qml").read_text())
+        self.assertIn('source: active ? "FoldMore.qml" : ""', (ROOT / "ui/ToolDetail.qml").read_text())
+        self.assertIn('source: active ? "ToolDetail.qml" : ""', pane)
+        self.assertIn("asynchronous: pane.openTools[entry.key] === undefined", pane)
+        self.assertIn("active: entry.unfolded && entry.shows", pane)
+        self.assertNotIn("FindMarks", pane)
+        self.assertIn('Qt.createComponent("FindMarks.qml")', (ROOT / "ui/FindBar.qml").read_text())
+        delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
+        for per_row in ("FindBar", "remark", "findIn", "foldText(", "Find."):
+            self.assertNotIn(per_row, delegate)
+        merge = pane[pane.index("    function merge(list, handoff) {"):pane.index("    function withFold(flat, it) {")]
+        self.assertEqual(merge.count("withFold(flat, it)"), 3)   # (only a row put in or changed)
+        self.assertIn("holdTop.interval = 2500", pane[pane.index("    function foldAll() {"):])
+        keys = (ROOT / "ui/PaneKeys.qml").read_text()
+        for key in ("Qt.Key_F)", "Qt.Key_O)", "Qt.Key_F3", 'what === "find"', "pane.foldAll()"):
+            self.assertIn(key, keys)
+        chat = (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text()
+        bar = (ROOT / "ui/FindBar.qml").read_text()
+        for words in ("Find in the chat", "Previous match (Shift+Enter, Shift+F3)", "Next match (Enter, F3)", "Close (Esc)"):
+            self.assertIn(words, bar)
+            self.assertIn(words, chat)
+        more = (ROOT / "ui/FoldMore.qml").read_text()
+        for words in ("Show less", "Show more · ", " more lines", "Fold it again", "Show all of it", ": unfold or fold everything)"):
+            self.assertIn(words, more)
+            self.assertIn(words, chat)
+
     def test_suggested_replies_are_made_only_when_there_are_some(self):
         # Talpy Chat's chips (B2 + B3): their list and words (ReplyChips.qml) and the grey completion
         # (ReplyGhost.qml) are read and made only while there are some, so a window opens as quickly;

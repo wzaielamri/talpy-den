@@ -454,7 +454,95 @@ Window {
     property bool loaded: false
     property string loadError: ""
     property bool loadMissing: false   // (no transcript: it hasn't started yet, or it's gone: a note, not an error)
-    property var openTools: ({})   // key -> unfolded
+    property var openTools: ({})   // key -> unfolded: a step's details, a long text ("<key>/out": its output); unsaid: foldOpen's
+    // Long texts fold (find.mjs foldOf: past about 40 lines, their first 24 show, then Show more:
+    // FoldMore.qml). Unsaid, what the window first read folds, but Claude's last reply then; what
+    // comes in while it shows doesn't (you watch it come); only a click, a search's step into it and
+    // Ctrl+O change one. Ctrl+O unfolds everything (allOpen), again: each back as it was
+    property bool allOpen: false
+    property var openBefore: ({})
+    property var firstRead: null   // {at, last}: when it first read the chat, Claude's last reply then
+    function foldText(text, how) {   // (FoldHelp.qml, find.mjs: read only once a text may be long)
+        let lines = 1
+        for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1))
+            lines++
+        if (lines + text.length / 100 <= 40)
+            return null
+        foldHelp.active = true
+        return foldHelp.item.foldOf(text, how)
+    }
+    Loader {
+        id: foldHelp
+        active: false
+        source: active ? "FoldHelp.qml" : ""
+    }
+    function foldAll() {   // (Ctrl+O: what you read stays where it is while it's laid out again)
+        const end = !loaded || nearEnd()
+        chatTop = end ? null : topMessage(true)
+        if (allOpen) {
+            allOpen = false
+            openTools = openBefore
+        } else {
+            openBefore = openTools
+            openTools = {}
+            allOpen = true
+        }
+        if (end)
+            keepEnd()
+        else {
+            showTop()
+            holdTop.interval = 2500   // (every step's details are made a few a frame)
+            holdTop.restart()
+        }
+    }
+    // Show more / Show less (now: it shows all of it now); Show less keeps its button where it was,
+    // under the pointer: the text above it folds away, not what's below
+    property Item foldButton: null
+    property real foldButtonAt: 0
+    function toggleFold(key, now, button) {
+        const next = Object.assign({}, openTools)
+        next[key] = !now
+        foldButton = now ? button : null
+        foldButtonAt = now ? button.mapToItem(list, 0, 0).y : 0
+        openTools = next
+        if (now)
+            foldKeep.restart()
+    }
+    Timer {
+        id: foldKeep
+        interval: 0
+        property int left: 2
+        onTriggered: {
+            const b = pane.foldButton
+            if (b && b.visible) {
+                settle.stop()
+                holdTop.stop()
+                list.contentY += b.mapToItem(list, 0, 0).y - pane.foldButtonAt
+            }
+            if (--left > 0)
+                restart()
+            else {
+                left = 2
+                pane.foldButton = null
+            }
+        }
+    }
+    // Search (Ctrl+F): FindBar.qml over the list's top right, read and made only while it's open
+    // (what it looks for stays for the next time); the conversation as the list shows it, in order
+    property bool findOn: false
+    property string findQuery: ""
+    property var shownList: []
+    function openFind() {
+        if (!conversationTab)
+            return
+        if (findOn && findBar.item)
+            findBar.item.focusField()
+        findOn = true
+    }
+    function closeFind() {
+        findOn = false
+        replyBox.forceActiveFocus()
+    }
     property string info: ""
     property bool infoBad: false
 
@@ -490,6 +578,10 @@ Window {
         loaded = false
         loadError = ""
         openTools = {}
+        allOpen = false
+        openBefore = {}
+        firstRead = null
+        shownList = []
         info = ""
         review = null
         reviewFor = ""
@@ -769,6 +861,13 @@ Window {
         stamp = result.stamp || ""
         more = !!result.more
         lastItems = result.items || []
+        if (firstRead === null && lastItems.length) {
+            let last = ""
+            for (let i = lastItems.length - 1; i >= 0 && last === ""; i--)
+                if (lastItems[i].kind === "claude")
+                    last = String(lastItems[i].key)
+            firstRead = { at: Date.now(), last: last }
+        }
         const handoff = {}
         merge(withPending(lastItems, handoff), handoff)
         countUnseen()
@@ -841,7 +940,7 @@ Window {
                            diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
                            pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n"),
                            asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "",
-                           command: it.command ? JSON.stringify(it.command) : "", day: day }
+                           command: it.command ? JSON.stringify(it.command) : "", day: day, fold: "" }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
                 if (old.text !== flat.text || old.status !== flat.status || old.output !== flat.output
@@ -849,17 +948,29 @@ Window {
                         || old.queued !== flat.queued || old.until !== flat.until || old.pictures !== flat.pictures
                         || old.here !== flat.here || old.asked !== flat.asked || old.answered !== flat.answered
                         || old.command !== flat.command || old.day !== flat.day)
-                    items.set(i, flat)
+                    items.set(i, withFold(flat, it))
             } else if (i < items.count) {
-                items.insert(i, flat)
+                items.insert(i, withFold(flat, it))
             } else {
-                items.append(flat)
+                items.append(withFold(flat, it))
             }
         }
         while (items.count > list.length)
             items.remove(items.count - 1)
+        shownList = list
         daysShown = days
         firstDays = firsts
+    }
+
+    // (a row put in or changed: where its long text folds, worked out then, not at each read)
+    function withFold(flat, it) {
+        const text = it.kind === "claude" ? foldText(flat.text, "markdown")
+                   : it.kind === "you" ? foldText(it.command && it.command.shell ? flat.text.replace(/^!\s*/, "") : shownText(flat.text), "plain") : null
+        const out = it.kind === "you" && it.command && it.command.output ? foldText(it.command.output, "ansi") : null
+        if (text || out)
+            flat.fold = JSON.stringify({ cut: text ? text.shown : "", more: text ? text.more : 0, outCut: out ? out.shown : "", outMore: out ? out.more : 0,
+                                         open: !firstRead || flat.key === firstRead.last || (it.at || 0) > firstRead.at })
+        return flat
     }
 
     // Times (VS Code shared/pane.ts: the same words and rules): a line before the first item of each
@@ -2263,14 +2374,15 @@ Window {
     Timer {
         id: holdTop
         interval: 800
+        onRunningChanged: if (!running) interval = 800
     }
 
     // The message at the top of the list (not a tool call: it's on both
-    // tabs): [its key, how far below the list's top it is]
-    function topMessage() {
+    // tabs; any row this tab shows: here): [its key, how far below the list's top it is]
+    function topMessage(here) {
         for (let i = Math.max(0, list.indexAt(list.width / 2, list.contentY)); i < items.count; i++) {
             const entry = list.itemAtIndex(i)
-            if (entry && entry.kind !== "tool" && entry.y + entry.height > list.contentY)
+            if (entry && (here ? entry.shows : entry.kind !== "tool") && entry.y + entry.height > list.contentY)
                 return [entry.key, entry.y - list.contentY]
         }
         return null
@@ -2811,6 +2923,12 @@ Window {
                             id: headerColumn
                             width: parent.width
 
+                            // (room for the find bar above the first row while it's open, so Show earlier
+                            // isn't under it: the list keeps what you read where it is)
+                            Item {
+                                visible: pane.findOn
+                                Layout.preferredHeight: Kirigami.Units.gridUnit * 1.6
+                            }
                             PlasmaComponents3.Button {
                                 visible: pane.more && pane.limit < pane.limitMax
                                 Layout.alignment: Qt.AlignHCenter
@@ -2936,8 +3054,13 @@ Window {
                         required property string asked      // (a question or a plan Claude asked, as JSON: pane.py asked_of)
                         required property string answered   // (yours: your answer to the call before it, pane.py your_answer)
                         required property string command    // (yours: a command you ran, as JSON: pane.py commands.py)
+                        required property string fold       // (a long one: where it folds, as JSON: withFold; "" for the rest)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
-                        readonly property bool unfolded: pane.openTools[key] === true
+                        readonly property bool unfolded: pane.openTools[key] !== undefined ? pane.openTools[key] : pane.allOpen
+                        readonly property var foldData: fold !== "" ? JSON.parse(fold) : null
+                        readonly property bool whole: !foldData || !foldData.cut || (pane.openTools[key] !== undefined ? pane.openTools[key] : pane.allOpen || foldData.open)
+                        readonly property bool outWhole: !foldData || !foldData.outCut
+                                                         || (pane.openTools[key + "/out"] !== undefined ? pane.openTools[key + "/out"] : pane.allOpen || foldData.open)
                         readonly property var askedData: asked !== "" ? JSON.parse(asked) : null
                         readonly property var commandData: command !== "" ? JSON.parse(command) : null
                         // (a question or a plan you answered: as Claude's, in Chat and Steps)
@@ -3022,9 +3145,11 @@ Window {
                                     }
                                     TextEdit {
                                         id: youText
+                                        objectName: "findText"
                                         Component.onCompleted: entry.textBox = youText
                                         Layout.fillWidth: true
-                                        text: entry.commandData && entry.commandData.shell ? entry.text.replace(/^!\s*/, "") : pane.shownText(entry.text)
+                                        text: !entry.whole ? entry.foldData.cut
+                                              : entry.commandData && entry.commandData.shell ? entry.text.replace(/^!\s*/, "") : pane.shownText(entry.text)
                                         textFormat: TextEdit.PlainText
                                         readOnly: true
                                         selectByMouse: true
@@ -3048,6 +3173,13 @@ Window {
                                         color: pane.mutedColor
                                         font.pointSize: pane.pt * 0.85
                                     }
+                                }
+                                // (a long one: Show more · N more lines, FoldMore.qml, made only for one)
+                                Loader {
+                                    active: !!entry.foldData && entry.foldData.cut !== ""
+                                    visible: active
+                                    Layout.leftMargin: pane.gutter
+                                    source: active ? "FoldMore.qml" : ""
                                 }
                                 // Its pictures, small: a click shows one big (bigView)
                                 PictureStrip {
@@ -3132,19 +3264,24 @@ Window {
                                 spacing: 0
 
                                 Dot {
+                                    Layout.alignment: Qt.AlignTop
                                     color: pane.claudeColor
                                     gutter: pane.gutter
                                     lineHeight: fm.height
                                 }
+                                ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
                                 TextEdit {
                                     id: replyText
+                                    objectName: "findText"
                                     // a code block's Copy: the one the pointer is on, and the one
                                     // just clicked, which reads Copied a moment (their index)
                                     property int copyHovered: -1
                                     property int copied: -1
                                     Component.onCompleted: entry.textBox = replyText
                                     Layout.fillWidth: true
-                                    text: Md.toHtml(entry.text, pane.mdStyle, copied)
+                                    text: Md.toHtml(entry.whole ? entry.text : entry.foldData.cut, pane.mdStyle, copied)
                                     textFormat: TextEdit.RichText
                                     readOnly: true
                                     persistentSelection: true   // (selectAcross clears it)
@@ -3213,6 +3350,13 @@ Window {
                                         id: replyHover
                                         cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor
                                     }
+                                }
+                                // (a long one: Show more · N more lines, FoldMore.qml, made only for one)
+                                Loader {
+                                    active: !!entry.foldData && entry.foldData.cut !== ""
+                                    visible: active
+                                    source: active ? "FoldMore.qml" : ""
+                                }
                                 }
                             }
                         }
@@ -3325,35 +3469,17 @@ Window {
                                 }
                                 // Unfolded: the command and what it printed, the lines it read
                                 // (numbered, in the file's colors), or what it was asked and got
-                                // (codehtml.mjs; an edit's change is above, its error here)
+                                // (codehtml.mjs; an edit's change is above, its error here): ToolDetail.qml,
+                                // made as it's opened (asynchronous: Ctrl+O opens every one, a few a frame),
+                                // only on a tab that shows the step
                                 Loader {
-                                    active: entry.unfolded && (entry.input !== "" || entry.output !== "")
+                                    active: entry.unfolded && entry.shows && (entry.input !== "" || entry.output !== "")
                                             && (entry.diff === "" || entry.status === "error")
-                                    visible: active
+                                    asynchronous: pane.openTools[entry.key] === undefined
+                                    visible: active && status === Loader.Ready
                                     Layout.fillWidth: true
                                     Layout.leftMargin: pane.gutter
-                                    sourceComponent: Rectangle {
-                                        implicitHeight: detail.implicitHeight + Kirigami.Units.largeSpacing * 1.5
-                                        radius: Kirigami.Units.cornerRadius
-                                        color: pane.mdStyle.blockBg
-                                        border.width: 1
-                                        border.color: pane.borderColor
-
-                                        TextEdit {
-                                            id: detail
-                                            anchors.fill: parent
-                                            anchors.margins: Kirigami.Units.largeSpacing * 0.75
-                                            text: Code.toolHtml({ name: entry.name, input: entry.input, output: entry.output, status: entry.status },
-                                                                toolBox.args, pane.codeStyle)
-                                            textFormat: TextEdit.RichText
-                                            readOnly: true
-                                            selectByMouse: true
-                                            wrapMode: TextEdit.Wrap
-                                            color: Kirigami.Theme.textColor
-                                            selectionColor: Kirigami.Theme.focusColor
-                                            selectedTextColor: Kirigami.Theme.highlightedTextColor
-                                        }
-                                    }
+                                    source: active ? "ToolDetail.qml" : ""
                                 }
                             }
                         }
@@ -3407,6 +3533,19 @@ Window {
                     onActiveChanged: if (active) pane.selectStart(selectOver.mapToItem(list, point.position.x, point.position.y))
                     onPointChanged: if (active) pane.selectAcross(selectOver.mapToItem(list, point.position.x, point.position.y))
                 }
+            }
+            // Search (Ctrl+F): FindBar.qml over the list's top right, clear of its scroll bar (nothing
+            // moves), read and made only while it's open
+            Loader {
+                id: findBar
+                parent: scroll
+                z: 12
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.topMargin: Kirigami.Units.smallSpacing * 0.5
+                anchors.rightMargin: Kirigami.Units.gridUnit
+                active: pane.findOn && pane.conversationTab
+                source: active ? "FindBar.qml" : ""
             }
             // "3 new ↓" at the list's bottom while you're scrolled up and something came in below (NewBelow.qml:
             // made only then); over the list, so it moves nothing; a click goes to the end

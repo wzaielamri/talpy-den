@@ -5,7 +5,8 @@ import "keys.mjs" as PaneKeys
 // ask keyAction at the ShortcutOverride (the key's id, or "": not Talpy Chat's, or nothing to do
 // with it now), then takeKey does it. A file of its own, read and made once the window shows (a
 // Loader, asynchronous): every window opens as quickly. Esc does the nearest thing first, one a
-// press (keys.mjs escTarget).
+// press (keys.mjs escTarget). Ctrl+F the find bar (FindBar.qml; F3 / Shift+F3 its next / previous
+// match), Ctrl+O every fold.
 QtObject {
     function keyAction(event) {
         const k = event.key, m = event.modifiers & ~Qt.KeypadModifier
@@ -25,6 +26,12 @@ QtObject {
             return pane.tasks !== null || pane.agents !== null ? "tasks" : ""
         if (ctrlShift && k === Qt.Key_C)
             return "copyLast"
+        if (ctrl && k === Qt.Key_F)
+            return pane.conversationTab ? "find" : ""
+        if (ctrl && k === Qt.Key_O)
+            return "fold"
+        if (k === Qt.Key_F3 && (plain || m === Qt.ShiftModifier))
+            return !pane.conversationTab ? "" : !pane.findOn ? "find" : plain ? "findNext" : "findBack"
         if (alt && (k === Qt.Key_Y || k === Qt.Key_A || k === Qt.Key_N))
             return pane.permission && askColumn.canAnswer ? (k === Qt.Key_Y ? "allow" : k === Qt.Key_A ? "always" : "deny") : ""
         if (!pane.conversationTab)
@@ -58,7 +65,8 @@ QtObject {
     // @ list, the keys, the grey completion; only then, in an empty box while Stop shows, it stops
     // Claude (a chip's menu closes itself first)
     function escapeTarget() {
-        return PaneKeys.escTarget({ big: pane.bigPicture !== "", list: pane.suggestions.length > 0 && replyBox.activeFocus, help: pane.helpOn,
+        return PaneKeys.escTarget({ big: pane.bigPicture !== "", list: pane.suggestions.length > 0 && replyBox.activeFocus,
+                                    find: pane.findOn && pane.conversationTab, help: pane.helpOn,
                                     ghost: !!ghostLine.item && ghostLine.item.rest !== "",
                                     stop: replyBox.activeFocus && replyBox.text === "" && pane.canStop && !pane.stopping })
     }
@@ -74,7 +82,9 @@ QtObject {
             else if (what === "list") {
                 pane.dismissed = replyBox.text.slice(pane.tokenStart, replyBox.cursorPosition)
                 pane.suggestions = []
-            } else if (what === "help")
+            } else if (what === "find")
+                pane.closeFind()
+            else if (what === "help")
                 pane.helpOn = false
             else if (what === "ghost")
                 pane.ghostOff = replyBox.text
@@ -136,6 +146,13 @@ QtObject {
         case "help":
             pane.helpOn = true
             return
+        case "find":
+            return pane.openFind()
+        case "findNext":
+        case "findBack":
+            return findBar.item ? findBar.item.step(id === "findBack") : undefined
+        case "fold":
+            return pane.foldAll()
         }
         const chip = /^(chip|edit)([1-9])$/.exec(id)
         if (chip && chipsRow.item && chipsRow.item.shown[Number(chip[2]) - 1])

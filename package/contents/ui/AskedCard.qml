@@ -17,7 +17,7 @@ RowLayout {
     property var pane: null     // the window it's in (ChatPane.qml): its colours, fonts and openTools
     property var asked: null    // what was asked (pane.py asked_of)
     property string key: ""     // its call's (its options unfolded: the window's openTools[key])
-    readonly property bool unfolded: !!pane && pane.openTools[key] === true
+    readonly property bool unfolded: !!pane && (pane.openTools[key] !== undefined ? pane.openTools[key] : pane.allOpen)   // (Ctrl+O: every one)
     readonly property var a: asked || ({ state: "", questions: [] })
 
     FontMetrics {
