@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isComparison, type Comparison } from "./changes";
+import { cleanupStatusOf, type CleanupStatus } from "./oldChats";
 import { hostLabel, shellQuote } from "./shared/model";
 import type { ContainerInfo, ContainerNote, FoundChat, FoundMemory, FoundPlan, FoundProject, HostProjects, LimitHistory, PermsData, ProjectRow, ProjectsData, Status, WeekRecap } from "./shared/types";
 
@@ -312,6 +313,12 @@ export class Backend {
       : null;
   }
 
+  // Old chats (cleanup.py --status [--days N]): who deletes them, each place's last run, and what a
+  // run would delete here now at those days (nothing is deleted; it reads every account's chats)
+  async cleanupStatus(configArgs: string[], days?: number): Promise<CleanupStatus | null> {
+    return cleanupStatusOf(await this.json(["cleanup.py", "--status", ...(days ? ["--days", String(days)] : []), ...configArgs], 120000));
+  }
+
   async mondayRecap(args: string[]): Promise<Record<string, any> | null> {
     return this.json(["week.py", "--monday-recap", ...args], 180000);
   }
@@ -340,7 +347,7 @@ export class Backend {
   }
 
   // jump.py / remote.py actions; they print {"ok": bool, "message": str}
-  async action(scriptName: "jump.py" | "remote.py" | "talpy_den.py" | "week.py", args: string[], timeoutMs = 90000): Promise<Answer> {
+  async action(scriptName: "jump.py" | "remote.py" | "talpy_den.py" | "week.py" | "cleanup.py", args: string[], timeoutMs = 90000): Promise<Answer> {
     const r = await this.json([scriptName, ...args], timeoutMs);
     if (!r) return { ok: false, message: "the helper gave no answer" };
     return {

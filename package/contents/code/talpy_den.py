@@ -8290,6 +8290,61 @@ def save_shared_settings(cache_root, by, values, now_ms, unless_default=False):
     return True, "Settings saved"
 
 
+# ---------------------------------------------------------------- old chats
+# Who deletes old chats and plans: Claude Code's own cleanup (its
+# cleanupPeriodDays), or Talpy Den's in its place, which keeps what you
+# starred (cleanup.py). One copy asks whether Talpy Den's daily run is due,
+# in its status check: the one that notifies (--instance elected it, VS
+# Code's --keep-going window) or GNOME's (--cleanup-check). Most checks
+# that's two stats; a due run starts on its own, in the background, and
+# the check doesn't wait for it.
+
+CLEANUP_SETTING_FILE = "cleanup.json"  # (in the state folder: what's deleted is decided there, never in the cache)
+CLEANUP_STAMP = "cleanup-ran"  # (in the cache: touched as a run starts)
+CLEANUP_EVERY_S = 86400
+
+
+def cleanup_due(cache_root, now):
+    """Is a run of cleanup.py due: the setting changed since the last one,
+    or a day went by while Talpy Den cleans (or still has Claude Code's own
+    cleanup to put back somewhere: "pending")? Never set: never."""
+    try:
+        changed = os.stat(str(state_dir(cache_root) / CLEANUP_SETTING_FILE)).st_mtime
+    except OSError:
+        return False
+    stamp = Path(cache_root) / CLEANUP_STAMP
+    try:
+        ran = os.stat(str(stamp)).st_mtime
+    except OSError:
+        ran = 0.0
+    if ran >= changed and abs(now - ran) < CLEANUP_EVERY_S:  # (a clock set back doesn't hold it off for long)
+        return False
+    data = read_json(state_dir(cache_root) / CLEANUP_SETTING_FILE)
+    due = isinstance(data, dict) and (data.get("mode") == "talpy" or data.get("pending") is True)
+    try:  # (asked again in a day, or once the setting changes)
+        private_dir(Path(cache_root))
+        os.close(os.open(str(stamp), os.O_CREAT | os.O_WRONLY, 0o600))
+        os.utime(str(stamp), (now, now))
+    except OSError:
+        return False  # (it would be asked every check)
+    return due
+
+
+def start_cleanup(extra_dirs=()):
+    """Start cleanup.py --run in the background, on its own (not a child the
+    check waits for): whether it started. Not on an SSH host, where this
+    file comes on stdin: the computer that asks runs it there."""
+    here = globals().get("__file__")
+    script = os.path.join(os.path.dirname(os.path.abspath(here)), "cleanup.py") if here else ""
+    if not script or not os.path.isfile(script):
+        return False
+    import subprocess
+    subprocess.Popen([sys.executable or "python3", "-I", script, "--run", *("--config-dir=" + str(d) for d in extra_dirs)],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True, close_fds=True, cwd=str(Path.home()))
+    return True
+
+
 # ---------------------------------------------------------------- prompt history
 
 RECENT_PROJECTS = 6
@@ -10936,7 +10991,9 @@ USAGE = """usage: talpy_den.py [--config-dir DIR]... [--done-hours H] [--recent 
   --instance ID     this copy of the widget (with --interval-ms N, how often it checks):
                     says whether it sends the notifications, and the shared settings; the
                     one that does looks after the chats that keep going (look_after_kept)
-  --keep-going      look after the chats that keep going (the VS Code window that notifies)
+  --keep-going      look after the chats that keep going (the VS Code window that notifies); and,
+                    as --cleanup-check, start Talpy Den's daily cleanup of old chats once it's due
+  --cleanup-check   (GNOME's copy, which needs no electing) start that cleanup once it's due
   --usage-cap N     stop what an account has at work once one of its plan windows reaches N%
   --usage-refresh N while one of an account's chats works, have Claude Code fetch its plan usage
                     once it's more than N minutes old, at most every N minutes (default 5, 0 = never;
@@ -10959,6 +11016,7 @@ def main(argv=None):
     continue_id, continue_folder, continue_ends_at = None, None, None
     vscode_account, vscode_server = None, VSCODE_SERVERS["Code"]
     keep_going, usage_cap, model, effort, mode = False, 0, None, None, None
+    cleanup_check = False  # (--cleanup-check: GNOME's one copy asks whether Talpy Den's cleanup of old chats is due)
     usage_refresh = USAGE_REFRESH_MINUTES
     fetch_usage = False
     starred_chats, starred_plans = set(), set()
@@ -11070,6 +11128,8 @@ def main(argv=None):
             pretty = True
         elif arg == "--keep-going":
             keep_going = True
+        elif arg == "--cleanup-check":
+            cleanup_check = True
         elif arg == "--usage-cap" and args and args[0].isdigit():
             usage_cap = min(100, int(args.pop(0)))
         elif arg == "--usage-refresh" and args and args[0].isdigit():
@@ -11187,6 +11247,12 @@ def main(argv=None):
                     result["keep"] = kept_chats(cache_root, result.get("moved"))
                 except Exception as exc:
                     result["errors"].append(f"chats that keep going: {exc}")
+            if (not remote or local) and (keep_going or cleanup_check or result.get("notifier") is True):
+                try:  # (old chats: Talpy Den's daily cleanup, when it's the one that cleans, cleanup.py)
+                    if cleanup_due(cache_root, time.time()):
+                        start_cleanup(config_dirs)
+                except Exception as exc:
+                    result["errors"].append(f"old chats: {exc}")
             if remote and not local and kept_here:  # (how each stands: the computer that asks keeps them going)
                 try:
                     result["keptTurns"] = kept_turns(home, config_dirs, kept_here, result.get("moved") or {})

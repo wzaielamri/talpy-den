@@ -18,6 +18,7 @@ import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, port
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
 import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
+import { cleanupText, oldChatsDetail, SETTING_OF } from "./oldChats";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
@@ -129,6 +130,7 @@ export class Dashboard implements vscode.Disposable {
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (!e.affectsConfiguration("talpyDen")) return;
         if (e.affectsConfiguration("talpyDen.recapHistory")) void this.setRecapHistory(settings.recapHistory());
+        if (e.affectsConfiguration("talpyDen.oldChats") || e.affectsConfiguration("talpyDen.oldChatsDays")) this.oldChatsChanged();
         this.settingsChanged();
       }),
       // the Claude Code extension installed, removed or (in a new folder) enabled
@@ -182,6 +184,7 @@ export class Dashboard implements vscode.Disposable {
     if (this.disposed) return;
     void this.checkClaudeCode();
     void this.syncRecapHistory();
+    void this.syncOldChats();
     const problem = await this.backend.checkPython();
     if (this.disposed) return;
     if (problem) {
@@ -975,6 +978,75 @@ export class Dashboard implements vscode.Disposable {
     } catch {
       // (no answer: the setting stays as it is)
     }
+  }
+
+  // Old chats (cleanup.py): who deletes them. A change of the settings in the window it was made in;
+  // one at a time (changing both settings is one change), and asked first when it deletes sooner
+  // (Talpy Den's, or fewer days), with what its first run deletes
+  private oldChatsChain: Promise<void> = Promise.resolve();
+
+  private oldChatsChanged(): void {
+    this.oldChatsChain = this.oldChatsChain.then(() => this.setOldChats()).catch(() => undefined);
+  }
+
+  async setOldChats(): Promise<void> {
+    if (this.demoPhase !== null || !vscode.window.state.focused) return;
+    const want = settings.oldChats(), days = settings.oldChatsDays(), dirs = configDirArgs();
+    const now = await this.backend.cleanupStatus(dirs);
+    if (!now) return;
+    let args: string[];
+    if (want === "claude") {
+      if (now.mode === "claude") return; // (the setting caught up with cleanup.py's choice: syncOldChats)
+      args = ["--set", "claude"];
+    } else {
+      if (now.mode === "talpy" && now.days === days) return;
+      if (now.mode !== "talpy" || days < now.days) {
+        const preview = await this.backend.cleanupStatus(dirs, days);
+        const pick = await vscode.window.showWarningMessage(
+          `Delete chats you haven't used for ${days} ${days === 1 ? "day" : "days"}?`, {
+            modal: true,
+            detail: `Talpy Den's first run deletes ${preview ? cleanupText(preview.preview) : "what's that old"} here, then once a day ` +
+              "what you haven't used for that long, on the SSH hosts and containers shown too; old plans go to the Trash. What you " +
+              "starred stays, and so do chats that are open, queued or keep going. Claude Code's own cleanup is off meanwhile.",
+          }, "Use It");
+        if (pick !== "Use It") return void this.syncOldChats();
+      }
+      args = ["--set", "talpy", String(days)];
+    }
+    const { ok, message } = await this.backend.action("cleanup.py", [...args, ...dirs], 120000);
+    if (ok) void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${message}.`));
+    else void vscode.window.showWarningMessage(noLinks(`Talpy Den: old chats: ${message}`));
+    void this.syncOldChats();
+  }
+
+  // The settings show the choice cleanup.py keeps (Talpy Den's settings on Plasma or GNOME may have changed it)
+  async syncOldChats(): Promise<void> {
+    if (this.demoPhase !== null) return;
+    try {
+      const now = await this.backend.cleanupStatus(configDirArgs());
+      if (!now) return;
+      const config = vscode.workspace.getConfiguration("talpyDen");
+      if (SETTING_OF[now.mode] !== settings.oldChats())
+        await config.update("oldChats", SETTING_OF[now.mode], vscode.ConfigurationTarget.Global);
+      if (now.mode === "talpy" && now.days !== settings.oldChatsDays())
+        await config.update("oldChatsDays", now.days, vscode.ConfigurationTarget.Global);
+    } catch {
+      // (no answer: the settings stay as they are)
+    }
+  }
+
+  // Talpy Den: Old Chats: who deletes them, what the next run deletes here, each place's last run
+  async showOldChats(): Promise<void> {
+    const now = this.demoPhase !== null ? null : await this.backend.cleanupStatus(configDirArgs());
+    if (!now) {
+      void vscode.window.showWarningMessage("Talpy Den: couldn't ask about old chats.");
+      return;
+    }
+    const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const pick = await vscode.window.showInformationMessage(
+      now.mode === "talpy" ? "Talpy Den deletes old chats, keeping what you starred" : "Claude Code deletes old chats",
+      { modal: true, detail: oldChatsDetail(now, when) }, "Settings");
+    if (pick === "Settings") void vscode.commands.executeCommand("workbench.action.openSettings", "talpyDen.oldChats");
   }
 
   async forgetRecapHistory(): Promise<void> {

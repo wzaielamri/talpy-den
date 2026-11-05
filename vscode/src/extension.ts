@@ -214,6 +214,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("talpyDen.refresh", () => view.refresh()),
     vscode.commands.registerCommand("talpyDen.forgetRecapHistory", () => dash.forgetRecapHistory()),
+    vscode.commands.registerCommand("talpyDen.oldChats", () => dash.showOldChats()),
     vscode.commands.registerCommand("talpyDen.pickHosts", () => a.pickHosts()),
     vscode.commands.registerCommand("talpyDen.openInEditor", () => view.openInEditor()),
     vscode.commands.registerCommand("talpyDen.newChat", () => a.newChat()),

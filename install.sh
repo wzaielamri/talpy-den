@@ -451,6 +451,10 @@ if [ "$uninstall" = 1 ]; then
     # the live hook: nothing would read what it notes)
     relay off
     live off
+    # (and Claude Code's own cleanup of old chats where Talpy Den's took over,
+    # here and on the SSH hosts it did it on: nothing would clean up there)
+    python3 -I "$here/package/contents/code/cleanup.py" --uninstall 2>/dev/null | python3 -I -c 'import json, sys
+print(json.load(sys.stdin).get("message") or "")' 2>/dev/null | grep . || true
   fi
   echo "Uninstalled. Cached data is in ${XDG_CACHE_HOME:-$HOME/.cache}/talpy-den (safe to delete)."
   # (left as the cache is: the hooks' scripts, and dictation's speech engine

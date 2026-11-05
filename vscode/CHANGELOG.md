@@ -4,6 +4,14 @@
 
 ### New
 
+- **Old chats, your stars kept:** `talpyDen.oldChats` picks who deletes old
+  chats and plans: Claude Code's own cleanup (the default: everything older
+  than its `cleanupPeriodDays`, starred or not, for good) or Talpy Den, once
+  a day, after `talpyDen.oldChatsDays` unused: it keeps what you starred and
+  chats that are open, queued or keep going, and moves old plans to the Trash;
+  here and on the SSH hosts and containers shown. Choosing it, or fewer days,
+  asks first with what its first run deletes; **Talpy Den: Old Chats** shows
+  each place's last run. One choice with Talpy Den on Plasma or GNOME.
 - **Search and folds in Talpy Chat:** **Ctrl+F** (*Talpy Chat: Find in the
   Chat*) opens a find bar over the conversation's top right: what you type is
   found in what the tab shows (on Steps, what each step ran and got too), the

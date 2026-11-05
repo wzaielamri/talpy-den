@@ -2441,7 +2441,7 @@ class SettingsPageTests(unittest.TestCase):
         general = "".join((ROOT / "ui" / name).read_text() for name in SETTINGS_PAGES)
         for flag in sorted(set(re.findall(r"--[a-z-]+", general))):
             self.assertTrue(any(f'"{flag}"' in main_of(name) for name in ("jump.py", "notify_sound.py", "week.py", "pane.py",
-                                                                         "dictate.py")),
+                                                                         "dictate.py", "cleanup.py")),
                             flag)
 
     def test_a_hosts_or_helpers_words_in_the_settings_show_as_written(self):

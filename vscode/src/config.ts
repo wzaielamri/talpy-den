@@ -44,6 +44,9 @@ export const settings = {
   },
   recapRules: () => cfg().get<boolean>("recapRules", true) !== false,
   recapHistory: () => cfg().get<boolean>("recapHistory", true) !== false,
+  // Old chats: Claude Code's own cleanup ("claude") or Talpy Den's ("talpyDen"), at oldChatsDays (cleanup.py)
+  oldChats: (): "claude" | "talpyDen" => (cfg().get<string>("oldChats", "claude") === "talpyDen" ? "talpyDen" : "claude"),
+  oldChatsDays: () => Math.round(num("oldChatsDays", 30, 1, 3649)),
   notifyWaiting: () => cfg().get<boolean>("notifyWaiting", true),
   notifyDone: () => cfg().get<boolean>("notifyDone", true),
   notifyDoneMinSeconds: () => num("notifyDoneMinSeconds", 30, 0, 3600),

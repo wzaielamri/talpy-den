@@ -174,10 +174,99 @@ ConfigPage {
         dictateHelper.connectSource("python3 -I " + q(codeDir + "dictate.py") + " " + args.map(q).join(" ") + " # " + Date.now())
     }
 
+    // Old chats (cleanup.py --status [--days N], --set claude | --set talpy DAYS): who deletes them,
+    // Claude Code's own cleanup or Talpy Den's, which keeps what you starred. One choice for every copy
+    // of the widget and the VS Code extension, in Talpy Den's state folder: it changes at once (not with
+    // Apply), and Talpy Den's, or fewer days, only once you saw what its first run deletes
+    property var cleanup: null           // cleanup.py --status
+    property string cleanupMessage: ""
+    property int cleanupDays: 0          // the days picked, asked first (0: none)
+    readonly property bool cleanupAsking: cleanup !== null && cleanupDays > 0
+                                          && (cleanup.mode !== "talpy" || cleanupDays !== cleanup.days)
+
+    Exec {
+        id: cleanupHelper
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            let result = null
+            try {
+                result = JSON.parse(data["stdout"])
+            } catch (e) {
+                page.cleanupMessage = i18n("Couldn't ask about old chats")
+                return
+            }
+            if (result.preview !== undefined) {
+                page.cleanup = result
+            } else {
+                page.cleanupMessage = result.message || ""
+                page.cleanupDays = 0
+                page.runCleanup(["--status"])
+            }
+        }
+    }
+
+    function runCleanup(args) {
+        const q = s => "'" + String(s).replace(/'/g, "'\\''") + "'"
+        cleanupHelper.connectSource("python3 -I " + q(codeDir + "cleanup.py") + " " + withConfigDirs(args).map(q).join(" ") + " # " + Date.now())
+    }
+
+    // Talpy Den's cleanup at days: what its first run deletes is read first (the question shows it)
+    function askCleanup(days) {
+        cleanupDays = days
+        if (cleanupAsking)
+            runCleanup(["--status", "--days", String(days)])
+    }
+
+    function sizeText(bytes) {
+        return Qt.locale().formattedDataSize(bytes || 0, 1)
+    }
+
+    // What a run deleted (or would delete): "3 chats, 1 background chat, 12 files (412 MB), 1 plan to the Trash"
+    function cleanupText(r) {
+        const parts = []
+        if (r.chats)
+            parts.push(i18np("%1 chat", "%1 chats", r.chats))
+        if (r.backgroundChats)
+            parts.push(i18np("%1 background chat", "%1 background chats", r.backgroundChats))
+        if (r.files)
+            parts.push(i18np("%1 other file", "%1 other files", r.files))
+        let text = parts.length ? parts.join(", ") + " (" + sizeText(r.bytes) + ")" : ""
+        if (r.plans)
+            text += (text ? ", " : "") + i18np("%1 plan to the Trash", "%1 plans to the Trash", r.plans)
+        return text || i18n("nothing")
+    }
+
+    function keptText(r) {
+        const kept = (r.keptChats || 0) + (r.keptPlans || 0)
+        return kept ? i18np("%1 old starred, open or queued one stays", "%1 old starred, open or queued ones stay", kept) : ""
+    }
+
+    // Each place's last run: "This computer, today 14:02: …", then each SSH host and container
+    function runsText() {
+        if (!cleanup || !cleanup.runs)
+            return ""
+        const lines = []
+        for (const place of Object.keys(cleanup.runs).sort()) {
+            const r = cleanup.runs[place]
+            const when = r.at ? Qt.formatDateTime(new Date(r.at), Qt.locale().dateTimeFormat(Locale.ShortFormat)) : ""
+            const where = place || i18n("This computer")
+            let what = !r.ok && r.message ? r.message   // (out of reach, or it failed there)
+                     : r.mode === "talpy" ? cleanupText(r) + (keptText(r) ? "; " + keptText(r) : "")
+                     : r.raised ? i18n("Claude Code's cleanup isn't back yet") : i18n("Claude Code's cleanup is back")
+            if (r.ok && (r.message || (r.errors && r.errors.length)))
+                what += " · " + (r.message || r.errors.join("; "))
+            else if (!r.ok && !r.message && r.errors && r.errors.length)
+                what += " · " + r.errors.join("; ")
+            lines.push(i18nc("a place's last cleanup: where, when: what", "%1, %2: %3", where, when, what))
+        }
+        return lines.join("\n")
+    }
+
     Component.onCompleted: {
         runRelay(["status"])
         runKeys(["status"])
         runDictate(["--status"])
+        runCleanup(["--status"])
     }
 
     Kirigami.FormLayout {
@@ -273,6 +362,97 @@ ConfigPage {
             textFormat: Text.PlainText
             text: (page.keysMessage ? page.keysMessage + "\n" : "")
                   + i18n("Two global shortcuts answer the chat that has waited longest for a permission, from anywhere: Allow once (a plan: Approve) or Deny (a plan: Keep planning); a note on screen says what was answered. They take \"Answer permission prompts from Talpy Den\"; Claude's questions are answered in the panel. Pick other keys in System Settings → Shortcuts → Talpy Den. Applies at once.")
+        }
+
+        Kirigami.Separator {
+            Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: i18n("Old chats")
+        }
+
+        QQC2.ComboBox {
+            id: cleanupWho
+            Kirigami.FormData.label: i18n("Deleted by:")
+            enabled: page.cleanup !== null
+            model: [i18n("Claude Code's own cleanup"), i18n("Talpy Den, keeping what you starred")]
+            currentIndex: page.cleanupAsking || (page.cleanup !== null && page.cleanup.mode === "talpy") ? 1 : 0
+            onActivated: index => {
+                if (index === 1 && page.cleanup.mode !== "talpy")
+                    page.askCleanup(page.cleanup.days)   // (asked first: what its first run deletes)
+                else if (index === 0) {
+                    page.cleanupDays = 0
+                    if (page.cleanup.mode === "talpy")
+                        page.runCleanup(["--set", "claude"])
+                }
+                currentIndex = Qt.binding(() => page.cleanupAsking || (page.cleanup !== null && page.cleanup.mode === "talpy") ? 1 : 0)
+            }
+        }
+
+        RowLayout {
+            visible: cleanupWho.currentIndex === 1
+            Kirigami.FormData.label: i18n("Not used for:")
+            spacing: Kirigami.Units.smallSpacing
+
+            QQC2.SpinBox {
+                id: cleanupDaysBox
+                from: 1
+                to: page.cleanup ? page.cleanup.maxDays : 3649
+                editable: true
+                value: page.cleanupDays > 0 ? page.cleanupDays : page.cleanup ? page.cleanup.days : 30
+                onValueModified: page.askCleanup(value)
+            }
+            QQC2.Label {
+                text: i18ncp("after the number of days", "day", "days", cleanupDaysBox.value)
+            }
+        }
+
+        // Talpy Den's cleanup, or fewer days: what its first run deletes, asked first
+        RowLayout {
+            visible: page.cleanupAsking
+            spacing: Kirigami.Units.smallSpacing
+
+            QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 14
+                wrapMode: Text.Wrap
+                color: Kirigami.Theme.neutralTextColor   // (a question: as every one, ConfirmLine)
+                text: !page.cleanup || page.cleanup.previewDays !== page.cleanupDays
+                      ? i18n("Looking at what it would delete…")
+                      : i18np("Delete chats you haven't used for %1 day? Its first run deletes %2 here.",
+                              "Delete chats you haven't used for %1 days? Its first run deletes %2 here.",
+                              page.cleanupDays, page.cleanupText(page.cleanup.preview))
+            }
+            QQC2.Button {
+                enabled: !!page.cleanup && page.cleanup.previewDays === page.cleanupDays
+                icon.name: Icons.plasma.erase
+                icon.color: Icons.color("erase", Kirigami.Theme)
+                text: i18n("Use It")
+                onClicked: page.runCleanup(["--set", "talpy", String(page.cleanupDays)])
+            }
+            QQC2.Button {
+                text: i18n("Cancel")
+                onClicked: {
+                    page.cleanupDays = 0
+                    page.runCleanup(["--status"])
+                }
+            }
+        }
+
+        QQC2.Label {
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 20
+            wrapMode: Text.Wrap
+            font: Kirigami.Theme.smallFont
+            opacity: 0.7
+            textFormat: Text.PlainText   // (a helper's or a host's words, shown as written)
+            text: (page.cleanupMessage ? page.cleanupMessage + "\n" : "")
+                  + (!page.cleanup ? ""
+                     : page.cleanup.mode !== "talpy" && !page.cleanupAsking   // (asked: what Talpy Den's does, read first)
+                     ? i18n("When it starts, Claude Code deletes every chat, and every plan of an account's plans folder, older than its cleanupPeriodDays (%1): starred or not, for good.",
+                            page.cleanup.claudeDays.map(a => i18nc("an account: its days", "%1: %2 days", a.account, a.days)).join(", "))
+                     : i18n("Once a day Talpy Den deletes the chats you haven't used for that long, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code's own cleanup is off on every account, here and on the SSH hosts and containers shown (cleanupPeriodDays 3650); choosing it again puts it back."))
+                  + (page.cleanup && page.cleanup.mode === "talpy" && !page.cleanupAsking
+                     ? "\n\n" + i18n("Its next run would delete %1 here.", page.cleanupText(page.cleanup.preview))
+                       + (page.keptText(page.cleanup.preview) ? " " + page.keptText(page.cleanup.preview) + "." : "")
+                     : "")
+                  + (page.runsText() ? "\n\n" + page.runsText() : "")
         }
 
         Kirigami.Separator {

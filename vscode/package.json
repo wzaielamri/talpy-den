@@ -222,6 +222,11 @@
         "category": "Talpy Den"
       },
       {
+        "command": "talpyDen.oldChats",
+        "title": "Old Chats",
+        "category": "Talpy Den"
+      },
+      {
         "command": "talpyDen.accounts",
         "title": "Claude Accounts…",
         "category": "Talpy Den",
@@ -937,6 +942,30 @@
               "default": "auto",
               "markdownDescription": "The language you dictate replies in, as a code (`en`, `de`, `fr`…), or `auto` to let whisper tell. Dictating (the microphone in Talpy Chat) runs on this computer: the first click offers to set it up (faster-whisper, no sudo), and **Talpy Den: Dictation Models…** downloads, deletes or picks the speech model. What you say never leaves the computer.",
               "order": 10
+            },
+            "talpyDen.oldChats": {
+              "type": "string",
+              "enum": ["claude", "talpyDen"],
+              "enumItemLabels": ["Claude Code's own cleanup", "Talpy Den, keeping what you starred"],
+              "markdownEnumDescriptions": [
+                "When it starts, Claude Code deletes every chat, and every plan of an account's plans folder, older than its `cleanupPeriodDays` (30 days unless set): starred or not, for good.",
+                "Once a day Talpy Den deletes the chats you haven't used for **Old Chats Days**, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code's own cleanup is off on every account, here and on the SSH hosts and containers shown (`cleanupPeriodDays` 3650); choosing it again puts it back."
+              ],
+              "default": "claude",
+              "scope": "application",
+              "ignoreSync": true,
+              "markdownDescription": "Who deletes old chats and plans. Choosing Talpy Den first says what its first run deletes and asks. One choice for Talpy Den here and on Plasma or GNOME; **Talpy Den: Old Chats** shows its last runs and what its next one would delete.",
+              "order": 11
+            },
+            "talpyDen.oldChatsDays": {
+              "type": "integer",
+              "default": 30,
+              "minimum": 1,
+              "maximum": 3649,
+              "scope": "application",
+              "ignoreSync": true,
+              "markdownDescription": "With **Old Chats** set to Talpy Den: the days a chat you haven't used stays. Fewer days are asked first, with what the next run deletes.",
+              "order": 12
             }
         }
       },

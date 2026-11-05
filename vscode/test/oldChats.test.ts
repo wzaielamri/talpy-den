@@ -1,0 +1,51 @@
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { test } from "node:test";
+import { cleanupStatusOf, cleanupText, keptText, oldChatsDetail, runsLines, sizeText, SETTING_OF } from "../src/oldChats";
+
+const when = (ms: number) => `t${ms}`;
+
+test("what a run deletes says each kind once, its size, and plans to the Trash", () => {
+  assert.equal(cleanupText({}), "nothing");
+  assert.equal(cleanupText({ chats: 3, backgroundChats: 1, files: 12, plans: 1, bytes: 432 * 1024 * 1024 }),
+    "3 chats, 1 background chat, 12 other files (432.0 MB), 1 plan to the Trash");
+  assert.equal(cleanupText({ plans: 2 }), "2 plans to the Trash");
+  assert.equal(keptText({ keptChats: 1 }), "1 old starred, open or queued one stays");
+  assert.equal(keptText({}), "");
+  assert.deepEqual([sizeText(500), sizeText(3 * 1024 ** 3)], ["0 KB", "3.0 GB"]);
+});
+
+test("cleanup.py's status is read only when it's one", () => {
+  assert.equal(cleanupStatusOf(null), null);
+  assert.equal(cleanupStatusOf({ ok: false, message: "x" }), null);
+  assert.equal(cleanupStatusOf({ ok: true, mode: "other", preview: {} }), null);
+  const st = cleanupStatusOf({ ok: true, mode: "talpy", days: 21, preview: { chats: 2 }, previewDays: 21, runs: {}, claudeDays: [{ account: "work", days: 30 }, null] })!;
+  assert.deepEqual([st.mode, st.days, st.maxDays, st.claudeDays.length, SETTING_OF[st.mode]], ["talpy", 21, 3649, 1, "talpyDen"]);
+});
+
+test("each place's last run, this computer first, a host out of reach by why", () => {
+  const st = cleanupStatusOf({
+    ok: true, mode: "talpy", days: 30, preview: {}, previewDays: 30, claudeDays: [],
+    runs: { "lab": { ok: false, at: 2, message: "lab didn't answer", chats: 4 }, "": { ok: true, at: 1, mode: "talpy", chats: 1, bytes: 2048, keptPlans: 1 },
+      "docker:web": { ok: true, at: 3, mode: "claude", raised: false } },
+  })!;
+  assert.deepEqual(runsLines(st, when), [
+    "This computer, t1: 1 chat (2 KB); 1 old starred, open or queued one stays",
+    "docker:web, t3: Claude Code's cleanup is back",
+    "lab, t2: lab didn't answer",
+  ]);
+  assert.match(oldChatsDetail(st, when), /^Talpy Den deletes the chats you haven't used for 30 days once a day;.*next run would delete nothing here\.\n\nThis computer/s);
+  st.mode = "claude";
+  st.claudeDays = [{ account: "work", days: 30 }, { account: "personal", days: 45 }];
+  assert.match(oldChatsDetail(st, when), /cleanupPeriodDays \(work: 30 days, personal: 45 days\): starred or not, for good\./);
+});
+
+test("the settings, the command and the backend's script are declared", () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "package.json"), "utf8"));
+  const props = Object.assign({}, ...pkg.contributes.configuration.map((c: any) => c.properties));
+  assert.deepEqual(props["talpyDen.oldChats"].enum, ["claude", "talpyDen"]);
+  assert.equal(props["talpyDen.oldChats"].default, "claude"); // (Claude Code's own, unless you choose)
+  assert.deepEqual([props["talpyDen.oldChatsDays"].minimum, props["talpyDen.oldChatsDays"].maximum], [1, 3649]);
+  assert.ok(pkg.contributes.commands.some((c: any) => c.command === "talpyDen.oldChats"));
+});

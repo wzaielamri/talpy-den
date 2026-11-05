@@ -315,7 +315,8 @@ class TalpyDenIndicator extends PanelMenu.Button {
             return;
         this._polling = true;
         // (poll.py runs talpy_den.py with its compiled code cached)
-        const out = await this._runner.run('poll.py', [...this._configDirArgs, ...this._listArgs], {poll: true});
+        // (--cleanup-check: GNOME's one copy starts Talpy Den's daily cleanup of old chats once it's due, cleanup.py)
+        const out = await this._runner.run('poll.py', [...this._configDirArgs, ...this._listArgs, '--cleanup-check'], {poll: true});
         this._polling = false;
         if (this._destroyed || out.cancelled)
             return;

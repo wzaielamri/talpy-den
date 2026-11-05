@@ -32,7 +32,7 @@ PATCHES = [
     ("notifier.js", "new MessageTray.Notification({", "Compat.newNotification({", 1),
     ("notifier.js", "source.addNotification(", "source.showNotification(", 1),
     # libadwaita 1.2 and GTK 4.8
-    ("prefs.js", "Adw.SpinRow.new_with_range(", "Compat.SpinRow.new_with_range(", 1),
+    ("prefs.js", "Adw.SpinRow.new_with_range(", "Compat.SpinRow.new_with_range(", 2),
     ("prefs.js", "new Adw.SwitchRow(", "new Compat.SwitchRow(", 2),
     ("prefs.js", "new Gtk.FileDialog(", "new Compat.FileDialog(", 1),
 ]

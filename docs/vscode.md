@@ -144,6 +144,7 @@ The ones that pick what Talpy Den runs or reads on this computer (`talpyDen.pyth
 | `talpyDen.chatFont` | `terminal` | The font of a chat's tab, its conversation and your reply: `terminal` the integrated terminal's (else the editor's), as Claude's terminal shows a chat; `editor` the editor's; `ui` VS Code's own interface font |
 | `talpyDen.suggestReplies` | `true` | Suggested replies in a chat's tab once Claude's turn is over (the answers to its question, your usual replies after a turn that ended the same way) and what you type completed in grey from your usual replies; `false`: nothing is read for them |
 | `talpyDen.dictateLanguage` | `auto` | The language you dictate replies in (`en`, `de`, `fr`…), or `auto` to let whisper tell |
+| `talpyDen.oldChats` / `oldChatsDays` | `claude` / `30` | Who deletes old chats and plans: Claude Code's own cleanup (everything older than its `cleanupPeriodDays`, starred or not, for good), or `talpyDen`: once a day the chats you haven't used for `oldChatsDays`, with their undo history and files, and finished background chats; old plans go to the Trash, and what you starred stays (and chats that are open, queued or keep going). Meanwhile Claude Code's own cleanup is off on every account, here and on the SSH hosts and containers shown. Choosing Talpy Den's, or fewer days, asks first with what its first run deletes; one choice with Plasma or GNOME. **Old Chats** shows the last runs |
 
 ### Notifications
 
@@ -219,6 +220,7 @@ All in the Command Palette under **Talpy Den:**; the view's title bar and **⋯*
 | Dictation Models… | | Downloads, deletes or picks a speech model, or removes faster-whisper |
 | Suggest Hidden Replies Again | | Your usual replies hidden with a chip's *Don't suggest this* are suggested again |
 | Delete the Recap's Saved History… | | The Recap starts again from the chats Claude still has; your plan's windows that ended go too |
+| Old Chats | | Who deletes old chats (`talpyDen.oldChats`), what Talpy Den's next run would delete here, and each place's last run |
 | Send Feedback to Claude | | In a plan's preview: sends your comments and changes to the chat that made it |
 | Play with Talpy / Turn On Playful Talpy / Turn Off Playful Talpy | | A game with the big Talpy; Playful Talpy (his tricks and props, jokes, cookies and games) on or off (`talpyDen.playfulTalpy`) |
 | Refresh | | Checks the chats and the plan usage again; on the Recap, Permissions or Projects tab it reads that tab again too (they have no button of their own for it), and the Recap once more when the plan usage it fetched has come in |

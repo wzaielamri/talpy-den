@@ -100,6 +100,7 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         const chats = category('Chats', 'chats');
         group(chats, 'Open in',
             'New and recent chats open in a terminal or in VS Code: the Terminal | VS Code switch at the top of their lists picks it.');
+        chats.add(this._cleanupGroup(window, settings));
 
         // ---- Notifications: when, sounds, while you're away, the shortcut
         const notifications = category('Notifications', 'notifications');
@@ -467,6 +468,144 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
         });
         row.connect('changed', () => row.remove_css_class('error'));
         return row;
+    }
+
+    // Old chats (cleanup.py --status [--days N], --set claude | --set talpy
+    // DAYS): who deletes them, Claude Code's own cleanup or Talpy Den's, which
+    // keeps what you starred. One choice for every copy of the widget and the
+    // VS Code extension, in Talpy Den's state folder: it changes at once, and
+    // Talpy Den's, or fewer days, only once you saw what its first run deletes
+    _cleanupGroup(window, settings) {
+        const group = new Adw.PreferencesGroup({title: 'Old chats'});
+        const run = args => new Promise(resolve => {
+            try {
+                const dirs = settings.get_string('extra-config-dirs').split(',').map(d => d.trim()).filter(d => d)
+                    .flatMap(d => ['--config-dir', d]);
+                const proc = Gio.Subprocess.new(['python3', '-I', GLib.build_filenamev([this.path, 'code', 'cleanup.py']), ...args, ...dirs],
+                    Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
+                proc.communicate_utf8_async(null, null, (pr, res) => {
+                    try {
+                        resolve(JSON.parse(pr.communicate_utf8_finish(res)[1]));
+                    } catch (e) {
+                        resolve({ok: false, message: e.message});
+                    }
+                });
+            } catch (e) {
+                resolve({ok: false, message: e.message});
+            }
+        });
+        const who = new Adw.ComboRow({title: 'Deleted by', sensitive: false,
+            model: Gtk.StringList.new(["Claude Code's own cleanup", 'Talpy Den, keeping what you starred'])});
+        const days = Adw.SpinRow.new_with_range(1, 3649, 1);
+        days.set({title: 'Not used for', subtitle: 'days', visible: false});
+        const about = new Adw.ActionRow({title: '', subtitle_lines: 0});
+        about.add_css_class('property');
+        const ask = new Adw.ActionRow({visible: false});
+        const use = iconTextButton('Use It', 'erase', async () => {
+            ask.visible = false;
+            said(await run(['--set', 'talpy', String(asked)]));
+            asked = 0;
+            sync();
+        });
+        const cancel = new Gtk.Button({label: 'Cancel', valign: Gtk.Align.CENTER});
+        cancel.connect('clicked', () => {
+            asked = 0;
+            ask.visible = false;
+            show();
+        });
+        ask.add_suffix(use);
+        ask.add_suffix(cancel);
+        const said = result => window.add_toast(new Adw.Toast({title: GLib.markup_escape_text(result.message || '', -1), timeout: 5}));
+        let st = null, asked = 0, syncing = false;
+        const size = bytes => GLib.format_size(bytes || 0);
+        const what = r => {   // ("3 chats, 1 background chat, 12 other files (412 MB), 1 plan to the Trash", as Plasma's)
+            const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+            const parts = [r.chats && n(r.chats, 'chat', 'chats'), r.backgroundChats && n(r.backgroundChats, 'background chat', 'background chats'),
+                r.files && n(r.files, 'other file', 'other files')].filter(x => x);
+            let text = parts.length ? `${parts.join(', ')} (${size(r.bytes)})` : '';
+            if (r.plans)
+                text += `${text ? ', ' : ''}${n(r.plans, 'plan', 'plans')} to the Trash`;
+            return text || 'nothing';
+        };
+        const kept = r => {
+            const k = (r.keptChats || 0) + (r.keptPlans || 0);
+            return k ? `${k} old starred, open or queued ${k === 1 ? 'one stays' : 'ones stay'}` : '';
+        };
+        const show = () => {
+            if (!st)
+                return;
+            syncing = true;
+            const talpy = asked > 0 || st.mode === 'talpy';
+            who.selected = talpy ? 1 : 0;
+            days.visible = talpy;
+            days.value = asked > 0 ? asked : st.days;
+            syncing = false;
+            ask.visible = asked > 0 && (st.mode !== 'talpy' || asked !== st.days);
+            if (ask.visible)
+                ask.title = `<span foreground="${QUESTION}">${GLib.markup_escape_text(st.previewDays !== asked ? 'Looking at what it would delete…'
+                    : `Delete chats you haven't used for ${asked} ${asked === 1 ? 'day' : 'days'}? Its first run deletes ${what(st.preview)} here.`, -1)}</span>`;
+            use.sensitive = st.previewDays === asked;
+            const lines = [st.mode !== 'talpy' && !ask.visible   // (asked: what Talpy Den's does, read first)
+                ? `When it starts, Claude Code deletes every chat, and every plan of an account's plans folder, older than its cleanupPeriodDays (${
+                    st.claudeDays.map(a => `${a.account}: ${a.days} days`).join(', ')}): starred or not, for good.`
+                : 'Once a day Talpy Den deletes the chats you haven\'t used for that long, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code\'s own cleanup is off on every account, here and on the SSH hosts and containers shown (cleanupPeriodDays 3650); choosing it again puts it back.'];
+            if (st.mode === 'talpy' && !ask.visible)
+                lines.push('', `Its next run would delete ${what(st.preview)} here.${kept(st.preview) ? ` ${kept(st.preview)}.` : ''}`);
+            const places = Object.keys(st.runs || {}).sort();
+            if (places.length)
+                lines.push('');
+            for (const place of places) {
+                const r = st.runs[place];
+                let text = !r.ok && r.message ? r.message   // (out of reach, or it failed there)
+                    : r.mode === 'talpy' ? what(r) + (kept(r) ? `; ${kept(r)}` : '')
+                    : r.raised ? "Claude Code's cleanup isn't back yet" : "Claude Code's cleanup is back";
+                const errors = r.errors && r.errors.length ? r.errors.join('; ') : '';
+                if (r.ok && (r.message || errors))
+                    text += ` · ${r.message || errors}`;
+                else if (!r.ok && !r.message && errors)
+                    text += ` · ${errors}`;
+                lines.push(`${place || 'This computer'}, ${r.at ? new Date(r.at).toLocaleString() : ''}: ${text}`);
+            }
+            about.subtitle = GLib.markup_escape_text(lines.join('\n'), -1);
+        };
+        const sync = async (asking = 0) => {
+            const result = await run(asking ? ['--status', '--days', String(asking)] : ['--status']);
+            if (result.preview === undefined) {
+                about.subtitle = GLib.markup_escape_text(result.message || "Couldn't ask about old chats", -1);
+                return;
+            }
+            st = result;
+            who.sensitive = true;
+            show();
+        };
+        const askFor = n => {   // (Talpy Den's at n days: what its first run deletes, read first)
+            asked = n;
+            show();
+            if (ask.visible)
+                sync(n);
+        };
+        who.connect('notify::selected', async () => {
+            if (syncing || !st)
+                return;
+            if (who.selected === 1 && st.mode !== 'talpy') {
+                askFor(st.days);
+            } else if (who.selected === 0) {
+                asked = 0;
+                if (st.mode === 'talpy')
+                    said(await run(['--set', 'claude']));
+                sync();
+            }
+        });
+        days.connect('notify::value', () => {
+            if (!syncing && st)
+                askFor(Math.round(days.value));
+        });
+        group.add(who);
+        group.add(days);
+        group.add(ask);
+        group.add(about);
+        sync();
+        return group;
     }
 
     // The Recap's history (week.py --history-status, --history on|off,
