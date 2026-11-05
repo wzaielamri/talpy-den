@@ -36,9 +36,13 @@ RowLayout {
     readonly property bool canInterrupt: canEnd && !!session.tmux && (session.state === "working" || session.state === "waiting")
                                          && session.reason !== "background shell"
     readonly property bool canStop: canEnd || (session.kind === "bg" && session.pid !== null && (!remoteHost || !!session.stopCommand))
-    readonly property string stopTitle: row.canInterrupt ? i18n("Interrupt or stop this chat")
-                                        : row.canEnd ? i18n("Stop this chat") : i18n("Stop this background chat")
-    readonly property string stopTip: row.canInterrupt
+    // (tooltips' words: worked out when they show)
+    function stopTitle() {
+        return row.canInterrupt ? i18n("Interrupt or stop this chat")
+             : row.canEnd ? i18n("Stop this chat") : i18n("Stop this background chat")
+    }
+    function stopTip() {
+        return row.canInterrupt
         ? i18n("Asks first. Interrupting is like Ctrl+C in its tmux pane, or the stop button in VS Code: the current step and its subagents stop, and the chat stays open there.")
         : row.canEnd && row.inVscode
         ? i18n("Asks first. Its tab in VS Code shows it as interrupted, keeps the chat and goes on with your next message.")
@@ -47,6 +51,7 @@ RowLayout {
         : row.canEnd
         ? i18n("Asks first. The current step is cut off, Claude quits and its terminal stays open; the chat is kept and shows under Recent chats.")
         : i18n("Asks first. The conversation is kept; claude attach resumes it.")
+    }
     // Kept in root by row key: rows are refreshed with new data every poll
     // (by the chat: a background session that ends stays open where it was).
     readonly property string rowKey: root.rowKeyOf(session, remoteHost)
@@ -169,7 +174,8 @@ RowLayout {
     // it keeps going until it's done: after each usage limit, it goes on by itself (root.keptChat)
     readonly property var kept: root.keptChat(session.chatId || session.sessionId, remoteHost)
     readonly property bool inContainer: root.isContainer(remoteHost)
-    readonly property string openHint: inContainer
+    function openHint() {
+        return inContainer
                                        ? (session.entrypoint === "claude-vscode" && !session.openCommand
                                           ? i18n("Show this conversation in VS Code (connected to %1)", root.hostLabel(remoteHost))
                                           : !session.openCommand ? i18n("Switch to the terminal open in %1", root.hostLabel(remoteHost))
@@ -186,6 +192,7 @@ RowLayout {
                                        : session.kind === "bg" && session.pid === null ? i18n("Reopen this background chat in a terminal")
                                        : session.kind === "bg" ? i18n("Show this background chat in a terminal")
                                        : i18n("Switch to the terminal running this chat")
+    }
 
     // Stop (the question's answer): only stopped if it's as the question
     // says now (busy: working or waiting; an idle one that got busy isn't);
@@ -365,9 +372,10 @@ RowLayout {
                                 textFormat: Text.PlainText
                                 width: nameLabel.contentWidth
                                 height: parent.height
-                                mainText: Plasmoid.configuration.clickOpensPane
+                                // (worked out while the pointer is on it)
+                                mainText: !containsMouse ? "" : Plasmoid.configuration.clickOpensPane
                                           ? i18n("Open this chat in Talpy Chat: its conversation, a box to reply, and what it changed")
-                                          : row.openHint
+                                          : row.openHint()
 
                                 MouseArea {
                                     id: nameMouse
@@ -669,7 +677,7 @@ RowLayout {
                         PlasmaCore.ToolTipArea {
                             textFormat: Text.PlainText
                             anchors.fill: parent
-                            mainText: Plasmoid.configuration.clickOpensPane ? row.openHint : i18n("Open in Talpy Chat")
+                            mainText: Plasmoid.configuration.clickOpensPane ? row.openHint() : i18n("Open in Talpy Chat")
                             subText: Plasmoid.configuration.clickOpensPane ? ""
                                      : i18n("Beside the popup: its conversation, a box to reply, and what it changed.")
                         }
@@ -765,8 +773,8 @@ RowLayout {
                         PlasmaCore.ToolTipArea {
                             textFormat: Text.PlainText
                             anchors.fill: parent
-                            mainText: row.stopTitle
-                            subText: row.stopTip
+                            mainText: row.stopTitle()
+                            subText: row.stopTip()
                         }
                     }
                 }
@@ -791,7 +799,7 @@ RowLayout {
                     width: folderLabel.contentWidth
                     height: parent.height
                     active: !!row.session.cwd
-                    mainText: i18n("Folder")
+                    mainText: containsMouse ? i18n("Folder") : ""
                     subText: (row.remoteHost ? root.hostLabel(row.remoteHost) + ":" : "") + row.session.cwd
                 }
             }
@@ -809,7 +817,7 @@ RowLayout {
                     anchors.fill: parent
                     active: !!row.session.effort || parent.ultracode
                     mainText: row.session.model || ""
-                    subText: [row.session.effort ? i18n("Effort: %1 (how hard it thinks; /effort changes it)", row.session.effort) : "",
+                    subText: !containsMouse ? "" : [row.session.effort ? i18n("Effort: %1 (how hard it thinks; /effort changes it)", row.session.effort) : "",
                               parent.ultracode ? i18n("Ultracode: Claude runs workflows of agents for every substantial task (/ultracode off turns it off)") : ""]
                              .filter(t => t).join("\n")
                 }
@@ -855,12 +863,12 @@ RowLayout {
                 textFormat: Text.PlainText
                 anchors.fill: parent
                 active: stepLabel.truncated || row.hasPeek
-                mainText: row.session.state === "waiting" ? i18n("What it needs")
+                mainText: !containsMouse ? "" : row.session.state === "waiting" ? i18n("What it needs")
                           : row.session.state === "working" ? i18n("What it's doing")
                           : row.stopped ? (row.stopped.kind === "login" ? i18n("Its login expired") : i18n("A usage limit stopped it"))
                           : row.showsRecap ? i18n("Claude's recap")
                           : row.showsReply ? i18n("What Claude said last") : i18n("Result")
-                subText: (stepLabel.truncated ? row.stepText + (row.hasPeek ? "\n\n" : "") : "")
+                subText: !containsMouse ? "" : (stepLabel.truncated ? row.stepText + (row.hasPeek ? "\n\n" : "") : "")
                          + (!row.hasPeek ? "" : row.showPeek ? i18n("Click to fold it up again.")
                                                              : i18n("Click to read your last prompt, Claude's reply and the chat's tasks."))
 

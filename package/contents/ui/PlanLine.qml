@@ -94,7 +94,8 @@ ColumnLayout {
                 width: planName.contentWidth
                 height: parent.height
                 mainText: planLine.plan.title
-                subText: (planLine.remoteHost ? i18n("Click to read it: a copy, fetched from %1.", root.hostLabel(planLine.remoteHost))
+                // (worked out while the pointer is on it)
+                subText: !containsMouse ? "" : (planLine.remoteHost ? i18n("Click to read it: a copy, fetched from %1.", root.hostLabel(planLine.remoteHost))
                                              : i18n("Click to read it, rendered."))
                          + (!planLine.remoteHost || root.vscodeInstalled ? " " + i18n("To change it, the edit button next to it opens its file.") : "")
                          + (planLine.plan.cwd ? "\n" + i18n("Folder: %1", (planLine.remoteHost ? root.hostLabel(planLine.remoteHost) + ":" : "") + planLine.plan.cwd) : "")
@@ -184,7 +185,7 @@ ColumnLayout {
                 StarMark {
                     starred: !!planLine.plan.starred
                     hidden: planButtons.shown
-                    tooltip: root.starHint("plans", false) + " " + root.starHint("plans", true)
+                    tooltip: planLine.plan.starred ? root.starHint("plans", false) + " " + root.starHint("plans", true) : ""
                     onClicked: root.setStar("plans", planLine.plan.slug, planLine.remoteHost, false)
                 }
                 RowText {

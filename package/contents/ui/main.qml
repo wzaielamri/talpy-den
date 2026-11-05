@@ -609,6 +609,7 @@ PlasmoidItem {
         function onActivated() {
             if (root.inTray || !Plasmoid.configuration.shortcutGoesToChat)
                 return
+            root.applyHeld(true)   // (a copy under windows: what it held back first)
             const chats = root.chatsNeedingYou()
             if (!chats.length)
                 return
@@ -1052,13 +1053,45 @@ PlasmoidItem {
         }
     ]
 
+    // A copy on the desktop that windows cover all over keeps the newest
+    // answers and shows them once it's uncovered (when it doesn't notify, nor
+    // has a Talpy Chat window open): every check was handled by every copy,
+    // the panel's popup and each desktop's dashboard, seen or not. What
+    // changed meanwhile is no news then (its trackers are primed again: no
+    // pet reacts to it late); the copy that notifies sees it all.
+    readonly property bool holdAnswers: onDesktop && shownInPlace && coveredByWindow && !notifier
+                                        && !paneWindows.some(w => w.visible)
+    property var heldAnswer: null
+    property var heldRemote: ({})   // host -> its answer
+    onHoldAnswersChanged: if (!holdAnswers) Qt.callLater(applyHeld)
+    function applyHeld(force) {
+        if (holdAnswers && !force)
+            return
+        if (heldAnswer) {
+            const a = heldAnswer
+            heldAnswer = null
+            primedSources = Object.assign({}, primedSources, { "": false })
+            handleOutput(a.stdout, a.stderr)
+        }
+        const held = heldRemote
+        heldRemote = {}
+        for (const host in held) {
+            primedSources = Object.assign({}, primedSources, { ["ssh:" + host]: false })
+            handleRemote(host, held[host])
+        }
+    }
+
     Connections {
         target: Hub
         function onOutput(command, stdout, stderr) {
-            if (command === root.command)
+            if (command === root.command && root.holdAnswers && root.status !== null)
+                root.heldAnswer = { stdout: stdout, stderr: stderr }
+            else if (command === root.command)
                 root.handleOutput(stdout, stderr)
             const host = root.hostOfCommand(command)
-            if (host)
+            if (host && root.holdAnswers && root.remote[host] && root.remote[host].result)
+                root.heldRemote[host] = { stdout: stdout, stderr: stderr }
+            else if (host)
                 root.handleRemote(host, { stdout: stdout, stderr: stderr })
         }
         function onStarted(command) {
@@ -1572,7 +1605,7 @@ PlasmoidItem {
         }
         let parsed = null
         try {
-            parsed = JSON.parse(stdout)
+            parsed = Hub.parse(stdout)   // (one parse for all copies: read only)
         } catch (e) {
             const lines = (stderr || "").trim().split("\n")
             errorText = i18n("Status script failed: %1", lines[lines.length - 1] || i18n("no output"))
@@ -4745,6 +4778,7 @@ PlasmoidItem {
         return !g ? emptyGroup : host ? withUsage(g, host) : g
     }
     property var projectsData: null
+    property string projectsText: ""   // (the answer it was, but its time)
     property string projectsError: ""
     property bool projectsBusy: false
     readonly property bool projectsShown: popupTab === "projects" && dashboardShown && !coveredByWindow
@@ -4780,7 +4814,12 @@ PlasmoidItem {
             root.projectsBusy = false
             const r = root.helperResult(data)
             if (r.ok) {
-                root.projectsData = r
+                // (an answer that says what the one before said leaves the cards as they are)
+                const text = (data["stdout"] || "").replace(/"generatedAt": *\d+/, "")
+                if (text !== root.projectsText || root.projectsData === null) {
+                    root.projectsText = text
+                    root.projectsData = r
+                }
                 root.projectsError = ""
             } else {
                 root.projectsError = i18n("Couldn't read your projects: %1", r.error || r.message || i18n("no answer"))
@@ -4829,9 +4868,10 @@ PlasmoidItem {
             root.hostProjectsBusy = busy
             const r = root.helperResult(data)
             const before = root.hostProjects[host] || { projects: [], hidden: 0, hiddenPaths: [] }
-            root.hostProjects = Object.assign({}, root.hostProjects, { [host]: r.ok
-                ? { ok: true, error: "", projects: r.projects || [], hidden: r.hidden || 0, hiddenPaths: r.hiddenPaths || [] }
-                : Object.assign({}, before, { ok: false, error: r.error || r.message || i18n("no answer") }) })
+            const next = r.ok ? { ok: true, error: "", projects: r.projects || [], hidden: r.hidden || 0, hiddenPaths: r.hiddenPaths || [] }
+                              : Object.assign({}, before, { ok: false, error: r.error || r.message || i18n("no answer") })
+            if (!root.hostProjects[host] || !root.same(next, root.hostProjects[host]))   // (the same: its cards stay as they are)
+                root.hostProjects = Object.assign({}, root.hostProjects, { [host]: next })
             if (root.hostProjectsAgain[host])
                 root.loadHostProjects(host)
         }

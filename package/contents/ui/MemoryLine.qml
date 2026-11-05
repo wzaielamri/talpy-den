@@ -72,7 +72,8 @@ ColumnLayout {
                 width: memoryName.contentWidth
                 height: parent.height
                 mainText: memoryLine.memory.name
-                subText: (memoryLine.memory.description ? memoryLine.memory.description + "\n\n" : "")
+                // (worked out while the pointer is on it)
+                subText: !containsMouse ? "" : (memoryLine.memory.description ? memoryLine.memory.description + "\n\n" : "")
                          + (memoryLine.memory.type ? i18n("Kind: %1", memoryLine.memory.type) + "\n" : "")
                          + (memoryLine.memory.folder ? (memoryLine.memory.folderGone ? i18n("Folder: %1 (not there any more)", (memoryLine.remoteHost ? root.hostLabel(memoryLine.remoteHost) + ":" : "") + memoryLine.memory.folder)
                                                                                      : i18n("Folder: %1", (memoryLine.remoteHost ? root.hostLabel(memoryLine.remoteHost) + ":" : "") + memoryLine.memory.folder)) + "\n" : "")

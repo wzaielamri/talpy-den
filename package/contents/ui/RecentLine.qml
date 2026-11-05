@@ -34,8 +34,11 @@ ColumnLayout {
     readonly property string rowKey: (recentLine.remoteHost ? recentLine.remoteHost + "|" : "") + chat.key
     readonly property bool canOpen: recentLine.inVscode || recentLine.inTalpyChat
                                     || (recentLine.terminalHere && (!recentLine.remoteHost || !!chat.openCommand))
-    readonly property string reopenHint: inTalpyChat ? root.talpyChatHint(remoteHost, true)
-                                         : inVscode ? root.vscodeHint(group, remoteHost, true) : root.terminalHint(remoteHost, true)
+    // (a tooltip's: worked out when it shows)
+    function reopenHint() {
+        return inTalpyChat ? root.talpyChatHint(remoteHost, true)
+             : inVscode ? root.vscodeHint(group, remoteHost, true) : root.terminalHint(remoteHost, true)
+    }
 
     // a click on its name
     function click() {
@@ -98,10 +101,11 @@ ColumnLayout {
                 width: recentName.contentWidth
                 height: parent.height
                 mainText: recentLine.chat.name
-                subText: (Plasmoid.configuration.clickOpensPane
+                // (worked out while the pointer is on it: one tooltip's words for every line made a long list slow)
+                subText: !containsMouse ? "" : (Plasmoid.configuration.clickOpensPane
                           ? i18n("Click to open it in Talpy Chat: its conversation, a box to reply, and what it changed.")
-                            + (recentLine.canOpen && !recentLine.inTalpyChat ? "\n" + i18n("The reopen button (on hover): %1", recentLine.reopenHint) : "")
-                          : recentLine.canOpen ? recentLine.reopenHint
+                            + (recentLine.canOpen && !recentLine.inTalpyChat ? "\n" + i18n("The reopen button (on hover): %1", recentLine.reopenHint()) : "")
+                          : recentLine.canOpen ? recentLine.reopenHint()
                           : root.terminalHint(recentLine.remoteHost, true) + "\n" + root.vscodeHint(recentLine.group, recentLine.remoteHost, true))
                          + (recentLine.chat.cwd ? "\n" + i18n("Folder: %1", (recentLine.remoteHost ? root.hostLabel(recentLine.remoteHost) + ":" : "") + recentLine.chat.cwd) : "")
                          + (recentLine.chat.shared ? "\n" + i18n("Shared between accounts; last used on %1.", recentLine.chat.profile) : "")
@@ -248,7 +252,7 @@ ColumnLayout {
                         textFormat: Text.PlainText
                         anchors.fill: parent
                         active: !!recentLine.chat.cwd
-                        mainText: i18n("Folder")
+                        mainText: containsMouse ? i18n("Folder") : ""
                         subText: (recentLine.remoteHost ? root.hostLabel(recentLine.remoteHost) + ":" : "") + recentLine.chat.cwd
                     }
                 }
@@ -256,7 +260,7 @@ ColumnLayout {
                 StarMark {
                     starred: !!recentLine.chat.starred
                     hidden: recentButtons.shown
-                    tooltip: root.starHint("chats", false) + " " + root.starHint("chats", true)
+                    tooltip: recentLine.chat.starred ? root.starHint("chats", false) + " " + root.starHint("chats", true) : ""
                     onClicked: root.setStar("chats", recentLine.chat.sessionId, recentLine.remoteHost, false)
                 }
                 RowText {
@@ -291,7 +295,7 @@ ColumnLayout {
                         textFormat: Text.PlainText
                         anchors.fill: parent
                         mainText: i18n("Reopen this chat")
-                        subText: recentLine.reopenHint
+                        subText: recentLine.reopenHint()
                     }
                 }
                 HoverButton {

@@ -80,9 +80,10 @@ ColumnLayout {
                 textFormat: Text.PlainText
                 anchors.fill: parent
                 active: bar.forecast !== null || bar.resetsAt > root.now
-                mainText: i18nc("usage window, percent used", "%1: %2% used", bar.label, Math.round(bar.pct))
-                subText: [bar.resetsAt > root.now ? root.resetAtText(bar.resetsAt) + "." : "",
-                          root.forecastText(bar.forecast, bar.pct, bar.resetsAt)].filter(t => t).join("\n")
+                // (worked out while the pointer is on it: not at every check)
+                mainText: !containsMouse ? "" : i18nc("usage window, percent used", "%1: %2% used", bar.label, Math.round(bar.pct))
+                subText: !containsMouse ? "" : [bar.resetsAt > root.now ? root.resetAtText(bar.resetsAt) + "." : "",
+                                                root.forecastText(bar.forecast, bar.pct, bar.resetsAt)].filter(t => t).join("\n")
             }
         }
 
@@ -106,7 +107,7 @@ ColumnLayout {
                 textFormat: Text.PlainText
                 anchors.fill: parent
                 active: bar.resetsAt > root.now
-                mainText: active ? root.resetAtText(bar.resetsAt) : ""
+                mainText: active && containsMouse ? root.resetAtText(bar.resetsAt) : ""
             }
         }
     }

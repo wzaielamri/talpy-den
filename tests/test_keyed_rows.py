@@ -78,7 +78,7 @@ view.show(); QTest.qWaitForWindowExposed(view)
 def call(name, *args):
     return QMetaObject.invokeMethod(r, name, Q_RETURN_ARG("QVariant"), *[Q_ARG("QVariant", a) for a in args])
 def sync(items):
-    call("sync", items); QTest.qWait(30)
+    call("sync", items); QTest.qWait(80)
 def state(label):
     shown = json.loads(call("shown"))
     print(repr([label, r.property("made"), r.property("gone"), r.property("reads"), shown]))
@@ -100,7 +100,46 @@ r.setProperty("budget", 12)
 sync([]); QTest.qWait(30)
 r.setProperty("made", 0)
 call("sync", [row("n%d" % i) for i in range(40)]); print(repr(["first go", r.property("made")]))
-QTest.qWait(600); print(repr(["all", r.property("made"), len(json.loads(call("shown")))]))
+QTest.qWait(40); print(repr(["a frame or two", r.property("made")]))
+QTest.qWait(800); print(repr(["all", r.property("made"), len(json.loads(call("shown")))]))
+"""
+
+
+BUTTON = """import QtQuick
+import QtQuick.Layouts
+import "%s"
+Item {
+    id: root
+    width: 200; height: 40
+    property int clicks: 0
+    RowLayout {
+        Text { id: name; text: "a chat"; activeFocusOnTab: true }
+        HoverButton { id: a; icon.name: "document-edit"; text: "Edit"; onClicked: root.clicks++ }
+        HoverButton { id: b; icon.name: "document-send"; text: "Send"; usable: false; onClicked: root.clicks += 100 }
+    }
+    function report() {
+        return [a.activeFocus, a.visualFocus, b.activeFocus, root.clicks, a.children[0].active, a.Accessible.name].join(" ")
+    }
+    function focusName() { name.forceActiveFocus() }
+}
+"""
+
+BUTTON_SCRIPT = """import sys
+from PySide6.QtCore import QUrl, QPoint, Qt, QMetaObject, Q_RETURN_ARG
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQuick import QQuickView
+from PySide6.QtTest import QTest
+app = QGuiApplication(sys.argv)
+view = QQuickView(); view.setSource(QUrl.fromLocalFile(sys.argv[1]))
+if view.status() != QQuickView.Ready:
+    sys.exit(str([e.toString() for e in view.errors()]))
+r = view.rootObject()
+view.show(); QTest.qWaitForWindowExposed(view); QTest.qWait(50)
+report = lambda: print(repr(QMetaObject.invokeMethod(r, "report", Q_RETURN_ARG("QVariant"))))
+report()
+QMetaObject.invokeMethod(r, "focusName"); QTest.keyClick(view, Qt.Key_Tab); QTest.qWait(50); report()
+QTest.keyClick(view, Qt.Key_Space); QTest.keyClick(view, Qt.Key_Return); QTest.qWait(50); report()
+QTest.keyClick(view, Qt.Key_Tab); QTest.qWait(50); report()
 """
 
 
@@ -125,12 +164,30 @@ class KeyedRowsTests(unittest.TestCase):
             ["renamed", True],
             ["a twice: two rows", 5, 2, 7, [["a", 0], ["a", 10], ["c", 20]]],
         ], out.stdout + out.stderr[-3000:])
-        # many at once: a few a frame (each row takes 4 ms here, a go 12 ms), all of them soon after
-        first, everything = steps[10], steps[11]
-        self.assertEqual(first[0], "first go")
-        self.assertGreaterEqual(first[1], 1)
-        self.assertLess(first[1], 10)
+        # many at once: from the next frame (the list's own draws first), a few a frame (each row
+        # takes 4 ms here, a frame's go 12 ms), all of them soon after
+        first, some, everything = steps[10], steps[11], steps[12]
+        self.assertEqual(first, ["first go", 0])
+        self.assertGreaterEqual(some[1], 1)
+        self.assertLess(some[1], 20)
         self.assertEqual(everything, ["all", 40, 40])
+
+    @NEEDS_PLASMA_QML
+    def test_a_light_hover_button_takes_tab_and_keys_and_draws_its_frames_only_when_needed(self):
+        # (a PlasmaComponents3.ToolButton each took milliseconds to make in a big popup: a line's
+        # first hover made seven; now plain items, the theme's frames made only while one shows)
+        with tempfile.TemporaryDirectory() as tmp:
+            qml = Path(tmp) / "button.qml"
+            qml.write_text(BUTTON % UI.as_uri())
+            out = subprocess.run(["python3", "-c", BUTTON_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
+                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+        steps = [eval(line) for line in out.stdout.split("\n") if line]
+        self.assertEqual(steps, [
+            "false false false 0 false Edit",   # nothing made for its frames
+            "true true false 0 true Edit",      # Tab from the name: focused, its focus frame made
+            "true true false 2 true Edit",      # Space and Enter click it
+            "false false false 2 false Edit",   # Tab: past the greyed out one (no focus), frames gone
+        ], out.stderr[-2000:])
 
     def test_an_accounts_chats_are_rows_kept_by_chat(self):
         section = (UI / "GroupSection.qml").read_text()

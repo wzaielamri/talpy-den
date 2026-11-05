@@ -37,6 +37,19 @@ QtObject {
     readonly property int liveStaleMs: 120000
 
     signal output(string command, string stdout, string stderr)
+
+    // One parse of an answer for all the copies that take it: each gets the
+    // same object, which none of them changes (three copies parsed the same
+    // quarter of a megabyte at every check)
+    readonly property var parsedMemo: ({ text: "", value: null })   // (changed in place)
+    function parse(text) {
+        if (parsedMemo.text !== text || parsedMemo.value === null) {
+            const value = JSON.parse(text)   // (throws as JSON.parse does)
+            parsedMemo.text = text
+            parsedMemo.value = value
+        }
+        return parsedMemo.value
+    }
     signal started(string command)   // (an SSH host shows "connecting…" meanwhile)
     // What the chats do right now, between checks (live.py's answer: the live hook's files that changed)
     signal live(var views)

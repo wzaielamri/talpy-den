@@ -1,4 +1,5 @@
 import QtQuick
+import "framebudget.mjs" as Budget
 
 // The model of a list whose rows are kept by key (an account's chats, the
 // accounts, the SSH hosts): sync() with the list as it is now moves, adds
@@ -19,15 +20,19 @@ import QtQuick
 //     }
 //
 // Many new rows at once (the list's first fill, the popup made anew) come a
-// few at a time, from the top, each frame's worth within budgetMs, so the
-// popup draws meanwhile; a row or two (a chat that starts) come at once.
+// few at a time, from the top, each frame's worth within budgetMs (shared by
+// the lists that fill in the same frame: framebudget.mjs), so the popup
+// draws meanwhile; a row or two (a chat that starts) come at once. The
+// first fill starts in the frame after the list's (later: the popup's first
+// frame shows without its rows' cost).
 QtObject {
     id: rows
 
     readonly property ListModel model: ListModel {}
 
     // how long one go may spend making rows before the rest wait for the next frame (0: all at once)
-    property int budgetMs: 20
+    property int budgetMs: 16
+    property bool fillLater: true
     // (rows still to make: sync goes on by itself, a go each frame, until they're all there)
     readonly property bool filling: more.running
     // the list as it is, by key (the model's rows, in order, and what each shows)
@@ -47,7 +52,12 @@ QtObject {
     // row of it had before, when it should keep that row (a chat moved to
     // another id), else ""
     function sync(list, keyOf, revOf, renamed) {
-        const t0 = Date.now()
+        if (fillLater && keys.length === 0 && !more.running && (list || []).length > 0) {
+            wanted = { list: list, keyOf: keyOf, revOf: revOf, renamed: renamed }
+            more.running = true   // (the first rows: from the next frame)
+            return
+        }
+        const until = Budget.begin(budgetMs)
         const want = [], seen = {}, nextItems = {}, nextRevs = {}
         for (const it of list || []) {
             let key = String(keyOf(it))
@@ -97,7 +107,7 @@ QtObject {
                     keys.splice(at, 0, key)
                 }
                 at += 1
-            } else if (budgetMs <= 0 || made === 0 || Date.now() - t0 < budgetMs) {
+            } else if (budgetMs <= 0 || made === 0 || Date.now() < until) {
                 items[key] = nextItems[key]   // (before the row is made: it reads it)
                 model.insert(at, { key: key, rev: nextRevs[key] })
                 keys.splice(at, 0, key)
@@ -126,6 +136,7 @@ QtObject {
                 delete revs[key]
         wanted = waiting ? { list: list, keyOf: keyOf, revOf: revOf, renamed: renamed } : null
         more.running = waiting
+        Budget.end()
     }
 
     function clearRows() {

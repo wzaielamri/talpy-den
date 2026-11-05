@@ -209,13 +209,25 @@ ColumnLayout {
 
     // New chat (the + above): what Claude should do (optional) and the
     // account's folders (NewChatBox.qml)
-    NewChatBox {
-        visible: root.newChatGroup === section.groupKey
+    // (made the first time it opens, then kept: a box under every account made the popup slow to open)
+    Loader {
+        id: newChatLoader
+        readonly property bool shown: root.newChatGroup === section.groupKey
+        property bool made: false
+        active: shown || made
+        visible: shown
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.smallSpacing
         Layout.rightMargin: Kirigami.Units.smallSpacing
-        group: section.group
-        remoteHost: section.remoteHost
+        onLoaded: {
+            made = true
+            item.visible = Qt.binding(() => newChatLoader.shown)
+        }
+        sourceComponent: NewChatBox {
+            visible: false
+            group: section.group
+            remoteHost: section.remoteHost
+        }
     }
 
     // This account's chats as pets (PetStrip.qml), the ones that need you or
@@ -374,8 +386,8 @@ ColumnLayout {
                 anchors.fill: parent
                 active: section.hasTokens
                 mainText: i18n("Tokens (this machine's transcripts only)")
-                subText: {
-                    if (!section.hasTokens)
+                subText: {   // (worked out while the pointer is on it: not at every check)
+                    if (!section.hasTokens || !containsMouse)
                         return ""
                     const t = section.tokens
                     const fmt = b => i18n("input %1 · output %2 · cache read %3 · cache write %4 · %5 replies",
@@ -403,12 +415,18 @@ ColumnLayout {
     }
 
     // The last days, unfolded from the token line
-    StatsPanel {
+    // (made the first time they unfold, then kept)
+    Loader {
+        property bool made: false
+        active: section.statsOpen || made
         visible: section.statsOpen
+        onLoaded: made = true
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.smallSpacing
         Layout.rightMargin: Kirigami.Units.smallSpacing
-        stats: section.hasStats ? section.group.stats : null
+        sourceComponent: StatsPanel {
+            stats: section.hasStats ? section.group.stats : null
+        }
     }
 
     // Sessions
@@ -738,14 +756,19 @@ ColumnLayout {
 
     // Where they reopen: the same Terminal | VS Code choice as for new chats
     // (under ★ Starred chats while Recent chats is folded)
-    OpenInSwitch {
+    Loader {   // (made the first time it shows, then kept)
+        property bool made: false
+        active: section.recentOpen || made
         visible: section.recentOpen
+        onLoaded: made = true
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.gridUnit
         Layout.rightMargin: Kirigami.Units.smallSpacing
-        group: section.group
-        remoteHost: section.remoteHost
-        resuming: true
+        sourceComponent: OpenInSwitch {
+            group: section.lineGroup
+            remoteHost: section.remoteHost
+            resuming: true
+        }
     }
 
     Repeater {
@@ -760,40 +783,53 @@ ColumnLayout {
             folderWidth: section.folderWidth
         }
     }
-    MoreButton {
-        open: section.recentOpen
-        listKey: section.groupKey + "|recent"
-        shown: section.recentShown
-        count: section.recentCount
+    Loader {   // (made only while it shows)
+        active: section.recentOpen && section.recentShown < section.recentCount
+        visible: active
+        Layout.leftMargin: Kirigami.Units.gridUnit
+        sourceComponent: MoreButton {
+            open: section.recentOpen
+            listKey: section.groupKey + "|recent"
+            shown: section.recentShown
+            count: section.recentCount
+        }
     }
 
     // ★ Starred chats: the ones you starred (☆ on a chat), however old, a page at a time
-    PlasmaComponents3.ToolButton {
-        visible: section.starred.length > 0
+    Loader {   // (made only when there are some)
+        active: section.starred.length > 0
+        visible: active
         Layout.leftMargin: Kirigami.Units.smallSpacing
-        flat: true
-        icon.name: section.starredOpen ? Icons.plasma.unfolded : Icons.plasma.folded
-        text: section.starredShown < section.starred.length
-              ? i18nc("starred chats: how many show, of how many", "★ Starred chats (%1 of %2)", section.starredShown, section.starred.length)
-              : i18nc("starred chats, how many", "★ Starred chats (%1)", section.starred.length)
-        font: Kirigami.Theme.smallFont
-        onClicked: root.toggleStarred(section.groupKey + "|chats", section.starredOpen)
+        sourceComponent: PlasmaComponents3.ToolButton {
+            flat: true
+            icon.name: section.starredOpen ? Icons.plasma.unfolded : Icons.plasma.folded
+            text: section.starredShown < section.starred.length
+                  ? i18nc("starred chats: how many show, of how many", "★ Starred chats (%1 of %2)", section.starredShown, section.starred.length)
+                  : i18nc("starred chats, how many", "★ Starred chats (%1)", section.starred.length)
+            font: Kirigami.Theme.smallFont
+            onClicked: root.toggleStarred(section.groupKey + "|chats", section.starredOpen)
 
-        PlasmaCore.ToolTipArea {
-            textFormat: Text.PlainText
-            anchors.fill: parent
-            mainText: i18n("Starred chats")
-            subText: i18n("The chats of this account you starred (☆ next to a chat), newest first, however old they are; not the ones listed above. Click a chat's ★ to unstar it.")
+            PlasmaCore.ToolTipArea {
+                textFormat: Text.PlainText
+                anchors.fill: parent
+                mainText: i18n("Starred chats")
+                subText: i18n("The chats of this account you starred (☆ next to a chat), newest first, however old they are; not the ones listed above. Click a chat's ★ to unstar it.")
+            }
         }
     }
-    OpenInSwitch {
+    Loader {   // (made the first time it shows, then kept)
+        property bool made: false
+        active: (section.starredOpen && !section.recentOpen) || made
         visible: section.starredOpen && !section.recentOpen
+        onLoaded: made = true
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.gridUnit
         Layout.rightMargin: Kirigami.Units.smallSpacing
-        group: section.group
-        remoteHost: section.remoteHost
-        resuming: true
+        sourceComponent: OpenInSwitch {
+            group: section.lineGroup
+            remoteHost: section.remoteHost
+            resuming: true
+        }
     }
     Repeater {
         model: section.starredOpen ? starredRows : 0
@@ -807,31 +843,39 @@ ColumnLayout {
             folderWidth: section.folderWidth
         }
     }
-    MoreButton {
-        open: section.starredOpen
-        listKey: section.groupKey + "|chats"
-        shown: section.starredShown
-        count: section.starred.length
+    Loader {   // (made only while it shows)
+        active: section.starredOpen && section.starredShown < section.starred.length
+        visible: active
+        Layout.leftMargin: Kirigami.Units.gridUnit
+        sourceComponent: MoreButton {
+            open: section.starredOpen
+            listKey: section.groupKey + "|chats"
+            shown: section.starredShown
+            count: section.starred.length
+        }
     }
 
     // ★ Starred plans: the plans you starred, however old, a page at a time
     // (every plan is in its project, in the Projects tab)
-    PlasmaComponents3.ToolButton {
-        visible: section.starredPlans.length > 0
+    Loader {   // (made only when there are some)
+        active: section.starredPlans.length > 0
+        visible: active
         Layout.leftMargin: Kirigami.Units.smallSpacing
-        flat: true
-        icon.name: section.starredPlansOpen ? Icons.plasma.unfolded : Icons.plasma.folded
-        text: section.starredPlansShown < section.starredPlans.length
-              ? i18nc("starred plans: how many show, of how many", "★ Starred plans (%1 of %2)", section.starredPlansShown, section.starredPlans.length)
-              : i18nc("starred plans, how many", "★ Starred plans (%1)", section.starredPlans.length)
-        font: Kirigami.Theme.smallFont
-        onClicked: root.toggleStarred(section.groupKey + "|plans", section.starredPlansOpen)
+        sourceComponent: PlasmaComponents3.ToolButton {
+            flat: true
+            icon.name: section.starredPlansOpen ? Icons.plasma.unfolded : Icons.plasma.folded
+            text: section.starredPlansShown < section.starredPlans.length
+                  ? i18nc("starred plans: how many show, of how many", "★ Starred plans (%1 of %2)", section.starredPlansShown, section.starredPlans.length)
+                  : i18nc("starred plans, how many", "★ Starred plans (%1)", section.starredPlans.length)
+            font: Kirigami.Theme.smallFont
+            onClicked: root.toggleStarred(section.groupKey + "|plans", section.starredPlansOpen)
 
-        PlasmaCore.ToolTipArea {
-            textFormat: Text.PlainText
-            anchors.fill: parent
-            mainText: i18n("Starred plans")
-            subText: i18n("The plans of this account you starred (☆ next to a plan), newest first, however old they are. Click one to read it; carry it out in a new chat, go back to the chat that made it, or share it with your other accounts. Click a plan's ★ to unstar it. Every plan is in its project, in the Projects tab.")
+            PlasmaCore.ToolTipArea {
+                textFormat: Text.PlainText
+                anchors.fill: parent
+                mainText: i18n("Starred plans")
+                subText: i18n("The plans of this account you starred (☆ next to a plan), newest first, however old they are. Click one to read it; carry it out in a new chat, go back to the chat that made it, or share it with your other accounts. Click a plan's ★ to unstar it. Every plan is in its project, in the Projects tab.")
+            }
         }
     }
     Repeater {
@@ -846,15 +890,20 @@ ColumnLayout {
             folderWidth: section.folderWidth
         }
     }
-    MoreButton {
-        open: section.starredPlansOpen
-        listKey: section.groupKey + "|plans"
-        shown: section.starredPlansShown
-        count: section.starredPlans.length
+    Loader {   // (made only while it shows)
+        active: section.starredPlansOpen && section.starredPlansShown < section.starredPlans.length
+        visible: active
+        Layout.leftMargin: Kirigami.Units.gridUnit
+        sourceComponent: MoreButton {
+            open: section.starredPlansOpen
+            listKey: section.groupKey + "|plans"
+            shown: section.starredPlansShown
+            count: section.starredPlans.length
+        }
     }
 
     // The account's CLAUDE.md: your instructions for every chat on it (read it, or edit it)
-    readonly property var instructions: (section.group.instructions || []).filter(m => !root.isHiding("memories", section.remoteHost, m.key))
+    readonly property var instructions: keepSame((section.group.instructions || []).filter(m => !root.isHiding("memories", section.remoteHost, m.key)), "memories")
     Repeater {
         model: section.instructions.length
         delegate: MemoryLine {

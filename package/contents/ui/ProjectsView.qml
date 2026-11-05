@@ -30,16 +30,26 @@ PlasmaComponents3.ScrollView {
     readonly property var hosts: root.shownHosts.filter(h => !!root.hostProjects[h] || !!root.hostProjectsBusy[h])
     // the cards, one list: this computer's projects, then each host's under its name ({host, project,
     // first: its host's first card, whose name shows above it}; project null: the host has none to show)
+    // (a project you hide leaves at once: root.hidingNow)
     readonly property var entries: {
-        const out = projects.map(p => ({ host: "", project: p, first: false }))
+        const out = projects.filter(p => !root.isHiding("projects", "", p.path)).map(p => ({ host: "", project: p, first: false }))
         for (const host of hosts) {
-            const rows = (root.hostProjects[host] || {}).projects || []
+            const rows = ((root.hostProjects[host] || {}).projects || []).filter(p => !root.isHiding("projects", host, p.path))
             if (!rows.length)
                 out.push({ host: host, project: null, first: true })
             rows.forEach((p, i) => out.push({ host: host, project: p, first: i === 0 }))
         }
         return out
     }
+    // The cards kept by project (KeyedRows.qml): a new read that says the same
+    // leaves them as they are, a project that comes or goes makes or drops its
+    // card only, and many at once (the tab's first look) come a few a frame
+    readonly property KeyedRows cardRows: KeyedRows {}
+    function entryKey(e) {
+        return e.project ? root.projectKey(e.project.path, e.host) : "empty|" + e.host
+    }
+    onEntriesChanged: cardRows.sync(entries, entryKey, null)
+    Component.onCompleted: cardRows.sync(entries, entryKey, null)
     readonly property real folderWidth: Kirigami.Units.gridUnit * 8
     // a project's buttons, as a row's (HoverButton.qml): 22 px high, 16 px icons, packed close
     readonly property real buttonSize: Math.round(Kirigami.Units.iconSizes.small * 1.375)
@@ -70,6 +80,8 @@ PlasmaComponents3.ScrollView {
     // key (root.projectKey): each chat in one project only, the closest one of its machine
     // whose folder holds the chat's (one in ~/repos/app is app's, not also ~/repos's and
     // ~'s when chats once ran there too); a project you hid counts, so its chats show in no other
+    // (a project whose open chats say what they said keeps its list, so its card's bindings don't run again)
+    readonly property var openMemo: ({})   // (changed in place: no binding hangs on it)
     readonly property var openByProject: {
         const out = {}
         for (const host of [""].concat(hosts)) {
@@ -89,6 +101,15 @@ PlasmaComponents3.ScrollView {
                     }
                 }
         }
+        const seen = c => c.key + "/" + (c.session.rev || JSON.stringify(c.session)) + "/" + c.account
+        for (const key in out) {
+            const was = openMemo[key]
+            if (was && was.length === out[key].length && was.every((c, i) => seen(c) === seen(out[key][i])))
+                out[key] = was
+        }
+        for (const key in openMemo)
+            delete openMemo[key]
+        Object.assign(openMemo, out)
         return out
     }
     function openChats(project, host) {
@@ -277,18 +298,20 @@ PlasmaComponents3.ScrollView {
 
         Repeater {
             id: cards
-            model: view.entries.length
+            model: view.cardRows.model
             delegate: ColumnLayout {
                 id: card
                 required property int index
-                readonly property var entry: view.entries[index] || ({ host: "", project: null, first: false })
+                // (its project's key: root.projectKey; "empty|<host>" for a host with none to show)
+                required property string key
+                required property string rev
+                readonly property var entry: { rev; return view.cardRows.item(key) || ({ host: "", project: null, first: false }) }
                 readonly property string host: entry.host   // ("": this computer's)
                 // (a host with no projects to show: only its name, and why)
                 readonly property bool empty: entry.project === null
                 readonly property var project: entry.project
                                                || ({ name: "", path: "", short: "", gone: false, lastAt: 0, accounts: [], chats: [],
                                                      chatCount: 0, plans: [], memories: [], recap: null })
-                readonly property string key: root.projectKey(project.path, host)
                 // (a plan whose chat is gone: its folder isn't known)
                 readonly property bool unfiled: project.path === ""
                 readonly property bool unfolded: !empty && !!root.openProjects[key]
@@ -491,7 +514,7 @@ PlasmaComponents3.ScrollView {
                                         textFormat: Text.PlainText
                                         anchors.fill: parent
                                         mainText: i18np("%1 open chat", "%1 open chats", card.here.length)
-                                        subText: card.here.map(c => c.session.name + ": " + root.stateText(c.session)).join("\n")
+                                        subText: !containsMouse ? "" : card.here.map(c => c.session.name + ": " + root.stateText(c.session)).join("\n")
                                     }
                                 }
                             }
@@ -512,7 +535,7 @@ PlasmaComponents3.ScrollView {
                                     textFormat: Text.PlainText
                                     text: card.unfiled ? i18n("Their folder isn't known any more")
                                           : (card.project.gone ? i18n("%1 (not there any more)", card.project.short) : card.project.short)
-                                            + " · " + i18n("last at work %1 ago", root.duration(Math.max(60000, root.now - card.project.lastAt)))
+                                            + " · " + i18n("last at work %1 ago", root.duration(Math.max(60000, root.minuteNow - card.project.lastAt)))
                                     font: Kirigami.Theme.smallFont
                                     opacity: 0.65
                                     elide: Text.ElideMiddle
@@ -585,9 +608,10 @@ PlasmaComponents3.ScrollView {
                         readonly property var chats: (project.chats || []).filter(c => !(view.listed[card.host] || {})[c.sessionId])
                         readonly property string pageKey: "project|" + card.key
                         readonly property int chatsShown: Math.min(chats.length, root.pageSize * root.pagesShown(pageKey))
-                        readonly property var plans: project.plans || []
+                        // (one you hide leaves at once: root.hidingNow)
+                        readonly property var plans: (project.plans || []).filter(p => !root.isHiding("plans", card.host, p.slug))
                         readonly property int plansShown: Math.min(plans.length, root.pageSize * root.pagesShown(pageKey + "|plans"))
-                        readonly property var memories: project.memories || []
+                        readonly property var memories: (project.memories || []).filter(m => !root.isHiding("memories", card.host, m.key))
                         readonly property int memoriesShown: Math.min(memories.length, root.pageSize * root.pagesShown(pageKey + "|memories"))
                         // its titles on the name's line, and each title's lines (with their Show N more) a little
                         // further in, under it: the groups are seen at a glance

@@ -256,9 +256,12 @@ PlasmaExtras.Representation {
                 Layout.fillHeight: true
                 source: "WeekView.qml"
             }
+            // (kept once made while the popup lives: back to the Chats tab, taking it away cost seconds)
             Loader {
-                active: root.popupTab === "projects"
-                visible: active
+                property bool made: false
+                active: root.popupTab === "projects" || made
+                visible: root.popupTab === "projects"
+                onLoaded: made = true
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 source: "ProjectsView.qml"
@@ -328,9 +331,15 @@ PlasmaExtras.Representation {
                         ]
                     }
 
-                    SearchResults {
-                        visible: root.searchOpen && root.searchQuery.trim().length >= 2
+                    // (made the first time you search, then kept)
+                    Loader {
+                        readonly property bool shown: root.searchOpen && root.searchQuery.trim().length >= 2
+                        property bool made: false
+                        active: shown || made
+                        visible: shown
+                        onLoaded: made = true
                         Layout.fillWidth: true
+                        sourceComponent: SearchResults {}
                     }
 
                     PlasmaComponents3.Label {
@@ -344,9 +353,14 @@ PlasmaExtras.Representation {
                     }
 
                     // Only what needs you and what works (the header's filter button)
-                    FocusView {
+                    // (made the first time it's on, then kept)
+                    Loader {
+                        property bool made: false
+                        active: root.focusView || made
                         visible: root.focusView && !(root.searchOpen && root.searchQuery.trim().length >= 2)
+                        onLoaded: made = true
                         Layout.fillWidth: true
+                        sourceComponent: FocusView {}
                     }
 
                     // Indexed by position so rows survive each poll (a new array every
