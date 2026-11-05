@@ -4,6 +4,16 @@
 
 ### New
 
+- **Commands in Talpy Chat:** a command you ran shows in its tab as yours,
+  wherever you ran it (`/context`, `/model fable`, a skill, `$ ls` for
+  Claude's `!` mode), with what it printed under it in Claude's colours. The
+  `/` list runs each where it can (as checked on Claude Code 2.1.318): most
+  from here; `/permissions` opens the view's Permissions tab; one that needs
+  Claude's own panel or dialog (`/config`, `/btw`, `/clear`, and `/model`
+  and `/effort`, which save your default for every new chat) opens in the
+  chat's terminal with the command typed in for you to press Enter there
+  (this window's terminal, tmux, its Claude Code panel's input), else on the
+  clipboard; one that can't run on that chat is greyed, saying why.
 - **Suggested replies in Talpy Chat:** once Claude's turn is over, small
   chips above the box answer the question it ended with (its options, the
   one it recommends in bold; an either/or's halves; Yes or No in its
