@@ -4,6 +4,15 @@
 
 ### New
 
+- **Times, Copy and new messages in Talpy Chat:** a line comes before the
+  first item of each new day (*Today*, *Yesterday*, *Mon 3 Nov*), and none
+  before the first. With the pointer on a message, yours or Claude's reply,
+  its time and **Copy** show over its top right corner: a reply goes on the
+  clipboard as Markdown, as Claude wrote it, yours as you wrote it;
+  *Copied* says it for a moment in the same place. Scrolled up while new
+  messages come in, *2 new ↓* shows over the bottom of the conversation; a
+  click goes to the end. Nothing moves what you're reading, and a long chat
+  costs nothing more per message.
 - **Context left and the turn so far in Talpy Chat:** its header has a tag,
   *Context 69% left*: what's left before Claude compacts the chat on its own,
   counted as Claude Code counts it (what Claude's last message read against
