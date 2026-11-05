@@ -24,6 +24,7 @@ sys.path.insert(0, str(CODE))
 import jump  # noqa: E402
 import pane  # noqa: E402
 import permission_hook  # noqa: E402
+import replies  # noqa: E402
 
 cs = pane.cs
 
@@ -375,7 +376,7 @@ class ConversationTests(PaneFixture):
         self.assertEqual(answer, {"ok": True, "items": []})
         # (with its word tables for Claude's questions: --suggest reads them there)
         asked.assert_called_once_with("gpu", ["--conversation", SID, "--profile", ".claude-work", "--limit", "40"],
-                                      name="pane.py", also=("reply_words.py",))
+                                      name="pane.py", also=("reply_words.py", "replies.py"))
 
 
 # Claude Code's own fixed sentences around a No (always in English; the note after them is yours)
@@ -873,7 +874,7 @@ class ToolUseTests(PaneFixture):
             answer = self.cli("--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1", "--host", "gpu")
         self.assertTrue(answer["changed"])
         self.assertEqual(asked.call_args[0][1], ["--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1"])
-        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py",)})
+        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py")})
 
 
 class HookTests(unittest.TestCase):
@@ -1950,14 +1951,14 @@ class AsksTests(unittest.TestCase):
     """B2: the question Claude ends its reply with, as chips, by its shape (made-up replies)."""
 
     def test_yes_no(self):
-        self.assertEqual(chips(pane.asks_of("I fixed the parser.\n\nShould I commit it?")),
+        self.assertEqual(chips(replies.asks_of("I fixed the parser.\n\nShould I commit it?")),
                          ("yesno", [("Yes", "Yes", False), ("No", "No", False)]))
-        self.assertEqual(chips(pane.asks_of("Done.\n\nMerge to main and install?")),   # (a few words, no question word)
+        self.assertEqual(chips(replies.asks_of("Done.\n\nMerge to main and install?")),   # (a few words, no question word)
                          ("yesno", [("Yes", "Yes", False), ("No", "No", False)]))
         # in the question's language
-        self.assertEqual(chips(pane.asks_of("Der Test läuft jetzt durch.\n\nSoll ich das mergen?"))[1][0][0], "Ja")
-        self.assertEqual(chips(pane.asks_of("C'est corrigé.\n\nVeux-tu que je le pousse ?"))[1][:1], [("Oui", "Oui", False)])
-        self.assertEqual(chips(pane.asks_of("Listo.\n\n¿Quieres que lo suba ahora?"))[1][0][0], "Sí")
+        self.assertEqual(chips(replies.asks_of("Der Test läuft jetzt durch.\n\nSoll ich das mergen?"))[1][0][0], "Ja")
+        self.assertEqual(chips(replies.asks_of("C'est corrigé.\n\nVeux-tu que je le pousse ?"))[1][:1], [("Oui", "Oui", False)])
+        self.assertEqual(chips(replies.asks_of("Listo.\n\n¿Quieres que lo suba ahora?"))[1][0][0], "Sí")
 
     def test_no_chips(self):
         for reply in ("All tests pass.",                                       # (no question)
@@ -1966,45 +1967,45 @@ class AsksTests(unittest.TestCase):
                       # (a long either/or)
                       "Should I rewrite the whole parser from scratch with the new grammar and its tests, or keep patching the old one?",
                       "", "   "):
-            self.assertIsNone(pane.asks_of(reply), reply)
+            self.assertIsNone(replies.asks_of(reply), reply)
 
     def test_options(self):
         reply = ("Two ways to go:\n\n1. Run the screening first\n2. Start the rename on a branch (Recommended)\n"
                  "3. Leave it as it is\n\nWhich one?")
-        self.assertEqual(chips(pane.asks_of(reply)), ("options", [
+        self.assertEqual(chips(replies.asks_of(reply)), ("options", [
             ("1 · Run the screening first", "1. Run the screening first", False),
             ("2 · Start the rename on a branch", "2. Start the rename on a branch", True),
             ("3 · Leave it as it is", "3. Leave it as it is", False)]))
         # the one Claude names, a letter list, bold numbers, an option's details after a dash
         said = "a) **Keep** — the old name stays\nb) **Rename** — everywhere\n\nI'd go with option b. Which do you prefer?"
-        self.assertEqual(chips(pane.asks_of(said)), ("options", [("a · Keep", "a. Keep", False), ("b · Rename", "b. Rename", True)]))
+        self.assertEqual(chips(replies.asks_of(said)), ("options", [("a · Keep", "a. Keep", False), ("b · Rename", "b. Rename", True)]))
         bold = "**1.** Squash them\n**2.** Keep each commit\n\nWhich way?"
-        self.assertEqual([c[1] for c in chips(pane.asks_of(bold))[1]], ["1. Squash them", "2. Keep each commit"])
+        self.assertEqual([c[1] for c in chips(replies.asks_of(bold))[1]], ["1. Squash them", "2. Keep each commit"])
         # bullets: the words alone
-        self.assertEqual([c[:2] for c in chips(pane.asks_of("- Opus\n- Sonnet\n\nWhich model?"))[1]],
+        self.assertEqual([c[:2] for c in chips(replies.asks_of("- Opus\n- Sonnet\n\nWhich model?"))[1]],
                          [("Opus", "Opus"), ("Sonnet", "Sonnet")])
         # another language's list
-        self.assertEqual(chips(pane.asks_of("1. Zuerst testen\n2. Gleich mergen\n\nWelche Variante?"))[0], "options")
+        self.assertEqual(chips(replies.asks_of("1. Zuerst testen\n2. Gleich mergen\n\nWelche Variante?"))[0], "options")
 
     def test_a_list_of_finished_work_isnt_options(self):
         done = ("I changed three things:\n\n"
                 "1. The parser now reads every kind of header that the old files had, including the ones that start with tabs or spaces\n"
                 "2. The writer keeps the order of the keys exactly as they were in the file it read, so the diffs stay small and easy to read\n"
                 "3. The tests cover both of them, with files made up for each case that used to fail before this change went in\n\n")
-        self.assertEqual(chips(pane.asks_of(done + "Should I merge it?"))[0], "yesno")
-        self.assertIsNone(pane.asks_of(done + "Which one should go in first?"))   # (long items: not options)
+        self.assertEqual(chips(replies.asks_of(done + "Should I merge it?"))[0], "yesno")
+        self.assertIsNone(replies.asks_of(done + "Which one should go in first?"))   # (long items: not options)
         # a yes/no question wins over a short list before it too; seven items aren't options
-        self.assertEqual(chips(pane.asks_of("1. Lint\n2. Tests\n\nShould I run both?"))[0], "yesno")
+        self.assertEqual(chips(replies.asks_of("1. Lint\n2. Tests\n\nShould I run both?"))[0], "yesno")
         seven = "\n".join("%d. Step %d" % (i, i) for i in range(1, 8)) + "\n\nWhich one first?"
-        self.assertIsNone(pane.asks_of(seven))
+        self.assertIsNone(replies.asks_of(seven))
 
     def test_either_or(self):
-        self.assertEqual(chips(pane.asks_of("The tests are slow.\n\nShould I run the screening first, or start the rename on a branch?")),
+        self.assertEqual(chips(replies.asks_of("The tests are slow.\n\nShould I run the screening first, or start the rename on a branch?")),
                          ("either", [("Run the screening first", "Run the screening first", False),
                                      ("Start the rename on a branch", "Start the rename on a branch", False)]))
-        self.assertEqual(chips(pane.asks_of("Soll ich zuerst testen oder gleich mergen?"))[1][1][0], "Gleich mergen")
+        self.assertEqual(chips(replies.asks_of("Soll ich zuerst testen oder gleich mergen?"))[1][1][0], "Gleich mergen")
         # "or not" isn't a choice
-        self.assertEqual(chips(pane.asks_of("Should I keep it or not?"))[0], "yesno")
+        self.assertEqual(chips(replies.asks_of("Should I keep it or not?"))[0], "yesno")
 
 
 class SuggestedRepliesTests(PaneFixture):
@@ -2148,7 +2149,7 @@ class SuggestedRepliesTests(PaneFixture):
         # (one that's shorter now was written again: read whole)
         write(c1, data)
         self.assertNotIn("ok", self.replies("--profile", ".claude-work")["ranked"])
-        with mock.patch.object(pane, "reply_records", side_effect=AssertionError("read again")):
+        with mock.patch.object(replies, "reply_records", side_effect=AssertionError("read again")):
             self.replies("--profile", ".claude-work")   # (nothing changed: nothing read)
 
 

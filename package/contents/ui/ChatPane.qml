@@ -927,6 +927,8 @@ Window {
     // completionOf). Suggest replies off: nothing is read or worked out for it.
     readonly property bool suggestOn: Plasmoid.configuration.suggestReplies !== false
     onSuggestOnChanged: {
+        if (!ready)
+            return   // (its binding's first value, as the window is made: reset() reads it then)
         usual = null
         usualAt = 0
         stamp = ""   // (read again, with or without how its turn ended)
