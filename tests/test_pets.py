@@ -2071,10 +2071,18 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('"--type-in " + root.shellQuote(chatId)', pane)
         self.assertIn('if (run === "terminal" && route === "vscode")', pane)
         self.assertIn('enabled: replyBox.text.trim() !== "" && commandRun !== "off"', pane)
+        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
         for words in ("A chat that isn't running reads ! as a message, not as a shell command: open it in its terminal to run it there.",
                       "A new chat starts in the background, where Claude reads ! as a message: start it first, then run the command in its terminal.",
-                      "Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat."):
+                      "Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.",
+                      ": Enter types it into its tmux pane, for you to press Enter there.",
+                      ": Enter opens the chat's terminal, with the command on the clipboard to paste there.",
+                      "A shell command, as Claude's ! mode: it runs in the chat's folder, then Claude answers what it printed.",
+                      "Its terminal takes no text from outside: Enter copies the command and opens its terminal, to paste it there.",
+                      ": start the chat first, then it opens in its terminal.", ": it opens in the chat's terminal, typed in for you there.",
+                      "Opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat."):
             self.assertIn(words, pane)
+            self.assertIn(words, shared)
         main = (ROOT / "ui/main.qml").read_text()
         self.assertIn('function openPermissions() {\n        popupTab = "perms"\n        expanded = true', main)
 

@@ -2367,6 +2367,9 @@ class TypeInTests(SendFixture):
             self.assertEqual(self.cli("--type-in", SID, "--text", "/btw why?", "--remote"),
                              {"ok": True, "how": "copy", "copied": False, "text": "/btw why?", "message": "Paste it into its terminal"})
         self.assertEqual(copied.call_count, 0)
+        with mock.patch.object(pane, "copy_to_clipboard") as copied:   # (VS Code: its own clipboard)
+            self.assertEqual(self.cli("--type-in", SID, "--text", "/btw why?", "--no-copy")["text"], "/btw why?")
+        self.assertEqual(copied.call_count, 0)
         self.assertFalse(self.cli("--type-in", SID, "--text", " ")["ok"])
         self.assertFalse(self.cli("--type-in", "--x", "--text", "/x")["ok"])
         # (never sent: nothing ran)

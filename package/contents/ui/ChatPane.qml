@@ -1947,6 +1947,19 @@ Window {
 
     readonly property string routeHint: {
         const where = host ? " " + i18n("(on %1)", root.hostLabel(host)) : ""
+        // (a command: where it runs, commandRun; one that can't run here says why first)
+        const ran = replyAnswers ? null : commandNow
+        if (ran && ran.run === "off")
+            return ran.why
+        if (ran && ran.run === "page")
+            return i18n("Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.")
+        if (ran && ran.run === "terminal" && ran.name === "!")
+            return i18n("Its terminal takes no text from outside: Enter copies the command and opens its terminal, to paste it there.") + where
+        if (ran && ran.run === "terminal")
+            return (route === "tmux" ? i18n("%1 %2: Enter types it into its tmux pane, for you to press Enter there.", ran.name, ran.why)
+                                     : i18n("%1 %2: Enter opens the chat's terminal, with the command on the clipboard to paste there.", ran.name, ran.why)) + where
+        if (ran && ran.name === "!")
+            return i18n("A shell command, as Claude's ! mode: it runs in the chat's folder, then Claude answers what it printed.") + where
         if (starting)
             return i18n("The chat starts in the background with your message.")
         if (fresh)
@@ -1959,19 +1972,6 @@ Window {
             return i18n("It's asking you a question: your message is your answer, in your own words.") + where
         if (replyAnswers === "decline")
             return i18n("It's asking you questions: your message declines them and goes to Claude with the No.") + where
-        // (a command: where it runs, commandRun)
-        const ran = commandNow
-        if (ran && ran.run === "off")
-            return ran.why
-        if (ran && ran.run === "page")
-            return i18n("Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.")
-        if (ran && ran.run === "terminal" && ran.name === "!")
-            return i18n("Its terminal takes no text from outside: Enter copies the command and opens its terminal, to paste it there.") + where
-        if (ran && ran.run === "terminal")
-            return (route === "tmux" ? i18n("%1 %2: Enter types it into its tmux pane, for you to press Enter there.", ran.name, ran.why)
-                                     : i18n("%1 %2: Enter opens the chat's terminal, with the command on the clipboard to paste there.", ran.name, ran.why)) + where
-        if (ran && ran.name === "!")
-            return i18n("A shell command, as Claude's ! mode: it runs in the chat's folder, then Claude answers what it printed.") + where
         if (route === "tmux")
             return i18n("Typed into its tmux pane.") + where
         if (route === "vscode")

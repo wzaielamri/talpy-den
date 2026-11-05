@@ -6,7 +6,7 @@
 //
 // Every run first copies into vendor/ the parts of the widget (the rest of
 // this repository) that the extension ships or bundles: the Python backend,
-// Talpy (the pet), codeview.mjs, the icon table (icons.mjs) and the status-line snippet. They are changed
+// Talpy (the pet), codeview.mjs, ansi.mjs (a command's colours), the icon table (icons.mjs) and the status-line snippet. They are changed
 // where they are, never in vendor/, which isn't committed. --vendor only
 // copies; --watch copies again when one of them changes.
 import * as esbuild from "esbuild";
@@ -23,7 +23,7 @@ const onlyVendor = process.argv.includes("--vendor");
 const VENDOR = [
   ["../package/contents/code", "code", (name) => name.endsWith(".py")],
   ["../package/contents/ui/talpy", "talpy", (name) => name.endsWith(".mjs") || name.endsWith(".d.mts")],
-  ["../package/contents/ui", ".", (name) => /^(codeview|icons)\.(mjs|d\.mts)$/.test(name)],
+  ["../package/contents/ui", ".", (name) => /^(codeview|icons|ansi)\.(mjs|d\.mts)$/.test(name)],
   ["..", ".", (name) => name === "statusline-snippet.sh"],
 ];
 

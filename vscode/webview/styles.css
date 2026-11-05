@@ -3446,6 +3446,38 @@ body.vscode-high-contrast-light .pane {
   font-family: var(--pane-font, inherit);
 }
 
+/* A command you ran (/compact, !ls): in the code font, what it printed under it (⎿ and its
+   output, its colours: ansi.mjs), as Claude's terminal shows it */
+.pane-you.command .pane-you-text {
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.pane-command-out {
+  display: flex;
+  margin-top: 4px;
+  color: var(--cs-muted);
+}
+
+.pane-command-out pre {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pane-command-out .pane-gutter {
+  align-items: flex-start;
+  height: auto;
+  font-weight: 400;
+}
+
+.pane-command-out.bad {
+  color: var(--cs-failed, var(--vscode-errorForeground));
+}
+
 /* Yours, queued (sent while Claude works): grey, as Claude's terminal shows it */
 .pane-you.queued {
   border-left-color: var(--cs-muted);
@@ -4365,6 +4397,25 @@ body.vscode-high-contrast-light .pane {
 .pane-offers li span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* (a command that runs elsewhere: where; one that can't run on this chat: greyed, its line says why) */
+.pane-offers li .grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pane-offer-tag {
+  flex: none;
+  padding: 0 5px;
+  font-size: 0.85em;
+  color: var(--cs-muted);
+  border: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--cs-fg) 18%, transparent));
+  border-radius: 3px;
+}
+
+.pane-offers li.off {
+  opacity: 0.55;
 }
 
 .pane-offers li.on {

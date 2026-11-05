@@ -269,6 +269,41 @@ export class ChatPanes implements vscode.Disposable {
     return { ok: !!r.ok, message: String(r.message ?? ""), went: !!r.ok && (r.how === "typed" || r.how === "background") };
   }
 
+  // A command that needs Claude's own panel or dialog (shared/pane.ts commandRun "terminal"),
+  // put where Claude's prompt is, for you to press Enter there (never sent): typed into one of
+  // this window's terminals (and shown), or by pane.py --type-in into its tmux pane, its Claude
+  // Code panel's input; else on the clipboard. Then its terminal comes up (as Open its window)
+  async typeIn(chat: ChatRef, text: string): Promise<{ ok: boolean; message: string }> {
+    const host = chat.host ?? "";
+    const { session, movedTo } = findPaneRow(this.dash.state(), host, chat.chatId || chat.sessionId);
+    const chatId = movedTo ?? (chat.chatId || chat.sessionId);
+    const ref = session ? chatRefOf(session, host || undefined) : chat;
+    const terminal = await this.windowTerminal(session, host);
+    if (terminal && session && session.state !== "waiting") {
+      terminal.sendText(asPaste(text), false);
+      terminal.show();
+      return { ok: true, message: "It's typed into its terminal: press Enter there" };
+    }
+    const sid = session?.sessionId ?? (movedTo ? "" : chat.sessionId);
+    const r = await this.backend.pane(["--type-in", chatId, "--text", text, "--no-copy", ...(sid ? ["--session", sid] : []),
+      ...(chat.profileDir ? ["--profile", chat.profileDir] : []), ...(host ? ["--host", host] : configDirArgs())], host ? 60000 : 20000);
+    if (!r.ok) return { ok: false, message: String(r.message ?? "That didn't work") };
+    if (r.how === "vscode" && typeof r.link === "string" && r.link.startsWith("vscode://anthropic.claude-code/open?")) {
+      if (host) await vscode.env.openExternal(vscode.Uri.parse(r.link));
+      else {
+        const opened = await this.backend.action("jump.py", ["--vscode-link", sid || chatId, r.link, ...configDirArgs()]);
+        if (!opened.ok) return { ok: false, message: `Couldn't open the chat: ${opened.message}` };
+      }
+      return { ok: true, message: String(r.message ?? "") };
+    }
+    if (r.how === "copy") await vscode.env.clipboard.writeText(text);   // (VS Code's clipboard: also in a remote window)
+    await this.actions.open(ref, true);
+    return { ok: true, message: r.how === "copy" ? `It's in the clipboard. ${String(r.message ?? "")}` : String(r.message ?? "") };
+  }
+
+  // /permissions (commandRun "page"): Talpy Den's Permissions tab (extension.ts sets it)
+  openPermissions: () => Promise<void> = async () => undefined;
+
   // Stop on a chat's working line (shared/pane.ts stopOf): what Claude does
   // now stops and the chat stays. In one of this window's terminals Ctrl+C is
   // typed in, as Interrupt does; else pane.py --interrupt (Ctrl+C in its tmux
@@ -848,10 +883,18 @@ class Pane implements vscode.Disposable {
         const r = await backend.pane([...(this.fresh ? ["--complete", "-", "--cwd", this.fresh.cwd] : ["--complete", this.chatId]),
           ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []),
           ...(this.host ? ["--host", this.host] : configDirArgs())], this.host ? 60000 : 20000);
-        if (r.ok) this.post({ type: "offers", offers: { commands: Array.isArray(r.commands) ? r.commands : [],
-          files: Array.isArray(r.files) ? r.files : [], history: Array.isArray(r.history) ? r.history : [] } });
+        // (null: they couldn't be read: a command waiting for them goes as a message)
+        this.post({ type: "offers", offers: r.ok ? { commands: Array.isArray(r.commands) ? r.commands : [],
+          files: Array.isArray(r.files) ? r.files : [], history: Array.isArray(r.history) ? r.history : [],
+          typed: r.typed && typeof r.typed === "object" ? r.typed : {} } : null });
         break;
       }
+      case "typeIn":
+        if (typeof m.text === "string" && m.text.trim() && !this.fresh) this.result("typein", await this.owner.typeIn(this.chat, m.text.trim()));
+        break;
+      case "openPermissions":
+        await this.owner.openPermissions();
+        break;
       case "replies": {
         // your usual replies, from the chats on its account (a first read can take some seconds: the tab doesn't wait)
         if (!Pane.suggests()) break;

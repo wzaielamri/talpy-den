@@ -4,9 +4,9 @@
 // reply, what it asks while it waits for a permission, and its review. It
 // shows what the extension sends and says what you clicked.
 
-import { render } from "preact";
+import { Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, completionOf, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -18,6 +18,7 @@ import { Tag, TestsTag } from "./components/Tag";
 import { TalpyIcon } from "./components/TalpyIcon";
 import { I, Icon, T } from "./util/icons";
 import { Markdown } from "./util/markdown";
+import { DARK, LIGHT, runs as ansiRuns } from "../vendor/ansi.mjs";
 
 declare global {
   interface Window {
@@ -217,6 +218,26 @@ function NewChatOptions({ fresh }: { fresh: NonNullable<PaneChat["fresh"]> }) {
   );
 }
 
+// What a command you ran printed (pane.py commands.py), under it as Claude's terminal shows it:
+// ⎿ and its output in the code font, with its colours (ansi.mjs: Plasma's CommandOutput.qml the same)
+function CommandOutput({ output, error }: { output: string; error: boolean }) {
+  const light = document.body.classList.contains("vscode-light") || document.body.classList.contains("vscode-high-contrast-light");
+  const parts = useMemo(() => ansiRuns(output, light ? LIGHT : DARK), [output, light]);
+  return (
+    <div class={`pane-command-out${error ? " bad" : ""}`}>
+      <span class="pane-gutter" aria-hidden="true">⎿</span>
+      <pre>{parts.map((r, i) => {
+        const fg = r.inverse ? (r.bg || "var(--cs-bg, var(--vscode-editor-background))") : r.fg;
+        const bg = r.inverse ? (r.fg || "var(--cs-fg)") : r.bg;
+        const style = { color: fg || undefined, background: bg || undefined, fontWeight: r.bold ? 600 : undefined,
+                        fontStyle: r.italic ? "italic" : undefined, textDecoration: r.underline ? "underline" : undefined,
+                        opacity: r.dim ? 0.6 : undefined };
+        return fg || bg || r.bold || r.italic || r.underline || r.dim ? <span key={i} style={style}>{r.text}</span> : r.text;
+      })}</pre>
+    </div>
+  );
+}
+
 function ChatApp() {
   const [chat, setChat] = useState<PaneChat | null>(null);
   const [items, setItems] = useState<PaneItem[]>([]);
@@ -298,6 +319,7 @@ function ChatApp() {
   // through your prompts, this chat's first (promptHistory), then your past ones
   // in its folder (pane.py --complete, asked again after a minute)
   const [offers, setOffers] = useState<Offers | null>(null);
+  const offersNow = useRef<Offers | null>(null);   // (as the message handler sees them)
   const offersAt = useRef(0);
   const [cursor, setCursor] = useState(0);
   const [dismissed, setDismissed] = useState("");
@@ -309,7 +331,12 @@ function ChatApp() {
     offersAt.current = Date.now();
     post({ type: "complete" });
   };
-  const offered = suggestFor(text.slice(0, cursor), offers, dismissed);
+  const offered = suggestFor(text.slice(0, cursor), offers, dismissed, chat);
+  // A / command sent before the offers (each command's kind) were read: sent once they're in
+  // (else /model would go as a message, and save your default model); null: as a message
+  const waitingOffers = useRef<{ how: "auto" | "background" | "copy" | "enter"; afterTurn: boolean; given?: string } | null>(null);
+  const offersFailed = useRef(false);
+  const typedIn = useRef("");   // (a command on its way to its terminal: out of the box once it's there)
   useEffect(() => {
     if (offered.token && Date.now() - offersAt.current >= 60000) askOffers();
   }, [offered.token]);
@@ -488,7 +515,17 @@ function ChatApp() {
           reply.current?.focus();
         }
       }
-      else if (m.type === "offers") setOffers(m.offers);
+      else if (m.type === "offers") {
+        setOffers(m.offers);
+        offersNow.current = m.offers;
+        const waiting = waitingOffers.current;
+        waitingOffers.current = null;
+        if (waiting) {
+          offersFailed.current = !m.offers;
+          sendNow.current(waiting.how, waiting.afterTurn, waiting.given);
+          offersFailed.current = false;
+        }
+      }
       else if (m.type === "replies") setUsual(m.replies);
       else if (m.type === "suggest") {
         setSuggest(m.on);
@@ -604,6 +641,10 @@ function ChatApp() {
         if (m.kind === "send" && m.ask) {
           setAskHow(true);
           return;
+        }
+        if (m.kind === "typein" && m.ok) {   // (in its terminal now: out of the box)
+          const was = typedIn.current;
+          setText((t) => (t.trim() === was ? "" : t));
         }
         if ((m.kind === "send" || m.kind === "later") && m.ok) {
           setText("");
@@ -727,6 +768,30 @@ function ChatApp() {
       else answer(asks === "plan" ? "keep" : "deny", said);
       return;
     }
+    // A command: as its kind says on this chat (commandRun, Plasma's the same)
+    const known = offersNow.current;
+    if (/^\/\S/.test(said) && !known && !offersFailed.current) {
+      waitingOffers.current = { how, afterTurn, given };
+      offersAt.current = 0;
+      askOffers();
+      return;
+    }
+    const ran = commandRun(said, known, chat);
+    if (ran?.run === "off") {
+      setInfo({ ok: false, message: ran.why });
+      return;
+    }
+    if (ran?.run === "page") {
+      setText("");
+      post({ type: "openPermissions" });
+      return;
+    }
+    if (ran?.run === "terminal") {
+      if (given !== undefined) setText(given);   // (the box keeps it till it's in its terminal)
+      typedIn.current = said;
+      post({ type: "typeIn", text: said });
+      return;
+    }
     const route = chat?.route;
     const shows = !afterTurn && how !== "copy" && (how === "background" || route === "background" || route === "tmux" || route === "vscodeTerminal");
     if (!shows) {
@@ -753,6 +818,8 @@ function ChatApp() {
       post({ type: "hold", id, text: said, how }); // (the extension sends it if the tab closes first)
     } else post({ type: "send", text: typed, how, afterTurn, id });
   };
+  const sendNow = useRef(send);   // (the message handler's: this render's)
+  sendNow.current = send;
   useEffect(() => {
     if (startNext.current && text.trim() && chat) {
       startNext.current = false;
@@ -807,6 +874,9 @@ function ChatApp() {
 
   const terminal = chat?.route === "terminal" || askHow;
   const asks = replyAnswers(chat);
+  // (a command in the box: where it runs, commandRun; its line under the box and the Send button say so)
+  const ran = asks ? null : commandRun(text, offers, chat);
+  const elsewhere = ran && ran.run !== "here" ? ran.run : "";
   const lastIndex = items.length - 1;
   const last = items[lastIndex];
   const activity = (chat?.activity ?? "").replace(/[….\s]+$/, "");
@@ -882,7 +952,8 @@ function ChatApp() {
     ? [...items,
        ...answersOut.map((p) => ({ kind: "you" as const, key: `answer-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending", answered: p.answered })),
        ...outgoing.map((p) => ({ kind: "you" as const, key: `pending-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending",
-                                 ...(p.state === "held" ? { until: p.until ?? 0 } : {}) }))]
+                                 ...(p.state === "held" ? { until: p.until ?? 0 } : {}),
+                                 ...(/^[/!]\S/.test(p.text) ? { command: p.text.startsWith("!") ? { shell: true } : {} } : {}) }))]
     : items), [items, outgoing, answersOut]);
   const answeringFor = useMemo(() => new Set(answersOut.map((p) => p.for).filter(Boolean)), [answersOut]);
   const steps = useMemo(() => shownItems.map((it, i) => {
@@ -890,11 +961,14 @@ function ChatApp() {
     // (queued: grey, as Claude's terminal shows it, with what becomes of it: held a moment,
     // Edit / Send now / Cancel, then in Claude's queue till it takes it in at its next step)
     const id = it.until ? Number(String(it.key).slice("pending-".length)) : 0;
+    // (a command you ran: in the code font, $ before a shell command as Claude's ! mode, what it printed under it)
+    const shell = !!it.command?.shell;
     return it.kind === "you" ? (
-      <div key={it.key} data-key={it.key} class={`pane-item pane-you ${gap}${it.sending ? " sending" : ""}${it.until || it.queued ? " queued" : ""}`}>
-        <span class="pane-gutter" aria-hidden="true">›</span>
+      <Fragment key={it.key}>
+      <div data-key={it.key} class={`pane-item pane-you ${gap}${it.sending ? " sending" : ""}${it.until || it.queued ? " queued" : ""}${it.command ? " command" : ""}`}>
+        <span class="pane-gutter" aria-hidden="true">{shell ? "$" : "›"}</span>
         <div class="pane-you-main">
-          <div class="pane-you-text">{numberedPictures(it.text ?? "")}</div>
+          <div class="pane-you-text">{shell ? (it.text ?? "").replace(/^!\s*/, "") : numberedPictures(it.text ?? "")}</div>
           {it.thumbs?.length ? (
             <div class="pane-you-pics">
               {it.thumbs.map((t) => (
@@ -923,6 +997,8 @@ function ChatApp() {
         </div>
         {it.sending ? <span class="pane-you-state">Sending…</span> : null}
       </div>
+      {it.command?.output ? <CommandOutput output={it.command.output} error={!!it.command.error} /> : null}
+      </Fragment>
     ) : it.kind === "claude" ? (
       <div key={it.key} data-key={it.key} class={`pane-item pane-claude ${gap}`}>
         <span class="pane-gutter" aria-hidden="true">
@@ -1114,10 +1190,11 @@ function ChatApp() {
           {offered.items.length ? (
             <ul class="pane-offers" role="listbox">
               {offered.items.map((o, i) => (
-                <li key={o.text} role="option" aria-selected={i === offerAt} class={i === offerAt ? "on" : ""}
-                  onMouseDown={(e) => { e.preventDefault(); take(o); }}>
+                <li key={o.text} role="option" aria-selected={i === offerAt} class={(i === offerAt ? "on" : "") + (o.off ? " off" : "")}
+                  title={o.tip || undefined} onMouseDown={(e) => { e.preventDefault(); take(o); }}>
                   <code>{o.text}</code>
-                  {o.about ? <span class="muted">{o.about}</span> : null}
+                  {o.about ? <span class="muted grow">{o.about}</span> : null}
+                  {o.tag ? <span class="pane-offer-tag">{o.tag}</span> : null}
                 </li>
               ))}
             </ul>
@@ -1273,8 +1350,9 @@ function ChatApp() {
               <button type="button" class="btn secondary" onClick={() => setOfferModel("")}>Not now</button>
             </div>
           ) : null}
-          <div class="pane-hint">{chat?.fresh || starting ? newChatHint(chat?.fresh ?? { account: "", folder: "", plan: "", model: "", effort: "", mode: "" }, starting)
-            : chat ? routeHint(chat.route, chat.state !== "done" || !!chat.busy, chat.where === "background" ? "bg" : "", chat.host, asks) : ""}</div>
+          <div class="pane-hint">{(chat ? commandHint(ran, chat.route, chat.host) : null)
+            ?? (chat?.fresh || starting ? newChatHint(chat?.fresh ?? { account: "", folder: "", plan: "", model: "", effort: "", mode: "" }, starting)
+            : chat ? routeHint(chat.route, chat.state !== "done" || !!chat.busy, chat.where === "background" ? "bg" : "", chat.host, asks) : "")}</div>
           <div class="pane-buttons">
             {/* (icons, as in the widget; what dictation is doing shows beside the microphone) */}
             <button type="button" class={"icon-btn pane-mic" + (dictating === "recording" ? " on" : "")}
@@ -1305,7 +1383,7 @@ function ChatApp() {
               <button
                 type="button"
                 class="btn secondary"
-                disabled={!text.trim() || sending}
+                disabled={!text.trim() || sending || !!elsewhere}
                 title="Kept, and sent once Claude's turn is over."
                 onClick={() => send(terminal ? "background" : "auto", true)}
               >
@@ -1315,10 +1393,13 @@ function ChatApp() {
             <button
               type="button"
               class="btn"
-              disabled={!text.trim() || sending || (terminal && !!chat?.busy) || (asks ? answering > 0 : !!chat?.permission && (chat.route === "tmux" || chat.where === "background"))}
-              onClick={() => send(terminal ? "background" : "auto", false)}
+              disabled={!text.trim() || sending || elsewhere === "off" || (terminal && !!chat?.busy && !elsewhere)
+                        || (asks ? answering > 0 : !elsewhere && !!chat?.permission && (chat.route === "tmux" || chat.where === "background"))}
+              onClick={() => send(terminal && !elsewhere ? "background" : "auto", false)}
             >
-              {asks ? <><Icon name={asks === "plan" ? I.edit : asks === "question" ? I.send : I.deny} tone={asks === "deny" || asks === "decline" ? T.deny : undefined} />{REPLY_ANSWERS[asks].send}</>
+              {elsewhere === "terminal" ? <><Icon name={I.terminal} />Open in a terminal</>
+                : elsewhere === "page" ? <><Icon name={I.permissions} />Open Permissions</>
+                : asks ? <><Icon name={asks === "plan" ? I.edit : asks === "question" ? I.send : I.deny} tone={asks === "deny" || asks === "decline" ? T.deny : undefined} />{REPLY_ANSWERS[asks].send}</>
                 : <><Icon name={I.send} />{sending ? "Sending…" : terminal ? "Send, go on in the background" : chat?.fresh && !starting ? "Start" : "Send"}</>}
             </button>
           </div>

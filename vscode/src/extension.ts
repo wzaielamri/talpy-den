@@ -118,6 +118,10 @@ export function activate(context: vscode.ExtensionContext): void {
   view.panes = panes;
   notifier.panes = panes;
   actions.panes = panes;
+  panes.openPermissions = async () => {
+    view.showTab("perms");
+    await vscode.commands.executeCommand("talpyDen.view.focus");
+  };
 
   // Send Feedback to Claude, for a plan's file (the editor's, or the active one)
   const sendFeedback = (uri?: vscode.Uri) => {

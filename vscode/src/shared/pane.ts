@@ -28,6 +28,7 @@ export interface PaneItem {
   asked?: Asked; // tool: a question or a plan Claude asked; {state: "denied"}: a call you denied with a note
   answered?: "question" | "plan" | "permission"; // you: your answer to the call before it (key "<tool id>/answer")
   answers?: { header: string; question: string; answer: string; notes: string }[]; // you: a question's, each answered
+  command?: { shell?: boolean; output?: string; error?: boolean }; // you: a command you ran (/compact, !ls: pane.py commands.py), what it printed (ANSI colours kept: ansi.mjs)
 }
 
 // What Claude asked (pane.py asked_of): its questions, each with the options
@@ -202,7 +203,7 @@ export type PaneHostMessage =
   | { type: "picked"; paths: string[] } // files picked to attach (+), attached as dropped ones
   | { type: "picture"; id: string; path: string; error: string } // a pasted picture, saved (path: where the chat opens it)
   | { type: "file"; id: string; path: string } // a file dropped on the tab: named in the reply (@path)
-  | { type: "offers"; offers: Offers } // what the reply box offers as you type (pane.py --complete)
+  | { type: "offers"; offers: Offers | null } // what the reply box offers as you type (pane.py --complete; null: it couldn't be read)
   | { type: "startWith"; text: string } // a new chat's task: sent as its first message, as if you typed it
   | { type: "suggest"; on: boolean } // talpyDen.suggestReplies
   | { type: "replies"; replies: UsualReplies | null } // your usual replies (pane.py --replies)
@@ -247,6 +248,8 @@ export type PaneMessage =
   | { type: "attach"; id: string; path: string } // a file dropped from VS Code's Explorer: a picture saved as one, a file named
   | { type: "screenshot"; id: string } // a region of the screen you pick, as a picture
   | { type: "complete" } // what the reply box offers (answered with "offers")
+  | { type: "typeIn"; text: string } // a command for Claude's own panel: in its terminal, typed in or on the clipboard (commandRun "terminal")
+  | { type: "openPermissions" } // /permissions: Talpy Den's Permissions tab (commandRun "page")
   | { type: "replies" } // your usual replies (answered with "replies")
   | { type: "hideReply"; text: string } // a chip's Don't suggest this
   | { type: "dictate"; action: "toggle" | "cancel" | "getModel" | "setup" }; // the microphone (answered with "dictation")
@@ -255,22 +258,100 @@ export type PaneMessage =
 // Claude's commands, yours and the project's, and skills; @ the project's
 // files; ↑ / ↓ your past prompts in its folder (newest first)
 export interface Offers {
-  commands: { name: string; about: string; kind: string }[];
+  commands: CommandOffer[];
   files: string[];
   history: string[];
+  typed?: Record<string, { run: CommandKind; runArgs?: CommandKind; why?: string; of?: string }>; // names not listed (aliases, Claude's other panels)
+}
+
+// How Talpy Chat runs a command (pane.py commands.py, as checked live on Claude Code 2.1.318):
+// "here" (sent as it is: it runs, what it prints shows under it), "page" (Talpy Den's own page for
+// it: /permissions, the Permissions tab), "terminal" (it needs Claude's own panel or dialog, where a
+// background chat would sit unseen: opened in the chat's terminal, typed in for you there or on the
+// clipboard, to press Enter there)
+export type CommandKind = "here" | "page" | "terminal";
+export interface CommandOffer {
+  name: string;
+  about: string;
+  kind: string; // "Claude", "yours", "project", "your skill"…
+  run?: CommandKind;
+  runArgs?: CommandKind; // with an argument, when other (/export FILE)
+  why?: string; // why it opens in the terminal
+}
+export interface CommandRun {
+  run: CommandKind | "off"; // off: it can't run on this chat (why)
+  name: string; // "/config", or "!" for a shell command
+  why: string;
+}
+
+// A command in the box (Plasma ChatPane commandRun: the same rule and words): how it runs on
+// this chat, or null for a message (or one Talpy Chat doesn't know: sent as it is). A shell
+// command (! in Claude's prompt) runs only where Claude's prompt takes it: not in a new chat nor
+// one that isn't running (claude --resume reads it as a message), and in a terminal that takes no
+// text it's pasted there. One for Claude's own panel goes into its Claude Code panel's input as
+// any message (you press Enter there, in Claude's own)
+export function commandRun(text: string, offers: Offers | null, chat: Pick<PaneChat, "where" | "route"> | null | undefined): CommandRun | null {
+  const t = text.trim();
+  const where = chat?.where, route = chat?.route;
+  if (/^![^!]/.test(t)) {
+    if (where === "new")
+      return { run: "off", name: "!", why: "A new chat starts in the background, where Claude reads ! as a message: start it first, then run the command in its terminal." };
+    if (where === "closed")
+      return { run: "off", name: "!", why: "A chat that isn't running reads ! as a message, not as a shell command: open it in its terminal to run it there." };
+    return { run: route === "terminal" ? "terminal" : "here", name: "!", why: "" };
+  }
+  const m = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(t);
+  if (!m || !offers) return null;
+  const c = offers.commands.find((x) => x.name === "/" + m[1]) ?? offers.typed?.[m[1]] ?? null;
+  if (!c?.run) return null;
+  let run: CommandKind = m[2]?.trim() && c.runArgs ? c.runArgs : c.run;
+  if (run === "terminal" && route === "vscode") run = "here"; // (its Claude Code panel's input: you press Enter there)
+  const name = ("of" in c && c.of) || "/" + m[1];
+  if (run === "terminal" && where === "new")
+    return { run: "off", name, why: `${name} ${c.why ?? ""}: start the chat first, then it opens in its terminal.` };
+  return { run, name, why: c.why ?? "" };
+}
+
+// What the line under the box says of a command (null: what it says of any message, routeHint)
+export function commandHint(ran: CommandRun | null, route: PaneChat["route"] | undefined, host = ""): string | null {
+  if (!ran) return null;
+  const where = host ? ` (on ${hostLabel(host)})` : "";
+  if (ran.run === "off") return ran.why;
+  if (ran.run === "page") return "Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.";
+  if (ran.run === "terminal" && ran.name === "!")
+    return `Its terminal takes no text from outside: Enter copies the command and opens its terminal, to paste it there.${where}`;
+  if (ran.run === "terminal")
+    return (route === "tmux" ? `${ran.name} ${ran.why}: Enter types it into its tmux pane, for you to press Enter there.`
+      : route === "vscodeTerminal" ? `${ran.name} ${ran.why}: Enter types it into its terminal in this window, for you to press Enter there.`
+      : `${ran.name} ${ran.why}: Enter opens the chat's terminal, with the command on the clipboard to paste there.`) + where;
+  if (ran.name === "!") return `A shell command, as Claude's ! mode: it runs in the chat's folder, then Claude answers what it printed.${where}`;
+  return null;
+}
+
+// A command's look in the / list, on this chat: where it opens (tag), greyed with why (off)
+export function commandOffer(c: CommandOffer, offers: Offers, chat: Pick<PaneChat, "where" | "route"> | null | undefined): { tag: string; off: boolean; tip: string; about: string } {
+  const ran = commandRun(c.name, offers, chat) ?? { run: "here" as const, name: c.name, why: "" };
+  const about = c.about + (c.kind === "Claude" ? "" : ` · ${c.kind}`);
+  if (ran.run === "off") return { tag: "", off: true, tip: ran.why, about: ran.why };
+  if (ran.run === "terminal") return { tag: "Terminal", off: false, tip: `${c.name} ${ran.why}: it opens in the chat's terminal, typed in for you there.`, about };
+  if (ran.run === "page") return { tag: "Talpy Den", off: false, tip: "Opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.", about };
+  return { tag: "", off: false, tip: "", about };
 }
 
 export interface Suggestion {
   text: string;
   about: string;
   insert: string;
+  tag?: string; // a command that runs elsewhere: "Terminal", "Talpy Den" (commandOffer)
+  off?: boolean; // one that can't run on this chat: greyed, about says why
+  tip?: string;
 }
 
 // For the text before the cursor: where the word being completed starts and
 // what fits it (at most 8: commands that start with it first, files whose
 // name starts with it first, then shorter paths); none for a word you closed
 // the list for (dismissed)
-export function suggestFor(before: string, offers: Offers | null, dismissed = ""): { start: number; items: Suggestion[]; token: string } {
+export function suggestFor(before: string, offers: Offers | null, dismissed = "", chat?: Pick<PaneChat, "where" | "route"> | null): { start: number; items: Suggestion[]; token: string } {
   const command = /^\/([^\s]*)$/.exec(before);
   const file = /(^|\s)@("?)([^\s"]*)$/.exec(before);
   const token = command ? before : file ? before.slice(before.length - file[0].length + file[1].length) : "";
@@ -279,8 +360,8 @@ export function suggestFor(before: string, offers: Offers | null, dismissed = ""
   let items: Suggestion[];
   if (command) {
     const starts = (n: string) => (n.toLowerCase().startsWith("/" + q) ? 0 : 1);
-    items = offers.commands.filter((c) => c.name.toLowerCase().includes(q)).sort((a, b) => starts(a.name) - starts(b.name))
-      .map((c) => ({ text: c.name, about: c.about + (c.kind === "Claude" ? "" : ` · ${c.kind}`), insert: c.name + " " }));
+    items = offers.commands.filter((c) => c.name.toLowerCase().includes(q)).sort((a, b) => starts(a.name) - starts(b.name)).slice(0, 8)
+      .map((c) => ({ text: c.name, insert: c.name + " ", ...commandOffer(c, offers, chat) }));
   } else {
     const rank = (f: string) => {
       const base = f.slice(f.lastIndexOf("/") + 1).toLowerCase();
@@ -527,12 +608,13 @@ export function pendingTaken(items: PaneItem[], pending: PendingSent[], now: num
   for (const p of pending) {
     if (p.state === "held") continue; // (not sent yet: nothing in the conversation is it)
     const want = squash(p.text);
+    const bare = want.startsWith("!") ? squash(want.slice(1)) : ""; // (a shell command waits in Claude's queue without its !)
     const found = items.find((it) => {
       const key = String(it.key);
       if (it.kind !== "you" || it.answered || p.known.includes(key) || claimed.has(key)) return false;
       const said = squash(it.text ?? "");
       const cut = said.endsWith("…") ? said.slice(0, -1).trim() : "";
-      return said === want || (cut !== "" && want.startsWith(cut))
+      return said === want || (bare !== "" && said === bare) || (cut !== "" && want.startsWith(cut))
         || (local && p.state === "sent" && now - p.sentAt > 3000 && (it.at ?? 0) >= p.at - 2000);
     });
     if (found) claimed.add(String(found.key));

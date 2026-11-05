@@ -272,14 +272,39 @@ window.addEventListener("harness-post", (e: Event) => {
     send({ type: "replies", replies: usual });
   } else if (m.type === "complete") {
     send({ type: "offers", offers: {
-      commands: [{ name: "/compact", about: "Free up context by summarizing the conversation so far", kind: "Claude" },
-                 { name: "/context", about: "Show how full the context is", kind: "Claude" },
-                 { name: "/release", about: "Cut a release", kind: "project" }],
+      commands: [{ name: "/compact", about: "Free up context by summarizing the conversation so far", kind: "Claude", run: "here" },
+                 { name: "/config", about: "Open settings", kind: "Claude", run: "terminal", why: "opens Claude's settings panel" },
+                 { name: "/context", about: "Show how full the context is", kind: "Claude", run: "here" },
+                 { name: "/copy", about: "Copy Claude's last response", kind: "Claude", run: "terminal", why: "copies where Claude runs" },
+                 { name: "/model", about: "Set the model", kind: "Claude", run: "terminal", why: "saves it as your default model for every new chat" },
+                 { name: "/permissions", about: "What Claude may do without asking", kind: "Claude", run: "page" },
+                 { name: "/release", about: "Cut a release", kind: "project", run: "here" }],
       files: ["src/parser.ts", "src/parse_date.ts", "tests/parser.test.ts", "README.md"],
       history: ["Fix the date parser", "Run the tests again"],
+      typed: { settings: { run: "terminal", of: "/config", why: "opens Claude's settings panel" } },
     } });
+  } else if (m.type === "typeIn") {
+    setTimeout(() => send({ type: "result", kind: "typein", ok: true, message: "It's in the clipboard. Paste it into its terminal" }), 300);
   }
 });
+
+// ?commands=1: commands you ran in the conversation, with what they printed (Claude's colours)
+if (params.get("commands") === "1") {
+  const E = "\x1b";
+  const grid = `${E}[1mFill level${E}[22m\n${E}[38;5;244m⛁ ⛁ ${E}[38;2;22;163;74m⛁ ${E}[38;2;215;119;87m⛁ ⛁ ${E}[38;5;246m⛶ ⛶ ⛶ ⛶ ⛶${E}[39m   Made-up model\n`
+    + `${E}[38;5;246m⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶${E}[39m   12k/200k tokens (6%)\n\n${E}[38;2;22;163;74m⛁${E}[39m Tools: 8k tokens\n${E}[2mMore: /context all${E}[22m`;
+  items.splice(0, items.length,
+    { kind: "you", key: "c0", text: "Check the parser's cache and tidy it", at: now - 300_000 },
+    { kind: "claude", key: "c1", text: "Done: the cache is tidy now.", at: now - 290_000 },
+    { kind: "you", key: "c2", text: "/context", at: now - 280_000, command: { output: grid } },
+    { kind: "you", key: "c3", text: "/model fable", at: now - 270_000, command: { output: "Set model to Fable and saved as your default" } },
+    { kind: "you", key: "c4", text: "!ls src", at: now - 260_000, command: { shell: true, output: "cache.py\nparse.ts\nroutes" } },
+    { kind: "claude", key: "c5", text: "`src` has the cache, the parser and the routes.", at: now - 250_000 },
+    { kind: "you", key: "c6", text: "!cat nope.txt", at: now - 240_000, command: { shell: true, output: "cat: nope.txt: No such file or directory", error: true } },
+    { kind: "you", key: "c7", text: "/compact", at: now - 230_000, command: {} },
+    { kind: "note", key: "c8", text: "The conversation was compacted", at: now - 225_000 });
+  Object.assign(chat, { state: "done", stateText: "done 1 min ago", busy: false, atWork: false, permission: null, queued: null, activity: "" });
+}
 
 // ?stop=1 (or fail): Stop clicked at once ("Stopping…")
 if (params.get("stop")) setTimeout(() => document.querySelector<HTMLButtonElement>(".pane-stop")?.click(), 300);

@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, completionOf, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -139,6 +139,83 @@ test("a reply goes to pane.py --send; copy goes to the clipboard and opens the c
   const typed = panes(state, { how: "typed", message: "Sent" });
   assert.deepEqual(await typed.p.send(chatRefOf(row), "hi", "enter", false), { ok: true, message: "Sent", went: true });
   assert.equal(typed.opened.length, 0);
+});
+
+// The / list's offers as pane.py --complete gives them (commands.py's kinds), a few of them
+const OFFERS: Offers = {
+  commands: [
+    { name: "/compact", about: "Free up context", kind: "Claude", run: "here" },
+    { name: "/config", about: "Open settings", kind: "Claude", run: "terminal", why: "opens Claude's settings panel" },
+    { name: "/export", about: "Export the conversation", kind: "Claude", run: "terminal", runArgs: "here", why: "asks where to" },
+    { name: "/model", about: "Set the model", kind: "Claude", run: "terminal", why: "saves it as your default model for every new chat" },
+    { name: "/permissions", about: "What Claude may do without asking", kind: "Claude", run: "page" },
+    { name: "/ship", about: "Ship it", kind: "yours", run: "here" },
+  ],
+  files: [],
+  history: [],
+  typed: { settings: { run: "terminal", of: "/config", why: "opens Claude's settings panel" }, theme: { run: "terminal", why: "uses Claude's own screen" } },
+};
+
+test("a command runs as its kind says on the chat's route (Plasma's commandRun: the same rule and words)", () => {
+  const tmux = { where: "tmux" as const, route: "tmux" as const };
+  const closed = { where: "closed" as const, route: "background" as const };
+  assert.equal(commandRun("tidy it", OFFERS, tmux), null);
+  assert.equal(commandRun("/nope", OFFERS, tmux), null);   // (not known: sent as typed)
+  assert.equal(commandRun("/config", null, tmux), null);   // (the kinds not read yet: the tab waits for them before sending)
+  assert.deepEqual(commandRun("/compact keep the tests", OFFERS, closed), { run: "here", name: "/compact", why: "" });
+  assert.deepEqual(commandRun(" /config ", OFFERS, tmux), { run: "terminal", name: "/config", why: "opens Claude's settings panel" });
+  assert.deepEqual(commandRun("/settings", OFFERS, tmux), { run: "terminal", name: "/config", why: "opens Claude's settings panel" });
+  // /model never goes from here (it saves your default for every new chat), with or without a name
+  assert.equal(commandRun("/model fable", OFFERS, closed)!.run, "terminal");
+  assert.equal(commandRun("/export", OFFERS, tmux)!.run, "terminal");
+  assert.equal(commandRun("/export chat.md", OFFERS, tmux)!.run, "here");
+  assert.equal(commandRun("/permissions", OFFERS, tmux)!.run, "page");
+  // in a Claude Code panel it goes into the panel's input (you press Enter in Claude's own); a new chat can't open a terminal yet
+  assert.equal(commandRun("/config", OFFERS, { where: "claude", route: "vscode" })!.run, "here");
+  assert.deepEqual(commandRun("/config", OFFERS, { where: "new", route: "background" }),
+                   { run: "off", name: "/config", why: "/config opens Claude's settings panel: start the chat first, then it opens in its terminal." });
+  // a shell command: in Claude's prompt only
+  assert.deepEqual(commandRun("!ls", OFFERS, tmux), { run: "here", name: "!", why: "" });
+  assert.equal(commandRun("!ls", null, { where: "background", route: "background" })!.run, "here");
+  assert.equal(commandRun("!ls", OFFERS, { where: "terminal", route: "terminal" })!.run, "terminal");
+  assert.deepEqual(commandRun("!ls", OFFERS, closed), { run: "off", name: "!", why: "A chat that isn't running reads ! as a message, not as a shell command: open it in its terminal to run it there." });
+  assert.equal(commandRun("!ls", OFFERS, { where: "new", route: "background" })!.why,
+               "A new chat starts in the background, where Claude reads ! as a message: start it first, then run the command in its terminal.");
+  assert.equal(commandRun("!!", OFFERS, closed), null);
+  // the line under the box
+  assert.equal(commandHint(commandRun("/config", OFFERS, tmux), "tmux"), "/config opens Claude's settings panel: Enter types it into its tmux pane, for you to press Enter there.");
+  assert.equal(commandHint(commandRun("/config", OFFERS, closed), "background", "gpu"),
+               "/config opens Claude's settings panel: Enter opens the chat's terminal, with the command on the clipboard to paste there. (on gpu)");
+  assert.equal(commandHint(commandRun("/permissions", OFFERS, tmux), "tmux"), "Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.");
+  assert.equal(commandHint(commandRun("/compact", OFFERS, tmux), "tmux"), null);
+  assert.equal(commandHint(null, "tmux"), null);
+  // the / list: where each runs, greyed with why where it can't
+  const list = suggestFor("/", OFFERS, "", { where: "new", route: "background" }).items;
+  assert.deepEqual(list.map((o) => [o.text, o.tag ?? "", !!o.off]),
+                   [["/compact", "", false], ["/config", "", true], ["/export", "", true], ["/model", "", true], ["/permissions", "Talpy Den", false], ["/ship", "", false]]);
+  assert.equal(list[1].about, "/config opens Claude's settings panel: start the chat first, then it opens in its terminal.");
+  assert.equal(list[5].about, "Ship it · yours");
+  assert.deepEqual(suggestFor("/co", OFFERS, "", tmux).items.map((o) => [o.text, o.tag]), [["/compact", ""], ["/config", "Terminal"]]);
+});
+
+test("a command for Claude's own panel goes to its terminal, never sent: typed into this window's, else pane.py --type-in", async () => {
+  const state = demoState(NOW);
+  const row = state.status!.groups.flatMap((g) => g.sessions)[0];
+  const { p, calls, opened } = panes(state, { how: "copy", copied: false, text: "/config", message: "Paste it into its terminal" });
+  assert.deepEqual(await p.typeIn(chatRefOf(row), "/config"), { ok: true, message: "It's in the clipboard. Paste it into its terminal" });
+  assert.deepEqual(calls[0].slice(0, 5), ["--type-in", row.chatId, "--text", "/config", "--no-copy"]);
+  assert.equal(clipboardWrites.at(-1), "/config");   // (VS Code's clipboard)
+  assert.equal(opened.length, 1);
+  const typed = panes(state, { how: "typed", message: "It's typed into its terminal: press Enter there" });
+  assert.deepEqual(await typed.p.typeIn(chatRefOf(row), "/config"), { ok: true, message: "It's typed into its terminal: press Enter there" });
+  assert.equal(typed.opened.length, 1);
+  assert.equal(calls.some((c) => c[0] === "--send"), false);
+});
+
+test("a shell command you sent is found in Claude's queue without its !", () => {
+  const pending = [{ id: 1, text: "!ls src", at: NOW, state: "sent" as const, sentAt: NOW, known: [] }];
+  assert.deepEqual([...pendingTaken([{ kind: "you", key: "queued-1", text: "ls src", at: NOW }], pending, NOW + 100, true)], [1]);
+  assert.deepEqual([...pendingTaken([{ kind: "you", key: "x", text: "!ls src", at: NOW, command: { shell: true } }], pending, NOW + 100, true)], [1]);
 });
 
 test("a click on a chat opens its tab, unless clicks open the chat itself; answers use the extension's chat", () => {

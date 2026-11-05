@@ -44,11 +44,12 @@ its permission prompt and its review.
         Esc in its terminal: Ctrl+C in its tmux pane, or Esc into a
         background chat through Claude's background service. The chat stays
         where it runs and takes your next message
-  --type-in CHAT --text T [--session ID] [--profile P]
+  --type-in CHAT --text T [--session ID] [--profile P] [--no-copy]
         a command that needs Claude's own panel (commands.py), put in the
         chat's own prompt for you to press Enter there: typed into its tmux
         pane (not sent), its VS Code panel's input (link), else the clipboard
-        ("how": "typed", "vscode" or "copy"); the caller opens its terminal
+        ("how": "typed", "vscode" or "copy"; --no-copy: the caller copies it);
+        the caller opens its terminal
   --answer REQUEST --decision allow|always|deny|answer|approve|approve-edits|keep [--note T] [--answers JSON]
         answer a permission request the hook relayed (permission_hook.py);
         Claude's questions (AskUserQuestion): answer, with JSON {question:
@@ -2295,7 +2296,7 @@ def main(argv=None):
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
                "--hide-reply", "--type-in")
-    osd, suggest = False, False
+    osd, suggest, no_copy = False, False, False
     cwd, model, effort, mode, plan, plan_profile = None, None, None, None, None, None
     while args:
         arg = args.pop(0)
@@ -2363,6 +2364,8 @@ def main(argv=None):
             osd = True
         elif arg == "--suggest":
             suggest = True
+        elif arg == "--no-copy":
+            no_copy = True
         elif arg == "--off":
             off = True
         elif arg == "--remote":
@@ -2432,7 +2435,7 @@ def main(argv=None):
             ok, said = interrupt(home, config_dirs, profile, target, session)
             result = {"ok": ok, "message": said}
         elif action == "--type-in":
-            result = type_in(home, config_dirs, profile, target, text, session, copy=not remote)
+            result = type_in(home, config_dirs, profile, target, text, session, copy=not (remote or no_copy))
         elif action == "--answer":
             ok, said = answer_request(cache_root, target, decision, note, answers)
             # (changed: the request you answered is gone; the chat may ask something else now)
