@@ -1323,7 +1323,7 @@ function ChatApp() {
   // at once), again as the chat is read again (Show earlier: more to search), its count in the bar;
   // the list moves only when you go to a match, and a match in what's folded unfolds it first
   const [find, setFind] = useState({ open: false, query: "" });
-  const [found, setFound] = useState<{ hits: FindHit[]; done: boolean }>({ hits: [], done: true });
+  const [found, setFound] = useState<{ hits: FindHit[]; done: boolean; query: string }>({ hits: [], done: true, query: "" });
   const [findAt, setFindAt] = useState(-1);
   const [findGo, setFindGo] = useState(0);         // (a step: the list goes to it once it's drawn)
   const [markAgain, setMarkAgain] = useState(0);   // (scrolled: the rows near the view now)
@@ -1337,7 +1337,7 @@ function ChatApp() {
   }, [find.query]);
   useEffect(() => {
     if (!find.open || !find.query) {
-      setFound({ hits: [], done: true });
+      setFound({ hits: [], done: true, query: "" });
       return undefined;
     }
     let next = 0, hits: FindHit[] = [], timer = 0, told = performance.now();
@@ -1348,7 +1348,7 @@ function ChatApp() {
       if (next >= 0) {
         if (performance.now() - told > 150) {   // (a long search: what it found so far)
           told = performance.now();
-          setFound({ hits: hits.slice(), done: false });
+          setFound({ hits: hits.slice(), done: false, query: find.query });
         }
         timer = window.setTimeout(slice, 0);
         return;
@@ -1356,7 +1356,7 @@ function ChatApp() {
       const was = findHit.current;
       const at = was ? hits.findIndex((h) => h.key === was.key && h.n === was.n) : -1;
       if (at < 0) findHit.current = null;
-      setFound({ hits, done: true });
+      setFound({ hits, done: true, query: find.query });
       setFindAt(at);
     };
     timer = window.setTimeout(slice, 0);
@@ -1365,7 +1365,17 @@ function ChatApp() {
   const stepFind = (back: boolean) => {
     const el = list.current;
     if (!el || !found.hits.length) return;
-    const i = findStep(found.hits, findAt, back, viewOf(el, shownItems));
+    let i = findStep(found.hits, findAt, back, viewOf(el, shownItems));
+    if (findAt < 0) {   // (the first step, in a long item at the view's edge: from the first match below its top, or going
+      const hits = found.hits, key = hits[i].key;   // back, the last one above its end; one folded away counts as below)
+      const ranges = rangesIn(rowsOf(el, key), find.query, 2000), view = el.getBoundingClientRect();
+      let k = i;
+      for (; k >= 0 && k < hits.length && hits[k].key === key; k += back ? -1 : 1) {
+        const r = hits[k].hidden ? null : ranges[hits[k].n]?.getBoundingClientRect();
+        if (back ? !!r && r.top <= view.bottom : !r || r.bottom >= view.top) break;
+      }
+      i = k >= 0 && k < hits.length && hits[k].key === key ? k : (k + hits.length) % hits.length;
+    }
     const h = found.hits[i];
     findHit.current = h;
     setFindAt(i);
@@ -1781,7 +1791,7 @@ function ChatApp() {
             }}
           >
             {find.open ? (
-              <FindBar query={find.query} count={find.query ? findCount(found.hits.length, findAt, found.done) : ""} input={findInput}
+              <FindBar query={find.query} count={!find.query ? "" : found.query ? findCount(found.hits.length, findAt, found.done) : "…"} input={findInput}
                 onQuery={(q) => setFind({ open: true, query: q })} onStep={stepFind} onClose={closeFind} />
             ) : null}
             {/* (room for the bar above the first row, so Show earlier isn't under it: it's above what you read, which stays put) */}
