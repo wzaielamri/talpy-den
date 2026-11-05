@@ -10,6 +10,9 @@ RowLayout {
     id: row
 
     property var session
+    // its account's section's colors and fonts (ListPalette.qml): the row draws
+    // with plain Text and Rectangles from them, with no theme of its own
+    property var colors: null
     property bool showProfile: false
     property string remoteHost: ""   // set for a session on an SSH host
     property string account: ""      // its account's title
@@ -48,10 +51,10 @@ RowLayout {
     // (by the chat: a background session that ends stays open where it was).
     readonly property string rowKey: root.rowKeyOf(session, remoteHost)
 
-    // Motion: the row is the same delegate whichever chat it shows, so when a
-    // chat moves in the list (or a row above it grows) it slides from where
-    // it was drawn last (root.rowSpots) to where it is; a chat new to the list
-    // fades in. Placed once a layout has settled (Qt.callLater).
+    // Motion: each chat keeps its row (GroupSection's KeyedRows), so when a
+    // chat moves in the list (or a row above it grows, or goes) it slides
+    // from where it was drawn last (root.rowSpots) to where it is; a chat new
+    // to the list fades in. Placed once a layout has settled (Qt.callLater).
     // (a new row isn't where it goes until the layout has placed it: its first
     // move, or a moment after it's made, at the top)
     transform: Translate { id: slide }
@@ -78,7 +81,8 @@ RowLayout {
         }
     }
     function placed() {
-        if (!root.rowSpace || row.session.key === "" || !row.visible || !row.laidOut)
+        // (called later: a row taken away meanwhile has no root any more)
+        if (typeof root === "undefined" || !root || !root.rowSpace || row.session.key === "" || !row.visible || !row.laidOut)
             return
         const y = listTop ? row.y - listTop.y : row.mapToItem(root.rowSpace, 0, 0).y
         const was = root.rowSpots[row.rowKey]
@@ -229,34 +233,35 @@ RowLayout {
         Layout.fillWidth: true
         spacing: Kirigami.Units.smallSpacing * 1.5
 
-        PlasmaComponents3.Label {
+        RowText {
             id: whoLabel
+            colors: row.colors
             Layout.alignment: Qt.AlignTop
             Layout.preferredWidth: whoWidth
-            textFormat: Text.PlainText
-            font.pointSize: Kirigami.Theme.smallFont.pointSize
+            font.pointSize: row.colors.smallFont.pointSize
             font.weight: Font.DemiBold
             opacity: 0.6
         }
-        PlasmaComponents3.Label {
+        RowText {
             id: saidLabel
+            colors: row.colors
             Layout.fillWidth: true
-            textFormat: Text.PlainText
             wrapMode: Text.Wrap
             elide: Text.ElideRight
-            font: Kirigami.Theme.smallFont
+            font: row.colors.smallFont
         }
     }
     // A link in it (Compare changes, Last turn)
-    component PeekLink: PlasmaComponents3.Label {
+    component PeekLink: RowText {
         id: peekLink
         property string tipTitle
         property string tip
         signal clicked()
-        textFormat: Text.PlainText
-        font.pointSize: Kirigami.Theme.smallFont.pointSize
+        colors: row.colors
+        font.pointSize: row.colors.smallFont.pointSize
         font.underline: enabled && linkMouse.containsMouse
-        color: enabled ? Kirigami.Theme.linkColor : Kirigami.Theme.disabledTextColor
+        color: enabled ? row.colors.linkColor : row.colors.disabledTextColor
+        opacity: 1
 
         PlasmaCore.ToolTipArea {
             textFormat: Text.PlainText
@@ -297,6 +302,7 @@ RowLayout {
             z: -1
             target: row
             shown: rowHover.hovered
+            colors: row.colors
             side: Kirigami.Units.smallSpacing
             pad: Kirigami.Units.smallSpacing / 2
         }
@@ -308,7 +314,7 @@ RowLayout {
         Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 0.6)
         Layout.preferredHeight: Layout.preferredWidth
         radius: width / 2
-        color: row.session.reason === "failed" || (row.stopped && !row.stopped.over) ? Kirigami.Theme.negativeTextColor
+        color: row.session.reason === "failed" || (row.stopped && !row.stopped.over) ? row.colors.negativeTextColor
              : root.stateColor(row.session.state)
     }
 
@@ -341,9 +347,9 @@ RowLayout {
                         width: nameBox.width
                         readonly property bool tagsBeside: nameLabel.implicitWidth + Kirigami.Units.smallSpacing + tagLine.extent.width <= width
 
-                        PlasmaComponents3.Label {
+                        RowText {
                             id: nameLabel
-                            textFormat: Text.PlainText
+                            colors: row.colors
                             text: row.session.name
                             font.bold: true
                             font.underline: nameMouse.containsMouse || activeFocus
@@ -403,150 +409,203 @@ RowLayout {
                                 tooltip: i18n("Once it isn't listed here any more, it stays under ★ Starred chats. Click to unstar it.")
                                 onClicked: root.setStar("chats", row.session.chatId || row.session.sessionId, row.remoteHost, false)
                             }
-                            Tag {
-                                visible: row.showProfile
-                                text: row.session.profile
-                                tooltip: i18n("The Claude profile (config folder) this chat runs in")
+                            Loader {
+                                active: row.showProfile
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    text: row.session.profile
+                                    tooltip: i18n("The Claude profile (config folder) this chat runs in")
+                                }
                             }
-                            Tag {
-                                visible: row.tag !== ""
-                                text: row.tag
-                                tooltip: root.movedText(row.session) + (row.session.pid === null ? i18n("No terminal or panel has it open: a reply goes on with it in the background.")
-                                         : row.session.kind === "bg"
-                                         ? (root.openChatsIn === "talpyChat" && !row.session.attached
-                                            ? i18n("A background chat: Claude's background service runs it, with no terminal of its own. Its window is Talpy Chat; Open in a terminal there shows it in one too (claude attach).")
-                                            : i18n("A background chat: Claude's background service runs it, with no terminal of its own. Click the name to open it in a terminal (claude attach)."))
-                                         : row.session.entrypoint === "claude-vscode"
-                                         ? i18n("Runs in VS Code's Claude Code panel. Click the name to open the conversation there.")
-                                         : row.session.tmux ? i18n("It runs in a tmux pane.")
-                                         : row.session.vscodeTerminal || row.session.terminalApp === "VS Code" ? i18n("It runs in a terminal of VS Code.")
-                                         : row.session.terminalApp ? i18n("It runs in a terminal (%1).", row.session.terminalApp)
-                                         : i18n("It runs in a terminal."))
+                            Loader {
+                                active: row.tag !== ""
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    text: row.tag
+                                    tooltip: root.movedText(row.session) + (row.session.pid === null ? i18n("No terminal or panel has it open: a reply goes on with it in the background.")
+                                             : row.session.kind === "bg"
+                                             ? (root.openChatsIn === "talpyChat" && !row.session.attached
+                                                ? i18n("A background chat: Claude's background service runs it, with no terminal of its own. Its window is Talpy Chat; Open in a terminal there shows it in one too (claude attach).")
+                                                : i18n("A background chat: Claude's background service runs it, with no terminal of its own. Click the name to open it in a terminal (claude attach)."))
+                                             : row.session.entrypoint === "claude-vscode"
+                                             ? i18n("Runs in VS Code's Claude Code panel. Click the name to open the conversation there.")
+                                             : row.session.tmux ? i18n("It runs in a tmux pane.")
+                                             : row.session.vscodeTerminal || row.session.terminalApp === "VS Code" ? i18n("It runs in a terminal of VS Code.")
+                                             : row.session.terminalApp ? i18n("It runs in a terminal (%1).", row.session.terminalApp)
+                                             : i18n("It runs in a terminal."))
+                                }
                             }
                             // a background session shown in a terminal too (claude attach)
-                            Tag {
-                                readonly property var shownIn: row.session.kind === "bg" && row.session.attached ? row.session.attached : null
-                                visible: shownIn !== null
-                                text: !shownIn ? "" : shownIn.in === "tmux" ? "Tmux"
-                                      : shownIn.in === "vscode" ? i18nc("where a chat runs", "VS Code terminal") : i18nc("where a chat runs", "Terminal")
-                                tooltip: !shownIn ? "" : shownIn.app ? i18n("Shown in a terminal too (%1): claude attach.", shownIn.app)
-                                                                     : i18n("Shown in a terminal too: claude attach.")
+                            Loader {
+                                active: row.session.kind === "bg" && !!row.session.attached
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    readonly property var shownIn: row.session.kind === "bg" && row.session.attached ? row.session.attached : null
+                                    text: !shownIn ? "" : shownIn.in === "tmux" ? "Tmux"
+                                          : shownIn.in === "vscode" ? i18nc("where a chat runs", "VS Code terminal") : i18nc("where a chat runs", "Terminal")
+                                    tooltip: !shownIn ? "" : shownIn.app ? i18n("Shown in a terminal too (%1): claude attach.", shownIn.app)
+                                                                         : i18n("Shown in a terminal too: claude attach.")
+                                }
                             }
-                            Tag {
-                                // Chat shared across profiles (hard-linked transcript)
-                                readonly property var info: row.session.shared
-                                visible: !!info
-                                icon: Icons.plasma.share
-                                text: info && info.forkOf ? i18n("Shared copy") : i18n("Shared")
-                                tooltipTitle: info && info.forkOf ? i18n("Copy of a shared chat") : i18n("Shared chat")
-                                tooltip: !info ? ""
-                                         : info.forkOf
-                                           ? i18n("A copy of a chat shared between the %1 profiles: Claude forked it into a chat of its own on %2, so new messages here are only on %2.",
-                                                  info.profiles.join(" + "), info.forkOn)
-                                             + (info.movedHere ? "\n" + i18n("The shared chat continued here, so it isn't listed itself.") : "")
-                                             + (info.stoppedCopies ? "\n" + i18n("Its background chat on %1 was stopped; %1 shows a link to this copy.", info.stoppedCopies.join(", ")) : "")
-                                           : i18n("This chat is shared between the %1 profiles: it continues on whichever account you open it with. Only one Claude can have it open at a time.",
-                                                  info.profiles.join(" + "))
-                                             + (row.session.kind === "chat" ? "\n" + i18n("Listed here because it was used on %1 last.", row.session.profile) : "")
-                                             + (info.openIn ? "\n" + i18n("Open in %1 right now.", info.openIn) : "")
-                                             + (info.stoppedCopies ? "\n" + i18n("Its background chat on %1 was stopped; %1 shows a link to this chat.", info.stoppedCopies.join(", ")) : "")
+                            Loader {
+                                active: !!row.session.shared
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    // Chat shared across profiles (hard-linked transcript)
+                                    readonly property var info: row.session.shared
+                                    icon: Icons.plasma.share
+                                    text: info && info.forkOf ? i18n("Shared copy") : i18n("Shared")
+                                    tooltipTitle: info && info.forkOf ? i18n("Copy of a shared chat") : i18n("Shared chat")
+                                    tooltip: !info ? ""
+                                             : info.forkOf
+                                               ? i18n("A copy of a chat shared between the %1 profiles: Claude forked it into a chat of its own on %2, so new messages here are only on %2.",
+                                                      info.profiles.join(" + "), info.forkOn)
+                                                 + (info.movedHere ? "\n" + i18n("The shared chat continued here, so it isn't listed itself.") : "")
+                                                 + (info.stoppedCopies ? "\n" + i18n("Its background chat on %1 was stopped; %1 shows a link to this copy.", info.stoppedCopies.join(", ")) : "")
+                                               : i18n("This chat is shared between the %1 profiles: it continues on whichever account you open it with. Only one Claude can have it open at a time.",
+                                                      info.profiles.join(" + "))
+                                                 + (row.session.kind === "chat" ? "\n" + i18n("Listed here because it was used on %1 last.", row.session.profile) : "")
+                                                 + (info.openIn ? "\n" + i18n("Open in %1 right now.", info.openIn) : "")
+                                                 + (info.stoppedCopies ? "\n" + i18n("Its background chat on %1 was stopped; %1 shows a link to this chat.", info.stoppedCopies.join(", ")) : "")
+                                }
                             }
-                            Tag {
-                                visible: row.agents !== null
-                                text: row.agents ? i18nc("subagents finished/total", "Agents %1/%2", row.agents.done, row.agents.total) : ""
-                                active: row.agents !== null && row.agents.running > 0
-                                clickable: true
-                                onClicked: root.toggleAgents(row.rowKey)
-                                tooltipTitle: i18n("Subagents")
-                                tooltip: !row.agents ? ""
-                                         : i18n("%1 done, %2 running, %3 stopped", row.agents.done, row.agents.running, row.agents.stopped)
-                                           + (row.agents.failed ? i18n(", %1 failed", row.agents.failed) : "") + ". "
-                                           + i18n("Click to %1 what each one is doing.", row.showAgents ? i18n("hide") : i18n("show"))
+                            Loader {
+                                active: row.agents !== null
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    text: row.agents ? i18nc("subagents finished/total", "Agents %1/%2", row.agents.done, row.agents.total) : ""
+                                    active: row.agents !== null && row.agents.running > 0
+                                    clickable: true
+                                    onClicked: root.toggleAgents(row.rowKey)
+                                    tooltipTitle: i18n("Subagents")
+                                    tooltip: !row.agents ? ""
+                                             : i18n("%1 done, %2 running, %3 stopped", row.agents.done, row.agents.running, row.agents.stopped)
+                                               + (row.agents.failed ? i18n(", %1 failed", row.agents.failed) : "") + ". "
+                                               + i18n("Click to %1 what each one is doing.", row.showAgents ? i18n("hide") : i18n("show"))
+                                }
                             }
-                            Tag {
-                                // another chat with a process changed some of the same files (talpy_den.py: note_overlaps)
-                                visible: !!row.session.overlaps && row.session.overlaps.length > 0
-                                icon: Icons.plasma.warning
-                                text: i18nc("two chats changed the same files", "Same files")
-                                warning: true
-                                clickable: true
-                                onClicked: row.openOverlap()
-                                tooltipTitle: i18n("Another chat changes the same files")
-                                tooltip: row.session.overlaps ? root.overlapText(row.session.overlaps) + "\n\n"
-                                         + i18n("Two chats changing the same files can overwrite each other's work. Click to go to the other chat.") : ""
+                            Loader {
+                                active: !!row.session.overlaps && row.session.overlaps.length > 0
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    // another chat with a process changed some of the same files (talpy_den.py: note_overlaps)
+                                    icon: Icons.plasma.warning
+                                    text: i18nc("two chats changed the same files", "Same files")
+                                    warning: true
+                                    clickable: true
+                                    onClicked: row.openOverlap()
+                                    tooltipTitle: i18n("Another chat changes the same files")
+                                    tooltip: row.session.overlaps ? root.overlapText(row.session.overlaps) + "\n\n"
+                                             + i18n("Two chats changing the same files can overwrite each other's work. Click to go to the other chat.") : ""
+                                }
                             }
-                            Tag {
-                                // plan mode, auto mode, …: how freely it may act
-                                visible: row.modeText !== ""
-                                text: row.modeText
-                                warning: !!row.peek && row.peek.mode === "bypassPermissions"
-                                tooltipTitle: i18n("Permission mode: %1", row.modeText)
-                                tooltip: root.modeHint(row.peek ? row.peek.mode : "")
+                            Loader {
+                                active: row.modeText !== ""
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    // plan mode, auto mode, …: how freely it may act
+                                    text: row.modeText
+                                    warning: !!row.peek && row.peek.mode === "bypassPermissions"
+                                    tooltipTitle: i18n("Permission mode: %1", row.modeText)
+                                    tooltip: root.modeHint(row.peek ? row.peek.mode : "")
+                                }
                             }
-                            Tag {
-                                // the plan it made (talpy_den.py: plan_of)
-                                visible: !!row.session.plan
-                                icon: Icons.plasma.plan
-                                text: i18nc("a chat's plan, click to open it", "Plan")
-                                clickable: true
-                                onClicked: root.openPlan(row.session.plan.slug, row.session.profileDir, row.remoteHost)
-                                tooltipTitle: row.session.plan ? row.session.plan.title : ""
-                                tooltip: row.remoteHost ? i18n("The plan this chat made. Click to read it: a copy, fetched from %1.", root.hostLabel(row.remoteHost))
-                                                        : i18n("The plan this chat made. Click to read it, rendered.")
+                            Loader {
+                                active: !!row.session.plan
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    // the plan it made (talpy_den.py: plan_of)
+                                    icon: Icons.plasma.plan
+                                    text: i18nc("a chat's plan, click to open it", "Plan")
+                                    clickable: true
+                                    onClicked: root.openPlan(row.session.plan.slug, row.session.profileDir, row.remoteHost)
+                                    tooltipTitle: row.session.plan ? row.session.plan.title : ""
+                                    tooltip: row.remoteHost ? i18n("The plan this chat made. Click to read it: a copy, fetched from %1.", root.hostLabel(row.remoteHost))
+                                                            : i18n("The plan this chat made. Click to read it, rendered.")
+                                }
                             }
-                            Tag {
-                                // its file itself, to change it (an SSH host's: in VS Code, over Remote-SSH)
-                                visible: !!row.session.plan && (!row.remoteHost || root.vscodeInstalled)
-                                icon: Icons.plasma.edit
-                                text: ""
-                                clickable: true
-                                onClicked: root.editPlan({ slug: row.session.plan.slug, path: row.session.plan.path,
-                                                           profileDir: row.session.profileDir }, row.remoteHost)
-                                tooltipTitle: i18n("Edit the plan")
-                                tooltip: (root.isContainer(row.remoteHost)
-                                          ? i18n("Opens its Markdown file in %1 in VS Code (Dev Containers). What you change there is the plan.", root.hostLabel(row.remoteHost))
-                                          : row.remoteHost
-                                          ? i18n("Opens its Markdown file on %1 in VS Code (Remote - SSH). What you change there is the plan.", root.hostLabel(row.remoteHost))
-                                          : i18n("Opens its Markdown file in your text editor (VS Code, if the settings open plans there). What you change there is the plan."))
-                                         + (row.remoteHost ? "" : " " + i18n("Then send your changes to this chat (Send to Claude): Claude revises the plan."))
+                            Loader {
+                                active: !!row.session.plan && (!row.remoteHost || root.vscodeInstalled)
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    // its file itself, to change it (an SSH host's: in VS Code, over Remote-SSH)
+                                    icon: Icons.plasma.edit
+                                    text: ""
+                                    clickable: true
+                                    onClicked: root.editPlan({ slug: row.session.plan.slug, path: row.session.plan.path,
+                                                               profileDir: row.session.profileDir }, row.remoteHost)
+                                    tooltipTitle: i18n("Edit the plan")
+                                    tooltip: (root.isContainer(row.remoteHost)
+                                              ? i18n("Opens its Markdown file in %1 in VS Code (Dev Containers). What you change there is the plan.", root.hostLabel(row.remoteHost))
+                                              : row.remoteHost
+                                              ? i18n("Opens its Markdown file on %1 in VS Code (Remote - SSH). What you change there is the plan.", root.hostLabel(row.remoteHost))
+                                              : i18n("Opens its Markdown file in your text editor (VS Code, if the settings open plans there). What you change there is the plan."))
+                                             + (row.remoteHost ? "" : " " + i18n("Then send your changes to this chat (Send to Claude): Claude revises the plan."))
+                                }
                             }
-                            Tag {
-                                // you changed its plan since the chat last did anything (talpy_den.py: plan_edited)
-                                visible: !!row.session.plan && !!row.session.plan.edited && !row.remoteHost && !!row.session.chatId
-                                icon: Icons.plasma.send
-                                text: i18nc("send your changes to the plan to the chat", "Send to Claude")
-                                active: true
-                                clickable: true
-                                onClicked: root.sendPlanFeedback(row.session.plan.slug, row.session.profileDir, row.session.chatId)
-                                tooltipTitle: i18n("Send your changes to Claude")
-                                tooltip: i18n("You changed this plan since Claude wrote it. Click to send what you changed (and notes you wrote into it) to this chat: Claude revises the plan, in plan mode.")
-                                         + "\n\n" + i18n("In tmux it's typed in for you. Else it goes to the clipboard and the chat comes up: paste it there (if Claude asks whether to go ahead with the plan, choose to keep planning first). A chat that isn't open reopens in plan mode with it.")
+                            Loader {
+                                active: !!row.session.plan && !!row.session.plan.edited && !row.remoteHost && !!row.session.chatId
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    // you changed its plan since the chat last did anything (talpy_den.py: plan_edited)
+                                    icon: Icons.plasma.send
+                                    text: i18nc("send your changes to the plan to the chat", "Send to Claude")
+                                    active: true
+                                    clickable: true
+                                    onClicked: root.sendPlanFeedback(row.session.plan.slug, row.session.profileDir, row.session.chatId)
+                                    tooltipTitle: i18n("Send your changes to Claude")
+                                    tooltip: i18n("You changed this plan since Claude wrote it. Click to send what you changed (and notes you wrote into it) to this chat: Claude revises the plan, in plan mode.")
+                                             + "\n\n" + i18n("In tmux it's typed in for you. Else it goes to the clipboard and the chat comes up: paste it there (if Claude asks whether to go ahead with the plan, choose to keep planning first). A chat that isn't open reopens in plan mode with it.")
+                                }
                             }
-                            Tag {
-                                visible: row.changes !== null
-                                text: row.changes ? i18nc("number of files a chat changed", "±%1", row.changes.count) : ""
-                                clickable: row.canCompare
-                                onClicked: root.showChanges(row.session.chatId, row.session.profileDir, false)
-                                tooltipTitle: row.changes ? i18np("%1 file changed", "%1 files changed", row.changes.count) : ""
-                                tooltip: !row.changes ? ""
-                                         : row.changes.files.join("\n")
-                                           + (row.changes.count > row.changes.files.length ? "\n" + i18n("…and %1 more", row.changes.count - row.changes.files.length) : "")
-                                           + "\n\n" + (row.remoteHost ? i18n("The files are on %1.", root.hostLabel(row.remoteHost))
-                                                      : !root.vscodeInstalled ? i18n("Install VS Code to compare them side by side.")
-                                                      : i18n("Click to compare them in VS Code: what they were before the chat, and now."))
+                            Loader {
+                                active: row.changes !== null
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    text: row.changes ? i18nc("number of files a chat changed", "±%1", row.changes.count) : ""
+                                    clickable: row.canCompare
+                                    onClicked: root.showChanges(row.session.chatId, row.session.profileDir, false)
+                                    tooltipTitle: row.changes ? i18np("%1 file changed", "%1 files changed", row.changes.count) : ""
+                                    tooltip: !row.changes ? ""
+                                             : row.changes.files.join("\n")
+                                               + (row.changes.count > row.changes.files.length ? "\n" + i18n("…and %1 more", row.changes.count - row.changes.files.length) : "")
+                                               + "\n\n" + (row.remoteHost ? i18n("The files are on %1.", root.hostLabel(row.remoteHost))
+                                                          : !root.vscodeInstalled ? i18n("Install VS Code to compare them side by side.")
+                                                          : i18n("Click to compare them in VS Code: what they were before the chat, and now."))
+                                }
                             }
-                            Tag {
-                                // it changed files and is done: to review until you mark it reviewed (ChatPane.qml)
-                                visible: root.reviewPending(row.session, row.remoteHost)
-                                text: i18nc("a finished chat's changes, not reviewed yet", "To review")
-                                active: true
-                                clickable: true
-                                onClicked: root.openPane(row.session, row.remoteHost, "review")
-                                tooltipTitle: i18n("Not reviewed yet")
-                                tooltip: i18n("It changed files and its turn is over. Click to see what it changed, against how the files were before the chat: undo it, commit only its files, or mark it reviewed.")
+                            Loader {
+                                active: root.reviewPending(row.session, row.remoteHost)
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    // it changed files and is done: to review until you mark it reviewed (ChatPane.qml)
+                                    text: i18nc("a finished chat's changes, not reviewed yet", "To review")
+                                    active: true
+                                    clickable: true
+                                    onClicked: root.openPane(row.session, row.remoteHost, "review")
+                                    tooltipTitle: i18n("Not reviewed yet")
+                                    tooltip: i18n("It changed files and its turn is over. Click to see what it changed, against how the files were before the chat: undo it, commit only its files, or mark it reviewed.")
+                                }
                             }
-                            TestsBadge {
-                                review: root.reviewPending(row.session, row.remoteHost) ? row.session.review : null
+                            Loader {
+                                active: root.reviewPending(row.session, row.remoteHost)
+                                visible: active
+                                sourceComponent: TestsBadge {
+                                    colors: row.colors
+                                    review: row.session.review
+                                }
                             }
                         }
                     }
@@ -562,8 +621,9 @@ RowLayout {
                 Layout.alignment: Qt.AlignTop
                 implicitHeight: stateLabel.implicitHeight
 
-                PlasmaComponents3.Label {
+                RowText {
                     id: stateLabel
+                    colors: row.colors
                     // (as wide as it was at its widest for this chat: "Working · 12m"
                     // turning "Idle · 0m", or the next minute, doesn't move its tags)
                     property real widest: 0
@@ -571,11 +631,10 @@ RowLayout {
                     horizontalAlignment: Text.AlignRight   // (at the line's end, however wide it was)
                     // (the hover buttons over its end: what's left of it shows, unless that's a sliver)
                     opacity: row.buttonsShown && implicitWidth - rowButtons.covering < Kirigami.Units.gridUnit * 2 ? 0 : 1
-                    textFormat: Text.PlainText
                     text: root.stateText(row.session)
-                    color: row.session.state === "waiting" ? Kirigami.Theme.neutralTextColor
-                         : row.stopped && !row.stopped.over ? Kirigami.Theme.negativeTextColor
-                         : row.stopped ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.textColor
+                    color: row.session.state === "waiting" ? row.colors.neutralTextColor
+                         : row.stopped && !row.stopped.over ? row.colors.negativeTextColor
+                         : row.stopped ? row.colors.positiveTextColor : row.colors.textColor
                     font.bold: row.session.state === "waiting" || !!row.stopped
                     elide: Text.ElideRight
                     onImplicitWidthChanged: widest = Math.max(widest, implicitWidth)
@@ -718,12 +777,12 @@ RowLayout {
             Layout.fillWidth: true
             spacing: Kirigami.Units.smallSpacing
 
-            PlasmaComponents3.Label {
+            RowText {
                 id: folderLabel
-                textFormat: Text.PlainText
+                colors: row.colors
                 text: row.session.cwdShort
                 opacity: 0.7
-                font: Kirigami.Theme.smallFont
+                font: row.colors.smallFont
                 elide: Text.ElideMiddle
                 Layout.fillWidth: true
 
@@ -736,14 +795,14 @@ RowLayout {
                     subText: (row.remoteHost ? root.hostLabel(row.remoteHost) + ":" : "") + row.session.cwd
                 }
             }
-            PlasmaComponents3.Label {
+            RowText {
                 readonly property bool ultracode: !!row.peek && row.peek.ultracode === true
-                textFormat: Text.PlainText
+                colors: row.colors
                 visible: !!row.session.model || ultracode
                 // the model, how hard it thinks (Claude's /effort) and whether ultracode is on
                 text: [row.session.model || "", row.session.effort || "", ultracode ? i18n("ultracode") : ""].filter(t => t).join(" · ")
                 opacity: 0.7
-                font: Kirigami.Theme.smallFont
+                font: row.colors.smallFont
 
                 PlasmaCore.ToolTipArea {
                     textFormat: Text.PlainText
@@ -761,7 +820,7 @@ RowLayout {
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 2.5
                 Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * 0.3)
                 radius: height / 2
-                color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
+                color: row.colors.groove
 
                 Rectangle {
                     width: parent.width * Math.min(100, Math.max(0, row.session.context || 0)) / 100
@@ -770,21 +829,15 @@ RowLayout {
                     color: root.usageColor(row.session.context || 0)
                 }
             }
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
+            RowText {
+                colors: row.colors
                 visible: row.session.context !== null
                 text: i18nc("context window fill", "ctx %1%", Math.round(row.session.context || 0))
                 opacity: 0.7
-                font: Kirigami.Theme.smallFont
+                font: row.colors.smallFont
                 // (as wide as "ctx 100%", right-aligned: every row's bar ends at one place)
-                Layout.minimumWidth: ctxWidth.width
+                Layout.minimumWidth: row.colors.ctxWidth
                 horizontalAlignment: Text.AlignRight
-
-                TextMetrics {
-                    id: ctxWidth
-                    font: Kirigami.Theme.smallFont
-                    text: i18nc("context window fill", "ctx %1%", 100)
-                }
             }
         }
 
@@ -831,290 +884,298 @@ RowLayout {
                     Layout.preferredWidth: Kirigami.Units.gridUnit * 2.5
                     Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * 0.3)
                     radius: height / 2
-                    color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15)
+                    color: row.colors.groove
 
                     Rectangle {
                         width: parent.width * (row.tasks ? row.tasks.done / Math.max(1, row.tasks.total) : 0)
                         height: parent.height
                         radius: parent.radius
-                        color: Kirigami.Theme.positiveTextColor
+                        color: row.colors.positiveTextColor
                     }
                 }
-                PlasmaComponents3.Label {
-                    textFormat: Text.PlainText
+                RowText {
+                    colors: row.colors
                     visible: row.tasks !== null
                     text: row.tasks ? i18nc("tasks done/total", "%1/%2", row.tasks.done, row.tasks.total) : ""
                     opacity: 0.7
-                    font: Kirigami.Theme.smallFont
+                    font: row.colors.smallFont
                 }
-                PlasmaComponents3.Label {
+                RowText {
                     id: stepLabel
+                    colors: row.colors
                     Layout.fillWidth: true
                     text: (row.session.state === "working" && row.stepText ? "▸ "
                            : row.showsRecap ? i18nc("Claude's recap of the chat", "Recap: ")
                            : row.showsReply ? i18nc("what Claude said last", "Claude: ") : "") + row.stepText
-                    textFormat: Text.PlainText
                     // (what it's doing in the working color, as in the VS Code extension)
                     readonly property bool doing: row.session.state === "working" && row.stepText !== ""
                     color: doing ? root.stateColor("working")
-                         : row.session.state === "waiting" ? Kirigami.Theme.neutralTextColor
-                         : row.stopped && !row.stopped.over && row.session.state !== "working" ? Kirigami.Theme.negativeTextColor
-                         : Kirigami.Theme.textColor
+                         : row.session.state === "waiting" ? row.colors.neutralTextColor
+                         : row.stopped && !row.stopped.over && row.session.state !== "working" ? row.colors.negativeTextColor
+                         : row.colors.textColor
                     elide: Text.ElideRight
                     opacity: doing ? 1 : 0.8
-                    font: Kirigami.Theme.smallFont
+                    font: row.colors.smallFont
                 }
                 // A usage limit stopped it: what's next, close together, away from
                 // the words before them (as VS Code's)
-                RowLayout {
-                    visible: row.handover !== null || row.goOnAt > 0 || row.goingOn !== null || row.kept !== null
+                Loader {   // (made only when it shows: most rows have none of these)
+                    active: row.handover !== null || row.goOnAt > 0 || row.goingOn !== null || row.kept !== null
+                    visible: active
                     Layout.leftMargin: Kirigami.Units.smallSpacing * 2
-                    spacing: Kirigami.Units.smallSpacing
+                    sourceComponent: RowLayout {
+                        spacing: Kirigami.Units.smallSpacing
 
-                    // continue on another account with room left
-                    IconTextButton {
-                        id: handoverButton
-                        visible: row.handover !== null
-                        icon.name: Icons.plasma.continueOn
-                        text: row.handover ? i18n("Continue on %1", row.handover.title) : ""
-                        Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
-                        onClicked: root.handOver(row.session, row.remoteHost, row.handover)
+                        // continue on another account with room left
+                        IconTextButton {
+                            id: handoverButton
+                            visible: row.handover !== null
+                            icon.name: Icons.plasma.continueOn
+                            text: row.handover ? i18n("Continue on %1", row.handover.title) : ""
+                            Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                            onClicked: root.handOver(row.session, row.remoteHost, row.handover)
 
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: row.handover ? i18n("Continue on %1", row.handover.title) : ""
-                            subText: !row.handover ? ""
-                                     : (row.handover.pct !== null
-                                        ? i18n("%1 has used %2% of its %3 limit.", row.handover.title, Math.round(row.handover.pct), row.handover.label)
-                                        : i18n("%1's plan usage isn't known here.", row.handover.title))
-                                       + " " + (row.session.pid !== null
-                                                ? (row.session.kind === "bg"
-                                                   ? i18n("This background chat is stopped first (claude stop); then the chat is shared with %1 and reopens there in a terminal.", row.handover.title)
-                                                   : i18n("Claude here quits first (its terminal stays open); then the chat is shared with %1 and reopens there in a terminal.", row.handover.title))
-                                                : i18n("The chat is shared with %1 and reopens there in a terminal.", row.handover.title))
+                            PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: row.handover ? i18n("Continue on %1", row.handover.title) : ""
+                                subText: !row.handover ? ""
+                                         : (row.handover.pct !== null
+                                            ? i18n("%1 has used %2% of its %3 limit.", row.handover.title, Math.round(row.handover.pct), row.handover.label)
+                                            : i18n("%1's plan usage isn't known here.", row.handover.title))
+                                           + " " + (row.session.pid !== null
+                                                    ? (row.session.kind === "bg"
+                                                       ? i18n("This background chat is stopped first (claude stop); then the chat is shared with %1 and reopens there in a terminal.", row.handover.title)
+                                                       : i18n("Claude here quits first (its terminal stays open); then the chat is shared with %1 and reopens there in a terminal.", row.handover.title))
+                                                    : i18n("The chat is shared with %1 and reopens there in a terminal.", row.handover.title))
+                            }
                         }
-                    }
-                    // or go on by itself once the limit resets (queued; again: cancelled)
-                    IconTextButton {
-                        visible: row.goOnAt > 0 || row.goingOn !== null
-                        icon.name: Icons.plasma.goOnAt
-                        on: row.goingOn !== null   // (it goes on then, as a toggle that's on; a click cancels it)
-                        // (one that waits for its background commands: when it ends them is in its tooltip and queued line)
-                        text: row.goingOn && row.goingOn.waits && !row.goingOn.error ? i18n("Waits to go on")
-                              : row.goingOn ? i18n("Goes on at %1", root.startText(row.goingOn.startAt))
-                              : i18n("Go on at %1", root.startText(row.goOnAt))
-                        Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
-                        onClicked: {
-                            if (row.goingOn)
-                                root.unqueue(row.goingOn)
-                            else
-                                root.queueContinue(row.session, row.remoteHost, row.account, false)
-                        }
+                        // or go on by itself once the limit resets (queued; again: cancelled)
+                        IconTextButton {
+                            visible: row.goOnAt > 0 || row.goingOn !== null
+                            icon.name: Icons.plasma.goOnAt
+                            on: row.goingOn !== null   // (it goes on then, as a toggle that's on; a click cancels it)
+                            // (one that waits for its background commands: when it ends them is in its tooltip and queued line)
+                            text: row.goingOn && row.goingOn.waits && !row.goingOn.error ? i18n("Waits to go on")
+                                  : row.goingOn ? i18n("Goes on at %1", root.startText(row.goingOn.startAt))
+                                  : i18n("Go on at %1", root.startText(row.goOnAt))
+                            Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                            onClicked: {
+                                if (row.goingOn)
+                                    root.unqueue(row.goingOn)
+                                else
+                                    root.queueContinue(row.session, row.remoteHost, row.account, false)
+                            }
 
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            readonly property bool waits: !!row.goingOn && !!row.goingOn.waits && !row.goingOn.error
-                            mainText: waits ? i18n("Waits to go on")
-                                      : row.goingOn ? i18n("Goes on by itself at %1", root.startText(row.goingOn.startAt))
-                                      : i18n("Go on once the limit resets")
-                            subText: waits ? row.goingOn.waits + ".\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
-                                                                                     : i18n("Click to cancel it."))
-                                     : (row.goingOn ? "" : i18n("At %1, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.", root.startText(row.goOnAt)) + " ")
-                                     + (row.session.pid === null || row.session.pid === undefined ? ""
-                                        : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
-                                        : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it.")) + " "
-                                     + i18n("It goes on in the permission mode it had.") + " "
-                                     + i18n("If it went on before then, nothing happens.")
-                                     + (row.goingOn ? "" : " " + i18n("This happens once: to have it go on after later limits too, choose Keep going."))
-                                     + (row.goingOn ? "\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
-                                                                         : i18n("Click to cancel it.")) : "")
+                            PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                readonly property bool waits: !!row.goingOn && !!row.goingOn.waits && !row.goingOn.error
+                                mainText: waits ? i18n("Waits to go on")
+                                          : row.goingOn ? i18n("Goes on by itself at %1", root.startText(row.goingOn.startAt))
+                                          : i18n("Go on once the limit resets")
+                                subText: waits ? row.goingOn.waits + ".\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
+                                                                                         : i18n("Click to cancel it."))
+                                         : (row.goingOn ? "" : i18n("At %1, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.", root.startText(row.goOnAt)) + " ")
+                                         + (row.session.pid === null || row.session.pid === undefined ? ""
+                                            : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
+                                            : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it.")) + " "
+                                         + i18n("It goes on in the permission mode it had.") + " "
+                                         + i18n("If it went on before then, nothing happens.")
+                                         + (row.goingOn ? "" : " " + i18n("This happens once: to have it go on after later limits too, choose Keep going."))
+                                         + (row.goingOn ? "\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
+                                                                             : i18n("Click to cancel it.")) : "")
+                            }
                         }
-                    }
-                    // or go on then, and after each later limit too, until it's done
-                    IconTextButton {
-                        visible: row.goOnAt > 0 && row.goingOn === null && row.kept === null
-                        icon.name: Icons.plasma.keepGoing
-                        text: i18n("Keep going")
-                        Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
-                        onClicked: root.queueContinue(row.session, row.remoteHost, row.account, true)
+                        // or go on then, and after each later limit too, until it's done
+                        IconTextButton {
+                            visible: row.goOnAt > 0 && row.goingOn === null && row.kept === null
+                            icon.name: Icons.plasma.keepGoing
+                            text: i18n("Keep going")
+                            Layout.preferredHeight: Math.max(stepLabel.implicitHeight + Kirigami.Units.smallSpacing, Kirigami.Units.iconSizes.small + 2)
+                            onClicked: root.queueContinue(row.session, row.remoteHost, row.account, true)
 
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: i18n("Keep going until it's done")
-                            subText: i18n("At %1, a minute after the limit resets, the chat goes on in the background, in the permission mode it had, and again after each later limit that stops it, until a turn of it ends by itself.", root.startText(row.goOnAt))
-                                     + " " + (row.session.pid === null || row.session.pid === undefined ? ""
-                                              : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
-                                              : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it."))
+                            PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: i18n("Keep going until it's done")
+                                subText: i18n("At %1, a minute after the limit resets, the chat goes on in the background, in the permission mode it had, and again after each later limit that stops it, until a turn of it ends by itself.", root.startText(row.goOnAt))
+                                         + " " + (row.session.pid === null || row.session.pid === undefined ? ""
+                                                  : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
+                                                  : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it."))
+                            }
                         }
-                    }
-                    // it keeps going: after each usage limit, on by itself (click: not any more)
-                    Tag {
-                        visible: row.kept !== null
-                        icon: Icons.plasma.keepGoing
-                        // (red: it says why, as VS Code's)
-                        text: row.kept && row.kept.error ? i18nc("a chat that goes on by itself after usage limits, which gave up", "Keeps going (gave up)")
-                            : row.kept && row.kept.note ? i18nc("a chat that goes on by itself after usage limits, which can't go on at the moment", "Keeps going (can't go on now)")
-                            : i18nc("a chat that goes on by itself after usage limits", "Keeps going")
-                        active: row.kept !== null && !row.kept.error
-                        warning: row.kept !== null && (!!row.kept.error || !!row.kept.note)
-                        clickable: true
-                        tooltipTitle: i18n("Keeps going until it's done")
-                        tooltip: row.kept ? root.keptText(row.kept) : ""
-                        onClicked: root.keepGoing(row.session, false, row.remoteHost)
+                        // it keeps going: after each usage limit, on by itself (click: not any more)
+                        Tag {
+                            colors: row.colors
+                            visible: row.kept !== null
+                            icon: Icons.plasma.keepGoing
+                            // (red: it says why, as VS Code's)
+                            text: row.kept && row.kept.error ? i18nc("a chat that goes on by itself after usage limits, which gave up", "Keeps going (gave up)")
+                                : row.kept && row.kept.note ? i18nc("a chat that goes on by itself after usage limits, which can't go on at the moment", "Keeps going (can't go on now)")
+                                : i18nc("a chat that goes on by itself after usage limits", "Keeps going")
+                            active: row.kept !== null && !row.kept.error
+                            warning: row.kept !== null && (!!row.kept.error || !!row.kept.note)
+                            clickable: true
+                            tooltipTitle: i18n("Keeps going until it's done")
+                            tooltip: row.kept ? root.keptText(row.kept) : ""
+                            onClicked: root.keepGoing(row.session, false, row.remoteHost)
+                        }
                     }
                 }
-                Kirigami.Icon {
-                    visible: row.hasPeek
-                    source: row.showPeek ? Icons.plasma.peekOpen : Icons.plasma.peekClosed
+                Loader {
+                    active: row.hasPeek
+                    visible: active
                     Layout.preferredWidth: Kirigami.Units.iconSizes.small
                     Layout.preferredHeight: Layout.preferredWidth
-                    opacity: stepMouse.containsMouse ? 0.9 : 0.4
+                    sourceComponent: Kirigami.Icon {
+                        source: row.showPeek ? Icons.plasma.peekOpen : Icons.plasma.peekClosed
+                        opacity: stepMouse.containsMouse ? 0.9 : 0.4
+                    }
                 }
             }
         }
 
         // What it asks while it waits for a permission: Allow once, Always allow, Deny; or its questions
-        PermissionAsk {
-            visible: row.session.state === "waiting" && !!row.session.permission
+        // (made only while it asks: a whole form, under every row it made a long list slow)
+        Loader {
+            active: row.session.state === "waiting" && !!row.session.permission
+            visible: active
             Layout.fillWidth: true
             Layout.topMargin: Kirigami.Units.smallSpacing
-            permission: visible ? row.session.permission : null
-            diffLines: 6
-            compact: true
-            onAnswered: (decision, note, answers) => root.answerPermission(row.session, row.remoteHost, decision, note, answers)
-            onWholePlan: root.openPane(row.session, row.remoteHost, "chat")
+            sourceComponent: PermissionAsk {
+                permission: row.session.state === "waiting" && !!row.session.permission ? row.session.permission : null
+                diffLines: 6
+                compact: true
+                onAnswered: (decision, note, answers) => root.answerPermission(row.session, row.remoteHost, decision, note, answers)
+                onWholePlan: root.openPane(row.session, row.remoteHost, "chat")
+            }
         }
 
         // Your last prompt, Claude's reply since, the chat's tasks, what it
         // changed and its numbers, as the VS Code extension shows them
-        Rectangle {
+        // (made only while unfolded: folded on almost every row)
+        Loader {
+            active: row.showPeek && row.hasPeek
+            visible: active
             Layout.fillWidth: true
             Layout.topMargin: Kirigami.Units.smallSpacing / 2
-            visible: row.showPeek && row.hasPeek
-            implicitHeight: peekColumn.implicitHeight + Kirigami.Units.smallSpacing * 2
-            radius: Kirigami.Units.cornerRadius
-            color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.05)
+            sourceComponent: Rectangle {
+                implicitHeight: peekColumn.implicitHeight + Kirigami.Units.smallSpacing * 2
+                radius: Kirigami.Units.cornerRadius
+                color: row.colors.ground
 
-            // its left edge
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: 2
-                radius: 1
-                color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
-            }
-            FontMetrics {
-                id: whoFm
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                font.weight: Font.DemiBold
-            }
-
-            ColumnLayout {
-                id: peekColumn
-                // (who said it: a column as wide as the widest of them)
-                readonly property real whoWidth: Math.ceil(Math.max(whoFm.advanceWidth(i18nc("Claude's recap of the chat", "Recap")),
-                                                                    whoFm.advanceWidth(i18nc("your last prompt", "You")),
-                                                                    whoFm.advanceWidth(i18nc("Claude's last reply", "Claude"))))
-                anchors.fill: parent
-                anchors.margins: Kirigami.Units.smallSpacing
-                anchors.leftMargin: Kirigami.Units.smallSpacing + 3
-                spacing: Kirigami.Units.smallSpacing
-
-                // Claude's recap of the chat, written when you came back to it
-                PeekMessage {
-                    visible: row.summary !== null
-                    who: i18nc("Claude's recap of the chat", "Recap")
-                    whoWidth: peekColumn.whoWidth
-                    text: row.summary ? row.summary.text : ""
-                    lines: 8
-                }
-                PeekMessage {
-                    visible: !!row.peek && row.peek.prompt !== ""
-                    who: i18nc("your last prompt", "You")
-                    whoWidth: peekColumn.whoWidth
-                    text: row.peek ? row.peek.prompt : ""
-                    lines: 3
-                }
-                PeekMessage {
-                    visible: !!row.peek && row.peek.reply !== ""
-                    who: i18nc("Claude's last reply", "Claude")
-                    whoWidth: peekColumn.whoWidth
-                    text: row.peek ? row.peek.reply : ""
-                    lines: 14
+                // its left edge
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 2
+                    radius: 1
+                    color: row.colors.frame
                 }
 
-                // The chat's tasks: ✓ done, ▸ the one it's on, ○ still to do
                 ColumnLayout {
-                    Layout.fillWidth: true
-                    visible: row.tasks !== null
-                    spacing: 0
+                    id: peekColumn
+                    // (who said it: a column as wide as the widest of them)
+                    readonly property real whoWidth: row.colors.whoWidth
+                    anchors.fill: parent
+                    anchors.margins: Kirigami.Units.smallSpacing
+                    anchors.leftMargin: Kirigami.Units.smallSpacing + 3
+                    spacing: Kirigami.Units.smallSpacing
 
-                    Repeater {
-                        model: row.tasks ? row.tasks.items.length : 0
-                        delegate: PlasmaComponents3.Label {
-                            required property int index
-                            readonly property var task: (row.tasks && row.tasks.items[index]) || root.emptyTask
-                            Layout.fillWidth: true
-                            text: (task.status === "completed" ? "✓ " : task.status === "in_progress" ? "▸ " : "○ ") + task.subject
-                            textFormat: Text.PlainText
-                            elide: Text.ElideRight
-                            opacity: task.status === "completed" ? 0.6 : 0.9
-                            font.pointSize: Kirigami.Theme.smallFont.pointSize
-                            font.bold: task.status === "in_progress"
+                    // Claude's recap of the chat, written when you came back to it
+                    PeekMessage {
+                        visible: row.summary !== null
+                        who: i18nc("Claude's recap of the chat", "Recap")
+                        whoWidth: peekColumn.whoWidth
+                        text: row.summary ? row.summary.text : ""
+                        lines: 8
+                    }
+                    PeekMessage {
+                        visible: !!row.peek && row.peek.prompt !== ""
+                        who: i18nc("your last prompt", "You")
+                        whoWidth: peekColumn.whoWidth
+                        text: row.peek ? row.peek.prompt : ""
+                        lines: 3
+                    }
+                    PeekMessage {
+                        visible: !!row.peek && row.peek.reply !== ""
+                        who: i18nc("Claude's last reply", "Claude")
+                        whoWidth: peekColumn.whoWidth
+                        text: row.peek ? row.peek.reply : ""
+                        lines: 14
+                    }
+
+                    // The chat's tasks: ✓ done, ▸ the one it's on, ○ still to do
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: row.tasks !== null
+                        spacing: 0
+
+                        Repeater {
+                            model: row.tasks ? row.tasks.items.length : 0
+                            delegate: RowText {
+                                required property int index
+                                readonly property var task: (row.tasks && row.tasks.items[index]) || root.emptyTask
+                                colors: row.colors
+                                Layout.fillWidth: true
+                                text: (task.status === "completed" ? "✓ " : task.status === "in_progress" ? "▸ " : "○ ") + task.subject
+                                elide: Text.ElideRight
+                                opacity: task.status === "completed" ? 0.6 : 0.9
+                                font.pointSize: row.colors.smallFont.pointSize
+                                font.bold: task.status === "in_progress"
+                            }
                         }
                     }
-                }
 
-                // What it changed, side by side in VS Code
-                RowLayout {
-                    visible: row.changes !== null && !row.remoteHost
-                    spacing: Kirigami.Units.gridUnit * 0.75
+                    // What it changed, side by side in VS Code
+                    RowLayout {
+                        visible: row.changes !== null && !row.remoteHost
+                        spacing: Kirigami.Units.gridUnit * 0.75
 
-                    PeekLink {
-                        text: i18np("Compare changes (%1 file)", "Compare changes (%1 files)", row.changes ? row.changes.count : 0)
-                        enabled: row.canCompare
-                        tipTitle: i18n("Everything this chat changed")
-                        tip: root.vscodeInstalled
-                             ? i18n("Opens in VS Code side by side: each file as it was before the chat first changed it, and as it is now.")
-                             : i18n("Needs VS Code.")
-                        onClicked: root.showChanges(row.session.chatId, row.session.profileDir, false)
+                        PeekLink {
+                            text: i18np("Compare changes (%1 file)", "Compare changes (%1 files)", row.changes ? row.changes.count : 0)
+                            enabled: row.canCompare
+                            tipTitle: i18n("Everything this chat changed")
+                            tip: root.vscodeInstalled
+                                 ? i18n("Opens in VS Code side by side: each file as it was before the chat first changed it, and as it is now.")
+                                 : i18n("Needs VS Code.")
+                            onClicked: root.showChanges(row.session.chatId, row.session.profileDir, false)
+                        }
+                        PeekLink {
+                            text: i18n("Last turn")
+                            enabled: row.canCompare
+                            tipTitle: i18n("What its last turn changed")
+                            tip: i18n("The files as they were when you sent your last prompt, and as they are now.")
+                            onClicked: root.showChanges(row.session.chatId, row.session.profileDir, true)
+                        }
                     }
-                    PeekLink {
-                        text: i18n("Last turn")
-                        enabled: row.canCompare
-                        tipTitle: i18n("What its last turn changed")
-                        tip: i18n("The files as they were when you sent your last prompt, and as they are now.")
-                        onClicked: root.showChanges(row.session.chatId, row.session.profileDir, true)
-                    }
-                }
 
-                // The chat in numbers
-                PlasmaComponents3.Label {
-                    textFormat: Text.PlainText
-                    Layout.fillWidth: true
-                    visible: row.recap !== null
-                    text: root.recapText(row.recap, row.session.costUsd)
-                    wrapMode: Text.Wrap
-                    opacity: 0.7
-                    font: Kirigami.Theme.smallFont
+                    // The chat in numbers
+                    RowText {
+                        colors: row.colors
+                        Layout.fillWidth: true
+                        visible: row.recap !== null
+                        text: root.recapText(row.recap, row.session.costUsd)
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                        font: row.colors.smallFont
 
-                    PlasmaCore.ToolTipArea {
-                        textFormat: Text.PlainText
-                        anchors.fill: parent
-                        active: row.recap !== null
-                        mainText: i18n("This chat in numbers")
-                        subText: !row.recap ? ""
-                                 : (row.recap.startedAt ? i18n("Started %1 ago, last active %2 ago.", root.duration(root.now - row.recap.startedAt),
-                                                               root.duration(root.now - (row.recap.lastAt || root.now))) + "\n" : "")
-                                   + i18n("Tokens: input %1 · output %2 · cache read %3 · cache write %4 (subagents included).",
-                                          root.formatTokens(row.recap.tokens.input), root.formatTokens(row.recap.tokens.output),
-                                          root.formatTokens(row.recap.tokens.cacheRead), root.formatTokens(row.recap.tokens.cacheWrite))
-                                   + "\n" + i18n("Worked: how long Claude was at it, from each prompt of yours to its last step.")
-                                   + (row.session.costUsd ? "\n" + i18n("The price is what this chat would cost through the API, from the status line.") : "")
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            active: row.recap !== null
+                            mainText: i18n("This chat in numbers")
+                            subText: !row.recap ? ""
+                                     : (row.recap.startedAt ? i18n("Started %1 ago, last active %2 ago.", root.duration(root.now - row.recap.startedAt),
+                                                                   root.duration(root.now - (row.recap.lastAt || root.now))) + "\n" : "")
+                                       + i18n("Tokens: input %1 · output %2 · cache read %3 · cache write %4 (subagents included).",
+                                              root.formatTokens(row.recap.tokens.input), root.formatTokens(row.recap.tokens.output),
+                                              root.formatTokens(row.recap.tokens.cacheRead), root.formatTokens(row.recap.tokens.cacheWrite))
+                                       + "\n" + i18n("Worked: how long Claude was at it, from each prompt of yours to its last step.")
+                                       + (row.session.costUsd ? "\n" + i18n("The price is what this chat would cost through the API, from the status line.") : "")
+                        }
                     }
                 }
             }
@@ -1159,61 +1220,79 @@ RowLayout {
             itemKey: row.session.key !== "" ? row.rowKey : ""
         }
 
-        Kirigami.InlineMessage {
+        // Stop it? (made only while it's asked)
+        Loader {
+            active: row.confirmingStop && row.canStop
+            visible: active
             Layout.fillWidth: true
-            visible: row.confirmingStop && row.canStop
-            type: Kirigami.MessageType.Warning
-            // rich text (an InlineMessage always guesses), so the name is escaped
-            text: "<span>" + (row.canInterrupt
-                  ? i18n("Interrupt “%1”? Like Ctrl+C in its tmux pane, or the stop button in VS Code: the current step and its subagents stop, and the chat stays open there. Or stop it: Claude quits and its terminal stays open.", root.escapeHtml(row.session.name))
-                  : row.canEnd && row.inVscode && row.session.state === "working"
-                  ? i18n("Stop “%1”? It's working right now: the current step is interrupted, as with VS Code's stop button, and anything it was running stops. Its tab keeps the chat and goes on with your next message.", root.escapeHtml(row.session.name))
-                  : row.canEnd && row.inVscode && row.session.state === "waiting"
-                  ? i18n("Stop “%1”? It's waiting for you: what it asks is refused, as with VS Code's stop button. Its tab keeps the chat and goes on with your next message.", root.escapeHtml(row.session.name))
-                  : row.canEnd && row.inVscode
-                  ? i18n("Stop “%1”? It's idle, so nothing is interrupted: its Claude process in VS Code quits. Its tab keeps the chat and goes on with your next message.", root.escapeHtml(row.session.name))
-                  : row.canEnd && row.session.state === "working"
-                  ? i18n("Stop “%1”? It's working right now: the current step is cut off and anything it was running stops. Claude quits and its terminal stays open; the chat is kept (Recent chats reopens it).", root.escapeHtml(row.session.name))
-                  : row.canEnd && row.session.state === "waiting"
-                  ? i18n("Stop “%1”? It's waiting for you: Claude quits without your answer and its terminal stays open. The chat is kept (Recent chats reopens it).", root.escapeHtml(row.session.name))
-                  : row.canEnd
-                  ? i18n("Stop “%1”? It's idle, so nothing is interrupted: Claude quits and its terminal stays open. The chat is kept; reopen it from Recent chats.", root.escapeHtml(row.session.name))
-                  : row.session.state === "working"
-                  ? i18n("Stop “%1”? It's working right now: the current step is interrupted and anything it started in the background stops too. The conversation is kept; claude attach resumes it.", root.escapeHtml(row.session.name))
-                  : row.session.state === "waiting"
-                  ? i18n("Stop “%1”? It's waiting for you. The conversation is kept; claude attach resumes it.", root.escapeHtml(row.session.name))
-                  : i18n("Stop “%1”? It's finished, so this only shuts down its idle process. The conversation is kept.", root.escapeHtml(row.session.name)))
-                  + (row.kept ? "<br>" + i18n("It keeps going after usage limits.") : "") + "</span>"
-            actions: [
-                Kirigami.Action {
-                    text: i18n("Interrupt")
-                    icon.name: Icons.plasma.interrupt
-                    visible: row.canInterrupt
-                    onTriggered: {
-                        root.stopConfirmSession = ""
-                        if (row.remoteHost)
-                            root.remoteInterrupt(row.remoteHost, row.session.sessionId, row.session.profileDir)
-                        else
-                            root.interruptSession(row.session.sessionId, row.session.profileDir)
+            sourceComponent: Kirigami.InlineMessage {
+                type: Kirigami.MessageType.Warning
+                // rich text (an InlineMessage always guesses), so the name is escaped
+                text: "<span>" + (row.canInterrupt
+                      ? i18n("Interrupt “%1”? Like Ctrl+C in its tmux pane, or the stop button in VS Code: the current step and its subagents stop, and the chat stays open there. Or stop it: Claude quits and its terminal stays open.", root.escapeHtml(row.session.name))
+                      : row.canEnd && row.inVscode && row.session.state === "working"
+                      ? i18n("Stop “%1”? It's working right now: the current step is interrupted, as with VS Code's stop button, and anything it was running stops. Its tab keeps the chat and goes on with your next message.", root.escapeHtml(row.session.name))
+                      : row.canEnd && row.inVscode && row.session.state === "waiting"
+                      ? i18n("Stop “%1”? It's waiting for you: what it asks is refused, as with VS Code's stop button. Its tab keeps the chat and goes on with your next message.", root.escapeHtml(row.session.name))
+                      : row.canEnd && row.inVscode
+                      ? i18n("Stop “%1”? It's idle, so nothing is interrupted: its Claude process in VS Code quits. Its tab keeps the chat and goes on with your next message.", root.escapeHtml(row.session.name))
+                      : row.canEnd && row.session.state === "working"
+                      ? i18n("Stop “%1”? It's working right now: the current step is cut off and anything it was running stops. Claude quits and its terminal stays open; the chat is kept (Recent chats reopens it).", root.escapeHtml(row.session.name))
+                      : row.canEnd && row.session.state === "waiting"
+                      ? i18n("Stop “%1”? It's waiting for you: Claude quits without your answer and its terminal stays open. The chat is kept (Recent chats reopens it).", root.escapeHtml(row.session.name))
+                      : row.canEnd
+                      ? i18n("Stop “%1”? It's idle, so nothing is interrupted: Claude quits and its terminal stays open. The chat is kept; reopen it from Recent chats.", root.escapeHtml(row.session.name))
+                      : row.session.state === "working"
+                      ? i18n("Stop “%1”? It's working right now: the current step is interrupted and anything it started in the background stops too. The conversation is kept; claude attach resumes it.", root.escapeHtml(row.session.name))
+                      : row.session.state === "waiting"
+                      ? i18n("Stop “%1”? It's waiting for you. The conversation is kept; claude attach resumes it.", root.escapeHtml(row.session.name))
+                      : i18n("Stop “%1”? It's finished, so this only shuts down its idle process. The conversation is kept.", root.escapeHtml(row.session.name)))
+                      + (row.kept ? "<br>" + i18n("It keeps going after usage limits.") : "") + "</span>"
+                actions: [
+                    Kirigami.Action {
+                        text: i18n("Interrupt")
+                        icon.name: Icons.plasma.interrupt
+                        visible: row.canInterrupt
+                        onTriggered: {
+                            root.stopConfirmSession = ""
+                            if (row.remoteHost)
+                                root.remoteInterrupt(row.remoteHost, row.session.sessionId, row.session.profileDir)
+                            else
+                                root.interruptSession(row.session.sessionId, row.session.profileDir)
+                        }
+                    },
+                    Kirigami.Action {
+                        text: i18n("Stop")
+                        icon.name: Icons.plasma.stop
+                        onTriggered: row.stop(false)
+                    },
+                    Kirigami.Action {
+                        // (Stop alone leaves Keep going on: it goes on after the next limit)
+                        text: i18n("Stop and turn Keep going off")
+                        icon.name: Icons.plasma.stop
+                        visible: row.kept !== null
+                        onTriggered: row.stop(true)
+                    },
+                    Kirigami.Action {
+                        text: i18n("Cancel")
+                        onTriggered: root.stopConfirmSession = ""
                     }
-                },
-                Kirigami.Action {
-                    text: i18n("Stop")
-                    icon.name: Icons.plasma.stop
-                    onTriggered: row.stop(false)
-                },
-                Kirigami.Action {
-                    // (Stop alone leaves Keep going on: it goes on after the next limit)
-                    text: i18n("Stop and turn Keep going off")
-                    icon.name: Icons.plasma.stop
-                    visible: row.kept !== null
-                    onTriggered: row.stop(true)
-                },
-                Kirigami.Action {
-                    text: i18n("Cancel")
-                    onTriggered: root.stopConfirmSession = ""
-                }
-            ]
+                ]
+            }
+        }
+
+        // Hide (×) took it away at once, but couldn't hide it: it's back, and says why
+        Loader {
+            active: root.hideFailed.key !== "" && root.hideFailed.key === "chats|" + row.remoteHost + "|" + row.session.sessionId
+            visible: active
+            Layout.fillWidth: true
+            sourceComponent: RowText {
+                colors: row.colors
+                text: i18n("Couldn't hide it: %1", root.hideFailed.message)
+                color: row.colors.negativeTextColor
+                wrapMode: Text.Wrap
+                font: row.colors.smallFont
+            }
         }
     }
 }

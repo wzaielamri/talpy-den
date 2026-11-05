@@ -15,7 +15,10 @@ Item {
     property string subText
     property bool active: true
     property int textFormat: Text.PlainText
-    readonly property bool inPane: Window.window !== null && Window.window.objectName === "talpyDenChatPane"
+    // (asked only once the pointer is on it: an item that reads its window
+    // gets an attachment that costs milliseconds to take out of a popup that
+    // holds a long list; one in each tag made it slow)
+    readonly property bool inPane: hover.hovered && Window.window !== null && Window.window.objectName === "talpyDenChatPane"
 
     PlasmaCore.ToolTipArea {
         anchors.fill: parent
@@ -26,7 +29,6 @@ Item {
     }
     HoverHandler {
         id: hover
-        enabled: tip.inPane
     }
     // (made only in the chat pane: in the popup it never shows, and one in
     // each tag made the popup's lists slow to open)

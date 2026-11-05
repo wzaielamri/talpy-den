@@ -233,6 +233,10 @@ PlasmaComponents3.ScrollView {
         width: view.availableWidth
         spacing: Kirigami.Units.largeSpacing
 
+        ListPalette {   // (its lines' colors: RecentLine, PlanLine, MemoryLine)
+            id: listColors
+        }
+
         // (read the first time: as the Recap's and the Permissions tab's)
         RowLayout {
             Layout.fillWidth: true
@@ -642,6 +646,7 @@ PlasmaComponents3.ScrollView {
                             model: PageRows { size: inside.chatsShown }
                             delegate: RecentLine {
                                 required property int index
+                                colors: listColors
                                 Layout.leftMargin: inside.lineIndent
                                 chat: inside.chats[index] || root.emptyRecent
                                 group: root.groupOfProfile(chat.profileDir, card.host)
@@ -693,6 +698,7 @@ PlasmaComponents3.ScrollView {
                                     model: PageRows { size: inside.plansShown }
                                     delegate: PlanLine {
                                         required property int index
+                                        colors: listColors
                                         Layout.leftMargin: inside.lineIndent
                                         plan: inside.plans[index] || root.emptyPlan
                                         group: root.groupOfProfile(plan.profileDir, card.host)
@@ -724,6 +730,7 @@ PlasmaComponents3.ScrollView {
                                     model: PageRows { size: inside.memoriesShown }
                                     delegate: MemoryLine {
                                         required property int index
+                                        colors: listColors
                                         Layout.leftMargin: inside.lineIndent
                                         memory: inside.memories[index] || root.emptyMemory
                                         remoteHost: card.host

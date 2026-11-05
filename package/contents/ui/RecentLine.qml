@@ -18,6 +18,8 @@ ColumnLayout {
                           profile: "", shared: false, openCommand: "", starred: false })
     property var group: root.emptyGroup
     property string remoteHost: ""
+    // its list's colors and fonts (ListPalette.qml): it draws with plain Text from them, with no theme of its own
+    property var colors: null
     property string accountTag: ""   // (in a project on several accounts: the one it's on)
     property string project: ""   // (in a project: its folder; the line's folder says only the part below it)
     // the folder and how long ago at the line's end: columns of one width in
@@ -69,6 +71,7 @@ ColumnLayout {
     HoverShade {
         target: recentLine
         shown: recentHover.hovered
+        colors: recentLine.colors
         side: Kirigami.Units.smallSpacing
         pad: Kirigami.Units.smallSpacing / 2
     }
@@ -77,9 +80,9 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: Kirigami.Units.smallSpacing
 
-        PlasmaComponents3.Label {
+        RowText {
             id: recentName
-            textFormat: Text.PlainText
+            colors: recentLine.colors
             text: recentLine.chat.name
             font.underline: recentMouse.containsMouse || activeFocus
             opacity: recentLine.canOpen || Plasmoid.configuration.clickOpensPane ? 1 : 0.6
@@ -119,13 +122,16 @@ ColumnLayout {
                 }
             }
         }
-Kirigami.Icon {
-            source: Icons.plasma.share
-            visible: recentLine.chat.shared
+        Loader {   // (made only on a shared chat's line)
+            active: !!recentLine.chat.shared
+            visible: active
             Layout.preferredWidth: Kirigami.Units.iconSizes.small
             Layout.preferredHeight: Layout.preferredWidth
             Layout.alignment: Qt.AlignVCenter
-            opacity: 0.6
+            sourceComponent: Kirigami.Icon {
+                source: Icons.plasma.share
+                opacity: 0.6
+            }
         }
         Loader {   // (made only where there is one: in a project on several accounts)
             active: recentLine.accountTag !== ""
@@ -141,6 +147,7 @@ Kirigami.Icon {
                     || (!!recentLine.chat.stopped && recentLine.chat.stopped.kind === "limit" && !recentLine.chat.stopped.over)
             visible: active && !!item && item.visible
             sourceComponent: Tag {
+                colors: recentLine.colors
                 readonly property real goOnAt: root.goOnAt(recentLine.chat)
                 readonly property var goingOn: root.queuedChat(recentLine.chat.sessionId, recentLine.remoteHost)
                 visible: goingOn !== null
@@ -173,6 +180,7 @@ Kirigami.Icon {
             active: root.keptChat(recentLine.chat.sessionId, recentLine.remoteHost) !== null || root.goOnAt(recentLine.chat) > 0
             visible: active && !!item && item.visible
             sourceComponent: Tag {
+                colors: recentLine.colors
                 readonly property var kept: root.keptChat(recentLine.chat.sessionId, recentLine.remoteHost)
                 readonly property bool canKeep: kept === null && root.goOnAt(recentLine.chat) > 0
                                                 && root.queuedChat(recentLine.chat.sessionId, recentLine.remoteHost) === null
@@ -198,6 +206,7 @@ Kirigami.Icon {
             active: root.reviewPending(recentLine.chat, recentLine.remoteHost)
             visible: active && !!item && item.visible
             sourceComponent: Tag {
+                colors: recentLine.colors
                 visible: root.reviewPending(recentLine.chat, recentLine.remoteHost)
                 text: i18nc("a finished chat's changes, not reviewed yet", "To review")
                 active: true
@@ -211,6 +220,7 @@ Kirigami.Icon {
             active: root.reviewPending(recentLine.chat, recentLine.remoteHost)
             visible: active && !!item && item.visible
             sourceComponent: TestsBadge {
+                colors: recentLine.colors
                 review: root.reviewPending(recentLine.chat, recentLine.remoteHost) ? recentLine.chat.review : null
             }
         }
@@ -225,14 +235,14 @@ Kirigami.Icon {
                 width: recentEnd.width
                 spacing: Kirigami.Units.smallSpacing
 
-                PlasmaComponents3.Label {
+                RowText {
                     id: recentFolder
+                    colors: recentLine.colors
                     Layout.preferredWidth: recentLine.folderWidth
                     horizontalAlignment: Text.AlignRight
-                    textFormat: Text.PlainText
                     text: root.folderIn(recentLine.chat.cwd, recentLine.project, recentLine.chat.cwdShort || "~")
                     opacity: 0.6
-                    font: Kirigami.Theme.smallFont
+                    font: recentLine.colors.smallFont
                     elide: Text.ElideMiddle
                     PlasmaCore.ToolTipArea {   // (the whole folder: the line may be cut short)
                         textFormat: Text.PlainText
@@ -249,13 +259,13 @@ Kirigami.Icon {
                     tooltip: root.starHint("chats", false) + " " + root.starHint("chats", true)
                     onClicked: root.setStar("chats", recentLine.chat.sessionId, recentLine.remoteHost, false)
                 }
-                PlasmaComponents3.Label {
+                RowText {
+                    colors: recentLine.colors
                     Layout.preferredWidth: root.agoWidth
                     horizontalAlignment: Text.AlignRight
-                    textFormat: Text.PlainText
-                    text: root.ago(root.now - recentLine.chat.lastActive)
+                    text: root.ago(root.minuteNow - recentLine.chat.lastActive)
                     opacity: 0.6
-                    font: Kirigami.Theme.smallFont
+                    font: recentLine.colors.smallFont
                 }
             }
         }

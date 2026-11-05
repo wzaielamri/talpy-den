@@ -10964,6 +10964,37 @@ def list_containers(cache_root, home, days=CONTAINER_DAYS, picked=(), now=None):
 # run it in a local terminal as `ssh -t host <command>`.
 
 REMOTE_MARK = "@@talpy-den@@"
+
+
+# Each row a list shows gets a "rev": a short hash of what it says, so the
+# widget's lists keep a row as it is while its rev stays (a check that changes
+# one chat runs that row's bindings again, not every row's), and the answer
+# a "stamp" first: a hash of it all but its time and the usage forecasts,
+# which drift with it, so a check that says nothing new is known from its
+# first line (the widget compared two copies of the whole answer).
+ROW_LISTS = ("sessions", "recent", "starred", "starredPlans", "instructions")
+
+
+def add_revs(result):
+    for group in result.get("groups") or []:
+        for name in ROW_LISTS:
+            for row in group.get(name) or []:
+                if isinstance(row, dict):
+                    row.pop("rev", None)
+                    row["rev"] = hashlib.sha1(json.dumps(row, sort_keys=True).encode()).hexdigest()[:12]
+
+
+STAMP_SKIP = (re.compile(r'"generatedAt": *\d+'), re.compile(r'"forecast": *\{[^{}]*\}'))
+
+
+def stamped(text):
+    """The answer's JSON text with "stamp" as its first key (an object's)."""
+    if not text.startswith("{") or text.startswith("{}"):
+        return text
+    key = text
+    for skip in STAMP_SKIP:
+        key = skip.sub("", key)
+    return '{"stamp": "%s", %s' % (hashlib.sha1(key.encode()).hexdigest()[:16], text[1:])
 # Where claude is often installed besides PATH: Claude's installer, its old
 # local install, npm, bun, ~/bin, Volta, pnpm, mise and asdf; then nvm's
 # Node versions (newest first) and the system-wide places
@@ -11439,7 +11470,11 @@ def main(argv=None):
     # ASCII only: a lone surrogate (half an emoji cut off in a title) can't be
     # written as UTF-8, and a host's locale may not be UTF-8 at all
     try:
+        if result.get("ok") and "groups" in result:
+            add_revs(result)
         text = json.dumps(result, indent=2 if pretty and not remote else None)
+        if not pretty and result.get("ok") and "groups" in result:
+            text = stamped(text)
     except (TypeError, ValueError) as exc:
         text = json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}", "generatedAt": int(time.time() * 1000)})
     if remote:

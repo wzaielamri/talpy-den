@@ -16,6 +16,10 @@ ColumnLayout {
     readonly property var lists: root.focusLists
     spacing: Kirigami.Units.smallSpacing
 
+    ListPalette {   // (its rows' colors: SessionRow)
+        id: focusColors
+    }
+
     // ------------------------------------------------------------ what needs you
 
     Kirigami.Heading {
@@ -32,6 +36,7 @@ ColumnLayout {
             required property int index
             readonly property var item: fv.lists.needs[index] || null
             Layout.fillWidth: true
+            colors: focusColors
             session: item ? item.session : root.emptySession
             showProfile: item ? item.multi : false
             remoteHost: item ? item.host : ""

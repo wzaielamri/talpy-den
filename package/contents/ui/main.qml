@@ -69,6 +69,14 @@ PlasmoidItem {
 
     readonly property var groups: status ? status.groups.map(g => withUsage(g, "")) : []
     property real now: Date.now()   // the last check's time (handleOutput)
+    // The same, moved on once a minute: the lists' times show minutes ("12m",
+    // "5m ago"), and one clock binding in each of their rows and lines run
+    // at every check was a good part of a check's time
+    property real minuteNow: Date.now()
+    onNowChanged: {
+        if (Math.floor(now / 60000) !== Math.floor(minuteNow / 60000))
+            minuteNow = now
+    }
 
     // Plan usage is the account's, whichever machine it's used on. An
     // account on several (this computer and SSH hosts: the same id) shows it
@@ -1507,13 +1515,56 @@ PlasmoidItem {
     // Most checks say what the one before said but for their time and the
     // usage forecasts, which drift with it. Then only the clock moves on
     // (time labels) and the dashboard isn't rebuilt; the forecasts catch up
-    // within 30 s.
+    // within 30 s. The answer's first key is its stamp (talpy_den.py:
+    // stamped), a hash of it without those: what's new is known from that.
     property string lastOutputKey: ""
     property real lastFullUpdate: 0
 
+    // What the rows ask the status about, apart, each set only when it
+    // changed: the queue, the chats that keep going, the review marks, and
+    // each machine's claude command, accounts to share with and clock
+    // (facts: "" here, else an SSH host's or a container's). A row reading the
+    // whole status ran its bindings again at every check that changed any chat.
+    property var queuedTasks: []
+    property var keptChats: []
+    property var reviewMarks: ({})
+    property real reviewedSince: 0
+    property var facts: ({})
+    property var factsSeen: ({})
+    function same(a, b) {
+        return JSON.stringify(a) === JSON.stringify(b)
+    }
+    function noteStatusParts(parsed) {
+        if (!same(parsed.queue || [], queuedTasks))
+            queuedTasks = parsed.queue || []
+        if (!same(parsed.keep || [], keptChats))
+            keptChats = parsed.keep || []
+        if (!same(parsed.reviewed || {}, reviewMarks))
+            reviewMarks = parsed.reviewed || {}
+        reviewedSince = parsed.reviewedSince || 0
+        noteFacts("", parsed, 0)
+    }
+    // (an account to share with: what handoverTarget reads of it, its usage but the forecasts)
+    function noteFacts(host, result, clockOffset) {
+        const share = result && result.canShare === true ? result.groups.filter(g => !!g.shareProfile) : []
+        const seen = JSON.stringify([result ? result.cli || null : null, clockOffset || 0,
+                                     share.map(g => [g.title, g.shareProfile, g.profileKeys,
+                                                     g.limits ? g.limits.windows.map(w => [w.key, w.label, w.pct]) : null])])
+        if (factsSeen[host] === seen)
+            return
+        factsSeen[host] = seen
+        facts = Object.assign({}, facts, { [host]: { cli: result ? result.cli || null : null, share: share, clockOffset: clockOffset || 0,
+                                                     known: !!result } })
+    }
+
+    function outputKey(stdout) {
+        const stamp = /^\{"stamp": *"(\w+)"/.exec(stdout.slice(0, 40))
+        return stamp ? stamp[1] : stdout.replace(/"generatedAt": *\d+/g, "").replace(/"forecast": *\{[^{}]*\}/g, "")
+    }
+
     function handleOutput(stdout, stderr) {
-        const time = /"generatedAt": *(\d+)/.exec(stdout)
-        const key = stdout.replace(/"generatedAt": *\d+/g, "").replace(/"forecast": *\{[^{}]*\}/g, "")
+        const time = /"generatedAt": *(\d+)/.exec(stdout.slice(0, 200)) || /"generatedAt": *(\d+)/.exec(stdout)
+        const key = outputKey(stdout)
         if (status && time && key === lastOutputKey && Date.now() - lastFullUpdate < 30000) {
             now = Number(time[1])
             syncSettings(status.sharedSettings || null)   // (a setting changed here is saved for the others now)
@@ -1539,6 +1590,8 @@ PlasmoidItem {
         now = parsed.generatedAt
         liveFromRows(parsed.groups)
         followMovedRows("", parsed.groups)
+        dropHidden("", parsed)
+        noteStatusParts(parsed)
         status = parsed   // first: whether this copy notifies
         followPaneChat("", parsed)
         trackTransitions("", parsed.groups, parsed.generatedAt, "")
@@ -2082,7 +2135,8 @@ PlasmoidItem {
     // a new one only where a hook given to one chat runs (it answers what a
     // background chat asks: managed settings may let only their own run)
     function talpyChatHere(host, resuming) {
-        return !host && cliHere("") && (resuming || !status || !status.cli || status.cli.hooks !== false)
+        const here = facts[""]
+        return !host && cliHere("") && (resuming || !here || !here.cli || here.cli.hooks !== false)
     }
 
     // The Talpy Chat half's tooltip (resuming: for the recent chats' switch)
@@ -2101,8 +2155,8 @@ PlasmoidItem {
     // There's a claude command here (host: on that SSH host). When unsure
     // (no answer yet, or an error looking), it counts as there.
     function cliHere(host) {
-        const result = host ? (remote[host] || {}).result : status
-        return !result || !result.cli || result.cli.installed !== false
+        const f = facts[host || ""]
+        return !f || !f.cli || f.cli.installed !== false
     }
 
     // Where this account's chats open: VS Code when you picked it, or when
@@ -2602,7 +2656,10 @@ PlasmoidItem {
         if (shownHosts.indexOf(host) < 0)
             return  // unpicked meanwhile
         const old = remote[host] || { loading: false, ok: false, error: "", result: null, updatedAt: 0 }
-        remote = Object.assign({}, remote, { [host]: Object.assign({}, old, patch) })
+        const next = Object.assign({}, old, patch)
+        if ("result" in patch || "clockOffset" in patch)
+            noteFacts(host, next.result, next.clockOffset)
+        remote = Object.assign({}, remote, { [host]: next })
     }
 
     function handleRemote(host, data) {
@@ -2630,6 +2687,7 @@ PlasmoidItem {
             trackOverlaps("ssh:" + host, result.groups, host)
             celebrateResets("ssh:" + host, result.groups)
             followMovedRows(host, result.groups)
+            dropHidden(host, result)
             // clockOffset: what its times were moved by (0: not moved), for
             // the ones left on its clock (reviewPending)
             setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(),
@@ -3019,8 +3077,8 @@ PlasmoidItem {
 
     // The accounts a chat of this computer (host "") or of an SSH host can go to
     function shareAccountsOf(host) {
-        const result = host ? (remote[host] || {}).result : status
-        return result && result.canShare === true ? result.groups.filter(g => !!g.shareProfile) : []
+        const f = facts[host || ""]
+        return f ? f.share : []
     }
 
     function shareHint(host) {
@@ -3170,13 +3228,16 @@ PlasmoidItem {
 
     readonly property var hiddenKinds: ["chats", "plans", "memories", "projects"]
 
-    // How many of a kind are hidden here (or on host): status.dismissed for chats
+    // How many of a kind are hidden here (or on host): status.dismissed for
+    // chats; and the ones being hidden now (hidingNow)
     function hiddenCount(kind, host) {
         const r = host ? (remote[host] || {}).result : status
         if (!r)
             return 0
-        return (kind === "chats" ? r.dismissed : kind === "plans" ? r.hiddenPlans
-                : kind === "memories" ? r.hiddenMemories : r.hiddenProjects) || 0
+        const prefix = kind + "|" + (host || "") + "|"
+        return ((kind === "chats" ? r.dismissed : kind === "plans" ? r.hiddenPlans
+                 : kind === "memories" ? r.hiddenMemories : r.hiddenProjects) || 0)
+               + Object.keys(hidingNow).filter(k => k.startsWith(prefix)).length
     }
 
     function showHiddenText(kind, count) {
@@ -3186,9 +3247,63 @@ PlasmoidItem {
              : i18n("Show Hidden Projects Again (%1)", count)
     }
 
+    // Hide leaves the list at once: what you hid is in hidingNow ("kind|host|id"
+    // -> when) until a check no longer lists it (dropHidden), and the lists
+    // leave it out meanwhile (an account's chats: GroupSection; plans,
+    // memories, projects: isHiding); jump.py (remote.py on a host) hides it
+    // for good. If that fails, it's back, and says why (hideFailed: under a
+    // chat's row; the others at the top). The status itself isn't filtered:
+    // what's tracked from it (notifications) sees what's there.
+    property var hidingNow: ({})
+    readonly property var noHideFailed: ({ key: "", message: "" })
+    property var hideFailed: noHideFailed
+    function isHiding(kind, host, id) {
+        return !!hidingNow[kind + "|" + (host || "") + "|" + id]
+    }
     function hideItem(kind, id, host) {
+        const key = kind + "|" + (host || "") + "|" + id
+        hidingNow = Object.assign({}, hidingNow, { [key]: Date.now() })
+        if (hideFailed.key === key)
+            hideFailed = noHideFailed
+        hidingExpiry.restart()
         hideRun(host ? "remote.py" : "jump.py", "--hide " + (host ? shellQuote(host) + " " : "") + kind + " " + shellQuote(id),
-                { kind: kind, host: host || "", say: false })
+                { kind: kind, host: host || "", say: false, key: key })
+    }
+    // (what a check of here, or of host, no longer lists is hidden for good: out of hidingNow;
+    // and after a minute whatever it is: a check that still lists it shows it again)
+    function dropHidden(host, result) {
+        const prefix = "|" + (host || "") + "|"
+        let next = null
+        for (const key in hidingNow) {
+            const at = key.indexOf(prefix)
+            if (at < 0)
+                continue
+            const kind = key.slice(0, at), id = key.slice(at + prefix.length)
+            if (kind === "chats" && result && result.groups
+                    && !result.groups.some(g => g.sessions.some(s => s.sessionId === id))) {
+                next = next || Object.assign({}, hidingNow)
+                delete next[key]
+            }
+        }
+        if (next)
+            hidingNow = next
+    }
+    Timer {
+        id: hidingExpiry
+        interval: 60000
+        onTriggered: {
+            const now = Date.now(), next = {}
+            let left = false
+            for (const key in root.hidingNow) {
+                if (now - root.hidingNow[key] < 55000) {
+                    next[key] = root.hidingNow[key]
+                    left = true
+                }
+            }
+            root.hidingNow = next
+            if (left)
+                restart()
+        }
     }
 
     function showHidden(kind, host) {
@@ -3207,12 +3322,22 @@ PlasmoidItem {
         id: hider
         onNewData: (source, data) => {
             disconnectSource(source)
-            const what = root.hideRuns[source] || { kind: "", host: "", say: false }
+            const what = root.hideRuns[source] || { kind: "", host: "", say: false, key: "" }
             delete root.hideRuns[source]
             const result = root.helperResult(data)
             if (!result.ok) {
-                root.actionError = result.message
-                actionErrorTimer.restart()
+                if (what.key && what.key in root.hidingNow) {   // (back in its list)
+                    const next = Object.assign({}, root.hidingNow)
+                    delete next[what.key]
+                    root.hidingNow = next
+                }
+                if (what.kind === "chats" && what.key) {   // (its row says why)
+                    root.hideFailed = { key: what.key, message: result.message }
+                    hideFailedTimer.restart()
+                } else {
+                    root.actionError = result.message
+                    actionErrorTimer.restart()
+                }
             } else {
                 root.actionError = ""
                 if (what.say) {   // (Showing 2 hidden plans again)
@@ -3227,6 +3352,12 @@ PlasmoidItem {
             if (what.kind === "projects" || root.projectsShown)
                 root.reloadProjects(what.host)   // (a plan or memory there, or a project)
         }
+    }
+
+    Timer {
+        id: hideFailedTimer
+        interval: 12000
+        onTriggered: root.hideFailed = root.noHideFailed
     }
 
     // The menu of an SSH host's hidden ones (its header's eye button)
@@ -3608,7 +3739,7 @@ PlasmoidItem {
     // The queued task that goes on with this chat (here, or on host), or null
     // (not a reply waiting for its turn to end: that isn't a go-on)
     function queuedChat(chatId, host) {
-        return (status && status.queue ? status.queue : []).find(t => !!t.chat && t.chat === chatId && !t.afterTurn
+        return queuedTasks.find(t => !!t.chat && t.chat === chatId && !t.afterTurn
                                                                        && (t.host || "") === (host || ""))
                || null
     }
@@ -3659,7 +3790,7 @@ PlasmoidItem {
 
     // The chat (of host: an SSH host or a container) that keeps going ({chat, host, note, error, …}), or null
     function keptChat(chatId, host) {
-        return (status && status.keep ? status.keep : []).find(k => k.chat === chatId && (k.host || "") === (host || "")) || null
+        return keptChats.find(k => k.chat === chatId && (k.host || "") === (host || "")) || null
     }
 
     // Can a chat of this row keep going? One at work (here, on an SSH host or in a container), not in VS Code's Claude
@@ -3714,7 +3845,7 @@ PlasmoidItem {
 
     // The account's queued tasks (here, or on host)
     function queuedFor(group, host) {
-        return (status && status.queue ? status.queue : []).filter(t => (t.host || "") === (host || "")
+        return queuedTasks.filter(t => (t.host || "") === (host || "")
                                                                          && group.profileKeys.indexOf(t.profile) >= 0)
     }
 
@@ -4194,20 +4325,20 @@ PlasmoidItem {
     function reviewSeen(s, host) {
         if (!s || !s.review || !s.review.editedAt)
             return true
-        const marks = status && status.reviewed ? status.reviewed : {}
+        const marks = reviewMarks
         const id = s.chatId || s.sessionId
         const mark = marks[host ? host + "|" + id : id]
-        const seen = mark === 0 ? 0 : Math.max(mark || 0, status && status.reviewedSince ? status.reviewedSince : 0)
+        const seen = mark === 0 ? 0 : Math.max(mark || 0, reviewedSince)
         // (the marks and reviewedSince are this computer's, also an SSH host's
         // chat's: pane.py marks it here. Its last edit is on the host's clock,
         // which toLocalClock leaves its review on: moved to ours here)
-        const offset = host && remote[host] ? remote[host].clockOffset || 0 : 0
+        const offset = host && facts[host] ? facts[host].clockOffset || 0 : 0
         return seen >= s.review.editedAt + offset
     }
 
     // The message waiting to be sent when the chat's turn ends (pane.py --send --after-turn)
     function queuedMessage(chatId, host) {
-        return (status && status.queue ? status.queue : []).find(t => t.afterTurn && t.chat === chatId
+        return queuedTasks.find(t => t.afterTurn && t.chat === chatId
                                                                        && (t.host || "") === (host || "")) || null
     }
 
@@ -5628,7 +5759,7 @@ PlasmoidItem {
     }
 
     function stateText(s) {
-        const since = s.since ? " · " + duration(now - s.since) : ""
+        const since = s.since ? " · " + duration(minuteNow - s.since) : ""
         const reason = s.reason ? " · " + s.reason : ""
         if (s.stopped && (s.state === "idle" || s.state === "done")) {
             if (s.stopped.kind === "login")

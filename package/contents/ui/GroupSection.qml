@@ -27,7 +27,32 @@ ColumnLayout {
     // Recent chats: the status' (a page more than shows), then a bigger
     // check's past those (root.fetchRecent), each once; how many show, and
     // how many are wanted (a page more than show: asked for when they aren't there)
-    readonly property var recent: group.recent || []
+    // (a line whose chat says what it said keeps its object, rev for rev, and
+    // its account what lines read of it: a check runs their bindings again
+    // only where something changed)
+    readonly property var lineMemo: ({})   // (changed in place: no binding hangs on it)
+    function keepSame(list, kind) {
+        const old = lineMemo[kind] || {}, next = {}
+        const out = list.map(c => {
+            const k = (c.sessionId || c.slug || c.key || "") + "|" + (c.profileDir || "")
+            const was = old[k]
+            const same = was && c.rev && was.rev === c.rev ? was : c
+            next[k] = same
+            return same
+        })
+        lineMemo[kind] = next
+        return out
+    }
+    readonly property var lineGroup: {
+        const g = group
+        const seen = JSON.stringify([g.id, g.name, g.title, g.vscodeHere, g.configDir, g.profileKeys, g.shareProfile])
+        if (lineMemo.group && lineMemo.groupSeen === seen)
+            return lineMemo.group
+        lineMemo.group = g
+        lineMemo.groupSeen = seen
+        return g
+    }
+    readonly property var recent: keepSame(group.recent || [], "recent")
     readonly property bool recentOpen: !!root.expandedRecent[groupKey]
     readonly property var recentMore: recentOpen ? root.recentMore[groupKey] || null : null
     readonly property var recentAll: {
@@ -36,7 +61,7 @@ ColumnLayout {
         const listed = {}
         for (const c of recent)
             listed[c.sessionId] = true
-        return recent.concat(recentMore.recent.filter(c => !listed[c.sessionId]))
+        return recent.concat(keepSame(recentMore.recent.filter(c => !listed[c.sessionId]), "more"))
     }
     // (a check that listed more got fewer than it asked for: that's all of them)
     readonly property int recentCount: recentMore && recentMore.recent.length < recentMore.asked
@@ -48,8 +73,8 @@ ColumnLayout {
             root.fetchRecent(groupKey, group.id, remoteHost, recentWanted)
     }
     // the chats and plans you starred, however old: all of them in the status
-    readonly property var starred: group.starred || []
-    readonly property var starredPlans: group.starredPlans || []
+    readonly property var starred: keepSame(group.starred || [], "starred")
+    readonly property var starredPlans: keepSame((group.starredPlans || []).filter(p => !root.isHiding("plans", section.remoteHost, p.slug)), "plans")
     readonly property bool starredOpen: !!root.expandedStarred[groupKey + "|chats"]
     readonly property bool starredPlansOpen: !!root.expandedStarred[groupKey + "|plans"]
     readonly property int starredShown: Math.min(starred.length, root.pageSize * root.pagesShown(groupKey + "|chats"))
@@ -66,6 +91,48 @@ ColumnLayout {
     PageRows {
         id: starredPlanRows
         size: section.starredPlansShown
+    }
+
+    // Its chats (but those you hid, while hiding them: root.hidingNow) as
+    // rows kept by chat (KeyedRows.qml): a check that changes a chat runs its
+    // row's bindings again, one that brings or takes a chat makes or drops
+    // that row, the others stay as they are. The rows are made once the
+    // dashboard shows (a panel's popup the first time it opens: in its own
+    // window), a few a frame while many come at once.
+    readonly property var sessions: {
+        const hiding = root.hidingNow
+        const out = []
+        for (const s of group.sessions)
+            if (!hiding["chats|" + section.remoteHost + "|" + s.sessionId])
+                out.push(s)
+        return out
+    }
+    KeyedRows {
+        id: sessionRows
+    }
+    property bool ready: false
+    function syncRows() {
+        if (!ready || (!root.dashboardShown && sessionRows.model.count === 0))
+            return
+        const host = section.remoteHost
+        sessionRows.sync(section.sessions, s => root.rowKeyOf(s, host), s => s.rev,
+                         s => s.movedFrom && s.movedFrom.id ? root.rowKeyOf({ profileDir: s.profileDir, chatId: s.movedFrom.id }, host) : "")
+    }
+    onSessionsChanged: syncRows()
+    Component.onCompleted: {
+        ready = true
+        syncRows()
+    }
+    Connections {
+        target: root
+        enabled: sessionRows.model.count === 0
+        function onDashboardShownChanged() {
+            section.syncRows()
+        }
+    }
+    // (the colors and fonts of its rows and lines, read here once: ListPalette.qml)
+    ListPalette {
+        id: listColors
     }
 
     readonly property var tokens: group.tokens
@@ -170,7 +237,7 @@ ColumnLayout {
         chats: {
             const rank = { waiting: 0, working: 1, idle: 2, done: 3 }
             const out = [], seen = {}
-            for (const s of section.group.sessions) {
+            for (const s of section.sessions) {
                 const key = root.petKeyOf(s, section.remoteHost)
                 if (key in seen)
                     continue
@@ -354,12 +421,17 @@ ColumnLayout {
         Layout.bottomMargin: -section.spacing
     }
     Repeater {
-        model: section.group.sessions.length
+        model: sessionRows.model
         delegate: SessionRow {
-            required property int index
+            required property string key
+            required property string rev
             Layout.fillWidth: true
             listTop: sessionsTop
-            session: section.group.sessions[index] || root.emptySession
+            colors: listColors
+            session: {
+                rev   // (its chat changed: read again)
+                return sessionRows.item(key) || root.emptySession
+            }
             showProfile: section.multiProfile
             remoteHost: section.remoteHost
             account: section.group.title
@@ -368,7 +440,7 @@ ColumnLayout {
 
     PlasmaComponents3.Label {
         textFormat: Text.PlainText
-        visible: section.group.sessions.length === 0
+        visible: section.sessions.length === 0
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.smallSpacing
         text: i18n("No running chats")
@@ -680,9 +752,10 @@ ColumnLayout {
         model: section.recentOpen ? recentRows : 0
         delegate: RecentLine {
             required property int index
+            colors: listColors
             Layout.leftMargin: Kirigami.Units.gridUnit
             chat: section.recentAll[index] || root.emptyRecent
-            group: section.group
+            group: section.lineGroup
             remoteHost: section.remoteHost
             folderWidth: section.folderWidth
         }
@@ -726,9 +799,10 @@ ColumnLayout {
         model: section.starredOpen ? starredRows : 0
         delegate: RecentLine {
             required property int index
+            colors: listColors
             Layout.leftMargin: Kirigami.Units.gridUnit
             chat: section.starred[index] || root.emptyRecent
-            group: section.group
+            group: section.lineGroup
             remoteHost: section.remoteHost
             folderWidth: section.folderWidth
         }
@@ -764,6 +838,7 @@ ColumnLayout {
         model: section.starredPlansOpen ? starredPlanRows : 0
         delegate: PlanLine {
             required property int index
+            colors: listColors
             Layout.leftMargin: Kirigami.Units.gridUnit
             plan: section.starredPlans[index] || root.emptyPlan
             group: section.group
@@ -779,12 +854,14 @@ ColumnLayout {
     }
 
     // The account's CLAUDE.md: your instructions for every chat on it (read it, or edit it)
+    readonly property var instructions: (section.group.instructions || []).filter(m => !root.isHiding("memories", section.remoteHost, m.key))
     Repeater {
-        model: (section.group.instructions || []).length
+        model: section.instructions.length
         delegate: MemoryLine {
             required property int index
+            colors: listColors
             Layout.leftMargin: Kirigami.Units.smallSpacing
-            memory: section.group.instructions[index] || root.emptyMemory
+            memory: section.instructions[index] || root.emptyMemory
             remoteHost: section.remoteHost
             folderWidth: section.folderWidth
         }

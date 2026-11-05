@@ -1,5 +1,4 @@
 import QtQuick
-import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 import "icons.mjs" as Icons
 
@@ -16,6 +15,11 @@ Rectangle {
     property bool warning: false    // outlined and written in the negative colour
     property bool caution: false    // outlined and written in the warning colour (close to something: the context to its compaction)
     property bool clickable: false
+    // In a list's row: the row's colors (ListPalette.qml), so the tag has no
+    // theme of its own (one each made a long list slow to make); elsewhere
+    // the theme's
+    property var colors: null
+    readonly property var theme: colors || Kirigami.Theme
     signal clicked()
 
     implicitWidth: (icon !== "" ? mark.width + (label.text !== "" ? Kirigami.Units.smallSpacing / 2 : 0) : 0)
@@ -24,30 +28,36 @@ Rectangle {
     radius: Kirigami.Units.cornerRadius
     color: "transparent"
     border.width: 1
-    border.color: warning ? Kirigami.Theme.negativeTextColor : caution ? Kirigami.Theme.neutralTextColor : active ? Kirigami.Theme.focusColor
-                  : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
+    border.color: warning ? theme.negativeTextColor : caution ? theme.neutralTextColor : active ? theme.focusColor
+                  : Qt.rgba(theme.textColor.r, theme.textColor.g, theme.textColor.b, 0.3)
 
-    Kirigami.Icon {
+    Loader {   // (made only on a tag with an icon: most have none)
         id: mark
-        visible: tag.icon !== ""
-        source: tag.icon
+        active: tag.icon !== ""
+        visible: active
         width: Kirigami.Units.iconSizes.small
         height: width
         anchors.verticalCenter: parent.verticalCenter
         x: label.text !== "" ? Kirigami.Units.smallSpacing : (parent.width - width) / 2
-        // (its tone's color; else a plain icon takes the warning's color, as its text; a warning's own icon stays as it is)
-        color: tag.tone !== "" ? Icons.color(tag.tone, Kirigami.Theme)
-             : tag.warning && tag.icon !== Icons.plasma.warning ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-        opacity: tag.warning || tag.tone !== "" ? 1 : 0.8
+        sourceComponent: Kirigami.Icon {
+            source: tag.icon
+            // (its tone's color; else a plain icon takes the warning's color, as its text; a warning's own icon stays as it is)
+            color: tag.tone !== "" ? Icons.color(tag.tone, tag.theme)
+                 : tag.warning && tag.icon !== Icons.plasma.warning ? tag.theme.negativeTextColor : tag.theme.textColor
+            opacity: tag.warning || tag.tone !== "" ? 1 : 0.8
+        }
     }
-    PlasmaComponents3.Label {
+    // (as a PlasmaComponents3.Label draws it)
+    Text {
         id: label
         anchors.verticalCenter: parent.verticalCenter
         x: tag.icon !== "" ? mark.x + mark.width + Kirigami.Units.smallSpacing / 2 : (parent.width - implicitWidth) / 2
         textFormat: Text.PlainText
-        font: Kirigami.Theme.smallFont
-        color: tag.warning ? Kirigami.Theme.negativeTextColor : tag.caution ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
+        font: tag.theme.smallFont
+        color: tag.warning ? tag.theme.negativeTextColor : tag.caution ? tag.theme.neutralTextColor : tag.theme.textColor
         opacity: tag.warning || tag.caution ? 1 : 0.8
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
     }
 
     TipArea {

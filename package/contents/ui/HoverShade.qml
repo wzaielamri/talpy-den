@@ -19,30 +19,39 @@ Item {
     property bool shown: false
     property real side: 0
     property real pad: 0
-    // where it is in target (bound to every item's place on the way)
-    readonly property point offset: {
-        let x = 0, y = 0
-        for (let item = shade; item && item !== shade.target; item = item.parent) {
-            x += item.x
-            y += item.y
-        }
-        return Qt.point(x, y)
-    }
-
+    // in a list's row: the row's colors (ListPalette.qml), else the theme's
+    property var colors: null
     Layout.preferredWidth: 0
     Layout.preferredHeight: 0
 
-    Rectangle {
-        x: -shade.offset.x - shade.side
-        y: -shade.offset.y - shade.pad
-        width: shade.target.width + 2 * shade.side
-        height: shade.target.height + 2 * shade.pad
-        radius: Kirigami.Units.cornerRadius
-        color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
-        opacity: shade.shown ? 1 : 0
-        visible: opacity > 0
-        Behavior on opacity {
-            NumberAnimation { duration: Kirigami.Units.shortDuration }
+    property bool made: false   // (shown once: kept)
+    Loader {   // (made the first time the line is hovered: most never are)
+        active: shade.shown || shade.made
+        onLoaded: shade.made = true
+        sourceComponent: Rectangle {
+            // where it is in target (bound to every item's place on the way)
+            readonly property point offset: {
+                let x = 0, y = 0
+                for (let item = shade; item && item !== shade.target; item = item.parent) {
+                    x += item.x
+                    y += item.y
+                }
+                return Qt.point(x, y)
+            }
+            x: -offset.x - shade.side
+            y: -offset.y - shade.pad
+            width: shade.target.width + 2 * shade.side
+            height: shade.target.height + 2 * shade.pad
+            radius: Kirigami.Units.cornerRadius
+            color: shade.colors ? shade.colors.shade : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
+            // (made on a hover: from nothing, as every later one)
+            property bool ready: false
+            Component.onCompleted: ready = true
+            opacity: shade.shown && ready ? 1 : 0
+            visible: opacity > 0
+            Behavior on opacity {
+                NumberAnimation { duration: Kirigami.Units.shortDuration }
+            }
         }
     }
 }

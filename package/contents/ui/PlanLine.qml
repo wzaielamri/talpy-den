@@ -25,6 +25,8 @@ ColumnLayout {
     property var plan: root.emptyPlan
     property var group: root.emptyGroup
     property string remoteHost: ""
+    // its list's colors and fonts (ListPalette.qml): it draws with plain Text from them, with no theme of its own
+    property var colors: null
     property string accountTag: ""   // (in a project on several accounts: the one it's on)
     property string project: ""   // (in a project: its folder; the line's folder says only the part below it)
     property bool chatGoneCard: false   // (in the Projects tab's card of plans whose chat is gone)
@@ -49,6 +51,7 @@ ColumnLayout {
     HoverShade {
         target: planLine
         shown: planHover.hovered
+        colors: planLine.colors
         side: Kirigami.Units.smallSpacing
         pad: Kirigami.Units.smallSpacing / 2
     }
@@ -57,15 +60,15 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: Kirigami.Units.smallSpacing
 
-        Kirigami.Icon {
+        Kirigami.Icon {   // (its kind: on every line, the one item with a theme of its own)
             source: Icons.plasma.plan
             Layout.preferredWidth: Kirigami.Units.iconSizes.small
             Layout.preferredHeight: Layout.preferredWidth
             opacity: 0.7
         }
-        PlasmaComponents3.Label {
+        RowText {
             id: planName
-            textFormat: Text.PlainText
+            colors: planLine.colors
             text: planLine.plan.title
             font.underline: planMouse.containsMouse || activeFocus
             elide: Text.ElideRight
@@ -112,13 +115,16 @@ ColumnLayout {
                 }
             }
         }
-Kirigami.Icon {
-            source: Icons.plasma.share
-            visible: planLine.plan.shared
+        Loader {   // (made only on a shared plan's line)
+            active: !!planLine.plan.shared
+            visible: active
             Layout.preferredWidth: Kirigami.Units.iconSizes.small
             Layout.preferredHeight: Layout.preferredWidth
             Layout.alignment: Qt.AlignVCenter
-            opacity: 0.6
+            sourceComponent: Kirigami.Icon {
+                source: Icons.plasma.share
+                opacity: 0.6
+            }
         }
         Loader {   // (made only where there is one: in a project on several accounts)
             active: planLine.accountTag !== ""
@@ -132,6 +138,7 @@ Kirigami.Icon {
             active: !!planLine.plan.edited && !!planLine.plan.chatId && !planLine.remoteHost
             visible: active && !!item && item.visible
             sourceComponent: Tag {
+                colors: planLine.colors
                 visible: !!planLine.plan.edited && !!planLine.plan.chatId && !planLine.remoteHost
                 icon: Icons.plasma.send
                 text: i18nc("send your changes to the plan to the chat", "Send")
@@ -153,16 +160,16 @@ Kirigami.Icon {
                 width: planEnd.width
                 spacing: Kirigami.Units.smallSpacing
 
-                PlasmaComponents3.Label {
+                RowText {
                     id: planWhen
+                    colors: planLine.colors
                     Layout.preferredWidth: planLine.folderWidth
                     horizontalAlignment: Text.AlignRight
-                    textFormat: Text.PlainText
                     text: planLine.plan.cwd ? root.folderIn(planLine.plan.cwd, planLine.project, planLine.plan.cwdShort || "")
                           : planLine.chatGoneCard ? ""
                           : i18nc("a plan whose chat is gone, so its project isn't known (where its folder would be)", "chat gone")
                     opacity: 0.6
-                    font: Kirigami.Theme.smallFont
+                    font: planLine.colors.smallFont
                     elide: Text.ElideMiddle
                     PlasmaCore.ToolTipArea {   // (the whole folder: the line may be cut short)
                         textFormat: Text.PlainText
@@ -180,13 +187,13 @@ Kirigami.Icon {
                     tooltip: root.starHint("plans", false) + " " + root.starHint("plans", true)
                     onClicked: root.setStar("plans", planLine.plan.slug, planLine.remoteHost, false)
                 }
-                PlasmaComponents3.Label {
+                RowText {
+                    colors: planLine.colors
                     Layout.preferredWidth: root.agoWidth
                     horizontalAlignment: Text.AlignRight
-                    textFormat: Text.PlainText
-                    text: root.ago(root.now - planLine.plan.updatedAt)
+                    text: root.ago(root.minuteNow - planLine.plan.updatedAt)
                     opacity: 0.6
-                    font: Kirigami.Theme.smallFont
+                    font: planLine.colors.smallFont
                 }
             }
         }

@@ -2350,7 +2350,7 @@ class SearchAndNewChatBoxTests(unittest.TestCase):
         # row's dot is red for a chat that failed or that a usage limit stopped
         row = (ROOT / "ui/SessionRow.qml").read_text()
         found = (ROOT / "ui/SearchResults.qml").read_text()
-        self.assertIn('row.session.reason === "failed" || (row.stopped && !row.stopped.over) ? Kirigami.Theme.negativeTextColor', row)
+        self.assertIn('row.session.reason === "failed" || (row.stopped && !row.stopped.over) ? row.colors.negativeTextColor', row)
         self.assertIn('hit.row.reason === "failed" || (!!hit.row.stopped && !hit.row.stopped.over) ? Kirigami.Theme.negativeTextColor', found)
 
 

@@ -505,15 +505,19 @@ class HoverButtonTests(unittest.TestCase):
 
     def test_a_chats_words_buttons_are_as_tight_as_its_tag(self):
         row = (UI / "SessionRow.qml").read_text()
-        line = row[row.index("// A usage limit stopped it: what's next"):row.index("Kirigami.Icon {\n                    visible: row.hasPeek")]
+        line = row[row.index("// A usage limit stopped it: what's next"):row.index("Loader {\n                    active: row.hasPeek")]
         self.assertEqual(line.count("IconTextButton {"), 3)                # Continue on…, Go on at…, Keep going
         self.assertNotIn("ToolButton", line)
         # (2026-11-02, the user: closer together) 4 px apart, in a row of their
         # own 12 px from the words before them, as VS Code's
         self.assertEqual(line.count("Layout.leftMargin"), 1)
-        self.assertIn("RowLayout {\n                    visible: row.handover !== null || row.goOnAt > 0 || row.goingOn !== null || row.kept !== null\n"
+        # (made only when one shows: most rows have none)
+        self.assertIn("Loader {   // (made only when it shows: most rows have none of these)\n"
+                      "                    active: row.handover !== null || row.goOnAt > 0 || row.goingOn !== null || row.kept !== null\n"
+                      "                    visible: active\n"
                       "                    Layout.leftMargin: Kirigami.Units.smallSpacing * 2\n"
-                      "                    spacing: Kirigami.Units.smallSpacing\n", line)
+                      "                    sourceComponent: RowLayout {\n"
+                      "                        spacing: Kirigami.Units.smallSpacing\n", line)
         self.assertIn("on: row.goingOn !== null", line)                    # Goes on at…: a toggle that's on
         self.assertNotIn("Rectangle {", line)                              # (its frame: IconTextButton's)
         button = (UI / "IconTextButton.qml").read_text()
@@ -524,7 +528,7 @@ class HoverButtonTests(unittest.TestCase):
         self.assertIn("border.width: 1", frame)
         self.assertIn("border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)", frame)
         self.assertIn('color: button.on ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.08) : "transparent"', frame)
-        self.assertIn(": Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)",
+        self.assertIn(": Qt.rgba(theme.textColor.r, theme.textColor.g, theme.textColor.b, 0.3)",   # (theme: a row's colors, or Kirigami's)
                       (UI / "Tag.qml").read_text())
         # VS Code: the same frame, 4 px apart; narrow, a button's words shorten
         # instead of the line running out past the row's left edge, over its
@@ -573,9 +577,9 @@ Item {
         return JSON.stringify({
             line: box(lineA), name: box(nameA), lineName: at(nameA, lineA), lineTwin: at(twinNameA, twinA), lineH: [lineA.height, twinA.height],
             row: box(rowB), rowBar: at(barB, rowB), rowName: at(nameB, rowB), rowTwin: [at(twinBarB, twinB), at(twinNameB, twinB)],
-            lineShade: box(shadeA.children[0]), rowShade: box(shadeB.children[0])})
+            lineShade: box(shadeA.children[0].item), rowShade: box(shadeB.children[0].item)})
     }
-    function shown() { return [shadeA.children[0].visible, shadeB.children[0].visible].join(" ") }
+    function shown() { return [shadeA.children[0].item.visible, shadeB.children[0].item.visible].join(" ") }
     ColumnLayout {
         x: 20; y: 10; width: 360
         spacing: 4
@@ -584,7 +588,7 @@ Item {
             Layout.fillWidth: true
             spacing: 0
             HoverHandler { id: hoverA }
-            HoverShade { id: shadeA; target: lineA; shown: hoverA.hovered; side: 4; pad: 2 }
+            HoverShade { id: shadeA; made: true; target: lineA; shown: hoverA.hovered; side: 4; pad: 2 }   // (made: made on a first hover)
             RowLayout {
                 Layout.fillWidth: true
                 PlasmaComponents3.Label {
@@ -608,7 +612,7 @@ Item {
             HoverHandler { id: hoverB }
             Rectangle {
                 id: barB; Layout.fillHeight: true; Layout.preferredWidth: 6; color: "orange"
-                HoverShade { id: shadeB; z: -1; target: rowB; shown: hoverB.hovered; side: 4; pad: 2 }
+                HoverShade { id: shadeB; made: true; z: -1; target: rowB; shown: hoverB.hovered; side: 4; pad: 2 }
             }
             PlasmaComponents3.Label { id: nameB; text: "a chat"; Layout.fillWidth: true }
         }
