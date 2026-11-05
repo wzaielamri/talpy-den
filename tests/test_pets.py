@@ -2041,6 +2041,39 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Claude's turn so far: ${turnTime(now - t.startedAt)} since your message,", shared)
         self.assertIn("(its tool calls, in the Steps tab).", shared)
 
+    def test_times_copy_and_new_below_add_nothing_per_message(self):
+        # Talpy Chat's lines between days (A5), a message's time and Copy on hover (A4, A5) and "3 new ↓"
+        # (A2): each in a file of its own, read and made only when there's one to show (a day line is the
+        # list's section header, the hovered message's tools one for the list, moved to the one
+        # hovered), "Today" moves on with one timer that runs only while the window shows; nothing
+        # takes the list's hover from it (no MouseArea); the same words as VS Code's
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn('section.property: "day"', pane)
+        self.assertIn('source: active ? "DayLine.qml" : ""', pane)
+        self.assertIn('source: active ? "MessageTools.qml" : ""', pane)
+        self.assertIn("onHoverRowChanged: if (hoverRow !== null) messageTools.active = true", pane)
+        self.assertIn("active: pane.unseen > 0 && pane.conversationTab\n", pane)
+        self.assertIn('source: active ? "NewBelow.qml" : ""', pane)
+        self.assertRegex(pane, r"id: midnight\n\s+interval: 3600000\n\s+repeat: true\n\s+running: pane\.shown\n")
+        delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
+        for per_row in ("DayLine", "MessageTools", "NewBelow", "timeText", "dayLabel", "HoverHandler {\n                            id: listHover"):
+            self.assertNotIn(per_row, delegate)
+        tools = (ROOT / "ui/MessageTools.qml").read_text()
+        self.assertNotIn("MouseArea {", tools)
+        self.assertIn("pane.copyText(tools.row.text, true)", tools)
+        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        chat = (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text()
+        for words in ("Copy this reply, as Markdown", "Copy your message, as you wrote it"):
+            self.assertIn(words, tools)
+            self.assertIn(words, chat)
+        below = (ROOT / "ui/NewBelow.qml").read_text()
+        self.assertIn("%1 new items below, since you scrolled up. Click to go to the end.", below)
+        self.assertIn("new items`} below, since you scrolled up. Click to go to the end.", shared)
+        for words in ('i18n("Today")', 'i18n("Yesterday")', '"ddd d MMM"'):
+            self.assertIn(words, pane)
+        for words in ('"Today"', '"Yesterday"', 'weekday: "short", day: "numeric", month: "short"'):
+            self.assertIn(words, shared)
+
     def test_suggested_replies_are_made_only_when_there_are_some(self):
         # Talpy Chat's chips (B2 + B3): their list and words (ReplyChips.qml) and the grey completion
         # (ReplyGhost.qml) are read and made only while there are some, so a window opens as quickly;

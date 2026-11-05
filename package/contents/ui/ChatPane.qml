@@ -415,6 +415,8 @@ Window {
         chipsSeen = []
         chipsIgnored = 0
         items.clear()
+        seenKeys = null
+        unseen = 0
         stamp = ""
         limit = 120
         more = false
@@ -595,7 +597,12 @@ Window {
     readonly property bool followsLive: !host && root.watching && root.liveHook
     // (minimized, it reads nothing: once it's back, the conversation now)
     readonly property bool shown: visible && visibility !== Window.Minimized
-    onShownChanged: if (shown && loaded) load()
+    onShownChanged: {
+        if (shown)
+            newDay()
+        if (shown && loaded)
+            load()
+    }
     Timer {
         // (with the watcher, only for what it can't see: a moment it wasn't running)
         interval: pane.host ? 5000 : pane.watchOk ? 15000 : pane.followsLive ? 5000 : 1500
@@ -694,6 +701,7 @@ Window {
         lastItems = result.items || []
         const handoff = {}
         merge(withPending(lastItems, handoff), handoff)
+        countUnseen()
         // (how its turn ended: its chips, made once the conversation is in the list)
         turnEnded = result.ended || ""
         turnOver = !!result.over
@@ -723,6 +731,14 @@ Window {
     function merge(list, handoff) {
         const wanted = {}
         list.forEach(i => wanted[i.key] = true)
+        // Each item's day (its start, ms), the latest so far (a message still in Claude's queue is
+        // listed last, with the time you sent it), the first one's for those before any time; a
+        // Date is made once a day, not once an item. The days each tab shows something of, and
+        // the first of them: DayLine.qml's (VS Code shared/pane.ts dayBreaks: the same rule)
+        const first = list.find(it => it.at)
+        let day = first ? dayStart(first.at) : 0
+        let dayEnd = first ? dayStart(first.at, 1) : 0
+        const shown = { chat: {}, steps: {} }, firsts = { chat: 0, steps: 0 }
         if (handoff) {
             const shown = {}
             for (let i = 0; i < items.count; i++)
@@ -739,20 +755,30 @@ Window {
         }
         for (let i = 0; i < list.length; i++) {
             const it = list[i]
+            if (it.at && it.at >= dayEnd) {
+                day = dayStart(it.at)
+                dayEnd = dayStart(it.at, 1)
+            }
+            if (it.kind !== "tool" || askedShows(it.asked, false) || (it.asked && it.asked.state === "denied")) {
+                shown.chat[day] = true
+                firsts.chat = firsts.chat || day
+            }
+            shown.steps[day] = true
+            firsts.steps = firsts.steps || day
             const flat = { kind: it.kind, key: String(it.key), text: it.text || "", line: it.line || "",
                            name: it.name || "", status: it.status || "", input: it.input || "", output: it.output || "",
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
                            diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
                            pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n"),
                            asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "",
-                           command: it.command ? JSON.stringify(it.command) : "" }
+                           command: it.command ? JSON.stringify(it.command) : "", day: day }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
                 if (old.text !== flat.text || old.status !== flat.status || old.output !== flat.output
                         || old.input !== flat.input || old.summary !== flat.summary || old.prev !== flat.prev || old.diff !== flat.diff
                         || old.queued !== flat.queued || old.until !== flat.until || old.pictures !== flat.pictures
                         || old.here !== flat.here || old.asked !== flat.asked || old.answered !== flat.answered
-                        || old.command !== flat.command)
+                        || old.command !== flat.command || old.day !== flat.day)
                     items.set(i, flat)
             } else if (i < items.count) {
                 items.insert(i, flat)
@@ -762,6 +788,84 @@ Window {
         }
         while (items.count > list.length)
             items.remove(items.count - 1)
+        daysShown = shown
+        firstDays = firsts
+    }
+
+    // Times (VS Code shared/pane.ts: the same words and rules): a line before the first item of each
+    // later day the tab shows ("Today", "Yesterday", "Mon 3 Nov"; the year when it isn't this one:
+    // DayLine.qml, the list's section headers), and a message's time on hover ("14:32"; "Yesterday
+    // 14:32" for an earlier day: MessageTools.qml)
+    property var daysShown: ({ chat: {}, steps: {} })   // tab -> {day: true}
+    property var firstDays: ({ chat: 0, steps: 0 })   // tab -> its first day (no line before it)
+    function dayStart(ms, after) {   // (the start of ms's day, or of the day after days later)
+        const d = new Date(ms)
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate() + (after || 0)).getTime()
+    }
+    function dayLabel(at) {
+        const days = Math.round((dayStart(today) - dayStart(at)) / 86400000)
+        if (days <= 0)
+            return i18n("Today")   // (a host's clock a little ahead: today too)
+        if (days === 1)
+            return i18n("Yesterday")
+        const d = new Date(at)
+        return Qt.locale().toString(d, d.getFullYear() !== new Date(today).getFullYear() ? "ddd d MMM yyyy" : "ddd d MMM")
+    }
+    function timeText(at) {
+        return dayStart(at) >= dayStart(Date.now()) ? root.clockText(at)
+             : i18nc("a message's day and time", "%1 %2", dayLabel(at), root.clockText(at))
+    }
+    // Today, for the lines' "Today" and "Yesterday": it moves on at midnight, with one timer that
+    // runs only while the window shows (and when it shows again on another day)
+    property real today: Date.now()
+    function newDay() {
+        const now = new Date()
+        if (new Date(today).toDateString() !== now.toDateString())
+            today = now.getTime()
+        midnight.interval = dayStart(now.getTime(), 1) - now.getTime() + 1000
+    }
+    Timer {
+        id: midnight
+        interval: 3600000
+        repeat: true
+        running: pane.shown
+        onTriggered: pane.newDay()
+    }
+
+    // What came in below while you're scrolled up ("3 new ↓" over the list's bottom: NewBelow.qml):
+    // the keys there when you left the end, till you're back at it (VS Code shared/pane.ts newBelow)
+    property var seenKeys: null
+    property int unseen: 0
+    readonly property bool atEnd: list.originY + list.contentHeight - list.contentY - list.height < Kirigami.Units.gridUnit * 2
+    onAtEndChanged: {
+        if (atEnd) {
+            seenKeys = null
+            unseen = 0
+        } else if (seenKeys === null && loaded) {
+            const keys = {}
+            for (let i = 0; i < items.count; i++)
+                keys[items.get(i).key] = true
+            seenKeys = keys
+        }
+    }
+    // (those after the last one there then, that the tab shows: Show earlier's come in above)
+    function countUnseen() {
+        if (seenKeys === null)
+            return
+        let n = 0
+        for (let i = items.count - 1; i >= 0; i--) {
+            const it = items.get(i)
+            if (seenKeys[it.key])
+                break
+            if (listTab === "steps" || it.kind !== "tool" || (it.asked !== "" && (askedShows(JSON.parse(it.asked), false) || JSON.parse(it.asked).state === "denied")))
+                n++
+        }
+        unseen = n
+    }
+    function toEnd() {
+        seenKeys = null
+        unseen = 0
+        keepEnd()
     }
 
     // The end of the conversation in view, with its working line, when you
@@ -2062,6 +2166,7 @@ Window {
             if (listTab !== tab) {
                 listTab = tab
                 list.forceLayout()
+                countUnseen()
             }
             if (chatAtEnd || !chatTop) {   // (only tool calls below its top: the last turn's)
                 keepEnd()
@@ -2562,6 +2667,39 @@ Window {
                     }
                     onContentHeightChanged: pane.keepPlace()
                     onHeightChanged: pane.keepPlace()
+
+                    // A line between days, before the first item of each later day the tab shows
+                    // (DayLine.qml: read and made only for a chat with more than one day)
+                    section.property: "day"
+                    section.delegate: Loader {
+                        required property string section
+                        width: list.width
+                        active: section !== String(pane.firstDays[pane.listTab]) && pane.daysShown[pane.listTab][section] === true
+                        source: active ? "DayLine.qml" : ""
+                        onLoaded: item.day = Qt.binding(() => Number(section))
+                    }
+
+                    // The message under the pointer (yours, or Claude's reply): its time and Copy over
+                    // its top right corner (MessageTools.qml: one for the list, made the first time
+                    // a message is hovered, moved to the one hovered; nothing more per message)
+                    HoverHandler {
+                        id: listHover
+                    }
+                    property Item hoverRow: {   // (a binding; a render sets one to draw its tools)
+                        if (!listHover.hovered)
+                            return null
+                        const p = listHover.point.position
+                        void list.contentY   // (scrolled under the pointer: the one there now)
+                        const at = listHover.parent.mapToItem(list.contentItem, p.x, p.y)
+                        const r = list.itemAt(at.x, at.y)
+                        return r && r.listed && r.shows && !r.card && (r.kind === "you" || r.kind === "claude") ? r : null
+                    }
+                    onHoverRowChanged: if (hoverRow !== null) messageTools.active = true
+                    Loader {
+                        id: messageTools
+                        active: false
+                        source: active ? "MessageTools.qml" : ""
+                    }
                     // (the wheel or a touchpad: the scroll view's Kirigami.WheelHandler moves
                     // contentY itself, so the list isn't moving, but you scroll all the same;
                     // this one only looks, the scroll view still scrolls)
@@ -3183,6 +3321,17 @@ Window {
                     onActiveChanged: if (active) pane.selectStart(selectOver.mapToItem(list, point.position.x, point.position.y))
                     onPointChanged: if (active) pane.selectAcross(selectOver.mapToItem(list, point.position.x, point.position.y))
                 }
+            }
+            // "3 new ↓" at the list's bottom while you're scrolled up and something came in below (NewBelow.qml:
+            // made only then); over the list, so it moves nothing; a click goes to the end
+            Loader {
+                parent: scroll
+                z: 11
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: Kirigami.Units.largeSpacing
+                active: pane.unseen > 0 && pane.conversationTab
+                source: active ? "NewBelow.qml" : ""
             }
 
             // What it asks while it waits: Allow once / Always allow / Deny, or its questions
