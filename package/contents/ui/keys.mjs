@@ -45,7 +45,7 @@ export const KEYS = [
     { id: "find", group: "Reading", plasma: "Ctrl+F", vscode: "Ctrl+F", commands: [[VS + "find", "ctrl+f"]],
       what: "Search the chat (Enter or F3: the next match; Shift+Enter or Shift+F3: the one before; Esc closes it)" },
     { id: "fold", group: "Reading", plasma: "Ctrl+O", vscode: "Ctrl+O", commands: [[VS + "foldAll", "ctrl+o"]],
-      what: "Unfold or fold everything: long messages, and each step's details on the Steps tab" },
+      what: "Unfold every long message, reply and output, and your answered questions and plans (again: folds them back)" },
     { id: "tabs", group: "Reading", plasma: "Ctrl+1 / Ctrl+2 / Ctrl+3", vscode: "Ctrl+1 / Ctrl+2 / Ctrl+3",
       commands: [[VS + "showChat", "ctrl+1"], [VS + "showSteps", "ctrl+2"], [VS + "showReview", "ctrl+3"]],
       what: "The Chat, Steps and Review tabs" },

@@ -145,55 +145,11 @@ function foldFor(it: PaneItem, text: string, how: "markdown" | "plain" | "ansi",
 function FoldMore({ id, fold, whole, onToggle }: { id: string; fold: Fold; whole: boolean; onToggle: (e: MouseEvent) => void }) {
   return (
     <button type="button" class="pane-fold-more" data-fold={id} aria-expanded={whole} onClick={onToggle}
-      title={`${whole ? "Fold it again" : "Show all of it"} (${keyText("fold", "vscode", MAC)}: unfold or fold everything)`}>
+      title={`${whole ? "Fold it again" : "Show all of it"} (${keyText("fold", "vscode", MAC)}: unfold or fold every long one)`}>
       <Icon name={I.folded} class={whole ? "open" : ""} />
       {whole ? "Show less" : `Show more · ${fold.more === 1 ? "1 more line" : `${fold.more} more lines`}`}
     </button>
   );
-}
-
-// Made a few at a time (Ctrl+O unfolds every step: each one's whole change and details are drawn in
-// the frames after, the ones nearest the middle of the list first, as many a frame as keep it
-// smooth), not all at once
-const later: { at: () => HTMLElement | null; go: () => void }[] = [];
-let laterFrame = 0, laterSorted = 0, laterMany = 8, laterAt = 0;
-function laterRun(t: number) {
-  laterFrame = 0;
-  if (laterSorted < later.length) {   // (those that came since: nearest the middle of the list first, read once)
-    const list = document.querySelector<HTMLElement>(".pane-list");
-    const mid = list ? list.getBoundingClientRect().top + list.clientHeight / 2 : 0;
-    const far = new Map(later.map((j) => [j, Math.abs((j.at()?.getBoundingClientRect().top ?? 1e9) - mid)]));
-    later.sort((a, b) => far.get(a)! - far.get(b)!);
-    laterSorted = later.length;
-  }
-  // (how many this frame, by how long the last one took: the page draws them all in one go after, and
-  // a long list's own reflow is most of a frame's time, so a few more a frame make it end sooner)
-  if (laterAt) laterMany = t - laterAt > 100 ? Math.max(2, Math.floor(laterMany * 0.7)) : t - laterAt < 60 ? Math.min(64, laterMany + 4) : laterMany;
-  laterAt = t;
-  for (const job of later.splice(0, laterMany)) job.go();
-  laterSorted = Math.max(0, laterSorted - laterMany);
-  if (later.length) laterFrame = requestAnimationFrame(laterRun);
-  else laterAt = 0;
-}
-function useLater(want: boolean, at: { current: HTMLElement | null }): boolean {
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    if (!want) {
-      setOn(false);
-      return undefined;
-    }
-    const job = { at: () => at.current, go: () => setOn(true) };
-    later.push(job);
-    if (!laterFrame) laterFrame = requestAnimationFrame(laterRun);
-    return () => {
-      const i = later.indexOf(job);
-      if (i >= 0) {
-        later.splice(i, 1);
-        if (i < laterSorted) laterSorted--;
-      }
-    };
-  }, [want]);
-  return want && on;
 }
 
 // Search in the chat (Ctrl+F): a bar over the list's top right, so nothing moves, drawn only while
@@ -315,10 +271,9 @@ function viewOf(list: HTMLElement, items: readonly PaneItem[]): { first: number;
 // A tool call: ● Bash  npm test in green, red, or (still going) blinking,
 // under it ⎿ what came of it, and an edit's change (its first lines; open,
 // all of it); click for what it ran and got (CodeView.tsx)
-// (eager: opened with a click, its details made at once; else, as Ctrl+O opens all: a few a frame,
-// useLater. Long output folds as a long message does: outWhole, onOut)
-function ToolLine({ item, open, eager, outWhole, onOut, onToggle, asking, going, gap, split, onSplit }: {
-  item: PaneItem; open: boolean; eager: boolean; outWhole: boolean; onOut: (e: MouseEvent) => void; onToggle: () => void; asking: boolean; going: boolean; gap: string;
+// (long output folds as a long message does: outWhole, onOut)
+function ToolLine({ item, open, outWhole, onOut, onToggle, asking, going, gap, split, onSplit }: {
+  item: PaneItem; open: boolean; outWhole: boolean; onOut: (e: MouseEvent) => void; onToggle: () => void; asking: boolean; going: boolean; gap: string;
   split: boolean; onSplit: (s: boolean) => void;
 }) {
   const name = item.name ?? "";
@@ -327,10 +282,6 @@ function ToolLine({ item, open, eager, outWhole, onOut, onToggle, asking, going,
   const tone = item.status === "ok" ? "ok" : item.status === "error" ? "error" : asking ? "asking" : going ? "going" : "open";
   const summary = item.summary || (asking ? "Waiting for your answer" : "");
   const diff = item.diff ?? [];
-  const box = useRef<HTMLDivElement>(null);
-  const late = useLater(open && !eager, box);
-  const waiting = open && !eager && !late;   // (its turn hasn't come: data-later)
-  open = eager ? open : late;
   const detail = open && !!(item.input || item.output) && (!diff.length || item.status === "error");
   const fold = detail && item.output ? foldFor(item, item.output, "plain", true) : null;
   const made = () => (
@@ -340,7 +291,7 @@ function ToolLine({ item, open, eager, outWhole, onOut, onToggle, asking, going,
     </>
   );
   return (
-    <div ref={box} data-key={item.key} data-later={waiting ? "" : undefined} class={`pane-item pane-tool ${tone} ${gap}`}>
+    <div data-key={item.key} class={`pane-item pane-tool ${tone} ${gap}`}>
       <button type="button" class="pane-tool-line" aria-expanded={open} title="Click for what it ran and what came back" onClick={onToggle}>
         <span class="pane-gutter" aria-hidden="true">
           <span class="pane-dot" />
@@ -547,8 +498,8 @@ function ChatApp() {
   // Folds (a long text, a step's details): open[key] says, by key ("<key>/out": a command's or a
   // step's output). Unsaid, a long text folds if it was there when the tab first read the chat (but
   // Claude's last reply then); one that comes in while it's open doesn't (you watch it come). Only
-  // a click, a search's step into it and Ctrl+O change one: Ctrl+O unfolds everything, again: back
-  // to how each one was
+  // a click, a search's step into it and Ctrl+O change one: Ctrl+O unfolds every long text and
+  // answered question or plan (not a step's details), again: back to how each one was
   const [allOpen, setAllOpen] = useState(false);
   const beforeAll = useRef<Record<string, boolean>>({});
   const firstRead = useRef<{ at: number; last: string } | null>(null);
@@ -1325,13 +1276,23 @@ function ChatApp() {
     const b = k && el ? el.querySelector<HTMLElement>(`[data-fold="${CSS.escape(k.key)}"]`) : null;
     if (k && el && b) el.scrollTop += b.getBoundingClientRect().top - k.top;
   }, [open]);
-  const foldAll = () => {   // (Ctrl+O)
+  // (Ctrl+O: every long text and answered question or plan unfolded, not a step's details; again,
+  // each back as it was)
+  const foldAll = () => {
+    const next = { ...open }, kept: Record<string, boolean> = {};
+    for (const it of shownItems) {
+      const keys = it.kind === "you" || it.kind === "claude" ? [it.key, `${it.key}/out`] : it.kind === "tool" && askedShows(it) ? [it.key] : [];
+      for (const k of keys) {
+        if (!allOpen && next[k] !== undefined) kept[k] = next[k];
+        if (allOpen || next[k] === false) delete next[k];   // (one you unfolded stays so meanwhile)
+      }
+    }
     if (allOpen) {
       setAllOpen(false);
-      setOpen(beforeAll.current);
+      setOpen({ ...next, ...beforeAll.current });
     } else {
-      beforeAll.current = open;
-      setOpen({});
+      beforeAll.current = kept;
+      setOpen(next);
       setAllOpen(true);
     }
   };
@@ -1666,13 +1627,12 @@ function ChatApp() {
         key={it.key}
         item={it}
         gap={gap}
-        open={open[it.key] ?? allOpen}
-        eager={open[it.key] === true}
-        outWhole={open[`${it.key}/out`] ?? allOpen}
-        onOut={toggleFold(`${it.key}/out`, open[`${it.key}/out`] ?? allOpen)}
+        open={!!open[it.key]}
+        outWhole={!!open[`${it.key}/out`]}
+        onOut={toggleFold(`${it.key}/out`, !!open[`${it.key}/out`])}
         asking={asking && i === shownItems.length - 1 && it.status === "open"}
         going={going && it.status === "open"}
-        onToggle={() => setOpen((was) => ({ ...was, [it.key]: !(was[it.key] ?? allOpen) }))}
+        onToggle={() => setOpen((was) => ({ ...was, [it.key]: !was[it.key] }))}
         split={split}
         onSplit={sideBySide}
       />

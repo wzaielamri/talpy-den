@@ -41,7 +41,7 @@ RowLayout {
         gesturePolicy: TapHandler.ReleaseWithinBounds
         onTapped: pane.toggleFold(more.foldKey, more.whole, more)
     }
-    PlasmaComponents3.ToolTip.text: (more.whole ? i18n("Fold it again") : i18n("Show all of it")) + " " + i18n("(Ctrl+O: unfold or fold everything)")
+    PlasmaComponents3.ToolTip.text: (more.whole ? i18n("Fold it again") : i18n("Show all of it")) + " " + i18n("(Ctrl+O: unfold or fold every long one)")
     PlasmaComponents3.ToolTip.visible: hover.hovered
     PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
 }

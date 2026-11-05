@@ -2116,8 +2116,8 @@ class NewChatTests(unittest.TestCase):
     def test_search_and_folds_are_made_only_when_wanted(self):
         # Talpy Chat's search (A3) and folds (A6): the find bar (FindBar.qml), its marks (FindMarks.qml,
         # made on matched rows near the view only), a fold's Show more (FoldMore.qml), find.mjs (read only
-        # once a text may be long: FoldHelp.qml) and a step's details (ToolDetail.qml, asynchronous for
-        # Ctrl+O) are files of their own, read and made only when wanted, so a window opens as quickly;
+        # once a text may be long: FoldHelp.qml) and a step's details (ToolDetail.qml) are files of their
+        # own, read and made only when wanted, so a window opens as quickly;
         # nothing of them is in each row; Ctrl+O keeps what you read in place; the same words as VS Code's
         pane = (ROOT / "ui/ChatPane.qml").read_text()
         self.assertNotIn('"find.mjs"', pane)
@@ -2130,7 +2130,7 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('source: active ? "FoldMore.qml" : ""', (ROOT / "ui/CommandOutput.qml").read_text())
         self.assertIn('source: active ? "FoldMore.qml" : ""', (ROOT / "ui/ToolDetail.qml").read_text())
         self.assertIn('source: active ? "ToolDetail.qml" : ""', pane)
-        self.assertIn("asynchronous: pane.openTools[entry.key] === undefined", pane)
+        self.assertIn("readonly property bool unfolded: pane.openTools[key] === true", pane)   # (Ctrl+O leaves a step's details)
         self.assertIn("active: entry.unfolded && entry.shows", pane)
         self.assertNotIn("FindMarks", pane)
         self.assertIn('Qt.createComponent("FindMarks.qml")', (ROOT / "ui/FindBar.qml").read_text())
@@ -2149,7 +2149,7 @@ class NewChatTests(unittest.TestCase):
             self.assertIn(words, bar)
             self.assertIn(words, chat)
         more = (ROOT / "ui/FoldMore.qml").read_text()
-        for words in ("Show less", "Show more · ", " more lines", "Fold it again", "Show all of it", ": unfold or fold everything)"):
+        for words in ("Show less", "Show more · ", " more lines", "Fold it again", "Show all of it", ": unfold or fold every long one)"):
             self.assertIn(words, more)
             self.assertIn(words, chat)
 

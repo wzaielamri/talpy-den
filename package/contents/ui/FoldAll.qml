@@ -1,10 +1,9 @@
 import QtQuick
 
-// Ctrl+O in Talpy Chat: every row unfolded (each step's details, its whole change, a long text), a
-// few at a time, the ones nearest what you read first, about 6 ms of it at once, so the window keeps
-// drawing while they're made (an edit's whole change is drawn again at once, all of them together
-// held the window up for a second and more). ChatPane.qml makes it at the first Ctrl+O; a row gets
-// its turn when its late is set to allGen; rows made after (scrolled to, come in) at once
+// Ctrl+O in Talpy Chat: every long text unfolded (a message, a reply, a command's output), a few
+// at a time, the ones nearest what you read first, a little of it each frame, so the window keeps
+// drawing while they're drawn whole again. ChatPane.qml makes it at the first Ctrl+O; a row gets its
+// turn when its late is set to allGen; rows made after (scrolled to, come in) at once
 Timer {
     property var rows: []
     interval: 16
@@ -13,10 +12,10 @@ Timer {
         const n = items.count
         const top = Math.max(0, list.indexAt(list.width / 2, list.contentY + 2))
         const order = []
-        for (let d = 0; top + d < n || top - d - 1 >= 0; d++) {   // (from what you read, outward)
-            if (top + d < n)
+        for (let d = 0; top + d < n || top - d - 1 >= 0; d++) {   // (from what you read, outward: the long ones)
+            if (top + d < n && items.get(top + d).fold !== "")
                 order.push(top + d)
-            if (top - d - 1 >= 0)
+            if (top - d - 1 >= 0 && items.get(top - d - 1).fold !== "")
                 order.push(top - d - 1)
         }
         rows = order

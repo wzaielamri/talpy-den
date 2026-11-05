@@ -3,17 +3,17 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "codehtml.mjs" as Code
 
-// A step's details in Talpy Chat, unfolded (a click on its line, or Ctrl+O for every one): the
+// A step's details in Talpy Chat, unfolded (a click on its line, or a search's step into them): the
 // command and what it printed, the lines it read (numbered, in the file's colours), or what it was
 // asked and got (codehtml.mjs; an edit's change is above it, in its row). ChatPane.qml's tool row
-// makes it as it's opened, by a Loader (asynchronous when Ctrl+O opens them all: a few a frame), so
-// a window opens as quickly. Long output folds as a long message does (FoldMore.qml)
+// makes it as it's opened, by a Loader, so a window opens as quickly. Long output folds as a long
+// message does (FoldMore.qml)
 Rectangle {
     id: detailBox
 
     readonly property string args: entry.line.indexOf(entry.name + ": ") === 0 ? entry.line.slice(entry.name.length + 2) : ""
     readonly property var outFold: entry.output !== "" ? pane.foldText(entry.output, "plain") : null
-    readonly property bool outWhole: !outFold || (pane.openTools[entry.key + "/out"] !== undefined ? pane.openTools[entry.key + "/out"] : pane.allOpen)
+    readonly property bool outWhole: !outFold || pane.openTools[entry.key + "/out"] === true
 
     implicitHeight: column.implicitHeight + Kirigami.Units.largeSpacing * 1.5
     radius: Kirigami.Units.cornerRadius

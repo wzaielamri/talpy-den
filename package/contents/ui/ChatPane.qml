@@ -458,7 +458,8 @@ Window {
     // Long texts fold (find.mjs foldOf: past about 40 lines, their first 24 show, then Show more:
     // FoldMore.qml). Unsaid, what the window first read folds, but Claude's last reply then; what
     // comes in while it shows doesn't (you watch it come); only a click, a search's step into it and
-    // Ctrl+O change one. Ctrl+O unfolds everything (allOpen), again: each back as it was
+    // Ctrl+O change one. Ctrl+O unfolds every long text and answered question or plan (allOpen; not a
+    // step's details), again: each back as it was
     property bool allOpen: false
     property int allGen: 0         // (each Ctrl+O's: a row is unfolded once its turn came, late === allGen: FoldAll.qml)
     property int lateDefault: 0    // (and a row made after its turns: at once)
@@ -483,15 +484,28 @@ Window {
         active: false
         source: active ? "FoldAll.qml" : ""
     }
-    function foldAll() {   // (Ctrl+O: what you read stays where it is while it's laid out again)
+    // (Ctrl+O: every long text and answered question or plan unfolded, not a step's details; again,
+    // each back as it was; what you read stays where it is while it's laid out again)
+    function foldAll() {
         const end = !loaded || nearEnd()
         chatTop = end ? null : topMessage(true)
+        const next = Object.assign({}, openTools), kept = {}
+        for (const it of shownList) {
+            const keys = it.kind === "you" || it.kind === "claude" ? [String(it.key), it.key + "/out"]
+                       : it.kind === "tool" && askedShows(it.asked, false) ? [String(it.key)] : []
+            for (const k of keys) {
+                if (!allOpen && next[k] !== undefined)
+                    kept[k] = next[k]
+                if (allOpen || next[k] === false)   // (one you unfolded stays so meanwhile, not folded a moment)
+                    delete next[k]
+            }
+        }
         if (allOpen) {
             allOpen = false
-            openTools = openBefore
+            openTools = Object.assign(next, openBefore)
         } else {
-            openBefore = openTools
-            openTools = {}
+            openBefore = kept
+            openTools = next
             allGen++
             allOpen = true
             foldAllRows.active = true
@@ -592,6 +606,7 @@ Window {
         openBefore = {}
         firstRead = null
         shownList = []
+        findOn = false   // (another chat: its find bar closed; what it looked for stays for Ctrl+F)
         info = ""
         review = null
         reviewFor = ""
@@ -3075,11 +3090,12 @@ Window {
                         required property string fold       // (a long one: where it folds, as JSON: withFold; "" for the rest)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
                         property int late: pane.lateDefault   // (Ctrl+O: its turn came, FoldAll.qml)
-                        readonly property bool unfolded: pane.openTools[key] !== undefined ? pane.openTools[key] : pane.allOpen && late === pane.allGen
+                        readonly property bool unfolded: pane.openTools[key] === true   // (a step's details: a click, a search's step)
+                        readonly property bool allTurn: pane.allOpen && late === pane.allGen
                         readonly property var foldData: fold !== "" ? JSON.parse(fold) : null
-                        readonly property bool whole: !foldData || !foldData.cut || (pane.openTools[key] !== undefined ? pane.openTools[key] : unfolded || foldData.open)
+                        readonly property bool whole: !foldData || !foldData.cut || (pane.openTools[key] !== undefined ? pane.openTools[key] : allTurn || foldData.open)
                         readonly property bool outWhole: !foldData || !foldData.outCut
-                                                         || (pane.openTools[key + "/out"] !== undefined ? pane.openTools[key + "/out"] : unfolded || foldData.open)
+                                                         || (pane.openTools[key + "/out"] !== undefined ? pane.openTools[key + "/out"] : allTurn || foldData.open)
                         readonly property var askedData: asked !== "" ? JSON.parse(asked) : null
                         readonly property var commandData: command !== "" ? JSON.parse(command) : null
                         // (a question or a plan you answered: as Claude's, in Chat and Steps)
@@ -3450,13 +3466,11 @@ Window {
                                 // Unfolded: the command and what it printed, the lines it read
                                 // (numbered, in the file's colors), or what it was asked and got
                                 // (codehtml.mjs; an edit's change is above, its error here): ToolDetail.qml,
-                                // made as it's opened (asynchronous: Ctrl+O opens every one, a few a frame),
-                                // only on a tab that shows the step
+                                // made as it's opened, only on a tab that shows the step
                                 Loader {
                                     active: entry.unfolded && entry.shows && (entry.input !== "" || entry.output !== "")
                                             && (entry.diff === "" || entry.status === "error")
-                                    asynchronous: pane.openTools[entry.key] === undefined
-                                    visible: active && status === Loader.Ready
+                                    visible: active
                                     Layout.fillWidth: true
                                     Layout.leftMargin: pane.gutter
                                     source: active ? "ToolDetail.qml" : ""

@@ -361,7 +361,7 @@
       },
       {
         "command": "talpyDen.chat.foldAll",
-        "title": "Unfold or Fold Everything",
+        "title": "Unfold or Fold Long Messages",
         "category": "Talpy Chat"
       },
       {
