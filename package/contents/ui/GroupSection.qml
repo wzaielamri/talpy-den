@@ -80,17 +80,26 @@ ColumnLayout {
     readonly property int starredShown: Math.min(starred.length, root.pageSize * root.pagesShown(groupKey + "|chats"))
     readonly property int starredPlansShown: Math.min(starredPlans.length, root.pageSize * root.pagesShown(groupKey + "|plans"))
     // (their lines' models: a page more made, none taken away while they show; folded, a list has none)
+    // (many lines at once, as when the section is made with pages of them
+    // unfolded: a page a frame, the first at once; a page you ask for comes
+    // in the next frame)
+    property int linesMade: root.pageSize
+    readonly property int linesWanted: Math.max(recentShown, starredShown, starredPlansShown)
+    FrameAnimation {
+        running: section.linesMade < section.linesWanted
+        onTriggered: section.linesMade = Math.min(section.linesWanted, section.linesMade + root.pageSize)
+    }
     PageRows {
         id: recentRows
-        size: section.recentShown
+        size: Math.min(section.recentShown, section.linesMade)
     }
     PageRows {
         id: starredRows
-        size: section.starredShown
+        size: Math.min(section.starredShown, section.linesMade)
     }
     PageRows {
         id: starredPlanRows
-        size: section.starredPlansShown
+        size: Math.min(section.starredPlansShown, section.linesMade)
     }
 
     // Its chats (but those you hid, while hiding them: root.hidingNow) as
@@ -337,10 +346,10 @@ ColumnLayout {
             text: fetching ? i18n("Fetching the plan usage…")
                   : !section.group.limits ? i18n("No plan usage yet: shows after this account's next reply")
                   : section.group.limitsFrom
-                    ? (root.now - section.group.limits.updatedAt < 60000 ? i18n("Plan usage updated just now, on %1", root.hostLabel(section.group.limitsFrom))
-                       : i18n("Plan usage as of %1 ago, on %2", root.duration(root.now - section.group.limits.updatedAt), root.hostLabel(section.group.limitsFrom)))
-                  : root.now - section.group.limits.updatedAt < 60000 ? i18n("Plan usage updated just now")
-                  : i18n("Plan usage as of %1 ago", root.duration(root.now - section.group.limits.updatedAt))
+                    ? (root.minuteNow - section.group.limits.updatedAt < 60000 ? i18n("Plan usage updated just now, on %1", root.hostLabel(section.group.limitsFrom))
+                       : i18n("Plan usage as of %1 ago, on %2", root.duration(root.minuteNow - section.group.limits.updatedAt), root.hostLabel(section.group.limitsFrom)))
+                  : root.minuteNow - section.group.limits.updatedAt < 60000 ? i18n("Plan usage updated just now")
+                  : i18n("Plan usage as of %1 ago", root.duration(root.minuteNow - section.group.limits.updatedAt))
 
             PlasmaCore.ToolTipArea {
                 textFormat: Text.PlainText

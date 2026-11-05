@@ -78,8 +78,8 @@ ColumnLayout {
             textFormat: Text.PlainText
             text: hostSection.info.loading && !hostSection.info.result ? i18n("connecting…")
                   : !hostSection.info.updatedAt ? ""
-                  : root.now - hostSection.info.updatedAt < 60000 ? i18n("updated just now")
-                  : i18n("updated %1 ago", root.duration(root.now - hostSection.info.updatedAt))
+                  : root.minuteNow - hostSection.info.updatedAt < 60000 ? i18n("updated just now")
+                  : i18n("updated %1 ago", root.duration(root.minuteNow - hostSection.info.updatedAt))
             opacity: 0.6
             font: Kirigami.Theme.smallFont
         }
