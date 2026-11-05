@@ -240,6 +240,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("talpyDen.answerPermissions", () => answerPermissionsHere(backend, dash)),
     vscode.commands.registerCommand("talpyDen.liveMode", () => liveModeHere(backend, dash)),
     vscode.commands.registerCommand("talpyDen.dictationModels", () => dictationModels(backend)),
+    // (the replies hidden with a chip's Don't suggest this: suggested again)
+    vscode.commands.registerCommand("talpyDen.suggestHiddenReplies", async () => {
+      const r = await backend.pane(["--hide-reply", "-", "--off"], 20000);
+      void vscode.window.showInformationMessage(noLinks(r.ok ? "Talpy Den: the replies you hid are suggested again."
+                                                             : `Talpy Den: ${String(r.message ?? "That didn't work")}`));
+    }),
     panes,
   );
   statusBar.update(dash.state(), account.update(dash.state()));

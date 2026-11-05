@@ -352,6 +352,7 @@ function ChatApp() {
   };
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set()); // (Don't suggest this: gone at once)
   const ignored = useRef(0);
+  const chipsSeen = useRef<ReplyChip[]>([]); // (the chips this turn showed: typing hides them, a send still counts)
   const [restUntil, setRestUntil] = useState(0); // (backing off: no chips till then)
   useEffect(() => {
     if (!restUntil) return undefined;
@@ -709,9 +710,10 @@ function ChatApp() {
     const typed = given ?? text;
     const said = typed.trim();
     if (!said) return;
-    if (chips.length) {   // (backing off: chips shown, and you sent none of them)
-      const next = chipsAfterSend(ignored.current, chips, said, Date.now());
+    if (chipsSeen.current.length) {   // (backing off: chips showed this turn, and you sent none of them)
+      const next = chipsAfterSend(ignored.current, chipsSeen.current, said, Date.now());
       ignored.current = next.ignored;
+      chipsSeen.current = [];
       if (next.restUntil) setRestUntil(next.restUntil);
     }
     sentAt.current = Date.now();
@@ -850,8 +852,9 @@ function ChatApp() {
                                           state: chat.state, text, pending: pendingHere, resting: restUntil > 0, sentAt: sentAt.current }, Date.now());
   const chips = useMemo(() => (chipsOn ? chipsOf(turn.asks, turn.ended, usual, hidden) : []), [chipsOn, turn, usual, hidden]);
   useEffect(() => {
-    if (!chips.length) setChipMenu(null);
-  }, [chips.length]);
+    if (chips.length) chipsSeen.current = chips;
+    else setChipMenu(null);
+  }, [chips]);
   useEffect(() => {
     if (!suggest) usualAt.current = 0;
     else if (chat) askUsual();

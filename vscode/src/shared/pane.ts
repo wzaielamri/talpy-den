@@ -711,9 +711,9 @@ export function chipsWanted(c: { on: boolean; fresh: boolean; ended: TurnEnded |
   return c.over || (c.state !== "working" && now - c.sentAt > CHIPS_AFTER_SEND_MS);
 }
 
-// Backing off, as Claude Code does with its own suggestions: a message you sent while chips showed,
-// none of them (typed or clicked), counts; CHIPS_IGNORED in a row, and there are none for
-// CHIPS_REST_MS (restUntil: when they're back; 0: none now)
+// Backing off, as Claude Code does with its own suggestions: a message you sent after chips showed
+// that turn (shown: those; typing hides them), none of them (typed or clicked), counts;
+// CHIPS_IGNORED in a row, and there are none for CHIPS_REST_MS (restUntil: when they're back; 0: none now)
 export function chipsAfterSend(ignored: number, shown: ReplyChip[], text: string, now: number): { ignored: number; restUntil: number } {
   if (!shown.length) return { ignored, restUntil: 0 };
   if (shown.some((c) => replyKey(c.send) === replyKey(text))) return { ignored: 0, restUntil: 0 };
