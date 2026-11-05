@@ -816,11 +816,15 @@ export function showsOn(it: PaneItem, steps: boolean): boolean {
 }
 // The "3 new" badge at the list's bottom while you're scrolled up: what came in below since you
 // left its end (seen: the keys there then), after the last of those, that its tab shows (earlier
-// ones, Show earlier's, are above). A click goes to the end; it's gone once you're there
+// ones, Show earlier's, are above; none of them left: nothing to tell). A click goes to the end;
+// it's gone once you're there
 export function newBelow(seen: ReadonlySet<string>, items: readonly PaneItem[], steps: boolean): number {
   let n = 0;
-  for (let i = items.length - 1; i >= 0 && !seen.has(items[i].key); i--) if (showsOn(items[i], steps)) n++;
-  return n;
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (seen.has(items[i].key)) return n;
+    if (showsOn(items[i], steps)) n++;
+  }
+  return 0;
 }
 export function newText(n: number): string {
   return `${n} new`;

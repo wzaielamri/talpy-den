@@ -1371,6 +1371,7 @@ test("the new-messages badge: what came in below since you scrolled up, as its t
   const earlier = [{ kind: "you" as const, key: "u0", text: "Before", at: 0 }, { kind: "claude" as const, key: "m0", text: "Sure", at: 0 }];
   assert.equal(newBelow(seen, [...earlier, ...items], false), 4);
   assert.equal(newBelow(seen, [...earlier, ...items.slice(0, 3)], false), 0);
+  assert.equal(newBelow(seen, earlier, true), 0);   // (none of those there then: nothing to tell)
   assert.equal(newText(3), "3 new");
   assert.equal(newHint(1), "One new item below, since you scrolled up. Click to go to the end.");
   assert.equal(newHint(4), "4 new items below, since you scrolled up. Click to go to the end.");

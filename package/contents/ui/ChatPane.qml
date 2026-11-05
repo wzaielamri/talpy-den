@@ -856,12 +856,14 @@ Window {
         let n = 0
         for (let i = items.count - 1; i >= 0; i--) {
             const it = items.get(i)
-            if (seenKeys[it.key])
-                break
+            if (seenKeys[it.key]) {
+                unseen = n
+                return
+            }
             if (listTab === "steps" || it.kind !== "tool" || (it.asked !== "" && (askedShows(JSON.parse(it.asked), false) || JSON.parse(it.asked).state === "denied")))
                 n++
         }
-        unseen = n
+        unseen = 0   // (none of those there then: nothing to tell)
     }
     function toEnd() {
         seenKeys = null
