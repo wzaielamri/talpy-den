@@ -2339,7 +2339,9 @@ class TypeInTests(SendFixture):
 
     def test_tmux_types_it_without_enter(self):
         self.live(tmux="main:1.%3")
-        with mock.patch.object(pane, "tmux_run", return_value=(True, "")) as tmux:
+        # (tmux itself needn't be installed here)
+        with mock.patch.object(pane, "tmux_base", return_value=(["tmux"], "%3")), \
+                mock.patch.object(pane, "tmux_run", return_value=(True, "")) as tmux:
             answer = self.cli("--type-in", SID, "--text", "/config ", "--profile", ".claude-work")
         self.assertEqual(answer, {"ok": True, "how": "typed", "message": "It's typed into its terminal: press Enter there"})
         self.assertEqual([c[0][1][0] for c in tmux.call_args_list], ["load-buffer", "paste-buffer"])   # (no Enter)
@@ -2670,6 +2672,7 @@ console.log(JSON.stringify({
         self.assertIn(" &lt;&amp;&gt;<br>2</p>", r["html"])
 
 
+@unittest.skipUnless(shutil.which("node"), "node isn't installed")
 class CodeViewTests(unittest.TestCase):
     """codeview.mjs (shared with the VS Code extension) and codehtml.mjs (the pane's rich text)."""
 
