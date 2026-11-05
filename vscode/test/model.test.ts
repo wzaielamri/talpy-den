@@ -46,6 +46,8 @@ import {
   stateText,
   summaryText,
   tokensText,
+  usageCameIn,
+  USAGE_WAIT_MS,
 } from "../src/shared/model";
 
 const NOW = 1_800_000_000_000;
@@ -170,6 +172,22 @@ test("an account on two hosts only shows its usage on the first, with the other'
   assert.equal(shown.hosts[0].result!.groups[0].limits!.windows[0].pct, 30);
   assert.equal(shown.hosts[0].result!.groups[0].limitsFrom, "gpu");
   assert.ok(shown.hosts[1].result!.groups[0].limitsHidden);
+});
+
+// Refresh's fetch of the plan usage: the Recap reads again once every
+// account fetched for it has numbers from after, or the fetch's minute is over
+test("Refresh's plan usage: the Recap reads again once it came in", () => {
+  const asked = 100_000;
+  const work = (fetchAt: number | null, updatedAt: number | null) =>
+    ({ id: "w", usageFetchAt: fetchAt, limits: updatedAt ? { updatedAt, windows: [] } : null }) as unknown as Group;
+  assert.equal(usageCameIn([work(null, 90_000)], asked, asked + 2000), false); // (its fetch not yet in the status)
+  assert.equal(usageCameIn([work(asked + 500, 90_000)], asked, asked + 5000), false);
+  assert.equal(usageCameIn([work(asked + 500, null)], asked, asked + 5000), false);
+  assert.equal(usageCameIn([work(asked + 500, asked + 3000)], asked, asked + 5000), true);
+  const other = (fetchAt: number, updatedAt: number | null) => ({ ...work(fetchAt, updatedAt), id: "p" }) as Group;
+  assert.equal(usageCameIn([work(asked + 500, asked + 3000), other(asked + 600, 1)], asked, asked + 5000), false);
+  assert.equal(usageCameIn([work(asked + 500, asked + 3000), other(asked - 30_000, null)], asked, asked + 5000), true); // (fetched before)
+  assert.equal(usageCameIn([work(asked + 500, 90_000)], asked, asked + USAGE_WAIT_MS + 1), true);
 });
 
 test("plan usage on every host, or on none", () => {

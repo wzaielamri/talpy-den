@@ -800,6 +800,9 @@ class OneRefreshTests(unittest.TestCase):
             self.assertIn(read, refresh)
         main = (ui / "main.qml").read_text()
         self.assertIn('if (popupTab !== "week")\n            return', self.body(r"\n    function loadWeek\(\) \{(.*?)\n    \}", main))
+        # (and the Recap once more, when the plan usage Refresh fetched came in)
+        self.assertIn("usageAskedAt = Date.now()", self.body(r"\n    function fetchUsage\(\) \{(.*?)\n    \}", main))
+        self.assertIn("loadWeek()", self.body(r"\n    function usageCameIn\(\) \{(.*?)\n    \}", main))
         self.assertIn('if (popupTab !== "perms"', self.body(r"\n    function loadPerms\(\) \{(.*?)\n    \}", main))
         week = (ui / "WeekView.qml").read_text()
         for gone in ("Icons.plasma.refresh", "root.loadWeek", "Read again", "These days read again"):
@@ -816,6 +819,9 @@ class OneRefreshTests(unittest.TestCase):
         tab = self.body(r"\n    _loadTab\(\) \{(.*?)\n    \}", indicator)
         self.assertIn("this.loadWeek()", tab)
         self.assertIn("this.loadPerms()", tab)
+        # (and the Recap once more, when the plan usage Refresh fetched came in)
+        self.assertIn("this._usageWait();", self.body(r"\n    async fetchUsage\(\) \{(.*?)\n    \}", indicator))
+        self.assertIn("this.loadWeek();", self.body(r"\n    _usageWait\(\) \{(.*?)\n    \}", indicator))
         week = (ext / "ui/weekView.js").read_text()
         for gone in ("Icons.gnome.refresh", "loadWeek", "Read again", "These days read again"):
             self.assertFalse(gone in week, gone)
@@ -826,9 +832,15 @@ class OneRefreshTests(unittest.TestCase):
         vs = ROOT / "vscode"
         self.assertIn('registerCommand("talpyDen.refresh", () => view.refresh())', (vs / "src/extension.ts").read_text())
         self.assertIn('this.broadcast({ type: "readAgain" });', self.body(r"\n  refresh\(\): void \{(.*?)\n  \}", (vs / "src/view.ts").read_text()))
-        self.assertIn('case "readAgain":\n      readAgain.set(readAgain.get() + 1);', (vs / "webview/main.tsx").read_text())
+        self.assertIn('case "readAgain": {\n      const store = msg.recap ? recapAgain : readAgain;\n      store.set(store.get() + 1);',
+                      (vs / "webview/main.tsx").read_text())
+        # (and the Recap once more, when the plan usage Refresh fetched came in)
+        dash = (vs / "src/dashboard.ts").read_text()
+        self.assertIn("this.usageWait();", self.body(r"\n  async fetchUsage\(\): Promise<void> \{(.*?)\n  \}", dash))
+        self.assertIn("this.onUsageCameInEmitter.fire();", self.body(r"\n  private usageWait\(\): void \{(.*?)\n  \}", dash))
+        self.assertIn('dash.onUsageCameIn(() => this.broadcast({ type: "readAgain", recap: true }))', (vs / "src/view.ts").read_text())
         components = vs / "webview/components"
-        for name, read in (("WeekView.tsx", "useReadAgain(visible, ask);"), ("PermsView.tsx", "useReadAgain(visible, ask);"),
+        for name, read in (("WeekView.tsx", "useReadAgain(visible, ask, true);"), ("PermsView.tsx", "useReadAgain(visible, ask);"),
                            ("ProjectsView.tsx", 'useReadAgain(visible, () => post({ type: "projects" }));')):
             with self.subTest(name=name):
                 source = (components / name).read_text()
@@ -887,9 +899,33 @@ class PlanTests(Home):
         self.assertEqual([(p["name"], [(w["key"], w["label"], w["pct"]) for w in p["windows"]]) for p in plans],
                          [("work", [("five_hour", "5h", 25), ("seven_day", "7d", 40)])])
         self.assertEqual(plans[0]["windows"][0]["points"], [[t0, 10], [t0 + 60_000, 25]])
-        self.assertEqual(self.recap(usage=plans)["plan"], plans)
-        self.assertEqual(self.recap(account=gid["personal"], usage=plans)["plan"], [])
-        self.assertEqual(self.recap(back=1, usage=plans)["plan"], [])
+        self.assertEqual(self.recap(usage=plans, span="day")["plan"], plans)
+        self.assertEqual(self.recap(account=gid["personal"], usage=plans, span="day")["plan"], [])
+        self.assertEqual(self.recap(back=1, usage=plans, span="day")["plan"], [])
+        # the limits now are today's: not the 7 days', the 30 days' or everything's
+        for span in ("week", "month", "all"):
+            self.assertEqual(self.recap(usage=plans, span=span)["plan"], [])
+
+    def test_the_newest_reading_is_the_number_now(self):
+        # the checks note a point only as they run: the newest reading (a
+        # Refresh's fetch, Claude Code's own usage cache) comes in between
+        t0 = self.t0
+        resets = t0 + 3600_000
+        d = self.home / ".claude-personal"
+        d.joinpath(".claude.json").write_text(json.dumps({"oauthAccount": {"accountUuid": "acct-pro"}, "cachedUsageUtilization": {
+            "fetchedAtMs": t0 + 120_000, "accountUuid": "acct-pro", "utilization": {
+                "five_hour": {"utilization": 100, "resets_at": resets}}}}))
+        profiles = self.profiles()
+        gid = {m.label: cs.short_id(g) for g, members in cs.group_profiles(profiles) for m in members}
+        cs.write_json_atomic(self.cache_root / "usage.json", {"groups": {gid["personal"]: {
+            "five_hour": {"resetsAt": resets, "points": [[t0, 90], [t0 + 60_000, 32]]}}}})
+        (five,) = {p["name"]: p["windows"] for p in week.plan_windows(self.cache_root, profiles, t0 + 180_000)}["personal"]
+        self.assertEqual((five["pct"], five["points"][-1]), (100, [t0 + 120_000, 100]))
+        # one of another window by now (the one on record is over): that one's, nothing drawn yet
+        cs.write_json_atomic(self.cache_root / "usage.json", {"groups": {gid["personal"]: {
+            "five_hour": {"resetsAt": t0 - 3600_000, "points": [[t0 - 7200_000, 50]]}}}})
+        (five,) = {p["name"]: p["windows"] for p in week.plan_windows(self.cache_root, profiles, t0 + 180_000)}["personal"]
+        self.assertEqual((five["pct"], five["resetsAt"], five["points"]), (100, resets, []))
 
     def test_a_window_past_its_reset_is_at_0(self):
         # as on the Chats tab: no reply since the 5-hour window reset at 11:00

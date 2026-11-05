@@ -466,6 +466,39 @@ class LimitTests(Fixture):
         limits = self.group(self.collect(with_tokens=False), "personal")["limits"]
         self.assertEqual(limits["windows"][0]["pct"], 20)
 
+    def test_an_idle_chats_status_line_drawn_again_is_an_old_reading(self):
+        # work at 100% (a chat at it at 10:44), and at 10:52 another chat's
+        # status line, idle since 09:52, drawn again as its prompt cache went
+        # cold: with its 32% of then. The Chats tab and the Recap said 32%.
+        resets = self.now + 2 * 3600
+        self.snapshot(".claude-work", "busy", {
+            "rate_limits": {"five_hour": {"used_percentage": 100, "resets_at": resets}},
+            "prompt_cache": {"warm": True, "ttl": "1h", "expires_at": self.now - 480 + 3600 - 12}}, age=480)
+        self.snapshot(".claude-work", "idle", {
+            "rate_limits": {"five_hour": {"used_percentage": 32, "resets_at": resets}},
+            "prompt_cache": {"warm": False, "ttl": "1h", "expires_at": self.now - 1}}, age=0)
+        limits = self.group(self.collect(with_tokens=False), "work")["limits"]
+        self.assertEqual(limits["windows"][0]["pct"], 100)
+        self.assertEqual(limits["updatedAt"], int((self.now - 492) * 1000))  # (as of its last request)
+        # once that chat replies again, its numbers are the newest
+        self.snapshot(".claude-work", "idle", {
+            "rate_limits": {"five_hour": {"used_percentage": 100, "resets_at": resets}},
+            "prompt_cache": {"warm": True, "ttl": "5m", "expires_at": self.now + 299}}, age=0)
+        limits = self.group(self.collect(with_tokens=False), "work")["limits"]
+        self.assertEqual(limits["updatedAt"], int((self.now - 1) * 1000))
+        # an older Claude Code's (no prompt_cache): when it was written, as before
+        self.snapshot(".claude-work", "older", {"rate_limits": {"five_hour": {"used_percentage": 40, "resets_at": resets}}}, age=0)
+        self.assertEqual(self.group(self.collect(with_tokens=False), "work")["limits"]["windows"][0]["pct"], 40)
+
+    def test_when_a_snapshots_numbers_were_read(self):
+        t = 1_800_000_000_000
+        self.assertEqual(cs.limits_read_at({"prompt_cache": {"ttl": "1h", "expires_at": 1_800_000_000}}, t), t - 3600_000)
+        self.assertEqual(cs.limits_read_at({"prompt_cache": {"ttl": "5m", "expires_at": 1_800_000_000 + 600}}, t), t)  # (never later than written)
+        for cache in (None, {}, {"ttl": "1h"}, {"ttl": "soon", "expires_at": 1_800_000_000}, {"ttl": "1h", "expires_at": True}):
+            self.assertEqual(cs.limits_read_at({"prompt_cache": cache}, t), t)
+        self.assertEqual([cs.cache_ttl_ms(v) for v in ("5m", "1h", "30s", "h", "1.5h", 3600)],
+                         [300_000, 3600_000, 30_000, None, None, None])
+
     def test_a_snapshot_that_goes_away_doesnt_take_the_others_along(self):
         # (another copy's check pruning an old one while this one lists the folder; here links to nothing)
         for i in range(10):

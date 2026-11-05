@@ -85,6 +85,22 @@ test('plan usage shows once per account, with the newest numbers', () => {
     eq(L.planUsageText(lim(1000), 1000 + 5 * 60000), 'Plan usage as of 5m ago');
 });
 
+test("Refresh's plan usage: the Recap reads again once it came in", () => {
+    const asked = 100000;
+    const work = (fetchAt, updatedAt) => ({id: 'w', usageFetchAt: fetchAt, limits: updatedAt ? {updatedAt, windows: []} : null});
+    // its fetch not yet in the status, or its numbers not yet come: not yet
+    eq(L.usageCameIn([work(null, 90000)], asked, asked + 2000), false);
+    eq(L.usageCameIn([work(asked + 500, 90000)], asked, asked + 5000), false);
+    eq(L.usageCameIn([work(asked + 500, null)], asked, asked + 5000), false);
+    // every account fetched has numbers from after
+    eq(L.usageCameIn([work(asked + 500, asked + 3000)], asked, asked + 5000), true);
+    eq(L.usageCameIn([work(asked + 500, asked + 3000), {id: 'p', usageFetchAt: asked + 600, limits: {updatedAt: 1}}], asked, asked + 5000), false);
+    // (one fetched before this Refresh isn't waited for)
+    eq(L.usageCameIn([work(asked + 500, asked + 3000), {id: 'p', usageFetchAt: asked - 30000, limits: null}], asked, asked + 5000), true);
+    // the fetch's minute over: whatever came
+    eq(L.usageCameIn([work(asked + 500, 90000)], asked, asked + L.USAGE_WAIT_MS + 1), true);
+});
+
 test('durations, tokens, reset text', () => {
     eq(L.ago(20000), 'just now');
     eq(L.ago(5 * 60000), '5m ago');

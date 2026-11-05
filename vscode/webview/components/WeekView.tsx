@@ -90,7 +90,7 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
     const timer = setInterval(ask, REFRESH_MS);
     return () => clearInterval(timer);
   }, [visible, span, back, account, hostsKey, currency]);
-  useReadAgain(visible, ask);
+  useReadAgain(visible, ask, true);
 
   const mine = answer && answer.span === span && answer.back === back && answer.account === account ? answer : null;
   useEffect(() => {

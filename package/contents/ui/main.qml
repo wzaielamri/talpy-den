@@ -682,6 +682,7 @@ PlasmoidItem {
     // numbers are over a minute old, chat at work or not (talpy_den.py
     // --fetch-usage; the status says an account's is on its way: usageFetchAt)
     function fetchUsage() {
+        usageAskedAt = Date.now()
         usageFetcher.connectSource("python3 -I " + shellQuote(codeDir + "talpy_den.py") + " --fetch-usage" + configDirArgs
                                    + " # " + Date.now())
     }
@@ -690,8 +691,34 @@ PlasmoidItem {
         id: usageFetcher
         onNewData: (source, data) => {
             disconnectSource(source)
+            const result = root.helperResult(data)
+            if (!result.ok || !(result.started || []).length)
+                root.usageAskedAt = 0   // (none fetched: every account's numbers were new enough)
             root.refresh()   // (its fetch on its way shows; its numbers at the checks after)
         }
+    }
+
+    // ...and once those numbers have come in, the Recap reads again, so its
+    // plan limits are the ones Refresh fetched (it read at once, before
+    // they came): when every account fetched for it (usageFetchAt) has
+    // numbers from after, or the fetch's minute is over
+    property real usageAskedAt: 0
+    function usageCameIn() {
+        if (!usageAskedAt || !status)
+            return
+        const fetched = status.groups.filter(g => g.usageFetchAt && g.usageFetchAt >= usageAskedAt)
+        const late = Date.now() - usageAskedAt > 75000
+        if (!late && (!fetched.length || fetched.some(g => !g.limits || g.limits.updatedAt < g.usageFetchAt)))
+            return
+        usageAskedAt = 0
+        loadWeek()   // (on the Recap tab)
+    }
+
+    Timer {
+        interval: 5000
+        repeat: true
+        running: root.usageAskedAt > 0
+        onTriggered: root.usageCameIn()   // (a check that says what the last one did isn't read again)
     }
 
     // KDE Connect (phoneWhileAway; jump.py --phone)
@@ -1520,6 +1547,7 @@ PlasmoidItem {
         startDueTasks(parsed.queue || [])
         celebrateResets("", parsed.groups)
         syncSettings(parsed.sharedSettings || null)
+        usageCameIn()
     }
 
     function celebrateResets(source, groupList) {

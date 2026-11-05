@@ -1090,7 +1090,7 @@ export type WebviewMessage =
 export type HostMessage =
   | { type: "state"; state: ViewState }
   | { type: "showTab"; tab: "chats" | "week" | "perms" } // (the Monday recap's Open the Recap)
-  | { type: "readAgain" } // (Refresh: the Recap, Permissions or Projects tab shown reads again)
+  | { type: "readAgain"; recap?: boolean } // (Refresh: the Recap, Permissions or Projects tab shown reads again; recap: only the Recap, as the plan usage Refresh fetched came in)
   | { type: "petEvent"; kind: PetEventKind; text: string; key: string }
   | { type: "playWithTalpy" } // a game with the big Talpy (now, or once his stage shows)
   | { type: "visible"; visible: boolean }

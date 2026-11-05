@@ -97,6 +97,16 @@
 - **One name: Talpy Chat.** A chat's tab is called Talpy Chat everywhere:
   *Open in Talpy Chat* on a row, in tooltips, settings and the docs.
 
+- **Plan usage stays at its newest numbers.** An idle chat's status line,
+  drawn again an hour after its last reply, no longer pulls an account's
+  plan usage back to that hour's numbers (100% showed as 32%): each counts
+  as of its chat's last reply.
+- **Your plan's limits now, on today's Day.** The Recap shows it on the
+  Day view of today only, with the newest numbers, as the Chats tab's.
+- **Refresh brings the Recap the plan usage it fetched.** The Recap reads
+  once more when the numbers Refresh asked for have come in, rather than
+  keeping the old ones until you open it again.
+
 ## 1.18.0
 
 ### New

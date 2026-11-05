@@ -36,12 +36,19 @@ export const projectsAnswer = createStore<Extract<HostMessage, { type: "projects
 // the Recap, Permissions or Projects tab in sight reads again, as when it
 // opens (they have no button of their own for it)
 export const readAgain = createStore(0);
+// ...and the Recap once more, when the plan usage that Refresh fetched came in
+export const recapAgain = createStore(0);
 
-// read() at each Refresh while visible (the latest read: the days shown now)
-export function useReadAgain(visible: boolean, read: () => void): void {
+// read() at each Refresh while visible (the latest read: the days shown now);
+// recap: at recapAgain too
+export function useReadAgain(visible: boolean, read: () => void, recap = false): void {
   const latest = useRef(read);
   latest.current = read;
-  useEffect(() => (visible ? readAgain.subscribe(() => latest.current()) : undefined), [visible]);
+  useEffect(() => {
+    if (!visible) return undefined;
+    const stops = [readAgain, ...(recap ? [recapAgain] : [])].map((s) => s.subscribe(() => latest.current()));
+    return () => stops.forEach((stop) => stop());
+  }, [visible, recap]);
 }
 
 // One chat's live view: a row re-renders when its own view changes, not at

@@ -482,6 +482,18 @@ export function shareUsage(
   };
 }
 
+// Refresh's fetch of the plan usage (talpy_den.py --fetch-usage), asked for
+// at askedAt: have its numbers come in (every account fetched for it,
+// usageFetchAt, has numbers from after), or is its minute over? The Recap
+// then reads again: it read at once, before they came (as the widget's
+// main.qml: usageCameIn and GNOME's logic.js)
+export const USAGE_WAIT_MS = 75000;
+export function usageCameIn(groups: Group[], askedAt: number, now: number): boolean {
+  if (now - askedAt > USAGE_WAIT_MS) return true;
+  const fetched = groups.filter((g) => g.usageFetchAt && g.usageFetchAt >= askedAt);
+  return fetched.length > 0 && fetched.every((g) => !!g.limits && g.limits.updatedAt >= g.usageFetchAt!);
+}
+
 // An account's plan usage, also where it isn't shown (shareUsage)
 function usageOf(g: Pick<Group, "limits" | "accountLimits">): Limits | null {
   return g.limits ?? g.accountLimits ?? null;

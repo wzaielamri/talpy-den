@@ -8337,6 +8337,31 @@ def recent_projects(histories, home):
 
 # ---------------------------------------------------------------- plan limits
 
+CACHE_TTL_UNITS = {"s": 1000, "m": 60_000, "h": 3600_000}
+
+
+def cache_ttl_ms(ttl):
+    """A prompt cache's ttl as the status line gives it ("5m", "1h") in ms, or None."""
+    if isinstance(ttl, str) and len(ttl) > 1 and ttl[-1] in CACHE_TTL_UNITS and ttl[:-1].isdigit():
+        return int(ttl[:-1]) * CACHE_TTL_UNITS[ttl[-1]]
+    return None
+
+
+def limits_read_at(snap, mtime_ms):
+    """When a status-line snapshot's plan usage (rate_limits) was read, in ms.
+    Claude Code has it from the chat's last reply, and draws the status line
+    again later with the same numbers: an idle chat's an hour after that
+    reply, when its prompt cache goes cold. The snapshot written then is new,
+    its numbers aren't (one at 32% after another chat's 100%). Its
+    prompt_cache says when the last request went: expires_at less its ttl;
+    without that (an older Claude Code), when the snapshot was written."""
+    cache = snap.get("prompt_cache") if isinstance(snap, dict) else None
+    if isinstance(cache, dict):
+        expires, ttl = to_ms(number(cache.get("expires_at"))), cache_ttl_ms(cache.get("ttl"))
+        if expires is not None and ttl is not None:
+            return min(mtime_ms, expires - ttl)
+    return mtime_ms
+
 
 def snapshot_files(snapshot_root, profiles):
     """(mtime, path) of these profiles' status-line snapshots, newest first,
@@ -8439,16 +8464,21 @@ def with_ended_windows(limits, older, now_ms):
 
 
 def plan_limits(snapshot_root, profiles, now_ms):
-    """Rate-limit windows of the group: from its newest status-line snapshot,
-    or from Claude Code's own usage cache when that's newer. (An account used
-    only in VS Code's panel, which runs no status line, had numbers from the
-    last time a terminal chat ran on it.)"""
+    """Rate-limit windows of the group: from its newest reading, a status-line
+    snapshot's (as of when it was read: limits_read_at, not when the snapshot
+    was written) or Claude Code's own usage cache's. (An account used only in
+    VS Code's panel, which runs no status line, had numbers from the last
+    time a terminal chat ran on it.)"""
     cached = cached_usage_limits(profiles, now_ms)
-    found = None
-    older = []  # the windows of the readings after it, newest first
+    cached_at = cached["updatedAt"] if cached is not None else None
+    readings = []  # [(when read, windows)], as the snapshots come (newest written first)
+    newest = None
     for mtime, path in snapshot_files(snapshot_root, profiles):
-        if found is None and cached is not None and cached["updatedAt"] >= int(mtime * 1000):
-            break  # (newest first: the others are older still)
+        t = int(mtime * 1000)  # (a snapshot's numbers were read when it was written, or before)
+        if cached_at is not None and t <= cached_at and (newest is None or newest <= cached_at):
+            break  # (the cache's are newer than all the rest)
+        if newest is not None and t <= newest and len(readings) > ENDED_WINDOWS_LOOKBACK:
+            break  # (none of the rest is newer, and with_ended_windows has enough)
         snap = read_json(path)
         limits = snap.get("rate_limits") if isinstance(snap, dict) else None
         if not isinstance(limits, dict) or not limits or not snapshot_of(snap, [p.real for p in profiles]):
@@ -8458,15 +8488,15 @@ def plan_limits(snapshot_root, profiles, now_ms):
                    if isinstance(w, dict) and number(w.get("used_percentage")) is not None]
         if not windows:
             continue
-        if found is None:
-            found = {"updatedAt": int(mtime * 1000), "windows": in_window_order(windows)}
-        else:
-            older.append(windows)
-            if len(older) >= ENDED_WINDOWS_LOOKBACK:
-                break
-    if found is None:
+        at = limits_read_at(snap, t)
+        readings.append((at, windows))
+        newest = at if newest is None else max(newest, at)
+    readings.sort(key=lambda r: -r[0])  # (stable: of two read at once, the one written last first)
+    if not readings or (cached_at is not None and cached_at >= readings[0][0]):
         return cached
-    if cached is not None and cached["updatedAt"] < found["updatedAt"]:
+    found = {"updatedAt": readings[0][0], "windows": in_window_order(readings[0][1])}
+    older = [windows for _, windows in readings[1:ENDED_WINDOWS_LOOKBACK + 1]]
+    if cached is not None:
         older.append(cached["windows"])
     return with_ended_windows(found, older, now_ms)
 

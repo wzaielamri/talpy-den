@@ -1494,7 +1494,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "cacheSaved": round(saved, 2),
         "spend": spending(chats, w0, w1, home),
         "work": claude_did(chats, w0, w1),
-        "plan": plan_windows_of(usage or [], account) if back == 0 else [],
+        "plan": plan_windows_of(usage or [], account) if back == 0 and span == "day" else [],
         "prompts": permission_prompts(chats, w0, w1, home, added),
         "tips": tips(chats, w0, w1, total, parts["waits"]),
         "prices": {"asOf": PRICES_AS_OF, "guessed": sorted(guessed)},
@@ -2146,27 +2146,36 @@ def plan_windows(cache_root, profiles, now_ms):
     (talpy_den.py: limit_window). Every window the Chats tab shows is here,
     one with nothing on record too: a 5-hour window that hasn't started
     (no reply in the last 5 hours: Claude says 0%, no reset time) isn't in
-    the history, which keeps only windows with a reset time."""
+    the history, which keeps only windows with a reset time. The numbers
+    are the newest reading's (plan_limits, as the Chats tab's), when it's
+    newer than the history's last point: the checks note one only as they
+    run, and a Refresh's fetch comes in between."""
     data = cs.read_json(cache_root / "usage.json")
     groups = data.get("groups") if isinstance(data, dict) and isinstance(data.get("groups"), dict) else {}
     logged_out = cs.logged_out_notes(cache_root)
     out = []
     for gid, members in cs.group_profiles(profiles):
         named = next((p for p in members if not p.is_default), members[0])
+        # (a logged-out account's last status lines are no one's plan usage now, as on the Chats tab)
+        now = None if all(cs.needs_login(p, logged_out) for p in members) else \
+            cs.plan_limits(cache_root / "statusline", members, now_ms)
+        newest = {w["key"]: w for w in (now or {}).get("windows") or ()}
         windows = []
         for key, rec in (groups.get(cs.short_id(gid)) or {}).items():
             points = [p for p in rec.get("points") or [] if isinstance(p, list) and len(p) == 2] if isinstance(rec, dict) else []
             if not points or key not in cs.WINDOW_ORDER:
                 continue
-            step = max(1, len(points) // 60)  # (60 points draw it)
             resets = rec.get("resetsAt")
+            w = newest.get(key)
+            if w is not None and now["updatedAt"] > points[-1][0]:
+                if w["reset"] or not cs.same_window(resets, w["resetsAt"]):
+                    continue  # (another window by now: as plan_limits has it, below)
+                points = points + [[now["updatedAt"], w["pct"]]]
+            step = max(1, len(points) // 60)  # (60 points draw it)
             reset = isinstance(resets, (int, float)) and resets <= now_ms
             windows.append({"key": key, "label": cs.WINDOW_LABELS.get(key, key), "resetsAt": None if reset else resets,
                             "pct": 0 if reset else points[-1][1], "reset": reset,
                             "points": [] if reset else points[::step] + ([points[-1]] if (len(points) - 1) % step else [])})
-        # (a logged-out account's last status lines are no one's plan usage now, as on the Chats tab)
-        now = None if all(cs.needs_login(p, logged_out) for p in members) else \
-            cs.plan_limits(cache_root / "statusline", members, now_ms)
         have = {w["key"] for w in windows}
         for w in (now or {}).get("windows") or ():
             if w["key"] in cs.WINDOW_ORDER and w["key"] not in have:
@@ -2276,7 +2285,7 @@ def limit_readings(cache_root, profiles, now_ms, plans):
             limits = snap.get("rate_limits") if isinstance(snap, dict) else None
             if not isinstance(limits, dict) or not cs.snapshot_of(snap, reals):
                 continue
-            at = int(mtime * 1000)
+            at = cs.limits_read_at(snap, int(mtime * 1000))  # (an idle chat's numbers come again later)
             for key, w in limits.items():  # (a snapshot doesn't say the plan it was on)
                 if isinstance(w, dict) and cs.number(w.get("used_percentage")) is not None:
                     add(aid, key, cs.to_ms(w.get("resets_at")), None, [[at, w["used_percentage"]]])
@@ -3380,8 +3389,8 @@ def main(argv=None):
                 starts = [x for src in sources[1:] for c in (src.get("chats") or {}).values()
                           for x in [t[0] for t in c.get("turns", [])[:1]] + c.get("prompts", [])[:1]]
                 first_ms = min([first_ms] * (first_ms is not None) + starts) if starts else first_ms
-            result = recap(sources, back, account, now_ms, home, plan_windows(cache_root, profiles, now_ms), load_added(cache_root),
-                           span, first_ms)
+            usage = plan_windows(cache_root, profiles, now_ms) if span == "day" and back == 0 else None  # (today's only)
+            result = recap(sources, back, account, now_ms, home, usage, load_added(cache_root), span, first_ms)
             result["currency"] = currency_of(currency, cache_root, now_ms / 1000)
     except Exception as exc:  # the widget must always get parseable output
         result = {"ok": False, "error": "{}: {}".format(type(exc).__name__, exc), "generatedAt": now_ms}

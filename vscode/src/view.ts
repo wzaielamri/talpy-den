@@ -50,6 +50,8 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       dash.onPetEvent((e) => this.broadcast({ type: "petEvent", kind: e.kind, text: e.text, key: e.key })),
       // (each step between checks: only what the chats do now, not the whole state)
       dash.onLive((e) => this.broadcast({ type: "live", live: e.live })),
+      // (the plan usage Refresh fetched came in: the Recap in sight reads again)
+      dash.onUsageCameIn(() => this.broadcast({ type: "readAgain", recap: true })),
     );
   }
 

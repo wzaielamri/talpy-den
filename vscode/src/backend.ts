@@ -202,9 +202,11 @@ export class Backend {
   }
 
   // Refresh: Claude Code fetches the plan usage of every account whose numbers
-  // are over a minute old, chat at work or not (talpy_den.py --fetch-usage)
-  async fetchUsage(args: string[]): Promise<void> {
-    await this.json(["talpy_den.py", "--fetch-usage", ...args], 30000);
+  // are over a minute old, chat at work or not (talpy_den.py --fetch-usage):
+  // the profiles it was started for
+  async fetchUsage(args: string[]): Promise<string[]> {
+    const r = await this.json(["talpy_den.py", "--fetch-usage", ...args], 30000);
+    return r?.ok && Array.isArray(r.started) ? r.started.map(String) : [];
   }
 
   // The hosts with a name of their own in ~/.ssh/config, this computer's

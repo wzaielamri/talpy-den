@@ -16,7 +16,7 @@ import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";
 import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
 import { demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
-import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, unseenHostItems, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
 import type { WeekRuleAsk } from "./shared/week";
@@ -83,6 +83,11 @@ export class Dashboard implements vscode.Disposable {
   // What this computer's running chats do now, between checks (live mode);
   // changed: the session ids whose view is new
   readonly onLive = this.onLiveEmitter.event;
+  // The plan usage Refresh fetched came in (fetchUsage): the Recap reads again
+  private readonly onUsageCameInEmitter = new vscode.EventEmitter<void>();
+  readonly onUsageCameIn = this.onUsageCameInEmitter.event;
+  private usageAskedAt = 0; // when Refresh asked for it, until its numbers come
+  private usageTimer: ReturnType<typeof setTimeout> | undefined;
   private live: LiveWatch;
   private liveViews: Record<string, LiveView> = {};
   private again = false; // a chat changed while a check ran: check again once it's done
@@ -116,6 +121,8 @@ export class Dashboard implements vscode.Disposable {
       this.onStateEmitter,
       this.onUnseenEmitter,
       this.onPetEventEmitter,
+      this.onUsageCameInEmitter,
+      { dispose: () => clearTimeout(this.usageTimer) },
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (!e.affectsConfiguration("talpyDen")) return;
         if (e.affectsConfiguration("talpyDen.recapHistory")) void this.setRecapHistory(settings.recapHistory());
@@ -432,6 +439,7 @@ export class Dashboard implements vscode.Disposable {
         this.liveViews = liveFromRows(status.groups, this.liveViews);
         this.react(changes, resets);
         this.startDueTasks(status);
+        this.usageWait();
       } else {
         this.errorText = error ?? "Status unavailable";
         this.log.warn(this.errorText);
@@ -452,11 +460,29 @@ export class Dashboard implements vscode.Disposable {
   }
 
   // Refresh (its button, its command): the plan usage too, of every account
-  // whose numbers are over a minute old; the status says a fetch is on its way
+  // whose numbers are over a minute old; the status says a fetch is on its
+  // way. Once its numbers have come in, the Recap reads again (usageCameIn):
+  // it read at once, before they came
   async fetchUsage(): Promise<void> {
     if (this.demo || this.disposed) return;
-    await this.backend.fetchUsage(configDirArgs());
+    const askedAt = Date.now();
+    this.usageAskedAt = askedAt;
+    const started = await this.backend.fetchUsage(configDirArgs());
+    if (this.disposed) return;
+    if (!started.length && this.usageAskedAt === askedAt) this.usageAskedAt = 0; // (every account's numbers were new enough)
     void this.refresh();
+    this.usageWait();
+  }
+
+  private usageWait(): void {
+    clearTimeout(this.usageTimer);
+    if (!this.usageAskedAt || this.disposed) return;
+    if (!usageCameIn(this.status?.groups ?? [], this.usageAskedAt, Date.now())) {
+      this.usageTimer = setTimeout(() => this.usageWait(), 5000); // (a check that says what the last one did)
+      return;
+    }
+    this.usageAskedAt = 0;
+    this.onUsageCameInEmitter.fire();
   }
 
   // Whether a check of host that started at since or later has answered:

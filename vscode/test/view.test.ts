@@ -23,7 +23,7 @@ function setup(state: ViewState = demoState(NOW), projects = demoProjects(NOW), 
   const dash = {
     onState: () => ({ dispose() {} }),
     onPetEvent: () => ({ dispose() {} }),
-    onLive: () => ({ dispose() {} }),
+    onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }),
     state: () => state,
     shownHosts: () => state.hosts.map((h) => h.name),
     setVisible() {},
@@ -66,7 +66,7 @@ test("the badge counts what needs you, else what finished, and its tooltip says 
 });
 
 test("the badge is on the hidden tree from startup, on the view once it's there, and back when it's gone", () => {
-  const dash = { onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), state: () => demoState(NOW), setVisible() {} };
+  const dash = { onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), state: () => demoState(NOW), setVisible() {} };
   const host = new ViewHost(vscode.Uri.file("/ext") as never, dash as never, {} as never);
   const tree = (vscode as unknown as { recorded: { treeViews: Map<string, { badge: unknown }> } }).recorded.treeViews.get("talpyDen.badge")!;
   host.setBadge(0, 2);
@@ -98,7 +98,7 @@ test("the badge is on the hidden tree from startup, on the view once it's there,
 // "Open the Recap" (the Monday notification): the view's page shows it now
 // if it's loaded, else once it is; a page that loads later starts on Chats
 test("a tab shown goes to the view's page once, not to a page that loads hours later", () => {
-  const dash = { onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), state: () => demoState(NOW), setVisible() {} };
+  const dash = { onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), state: () => demoState(NOW), setVisible() {} };
   const host = new ViewHost(vscode.Uri.file("/ext") as never, dash as never, {} as never);
   const priv = host as unknown as { receive(webview: unknown, m: unknown): void };
   const page = () => {
@@ -129,7 +129,7 @@ test("a tab shown goes to the view's page once, not to a page that loads hours l
 test("Refresh checks the chats and the plan usage and has every page read its tab again; a host's checks that host", () => {
   const calls: string[] = [];
   const dash = {
-    onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }),
+    onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }),
     state: () => demoState(NOW), shownHosts: () => ["lab"], setVisible() {},
     refreshAll: () => void calls.push("refreshAll"),
     fetchUsage: async () => void calls.push("fetchUsage"),
@@ -160,13 +160,29 @@ test("Refresh checks the chats and the plan usage and has every page read its ta
   assert.deepEqual(readAgain(), [2, 2]);
 });
 
+// The Recap read at once, before the plan usage Refresh fetched came in:
+// once it has, the Recap in sight reads again (not Permissions or Projects)
+test("the plan usage Refresh fetched came in: every page's Recap reads again", () => {
+  let cameIn = () => {};
+  const dash = {
+    onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }),
+    onUsageCameIn: (f: () => void) => ((cameIn = f), { dispose() {} }),
+    state: () => demoState(NOW), setVisible() {}, refreshAll() {}, fetchUsage: async () => undefined,
+  };
+  const host = new ViewHost(vscode.Uri.file("/ext") as never, dash as never, {} as never);
+  host.openInEditor();
+  const tab = recorded.panels.at(-1)!;
+  cameIn();
+  assert.deepEqual((tab.sent as { type: string }[]).filter((m) => m.type === "readAgain"), [{ type: "readAgain", recap: true }]);
+});
+
 // Closing the editor tab: VS Code refuses its panel's webview from then on
 // (the stub's too), so the view forgets the tab without asking for it, and
 // Open in Editor Tab opens a new one (it revealed the closed one, which
 // throws)
 test("a closed editor tab is forgotten, and Open in Editor Tab opens a new one", () => {
   const dash = {
-    onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }),
+    onState: () => ({ dispose() {} }), onPetEvent: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }),
     state: () => demoState(NOW), setVisible() {}, refreshAll() {}, fetchUsage: async () => undefined,
   };
   const host = new ViewHost(vscode.Uri.file("/ext") as never, dash as never, {} as never);

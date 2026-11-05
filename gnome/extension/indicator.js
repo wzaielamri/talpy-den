@@ -51,6 +51,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this.tips = new Tooltips();
 
         this._status = null;          // parsed output of talpy_den.py
+        this._usageAskedAt = 0;       // when Refresh asked for the plan usage, until its numbers come (fetchUsage)
         this._errorText = '';
         this._actionError = '';
         this._actionInfo = '';
@@ -280,11 +281,32 @@ class TalpyDenIndicator extends PanelMenu.Button {
 
     // Refresh (its button): the plan usage too, of every account whose numbers
     // are over a minute old (talpy_den.py --fetch-usage); the status says a
-    // fetch is on its way
+    // fetch is on its way. Once its numbers have come in, the Recap reads
+    // again (L.usageCameIn): it read at once, before they came
     async fetchUsage() {
-        await this._runner.run('talpy_den.py', ['--fetch-usage', ...this._configDirArgs]);
-        if (!this._destroyed)
-            this.refresh();
+        const askedAt = Date.now();
+        this._usageAskedAt = askedAt;
+        const out = await this._runner.run('talpy_den.py', ['--fetch-usage', ...this._configDirArgs]);
+        if (this._destroyed)
+            return;
+        const answer = L.helperResult(out.stdout, out.stderr);
+        if (this._usageAskedAt === askedAt && !(answer.ok && (answer.started || []).length))
+            this._usageAskedAt = 0;   // (none fetched: every account's numbers were new enough)
+        this.refresh();
+        this._usageWait();
+    }
+
+    _usageWait() {
+        if (!this._usageAskedAt || this._destroyed)
+            return;
+        if (!L.usageCameIn(this._status ? this._status.groups : [], this._usageAskedAt, Date.now())) {
+            this._later('usage', 5000, () => this._usageWait());   // (a check that says what the last one did: no new status)
+            return;
+        }
+        this._usageAskedAt = 0;
+        this._clearTimer('usage');
+        if (this.ui.tab === 'week')
+            this.loadWeek();
     }
 
     async refresh() {
@@ -314,6 +336,7 @@ class TalpyDenIndicator extends PanelMenu.Button {
         }
         this._render();
         this._adjustPollTimer();
+        this._usageWait();
     }
 
     // Notifications, pet reactions and the sound when sessions change state.

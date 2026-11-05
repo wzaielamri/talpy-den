@@ -8,7 +8,7 @@ import { gotDeleteAsk } from "./components/DeleteAsk";
 import { gotMoveAsk } from "./components/MoveAsk";
 import { isDark, post } from "./env";
 import { pets } from "./pets";
-import { hostVisible, limitsAnswer, liveViews, pageVisible, permsAnswer, projectsAnswer, petColorsVersion, readAgain, viewState, weekAnswer, weekRevokeAnswer, weekRuleAnswer } from "./util/stores";
+import { hostVisible, limitsAnswer, liveViews, pageVisible, permsAnswer, projectsAnswer, petColorsVersion, readAgain, recapAgain, viewState, weekAnswer, weekRevokeAnswer, weekRuleAnswer } from "./util/stores";
 
 // Listen before saying "ready": the first state comes right after it
 window.addEventListener("message", (event: MessageEvent) => {
@@ -35,9 +35,11 @@ window.addEventListener("message", (event: MessageEvent) => {
     case "showTab":
       setTab(msg.tab);
       break;
-    case "readAgain":
-      readAgain.set(readAgain.get() + 1);
+    case "readAgain": {
+      const store = msg.recap ? recapAgain : readAgain;
+      store.set(store.get() + 1);
       break;
+    }
     case "week":
       weekAnswer.set(msg);
       break;

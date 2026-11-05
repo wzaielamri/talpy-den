@@ -161,6 +161,19 @@ export function usageOwners(groups, hostGroups) {
     return out;
 }
 
+// Refresh's fetch of the plan usage (talpy_den.py --fetch-usage), asked for
+// at askedAt: have its numbers come in (every account fetched for it,
+// usageFetchAt, has numbers from after), or is its minute over? The Recap
+// then reads again: it read at once, before they came (as Plasma's main.qml:
+// usageCameIn and VS Code's model.ts)
+export const USAGE_WAIT_MS = 75000;
+export function usageCameIn(groups, askedAt, now) {
+    if (now - askedAt > USAGE_WAIT_MS)
+        return true;
+    const fetched = groups.filter(g => g.usageFetchAt && g.usageFetchAt >= askedAt);
+    return fetched.length > 0 && fetched.every(g => g.limits && g.limits.updatedAt >= g.usageFetchAt);
+}
+
 // group as shown in host's section ('' here): limitsHidden when its usage
 // shows elsewhere, limitsFrom when the numbers come from another machine
 export function withUsage(group, host, owners) {
