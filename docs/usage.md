@@ -11,7 +11,7 @@
 | The line under a chat | Unfolds your last prompt, Claude's reply, the chat's tasks, and buttons that compare what it changed (all of it, or its last turn). |
 | **±3** next to a chat | Compares the files the chat changed in VS Code. |
 | An account's token line | Unfolds its last 14 days: tokens per day, chats, prompts, busiest folders and models. |
-| Talpy Den's keyboard shortcut | Goes to the chat that needs you, else opens the popup (set the key in the settings, on the Keyboard Shortcuts page). |
+| Talpy Den's keyboard shortcut | Goes to the chat that needs you (in its own window, or in Talpy Chat: Settings → Notifications), else opens the popup (set the key in the settings, on the Keyboard Shortcuts page). |
 | Hovering a chat | Its row is shaded (a recent chat's, a plan's or a memory's line too, as in VS Code and GNOME). ■ stops or interrupts a chat (it asks first; for a chat that keeps going, also whether to turn that off), the hide button (a struck-out eye) hides a finished one, the trash button deletes it to the Trash (it asks first), and the share button shares a chat with your other accounts. The buttons also show while the chat's name or one of them has the keyboard's focus (Tab gets there), and on a touch screen when you press and hold the row. |
 | A chat's pet | Opens its chat. |
 | The speech bubble with a plus next to an account (**New chat**) | A field for what Claude should do (optional), then the account's recent folders and **Choose folder…** (an SSH host's: its home folder instead). Click one for a new chat there: in Talpy Chat, a terminal or VS Code (the **Open in** switch at the top of the list) or, with a task and **In the background**, as a background chat. With Talpy Chat, a folder Claude doesn't trust yet starts in a terminal. |
@@ -34,10 +34,10 @@
 | Filter button at the top (**Focus**) | Shows only what needs you, the chats that finished a turn you haven't looked at yet and one line for each chat at work; **Show everything** goes back. |
 | *Context 69% left* in Talpy Chat's header | What's left of the chat's context before Claude compacts it on its own (auto-compact), counted as Claude Code counts it; in the warning colour once that's close. Hover it for the tokens used and where Claude compacts it. |
 | *4m · 12 steps* on Talpy Chat's working line | While Claude works: the time since your message and the steps (tool calls) it took since. |
-| **Copy** on a message in Talpy Chat | With the pointer on it, beside its time: puts Claude's reply on the clipboard as Markdown, as Claude wrote it, or your message as you wrote it. |
+| **Copy** on a message in Talpy Chat | With the pointer on it, beside its time: puts Claude's reply on the clipboard as Markdown, as Claude wrote it, all of it (one Talpy Chat shows cut is read whole first), or your message as you wrote it; *Copied* once it's there. |
 | *2 new ↓* at the bottom of Talpy Chat | Scrolled up while new messages came in below: goes to the end. |
 | **Stop** on Talpy Chat's working line | While Claude works: stops what it does now, as Esc in its terminal; the chat stays and takes your next message. For a chat in tmux or in the background; elsewhere the line's tooltip says where to stop it. |
-| A chip above Talpy Chat's reply box | Once Claude's turn is over: sends that reply, as if you typed it (an answer to Claude's question, or what you usually reply then). Shift+click, or *Edit before sending* on its right-click menu: in the box first; Alt+1…4 in the box: the first to the fourth; *Don't suggest this* (right-click, one of your usual replies): never again. In the box, Tab or → takes the grey rest of a usual reply you started typing. |
+| A chip above Talpy Chat's reply box | Once Claude's turn is over: sends that reply, as if you typed it (an answer to Claude's question, or what you usually reply then). Shift+click, or *Edit before sending* on its right-click menu: in the box first; Alt+1…4: the first to the fourth; *Don't suggest this* (right-click, one of your usual replies): never again. In the box, Tab or → takes the grey rest of a usual reply you started typing. |
 | A `/` command in Talpy Chat's reply box | The list as you type offers Claude's commands, yours and the project's. Most run from here, and what they print shows under them. **Open in a terminal** (tagged *Terminal* in the list): one that needs Claude's own panel or dialog (`/config`, `/btw`, `/model`…) opens in the chat's terminal, typed in for you to press Enter there, else on the clipboard to paste there. **Open Permissions** (`/permissions`, tagged *Talpy Den*): the Permissions tab. Greyed: it can't run on that chat, and the line under the box says why. |
 | Microphone in Talpy Chat (**Dictate**) | Records your reply and writes it into the box (click again to stop); the first time, it offers to set dictation up. |
 | Magnifier at the top | Finds a chat by the words in its name, folder or your prompts, and project folders, plans and memories with those words. |
@@ -47,6 +47,33 @@
 | A project in the **Projects** tab | Click it to open it: its open chats, Claude's last recap of it, its chats, plans and memories, a page at a time. The speech bubble starts a new chat there; the hide button (a struck-out eye) hides it from the tab (nothing is deleted); right-click → *Show Hidden Projects Again (N)* brings it back. |
 | A project in the Recap's *Where Claude worked* | Opens it in the **Projects** tab. |
 | **Log in…** at an account | An account that isn't logged in (a new one, or one you logged out of): a terminal opens with Claude's own login. |
+
+## Talpy Chat's keys
+
+**?** in an empty reply box lists them all. Buttons' tooltips name their keys. The same in VS Code (each a command there, see [VS Code](vscode.md); Cmd for Ctrl on a Mac).
+
+| Key | What it does |
+|---|---|
+| Enter / Shift+Enter | Send / a new line |
+| Ctrl+Enter | Send now: while Claude works, without the 5 s wait; in an empty box, the message waiting goes now |
+| Alt+Enter | Send when this turn ends |
+| Ctrl+Shift+Enter | Send, go on in the background (a terminal that takes no text) |
+| Ctrl+L | Clear the box (Ctrl+Z brings it back) |
+| ↑ / ↓ | Your earlier messages (↑ in an empty box: a waiting one back first) |
+| Tab or → | The grey rest of your usual reply |
+| Alt+1 … Alt+4 | A suggested reply (with Shift: in the box first) |
+| Alt+Y / Alt+A / Alt+N | Allow once / Always allow / Deny… what it asks (a plan: Approve / Approve, accept edits / Keep planning…; questions: Decline…) |
+| PageUp / PageDown | Scroll the conversation a page, from the box too |
+| Ctrl+↑ / Ctrl+↓ | Your previous / next message (past the last: the end) |
+| Ctrl+1 / Ctrl+2 / Ctrl+3 | The Chat, Steps and Review tabs |
+| Ctrl+T | Show or hide the chat's tasks |
+| Ctrl+Shift+C | Copy Claude's last reply, as Markdown (all of it) |
+| Ctrl+C | Copy what you selected, across messages too |
+| Ctrl+= / Ctrl+- / Ctrl+0, Ctrl+wheel | Text size |
+| Ctrl+Shift+O | Open its window (a background chat: in a terminal) |
+| Ctrl+W | Close Talpy Chat's window |
+| Ctrl+Tab / Ctrl+Shift+Tab | Your other Talpy Chat windows, the last one in front first |
+| Esc | Closes what's open first, one a press: a menu, the big picture, the `/` and `@` list, the list of keys, the grey completion; then, in an empty box while Claude works, **Stop** |
 
 ## Settings
 
@@ -88,7 +115,7 @@ When to notify, sounds, while you're away, the keyboard shortcut.
 | Sound | on, 70% | Sounds for needs input / finished / failed or stopped (a usage limit or an expired login stopped a chat): from your sound theme, a file, or none |
 | While you're away | on, 5 min | Once the screen has been locked this long, one notification sums it all up when you're back |
 | Phone | off | Meanwhile, send chats that need you (and, if you like, ones that finish) to your phone with KDE Connect: every paired phone that's reachable, or the one you pick; *Send a test* tries it |
-| Keyboard shortcut | goes to the chat | Goes to the chat that needs you (else opens the popup); the key itself is set on the Keyboard Shortcuts page |
+| Keyboard shortcut | goes to the chat | Goes to the chat that needs you (else opens the popup), in its own window or, with *In Talpy Chat, wherever it runs*, in Talpy Chat; the key itself is set on the Keyboard Shortcuts page |
 
 ### Usage & limits
 

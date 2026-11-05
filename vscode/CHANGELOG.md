@@ -4,6 +4,28 @@
 
 ### New
 
+- **Keys in Talpy Chat:** each a command, *Talpy Chat: …*, whose key applies
+  only while a Talpy Chat tab has the focus (never with it in the terminal or
+  the side bar), and can be changed in Keyboard Shortcuts: **Ctrl+Enter**
+  sends now (while Claude works, without the 5 s wait; in an empty box, the
+  message waiting goes now), **Alt+Enter** when this turn ends,
+  **Ctrl+Shift+Enter** on in the background where that button shows,
+  **Ctrl+L** clears the box (Ctrl+Z brings it back), **Alt+1…4** take a
+  suggested reply (with Shift: into the box first), **Alt+Y / Alt+A /
+  Alt+N** answer what it asks as Allow once / Always allow / Deny… do,
+  **Ctrl+↑ / Ctrl+↓** go to your previous / next message, **Ctrl+1 / 2 / 3**
+  to Chat, Steps and Review, **Ctrl+T** shows or hides its tasks,
+  **Ctrl+Shift+C** copies Claude's last reply, **Ctrl+Shift+O** opens its
+  window; on a Mac, Cmd for Ctrl. In the tab, **Esc** closes what's open
+  first (a menu, the big picture, the `/` and `@` list, the list of keys,
+  the grey completion) and only then, in an empty box while Claude works,
+  stops it; **PageUp / PageDown** scroll the conversation from the box too;
+  **?** in an empty box lists every key, and buttons' tooltips name theirs.
+  **Talpy Chat with the Chat That Needs You** (Ctrl+Alt+Shift+Q): Go to the
+  Chat That Needs You, in its Talpy Chat tab.
+- **Copy copies all of a reply:** one Talpy Chat shows cut (past 20,000
+  characters) is read whole from the transcript on the click, and *Copied*
+  shows once it's on the clipboard, else it says why.
 - **Times, Copy and new messages in Talpy Chat:** a line comes before the
   first item of each new day (*Today*, *Yesterday*, *Mon 3 Nov*), and none
   before the first. With the pointer on a message, yours or Claude's reply,
