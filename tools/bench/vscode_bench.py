@@ -9,7 +9,10 @@ with performance.now() (vscode_bench.html).
 - render: a conversation posted to an empty list (16, 120 and 500 items):
   in the page and laid out, then painted (the frame after), ms;
 - scroll: the 500-item chat, 120 px a frame, end → top → end (Chat tab);
-- send: Enter in the reply box → your message in the list.
+- send: Enter in the reply box → your message in the list;
+- find: search on the 500 items (a query typed → its count; the longest frame
+  meanwhile), 20 steps to matches, and Ctrl+O on the Steps tab (every step's
+  details made); none in a build without search.
 
 It builds the extension and its harness first (node esbuild.mjs, then
 --harness; vscode/node_modules must be there). Firefox runs with a new,

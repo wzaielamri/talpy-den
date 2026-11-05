@@ -338,12 +338,109 @@
             })
         }
 
+        // Search on a 500-item chat, on the Steps tab (what each step ran and got searched too): a
+        // query typed (Talpy Chat's FindBar.qml: none in a package without it), till all is searched,
+        // and how late a 5 ms timer ticks meanwhile (the longest the window can't draw); then 20
+        // steps to matches, each till its frame; then Ctrl+O (every step's details made) and back
+        function lateness(cb) {   // cb() → {max, p95, over16}: the timer's late ticks till then
+            const t = Qt.createQmlObject("import QtQuick; Timer { interval: 5; repeat: true }", bench)
+            const gaps = []
+            let last = Date.now()
+            t.triggered.connect(() => { const n = Date.now(); gaps.push(n - last); last = n })
+            t.start()
+            return () => {
+                t.stop()
+                t.destroy()
+                const s = gaps.slice().sort((x, y) => x - y)
+                return { max: s.length ? s[s.length - 1] : -1, p95: s.length ? s[Math.floor(s.length * 0.95)] : -1,
+                         over16: gaps.filter(x => x > 16).length, ticks: gaps.length }
+            }
+        }
+        function barOf(win) { return find(win.contentItem, o => o.hits !== undefined && o.step !== undefined && o.searched !== undefined) }
+        function runFind() {
+            open(ids.long, "long chat", win => {
+                win.limit = 500
+                win.stamp = ""
+                win.load()
+                when(() => win.loaded && win.lastItems.length >= 500, () => after(3000, () => {
+                    win.tab = "steps"
+                    after(3000, () => {
+                        if (win.findOn === undefined) {
+                            log("search", { error: "no search in this package" })
+                            return done()
+                        }
+                        win.findOn = true
+                        after(1000, () => chain(["parser", "nowhere at all", "a"].map(q => next => searchOnce(win, q, next)).concat([
+                            next => stepsOnce(win, next), next => foldOnce(win, next), next => done()])))
+                    })
+                }), 30000, "500 items")
+            })
+        }
+        function searchOnce(win, q, cb) {
+            const late = lateness()
+            const t0 = Date.now()
+            win.findQuery = q
+            const bar = barOf(win)
+            when(() => bar.next === -1 && bar.searched, () => {
+                const t1 = Date.now()
+                const l = late()
+                log("search", { query: q, items: win.shownList.length, hits: bar.hits.length, ms: t1 - t0, lateMax: l.max, lateP95: l.p95, over16: l.over16 })
+                after(1500, cb)
+            }, 20000, "search " + q)
+        }
+        function stepsOnce(win, cb) {
+            win.findQuery = "parser"
+            const bar = barOf(win)
+            when(() => bar.next === -1, () => {
+                const times = [], calls = []
+                const one = k => {
+                    if (k >= 20) {
+                        const s = times.slice().sort((x, y) => x - y), c = calls.slice().sort((x, y) => x - y)
+                        log("steps", { steps: times.length, frameMedian: s[Math.floor(s.length / 2)], frameMax: s[s.length - 1],
+                                       callMedian: c[Math.floor(c.length / 2)], callMax: c[c.length - 1] })
+                        return after(1000, cb)
+                    }
+                    const t0 = Date.now()
+                    bar.step(false)
+                    bar.goTo()   // (what its timer does a moment later: at once here)
+                    calls.push(Date.now() - t0)
+                    nextFrame(win, t => { times.push(t < 0 ? -1 : t - t0); after(150, () => one(k + 1)) })
+                }
+                one(0)
+            }, 20000, "steps")
+        }
+        function foldOnce(win, cb) {
+            win.findOn = false
+            const list = listOf(win)
+            const late = lateness()
+            const t0 = Date.now()
+            win.foldAll()
+            const t1 = Date.now()
+            let h = list.contentHeight, still = Date.now()
+            const watch = () => {
+                if (list.contentHeight !== h) {
+                    h = list.contentHeight
+                    still = Date.now()
+                }
+                if (Date.now() - still > 1000) {
+                    const l = late()
+                    log("foldAll", { call: t1 - t0, settled: still - t0, height: Math.round(h), lateMax: l.max, lateP95: l.p95, over16: l.over16 })
+                    const t2 = Date.now()
+                    win.foldAll()
+                    log("foldAll", { back: Date.now() - t2 })
+                    return after(1500, cb)
+                }
+                after(50, watch)
+            }
+            watch()
+        }
+
         Component.onCompleted: {
             // the made-up chats listed first (at most a minute), then a moment for the
             // widget's first checks to settle
             when(() => rowOf(ids.short) !== null && rowOf(ids.long) !== null, () => {
                 log("start", { scenario: scenario, listed: rowOf(ids.short) !== null })
-                after(3000, () => ({ open: runOpen, send: runSend, turn: runTurn, scroll: runScroll, idle: runIdle })[scenario]())
+                after(3000, () => ({ open: runOpen, send: runSend, turn: runTurn, scroll: runScroll, idle: runIdle, find: runFind })[scenario]())
             }, 60000, "the made-up chats listed")
         }
     }

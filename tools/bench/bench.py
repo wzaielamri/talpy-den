@@ -4,14 +4,20 @@ widget from this repository rendered offscreen (tools/render_popup.sh) on
 made-up chats (fake_chats.py, in a home folder of their own), with
 bench.qml driving its Talpy Chat windows.
 
-    tools/bench/bench.py [open|send|turn|scroll|idle|reads|all ...] [--out DIR] [--idle-seconds N]
+    tools/bench/bench.py [open|send|turn|scroll|idle|find|reads|all ...] [--out DIR] [--idle-seconds N] [--warm]
 
     open    opening a chat's window: first window, a new one, a closed one again (short and long chat)
     send    Enter → your message shown (5 messages)
     turn    turn's end → shown, and → its chips drawn (5 turns appended line by line to a transcript)
     scroll  a 500-item chat scrolled end → top → end, on the Chat and Steps tabs
     idle    CPU of the offscreen plasmawindowed: no window, a window open, closed (60 s each)
+    find    Talpy Chat's search on a 500-item chat (Steps tab): till all is searched, the longest the
+            window waits meanwhile (a 5 ms timer's late ticks), steps to matches, and Ctrl+O
     reads   pane.py --conversation from the shell (no window): the read alone
+
+    --warm  each scenario runs twice with the widget's QML disk cache and data kept between them
+            (render_popup.sh RENDER_KEEP), and the second is measured: as a real plasmashell has
+            them after its first start. Without it, every run starts with a fresh cache
 
 Nothing can reach a real chat: the home folder is a made-up one, and the
 package copy's pane.py never sends, answers or presses keys (patch_pkg.py).
@@ -40,8 +46,8 @@ REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 import fake_chats  # noqa: E402
 
-SCENARIOS = ("open", "send", "turn", "scroll", "idle")
-SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 90}   # (the render's limit; each ends sooner)
+SCENARIOS = ("open", "send", "turn", "scroll", "idle", "find")
+SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 90, "find": 90}   # (the render's limit; each ends sooner)
 TICK = os.sysconf("SC_CLK_TCK")
 RENDER_ID = "org.wzaielamri.talpyden.rendertest"
 
@@ -152,8 +158,9 @@ class Sampler(threading.Thread):
         return None
 
 
-def render(scenario, out, idle_s):
-    """One render driving scenario: its BENCH lines, the feeder's times, the CPU samples."""
+def render(scenario, out, idle_s, keep=None):
+    """One render driving scenario: its BENCH lines, the feeder's times, the CPU samples (keep: the
+    folder whose QML cache and data the render keeps for the next one)."""
     wait_turn()
     work = Path(tempfile.mkdtemp(prefix="talpy-bench-"))
     try:
@@ -163,6 +170,8 @@ def render(scenario, out, idle_s):
             .replace("__IDS__", json.dumps(ids)).replace("__IDLE_MS__", str(int(idle_s * 1000)))
         env = env_for(home)
         env.update(EXTRA=extra, PATCH="python3 -I " + str(HERE / "patch_pkg.py"))
+        if keep:
+            env["RENDER_KEEP"] = str(keep)
         png = out / f"{scenario}.png"
         log = out / f"{scenario}.log"
         secs = SECONDS.get(scenario, int(3 * idle_s + 60))
@@ -245,6 +254,14 @@ def report_idle(lines, sampler):
     return out
 
 
+def report_find(lines):
+    out = {}
+    for kind, d in lines:
+        if kind in ("search", "steps", "foldAll"):
+            out.setdefault(kind, []).append(d)
+    return out
+
+
 def report_reads():
     """pane.py --conversation run from the shell on the made-up chats: its read alone (median of 5, ms),
     with its modules compiled once and kept, as the installed widget's are (pane.py: pycache)."""
@@ -274,13 +291,15 @@ def report_reads():
 
 
 def main(argv):
-    args, out, idle_s = [], None, 60.0
+    args, out, idle_s, warm = [], None, 60.0, False
     while argv:
         a = argv.pop(0)
         if a == "--out" and argv:
             out = Path(argv.pop(0))
         elif a == "--idle-seconds" and argv:
             idle_s = float(argv.pop(0))
+        elif a == "--warm":
+            warm = True
         elif a in SCENARIOS + ("reads", "all"):
             args.append(a)
         else:
@@ -292,18 +311,27 @@ def main(argv):
     if load > (os.cpu_count() or 1) / 2:
         print(f"bench: the computer is busy (load {load:.1f}): the numbers will be slower than usual", flush=True)
     results = {"when": time.strftime("%Y-%m-%d %H:%M"), "load": round(load, 1), "commit": subprocess.run(
-        ["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE, text=True).stdout.strip()}
+        ["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE, text=True).stdout.strip(),
+        "warm": warm}
     for s in todo:
         if s == "reads":
             results["reads"] = report_reads()
         else:
-            lines, written, sampler = render(s, out, idle_s)
+            keep = None
+            if warm:   # (a first run fills the QML cache and the data; the second is measured)
+                keep = out / f"keep-{s}"
+                shutil.rmtree(keep, ignore_errors=True)
+                keep.mkdir(parents=True)
+                render(s, out, idle_s, keep)
+            lines, written, sampler = render(s, out, idle_s, keep)
             if not lines:   # (another session's render took plasmawindowed: once more, after it)
                 time.sleep(30)
-                lines, written, sampler = render(s, out, idle_s)
+                lines, written, sampler = render(s, out, idle_s, keep)
+            if keep:
+                shutil.rmtree(keep, ignore_errors=True)
             results[s] = {"open": lambda: report_open(lines), "send": lambda: report_send(lines),
                           "turn": lambda: report_turn(lines, written), "scroll": lambda: report_scroll(lines),
-                          "idle": lambda: report_idle(lines, sampler)}[s]()
+                          "idle": lambda: report_idle(lines, sampler), "find": lambda: report_find(lines)}[s]()
             if s != "open":
                 results[s]["window"] = report_open(lines)
         print(f"{s}: {json.dumps(results[s], indent=1)}", flush=True)

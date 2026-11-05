@@ -80,6 +80,63 @@
         return { layout, paint: (await frame()) - t0 };
       }
 
+      // Search on the 500 items (Chat tab): a query typed, till the count says what it found, the
+      // longest frame meanwhile; 20 steps (Enter), each till its frame; then Ctrl+O on the Steps tab
+      // (every step's details made a few a frame), till they're all made. None in a build without it
+      async function findBench() {
+        w.postMessage({ type: "key", key: "find" }, "*");
+        await sleep(400);
+        const input = d.querySelector(".pane-find-text");
+        if (!input) return { error: "no search in this build" };
+        const count = () => d.querySelector(".pane-find-count")?.textContent ?? "";
+        const out = {};
+        for (const q of ["parser", "nowhere at all", "a"]) {
+          const before = count();
+          const gaps = [];
+          let last = w.performance.now(), on = true;
+          const tick = () => { if (!on) return; const t = w.performance.now(); gaps.push(t - last); last = t; w.requestAnimationFrame(tick); };
+          w.requestAnimationFrame(tick);
+          const t0 = w.performance.now();
+          input.value = q;
+          input.dispatchEvent(new w.Event("input", { bubbles: true }));
+          await until(() => count() !== before && !count().includes("…"));
+          const ms = w.performance.now() - t0;
+          await frame();
+          on = false;
+          out["search " + JSON.stringify(q)] = { ms: Math.round(ms * 10) / 10, count: count(), maxFrame: Math.round(Math.max(...gaps)), over20: gaps.filter((g) => g > 20).length };
+          await sleep(500);
+        }
+        input.value = "parser";
+        input.dispatchEvent(new w.Event("input", { bubbles: true }));
+        await until(() => /matches$/.test(count()));
+        const steps = [];
+        for (let i = 0; i < 20; i++) {
+          const t0 = w.performance.now();
+          input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+          await frame();
+          steps.push((await frame()) - t0);
+          await sleep(100);
+        }
+        out.steps = { median: median(steps), max: Math.round(Math.max(...steps)) };
+        d.querySelectorAll(".pane-tabs button")[1].click();
+        await sleep(1000);
+        const gaps = [];
+        let last = w.performance.now(), on = true;
+        const tick = () => { if (!on) return; const t = w.performance.now(); gaps.push(t - last); last = t; w.requestAnimationFrame(tick); };
+        w.requestAnimationFrame(tick);
+        const t0 = w.performance.now();
+        w.postMessage({ type: "key", key: "fold" }, "*");
+        await sleep(50);
+        await until(() => !d.querySelector("[data-later]"), 60000);
+        const made = w.performance.now() - t0;
+        await frame();
+        on = false;
+        out.foldAll = { madeMs: Math.round(made), details: d.querySelectorAll(".pane-tool-detail").length, maxFrame: Math.round(Math.max(...gaps)),
+                        over20: gaps.filter((g) => g > 20).length, frames: gaps.length };
+        w.postMessage({ type: "key", key: "fold" }, "*");
+        return out;
+      }
+
       async function run() {
         w = f.contentWindow;
         d = w.document;
@@ -104,6 +161,9 @@
           await sleep(800);
         }
         out.send = { runs: sends.length, layout: median(sends.map((x) => x.layout)), paint: median(sends.map((x) => x.paint)) };
+        await show(data.long500);
+        await sleep(1000);
+        out.find = await findBench();
         await fetch("/result?" + encodeURIComponent(JSON.stringify(out)));
       }
       f.addEventListener("load", () => run().catch((e) => fetch("/result?" + encodeURIComponent(JSON.stringify({ error: String(e) })))));

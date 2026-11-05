@@ -12,6 +12,12 @@
 #                    that calls root.petEvent("done", "…") to see a reaction)
 #   PATCH='command'  run on the package copy (its folder last) before it's
 #                    installed: tools/bench/ stubs the sends out with it
+#   RENDER_KEEP=DIR  keep the widget's data and cache folders in DIR (its QML
+#                    disk cache, the backend's compiled modules) for the next
+#                    render with the same DIR, as a real plasmashell has them
+#                    after its first start; the package isn't installed again
+#                    when it's the same (a new install would make its files
+#                    new, and Qt compiles them again)
 # Colors and fonts are your KDE theme's (QT_QPA_PLATFORMTHEME=kde).
 # QML warnings go to OUT.log. The widget runs under a test id with its own
 # config, data, state and cache folders, so nothing of your desktop is touched.
@@ -75,7 +81,11 @@ s = s.replace(place, place + "        return null   // (render: never scripts yo
 open(main, "w").write(s)
 PY
 [ -z "${PATCH:-}" ] || bash -c "$PATCH \"\$0\"" "$work/pkg"
-mkdir -p "$work/data" "$work/config" "$work/state" "$work/cache/talpy-den"
+data="$work/data" cache="$work/cache"
+if [ -n "${RENDER_KEEP:-}" ]; then
+  data="$RENDER_KEEP/data" cache="$RENDER_KEEP/cache"
+fi
+mkdir -p "$data" "$work/config" "$work/state" "$cache/talpy-den"
 for f in kdeglobals plasmarc; do [ -f "$HOME/.config/$f" ] && cp "$HOME/.config/$f" "$work/config/"; done
 # A copy of the widget's cache (the status-line snapshots for plan usage, and
 # the token and transcript caches so the first check is quick), not the
@@ -83,18 +93,25 @@ for f in kdeglobals plasmarc; do [ -f "$HOME/.config/$f" ] && cp "$HOME/.config/
 # (instances.json) or hand its settings to the real ones (settings.json)
 real_cache="${XDG_CACHE_HOME:-$HOME/.cache}/talpy-den"
 if [ -d "$real_cache" ]; then
-  [ -d "$real_cache/statusline" ] && cp -a "$real_cache/statusline" "$work/cache/talpy-den/"
-  [ -d "$real_cache/live" ] && cp -a "$real_cache/live" "$work/cache/talpy-den/"  # (live mode's steps)
+  [ -d "$real_cache/statusline" ] && cp -a "$real_cache/statusline" "$cache/talpy-den/"
+  [ -d "$real_cache/live" ] && cp -a "$real_cache/live" "$cache/talpy-den/"  # (live mode's steps)
   find "$real_cache" -maxdepth 1 -name '*.json' ! -name instances.json ! -name settings.json \
-    -exec cp -p {} "$work/cache/talpy-den/" \;
+    -exec cp -p {} "$cache/talpy-den/" \;
 fi
 {
   printf '[Applets][1]\nimmutability=1\nplugin=org.wzaielamri.talpyden.rendertest\n\n'
   printf '[Applets][1][Configuration]\ngeometry=0,0,%s,%s\n' "${WIN_W:-520}" "${WIN_H:-560}"
   [ -n "${SSH_HOSTS:-}" ] && printf '\n[Applets][1][Configuration][General]\nsshHosts=%s\nremotePollSeconds=10\n' "$SSH_HOSTS"
 } > "$work/config/plasmawindowedrc"
-export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" XDG_DATA_HOME="$work/data" XDG_CACHE_HOME="$work/cache"
-kpackagetool6 -t Plasma/Applet -i "$work/pkg" >/dev/null
+export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" XDG_DATA_HOME="$data" XDG_CACHE_HOME="$cache"
+installed="$data/plasma/plasmoids/org.wzaielamri.talpyden.rendertest"
+if [ -n "${RENDER_KEEP:-}" ] && [ -d "$installed" ] && diff -rq "$work/pkg" "$installed" >/dev/null; then
+  :  # (the same package, installed by the render before: its files and their compiled QML kept)
+elif [ -d "$installed" ]; then
+  kpackagetool6 -t Plasma/Applet -u "$work/pkg" >/dev/null
+else
+  kpackagetool6 -t Plasma/Applet -i "$work/pkg" >/dev/null
+fi
 QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORMTHEME=kde QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
   timeout $((secs + 20)) plasmawindowed org.wzaielamri.talpyden.rendertest > "${out%.png}.log" 2>&1 || true
 grep -E "RENDER|TypeError|ReferenceError|Error:" "${out%.png}.log" || echo "no RENDER line: see ${out%.png}.log"
