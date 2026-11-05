@@ -1042,9 +1042,9 @@ Window {
     function hideChip(chip) {
         if (!chip)
             return
-        const now = Object.assign({}, hiddenReplies)
-        now[replyKey(chip.send)] = true
-        hiddenReplies = now
+        const hidden = Object.assign({}, hiddenReplies)
+        hidden[replyKey(chip.send)] = true
+        hiddenReplies = hidden
         run("hide", "--hide-reply " + root.shellQuote(chip.send) + (host ? " --host " + root.shellQuote(host) : ""))
         replyBox.forceActiveFocus()
     }
