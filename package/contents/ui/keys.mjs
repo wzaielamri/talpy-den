@@ -42,6 +42,10 @@ export const KEYS = [
     { id: "prompts", group: "Reading", plasma: "Ctrl+↑ / Ctrl+↓", vscode: "Ctrl+↑ / Ctrl+↓",
       commands: [[VS + "previousPrompt", "ctrl+up"], [VS + "nextPrompt", "ctrl+down"]],
       what: "Your previous / next message (past the last: the end)" },
+    { id: "find", group: "Reading", plasma: "Ctrl+F", vscode: "Ctrl+F", commands: [[VS + "find", "ctrl+f"]],
+      what: "Search the chat (Enter or F3: the next match; Shift+Enter or Shift+F3: the one before; Esc closes it)" },
+    { id: "fold", group: "Reading", plasma: "Ctrl+O", vscode: "Ctrl+O", commands: [[VS + "foldAll", "ctrl+o"]],
+      what: "Unfold or fold everything: long messages, and each step's details on the Steps tab" },
     { id: "tabs", group: "Reading", plasma: "Ctrl+1 / Ctrl+2 / Ctrl+3", vscode: "Ctrl+1 / Ctrl+2 / Ctrl+3",
       commands: [[VS + "showChat", "ctrl+1"], [VS + "showSteps", "ctrl+2"], [VS + "showReview", "ctrl+3"]],
       what: "The Chat, Steps and Review tabs" },
@@ -63,7 +67,7 @@ export const KEYS = [
 
     { id: "help", group: "Help", plasma: "?", vscode: "?", what: "These keys (in an empty box)" },
     { id: "escape", group: "Help", plasma: "Esc", vscode: "Esc",
-      what: "Closes what's open first: a menu, the big picture, the / and @ list, these keys, the grey completion; then, in an empty box while Claude works, Stop" },
+      what: "Closes what's open first: a menu, the big picture, the / and @ list, the find bar, these keys, the grey completion; then, in an empty box while Claude works, Stop" },
 ];
 
 export function keyOf(id) {

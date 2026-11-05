@@ -824,6 +824,10 @@ export function lastReply(items: readonly PaneItem[]): PaneItem | null {
   return null;
 }
 
+// Search (Ctrl+F) and folding (Show more / Show less, Ctrl+O): the widget's find.mjs, so Plasma's
+// Talpy Chat counts the same matches and folds the same texts (see there)
+export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, plainOf, type FindHit, type Fold } from "../../vendor/find.mjs";
+
 // Does it show on that tab: Chat leaves out Claude's tool calls, but not a question or a plan you
 // answered, nor a call you denied with a note
 export function showsOn(it: PaneItem, steps: boolean): boolean {

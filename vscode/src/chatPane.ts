@@ -49,6 +49,8 @@ export const CHAT_KEYS: Record<string, string> = {
   "talpyDen.chat.showReview": "tabReview",
   "talpyDen.chat.toggleTasks": "tasks",
   "talpyDen.chat.copyLastReply": "copyLast",
+  "talpyDen.chat.find": "find",
+  "talpyDen.chat.foldAll": "fold",
   "talpyDen.chat.openWindow": "openWindow",
   "talpyDen.chat.keys": "help",
 };

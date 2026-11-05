@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1481,4 +1481,116 @@ test("Copy copies all of it: a reply shown cut is read whole first, and Copied i
                           { kind: "claude", key: "m3", text: "three", at: 3 }, { kind: "tool", key: "t4", name: "Bash", at: 4 }])?.key, "m3");
   assert.equal(lastReply([{ kind: "you", key: "u2", text: "two", at: 2 }]), null);
   p.dispose();
+});
+
+// Search (A3) and folding (A6): find.mjs, the widget's too, so Plasma and VS Code count the same
+// matches and fold the same texts. Made-up text only
+const lines = (n: number, word = "line") => Array.from({ length: n }, (_, i) => `${word} ${i + 1}`).join("\n");
+
+test("folding: past about 40 lines (a long paragraph counts as the lines it wraps to), its first 24 show", () => {
+  assert.equal(foldOf(""), null);
+  assert.equal(foldOf(lines(FOLD_LINES)), null);
+  assert.equal(foldOf("word ".repeat(700)), null);   // (3500 characters: 35 lines of 100)
+  const f = foldOf(lines(FOLD_LINES + 17))!;
+  assert.equal(f.shown, lines(FOLD_SHOWN));
+  assert.equal(f.more, FOLD_LINES + 17 - FOLD_SHOWN);
+  assert.ok(lines(FOLD_LINES + 17).slice(f.at).startsWith("line 25\n"));
+  // one long paragraph: as much as fits, to a word's end, then …
+  const para = Array.from({ length: 1200 }, (_, i) => `w${i}`).join(" ");
+  const p = foldOf(para)!;
+  assert.ok(p.shown.endsWith(" …"), p.shown.slice(-20));
+  assert.ok(p.shown.length <= FOLD_SHOWN * 100 + 2);
+  assert.ok(para.slice(p.at).startsWith(" w"), "cut between words");
+  // a code block cut in two is closed again, with its own marks
+  const code = "Here it is:\n\n~~~python\n" + lines(60, "x =") + "\n~~~\nDone.";
+  assert.ok(foldOf(code)!.shown.endsWith("\n~~~"));
+  assert.ok(!foldOf(code, "plain")!.shown.endsWith("~~~"));
+  // a command's output: cut between lines only (never in a colour's code)
+  const ansi = Array.from({ length: 50 }, (_, i) => `\x1b[3${i % 7}m${"z".repeat(150)}\x1b[0m`).join("\n");
+  const a = foldOf(ansi, "ansi")!;
+  assert.equal(a.shown.split("\n").length, FOLD_SHOWN / 2);
+  assert.ok(a.shown.endsWith("\x1b[0m"));
+});
+
+test("search reads Markdown as the text it shows: no marks, a link's words, code as it is", () => {
+  assert.equal(plainOf("## The plan\n\n- **Fix** the `parser` in [the docs](https://example.org/x)\n1. _then_ ~~not~~ test"),
+               "The plan\n\nFix the parser in the docs\nthen not test");
+  assert.equal(plainOf("```js\nconst **a** = `b`;\n```"), "\nconst **a** = `b`;\n");
+  assert.equal(plainOf("| Case | Before |\n|---|---|\n| one | 12 ms |"), "Case Before\n\none 12 ms");
+  assert.equal(plainOf("keep snake_case_names and 2 * 3 * 4"), "keep snake_case_names and 2 * 3 * 4");
+  assert.equal(plainOf("> quoted *word*"), "quoted word");
+});
+
+const conversation = (): PaneItem[] => [
+  { kind: "you", key: "u1", text: "Fix the Parser, see [Image: /tmp/a.png] and [Image: /tmp/a.png]", at: 1 },
+  { kind: "claude", key: "c1", text: "The **parser** reads `dates`.", at: 2 },
+  { kind: "tool", key: "t1", name: "Bash", line: "Bash: npm test -- parser", status: "ok", summary: "3 passed", input: "$ npm test -- parser", output: "parser ok\nparser ok", at: 3 },
+  { kind: "tool", key: "t2", name: "Edit", line: "Edit: src/parse.ts", status: "ok", input: "old parser", output: "", diff: ["@@ -1 +1 @@", "-old parser", "+new parser"], at: 4 },
+  { kind: "you", key: "u2", text: "!grep parser src", command: { shell: true, output: "\x1b[31msrc/parser.ts\x1b[0m: parser" }, at: 5 },
+  { kind: "note", key: "n1", text: "Interrupted", at: 6 },
+  { kind: "claude", key: "c2", text: lines(50, "parser"), at: 7 },
+];
+
+test("search: what each tab shows, in order; what shows only once opened or unfolded is marked so", () => {
+  const [u1] = conversation();
+  assert.equal(findParts(u1, false)[0], "Fix the Parser, see [Image #1] and [Image #1]");
+  assert.deepEqual(findParts(conversation()[2], false), ["", ""]);   // (Chat: no tool calls)
+  assert.deepEqual(findParts(conversation()[2], true), ["Bash  npm test -- parser\n3 passed", "$ npm test -- parser\nparser ok\nparser ok"]);
+  assert.deepEqual(findParts(conversation()[3], true), ["Edit  src/parse.ts", "@@ -1 +1 @@\n-old parser\n+new parser"]);   // (an edit: its change)
+  assert.deepEqual(findParts(conversation()[4], false), ["grep parser src\nsrc/parser.ts: parser", ""]);
+  const chat = findIn(conversation(), "PARSER", false).hits;
+  assert.deepEqual(chat.slice(0, 5), [{ key: "u1", n: 0, hidden: false }, { key: "c1", n: 0, hidden: false },
+                                      { key: "u2", n: 0, hidden: false }, { key: "u2", n: 1, hidden: false }, { key: "u2", n: 2, hidden: false }]);
+  const long = chat.filter((h) => h.key === "c2");
+  assert.equal(long.length, 50);
+  assert.equal(long.filter((h) => !h.hidden).length, FOLD_SHOWN);   // (folded: the rest shows once unfolded)
+  const steps = findIn(conversation(), "parser", true).hits;
+  assert.deepEqual(steps.filter((h) => h.key === "t1"), [{ key: "t1", n: 0, hidden: false }, { key: "t1", n: 1, hidden: true },
+                                                         { key: "t1", n: 2, hidden: true }, { key: "t1", n: 3, hidden: true }]);
+  assert.equal(steps.filter((h) => h.key === "t2").length, 2);
+  assert.deepEqual(findIn(conversation(), "", true), { hits: [], next: -1 });
+  assert.deepEqual(findIn(conversation(), "nowhere", true).hits, []);
+  // an answered question shows on both tabs: its options once unfolded
+  const asked: PaneItem = { kind: "tool", key: "q1", name: "AskUserQuestion", line: "", at: 8, asked: { state: "answered", questions: [
+    { header: "Weeks", question: "Which weeks?", multiSelect: false, options: [{ label: "ISO weeks", description: "" }, { label: "US weeks", description: "Sunday first" }], picked: ["ISO weeks"] }] } };
+  assert.deepEqual(findIn([asked], "weeks", false).hits.map((h) => h.hidden), [false, false, true, true]);
+});
+
+test("search goes a slice at a time and finds the same; a chat read again is searched again", () => {
+  const many: PaneItem[] = [];
+  for (let i = 0; i < 400; i++) many.push({ kind: i % 2 ? "claude" : "you", key: `k${i}`, text: `item ${i} with a needle and a Needle`, at: i });
+  const whole = findIn(many, "needle", true).hits;
+  assert.equal(whole.length, 800);
+  let got = findIn(many, "needle", true, 0, 0);
+  let slices = 1;
+  while (got.next >= 0) {
+    got = findIn(many, "needle", true, got.next, 0, got.hits);
+    slices++;
+  }
+  assert.ok(slices >= 400 / 8, `${slices} slices`);
+  assert.deepEqual(got.hits, whole);
+  const again = many.map((it) => (it.key === "k3" ? { ...it, text: "no longer" } : it));
+  assert.equal(findIn(again, "needle", true).hits.length, 798);
+});
+
+test("the find bar's count and its steps: from what you read, then one after another, round", () => {
+  assert.equal(findCount(0, -1, false), "…");
+  assert.equal(findCount(7, -1, false), "7…");
+  assert.equal(findCount(0, -1, true), "No matches");
+  assert.equal(findCount(1, -1, true), "1 match");
+  assert.equal(findCount(12, -1, true), "12 matches");
+  assert.equal(findCount(12, 2, true), "3 of 12");
+  const hits = [{ key: "a", n: 0, hidden: false }, { key: "c", n: 0, hidden: false }, { key: "c", n: 1, hidden: false }, { key: "e", n: 0, hidden: false }];
+  const order = new Map(["a", "b", "c", "d", "e"].map((k, i) => [k, i]));
+  assert.equal(findStep(hits, -1, false, { first: 1, last: 3, order }), 1);   // (the first at or below what you read)
+  assert.equal(findStep(hits, -1, true, { first: 1, last: 3, order }), 2);    // (the last at or above its end)
+  assert.equal(findStep(hits, -1, false, { first: 4, last: 4, order }), 3);
+  assert.equal(findStep(hits, -1, false, { first: 9, last: 9, order }), 0);   // (none below: the first)
+  assert.equal(findStep(hits, 3, false, { first: 0, last: 0, order }), 0);    // (round)
+  assert.equal(findStep(hits, 0, true, { first: 0, last: 0, order }), 3);
+  assert.equal(findStep([], -1, false, { first: 0, last: 0, order }), -1);
+  assert.deepEqual(nthIn("A parser, the PARSER", "parser", 1), [14, 20]);
+  assert.equal(nthIn("A parser", "parser", 1), null);
+  assert.deepEqual(allIn("aXa xa", "A"), [[0, 1], [2, 3], [5, 6]]);
+  assert.equal(allIn("aaaa", "a", 2).length, 2);
 });

@@ -355,6 +355,16 @@
         "category": "Talpy Chat"
       },
       {
+        "command": "talpyDen.chat.find",
+        "title": "Find in the Chat",
+        "category": "Talpy Chat"
+      },
+      {
+        "command": "talpyDen.chat.foldAll",
+        "title": "Unfold or Fold Everything",
+        "category": "Talpy Chat"
+      },
+      {
         "command": "talpyDen.chat.openWindow",
         "title": "Open Its Window",
         "category": "Talpy Chat"
@@ -492,6 +502,18 @@
         "command": "talpyDen.chat.copyLastReply",
         "key": "ctrl+shift+c",
         "mac": "cmd+shift+c",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+      },
+      {
+        "command": "talpyDen.chat.find",
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+      },
+      {
+        "command": "talpyDen.chat.foldAll",
+        "key": "ctrl+o",
+        "mac": "cmd+o",
         "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
       },
       {
@@ -690,6 +712,14 @@
         },
         {
           "command": "talpyDen.chat.copyLastReply",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+        },
+        {
+          "command": "talpyDen.chat.find",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+        },
+        {
+          "command": "talpyDen.chat.foldAll",
           "when": "activeWebviewPanelId == 'talpyDen.chat'"
         },
         {
