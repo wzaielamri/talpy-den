@@ -4,6 +4,14 @@
 
 ### New
 
+- **Context left and the turn so far in Talpy Chat:** its header has a tag,
+  *Context 69% left*: what's left before Claude compacts the chat on its own,
+  counted as Claude Code counts it (what Claude's last message read against
+  its model's window), in the warning colour once Claude Code would say it's
+  close, its tooltip suggesting `/compact` then; none when it can't be
+  known. While Claude works, the working line ends with *4m · 12 steps*
+  before Stop: the time since your message and its tool calls since, its
+  clock running only while the tab is in front.
 - **Commands in Talpy Chat:** a command you ran shows in its tab as yours,
   wherever you ran it (`/context`, `/model fable`, a skill, `$ ls` for
   Claude's `!` mode), with what it printed under it in Claude's colours. The
