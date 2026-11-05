@@ -36,6 +36,13 @@ Flow {
             Accessible.description: modelData.title
             Accessible.onPressAction: pane.takeChip(modelData, false)
 
+            // Its right-click menu, made only now (and gone once closed)
+            function openMenu() {
+                const menu = menuMaker.createObject(row, { chip: modelData })
+                menu.closed.connect(() => menu.destroy())
+                menu.popup()
+            }
+
             PlasmaComponents3.Label {
                 id: label
                 anchors.fill: parent
@@ -56,34 +63,35 @@ Flow {
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
                 onClicked: event => {
-                    if (event.button === Qt.RightButton) {
-                        menu.chip = chip.modelData
-                        menu.popup()
-                    } else {
+                    if (event.button === Qt.RightButton)
+                        chip.openMenu()
+                    else
                         pane.takeChip(chip.modelData, (event.modifiers & Qt.ShiftModifier) !== 0)
-                    }
                 }
             }
             PlasmaComponents3.ToolTip.text: modelData.title
-            PlasmaComponents3.ToolTip.visible: mouse.containsMouse && !menu.visible
+            PlasmaComponents3.ToolTip.visible: mouse.containsMouse && mouse.pressedButtons === Qt.NoButton
             PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
         }
     }
 
-    PlasmaComponents3.Menu {
-        id: menu
-        property var chip: null
-        PlasmaComponents3.MenuItem {
-            icon.name: Icons.plasma.edit
-            text: i18n("Edit before sending")
-            onTriggered: pane.takeChip(menu.chip, true)
-        }
-        PlasmaComponents3.MenuItem {
-            visible: !!menu.chip && menu.chip.usual
-            height: visible ? implicitHeight : 0
-            icon.name: Icons.plasma.hide
-            text: i18n("Don't suggest this")
-            onTriggered: pane.hideChip(menu.chip)
+    Component {
+        id: menuMaker
+        PlasmaComponents3.Menu {
+            id: menu
+            property var chip: null
+            PlasmaComponents3.MenuItem {
+                icon.name: Icons.plasma.edit
+                text: i18n("Edit before sending")
+                onTriggered: pane.takeChip(menu.chip, true)
+            }
+            PlasmaComponents3.MenuItem {
+                visible: !!menu.chip && menu.chip.usual
+                height: visible ? implicitHeight : 0
+                icon.name: Icons.plasma.hide
+                text: i18n("Don't suggest this")
+                onTriggered: pane.hideChip(menu.chip)
+            }
         }
     }
 }

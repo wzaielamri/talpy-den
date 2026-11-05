@@ -687,12 +687,15 @@ Window {
         const following = !loaded || nearEnd()
         stamp = result.stamp || ""
         more = !!result.more
-        turnEnded = result.ended || ""
-        turnOver = !!result.over
-        asks = result.asks || null
         lastItems = result.items || []
         const handoff = {}
         merge(withPending(lastItems, handoff), handoff)
+        // (how its turn ended: its chips, made once the conversation is in the list)
+        turnEnded = result.ended || ""
+        turnOver = !!result.over
+        asks = result.asks || null
+        if (turnEnded !== "" && usual === null)
+            usualSoon.restart()
         loaded = true
         if (following)
             keepEnd()
@@ -951,6 +954,13 @@ Window {
         onTriggered: pane.chipsResting = false
     }
 
+    // (asked a moment after the box takes the focus or a turn has ended, not as the window
+    // opens: a process started then delays its first frame)
+    Timer {
+        id: usualSoon
+        interval: 600
+        onTriggered: pane.loadUsual()
+    }
     function loadUsual() {
         if (!suggestOn || !chatId || Date.now() - usualAt < 60000)
             return
@@ -3265,7 +3275,8 @@ Window {
                             onActiveFocusChanged: {
                                 if (activeFocus) {
                                     pane.loadOffers()
-                                    pane.loadUsual()
+                                    if (pane.suggestOn && pane.usual === null)
+                                        usualSoon.restart()
                                 }
                             }
                             Keys.onPressed: event => {
@@ -3342,13 +3353,7 @@ Window {
                                 x: at.x
                                 y: at.y
                                 width: Math.max(0, replyBox.width - replyBox.rightPadding - at.x)
-                                sourceComponent: PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
-                                    text: pane.ghost
-                                    color: pane.mutedColor
-                                    font: replyBox.font
-                                    elide: Text.ElideRight
-                                }
+                                source: active ? "ReplyGhost.qml" : ""
                             }
                         }
                     }

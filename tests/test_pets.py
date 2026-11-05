@@ -2030,6 +2030,7 @@ class NewChatTests(unittest.TestCase):
         self.assertEqual(pane.count('(suggestOn ? " --suggest" : "")'), 2)
         self.assertIn("if (!suggestOn || !chatId || Date.now() - usualAt < 60000)", pane)
         self.assertIn("active: pane.ghost !== \"\"", pane)
+        self.assertIn("source: active ? \"ReplyGhost.qml\" : \"\"", pane)
         self.assertIn("Plasmoid.configuration.suggestReplies !== false", pane)
         # (the same words and limits as VS Code's shared/pane.ts)
         shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
