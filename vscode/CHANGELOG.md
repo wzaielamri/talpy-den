@@ -15,8 +15,8 @@
   first 24 with *Show more · N more lines* (and *Show less*); a step's long
   output too. What the tab first read folds, but Claude's last reply then;
   what comes in while it's open doesn't. **Ctrl+O** (*Talpy Chat: Unfold or
-  Fold Everything*) unfolds everything, each step's details on Steps too, a
-  few a frame, and again folds each back as it was.
+  Fold Long Messages*) unfolds every long one and your answered questions and
+  plans, and again folds them back as they were.
 - **Keys in Talpy Chat:** each a command, *Talpy Chat: …*, whose key applies
   only while a Talpy Chat tab has the focus (never with it in the terminal or
   the side bar), and can be changed in Keyboard Shortcuts: **Ctrl+Enter**

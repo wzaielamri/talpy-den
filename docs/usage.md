@@ -66,7 +66,7 @@
 | PageUp / PageDown | Scroll the conversation a page, from the box too |
 | Ctrl+↑ / Ctrl+↓ | Your previous / next message (past the last: the end) |
 | Ctrl+F | Search the chat: a find bar over its top right; Enter or F3 the next match, Shift+Enter or Shift+F3 the one before, Esc closes it |
-| Ctrl+O | Unfold or fold everything: long messages, and each step's details on the Steps tab |
+| Ctrl+O | Unfold every long message, reply and output, and your answered questions and plans; again, fold them back |
 | Ctrl+1 / Ctrl+2 / Ctrl+3 | The Chat, Steps and Review tabs |
 | Ctrl+T | Show or hide the chat's tasks |
 | Ctrl+Shift+C | Copy Claude's last reply, as Markdown (all of it) |
