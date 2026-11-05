@@ -24,6 +24,10 @@ its permission prompt and its review.
         type]}; CHAT "-" with --cwd FOLDER --profile P: a new chat's
   --hide-reply TEXT [--off]
         don't suggest TEXT again (--off: do again; "-" --off: all of them)
+  --reply-text CHAT --key KEY [--profile P]
+        Copy's text of a reply (or a prompt of yours) the conversation shows
+        cut at TEXT_CHARS: all of it, from the transcript (replies.whole_text).
+        {"ok", "text"}
   --send CHAT --profile P --text T [--session ID] [--how auto|background|copy|enter] [--after-turn] [--name N]
         your message to the chat, the way it can take one (send) (or
         --text-file F: a long one in F, a text-*.txt of the cache folder,
@@ -2277,6 +2281,18 @@ def take_text(cache_root, name):
             pass
 
 
+def reply_text(home, extra_dirs, chat_id, profile_key, key):
+    """--reply-text: the whole text of the reply (or prompt) with that key."""
+    if not cs.valid_id(chat_id) or not key:
+        return {"ok": False, "message": f"Not a chat: {chat_id}" if not cs.valid_id(chat_id) else "Which message?"}
+    _, path = find_transcript(home, extra_dirs, chat_id, profile_key)
+    if path is None:
+        return {"ok": False, "missing": True, "message": NO_CHAT}
+    import replies
+    text = replies.whole_text(path, key)
+    return {"ok": True, "text": text} if text is not None else {"ok": False, "message": "That message isn't in the chat any more"}
+
+
 def forward(host, args):
     """Run this file on an SSH host with args: its answer."""
     import remote
@@ -2302,9 +2318,9 @@ def main(argv=None):
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
-               "--hide-reply", "--type-in")
+               "--hide-reply", "--type-in", "--reply-text")
     osd, suggest, no_copy = False, False, False
-    cwd, model, effort, mode, plan, plan_profile = None, None, None, None, None, None
+    cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
     while args:
         arg = args.pop(0)
         if arg in actions and args and action is None:
@@ -2315,6 +2331,8 @@ def main(argv=None):
             profile = args.pop(0)
         elif arg == "--session" and args:
             session = args.pop(0)
+        elif arg == "--key" and args:
+            key = args.pop(0)
         elif arg == "--text" and args:
             text = args.pop(0)
         elif arg == "--text-file" and args:
@@ -2451,6 +2469,8 @@ def main(argv=None):
             result = completions(home, config_dirs, target, profile, cwd)
         elif action == "--replies":
             result = chat_replies(home, config_dirs, cache_root, target, profile, cwd)
+        elif action == "--reply-text":
+            result = reply_text(home, config_dirs, target, profile, key)
         elif action == "--hide-reply":
             import replies
             ok, said = replies.hide_reply(cache_root, target, on=not off)

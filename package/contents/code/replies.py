@@ -8,7 +8,9 @@ every call):
   the few words it looks at are a table per language in reply_words.py;
 - usual_replies, from reply_history: what you usually reply after a turn
   that ended the same way, from your chats on that account;
-- hide_reply: a reply you don't want suggested again.
+- hide_reply: a reply you don't want suggested again;
+- whole_text: a reply (or prompt) all of it, for Copy where the
+  conversation shows it cut.
 
 Python 3.7+ and the standard library only (the SSH host backend too).
 """
@@ -588,3 +590,38 @@ def hide_reply(cache_root, text, on=True):
     cs.private_dir(path.parent)
     cs.write_json_atomic(path, {"version": 1, "hidden": sorted(hidden)}, private=True)
     return True, ("It won't be suggested again" if on else "Suggested again")
+
+
+def whole_text(path, key):
+    """All of a reply of Claude's (key: its message's id, or its entry's uuid),
+    joined as pane.py's conversation_items joins it (text, and thinking shown
+    as updates), or of a prompt of yours (key: its entry's uuid), for Copy
+    where Talpy Chat shows it cut; None if no entry has that key. Only the
+    lines the key is in are parsed."""
+    needle = json.dumps(key)[1:-1].encode("utf-8")
+    said, prompt = [], None
+    try:
+        with open(path, "rb") as f:
+            for line in f:
+                if needle not in line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except (ValueError, RecursionError):
+                    continue
+                if not isinstance(e, dict) or e.get("isSidechain"):
+                    continue
+                msg, blocks = cs.blocks_of(e)
+                if e.get("type") == "user" and e.get("uuid") == key:
+                    prompt = cs.human_prompt(e)
+                elif e.get("type") == "assistant" and not e.get("isApiErrorMessage") \
+                        and (msg.get("id") == key or e.get("uuid") == key):
+                    updates = e.get("thinkingDisplay") == "updates"
+                    for c in blocks:
+                        text = c.get("text") if c.get("type") == "text" \
+                            else c.get("thinking") if c.get("type") == "thinking" and updates else None
+                        if isinstance(text, str) and text.strip():
+                            said.append(text.strip())
+    except OSError:
+        return None
+    return "\n\n".join(said) if said else prompt

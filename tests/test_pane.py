@@ -2396,6 +2396,47 @@ def steps(n, ts, start=0, msg="s"):
     return out
 
 
+class WholeReplyTests(PaneFixture):
+    """Copy (a message's, or Ctrl+Shift+C) copies all of it: a reply longer than
+    Talpy Chat keeps (pane.TEXT_CHARS, shown cut with "…") is read whole from
+    the transcript on the click (pane.py --reply-text, replies.whole_text)."""
+
+    def test_a_long_reply_whole_as_the_conversation_joins_it(self):
+        t = self.now - 100
+        part = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n" * 300   # (made-up, ~17 000 characters)
+        first = dict(text_reply(part, t + 1, "m1"), uuid="a-1")
+        second = dict(text_reply("Second half:\n" + part, t + 2, "m1", stop="end_turn"), uuid="a-2")
+        # (a subagent's entry with the same id isn't the chat's; thinking kept to itself isn't shown)
+        side = dict(text_reply("from a subagent", t + 2, "m1"), uuid="a-3", isSidechain=True)
+        hidden = {"type": "assistant", "timestamp": iso(t + 2), "uuid": "a-4",
+                  "message": {"id": "m1", "role": "assistant", "content": [{"type": "thinking", "thinking": "private"}]}}
+        self.chat(dict(prompt("Write it all out", t, cwd=str(self.folder)), uuid="u-1"), first, side, hidden, second)
+        item = [i for i in self.cli("--conversation", SID)["items"] if i["kind"] == "claude"][0]
+        self.assertTrue(item["text"].endswith("\n…") and len(item["text"]) <= pane.TEXT_CHARS + 2)
+        whole = self.cli("--reply-text", SID, "--key", item["key"])
+        self.assertEqual(whole, {"ok": True, "text": part.strip() + "\n\nSecond half:\n" + part.strip()})
+        self.assertTrue(whole["text"].startswith(item["text"][:-2]))
+        # (by its entry's uuid too: a reply with no message id)
+        self.assertEqual(self.cli("--reply-text", SID, "--key", "a-1", "--profile", ".claude-work")["text"], part.strip())
+
+    def test_yours_and_thinking_shown_as_updates(self):
+        t = self.now - 100
+        long = "Here is the log:\n" + "line of a made-up log\n" * 1200
+        updates = {"type": "assistant", "timestamp": iso(t + 1), "uuid": "a-9", "thinkingDisplay": "updates",
+                   "message": {"id": "m9", "role": "assistant", "content": [{"type": "thinking", "thinking": "Looking at it."},
+                                                                              {"type": "text", "text": "Found it."}]}}
+        self.chat(dict(prompt(long, t, cwd=str(self.folder)), uuid="u-9"), updates)
+        self.assertEqual(self.cli("--reply-text", SID, "--key", "u-9")["text"], long.strip())
+        self.assertEqual(self.cli("--reply-text", SID, "--key", "m9")["text"], "Looking at it.\n\nFound it.")
+
+    def test_none_with_that_key(self):
+        self.chat(dict(prompt("hello", self.now - 5, cwd=str(self.folder)), uuid="u-1"))
+        self.assertEqual(self.cli("--reply-text", SID, "--key", "m-gone"),
+                         {"ok": False, "message": "That message isn't in the chat any more"})
+        self.assertFalse(self.cli("--reply-text", "not-a-chat!", "--key", "u-1")["ok"])
+        self.assertFalse(self.cli("--reply-text", SID)["ok"])   # (no key)
+
+
 class ContextAndTurnTests(PaneFixture):
     """Talpy Chat's header says how much of the chat's context is left till
     Claude compacts it (A7), its working line how long Claude's turn has run
