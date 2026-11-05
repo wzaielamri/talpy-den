@@ -4,9 +4,12 @@ name: release
 # gnome/extension/metadata.json, vscode/package.json, CHANGELOG.md and
 # vscode/CHANGELOG.md) and this builds the Plasma widget (.plasmoid), the GNOME
 # extension (.zip) and the VS Code extension (.vsix) and publishes them as one
-# GitHub release, with that version's CHANGELOG entries as its notes. For a tag
-# that has no release yet, run it by hand (Actions → release → Run workflow)
-# with that tag.
+# GitHub release, with that version's CHANGELOG entries as its notes, and then
+# the same .vsix on the Visual Studio Marketplace. For a tag that has no
+# release yet, run it by hand (Actions → release → Run workflow) with that tag,
+# chosen under "Use workflow from" too: the Marketplace takes only a run of a
+# v* tag (a run of a branch makes the GitHub release, and its Marketplace job
+# is refused).
 on:
   push:
     tags: ["v*"]
@@ -21,9 +24,10 @@ env:
   # into the script itself)
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
-# Two jobs: the build runs the packages and tests with a token that can only
-# read; the publish job, the only one that can write, runs none of them and
-# only publishes what the build made
+# Three jobs: the build runs the packages and tests with a token that can only
+# read; the publish job, the only one that can write, and the Marketplace job,
+# the only one that can ask for a Marketplace token, run none of them and only
+# publish what the build made
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -65,7 +69,7 @@ jobs:
         working-directory: vscode
         run: |
           # (no install scripts: esbuild runs from its locked platform package,
-          # and packing needs neither keytar nor vsce-sign)
+          # and packing needs neither the keyring nor vsce-sign)
           npm ci --ignore-scripts
           npm run check
           npm test
@@ -174,3 +178,42 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: gh release create "$TAG" dist/* --title "Talpy Den ${TAG#v}" --notes-file notes.md --verify-tag
+
+  # The release's .vsix on the Visual Studio Marketplace, once the GitHub
+  # release is out. No key is kept anywhere: the Marketplace has a trusted
+  # publishing policy for this workflow in the "marketplace" environment (which
+  # GitHub lets only v* tags run in), and vsce trades this run's GitHub token
+  # for a Marketplace one that lasts 15 minutes at most
+  marketplace:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # only the extension's package.json and lockfile: vsce, as locked there
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+          sparse-checkout: |
+            vscode/package.json
+            vscode/package-lock.json
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: vsce
+        working-directory: vscode
+        run: npm ci --ignore-scripts
+      - name: The release's files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: release
+          path: release
+      - name: Publish
+        working-directory: vscode
+        # (a version the Marketplace has already, from an earlier run: left as it is)
+        run: npx --no-install vsce publish --oidc --skip-duplicate --packagePath "../release/dist/talpy-den-${TAG#v}.vsix"
