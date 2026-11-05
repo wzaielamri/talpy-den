@@ -17,8 +17,8 @@ IconTextButton {
     text: pane.stopping ? i18n("Stopping…") : i18n("Stop")
     onClicked: pane.stop()
     PlasmaComponents3.ToolTip.text: pane.where === "tmux"
-        ? i18n("Stop what Claude is doing now, as Ctrl+C in its tmux pane: the chat stays open there and takes your next message.")
-        : i18n("Stop what Claude is doing now, as Esc in its terminal: the background chat stays and takes your next message.")
+        ? i18n("Stop what Claude is doing now, as Ctrl+C in its tmux pane: the chat stays open there and takes your next message. (Esc, in an empty box)")
+        : i18n("Stop what Claude is doing now, as Esc in its terminal: the background chat stays and takes your next message. (Esc, in an empty box)")
     PlasmaComponents3.ToolTip.visible: hovered
     PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
 }

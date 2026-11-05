@@ -173,6 +173,8 @@ KCM.SimpleKCM {
     property var cfg_phoneDeviceDefault
     property var cfg_shortcutGoesToChat
     property var cfg_shortcutGoesToChatDefault
+    property var cfg_shortcutTalpyChat
+    property var cfg_shortcutTalpyChatDefault
     property var cfg_clickOpensPane
     property var cfg_clickOpensPaneDefault
     property var cfg_diffSideBySide

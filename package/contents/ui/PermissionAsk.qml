@@ -101,6 +101,28 @@ ColumnLayout {
         noteField.forceActiveFocus()
     }
 
+    // Talpy Chat's Alt+Y / Alt+A / Alt+N (ChatPane.qml): as a click on Allow once / Always allow /
+    // Deny… (a plan: Approve / Approve, accept edits / Keep planning…; questions: Decline…), where that
+    // button shows and can be clicked (not while its buttons wait for a new prompt); false: none did
+    function pressKey(key) {
+        if (!canAnswer || busy || settling || denying)
+            return false
+        if (key === "deny") {
+            denyWithNote()
+            return true
+        }
+        if (plan !== null) {
+            answered(key === "always" ? "approve-edits" : "approve", "", null)
+            return true
+        }
+        if (asksQuestions || (key === "always" && !(permission.answer === "keys" || permission.always !== "")))
+            return false
+        answered(key === "always" ? "always" : "allow", "", null)
+        return true
+    }
+    // (the pane's: each button's tooltip names its key)
+    property bool keyed: false
+
     // A question's own-words field, ready to type in
     function typeAnswer() {
         if (canAnswer && asksQuestions)
@@ -291,7 +313,7 @@ ColumnLayout {
             TipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: i18n("Approve and accept edits")
+                mainText: ask.keyed ? i18n("Approve and accept edits (Alt+A)") : i18n("Approve and accept edits")
                 subText: i18n("It starts on the plan and changes files without asking for the rest of this chat (accept edits mode); commands still ask.")
             }
         }
@@ -305,7 +327,7 @@ ColumnLayout {
             TipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: i18n("Approve")
+                mainText: ask.keyed ? i18n("Approve (Alt+Y)") : i18n("Approve")
                 subText: i18n("It starts on the plan and asks before each change, as \"Yes, manually approve edits\" in its dialog.")
             }
         }
@@ -327,6 +349,9 @@ ColumnLayout {
             icon.color: Icons.color("allow", Kirigami.Theme)
             text: i18n("Allow once")
             onClicked: ask.answered("allow", "", null)
+            PlasmaComponents3.ToolTip.text: i18n("Allow once (Alt+Y)")
+            PlasmaComponents3.ToolTip.visible: ask.keyed && hovered
+            PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
         }
         PlasmaComponents3.Button {
             visible: ask.permission && (ask.permission.answer === "keys" || ask.permission.always !== "")
@@ -339,7 +364,7 @@ ColumnLayout {
             TipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: i18n("Always allow")
+                mainText: ask.keyed ? i18n("Always allow (Alt+A)") : i18n("Always allow")
                 subText: !ask.permission ? ""
                          : ask.permission.answer === "keys" ? i18n("Like \"Yes, and don't ask again\" in its dialog (for an edit, \"Yes, allow all edits during this session\").")
                          : i18n("From now on, without asking: %1.", ask.permission.always)
@@ -351,6 +376,9 @@ ColumnLayout {
             icon.color: Icons.color("deny", Kirigami.Theme)
             text: i18n("Deny…")
             onClicked: ask.denyWithNote()
+            PlasmaComponents3.ToolTip.text: i18n("Deny, with a note (Alt+N)")
+            PlasmaComponents3.ToolTip.visible: ask.keyed && hovered
+            PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
         }
         Item {
             Layout.fillWidth: true

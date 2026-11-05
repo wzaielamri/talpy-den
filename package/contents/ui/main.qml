@@ -653,7 +653,9 @@ PlasmoidItem {
         lastNextKey = c.key
         lastNextAt = Date.now()
         forgetUnseen(c.key, "done")
-        if (c.host)
+        if (Plasmoid.configuration.shortcutTalpyChat)   // (in its Talpy Chat window, wherever it runs)
+            openPane(c.session, c.host, "chat")
+        else if (c.host)
             remoteShow(c.host, c.session)
         else
             jumpTo(c.session.sessionId, c.session.profileDir)
@@ -3980,6 +3982,25 @@ PlasmoidItem {
         }
         paneWindows = paneWindows.concat([win])
         return win
+    }
+
+    // Ctrl+Tab in a Talpy Chat window (Ctrl+Shift+Tab: the other way): this copy's other open
+    // windows, the last one in front first, like Alt+Tab; pressed again within 1.5 s it goes on
+    // through the same list
+    property var paneCycle: null   // {list, at, i}
+    function nextPaneWindow(from, back) {
+        const now = Date.now()
+        if (!paneCycle || now - paneCycle.at > 1500 || paneCycle.list.indexOf(from) < 0) {
+            const open = paneWindows.filter(w => w.visible && !!w.chat.chatId)
+            open.sort((a, b) => (a === from ? -1 : b === from ? 1 : b.activeAt - a.activeAt))
+            paneCycle = { list: open, at: now, i: 0 }
+        }
+        const list = paneCycle.list.filter(w => w.visible && !!w.chat.chatId)
+        if (list.length < 2)
+            return
+        const i = (list.indexOf(from) + (back ? list.length - 1 : 1)) % list.length
+        paneCycle = { list: paneCycle.list, at: now, i: i }
+        list[i].forward("")
     }
 
     // Closed (ChatPane onClosing): hidden, and free for the next chat

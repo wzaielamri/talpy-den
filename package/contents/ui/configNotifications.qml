@@ -25,6 +25,7 @@ ConfigPage {
     property alias cfg_phoneFinished: phoneFinished.checked
     property string cfg_phoneDevice
     property alias cfg_shortcutGoesToChat: shortcutGoesToChat.checked
+    property alias cfg_shortcutTalpyChat: shortcutTalpyChat.checked
 
     // Plasma passes every setting and its default to each page: declaring the
     // defaults of this page's settings avoids "SimpleKCM does not have a
@@ -43,6 +44,7 @@ ConfigPage {
     property bool cfg_phoneFinishedDefault
     property string cfg_phoneDeviceDefault
     property bool cfg_shortcutGoesToChatDefault
+    property bool cfg_shortcutTalpyChatDefault
 
     readonly property string codeDir: decodeURIComponent(Qt.resolvedUrl("../code/").toString().replace(/^file:\/\//, ""))
 
@@ -263,13 +265,19 @@ ConfigPage {
             id: shortcutGoesToChat
             text: i18n("Goes to the chat that needs you")
         }
+        QQC2.CheckBox {
+            id: shortcutTalpyChat
+            Layout.leftMargin: Kirigami.Units.gridUnit
+            enabled: shortcutGoesToChat.checked
+            text: i18n("In Talpy Chat, wherever it runs")
+        }
 
         QQC2.Label {
             Layout.maximumWidth: Kirigami.Units.gridUnit * 20
             wrapMode: Text.Wrap
             font: Kirigami.Theme.smallFont
             opacity: 0.7
-            text: i18n("Set the key on the Keyboard Shortcuts page of these settings. It brings up the chat that has waited longest for you, then one that finished while you weren't looking; press it again for the next one. With none, it opens the popup. In the system tray, the shortcut opens the popup.")
+            text: i18n("Set the key on the Keyboard Shortcuts page of these settings. It brings up the chat that has waited longest for you, then one that finished while you weren't looking; press it again for the next one: in its own window (its terminal, its VS Code tab), or in Talpy Chat. With none, it opens the popup. In the system tray, the shortcut opens the popup.")
         }
     }
 }

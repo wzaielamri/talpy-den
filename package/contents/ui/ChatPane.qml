@@ -8,6 +8,7 @@ import "hub"
 import "markdown.mjs" as Md
 import "codehtml.mjs" as Code
 import "icons.mjs" as Icons
+import "keys.mjs" as PaneKeys
 
 // A chat beside the popup (main.qml: openPane): its conversation, updating
 // while it works, drawn the way Claude's terminal draws it (a dot before each
@@ -352,6 +353,218 @@ Window {
         info = i18n("Copied")
         infoBad = false
         infoTimer.restart()
+    }
+    // Copy on a message (hover: MessageTools.qml says Copied), or Ctrl+Shift+C: all of it. A text
+    // Talpy Chat keeps cut ("…" on a line of its own at its end) is read whole from the transcript
+    // first (pane.py --reply-text, off this thread); Copied once it's on the clipboard, else why not
+    property string copiedKey: ""
+    Timer {
+        id: copiedTimer
+        interval: 1500
+        onTriggered: pane.copiedKey = ""
+    }
+    function copied(key, hover) {
+        if (hover) {
+            copiedKey = key
+            copiedTimer.restart()
+        } else {
+            info = i18n("Copied Claude's last reply")
+            infoBad = false
+            infoTimer.restart()
+        }
+    }
+    function copyItem(key, text, hover) {
+        if (!text)
+            return
+        if (!text.endsWith("\n…") || fresh) {
+            copyText(text, true)
+            copied(key, hover)
+            return
+        }
+        start("--reply-text " + root.shellQuote(chatId) + " --key " + root.shellQuote(key)
+              + paneArgs() + " # " + Date.now(),
+              { kind: "copy", chat: chatId, host: host, key: key, hover: hover })
+    }
+    function copyLast() {
+        for (let i = lastItems.length - 1; i >= 0; i--)
+            if (lastItems[i].kind === "claude")
+                return copyItem(String(lastItems[i].key), lastItems[i].text || "", false)
+        info = i18n("Claude hasn't replied in this chat yet")
+        infoBad = true
+        infoTimer.restart()
+    }
+
+    // ---------------------------------------------------------------- keys
+    //
+    // Talpy Chat's keys (keys.mjs; VS Code's the same; ? in an empty box lists them, KeysHelp.qml).
+    // Not Shortcuts: Plasma gives every button an Alt+letter of its own (Kirigami's mnemonics, one
+    // list for all of Plasma), so a Shortcut on Alt+A would be one of two and work every other
+    // press. surface and the reply box take them first, at the ShortcutOverride, only when they're
+    // Talpy Chat's and do something now; the box keeps the editing keys it takes itself (Ctrl+Home,
+    // Shift+arrows…). keyAction: the key's id, or "" (not ours, or nothing to do with it now)
+    property bool helpOn: false
+    property var ghostOff: null   // (Esc on the grey completion: none for that text)
+    property real activeAt: 0     // (when it was last in front: Ctrl+Tab, main.qml nextPaneWindow)
+    onActiveChanged: if (active) activeAt = Date.now()
+    // (focus that falls back to the window, a field gone or turned off: surface's, so the keys still work)
+    onActiveFocusItemChanged: if (active && activeFocusItem === contentItem) surface.forceActiveFocus()
+    function keyAction(event) {
+        const k = event.key, m = event.modifiers & ~Qt.KeypadModifier
+        const ctrl = m === Qt.ControlModifier, alt = m === Qt.AltModifier, plain = m === Qt.NoModifier
+        const ctrlShift = m === (Qt.ControlModifier | Qt.ShiftModifier)
+        if (k === Qt.Key_Escape && plain)
+            return escapeTarget() !== "" ? "escape" : ""
+        if (ctrl && k >= Qt.Key_1 && k <= Qt.Key_3)
+            return k === Qt.Key_3 && fresh ? "" : ["tabChat", "tabSteps", "tabReview"][k - Qt.Key_1]
+        if (ctrl && k === Qt.Key_W)
+            return "close"
+        if ((ctrl && k === Qt.Key_Tab) || (ctrlShift && k === Qt.Key_Backtab))
+            return k === Qt.Key_Tab ? "nextWindow" : "previousWindow"
+        if (ctrlShift && k === Qt.Key_O)
+            return fresh || starting ? "" : "openWindow"
+        if (ctrl && k === Qt.Key_T)
+            return tasks !== null || agents !== null ? "tasks" : ""
+        if (ctrlShift && k === Qt.Key_C)
+            return "copyLast"
+        if (alt && (k === Qt.Key_Y || k === Qt.Key_A || k === Qt.Key_N))
+            return permission && askColumn.canAnswer ? (k === Qt.Key_Y ? "allow" : k === Qt.Key_A ? "always" : "deny") : ""
+        if (!conversationTab)
+            return ""
+        const enter = k === Qt.Key_Return || k === Qt.Key_Enter
+        if (enter && (ctrl || alt || ctrlShift))
+            return ctrl ? "sendNow" : alt ? "sendLater" : "sendBackground"
+        // (Alt+1…: a chip; with Shift, into the box first: the digit by its key, whatever the layout makes of it)
+        const digit = k >= Qt.Key_1 && k <= Qt.Key_9 ? k - Qt.Key_0 : event.nativeScanCode >= 10 && event.nativeScanCode <= 18 ? event.nativeScanCode - 9 : 0
+        if ((alt || m === (Qt.AltModifier | Qt.ShiftModifier)) && digit > 0)
+            return chipsRow.item && chipsRow.item.shown[digit - 1] ? (alt ? "chip" : "edit") + digit : ""
+        if (plain && (k === Qt.Key_PageUp || k === Qt.Key_PageDown))
+            return k === Qt.Key_PageUp ? "pageUp" : "pageDown"
+        if (ctrl && (k === Qt.Key_Up || k === Qt.Key_Down))
+            return k === Qt.Key_Up ? "promptUp" : "promptDown"
+        if (ctrl && k === Qt.Key_L)
+            return replyBox.text !== "" ? "clear" : ""
+        if (event.text === "?" && !(m & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) && replyBox.activeFocus && replyBox.text === "")
+            return "help"
+        return ""
+    }
+    function takeKey(event) {
+        const id = keyAction(event)
+        if (id === "")
+            return false
+        event.accepted = true
+        doKey(id)
+        return true
+    }
+    // Esc does the nearest thing first, one a press (keys.mjs escTarget): the big picture, the / and
+    // @ list, the keys, the grey completion; only then, in an empty box while Stop shows, it stops
+    // Claude (a chip's menu closes itself first)
+    function escapeTarget() {
+        return PaneKeys.escTarget({ big: bigPicture !== "", list: suggestions.length > 0 && replyBox.activeFocus, help: helpOn,
+                                    ghost: !!ghostLine.item && ghostLine.item.rest !== "",
+                                    stop: replyBox.activeFocus && replyBox.text === "" && canStop && !stopping })
+    }
+    function doKey(id) {
+        const text = replyBox.text.trim()
+        const terminal = route === "terminal" || askHow
+        const elsewhere = !replyAnswers && commandNow && commandNow.run !== "here"
+        switch (id) {
+        case "escape": {
+            const what = escapeTarget()
+            if (what === "big")
+                bigPicture = ""
+            else if (what === "list") {
+                dismissed = replyBox.text.slice(tokenStart, replyBox.cursorPosition)
+                suggestions = []
+            } else if (what === "help")
+                helpOn = false
+            else if (what === "ghost")
+                ghostOff = replyBox.text
+            else if (what === "stop")
+                stop()
+            return
+        }
+        case "sendNow": {   // (no 5 s wait; in an empty box, the message waiting goes now)
+            if (text !== "")
+                return send("enter", false, true)
+            const mine = pendingSent.filter(p => p.state === "held" && p.chat === chatId && p.host === (host || ""))
+            if (mine.length)
+                release("pending-" + mine[mine.length - 1].id)
+            return
+        }
+        case "sendLater":
+            if (busy && text !== "" && !elsewhere)
+                send(terminal ? "background" : "auto", true)
+            return
+        case "sendBackground":
+            if (terminal && !busy && text !== "" && !elsewhere)
+                send("background", false)
+            return
+        case "clear":   // (an edit: Ctrl+Z brings it back)
+            replyBox.remove(0, replyBox.length)
+            replyBox.forceActiveFocus()
+            return
+        case "allow":
+        case "always":
+        case "deny":
+            askColumn.pressKey(id)
+            return
+        case "pageUp":
+        case "pageDown":
+            settle.stop()
+            holdTop.stop()
+            list.contentY = Math.max(list.originY, Math.min(list.originY + list.contentHeight - list.height,
+                                                            list.contentY + (id === "pageUp" ? -1 : 1) * Math.max(fm.height * 2, list.height - fm.height * 2)))
+            return
+        case "promptUp":
+        case "promptDown":
+            return jumpPrompt(id === "promptDown")
+        case "tabChat":
+        case "tabSteps":
+        case "tabReview":
+            tab = id === "tabChat" ? "chat" : id === "tabSteps" ? "steps" : "review"
+            return
+        case "tasks":
+            return toggleStrip()
+        case "copyLast":
+            return copyLast()
+        case "openWindow":
+            return root.openRow(row || chat, host, true)
+        case "close":
+            return close()
+        case "nextWindow":
+        case "previousWindow":
+            return root.nextPaneWindow(pane, id === "previousWindow")
+        case "help":
+            helpOn = true
+            return
+        }
+        const chip = /^(chip|edit)([1-9])$/.exec(id)
+        if (chip && chipsRow.item && chipsRow.item.shown[Number(chip[2]) - 1])
+            takeChip(chipsRow.item.shown[Number(chip[2]) - 1], chip[1] === "edit")
+    }
+    // Ctrl+↑ / Ctrl+↓: your previous / next message at the list's top (past the last: the end)
+    function jumpPrompt(down) {
+        settle.stop()
+        holdTop.stop()
+        const top = list.contentY
+        let to = null
+        for (let i = 0; i < items.count; i++) {
+            if (items.get(i).kind !== "you")
+                continue
+            const it = list.itemAtIndex(i)
+            if (!it || !it.visible || it.height <= 0)
+                continue
+            const at = it.y + (it.gap || 0) - fm.height * 0.5
+            if (down ? at > top + 4 : at < top - 4) {
+                to = at
+                if (down)
+                    break
+            }
+        }
+        if (to !== null)
+            list.contentY = Math.max(list.originY, Math.min(list.originY + list.contentHeight - list.height, to))
+        else if (down)
+            toEnd()
     }
 
     // Where a reply's link goes, under the pointer while it's hovered (its
@@ -1195,12 +1408,24 @@ Window {
     // (what you type, completed in grey from your usual replies: ReplyGhost.qml, while one can be)
     readonly property bool ghostOn: suggestOn && usual !== null && conversationTab && replyBox.activeFocus && suggestions.length === 0
                                     && replyBox.text !== "" && replyBox.cursorPosition === replyBox.length && replyBox.preeditText === ""
+                                    && replyBox.text !== ghostOff
 
     // asked: the run it answers ({kind, chat, host, target}: run())
     function handle(kind, result, asked) {
         if (kind === "font") {
             if (result.ok && typeof result.family === "string" && result.family !== Plasmoid.configuration.paneTerminalFont)
                 Plasmoid.configuration.paneTerminalFont = result.family
+            return
+        }
+        if (kind === "copy") {   // (all of a reply shown cut: on the clipboard now, Copied)
+            if (result.ok && typeof result.text === "string") {
+                copyText(result.text, true)
+                copied(asked.key, asked.hover)
+            } else {
+                info = i18n("Couldn't copy all of it: %1", result.message || i18n("it couldn't be read"))
+                infoBad = true
+                infoTimer.restart()
+            }
             return
         }
         if (kind === "replies" || kind === "hide") {   // (your usual replies, for this chat only; one hidden: nothing to say)
@@ -1651,7 +1876,7 @@ Window {
         send("auto", false)
     }
 
-    function send(how, afterTurn) {
+    function send(how, afterTurn, now) {   // (now: Ctrl+Enter, no 5 s wait while Claude works)
         const text = replyBox.text.trim()
         if (!text)
             return
@@ -1718,7 +1943,7 @@ Window {
             return   // (one the box keeps is on its way: an Enter again doesn't send it twice)
         // (Claude at work: it waits a moment, queued, to be taken back, as ↑ does in Claude's terminal.
         // Not when its turn is over and only a background command runs: Claude takes it in at once)
-        const holds = shows && chatState === "working" && !(row && row.reason === "background shell")
+        const holds = shows && chatState === "working" && !(row && row.reason === "background shell") && !now
         const id = ++sentCount
         const asked = { kind: afterTurn ? "later" : "send", chat: chatId, host: host, target: row || chat,
                         sent: shows || afterTurn ? "" : replyBox.text, draft: draftKey, text: text, id: id, startedAt: 0,
@@ -1988,12 +2213,7 @@ Window {
     }
 
     // A picture of yours, big (its thumbnail clicked): over the pane, till a click, × or Esc
-    property string bigPicture: ""
-    Shortcut {
-        sequence: "Escape"
-        enabled: pane.bigPicture !== ""
-        onActivated: pane.bigPicture = ""
-    }
+    property string bigPicture: ""   // (Esc: doKey)
 
     // The conversation with your messages on their way after it: each till
     // the conversation has it (a prompt of yours that wasn't there when you
@@ -2246,6 +2466,9 @@ Window {
         id: surface
         anchors.fill: parent
         color: Kirigami.Theme.backgroundColor
+        // Talpy Chat's keys, wherever the focus is in it (keyAction)
+        Keys.onShortcutOverride: event => event.accepted = pane.keyAction(event) !== ""
+        Keys.onPressed: event => pane.takeKey(event)
         Kirigami.Theme.colorSet: Kirigami.Theme.Window
         Kirigami.Theme.inherit: false
         // Files and pictures dropped on the pane go in your reply (a picture as
@@ -2361,7 +2584,7 @@ Window {
                     TipArea {
                         textFormat: Text.PlainText
                         anchors.fill: parent
-                        mainText: parent.text
+                        mainText: i18n("%1 (Ctrl+Shift+O)", parent.text)
                         subText: parent.attaches ? i18n("The background chat in a terminal too (claude attach): what it shows there, and its own prompts. It goes on running; nothing is lost.")
                                  : i18n("The terminal or VS Code tab the chat runs in; a chat that isn't open reopens in a terminal or in VS Code, as the Open in switch of Recent chats says.")
                     }
@@ -2599,6 +2822,10 @@ Window {
                         onClicked: pane.tab = modelData
                         Accessible.role: Accessible.PageTab
                         Accessible.name: tabText.text
+                        PlasmaComponents3.ToolTip.text: modelData === "chat" ? i18n("Your messages and Claude's replies (Ctrl+1)")
+                                                        : modelData === "steps" ? i18n("Claude's steps too: each tool call (Ctrl+2)") : i18n("The files it changed (Ctrl+3)")
+                        PlasmaComponents3.ToolTip.visible: containsMouse
+                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
 
                         PlasmaComponents3.Label {
                             id: tabText
@@ -3013,7 +3240,7 @@ Window {
                                         icon.name: Icons.plasma.send
                                         text: i18n("Send now")
                                         onClicked: pane.release(entry.key)
-                                        PlasmaComponents3.ToolTip.text: i18n("To Claude now: it takes it in at its next step")
+                                        PlasmaComponents3.ToolTip.text: i18n("To Claude now: it takes it in at its next step (Ctrl+Enter, in an empty box)")
                                         PlasmaComponents3.ToolTip.visible: hovered
                                         PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                                     }
@@ -3363,6 +3590,7 @@ Window {
                         mono: pane.monoFamily
                         diffLines: 12
                         planHeight: Kirigami.Units.gridUnit * 1000   // (the box scrolls)
+                        keyed: true   // (Alt+Y / Alt+A / Alt+N: pressKey, from the keys)
                         onAnswered: (decision, note, answers) => pane.answer(decision, note, answers)
                         // (a background chat started without Talpy Den's hook: claude attach on it)
                         attachable: !pane.host && !!pane.row && pane.row.kind === "bg" && !!pane.row.pid
@@ -3549,7 +3777,7 @@ Window {
                             background: null
                             placeholderText: pane.permission && !pane.replyAnswers ? i18n("It's asking you something: answer that first")
                                              : pane.fresh && !pane.starting ? i18n("What should Claude do? (Enter starts the chat, Shift+Enter: new line; Ctrl+V or drop: a picture or a file too)")
-                                             : i18n("Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop: a picture or a file too)")
+                                             : i18n("Reply to Claude… (Enter sends, Shift+Enter: new line; Ctrl+V or drop: a picture or a file too; ?: the keys)")
                             wrapMode: TextEdit.Wrap
                             font.family: pane.chatFamily
                             font.pointSize: pane.pt
@@ -3572,14 +3800,14 @@ Window {
                                         usualSoon.restart()
                                 }
                             }
-                            Keys.onPressed: event => {
-                                // Alt+1…4: a chip (with Shift: in the box first)
-                                if (chipsRow.item && (event.modifiers & Qt.AltModifier) && !(event.modifiers & Qt.ControlModifier)
-                                        && event.key >= Qt.Key_1 && event.key <= Qt.Key_9 && chipsRow.item.shown[event.key - Qt.Key_1]) {
-                                    pane.takeChip(chipsRow.item.shown[event.key - Qt.Key_1], (event.modifiers & Qt.ShiftModifier) !== 0)
+                            Keys.onShortcutOverride: event => {
+                                if (pane.keyAction(event) !== "")
                                     event.accepted = true
+                            }
+                            Keys.onPressed: event => {
+                                // Talpy Chat's keys first (Alt+1…4 a chip, Ctrl+Enter, Esc, ? in an empty box…: keyAction)
+                                if (pane.takeKey(event))
                                     return
-                                }
                                 // Tab or → at the end: the grey rest of your usual reply
                                 if (ghostLine.item && ghostLine.item.rest !== "" && (event.key === Qt.Key_Tab || event.key === Qt.Key_Right)
                                         && event.modifiers === Qt.NoModifier) {
@@ -3597,12 +3825,6 @@ Window {
                                     }
                                     if (event.key === Qt.Key_Tab || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                                         pane.takeSuggestion(pane.suggestion)
-                                        event.accepted = true
-                                        return
-                                    }
-                                    if (event.key === Qt.Key_Escape) {
-                                        pane.dismissed = text.slice(pane.tokenStart, cursorPosition)
-                                        pane.suggestions = []
                                         event.accepted = true
                                         return
                                     }
@@ -3625,7 +3847,7 @@ Window {
                                     root.pasteImage(pane.host, pane.pasteTarget)
                                     return
                                 }
-                                if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
+                                if ((event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter) || (event.modifiers & (Qt.ControlModifier | Qt.AltModifier)))
                                     return
                                 if (event.modifiers & Qt.ShiftModifier) {
                                     if (selectedText)
@@ -3823,7 +4045,7 @@ Window {
                             TipArea {
                                 textFormat: Text.PlainText
                                 anchors.fill: parent
-                                mainText: i18n("Send when this turn ends")
+                                mainText: i18n("Send when this turn ends (Alt+Enter)")
                                 subText: i18n("Talpy Den keeps it and sends it once Claude's turn is over (also with the popup closed).")
                             }
                         }
@@ -3848,6 +4070,12 @@ Window {
                                   : pane.fresh && !pane.starting ? i18nc("a new chat's first message: start the chat with it", "Start") : i18n("Send")
                             onClicked: pane.send(commandRun !== "" && commandRun !== "here" ? "auto"
                                                  : pane.route === "terminal" || pane.askHow ? "background" : "auto", false)
+                            // (its key: Enter in the box; on in the background, Ctrl+Shift+Enter; Claude at work, Ctrl+Enter skips the wait)
+                            PlasmaComponents3.ToolTip.text: commandRun !== "" ? "" : pane.replyAnswers ? i18n("Enter")
+                                : pane.route === "terminal" || pane.askHow ? i18n("Send, go on in the background (Ctrl+Shift+Enter)")
+                                : pane.atWork ? i18n("Send (Enter; Ctrl+Enter: without the 5 s wait while Claude works)") : i18n("Send (Enter)")
+                            PlasmaComponents3.ToolTip.visible: hovered && PlasmaComponents3.ToolTip.text !== ""
+                            PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                         }
                     }
                 }
@@ -4129,6 +4357,14 @@ Window {
                     }
                 }
             }
+        }
+
+        // Talpy Chat's keys (? in an empty box): KeysHelp.qml, read and made only while it shows
+        Loader {
+            anchors.fill: parent
+            z: 90
+            active: pane.helpOn
+            source: active ? "KeysHelp.qml" : ""
         }
 
         // A picture of yours, big: a click anywhere (or × or Esc) closes it,

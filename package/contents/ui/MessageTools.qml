@@ -9,15 +9,15 @@ import org.kde.kirigami as Kirigami
 // first time a message is hovered and moves it to the one hovered: a long chat
 // has nothing more for each message, and a time is worked out only here. Copy
 // puts a reply on the clipboard as Markdown, as the transcript has it (not as
-// it's shown), and yours as you wrote it (a command too); Copied says it for a
-// moment in the same place, as wide. No MouseArea: hover stays the list's (its
+// it's shown; all of it: one shown cut is read whole first, ChatPane copyItem),
+// and yours as you wrote it (a command too); Copied says it for a moment in the
+// same place, as wide, once it's on the clipboard. No MouseArea: hover stays the list's (its
 // HoverHandler picks the message). VS Code chat.tsx HoverBar: the same words.
 Rectangle {
     id: tools
 
     readonly property Item row: list.hoverRow
-    property string copiedKey: ""
-    readonly property bool copied: row !== null && copiedKey === row.key
+    readonly property bool copied: row !== null && pane.copiedKey === row.key
     readonly property real at: row !== null && row.index >= 0 && row.index < items.count ? items.get(row.index).at : 0
 
     parent: row || list.contentItem
@@ -79,11 +79,7 @@ Rectangle {
             }
             TapHandler {
                 gesturePolicy: TapHandler.ReleaseWithinBounds   // (the press is Copy's: no selection starts under it)
-                onTapped: {
-                    pane.copyText(tools.row.text, true)
-                    tools.copiedKey = tools.row.key
-                    copiedTimer.restart()
-                }
+                onTapped: pane.copyItem(tools.row.key, tools.row.text, true)   // (all of it: Copied once it's on the clipboard)
             }
             PlasmaComponents3.ToolTip.text: tools.row && tools.row.kind === "claude" ? i18n("Copy this reply, as Markdown") : i18n("Copy your message, as you wrote it")
             PlasmaComponents3.ToolTip.visible: copyHover.hovered
@@ -91,9 +87,4 @@ Rectangle {
         }
     }
 
-    Timer {
-        id: copiedTimer
-        interval: 1500
-        onTriggered: tools.copiedKey = ""
-    }
 }

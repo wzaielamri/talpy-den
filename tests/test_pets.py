@@ -2060,7 +2060,7 @@ class NewChatTests(unittest.TestCase):
             self.assertNotIn(per_row, delegate)
         tools = (ROOT / "ui/MessageTools.qml").read_text()
         self.assertNotIn("MouseArea {", tools)
-        self.assertIn("pane.copyText(tools.row.text, true)", tools)
+        self.assertIn("pane.copyItem(tools.row.key, tools.row.text, true)", tools)
         shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
         chat = (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text()
         for words in ("Copy this reply, as Markdown", "Copy your message, as you wrote it"):
@@ -2073,6 +2073,37 @@ class NewChatTests(unittest.TestCase):
             self.assertIn(words, pane)
         for words in ('"Today"', '"Yesterday"', 'weekday: "short", day: "numeric", month: "short"'):
             self.assertIn(words, shared)
+
+    def test_keys_take_no_shortcut_and_the_list_is_made_only_when_shown(self):
+        # Talpy Chat's keys (A10): one table (keys.mjs) for Plasma and VS Code; Plasma takes them at the
+        # ShortcutOverride on surface and the reply box (Kirigami gives every button an Alt+letter, so a
+        # Shortcut on Alt+A would be one of two), never per message; the ? list in a file of its own, read
+        # and made only while it shows; Esc in the order keys.mjs gives; the tooltips name keys of the table
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        keys = (ROOT / "ui/keys.mjs").read_text()
+        self.assertIn('import "keys.mjs" as PaneKeys', pane)
+        self.assertIn("Keys.onShortcutOverride: event => event.accepted = pane.keyAction(event) !== \"\"", pane)
+        self.assertEqual(pane.count("pane.takeKey(event)"), 2)   # (surface, and the reply box first)
+        self.assertIn("PaneKeys.escTarget(", pane)
+        self.assertIn('source: active ? "KeysHelp.qml" : ""', pane)
+        self.assertIn("active: pane.helpOn", pane)
+        for shortcut in re.findall(r"Shortcut \{[^}]*\}", pane):
+            self.assertNotRegex(shortcut, r"Alt\+|Escape|Return|Enter")
+        delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
+        for per_row in ("keyAction", "KeysHelp", "takeKey", "onShortcutOverride"):
+            self.assertNotIn(per_row, delegate)
+        table = set(re.findall(r'(?:plasma|vscode): "([^"]+)"', keys))
+        named = {k for text in re.findall(r'i18n\("[^"]*\(([^)"]*)\)', pane) for k in re.findall(r"(?:Ctrl\+|Alt\+|Shift\+)+[^\s;,:)]+|\bEsc\b", text)}
+        self.assertTrue({"Ctrl+Enter", "Ctrl+Shift+Enter", "Alt+Enter", "Ctrl+Shift+O", "Ctrl+1", "Esc"} <= named, named)
+        for key in named:
+            self.assertTrue(any(key in t for t in table), key)
+        self.assertIn("keyed: true", pane)
+        ask = (ROOT / "ui/PermissionAsk.qml").read_text()
+        for words in ('"Allow once (Alt+Y)"', '"Deny, with a note (Alt+N)"', '"Always allow (Alt+A)"'):
+            self.assertIn(words, ask)
+        self.assertIn("function pressKey(key)", ask)
+        help = (ROOT / "ui/KeysHelp.qml").read_text()
+        self.assertIn("PaneKeys.KEYS", help)
 
     def test_suggested_replies_are_made_only_when_there_are_some(self):
         # Talpy Chat's chips (B2 + B3): their list and words (ReplyChips.qml) and the grey completion
@@ -2116,7 +2147,7 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('source: active ? "CommandOutput.qml" : ""', pane)
         self.assertNotIn('"ansi.mjs"', pane)
         self.assertIn('import "ansi.mjs" as Ansi', (ROOT / "ui/CommandOutput.qml").read_text())
-        send = pane[pane.index("    function send(how, afterTurn) {"):]
+        send = pane[pane.index("    function send(how, afterTurn, now) {"):]
         send = send[:send.index("\n    }\n")]
         self.assertIn("if (/^\\/\\S/.test(text) && !offers && !offersFailed && !replyAnswers) {", send)
         self.assertIn('if (ran && ran.run === "terminal") {\n            openWithCommand(text)\n            return', send)
@@ -2379,7 +2410,7 @@ class SettingsPageTests(unittest.TestCase):
         main = (ROOT / "ui/main.qml").read_text()
         shared = main[main.index("readonly property var sharedKeys: ["):]
         shared = set(re.findall(r'"(\w+)"', shared[:shared.index("]")]))
-        self.assertEqual(names - shared, {"focusView", "shortcutGoesToChat"})
+        self.assertEqual(names - shared, {"focusView", "shortcutGoesToChat", "shortcutTalpyChat"})
 
 
 class PetLifeTests(unittest.TestCase):

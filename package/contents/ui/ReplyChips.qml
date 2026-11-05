@@ -71,6 +71,7 @@ Flow {
         delegate: Rectangle {
             id: chip
             required property var modelData
+            required property int index
             readonly property color tone: modelData.usual ? pane.textColor : pane.youColor
             height: pane.queueButtonHeight
             width: Math.min(row.width, label.implicitWidth + Kirigami.Units.smallSpacing * 3)
@@ -117,7 +118,7 @@ Flow {
                         pane.takeChip(chip.modelData, (event.modifiers & Qt.ShiftModifier) !== 0)
                 }
             }
-            PlasmaComponents3.ToolTip.text: modelData.title
+            PlasmaComponents3.ToolTip.text: index < 4 ? i18n("%1 (Alt+%2; with Shift: in the box first)", modelData.title, index + 1) : modelData.title
             PlasmaComponents3.ToolTip.visible: mouse.containsMouse && mouse.pressedButtons === Qt.NoButton
             PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
         }

@@ -161,6 +161,10 @@
       <label>Talpy Den's keyboard shortcut goes to the chat that needs you (else it opens the popup)</label>
       <default>true</default>
     </entry>
+    <entry name="shortcutTalpyChat" type="Bool">
+      <label>Talpy Den's keyboard shortcut opens the chat that needs you in Talpy Chat (else in its own window)</label>
+      <default>false</default>
+    </entry>
     <entry name="clickOpensPane" type="Bool">
       <label>A click on a chat opens it in Talpy Chat (else in its own window: terminal or VS Code)</label>
       <default>true</default>
