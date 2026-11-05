@@ -382,3 +382,46 @@ if (params.get("paste") === "1") {
 if (params.get("keys") === "1") setTimeout(() => send({ type: "key", key: "help" }), 600);
 const key = params.get("key");
 if (key) setTimeout(() => key.split(",").forEach((k, i) => setTimeout(() => send({ type: "key", key: k }), i * 400)), 900);
+
+// ?fold=1: long ones among them (a reply, a pasted log of yours, a command's output, a step's
+// output): those read first fold, but Claude's last reply; &more=1: one more long reply comes in
+// after (it doesn't fold: you watched it come); ?fold=all: then Ctrl+O (everything unfolded)
+const fold = params.get("fold");
+if (fold) {
+  const lines = (n: number, what: string) => Array.from({ length: n }, (_, i) => `${what} ${i + 1}: the parser reads the week of each date and checks it against the calendar.`).join("\n");
+  items.splice(4, 0,
+    { kind: "you", key: "f1", text: "Here's the log:\n" + lines(52, "log line"), at: now - 280_000 },
+    { kind: "claude", key: "f2", text: "## What the log says\n\n" + lines(30, "- Point") + "\n\n```ts\n" + lines(20, "// step") + "\n```\n\nThat's all of it.", at: now - 270_000 },
+    { kind: "you", key: "f3", text: "!cat weeks.txt", command: { shell: true, output: lines(60, "\x1b[32mweek\x1b[0m") }, at: now - 260_000 },
+    { kind: "tool", key: "f4", name: "Read", line: "Read: weeks.ts", status: "ok", input: "file_path: /home/alice/projects/webapp/src/weeks.ts",
+      output: Array.from({ length: 90 }, (_, i) => `${String(i + 1).padStart(6)}\texport const week${i + 1} = ${i + 1};`).join("\n"), summary: "90 lines", at: now - 250_000 });
+  items.push({ kind: "claude", key: "f5", text: "## Done\n\n" + lines(45, "- Fixed"), at: now - 5_000 });
+  if (params.get("more") === "1")
+    setTimeout(() => send({ type: "conversation", answer: { ok: true, more: true, stamp: "2", items: [...items,
+      { kind: "claude", key: "f6", text: "## And one more\n\n" + lines(50, "- Also"), at: Date.now() }] } }), 800);
+  if (fold === "all") setTimeout(() => send({ type: "key", key: "fold" }), 900);
+}
+
+// ?find=parser: the find bar with that typed in; &step=N: Enter N times (&back=1: Shift+Enter)
+const findQuery = params.get("find");
+if (findQuery !== null)
+  setTimeout(() => {
+    send({ type: "key", key: "find" });
+    setTimeout(() => {
+      const input = document.querySelector<HTMLInputElement>(".pane-find-text");
+      if (!input) return;
+      input.value = findQuery;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      const steps = Number(params.get("step") ?? 0);
+      for (let i = 0; i < steps; i++)
+        setTimeout(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: params.get("back") === "1", bubbles: true, cancelable: true })),
+                   300 + i * 200);
+    }, 200);
+  }, 700);
+
+// ?scroll=top: the list scrolled to its top once it's drawn (&by=N px down from there)
+if (params.get("scroll") === "top")
+  setTimeout(() => {
+    const list = document.querySelector<HTMLElement>(".pane-list");
+    if (list) list.scrollTop = Number(params.get("by") ?? 0);
+  }, 1200);

@@ -66,6 +66,8 @@ export type Meaning =
   | "focus"
   | "showAll"
   | "search"
+  | "findPrevious"
+  | "findNext"
   | "settings"
   | "password"
   | "web"

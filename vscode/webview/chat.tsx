@@ -4,9 +4,9 @@
 // reply, what it asks while it waits for a permission, and its review. It
 // shows what the extension sends and says what you clicked.
 
-import { Fragment, render } from "preact";
+import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -132,11 +132,181 @@ function KeysHelp({ onClose }: { onClose: () => void }) {
   );
 }
 
+// A long text, folded (find.mjs foldOf: past about 40 lines its first 24 show): "Show more · 17 more
+// lines" under it, "Show less" once unfolded. Each item's fold is worked out once (its object is the
+// same till the chat is read again)
+const textFolds = new WeakMap<object, Fold | null>();
+const outFolds = new WeakMap<object, Fold | null>();
+function foldFor(it: PaneItem, text: string, how: "markdown" | "plain" | "ansi", out = false): Fold | null {
+  const memo = out ? outFolds : textFolds;
+  if (!memo.has(it)) memo.set(it, foldOf(text, how));
+  return memo.get(it) ?? null;
+}
+function FoldMore({ id, fold, whole, onToggle }: { id: string; fold: Fold; whole: boolean; onToggle: (e: MouseEvent) => void }) {
+  return (
+    <button type="button" class="pane-fold-more" data-fold={id} aria-expanded={whole} onClick={onToggle}
+      title={`${whole ? "Fold it again" : "Show all of it"} (${keyText("fold", "vscode", MAC)}: unfold or fold everything)`}>
+      <Icon name={I.folded} class={whole ? "open" : ""} />
+      {whole ? "Show less" : `Show more · ${fold.more === 1 ? "1 more line" : `${fold.more} more lines`}`}
+    </button>
+  );
+}
+
+// Made a few at a time (Ctrl+O unfolds every step: each one's details are made in the frames after,
+// the ones nearest the middle of the list first, as many a frame as keep it smooth), not all at once
+const later: { at: () => HTMLElement | null; go: () => void }[] = [];
+let laterFrame = 0, laterMany = 4, laterAt = 0;
+function laterRun(t: number) {
+  laterFrame = 0;
+  if (laterAt) laterMany = t - laterAt > 24 ? Math.max(1, laterMany >> 1) : t - laterAt < 18 ? Math.min(32, laterMany + 2) : laterMany;
+  laterAt = t;
+  const list = document.querySelector<HTMLElement>(".pane-list");
+  const mid = list ? list.getBoundingClientRect().top + list.clientHeight / 2 : 0;
+  const far = (j: (typeof later)[number]) => Math.abs((j.at()?.getBoundingClientRect().top ?? 1e9) - mid);
+  later.sort((a, b) => far(a) - far(b));
+  for (const job of later.splice(0, laterMany)) job.go();
+  if (later.length) laterFrame = requestAnimationFrame(laterRun);
+  else laterAt = 0;
+}
+function Later({ children }: { children: () => ComponentChildren }) {
+  const [on, setOn] = useState(false);
+  const at = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const job = { at: () => at.current, go: () => setOn(true) };
+    later.push(job);
+    if (!laterFrame) laterFrame = requestAnimationFrame(laterRun);
+    return () => {
+      const i = later.indexOf(job);
+      if (i >= 0) later.splice(i, 1);
+    };
+  }, []);
+  return on ? <>{children()}</> : <span ref={at} class="pane-later" />;
+}
+
+// Search in the chat (Ctrl+F): a bar over the list's top right, so nothing moves, drawn only while
+// it's open. What you type is looked for a slice at a time (find.mjs findIn); the list stays where
+// you read till you go to a match: Enter or F3 the next one, Shift+Enter or Shift+F3 the one before
+function FindBar({ query, count, input, onQuery, onStep, onClose }: {
+  query: string; count: string; input: { current: HTMLInputElement | null }; onQuery: (q: string) => void; onStep: (back: boolean) => void; onClose: () => void;
+}) {
+  return (
+    <div class="pane-find-at">
+      <div class="pane-find" role="search">
+        <Icon name={I.search} />
+        <input ref={input} class="pane-find-text" type="text" placeholder="Find in the chat" aria-label="Find in the chat" value={query} spellcheck={false}
+          onInput={(e) => onQuery((e.target as HTMLInputElement).value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.isComposing && !e.ctrlKey && !e.altKey && !e.metaKey) {
+              e.preventDefault();
+              onStep(e.shiftKey);
+            }
+          }} />
+        <span class="pane-find-count" aria-live="polite">{count}</span>
+        <IconButton icon={I.findPrevious} class="pane-find-up" label="Previous match" title="Previous match (Shift+Enter, Shift+F3)" onClick={() => onStep(true)} />
+        <IconButton icon={I.findNext} class="pane-find-down" label="Next match" title="Next match (Enter, F3)" onClick={() => onStep(false)} />
+        <IconButton icon={I.close} label="Close" title="Close (Esc)" onClick={onClose} />
+      </div>
+    </div>
+  );
+}
+
+// The matches in the rows near what you read, marked without touching the page (the CSS Custom
+// Highlight API: nothing moves, nothing is made again), the one gone to in its own colour. A row's
+// text as it shows, without what isn't its words (a code block's language and Copy, a fold's button,
+// line numbers, the gutter's marks, "Sending…")
+const FIND_SKIP = ".pane-gutter, .md-code-head, .pane-fold-more, .cv-no, .cv-prompt, .pane-you-state, .pane-you-queue, .pane-you-pics, .pane-asked-toggle, .pane-asked-mark, .pane-later";
+const marking = typeof CSS !== "undefined" && "highlights" in CSS && typeof Highlight !== "undefined";
+function rowsOf(list: HTMLElement, key: string): HTMLElement[] {
+  const k = CSS.escape(key);
+  return [...list.querySelectorAll<HTMLElement>(`:scope > [data-key="${k}"], :scope > [data-of="${k}"]`)];
+}
+function rangesIn(rows: HTMLElement[], query: string, max: number): Range[] {
+  const texts: Text[] = [];
+  for (const row of rows) {
+    const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT,
+      { acceptNode: (n) => (n.parentElement?.closest(FIND_SKIP) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+    while (walk.nextNode()) texts.push(walk.currentNode as Text);
+  }
+  const q = query.toLowerCase();
+  const starts: number[] = [];
+  let length = 0;
+  for (const t of texts) {
+    starts.push(length);
+    length += t.data.length;
+  }
+  const whole = texts.map((t) => t.data).join("").toLowerCase();
+  const nodeAt = (pos: number) => {   // (the text node pos is in: the last that starts at or before it)
+    let lo = 0, hi = texts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= pos) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
+  const out: Range[] = [];
+  for (let at = q ? whole.indexOf(q) : -1; at >= 0 && out.length < max; at = whole.indexOf(q, at + q.length)) {
+    const a = nodeAt(at), b = nodeAt(at + q.length - 1);
+    const r = document.createRange();
+    r.setStart(texts[a], at - starts[a]);
+    r.setEnd(texts[b], at + q.length - starts[b]);
+    out.push(r);
+  }
+  return out;
+}
+// (marks the rows with matches within a screen of the view; the nth of the one gone to, or the
+// last one it shows: its Range, to go to)
+function markFound(list: HTMLElement, hits: readonly FindHit[], now: FindHit | null, query: string): Range | null {
+  const view = list.getBoundingClientRect();
+  const keys = [...new Set(hits.map((h) => h.key))];
+  const all: Range[] = [];
+  let current: Range | null = null;
+  for (const key of keys) {
+    const rows = rowsOf(list, key);
+    if (!rows.length) continue;
+    const top = rows[0].getBoundingClientRect().top, bottom = rows[rows.length - 1].getBoundingClientRect().bottom;
+    const near = bottom > view.top - view.height && top < view.bottom + view.height;
+    if (!near && now?.key !== key) continue;
+    const ranges = rangesIn(rows, query, 400);
+    if (now?.key === key && ranges.length) current = ranges[Math.min(now.n, ranges.length - 1)];
+    if (near) all.push(...ranges.filter((r) => r !== current));
+    if (all.length > 2000) break;
+  }
+  if (marking) {
+    CSS.highlights.set("talpy-find", new Highlight(...all));
+    CSS.highlights.set("talpy-find-now", current ? new Highlight(current) : new Highlight());
+  }
+  return current;
+}
+function unmark() {
+  if (!marking) return;
+  CSS.highlights.delete("talpy-find");
+  CSS.highlights.delete("talpy-find-now");
+}
+// The rows in view, by their place in the list (findStep starts there)
+function viewOf(list: HTMLElement, items: readonly PaneItem[]): { first: number; last: number; order: Map<string, number> } {
+  const order = new Map(items.map((it, i) => [String(it.key), i] as [string, number]));
+  const top = list.getBoundingClientRect().top, bottom = top + list.clientHeight;
+  let first = Infinity, last = -1;
+  for (const row of list.querySelectorAll<HTMLElement>(":scope > [data-key]")) {
+    const r = row.getBoundingClientRect();
+    const i = order.get(row.dataset.key ?? "") ?? -1;
+    if (i >= 0 && r.bottom > top && r.top < bottom) {
+      first = Math.min(first, i);
+      last = Math.max(last, i);
+    }
+  }
+  return { first: first === Infinity ? 0 : first, last: last < 0 ? items.length - 1 : last, order };
+}
+
 // A tool call: ● Bash  npm test in green, red, or (still going) blinking,
 // under it ⎿ what came of it, and an edit's change (its first lines; open,
 // all of it); click for what it ran and got (CodeView.tsx)
-function ToolLine({ item, open, onToggle, asking, going, gap, split, onSplit }: {
-  item: PaneItem; open: boolean; onToggle: () => void; asking: boolean; going: boolean; gap: string; split: boolean; onSplit: (s: boolean) => void;
+// (eager: opened with a click, its details made at once; else, as Ctrl+O opens all: a few a frame.
+// Long output folds as a long message does: outWhole, onOut)
+function ToolLine({ item, open, eager, outWhole, onOut, onToggle, asking, going, gap, split, onSplit }: {
+  item: PaneItem; open: boolean; eager: boolean; outWhole: boolean; onOut: (e: MouseEvent) => void; onToggle: () => void; asking: boolean; going: boolean; gap: string;
+  split: boolean; onSplit: (s: boolean) => void;
 }) {
   const name = item.name ?? "";
   const line = item.line ?? "";
@@ -144,8 +314,16 @@ function ToolLine({ item, open, onToggle, asking, going, gap, split, onSplit }: 
   const tone = item.status === "ok" ? "ok" : item.status === "error" ? "error" : asking ? "asking" : going ? "going" : "open";
   const summary = item.summary || (asking ? "Waiting for your answer" : "");
   const diff = item.diff ?? [];
+  const detail = open && !!(item.input || item.output) && (!diff.length || item.status === "error");
+  const fold = detail && item.output ? foldFor(item, item.output, "plain", true) : null;
+  const made = () => (
+    <>
+      <ToolDetail item={fold && !outWhole ? { ...item, output: fold.shown } : item} path={args} />
+      {fold ? <FoldMore id={`${item.key}/out`} fold={fold} whole={outWhole} onToggle={onOut} /> : null}
+    </>
+  );
   return (
-    <div class={`pane-item pane-tool ${tone} ${gap}`}>
+    <div data-key={item.key} class={`pane-item pane-tool ${tone} ${gap}`}>
       <button type="button" class="pane-tool-line" aria-expanded={open} title="Click for what it ran and what came back" onClick={onToggle}>
         <span class="pane-gutter" aria-hidden="true">
           <span class="pane-dot" />
@@ -163,7 +341,7 @@ function ToolLine({ item, open, onToggle, asking, going, gap, split, onSplit }: 
           <Diff lines={diff} path={args} max={open ? 0 : 6} split={split} onSplit={open ? onSplit : undefined} />
         </div>
       ) : null}
-      {open && (item.input || item.output) && (!diff.length || item.status === "error") ? <ToolDetail item={item} path={args} /> : null}
+      {detail ? (eager ? made() : <Later>{made}</Later>) : null}
     </div>
   );
 }
@@ -313,12 +491,13 @@ function NewChatOptions({ fresh }: { fresh: NonNullable<PaneChat["fresh"]> }) {
 
 // What a command you ran printed (pane.py commands.py), under it as Claude's terminal shows it:
 // ⎿ and its output in the code font, with its colours (ansi.mjs: Plasma's CommandOutput.qml the same)
-function CommandOutput({ output, error }: { output: string; error: boolean }) {
+function CommandOutput({ of, output, error, more }: { of: string; output: string; error: boolean; more?: ComponentChildren }) {
   const light = document.body.classList.contains("vscode-light") || document.body.classList.contains("vscode-high-contrast-light");
   const parts = useMemo(() => ansiRuns(output, light ? LIGHT : DARK), [output, light]);
   return (
-    <div class={`pane-command-out${error ? " bad" : ""}`}>
+    <div data-of={of} class={`pane-command-out${error ? " bad" : ""}`}>
       <span class="pane-gutter" aria-hidden="true">⎿</span>
+      <div class="pane-command-body">
       <pre>{parts.map((r, i) => {
         const fg = r.inverse ? (r.bg || "var(--cs-bg, var(--vscode-editor-background))") : r.fg;
         const bg = r.inverse ? (r.fg || "var(--cs-fg)") : r.bg;
@@ -327,6 +506,8 @@ function CommandOutput({ output, error }: { output: string; error: boolean }) {
                         opacity: r.dim ? 0.6 : undefined };
         return fg || bg || r.bold || r.italic || r.underline || r.dim ? <span key={i} style={style}>{r.text}</span> : r.text;
       })}</pre>
+      {more}
+      </div>
     </div>
   );
 }
@@ -346,6 +527,16 @@ function ChatApp() {
   const setStrip = (open: StripOpen) => setStripOf({ chatId: chat?.chatId ?? "", ...open });
   const conversation = tab === "chat" || tab === "steps";
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  // Folds (a long text, a step's details): open[key] says, by key ("<key>/out": a command's or a
+  // step's output). Unsaid, a long text folds if it was there when the tab first read the chat (but
+  // Claude's last reply then); one that comes in while it's open doesn't (you watch it come). Only
+  // a click, a search's step into it and Ctrl+O change one: Ctrl+O unfolds everything, again: back
+  // to how each one was
+  const [allOpen, setAllOpen] = useState(false);
+  const beforeAll = useRef<Record<string, boolean>>({});
+  const firstRead = useRef<{ at: number; last: string } | null>(null);
+  const whole = (key: string, at: number | null | undefined) =>
+    open[key] ?? (allOpen || !firstRead.current || key === firstRead.current.last || (at ?? 0) > firstRead.current.at);
   const [text, setText] = useState("");
   const [askHow, setAskHow] = useState(false);
   const [info, setInfo] = useState<{ ok: boolean; message: string } | null>(null);
@@ -680,6 +871,7 @@ function ChatApp() {
           setLoadMissing(!!a.missing);
         }
         else if (!a.unchanged) {
+          if (!firstRead.current && a.items?.length) firstRead.current = { at: Date.now(), last: lastReply(a.items)?.key ?? "" };
           const el = list.current;
           if (el) follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; // (on another tab: as when you left)
           setLoadError("");
@@ -1103,6 +1295,102 @@ function ChatApp() {
     setSeen(null);
     if (el) el.scrollTop = el.scrollHeight;
   };
+  // Show more / Show less (now: whether it shows all of it now). Show less keeps its button where it
+  // was, under the pointer: the text above it folds away, not what's below
+  const keepFold = useRef<{ key: string; top: number } | null>(null);
+  const toggleFold = (key: string, now: boolean) => (e: MouseEvent) => {
+    if (now) keepFold.current = { key, top: (e.currentTarget as HTMLElement).getBoundingClientRect().top };
+    setOpen((was) => ({ ...was, [key]: !now }));
+  };
+  useLayoutEffect(() => {
+    const k = keepFold.current, el = list.current;
+    keepFold.current = null;
+    const b = k && el ? el.querySelector<HTMLElement>(`[data-fold="${CSS.escape(k.key)}"]`) : null;
+    if (k && el && b) el.scrollTop += b.getBoundingClientRect().top - k.top;
+  }, [open]);
+  const foldAll = () => {   // (Ctrl+O)
+    if (allOpen) {
+      setAllOpen(false);
+      setOpen(beforeAll.current);
+    } else {
+      beforeAll.current = open;
+      setOpen({});
+      setAllOpen(true);
+    }
+  };
+
+  // Search (Ctrl+F): what the tab shows, found a slice at a time (find.mjs findIn: at most ~4 ms
+  // at once), again as the chat is read again (Show earlier: more to search), its count in the bar;
+  // the list moves only when you go to a match, and a match in what's folded unfolds it first
+  const [find, setFind] = useState({ open: false, query: "" });
+  const [found, setFound] = useState<{ hits: FindHit[]; done: boolean }>({ hits: [], done: true });
+  const [findAt, setFindAt] = useState(-1);
+  const [findGo, setFindGo] = useState(0);         // (a step: the list goes to it once it's drawn)
+  const [markAgain, setMarkAgain] = useState(0);   // (scrolled: the rows near the view now)
+  const findHit = useRef<FindHit | null>(null);    // (the one gone to: found again as the chat is read again)
+  const findInput = useRef<HTMLInputElement>(null);
+  const markTimer = useRef(0);
+  const onSteps = tab === "steps";
+  useEffect(() => {
+    findHit.current = null;
+    setFindAt(-1);
+  }, [find.query]);
+  useEffect(() => {
+    if (!find.open || !find.query) {
+      setFound({ hits: [], done: true });
+      return undefined;
+    }
+    let next = 0, hits: FindHit[] = [], timer = 0, told = performance.now();
+    const slice = () => {
+      const r = findIn(shownItems, find.query, onSteps, next, 4, hits);
+      hits = r.hits;
+      next = r.next;
+      if (next >= 0) {
+        if (performance.now() - told > 150) {   // (a long search: what it found so far)
+          told = performance.now();
+          setFound({ hits: hits.slice(), done: false });
+        }
+        timer = window.setTimeout(slice, 0);
+        return;
+      }
+      const was = findHit.current;
+      const at = was ? hits.findIndex((h) => h.key === was.key && h.n === was.n) : -1;
+      if (at < 0) findHit.current = null;
+      setFound({ hits, done: true });
+      setFindAt(at);
+    };
+    timer = window.setTimeout(slice, 0);
+    return () => window.clearTimeout(timer);
+  }, [find.open, find.query, shownItems, onSteps]);
+  const stepFind = (back: boolean) => {
+    const el = list.current;
+    if (!el || !found.hits.length) return;
+    const i = findStep(found.hits, findAt, back, viewOf(el, shownItems));
+    const h = found.hits[i];
+    findHit.current = h;
+    setFindAt(i);
+    if (h.hidden) setOpen((was) => ({ ...was, [h.key]: true, [`${h.key}/out`]: true }));
+    setFindGo((n) => n + 1);
+  };
+  const openFind = () => {
+    if (!conversation) return;
+    setFind((f) => (f.open ? f : { ...f, open: true }));
+    requestAnimationFrame(() => {
+      findInput.current?.focus();
+      findInput.current?.select();
+    });
+  };
+  const closeFind = () => {
+    setFind((f) => ({ ...f, open: false }));
+    findHit.current = null;
+    setFindAt(-1);
+    unmark();
+    reply.current?.focus();
+  };
+  const findKeyNow = useRef((_back: boolean) => {});
+  findKeyNow.current = (back) => (find.open && conversation ? stepFind(back) : openFind());
+  useEffect(() => unmark, []);
+
   const steps = useMemo(() => shownItems.map((it, i) => {
     const item = shownStep(it, i);
     // (the first item of a new day the tab shows: its line before it)
@@ -1112,7 +1400,22 @@ function ChatApp() {
         {item}
       </Fragment>
     ) : item;
-  }), [shownItems, open, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today]);
+  }), [shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today]);
+  // (the matches marked in the rows near the view, again as they're drawn again or you scroll)
+  useEffect(() => {
+    const el = list.current;
+    if (!find.open || !find.query || !found.hits.length || !el || !conversation) unmark();
+    else markFound(el, found.hits, findAt >= 0 ? found.hits[findAt] : null, find.query);
+  }, [find.open, find.query, found, findAt, steps, markAgain, conversation]);
+  useLayoutEffect(() => {   // (a step: to its match, if it isn't in view, a third down the list)
+    const el = list.current, h = findHit.current;
+    if (!findGo || !el || !h) return;
+    const r = markFound(el, found.hits, h, find.query);
+    const box = r?.getBoundingClientRect() ?? rowsOf(el, h.key)[0]?.getBoundingClientRect();
+    if (!box) return;
+    const view = el.getBoundingClientRect();
+    if (box.top < view.top + 8 || box.bottom > view.bottom - 8) el.scrollTop += box.top - view.top - el.clientHeight / 3;
+  }, [findGo]);
   // Talpy Chat's keys (keys.mjs): VS Code's commands send them here (talpyDen.chat.*, bound only
   // while this tab has the focus); each does what its button does, where that button shows
   const jumpPrompt = (down: boolean) => {   // (Ctrl+↑ / Ctrl+↓: your previous / next message, at the list's top)
@@ -1190,6 +1493,12 @@ function ChatApp() {
       case "help":
         setHelp(true);
         return;
+      case "find":
+        openFind();
+        return;
+      case "fold":
+        foldAll();
+        return;
       default: {
         const n = /^(chip|edit)([1-9])$/.exec(k);
         if (n && chips[Number(n[2]) - 1]) takeChip(chips[Number(n[2]) - 1], n[1] === "edit");
@@ -1204,9 +1513,10 @@ function ChatApp() {
   const escapeNow = useRef((): boolean => false);
   escapeNow.current = () => {
     const inBox = !!reply.current && document.activeElement === reply.current;
-    const what = escTarget({ menu: !!chipMenu, big: !!big, list: inBox && offered.items.length > 0, help, ghost: inBox && !!ghost,
-                             stop: inBox && text === "" && stop.can && !stopping });
+    const what = escTarget({ menu: !!chipMenu, big: !!big, list: inBox && offered.items.length > 0, find: find.open && conversation, help,
+                             ghost: inBox && !!ghost, stop: inBox && text === "" && stop.can && !stopping });
     if (what === "menu") setChipMenu(null);
+    else if (what === "find") closeFind();
     else if (what === "big") setBig(null);
     else if (what === "list") setDismissed(offered.token);
     else if (what === "help") setHelp(false);
@@ -1226,6 +1536,13 @@ function ChatApp() {
           e.preventDefault();
           e.stopPropagation();
         }
+        return;
+      }
+      // F3 / Shift+F3: the next / previous match (the find bar closed: it opens)
+      if (e.key === "F3" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        findKeyNow.current(e.shiftKey);
         return;
       }
       // PageUp / PageDown: the conversation a page, from the reply box too (not from another field)
@@ -1260,12 +1577,20 @@ function ChatApp() {
     const id = it.until ? Number(String(it.key).slice("pending-".length)) : 0;
     // (a command you ran: in the code font, $ before a shell command as Claude's ! mode, what it printed under it)
     const shell = !!it.command?.shell;
+    // (a long one folded: its first lines, then Show more)
+    const said = it.kind === "you" ? (shell ? (it.text ?? "").replace(/^!\s*/, "") : numberedPictures(it.text ?? "")) : "";
+    const fold = it.kind === "you" ? foldFor(it, said, "plain") : it.kind === "claude" ? foldFor(it, it.text ?? "", "markdown") : null;
+    const all = !fold || whole(it.key, it.at);
+    const out = it.kind === "you" ? it.command?.output ?? "" : "";
+    const outFold = out ? foldFor(it, out, "ansi", true) : null;
+    const outAll = !outFold || whole(`${it.key}/out`, it.at);
     return it.kind === "you" ? (
       <Fragment key={it.key}>
       <div data-key={it.key} class={`pane-item pane-you ${gap}${it.sending ? " sending" : ""}${it.until || it.queued ? " queued" : ""}${it.command ? " command" : ""}`}>
         <span class="pane-gutter" aria-hidden="true">{shell ? "$" : "›"}</span>
         <div class="pane-you-main">
-          <div class="pane-you-text">{shell ? (it.text ?? "").replace(/^!\s*/, "") : numberedPictures(it.text ?? "")}</div>
+          <div class="pane-you-text">{all ? said : fold!.shown}</div>
+          {fold ? <FoldMore id={it.key} fold={fold} whole={all} onToggle={toggleFold(it.key, all)} /> : null}
           {it.thumbs?.length ? (
             <div class="pane-you-pics">
               {it.thumbs.map((t) => (
@@ -1294,7 +1619,8 @@ function ChatApp() {
         </div>
         {it.sending ? <span class="pane-you-state">Sending…</span> : null}
       </div>
-      {it.command?.output ? <CommandOutput output={it.command.output} error={!!it.command.error} /> : null}
+      {out ? <CommandOutput of={it.key} output={outAll ? out : outFold!.shown} error={!!it.command?.error}
+        more={outFold ? <FoldMore id={`${it.key}/out`} fold={outFold} whole={outAll} onToggle={toggleFold(`${it.key}/out`, outAll)} /> : null} /> : null}
       </Fragment>
     ) : it.kind === "claude" ? (
       <div key={it.key} data-key={it.key} class={`pane-item pane-claude ${gap}`}>
@@ -1302,20 +1628,24 @@ function ChatApp() {
           <span class="pane-dot" />
         </span>
         <div class="pane-body">
-          <Markdown text={it.text ?? ""} onCopy={copyCode} />
+          <Markdown text={all ? it.text ?? "" : fold!.shown} onCopy={copyCode} />
+          {fold ? <FoldMore id={it.key} fold={fold} whole={all} onToggle={toggleFold(it.key, all)} /> : null}
         </div>
       </div>
     ) : it.kind === "tool" && askedShows(it, answeringFor.has(it.key)) ? (
-      <AskedCard key={it.key} item={it} gap={gap} open={!!open[it.key]} onToggle={() => setOpen((was) => ({ ...was, [it.key]: !was[it.key] }))} />
+      <AskedCard key={it.key} item={it} gap={gap} open={open[it.key] ?? allOpen} onToggle={() => setOpen((was) => ({ ...was, [it.key]: !(was[it.key] ?? allOpen) }))} />
     ) : it.kind === "tool" ? (tab !== "steps" && it.asked?.state !== "denied" ? null :
       <ToolLine
         key={it.key}
         item={it}
         gap={gap}
-        open={!!open[it.key]}
+        open={open[it.key] ?? allOpen}
+        eager={open[it.key] === true}
+        outWhole={open[`${it.key}/out`] ?? allOpen}
+        onOut={toggleFold(`${it.key}/out`, open[`${it.key}/out`] ?? allOpen)}
         asking={asking && i === shownItems.length - 1 && it.status === "open"}
         going={going && it.status === "open"}
-        onToggle={() => setOpen((was) => ({ ...was, [it.key]: !was[it.key] }))}
+        onToggle={() => setOpen((was) => ({ ...was, [it.key]: !(was[it.key] ?? allOpen) }))}
         split={split}
         onSplit={sideBySide}
       />
@@ -1439,6 +1769,10 @@ function ChatApp() {
                 seenNow.current = follow.current ? null : new Set(shownNow.current.map((it) => String(it.key)));
                 setSeen(seenNow.current);
               }
+              if (find.open && find.query) {
+                window.clearTimeout(markTimer.current);
+                markTimer.current = window.setTimeout(() => setMarkAgain((n) => n + 1), 120);
+              }
             }}
             onWheel={(e) => {
               if (!e.ctrlKey) return;
@@ -1446,6 +1780,12 @@ function ChatApp() {
               zoom(e.deltaY < 0 ? 1 : -1);
             }}
           >
+            {find.open ? (
+              <FindBar query={find.query} count={find.query ? findCount(found.hits.length, findAt, found.done) : ""} input={findInput}
+                onQuery={(q) => setFind({ open: true, query: q })} onStep={stepFind} onClose={closeFind} />
+            ) : null}
+            {/* (room for the bar above the first row, so Show earlier isn't under it: it's above what you read, which stays put) */}
+            {find.open ? <div class="pane-find-room" aria-hidden="true" /> : null}
             {more ? (
               <button type="button" class="btn secondary small pane-more" onClick={() => post({ type: "more" })}>
                 Show earlier

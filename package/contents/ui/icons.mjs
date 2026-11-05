@@ -82,6 +82,8 @@ const TABLE = {
     focus:           ['view-filter',                   'filter',     'view-filter-symbolic'],             // Focus view
     showAll:         ['view-list-details',             'filter',     'view-list-symbolic'],               // out of Focus view
     search:          ['edit-find',                     'search',     'edit-find-symbolic'],
+    findPrevious:    ['go-up',                         'chevron',    'go-up-symbolic'],                   // Talpy Chat's find bar: the match before (VS Code turns its chevron)
+    findNext:        ['go-down',                       'chevron',    'go-down-symbolic'],                 // and the next one
     settings:        ['configure',                     'gear',       'emblem-system-symbolic'],
     password:        ['dialog-password',               null,         'dialog-password-symbolic'],
     web:             ['globe',                         'external',   'web-browser-symbolic'],
