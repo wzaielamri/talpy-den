@@ -504,6 +504,7 @@ Window {
     onChatIdChanged: if (ready) (chat.from && draftKey === (chat.host || "") + "\n" + chat.from ? follow() : reset())
     Component.onCompleted: {
         ready = true
+        newDay()   // (when midnight is: two Dates)
         reset()
         run("font", "--terminal-font")   // (changed since it was last found: from now on)
     }
@@ -738,7 +739,7 @@ Window {
         const first = list.find(it => it.at)
         let day = first ? dayStart(first.at) : 0
         let dayEnd = first ? dayStart(first.at, 1) : 0
-        const shown = { chat: {}, steps: {} }, firsts = { chat: 0, steps: 0 }
+        const days = { chat: {}, steps: {} }, firsts = { chat: 0, steps: 0 }
         if (handoff) {
             const shown = {}
             for (let i = 0; i < items.count; i++)
@@ -760,10 +761,10 @@ Window {
                 dayEnd = dayStart(it.at, 1)
             }
             if (it.kind !== "tool" || askedShows(it.asked, false) || (it.asked && it.asked.state === "denied")) {
-                shown.chat[day] = true
+                days.chat[day] = true
                 firsts.chat = firsts.chat || day
             }
-            shown.steps[day] = true
+            days.steps[day] = true
             firsts.steps = firsts.steps || day
             const flat = { kind: it.kind, key: String(it.key), text: it.text || "", line: it.line || "",
                            name: it.name || "", status: it.status || "", input: it.input || "", output: it.output || "",
@@ -788,7 +789,7 @@ Window {
         }
         while (items.count > list.length)
             items.remove(items.count - 1)
-        daysShown = shown
+        daysShown = days
         firstDays = firsts
     }
 
@@ -850,8 +851,8 @@ Window {
     }
     // (those after the last one there then, that the tab shows: Show earlier's come in above)
     function countUnseen() {
-        if (seenKeys === null)
-            return
+        if (seenKeys === null || settle.running)
+            return   // (following the end: it's coming into view)
         let n = 0
         for (let i = items.count - 1; i >= 0; i--) {
             const it = items.get(i)
