@@ -13,6 +13,9 @@ its permission prompt and its review.
         wait up to S seconds (at most WAIT_MAX_S) for it to change, and answer
         the moment it does (the pane's watcher: what Claude writes shows at
         once, not at the next look). Not on an SSH host (it's left out there).
+        Also how full its context is, "context" (talpy_den.context_left), and
+        Claude's turn so far while it's going on, "turn": {"startedAt",
+        "steps"} (talpy_den.TurnSoFar).
         --suggest (Suggest replies): how its last turn ended, "ended" and
         "over", and the question it ends with as chips, "asks" (replies.asks_of)
   --replies CHAT [--profile P]
@@ -530,7 +533,7 @@ def commands_of(items, due, end):
     return commands.Commands(items, due, end)
 
 
-def conversation_items(lines, pictures=None, ends=None):
+def conversation_items(lines, pictures=None, ends=None, so_far=None):
     """The pane's items from transcript lines (oldest first): {"kind": "you",
     "text"} for a prompt of yours (one sent while Claude works shows when you
     send it, not once Claude takes it in), {"kind": "claude", "text"} for Claude's
@@ -546,9 +549,11 @@ def conversation_items(lines, pictures=None, ends=None):
     command you ran (/compact, !ls) is yours with "command" (commands.py:
     what it printed on it).
     Entries of subagents (sidechains) aren't in it. ends: a dict given gets
-    how the last turn ended (replies.TurnEnd.result)."""
+    how the last turn ended (replies.TurnEnd.result); so_far: one given gets
+    Claude's turn so far ("turn": cs.TurnSoFar, also how full its context is)."""
     items, tools = [], {}
-    end = turn_end(ends is not None)
+    ending = turn_end(ends is not None)
+    end = cs.TurnSoFar(ending)
     # Messages sent while Claude works: the transcript has each one when it's
     # sent (queue-operation enqueue) and again once Claude takes it in, after
     # its next tool result (an attachment, queued_command), which can be long
@@ -616,6 +621,7 @@ def conversation_items(lines, pictures=None, ends=None):
             sub, content = e.get("subtype"), e.get("content")
             if sub == "compact_boundary":
                 items.append({"kind": "note", "key": uid, "text": "The conversation was compacted", "at": at})
+                end.compacted()
             elif sub == "local_command" and isinstance(content, str):
                 ran = ran or commands_of(items, due, end)
                 ran.entry(content, uid, at)
@@ -650,7 +656,7 @@ def conversation_items(lines, pictures=None, ends=None):
                         items.append(said)
             prompt = cs.human_prompt(e)
             if prompt is not None:
-                end.prompt()
+                end.prompt(at)
                 if due:
                     shown = due.pop(0)
                     if same_text(shown["text"], prompt):
@@ -712,8 +718,10 @@ def conversation_items(lines, pictures=None, ends=None):
             if data is not None:
                 item["diff"] = capped(edit_lines("Edit", inp, None, data.decode("utf-8", "replace")))
     if ends is not None:
-        ends["ended"], ends["over"] = end.result(bool(waiting or due))
-        ends["reply"] = end.reply
+        ends["ended"], ends["over"] = ending.result(bool(waiting or due))
+        ends["reply"] = ending.reply
+    if so_far is not None:
+        so_far["turn"] = end
     return items
 
 
@@ -735,25 +743,30 @@ def within_budget(items):
 
 def tail_lines(path, size, nbytes):
     """The whole lines in the last nbytes of a file (its first, cut, one
-    dropped), and whether they start at the file's start."""
+    dropped), whether they start at the file's start, and where they do."""
+    start = max(0, size - nbytes)
     with open(path, "rb") as f:
-        f.seek(max(0, size - nbytes))
+        f.seek(start)
         lines = f.read(min(size, nbytes)).split(b"\n")
     whole = size <= nbytes
     if not whole:
+        start += len(lines[0]) + 1
         lines = lines[1:]
-    return lines, whole
+    return lines, whole, start
 
 
-def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None):
+def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None):
     """(items, more) of a chat: its newest limit items (conversation_items,
-    pasted pictures saved in pictures; ends: how its last turn ended), and
-    whether there are older ones."""
+    pasted pictures saved in pictures; ends: how its last turn ended; so_far:
+    its turn so far, and where the lines read start, "start"), and whether
+    there are older ones."""
     size = path.stat().st_size
     nbytes = PANE_TAIL_BYTES
     while True:
-        lines, whole = tail_lines(path, size, nbytes)
-        items = conversation_items(lines, pictures, ends)
+        lines, whole, start = tail_lines(path, size, nbytes)
+        items = conversation_items(lines, pictures, ends, so_far)
+        if so_far is not None:
+            so_far["start"] = start
         if whole or len(items) > limit or nbytes >= PANE_TAIL_MAX:
             return within_budget(file_pictures(items[-limit:])), len(items) > limit or not whole
         nbytes *= 4
@@ -808,9 +821,12 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
 
 def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None,
                       suggest=False):
-    """--conversation. suggest (Suggest replies on): how its last turn ended,
-    "ended" and "over" (replies.TurnEnd.result), and the question it ends
-    with as chips, "asks" (replies.asks_of)."""
+    """--conversation. "context": how full its context is (cs.context_left),
+    "turn": Claude's turn so far, while it's going on (cs.TurnSoFar.now: the
+    start of a long one kept in the cache folder's turns/). suggest (Suggest
+    replies on): how its last turn ended, "ended" and "over"
+    (replies.TurnEnd.result), and the question it ends with as chips, "asks"
+    (replies.asks_of)."""
     if not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
@@ -826,13 +842,16 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
             stamp = stamp_of(path)  # (before it's read: what's written meanwhile is a change the next time)
         except (OSError, AttributeError):
             return {"ok": False, "missing": True, "message": NO_CHAT}
-    ends = {} if suggest else None
-    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends)
+    ends, so_far = {} if suggest else None, {}
+    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends, so_far)
     name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
     peek = cs.chat_peek(path) or {}
+    turn = so_far["turn"]
     result = {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or cs.chat_folder(path) or "",
               "items": items, "more": more, "stamp": f"{stamp}/{limit}", "mode": peek.get("mode"),
-              "permission": cs.pending_permission(path, cwd)}
+              "permission": cs.pending_permission(path, cwd),
+              "context": cs.context_left(turn.usage, turn.model, lambda: cs.status_window(home, profile, chat_id, turn.model)),
+              "turn": turn.now(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")}
     if suggest:
         import replies
         ended = ends.get("ended")

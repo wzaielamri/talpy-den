@@ -358,7 +358,7 @@ class Commands:
         item["command"] = {"shell": True} if shell else {}
         self.last, self.skip = item, False
         if not local and not shell:
-            self.end.prompt()   # (a prompt: Claude answers it)
+            self.end.prompt(at)   # (a prompt: Claude answers it)
 
     def printed(self, outputs):
         item, skip = self.last, self.skip

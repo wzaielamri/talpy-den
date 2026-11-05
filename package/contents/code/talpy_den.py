@@ -1618,6 +1618,252 @@ def blocks_of(e):
     return msg, [c for c in content if isinstance(c, dict)] if isinstance(content, list) else []
 
 
+# ---------------------------------------------------------------- Talpy Chat: context left, the turn so far
+
+# The context window of each model Claude Code knows (its own table, 2.1.318), by the name a
+# transcript gives it ("claude-opus-5-5"; a date, a provider's prefix or "[1m]" around it)
+CONTEXT_1M = 1000000
+CONTEXT_WINDOWS = dict(
+    {m: CONTEXT_1M for m in ("claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5",
+                             "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1")},
+    # (200k, or 1M where it's chosen: "sonnet[1m]")
+    **{m: 200000 for m in ("claude-opus-4", "claude-opus-4-1", "claude-opus-4-5", "claude-opus-4-6", "claude-sonnet-4",
+                           "claude-sonnet-4-5", "claude-sonnet-4-6", "claude-haiku-4-5")})
+MODEL_OF = re.compile(r"claude-(?:opus|sonnet|haiku|fable)-\d+(?:-\d{1,2}(?![0-9]))?")
+# Claude Code compacts a chat on its own (auto-compact) at its window less the room it keeps for
+# Claude's reply (the model's most output, at most 20k: every model above has more) and 13k more,
+# and says it's close from 20k before that (2.1.318)
+COMPACT_ROOM = 20000 + 13000
+COMPACT_CLOSE = 20000
+USAGE_READ = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
+def context_window(model, used=0, told=None):
+    """The context window of a chat on this model (tokens), None when it isn't
+    known. told(): the window its status line gives (status_window), else
+    Claude Code's table; 1M where that's chosen ([1m]) or the chat is past its
+    model's own window already."""
+    said = told() if told is not None else None
+    if isinstance(said, int) and said > 0:
+        return said
+    m = MODEL_OF.search(model) if isinstance(model, str) else None
+    window = CONTEXT_WINDOWS.get(m.group(0)) if m else None
+    if window is not None and window < CONTEXT_1M and ("[1m]" in model.lower() or used > window):
+        return CONTEXT_1M
+    return window
+
+
+def context_left(usage, model, told=None):
+    """How full a chat's context is, from the token counts of Claude's last
+    message (usage: all it read, cached or not, which its next one starts
+    from): {"used", "window", "compactAt": where Claude compacts the chat,
+    "left": % of it till then, "near": Claude Code says it's close}, or None
+    when it can't be known (no counts, a model not known: context_window)."""
+    if not isinstance(usage, dict):
+        return None
+    used = sum(n for n in (usage.get(k) for k in USAGE_READ) if isinstance(n, int) and not isinstance(n, bool) and n > 0)
+    window = context_window(model, used, told) if used else None
+    if window is None or window <= COMPACT_ROOM:
+        return None
+    at = window - COMPACT_ROOM
+    return {"used": used, "window": window, "compactAt": at, "left": max(0, int((at - used) * 100 / at + 0.5)),
+            "near": used >= at - COMPACT_CLOSE}
+
+
+def status_window(home, profile, chat_id, model):
+    """The context window a chat's newest status-line snapshot gives
+    (context_window_size, or 1M for a model named with [1m]), when it's of
+    the model of Claude's last message; else None."""
+    for _, path in snapshot_paths(cache_dir(home) / "statusline", profile, [chat_id]):
+        snap = read_json(path)
+        part = lambda key: snap.get(key) if isinstance(snap, dict) and isinstance(snap.get(key), dict) else {}
+        named, size = part("model").get("id"), part("context_window").get("context_window_size")
+        if not isinstance(named, str) or not isinstance(model, str) or named.split("[")[0] != model.split("[")[0]:
+            return None
+        if isinstance(size, int) and not isinstance(size, bool) and size > 0:
+            return size
+        return CONTEXT_1M if "[1m]" in named.lower() else None
+    return None
+
+
+class TurnSoFar:
+    """Claude's turn so far, followed entry by entry (pane.py's
+    conversation_items), beside how it ends (end: replies.TurnEnd, or one
+    that follows nothing): when your prompt that started it came (started,
+    ms: None when it isn't in what was read, 0 when it doesn't say), the tool
+    calls Claude made since (steps), whether it's over (the transcript says
+    so), and the token counts of Claude's last message of its own (usage, on
+    model) for how full its context is."""
+    __slots__ = ("end", "started", "steps", "over", "usage", "model")
+
+    def __init__(self, end):
+        self.end, self.started, self.steps, self.over, self.usage, self.model = end, None, 0, False, None, None
+
+    def prompt(self, at=None):
+        self.started, self.steps, self.over = at or 0, 0, False
+        self.end.prompt()
+
+    def tool_result(self, error):
+        self.over = False
+        self.end.tool_result(error)
+
+    def interrupted(self):
+        self.over = True
+        self.end.interrupted()
+
+    def compacted(self):
+        self.usage = None   # (what's left of it: known once Claude says something again)
+
+    def assistant(self, e, msg, blocks):
+        self.end.assistant(e, msg, blocks)
+        calls = sum(1 for c in blocks if c.get("type") == "tool_use")
+        self.steps += calls
+        if e.get("isApiErrorMessage") or msg.get("model") == "<synthetic>":
+            self.over = True
+            return
+        if isinstance(msg.get("usage"), dict):
+            self.usage, self.model = msg["usage"], msg.get("model")
+        self.over = not calls and msg.get("stop_reason") in ("end_turn", "stop_sequence")
+
+    def now(self, path, start, kept=None):
+        """{"startedAt", "steps"} of the turn going on, None when it's over or
+        its start can't be known. start: where the lines read begin in the
+        transcript at path (a line's start; 0: all of it was read); a prompt
+        before is found there (turn_before)."""
+        if self.over:
+            return None
+        started, steps = self.started, self.steps
+        if started is None and start:
+            before = turn_before(path, start, kept)
+            started, steps = (before[0], before[1] + steps) if before else (None, steps)
+        return {"startedAt": started, "steps": steps} if started else None
+
+
+TOOL_CALL_LINE = re.compile(rb'"type":\s*"tool_use"')
+TURN_CHUNK = 1 << 20
+TURN_BACK_MAX = 64 << 20   # (as far back as Talpy Chat reads a chat: pane.py PANE_TAIL_MAX)
+
+
+def turn_prompt_at(line):
+    """When the prompt of yours on this transcript line came (ms, 0 if it
+    doesn't say), if it's one that starts Claude's turn (or a command that's
+    a prompt: yours, a skill); else None."""
+    if not USER_LINE.search(line) or b'"tool_use_id"' in line:
+        return None
+    try:
+        e = json.loads(line)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(e, dict) or e.get("type") != "user" or e.get("isMeta") or e.get("isSidechain"):
+        return None
+    if human_prompt(e) is None and not message_text(blocks_of(e)[0]).lstrip().startswith("<command-message>"):
+        return None
+    return to_ms(e.get("timestamp")) or 0
+
+
+def tool_calls(line):
+    """How many tool calls of Claude's own (not a subagent's) a transcript line has."""
+    if not TOOL_CALL_LINE.search(line):
+        return 0
+    try:
+        e = json.loads(line)
+    except (ValueError, RecursionError):
+        return 0
+    if not isinstance(e, dict) or e.get("type") != "assistant" or e.get("isSidechain"):
+        return 0
+    return sum(1 for c in blocks_of(e)[1] if c.get("type") == "tool_use")
+
+
+def turn_forward(f, start, end, found):
+    """found (offset, at, steps) carried through the whole lines of f from
+    start to end: a prompt of yours starts again from it, tool calls add up."""
+    f.seek(start)
+    offset = start
+    for line in f.read(end - start).split(b"\n"):
+        at = turn_prompt_at(line) if line else None
+        found = (offset, at, 0) if at is not None else (found[0], found[1], found[2] + tool_calls(line))
+        offset += len(line) + 1
+    return found
+
+
+def turn_backward(f, end):
+    """(offset, at, steps) of the last prompt of yours before end in f, and
+    the tool calls after it; None when there's none TURN_BACK_MAX before."""
+    pos, rest, after = end, b"", 0
+    while pos > 0 and end - pos < TURN_BACK_MAX:
+        start = max(0, pos - TURN_CHUNK)
+        f.seek(start)
+        lines = (f.read(pos - start) + rest).split(b"\n")
+        offsets, o = [], start
+        for line in lines:
+            offsets.append(o)
+            o += len(line) + 1
+        rest = lines[0] if start > 0 else b""   # (cut: whole with the bytes before it)
+        for i in range(len(lines) - 1, 0 if start > 0 else -1, -1):
+            at = turn_prompt_at(lines[i]) if lines[i] else None
+            if at is not None:
+                return offsets[i], at, after
+            after += tool_calls(lines[i])
+        pos = start
+    return None
+
+
+def turn_before(path, end, kept=None):
+    """(started, steps) of the turn going on at byte end of a transcript (a
+    line's start): when the prompt of yours that started it came (ms) and
+    Claude's tool calls from there to end; None when there's no prompt of
+    yours in the TURN_BACK_MAX bytes before. kept: a file it's kept in
+    (yours alone), so the next read looks only at what was written since."""
+    try:
+        with open(path, "rb") as f:
+            ino = os.fstat(f.fileno()).st_ino
+            was = read_json(kept, 4096) if kept is not None else None
+            keys = ("offset", "at", "upto", "steps")
+            if not (isinstance(was, dict) and was.get("ino") == ino
+                    and all(isinstance(was.get(k), int) and not isinstance(was.get(k), bool) for k in keys)
+                    and was["offset"] < end and was["offset"] <= was["upto"]):
+                was = None
+            if was is not None:   # (still its prompt there: the transcript wasn't written again)
+                f.seek(was["offset"])
+                if turn_prompt_at(f.readline().rstrip(b"\n")) != was["at"]:
+                    was = None
+            if was is None:
+                found = turn_backward(f, end)
+            elif was["upto"] <= end:
+                found = turn_forward(f, was["upto"], end, (was["offset"], was["at"], was["steps"]))
+            else:   # (read from further back this time)
+                found = turn_forward(f, was["offset"], end, (was["offset"], was["at"], 0))
+    except OSError:
+        return None
+    if found is None:
+        return None
+    offset, at, steps = found
+    if kept is not None and (was is None or [was[k] for k in keys] != [offset, at, end, steps]):
+        try:
+            if was is None:
+                prune_kept(kept.parent, KEPT_TURN_DAYS)
+            private_dir(kept.parent)
+            write_json_atomic(kept, {"ino": ino, "offset": offset, "at": at, "upto": end, "steps": steps}, private=True)
+        except OSError:
+            pass
+    return at, steps
+
+
+KEPT_TURN_DAYS = 30
+
+
+def prune_kept(folder, days):
+    """Remove the files in folder not written for days (what's kept of chats long done)."""
+    cut = time.time() - days * 86400
+    try:
+        with os.scandir(str(folder)) as it:
+            for f in it:
+                if f.is_file(follow_symlinks=False) and f.stat(follow_symlinks=False).st_mtime < cut:
+                    os.unlink(f.path)
+    except OSError:
+        pass
+
+
 def tail_entries(path, size, nbytes, more=False):
     """Conversation entries (and last-prompt records) from the last nbytes
     of a transcript, newest first; more: system and permission-mode records

@@ -2378,6 +2378,139 @@ class TypeInTests(SendFixture):
         self.assertEqual(self.calls(), [])
 
 
+def using(ts, msg, model, read, written=0, cached=0, stop="end_turn", **kw):
+    """Claude's reply with its token counts (what it read: new, written to the cache, read from it)."""
+    return {"type": "assistant", "timestamp": iso(ts), **kw,
+            "message": {"id": msg, "role": "assistant", "model": model, "content": [{"type": "text", "text": "Done."}],
+                        "stop_reason": stop, "usage": {"input_tokens": read, "cache_creation_input_tokens": written,
+                                                       "cache_read_input_tokens": cached, "output_tokens": 700}}}
+
+
+def steps(n, ts, start=0, msg="s"):
+    """n tool calls of Claude's, each with its result, a second apart from ts."""
+    out = []
+    for i in range(start, start + n):
+        out += [tool_use(f"t{i}", "Bash", {"command": f"step {i} " + "x" * 200}, ts + i - start, f"{msg}{i}"),
+                tool_result(f"t{i}", ts + i - start, text="y" * 300)]
+    return out
+
+
+class ContextAndTurnTests(PaneFixture):
+    """Talpy Chat's header says how much of the chat's context is left till
+    Claude compacts it (A7), its working line how long Claude's turn has run
+    and its steps so far (A8): both from the transcript, in the
+    --conversation answer (talpy_den.py: context_left, TurnSoFar)."""
+
+    def answer(self, *entries, limit=None):
+        self.chat(*entries)
+        return self.cli("--conversation", SID, *(("--limit", str(limit)) if limit else ()))
+
+    def test_context_left_till_claude_compacts_the_chat(self):
+        t = self.now - 100
+        a = self.answer(prompt("hello", t, cwd=str(self.folder)), using(t + 1, "m1", "claude-opus-5-5", 2000, 8000, 290000))
+        # (what Claude's last message read, cached or not, against its model's window; Claude Code compacts
+        # the chat at the window less the room it keeps for Claude's reply (20k) and 13k more)
+        self.assertEqual(a["context"], {"used": 300000, "window": 1000000, "compactAt": 967000, "left": 69, "near": False})
+        a = self.answer(prompt("hello", t, cwd=str(self.folder)), using(t + 1, "m1", "claude-opus-5-5", 10, 0, 950000))
+        self.assertEqual((a["context"]["left"], a["context"]["near"]), (2, True))   # (Claude Code says so 20k before)
+
+    def test_the_window_by_model(self):
+        left, u = cs.context_left, (lambda n: {"input_tokens": n})
+        self.assertEqual(left(u(150000), "claude-sonnet-4-5-20250929"),
+                         {"used": 150000, "window": 200000, "compactAt": 167000, "left": 10, "near": True})
+        for model in ("claude-opus-4-20250514", "claude-opus-4-1-20250805", "claude-haiku-4-5-20251001",
+                      "us.anthropic.claude-sonnet-4-6", "claude-opus-4-6"):
+            self.assertEqual(left(u(1000), model)["window"], 200000, model)
+        for model in ("claude-opus-5-5", "claude-opus-4-7", "claude-sonnet-5", "claude-haiku-5-5", "claude-fable-5-1"):
+            self.assertEqual(left(u(1000), model)["window"], 1000000, model)
+        # 1M chosen ([1m], or the status line says so), or a chat already past 200k: 1M
+        self.assertEqual(left(u(1000), "claude-sonnet-4-6[1m]")["window"], 1000000)
+        self.assertEqual(left(u(250000), "claude-sonnet-4-6")["window"], 1000000)
+        self.assertEqual(left(u(1000), "claude-sonnet-4-6", lambda: 1000000)["window"], 1000000)
+        self.assertEqual(left(u(1000), "claude-opus-5-5", lambda: 200000)["window"], 200000)   # (the status line knows best)
+        self.assertEqual(left(u(1000), "claude-mystery-9", lambda: 400000)["window"], 400000)
+        # not known: nothing rather than a guess
+        for model in ("claude-mystery-9", "claude-3-5-sonnet-20241022", "gpt-4", None, "<synthetic>"):
+            self.assertIsNone(left(u(1000), model), model)
+        for usage in ({}, {"input_tokens": 0}, None, {"input_tokens": "many"}):
+            self.assertIsNone(left(usage, "claude-opus-5-5"), usage)
+        self.assertEqual(left(u(990000), "claude-opus-5-5")["left"], 0)   # (past it: auto-compact off)
+
+    def test_context_is_claudes_last_message_of_its_own(self):
+        t = self.now - 100
+        start = (prompt("hello", t, cwd=str(self.folder)), using(t + 1, "m1", "claude-opus-5-5", 1000, 0, 49000))
+        sub = using(t + 2, "m9", "claude-haiku-5-5", 5, 0, 99000, isSidechain=True)   # (a subagent's context is its own)
+        limit = {"type": "assistant", "timestamp": iso(t + 3), "isApiErrorMessage": True,
+                 "message": {"id": "e", "role": "assistant", "model": "<synthetic>", "usage": {"input_tokens": 0},
+                             "content": [{"type": "text", "text": "You've hit your session limit"}]}}
+        self.assertEqual(self.answer(*start, sub, limit)["context"]["used"], 50000)
+        # compacted: not known till Claude's next message
+        compacted = {"type": "system", "subtype": "compact_boundary", "timestamp": iso(t + 4)}
+        self.assertIsNone(self.answer(*start, compacted)["context"])
+        self.assertEqual(self.answer(*start, compacted, using(t + 5, "m2", "claude-opus-5-5", 9000))["context"]["used"], 9000)
+        # no token counts, a model not known
+        self.assertIsNone(self.answer(start[0], text_reply("Hi.", t + 1, "m1", "end_turn"))["context"])
+        self.assertIsNone(self.answer(start[0], using(t + 1, "m1", "claude-mystery-9", 1000))["context"])
+
+    def test_the_status_line_says_which_window(self):
+        t = self.now - 100
+        chat = (prompt("hello", t, cwd=str(self.folder)), using(t + 1, "m1", "claude-sonnet-4-6", 1000, 0, 99000))
+        self.assertEqual(self.answer(*chat)["context"]["window"], 200000)
+        snapshot = self.cache / "statusline/.claude-work" / f"{SID}.json"
+        write(snapshot, {"session_id": SID, "model": {"id": "claude-sonnet-4-6[1m]"}})
+        self.assertEqual(self.answer(*chat)["context"]["window"], 1000000)
+        write(snapshot, {"session_id": SID, "model": {"id": "claude-sonnet-4-6"}, "context_window": {"context_window_size": 500000}})
+        self.assertEqual(self.answer(*chat)["context"]["window"], 500000)
+        # (one of another model: not this one's)
+        write(snapshot, {"session_id": SID, "model": {"id": "claude-opus-5-5"}, "context_window": {"context_window_size": 1000000}})
+        self.assertEqual(self.answer(*chat)["context"]["window"], 200000)
+
+    def test_the_turn_so_far(self):
+        t = self.now - 100
+        go = prompt("run the tests", t, cwd=str(self.folder))
+        both = {"type": "assistant", "timestamp": iso(t + 3), "message": {"id": "m2", "role": "assistant", "content": [
+            {"type": "tool_use", "id": "t2", "name": "Read", "input": {}}, {"type": "tool_use", "id": "t3", "name": "Read", "input": {}}]}}
+        a = self.answer(prompt("first", t - 50, cwd=str(self.folder)), text_reply("Done.", t - 49, "m0", "end_turn"), go,
+                        tool_use("t1", "Bash", {"command": "ls"}, t + 1, "m1"), tool_result("t1", t + 2), both,
+                        tool_use("sub", "Bash", {"command": "ls"}, t + 4, "m9", isSidechain=True),   # (a subagent's)
+                        tool_result("t2", t + 5), tool_result("t3", t + 5), text_reply("Now the tests.", t + 6, "m3"))
+        self.assertEqual(a["turn"], {"startedAt": cs.to_ms(iso(t)), "steps": 3})
+        # over: nothing on the working line
+        self.assertIsNone(self.answer(go, tool_use("t1", "Bash", {}, t + 1, "m1"), tool_result("t1", t + 2),
+                                      text_reply("All pass.", t + 3, "m2", "end_turn"))["turn"])
+        self.assertIsNone(self.answer(go, text_reply("All pass.", t + 3, "m2", "end_turn"),
+                                      {"type": "system", "subtype": "compact_boundary", "timestamp": iso(t + 4)})["turn"])
+        # (a message of yours Claude takes in as it works is no new turn; a prompt command is)
+        taken = {"type": "attachment", "timestamp": iso(t + 3), "attachment": {
+            "type": "queued_command", "prompt": "also this", "commandMode": "prompt", "origin": {"kind": "human"}}}
+        self.assertEqual(self.answer(go, *steps(2, t + 1), taken, *steps(1, t + 4, start=2))["turn"],
+                         {"startedAt": cs.to_ms(iso(t)), "steps": 3})
+        skill = {"type": "user", "timestamp": iso(t + 5), "message": {"role": "user", "content":
+                 "<command-message>tidy</command-message>\n<command-name>/tidy</command-name>"}}
+        self.assertEqual(self.answer(go, *steps(2, t + 1), text_reply("Done.", t + 4, "m8", "end_turn"), skill,
+                                     *steps(1, t + 6, start=2))["turn"], {"startedAt": cs.to_ms(iso(t + 5)), "steps": 1})
+
+    def test_a_long_turn_counts_from_its_prompt_before_what_is_read(self):
+        # (Talpy Chat reads the chat's last items only: a turn longer than that has its prompt further
+        # back, found once and kept; the next read looks only at what was written since)
+        t = self.now - 1000
+        chat = [prompt("first", t - 9, cwd=str(self.folder)), text_reply("Done.", t - 8, "m", "end_turn"),
+                prompt("go on", t - 5)] + steps(40, t)
+        with mock.patch.object(pane, "PANE_TAIL_BYTES", 4000):
+            a = self.answer(*chat, limit=10)
+            self.assertTrue(a["more"])
+            self.assertEqual(a["turn"], {"startedAt": cs.to_ms(iso(t - 5)), "steps": 40})
+            self.assertEqual(cs.read_json(self.cache / "turns" / f"{SID}.json")["at"], cs.to_ms(iso(t - 5)))
+            with mock.patch.object(cs, "turn_backward", side_effect=AssertionError("read again")):
+                self.assertEqual(self.answer(*chat, *steps(3, t + 40, start=40), limit=10)["turn"]["steps"], 43)
+                # a prompt of yours since: its turn
+                self.assertEqual(self.answer(*chat, *steps(3, t + 40, start=40), prompt("next", t + 50),
+                                             *steps(30, t + 51, start=43), limit=10)["turn"],
+                                 {"startedAt": cs.to_ms(iso(t + 50)), "steps": 30})
+            # (written again from the start: what was kept isn't of it; no prompt of yours in it: none)
+            self.assertIsNone(self.answer(*steps(40, t), limit=10)["turn"])
+
+
 class RelayTests(PaneFixture):
     def test_on_and_off(self):
         shared = self.home / ".claude-shared/settings.json"
