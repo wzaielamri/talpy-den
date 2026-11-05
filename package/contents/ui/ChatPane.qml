@@ -911,9 +911,11 @@ Window {
             return { run: route === "terminal" ? "terminal" : "here", name: "!", why: "" }
         }
         const m = /^\/([^\s\/]+)(?:\s+([\s\S]*))?$/.exec(t)
-        if (!m || !offers)
+        if (!m)
             return null
-        const c = offers.commands.find(x => x.name === "/" + m[1]) || (offers.typed || {})[m[1]] || null
+        // (the list's kinds unread, they couldn't be: these three never go as a message all the same)
+        const c = offers ? offers.commands.find(x => x.name === "/" + m[1]) || (offers.typed || {})[m[1]] || null
+                         : ["model", "effort", "config"].indexOf(m[1]) >= 0 ? { run: "terminal", why: i18n("needs Claude's own screen") } : null
         if (!c || !c.run)
             return null
         let run = m[2] && m[2].trim() && c.runArgs ? c.runArgs : c.run

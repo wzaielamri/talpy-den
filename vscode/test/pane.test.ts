@@ -161,7 +161,8 @@ test("a command runs as its kind says on the chat's route (Plasma's commandRun: 
   const closed = { where: "closed" as const, route: "background" as const };
   assert.equal(commandRun("tidy it", OFFERS, tmux), null);
   assert.equal(commandRun("/nope", OFFERS, tmux), null);   // (not known: sent as typed)
-  assert.equal(commandRun("/config", null, tmux), null);   // (the kinds not read yet: the tab waits for them before sending)
+  assert.equal(commandRun("/compact", null, tmux), null);   // (the kinds not read yet: the tab waits for them before sending;
+  assert.deepEqual(commandRun("/model fable", null, tmux), { run: "terminal", name: "/model", why: "needs Claude's own screen" });   // couldn't be: never /model)
   assert.deepEqual(commandRun("/compact keep the tests", OFFERS, closed), { run: "here", name: "/compact", why: "" });
   assert.deepEqual(commandRun(" /config ", OFFERS, tmux), { run: "terminal", name: "/config", why: "opens Claude's settings panel" });
   assert.deepEqual(commandRun("/settings", OFFERS, tmux), { run: "terminal", name: "/config", why: "opens Claude's settings panel" });

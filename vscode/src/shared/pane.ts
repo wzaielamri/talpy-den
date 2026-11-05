@@ -301,12 +301,15 @@ export function commandRun(text: string, offers: Offers | null, chat: Pick<PaneC
     return { run: route === "terminal" ? "terminal" : "here", name: "!", why: "" };
   }
   const m = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(t);
-  if (!m || !offers) return null;
-  const c = offers.commands.find((x) => x.name === "/" + m[1]) ?? offers.typed?.[m[1]] ?? null;
+  if (!m) return null;
+  // (the list's kinds unread, they couldn't be: these three never go as a message all the same)
+  const c: { run?: CommandKind; runArgs?: CommandKind; why?: string; of?: string } | null = offers
+    ? offers.commands.find((x) => x.name === "/" + m[1]) ?? offers.typed?.[m[1]] ?? null
+    : ["model", "effort", "config"].includes(m[1]) ? { run: "terminal", why: "needs Claude's own screen" } : null;
   if (!c?.run) return null;
   let run: CommandKind = m[2]?.trim() && c.runArgs ? c.runArgs : c.run;
   if (run === "terminal" && route === "vscode") run = "here"; // (its Claude Code panel's input: you press Enter there)
-  const name = ("of" in c && c.of) || "/" + m[1];
+  const name = c.of || "/" + m[1];
   if (run === "terminal" && where === "new")
     return { run: "off", name, why: `${name} ${c.why ?? ""}: start the chat first, then it opens in its terminal.` };
   return { run, name, why: c.why ?? "" };
