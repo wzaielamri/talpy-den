@@ -2,7 +2,7 @@
 // chat, its conversation, and its review when the page asks for it.
 
 import "../webview/chat";
-import type { PaneChat, PaneHostMessage, PaneItem, ReviewAnswer } from "../src/shared/pane";
+import type { Asks, Conversation, PaneChat, PaneHostMessage, PaneItem, ReviewAnswer, UsualReplies } from "../src/shared/pane";
 
 const params = new URLSearchParams(location.search);
 const now = Date.now();
@@ -208,6 +208,7 @@ if (typed)
     const box = document.querySelector<HTMLTextAreaElement>(".pane-reply");
     if (!box) return;
     box.focus();
+    box.dispatchEvent(new FocusEvent("focus"));   // (a headless browser's window never has the focus)
     box.value = typed;
     box.setSelectionRange(typed.length, typed.length);
     box.dispatchEvent(new Event("input", { bubbles: true }));
@@ -222,11 +223,39 @@ if (fresh)
                         attached: null, mode: "", plan: null, agents: null, tasks: null, queued: null, canMove: false,
                         fresh: { account: "work · Team", folder: "~/repos/app", plan: "", model: "opus", effort: "xhigh", mode: "default" } });
 
+// ?chips=yesno|options|either|limit: its turn over, with suggested replies (Claude's question's,
+// then your usual ones); ?chipmenu=1: a chip's right-click menu; with ?type=co: what you type
+// completed in grey
+const chipsOf = params.get("chips");
+const asks: Record<string, Asks> = {
+  yesno: { kind: "yesno", choices: [{ label: "Yes", send: "Yes", recommended: false }, { label: "No", send: "No", recommended: false }] },
+  options: { kind: "options", choices: [
+    { label: "1 · Run the screening first", send: "1. Run the screening first", recommended: false },
+    { label: "2 · Start the rename on a branch", send: "2. Start the rename on a branch", recommended: true },
+    { label: "3 · Leave it as it is", send: "3. Leave it as it is", recommended: false }] },
+  either: { kind: "either", choices: [{ label: "Fix the parser first", send: "Fix the parser first", recommended: false },
+                                      { label: "Update the tests", send: "Update the tests", recommended: false }] },
+};
+const usual: UsualReplies = { chips: { asked: ["yes please", "go"], limit: ["continue"], stopped: ["go on"] },
+                              ranked: ["continue", "commit and push", "go on", "yes please", "go"] };
+const turnEnd: Partial<Conversation> = chipsOf === "limit" ? { ended: "limit", over: true, asks: null }
+  : chipsOf ? { ended: "asked", over: true, asks: asks[chipsOf] ?? null } : {};
+if (chipsOf)
+  Object.assign(chat, { state: "done", stateText: "done 1 min ago", busy: false, atWork: false, permission: null, queued: null, activity: "" });
+if (params.get("chipmenu") === "1")
+  setTimeout(() => {
+    const all = document.querySelectorAll<HTMLButtonElement>(".pane-chip");
+    const last = all[all.length - 1];
+    if (!last) return;
+    const r = last.getBoundingClientRect();
+    last.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.bottom + 2 }));
+  }, 400);
+
 window.addEventListener("harness-post", (e: Event) => {
   const m = (e as CustomEvent).detail as { type: string };
   if (m.type === "ready") {
     send({ type: "chat", chat });
-    send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1" } });
+    send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1", ...turnEnd } });
     if (fresh === "task") setTimeout(() => send({ type: "startWith", text: "Fix the flaky date test in tests/parser.test.ts" }), 100);
     const tab = params.get("tab");   // ?tab=steps
     if (tab) send({ type: "result", kind: "tab:" + tab, ok: true, message: "" });
@@ -239,6 +268,8 @@ window.addEventListener("harness-post", (e: Event) => {
     // (?stop=fail: it says why not, and Stop is back)
     setTimeout(() => send({ type: "result", kind: "stop", ok: params.get("stop") !== "fail",
                             message: params.get("stop") === "fail" ? "Claude's background service didn't answer" : "Stopped" }), 1500);
+  } else if (m.type === "replies") {
+    send({ type: "replies", replies: usual });
   } else if (m.type === "complete") {
     send({ type: "offers", offers: {
       commands: [{ name: "/compact", about: "Free up context by summarizing the conversation so far", kind: "Claude" },

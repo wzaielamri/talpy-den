@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture } from "../src/shared/pane";
+import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, completionOf, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1154,4 +1154,59 @@ test("a tab closed while it reads its chat, or looks up its row, does nothing mo
   } finally {
     process.off("unhandledRejection", onRejection);
   }
+});
+
+test("suggested replies: Claude's question's chips first, then your usual ones after a turn that ended so, at most 4", () => {
+  const yesno: Asks = { kind: "yesno", choices: [{ label: "Yes", send: "Yes", recommended: false }, { label: "No", send: "No", recommended: false }] };
+  const usual: UsualReplies = { chips: { asked: ["yes please", "Yes.", "go"], limit: ["continue"] }, ranked: ["continue", "commit and push", "yes please"] };
+  const chips = chipsOf(yesno, "asked", usual);
+  assert.deepEqual(chips.map((c) => [c.label, c.send, c.usual]), [["Yes", "Yes", false], ["No", "No", false], ["yes please", "yes please", true], ["go", "go", true]]);
+  assert.match(chips[0].title, /Answers Claude's question with “Yes” \(Alt\+1\)/);
+  assert.match(chips[3].title, /Your usual reply after Claude's questions: sends “go” \(Alt\+4\).*don't suggest it again/);
+  // after a usage limit: only yours; one you hid isn't there
+  assert.deepEqual(chipsOf(null, "limit", usual).map((c) => c.send), ["continue"]);
+  assert.deepEqual(chipsOf(null, "limit", usual, new Set([replyKey("Continue!")])), []);
+  assert.deepEqual(chipsOf(null, "finished", null), []);
+  // six options: the one Claude recommends stays, with the first ones, in their order
+  const six: Asks = { kind: "options", choices: [1, 2, 3, 4, 5, 6].map((n) => ({ label: `${n} · Step ${n}`, send: `${n}. Step ${n}`, recommended: n === 6 })) };
+  const shown = chipsOf(six, "asked", usual);
+  assert.deepEqual(shown.map((c) => c.send), ["1. Step 1", "2. Step 2", "3. Step 3", "6. Step 6"]);
+  assert.ok(shown[3].recommended && /recommends this one/.test(shown[3].title));
+});
+
+test("suggested replies show once Claude's turn is over and the box is empty, never while it works or asks", () => {
+  const now = 1_000_000;
+  const base = { on: true, fresh: false, ended: "asked" as const, over: true, state: "done", text: "", pending: false, resting: false, sentAt: 0 };
+  assert.equal(chipsWanted(base, now), true);
+  assert.equal(chipsWanted({ ...base, state: "working" }, now), true);       // (the transcript says it's over: the row comes a moment later)
+  for (const no of [{ on: false }, { fresh: true }, { ended: null }, { text: "c" }, { pending: true }, { resting: true }, { state: "waiting" }])
+    assert.equal(chipsWanted({ ...base, ...no } as typeof base, now), false, JSON.stringify(no));
+  // not said by the transcript (your prompt with no reply): the chat's state, not just after you sent something
+  const open = { ...base, ended: "stopped" as const, over: false };
+  assert.equal(chipsWanted({ ...open, state: "working" }, now), false);
+  assert.equal(chipsWanted(open, now), true);
+  assert.equal(chipsWanted({ ...open, sentAt: now - 2000 }, now), false);
+});
+
+test("suggested replies back off: five sends in a row with chips and none of them, then none for a while", () => {
+  const chips = chipsOf(null, "limit", { chips: { limit: ["continue"] }, ranked: [] });
+  let state = { ignored: 0, restUntil: 0 };
+  for (let i = 1; i < CHIPS_IGNORED; i++) {
+    state = chipsAfterSend(state.ignored, chips, "something else", 0);
+    assert.deepEqual(state, { ignored: i, restUntil: 0 });
+  }
+  assert.deepEqual(chipsAfterSend(state.ignored, chips, "Continue.", 0), { ignored: 0, restUntil: 0 });   // (typed as a chip says: used)
+  assert.deepEqual(chipsAfterSend(CHIPS_IGNORED - 1, chips, "no", 5), { ignored: 0, restUntil: 5 + CHIPS_REST_MS });
+  assert.deepEqual(chipsAfterSend(3, [], "no", 5), { ignored: 3, restUntil: 0 });   // (none showed: nothing counts)
+});
+
+test("completion as you type: the rest of your usual reply that starts so, this turn's kind first", () => {
+  const usual: UsualReplies = { chips: { limit: ["carry on"] }, ranked: ["continue", "commit and push", "Go on"] };
+  assert.equal(completionOf("co", usual), "ntinue");
+  assert.equal(completionOf("Comm", usual), "it and push");
+  assert.equal(completionOf("c", usual, "limit"), "arry on");
+  assert.equal(completionOf("go", usual), " on");
+  for (const none of ["", "  ", "continue", "x", "/co", "!co", "co\nmore"]) assert.equal(completionOf(none, usual), "", none);
+  assert.equal(completionOf("co", null), "");
+  assert.equal(completionOf("co", usual, null, new Set(["continue"])), "mmit and push");
 });

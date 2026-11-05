@@ -395,6 +395,11 @@ class Pane implements vscode.Disposable {
         if (e.affectsConfiguration("talpyDen.chatFont") || e.affectsConfiguration("terminal.integrated.fontFamily")
             || e.affectsConfiguration("editor.fontFamily")) this.post({ type: "font", family: Pane.chatFont() });
         if (e.affectsConfiguration("talpyDen.diffSideBySide")) this.post({ type: "diffLayout", split: Pane.sideBySide() });
+        if (e.affectsConfiguration("talpyDen.suggestReplies")) {
+          this.post({ type: "suggest", on: Pane.suggests() });
+          this.stamp = "";   // (read again, with or without how its turn ended)
+          void this.load();
+        }
         if (this.fresh && (e.affectsConfiguration("talpyDen.newChatModel") || e.affectsConfiguration("talpyDen.newChatEffort")
             || e.affectsConfiguration("talpyDen.newChatMode"))) void this.pushChat();   // (its ⚙ line)
       }),
@@ -403,6 +408,11 @@ class Pane implements vscode.Disposable {
 
   private static sideBySide(): boolean {
     return vscode.workspace.getConfiguration("talpyDen").get("diffSideBySide") !== false;
+  }
+
+  // Suggest replies (talpyDen.suggestReplies): off, nothing is read or worked out for them
+  static suggests(): boolean {
+    return vscode.workspace.getConfiguration("talpyDen").get("suggestReplies") !== false;
   }
 
   // The conversation's font (talpyDen.chatFont, doc.ts chatFont)
@@ -536,6 +546,7 @@ class Pane implements vscode.Disposable {
     try {
       const r = await this.owner.ext.backend.pane([
         "--conversation", chatId, "--limit", String(this.limit), ...(this.stamp ? ["--if-changed", this.stamp] : []),
+        ...(Pane.suggests() ? ["--suggest"] : []),
         ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...(this.host ? ["--host", this.host] : configDirArgs()),
       ], this.host ? 60000 : 30000);
       if (this.disposed) return;
@@ -592,7 +603,7 @@ class Pane implements vscode.Disposable {
         const chatId = this.chatId;
         const asked = Date.now();
         const r = await this.owner.ext.backend.pane([
-          "--conversation", chatId, "--limit", String(limit), "--if-changed", stamp, "--wait", "50",
+          "--conversation", chatId, "--limit", String(limit), "--if-changed", stamp, "--wait", "50", ...(Pane.suggests() ? ["--suggest"] : []),
           ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...configDirArgs(),
         ], 70000);
         if (this.disposed) return;
@@ -841,6 +852,18 @@ class Pane implements vscode.Disposable {
           files: Array.isArray(r.files) ? r.files : [], history: Array.isArray(r.history) ? r.history : [] } });
         break;
       }
+      case "replies": {
+        // your usual replies, from the chats on its account (a first read can take some seconds: the tab doesn't wait)
+        if (!Pane.suggests()) break;
+        const r = await backend.pane([...(this.fresh ? ["--replies", "-", "--cwd", this.fresh.cwd] : ["--replies", this.chatId]),
+          ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...where], this.host ? 90000 : 60000);
+        if (r.ok) this.post({ type: "replies", replies: { chips: r.chips && typeof r.chips === "object" ? r.chips : {},
+                                                          ranked: Array.isArray(r.ranked) ? r.ranked : [] } });
+        break;
+      }
+      case "hideReply":
+        if (typeof m.text === "string" && m.text.trim()) await backend.pane(["--hide-reply", m.text, ...where]);
+        break;
       case "textSize":
         if (typeof m.scale === "number" && Number.isFinite(m.scale))
           await vscode.workspace.getConfiguration("talpyDen").update("chatTextScale", textScale(m.scale), vscode.ConfigurationTarget.Global);
@@ -959,7 +982,8 @@ class Pane implements vscode.Disposable {
     const { uri } = this.owner.ext;
     const nonce = crypto.randomBytes(16).toString("base64");
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(uri, ...p)).toString();
-    const config = JSON.stringify({ tab, local: !this.host, scale: Pane.textScale(), split: Pane.sideBySide(), font: Pane.chatFont() });
+    const config = JSON.stringify({ tab, local: !this.host, scale: Pane.textScale(), split: Pane.sideBySide(), font: Pane.chatFont(),
+                                    suggest: Pane.suggests() });
     const csp = [
       "default-src 'none'",
       "base-uri 'none'",

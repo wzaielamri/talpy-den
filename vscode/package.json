@@ -578,11 +578,17 @@
               "markdownDescription": "The font of Talpy Chat: the conversation and your reply.",
               "order": 8
             },
+            "talpyDen.suggestReplies": {
+              "type": "boolean",
+              "default": true,
+              "markdownDescription": "Suggest replies in Talpy Chat: once Claude's turn is over, small chips above the box answer the question it ended with (its options, Yes or No…) or offer what you usually reply after a turn that ended the same way (a usage limit, a chat that stopped…), and what you type is completed in grey (Tab or → takes it). Nothing is sent without a click. Worked out on this computer, from your own chats on the chat's account; off, nothing is read for it.",
+              "order": 9
+            },
             "talpyDen.dictateLanguage": {
               "type": "string",
               "default": "auto",
               "markdownDescription": "The language you dictate replies in, as a code (`en`, `de`, `fr`…), or `auto` to let whisper tell. Dictating (the microphone in Talpy Chat) runs on this computer: the first click offers to set it up (faster-whisper, no sudo), and **Talpy Den: Dictation Models…** downloads, deletes or picks the speech model. What you say never leaves the computer.",
-              "order": 9
+              "order": 10
             }
         }
       },

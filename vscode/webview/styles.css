@@ -4707,3 +4707,96 @@ body.vscode-high-contrast-light .pane {
   flex: none;
   max-width: 40%;
 }
+
+/* Suggested replies (chat.tsx, shared/pane.ts chipsOf): small framed chips above the box once
+   Claude's turn is over, as a held message's buttons; the answers to Claude's question in your
+   accent, the one it recommends in bold; your usual replies plain */
+.pane-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 0 0 6px var(--pane-gutter);
+}
+
+.pane-chip.btn.secondary {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-color: color-mix(in srgb, var(--cs-fg) 30%, transparent);
+}
+
+.pane-chip.btn.secondary.asked {
+  color: var(--pane-you);
+  border-color: color-mix(in srgb, var(--pane-you) 55%, transparent);
+}
+
+.pane-chip.btn.secondary:hover:not(:disabled) {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.pane-chip.recommended {
+  font-weight: 700;
+}
+
+/* A chip's right-click menu: Edit before sending, Don't suggest this */
+.pane-chip-menu {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 12em;
+  padding: 4px;
+  border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, var(--cs-border)));
+  border-radius: 4px;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  color: var(--vscode-menu-foreground, inherit);
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+}
+
+.pane-chip-menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pane-chip-menu button:hover,
+.pane-chip-menu button:focus-visible {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-menu-selectionForeground, inherit);
+}
+
+/* What you type, completed in grey from your usual replies (Tab or → takes it): a copy of the
+   box's text under it, laid out as the box lays it out, with the rest after it */
+.pane-reply-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pane-ghost {
+  position: absolute;
+  inset: 0;
+  padding: 6px 10px 6px 0;
+  overflow: hidden;
+  pointer-events: none;
+  font: inherit;
+  font-family: var(--pane-font, inherit);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: var(--cs-muted);
+}
+
+.pane-ghost-typed {
+  visibility: hidden;
+}

@@ -6,7 +6,7 @@
 
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, clipboardCode, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, routeHint, shownAsk, stopOf, suggestFor, type Offers, type PendingSent, type Suggestion, testsText, TEXT_SCALES, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, completionOf, newChatHint, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -21,7 +21,7 @@ import { Markdown } from "./util/markdown";
 
 declare global {
   interface Window {
-    CLAUDE_CHAT: { tab: "chat" | "review"; local: boolean; scale?: number; split?: boolean; font?: string };
+    CLAUDE_CHAT: { tab: "chat" | "review"; local: boolean; scale?: number; split?: boolean; font?: string; suggest?: boolean };
   }
 }
 
@@ -338,6 +338,45 @@ function ChatApp() {
     return true;
   };
 
+  // Suggested replies (talpyDen.suggestReplies): chips above the box once Claude's turn is over
+  // (chipsOf: its question's answers, then your usual replies after a turn that ended so), and
+  // what you type completed in grey from your usual replies (completionOf; Tab or → takes it)
+  const [suggest, setSuggest] = useState(config.suggest !== false);
+  const [turn, setTurn] = useState<{ ended: TurnEnded | null; over: boolean; asks: Asks | null }>({ ended: null, over: false, asks: null });
+  const [usual, setUsual] = useState<UsualReplies | null>(null);
+  const usualAt = useRef(0);
+  const askUsual = () => {   // (pane.py --replies: once a tab, again after a send a minute later)
+    if (!suggest || Date.now() - usualAt.current < 60000) return;
+    usualAt.current = Date.now();
+    post({ type: "replies" });
+  };
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set()); // (Don't suggest this: gone at once)
+  const ignored = useRef(0);
+  const [restUntil, setRestUntil] = useState(0); // (backing off: no chips till then)
+  useEffect(() => {
+    if (!restUntil) return undefined;
+    const t = setTimeout(() => setRestUntil(0), Math.max(0, restUntil - Date.now()));
+    return () => clearTimeout(t);
+  }, [restUntil]);
+  const sentAt = useRef(0);
+  const [focused, setFocused] = useState(false);
+  const [chipMenu, setChipMenu] = useState<{ chip: ReplyChip; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!chipMenu) return undefined;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      setChipMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [chipMenu]);
+
   // The microphone: record, then whisper writes it down on this computer
   const [dictating, setDictating] = useState<"" | "starting" | "recording" | "writing" | "model" | "setup">("");
   const [recordedAt, setRecordedAt] = useState(0);
@@ -449,6 +488,11 @@ function ChatApp() {
         }
       }
       else if (m.type === "offers") setOffers(m.offers);
+      else if (m.type === "replies") setUsual(m.replies);
+      else if (m.type === "suggest") {
+        setSuggest(m.on);
+        if (!m.on) setUsual(null);
+      }
       else if (m.type === "startWith") {   // (a new chat's task: sent at once, as if you typed it)
         startNext.current = true;
         setText(m.text);
@@ -502,6 +546,7 @@ function ChatApp() {
           const el = list.current;
           if (el) follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; // (on another tab: as when you left)
           setLoadError("");
+          setTurn({ ended: a.ended ?? null, over: !!a.over, asks: a.asks ?? null });
           setItems(a.items ?? []);
           setMore(!!a.more);
           setCapped(!!a.capped);
@@ -659,14 +704,23 @@ function ChatApp() {
   // the background): in the conversation as being sent, the box empty for the
   // next one (the extension sends each in turn). A copy, one for VS Code's
   // input, Enter for a terminal that takes no text: the box keeps it till then.
-  const send = (how: "auto" | "background" | "copy" | "enter", afterTurn: boolean) => {
-    const said = text.trim();
+  // (given: a chip's words, sent as if you typed them)
+  const send = (how: "auto" | "background" | "copy" | "enter", afterTurn: boolean, given?: string) => {
+    const typed = given ?? text;
+    const said = typed.trim();
     if (!said) return;
+    if (chips.length) {   // (backing off: chips shown, and you sent none of them)
+      const next = chipsAfterSend(ignored.current, chips, said, Date.now());
+      ignored.current = next.ignored;
+      if (next.restUntil) setRestUntil(next.restUntil);
+    }
+    sentAt.current = Date.now();
+    askUsual();
     // (a background chat that asks you something: your words answer it, as in its own prompt; never stopped for it)
     const asks = replyAnswers(chat);
     if (asks && !afterTurn && how !== "copy") {
       if (answering) return;
-      answeredWith.current = text;
+      answeredWith.current = typed;
       if (asks === "question") answer("answer", "", { [chat!.permission!.questions![0].question]: [said] });
       else answer(asks === "plan" ? "keep" : "deny", said);
       return;
@@ -677,7 +731,8 @@ function ChatApp() {
       if (sendingNow.current) return;
       sendingNow.current = true;
       setSending(true);
-      post({ type: "send", text, how, afterTurn });
+      if (given !== undefined) setText(given);   // (kept in the box till it went, as typed words are)
+      post({ type: "send", text: typed, how, afterTurn });
       return;
     }
     // (Claude at work: it waits a moment, queued, to be taken back, as ↑ does in Claude's terminal)
@@ -694,7 +749,7 @@ function ChatApp() {
     if (holds) {
       setNow(Date.now());
       post({ type: "hold", id, text: said, how }); // (the extension sends it if the tab closes first)
-    } else post({ type: "send", text, how, afterTurn, id });
+    } else post({ type: "send", text: typed, how, afterTurn, id });
   };
   useEffect(() => {
     if (startNext.current && text.trim() && chat) {
@@ -789,6 +844,37 @@ function ChatApp() {
   const starting = !!chat?.starting || (!!chat?.fresh && outgoing.some((p) => p.state !== "held"));
   // (its dot and state: a new chat's muted, Starting… in the working colour)
   const headState = starting && chat?.state !== "waiting" ? "working" : chat?.fresh ? "new" : chat?.state ?? "done";
+  // Suggested replies: once its turn is over and the box is empty (chipsWanted), not with yours on their way
+  const pendingHere = outgoing.length > 0 || answersOut.length > 0 || !!chat?.queued || items.some((it) => it.queued);
+  const chipsOn = !!chat && chipsWanted({ on: suggest && conversation, fresh: !!chat.fresh || starting, ended: turn.ended, over: turn.over,
+                                          state: chat.state, text, pending: pendingHere, resting: restUntil > 0, sentAt: sentAt.current }, Date.now());
+  const chips = useMemo(() => (chipsOn ? chipsOf(turn.asks, turn.ended, usual, hidden) : []), [chipsOn, turn, usual, hidden]);
+  useEffect(() => {
+    if (!chips.length) setChipMenu(null);
+  }, [chips.length]);
+  useEffect(() => {
+    if (!suggest) usualAt.current = 0;
+    else if (chat) askUsual();
+  }, [suggest, !!chat]);
+  const ghost = suggest && conversation && focused && !offered.items.length && cursor === text.length
+    ? completionOf(text, usual, turn.ended, hidden) : "";
+  // A chip: sent as if typed (Enter); Shift+click (or Edit before sending) puts it in the box
+  const takeChip = (c: ReplyChip, edit: boolean) => {
+    setChipMenu(null);
+    if (!edit) return send("enter", false, c.send);
+    setText(c.send);
+    setCursor(c.send.length);
+    requestAnimationFrame(() => {
+      reply.current?.focus();
+      reply.current?.setSelectionRange(c.send.length, c.send.length);
+    });
+  };
+  const hideChip = (c: ReplyChip) => {
+    setChipMenu(null);
+    setHidden((was) => new Set([...was, replyKey(c.send)]));
+    post({ type: "hideReply", text: c.send });
+    reply.current?.focus();
+  };
   const shownItems = useMemo((): PaneItem[] => (outgoing.length || answersOut.length
     ? [...items,
        ...answersOut.map((p) => ({ kind: "you" as const, key: `answer-${p.id}`, text: p.text, at: p.at, sending: p.state === "sending", answered: p.answered })),
@@ -1034,11 +1120,32 @@ function ChatApp() {
             </ul>
           ) : null}
           {chat?.fresh && !starting ? <NewChatOptions fresh={chat.fresh} /> : null}
+          {chips.length ? (
+            <div class="pane-chips" role="toolbar" aria-label="Suggested replies">
+              {chips.map((c) => (
+                <button key={c.send} type="button" title={c.title} aria-label={`${c.usual ? "Your usual reply" : "Answer"}: ${c.send}`}
+                  class={`btn secondary small pane-chip${c.usual ? "" : " asked"}${c.recommended ? " recommended" : ""}`}
+                  onClick={(e) => takeChip(c, e.shiftKey)}
+                  onContextMenu={(e) => { e.preventDefault(); setChipMenu({ chip: c, x: e.clientX, y: e.clientY }); }}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {chipMenu ? (
+            <div class="pane-chip-menu" role="menu" style={{ left: `${chipMenu.x}px`, top: `${chipMenu.y}px` }} onMouseDown={(e) => e.stopPropagation()}>
+              <button type="button" role="menuitem" onClick={() => takeChip(chipMenu.chip, true)}><Icon name={I.edit} />Edit before sending</button>
+              {chipMenu.chip.usual ? (
+                <button type="button" role="menuitem" onClick={() => hideChip(chipMenu.chip)}><Icon name={I.hide} />Don't suggest this</button>
+              ) : null}
+            </div>
+          ) : null}
           <div class={"pane-replybox" + (dragging ? " dropping" : "")}
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
             onDrop={dropped}>
           <span class="pane-prompt" aria-hidden="true">›</span>
+          <div class="pane-reply-wrap">
           <textarea
             class="pane-reply"
             rows={3}
@@ -1054,10 +1161,30 @@ function ChatApp() {
               historyAt.current = -1;
             }}
             onSelect={(e) => setCursor((e.target as HTMLTextAreaElement).selectionStart)}
-            onFocus={askOffers}
+            onFocus={() => {
+              askOffers();
+              setFocused(true);
+            }}
+            onBlur={() => setFocused(false)}
             onPaste={pasted}
             onKeyDown={(e) => {
               const box = e.target as HTMLTextAreaElement;
+              // Alt+1…4: a chip (Shift too: in the box first); kept from VS Code, where Alt+1 opens an editor
+              if (chips.length && e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-9]$/.test(e.code) && chips[Number(e.code.slice(5)) - 1]) {
+                e.preventDefault();
+                e.stopPropagation();
+                takeChip(chips[Number(e.code.slice(5)) - 1], e.shiftKey);
+                return;
+              }
+              // Tab or → at the end: the grey rest of your usual reply
+              if (ghost && (e.key === "Tab" || e.key === "ArrowRight") && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                const next = text + ghost;
+                setText(next);
+                setCursor(next.length);
+                requestAnimationFrame(() => box.setSelectionRange(next.length, next.length));
+                return;
+              }
               if (offered.items.length) {
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                   e.preventDefault();
@@ -1102,6 +1229,10 @@ function ChatApp() {
               }
             }}
           />
+          {ghost ? (
+            <div class="pane-ghost" aria-hidden="true"><span class="pane-ghost-typed">{text}</span>{ghost}</div>
+          ) : null}
+          </div>
           </div>
           {picturesIn(text).length ? (
             <div class="pane-pictures">

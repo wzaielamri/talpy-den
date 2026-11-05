@@ -21,7 +21,7 @@ const TABLE = {
     // ---- what you do to something
     cancel:          ['window-close',                  'close',      'window-close-symbolic'],            // a queued task, a picture, dictation, a question; Revoke a permission
     close:           ['window-close',                  'close',      'window-close-symbolic'],            // a summary, a window's part
-    hide:            ['view-hidden',                   'eyeClosed',  'view-conceal-symbolic'],            // a chat, plan, memory, project, SSH host: listed no more, nothing deleted
+    hide:            ['view-hidden',                   'eyeClosed',  'view-conceal-symbolic'],            // a chat, plan, memory, project, SSH host, a suggested reply: listed no more, nothing deleted
     showHidden:      ['view-visible',                  'eye',        'view-reveal-symbolic'],
     delete:          ['user-trash',                    'trash',      'user-trash-symbolic'],              // Delete… to the Trash (a chat, plan, memory, an account's folder)
     erase:           ['draw-eraser',                   null,         'edit-clear-all-symbolic'],          // deleted for good: a dictation model, saved history

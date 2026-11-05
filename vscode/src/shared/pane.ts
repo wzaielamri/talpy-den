@@ -62,6 +62,11 @@ export interface Conversation {
   capped?: boolean; // there are, but the tab shows no more (LIMIT_MAX)
   stamp?: string;
   mode?: string | null;
+  // (talpyDen.suggestReplies: pane.py --suggest) how its last turn ended (null: mid-turn, or a
+  // message waiting in Claude's queue), whether the transcript says it's over, and its question as chips
+  ended?: TurnEnded | null;
+  over?: boolean;
+  asks?: Asks | null;
 }
 
 // One file a chat changed (pane.py: chat_review)
@@ -199,6 +204,8 @@ export type PaneHostMessage =
   | { type: "file"; id: string; path: string } // a file dropped on the tab: named in the reply (@path)
   | { type: "offers"; offers: Offers } // what the reply box offers as you type (pane.py --complete)
   | { type: "startWith"; text: string } // a new chat's task: sent as its first message, as if you typed it
+  | { type: "suggest"; on: boolean } // talpyDen.suggestReplies
+  | { type: "replies"; replies: UsualReplies | null } // your usual replies (pane.py --replies)
   // dictating: "starting" (the microphone, not recording yet), "recording", "writing", "model" (downloading one), "setup" (setting it up), "" (done:
   // text written down, or why not); offerModel: whisper is there but no speech model (engine: which
   // one), offerSetup: nothing writes it down yet (setupMb: what setting up downloads); the tab asks
@@ -240,6 +247,8 @@ export type PaneMessage =
   | { type: "attach"; id: string; path: string } // a file dropped from VS Code's Explorer: a picture saved as one, a file named
   | { type: "screenshot"; id: string } // a region of the screen you pick, as a picture
   | { type: "complete" } // what the reply box offers (answered with "offers")
+  | { type: "replies" } // your usual replies (answered with "replies")
+  | { type: "hideReply"; text: string } // a chip's Don't suggest this
   | { type: "dictate"; action: "toggle" | "cancel" | "getModel" | "setup" }; // the microphone (answered with "dictation")
 
 // What the reply box offers as you type (pane.py --complete): / at the start
@@ -626,6 +635,101 @@ export function stopOf(chat: Pick<PaneChat, "state" | "atWork" | "where" | "rout
   return { ...no, elsewhere: chat.where === "claude" ? "To stop it: the stop button in its Claude Code panel."
     : chat.where === "background" ? "To stop it: open it in a terminal and press Esc there. Talpy Chat's Stop doesn't know the background chats of this Claude Code version yet."
     : "To stop it: press Esc in its terminal. Talpy Chat can't type into that terminal." };
+}
+
+// Suggested replies (Plasma ChatPane, the same rules and words): small chips above the box once
+// Claude's turn is over, each sent only with a click. First the answers to the question Claude
+// ended with (pane.py asks_of: its options, an either/or's halves, or Yes and No), then your
+// usual replies after a turn that ended the same way (pane.py --replies: usual_replies)
+export type TurnEnded = "asked" | "finished" | "limit" | "interrupted" | "failed" | "stopped";
+export interface Asks {
+  kind: "options" | "either" | "yesno";
+  choices: { label: string; send: string; recommended: boolean }[];
+}
+export interface UsualReplies {
+  chips: Partial<Record<TurnEnded, string[]>>; // how a turn ended -> what you usually reply then
+  ranked: string[]; // every reply of yours, the most used first: what you type is completed from them
+}
+export interface ReplyChip {
+  label: string;
+  send: string;
+  recommended: boolean; // (Claude says it would take this option)
+  usual: boolean; // (one of your usual replies: "Don't suggest this" hides it)
+  title: string;
+}
+export const CHIPS_MAX = 4;
+export const CHIPS_IGNORED = 5; // turns in a row with chips and none used: none for CHIPS_REST_MS then
+export const CHIPS_REST_MS = 30 * 60_000;
+export const CHIPS_AFTER_SEND_MS = 15_000; // (just after you sent something, only the transcript says the turn is over)
+const ENDED_AFTER: Record<TurnEnded, string> = {
+  asked: "Claude's questions", finished: "a finished turn", limit: "a usage limit", interrupted: "an interruption",
+  failed: "an error", stopped: "a chat that stopped",
+};
+
+// A reply as replies are compared (pane.py reply_key): case, outer quotes, final punctuation and
+// extra spaces left out
+export function replyKey(text: string): string {
+  return text.normalize("NFKC").toLowerCase().trim().replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, "")
+    .replace(/[\s.!?,;:…。！？]+$/u, "").split(/\s+/).filter(Boolean).join(" ");
+}
+
+// The chips for a turn that's over: Claude's question's (more options than fit: the ones it
+// recommends, then the first ones, in their order), then your usual replies after a turn that
+// ended so, each once and none you hid; at most CHIPS_MAX
+export function chipsOf(asks: Asks | null | undefined, ended: TurnEnded | null | undefined, usual: UsualReplies | null | undefined,
+                        hidden: ReadonlySet<string> = new Set()): ReplyChip[] {
+  let choices = asks?.choices ?? [];
+  if (choices.length > CHIPS_MAX) {
+    const marked = choices.filter((c) => c.recommended).slice(0, CHIPS_MAX);
+    const rest = choices.filter((c) => !c.recommended).slice(0, CHIPS_MAX - marked.length);
+    choices = choices.filter((c) => marked.includes(c) || rest.includes(c));
+  }
+  const out: ReplyChip[] = [];
+  const seen = new Set<string>();
+  const add = (label: string, send: string, recommended: boolean, usual: boolean) => {
+    const n = out.length + 1;
+    out.push({ label, send, recommended, usual, title: usual
+      ? `Your usual reply after ${ENDED_AFTER[ended!]}: sends “${send}” (Alt+${n}). Shift+click: put it in the box first, to add to it. Right-click: don't suggest it again.`
+      : `Answers Claude's question with “${send}” (Alt+${n}).${recommended ? " Claude recommends this one." : ""} Shift+click: put it in the box first, to add to it.` });
+    seen.add(replyKey(send));
+  };
+  for (const c of choices) add(c.label, c.send, !!c.recommended, false);
+  for (const t of (ended && usual?.chips?.[ended]) || []) {
+    if (out.length >= CHIPS_MAX) break;
+    const key = replyKey(t);
+    if (!seen.has(key) && !hidden.has(key)) add(t, t, false, true);
+  }
+  return out;
+}
+
+// Whether the chips show: Suggest replies on, a chat that's going (not a new one), its turn over
+// (the transcript says so, else the chat isn't at work and nothing went to it a moment ago), not
+// asking for a permission, the box empty, nothing of yours on its way or queued, not backed off
+export function chipsWanted(c: { on: boolean; fresh: boolean; ended: TurnEnded | null | undefined; over: boolean; state: string; text: string;
+                                 pending: boolean; resting: boolean; sentAt: number }, now: number): boolean {
+  if (!c.on || c.fresh || !c.ended || c.text.trim() !== "" || c.pending || c.resting || c.state === "waiting") return false;
+  return c.over || (c.state !== "working" && now - c.sentAt > CHIPS_AFTER_SEND_MS);
+}
+
+// Backing off, as Claude Code does with its own suggestions: a message you sent while chips showed,
+// none of them (typed or clicked), counts; CHIPS_IGNORED in a row, and there are none for
+// CHIPS_REST_MS (restUntil: when they're back; 0: none now)
+export function chipsAfterSend(ignored: number, shown: ReplyChip[], text: string, now: number): { ignored: number; restUntil: number } {
+  if (!shown.length) return { ignored, restUntil: 0 };
+  if (shown.some((c) => replyKey(c.send) === replyKey(text))) return { ignored: 0, restUntil: 0 };
+  return ignored + 1 >= CHIPS_IGNORED ? { ignored: 0, restUntil: now + CHIPS_REST_MS } : { ignored: ignored + 1, restUntil: 0 };
+}
+
+// Completion as you type: the rest of the first of your usual replies (those after a turn that
+// ended as this one did first) that starts with what you typed, in grey; "" for none. Not for a
+// command, nor a text of several lines
+export function completionOf(text: string, usual: UsualReplies | null | undefined, ended?: TurnEnded | null,
+                             hidden: ReadonlySet<string> = new Set()): string {
+  if (!usual || !text.trim() || text.includes("\n") || /^[/!]/.test(text)) return "";
+  const low = text.toLowerCase();
+  for (const r of [...((ended && usual.chips?.[ended]) || []), ...(usual.ranked ?? [])])
+    if (r.length > text.length && r.toLowerCase().startsWith(low) && !hidden.has(replyKey(r))) return r.slice(text.length);
+  return "";
 }
 
 // A new chat's line under the box (Plasma's routeHint for one, the same words)
