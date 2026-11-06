@@ -532,6 +532,7 @@ PlasmoidItem {
     // others take it over at theirs (a new copy takes over what the others use).
     readonly property string instanceId: (Plasmoid.containment ? Plasmoid.containment.id + "/" : "") + Plasmoid.id
     readonly property bool notifier: (status === null || status.notifier !== false) && Hub.leaderId === instanceId
+    onNotifierChanged: watchesChanged()   // (the copy that notifies watches the hosts whose hooked chats work)
     // In the system tray, which draws the popup's heading itself (settable for render tests)
     property bool inTray: (Plasmoid.containmentDisplayHints & PlasmaCore.Types.ContainmentDrawsPlasmoidHeading) !== 0
     readonly property var sharedKeys: ["pollInterval", "idlePollInterval", "extraConfigDirs", "notifyWaiting", "notifyDone",
@@ -2734,7 +2735,113 @@ PlasmoidItem {
     }
 
     function pollHost(host) {
+        hostPolledAt[host] = Date.now()
         Hub.refresh(hostCommand(host))   // (one still running is run again once it's done)
+    }
+
+    // ---------------------------------------------------------------- watching SSH hosts and containers
+    // Talpy Chat's watcher of a host or container (Hub: remote.py --watch,
+    // live.py there) runs while this copy wants it: a Talpy Chat window of a
+    // chat there shows (or starts one), or, in the copy that notifies, a chat
+    // there whose prompts Talpy Den's hook answers works or waits (it has no
+    // terminal: the notification is how you hear of it). Only for one whose
+    // last check answered, and not one sharing this computer's home. With
+    // none of that, nothing runs there. What it answers: a permission
+    // request there checks the host at once, a chat of a window or a hooked
+    // one that changed at most every 2 s (the last change of a burst too),
+    // and that window reads its conversation at once.
+    property var watchedHosts: ({})
+    property var hostPolledAt: ({})   // host -> when its check was last asked for
+    property var hostPollDue: ({})    // host -> when a check held back by the 2 s is due
+    function watchesChanged() {
+        watchUpdate.restart()
+    }
+    Timer {
+        id: watchUpdate
+        interval: 100
+        onTriggered: root.updateWatches()
+    }
+    function hostWatchWanted() {
+        const out = {}
+        for (const w of paneWindows)
+            if (w.host && w.chat && w.chat.chatId && (w.shown || w.starting))
+                out[w.host] = true
+        if (notifier)
+            for (const host of shownHosts) {
+                const r = remote[host]
+                if (r && r.ok && r.result && !r.cached && r.result.groups.some(g => g.sessions.some(s => hookedAtWork(s))))
+                    out[host] = true
+            }
+        for (const host in out)
+            if (!talpyChatHere(host, true))
+                delete out[host]
+        return out
+    }
+    // (a chat whose prompt only Talpy Den can show: it works or waits, and the hook answers what it asks)
+    function hookedAtWork(s) {
+        return (s.hooked && (s.state === "working" || s.state === "waiting"))
+               || (s.state === "waiting" && !!s.permission && s.permission.answer === "hook")
+    }
+    function updateWatches() {
+        const want = hostWatchWanted()
+        for (const host in want)
+            if (!watchedHosts[host])
+                Hub.wantWatch(instanceId, host, "python3 -I " + shellQuote(codeDir + "remote.py") + " --watch " + shellQuote(host))
+        for (const host in watchedHosts)
+            if (!want[host])
+                Hub.dropWatch(instanceId, host)
+        if (!same(Object.keys(want).sort(), Object.keys(watchedHosts).sort()))
+            watchedHosts = want
+    }
+    function pollHostSoon(host) {
+        const wait = (hostPolledAt[host] || 0) + 2000 - Date.now()
+        if (wait <= 0) {
+            pollHost(host)
+            return
+        }
+        hostPollDue[host] = Date.now() + wait   // (trailing: the last change of a burst is checked too)
+        hostPollTimer.start()
+    }
+    Timer {
+        id: hostPollTimer
+        interval: 250
+        repeat: true
+        onTriggered: {
+            let left = false
+            for (const host in root.hostPollDue) {
+                if (Date.now() >= root.hostPollDue[host]) {
+                    delete root.hostPollDue[host]
+                    root.pollHost(host)
+                } else {
+                    left = true
+                }
+            }
+            if (!left)
+                stop()
+        }
+    }
+    Connections {
+        target: Hub
+        function onHostChanged(host, answer) {
+            if (!root.watchedHosts[host])
+                return
+            const changed = answer.changed || []
+            const wins = root.paneWindows.filter(w => w.host === host && w.chat && !!w.chat.chatId)
+            const ofWindow = w => changed.indexOf(w.chatId) >= 0 || (!!w.sessionId && changed.indexOf(w.sessionId) >= 0)
+            const r = root.remote[host]
+            let hooked = false
+            for (const g of r && r.result ? r.result.groups : [])
+                for (const s of g.sessions)
+                    if (root.hookedAtWork(s) && (changed.indexOf(s.sessionId) >= 0 || changed.indexOf(s.chatId) >= 0))
+                        hooked = true
+            if (answer.requests)
+                root.pollHost(host)
+            else if (!answer.changed || hooked || wins.some(w => w.starting || ofWindow(w)))
+                root.pollHostSoon(host)
+            for (const w of wins)
+                if (w.shown && ofWindow(w))
+                    w.load()   // (its conversation now, not at its next look)
+        }
     }
 
     function setRemote(host, patch) {
@@ -2745,6 +2852,7 @@ PlasmoidItem {
         if ("result" in patch || "clockOffset" in patch)
             noteFacts(host, next.result, next.clockOffset)
         remote = Object.assign({}, remote, { [host]: next })
+        watchesChanged()
     }
 
     function handleRemote(host, data) {
@@ -2779,6 +2887,7 @@ PlasmoidItem {
                               stopped: false, gone: false, paused: false, cached: false })
             dropHidden(host, result)   // (after: see handleOutput)
             followPaneChat(host, result)
+            Hub.watchChecked(host)   // (a watcher that couldn't reach it runs again)
             if (status)
                 startDueTasks(status.queue || [])   // (a reply waiting for the end of a turn there: it ended)
         } else {
@@ -4200,6 +4309,7 @@ PlasmoidItem {
     // (which chats this copy's windows show: one opened from another copy comes forward here)
     function paneListChanged() {
         Hub.paneShown(instanceId, paneWindows.map(w => paneKeyOf(w.chat)).filter(k => k !== ""))
+        watchesChanged()
     }
 
     // s: a session row or a recent chat (sessionId is its chat then); tab: "chat" or "review";

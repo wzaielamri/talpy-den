@@ -1201,6 +1201,55 @@ class TalpyChatThereTests(TwoAccountHost):
         self.assertFalse((self.fake_home / "claude-args").exists())
 
 
+class HostWatchTests(FakeSSH):
+    """(2026-11-06) Talpy Chat's watcher of a host (remote.py --watch): live.py
+    there, through the stand-in ssh, answering the moment a session file or
+    a permission request there changes."""
+
+    def test_it_answers_when_something_changes_there(self):
+        first = remote.watch("lab", "a1b2c3d4e5f6", 5)
+        self.assertEqual((first["ok"], first["host"], first["sessions"], first["requests"]), (True, "lab", True, True), first)
+        self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --wait --requests --remote --as a1b2c3d4e5f6 --timeout 5"])
+        # (the hook's requests folder there, made so it can be watched)
+        asks = self.fake_home / ".local/state/talpy-den/permissions"
+        self.assertTrue(asks.is_dir())
+        import threading
+        threading.Timer(0.6, lambda: (asks / "1-0a1b2c3d.json").write_text(json.dumps({"sessionId": "chat-1"}))).start()
+        started = time.time()
+        answer = remote.watch("lab", "a1b2c3d4e5f6", 5)
+        self.assertEqual((answer["requests"], answer["changed"], answer["timeout"]), (True, ["chat-1"], False), answer)
+        self.assertLess(time.time() - started, 3)
+        answer = remote.watch("lab", "a1b2c3d4e5f6", 1)
+        self.assertEqual((answer["ok"], answer["timeout"]), (True, True))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            remote.main(["--watch", "lab", "--as", "a1b2c3d4e5f6", "--timeout", "1"])
+        self.assertTrue(json.loads(out.getvalue())["timeout"])
+
+    def test_a_host_it_cant_reach(self):
+        self.mode("unreachable")
+        answer = remote.watch("lab", "a1b2c3d4e5f6")
+        self.assertEqual((answer["ok"], answer["reached"]), (False, False))
+        self.assertIn("Can't reach lab", answer["error"])
+        with self.assertRaises(ValueError):   # (the name shows in the host's process list: a hash, nothing else)
+            remote.watch("lab", "my laptop; rm -rf ~")
+
+    def test_in_a_container(self):
+        # (the engine's exec, over ssh for a host's container; argv only)
+        lines = []
+        def capped(line, stdin=None, timeout=None, binary=False):
+            lines.append(line)
+            return subprocess.CompletedProcess(line, 0, "\n" + cs.REMOTE_MARK + ' {"ok": true, "timeout": true}\n', "")
+        with mock.patch.object(remote, "run_capped", side_effect=capped), \
+                mock.patch.object(remote, "exec_user", return_value=("vscode", True)):
+            self.assertTrue(remote.watch("docker:web", "a1b2c3d4e5f6", 50)["ok"])
+            self.assertTrue(remote.watch("podman:web@lab", "a1b2c3d4e5f6", 50)["ok"])
+        self.assertEqual(lines[0], ["docker", "exec", "-i", "-u", "vscode", "web", "sh", "-c",
+                                    "python3 -I - --wait --requests --remote --as a1b2c3d4e5f6 --timeout 50"])
+        self.assertEqual(lines[1][0], "ssh")
+        self.assertIn("podman exec -i -u vscode web sh -c", lines[1][-1])
+
+
 class UnreachedTests(TwoAccountHost):
     def test_an_answer_says_when_the_host_couldnt_be_reached(self):
         # (a queued go-on then starts once the host answers again: KeepGoingOnHostsTests)

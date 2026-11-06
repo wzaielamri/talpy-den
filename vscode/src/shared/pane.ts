@@ -178,6 +178,7 @@ export interface PaneChat {
   busy: boolean; // working or waiting
   atWork: boolean; // working, its turn not over (only a background command after it isn't): a message waits a moment
   bgStop: boolean; // a background chat Stop can interrupt (its row's: the Claude Code versions that was checked on)
+  watchTrouble?: string; // an SSH host's chat: why its host's watcher can't watch it now ("check": it couldn't be reached)
   activity: string; // what it does now
   permission: PermissionAsk | null;
   changes: number; // files it changed

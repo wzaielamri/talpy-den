@@ -24,6 +24,8 @@ function send(message: PaneHostMessage): void {
 
 const chat: PaneChat = {
   host: params.get("host") ?? "", // ?host=lab: an SSH host's chat
+  // ?host=lab&watch=fail: its host's watcher keeps failing (the host tag in the warning colour, its tooltip says why)
+  watchTrouble: params.get("watch") === "fail" ? "lab: Connection closed by remote host" : "",
   chatId: "demo-chat",
   sessionId: "demo-chat",
   profileDir: ".claude",

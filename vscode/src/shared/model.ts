@@ -181,6 +181,13 @@ export function reopensInClaudeCode(prefer: ReopenIn, cliHere: boolean, codeHere
   return codeHere && (prefer === "claudeCode" || !cliHere);
 }
 
+// A chat whose prompts only Talpy Den can show: a background chat Talpy Den's hook answers, at work
+// or waiting, or one waiting on a request the hook relayed (the window that notifies watches its host)
+export function hookedAtWork(s: Pick<Session, "hooked" | "state" | "permission">): boolean {
+  return (!!s.hooked && (s.state === "working" || s.state === "waiting"))
+    || (s.state === "waiting" && s.permission?.answer === "hook");
+}
+
 // What Talpy Chat needs to know of the machine a chat is on (talpyPlace):
 // its claude command and hooks, and for an SSH host or a container, why its
 // chats can't open there now: "connect" (its last check didn't answer, or

@@ -1793,7 +1793,8 @@ function ChatApp() {
       <div class="pane-head">
         <span class={`state-dot st-${headState}`} aria-hidden="true" />
         <h2 class="pane-name">{chat?.name ?? ""}</h2>
-        {chat?.host ? <Tag text={chat.host} title={`This chat runs on the SSH host ${chat.host}.`} /> : null}
+        {chat?.host ? <Tag text={chat.host} caution={!!chat.watchTrouble}
+          title={`This chat runs on the SSH host ${chat.host}.` + (chat.watchTrouble ? `\n\nWhat it asks shows at its next check: Talpy Den can't watch ${chat.host} right now (${chat.watchTrouble === "check" ? "it couldn't be reached" : chat.watchTrouble}).` : "")} /> : null}
         {/* (while the working line says the turn's own time, the header doesn't say a second one) */}
         <span class={`pane-state st-${headState}`}>{starting && chat?.fresh ? "starting"
           : soFar.turn && chat?.state === "working" && chat.stateShort ? chat.stateShort : chat?.stateText ?? ""}</span>

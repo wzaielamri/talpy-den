@@ -41,6 +41,11 @@
   copy), named only by those chats. **Answer it in a terminal** attaches over
   ssh. Two windows answering one prompt: the first answer counts. Not yet in a
   container that shares this computer's home.
+- **A host's prompts within a second:** while a Talpy Chat tab of a chat on a
+  host shows (or, in the window that notifies, while a hooked chat there works
+  or waits), Talpy Den watches that host, so what it asks shows within about
+  a second, not at the next check; the tab then reads every minute while
+  Claude neither works nor waits there.
 - **Model and effort for one chat:** in a background chat or one that isn't
   open, `/model` and `/effort` list the models and effort levels as you type,
   and the one you pick (or `/model sonnet` typed) is for that chat alone:

@@ -58,7 +58,7 @@ export function HostSection({ host: h, groups }: { host: HostState; groups: Grou
           <IconButton
             icon={I.signOut}
             label={`Disconnect from ${container?.host || h.name}`}
-            title={`Disconnect from ${container?.host || h.name}\nCloses the connection you logged in with. To check ${name} again, log in again.`}
+            title={`Disconnect from ${container?.host || h.name}\nCloses the connection you logged in with. To check ${name} again, log in again. Its chats go on there (Claude's background service runs them), and what one asks waits there till you're back.`}
             onClick={() => post({ type: "disconnectHost", host: h.name })}
           />
         ) : null}

@@ -109,7 +109,7 @@ ColumnLayout {
                 textFormat: Text.PlainText
                 anchors.fill: parent
                 mainText: i18n("Disconnect from %1", hostSection.sshHost)
-                subText: i18n("Closes the connection you logged in with: to check %1 again, Talpy Den asks you to log in.", hostSection.label)
+                subText: i18n("Closes the connection you logged in with: to check %1 again, Talpy Den asks you to log in. Its chats go on there (Claude's background service runs them), and what one asks waits there till you're back.", hostSection.label)
             }
         }
         PlasmaComponents3.ToolButton {

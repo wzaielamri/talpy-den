@@ -35,6 +35,8 @@
                                                     a new chat there with a task: in the background there,
                                                     or in a terminal here (or print its command)
     python3 -I remote.py --put-image HOST PATH      a picture pasted here (jump.py --paste-image) to HOST, for a task there
+    python3 -I remote.py --watch HOST --as NAME [--timeout S]   wait (up to S, 50) for a chat's session file or a
+                                                    permission request on HOST to change (live.py there), for Talpy Chat
     python3 -I remote.py --plan HOST SLUG [PROFILE] [--no-open]   a plan there, as a Markdown file here
     python3 -I remote.py --share-plan HOST SLUG PROFILE [TO]      share a plan with every account there (or TO)
     python3 -I remote.py --unshare-plan HOST SLUG PROFILE         keep a shared plan only on PROFILE there
@@ -1030,6 +1032,42 @@ def with_texts(script, args):
     return "import sys; sys.argv[1:] = %s\n" % ascii(["--remote", *args]) + script, shown
 
 
+# Talpy Chat's watcher of a host or a container (--watch): live.py there
+# (sent on stdin, as the status script is), answering the moment a chat's
+# session file or a permission request there changes, or after WATCH_S.
+# Run again at once by the front end while it wants it (a Talpy Chat window
+# of a chat there shows, or a chat Talpy Chat hooked there works or waits):
+# a channel of the shared connection, a python3 waiting in inotify there.
+WATCH_S = 50
+WATCH_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
+
+
+def watch(host, name, timeout=WATCH_S):
+    """What changed on host since what name was told last (live.py --wait
+    --requests --remote there): {"ok", "host", "sessions", "requests",
+    "changed": [chat ids], "urgent", "timeout"}, or {"ok": false, "error",
+    "reached": false (ssh couldn't connect, the container isn't running)}.
+    name: who asks (a hash the front end makes: it shows in the host's
+    process list)."""
+    host = check_host(host)
+    if not WATCH_NAME.match(name or ""):
+        raise ValueError(f"not a watcher's name: {name!r}")
+    timeout = max(1, min(int(timeout), WATCH_S))
+    script = PYTHON_CHECK + (HERE / "live.py").read_text(encoding="utf-8")
+    p = place(host)
+    try:
+        r = run_on(host, f"python3 -I - --wait --requests --remote --as {name} --timeout {timeout}", script, timeout + 15)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "host": host, "error": f"{p.label} didn't answer within {timeout + 15} s"}
+    except OSError as exc:
+        return {"ok": False, "host": host, "reached": False, "error": cant_run(p, exc)}
+    answer = answer_after_mark(r.stdout)
+    if answer is not None:
+        return {**answer, "ok": bool(answer.get("ok")), "host": host}
+    unreached = r.returncode == 255 or (p.container and container_problem(p, r.returncode, r.stderr)[0])
+    return {"ok": False, "host": host, "error": explain(host, r.returncode, r.stderr), **({"reached": False} if unreached else {})}
+
+
 def run_status_script(host, args):
     """Run talpy_den.py on host with args: (ok, its message)."""
     answer = host_answer(host, args)
@@ -1602,6 +1640,8 @@ def main(argv=None):
             out = task(host, profile, folder, **kw)
         elif action == "--put-image" and len(args) == 2:
             out = put_image(*args)
+        elif action == "--watch" and len(args) in (3, 5) and args[1] == "--as" and (len(args) == 3 or args[3] == "--timeout"):
+            out = watch(args[0], args[2], int(args[4]) if len(args) == 5 and args[4].isdigit() else WATCH_S)
         elif action == "--login" and len(args) == 1:
             ok, message = login(args[0])
             out = {"ok": ok, "message": message}

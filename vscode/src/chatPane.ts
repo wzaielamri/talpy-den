@@ -120,7 +120,15 @@ export class ChatPanes implements vscode.Disposable {
     if (pane) return pane.reveal(tab);
     const created = new Pane(this, chat, tab);
     this.panes.set(key, created);
-    created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
+    created.onClosed(() => (this.panes.forEach((p, k) => p === created && this.panes.delete(k)), this.watchesChanged()));
+    this.watchesChanged();
+  }
+
+  // Which hosts' watchers the tabs want (Dashboard: remote.py --watch): of a chat there that shows, or starts
+  watchesChanged(): void {
+    const hosts = new Set<string>();
+    for (const p of this.panes.values()) if (p.wantsWatch()) hosts.add(p.host);
+    this.dash.setPaneHosts?.(hosts);
   }
 
   // A new chat in a tab of its own, for that account and folder, with nothing started yet: your first
@@ -136,7 +144,8 @@ export class ChatPanes implements vscode.Disposable {
                            task: task || (plan ? "Implement this plan." : "") };
     const created = new Pane(this, chat, "chat", fresh);
     this.panes.set(`${host}|${id}`, created);
-    created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
+    created.onClosed(() => (this.panes.forEach((p, k) => p === created && this.panes.delete(k)), this.watchesChanged()));
+    this.watchesChanged();
   }
 
   // A tab's chat Claude moved to the background under a new id goes on under that one (Pane.follow)
@@ -410,7 +419,7 @@ function inPictures(file: string): boolean {
 
 class Pane implements vscode.Disposable {
   private panel: vscode.WebviewPanel;
-  private host: string;
+  readonly host: string;   // (its chat's SSH host or container, "" for this computer)
   private chatId: string;
   private chat: ChatRef;
   private stamp = "";
@@ -457,6 +466,7 @@ class Pane implements vscode.Disposable {
       this.panel.onDidChangeViewState(() => {
         if (this.disposed || this.panel.visible === this.shown) return;
         this.shown = this.panel.visible;
+        if (this.host) this.owner.watchesChanged();   // (an SSH host's chat shown: its host watched, or not)
         this.post({ type: "visible", visible: this.shown });
         // (the look's pace once the read has started the watcher again: 15 s, not 1.5)
         if (this.shown && this.ready) void this.load().finally(() => this.schedule());
@@ -464,6 +474,14 @@ class Pane implements vscode.Disposable {
       }),
       this.panel.onDidDispose(() => this.dispose()),
       owner.ext.dash.onState(() => void this.pushChat()),
+      // an SSH host's or a container's watcher: its chat changed there (a request, its state): a check of the
+      // host (at most every 2 s) and the conversation now; a new chat starting there: the check
+      ...(owner.ext.dash.onHostChanged ? [owner.ext.dash.onHostChanged((e) => {
+        if (this.disposed || !this.host || e.host !== this.host) return;
+        const mine = e.changed.includes(this.chatId) || (!!this.chat.sessionId && e.changed.includes(this.chat.sessionId));
+        if ((mine || this.starting) && !e.requests) this.owner.ext.dash.pollHostSoon(this.host);
+        if (mine && this.panel.visible) void this.load();
+      })] : []),
       // live mode: the chat did a step: what it does now, and the conversation at once
       owner.ext.dash.onLive((e) => {
         if (this.host || !this.chat.sessionId || !e.changed.includes(this.chat.sessionId)) return;
@@ -568,6 +586,8 @@ class Pane implements vscode.Disposable {
       busy: session?.state === "working" || session?.state === "waiting",
       atWork: session?.state === "working" && session.reason !== "background shell",
       bgStop: !!session?.bgStop,
+      // (its host's watcher fails: what it asks shows at the host's next check)
+      watchTrouble: this.host ? (this.owner.ext.dash.hostWatchTrouble?.(this.host) ?? "") : "",
       activity: session ? doingText(session, this.host ? null : liveOf(session, state.live)) : "",
       permission: session?.state === "waiting" ? (session.permission ?? null) : null,
       changes: (session?.changes ?? recent?.changes)?.count ?? 0,
@@ -615,7 +635,11 @@ class Pane implements vscode.Disposable {
     if (this.disposed || !this.panel.visible) return; // (closed: the reading stops)
     // (with the watcher, only for what it can't see: a moment it wasn't running; an SSH host's chat
     // every second just after you sent it something, till that shows: chaseUntil)
-    const every = this.host ? (Date.now() < this.chaseUntil ? 1000 : 5000) : this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
+    // (an SSH host's: every minute while its watcher answers and Claude neither works nor waits there,
+    // what changes coming with the watcher's answer: dash.onHostChanged)
+    const hostBusy = () => ["working", "waiting"].includes(findPaneRow(this.owner.ext.dash.state(), this.host, this.chatId).session?.state ?? "");
+    const every = this.host ? (Date.now() < this.chaseUntil ? 1000 : this.owner.ext.dash.hostWatched?.(this.host) && !hostBusy() ? 60000 : 5000)
+      : this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
     this.timer = setTimeout(() => void this.load().finally(() => this.schedule()), every);
   }
 
@@ -762,10 +786,12 @@ class Pane implements vscode.Disposable {
       return { ok: true, message: "", went: true };
     })();
     void this.pushChat();   // (Starting…)
+    if (this.host) this.owner.watchesChanged();
     try {
       return await this.starting;
     } finally {
       this.starting = null;
+      if (this.host) this.owner.watchesChanged();
       void this.pushChat();
       void this.load();
     }
@@ -1176,6 +1202,11 @@ class Pane implements vscode.Disposable {
   }
 
   private disposed = false;
+
+  // Its host's watcher is wanted: a chat there that shows, or one starting there
+  wantsWatch(): boolean {
+    return !this.disposed && !!this.host && (this.panel.visible || !!this.starting);
+  }
 
   dispose(): void {
     if (this.disposed) return; // (closing the panel calls this again)

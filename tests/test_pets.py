@@ -2027,6 +2027,31 @@ class NewChatTests(unittest.TestCase):
         switch = (ROOT / "ui/OpenInSwitch.qml").read_text()
         self.assertIn("tipTitle: root.talpyChatTitle(openIn.remoteHost, openIn.resuming)", switch)
 
+    def test_a_host_is_watched_only_while_talpy_chat_wants_it(self):
+        # (2026-11-06) one watcher per host for every copy (Hub: remote.py --watch, its command line the same
+        # from run to run), wanted while a Talpy Chat window of a chat there shows or starts one, or in the copy
+        # that notifies while a hooked chat there works or waits; a request checks the host at once, a change
+        # of a chat of interest at most every 2 s (trailing), and that window reads its conversation; a shown
+        # host window reads every minute while its watcher answers and Claude neither works nor waits there
+        hub = (ROOT / "ui/hub/Hub.qml").read_text()
+        for name in ("function wantWatch(id, host, command)", "function dropWatch(id, host)", "function watchChecked(host)",
+                     "signal hostChanged(string host, var answer)", 'Qt.md5("talpy-den plasma " + instanceName).slice(0, 12)'):
+            self.assertIn(name, hub)
+        self.assertIn("watchNext[host] = Date.now() + (n >= 3 ? 60000 : 5000)", hub)
+        self.assertLess(hub.index("Qt.callLater(hub.runWatch, host)"), hub.index("hub.hostChanged(host, answer)"))
+        main = (ROOT / "ui/main.qml").read_text()
+        wanted = main[main.index("function hostWatchWanted() {"):]
+        wanted = wanted[:wanted.index("\n    }\n")]
+        self.assertIn("(w.shown || w.starting)", wanted)
+        self.assertIn("if (notifier)", wanted)
+        self.assertIn("if (!talpyChatHere(host, true))", wanted)
+        self.assertIn("hostPollDue[host] = Date.now() + wait   // (trailing", main)
+        self.assertIn("Hub.watchChecked(host)", main)
+        self.assertNotIn("flatMap", main[main.index("function onHostChanged(host, answer)"):][:1500])   # (QML's lists have none)
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn('interval: pane.host ? (pane.hostWatched && pane.chatState !== "working" && pane.chatState !== "waiting" ? 60000 : 5000)', pane)
+        self.assertIn("caution: pane.hostTrouble !== \"\"", pane)
+
     def test_stop_is_made_only_for_a_chat_it_can_stop_and_keeps_the_line_still(self):
         # Talpy Chat's Stop (A1): its button's QML is read and made only while a chat it can stop
         # works; the working line is as tall without it (nothing moves when it comes or goes), as

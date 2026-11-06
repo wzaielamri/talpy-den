@@ -37,6 +37,7 @@ Window {
     readonly property string chatName: row && row.name ? row.name : (chat.name || (fresh ? i18n("New chat in %1", fresh.short) : ""))
     // Your first message started it, and it isn't listed yet: "Starting…" on its working line
     readonly property bool starting: (!!fresh && pendingSent.some(p => p.chat === chatId && p.state !== "held"))
+    onStartingChanged: if (host) root.watchesChanged()
                                      || (!!chat.startedAt && !row)
     readonly property string chatState: row ? row.state : "done"
     readonly property bool busy: chatState === "working" || chatState === "waiting"
@@ -833,6 +834,8 @@ Window {
     // (minimized, it reads nothing: once it's back, the conversation now)
     readonly property bool shown: visible && visibility !== Window.Minimized
     onShownChanged: {
+        if (host)
+            root.watchesChanged()   // (an SSH host's chat shown: its host watched, Hub's remote.py --watch)
         if (shown)
             paneKeys.active = true   // (its keys: made once it shows)
         if (shown)
@@ -841,8 +844,11 @@ Window {
             load()
     }
     Timer {
-        // (with the watcher, only for what it can't see: a moment it wasn't running)
-        interval: pane.host ? 5000 : pane.watchOk ? 15000 : pane.followsLive ? 5000 : 1500
+        // (with the watcher, only for what it can't see: a moment it wasn't running. An SSH host's or a
+        // container's: every 5 s, but every minute while its host's watcher answers and Claude doesn't work
+        // or wait there: what changes comes with the watcher's answer, root.onHostChanged)
+        interval: pane.host ? (pane.hostWatched && pane.chatState !== "working" && pane.chatState !== "waiting" ? 60000 : 5000)
+                  : pane.watchOk ? 15000 : pane.followsLive ? 5000 : 1500
         running: pane.shown && pane.chatId !== "" && !pane.fresh
         repeat: true
         onTriggered: pane.load()
@@ -854,6 +860,9 @@ Window {
     // not at the next look. Not for an SSH host's (a look every 5 s, and
     // often just after you sent something, chase)
     readonly property bool watching: shown && !host && chatId !== "" && loaded && stamp !== "" && watchFailures < 3
+    // (an SSH host's or a container's chat: its host's watcher answers, root.watchedHosts)
+    readonly property bool hostWatched: !!host && !!root.watchedHosts[host] && Hub.watching(host)
+    readonly property string hostTrouble: host && root.watchedHosts[host] ? Hub.watchTrouble[host] || "" : ""
     readonly property bool watchOk: watching && watchLine !== "" && watchFailures === 0
     property string watchLine: ""     // the one running (an answer from another is left out)
     property real watchStartedAt: 0
@@ -2785,8 +2794,14 @@ Window {
                 Tag {
                     visible: pane.host !== ""
                     text: root.hostLabel(pane.host)
-                    tooltip: root.isContainer(pane.host) ? i18n("This chat runs in the container %1.", root.hostLabel(pane.host))
-                                                         : i18n("This chat runs on the SSH host %1.", pane.host)
+                    // (its watcher fails: in the warning colour, and the tooltip says what that means)
+                    caution: pane.hostTrouble !== ""
+                    tooltip: (root.isContainer(pane.host) ? i18n("This chat runs in the container %1.", root.hostLabel(pane.host))
+                                                          : i18n("This chat runs on the SSH host %1.", pane.host))
+                             + (pane.hostTrouble === "" ? ""
+                                : "\n\n" + i18n("What it asks shows at its next check: Talpy Den can't watch %1 right now (%2).",
+                                                root.hostLabel(pane.host),
+                                                pane.hostTrouble === "check" ? i18n("it couldn't be reached") : pane.hostTrouble))
                 }
                 // what it's doing, in its state's color
                 Rectangle {

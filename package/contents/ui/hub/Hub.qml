@@ -112,6 +112,8 @@ QtObject {
 
     function drop(id) {
         delete panes[id]
+        for (const host in watchWanted)
+            dropWatch(id, host)
         if (!(id in copies))
             return
         delete copies[id]
@@ -217,6 +219,114 @@ QtObject {
         onTriggered: hub.runLive()
     }
 
+    // ---------------------------------------------------------------- SSH hosts' and containers' watchers
+    // Talpy Chat's watcher of a host (remote.py --watch: live.py there, over
+    // the shared ssh connection): while a copy wants it (a Talpy Chat window
+    // of a chat there shows, or, in the copy that notifies, a chat Talpy Chat
+    // hooked there works or waits), it answers the moment a chat's session
+    // file or a permission request there changes (hostChanged), then runs
+    // again; within 50 s anyway. One per host for all copies, its command line
+    // the same from run to run (--as: a name of this plasmashell's, hashed).
+    property var watchWanted: ({})    // host -> {copy id: its remote.py --watch command, without --as}
+    property var watchRuns: ({})      // host -> {line, at}: the one running
+    property var watchFailures: ({})  // host -> failures in a row
+    property var watchNext: ({})      // host -> when it may run again (after a failure)
+    // host -> why Talpy Den can't watch it now ("" or missing: it can); "check": it couldn't be
+    // reached, so not until its next check answers (watchChecked)
+    property var watchTrouble: ({})
+    signal hostChanged(string host, var answer)   // answer: {sessions, requests, changed: [chat ids]}
+    readonly property int watchStaleMs: 80000
+
+    function wantWatch(id, host, command) {
+        const w = watchWanted[host] || {}
+        if (w[id] === command)
+            return
+        watchWanted = Object.assign({}, watchWanted, { [host]: Object.assign({}, w, { [id]: command }) })
+        runWatch(host)
+    }
+
+    function dropWatch(id, host) {
+        const w = watchWanted[host]
+        if (!w || !(id in w))
+            return
+        const rest = Object.assign({}, w)
+        delete rest[id]
+        const next = Object.assign({}, watchWanted)
+        if (Object.keys(rest).length)
+            next[host] = rest
+        else
+            delete next[host]   // (the run in flight ends by itself within 50 s; its answer is let go)
+        watchWanted = next
+    }
+
+    // The host answered its check: a watcher that couldn't reach it runs again
+    function watchChecked(host) {
+        if (watchTrouble[host] === "check") {
+            const t = Object.assign({}, watchTrouble)
+            delete t[host]
+            watchTrouble = t
+            watchFailures[host] = 0
+            runWatch(host)
+        }
+    }
+
+    function watching(host) {
+        return !!watchWanted[host] && !watchTrouble[host]
+    }
+
+    function runWatch(host) {
+        const w = watchWanted[host]
+        if (!w || watchRuns[host] || watchTrouble[host] === "check" || Date.now() < (watchNext[host] || 0) || !instanceName)
+            return
+        const command = w[Object.keys(w).sort()[0]]
+        const line = command + " --as " + Qt.md5("talpy-den plasma " + instanceName).slice(0, 12)
+        watchRuns[host] = { line: line, at: Date.now() }
+        watchRunner.connectSource(line)
+    }
+
+    function watchFailed(host, why, unreached) {
+        const n = (watchFailures[host] || 0) + 1
+        watchFailures[host] = n
+        watchNext[host] = Date.now() + (n >= 3 ? 60000 : 5000)
+        if (unreached || n >= 3)
+            watchTrouble = Object.assign({}, watchTrouble, { [host]: unreached ? "check" : why })
+    }
+
+    property Exec watchRunner: Exec {
+        staleMs: hub.watchStaleMs
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            let host = ""
+            for (const h in hub.watchRuns)
+                if (hub.watchRuns[h].line === source)
+                    host = h
+            if (!host)
+                return
+            delete hub.watchRuns[host]
+            let answer = null
+            try {
+                answer = JSON.parse(data["stdout"])
+            } catch (e) {
+            }
+            if (!hub.watchWanted[host])
+                return   // (not wanted any more: let go)
+            if (!answer || !answer.ok) {
+                hub.watchFailed(host, answer ? answer.error || answer.message || "" : (data["stderr"] || "").trim().split("\n").pop(),
+                                !!answer && answer.reached === false)
+                return
+            }
+            hub.watchFailures[host] = 0
+            if (hub.watchTrouble[host]) {
+                const t = Object.assign({}, hub.watchTrouble)
+                delete t[host]
+                hub.watchTrouble = t
+            }
+            Qt.callLater(hub.runWatch, host)   // (first: a copy's handler that throws doesn't stop it)
+            if (answer.sessions || answer.requests)
+                hub.hostChanged(host, answer)
+        }
+    }
+
     function wantsOf(command) {
         const out = []
         for (const id in copies)
@@ -306,6 +416,14 @@ QtObject {
             if (hub.liveRunning && (Date.now() - hub.liveStartedAt > hub.liveStaleMs || !hub.liveRunner.has(hub.liveLine))) {
                 hub.liveRunning = false   // (its watcher never answered, or can't: the next one starts)
                 hub.runLive()
+            }
+            // (a host's watcher: one that never answered, or can't, is given up; one that failed runs again when its wait is over)
+            for (const host in hub.watchWanted) {
+                const r = hub.watchRuns[host]
+                if (r && (Date.now() - r.at > hub.watchStaleMs || !hub.watchRunner.has(r.line)))
+                    delete hub.watchRuns[host]
+                if (!hub.watchRuns[host])
+                    hub.runWatch(host)
             }
             const due = {}
             for (const id in hub.copies)
