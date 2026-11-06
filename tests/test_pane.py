@@ -1470,6 +1470,40 @@ class TalpyChatHookTests(SendFixture):
         # nothing of the account's settings changes
         self.assertFalse((self.home / ".claude-work/settings.json").exists())
 
+    def test_claudes_predicted_reply_on_with_suggest_replies(self):
+        # (Suggest replies on: the chats Talpy Chat starts or wakes predict your reply, Claude's grey
+        # suggestion, written into their job's record; with the hook, or alone where the hook runs anyway)
+        predict = '"env":{"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION":"true"}'
+        self.start(predict=True)
+        self.assertEqual(self.calls()[-1][:3], ["--bg", "--settings", self.hook()[:-1] + "," + predict + "}"])
+        pane.relay(self.home, [], True)
+        self.assertEqual(pane.send(self.home, [], ".claude-work", SID, "and the docs", None, "auto", str(self.bin / "claude"),
+                                   predict=True)["how"], "background")
+        self.assertEqual(self.calls()[-1], ["--bg", "--resume", SID, "--settings", "{" + predict + "}", "and the docs"])
+        self.start()   # (off: none)
+        self.assertEqual(self.calls()[-1], ["--bg", "Fix the tests"])
+
+    def test_claudes_predicted_reply_is_in_the_conversation(self):
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "tempo": "blocked", "needs": "pick one", "respawnFlags": []})
+        self.chat(prompt("tidy up", self.now - 9, cwd=str(self.folder)),
+                  text_reply("Should I delete the old logs or keep them?", self.now - 8, "m1"))
+        ask = lambda **kw: self.cli("--conversation", SID, "--profile", ".claude-work", "--suggest", *kw.get("more", []))
+        first = ask()
+        self.assertEqual((first["ended"], first["predicted"]), ("asked", None))
+        # a few seconds later, Claude's guess: a change, though the transcript isn't
+        write(state, {"sessionId": SID, "tempo": "blocked", "needs": "pick one", "respawnFlags": [],
+                      "suggestedReply": "  delete   them "})
+        again = ask(more=["--if-changed", first["stamp"]])
+        self.assertEqual(again["predicted"], "delete them")
+        self.assertTrue(ask(more=["--if-changed", again["stamp"]])["unchanged"])
+        # not while it works again, nor for a permission prompt, nor with Suggest replies off
+        write(state, {"sessionId": SID, "tempo": "active", "suggestedReply": "delete them"})
+        self.assertIsNone(ask()["predicted"])
+        write(state, {"sessionId": SID, "tempo": "blocked", "block": {"kind": "permission"}, "suggestedReply": "yes"})
+        self.assertIsNone(ask()["predicted"])
+        self.assertNotIn("predicted", self.cli("--conversation", SID, "--profile", ".claude-work"))
+
     def test_no_hook_of_its_own_where_the_hook_runs_anyway_or_cant(self):
         # the setting for every chat on: the account's settings have the hook (it would run twice)
         pane.relay(self.home, [], True)

@@ -675,7 +675,7 @@ function ChatApp() {
   // (chipsOf: its question's answers, then your usual replies after a turn that ended so), and
   // what you type completed in grey from your usual replies (completionOf; Tab or → takes it)
   const [suggest, setSuggest] = useState(config.suggest !== false);
-  const [turn, setTurn] = useState<{ ended: TurnEnded | null; over: boolean; asks: Asks | null }>({ ended: null, over: false, asks: null });
+  const [turn, setTurn] = useState<{ ended: TurnEnded | null; over: boolean; asks: Asks | null; predicted?: string | null }>({ ended: null, over: false, asks: null });
   // How full its context is (the header's tag), Claude's turn so far (the working line's end)
   const [soFar, setSoFar] = useState<{ context: ContextLeft | null; turn: TurnSoFar | null }>({ context: null, turn: null });
   const [usual, setUsual] = useState<UsualReplies | null>(null);
@@ -893,7 +893,7 @@ function ChatApp() {
           const el = list.current;
           if (el) follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; // (on another tab: as when you left)
           setLoadError("");
-          setTurn({ ended: a.ended ?? null, over: !!a.over, asks: a.asks ?? null });
+          setTurn({ ended: a.ended ?? null, over: !!a.over, asks: a.asks ?? null, predicted: a.predicted ?? null });
           setSoFar({ context: a.context ?? null, turn: a.turn ?? null });
           if (a.options) setChatOptions(a.options);
           setItems(a.items ?? []);
@@ -1288,7 +1288,7 @@ function ChatApp() {
   const pendingHere = outgoing.length > 0 || answersOut.length > 0 || !!chat?.queued || items.some((it) => it.queued);
   const chipsOn = !!chat && chipsWanted({ on: suggest && conversation, fresh: !!chat.fresh || starting, ended: turn.ended, over: turn.over,
                                           state: chat.state, text, pending: pendingHere, resting: restUntil > 0, sentAt: sentAt.current }, Date.now());
-  const chips = useMemo(() => (chipsOn ? chipsOf(turn.asks, turn.ended, usual, hidden) : []), [chipsOn, turn, usual, hidden]);
+  const chips = useMemo(() => (chipsOn ? chipsOf(turn.asks, turn.ended, usual, hidden, turn.predicted) : []), [chipsOn, turn, usual, hidden]);
   useEffect(() => {
     if (chips.length) chipsSeen.current = chips;
     else setChipMenu(null);

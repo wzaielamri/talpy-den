@@ -4505,7 +4505,9 @@ PlasmoidItem {
             return
         const cmd = "python3 -I " + shellQuote(codeDir + "pane.py") + " --send " + shellQuote(s.chatId || s.sessionId)
                     + " --text " + shellQuote(text) + (s.sessionId ? " --session " + shellQuote(s.sessionId) : "")
-                    + profileArg(s.profileDir) + (host ? " --host " + shellQuote(host) : "") + configDirArgs + " # " + Date.now()
+                    + profileArg(s.profileDir) + (host ? " --host " + shellQuote(host) : "")
+                    + (Plasmoid.configuration.suggestReplies !== false ? " --suggest" : "")   // (a chat it wakes predicts your reply)
+                    + configDirArgs + " # " + Date.now()
         replyDrafts[cmd] = { session: s, host: host || "", text: text }
         paneActions.connectSource(cmd)
     }

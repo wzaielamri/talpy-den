@@ -271,6 +271,7 @@ export class ChatPanes implements vscode.Disposable {
     // (enter goes as auto: the copy is VS Code's clipboard, also in a remote window)
     const args = ["--send", chatId, ...(file ? ["--text-file", file] : ["--text", text]), "--how", how === "enter" ? "auto" : how, ...(sid ? ["--session", sid] : []),
                   ...(chat.profileDir ? ["--profile", chat.profileDir] : []), ...(afterTurn ? ["--after-turn", "--name", chat.name || ""] : []),
+                  ...(Pane.suggests() ? ["--suggest"] : []),   // (a chat it wakes predicts your reply: pane.py PREDICT_ENV)
                   ...(host ? ["--host", host] : configDirArgs())];
     let r: Record<string, any>;
     try {
@@ -729,7 +730,8 @@ class Pane implements vscode.Disposable {
         }
         r = await this.owner.ext.backend.pane([
           "--start", f.profile, "--cwd", f.cwd, ...(file ? ["--text-file", file] : ["--text", text]), ...chatOptionArgs(),
-          ...(f.plan ? ["--plan", f.plan.slug, "--plan-profile", f.plan.profileDir] : []), ...configDirArgs(),
+          ...(f.plan ? ["--plan", f.plan.slug, "--plan-profile", f.plan.profileDir] : []), ...(Pane.suggests() ? ["--suggest"] : []),
+          ...configDirArgs(),
         ], 180000);
       } catch (e) {
         r = { ok: false, message: e instanceof Error ? e.message : String(e) };

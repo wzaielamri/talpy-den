@@ -241,7 +241,7 @@ const asks: Record<string, Asks> = {
 const usual: UsualReplies = { chips: { asked: ["yes please", "go"], limit: ["continue"], stopped: ["go on"] },
                               ranked: ["continue", "commit and push", "go on", "yes please", "go"] };
 const turnEnd: Partial<Conversation> = chipsOf === "limit" ? { ended: "limit", over: true, asks: null }
-  : chipsOf ? { ended: "asked", over: true, asks: asks[chipsOf] ?? null } : {};
+  : chipsOf ? { ended: "asked", over: true, asks: asks[chipsOf] ?? null, predicted: params.get("predicted") } : {};
 if (chipsOf)
   Object.assign(chat, { state: "done", stateText: "done 1 min ago", busy: false, atWork: false, permission: null, queued: null, activity: "" });
 // how full its context is (?context=near: close to Claude compacting it; ?context=0: not known), and

@@ -69,6 +69,7 @@ export interface Conversation {
   ended?: TurnEnded | null;
   over?: boolean;
   asks?: Asks | null;
+  predicted?: string | null; // Claude's own guess at your reply to its question (a background chat's: its first chip)
   context?: ContextLeft | null; // how full its context is (null: not known)
   turn?: TurnSoFar | null; // Claude's turn so far, while it's going on
   options?: ChatOptions; // the model and effort it uses now (/model and /effort's lists mark them)
@@ -980,6 +981,7 @@ export interface ReplyChip {
   recommended: boolean; // (Claude says it would take this option)
   usual: boolean; // (one of your usual replies: "Don't suggest this" hides it)
   title: string;
+  predicted?: boolean; // (Claude's own guess at your reply: Conversation.predicted)
 }
 export const CHIPS_MAX = 4;
 export const CHIPS_IGNORED = 5; // turns in a row with chips and none used: none for CHIPS_REST_MS then
@@ -997,27 +999,33 @@ export function replyKey(text: string): string {
     .replace(/[\s.!?,;:…。！？]+$/u, "").split(/\s+/).filter(Boolean).join(" ");
 }
 
-// The chips for a turn that's over: Claude's question's (more options than fit: the ones it
-// recommends, then the first ones, in their order), then your usual replies after a turn that
-// ended so, each once and none you hid; at most CHIPS_MAX
+// The chips for a turn that's over: Claude's own guess at your reply (predicted: a background
+// chat's), then Claude's question's (more options than fit: the ones it recommends, then the first
+// ones, in their order), then your usual replies after a turn that ended so, each once and none you
+// hid; at most CHIPS_MAX
 export function chipsOf(asks: Asks | null | undefined, ended: TurnEnded | null | undefined, usual: UsualReplies | null | undefined,
-                        hidden: ReadonlySet<string> = new Set()): ReplyChip[] {
+                        hidden: ReadonlySet<string> = new Set(), predicted?: string | null): ReplyChip[] {
+  const guess = (predicted ?? "").trim();
+  const room = CHIPS_MAX - (guess ? 1 : 0);
   let choices = asks?.choices ?? [];
-  if (choices.length > CHIPS_MAX) {
-    const marked = choices.filter((c) => c.recommended).slice(0, CHIPS_MAX);
-    const rest = choices.filter((c) => !c.recommended).slice(0, CHIPS_MAX - marked.length);
+  if (choices.length > room) {
+    const marked = choices.filter((c) => c.recommended).slice(0, room);
+    const rest = choices.filter((c) => !c.recommended).slice(0, room - marked.length);
     choices = choices.filter((c) => marked.includes(c) || rest.includes(c));
   }
   const out: ReplyChip[] = [];
   const seen = new Set<string>();
-  const add = (label: string, send: string, recommended: boolean, usual: boolean) => {
+  const add = (label: string, send: string, recommended: boolean, usual: boolean, guessed = false) => {
     const n = out.length + 1;
-    out.push({ label, send, recommended, usual, title: usual
+    out.push({ label, send, recommended, usual, ...(guessed ? { predicted: true } : {}), title: guessed
+      ? `Claude's own guess at your reply: sends “${send}” (Alt+${n}). Shift+click: put it in the box first, to add to it.`
+      : usual
       ? `Your usual reply after ${ENDED_AFTER[ended!]}: sends “${send}” (Alt+${n}). Shift+click: put it in the box first, to add to it. Right-click: don't suggest it again.`
       : `Answers Claude's question with “${send}” (Alt+${n}).${recommended ? " Claude recommends this one." : ""} Shift+click: put it in the box first, to add to it.` });
     seen.add(replyKey(send));
   };
-  for (const c of choices) add(c.label, c.send, !!c.recommended, false);
+  if (guess) add(guess, guess, false, false, true);
+  for (const c of choices) if (!seen.has(replyKey(c.send))) add(c.label, c.send, !!c.recommended, false);
   for (const t of (ended && usual?.chips?.[ended]) || []) {
     if (out.length >= CHIPS_MAX) break;
     const key = replyKey(t);

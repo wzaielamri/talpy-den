@@ -130,6 +130,7 @@ import stat
 import subprocess
 import sys
 import time
+import zlib
 from pathlib import Path
 
 sys.dont_write_bytecode = True  # no __pycache__ inside the installed widget...
@@ -801,17 +802,18 @@ WAIT_GATHER_S = 0.04  # after a change: what Claude writes with it (a prompt and
 WAIT_MASK = 0x2 | 0x4 | 0x8 | 0x400 | 0x800
 
 
-def wait_for_change(path, stamp, seconds, clock=time.time):
+def wait_for_change(path, stamp, seconds, clock=time.time, look=stamp_of):
     """Wait up to seconds for the transcript at path to be other than stamp
-    (stamp_of): whether it is. inotify on the file (elsewhere: a look every
-    half second); it ends as soon as whoever started it is gone."""
+    (look: stamp_of, or what else the answer depends on with it): whether it
+    is. inotify on the file (elsewhere: a look every half second), and a look
+    every second; it ends as soon as whoever started it is gone."""
     import live  # (its Watch: the same inotify the widget's watcher uses)
     watch = live.Watch([str(path)], WAIT_MASK)  # (watching first: nothing between the look and the wait is missed)
     parent, end = os.getppid(), clock() + max(0.0, seconds)
     try:
         while True:
             try:
-                if stamp_of(path) != stamp:
+                if look(path) != stamp:
                     return True
             except OSError:
                 return True  # (gone: the read says so)
@@ -843,21 +845,28 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     "turn": Claude's turn so far, while it's going on (turns.TurnSoFar.now:
     the start of a long one kept in the cache folder's turns/). suggest (Suggest
     replies on): how its last turn ended, "ended" and "over"
-    (replies.TurnEnd.result), and the question it ends with as chips, "asks"
-    (replies.asks_of)."""
+    (replies.TurnEnd.result), the question it ends with as chips, "asks"
+    (replies.asks_of), and Claude's own predicted reply to it, "predicted"
+    (predicted_reply: its background job writes it a few seconds after the
+    turn's end, so the stamp says whether there is one)."""
     if not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
     if path is None:
         return {"ok": False, "missing": True, "message": NO_CHAT}
-    stamp = stamp_of(path)
+    import chatpick
+
+    def look(path):
+        said = predicted_reply(chatpick.job_record(profile, chat_id)) if suggest else None
+        return stamp_of(path) + (f"~{zlib.crc32(said.encode('utf-8')):08x}" if said else "")
+    stamp = look(path)
     if if_changed and if_changed == f"{stamp}/{limit}":
-        if not (wait > 0 and wait_for_change(path, stamp, min(wait, WAIT_MAX_S))):
+        if not (wait > 0 and wait_for_change(path, stamp, min(wait, WAIT_MAX_S), look=look)):
             return {"ok": True, "unchanged": True}
         if not path.exists():  # (moved: where it is now)
             profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
         try:
-            stamp = stamp_of(path)  # (before it's read: what's written meanwhile is a change the next time)
+            stamp = look(path)  # (before it's read: what's written meanwhile is a change the next time)
         except (OSError, AttributeError):
             return {"ok": False, "missing": True, "message": NO_CHAT}
     ends, so_far = {} if suggest else None, {}
@@ -872,13 +881,27 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
               "context": turns.context_left(turn.usage, turn.model, lambda: turns.status_window(home, profile, chat_id, turn.model),
                                             cs.compact_window(profile.path, turn.model)),
               "turn": turn.now(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")}
-    import chatpick   # (what /model and /effort's lists mark as what it uses now)
-    result["options"] = chatpick.options_now(home, profile, chat_id, bool(peek.get("ultracode")))
+    record = chatpick.job_record(profile, chat_id)   # (what /model and /effort's lists mark as what it uses now)
+    result["options"] = chatpick.options_now(home, profile, chat_id, bool(peek.get("ultracode")), record)
     if suggest:
         import replies
         ended = ends.get("ended")
-        result.update(ended=ended, over=bool(ends.get("over")), asks=replies.asks_of(ends.get("reply")) if ended == "asked" else None)
+        result.update(ended=ended, over=bool(ends.get("over")), asks=replies.asks_of(ends.get("reply")) if ended == "asked" else None,
+                      predicted=predicted_reply(record) if ended == "asked" else None)
     return result
+
+
+PREDICTED_CHARS = 300
+
+
+def predicted_reply(record):
+    """Claude's predicted reply to what its background chat asks you (its
+    job's suggestedReply: PREDICT_ENV), while it waits for it (tempo
+    "blocked", not a permission prompt), or None."""
+    said = record.get("suggestedReply") if isinstance(record, dict) else None
+    if not isinstance(said, str) or not said.strip() or record.get("tempo") != "blocked" or record.get("block"):
+        return None
+    return " ".join(said.split())[:PREDICTED_CHARS]
 
 
 # ---------------------------------------------------------------- permission requests the hook relays
@@ -1352,7 +1375,8 @@ def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped
     return answer
 
 
-def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None, scoped=True):
+def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None, scoped=True,
+         predict=False):
     """Send your message to a chat the way it takes one (cs.reply_route):
     {"ok", "message", "how": "typed"|"background"|"vscode"|"copy"|"ask",
     "link" (vscode), "copied" (copy)}. how "ask": the chat runs in a
@@ -1380,10 +1404,12 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
     with cs.wake_lock(home, chat_id) as waited:
         if waited:
             cs.wake_settle(home, extra_dirs, chat_id)
-        return send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile)
+        return send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile,
+                        predict)
 
 
-def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile):
+def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile,
+             predict=False):
     """send's sending, under its lock."""
     entry = None
     for sid in (session_id, chat_id):
@@ -1431,7 +1457,7 @@ def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, clau
         ok, message = cs.stop_chat(entry)
         if not ok:
             return {"ok": False, "message": message}
-    hook = chat_hook(home, next((p for p in profiles if cs.matches_profile(p, profile_key)), profile)) if scoped else None
+    hook = chat_hook(home, next((p for p in profiles if cs.matches_profile(p, profile_key)), profile), predict) if scoped else None
     answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped, hook)
     answer["how"] = "background"
     return answer
@@ -1484,7 +1510,7 @@ def type_in(home, extra_dirs, profile_key, chat_id, text, session_id=None, copy=
 
 
 def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=None, mode=None, plan=None,
-               plan_profile=None, claude=None, scoped=True):
+               plan_profile=None, claude=None, scoped=True, predict=False):
     """A new chat Talpy Chat starts with your first message (text; or a
     plan's, with what you add): in the background on the profile, in folder
     (claude --bg, in a systemd scope of its own: go_on_in_background), with
@@ -1512,7 +1538,7 @@ def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=N
     claude = claude or cs.find_claude(home, ask_shell=True)
     if claude is None:
         return {"ok": False, "message": "No claude command found"}
-    hook = chat_hook(home, profile) if scoped else None
+    hook = chat_hook(home, profile, predict) if scoped else None
     options = (["--settings", hook] if hook else []) + options + cs.picture_options(home, text)
     prefix = []
     if scoped:
@@ -2196,19 +2222,33 @@ def hook_copy(home, kind="relay"):
     return target
 
 
-def chat_hook(home, profile):
-    """The permission hook for one chat, as claude --settings takes it
-    (JSON: the same entry --relay on writes), so a background chat Talpy
-    Chat starts or wakes asks its permission prompts and questions where
-    Talpy Chat answers them: it has no terminal to ask in. None when the
-    profile's own settings have the hook (on for every chat: it would run
-    twice), or managed settings let only their own hooks run."""
-    if cs.managed_hooks_only() or has_hook(cs.read_json(profile.path / "settings.json") or {}):
-        return None
-    target = hook_copy(home)
-    if target is None:
-        return None
-    return json.dumps(set_hook({}, hook_command(target), True), separators=(",", ":"))
+# Claude's predicted next prompt (its grey suggestion in a terminal), for a
+# chat Talpy Chat starts or wakes while Suggest replies is on: a background
+# chat writes it into its job's record (suggestedReply) once a reply of
+# Claude's ends asking you something, and Talpy Chat shows it as the first
+# chip. Off by default for many accounts (a flag of Claude's own, and off
+# near a usage limit): this turns it on for that chat alone (Claude Code
+# 2.1.318, live-checked: research Q4)
+PREDICT_ENV = {"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true"}
+
+
+def chat_hook(home, profile, predict=False):
+    """Settings of its own for one chat, as claude --settings takes them
+    (JSON), or None for none. The permission hook (the same entry --relay on
+    writes), so a background chat Talpy Chat starts or wakes asks its
+    permission prompts and questions where Talpy Chat answers them: it has
+    no terminal to ask in; not when the profile's own settings have the hook
+    (on for every chat: it would run twice), or managed settings let only
+    their own hooks run. predict: Claude's predicted reply on too
+    (PREDICT_ENV)."""
+    settings = {}
+    if not (cs.managed_hooks_only() or has_hook(cs.read_json(profile.path / "settings.json") or {})):
+        target = hook_copy(home)
+        if target is not None:
+            settings = set_hook({}, hook_command(target), True)
+    if predict:
+        settings["env"] = dict(PREDICT_ENV)
+    return json.dumps(settings, separators=(",", ":")) if settings else None
 
 
 def relay_status(home, extra_dirs, kind="relay"):
@@ -2510,12 +2550,12 @@ def main(argv=None):
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)
                 result = {"ok": ok, "message": said}
             else:
-                result = send(home, config_dirs, profile, target, text, session, how, scoped=not remote)
+                result = send(home, config_dirs, profile, target, text, session, how, scoped=not remote, predict=suggest)
                 if how == "enter" and result.get("how") == "ask" and not remote:  # (on a host: copied here, above)
                     result = copy_answer((text or "").strip(), ENTER_COPIES)
         elif action == "--start":
             result = start_chat(home, config_dirs, target, cwd, text, model, effort, mode, plan, plan_profile,
-                                scoped=not remote)
+                                scoped=not remote, predict=suggest)
         elif action == "--interrupt":
             ok, said = interrupt(home, config_dirs, profile, target, session)
             result = {"ok": ok, "message": said}

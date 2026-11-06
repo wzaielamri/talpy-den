@@ -613,6 +613,7 @@ Window {
         turnEnded = ""
         turnOver = false
         asks = null
+        predicted = ""
         contextLeft = null
         turnNow = null
         usesNow = null
@@ -928,6 +929,7 @@ Window {
         turnEnded = result.ended || ""
         turnOver = !!result.over
         asks = result.asks || null
+        predicted = result.predicted || ""
         contextLeft = result.context || null
         turnNow = result.turn || null
         if (result.options)
@@ -1457,6 +1459,7 @@ Window {
     property string turnEnded: ""      // how its last turn ended ("": mid-turn, a message queued, or not asked)
     property bool turnOver: false      // (the transcript says so; else the chat's state does)
     property var asks: null            // the question it ended with, as chips
+    property string predicted: ""      // Claude's own guess at your reply to it (a background chat's: pane.py predicted_reply)
     property var usual: null           // {chips: {how a turn ended: [your replies then]}, ranked: [all of them]}
     property real usualAt: 0
     property var hiddenReplies: ({})   // reply key -> true: Don't suggest this, gone at once
@@ -1501,7 +1504,7 @@ Window {
             return false
         if (!turnOver && (chatState === "working" || Date.now() - sentAt <= 15000))
             return false
-        return (!!asks && !!asks.choices && asks.choices.length > 0)
+        return (!!asks && !!asks.choices && asks.choices.length > 0) || predicted !== ""
                || ((usual && usual.chips && usual.chips[turnEnded]) || []).some(t => !hiddenReplies[replyKey(t)])
     }
     onChipsOnChanged: if (loaded && nearEnd()) keepEnd()   // (the row above the box comes or goes: the end stays in view)
@@ -2123,16 +2126,17 @@ Window {
     }
     // pane.py --send's arguments for your message (asked), to the chat shown; a new chat's first
     // one starts it (--start: in the background, on its account, in its folder, with the model,
-    // effort and mode of its ⚙ line, the new-chat ones; with the permission hook for it alone)
+    // effort and mode of its ⚙ line, the new-chat ones; with the permission hook for it alone).
+    // Suggest replies on: a chat it starts or wakes predicts your reply (pane.py PREDICT_ENV)
     function sendArgs(asked) {
         const f = asked.fresh
         if (f)
             return "--start " + root.shellQuote(f.profile) + " --cwd " + root.shellQuote(f.cwd) + " --text " + root.shellQuote(asked.text)
                    + root.chatOptions + (f.plan ? " --plan " + root.shellQuote(f.plan.slug) + " --plan-profile " + root.shellQuote(f.plan.profileDir) : "")
-                   + root.configDirArgs
+                   + (suggestOn ? " --suggest" : "") + root.configDirArgs
         return "--send " + root.shellQuote(asked.chat) + " --text " + root.shellQuote(asked.text)
                + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + " --how " + asked.how
-               + (asked.kind === "later" ? " --after-turn --name " + root.shellQuote(chatName) : "") + paneArgs()
+               + (asked.kind === "later" ? " --after-turn --name " + root.shellQuote(chatName) : "") + (suggestOn ? " --suggest" : "") + paneArgs()
     }
     // Held (sent while Claude works): it goes to Claude when its moment is up
     // (Claude takes it in at its next step), or at once with Send now; Edit

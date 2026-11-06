@@ -57,7 +57,13 @@ def label(model, effort):
     return " · ".join(words)
 
 
-def options_now(home, profile, chat_id, ultracode=False):
+def job_record(profile, chat_id):
+    """Its own background job's record (jobs/<id8>/state.json), or None."""
+    record = cs.read_json(profile.path / "jobs" / chat_id[:8] / "state.json")
+    return record if isinstance(record, dict) and record.get("sessionId") == chat_id else None
+
+
+def options_now(home, profile, chat_id, ultracode=False, record=False):
     """What a chat uses now, for Talpy Chat's model and effort lists to mark
     (pane.py --conversation's "options"): {"model", "effort", "ultracode",
     "next"}. From what Claude wakes it with (its job's saved options; ""
@@ -65,9 +71,10 @@ def options_now(home, profile, chat_id, ultracode=False):
     its next wake ("next"), else what it last ran on (its last reply's model,
     e.g. "claude-opus-5-5", and its status line's effort; None where that
     isn't known). An effort of "ultracode" is xhigh with ultracode on;
-    otherwise ultracode is as the chat last noted it (talpy_den's peek)."""
-    record = cs.read_json(profile.path / "jobs" / chat_id[:8] / "state.json")
-    if isinstance(record, dict) and record.get("sessionId") == chat_id and isinstance(record.get("respawnFlags"), list):
+    otherwise ultracode is as the chat last noted it (talpy_den's peek).
+    record: its job's record when read already (job_record)."""
+    record = job_record(profile, chat_id) if record is False else record
+    if record is not None and isinstance(record.get("respawnFlags"), list):
         saved = cs.saved_flags(record["respawnFlags"])
         effort = saved.get("effort", "")
         return {"model": saved.get("model", ""), "effort": "xhigh" if effort == cs.ULTRACODE else effort,

@@ -141,6 +141,10 @@
 
 ### Better
 
+- **Talpy Chat: Claude's own guess at your reply.** With
+  `talpyDen.suggestReplies` on, the chats Talpy Chat starts or wakes in the
+  background predict your reply (Claude's grey suggestion); once Claude asks
+  you something, its guess is the first chip, sent only with a click.
 - **Talpy Chat: ultracode for one chat, and what a chat uses now.**
   `/effort`'s list has *Turn ultracode on* (Extra high effort, with
   ultracode) or *Turn ultracode off*, for that chat alone, your settings

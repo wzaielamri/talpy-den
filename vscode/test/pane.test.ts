@@ -1284,6 +1284,12 @@ test("suggested replies: Claude's question's chips first, then your usual ones a
   assert.deepEqual(chipsOf(null, "limit", usual).map((c) => c.send), ["continue"]);
   assert.deepEqual(chipsOf(null, "limit", usual, new Set([replyKey("Continue!")])), []);
   assert.deepEqual(chipsOf(null, "finished", null), []);
+  // Claude's own guess at your reply first (a background chat's), each once, still at most 4
+  const guessed = chipsOf(yesno, "asked", usual, new Set(), " yes ");
+  assert.deepEqual(guessed.map((c) => [c.send, !!c.predicted, c.usual]),
+                   [["yes", true, false], ["No", false, false], ["yes please", false, true], ["go", false, true]]);
+  assert.match(guessed[0].title, /^Claude's own guess at your reply: sends “yes” \(Alt\+1\)/);
+  assert.equal(chipsOf(null, "asked", usual, new Set(), "keep the old logs").length, 4);
   // six options: the one Claude recommends stays, with the first ones, in their order
   const six: Asks = { kind: "options", choices: [1, 2, 3, 4, 5, 6].map((n) => ({ label: `${n} · Step ${n}`, send: `${n}. Step ${n}`, recommended: n === 6 })) };
   const shown = chipsOf(six, "asked", usual);
