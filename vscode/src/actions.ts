@@ -1028,6 +1028,11 @@ export class Actions {
     // browsed unless this window is connected to it: its home folder is listed.
     let folders: Project[] = host ? group.projects.slice() : group.projects.filter((f) => f.short !== "~");
     if (host && !folders.some((f) => f.short === "~")) folders.push({ path: "", short: "~", newChatCommand: home, trusted: false });
+    // (a Remote-SSH or Dev Containers window's own host: the folders this window has open first)
+    if (host && host === this.dash.currentHost) {
+      const open = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.path);
+      folders = [...folders.filter((f) => open.includes(f.path)), ...folders.filter((f) => !open.includes(f.path))];
+    }
     if (plan?.cwd) {
       const own = folders.find((f) => f.path === plan.cwd);
       folders = [own ?? { path: plan.cwd, short: plan.cwdShort || plan.cwd }, ...folders.filter((f) => f.path !== plan.cwd)];

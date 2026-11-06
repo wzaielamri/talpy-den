@@ -1165,6 +1165,21 @@ PlasmoidItem {
         }
     }
 
+    // A host taken off the list: what pane.py --relay forget did there; said only when its permission hook
+    // stays (a chat Talpy Chat started there still runs, or it's on for every chat there)
+    Exec {
+        id: hookForgetter
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            const result = root.helperResult(data)
+            const host = (/ --host '([^']*)'/.exec(source) || [])[1] || ""
+            if (result.ok && result.kept) {
+                root.actionInfo = root.hostLabel(host) + ": " + result.message
+                actionInfoTimer.restart()
+            }
+        }
+    }
+
     Timer {
         id: actionErrorTimer
         interval: 10000
@@ -2650,8 +2665,13 @@ PlasmoidItem {
             if (host in remote)
                 next[host] = remote[host]
         for (const host in remote)
-            if (!(host in next))
+            if (!(host in next)) {
                 forgetSource("ssh:" + host)  // shown again later, it starts afresh
+                // (taken off the list: Talpy Chat's permission hook there goes, unless a chat it started there runs)
+                if (notifier && remote[host].ok && pickedHosts.indexOf(host) < 0)
+                    hookForgetter.connectSource("python3 -I " + shellQuote(codeDir + "pane.py") + " --relay forget --host "
+                                                + shellQuote(host) + " # " + Date.now())
+            }
         remote = next
         if (searchOpen && shownHosts.some(host => !(host in searchResults)))
             runSearch()   // (a host shown while you search is searched too)

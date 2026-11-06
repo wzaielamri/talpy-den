@@ -46,6 +46,9 @@
   or waits), Talpy Den watches that host, so what it asks shows within about
   a second, not at the next check; the tab then reads every minute while
   Claude neither works nor waits there.
+  A host taken off the list loses the hook's copy, unless a chat Talpy Chat
+  started there still runs; in a Remote-SSH window, New Chat… lists the
+  window's open folders first.
 - **Model and effort for one chat:** in a background chat or one that isn't
   open, `/model` and `/effort` list the models and effort levels as you type,
   and the one you pick (or `/model sonnet` typed) is for that chat alone:

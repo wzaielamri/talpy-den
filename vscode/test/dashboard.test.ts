@@ -457,3 +457,26 @@ test("a host is watched only while Talpy Chat wants it; what changes there check
     release();
   }
 });
+
+// (2026-11-06) A host taken off the list: the permission hook Talpy Chat put there goes (pane.py --relay forget
+// there), from the window that notifies, for a host that answered; said only when it stays
+test("a host taken off the list forgets Talpy Chat's hook there, and says when it stays", async () => {
+  const { overrides } = await import("./vscode-stub");
+  const asked: string[][] = [];
+  const backend = { pane: async (args: string[]) => (asked.push(args), { ok: true, kept: 1, message: "1 chat Talpy Chat started there still runs: its permission hook stays there for them" }) } as unknown as Backend;
+  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const d = dash as unknown as { hosts: Map<string, unknown>; syncHosts(): void; actionInfo: string };
+  overrides.set("sshHosts", []);
+  try {
+    d.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result: null, updatedAt: NOW, current: false });
+    d.hosts.set("gpu", { name: "gpu", loading: false, ok: false, error: "timed out", result: null, updatedAt: NOW, current: false });
+    d.syncHosts();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(asked, [["--relay", "forget", "--host", "lab"]], "not a host that didn't answer");
+    assert.equal(d.actionInfo, "lab: 1 chat Talpy Chat started there still runs: its permission hook stays there for them");
+  } finally {
+    overrides.clear();
+    dash.dispose();
+  }
+});

@@ -1774,6 +1774,30 @@ class HostHookTests(SendFixture):
         self.live(kind="interactive", status="busy")
         self.assertFalse(self.rows()[SID]["hooked"])
 
+    def test_a_host_taken_off_the_list_forgets_the_hook_unless_a_chat_still_uses_it(self):
+        # (user, 2026-11-05: its copy and its requests folder go, if no chat Talpy Chat started there still runs)
+        self.start()
+        requests = cs.requests_dir(self.cache)
+        write(requests / "1-0a1b2c3d.json", {"id": "1-0a1b2c3d"})
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "state": "working", "respawnFlags": ["--settings", self.hook()]})
+        self.live(kind="bg", status="busy", jobId=SID[:8])
+        answer = pane.forget_hook(self.home, [])
+        self.assertEqual((answer["kept"], answer["message"]), (1, "1 chat Talpy Chat started there still runs: its permission hook stays there for them"))
+        self.assertTrue(self.copy().is_file())
+        # the one for every chat: it stays
+        (self.home / ".claude-work/sessions/30.json").unlink()
+        pane.relay(self.home, [], True)
+        self.assertEqual(pane.forget_hook(self.home, [])["kept"], "every")
+        pane.relay(self.home, [], False, keep_copy=True)
+        # none of them: gone, with its requests
+        with mock.patch.object(cs, "find_claude", return_value=str(self.bin / "claude")):
+            answer = self.cli("--relay", "forget")
+        self.assertEqual(answer, {"ok": True, "message": "Talpy Den's permission hook and its requests are gone from there"})
+        self.assertFalse(self.copy().exists())
+        self.assertFalse(requests.exists())
+        self.assertEqual(pane.forget_hook(self.home, [])["message"], "Nothing of Talpy Chat's there")
+
     def test_which_home_it_is(self):
         # (a container that shares your home answers the same: its chats, hook and requests are this computer's)
         here = cs.home_id(self.home)

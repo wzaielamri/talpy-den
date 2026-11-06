@@ -108,10 +108,13 @@ its permission prompt and its review.
         repository they are in
   --reviewed CHAT [--off]
         mark the chat reviewed (until it changes files again), or not
-  --relay on|off|status [--keep-copy]
+  --relay on|off|status|forget [--keep-copy]
         the permission hook in each Claude profile's settings.json (status: also
         "hooked", the chats Talpy Chat started that answer their prompts with
-        a hook of their own; off --keep-copy: they keep it)
+        a hook of their own; off --keep-copy: they keep it). forget (with
+        --host: a host taken off the list): the hook's copy Talpy Chat put
+        there and its requests go, unless a chat it started there still runs
+        or the hook is on for every chat there (forget_hook)
   --live on|off|status
         live mode: the live hook (live_hook.py) in each Claude profile's
         settings.json, so the widget shows each step of each chat as it happens
@@ -2284,6 +2287,36 @@ def hooked_chats(home, extra_dirs):
     return count
 
 
+def forget_hook(home, extra_dirs):
+    """An SSH host (or a container) taken off Talpy Den's list: the permission
+    hook's copy Talpy Chat put there, and its requests folder, go, unless a
+    chat Talpy Chat started there still runs (it would ask in its own prompt
+    then) or the hook is on for every chat there (its settings name the copy).
+    {"ok", "message", "kept": the chats that run with it, or "every"}."""
+    if relay_status(home, extra_dirs)["some"]:
+        return {"ok": True, "kept": "every", "message": "Its permission hook stays: it's on for every chat there"}
+    running = 0
+    for entry, runs_on, _holder in cs.live_entries_all(cs.discover_profiles(home, extra_dirs)):
+        if entry.get("kind") == "bg" and cs.valid_id(entry.get("jobId") or "") and not entry.get("spare"):
+            job = cs.read_job([runs_on], entry["jobId"])
+            running += bool(isinstance(job, dict) and cs.hook_settings(job.get("respawnFlags")))
+    if running:
+        return {"ok": True, "kept": running, "message": plural(running, "chat") + " Talpy Chat started there still "
+                + ("runs" if running == 1 else "run") + ": its permission hook stays there for them"}
+    gone = []
+    target = hook_path(home)
+    try:
+        target.unlink()
+        gone.append(target.name)
+    except OSError:
+        pass
+    folder = cs.requests_dir(cs.cache_dir(home))
+    if folder.is_dir() and not folder.is_symlink():
+        shutil.rmtree(str(folder), ignore_errors=True)
+        gone.append(folder.name)
+    return {"ok": True, "message": "Talpy Den's permission hook and its requests are gone from there" if gone else "Nothing of Talpy Chat's there"}
+
+
 def live(home, extra_dirs, on, source=None):
     """Live mode: the live hook in each profile's settings (on) or out of
     them: (ok, message)."""
@@ -2800,6 +2833,8 @@ def main(argv=None):
             kind = action[2:]
             if target == "status":
                 result = relay_status(home, config_dirs, kind)
+            elif target == "forget" and kind == "relay":   # (a host taken off the list: forget_hook, there)
+                result = forget_hook(home, config_dirs)
             elif target in ("on", "off"):
                 ok, said = relay(home, config_dirs, target == "on", source, keep_copy) if kind == "relay" \
                     else live(home, config_dirs, target == "on", source)

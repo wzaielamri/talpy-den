@@ -154,7 +154,8 @@ test("New Chat… on an SSH host offers Talpy Chat in its folders, or says why n
   try {
     const group = (host: string) => ({
       id: host || "w", title: "work", chatProfile: ".claude", profileKeys: [".claude"], sessions: [], homeChatCommand: "cd ~ 2>/dev/null; claude", host: host || undefined,
-      projects: [{ path: "/srv/app", short: "~/app", newChatCommand: "cd /srv/app 2>/dev/null; claude", trusted: true }],
+      projects: [{ path: "/srv/app", short: "~/app", newChatCommand: "cd /srv/app 2>/dev/null; claude", trusted: true },
+                 { path: "/srv/web", short: "~/web", newChatCommand: "cd /srv/web 2>/dev/null; claude", trusted: true }],
     } as unknown as Group);
     let answered = true;
     const dash = { opened() {}, demo: false, currentHost: "build-server",
@@ -163,11 +164,17 @@ test("New Chat… on an SSH host offers Talpy Chat in its folders, or says why n
       setActionError: () => undefined, isVisible: () => true };
     const actions = new Actions({ action: async () => ({ ok: true, message: "" }) } as unknown as Backend, dash as unknown as Dashboard,
       {} as unknown as Terminals, { warn: () => undefined } as unknown as vscode.LogOutputChannel, {} as AccountSwitch);
-    await actions.newChat("build-server", "build-server");
+    const workspace = stub.workspace as unknown as Record<string, unknown>;
+    workspace.workspaceFolders = [{ uri: { path: "/srv/web" } }];   // (this Remote-SSH window has ~/web open)
+    try {
+      await actions.newChat("build-server", "build-server");
+    } finally {
+      workspace.workspaceFolders = undefined;
+    }
     const there = shown[0].map((i) => i.label);
     const first = there.indexOf("In a Talpy Chat tab");
-    assert.equal(there[first + 1], "$(folder) ~/app", "its own folders");
-    assert.equal(there[first + 2], "In a terminal", "no folder dialog: it can't be browsed");
+    assert.deepEqual(there.slice(first + 1, first + 3), ["$(folder) ~/web", "$(folder) ~/app"], "its own folders, the window's first");
+    assert.equal(there[first + 3], "In a terminal", "no folder dialog: it can't be browsed");
     answered = false;   // (its last check didn't answer)
     await actions.newChat("build-server", "build-server");
     const labels = shown[1].map((i) => i.label);

@@ -787,6 +787,8 @@ def explain(host, code, stderr):
         return f"{host}'s host key isn't known yet. Run ssh {host} once in a terminal to accept it."
     if "permission denied" in low or "too many authentication failures" in low:
         return f"{host} refused the login. Talpy Den can't type a password: load your key into the agent (ssh-add) or run ssh {host} once in a terminal."
+    if "administratively prohibited" in low:   # (sshd's MaxSessions: every check, watcher and read shares one connection)
+        return f"{host} refused another ssh session (its sshd's MaxSessions): Talpy Den tries again in a moment."
     if "could not resolve hostname" in low or "name or service not known" in low:
         return f"Can't find {host} (DNS). Are you on the right network or VPN?"
     if any(s in low for s in ("connection timed out", "operation timed out", "no route to host",

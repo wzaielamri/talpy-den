@@ -2026,6 +2026,10 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("result.hooked === false", pane)
         switch = (ROOT / "ui/OpenInSwitch.qml").read_text()
         self.assertIn("tipTitle: root.talpyChatTitle(openIn.remoteHost, openIn.resuming)", switch)
+        # a host taken off the list (the copy that notifies, one that answered): its hook there goes, said when it stays
+        self.assertIn("if (notifier && remote[host].ok && pickedHosts.indexOf(host) < 0)", main)
+        self.assertIn('" --relay forget --host "', main)
+        self.assertIn("if (result.ok && result.kept)", main)
 
     def test_a_host_is_watched_only_while_talpy_chat_wants_it(self):
         # (2026-11-06) one watcher per host for every copy (Hub: remote.py --watch, its command line the same

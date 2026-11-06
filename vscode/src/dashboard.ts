@@ -288,6 +288,13 @@ export class Dashboard implements vscode.Disposable {
 
   // ---------------------------------------------------------------- watching SSH hosts and containers
 
+  // A host taken off the list: the permission hook Talpy Chat put there, and its requests, go (pane.py
+  // --relay forget there); said only when it stays (a chat Talpy Chat started there still runs)
+  private async forgetHook(host: string): Promise<void> {
+    const r = await this.backend.pane(["--relay", "forget", "--host", host], 60000);
+    if (r.ok && r.kept) this.setActionInfo(`${hostLabel(host)}: ${String(r.message ?? "")}`);
+  }
+
   // The hosts of Talpy Chat tabs that show (or start a chat), from ChatPanes
   setPaneHosts(hosts: Iterable<string>): void {
     const next = new Set(hosts);
@@ -444,8 +451,11 @@ export class Dashboard implements vscode.Disposable {
     const shown = this.shownHosts();
     for (const name of [...this.hosts.keys()]) {
       if (!shown.includes(name)) {
+        const was = this.hosts.get(name);
         this.hosts.delete(name);
         this.tracker.forget("ssh:" + name); // a host that comes back starts over
+        // (taken off the list: Talpy Chat's permission hook there goes, unless a chat it started there runs)
+        if (was?.ok && !this.demo && this.notifier.isLeader() && !settings.sshHosts().includes(name)) void this.forgetHook(name);
       }
     }
     for (const name of shown) {

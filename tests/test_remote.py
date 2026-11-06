@@ -1233,6 +1233,9 @@ class HostWatchTests(FakeSSH):
         self.assertIn("Can't reach lab", answer["error"])
         with self.assertRaises(ValueError):   # (the name shows in the host's process list: a hash, nothing else)
             remote.watch("lab", "my laptop; rm -rf ~")
+        # (sshd's MaxSessions: the checks, the watchers and Talpy Chat's reads share one connection)
+        self.assertEqual(remote.explain("lab", 255, "channel 3: open failed: administratively prohibited: open failed\n"),
+                         "lab refused another ssh session (its sshd's MaxSessions): Talpy Den tries again in a moment.")
 
     def test_in_a_container(self):
         # (the engine's exec, over ssh for a host's container; argv only)
