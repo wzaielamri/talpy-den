@@ -135,6 +135,10 @@
 
 ### Better
 
+- **Talpy Chat:** a wake-up Claude scheduled for itself is a small note in
+  its place, no longer a message of yours at the end of the chat; an
+  answered question's options are a bulleted list, each with what it means
+  under it.
 - **Background chats open in Talpy Chat** whatever `talpyDen.reopenIn` says
   (one on this computer that no terminal shows); **Interrupt or stop** on a
   background chat's row at work; rows say *51% left* before Claude compacts

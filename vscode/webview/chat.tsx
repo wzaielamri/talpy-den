@@ -440,7 +440,7 @@ function AskedCard({ item, open, onToggle, gap }: { item: PaneItem; open: boolea
                   const picked = q.picked.includes(o.label);
                   return (
                     <li key={o.label} class={picked ? "picked" : ""}>
-                      <span class="pane-asked-mark" aria-label={picked ? "Your answer" : undefined}>{picked ? <Icon name={I.picked} /> : null}</span>
+                      <span class="pane-asked-mark" aria-label={picked ? "Your answer" : undefined}>{picked ? <Icon name={I.picked} /> : "•"}</span>
                       <span>
                         <span class="pane-asked-label">{o.label}</span>
                         {o.description ? <span class="pane-asked-desc">{o.description}</span> : null}

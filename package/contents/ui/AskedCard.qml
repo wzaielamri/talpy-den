@@ -122,15 +122,25 @@ RowLayout {
                                         anchors.verticalCenter: parent.verticalCenter
                                         color: askedBox.pane.textColor
                                     }
+                                    Text {   // (each option a bullet: where one ends and the next begins)
+                                        visible: !optionRow.picked
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "•"
+                                        color: askedBox.pane.mutedColor
+                                        font.family: askedBox.pane.chatFamily
+                                        font.pointSize: askedBox.pane.pt
+                                    }
                                 }
+                                // its name, then what it means on a line of its own under it
                                 PlasmaComponents3.Label {
                                     Layout.fillWidth: true
+                                    Layout.bottomMargin: optionRow.modelData.description ? Kirigami.Units.smallSpacing / 2 : 0
                                     textFormat: Text.StyledText
                                     text: (optionRow.picked ? "<b>" + Md.escape(optionRow.modelData.label) + "</b>" : Md.escape(optionRow.modelData.label))
-                                          + (optionRow.modelData.description ? "&nbsp;&nbsp;<font color=\"" + askedBox.pane.hex(askedBox.pane.mutedColor) + "\">"
+                                          + (optionRow.modelData.description ? "<br><font color=\"" + askedBox.pane.hex(askedBox.pane.mutedColor) + "\">"
                                                                                + Md.escape(optionRow.modelData.description) + "</font>" : "")
                                     wrapMode: Text.Wrap
-                                    color: optionRow.picked ? askedBox.pane.textColor : askedBox.pane.mutedColor
+                                    color: askedBox.pane.textColor
                                     font.family: askedBox.pane.chatFamily
                                     font.pointSize: askedBox.pane.pt
                                 }

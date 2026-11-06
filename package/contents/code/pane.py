@@ -627,9 +627,18 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
             elif sub == "informational" and isinstance(content, str) and content.startswith(UNKNOWN_COMMAND):
                 ran = ran or commands_of(items, due, end)
                 ran.unknown(content, uid, at)
+            elif sub == "scheduled_task_fire":
+                # (a wake-up Claude scheduled itself, ScheduleWakeup or /loop: its prompt isn't yours)
+                said = e.get("prompt") if isinstance(e.get("prompt"), str) else ""
+                items.append({"kind": "note", "key": uid, "at": at,
+                              "text": "Claude woke itself up" + (": " + cs.short_text(" ".join(said.split()), 120) if said.strip() else "")})
             continue
         msg, blocks = cs.blocks_of(e)
         if kind == "user":
+            if e.get("isMeta") and e.get("promptSource") == "system" and due \
+                    and same_text(due[0]["text"], cs.message_text(msg) if msg else ""):
+                due.pop(0)   # (a wake-up's prompt, queued and taken in as Claude's own: not yours, not shown)
+                continue
             if e.get("isCompactSummary") or e.get("isMeta"):
                 continue
             results = [c for c in blocks if c.get("type") == "tool_result"]

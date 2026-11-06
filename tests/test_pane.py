@@ -246,6 +246,25 @@ class ConversationTests(PaneFixture):
                   taken([{"type": "text", "text": "with a picture"}, {"type": "image"}], t + 6, "c5"))
         self.assertEqual([i["text"] for i in pane.conversation(self.transcript)[0]], ["never seen", "with a picture"])
 
+    def test_a_wake_up_claude_scheduled_isnt_yours(self):
+        # (ScheduleWakeup or /loop: Claude Code 2.1.318 writes its prompt as enqueue, a scheduled_task_fire,
+        # dequeue, then a meta user entry of the system's; it showed as yours, at the end, for good)
+        t = self.now - 100
+        wake = "continue the panel improvment work"
+        self.chat(prompt("go on", t, cwd=str(self.folder)), text_reply("Working on it.", t + 1, "m1", "end_turn"),
+                  {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(t + 2), "content": wake},
+                  {"type": "system", "subtype": "scheduled_task_fire", "uuid": "f1", "timestamp": iso(t + 2),
+                   "content": "Claude resuming /loop wakeup (Nov 6 12:48am)", "isMeta": False, "prompt": wake, "taskKind": "loop"},
+                  {"type": "queue-operation", "operation": "dequeue", "timestamp": iso(t + 2)},
+                  {"type": "user", "uuid": "w1", "timestamp": iso(t + 2), "isMeta": True, "promptSource": "system",
+                   "message": {"role": "user", "content": wake}},
+                  text_reply("Picking it up again.", t + 3, "m2", "end_turn"),
+                  prompt("thanks", t + 4, cwd=str(self.folder)))
+        items = pane.conversation(self.transcript)[0]
+        self.assertEqual([(i["kind"], i["text"]) for i in items],
+                         [("you", "go on"), ("claude", "Working on it."), ("note", "Claude woke itself up: " + wake),
+                          ("claude", "Picking it up again."), ("you", "thanks")])
+
     def test_a_queued_message_taken_back_or_run_as_a_turn_shows_once(self):
         t = self.now - 100
         queued = {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(t + 1), "content": "first"}
