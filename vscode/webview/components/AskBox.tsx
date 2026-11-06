@@ -133,6 +133,7 @@ export function AskBox({ ask, onAnswer, onWholePlan, onTerminal, busy = false, m
           compact={compact}
           onSend={(answers) => onAnswer("answer", "", answers)}
           onDecline={() => setDenying(true)}
+          sendKey={pressed && pressed.key === "allow" && !off && canAnswer && !denying ? pressed.at : 0}
         />
       ) : null}
       {canAnswer && !denying && !questions.length && !plan ? (
@@ -204,13 +205,14 @@ interface Chosen {
 // Claude's questions (AskUserQuestion): each with its options, one to pick
 // (or any, for a multiSelect one), and a field to answer in your own words
 // instead (as "Type something." in Claude's dialog); then Send answers
-function QuestionForm({ questions, enabled, buttons, compact, onSend, onDecline }: {
+function QuestionForm({ questions, enabled, buttons, compact, onSend, onDecline, sendKey }: {
   questions: Question[];
   enabled: boolean;
   buttons: boolean;
   compact: boolean;
   onSend: (answers: Answers) => void;
   onDecline: () => void;
+  sendKey: number; // Alt+Y pressed (its time): Send answers, once each one has an answer
 }) {
   const [chosen, setChosen] = useState<Record<number, Chosen>>({});
   const stateOf = (i: number): Chosen => chosen[i] ?? { labels: [], text: "" };
@@ -237,6 +239,9 @@ function QuestionForm({ questions, enabled, buttons, compact, onSend, onDecline 
     return out;
   };
   const complete = questions.every((_, i) => stateOf(i).labels.length > 0 || stateOf(i).text.trim() !== "");
+  useEffect(() => {
+    if (sendKey && enabled && complete) onSend(answers());
+  }, [sendKey]);
   return (
     <div class="ask-questions">
       {questions.map((q, i) => (

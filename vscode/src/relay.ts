@@ -34,8 +34,21 @@ export async function answerPermissionsHere(backend: Backend, dash: Dashboard): 
   const pick = await vscode.window.showQuickPick(items, { title: "Permission prompts", placeHolder: "Where can you answer them?" });
   if (!pick) return;
   const flag = pick.on ? "on" : "off";
+  // (chats Talpy Chat started answer their prompts here with a hook of their own: asked whether they keep it)
+  const hooked = typeof status.hooked === "number" ? status.hooked : 0;
+  let keep: string[] = [];
+  if (!pick.on && hooked > 0) {
+    const them = "Yes, for Them Too", mine = "No, Keep It for Them";
+    const answer = await vscode.window.showWarningMessage(
+      hooked === 1 ? "1 chat started from Talpy Chat answers its prompts here with it. Turn it off for it too?"
+        : `${hooked} chats started from Talpy Chat answer their prompts here with it. Turn it off for them too?`,
+      { modal: true, detail: "Yes: they ask in their own prompt (Talpy Chat shows Answer it in a terminal). No: off for every other chat; they still answer their prompts in Talpy Chat." },
+      them, mine);
+    if (!answer) return;
+    if (answer === mine) keep = ["--keep-copy"];
+  }
   const results: Record<string, any>[] = await Promise.all([
-    backend.pane(["--relay", flag, ...configDirArgs()], 30000),
+    backend.pane(["--relay", flag, ...keep, ...configDirArgs()], 30000),
     ...hosts.map((h) => backend.pane(["--relay", flag, "--host", h], 90000).then((r) => ({ ...r, host: h }))),
   ]);
   const failed = results.filter((r) => !r.ok);

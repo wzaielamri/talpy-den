@@ -372,8 +372,12 @@ export class Actions {
         : localAncestors(chat.pid);
       terminal = await this.terminals.find(ancestors, onWindowHost);
     }
-    const interruptible = !!terminal || (chatProcess && hasTurn(chat) && !inTab && !!chat.tmux);
-    const detail = !chatProcess
+    // (a background chat at work: Esc through Claude's background service, as Talpy Chat's Stop, on the versions checked)
+    const bgInterrupt = !chatProcess && hasTurn(chat) && !!chat.bgStop;
+    const interruptible = !!terminal || (chatProcess && hasTurn(chat) && !inTab && !!chat.tmux) || bgInterrupt;
+    const detail = bgInterrupt
+      ? "Interrupt: like Esc in its terminal; the current step and its subagents stop, and the background chat stays and takes your next message.\n\nStop: its process ends; the conversation is kept, and `claude attach` resumes it."
+      : !chatProcess
       ? "It's interrupted; its conversation is kept, and `claude attach` resumes it."
       : interruptible
         ? `Interrupt: like Ctrl+C in its ${terminal ? "terminal" : "tmux pane"}, or the stop button of a Claude Code panel; the current step and its subagents stop, and the chat stays open there.\n\nStop: Claude quits (the current step is cut off) and its terminal stays open; the chat is kept and shows under Recent chats.`

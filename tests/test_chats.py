@@ -227,6 +227,14 @@ class ProfileLinkTests(World):
         self.assertEqual(self.row(self.collect(), "chat-a")["context"], 40)
         self.snapshot(".claude", "chat-a", age=10, context_window={"used_percentage": 55})
         self.assertEqual(self.row(self.collect(), "chat-a")["context"], 55)
+        # what's left before Claude compacts it, as Talpy Chat's header says it (talpy_den.context_left)
+        self.assertEqual((self.row(self.collect(), "chat-a")["contextLeft"], self.row(self.collect(), "chat-a")["contextNear"]),
+                         (None, False))   # (no token counts: not known)
+        self.snapshot(".claude", "chat-a", age=5, model={"id": "claude-opus-5-5", "display_name": "Opus 5.5"},
+                      context_window={"used_percentage": 30, "context_window_size": 1000000,
+                                      "current_usage": {"input_tokens": 10, "cache_read_input_tokens": 299990}})
+        row = self.row(self.collect(), "chat-a")
+        self.assertEqual((row["context"], row["contextLeft"], row["contextNear"]), (30, 69, False))
 
     def test_tokens_dont_move_with_the_link(self):
         self.link_default("work", age=3600)

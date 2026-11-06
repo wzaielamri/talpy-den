@@ -36,7 +36,8 @@ Item {
                                                         whoFm.advanceWidth(i18nc("your last prompt", "You")),
                                                         whoFm.advanceWidth(i18nc("Claude's last reply", "Claude"))))
     // "ctx 100%": the context's numbers are as wide, so every row's bar ends at one place
-    readonly property real ctxWidth: ctxFm.advanceWidth(i18nc("context window fill", "ctx %1%", 100))
+    readonly property real ctxWidth: Math.max(ctxFm.advanceWidth(i18nc("context window fill", "ctx %1%", 100)),
+                                              ctxFm.advanceWidth(i18nc("context left before Claude compacts the chat", "%1% left", 100)))
 
     FontMetrics {
         id: whoFm

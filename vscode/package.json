@@ -311,7 +311,7 @@
       },
       {
         "command": "talpyDen.chat.allow",
-        "title": "Allow Once",
+        "title": "Allow Once (Questions: Send Answers)",
         "category": "Talpy Chat"
       },
       {

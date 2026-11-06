@@ -70,11 +70,15 @@ ConfigPage {
         relayHelper.connectSource("python3 -I " + q(codeDir + "pane.py") + " --relay " + withConfigDirs(args).map(q).join(" ") + " # " + Date.now())
     }
 
-    function setRelay(on) {
-        runRelay([on ? "on" : "off"])
+    // keepCopy: off for every chat, but the chats Talpy Chat started keep theirs (pane.py --keep-copy)
+    function setRelay(on, keepCopy) {
+        runRelay([on ? "on" : "off"].concat(!on && keepCopy ? ["--keep-copy"] : []))
         for (const host of Plasmoid.configuration.sshHosts.split(",").map(h => h.trim()).filter(h => h))
             runRelay([on ? "on" : "off", "--host", host])
     }
+    // Turned off while chats Talpy Chat started answer their prompts here with a hook of
+    // their own (relay.hooked): asked first whether they keep it
+    property bool askingHookOff: false
 
     // The replies hidden with a chip's Don't suggest this (pane.py --hide-reply - --off): suggested
     // again, here and on each SSH host (each keeps its own), at once (not with Apply)
@@ -371,8 +375,40 @@ ConfigPage {
             id: relayBox
             text: i18n("Answer permission prompts from Talpy Den")
             checked: page.relay !== null && page.relay.on
-            enabled: page.relay !== null
-            onToggled: page.setRelay(checked)
+            enabled: page.relay !== null && !page.askingHookOff
+            onToggled: {
+                if (!checked && page.relay && page.relay.hooked > 0) {
+                    checked = true   // (till you've answered)
+                    page.askingHookOff = true
+                } else {
+                    page.setRelay(checked, false)
+                }
+            }
+        }
+        Kirigami.InlineMessage {
+            visible: page.askingHookOff
+            Layout.preferredWidth: Kirigami.Units.gridUnit * 20
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 20
+            type: Kirigami.MessageType.Information
+            text: i18np("1 chat started from Talpy Chat answers its prompts here with it. Turn it off for it too?",
+                        "%1 chats started from Talpy Chat answer their prompts here with it. Turn it off for them too?",
+                        page.relay ? page.relay.hooked : 0)
+            actions: [
+                Kirigami.Action {
+                    text: i18n("Yes, for them too")
+                    tooltip: i18n("They ask in their own prompt: Talpy Chat shows Answer it in a terminal.")
+                    onTriggered: { page.askingHookOff = false; relayBox.checked = false; page.setRelay(false, false) }
+                },
+                Kirigami.Action {
+                    text: i18n("No, keep it for them")
+                    tooltip: i18n("Off for every other chat; the chats started from Talpy Chat still answer their prompts there.")
+                    onTriggered: { page.askingHookOff = false; relayBox.checked = false; page.setRelay(false, true) }
+                },
+                Kirigami.Action {
+                    text: i18n("Cancel")
+                    onTriggered: { page.askingHookOff = false; relayBox.checked = true }
+                }
+            ]
         }
 
         QQC2.Label {

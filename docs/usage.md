@@ -62,7 +62,7 @@
 | ↑ / ↓ | Your earlier messages (↑ in an empty box: a waiting one back first) |
 | Tab or → | The grey rest of your usual reply |
 | Alt+1 … Alt+4 | A suggested reply (with Shift: in the box first) |
-| Alt+Y / Alt+A / Alt+N | Allow once / Always allow / Deny… what it asks (a plan: Approve / Approve, accept edits / Keep planning…; questions: Decline…) |
+| Alt+Y / Alt+A / Alt+N | Allow once / Always allow / Deny… what it asks (a plan: Approve / Approve, accept edits / Keep planning…; questions: Send answers / – / Decline…) |
 | PageUp / PageDown | Scroll the conversation a page, from the box too |
 | Ctrl+↑ / Ctrl+↓ | Your previous / next message (past the last: the end) |
 | Ctrl+F | Search the chat: a find bar over its top right; Enter or F3 the next match, Shift+Enter or Shift+F3 the one before, Esc closes it |
@@ -121,7 +121,7 @@ When to notify, sounds, while you're away, the keyboard shortcut.
 | Sound | on, 70% | Sounds for needs input / finished / failed or stopped (a usage limit or an expired login stopped a chat): from your sound theme, a file, or none |
 | While you're away | on, 5 min | Once the screen has been locked this long, one notification sums it all up when you're back |
 | Phone | off | Meanwhile, send chats that need you (and, if you like, ones that finish) to your phone with KDE Connect: every paired phone that's reachable, or the one you pick; *Send a test* tries it |
-| Keyboard shortcut | goes to the chat | Goes to the chat that needs you (else opens the popup), in its own window or, with *In Talpy Chat, wherever it runs*, in Talpy Chat; the key itself is set on the Keyboard Shortcuts page |
+| Keyboard shortcut | goes to the chat, in its own window | Opens the popup, or goes to the chat that needs you in its own window or in Talpy Chat (three choices); the key itself is set on the Keyboard Shortcuts page |
 
 ### Usage & limits
 

@@ -555,6 +555,7 @@ class Pane implements vscode.Disposable {
       cwd: session?.cwd ?? recent?.cwd ?? this.chat.cwd ?? "",
       state: session?.state ?? "done",
       stateText: session ? stateText(session, state.now) : starting ? "starting" : this.fresh ? "new" : "not running",
+      stateShort: session ? stateText({ ...session, since: null }, state.now) : "",
       route: this.terminalHere ? "vscodeTerminal" : (session?.reply ?? "background"),
       busy: session?.state === "working" || session?.state === "waiting",
       atWork: session?.state === "working" && session.reason !== "background shell",

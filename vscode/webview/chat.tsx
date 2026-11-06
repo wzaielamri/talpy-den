@@ -1774,7 +1774,9 @@ function ChatApp() {
         <span class={`state-dot st-${headState}`} aria-hidden="true" />
         <h2 class="pane-name">{chat?.name ?? ""}</h2>
         {chat?.host ? <Tag text={chat.host} title={`This chat runs on the SSH host ${chat.host}.`} /> : null}
-        <span class={`pane-state st-${headState}`}>{starting && chat?.fresh ? "starting" : chat?.stateText ?? ""}</span>
+        {/* (while the working line says the turn's own time, the header doesn't say a second one) */}
+        <span class={`pane-state st-${headState}`}>{starting && chat?.fresh ? "starting"
+          : soFar.turn && chat?.state === "working" && chat.stateShort ? chat.stateShort : chat?.stateText ?? ""}</span>
         <span class="pane-sizes">
           <IconButton icon={I.zoomOut} label="Smaller text" title="Smaller text (Ctrl+wheel)" disabled={scale <= TEXT_SCALES[0] + 0.001} onClick={() => zoom(-1)} />
           <IconButton icon={I.zoomIn} label="Larger text" title="Larger text (Ctrl+wheel)" disabled={scale >= TEXT_SCALES[TEXT_SCALES.length - 1] - 0.001} onClick={() => zoom(1)} />

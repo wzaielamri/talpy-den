@@ -115,6 +115,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
   const inTalpy = opensInTalpyChat(s, view.settings.reopenIn, machineStatus(view, host), host, codeHere);
   const mode = modeText(s.peek?.mode);
   const ultracode = s.peek?.ultracode === true;
+  const ctxFill = s.contextLeft != null ? 100 - s.contextLeft : s.context ?? null;   // (its context bar: up to where Claude compacts it)
   // A usage limit stopped it: it can go on on another account with room left
   const handover = handoverTarget(s, shareAccounts(machineStatus(view, host)));
   // or by itself once the limit resets (queued; again: cancelled)
@@ -246,21 +247,24 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
               {[s.model ?? "", s.effort ?? "", ultracode ? "ultracode" : ""].filter((t) => t).join(" · ")}
             </span>
           ) : null}
-          {s.context != null ? (
+          {ctxFill != null ? (
             <>
-              {/* Context window fill */}
+              {/* Context: what's left before Claude compacts it on its own, as Talpy Chat's header says it
+                  (the bar fills up to there), else how full its window is */}
               <span
-                class={`meter ctx-meter lvl-${usageLevel(s.context)}`}
+                class={`meter ctx-meter lvl-${usageLevel(ctxFill)}`}
                 role="meter"
-                aria-label="Context window"
+                aria-label={s.contextLeft != null ? "Context used before Claude compacts it" : "Context window"}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-valuenow={Math.round(s.context)}
+                aria-valuenow={Math.round(ctxFill)}
               >
-                <span style={{ width: `${Math.min(100, Math.max(0, s.context))}%` }} />
+                <span style={{ width: `${Math.min(100, Math.max(0, ctxFill))}%` }} />
               </span>
-              <span class="muted nowrap ctx-pct" title="How full the chat's context window is">
-                ctx {Math.round(s.context)}%
+              <span class="muted nowrap ctx-pct"
+                title={s.contextLeft != null ? "What's left of the chat's context before Claude compacts it on its own (/compact: you choose what it keeps)"
+                  : "How full the chat's context window is"}>
+                {s.contextLeft != null ? `${s.contextLeft}% left` : `ctx ${Math.round(s.context!)}%`}
               </span>
             </>
           ) : null}
@@ -440,8 +444,10 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
             ) : (
               <IconButton
                 icon={I.stop}
-                label="Stop this background chat…"
-                title={"Stop this background chat…\nAsks first; the conversation is kept and claude attach resumes it."}
+                label={hasTurn(s) && s.bgStop ? "Interrupt or stop this background chat…" : "Stop this background chat…"}
+                title={hasTurn(s) && s.bgStop
+                  ? "Interrupt or stop this background chat…\nAsks first. Interrupting is like Esc in its terminal: the current step and its subagents stop, and the chat stays and takes your next message. Stopping ends its process; the conversation is kept and claude attach resumes it."
+                  : "Stop this background chat…\nAsks first; the conversation is kept and claude attach resumes it."}
                 onClick={() => post({ type: "stop", chat })}
               />
             )

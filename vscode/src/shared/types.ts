@@ -230,6 +230,8 @@ export interface Session {
   since: number | null;
   startedAt: number | null;
   context: number | null;
+  contextLeft?: number | null; // % left before Claude compacts it (talpy_den.context_left), as Talpy Chat's header says it
+  contextNear?: boolean;
   model: string | null;
   effort?: string | null; // reasoning effort, from the status line (low … max)
   costUsd: number | null;
@@ -998,6 +1000,7 @@ export interface ChatRef {
   state?: SessionState;
   tmux?: boolean;
   jobId?: string | null;
+  bgStop?: boolean; // a background chat at work Stop's Esc can interrupt (its row's)
   openCommand?: string | null;
   stopCommand?: string | null;
   terminalCommand?: string | null;

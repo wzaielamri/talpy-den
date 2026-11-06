@@ -106,6 +106,7 @@ export interface PaneChat {
   cwd: string;
   state: SessionState;
   stateText: string;
+  stateShort?: string; // the same without how long ("Working"): the header's while the working line says the turn's own time
   route: Session["reply"] | "vscodeTerminal"; // vscodeTerminal: one of this window's terminals (it types it in)
   busy: boolean; // working or waiting
   atWork: boolean; // working, its turn not over (only a background command after it isn't): a message waits a moment

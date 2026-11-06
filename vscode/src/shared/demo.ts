@@ -24,6 +24,7 @@ function session(now: number, partial: Partial<Session> & Pick<Session, "key" | 
     since: now - 5 * MIN,
     startedAt: now - HOUR,
     context: 34,
+    contextLeft: 65,
     model: "Opus",
     costUsd: 1.42,
     agents: null,
@@ -134,6 +135,7 @@ function personal(now: number, phase: number): Group {
         since: now - (parserState === "working" ? 7 : 1) * MIN,
         agents: parserState === "working" ? agents(now) : null,
         context: 62,
+        contextLeft: 36,
         peek:
           parserState === "working"
             ? { activity: "Bash: npm test -- parser", prompt: "The date parser breaks on ISO weeks; fix it and add tests.", reply: "Found it: week 53 wraps to the next year. Fixing the year rollover now.", replyLine: "Found it: week 53 wraps to the next year. Fixing the year rollover now.", at: now - 20000, mode: "auto" }
@@ -166,6 +168,7 @@ function personal(now: number, phase: number): Group {
         cwdShort: "~/projects/api-server",
         since: now - 2 * MIN,
         context: 18,
+        contextLeft: 81,
         model: "Sonnet",
         peek: { activity: "Bash: git tag v2.0.0", prompt: "Write the release notes for 2.0 and tag it.", reply: "The notes are in CHANGELOG.md. Tagging v2.0.0 next.", replyLine: "The notes are in CHANGELOG.md. Tagging v2.0.0 next.", at: now - 2 * MIN, mode: "acceptEdits" },
         plan: { slug: "brave-green-otter", title: "Release 2.0", path: "/home/alice/.claude/plans/brave-green-otter.md", updatedAt: now - 2 * HOUR, edited: true },
@@ -186,6 +189,7 @@ function personal(now: number, phase: number): Group {
         cwdShort: "~/notes",
         since: now - 3 * HOUR,
         context: 9,
+        contextLeft: 91,
         detail: "All dependencies are up to date",
         changes: { count: 2, files: ["package.json", "package-lock.json"] },
         review: { editedAt: now - 3 * HOUR - 5 * MIN, tests: { command: "npm test", ok: true, at: now - 3 * HOUR - 2 * MIN } },
@@ -294,6 +298,7 @@ function buildServer(now: number, phase: number): Status {
             cwdShort: "~/experiments/ranking",
             since: now - (state === "working" ? 24 : 2) * MIN,
             context: 87,
+            contextLeft: 10,
             model: "Opus",
             peek: {
               activity: state === "working" ? "Bash: python train.py --epochs 20" : "",
@@ -315,6 +320,7 @@ function buildServer(now: number, phase: number): Status {
             cwdShort: "~/experiments/ranking",
             since: now - 18 * MIN,
             context: 41,
+            contextLeft: 58,
             model: "Opus",
             peek: { activity: "", prompt: "Evaluate the new model on the holdout set.", reply: "", replyLine: "", at: now - 18 * MIN },
             stopped: { kind: "limit", window: "five_hour", text: "You've hit your session limit · resets 4:10pm", at: now - 18 * MIN, resetsAt: now + 41 * MIN, over: false },

@@ -644,6 +644,138 @@ def snapshot_paths(snapshot_root, profile, ids):
     return found
 
 
+# ---------------------------------------------------------------- context left
+
+# The context window of each model Claude Code knows (its own table, 2.1.318), by the name a
+# transcript gives it ("claude-opus-5-5"; a date, a provider's prefix or "[1m]" around it: model_key)
+CONTEXT_1M = 1000000
+CONTEXT_WINDOWS = dict(
+    {m: CONTEXT_1M for m in ("claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5",
+                             "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1")},
+    # (200k, or 1M where it's chosen: "sonnet[1m]")
+    **{m: 200000 for m in ("claude-opus-4", "claude-opus-4-1", "claude-opus-4-5", "claude-opus-4-6", "claude-sonnet-4",
+                           "claude-sonnet-4-5", "claude-sonnet-4-6", "claude-haiku-4-5")})
+# Claude Code compacts a chat on its own (auto-compact) at its window less the room it keeps for
+# Claude's reply (the model's most output, at most 20k: every model above has more) and 13k more,
+# and says it's close from 20k before that (2.1.318)
+COMPACT_ROOM = 20000 + 13000
+COMPACT_CLOSE = 20000
+USAGE_READ = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+# The auto-compact window you can set (Claude Code 2.1.318): CLAUDE_CODE_AUTO_COMPACT_WINDOW
+# ("200k", "1M", 200000) first, else autoCompactWindow in settings (modelSettings' for the model
+# first; "auto": the model's own), from 100k to 1M; Claude compacts by it where it's below the
+# model's window
+COMPACT_WINDOW_ENV = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
+COMPACT_WINDOW_MIN, COMPACT_WINDOW_MAX = 100000, 1000000
+
+
+def model_key(model):
+    """The name Claude Code's table gives a model ("claude-opus-4-1") from the
+    one a transcript or a provider gives it ("claude-opus-4-1-20250805",
+    "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "claude-sonnet-4-6[1m]"):
+    family, version and minor version, no date; None for no Claude model."""
+    i = model.find("claude-") if isinstance(model, str) else -1
+    if i < 0:
+        return None
+    words = model[i:].split("[")[0].replace("@", "-").split("-")[:4]
+    if len(words) < 3 or not words[2].isdigit():
+        return None
+    minor = words[3] if len(words) > 3 and words[3].isdigit() and len(words[3]) <= 2 else None
+    return "-".join(words[:3]) + ("-" + minor if minor else "")
+
+
+def context_window(model, used=0, told=None):
+    """The context window of a chat on this model (tokens), None when it isn't
+    known. told(): the window its status line gives (status_window), else
+    Claude Code's table; 1M where that's chosen ([1m]) or the chat is past its
+    model's own window already."""
+    said = told() if told is not None else None
+    if isinstance(said, int) and said > 0:
+        return said
+    window = CONTEXT_WINDOWS.get(model_key(model))
+    if window is not None and window < CONTEXT_1M and ("[1m]" in model.lower() or used > window):
+        return CONTEXT_1M
+    return window
+
+
+def context_left(usage, model, told=None, compact=None):
+    """How full a chat's context is, from the token counts of Claude's last
+    message (usage: all it read, cached or not, which its next one starts
+    from): {"used", "window", "compactAt": where Claude compacts the chat,
+    "left": % of it till then, "near": Claude Code says it's close}, or None
+    when it can't be known (no counts, a model not known: context_window).
+    compact: the auto-compact window you set (compact_window), when it's
+    below the model's window."""
+    if not isinstance(usage, dict):
+        return None
+    used = sum(n for n in (usage.get(k) for k in USAGE_READ) if isinstance(n, int) and not isinstance(n, bool) and n > 0)
+    window = context_window(model, used, told) if used else None
+    if window is not None and isinstance(compact, int) and 0 < compact < window:
+        window = compact
+    if window is None or window <= COMPACT_ROOM:
+        return None
+    at = window - COMPACT_ROOM
+    return {"used": used, "window": window, "compactAt": at, "left": max(0, int((at - used) * 100 / at + 0.5)),
+            "near": used >= at - COMPACT_CLOSE}
+
+
+def compact_tokens(value):
+    """An auto-compact window as Claude Code reads it ("200k", "1M", 200000;
+    a bare 100 to 1000 in the env is thousands), kept from 100k to 1M; None
+    for none or one it ignores."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        tokens = float(value)
+    elif isinstance(value, str) and value.strip():
+        text = value.strip()
+        unit = {"m": 1e6, "k": 1e3}.get(text[-1].lower())
+        try:
+            tokens = float(text[:-1]) * unit if unit else float(text)
+        except ValueError:
+            return None
+        if unit is None and 100 <= tokens <= 1000:
+            tokens *= 1000
+    else:
+        return None
+    if tokens != tokens or tokens < 1:  # (NaN)
+        return None
+    return int(round(min(COMPACT_WINDOW_MAX, max(COMPACT_WINDOW_MIN, tokens))))
+
+
+_COMPACT_SETTINGS = {}  # settings.json path -> ((mtime_ns, size), its env value, its setting, its modelSettings)
+
+
+def compact_window(profile_path, model):
+    """The auto-compact window you set for a chat on this model in the
+    account's settings (its env's CLAUDE_CODE_AUTO_COMPACT_WINDOW, else
+    autoCompactWindow: the model's in modelSettings first), or None (Claude's
+    own: the model's window). Read once a run per file and change."""
+    path = os.path.join(str(profile_path), "settings.json")
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    stamp = (st.st_mtime_ns, st.st_size)
+    kept = _COMPACT_SETTINGS.get(path)
+    if kept is None or kept[0] != stamp:
+        data = read_json(Path(path))
+        data = data if isinstance(data, dict) else {}
+        env = data.get("env") if isinstance(data.get("env"), dict) else {}
+        models = data.get("modelSettings") if isinstance(data.get("modelSettings"), dict) else {}
+        kept = _COMPACT_SETTINGS[path] = (stamp, env.get(COMPACT_WINDOW_ENV), data.get("autoCompactWindow"), models)
+    _, env_value, setting, models = kept
+    tokens = compact_tokens(env_value)
+    if tokens is not None:
+        return tokens
+    key = model_key(model)
+    own = next((v.get("autoCompactWindow") for k, v in models.items()
+                if isinstance(v, dict) and "autoCompactWindow" in v and model_key(k if k.startswith("claude-") else "claude-" + k) == key),
+               None) if key else None
+    value = own if own is not None else setting
+    return None if value == "auto" else compact_tokens(value) if not isinstance(value, str) else None
+
+
 def attach_snapshot(session, snapshot_root, profile, ids=None, since=None):
     """Add model, context fill and cost from the session's newest status-line
     snapshot; with since (ms), only one written since then: a run with no
@@ -657,6 +789,13 @@ def attach_snapshot(session, snapshot_root, profile, ids=None, since=None):
         if isinstance(snap, dict):
             part = lambda key: snap.get(key) if isinstance(snap.get(key), dict) else {}
             session["context"] = number(part("context_window").get("used_percentage"))
+            # (what's left before Claude compacts it, as Talpy Chat's header says it: context_left)
+            size = part("context_window").get("context_window_size")
+            left = context_left(part("context_window").get("current_usage"), part("model").get("id"),
+                                (lambda: size) if isinstance(size, int) and not isinstance(size, bool) else None,
+                                compact_window(profile.path, part("model").get("id")))
+            session["contextLeft"] = left["left"] if left else None
+            session["contextNear"] = bool(left and left["near"])
             model = part("model").get("display_name")
             session["model"] = model if isinstance(model, str) and model else None
             effort = part("effort").get("level")
@@ -688,6 +827,8 @@ def make_session(profile, home, *, sid, pid, name, cwd, kind, entrypoint, state,
         "since": since,
         "startedAt": started_at,
         "context": None,
+        "contextLeft": None,  # % left before Claude compacts it (context_left), as Talpy Chat's header says it
+        "contextNear": False,
         "model": None,
         "effort": None,  # the reasoning effort, from the status line (low … max)
         "costUsd": None,
@@ -3912,7 +4053,7 @@ def place_chats(groups, ctx):
             "sessionId": chat, "chatId": chat, "pid": None, "kind": "chat", "entrypoint": "",
             "state": "done", "reason": "", "waitingFor": "", "detail": "", "since": seen[home],
             "startedAt": None, "jobId": None, "jobSessionId": None,
-            "context": None, "model": None, "costUsd": None,
+            "context": None, "contextLeft": None, "contextNear": False, "model": None, "costUsd": None,
             "formerIds": [i for _, s in entries for i in (s["sessionId"], s.get("jobSessionId")) if i],
         })
         attach_snapshot(moved, ctx.snapshot_root, home, [chat, *(i for _, s in entries for i in (s["sessionId"], s.get("jobSessionId")))])

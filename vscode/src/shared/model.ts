@@ -33,6 +33,7 @@ export function chatRefOf(s: Session, host?: string): ChatRef {
     state: s.state,
     tmux: !!s.tmux,
     jobId: s.jobId,
+    bgStop: !!s.bgStop,
     openCommand: s.openCommand ?? null,
     stopCommand: s.stopCommand ?? null,
     terminalCommand: s.terminalCommand ?? null,
@@ -202,8 +203,11 @@ export function openChatsIn(prefer: ReopenIn, status: Pick<Status, "cli"> | null
 export function opensInTalpyChat(c: { kind?: string; pid?: number | null; attached?: Session["attached"] | null },
                                  prefer: ReopenIn, status: Pick<Status, "cli"> | null | undefined, host: string | undefined,
                                  codeHere: boolean): boolean {
-  if (openChatsIn(prefer, status, host, codeHere, true) !== "talpyChat") return false;
-  return (c.kind === "chat" && !c.pid) || (c.kind === "bg" && !!c.pid && !c.attached);
+  // a background chat no terminal shows: its window is Talpy Chat, whatever Open in says (this computer's: a
+  // host's prompts can't reach Talpy Chat yet); Open in a terminal there still shows it in one (claude attach)
+  if (c.kind === "bg" && !!c.pid && !c.attached) return talpyChatHere(status, host, true);
+  // a chat that isn't running: as Open in says
+  return openChatsIn(prefer, status, host, codeHere, true) === "talpyChat" && c.kind === "chat" && !c.pid;
 }
 
 // The Talpy Chat half's tooltip (Plasma's talpyChatHint, the same words)

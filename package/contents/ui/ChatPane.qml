@@ -2684,7 +2684,10 @@ Window {
                         id: stateLabel
                         anchors.centerIn: parent
                         textFormat: Text.PlainText
-                        text: pane.row ? root.stateText(pane.row) : pane.starting ? i18nc("a chat's state", "starting")
+                        // (while the working line says the turn's own time, the header doesn't say a second one)
+                        text: pane.row ? root.stateText(pane.chatState === "working" && pane.turnNow !== null
+                                                        ? Object.assign({}, pane.row, { since: 0 }) : pane.row)
+                              : pane.starting ? i18nc("a chat's state", "starting")
                               : pane.fresh ? i18nc("a chat's state: not started yet", "new") : i18n("not running")
                         color: pane.chatState === "waiting" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
                         font.weight: pane.chatState === "waiting" ? Font.Bold : Font.Normal

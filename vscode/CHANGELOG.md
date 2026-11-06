@@ -135,6 +135,13 @@
 
 ### Better
 
+- **Background chats open in Talpy Chat** whatever `talpyDen.reopenIn` says
+  (one on this computer that no terminal shows); **Interrupt or stop** on a
+  background chat's row at work; rows say *51% left* before Claude compacts
+  the chat, counting your `autoCompactWindow`; Talpy Chat's header says
+  *Working* without a second time; **Alt+Y** sends the answers to Claude's
+  questions; turning the permission hook off asks whether the chats Talpy
+  Chat started keep theirs.
 - **Talpy Chat's icon:** Talpa with a speech bubble, on its tabs and the
   *Open in* switch (in colour) and on the buttons that open a chat in it.
 - **A Remote-SSH window's host comes first** in the view, tagged *this

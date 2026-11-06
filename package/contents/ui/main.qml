@@ -3653,13 +3653,13 @@ PlasmoidItem {
                               + profileArg(profileDir) + configDirArgs + " # " + Date.now())
     }
 
-    // The chat's window. A background chat no terminal shows has none: with
-    // Talpy Chat picked in Open in, it's its Talpy Chat window (its pet, Open
-    // its window, its notifications); direct: a terminal on it all the same
-    // (claude attach: Answer it in a terminal, Talpy Chat's Open in a terminal)
+    // The chat's window. A background chat no terminal shows has none: it's
+    // its Talpy Chat window, whatever Open in says (its pet, Open its window,
+    // its notifications); direct: a terminal on it all the same (claude
+    // attach: Answer it in a terminal, Talpy Chat's Open in a terminal)
     function jumpTo(sessionId, profileDir, direct) {
         const row = listedRow(sessionId, profileDir, "")
-        if (!direct && row && row.kind === "bg" && row.pid && !row.attached && openChatsIn === "talpyChat") {
+        if (!direct && row && row.kind === "bg" && row.pid && !row.attached && talpyChatHere("", true)) {
             openPane(row, "", "chat")
             return
         }

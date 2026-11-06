@@ -24,8 +24,17 @@ ConfigPage {
     property alias cfg_phoneWhileAway: phoneWhileAway.checked
     property alias cfg_phoneFinished: phoneFinished.checked
     property string cfg_phoneDevice
-    property alias cfg_shortcutGoesToChat: shortcutGoesToChat.checked
-    property alias cfg_shortcutTalpyChat: shortcutTalpyChat.checked
+    // (the shortcut's three choices, as radio buttons: the popup, the chat's own window, Talpy Chat)
+    property bool cfg_shortcutGoesToChat
+    property bool cfg_shortcutTalpyChat
+    // (set again whenever they change, Defaults too: a click on a radio button ends its binding)
+    function syncShortcut() {
+        shortcutPopup.checked = !cfg_shortcutGoesToChat
+        shortcutWindow.checked = cfg_shortcutGoesToChat && !cfg_shortcutTalpyChat
+        shortcutPane.checked = cfg_shortcutGoesToChat && cfg_shortcutTalpyChat
+    }
+    onCfg_shortcutGoesToChatChanged: syncShortcut()
+    onCfg_shortcutTalpyChatChanged: syncShortcut()
 
     // Plasma passes every setting and its default to each page: declaring the
     // defaults of this page's settings avoids "SimpleKCM does not have a
@@ -86,7 +95,10 @@ ConfigPage {
         return "python3 -I " + q(codeDir + "jump.py") + " " + args.map(q).join(" ") + " # " + Date.now()
     }
 
-    Component.onCompleted: phoneHelper.connectSource(jumpCommand(["--phone-devices"]))
+    Component.onCompleted: {
+        syncShortcut()
+        phoneHelper.connectSource(jumpCommand(["--phone-devices"]))
+    }
 
     function play(sound) {
         const q = s => "'" + String(s).replace(/'/g, "'\\''") + "'"
@@ -261,15 +273,26 @@ ConfigPage {
             Kirigami.FormData.label: i18n("Keyboard shortcut")
         }
 
-        QQC2.CheckBox {
-            id: shortcutGoesToChat
-            text: i18n("Goes to the chat that needs you")
+        QQC2.ButtonGroup {
+            id: shortcutChoice
         }
-        QQC2.CheckBox {
-            id: shortcutTalpyChat
-            Layout.leftMargin: Kirigami.Units.gridUnit
-            enabled: shortcutGoesToChat.checked
-            text: i18n("In Talpy Chat, wherever it runs")
+        QQC2.RadioButton {
+            QQC2.ButtonGroup.group: shortcutChoice
+            id: shortcutPopup
+            text: i18n("Opens the popup")
+            onToggled: if (checked) page.cfg_shortcutGoesToChat = false
+        }
+        QQC2.RadioButton {
+            QQC2.ButtonGroup.group: shortcutChoice
+            id: shortcutWindow
+            text: i18n("Goes to the chat that needs you, in its own window")
+            onToggled: if (checked) { page.cfg_shortcutGoesToChat = true; page.cfg_shortcutTalpyChat = false }
+        }
+        QQC2.RadioButton {
+            QQC2.ButtonGroup.group: shortcutChoice
+            id: shortcutPane
+            text: i18n("Goes to the chat that needs you, in Talpy Chat")
+            onToggled: if (checked) { page.cfg_shortcutGoesToChat = true; page.cfg_shortcutTalpyChat = true }
         }
 
         QQC2.Label {

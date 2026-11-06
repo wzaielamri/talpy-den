@@ -2680,6 +2680,27 @@ class ContextAndTurnTests(PaneFixture):
             self.assertIsNone(left(usage, "claude-opus-5-5"), usage)
         self.assertEqual(left(u(990000), "claude-opus-5-5")["left"], 0)   # (past it: auto-compact off)
 
+    def test_the_auto_compact_window_you_set(self):
+        # (Claude Code 2.1.318: CLAUDE_CODE_AUTO_COMPACT_WINDOW first, else autoCompactWindow, the model's in
+        # modelSettings first; "auto": the model's own; from 100k to 1M; below the model's window it compacts by it)
+        tokens = cs.compact_tokens
+        self.assertEqual([tokens(v) for v in ("200k", "1M", "200000", "300", 250000, " 400K ", "50k", "5M", "auto", "", "x", True, None)],
+                         [200000, 1000000, 200000, 300000, 250000, 400000, 100000, 1000000, None, None, None, None, None])
+        settings = self.home / ".claude-work/settings.json"
+        window = lambda model="claude-opus-5-5": cs.compact_window(self.home / ".claude-work", model)
+        self.assertIsNone(window())   # (none: the model's own)
+        write(settings, {"autoCompactWindow": 300000, "modelSettings": {"claude-sonnet-5": {"autoCompactWindow": "auto"},
+                                                                         "claude-haiku-5-5": {"autoCompactWindow": 150000}}})
+        self.assertEqual((window(), window("claude-sonnet-5-20260101"), window("claude-haiku-5-5")), (300000, None, 150000))
+        write(settings, {"autoCompactWindow": 300000, "env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200k"}, "x": 1})
+        self.assertEqual(window(), 200000)   # (the env first; read again once the file changed)
+        left = cs.context_left({"input_tokens": 150000}, "claude-opus-5-5", None, window())
+        self.assertEqual((left["window"], left["compactAt"], left["left"], left["near"]), (200000, 167000, 10, True))
+        # Talpy Chat's header says the same
+        t = self.now - 100
+        a = self.answer(prompt("hello", t, cwd=str(self.folder)), using(t + 1, "m1", "claude-opus-5-5", 10, 0, 149990))
+        self.assertEqual((a["context"]["window"], a["context"]["left"]), (200000, 10))
+
     def test_context_is_claudes_last_message_of_its_own(self):
         t = self.now - 100
         start = (prompt("hello", t, cwd=str(self.folder)), using(t + 1, "m1", "claude-opus-5-5", 1000, 0, 49000))
@@ -2779,6 +2800,25 @@ class RelayTests(PaneFixture):
         self.assertEqual((data["hooks"]["PermissionRequest"], data["model"]), ([mine], "opus"))
         self.assertFalse(hook.exists())
         self.assertFalse(self.cli("--relay", "status")["some"])
+
+    def test_off_asks_about_the_chats_talpy_chat_started(self):
+        # (chats Talpy Chat started answer their prompts with a hook of their own, in their jobs' saved options:
+        # turned off for every chat, you choose whether they keep it)
+        pane.relay(self.home, [], True)
+        hook = self.home / ".local/share/talpy-den/permission-hook.py"
+        own = json.dumps(pane.set_hook({}, pane.hook_command(hook), True), separators=(",", ":"))
+        write(self.home / ".claude-work/jobs/1a2b3c4d/state.json", {"sessionId": "x", "respawnFlags": ["--settings", own]})
+        write(self.home / ".claude-work/jobs/5e6f7a8b/state.json", {"sessionId": "y", "respawnFlags": ["--settings", "{}"]})
+        write(self.home / ".claude-personal/jobs/9c0d1e2f/state.json", {"sessionId": "z", "respawnFlags": ["--settings=" + own]})
+        self.assertEqual(self.cli("--relay", "status")["hooked"], 2)
+        # no: off for every chat, theirs stays
+        self.assertEqual(self.cli("--relay", "off", "--keep-copy")["message"],
+                         "Permission prompts are answered in the chats, but for the chats started from Talpy Chat")
+        self.assertTrue(hook.exists())
+        self.assertFalse(self.cli("--relay", "status")["some"])
+        # yes: theirs goes too (they ask in their own prompt: the hook's command runs nothing then)
+        pane.relay(self.home, [], False)
+        self.assertFalse(hook.exists())
 
     def test_an_entry_written_before_is_replaced_not_added_to(self):
         # Before: python3 -I PATH (no exec, unquoted), also in the folder of

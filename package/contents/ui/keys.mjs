@@ -32,7 +32,7 @@ export const KEYS = [
       commands: [1, 2, 3, 4].map((n) => [VS + "reply" + n, "alt+" + n]),
       what: "A suggested reply (with Shift: in the box first)" },
     { id: "allow", group: "Answering", plasma: "Alt+Y", vscode: "Alt+Y", commands: [[VS + "allow", "alt+y"]],
-      what: "Allow once (a plan: Approve)" },
+      what: "Allow once (a plan: Approve; questions: Send answers)" },
     { id: "always", group: "Answering", plasma: "Alt+A", vscode: "Alt+A", commands: [[VS + "alwaysAllow", "alt+a"]],
       what: "Always allow (a plan: Approve, accept edits)" },
     { id: "deny", group: "Answering", plasma: "Alt+N", vscode: "Alt+N", commands: [[VS + "deny", "alt+n"]],

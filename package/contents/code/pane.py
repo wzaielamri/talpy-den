@@ -89,8 +89,10 @@ its permission prompt and its review.
         repository they are in
   --reviewed CHAT [--off]
         mark the chat reviewed (until it changes files again), or not
-  --relay on|off|status
-        the permission hook in each Claude profile's settings.json
+  --relay on|off|status [--keep-copy]
+        the permission hook in each Claude profile's settings.json (status: also
+        "hooked", the chats Talpy Chat started that answer their prompts with
+        a hook of their own; off --keep-copy: they keep it)
   --live on|off|status
         live mode: the live hook (live_hook.py) in each Claude profile's
         settings.json, so the widget shows each step of each chat as it happens
@@ -849,7 +851,8 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     result = {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or cs.chat_folder(path) or "",
               "items": items, "more": more, "stamp": f"{stamp}/{limit}", "mode": peek.get("mode"),
               "permission": cs.pending_permission(path, cwd),
-              "context": turns.context_left(turn.usage, turn.model, lambda: turns.status_window(home, profile, chat_id, turn.model)),
+              "context": turns.context_left(turn.usage, turn.model, lambda: turns.status_window(home, profile, chat_id, turn.model),
+                                            cs.compact_window(profile.path, turn.model)),
               "turn": turn.now(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")}
     if suggest:
         import replies
@@ -2070,10 +2073,11 @@ def upgrade_hooks(home, extra_dirs=()):
     return changed
 
 
-def install_hook(home, extra_dirs, on, kind, source=None):
+def install_hook(home, extra_dirs, on, kind, source=None, keep_copy=False):
     """Put the hook in each profile's settings (on) or take it out: how many
     settings files changed (ValueError: one isn't JSON). source: the hook's
-    code (else its file next to this one)."""
+    code (else its file next to this one). keep_copy: taken out, its copy
+    stays (chats Talpy Chat started name it in settings of their own)."""
     target = hook_path(home, kind)
     if on:
         if source is None:
@@ -2099,7 +2103,7 @@ def install_hook(home, extra_dirs, on, kind, source=None):
                 continue  # (as it was: the file isn't touched)
             write_settings(path, data)
             changed += 1
-    if not on:
+    if not on and not keep_copy:
         try:
             target.unlink()
         except OSError:
@@ -2107,17 +2111,38 @@ def install_hook(home, extra_dirs, on, kind, source=None):
     return changed
 
 
-def relay(home, extra_dirs, on, source=None):
+def relay(home, extra_dirs, on, source=None, keep_copy=False):
     """Put the permission hook in each profile's settings (on) or take it
     out: (ok, message). source: the hook's code (else permission_hook.py
-    next to this file)."""
+    next to this file). keep_copy: taken out, the chats Talpy Chat started
+    keep theirs (hooked_chats: they still answer their prompts in Talpy
+    Chat); else its copy goes, and they ask in their own prompt."""
     try:
-        changed = install_hook(home, extra_dirs, on, "relay", source)
+        changed = install_hook(home, extra_dirs, on, "relay", source, keep_copy)
     except ValueError as exc:
         return False, str(exc)
     if on:
         return True, "Permission prompts can be answered from Talpy Den" + ("" if changed else " (they could already)")
+    if keep_copy:
+        return True, "Permission prompts are answered in the chats, but for the chats started from Talpy Chat"
     return True, "Permission prompts are answered in the chats only"
+
+
+def hooked_chats(home, extra_dirs):
+    """How many background chats answer their prompts in Talpy Chat with the
+    hook of their own Talpy Chat gave them (their jobs' saved options name
+    it: talpy_den.hook_settings), on each profile."""
+    count = 0
+    for profile in cs.discover_profiles(home, extra_dirs):
+        try:
+            jobs = list((profile.path / "jobs").iterdir())
+        except OSError:
+            continue
+        for job in jobs:
+            record = cs.read_json(job / "state.json")
+            if isinstance(record, dict) and cs.hook_settings(record.get("respawnFlags")):
+                count += 1
+    return count
 
 
 def live(home, extra_dirs, on, source=None):
@@ -2167,9 +2192,14 @@ def chat_hook(home, profile):
 
 
 def relay_status(home, extra_dirs, kind="relay"):
+    """{"ok", "on", "some", "settings"; the permission hook's: "hooked", how many
+    chats Talpy Chat started answer their prompts with a hook of their own}."""
     files = settings_files(home, extra_dirs)
     on = [has_hook(cs.read_json(p) or {}, kind) for p in files]
-    return {"ok": True, "on": bool(on) and all(on), "some": any(on), "settings": [str(p) for p in files]}
+    out = {"ok": True, "on": bool(on) and all(on), "some": any(on), "settings": [str(p) for p in files]}
+    if kind == "relay":
+        out["hooked"] = hooked_chats(home, extra_dirs)
+    return out
 
 
 # ---------------------------------------------------------------- command line
@@ -2327,7 +2357,7 @@ def main(argv=None):
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
                "--hide-reply", "--type-in", "--reply-text", "--set-options")
-    osd, suggest, no_copy = False, False, False
+    osd, suggest, no_copy, keep_copy = False, False, False, False
     cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
     while args:
         arg = args.pop(0)
@@ -2399,6 +2429,8 @@ def main(argv=None):
             suggest = True
         elif arg == "--no-copy":
             no_copy = True
+        elif arg == "--keep-copy":
+            keep_copy = True
         elif arg == "--off":
             off = True
         elif arg == "--remote":
@@ -2525,7 +2557,8 @@ def main(argv=None):
             if target == "status":
                 result = relay_status(home, config_dirs, kind)
             elif target in ("on", "off"):
-                ok, said = (relay if kind == "relay" else live)(home, config_dirs, target == "on", source)
+                ok, said = relay(home, config_dirs, target == "on", source, keep_copy) if kind == "relay" \
+                    else live(home, config_dirs, target == "on", source)
                 result = {"ok": ok, "message": said}
             else:
                 sys.exit(__doc__)

@@ -115,7 +115,13 @@ ColumnLayout {
             answered(key === "always" ? "approve-edits" : "approve", "", null)
             return true
         }
-        if (asksQuestions || (key === "always" && !(permission.answer === "keys" || permission.always !== "")))
+        if (asksQuestions) {   // (Alt+Y: Send answers, once each question has one)
+            if (key !== "allow" || !questionForm.complete)
+                return false
+            answered("answer", "", questionForm.answers())
+            return true
+        }
+        if (key === "always" && !(permission.answer === "keys" || permission.always !== ""))
             return false
         answered(key === "always" ? "always" : "allow", "", null)
         return true
@@ -285,6 +291,12 @@ ColumnLayout {
             icon.name: Icons.plasma.send
             text: i18n("Send answers")
             onClicked: ask.answered("answer", "", questionForm.answers())
+
+            TipArea {
+                anchors.fill: parent
+                active: ask.keyed
+                mainText: i18n("Send answers (Alt+Y)")
+            }
         }
         PlasmaComponents3.Button {
             enabled: !ask.busy && !ask.settling

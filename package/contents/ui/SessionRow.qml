@@ -31,9 +31,16 @@ RowLayout {
     // stopping and interrupting chats). One in tmux that's working can be
     // interrupted instead: Ctrl+C in its pane, like VS Code's stop button.
     readonly property bool canEnd: session.kind === "interactive" && session.pid !== null
+    // (its context: % left before Claude compacts it, or null; the bar's fill)
+    readonly property var ctxLeft: typeof session.contextLeft === "number" ? session.contextLeft : null
+    readonly property real ctxFill: ctxLeft !== null ? 100 - ctxLeft : session.context || 0
     readonly property bool inVscode: session.entrypoint === "claude-vscode"
     // (not when only a background command runs: its turn is over, Ctrl+C would land at its prompt)
-    readonly property bool canInterrupt: canEnd && !!session.tmux && (session.state === "working" || session.state === "waiting")
+    // A background chat at work too: Esc through Claude's background service, as Talpy Chat's Stop
+    // (bgStop: on the Claude Code versions that was checked on)
+    readonly property bool bgInterrupt: session.kind === "bg" && session.pid !== null && !!session.bgStop
+    readonly property bool canInterrupt: (canEnd && !!session.tmux || bgInterrupt)
+                                         && (session.state === "working" || session.state === "waiting")
                                          && session.reason !== "background shell"
     readonly property bool canStop: canEnd || (session.kind === "bg" && session.pid !== null && (!remoteHost || !!session.stopCommand))
     // (tooltips' words: worked out when they show)
@@ -42,7 +49,9 @@ RowLayout {
              : row.canEnd ? i18n("Stop this chat") : i18n("Stop this background chat")
     }
     function stopTip() {
-        return row.canInterrupt
+        return row.canInterrupt && row.bgInterrupt
+        ? i18n("Asks first. Interrupting is like Esc in its terminal: the current step and its subagents stop, and the background chat stays and takes your next message. Stopping ends its process; claude attach resumes it.")
+        : row.canInterrupt
         ? i18n("Asks first. Interrupting is like Ctrl+C in its tmux pane, or the stop button in VS Code: the current step and its subagents stop, and the chat stays open there.")
         : row.canEnd && row.inVscode
         ? i18n("Asks first. Its tab in VS Code shows it as interrupted, keeps the chat and goes on with your next message.")
@@ -434,7 +443,7 @@ RowLayout {
                                     text: row.tag
                                     tooltip: root.movedText(row.session) + (row.session.pid === null ? i18n("No terminal or panel has it open: a reply goes on with it in the background.")
                                              : row.session.kind === "bg"
-                                             ? (root.openChatsIn === "talpyChat" && !row.session.attached
+                                             ? (!row.remoteHost && !row.session.attached
                                                 ? i18n("A background chat: Claude's background service runs it, with no terminal of its own. Its window is Talpy Chat; Open in a terminal there shows it in one too (claude attach).")
                                                 : i18n("A background chat: Claude's background service runs it, with no terminal of its own. Click the name to open it in a terminal (claude attach)."))
                                              : row.session.entrypoint === "claude-vscode"
@@ -822,25 +831,27 @@ RowLayout {
                              .filter(t => t).join("\n")
                 }
             }
-            // Context window fill
+            // Context: what's left before Claude compacts it on its own, as Talpy Chat's header says
+            // it (talpy_den.context_left; the bar fills up to there), else how full its window is
             Rectangle {
-                visible: row.session.context !== null
+                visible: row.session.context !== null || row.ctxLeft !== null
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 2.5
                 Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * 0.3)
                 radius: height / 2
                 color: row.colors.groove
 
                 Rectangle {
-                    width: parent.width * Math.min(100, Math.max(0, row.session.context || 0)) / 100
+                    width: parent.width * Math.min(100, Math.max(0, row.ctxFill)) / 100
                     height: parent.height
                     radius: parent.radius
-                    color: root.usageColor(row.session.context || 0)
+                    color: root.usageColor(row.ctxFill)
                 }
             }
             RowText {
                 colors: row.colors
-                visible: row.session.context !== null
-                text: i18nc("context window fill", "ctx %1%", Math.round(row.session.context || 0))
+                visible: row.session.context !== null || row.ctxLeft !== null
+                text: row.ctxLeft !== null ? i18nc("context left before Claude compacts the chat", "%1% left", row.ctxLeft)
+                                           : i18nc("context window fill", "ctx %1%", Math.round(row.session.context || 0))
                 opacity: 0.7
                 font: row.colors.smallFont
                 // (as wide as "ctx 100%", right-aligned: every row's bar ends at one place)
@@ -1237,7 +1248,9 @@ RowLayout {
                 visible: true   // (an InlineMessage is hidden till told: the Loader shows it only while it's wanted)
                 type: Kirigami.MessageType.Warning
                 // rich text (an InlineMessage always guesses), so the name is escaped
-                text: "<span>" + (row.canInterrupt
+                text: "<span>" + (row.canInterrupt && row.bgInterrupt
+                      ? i18n("Interrupt “%1”? Like Esc in its terminal: the current step and its subagents stop, and the background chat stays and takes your next message. Or stop it: its process ends, the conversation is kept and claude attach resumes it.", root.escapeHtml(row.session.name))
+                      : row.canInterrupt
                       ? i18n("Interrupt “%1”? Like Ctrl+C in its tmux pane, or the stop button in VS Code: the current step and its subagents stop, and the chat stays open there. Or stop it: Claude quits and its terminal stays open.", root.escapeHtml(row.session.name))
                       : row.canEnd && row.inVscode && row.session.state === "working"
                       ? i18n("Stop “%1”? It's working right now: the current step is interrupted, as with VS Code's stop button, and anything it was running stops. Its tab keeps the chat and goes on with your next message.", root.escapeHtml(row.session.name))

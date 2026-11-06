@@ -22,68 +22,9 @@ import time
 import talpy_den as cs
 
 # ---------------------------------------------------------------- context left
-
-# The context window of each model Claude Code knows (its own table, 2.1.318), by the name a
-# transcript gives it ("claude-opus-5-5"; a date, a provider's prefix or "[1m]" around it: model_key)
-CONTEXT_1M = 1000000
-CONTEXT_WINDOWS = dict(
-    {m: CONTEXT_1M for m in ("claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5",
-                             "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1")},
-    # (200k, or 1M where it's chosen: "sonnet[1m]")
-    **{m: 200000 for m in ("claude-opus-4", "claude-opus-4-1", "claude-opus-4-5", "claude-opus-4-6", "claude-sonnet-4",
-                           "claude-sonnet-4-5", "claude-sonnet-4-6", "claude-haiku-4-5")})
-# Claude Code compacts a chat on its own (auto-compact) at its window less the room it keeps for
-# Claude's reply (the model's most output, at most 20k: every model above has more) and 13k more,
-# and says it's close from 20k before that (2.1.318)
-COMPACT_ROOM = 20000 + 13000
-COMPACT_CLOSE = 20000
-USAGE_READ = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
-
-
-def model_key(model):
-    """The name Claude Code's table gives a model ("claude-opus-4-1") from the
-    one a transcript or a provider gives it ("claude-opus-4-1-20250805",
-    "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "claude-sonnet-4-6[1m]"):
-    family, version and minor version, no date; None for no Claude model."""
-    i = model.find("claude-") if isinstance(model, str) else -1
-    if i < 0:
-        return None
-    words = model[i:].split("[")[0].replace("@", "-").split("-")[:4]
-    if len(words) < 3 or not words[2].isdigit():
-        return None
-    minor = words[3] if len(words) > 3 and words[3].isdigit() and len(words[3]) <= 2 else None
-    return "-".join(words[:3]) + ("-" + minor if minor else "")
-
-
-def context_window(model, used=0, told=None):
-    """The context window of a chat on this model (tokens), None when it isn't
-    known. told(): the window its status line gives (status_window), else
-    Claude Code's table; 1M where that's chosen ([1m]) or the chat is past its
-    model's own window already."""
-    said = told() if told is not None else None
-    if isinstance(said, int) and said > 0:
-        return said
-    window = CONTEXT_WINDOWS.get(model_key(model))
-    if window is not None and window < CONTEXT_1M and ("[1m]" in model.lower() or used > window):
-        return CONTEXT_1M
-    return window
-
-
-def context_left(usage, model, told=None):
-    """How full a chat's context is, from the token counts of Claude's last
-    message (usage: all it read, cached or not, which its next one starts
-    from): {"used", "window", "compactAt": where Claude compacts the chat,
-    "left": % of it till then, "near": Claude Code says it's close}, or None
-    when it can't be known (no counts, a model not known: context_window)."""
-    if not isinstance(usage, dict):
-        return None
-    used = sum(n for n in (usage.get(k) for k in USAGE_READ) if isinstance(n, int) and not isinstance(n, bool) and n > 0)
-    window = context_window(model, used, told) if used else None
-    if window is None or window <= COMPACT_ROOM:
-        return None
-    at = window - COMPACT_ROOM
-    return {"used": used, "window": window, "compactAt": at, "left": max(0, int((at - used) * 100 / at + 0.5)),
-            "near": used >= at - COMPACT_CLOSE}
+# (talpy_den's: the popup's rows say it too, from their status lines)
+CONTEXT_1M, CONTEXT_WINDOWS, COMPACT_ROOM, COMPACT_CLOSE = cs.CONTEXT_1M, cs.CONTEXT_WINDOWS, cs.COMPACT_ROOM, cs.COMPACT_CLOSE
+model_key, context_window, context_left = cs.model_key, cs.context_window, cs.context_left
 
 
 def status_window(home, profile, chat_id, model):

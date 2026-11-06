@@ -88,6 +88,10 @@ test("Talpy Chat is one more choice: this computer's chats, a new one where a ho
   assert.equal(openChatsIn("talpyChat", managed, undefined, false, false), "terminal");
   // its window: a chat that isn't running, or a background one no terminal shows
   assert.equal(opensInTalpyChat({ kind: "chat", pid: null }, "talpyChat", here, undefined, false), true);
+  // a background chat no terminal shows: Talpy Chat whatever Open in says (this computer's; a host's in its terminal)
+  assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "terminal", here, undefined, false), true);
+  assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "claudeCode", here, undefined, true), true);
+  assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "talpyChat", here, "gpu", false), false);
   assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "talpyChat", here, undefined, false), true);
   assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: { in: "terminal", app: "Konsole" } }, "talpyChat", here, undefined, false), false,
                "the terminal it's shown in");
