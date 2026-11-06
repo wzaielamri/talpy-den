@@ -71,6 +71,7 @@ export interface Conversation {
   asks?: Asks | null;
   context?: ContextLeft | null; // how full its context is (null: not known)
   turn?: TurnSoFar | null; // Claude's turn so far, while it's going on
+  options?: ChatOptions; // the model and effort it uses now (/model and /effort's lists mark them)
 }
 
 // One file a chat changed (pane.py: chat_review)
@@ -200,7 +201,7 @@ export type PaneHostMessage =
   | { type: "review"; answer: ReviewAnswer | null; error: string }
   // ask: its terminal takes no text: choose; id: the message it's for (send); went: it went into the chat
   // itself (typed in, or on in the background: not VS Code's input or the clipboard)
-  | { type: "result"; kind: string; ok: boolean; message: string; ask?: boolean; id?: number; went?: boolean }
+  | { type: "result"; kind: string; ok: boolean; message: string; ask?: boolean; id?: number; went?: boolean; how?: string } // how: an "options" result's (now, next)
   | { type: "textSize"; scale: number } // talpyDen.chatTextScale
   | { type: "font"; family: string } // talpyDen.chatFont, as a CSS font-family ("": VS Code's own)
   | { type: "diffLayout"; split: boolean } // talpyDen.diffSideBySide
@@ -346,21 +347,70 @@ export function pickerOf(text: string): { kind: "model" | "effort"; value: strin
 export function pickLabel(kind: "model" | "effort", value: string): string {
   const v = value.toLowerCase();
   if (v === "" || v === "default") return kind === "model" ? "Claude's default model" : "Claude's default effort";
+  if (kind === "effort" && v === ULTRACODE) return "Ultracode, with Extra high effort";
   const known = (kind === "model" ? CHAT_MODELS : CHAT_EFFORTS).find(([k]) => k === v);
   if (kind === "effort") return `${known ? known[1] : value} effort`;
   return known ? known[1] : value;
 }
 
-// The list for /model or /effort as you type its name (suggestFor): each with what it sets
-export function pickerItems(kind: "model" | "effort", q: string): Suggestion[] {
+// Claude's ultracode (an effort of its own: Extra high, with ultracode on; /effort's toggle here)
+export const ULTRACODE = "ultracode";
+
+// What a chat uses now (pane.py --conversation's "options", chatpick.options_now): what Claude
+// wakes it with, else what you picked for its next message (next), else what it last ran on (its
+// last reply's model, e.g. "claude-opus-5-5"); "" is Claude's default, null not known
+export interface ChatOptions {
+  model: string | null;
+  effort: string | null; // xhigh when ultracode is on
+  ultracode: boolean;
+  next: boolean;
+}
+
+// A model as the list names it: its alias for a full name ("claude-opus-5-5[1m]": "opus")
+export function modelKey(model: string): string {
+  const m = model.toLowerCase();
+  return CHAT_MODELS.find(([k]) => k && m.includes(k))?.[0] ?? m;
+}
+
+// What the chat uses once a pick is set (how: "now", or "next": from its next message)
+export function withPick(now: ChatOptions | null, kind: "model" | "effort", value: string, how: string): ChatOptions {
+  const was = now ?? { model: null, effort: null, ultracode: false, next: false };
+  const v = value.toLowerCase() === "default" ? "" : value.toLowerCase();
+  const next = how === "next";
+  return kind === "model" ? { ...was, model: v, next } : { ...was, effort: v === ULTRACODE ? "xhigh" : v, ultracode: v === ULTRACODE, next };
+}
+
+// "Opus · Extra high effort, with ultracode" (null: nothing known)
+export function nowText(now: ChatOptions | null | undefined): string | null {
+  if (!now || (now.model === null && now.effort === null)) return null;
+  const words = [now.model === null ? "" : pickLabel("model", modelKey(now.model)),
+    now.effort === null ? "" : pickLabel("effort", now.effort) + (now.ultracode ? ", with ultracode" : "")];
+  return words.filter(Boolean).join(" · ");
+}
+
+// The list for /model or /effort as you type its name (suggestFor): each with what it sets, the one
+// the chat uses now marked (✓, "now" or "from your next message"); /effort's also turns ultracode
+// on or off
+export function pickerItems(kind: "model" | "effort", q: string, now?: ChatOptions | null): Suggestion[] {
   const query = q.toLowerCase();
-  return (kind === "model" ? CHAT_MODELS : CHAT_EFFORTS)
-    .filter(([v, label]) => !query || (v || "default").startsWith(query) || label.toLowerCase().split(/[\s']+/).some((w) => w.startsWith(query)))
-    .map(([v, label]) => ({ text: label, about: "for this chat alone", insert: `/${kind} ${v || "default"}`, run: true }));
+  const on = !!now?.ultracode;
+  const rows: { v: string; label: string; insert: string; toggle?: boolean }[] =
+    (kind === "model" ? CHAT_MODELS : CHAT_EFFORTS).map(([v, label]) => ({ v, label, insert: `/${kind} ${v || "default"}` }));
+  if (kind === "effort")
+    rows.splice(rows.length - 1, 0, { v: ULTRACODE, label: on ? "Turn ultracode off" : "Turn ultracode on", insert: `/effort ${on ? "xhigh" : ULTRACODE}`, toggle: true });
+  const used = (v: string) => !!now && (kind === "model" ? now.model !== null && modelKey(now.model) === v : now.effort !== null && now.effort === v);
+  return rows
+    .filter((r) => !query || (r.v || "default").startsWith(query) || r.label.toLowerCase().split(/[\s']+/).some((w) => w.startsWith(query)))
+    .map((r) => {
+      const mark = !r.toggle && used(r.v);
+      const about = [mark ? (now!.next ? "from your next message" : "now") + (kind === "effort" && on ? ", with ultracode" : "") : "",
+        r.toggle ? (on ? "Extra high effort stays" : "with Extra high effort") : "", "for this chat alone"];
+      return { text: r.label, about: about.filter(Boolean).join(" · "), insert: r.insert, run: true, ...(mark ? { now: true } : {}) };
+    });
 }
 
 // What the line under the box says of a command (null: what it says of any message, routeHint)
-export function commandHint(ran: CommandRun | null, route: PaneChat["route"] | undefined, host = ""): string | null {
+export function commandHint(ran: CommandRun | null, route: PaneChat["route"] | undefined, host = "", now?: ChatOptions | null): string | null {
   if (!ran) return null;
   const where = host ? ` (on ${hostLabel(host)})` : "";
   if (ran.run === "off") return ran.why;
@@ -369,9 +419,11 @@ export function commandHint(ran: CommandRun | null, route: PaneChat["route"] | u
     const p = pickerOf(ran.name);
     const words = p?.kind === "effort" ? "effort level" : "model";
     const kind = p?.kind ?? "model";
-    const exact = !!ran.arg && pickerItems(kind, "").some((s) => s.insert === `/${kind} ${ran.arg!.toLowerCase()}`);
-    const named = !ran.arg ? "" : exact || !pickerItems(kind, ran.arg).length ? pickLabel(kind, ran.arg) : "";
-    return (named ? `Enter: ${named} for this chat alone` : ran.arg ? `Enter: the ${words} picked in the list, for this chat alone`
+    const exact = !!ran.arg && pickerItems(kind, "", now).some((s) => s.insert === `/${kind} ${ran.arg!.toLowerCase()}`);
+    const named = !ran.arg ? "" : exact || !pickerItems(kind, ran.arg, now).length ? pickLabel(kind, ran.arg) : "";
+    const used = nowText(now);
+    return (used ? `${now!.next ? "From your next message" : "Now"}: ${used}. ` : "")
+      + (named ? `Enter: ${named} for this chat alone` : ran.arg ? `Enter: the ${words} picked in the list, for this chat alone`
       : `Enter lists the ${words}s: for this chat alone`)
       + ` (in its terminal, Claude's ${ran.name} would also make it your default for every new chat).${where}`;
   }
@@ -404,17 +456,19 @@ export interface Suggestion {
   off?: boolean; // one that can't run on this chat: greyed, about says why
   tip?: string;
   run?: boolean; // taken, it runs at once (a model or effort of the picker's list)
+  now?: boolean; // the picker's: what the chat uses now (✓)
 }
 
 // For the text before the cursor: where the word being completed starts and
 // what fits it (at most 8: commands that start with it first, files whose
 // name starts with it first, then shorter paths); none for a word you closed
 // the list for (dismissed)
-export function suggestFor(before: string, offers: Offers | null, dismissed = "", chat?: Pick<PaneChat, "where" | "route"> | null): { start: number; items: Suggestion[]; token: string } {
+export function suggestFor(before: string, offers: Offers | null, dismissed = "", chat?: Pick<PaneChat, "where" | "route"> | null,
+                           now?: ChatOptions | null): { start: number; items: Suggestion[]; token: string } {
   // (/model or /effort and a space, on a chat Talpy Chat sets them for: its own list of them)
   const pick = /^\/(model|effort)\s+(\S*)$/.exec(before);
   if (pick && before !== dismissed && commandRun("/" + pick[1], offers, chat)?.run === "picker")
-    return { start: 0, items: pickerItems(pick[1] as "model" | "effort", pick[2]), token: before };
+    return { start: 0, items: pickerItems(pick[1] as "model" | "effort", pick[2], now), token: before };
   const command = /^\/([^\s]*)$/.exec(before);
   const file = /(^|\s)@("?)([^\s"]*)$/.exec(before);
   const token = command ? before : file ? before.slice(before.length - file[0].length + file[1].length) : "";

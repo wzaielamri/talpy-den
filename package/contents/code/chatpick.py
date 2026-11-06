@@ -52,8 +52,32 @@ def label(model, effort):
         words.append(cs.model_label(model) or (model.capitalize() if model.isalpha() else model) if model
                      else "Claude's default model")
     if effort is not None:
-        words.append(f"{effort} effort" if effort else "Claude's default effort")
+        words.append("ultracode, with xhigh effort" if effort == cs.ULTRACODE else f"{effort} effort" if effort
+                     else "Claude's default effort")
     return " · ".join(words)
+
+
+def options_now(home, profile, chat_id, ultracode=False):
+    """What a chat uses now, for Talpy Chat's model and effort lists to mark
+    (pane.py --conversation's "options"): {"model", "effort", "ultracode",
+    "next"}. From what Claude wakes it with (its job's saved options; ""
+    where they name none: Claude's default), else what you picked here for
+    its next wake ("next"), else what it last ran on (its last reply's model,
+    e.g. "claude-opus-5-5", and its status line's effort; None where that
+    isn't known). An effort of "ultracode" is xhigh with ultracode on;
+    otherwise ultracode is as the chat last noted it (talpy_den's peek)."""
+    record = cs.read_json(profile.path / "jobs" / chat_id[:8] / "state.json")
+    if isinstance(record, dict) and record.get("sessionId") == chat_id and isinstance(record.get("respawnFlags"), list):
+        saved = cs.saved_flags(record["respawnFlags"])
+        effort = saved.get("effort", "")
+        return {"model": saved.get("model", ""), "effort": "xhigh" if effort == cs.ULTRACODE else effort,
+                "ultracode": effort == cs.ULTRACODE or (ultracode and not effort), "next": False}
+    picked = cs.picked_options(home, chat_id)
+    model, effort = cs.chat_model(home, profile, chat_id)
+    model, effort = picked.get("model", model), picked.get("effort", effort)
+    if effort == cs.ULTRACODE:
+        return {"model": model, "effort": "xhigh", "ultracode": True, "next": bool(picked)}
+    return {"model": model, "effort": effort, "ultracode": bool(ultracode) and "effort" not in picked, "next": bool(picked)}
 
 
 def write_flags(state_path, chat_id, model, effort):
@@ -101,7 +125,7 @@ def set_options(home, extra_dirs, profile_key, chat_id, model=None, effort=None,
     "model", "effort"}. One wake of a chat at a time (talpy_den.wake_lock)."""
     try:
         model = pick_value(model)
-        effort = pick_value(effort, cs.EFFORT_LEVELS)
+        effort = pick_value(effort, cs.EFFORT_LEVELS + (cs.ULTRACODE,))
     except ValueError as exc:
         return {"ok": False, "message": str(exc)}
     if model is None and effort is None:

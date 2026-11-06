@@ -141,6 +141,12 @@
 
 ### Better
 
+- **Talpy Chat: ultracode for one chat, and what a chat uses now.**
+  `/effort`'s list has *Turn ultracode on* (Extra high effort, with
+  ultracode) or *Turn ultracode off*, for that chat alone, your settings
+  untouched. `/model` and `/effort`'s lists mark what the chat uses with ✓
+  (*now*, or *from your next message*), and the line under the box says it
+  (*Now: Opus · Extra high effort*).
 - **Talpy Chat: Claude's thinking isn't shown as its reply.** The lines
   Claude Code writes to sum up Claude's thinking while it works are dimmed,
   in italics, after *∴*, as in Claude's terminal: such a line can tell what

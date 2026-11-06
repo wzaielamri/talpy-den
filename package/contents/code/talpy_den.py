@@ -6994,6 +6994,10 @@ def resume_command(profile, session_id, home=None, folder=None, claude="claude")
 
 MODEL_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9._\[\]-]{0,79}$")  # an alias (opus, sonnet, fable) or a model's full name
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+# claude --effort ultracode: xhigh with ultracode on (Claude Code 2.1.312+; a
+# chat woken with it notes ultra_effort_enter at its next message, and one
+# woken with --effort xhigh after it ultra_effort_exit: live-checked, 2.1.318)
+ULTRACODE = "ultracode"
 # claude --permission-mode's ("manual" is newer Claude's name for "default",
 # which older ones on SSH hosts know only by that)
 PERMISSION_MODES = ("default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions")
@@ -7009,8 +7013,8 @@ def chat_options(model=None, effort=None, mode=None):
             raise ValueError(f"Not a model name: {model}")
         words += ["--model", model]
     if effort:
-        if effort not in EFFORT_LEVELS:
-            raise ValueError(f"Not an effort level: {effort} (it's low, medium, high, xhigh or max)")
+        if effort not in EFFORT_LEVELS + (ULTRACODE,):
+            raise ValueError(f"Not an effort level: {effort} (it's low, medium, high, xhigh, max or ultracode)")
         words += ["--effort", effort]
     if mode:
         mode = "default" if mode == "manual" else mode

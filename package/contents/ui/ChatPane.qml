@@ -615,6 +615,8 @@ Window {
         asks = null
         contextLeft = null
         turnNow = null
+        usesNow = null
+        picking = null
         usual = null
         usualAt = 0
         chipsSeen = []
@@ -928,6 +930,8 @@ Window {
         asks = result.asks || null
         contextLeft = result.context || null
         turnNow = result.turn || null
+        if (result.options)
+            usesNow = result.options
         if (turnEnded !== "" && usual === null)
             usualSoon.restart()
         loaded = true
@@ -1308,20 +1312,63 @@ Window {
         const v = String(value || "").toLowerCase()
         if (v === "" || v === "default")
             return kind === "model" ? i18n("Claude's default model") : i18n("Claude's default effort")
+        if (kind === "effort" && v === "ultracode")
+            return i18n("Ultracode, with Extra high effort")
         const known = (kind === "model" ? chatModels : chatEfforts).find(k => k[0] === v)
         return kind === "effort" ? i18n("%1 effort", known ? known[1] : value) : known ? known[1] : value
     }
+    // What the chat uses now (pane.py --conversation's "options", chatpick.options_now: VS Code's
+    // ChatOptions): {model, effort ("" Claude's default, null not known; xhigh with ultracode),
+    // ultracode, next (from your next message)}; each pick sets it at once (withPick)
+    property var usesNow: null
+    property var picking: null   // ({kind, value}: a pick on its way)
+    function modelKey(model) {   // (a full name as the list names it: "claude-opus-5-5[1m]" is opus)
+        const m = String(model).toLowerCase()
+        const known = chatModels.find(k => k[0] && m.indexOf(k[0]) >= 0)
+        return known ? known[0] : m
+    }
+    function withPick(was, kind, value, how) {
+        const now = Object.assign({ model: null, effort: null, ultracode: false, next: false }, was || {})
+        const v = String(value).toLowerCase() === "default" ? "" : String(value).toLowerCase()
+        if (kind === "model")
+            return Object.assign(now, { model: v, next: how === "next" })
+        return Object.assign(now, { effort: v === "ultracode" ? "xhigh" : v, ultracode: v === "ultracode", next: how === "next" })
+    }
+    function nowText(now) {   // ("Opus · Extra high effort, with ultracode"; "": nothing known)
+        if (!now || (now.model === null && now.effort === null))
+            return ""
+        return [now.model === null ? "" : pickLabel("model", modelKey(now.model)),
+                now.effort === null ? "" : pickLabel("effort", now.effort) + (now.ultracode ? i18n(", with ultracode") : "")]
+            .filter(w => w).join(" · ")
+    }
+    // The list for /model or /effort: each with what it sets, the one the chat uses now marked (✓,
+    // "now" or "from your next message"); /effort's also turns ultracode on or off
     function pickerItems(kind, q) {
         const query = String(q || "").toLowerCase()
-        return (kind === "model" ? chatModels : chatEfforts)
-            .filter(k => !query || (k[0] || "default").startsWith(query) || k[1].toLowerCase().split(/[\s']+/).some(w => w.startsWith(query)))
-            .map(k => ({ text: k[1], about: i18n("for this chat alone"), insert: "/" + kind + " " + (k[0] || "default"), run: true, off: false, tag: "", tip: "" }))
+        const now = usesNow
+        const on = !!(now && now.ultracode)
+        const rows = (kind === "model" ? chatModels : chatEfforts).map(k => ({ v: k[0], label: k[1], insert: "/" + kind + " " + (k[0] || "default") }))
+        if (kind === "effort")
+            rows.splice(rows.length - 1, 0, { v: "ultracode", label: on ? i18n("Turn ultracode off") : i18n("Turn ultracode on"),
+                                              insert: "/effort " + (on ? "xhigh" : "ultracode"), toggle: true })
+        const used = v => !!now && (kind === "model" ? now.model !== null && now.model !== undefined && modelKey(now.model) === v
+                                                     : now.effort !== null && now.effort !== undefined && now.effort === v)
+        return rows
+            .filter(r => !query || (r.v || "default").startsWith(query) || r.label.toLowerCase().split(/[\s']+/).some(w => w.startsWith(query)))
+            .map(r => {
+                const mark = !r.toggle && used(r.v)
+                const about = [mark ? (now.next ? i18n("from your next message") : i18n("now")) + (kind === "effort" && on ? i18n(", with ultracode") : "") : "",
+                               r.toggle ? (on ? i18n("Extra high effort stays") : i18n("with Extra high effort")) : "",
+                               i18n("for this chat alone")]
+                return { text: r.label, about: about.filter(w => w).join(" · "), insert: r.insert, run: true, now: mark, off: false, tag: "", tip: "" }
+            })
     }
     property bool pickBusy: false   // (a pick on its way: pane.py --set-options)
     function setOptions(kind, value) {
         if (pickBusy)
             return
         pickBusy = true
+        picking = { kind: kind, value: value }
         start("--set-options " + root.shellQuote(chatId) + " --" + kind + " " + root.shellQuote(value === "default" ? "" : value)
               + paneArgs() + " # " + Date.now(), { kind: "options", chat: chatId, host: host, text: replyBox.text.trim() })
     }
@@ -1516,6 +1563,9 @@ Window {
             infoTimer.restart()
             if (result.ok && asked.chat === chatId && pickerOf(replyBox.text))
                 replyBox.text = ""   // (the /model you picked goes)
+            if (result.ok && asked.chat === chatId && picking)
+                usesNow = withPick(usesNow, picking.kind, picking.value, result.how || "")   // (marked at once: what it uses now)
+            picking = null
             if (result.ok)
                 root.refresh()
             return
@@ -2432,7 +2482,9 @@ Window {
             const kind = p ? p.kind : "model"
             const exact = !!ran.arg && pickerItems(kind, "").some(s => s.insert === "/" + kind + " " + ran.arg.toLowerCase())
             const named = !ran.arg ? "" : exact || !pickerItems(kind, ran.arg).length ? pickLabel(kind, ran.arg) : ""
-            return (named ? i18n("Enter: %1 for this chat alone", named)
+            const used = nowText(usesNow)
+            return (used ? (usesNow.next ? i18n("From your next message: %1.", used) : i18n("Now: %1.", used)) + " " : "")
+                + (named ? i18n("Enter: %1 for this chat alone", named)
                     : ran.arg ? (kind === "effort" ? i18n("Enter: the effort level picked in the list, for this chat alone")
                                                    : i18n("Enter: the model picked in the list, for this chat alone"))
                     : kind === "effort" ? i18n("Enter lists the effort levels: for this chat alone") : i18n("Enter lists the models: for this chat alone"))

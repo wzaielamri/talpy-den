@@ -4679,6 +4679,16 @@ body.vscode-high-contrast-light .pane {
   text-overflow: ellipsis;
 }
 
+/* (/model and /effort's list: a check before what the chat uses now, plain as an answer's; every row of it
+   keeps that room, so names line up) */
+.pane-offers li .pane-offer-now {
+  flex: none;
+  width: 1em;
+  margin-right: -6px;
+  align-self: center;
+  display: inline-flex;
+}
+
 /* (a command that runs elsewhere: where; one that can't run on this chat: greyed, its line says why) */
 .pane-offers li .grow {
   flex: 1 1 auto;

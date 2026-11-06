@@ -765,9 +765,9 @@ class Pane implements vscode.Disposable {
     this.post({ type: "review", answer: r.ok ? (r as never) : null, error: r.ok ? "" : String(r.message ?? "") });
   }
 
-  private result(kind: string, r: { ok: boolean; message: string; ask?: boolean; went?: boolean }, id?: number): void {
+  private result(kind: string, r: { ok: boolean; message: string; ask?: boolean; went?: boolean; how?: string }, id?: number): void {
     this.post({ type: "result", kind, ok: r.ok, message: r.message, ...(r.ask ? { ask: true } : {}), ...(r.went ? { went: true } : {}),
-                ...(typeof id === "number" ? { id } : {}) });
+                ...(r.how ? { how: r.how } : {}), ...(typeof id === "number" ? { id } : {}) });
   }
 
   private async receive(raw: unknown): Promise<void> {
@@ -975,7 +975,7 @@ class Pane implements vscode.Disposable {
         const r = await backend.pane(["--set-options", this.chatId, ...(model !== undefined ? ["--model", model] : []),
           ...(effort !== undefined ? ["--effort", effort] : []), ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []),
           ...where], this.host ? 90000 : 60000);
-        this.result("options", { ok: !!r.ok, message: String(r.message ?? (r.ok ? "" : "That didn't work")) });
+        this.result("options", { ok: !!r.ok, message: String(r.message ?? (r.ok ? "" : "That didn't work")), how: typeof r.how === "string" ? r.how : "" });
         if (r.ok) this.owner.refresh(this.host);
         break;
       }

@@ -838,7 +838,8 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
 
 def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None,
                       suggest=False):
-    """--conversation. "context": how full its context is (turns.context_left),
+    """--conversation. "options": the model and effort it uses now
+    (chatpick.options_now). "context": how full its context is (turns.context_left),
     "turn": Claude's turn so far, while it's going on (turns.TurnSoFar.now:
     the start of a long one kept in the cache folder's turns/). suggest (Suggest
     replies on): how its last turn ended, "ended" and "over"
@@ -871,6 +872,8 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
               "context": turns.context_left(turn.usage, turn.model, lambda: turns.status_window(home, profile, chat_id, turn.model),
                                             cs.compact_window(profile.path, turn.model)),
               "turn": turn.now(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")}
+    import chatpick   # (what /model and /effort's lists mark as what it uses now)
+    result["options"] = chatpick.options_now(home, profile, chat_id, bool(peek.get("ultracode")))
     if suggest:
         import replies
         ended = ends.get("ended")

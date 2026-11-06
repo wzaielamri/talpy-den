@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -188,6 +188,24 @@ test("a command runs as its kind says on the chat's route (Plasma's commandRun: 
                     ["Claude's default model", "/model default", true]]);
   assert.deepEqual(suggestFor("/effort x", null, "", closed).items.map((o) => o.insert), ["/effort xhigh"]);
   assert.deepEqual(suggestFor("/model ", OFFERS, "", tmux).items, []);   // (a terminal's: Claude's own list there)
+  // what it uses now, marked (its full name as the list names it); the line under the box says it
+  const now: ChatOptions = { model: "claude-sonnet-5-5[1m]", effort: "high", ultracode: false, next: false };
+  assert.deepEqual(suggestFor("/model ", OFFERS, "", closed, now).items.filter((o) => o.now).map((o) => [o.text, o.about]),
+                   [["Sonnet", "now · for this chat alone"]]);
+  assert.match(commandHint(commandRun("/model ", OFFERS, closed), "background", "", now)!, /^Now: Sonnet · High effort\. Enter lists the models/);
+  // /effort turns ultracode on or off (Extra high effort, with ultracode: claude --effort ultracode)
+  const effort = (o: ChatOptions) => suggestFor("/effort ", null, "", closed, o).items.map((s) => [s.text, s.insert, s.about, !!s.now]);
+  assert.deepEqual(effort(now).slice(2, 6), [["High", "/effort high", "now · for this chat alone", true],
+    ["Extra high", "/effort xhigh", "for this chat alone", false], ["Max", "/effort max", "for this chat alone", false],
+    ["Turn ultracode on", "/effort ultracode", "with Extra high effort · for this chat alone", false]]);
+  const on = withPick(now, "effort", "ultracode", "next");
+  assert.deepEqual(on, { model: "claude-sonnet-5-5[1m]", effort: "xhigh", ultracode: true, next: true });
+  assert.deepEqual(effort(on).slice(3, 6), [["Extra high", "/effort xhigh", "from your next message, with ultracode · for this chat alone", true],
+    ["Max", "/effort max", "for this chat alone", false], ["Turn ultracode off", "/effort xhigh", "Extra high effort stays · for this chat alone", false]]);
+  assert.match(commandHint(commandRun("/effort ", null, closed), "background", "", on)!,
+               /^From your next message: Sonnet · Extra high effort, with ultracode\. Enter lists/);
+  assert.deepEqual(withPick(on, "effort", "xhigh", "now"), { ...on, ultracode: false, next: false });
+  assert.equal(pickLabel("effort", "ultracode"), "Ultracode, with Extra high effort");
   assert.equal(commandRun("/export", OFFERS, tmux)!.run, "terminal");
   assert.equal(commandRun("/export chat.md", OFFERS, tmux)!.run, "here");
   assert.equal(commandRun("/permissions", OFFERS, tmux)!.run, "page");

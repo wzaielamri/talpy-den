@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -630,7 +630,10 @@ function ChatApp() {
     offersAt.current = Date.now();
     post({ type: "complete" });
   };
-  const offered = suggestFor(text.slice(0, cursor), offers, dismissed, chat);
+  // (what the chat uses now: the conversation's, then each pick of /model or /effort's list as it's set)
+  const [chatOptions, setChatOptions] = useState<ChatOptions | null>(null);
+  const picking = useRef<{ kind: "model" | "effort"; value: string } | null>(null);
+  const offered = suggestFor(text.slice(0, cursor), offers, dismissed, chat, chatOptions);
   // A / command sent before the offers (each command's kind) were read: sent once they're in
   // (else /model would go as a message, and save your default model); null: as a message
   const waitingOffers = useRef<{ how: "auto" | "background" | "copy" | "enter"; afterTurn: boolean; given?: string } | null>(null);
@@ -892,6 +895,7 @@ function ChatApp() {
           setLoadError("");
           setTurn({ ended: a.ended ?? null, over: !!a.over, asks: a.asks ?? null });
           setSoFar({ context: a.context ?? null, turn: a.turn ?? null });
+          if (a.options) setChatOptions(a.options);
           setItems(a.items ?? []);
           setMore(!!a.more);
           setCapped(!!a.capped);
@@ -953,7 +957,12 @@ function ChatApp() {
           const was = typedIn.current;
           setText((t) => (t.trim() === was ? "" : t));
         }
-        if (m.kind === "options" && m.ok) setText((t) => (pickerOf(t) ? "" : t));   // (set: the /model you picked goes)
+        if (m.kind === "options" && m.ok) {
+          setText((t) => (pickerOf(t) ? "" : t));   // (set: the /model you picked goes)
+          const p = picking.current;
+          if (p) setChatOptions((was) => withPick(was, p.kind, p.value, m.how ?? ""));   // (marked at once: what it uses now)
+        }
+        if (m.kind === "options") picking.current = null;
         if ((m.kind === "send" || m.kind === "later") && m.ok) {
           setText("");
           setAskHow(false);
@@ -1118,6 +1127,7 @@ function ChatApp() {
         return;
       }
       setInfo({ ok: true, message: `${pickLabel(p.kind, p.value)} for this chat…` });
+      picking.current = { kind: p.kind, value: p.value };
       post({ type: "setOptions", [p.kind]: p.value === "default" ? "" : p.value });
       return;
     }
@@ -1963,6 +1973,7 @@ function ChatApp() {
               {offered.items.map((o, i) => (
                 <li key={o.text} role="option" aria-selected={i === offerAt} class={(i === offerAt ? "on" : "") + (o.off ? " off" : "")}
                   title={o.tip || undefined} onMouseDown={(e) => { e.preventDefault(); take(o); }}>
+                  {o.run ? <span class="pane-offer-now" aria-label={o.now ? "what it uses now" : undefined}>{o.now ? <Icon name={I.picked} /> : null}</span> : null}
                   <code>{o.text}</code>
                   {o.about ? <span class="muted grow">{o.about}</span> : null}
                   {o.tag ? <span class="pane-offer-tag">{o.tag}</span> : null}
@@ -2123,7 +2134,7 @@ function ChatApp() {
               <button type="button" class="btn secondary" onClick={() => setOfferModel("")}>Not now</button>
             </div>
           ) : null}
-          <div class="pane-hint">{(chat ? commandHint(ran, chat.route, chat.host) : null)
+          <div class="pane-hint">{(chat ? commandHint(ran, chat.route, chat.host, chatOptions) : null)
             ?? (chat?.fresh || starting ? newChatHint(chat?.fresh ?? { account: "", folder: "", plan: "", model: "", effort: "", mode: "" }, starting)
             : chat ? routeHint(chat.route, chat.state !== "done" || !!chat.busy, chat.where === "background" ? "bg" : "", chat.host, asks) : "")}</div>
           <div class="pane-buttons">

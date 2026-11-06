@@ -1717,8 +1717,43 @@ class ChatPickTests(SendFixture):
         self.assertEqual(stopped.call_count, 0)
         self.assertEqual(self.flags(), ["--model", "haiku"])
         self.assertEqual(self.set(model="gpt 5")["message"], "Not a model: gpt 5")
-        self.assertEqual(self.set(effort="huge")["message"], "Not an effort level: huge (one of low, medium, high, xhigh, max)")
+        self.assertEqual(self.set(effort="huge")["message"], "Not an effort level: huge (one of low, medium, high, xhigh, max, ultracode)")
         self.assertEqual(self.set()["message"], "Pick a model or an effort level")
+
+    def test_ultracode_on_and_off_for_this_chat(self):
+        # (live-checked on 2.1.318: woken with --effort ultracode, its next message notes ultra_effort_enter;
+        # woken with --effort xhigh after it, ultra_effort_exit)
+        write(self.state, {"sessionId": SID, "respawnFlags": ["--model", "haiku", "--effort", "low"]})
+        self.assertEqual(self.set(effort="Ultracode")["message"],
+                         "ultracode, with xhigh effort for this chat, from your next message")
+        self.assertEqual(self.flags(), ["--model", "haiku", "--effort", "ultracode"])
+        self.assertEqual(self.pick.options_now(self.home, self.profile(), SID),
+                         {"model": "haiku", "effort": "xhigh", "ultracode": True, "next": False})
+        self.assertTrue(self.set(effort="xhigh")["ok"])   # (off: the effort it had with it)
+        self.assertEqual(self.pick.options_now(self.home, self.profile(), SID, ultracode=True),
+                         {"model": "haiku", "effort": "xhigh", "ultracode": False, "next": False})
+        self.assertEqual(json.loads(self.settings.read_text()), {"model": "opus"})
+
+    def profile(self):
+        return next(p for p in cs.discover_profiles(self.home, []) if p.key == ".claude-work")
+
+    def test_what_it_uses_now(self):
+        # (what the lists mark: what Claude wakes it with, "" for Claude's default; else what you picked for its
+        # next wake; else what it last ran on)
+        write(self.state, {"sessionId": SID, "respawnFlags": ["--permission-mode", "auto"]})
+        self.assertEqual(self.pick.options_now(self.home, self.profile(), SID),
+                         {"model": "", "effort": "", "ultracode": False, "next": False})
+        self.state.unlink()
+        with mock.patch.object(cs, "chat_model", return_value=("claude-opus-5-5", "high")):
+            self.assertEqual(self.pick.options_now(self.home, self.profile(), SID, ultracode=True),
+                             {"model": "claude-opus-5-5", "effort": "high", "ultracode": True, "next": False})
+            self.set(effort="medium")
+            self.assertEqual(self.pick.options_now(self.home, self.profile(), SID, ultracode=True),
+                             {"model": "claude-opus-5-5", "effort": "medium", "ultracode": False, "next": True})
+        # in the conversation's answer
+        self.chat(prompt("hello", self.now - 5, cwd=str(self.folder)))
+        options = self.cli("--conversation", SID, "--profile", ".claude-work")["options"]
+        self.assertEqual((options["effort"], options["next"]), ("medium", True))
 
     def test_a_chat_with_no_job_of_its_own_wakes_with_them_from_here(self):
         # (it last ran in a terminal, closed now: kept for its next wake from Talpy Chat or a go-on)

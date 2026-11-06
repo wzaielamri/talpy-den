@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
+import "icons.mjs" as Icons
 
 // What Talpy Chat's reply box offers for what you're typing: at the start, / Claude's commands, yours
 // and the project's, and skills (where each runs: its tag, greyed with why where it can't); @ the
@@ -36,6 +37,21 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.leftMargin: Kirigami.Units.smallSpacing
                     anchors.rightMargin: Kirigami.Units.smallSpacing
+                    // (/model and /effort's list: ✓ before what the chat uses now; every row of it
+                    // keeps that room, so the names line up)
+                    Item {
+                        visible: !!offer.run
+                        Layout.preferredWidth: Math.round(fm.height * 0.9)
+                        Layout.preferredHeight: fm.height
+                        Kirigami.Icon {
+                            visible: !!offer.now
+                            source: Icons.plasma.picked
+                            width: Math.round(fm.height * 0.75)
+                            height: width
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: pane.textColor
+                        }
+                    }
                     PlasmaComponents3.Label {
                         textFormat: Text.PlainText
                         text: offer.text

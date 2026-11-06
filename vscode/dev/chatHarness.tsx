@@ -265,7 +265,9 @@ window.addEventListener("harness-post", (e: Event) => {
   const m = (e as CustomEvent).detail as { type: string };
   if (m.type === "ready") {
     send({ type: "chat", chat });
-    send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1", ...turnEnd } });
+    send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1", ...turnEnd,
+      // (what /model and /effort's lists mark: ?ultracode for a chat with it on)
+      options: { model: "claude-opus-5-5", effort: params.has("ultracode") ? "xhigh" : "high", ultracode: params.has("ultracode"), next: false } } });
     if (fresh === "task") setTimeout(() => send({ type: "startWith", text: "Fix the flaky date test in tests/parser.test.ts" }), 100);
     const tab = params.get("tab");   // ?tab=steps
     if (tab) send({ type: "result", kind: "tab:" + tab, ok: true, message: "" });
