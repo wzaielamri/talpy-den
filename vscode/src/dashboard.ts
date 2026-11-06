@@ -466,6 +466,7 @@ export class Dashboard implements vscode.Disposable {
       const now = this.hosts.get(name)!;
       if (containerOf(name)) now.detail = containerDetail(name, this.containerInfo(name));
     }
+    this.updateWatches(); // (a host taken off the list isn't watched any more)
     this.emit();
   }
 

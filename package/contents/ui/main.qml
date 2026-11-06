@@ -2673,6 +2673,7 @@ PlasmoidItem {
                                                 + shellQuote(host) + " # " + Date.now())
             }
         remote = next
+        watchesChanged()   // (a host taken off the list isn't watched any more)
         if (searchOpen && shownHosts.some(host => !(host in searchResults)))
             runSearch()   // (a host shown while you search is searched too)
     }
