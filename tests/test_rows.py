@@ -3,6 +3,7 @@ keyboard and a finger, which can't hover: while the line's name or one of its
 buttons has the keyboard's focus (Tab), and after a press and hold
 (TouchHold.qml). A mouse does what it did. They're made the first time they
 show, and kept: made with every line, they made a list slow to open."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import os
 import re
 import subprocess

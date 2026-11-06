@@ -2,6 +2,7 @@
 chats do: his moods, his lamp and quiet moves (looking around, typing,
 thinking, sleeping); no prop tricks (balloon, plane, selfie, music…), no joke
 bubbles, no cookie, no games. Notifications and badges stay as they are."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
 import re
 import unittest

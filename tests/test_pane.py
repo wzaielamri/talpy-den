@@ -2,6 +2,7 @@
 answering its permission prompt (with the hook, permission_hook.py, or keys
 in tmux) and reviewing what it changed (Undo, Commit, Mark reviewed); and
 what the status rows carry for it (talpy_den.py)."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import base64
 import contextlib
 import io

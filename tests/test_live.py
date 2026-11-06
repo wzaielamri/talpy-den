@@ -1,5 +1,6 @@
 """Live mode: the live hook (live_hook.py), the watcher (live.py --wait),
 turning it on and off (pane.py --live) and the rows that carry it."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
 import os
 import shutil

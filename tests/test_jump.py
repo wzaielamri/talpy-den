@@ -1,3 +1,4 @@
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import contextlib
 import importlib.util
 import io
@@ -1106,6 +1107,25 @@ class FindClaudeTests(unittest.TestCase):
             self.assertEqual(jump.resume(self.home, [], self.CHAT), (True, "Reopened the chat in a terminal"))
         self.assertEqual(len(opened), 1)
         self.assertTrue(opened[0].endswith(f"env -u CLAUDE_CONFIG_DIR {claude} --resume {self.CHAT}"), opened[0])
+
+
+class ClaudeGuardTests(unittest.TestCase):
+    """No test runs the real claude (tests/claude_guard.py): a test with no fake
+    claude of its own finds the guard's, on PATH and through the login shell."""
+
+    def test_every_test_module_imports_the_guard_first(self):
+        for path in sorted(Path(__file__).parent.glob("test_*.py")):
+            imports = [line for line in path.read_text().splitlines() if line.startswith(("import ", "from "))]
+            self.assertTrue(imports[0].startswith("import claude_guard"), path.name)
+
+    def test_a_test_with_no_fake_claude_finds_the_guards(self):
+        with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}):
+            self.assertEqual(cs.find_claude(Path(home)), "claude")
+            self.assertEqual(cs.find_claude(Path(home), ask_shell=True), str(claude_guard.CLAUDE))
+        run = subprocess.run([cs.find_claude(Path("/nonexistent")), "--bg", "hi"], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 97)
+        self.assertEqual(claude_guard.ran()[-1:], ["--bg hi"])
+        claude_guard.forget()   # (or this test would fail: it ran claude)
 
 
 class SharedChatActionTests(unittest.TestCase):

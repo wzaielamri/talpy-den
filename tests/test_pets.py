@@ -1,5 +1,6 @@
 """Talpy, the pet: what the widget asks of it exists, its shared code runs in
 every host, and its rules hold (run in Node where it's installed)."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
 import re
 import shutil

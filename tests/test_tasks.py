@@ -1,5 +1,6 @@
 """Recaps, permission modes, usage limits that stopped chats, plans, finding
 chats and starting tasks (talpy_den.py, jump.py, sharing.py, remote.py)."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import base64
 import contextlib
 import importlib.util

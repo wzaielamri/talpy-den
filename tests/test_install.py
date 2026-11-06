@@ -1,6 +1,7 @@
 """install.sh in a made-up home: stand-ins for kpackagetool6, gdbus and
 GNOME's tools only note how they were called, so nothing is installed for
 real."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
 import os
 import shutil

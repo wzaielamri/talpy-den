@@ -1,5 +1,6 @@
 """SSH hosts: the host list, and status/open/run through a stand-in ssh that
 runs the command locally in a fake remote home."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import contextlib
 import importlib.util
 import io

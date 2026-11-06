@@ -6,6 +6,7 @@ given a number made every row of an account anew whenever a chat came or went
 an Icon, a Rectangle colored from the theme) cost milliseconds each to make
 and to take out of a big popup: the rows are light now (ListPalette.qml,
 RowText.qml) and make what they rarely show only when it shows."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import os
 import re
 import subprocess

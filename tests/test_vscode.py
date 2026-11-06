@@ -1,6 +1,7 @@
 """New chats in VS Code: which account VS Code's Claude extension runs on
 (its environmentVariables setting, VS Code's environment, else ~/.claude),
 and jump.py opening the folder there and asking the extension for a chat."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import contextlib
 import importlib.util
 import io

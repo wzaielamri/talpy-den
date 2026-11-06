@@ -1,6 +1,7 @@
 """The release workflow's notes (.github/workflows/release.yml, its Notes
 step): the CHANGELOG entries of the version, fitted in what GitHub takes."""
 
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import os
 import re
 import shutil

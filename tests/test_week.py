@@ -1,3 +1,4 @@
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import importlib.util
 import json
 import os

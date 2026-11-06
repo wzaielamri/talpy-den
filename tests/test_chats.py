@@ -5,6 +5,7 @@ projects/ transcripts, status-line snapshots, prompt history) and the
 hard links / locks of a shared-chat tool, then checked against what the
 widget must show.
 """
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import importlib.util
 import json
 import os

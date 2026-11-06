@@ -1,5 +1,6 @@
 """Dictating a reply (dictate.py): recorded here, written down by whisper.cpp
 here; run with stand-ins for the recorder and whisper.cpp."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import io
 import json
 import os
