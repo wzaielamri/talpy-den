@@ -10075,6 +10075,184 @@ def starred_of(stars, host=""):
     return {kind: {i["id"] for i in stars[kind] if i["host"] == (host or "")} for kind in STAR_KINDS}
 
 
+# ---------------------------------------------------------------- bookmarked messages
+#
+# Talpy Chat's bookmarks: the messages of a chat you bookmarked, listed on its
+# side to go back to. A chat's are a file of their own in the widget's cache
+# (bookmarks/<chat>.json; an SSH host's or a container's chat's under
+# host-<short_id(host)>/, kept here as stars are), each with its message's key
+# (pane.py's item key), when it was written and its first BOOKMARK_TEXT
+# characters, so the list can show one before it's loaded. v grows with every
+# change, so a front end can tell a newer list from an older one.
+
+BOOKMARKS_DIR = "bookmarks"
+BOOKMARKS_MAX = 100  # a chat's bookmarks at most
+BOOKMARK_TEXT = 140  # characters of a message's text kept with its bookmark
+BOOKMARK_KEY = re.compile(r"^[A-Za-z0-9_.:@-]{1,200}$")  # (matched whole: fullmatch, as $ lets a last \n by)
+BOOKMARKS_READ = 256 << 10  # bytes of a file read at most (100 of the longest keys and texts, written as JSON escapes)
+BOOKMARK_KINDS = ("you", "claude")
+BOOKMARK_FULL = "A chat keeps up to %d bookmarks: remove one first" % BOOKMARKS_MAX
+
+
+def bookmark_key_ok(key):
+    """A message's key a bookmark can be of: never a message on its way (pending-N) nor a word that is a flag."""
+    return isinstance(key, str) and bool(BOOKMARK_KEY.fullmatch(key)) and not key.startswith(("pending-", "-"))
+
+
+def bookmark_text(text):
+    """A message's text as its bookmark keeps it: on one line, its first BOOKMARK_TEXT characters (… where cut)."""
+    text = " ".join(text.split()) if isinstance(text, str) else ""
+    return text if len(text) <= BOOKMARK_TEXT else text[:BOOKMARK_TEXT - 1].rstrip() + "…"
+
+
+def bookmarks_folder(cache_root, host=""):
+    """Where a computer's bookmark files are: a host's under the hash of its name, never the name itself."""
+    folder = Path(cache_root) / BOOKMARKS_DIR
+    return folder / ("host-" + short_id(host)) if host else folder
+
+
+def bookmarks_path(cache_root, chat, host=""):
+    """A chat's bookmark file, or None for something that isn't a chat id."""
+    if not valid_id(chat) or "\0" in chat:
+        return None
+    return bookmarks_folder(cache_root, host) / (chat + ".json")
+
+
+def whole_ms(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def load_bookmarks(cache_root, chat, host=""):
+    """(marks, v): a chat's bookmarks, in the chat's order ((at, made)), each
+    {"key", "kind", "at", "text", "made"}, and its file's version; ([], 0)
+    when it has none (no file: one failed open). Malformed ones are left out."""
+    path = bookmarks_path(cache_root, chat, host)
+    data = read_json(path, BOOKMARKS_READ) if path is not None else None
+    if not isinstance(data, dict):
+        return [], 0
+    marks, seen, key_ok = [], set(), BOOKMARK_KEY.fullmatch
+    for m in data.get("marks") if isinstance(data.get("marks"), list) else ():  # (read at every look at the chat)
+        key = m.get("key") if type(m) is dict else None
+        if type(key) is not str or key in seen or not key_ok(key) or key[0] == "-" or key.startswith("pending-") \
+                or m.get("kind") not in BOOKMARK_KINDS:
+            continue
+        seen.add(key)
+        at, made, text = m.get("at"), m.get("made"), m.get("text")
+        marks.append({"key": key, "kind": m["kind"], "at": at if type(at) is int and at > 0 else 0,
+                      "text": text if type(text) is str and len(text) <= BOOKMARK_TEXT and "\n" not in text
+                      else bookmark_text(text), "made": made if type(made) is int and made > 0 else 0})
+        if len(marks) == BOOKMARKS_MAX:
+            break
+    marks.sort(key=lambda m: (m["at"], m["made"]))
+    return marks, whole_ms(data.get("v")) or 1
+
+
+def save_bookmarks(cache_root, chat, host, marks, v):
+    """Write a chat's bookmark file (in folders only you can open, a file only you can read; in one go)."""
+    private_dir(Path(cache_root) / BOOKMARKS_DIR)
+    if host:
+        private_dir(bookmarks_folder(cache_root, host))
+    data = {"chat": chat, "host": host or "", "v": v, "marks": marks}
+    write_json_atomic(bookmarks_path(cache_root, chat, host), data, private=True)
+
+
+@contextlib.contextmanager
+def bookmarks_lock(cache_root):
+    """Every copy of pane.py and of the status check changes bookmark files under it."""
+    private_dir(Path(cache_root))
+    with open(Path(cache_root) / "bookmarks.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def change_bookmark(cache_root, chat, host, key, on, kind="", at=0, text="", now_ms=None):
+    """Bookmark a chat's message (on: of kind "you" or "claude", written at
+    at ms, its text), or not any more: (ok, what went wrong, the chat's
+    bookmarks now, their v). Adding one twice keeps one, removing one that
+    isn't there is done. A file whose last bookmark went stays (v only ever
+    grows: forget_bookmarks alone deletes it)."""
+    if bookmarks_path(cache_root, chat, host) is None:
+        return False, f"Not a chat: {chat}", [], 0
+    if not bookmark_key_ok(key) or (on and kind not in BOOKMARK_KINDS):
+        return (False, "Which message?") + load_bookmarks(cache_root, chat, host)
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    with bookmarks_lock(cache_root):
+        marks, v = load_bookmarks(cache_root, chat, host)
+        if bool(on) == any(m["key"] == key for m in marks):
+            return True, "", marks, v
+        if on and len(marks) >= BOOKMARKS_MAX:
+            return False, BOOKMARK_FULL, marks, v
+        new = [m for m in marks if m["key"] != key]
+        if on:
+            new.append({"key": key, "kind": kind, "at": whole_ms(at), "text": bookmark_text(text), "made": now_ms})
+            new.sort(key=lambda m: (m["at"], m["made"]))
+        try:
+            save_bookmarks(cache_root, chat, host, new, max(v + 1, now_ms))
+        except OSError as exc:
+            return False, exc.strerror or str(exc), marks, v
+        return True, "", new, max(v + 1, now_ms)
+
+
+def bookmarks_answer(result, cache_root, chat, host=""):
+    """Add a chat's bookmarks to pane.py's answer (bookmarks, bookmarksV) when it has a bookmark file."""
+    marks, v = load_bookmarks(cache_root, chat, host)
+    if v > 0:
+        result["bookmarks"] = marks
+        result["bookmarksV"] = v
+    return result
+
+
+def bookmarks_moved(cache_root, moves, host=""):
+    """The bookmarks of chats Claude moved to the background under a new id
+    (moves: chat_moves, or a host's) go with them: merged into the file of
+    the id each goes on under (moved_chat; its own bookmarks win), the old
+    file deleted. One listing of the folder when none moved."""
+    try:
+        names = set(os.listdir(bookmarks_folder(cache_root, host)))
+    except OSError:
+        return
+    olds = [(old, moved_chat(old, moves)) for old in moves if old + ".json" in names]
+    olds = [(old, new) for old, new in olds if new != old and bookmarks_path(cache_root, old, host) is not None
+            and bookmarks_path(cache_root, new, host) is not None]
+    if not olds:
+        return
+    now_ms = int(time.time() * 1000)
+    with bookmarks_lock(cache_root):
+        for old, new in olds:
+            old_marks, old_v = load_bookmarks(cache_root, old, host)
+            if old_v:
+                marks, v = load_bookmarks(cache_root, new, host)
+                keep = {m["key"]: m for m in marks}
+                for m in sorted(old_marks, key=lambda m: -m["made"]):  # (the newest first, up to the cap)
+                    if len(keep) >= BOOKMARKS_MAX:
+                        break
+                    keep.setdefault(m["key"], m)
+                merged = sorted(keep.values(), key=lambda m: (m["at"], m["made"]))
+                save_bookmarks(cache_root, new, host, merged, max(max(v, old_v) + 1, now_ms))
+            forget_bookmarks(cache_root, old, host)
+
+
+def forget_bookmarks(cache_root, chat, host=""):
+    """A deleted chat's bookmarks go (its file)."""
+    path = bookmarks_path(cache_root, chat, host)
+    if path is None:
+        return
+    try:
+        os.unlink(path)
+    except OSError:  # (none: Python 3.7 has no missing_ok; nor anything else, a delete goes on)
+        pass
+
+
+def bookmarked_chats(cache_root, host=""):
+    """The ids of the chats (of this computer, or of host) with a bookmark: for cleanup, which keeps them."""
+    try:
+        names = os.listdir(bookmarks_folder(cache_root, host))
+    except OSError:
+        return set()
+    return {name[:-5] for name in names if name.endswith(".json") and not name.startswith(".")
+            and load_bookmarks(cache_root, name[:-5], host)[0]}
+
+
 def load_dismissed(cache_root):
     """Finished sessions the user removed from the widget's list: {session id: when}."""
     data = read_json(cache_root / "dismissed.json")
