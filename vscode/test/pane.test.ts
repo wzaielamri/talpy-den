@@ -148,7 +148,7 @@ const OFFERS: Offers = {
     { name: "/compact", about: "Free up context", kind: "Claude", run: "here" },
     { name: "/config", about: "Open settings", kind: "Claude", run: "terminal", why: "opens Claude's settings panel" },
     { name: "/export", about: "Export the conversation", kind: "Claude", run: "terminal", runArgs: "here", why: "asks where to" },
-    { name: "/model", about: "Set the model", kind: "Claude", run: "terminal", why: "saves it as your default model for every new chat" },
+    { name: "/model", about: "Set the model", kind: "Claude", run: "picker", why: "saves it as your default model for every new chat" },
     { name: "/permissions", about: "What Claude may do without asking", kind: "Claude", run: "page" },
     { name: "/ship", about: "Ship it", kind: "yours", run: "here" },
   ],
@@ -163,12 +163,31 @@ test("a command runs as its kind says on the chat's route (Plasma's commandRun: 
   assert.equal(commandRun("tidy it", OFFERS, tmux), null);
   assert.equal(commandRun("/nope", OFFERS, tmux), null);   // (not known: sent as typed)
   assert.equal(commandRun("/compact", null, tmux), null);   // (the kinds not read yet: the tab waits for them before sending;
-  assert.deepEqual(commandRun("/model fable", null, tmux), { run: "terminal", name: "/model", why: "needs Claude's own screen" });   // couldn't be: never /model)
+  assert.deepEqual(commandRun("/model fable", null, tmux), { run: "terminal", name: "/model", why: "saves it as your default model for every new chat" });   // couldn't be: never /model as a message)
   assert.deepEqual(commandRun("/compact keep the tests", OFFERS, closed), { run: "here", name: "/compact", why: "" });
   assert.deepEqual(commandRun(" /config ", OFFERS, tmux), { run: "terminal", name: "/config", why: "opens Claude's settings panel" });
   assert.deepEqual(commandRun("/settings", OFFERS, tmux), { run: "terminal", name: "/config", why: "opens Claude's settings panel" });
-  // /model never goes from here (it saves your default for every new chat), with or without a name
-  assert.equal(commandRun("/model fable", OFFERS, closed)!.run, "terminal");
+  // /model never goes as a message (it saves your default for every new chat), with or without a name: Talpy Chat's own
+  // list sets it for a background or closed chat alone (pane.py --set-options), a terminal's opens Claude's there
+  assert.deepEqual(commandRun("/model fable", OFFERS, closed), { run: "picker", name: "/model", why: "saves it as your default model for every new chat", arg: "fable" });
+  assert.equal(commandRun("/model", null, { where: "background", route: "background" })!.arg, "");
+  assert.equal(commandRun("/model fable", OFFERS, tmux)!.run, "terminal");
+  assert.equal(commandRun("/model fable", OFFERS, { where: "claude", route: "vscode" })!.run, "here");
+  assert.deepEqual(commandRun("/model", OFFERS, { where: "new", route: "background" }),
+                   { run: "off", name: "/model", why: "Pick its model on the ⚙ line above: it starts with it." });
+  assert.equal(commandHint(commandRun("/model fable", OFFERS, closed), "background"),
+               "Enter: Fable for this chat alone (in its terminal, Claude's /model would also make it your default for every new chat).");
+  assert.equal(commandHint(commandRun("/model", OFFERS, closed), "background"),
+               "Enter lists the models: for this chat alone (in its terminal, Claude's /model would also make it your default for every new chat).");
+  // (part of a name: the list's pick; one the list doesn't know: as typed, pane.py says if it isn't one)
+  assert.match(commandHint(commandRun("/model so", OFFERS, closed), "background")!, /^Enter: the model picked in the list, for this chat alone/);
+  assert.match(commandHint(commandRun("/model claude-opus-5-5", OFFERS, closed), "background")!, /^Enter: claude-opus-5-5 for this chat alone/);
+  // its list as you type the name: each sets it at once
+  assert.deepEqual(suggestFor("/model ", OFFERS, "", closed).items.map((o) => [o.text, o.insert, !!o.run]),
+                   [["Opus", "/model opus", true], ["Sonnet", "/model sonnet", true], ["Fable", "/model fable", true], ["Haiku", "/model haiku", true],
+                    ["Claude's default model", "/model default", true]]);
+  assert.deepEqual(suggestFor("/effort x", null, "", closed).items.map((o) => o.insert), ["/effort xhigh"]);
+  assert.deepEqual(suggestFor("/model ", OFFERS, "", tmux).items, []);   // (a terminal's: Claude's own list there)
   assert.equal(commandRun("/export", OFFERS, tmux)!.run, "terminal");
   assert.equal(commandRun("/export chat.md", OFFERS, tmux)!.run, "here");
   assert.equal(commandRun("/permissions", OFFERS, tmux)!.run, "page");
@@ -195,6 +214,7 @@ test("a command runs as its kind says on the chat's route (Plasma's commandRun: 
   const list = suggestFor("/", OFFERS, "", { where: "new", route: "background" }).items;
   assert.deepEqual(list.map((o) => [o.text, o.tag ?? "", !!o.off]),
                    [["/compact", "", false], ["/config", "", true], ["/export", "", true], ["/model", "", true], ["/permissions", "Talpy Den", false], ["/ship", "", false]]);
+  assert.equal(suggestFor("/mo", OFFERS, "", closed).items[0].about, "Set the model · this chat");
   assert.equal(list[1].about, "/config opens Claude's settings panel: start the chat first, then it opens in its terminal.");
   assert.equal(list[5].about, "Ship it · yours");
   assert.deepEqual(suggestFor("/co", OFFERS, "", tmux).items.map((o) => [o.text, o.tag]), [["/compact", ""], ["/config", "Terminal"]]);

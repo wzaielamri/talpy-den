@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -646,6 +646,10 @@ function ChatApp() {
     setText(next);
     setCursor(at);
     requestAnimationFrame(() => reply.current?.setSelectionRange(at, at));
+    if (sug.run) {   // (a model or effort of the picker's list: set at once)
+      setDismissed(next);
+      send("auto", false, next);
+    }
   };
   // (the list as it was at the first ↑: the conversation can change while you go through it)
   const historyList = useRef<string[]>([]);
@@ -949,6 +953,7 @@ function ChatApp() {
           const was = typedIn.current;
           setText((t) => (t.trim() === was ? "" : t));
         }
+        if (m.kind === "options" && m.ok) setText((t) => (pickerOf(t) ? "" : t));   // (set: the /model you picked goes)
         if ((m.kind === "send" || m.kind === "later") && m.ok) {
           setText("");
           setAskHow(false);
@@ -1099,6 +1104,21 @@ function ChatApp() {
     if (ran?.run === "page") {
       setText("");
       post({ type: "openPermissions" });
+      return;
+    }
+    if (ran?.run === "picker") {   // (/model, /effort: for this chat alone; with no name, its list)
+      const p = pickerOf(said);
+      if (!p) return;
+      if (!p.value) {
+        const next = `/${p.kind} `;
+        setDismissed("");
+        setText(next);
+        setCursor(next.length);
+        requestAnimationFrame(() => reply.current?.setSelectionRange(next.length, next.length));
+        return;
+      }
+      setInfo({ ok: true, message: `${pickLabel(p.kind, p.value)} for this chat…` });
+      post({ type: "setOptions", [p.kind]: p.value === "default" ? "" : p.value });
       return;
     }
     if (ran?.run === "terminal") {
@@ -2148,6 +2168,7 @@ function ChatApp() {
             >
               {elsewhere === "terminal" ? <><Icon name={I.terminal} />Open in a terminal</>
                 : elsewhere === "page" ? <><Icon name={I.permissions} />Open Permissions</>
+                : elsewhere === "picker" ? <><Icon name={I.send} />{ran?.arg ? "Set for this chat" : "List them"}</>
                 : asks ? <><Icon name={asks === "plan" ? I.edit : asks === "question" ? I.send : I.deny} tone={asks === "deny" || asks === "decline" ? T.deny : undefined} />{REPLY_ANSWERS[asks].send}</>
                 : <><Icon name={I.send} />{sending ? "Sending…" : terminal ? "Send, go on in the background" : chat?.fresh && !starting ? "Start" : "Send"}</>}
             </button>

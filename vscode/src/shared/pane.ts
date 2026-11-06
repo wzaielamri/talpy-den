@@ -258,6 +258,7 @@ export type PaneMessage =
   | { type: "complete" } // what the reply box offers (answered with "offers")
   | { type: "typeIn"; text: string } // a command for Claude's own panel: in its terminal, typed in or on the clipboard (commandRun "terminal")
   | { type: "openPermissions" } // /permissions: Talpy Den's Permissions tab (commandRun "page")
+  | { type: "setOptions"; model?: string; effort?: string } // /model, /effort: for this chat alone (commandRun "picker"; result "options")
   | { type: "replies" } // your usual replies (answered with "replies")
   | { type: "hideReply"; text: string } // a chip's Don't suggest this
   | { type: "dictate"; action: "toggle" | "cancel" | "getModel" | "setup" }; // the microphone (answered with "dictation")
@@ -274,10 +275,11 @@ export interface Offers {
 
 // How Talpy Chat runs a command (pane.py commands.py, as checked live on Claude Code 2.1.318):
 // "here" (sent as it is: it runs, what it prints shows under it), "page" (Talpy Den's own page for
-// it: /permissions, the Permissions tab), "terminal" (it needs Claude's own panel or dialog, where a
-// background chat would sit unseen: opened in the chat's terminal, typed in for you there or on the
-// clipboard, to press Enter there)
-export type CommandKind = "here" | "page" | "terminal";
+// it: /permissions, the Permissions tab), "picker" (Talpy Chat's own list: /model and /effort for
+// the chat alone, pane.py --set-options; a chat in a terminal opens Claude's own there), "terminal"
+// (it needs Claude's own panel or dialog, where a background chat would sit unseen: opened in the
+// chat's terminal, typed in for you there or on the clipboard, to press Enter there)
+export type CommandKind = "here" | "page" | "picker" | "terminal";
 export interface CommandOffer {
   name: string;
   about: string;
@@ -290,6 +292,7 @@ export interface CommandRun {
   run: CommandKind | "off"; // off: it can't run on this chat (why)
   name: string; // "/config", or "!" for a shell command
   why: string;
+  arg?: string; // the picker's: what follows the name ("" for none: the list)
 }
 
 // A command in the box (Plasma ChatPane commandRun: the same rule and words): how it runs on
@@ -313,14 +316,45 @@ export function commandRun(text: string, offers: Offers | null, chat: Pick<PaneC
   // (the list's kinds unread, they couldn't be: these three never go as a message all the same)
   const c: { run?: CommandKind; runArgs?: CommandKind; why?: string; of?: string } | null = offers
     ? offers.commands.find((x) => x.name === "/" + m[1]) ?? offers.typed?.[m[1]] ?? null
-    : ["model", "effort", "config"].includes(m[1]) ? { run: "terminal", why: "needs Claude's own screen" } : null;
+    : ["model", "effort"].includes(m[1]) ? { run: "picker", why: `saves it as your default ${m[1]} for every new chat` }
+    : m[1] === "config" ? { run: "terminal", why: "needs Claude's own screen" } : null;
   if (!c?.run) return null;
   let run: CommandKind = m[2]?.trim() && c.runArgs ? c.runArgs : c.run;
-  if (run === "terminal" && route === "vscode") run = "here"; // (its Claude Code panel's input: you press Enter there)
   const name = c.of || "/" + m[1];
+  // Talpy Chat's own list (/model, /effort): for a background or closed chat alone (pane.py
+  // --set-options); a new one has its ⚙ line; one in a terminal opens Claude's own there
+  if (run === "picker") {
+    if (where === "new")
+      return { run: "off", name, why: `Pick its ${m[1] === "effort" ? "effort" : "model"} on the ⚙ line above: it starts with it.` };
+    if (where !== "background" && where !== "closed") run = "terminal";
+  }
+  if (run === "terminal" && route === "vscode") run = "here"; // (its Claude Code panel's input: you press Enter there)
   if (run === "terminal" && where === "new")
     return { run: "off", name, why: `${name} ${c.why ?? ""}: start the chat first, then it opens in its terminal.` };
-  return { run, name, why: c.why ?? "" };
+  return { run, name, why: c.why ?? "", ...(run === "picker" ? { arg: (m[2] ?? "").trim() } : {}) };
+}
+
+// Talpy Chat's model and effort list (commandRun "picker"): /model or /effort and what follows
+export function pickerOf(text: string): { kind: "model" | "effort"; value: string } | null {
+  const m = /^\/(model|effort)(?:\s+(\S*))?\s*$/.exec(text.trim());
+  return m ? { kind: m[1] as "model" | "effort", value: m[2] ?? "" } : null;
+}
+
+// What a pick is called ("Sonnet", "Medium effort", "Claude's default model")
+export function pickLabel(kind: "model" | "effort", value: string): string {
+  const v = value.toLowerCase();
+  if (v === "" || v === "default") return kind === "model" ? "Claude's default model" : "Claude's default effort";
+  const known = (kind === "model" ? CHAT_MODELS : CHAT_EFFORTS).find(([k]) => k === v);
+  if (kind === "effort") return `${known ? known[1] : value} effort`;
+  return known ? known[1] : value;
+}
+
+// The list for /model or /effort as you type its name (suggestFor): each with what it sets
+export function pickerItems(kind: "model" | "effort", q: string): Suggestion[] {
+  const query = q.toLowerCase();
+  return (kind === "model" ? CHAT_MODELS : CHAT_EFFORTS)
+    .filter(([v, label]) => !query || (v || "default").startsWith(query) || label.toLowerCase().split(/[\s']+/).some((w) => w.startsWith(query)))
+    .map(([v, label]) => ({ text: label, about: "for this chat alone", insert: `/${kind} ${v || "default"}`, run: true }));
 }
 
 // What the line under the box says of a command (null: what it says of any message, routeHint)
@@ -329,6 +363,16 @@ export function commandHint(ran: CommandRun | null, route: PaneChat["route"] | u
   const where = host ? ` (on ${hostLabel(host)})` : "";
   if (ran.run === "off") return ran.why;
   if (ran.run === "page") return "Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.";
+  if (ran.run === "picker") {
+    const p = pickerOf(ran.name);
+    const words = p?.kind === "effort" ? "effort level" : "model";
+    const kind = p?.kind ?? "model";
+    const exact = !!ran.arg && pickerItems(kind, "").some((s) => s.insert === `/${kind} ${ran.arg!.toLowerCase()}`);
+    const named = !ran.arg ? "" : exact || !pickerItems(kind, ran.arg).length ? pickLabel(kind, ran.arg) : "";
+    return (named ? `Enter: ${named} for this chat alone` : ran.arg ? `Enter: the ${words} picked in the list, for this chat alone`
+      : `Enter lists the ${words}s: for this chat alone`)
+      + ` (in its terminal, Claude's ${ran.name} would also make it your default for every new chat).${where}`;
+  }
   if (ran.run === "terminal" && ran.name === "!")
     return `Its terminal takes no text from outside: Enter copies the command and opens its terminal, to paste it there.${where}`;
   if (ran.run === "terminal")
@@ -346,6 +390,7 @@ export function commandOffer(c: CommandOffer, offers: Offers, chat: Pick<PaneCha
   if (ran.run === "off") return { tag: "", off: true, tip: ran.why, about: ran.why };
   if (ran.run === "terminal") return { tag: "Terminal", off: false, tip: `${c.name} ${ran.why}: it opens in the chat's terminal, typed in for you there.`, about };
   if (ran.run === "page") return { tag: "Talpy Den", off: false, tip: "Opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.", about };
+  if (ran.run === "picker") return { tag: "", off: false, tip: `For this chat alone: in its terminal, Claude's ${c.name} would also make it your default for every new chat.`, about: about + " · this chat" };
   return { tag: "", off: false, tip: "", about };
 }
 
@@ -356,6 +401,7 @@ export interface Suggestion {
   tag?: string; // a command that runs elsewhere: "Terminal", "Talpy Den" (commandOffer)
   off?: boolean; // one that can't run on this chat: greyed, about says why
   tip?: string;
+  run?: boolean; // taken, it runs at once (a model or effort of the picker's list)
 }
 
 // For the text before the cursor: where the word being completed starts and
@@ -363,6 +409,10 @@ export interface Suggestion {
 // name starts with it first, then shorter paths); none for a word you closed
 // the list for (dismissed)
 export function suggestFor(before: string, offers: Offers | null, dismissed = "", chat?: Pick<PaneChat, "where" | "route"> | null): { start: number; items: Suggestion[]; token: string } {
+  // (/model or /effort and a space, on a chat Talpy Chat sets them for: its own list of them)
+  const pick = /^\/(model|effort)\s+(\S*)$/.exec(before);
+  if (pick && before !== dismissed && commandRun("/" + pick[1], offers, chat)?.run === "picker")
+    return { start: 0, items: pickerItems(pick[1] as "model" | "effort", pick[2]), token: before };
   const command = /^\/([^\s]*)$/.exec(before);
   const file = /(^|\s)@("?)([^\s"]*)$/.exec(before);
   const token = command ? before : file ? before.slice(before.length - file[0].length + file[1].length) : "";

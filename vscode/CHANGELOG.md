@@ -4,6 +4,12 @@
 
 ### New
 
+- **Model and effort for one chat:** in a background chat or one that isn't
+  open, `/model` and `/effort` list the models and effort levels as you type,
+  and the one you pick (or `/model sonnet` typed) is for that chat alone:
+  Claude's own commands save it as your default for every new chat. A
+  background chat open idle takes it at once; one that isn't open, from your
+  next message. A chat in a terminal still opens them there.
 - **Right-click in Talpy Chat:** on the conversation, *Copy*, *Copy message*
   (as its Copy button) and *Select all* (every message; Ctrl+A there too);
   on the reply box, *Undo*, *Redo*, *Cut*, *Copy*, *Paste* (VS Code's own,

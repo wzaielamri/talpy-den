@@ -284,7 +284,8 @@ window.addEventListener("harness-post", (e: Event) => {
                  { name: "/config", about: "Open settings", kind: "Claude", run: "terminal", why: "opens Claude's settings panel" },
                  { name: "/context", about: "Show how full the context is", kind: "Claude", run: "here" },
                  { name: "/copy", about: "Copy Claude's last response", kind: "Claude", run: "terminal", why: "copies where Claude runs" },
-                 { name: "/model", about: "Set the model", kind: "Claude", run: "terminal", why: "saves it as your default model for every new chat" },
+                 { name: "/effort", about: "Set the effort level", kind: "Claude", run: "picker", why: "saves it as your default effort for every new chat" },
+                 { name: "/model", about: "Set the model", kind: "Claude", run: "picker", why: "saves it as your default model for every new chat" },
                  { name: "/permissions", about: "What Claude may do without asking", kind: "Claude", run: "page" },
                  { name: "/release", about: "Cut a release", kind: "project", run: "here" }],
       files: ["src/parser.ts", "src/parse_date.ts", "tests/parser.test.ts", "README.md"],
@@ -299,6 +300,10 @@ window.addEventListener("harness-post", (e: Event) => {
                c.text.endsWith("\n…") ? 300 : 0);
   } else if (m.type === "typeIn") {
     setTimeout(() => send({ type: "result", kind: "typein", ok: true, message: "It's in the clipboard. Paste it into its terminal" }), 300);
+  } else if (m.type === "setOptions") {   // (pane.py --set-options: an idle background chat woken again with them)
+    const o = m as unknown as { model?: string; effort?: string };
+    setTimeout(() => send({ type: "result", kind: "options", ok: true,
+                            message: `${o.model ? o.model[0].toUpperCase() + o.model.slice(1) : `${o.effort} effort`} for this chat from now on` }), 600);
   }
 });
 

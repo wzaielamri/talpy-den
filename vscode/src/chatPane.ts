@@ -966,6 +966,18 @@ class Pane implements vscode.Disposable {
       case "openPermissions":
         await this.owner.openPermissions();
         break;
+      case "setOptions": {
+        // (for this chat alone: pane.py --set-options, never your settings; it may stop and wake a background chat)
+        const pick = (v: unknown) => (typeof v === "string" && v.length <= 80 ? v : undefined);
+        const model = pick(m.model), effort = pick(m.effort);
+        if (this.fresh || (model === undefined && effort === undefined)) break;
+        const r = await backend.pane(["--set-options", this.chatId, ...(model !== undefined ? ["--model", model] : []),
+          ...(effort !== undefined ? ["--effort", effort] : []), ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []),
+          ...where], this.host ? 90000 : 60000);
+        this.result("options", { ok: !!r.ok, message: String(r.message ?? (r.ok ? "" : "That didn't work")) });
+        if (r.ok) this.owner.refresh(this.host);
+        break;
+      }
       case "replies": {
         // your usual replies, from the chats on its account (a first read can take some seconds: the tab doesn't wait)
         if (!Pane.suggests()) break;

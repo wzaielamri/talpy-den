@@ -1161,6 +1161,14 @@ Window {
 
     function suggest() {
         const before = replyBox.text.slice(0, replyBox.cursorPosition)
+        // (/model or /effort and a space, on a chat Talpy Chat sets them for: its own list of them)
+        const pick = /^\/(model|effort)\s+(\S*)$/.exec(before)
+        if (pick && before !== dismissed && (commandRun("/" + pick[1]) || {}).run === "picker") {
+            tokenStart = 0
+            suggestions = pickerItems(pick[1], pick[2])
+            suggestion = 0
+            return
+        }
         const command = /^\/([^\s]*)$/.exec(before)
         const file = /(^|\s)@("?)([^\s"]*)$/.exec(before)
         const token = command ? before : file ? before.slice(before.length - file[0].length + file[1].length) : ""
@@ -1181,12 +1189,14 @@ Window {
                 .slice(0, 8)
                 .map(c => {
                     const ran = commandRun(c.name) || { run: "here", why: "" }
-                    return { text: c.name, about: ran.run === "off" ? ran.why : c.about + (c.kind === "Claude" ? "" : " · " + c.kind),
+                    return { text: c.name, about: ran.run === "off" ? ran.why : c.about + (c.kind === "Claude" ? "" : " · " + c.kind)
+                                                                     + (ran.run === "picker" ? " · " + i18n("this chat") : ""),
                              insert: c.name + " ", off: ran.run === "off",
                              tag: ran.run === "terminal" ? i18nc("a command opens in the chat's terminal", "Terminal")
                                 : ran.run === "page" ? i18nc("a command opens Talpy Den's own page for it", "Talpy Den") : "",
                              tip: ran.run === "terminal" ? i18n("%1 %2: it opens in the chat's terminal, typed in for you there.", c.name, ran.why)
-                                : ran.run === "page" ? i18n("Opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.") : "" }
+                                : ran.run === "page" ? i18n("Opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.")
+                                : ran.run === "picker" ? i18n("For this chat alone: in its terminal, Claude's %1 would also make it your default for every new chat.", c.name) : "" }
                 })
         } else {
             const rank = f => {
@@ -1210,6 +1220,12 @@ Window {
         replyBox.remove(tokenStart, at)
         replyBox.insert(tokenStart, s.insert)
         suggestions = []
+        if (s.run) {   // (a model or effort of the picker's list: set at once)
+            dismissed = replyBox.text.slice(0, replyBox.cursorPosition)
+            const p = pickerOf(s.insert)
+            if (p && p.value)
+                setOptions(p.kind, p.value)
+        }
     }
 
     // ---------------------------------------------------------------- commands
@@ -1236,16 +1252,57 @@ Window {
             return null
         // (the list's kinds unread, they couldn't be: these three never go as a message all the same)
         const c = offers ? offers.commands.find(x => x.name === "/" + m[1]) || (offers.typed || {})[m[1]] || null
-                         : ["model", "effort", "config"].indexOf(m[1]) >= 0 ? { run: "terminal", why: i18n("needs Claude's own screen") } : null
+                : m[1] === "model" ? { run: "picker", why: i18n("saves it as your default model for every new chat") }
+                : m[1] === "effort" ? { run: "picker", why: i18n("saves it as your default effort for every new chat") }
+                : m[1] === "config" ? { run: "terminal", why: i18n("needs Claude's own screen") } : null
         if (!c || !c.run)
             return null
         let run = m[2] && m[2].trim() && c.runArgs ? c.runArgs : c.run
+        const name = c.of || "/" + m[1]
+        // Talpy Chat's own list (/model, /effort): for a background or closed chat alone (pane.py
+        // --set-options); a new one has its ⚙ line; one in a terminal opens Claude's own there
+        if (run === "picker") {
+            if (where === "new")
+                return { run: "off", name: name, why: m[1] === "effort" ? i18n("Pick its effort on the ⚙ line above: it starts with it.")
+                                                                        : i18n("Pick its model on the ⚙ line above: it starts with it.") }
+            if (where !== "background" && where !== "closed")
+                run = "terminal"
+        }
         if (run === "terminal" && route === "vscode")
             run = "here"   // (its Claude Code panel's input: you press Enter there, in Claude's own)
-        const name = c.of || "/" + m[1]
         if (run === "terminal" && where === "new")
             return { run: "off", name: name, why: i18n("%1 %2: start the chat first, then it opens in its terminal.", name, c.why || "") }
-        return { run: run, name: name, why: c.why || "" }
+        return run === "picker" ? { run: run, name: name, why: c.why || "", arg: (m[2] || "").trim() } : { run: run, name: name, why: c.why || "" }
+    }
+    // Talpy Chat's model and effort list (commandRun "picker"; VS Code's pickerOf, pickLabel, pickerItems)
+    readonly property var chatModels: [["opus", i18n("Opus")], ["sonnet", i18n("Sonnet")], ["fable", i18n("Fable")], ["haiku", i18n("Haiku")],
+                                       ["", i18n("Claude's default model")]]
+    readonly property var chatEfforts: [["low", i18n("Low")], ["medium", i18n("Medium")], ["high", i18n("High")], ["xhigh", i18n("Extra high")],
+                                        ["max", i18n("Max")], ["", i18n("Claude's default effort")]]
+    function pickerOf(text) {
+        const m = /^\/(model|effort)(?:\s+(\S*))?\s*$/.exec(String(text || "").trim())
+        return m ? { kind: m[1], value: m[2] || "" } : null
+    }
+    function pickLabel(kind, value) {
+        const v = String(value || "").toLowerCase()
+        if (v === "" || v === "default")
+            return kind === "model" ? i18n("Claude's default model") : i18n("Claude's default effort")
+        const known = (kind === "model" ? chatModels : chatEfforts).find(k => k[0] === v)
+        return kind === "effort" ? i18n("%1 effort", known ? known[1] : value) : known ? known[1] : value
+    }
+    function pickerItems(kind, q) {
+        const query = String(q || "").toLowerCase()
+        return (kind === "model" ? chatModels : chatEfforts)
+            .filter(k => !query || (k[0] || "default").startsWith(query) || k[1].toLowerCase().split(/[\s']+/).some(w => w.startsWith(query)))
+            .map(k => ({ text: k[1], about: i18n("for this chat alone"), insert: "/" + kind + " " + (k[0] || "default"), run: true, off: false, tag: "", tip: "" }))
+    }
+    property bool pickBusy: false   // (a pick on its way: pane.py --set-options)
+    function setOptions(kind, value) {
+        if (pickBusy)
+            return
+        pickBusy = true
+        start("--set-options " + root.shellQuote(chatId) + " --" + kind + " " + root.shellQuote(value === "default" ? "" : value)
+              + paneArgs() + " # " + Date.now(), { kind: "options", chat: chatId, host: host, text: replyBox.text.trim() })
     }
     readonly property var commandNow: commandRun(replyBox.text)
     property string sendAfterOffers: ""   // ("how later"): a / command sent while the offers were being read
@@ -1428,6 +1485,18 @@ Window {
         if (kind === "replies" || kind === "hide") {   // (your usual replies, for this chat only; one hidden: nothing to say)
             if (kind === "replies" && result.ok && asked.chat === chatId && suggestOn)
                 usual = { chips: result.chips || {}, ranked: result.ranked || [] }
+            return
+        }
+        // (a model or effort picked for this chat alone: set, or why not)
+        if (kind === "options") {
+            pickBusy = false
+            info = result.message || (result.ok ? "" : i18n("That didn't work"))
+            infoBad = !result.ok
+            infoTimer.restart()
+            if (result.ok && asked.chat === chatId && pickerOf(replyBox.text))
+                replyBox.text = ""   // (the /model you picked goes)
+            if (result.ok)
+                root.refresh()
             return
         }
         // (a command opened in its chat's terminal: there, whichever chat this window shows now)
@@ -1901,6 +1970,19 @@ Window {
             openWithCommand(text)
             return
         }
+        if (ran && ran.run === "picker") {   // (/model, /effort: for this chat alone; with no name, its list)
+            const p = pickerOf(text)
+            if (!p)
+                return
+            if (!p.value) {
+                dismissed = ""
+                replyBox.text = "/" + p.kind + " "
+                replyBox.cursorPosition = replyBox.text.length
+                return
+            }
+            setOptions(p.kind, p.value)
+            return
+        }
         // (it goes on the command line: one too long for it is refused here, as
         // VS Code does, and stays in the box)
         if (text.length > 100000 || utf8Length(text) > 120000) {
@@ -2324,6 +2406,17 @@ Window {
             return ran.why
         if (ran && ran.run === "page")
             return i18n("Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.")
+        if (ran && ran.run === "picker") {
+            const p = pickerOf(ran.name)
+            const kind = p ? p.kind : "model"
+            const exact = !!ran.arg && pickerItems(kind, "").some(s => s.insert === "/" + kind + " " + ran.arg.toLowerCase())
+            const named = !ran.arg ? "" : exact || !pickerItems(kind, ran.arg).length ? pickLabel(kind, ran.arg) : ""
+            return (named ? i18n("Enter: %1 for this chat alone", named)
+                    : ran.arg ? (kind === "effort" ? i18n("Enter: the effort level picked in the list, for this chat alone")
+                                                   : i18n("Enter: the model picked in the list, for this chat alone"))
+                    : kind === "effort" ? i18n("Enter lists the effort levels: for this chat alone") : i18n("Enter lists the models: for this chat alone"))
+                + " " + i18n("(in its terminal, Claude's %1 would also make it your default for every new chat).", ran.name) + where
+        }
         if (ran && ran.run === "terminal" && ran.name === "!")
             return i18n("Its terminal takes no text from outside: Enter copies the command and opens its terminal, to paste it there.") + where
         if (ran && ran.run === "terminal")
@@ -3986,6 +4079,7 @@ Window {
                             icon.color: pane.replyDenies && commandRun === "" ? Icons.color("deny", Kirigami.Theme) : "transparent"
                             text: commandRun === "terminal" ? i18n("Open in a terminal")
                                   : commandRun === "page" ? i18n("Open Permissions")
+                                  : commandRun === "picker" ? (pane.commandNow.arg ? i18n("Set for this chat") : i18n("List them"))
                                   : pane.replyAnswers === "deny" ? i18n("Deny with this note")
                                   : pane.replyAnswers === "plan" ? i18n("Keep planning with this note")
                                   : pane.replyAnswers === "question" ? i18n("Send as your answer")
