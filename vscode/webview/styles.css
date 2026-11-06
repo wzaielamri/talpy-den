@@ -3122,14 +3122,106 @@ body.vscode-high-contrast:not(.vscode-high-contrast-light) .cv {
    in the focus colour while the pointer is on one, as in the Plasma pane */
 .ask-buttons .btn.secondary,
 .pane-you-queue .btn.secondary,
-.pane-working .btn.secondary {
+.pane-working .btn.secondary,
+.pane-made-tools .btn.secondary {
   border-color: color-mix(in srgb, var(--cs-fg) 30%, transparent);
 }
 
 .ask-buttons .btn.secondary:hover:not(:disabled),
 .pane-you-queue .btn.secondary:hover:not(:disabled),
-.pane-working .btn.secondary:hover:not(:disabled) {
+.pane-working .btn.secondary:hover:not(:disabled),
+.pane-made-tools .btn.secondary:hover:not(:disabled) {
   border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+/* What Claude made (MadeLine.tsx): a line under its step, folded ("icon.svg · 2 KB"); unfolded,
+   the picture at the tab's width, a plan or a page's source in a box of its own */
+.pane-made-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 1px 6px 1px 2px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.92em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pane-made-line:hover {
+  background: var(--cs-hover);
+}
+
+.pane-made-line .icon {
+  flex: none;
+  width: 1em;
+  height: 1em;
+  color: var(--cs-muted);
+}
+
+.pane-made-line .chevron {
+  transition: transform 120ms;
+}
+
+.pane-made-line .chevron.open {
+  transform: rotate(90deg);
+}
+
+.pane-made-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-made-shown {
+  margin: 0.3em 0 0.2em 1.2em;
+}
+
+.pane-made-pic {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  border: 1px solid var(--cs-border);
+  border-radius: 4px;
+  /* (a see-through picture on a light check, as image viewers show it) */
+  background: repeating-conic-gradient(#d8d8d8 0% 25%, #f4f4f4 0% 50%) 50% / 16px 16px;
+}
+
+.pane-made-text {
+  max-height: 60vh;
+  overflow: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--cs-border);
+  border-radius: 4px;
+}
+
+.pane-made-source {
+  margin: 0;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.pane-made-cut,
+.pane-made-note {
+  color: var(--cs-muted);
+  font-size: 0.92em;
+}
+
+.pane-made-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 0.3em;
+}
+
+.pane-made-tools:empty {
+  display: none;
 }
 
 /* Claude's questions (AskBox: QuestionForm) */

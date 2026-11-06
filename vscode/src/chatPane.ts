@@ -21,7 +21,7 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, chatWhere, copyCut, HOLD_MS, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
+import { answersOf, askShownOf, chatWhere, copyCut, HOLD_MS, madeOf, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -617,6 +617,7 @@ class Pane implements vscode.Disposable {
   }
 
   private chaseUntil = 0;
+  private made: ReturnType<typeof madeOf> = madeOf([]);   // (the files and Read steps the conversation shows as made)
   private async load(): Promise<void> {
     if (this.disposed) return;
     if (this.fresh) {   // (nothing to read yet: it shows empty, ready for your first message)
@@ -664,6 +665,7 @@ class Pane implements vscode.Disposable {
           it.thumbs = it.pictures.filter((f: unknown): f is string => typeof f === "string" && inPictures(f))
             .map((f: string) => ({ path: f, src: this.panel.webview.asWebviewUri(vscode.Uri.file(f)).toString() }));
     if (r.ok && typeof r.stamp === "string") this.stamp = r.stamp;
+    if (r.ok && Array.isArray(r.items)) this.made = madeOf(r.items);   // (what the tab may unfold: madeOf)
     // (at the most a tab shows: no Show earlier, it says so instead)
     const capped = r.ok && !!r.more && this.limit >= LIMIT_MAX;
     this.post({ type: "conversation", answer: (r.ok ? { ...r, more: !!r.more && !capped, capped } : r) as never });
@@ -884,6 +886,31 @@ class Pane implements vscode.Disposable {
         if (typeof m.path === "string" && !this.host && inPictures(m.path))
           await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(m.path));
         break;
+      case "made": {
+        // a made file unfolded: only one the conversation shows (madeOf), read by pane.py --made (which
+        // checks the transcript names it, and caps it); a picture as a data: URL, which the tab's CSP allows
+        if (typeof m.id !== "number" || typeof m.path !== "string") break;
+        const step = typeof m.step === "string" && this.made.steps.has(m.step) ? m.step : undefined;
+        if (!this.made.paths.has(m.path) || (m.step !== undefined && !step)) {
+          this.post({ type: "made", id: m.id, ok: false, message: "Not a file this chat made" });
+          break;
+        }
+        const r = await backend.pane(["--made", this.chatId, "--path", m.path, ...(step ? ["--step", step] : []), ...profile, ...where],
+                                     this.host ? 60000 : 20000);
+        const src = r.ok && typeof r.data === "string" && typeof r.mime === "string" && /^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(r.mime)
+          ? `data:${r.mime};base64,${r.data}` : undefined;
+        this.post(r.ok ? { type: "made", id: m.id, ok: true, ...(src ? { src } : {}), ...(typeof r.text === "string" ? { text: r.text, cut: !!r.cut } : {}) }
+          : { type: "made", id: m.id, ok: false, message: String(r.message ?? "It couldn't be read"), ...(r.gone ? { gone: true } : {}), ...(r.big ? { big: true } : {}) });
+        break;
+      }
+      case "openMade": {
+        // this computer's: a picture in VS Code's image viewer, a plan in its editor, a page in your browser, a PDF in its app
+        if (typeof m.path !== "string" || this.host || !this.made.paths.has(m.path)) break;
+        const file = vscode.Uri.file(m.path);
+        if (/\.(png|jpe?g|gif|webp|svg|md|markdown)$/i.test(m.path)) await vscode.commands.executeCommand("vscode.open", file);
+        else await vscode.env.openExternal(file);
+        break;
+      }
       case "paste":
         // (the right-click menu's Paste in the reply box: what Ctrl+V runs there, so a picture on the
         // clipboard comes in as a pasted one)

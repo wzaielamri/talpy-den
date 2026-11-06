@@ -24,6 +24,15 @@
   follow a chat Claude moves to the background, go with a deleted chat and keep
   a chat from Talpy Den's cleanup of old chats, as a star does.
 
+- **What Claude made, in Talpy Chat:** a picture, a plan or a page Claude
+  wrote, edited or looked at shows under the step that made it (or the reply
+  that names it), on both tabs, folded: *icon.svg · 2 KB*, *Plan: …*. A click
+  shows it: a picture at the tab's width (what Claude saw, for one it read),
+  a plan rendered, a page's **Show source** and **Open in browser** (never
+  drawn in the tab), and **Open** (VS Code's image viewer or editor). It's
+  read only then, capped, only a file the chat's transcript names, a picture
+  as a `data:` URL the tab's content policy already allows (an SVG as a
+  picture: no script runs); an SSH host's file is fetched then too.
 - **Model and effort for one chat:** in a background chat or one that isn't
   open, `/model` and `/effort` list the models and effort levels as you type,
   and the one you pick (or `/model sonnet` typed) is for that chat alone:

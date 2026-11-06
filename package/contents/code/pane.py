@@ -2650,7 +2650,8 @@ def main(argv=None):
         elif action == "--made":
             import made   # (a module of its own, as replies.py: compiled once and kept)
             found = find_transcript(home, config_dirs, target, profile)[1] if cs.valid_id(target) else None
-            result = made.show(found, made_path, step) if found is not None else {"ok": False, "missing": True, "message": NO_CHAT}
+            result = made.show(found, made_path, step, as_file and not remote) if found is not None \
+                else {"ok": False, "missing": True, "message": NO_CHAT}
             if as_file and not remote:   # (what Claude saw, as a file here, for Plasma's Talpy Chat)
                 result = made.keep_copy(str(cs.images_dir(home)), f"\0{target}\0{step or made_path}", result)
         elif action == "--type-in":

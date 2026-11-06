@@ -272,6 +272,15 @@ class ShowMadeTests(MadeFixture):
         self.assertEqual(self.show(self.png)["message"], "It isn't a plain file")
         self.assertLess(time.time() - started, 5)
 
+    def test_plasmas_picture_of_this_computer_is_its_path_once_its_a_plain_file(self):
+        got = self.show(self.svg, "--as-file")
+        self.assertEqual((got["ok"], got["file"], got["size"], "data" in got), (True, str(self.svg), len(SVG), False))
+        write(self.svg, "<svg>" + " " * made.SVG_SHOW_MAX + "</svg>")
+        self.assertEqual(self.show(self.svg, "--as-file").get("big"), True)
+        self.png.unlink()
+        os.mkfifo(self.png)   # (Qt's image reader would wait on a pipe for good)
+        self.assertEqual(self.show(self.png, "--as-file"), {"ok": False, "message": "It isn't a plain file"})
+
     def test_what_claude_saw_comes_from_the_transcript(self):
         self.png.unlink()   # (gone since: the transcript has what Claude saw)
         got = self.show(self.png, "--step", "r1")

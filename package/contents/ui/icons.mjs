@@ -103,6 +103,11 @@ const TABLE = {
     chooseFile:      ['document-open',                 null,         'document-open-symbolic'],
     vscodeApp:       ['vscode',                        null,         'text-editor-symbolic'],             // VS Code's own icon (GNOME: if it has none)
     talpyChatLogo:   ['talpy-chat.svg',                null,         'chat-bubbles-symbolic'],            // Talpy Chat's own icon, in colour: the Open in switch (VS Code: an image, TalpyChatLogo in icons.tsx)
+    showSource:      ['code-context',                  'code',       'text-x-script-symbolic'],           // a page Claude made: its source, in Talpy Chat
+    // ---- what Claude made, folded under its step in Talpy Chat (a plan: plan)
+    madePicture:     ['insert-image',                  'image',      'image-x-generic-symbolic'],
+    madePage:        ['globe',                         'globe',      'text-html-symbolic'],
+    madeFile:        ['note',                          'note',       'text-x-generic-symbolic'],
     // ---- things
     chats:           ['dialog-messages',               'chat',       'user-available-symbolic'],          // the Talpy Den tab (GNOME: a speech bubble Adwaita and Yaru have)
     account:         ['user-identity',                 'user',       'avatar-default-symbolic'],

@@ -282,14 +282,32 @@ def not_made():
     return {"ok": False, "message": "Not a file this chat made"}
 
 
-def show(transcript, path, step=None):
+def plain_size(path):
+    """The size of a plain file (or a link to one), opened without waiting, nothing read; else
+    cs.NOT_PLAIN, or "" when it isn't there."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOCTTY", 0))
+    except (OSError, ValueError):
+        return ""
+    try:
+        st = os.fstat(fd)
+    except OSError:
+        return ""
+    finally:
+        os.close(fd)
+    return st.st_size if stat.S_ISREG(st.st_mode) else cs.NOT_PLAIN
+
+
+def show(transcript, path, step=None, as_file=False):
     """--made: a file the chat made, unfolded. A picture: {"ok", "type": "picture", "mime",
     "data" (base64), "size"}; a page or a plan: {"ok", "type", "text" (its first lines),
     "cut" (there's more), "size"}. Only a picture, a page or a plan the transcript names,
     a plain file of at most PICTURE_SHOW_MAX (an SVG: SVG_SHOW_MAX; a text: its first
     TEXT_SHOW_BYTES); else {"ok": False, "message", "gone"|"big": True}. step (a Read's
     tool call): the picture Claude saw there, from the transcript, whatever became of the
-    file since ("seen": True)."""
+    file since ("seen": True). as_file (Plasma's, this computer's file as it is now): a
+    picture's "file" (its path, once it's known to be a plain file within the cap, so
+    Qt's image reader is never given a pipe) in place of its bytes."""
     if step is not None:
         found = seen_in(transcript, step) if isinstance(step, str) and STEP_ID.match(step) else None
         if found is None:
@@ -307,7 +325,14 @@ def show(transcript, path, step=None):
     if what is None or not named_in(transcript, path):
         return not_made()
     ext = os.path.splitext(path)[1].lower()
-    if what == "picture":
+    if what == "picture" and as_file:
+        found = plain_size(path)
+        if isinstance(found, int) and found > (SVG_SHOW_MAX if ext == ".svg" else PICTURE_SHOW_MAX):
+            return {"ok": False, "big": True, "message": f"It's too big to show here (a file of {max(1, round(found / (1 << 20)))} MB)"}
+        if isinstance(found, int):
+            return {"ok": True, "type": what, "mime": PICTURES[ext], "file": path, "size": found}
+        data, other = None, found
+    elif what == "picture":
         data, other = cs.bytes_to_compare(path, SVG_SHOW_MAX if ext == ".svg" else PICTURE_SHOW_MAX)
     else:
         data, other = cs.bytes_to_compare(path, TEXT_SHOW_BYTES, head=True)

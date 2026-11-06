@@ -481,6 +481,15 @@ Window {
     property string loadError: ""
     property bool loadMissing: false   // (no transcript: it hasn't started yet, or it's gone: a note, not an error)
     property var openTools: ({})   // key -> unfolded: a step's details, a long text ("<key>/out": its output); unsaid: foldOpen's
+    // What Claude made, unfolded (MadeLine.qml): pane.py --made's answer, by the line's key; asked again at each unfold
+    property var madeShown: ({})
+    function madeAsk(key, path, step, asFile) {
+        const next = Object.assign({}, madeShown)
+        delete next[key]   // (reading it…)
+        madeShown = next
+        start("--made " + root.shellQuote(chatId) + " --path " + root.shellQuote(path) + (step ? " --step " + root.shellQuote(step) : "")
+              + (asFile ? " --as-file" : "") + paneArgs() + " # " + Date.now(), { kind: "made", chat: chatId, host: host, key: key })
+    }
     // Long texts fold (find.mjs foldOf: past about 40 lines, their first 24 show, then Show more:
     // FoldMore.qml). Unsaid, what the window first read folds, but Claude's last reply then; what
     // comes in while it shows doesn't (you watch it come); only a click, a search's step into it and
@@ -631,6 +640,7 @@ Window {
         loaded = false
         loadError = ""
         openTools = {}
+        madeShown = {}
         allOpen = false
         openBefore = {}
         firstRead = null
@@ -996,15 +1006,16 @@ Window {
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
                            diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
                            pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n"),
-                           asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "", thinking: !!it.thinking,
-                           command: it.command ? JSON.stringify(it.command) : "", day: day, fold: "" }
+                            asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "", thinking: !!it.thinking,
+                            command: it.command ? JSON.stringify(it.command) : "", day: day, fold: "",
+                            made: it.made ? JSON.stringify(it.made) : "" }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
                 if (old.text !== flat.text || old.status !== flat.status || old.output !== flat.output
                         || old.input !== flat.input || old.summary !== flat.summary || old.prev !== flat.prev || old.diff !== flat.diff
                         || old.queued !== flat.queued || old.until !== flat.until || old.pictures !== flat.pictures
                         || old.here !== flat.here || old.asked !== flat.asked || old.answered !== flat.answered
-                        || old.command !== flat.command || old.day !== flat.day)
+                        || old.command !== flat.command || old.day !== flat.day || old.made !== flat.made)
                     items.set(i, withFold(flat, it))
             } else if (i < items.count) {
                 items.insert(i, withFold(flat, it))
@@ -1540,6 +1551,14 @@ Window {
         if (kind === "font") {
             if (result.ok && typeof result.family === "string" && result.family !== Plasmoid.configuration.paneTerminalFont)
                 Plasmoid.configuration.paneTerminalFont = result.family
+            return
+        }
+        if (kind === "made") {   // (what Claude made, unfolded: MadeLine.qml shows it)
+            if (asked.chat === chatId) {
+                const next = Object.assign({}, madeShown)
+                next[asked.key] = result
+                madeShown = next
+            }
             return
         }
         if (kind === "copy") {   // (all of a reply shown cut: on the clipboard now, Copied)
@@ -3303,7 +3322,9 @@ Window {
                         required property string answered   // (yours: your answer to the call before it, pane.py your_answer)
                         required property string command    // (yours: a command you ran, as JSON: pane.py commands.py)
                         required property bool thinking     // (Claude's: a thinking line, not its reply: pane.py THOUGHT)
-                        required property string fold      // (a long one: where it folds, as JSON: withFold; "" for the rest)
+                        required property string fold       // (a long one: where it folds, as JSON: withFold; "" for the rest)
+                        required property string made       // (what Claude made, as JSON: pane.py made.py; "" for the rest)
+                        readonly property var madeData: made !== "" ? JSON.parse(made) : null
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
                         property int late: pane.lateDefault   // (Ctrl+O: its turn came, FoldAll.qml)
                         readonly property bool unfolded: pane.openTools[key] === true   // (a step's details: a click, a search's step)
@@ -3319,7 +3340,7 @@ Window {
                         // more room before your prompt (a new turn) than between steps; your answer: right under what it answers
                         readonly property real gap: index === 0 ? 0
                             : kind === "you" && answered === "" ? Kirigami.Units.gridUnit * 1.6
-                            : kind === "tool" && prev === "tool" ? Kirigami.Units.smallSpacing * 1.5
+                            : (kind === "tool" && (prev === "tool" || prev === "made")) || kind === "made" ? Kirigami.Units.smallSpacing * 1.5
                             : Kirigami.Units.gridUnit * 0.8
                         // (the Chat tab: a call you denied with a note too, its note under it)
                         readonly property bool shows: (kind !== "tool" || pane.listTab === "steps" || card
@@ -3338,7 +3359,7 @@ Window {
                             y: entry.gap
                             width: parent.width
                             sourceComponent: entry.card ? askedItem : entry.kind === "you" ? youItem : entry.kind === "claude" ? claudeItem
-                                           : entry.kind === "tool" ? toolItem : noteItem
+                                           : entry.kind === "tool" ? toolItem : entry.kind === "made" ? madeItem : noteItem
                         }
 
                         // Yours: a band in your accent color, after a ›. Queued (sent
@@ -3593,6 +3614,16 @@ Window {
                             Loader {
                                 Component.onCompleted: setSource("AskedCard.qml", { pane: pane, key: entry.key, asked: entry.askedData })
                                 onLoaded: item.asked = Qt.binding(() => entry.askedData)
+                            }
+                        }
+
+                        // What Claude made, under its step or reply: "icon.svg · 2 KB", folded (MadeLine.qml:
+                        // read and made only for such a line, so a window opens as quickly as before)
+                        Component {
+                            id: madeItem
+
+                            Loader {
+                                source: "MadeLine.qml"
                             }
                         }
 

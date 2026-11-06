@@ -14,6 +14,7 @@ import type { Answers, Decision, Session } from "../src/shared/types";
 import { agentsNow, agentsRunningFirst, modeHint, modeText } from "../src/shared/model";
 import { sharedTagTitle } from "./util/chat";
 import { IconButton } from "./components/IconButton";
+import { MadeLine } from "./components/MadeLine";
 import { Tag, TestsTag } from "./components/Tag";
 import { TalpyIcon } from "./components/TalpyIcon";
 import { I, Icon, T } from "./util/icons";
@@ -412,7 +413,8 @@ function TaskStrip({ tasks, agents, open, setOpen, host }: {
 function gapOf(kind: PaneItem["kind"], prev: PaneItem["kind"] | undefined, answer = false): string {
   if (!prev) return "first";
   if (kind === "you") return answer ? "" : "turn"; // (your answer: right under what it answers)
-  return kind === "tool" && prev === "tool" ? "close" : "";
+  // (what a step made: right under it; the next step as close as after the step itself)
+  return (kind === "tool" && (prev === "tool" || prev === "made")) || kind === "made" ? "close" : "";
 }
 
 // What Claude asked, as Claude's (a question, or its plan), once you answered
@@ -1745,6 +1747,9 @@ function ChatApp() {
           {fold ? <FoldMore id={it.key} fold={fold} whole={all} onToggle={toggleFold(it.key, all)} /> : null}
         </div>
       </div>
+    ) : it.kind === "made" && it.made ? (
+      <MadeLine key={it.key} item={it} gap={gap} open={!!open[it.key]} local={config.local} post={post}
+        onToggle={() => setOpen((was) => ({ ...was, [it.key]: !was[it.key] }))} />
     ) : it.kind === "tool" && askedShows(it, answeringFor.has(it.key)) ? (
       <AskedCard key={it.key} item={it} gap={gap} open={open[it.key] ?? allOpen} onToggle={() => setOpen((was) => ({ ...was, [it.key]: !(was[it.key] ?? allOpen) }))} />
     ) : it.kind === "tool" ? (tab !== "steps" && it.asked?.state !== "denied" ? null :

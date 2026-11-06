@@ -194,6 +194,42 @@ if (params.get("answers")) {
     setTimeout(() => document.querySelectorAll<HTMLButtonElement>(".pane-asked-toggle").forEach((b) => b.click()), 900);
 }
 
+// ?made=1: what Claude made under its steps and its reply (a picture it wrote, one it read, a plan, a
+// page, one gone, a PDF); ?made=open: each unfolded (a page's source too); &host=lab: an SSH host's
+const madeSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" fill="#2aa198"/>'
+  + '<path d="M18 34l9 9 19-21" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round"/></svg>';
+const madeFiles: Record<string, { src?: string; text?: string; cut?: boolean } | { ok: false; message: string }> = {
+  "/home/alice/projects/webapp/media/badge.svg": { src: "data:image/svg+xml;base64," + btoa(madeSvg) },
+  "/tmp/shots/week53.png": { src: "../media/icon.png" },
+  "/home/alice/.claude/plans/brave-otter.md": { text: "# Fix the week numbers\n\n1. Make `isoWeek` count 53 weeks in a long year.\n2. Add a test for **2026-12-31**.\n3. Check week 1 of 2027." },
+  "/home/alice/projects/webapp/report/weeks.html": { text: "<!doctype html>\n<title>Weeks</title>\n<table>\n  <tr><td>2026-W53</td><td>ok</td></tr>\n</table>", cut: true },
+};
+if (params.get("made")) {
+  const made = (key: string, path: string, type: "picture" | "plan" | "page" | "file", size: number | null, more: object = {}, text?: string): PaneItem =>
+    ({ kind: "made", key, of: key.split("/made/")[0], at: now - 100_000, text: text ?? path.split("/").pop(),
+       made: { path, type, name: path.split("/").pop()!, size, ...more } });
+  items.splice(0, items.length,
+    { kind: "you", key: "u1", text: "Draw a badge for week 53, check how the report looks, and write down the plan.", at: now - 400_000 },
+    { kind: "tool", key: "w1", name: "Write", line: "Write: badge.svg", status: "ok", summary: "1 line", at: now - 390_000, diff: [] },
+    made("w1/made/0", "/home/alice/projects/webapp/media/badge.svg", "picture", 241),
+    { kind: "tool", key: "p1", name: "Write", line: "Write: brave-otter.md", status: "ok", summary: "6 lines", at: now - 380_000, diff: [] },
+    made("p1/made/0", "/home/alice/.claude/plans/brave-otter.md", "plan", 3172, {}, "Plan: Fix the week numbers"),
+    { kind: "tool", key: "e1", name: "Edit", line: "Edit: weeks.html", status: "ok", summary: "2 lines added, 1 removed", at: now - 370_000, diff: [] },
+    made("e1/made/0", "/home/alice/projects/webapp/report/weeks.html", "page", 18_400),
+    { kind: "tool", key: "r1", name: "Read", line: "Read: week53.png", status: "ok", summary: "", at: now - 360_000 },
+    made("r1/made/0", "/tmp/shots/week53.png", "picture", 41_532, { step: "r1" }),
+    { kind: "tool", key: "r2", name: "Read", line: "Read: spec.pdf", status: "ok", summary: "", at: now - 350_000 },
+    made("r2/made/0", "/home/alice/projects/webapp/docs/spec.pdf", "file", 242_891),
+    { kind: "claude", key: "m1", text: "The badge is in `media/badge.svg`, and the old one, `/tmp/old-badge.png`, is gone now.", at: now - 300_000 },
+    made("m1/made/0", "/tmp/old-badge.png", "picture", 3_880, { gone: true }),
+  );
+  if (params.get("made") === "open")
+    setTimeout(() => {
+      document.querySelectorAll<HTMLButtonElement>(".pane-made-line").forEach((b) => b.click());
+      setTimeout(() => document.querySelectorAll<HTMLButtonElement>(".pane-made-tools button[aria-pressed]").forEach((b) => b.click()), 200);
+    }, 900);
+}
+
 // ?ask=question&answering=1: your answer shows at once, as yours, under the question, till the conversation has it
 if (ask === "question" && params.get("answering") === "1") {
   items.push({ kind: "tool", key: "aq", name: "AskUserQuestion", line: "AskUserQuestion: Which weeks should the fix cover?", status: "open", at: now - 5_000,
@@ -271,6 +307,11 @@ window.addEventListener("harness-post", (e: Event) => {
     if (fresh === "task") setTimeout(() => send({ type: "startWith", text: "Fix the flaky date test in tests/parser.test.ts" }), 100);
     const tab = params.get("tab");   // ?tab=steps
     if (tab) send({ type: "result", kind: "tab:" + tab, ok: true, message: "" });
+  } else if (m.type === "made") {   // (pane.py --made: a moment later, as reading it takes)
+    const a = m as unknown as { id: number; path: string };
+    const f = madeFiles[a.path];
+    setTimeout(() => send(f && !("ok" in f) ? { type: "made", id: a.id, ok: true, ...f }
+                                           : { type: "made", id: a.id, ok: false, message: "It isn't there any more", gone: true }), 120);
   } else if (m.type === "picture") {
     const id = (m as unknown as { id: string }).id;
     setTimeout(() => send({ type: "picture", id, path: `/home/alice/.cache/talpy-den/images/20261026-1015${id.slice(-2)}.png`, error: "" }), 200);

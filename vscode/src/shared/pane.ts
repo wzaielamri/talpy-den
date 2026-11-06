@@ -8,7 +8,7 @@ import type { Answers, AskShown, Decision, PermissionAsk, Question, QueuedTask, 
 
 // One item of a chat's conversation (pane.py: conversation_items)
 export interface PaneItem {
-  kind: "you" | "claude" | "tool" | "note";
+  kind: "you" | "claude" | "tool" | "note" | "made";
   key: string; // the same in the next answer, while it's listed
   text?: string; // you, claude (markdown), note
   thinking?: boolean; // claude: a line Claude Code wrote while Claude thought, summing it up (thinking shown as updates), not its reply: dimmed, in italics, after ∴ (key "<its reply's>/thinking")
@@ -30,6 +30,54 @@ export interface PaneItem {
   answered?: "question" | "plan" | "permission"; // you: your answer to the call before it (key "<tool id>/answer")
   answers?: { header: string; question: string; answer: string; notes: string }[]; // you: a question's, each answered
   command?: { shell?: boolean; output?: string; error?: boolean }; // you: a command you ran (/compact, !ls: pane.py commands.py), what it printed (ANSI colours kept: ansi.mjs)
+  of?: string; // made: the key of the step or the reply it's under
+  made?: Made; // made: what it is (pane.py made.py); its text is its name, or "Plan: " and its title
+}
+
+// What Claude made, under the step that made it or the reply that names it (pane.py made.py): a
+// picture, a plan (Markdown in a plans folder), a page (HTML) or another file (a PDF it read).
+// Folded, only its name and size; unfolded, the file as it is now (a picture Claude read: what
+// it saw, from the transcript, "step"), asked for then (madeAsk)
+export interface Made {
+  path: string; // where it is (on its SSH host, for a host's chat)
+  type: "picture" | "plan" | "page" | "file";
+  name: string;
+  size: number | null; // bytes, when known
+  gone?: boolean; // made by a step, not there now
+  step?: string; // a Read's tool call: what Claude saw is in the transcript (pane.py --made --step)
+}
+
+// "2 KB", as a made file's folded line says it (Plasma's MadeLine.qml: the same rule)
+export function madeSize(bytes: number | null | undefined): string {
+  if (bytes == null || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// The folded line: "icon.svg · 2 KB", "Plan: Ship it · 3 KB", "shot.png · not there any more"
+export function madeLine(it: Pick<PaneItem, "text" | "made">): string {
+  const m = it.made;
+  const size = madeSize(m?.size);
+  return [it.text ?? m?.name ?? "", m?.gone ? "not there any more" : size].filter(Boolean).join(" · ");
+}
+
+// What unfolding it asks the extension for (null: nothing to read: another file, or one gone)
+export function madeAsk(m: Made): { path: string; step?: string } | null {
+  if (m.step) return { path: m.path, step: m.step };
+  return m.gone || m.type === "file" ? null : { path: m.path };
+}
+
+// The files and Read steps a conversation shows as made: the only ones its tab may ask for (the
+// extension's check, before pane.py's own)
+export function madeOf(items: readonly PaneItem[] | undefined): { paths: Set<string>; steps: Set<string> } {
+  const out = { paths: new Set<string>(), steps: new Set<string>() };
+  for (const it of items ?? []) {
+    if (it.kind !== "made" || !it.made || typeof it.made.path !== "string") continue;
+    out.paths.add(it.made.path);
+    if (it.made.step) out.steps.add(it.made.step);
+  }
+  return out;
 }
 
 // What Claude asked (pane.py asked_of): its questions, each with the options
@@ -225,6 +273,9 @@ export type PaneHostMessage =
   | { type: "answering"; id: number; ask: PermissionAsk; decision: Decision; note: string; answers?: Answers }
   | { type: "answered"; id: number; ok: boolean }
   | { type: "copied"; id: number; ok: boolean; message: string } // a copyItem on the clipboard (ok), or why not
+  // a made file unfolded (madeAsk; pane.py --made): a picture as a data: URL (src), a plan's or a page's
+  // first lines (text; cut: there's more), or why not (gone: not there any more; big: too big to show)
+  | { type: "made"; id: number; ok: boolean; src?: string; text?: string; cut?: boolean; message?: string; gone?: boolean; big?: boolean }
   | { type: "key"; key: string }; // a key's command (talpyDen.chat.*, package.json): an id of keys.mjs's table
 
 // tab -> extension
@@ -253,6 +304,10 @@ export type PaneMessage =
   // read whole from the transcript first; answered with copied once it's on the clipboard
   | { type: "copyItem"; id: number; key: string; text: string }
   | { type: "openPicture"; path: string } // a picture of yours, in VS Code's image viewer
+  | { type: "made"; id: number; path: string; step?: string } // a made file unfolded (madeAsk): answered with "made"
+  // a made file opened (this computer's): a picture in VS Code's image viewer, a plan in its editor, a page or
+  // another file in your browser or the app for it
+  | { type: "openMade"; path: string }
   | { type: "textSize"; scale: number } // A− / A+: talpyDen.chatTextScale
   | { type: "diffLayout"; split: boolean } // side by side or one after the other: talpyDen.diffSideBySide
   | { type: "pickFiles" } // + : files to attach, from VS Code's file dialog (answered with "picked")
@@ -943,7 +998,7 @@ export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, 
 export { adoptable, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, oneLine, SNIPPET_CHARS, snippetOf, stateOf, staysOpen, step as bookmarkStep, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, type BookmarkStep } from "../../vendor/bookmarks.mjs";
 
 // Does it show on that tab: Chat leaves out Claude's tool calls, but not a question or a plan you
-// answered, nor a call you denied with a note
+// answered, nor a call you denied with a note (what a call made shows on both, under it)
 export function showsOn(it: PaneItem, steps: boolean): boolean {
   return steps || it.kind !== "tool" || askedShows(it) || it.asked?.state === "denied";
 }

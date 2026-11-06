@@ -134,6 +134,7 @@ export function findParts(it, steps) {
         return f ? [plainOf(f.shown), plainOf((it.text || "").slice(f.at))] : [plainOf(it.text), ""];
     }
     case "note":
+    case "made":   // (what a step made, on both tabs: its name, or Plan: and its title)
         return [it.text || "", ""];
     case "tool": {
         if (askedShown(it)) {
