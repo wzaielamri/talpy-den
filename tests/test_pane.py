@@ -2737,6 +2737,186 @@ class WholeReplyTests(PaneFixture):
         self.assertFalse(self.cli("--reply-text", SID)["ok"])   # (no key)
 
 
+class BookmarkTests(PaneFixture):
+    """Talpy Chat's bookmarks (pane.py --bookmark): kept on this computer, an
+    SSH host's chat's too (never sent there), and carried in --conversation's
+    answers once the chat has had one."""
+
+    def mark(self, key, *more):
+        return self.cli("--bookmark", SID, "--key", key, *more)
+
+    def keys(self, answer):
+        return [m["key"] for m in answer["bookmarks"]]
+
+    def test_it_answers_the_whole_list_and_its_v(self):
+        got = self.mark("m1", "--kind", "claude", "--at", "2000", "--text", "Done:  the tests\npass.")
+        self.assertEqual((got["ok"], got["message"], len(got["bookmarks"])), (True, "", 1), got)
+        self.assertEqual({k: got["bookmarks"][0][k] for k in ("key", "kind", "at", "text")},
+                         {"key": "m1", "kind": "claude", "at": 2000, "text": "Done: the tests pass."})
+        first = got["bookmarksV"]
+        self.assertGreater(first, 0)
+        got = self.mark("u1", "--kind", "you", "--at", "1000", "--text", "run the tests")
+        self.assertEqual(self.keys(got), ["u1", "m1"])   # (in the chat's order)
+        self.assertGreater(got["bookmarksV"], first)
+        self.assertEqual((got["bookmarks"], got["bookmarksV"]), tuple(cs.load_bookmarks(self.cache, SID)))
+        self.assertEqual(oct(os.stat(self.cache / "bookmarks" / f"{SID}.json").st_mode & 0o777), "0o600")
+        # removed; again, and adding one it has: done, nothing written
+        got = self.mark("m1", "--off")
+        self.assertEqual((got["ok"], self.keys(got)), (True, ["u1"]))
+        again = self.mark("m1", "--off")
+        self.assertEqual((again["ok"], again["bookmarks"], again["bookmarksV"]), (True, got["bookmarks"], got["bookmarksV"]))
+        self.assertEqual(self.mark("u1", "--kind", "you", "--at", "1000")["bookmarksV"], got["bookmarksV"])
+        # refused: a message on its way, no key, a key that is a flag, a kind other than yours or Claude's, not a chat
+        for refused in (self.mark("pending-3", "--kind", "you"), self.cli("--bookmark", SID, "--kind", "you"),
+                        self.mark("-x", "--kind", "you"), self.mark("t1", "--kind", "tool")):
+            self.assertEqual((refused["ok"], refused["message"], self.keys(refused)), (False, "Which message?", ["u1"]))
+        self.assertEqual(self.cli("--bookmark", "../x", "--key", "m1", "--kind", "claude"),
+                         {"ok": False, "message": "Not a chat: ../x", "bookmarks": [], "bookmarksV": 0})
+        self.assertFalse((self.cache / "bookmarks" / "x.json").exists())
+
+    def test_a_hosts_is_kept_here_and_never_sent_there(self):
+        with mock.patch("remote.host_answer", side_effect=AssertionError("forwarded")) as asked, \
+                mock.patch.object(pane, "forward", side_effect=AssertionError("forwarded")) as forwarded:
+            got = self.cli("--bookmark", SID, "--key", "m1", "--kind", "claude", "--at", "5", "--text", "hi", "--host", "gpu")
+            off = self.cli("--bookmark", SID, "--key", "m2", "--off", "--host", "gpu")
+        self.assertEqual((got["ok"], self.keys(got), off["ok"], self.keys(off)), (True, ["m1"], True, ["m1"]), got)
+        asked.assert_not_called()
+        forwarded.assert_not_called()
+        root = self.cache / "bookmarks"
+        self.assertEqual(os.listdir(root), ["host-" + cs.short_id("gpu")])
+        self.assertEqual(cs.load_bookmarks(self.cache, SID, "gpu")[0], got["bookmarks"])
+        self.assertEqual(cs.load_bookmarks(self.cache, SID), ([], 0))   # (not this computer's chat of that id)
+
+    def test_the_conversation_carries_them_once_there_are_some(self):
+        t = self.now - 100
+        self.chat(dict(prompt("run the tests", t, cwd=str(self.folder)), uuid="u1"),
+                  text_reply("They pass.", t + 1, "m1", "end_turn"))
+        first = self.cli("--conversation", SID)
+        self.assertTrue(first["ok"], first)
+        self.assertNotIn("bookmarks", first)   # (none yet: no file, nothing said)
+        self.assertNotIn("bookmarksV", first)
+        marked = self.mark("m1", "--kind", "claude", "--at", str(first["items"][1]["at"]), "--text", "They pass.")
+        got = self.cli("--conversation", SID)
+        self.assertEqual((got["bookmarks"], got["bookmarksV"]), (marked["bookmarks"], marked["bookmarksV"]))
+        # an unchanged answer is only that (the list comes with the next changed one)
+        self.assertEqual(self.cli("--conversation", SID, "--if-changed", got["stamp"]), {"ok": True, "unchanged": True})
+        # the last one removed: an empty list, its v still growing (so it wins over the list before)
+        gone = self.mark("m1", "--off")
+        got = self.cli("--conversation", SID)
+        self.assertEqual((got["bookmarks"], got["bookmarksV"]), ([], gone["bookmarksV"]))
+        self.assertGreater(gone["bookmarksV"], marked["bookmarksV"])
+        # on an SSH host (--remote): none of the host's own (they're kept on the computer that asks)
+        self.mark("u1", "--kind", "you", "--at", "1")
+        self.assertNotIn("bookmarks", self.cli("--conversation", SID, "--remote"))
+
+    def test_a_hosts_conversation_gets_this_computers_list(self):
+        self.cli("--bookmark", SID, "--key", "m1", "--kind", "claude", "--at", "5", "--text", "hi", "--host", "gpu")
+        self.mark("u9", "--kind", "you", "--at", "1")   # (this computer's chat of that id: not the host's)
+        there = {"ok": True, "items": [], "stamp": "1:2/120", "more": False}
+        with mock.patch("remote.host_answer", side_effect=lambda *a, **kw: dict(there)) as asked:
+            got = self.cli("--conversation", SID, "--host", "gpu", "--reach", "m1")
+            other = self.cli("--conversation", SID, "--host", "box")
+        self.assertEqual([m["key"] for m in got["bookmarks"]], ["m1"])
+        self.assertEqual(got["bookmarksV"], cs.load_bookmarks(self.cache, SID, "gpu")[1])
+        self.assertNotIn("bookmarks", other)
+        # (--reach goes with the rest: the host reads that far back)
+        self.assertEqual(asked.call_args_list[0][0], ("gpu", ["--conversation", SID, "--reach", "m1"]))
+        with mock.patch("remote.host_answer", return_value={"ok": True, "unchanged": True}):
+            self.assertEqual(self.cli("--conversation", SID, "--host", "gpu", "--if-changed", "1:2/120"),
+                             {"ok": True, "unchanged": True})
+        with mock.patch("remote.host_answer", return_value={"ok": False, "message": "Couldn't reach gpu"}):
+            self.assertNotIn("bookmarks", self.cli("--conversation", SID, "--host", "gpu"))
+
+    def test_the_usage_says_so(self):
+        self.assertIn("--bookmark CHAT --key KEY [--off] [--kind you|claude] [--at MS] [--text TEXT] [--host HOST]", pane.__doc__)
+        self.assertIn("[--suggest] [--reach KEY]", pane.__doc__)
+
+
+class ReachTests(PaneFixture):
+    """A bookmark further back than what's shown (pane.py --conversation
+    --reach KEY): the answer shows it, its limit grown as Show earlier grows
+    it, or says it's too far back ("far") or not in the chat any more ("gone")."""
+
+    def prompts(self, n, start=0):
+        t = self.now - 10000
+        return [dict(prompt(f"prompt {k}", t + k), uuid=f"u{k}") for k in range(start, start + n)]
+
+    def reach(self, key, *more):
+        return self.cli("--conversation", SID, "--reach", key, *more)
+
+    def test_the_limit_grows_as_show_earlier_grows_it(self):
+        self.assertEqual([pane.reach_limit(120, 303), pane.reach_limit(40, 10), pane.reach_limit(960, 1000),
+                          pane.reach_limit(1920, 1999), pane.reach_limit(2000, 2000)], [480, 120, 1920, 2000, 2000])
+
+    def test_a_key_300_items_back(self):
+        self.chat(*self.prompts(600))
+        # (not in the first read, which has more than the limit's items: further back, as Show earlier)
+        with mock.patch.object(pane, "PANE_TAIL_BYTES", 20000):
+            got = self.reach("u300")
+        self.assertEqual((got["limit"], got["reach"], got["reached"], len(got["items"]), got["more"]),
+                         (480, "u300", "here", 480, True))
+        self.assertTrue(got["stamp"].endswith("/480"))
+        keys = [i["key"] for i in got["items"]]
+        self.assertGreaterEqual(keys.index("u300"), pane.REACH_ABOVE)
+        self.assertEqual(keys[-1], "u599")
+        # (the next look, at that limit, is the same answer)
+        self.assertEqual(self.cli("--conversation", SID, "--limit", "480", "--if-changed", got["stamp"]),
+                         {"ok": True, "unchanged": True})
+
+    def test_a_key_already_loaded_keeps_the_limit(self):
+        self.chat(*self.prompts(600))
+        got = self.reach("u590")
+        self.assertEqual((got["limit"], got["reached"], len(got["items"])), (120, "here", 120))
+        self.assertTrue(got["stamp"].endswith("/120"))
+        self.assertEqual(self.reach("u400", "--limit", "240")["limit"], 240)
+        plain = self.cli("--conversation", SID)
+        self.assertFalse({"limit", "reach", "reached"} & set(plain))   # (only with --reach)
+
+    def test_more_than_pane_items_max_back_is_far(self):
+        self.chat(*self.prompts(2100))
+        far = self.reach("u50")
+        self.assertEqual((far["reached"], far["limit"], len(far["items"])), ("far", 120, 120))
+        self.assertTrue(far["stamp"].endswith("/120"))
+        edge = self.reach("u103")   # (2000 with the three above it: the most Talpy Chat shows)
+        self.assertEqual((edge["reached"], edge["limit"], edge["items"][pane.REACH_ABOVE]["key"]), ("here", 2000, "u103"))
+
+    def test_a_key_not_in_the_chat_is_gone(self):
+        self.chat(*self.prompts(600))
+        got = self.reach("m-gone")
+        self.assertEqual((got["reached"], got["limit"], len(got["items"])), ("gone", 120, 120))
+        # (not found in all it may read of a huge one: further back than that)
+        with mock.patch.object(pane, "PANE_TAIL_BYTES", 1000), mock.patch.object(pane, "PANE_TAIL_MAX", 4000):
+            self.assertEqual(self.reach("m-gone")["reached"], "far")
+
+    def test_a_queued_prompt_is_found_once_the_read_grows(self):
+        # (sent while Claude worked: keyed queued-<ms> while its enqueue line
+        # is read, else by the line Claude took it in with)
+        t = self.now - 20000
+        self.chat(dict(prompt("go", t, cwd=str(self.folder)), uuid="u-go"),
+                  tool_use("t1", "Bash", {"command": "sleep 60"}, t + 1, "m1"),
+                  {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(t + 2), "content": "also this"},
+                  tool_result("t1", t + 9),
+                  {"type": "queue-operation", "operation": "remove", "timestamp": iso(t + 9), "content": "also this",
+                   "commandUuid": "c1"},
+                  {"type": "attachment", "uuid": "a-1", "timestamp": iso(t + 9), "attachment": {
+                      "type": "queued_command", "prompt": "also this", "source_uuid": "c1", "commandMode": "prompt",
+                      "origin": {"kind": "human"}}},
+                  *self.prompts(300))
+        key = next(i["key"] for i in pane.conversation(self.transcript, limit=400)[0] if i.get("text") == "also this")
+        self.assertTrue(key.startswith("queued-"), key)
+        with mock.patch.object(pane, "PANE_TAIL_BYTES", 15000):   # (more than the limit's items, the enqueue line not in it)
+            self.assertNotIn(key, [i["key"] for i in self.cli("--conversation", SID)["items"]])
+            got = self.reach(key)
+        self.assertEqual((got["reached"], got["limit"]), ("here", 480))
+        self.assertIn(key, [i["key"] for i in got["items"]])
+
+    def test_if_changed_isnt_looked_at(self):
+        self.chat(*self.prompts(600))
+        first = self.cli("--conversation", SID)
+        got = self.cli("--conversation", SID, "--if-changed", first["stamp"], "--reach", "u300")
+        self.assertEqual((got["ok"], got.get("unchanged"), got["reached"], got["limit"]), (True, None, "here", 480))
+
+
 class ContextAndTurnTests(PaneFixture):
     """Talpy Chat's header says how much of the chat's context is left till
     Claude compacts it (A7), its working line how long Claude's turn has run

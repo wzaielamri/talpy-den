@@ -4,7 +4,7 @@ its permission prompt and its review.
 
     python3 -I pane.py ACTION [--host HOST] [--config-dir DIR]... [--remote] [--pretty]
 
-  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP [--wait S]] [--suggest]
+  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP [--wait S]] [--suggest] [--reach KEY]
         the chat as the pane shows it: your prompts, Claude's replies
         (markdown), each tool call as one line with how it went, and notes
         (a usage limit, an interruption); the newest N items. STAMP: the
@@ -15,9 +15,20 @@ its permission prompt and its review.
         once, not at the next look). Not on an SSH host (it's left out there).
         Also how full its context is, "context" (turns.context_left), and
         Claude's turn so far while it's going on, "turn": {"startedAt",
-        "steps"} (turns.TurnSoFar).
+        "steps"} (turns.TurnSoFar); its bookmarks, "bookmarks" and
+        "bookmarksV", once it has had one (kept here for a host's chat too).
         --suggest (Suggest replies): how its last turn ended, "ended" and
         "over", and the question it ends with as chips, "asks" (replies.asks_of)
+        --reach KEY (a bookmark further back than what's shown): enough
+        items to show the message with that key and a few above it, the
+        limit grown as Show earlier grows it ("limit"; STAMP isn't looked
+        at), and "reached": "here", "far" (further back than PANE_ITEMS_MAX
+        items) or "gone" (not in the chat any more)
+  --bookmark CHAT --key KEY [--off] [--kind you|claude] [--at MS] [--text TEXT] [--host HOST]
+        bookmark the message with that key (yours or Claude's reply, written
+        at MS, its first words TEXT), or not any more (--off); kept on this
+        computer, a host's chat's too (talpy_den.change_bookmark). {"ok",
+        "message", "bookmarks": the chat's now, "bookmarksV"}
   --replies CHAT [--profile P]
         your usual replies for the chat (replies.usual_replies): {"ok", "chips": {how
         a turn ended: [replies]}, "ranked": [replies, to complete what you
@@ -773,11 +784,26 @@ def tail_lines(path, size, nbytes):
     return lines, whole, start
 
 
-def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None):
+REACH_ABOVE = 3  # items shown above a message --reach goes to
+
+
+def reach_limit(limit, need):
+    """The limit that shows need items: limit doubled as Show earlier doubles
+    it (so the next Show earlier goes on from there), at most PANE_ITEMS_MAX."""
+    n = max(limit, PANE_ITEMS)
+    while n < need and n < PANE_ITEMS_MAX:
+        n = min(PANE_ITEMS_MAX, n * 2)
+    return n
+
+
+def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None, reach=None):
     """(items, more) of a chat: its newest limit items (conversation_items,
     pasted pictures saved in pictures; ends: how its last turn ended; so_far:
     its turn so far, and where the lines read start, "start"), and whether
-    there are older ones."""
+    there are older ones. reach: the key of a message to show (--reach): read
+    back until it's there, the limit grown to show it (so_far "limit"), and
+    so_far "reached": "here", "far" (more than PANE_ITEMS_MAX items back, or
+    further than PANE_TAIL_MAX bytes) or "gone"."""
     size = path.stat().st_size
     nbytes = PANE_TAIL_BYTES
     while True:
@@ -785,6 +811,18 @@ def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None):
         items = conversation_items(lines, pictures, ends, so_far)
         if so_far is not None:
             so_far["start"] = start
+        if reach is not None:
+            at = next((n for n, item in enumerate(items) if item.get("key") == reach), -1)
+            if at < 0 and not whole and nbytes < PANE_TAIL_MAX:
+                nbytes *= 4   # (as Show earlier reads further back)
+                continue
+            need = len(items) - at + REACH_ABOVE
+            reached = "here" if at >= 0 and need <= PANE_ITEMS_MAX else "far" if at >= 0 or not whole else "gone"
+            if reached == "here":
+                limit = reach_limit(limit, need)
+            if so_far is not None:
+                so_far.update(reached=reached, **({"limit": limit} if reached == "here" else {}))
+            reach = None
         if whole or len(items) > limit or nbytes >= PANE_TAIL_MAX:
             return within_budget(file_pictures(items[-limit:])), len(items) > limit or not whole
         nbytes *= 4
@@ -839,7 +877,7 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
 
 
 def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None,
-                      suggest=False):
+                      suggest=False, reach=None):
     """--conversation. "options": the model and effort it uses now
     (chatpick.options_now). "context": how full its context is (turns.context_left),
     "turn": Claude's turn so far, while it's going on (turns.TurnSoFar.now:
@@ -848,7 +886,9 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     (replies.TurnEnd.result), the question it ends with as chips, "asks"
     (replies.asks_of), and Claude's own predicted reply to it, "predicted"
     (predicted_reply: its background job writes it a few seconds after the
-    turn's end, so the stamp says whether there is one)."""
+    turn's end, so the stamp says whether there is one). reach: the key of a
+    message to show, if_changed not looked at (conversation): the answer has
+    "limit" (the stamp's), "reach" and "reached"."""
     if not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
@@ -860,7 +900,7 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
         said = predicted_reply(chatpick.job_record(profile, chat_id)) if suggest else None
         return stamp_of(path) + (f"~{zlib.crc32(said.encode('utf-8')):08x}" if said else "")
     stamp = look(path)
-    if if_changed and if_changed == f"{stamp}/{limit}":
+    if if_changed and not reach and if_changed == f"{stamp}/{limit}":
         if not (wait > 0 and wait_for_change(path, stamp, min(wait, WAIT_MAX_S), look=look)):
             return {"ok": True, "unchanged": True}
         if not path.exists():  # (moved: where it is now)
@@ -870,7 +910,8 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
         except (OSError, AttributeError):
             return {"ok": False, "missing": True, "message": NO_CHAT}
     ends, so_far = {} if suggest else None, {}
-    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends, so_far)
+    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends, so_far, reach or None)
+    limit = so_far.get("limit", limit)   # (grown to show what --reach goes to)
     name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
     peek = cs.chat_peek(path) or {}
     import turns
@@ -883,6 +924,8 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
               "turn": turn.now(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")}
     record = chatpick.job_record(profile, chat_id)   # (what /model and /effort's lists mark as what it uses now)
     result["options"] = chatpick.options_now(home, profile, chat_id, bool(peek.get("ultracode")), record)
+    if reach:   # (the front end takes the limit before the stamp: an answer read for another limit isn't taken)
+        result.update(limit=limit, reach=reach, reached=so_far.get("reached"))
     if suggest:
         import replies
         ended = ends.get("ended")
@@ -2416,9 +2459,10 @@ def main(argv=None):
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
-               "--hide-reply", "--type-in", "--reply-text", "--set-options")
+               "--hide-reply", "--type-in", "--reply-text", "--set-options", "--bookmark")
     osd, suggest, no_copy, keep_copy = False, False, False, False
     cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
+    mark_kind, mark_at, reach = "", 0, None   # (--bookmark's --kind and --at; --conversation's --reach)
     while args:
         arg = args.pop(0)
         if arg in actions and args and action is None:
@@ -2470,6 +2514,12 @@ def main(argv=None):
             stamp = args.pop(0)
         elif arg == "--limit" and args and args[0].isdigit():
             limit = int(args.pop(0))
+        elif arg == "--kind" and args:
+            mark_kind = args.pop(0)
+        elif arg == "--at" and args and args[0].isdigit():
+            mark_at = int(args.pop(0))
+        elif arg == "--reach" and args:
+            reach = args.pop(0)
         elif arg == "--wait" and args:
             try:
                 wait = max(0.0, float(args.pop(0)))
@@ -2517,6 +2567,9 @@ def main(argv=None):
         i = rest.index("--text-file")
         rest[i:i + 2] = ["--text", text]  # (a host gets the text: remote.host_answer takes it there)
     try:
+        if action == "--bookmark":  # (kept here, a host's chat's too, as stars are: never forwarded)
+            ok, said, marks, v = cs.change_bookmark(cache_root, target, host, key or "", not off, mark_kind, mark_at, text or "")
+            return emit({"ok": ok, "message": said, "bookmarks": marks, "bookmarksV": v})
         if host and action == "--reviewed":  # (kept here, as stars are)
             mark_reviewed(cache_root, target, host, on=not off)
             return emit({"ok": True, "message": "Marked reviewed" if not off else "Not marked reviewed"})
@@ -2536,6 +2589,8 @@ def main(argv=None):
                 answer["reviewedAt"] = cs.load_reviewed(cache_root).get(cs.review_key(target, host))
             if action == "--conversation" and answer.get("ok"):
                 pictures_here(answer.get("items"))
+                if not answer.get("unchanged"):   # (--reach went with the rest: the host reads that far)
+                    cs.bookmarks_answer(answer, cache_root, target, host)
             if action in ("--send", "--type-in"):
                 answer = host_vscode_link(answer, (session, target), text)
             if action == "--send" and how == "enter" and answer.get("how") == "ask":
@@ -2544,7 +2599,9 @@ def main(argv=None):
         if action == "--conversation":
             # (pasted pictures saved for the thumbnails: not on an SSH host, where the pane doesn't look)
             result = chat_conversation(home, config_dirs, target, profile, limit, stamp, wait,
-                                       None if remote else cs.images_dir(home), suggest)
+                                       None if remote else cs.images_dir(home), suggest, reach)
+            if not remote and result.get("ok") and not result.get("unchanged"):   # (a host's: kept here, above)
+                cs.bookmarks_answer(result, cache_root, target)
         elif action == "--send":
             if after:
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)
