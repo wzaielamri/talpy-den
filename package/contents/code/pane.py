@@ -153,6 +153,7 @@ DETAIL_CHARS = 1200  # of a tool call's input or output, unfolded
 DETAIL_LINES = 24
 PANE_LINE = re.compile(rb'"type":\s*"(?:user|assistant|system|queue-operation|queued_command)"')
 INTERRUPTED = "[Request interrupted"
+THOUGHT = "/thinking"   # (a thinking line's key: its message's id and this; replies.THOUGHT)
 NO_CHAT = "This chat hasn't started yet, or it isn't there any more"   # (no transcript: none yet, or deleted)
 
 
@@ -690,19 +691,26 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
                 items.append({"kind": "note", "key": uid, "text": cs.short_text(text, 300), "at": at, "error": True})
             continue
         mid = msg.get("id") if isinstance(msg.get("id"), str) else None
-        # (thinking shown as updates: Claude Code shows a thinking block's text
-        # as a reply then, what Claude tells you as it works; thinking it keeps
-        # to itself comes without text)
+        # (thinking shown as updates: a thinking block's text is a line Claude
+        # Code writes while Claude thinks, summing it up; not Claude's reply,
+        # it can tell what Claude means to do as if it were done. An item of
+        # its own, "thinking", shown dimmed in italics as Claude Code's
+        # terminal shows it (after ∴); thinking Claude keeps to itself comes
+        # without text)
         updates = e.get("thinkingDisplay") == "updates"
         for c in blocks:
-            said = c.get("text") if c.get("type") == "text" else c.get("thinking") if c.get("type") == "thinking" and updates else None
+            thought = updates and c.get("type") == "thinking"
+            said = c.get("text") if c.get("type") == "text" else c.get("thinking") if thought else None
             if isinstance(said, str) and said.strip():
+                key = (mid or uid) + THOUGHT if thought else mid or uid
                 last = items[-1] if items else None
-                if last is not None and last["kind"] == "claude" and mid is not None and last["key"] == mid:
+                if last is not None and last["kind"] == "claude" and mid is not None and last["key"] == key:
                     last["text"] = clip(last["text"] + "\n\n" + said.strip(), TEXT_CHARS, 10 ** 6)
                 else:
-                    items.append({"kind": "claude", "key": mid or uid, "text": clip(said.strip(), TEXT_CHARS, 10 ** 6),
-                                  "at": at})
+                    item = {"kind": "claude", "key": key, "text": clip(said.strip(), TEXT_CHARS, 10 ** 6), "at": at}
+                    if thought:
+                        item["thinking"] = True
+                    items.append(item)
             elif c.get("type") == "tool_use" and isinstance(c.get("id"), str):
                 end.steps += 1
                 inp = c.get("input") if isinstance(c.get("input"), dict) else {}

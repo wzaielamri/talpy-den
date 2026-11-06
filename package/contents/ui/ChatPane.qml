@@ -261,6 +261,8 @@ Window {
         blockBg: hex(dark ? Qt.tint(surface.Kirigami.Theme.backgroundColor, Qt.rgba(0, 0, 0, 0.28)) : mix(textColor, 0.04)),
         border: hex(borderColor), link: hex(surface.Kirigami.Theme.linkColor)
     })
+    // A thinking line's: all of it muted (its list items and bold words too)
+    readonly property var thoughtStyle: Object.assign({}, mdStyle, { text: mdStyle.muted, strong: mdStyle.muted })
     // Code and changes (codehtml.mjs): a tool call's details
     readonly property var codeStyle: Code.palette(dark, hex(textColor), mdStyle.blockBg, monoFamily, pt,
                                                   codeFm.font.pointSize && codeFm.advanceWidth("M"))
@@ -292,6 +294,25 @@ Window {
     readonly property string chatFamily: Plasmoid.configuration.paneFont === "desktop"
                                          ? surface.Kirigami.Theme.defaultFont.family : monoFamily
     readonly property real gutter: Math.round(fm.height * 1.3)   // where the dots go
+
+    // ∴ before a thinking line, as in Claude Code's terminal (VS Code shared/pane.ts THINKING_TIP:
+    // the same words)
+    Component {
+        id: thoughtMark
+        Text {
+            text: "∴"
+            textFormat: Text.PlainText
+            color: pane.mutedColor
+            font.family: pane.chatFamily
+            font.pointSize: pane.pt
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            TipArea {
+                anchors.fill: parent
+                mainText: i18n("Claude's thinking, as Claude Code sums it up while Claude works: not its reply. It can tell what Claude means to do as if it were done.")
+            }
+        }
+    }
 
     // ● before a reply or a tool call, on its first line (blinking: still going)
     component Dot: Item {
@@ -386,7 +407,7 @@ Window {
     }
     function copyLast() {
         for (let i = lastItems.length - 1; i >= 0; i--)
-            if (lastItems[i].kind === "claude")
+            if (lastItems[i].kind === "claude" && !lastItems[i].thinking)   // (a thinking line isn't its reply)
                 return copyItem(String(lastItems[i].key), lastItems[i].text || "", false)
         info = i18n("Claude hasn't replied in this chat yet")
         infoBad = true
@@ -894,7 +915,7 @@ Window {
         if (firstRead === null && lastItems.length) {
             let last = ""
             for (let i = lastItems.length - 1; i >= 0 && last === ""; i--)
-                if (lastItems[i].kind === "claude")
+                if (lastItems[i].kind === "claude" && !lastItems[i].thinking)
                     last = String(lastItems[i].key)
             firstRead = { at: Date.now(), last: last }
         }
@@ -969,7 +990,7 @@ Window {
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
                            diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
                            pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n"),
-                           asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "",
+                           asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "", thinking: !!it.thinking,
                            command: it.command ? JSON.stringify(it.command) : "", day: day, fold: "" }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
@@ -3225,7 +3246,8 @@ Window {
                         required property string asked      // (a question or a plan Claude asked, as JSON: pane.py asked_of)
                         required property string answered   // (yours: your answer to the call before it, pane.py your_answer)
                         required property string command    // (yours: a command you ran, as JSON: pane.py commands.py)
-                        required property string fold       // (a long one: where it folds, as JSON: withFold; "" for the rest)
+                        required property bool thinking     // (Claude's: a thinking line, not its reply: pane.py THOUGHT)
+                        required property string fold      // (a long one: where it folds, as JSON: withFold; "" for the rest)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
                         property int late: pane.lateDefault   // (Ctrl+O: its turn came, FoldAll.qml)
                         readonly property bool unfolded: pane.openTools[key] === true   // (a step's details: a click, a search's step)
@@ -3390,7 +3412,9 @@ Window {
                             }
                         }
 
-                        // Claude's reply: ● and its Markdown, rendered
+                        // Claude's reply: ● and its Markdown, rendered. A thinking line (Claude
+                        // Code's, while Claude thinks: thinking shown as updates) dimmed, in
+                        // italics, after ∴, as Claude Code's terminal shows it: not its reply
                         Component {
                             id: claudeItem
 
@@ -3398,10 +3422,19 @@ Window {
                                 spacing: 0
 
                                 Dot {
+                                    visible: !entry.thinking
                                     Layout.alignment: Qt.AlignTop
                                     color: pane.claudeColor
                                     gutter: pane.gutter
                                     lineHeight: fm.height
+                                }
+                                Loader {
+                                    active: entry.thinking
+                                    visible: active
+                                    Layout.preferredWidth: pane.gutter
+                                    Layout.preferredHeight: fm.height
+                                    Layout.alignment: Qt.AlignTop
+                                    sourceComponent: thoughtMark
                                 }
                                 ColumnLayout {
                                 Layout.fillWidth: true
@@ -3415,18 +3448,19 @@ Window {
                                     property int copied: -1
                                     Component.onCompleted: entry.textBox = replyText
                                     Layout.fillWidth: true
-                                    text: Md.toHtml(entry.whole ? entry.text : entry.foldData.cut, pane.mdStyle, copied)
+                                    text: Md.toHtml(entry.whole ? entry.text : entry.foldData.cut, entry.thinking ? pane.thoughtStyle : pane.mdStyle, copied)
                                     textFormat: TextEdit.RichText
                                     readOnly: true
                                     persistentSelection: true   // (selectAcross clears it)
                                     Keys.onPressed: event => pane.copyAcross(event)
                                     selectByMouse: true
                                     wrapMode: TextEdit.Wrap
-                                    color: Kirigami.Theme.textColor
+                                    color: entry.thinking ? pane.mutedColor : Kirigami.Theme.textColor
                                     selectionColor: Kirigami.Theme.focusColor
                                     selectedTextColor: Kirigami.Theme.highlightedTextColor
                                     font.family: pane.chatFamily
                                     font.pointSize: pane.pt
+                                    font.italic: entry.thinking
                                     onLinkActivated: link => {
                                         if (link.indexOf("copy:") === 0) {
                                             copied = Number(link.slice(5))

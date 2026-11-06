@@ -153,22 +153,30 @@ class CompleteTests(PaneFixture):
 
 
 class ConversationTests(PaneFixture):
-    def test_thinking_shown_as_updates_is_a_reply(self):
-        # (Claude Code shows a thinking block's text as a reply when thinking is
-        # shown as updates; thinking it keeps to itself has no text)
+    def test_thinking_shown_as_updates_is_a_line_of_its_own(self):
+        # (when thinking is shown as updates, Claude Code writes a line summing
+        # up Claude's thinking: shown as thinking, not as Claude's reply, as
+        # its terminal shows it; thinking Claude keeps to itself has no text)
         t = self.now - 100
 
-        def thinking(text, ts, display="updates"):
+        def thinking(text, ts, mid="m1", display="updates"):
             return {"type": "assistant", "timestamp": iso(ts), "thinkingDisplay": display,
-                    "message": {"id": "m1", "role": "assistant", "content": [{"type": "thinking", "thinking": text, "signature": "x"}]}}
+                    "message": {"id": mid, "role": "assistant", "content": [{"type": "thinking", "thinking": text, "signature": "x"}]}}
         self.chat(prompt("tidy the tags", t, cwd=str(self.folder)),
                   thinking("", t + 1),
                   thinking("Making every tag start with a capital.", t + 2),
                   tool_use("t1", "Bash", {"command": "ls"}, t + 3, "m1"),
-                  thinking("A thought of its own.", t + 4, display=None))
+                  tool_result("t1", t + 4),
+                  thinking("Pushing it.", t + 5, "m2"),
+                  thinking("Then the tags.", t + 5, "m2"),
+                  text_reply("Done: every tag has a capital.", t + 6, "m2"),
+                  thinking("A thought of its own.", t + 7, "m3", display=None))
         items, _ = pane.conversation(self.transcript)
-        self.assertEqual([(i["kind"], i.get("text") or i.get("line")) for i in items],
-                         [("you", "tidy the tags"), ("claude", "Making every tag start with a capital."), ("tool", "Bash: ls")])
+        self.assertEqual([(i["kind"], i["key"], i.get("text") or i.get("line"), i.get("thinking")) for i in items][1:],
+                         [("claude", "m1/thinking", "Making every tag start with a capital.", True),
+                          ("tool", "t1", "Bash: ls", None),
+                          ("claude", "m2/thinking", "Pushing it.\n\nThen the tags.", True),
+                          ("claude", "m2", "Done: every tag has a capital.", None)])
 
     def test_items(self):
         t = self.now - 100
@@ -2649,7 +2657,8 @@ class WholeReplyTests(PaneFixture):
                                                                               {"type": "text", "text": "Found it."}]}}
         self.chat(dict(prompt(long, t, cwd=str(self.folder)), uuid="u-9"), updates)
         self.assertEqual(self.cli("--reply-text", SID, "--key", "u-9")["text"], long.strip())
-        self.assertEqual(self.cli("--reply-text", SID, "--key", "m9")["text"], "Looking at it.\n\nFound it.")
+        self.assertEqual(self.cli("--reply-text", SID, "--key", "m9")["text"], "Found it.")
+        self.assertEqual(self.cli("--reply-text", SID, "--key", "m9/thinking")["text"], "Looking at it.")
 
     def test_none_with_that_key(self):
         self.chat(dict(prompt("hello", self.now - 5, cwd=str(self.folder)), uuid="u-1"))

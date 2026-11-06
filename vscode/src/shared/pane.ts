@@ -11,6 +11,7 @@ export interface PaneItem {
   kind: "you" | "claude" | "tool" | "note";
   key: string; // the same in the next answer, while it's listed
   text?: string; // you, claude (markdown), note
+  thinking?: boolean; // claude: a line Claude Code wrote while Claude thought, summing it up (thinking shown as updates), not its reply: dimmed, in italics, after ∴ (key "<its reply's>/thinking")
   name?: string; // tool: its name, e.g. "Bash"
   line?: string; // tool: one line, e.g. "Bash: npm test"
   status?: "ok" | "error" | "open"; // tool: how it went ("open": no result yet)
@@ -869,9 +870,12 @@ export function copyText(it: PaneItem): string {
 export function copyCut(text: string): boolean {
   return text.endsWith("\n…");
 }
-// Claude's last reply (Ctrl+Shift+C copies it)
+// A thinking line's mark (∴, as in Claude Code's terminal), on hover (Plasma ChatPane: the same words)
+export const THINKING_TIP = "Claude's thinking, as Claude Code sums it up while Claude works: not its reply. It can tell what Claude means to do as if it were done.";
+
+// Claude's last reply (Ctrl+Shift+C copies it; not a thinking line)
 export function lastReply(items: readonly PaneItem[]): PaneItem | null {
-  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "claude") return items[i];
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "claude" && !items[i].thinking) return items[i];
   return null;
 }
 

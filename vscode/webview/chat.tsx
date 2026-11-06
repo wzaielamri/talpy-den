@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
@@ -134,7 +134,7 @@ function HoverBar({ list, itemOf, copied, onCopy }: { list: { current: HTMLDivEl
     <div class="pane-hoverbar" style={{ top: `${on.top}px`, right: `${on.right}px` }}>
       {it.at ? <span class="pane-when">{timeText(it.at, Date.now())}</span> : null}
       <button type="button" class={done ? "md-copy copied" : "md-copy"}
-        title={it.kind === "claude" ? "Copy this reply, as Markdown" : "Copy your message, as you wrote it"}
+        title={it.thinking ? "Copy this thinking line" : it.kind === "claude" ? "Copy this reply, as Markdown" : "Copy your message, as you wrote it"}
         onClick={() => onCopy(it)}>
         {/* (both words in one place: as wide with Copied as with Copy) */}
         <span class="pane-swap"><span class={done ? "off" : ""}>Copy</span><span class={done ? "" : "off"} aria-hidden={!done}>Copied</span></span>
@@ -1722,10 +1722,14 @@ function ChatApp() {
         more={outFold ? <FoldMore id={`${it.key}/out`} fold={outFold} whole={outAll} onToggle={toggleFold(`${it.key}/out`, outAll)} /> : null} /> : null}
       </Fragment>
     ) : it.kind === "claude" ? (
-      <div key={it.key} data-key={it.key} class={`pane-item pane-claude ${gap}`}>
-        <span class="pane-gutter" aria-hidden="true">
-          <span class="pane-dot" />
-        </span>
+      <div key={it.key} data-key={it.key} class={`pane-item pane-claude${it.thinking ? " pane-thinking" : ""} ${gap}`}>
+        {it.thinking ? (
+          <span class="pane-gutter pane-thought" title={THINKING_TIP}>∴</span>
+        ) : (
+          <span class="pane-gutter" aria-hidden="true">
+            <span class="pane-dot" />
+          </span>
+        )}
         <div class="pane-body">
           <Markdown text={all ? it.text ?? "" : fold!.shown} onCopy={copyCode} />
           {fold ? <FoldMore id={it.key} fold={fold} whole={all} onToggle={toggleFold(it.key, all)} /> : null}

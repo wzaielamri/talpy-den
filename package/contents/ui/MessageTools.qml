@@ -81,7 +81,8 @@ Rectangle {
                 gesturePolicy: TapHandler.ReleaseWithinBounds   // (the press is Copy's: no selection starts under it)
                 onTapped: pane.copyItem(tools.row.key, tools.row.text, true)   // (all of it: Copied once it's on the clipboard)
             }
-            PlasmaComponents3.ToolTip.text: tools.row && tools.row.kind === "claude" ? i18n("Copy this reply, as Markdown") : i18n("Copy your message, as you wrote it")
+            PlasmaComponents3.ToolTip.text: tools.row && tools.row.thinking ? i18n("Copy this thinking line")
+                                          : tools.row && tools.row.kind === "claude" ? i18n("Copy this reply, as Markdown") : i18n("Copy your message, as you wrote it")
             PlasmaComponents3.ToolTip.visible: copyHover.hovered
             PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
         }

@@ -3434,6 +3434,19 @@ body.vscode-high-contrast-light .pane {
   background: var(--pane-claude);
 }
 
+/* A thinking line (Claude Code's, thinking shown as updates): dimmed, in italics, after ∴, as in
+   Claude Code's terminal; not Claude's reply */
+.pane-thought {
+  color: var(--cs-muted);
+  font-weight: 400;
+  cursor: default;
+}
+
+.pane-thinking .pane-body {
+  color: var(--cs-muted);
+  font-style: italic;
+}
+
 .pane-body {
   flex: 1 1 auto;
   min-width: 0;

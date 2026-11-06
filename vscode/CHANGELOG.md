@@ -141,6 +141,11 @@
 
 ### Better
 
+- **Talpy Chat: Claude's thinking isn't shown as its reply.** The lines
+  Claude Code writes to sum up Claude's thinking while it works are dimmed,
+  in italics, after *∴*, as in Claude's terminal: such a line can tell what
+  Claude means to do as if it were done. *Copy* on one copies that line
+  alone, and Ctrl+Shift+C still copies Claude's last reply.
 - **Talpy Chat:** a wake-up Claude scheduled for itself is a small note in
   its place, no longer a message of yours at the end of the chat; an
   answered question's options are a bulleted list, each with what it means

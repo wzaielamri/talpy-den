@@ -1503,6 +1503,9 @@ test("Copy copies all of it: a reply shown cut is read whole first, and Copied i
   assert.equal(lastReply([{ kind: "claude", key: "m1", text: "one", at: 1 }, { kind: "you", key: "u2", text: "two", at: 2 },
                           { kind: "claude", key: "m3", text: "three", at: 3 }, { kind: "tool", key: "t4", name: "Bash", at: 4 }])?.key, "m3");
   assert.equal(lastReply([{ kind: "you", key: "u2", text: "two", at: 2 }]), null);
+  // (a thinking line isn't Claude's reply)
+  assert.equal(lastReply([{ kind: "claude", key: "m3", text: "three", at: 3 },
+                          { kind: "claude", key: "m4/thinking", text: "Pushing it.", thinking: true, at: 4 }])?.key, "m3");
   p.dispose();
 });
 
