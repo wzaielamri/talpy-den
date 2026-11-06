@@ -6,6 +6,22 @@
 import { clockText, formatTokens, hostLabel } from "./model";
 import type { Answers, AskShown, Decision, PermissionAsk, Question, QueuedTask, RecentChat, Review, Session, SessionState, Status } from "./types";
 
+// What came of a message (or a new chat's start) sent from Talpy Chat: went, to the chat itself;
+// ask: its terminal takes no text, you choose; warn: it went, but message says what's wrong
+export interface SendResult {
+  ok: boolean;
+  message: string;
+  ask?: boolean;
+  went?: boolean;
+  warn?: boolean;
+}
+
+// A chat started or woken in the background without Talpy Den's permission hook (pane.py's
+// "hooked": false, "hookWhy"): what it asks waits in its own prompt (Plasma's words too)
+export function unhookedText(why: unknown): string {
+  return `It went, but Talpy Chat can't answer what it asks (${typeof why === "string" && why ? why : "no permission hook"}): answer its prompts in a terminal.`;
+}
+
 // One item of a chat's conversation (pane.py: conversation_items)
 export interface PaneItem {
   kind: "you" | "claude" | "tool" | "note" | "made";
@@ -250,7 +266,7 @@ export type PaneHostMessage =
   | { type: "review"; answer: ReviewAnswer | null; error: string }
   // ask: its terminal takes no text: choose; id: the message it's for (send); went: it went into the chat
   // itself (typed in, or on in the background: not VS Code's input or the clipboard)
-  | { type: "result"; kind: string; ok: boolean; message: string; ask?: boolean; id?: number; went?: boolean; how?: string } // how: an "options" result's (now, next)
+  | { type: "result"; kind: string; ok: boolean; message: string; ask?: boolean; id?: number; went?: boolean; how?: string; warn?: boolean } // how: an "options" result's (now, next)
   | { type: "textSize"; scale: number } // talpyDen.chatTextScale
   | { type: "font"; family: string } // talpyDen.chatFont, as a CSS font-family ("": VS Code's own)
   | { type: "diffLayout"; split: boolean } // talpyDen.diffSideBySide

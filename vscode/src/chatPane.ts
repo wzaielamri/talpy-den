@@ -21,7 +21,7 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, chatWhere, copyCut, HOLD_MS, madeOf, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
+import { answersOf, askShownOf, chatWhere, copyCut, HOLD_MS, madeOf, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -128,13 +128,14 @@ export class ChatPanes implements vscode.Disposable {
   // alone), a task at once; plan: one it carries out (its first message, with what you wrote)
   openNew(group: Group, folder: { path: string; short: string }, task = "", plan?: PlanItem): void {
     const id = `new-${Date.now()}-${++this.newChats}`;
+    const host = group.host ?? "";   // (an SSH host's or a container's account: it starts there)
     const chat: ChatRef = { key: id, sessionId: "", chatId: id, profileDir: group.chatProfile, name: `New chat in ${folder.short}`,
-                            cwd: folder.path, kind: "chat", pid: null };
+                            cwd: folder.path, kind: "chat", pid: null, ...(host ? { host } : {}) };
     const fresh: Fresh = { profile: group.chatProfile, account: group.title, cwd: folder.path, short: folder.short,
                            plan: plan ? { slug: plan.slug, profileDir: plan.profileDir, title: plan.title } : null,
                            task: task || (plan ? "Implement this plan." : "") };
     const created = new Pane(this, chat, "chat", fresh);
-    this.panes.set(`|${id}`, created);
+    this.panes.set(`${host}|${id}`, created);
     created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
   }
 
@@ -222,7 +223,7 @@ export class ChatPanes implements vscode.Disposable {
   // sent while another is still on its way goes once that one has (never
   // dropped). went: it went into the chat itself (typed in, or on in the
   // background), not into VS Code's input or the clipboard.
-  async send(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<{ ok: boolean; message: string; ask?: boolean; went?: boolean }> {
+  async send(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<SendResult> {
     text = text.trim();
     if (!text) return { ok: false, message: "Write your message first" };
     if (text.length > TEXT_MAX) return { ok: false, message: "That message is too long" };
@@ -245,7 +246,7 @@ export class ChatPanes implements vscode.Disposable {
 
   private sending = new Map<string, Promise<unknown>>(); // "<host>|<chat id>": the last message on its way to it
 
-  private async sendNow(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<{ ok: boolean; message: string; ask?: boolean; went?: boolean }> {
+  private async sendNow(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<SendResult> {
     const host = chat.host ?? "";
     // (to where the chat is now: one Claude moved to the background meanwhile
     // goes on under its new id, also for a message that waited its turn)
@@ -299,6 +300,8 @@ export class ChatPanes implements vscode.Disposable {
       }
     }
     this.refresh(host);
+    // (woken in the background without Talpy Den's permission hook: what it asks waits in its own prompt)
+    if (r.ok && r.hooked === false) return { ok: true, message: unhookedText(r.hookWhy), went: true, warn: true };
     return { ok: !!r.ok, message: String(r.message ?? ""), went: !!r.ok && (r.how === "typed" || r.how === "background") };
   }
 
@@ -718,7 +721,7 @@ class Pane implements vscode.Disposable {
   // A new chat's first message: it starts in the background (pane.py --start: on its account, in
   // its folder, with the new-chat model, effort and mode, and the permission hook for it alone),
   // and the tab goes on with it under its id. One sent while that's on its way goes to it after.
-  private async start(text: string): Promise<{ ok: boolean; message: string; went?: boolean }> {
+  private async start(text: string): Promise<SendResult> {
     if (this.starting) {
       const first = await this.starting;
       if (!first.ok || this.fresh) return { ok: false, message: "The chat didn't start: send it again once it has" };
@@ -734,10 +737,12 @@ class Pane implements vscode.Disposable {
           fs.mkdirSync(cacheDir(), { recursive: true, mode: 0o700 });
           fs.writeFileSync(file, text, { mode: 0o600, flag: "wx" });
         }
+        // (on an SSH host or in a container: started there, with Talpy Den's permission hook copied there;
+        // this computer's extra Claude folders stay here)
         r = await this.owner.ext.backend.pane([
           "--start", f.profile, "--cwd", f.cwd, ...(file ? ["--text-file", file] : ["--text", text]), ...chatOptionArgs(),
           ...(f.plan ? ["--plan", f.plan.slug, "--plan-profile", f.plan.profileDir] : []), ...(Pane.suggests() ? ["--suggest"] : []),
-          ...configDirArgs(),
+          ...(this.host ? ["--host", this.host] : configDirArgs()),
         ], 180000);
       } catch (e) {
         r = { ok: false, message: e instanceof Error ? e.message : String(e) };
@@ -748,11 +753,12 @@ class Pane implements vscode.Disposable {
       const from = this.chatId;
       this.fresh = null;
       this.startedAt = Date.now();
-      this.owner.moved(this, `|${from}`, `|${r.chat}`);
+      this.owner.moved(this, `${this.host}|${from}`, `${this.host}|${r.chat}`);
       this.chatId = r.chat;
       this.chat = { ...this.chat, key: r.chat, chatId: r.chat, sessionId: r.chat, profileDir: typeof r.profileDir === "string" ? r.profileDir : this.chat.profileDir };
       this.stamp = "";
-      this.owner.refresh("");
+      this.owner.refresh(this.host);
+      if (r.hooked === false) return { ok: true, message: unhookedText(r.hookWhy), went: true, warn: true };
       return { ok: true, message: "", went: true };
     })();
     void this.pushChat();   // (Starting…)
@@ -773,9 +779,9 @@ class Pane implements vscode.Disposable {
     this.post({ type: "review", answer: r.ok ? (r as never) : null, error: r.ok ? "" : String(r.message ?? "") });
   }
 
-  private result(kind: string, r: { ok: boolean; message: string; ask?: boolean; went?: boolean; how?: string }, id?: number): void {
+  private result(kind: string, r: SendResult & { how?: string }, id?: number): void {
     this.post({ type: "result", kind, ok: r.ok, message: r.message, ...(r.ask ? { ask: true } : {}), ...(r.went ? { went: true } : {}),
-                ...(r.how ? { how: r.how } : {}), ...(typeof id === "number" ? { id } : {}) });
+                ...(r.warn ? { warn: true } : {}), ...(r.how ? { how: r.how } : {}), ...(typeof id === "number" ? { id } : {}) });
   }
 
   private async receive(raw: unknown): Promise<void> {

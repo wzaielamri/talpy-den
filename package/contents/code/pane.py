@@ -1028,13 +1028,37 @@ def plan_decision(decision, note, inp):
     return out
 
 
-NOT_ASKING = "It isn't asking any more (answered in the chat?)"
+NOT_ASKING = "It isn't asking any more: answered in the chat or another window"
+ANSWERED_ELSEWHERE = "It was just answered from another window"
+
+
+def answer_file(path, answer):
+    """Write a request's answer, the first one only (two windows, Plasma's
+    and VS Code's, answering one prompt a moment apart: the second gets
+    False, not "Allowed" when it was denied). Linked into place in one go
+    (cs.write_atomic new: the hook never reads half an answer, which it
+    would remove); where the folder takes no hard links (some FUSE or
+    shared-folder homes), replaced as before."""
+    data = json.dumps(answer, separators=(",", ":")).encode("utf-8")
+    try:
+        cs.write_atomic(path, data, mode=0o600, new=True)
+    except FileExistsError:
+        return False
+    except OSError as exc:
+        import errno
+        if exc.errno not in (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK):
+            raise
+        if path.exists():
+            return False
+        cs.write_atomic(path, data, mode=0o600)
+    return True
 
 
 def answer_request(cache_root, request_id, decision, note="", answers=None):
     """Answer a relayed request: (ok, message). A question takes "answer"
     (answers: {question: [labels or text]}) or "deny". One that's gone:
-    (False, NOT_ASKING); one its chat asked again after: (False, ASKS_ELSE)."""
+    (False, NOT_ASKING); one its chat asked again after: (False, ASKS_ELSE);
+    one another window answered first: (False, ANSWERED_ELSEWHERE)."""
     if decision not in DECISIONS + PLAN_DECISIONS:
         return False, f"Not an answer: {decision}"
     if not re.fullmatch(r"[0-9]+-[0-9a-f]{8}", request_id or ""):
@@ -1065,7 +1089,8 @@ def answer_request(cache_root, request_id, decision, note="", answers=None):
         return False, "It asks for a permission, not a question"
     if not plan:
         answer = decision_of(decision, note, req.get("suggestions") or [], inp, given)
-    cs.write_json_atomic(folder / (request_id + ".answer.json"), answer)
+    if not answer_file(folder / (request_id + ".answer.json"), answer):
+        return False, ANSWERED_ELSEWHERE
     deadline = time.time() + 5
     while (folder / (request_id + ".json")).exists() and time.time() < deadline:
         time.sleep(0.1)
@@ -1439,15 +1464,16 @@ def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped
 
 
 def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None, scoped=True,
-         predict=False):
+         hooked=True, hook_source=None, predict=False):
     """Send your message to a chat the way it takes one (cs.reply_route):
     {"ok", "message", "how": "typed"|"background"|"vscode"|"copy"|"ask",
-    "link" (vscode), "copied" (copy)}. how "ask": the chat runs in a
-    terminal that takes no text from outside, and you choose (how
-    background or copy). scoped: a chat it wakes in the background in a
-    systemd scope of its own (go_on_in_background), with the permission hook
-    for it (chat_hook); not on an SSH host, where Talpy Den has no hook of
-    its own."""
+    "link" (vscode), "copied" (copy); woken in the background: "hooked",
+    "hookWhy" (chat_hook_of)}. how "ask": the chat runs in a terminal that
+    takes no text from outside, and you choose (how background or copy).
+    scoped: a chat it wakes in the background in a systemd scope of its own
+    (go_on_in_background; not on an SSH host or in a container); hooked:
+    with the permission hook for it (chat_hook_of; hook_source: its code,
+    from the computer that asks, for a host's copy)."""
     text = (text or "").strip()
     if not text:
         return {"ok": False, "message": "Write your message first"}
@@ -1468,11 +1494,11 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
         if waited:
             cs.wake_settle(home, extra_dirs, chat_id)
         return send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile,
-                        predict)
+                        hooked, hook_source, predict)
 
 
 def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile,
-             predict=False):
+             hooked=True, hook_source=None, predict=False):
     """send's sending, under its lock."""
     entry = None
     for sid in (session_id, chat_id):
@@ -1520,9 +1546,12 @@ def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, clau
         ok, message = cs.stop_chat(entry)
         if not ok:
             return {"ok": False, "message": message}
-    hook = chat_hook(home, next((p for p in profiles if cs.matches_profile(p, profile_key)), profile), predict) if scoped else None
-    answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped, hook)
+    hook = chat_hook_of(home, next((p for p in profiles if cs.matches_profile(p, profile_key)), profile), hook_source,
+                        predict, hooked)
+    answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped, hook["settings"])
     answer["how"] = "background"
+    if hooked and answer.get("ok"):
+        answer.update(hooked=hook["hooked"], **({"hookWhy": hook["why"]} if hook["why"] else {}))
     return answer
 
 
@@ -1573,15 +1602,18 @@ def type_in(home, extra_dirs, profile_key, chat_id, text, session_id=None, copy=
 
 
 def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=None, mode=None, plan=None,
-               plan_profile=None, claude=None, scoped=True, predict=False):
+               plan_profile=None, claude=None, scoped=True, hook_source=None, predict=False):
     """A new chat Talpy Chat starts with your first message (text; or a
     plan's, with what you add): in the background on the profile, in folder
-    (claude --bg, in a systemd scope of its own: go_on_in_background), with
-    that model, effort and permission mode, and the permission hook for it
-    alone (chat_hook), so what it asks is answered in Talpy Chat. Only in a
-    folder Claude trusts (a background chat can't ask). {"ok", "message",
-    "how": "background", "id": its job's short id, "chat": its chat id
-    (from its job's record), "profileDir"}."""
+    (claude --bg, in a systemd scope of its own unless not scoped, as on an
+    SSH host or in a container: go_on_in_background), with that model,
+    effort and permission mode, and the permission hook for it alone
+    (chat_hook_of; hook_source: its code, from the computer that asks, for a
+    host's copy), so what it asks is answered in Talpy Chat. Only in a
+    folder Claude trusts (a background chat can't ask: "untrusted" true).
+    {"ok", "message", "how": "background", "id": its job's short id, "chat":
+    its chat id (from its job's record), "profileDir", "hooked" (whether
+    Talpy Chat answers what it asks), "hookWhy" (why not)}."""
     text = (text or "").strip()
     if not text and not plan:
         return {"ok": False, "message": "Write your message first"}
@@ -1601,8 +1633,8 @@ def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=N
     claude = claude or cs.find_claude(home, ask_shell=True)
     if claude is None:
         return {"ok": False, "message": "No claude command found"}
-    hook = chat_hook(home, profile, predict) if scoped else None
-    options = (["--settings", hook] if hook else []) + options + cs.picture_options(home, text)
+    hook = chat_hook_of(home, profile, hook_source, predict)
+    options = (["--settings", hook["settings"]] if hook["settings"] else []) + options + cs.picture_options(home, text)
     prefix = []
     if scoped:
         import jump
@@ -1611,12 +1643,13 @@ def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=N
     ok, message, job = cs.start_background(profile, folder, cs.task_prompt(text, plan_path, home), home, claude,
                                            prefix=prefix, options=options)
     if not ok:
-        return {"ok": False, "message": message}
+        return {"ok": False, "message": message, **({"untrusted": True} if message.startswith(cs.UNTRUSTED) else {})}
     chat = job_chat(profile, job)
     if chat is None:
         return {"ok": False, "message": f"It started ({job}), but its chat isn't there to show: find it in the list"}
     return {"ok": True, "how": "background", "id": job, "chat": chat, "profileDir": profile.key,
-            "message": "Started in the background on " + profile.label}
+            "message": "Started in the background on " + profile.label, "hooked": hook["hooked"],
+            **({"hookWhy": hook["why"]} if hook["why"] else {})}
 
 
 JOB_RECORD_WAIT_S = 2.0
@@ -2185,17 +2218,14 @@ def upgrade_hooks(home, extra_dirs=()):
 def install_hook(home, extra_dirs, on, kind, source=None, keep_copy=False):
     """Put the hook in each profile's settings (on) or take it out: how many
     settings files changed (ValueError: one isn't JSON). source: the hook's
-    code (else its file next to this one). keep_copy: taken out, its copy
-    stays (chats Talpy Chat started name it in settings of their own)."""
+    code (else its file next to this one): a copy that's there is replaced
+    only by a newer one (place_hook). keep_copy: taken out, its copy stays
+    (chats Talpy Chat started name it in settings of their own)."""
     target = hook_path(home, kind)
     if on:
-        if source is None:
-            source = (Path(__file__).resolve().parent / HOOKS[kind]["source"]).read_text(encoding="utf-8")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if read_bytes(target) != source.encode():
-            tmp = target.with_name(target.name + ".tmp")
-            tmp.write_text(source, encoding="utf-8")
-            os.replace(tmp, target)
+        placed, why = place_hook(home, kind, source)
+        if placed is None:
+            raise ValueError("Talpy Den couldn't put its hook in place: " + why)
     changed = 0
     with cs.claude_settings_lock(home):  # (read to written: another helper's change isn't lost)
         for path in settings_files(home, extra_dirs):
@@ -2266,23 +2296,37 @@ def live(home, extra_dirs, on, source=None):
     return True, "Chats show their steps at each check"
 
 
-def hook_copy(home, kind="relay"):
-    """The hook's copy in Talpy Den's data folder, put there if it isn't (a
-    chat Talpy Chat starts names it in settings of its own, while the
-    setting for every chat may be off; a status check brings it up to date,
-    talpy_den.refresh_hooks): its path, or None (no hook here to copy)."""
+def place_hook(home, kind="relay", source=None):
+    """The hook's copy in Talpy Den's data folder (a chat Talpy Chat starts
+    names it in settings of its own, while the setting for every chat may be
+    off): (its path, or None and why not). One that's there stays, unless
+    source (the hook's code, sent by the computer that asks: on an SSH host
+    or in a container this file comes on stdin, without the hooks) is newer
+    (its HOOK_REVISION, as talpy_den.refresh_hooks has it: front ends of
+    other versions never make it older). With none there, it's written from
+    source, else from the hook next to this file: in one go, 0600, in a
+    folder only you may write in (cs.safe_folder: Claude runs it as you)."""
     target = hook_path(home, kind)
-    if target.is_file():
-        return target
+    why = cs.safe_folder(target.parent)
+    if why:
+        return None, why
     try:
-        data = (Path(__file__).resolve().parent / HOOKS[kind]["source"]).read_bytes()
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(target.name + ".tmp")
-        tmp.write_bytes(data)
-        os.replace(tmp, target)
-    except (OSError, NameError):
-        return None
-    return target
+        installed = target.read_bytes() if target.is_file() else None
+    except OSError:
+        installed = None
+    new = source.encode("utf-8") if isinstance(source, str) else None
+    if installed is not None and (new is None or cs.hook_revision(new) <= cs.hook_revision(installed)):
+        return target, ""
+    if new is None:
+        try:
+            new = (Path(__file__).resolve().parent / HOOKS[kind]["source"]).read_bytes()
+        except (OSError, NameError):
+            return None, "its code isn't here to copy"
+    try:
+        cs.write_atomic(target, new, mode=0o600)
+    except OSError as exc:
+        return None, f"couldn't write {cs.short_path(str(target), home)}: {exc.strerror or exc}"
+    return target, ""
 
 
 # Claude's predicted next prompt (its grey suggestion in a terminal), for a
@@ -2295,23 +2339,44 @@ def hook_copy(home, kind="relay"):
 PREDICT_ENV = {"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true"}
 
 
-def chat_hook(home, profile, predict=False):
+def hook_copy(home, kind="relay", source=None):
+    """place_hook's path, or None (no hook here to copy, or nowhere safe to put it)."""
+    return place_hook(home, kind, source)[0]
+
+
+def chat_hook_of(home, profile, source=None, predict=False, hook=True):
     """Settings of its own for one chat, as claude --settings takes them
-    (JSON), or None for none. The permission hook (the same entry --relay on
-    writes), so a background chat Talpy Chat starts or wakes asks its
-    permission prompts and questions where Talpy Chat answers them: it has
-    no terminal to ask in; not when the profile's own settings have the hook
-    (on for every chat: it would run twice), or managed settings let only
-    their own hooks run. predict: Claude's predicted reply on too
-    (PREDICT_ENV)."""
-    settings = {}
-    if not (cs.managed_hooks_only() or has_hook(cs.read_json(profile.path / "settings.json") or {})):
-        target = hook_copy(home)
-        if target is not None:
-            settings = set_hook({}, hook_command(target), True)
+    (JSON). The permission hook (the same entry --relay on writes), so a
+    background chat Talpy Chat starts or wakes asks its permission prompts
+    and questions where Talpy Chat answers them: it has no terminal to ask
+    in. Here, on an SSH host or in a container (source: the hook's code,
+    from the computer that asks: place_hook). {"settings": that JSON or
+    None, "hooked": whether Talpy Chat answers what the chat asks, "why":
+    why not}. No hook of its own when the profile's own settings have the
+    hook (on for every chat: it would run twice; hooked all the same), or
+    managed settings let only their own hooks run (not hooked); none either
+    with hook False. predict: Claude's predicted reply on too (PREDICT_ENV)."""
+    settings, hooked, why = {}, False, ""
+    if not hook:
+        pass
+    elif cs.managed_hooks_only():
+        why = "managed settings let only their own hooks run"
+    elif has_hook(cs.read_json(profile.path / "settings.json") or {}):
+        hooked = True
+    else:
+        target, why = place_hook(home, source=source)
+        if target is None:
+            why = "Talpy Den couldn't put its permission hook in place: " + why
+        else:
+            settings, hooked, why = set_hook({}, hook_command(target), True), True, ""
     if predict:
         settings["env"] = dict(PREDICT_ENV)
-    return json.dumps(settings, separators=(",", ":")) if settings else None
+    return {"settings": json.dumps(settings, separators=(",", ":")) if settings else None, "hooked": hooked, "why": why}
+
+
+def chat_hook(home, profile, source=None, predict=False):
+    """chat_hook_of's settings: the JSON, or None."""
+    return chat_hook_of(home, profile, source, predict)["settings"]
 
 
 def relay_status(home, extra_dirs, kind="relay"):
@@ -2453,11 +2518,33 @@ def reply_text(home, extra_dirs, chat_id, profile_key, key):
     return {"ok": True, "text": text} if text is not None else {"ok": False, "message": "That message isn't in the chat any more"}
 
 
-def forward(host, args):
-    """Run this file on an SSH host with args: its answer."""
+# The modules each action imports, sent along with this file to an SSH host
+# (each is ~10-40 ms more to send and compile there); any other action gets them all
+ACTION_MODULES = {
+    "--conversation": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"),
+    "--made": ("made.py",), "--bookmark": (),
+    "--complete": ("commands.py",), "--replies": ("reply_words.py", "replies.py"),
+    "--reply-text": ("reply_words.py", "replies.py"), "--hide-reply": ("reply_words.py", "replies.py"),
+    "--set-options": ("chatpick.py",),
+    "--send": (), "--start": (), "--answer": (), "--interrupt": (), "--keys": (), "--type-in": (), "--relay": (),
+    "--live": (), "--review": (), "--undo": (), "--commit": (),
+}
+# A start or a wake there may wait for claude's background service (60 s),
+# after asking the login shell for claude: longer than other actions
+HOST_START_TIMEOUT = 110
+MAY_HAVE_STARTED = "{where} didn't answer in time: the chat may have started there, so look for it in the list before you send it again"
+
+
+def forward(host, args, action=None):
+    """Run this file on an SSH host (or in a container) with args: its answer."""
     import remote
-    return remote.host_answer(host, args, name="pane.py",
-                              also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"))
+    also = ACTION_MODULES.get(action, ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"))
+    long = action in ("--start", "--send")
+    answer = remote.host_answer(host, args, name="pane.py", also=also,
+                                timeout=HOST_START_TIMEOUT if long else remote.RUN_TIMEOUT)
+    if long and answer.get("timedOut"):   # (it got there and took too long: sent again, it could start a second chat)
+        answer = dict(answer, maybe=True, message=MAY_HAVE_STARTED.format(where=remote.place(host).label))
+    return answer
 
 
 def main(argv=None):
@@ -2604,13 +2691,15 @@ def main(argv=None):
         if host and action == "--send" and after:  # (queued here: the widget here sends it then)
             ok, said = send_later(home, config_dirs, profile, target, text, session, how, host, name)
             return emit({"ok": ok, "message": said})
-        if host and action == "--start":  # (a host's prompts can't reach Talpy Chat yet)
-            return emit({"ok": False, "message": "Talpy Chat starts chats on this computer only, for now"})
         if host:
-            if action in ("--relay", "--live") and target == "on" and source is None:
-                path = Path(__file__).resolve().parent / HOOKS[action[2:]]["source"]
+            # (the hook's code goes along, on stdin: its copy there, for the chats Talpy Chat starts or
+            # wakes there, or for every chat; a copy there that's newer stays)
+            hook_kind = action[2:] if action in ("--relay", "--live") and target == "on" else \
+                "relay" if action in ("--start", "--send") else None
+            if hook_kind and source is None:
+                path = Path(__file__).resolve().parent / HOOKS[hook_kind]["source"]
                 rest += ["--hook-source", base64.b64encode(path.read_bytes()).decode()]
-            answer = forward(host, rest)
+            answer = forward(host, rest, action)
             if action == "--review" and answer.get("ok"):
                 answer["reviewedAt"] = cs.load_reviewed(cache_root).get(cs.review_key(target, host))
             if action == "--conversation" and answer.get("ok"):
@@ -2636,12 +2725,13 @@ def main(argv=None):
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)
                 result = {"ok": ok, "message": said}
             else:
-                result = send(home, config_dirs, profile, target, text, session, how, scoped=not remote, predict=suggest)
+                result = send(home, config_dirs, profile, target, text, session, how, scoped=not remote,
+                              hook_source=source, predict=suggest)
                 if how == "enter" and result.get("how") == "ask" and not remote:  # (on a host: copied here, above)
                     result = copy_answer((text or "").strip(), ENTER_COPIES)
         elif action == "--start":
             result = start_chat(home, config_dirs, target, cwd, text, model, effort, mode, plan, plan_profile,
-                                scoped=not remote, predict=suggest)
+                                scoped=not remote, hook_source=source, predict=suggest)
         elif action == "--interrupt":
             ok, said = interrupt(home, config_dirs, profile, target, session)
             result = {"ok": ok, "message": said}
@@ -2664,7 +2754,8 @@ def main(argv=None):
         elif action == "--answer":
             ok, said = answer_request(cache_root, target, decision, note, answers)
             # (changed: the request you answered is gone; the chat may ask something else now)
-            result = {"ok": ok, "message": said, **({"changed": True} if not ok and said in (NOT_ASKING, ASKS_ELSE) else {})}
+            result = {"ok": ok, "message": said,
+                      **({"changed": True} if not ok and said in (NOT_ASKING, ASKS_ELSE, ANSWERED_ELSEWHERE) else {})}
         elif action == "--complete":
             result = completions(home, config_dirs, target, profile, cwd)
         elif action == "--replies":

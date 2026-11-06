@@ -1084,6 +1084,123 @@ class KeepGoingThereTests(TwoAccountHost):
         self.assertEqual(cs.load_bookmarks(cache, new, "lab"), (marks, v))
 
 
+# The host's claude, for Talpy Chat there: claude --bg writes its job's record,
+# and its background worker asks for a permission through the hook --settings
+# names (as Claude runs a hook: sh -c, the request on its stdin), while its
+# session file says it waits; what the hook answers is kept in ~/hook-said
+HOST_CLAUDE = r'''#!{python}
+import json, os, subprocess, sys, time
+args = sys.argv[1:]
+home = os.environ["HOME"]
+with open(os.path.join(home, "claude-args"), "a") as f:
+    f.write(json.dumps(args) + "\n")
+if "--bg" not in args:
+    sys.exit(0)
+config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+job, chat = "1a2b3c4d", "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+os.makedirs(os.path.join(config, "jobs", job), exist_ok=True)
+with open(os.path.join(config, "jobs", job, "state.json"), "w") as f:
+    json.dump({{"sessionId": chat, "state": "working", "respawnFlags": args[1:-1]}}, f)
+settings = json.loads(args[args.index("--settings") + 1]) if "--settings" in args else None
+if settings and os.fork() == 0:
+    os.setsid()
+    null = os.open(os.devnull, os.O_RDWR)
+    for fd in (0, 1, 2):
+        os.dup2(null, fd)
+    command = settings["hooks"]["PermissionRequest"][0]["hooks"][0]["command"]
+    session = os.path.join(config, "sessions", "%d.json" % os.getpid())
+    os.makedirs(os.path.dirname(session), exist_ok=True)
+    with open(session, "w") as f:
+        json.dump({{"pid": os.getpid(), "sessionId": chat, "cwd": os.getcwd(), "kind": "bg", "jobId": job,
+                   "status": "waiting", "waitingFor": "permission prompt", "statusUpdatedAt": int(time.time() * 1000),
+                   "startedAt": int(time.time() * 1000)}}, f)
+    asked = json.dumps({{"session_id": chat, "tool_name": "Bash", "tool_input": {{"command": "make"}},
+                        "cwd": os.getcwd(), "permission_suggestions": []}})
+    r = subprocess.run(["sh", "-c", command], input=asked.encode(), stdout=subprocess.PIPE, timeout=60)
+    with open(os.path.join(home, "hook-said"), "wb") as f:
+        f.write(r.stdout)
+    os.unlink(session)
+    os._exit(0)
+print("backgrounded · " + job)
+'''
+
+
+class TalpyChatThereTests(TwoAccountHost):
+    """(2026-11-06) Talpy Chat on an SSH host, end to end through the stand-in
+    ssh: a new chat started there gets the permission hook (its copy from
+    the code sent on stdin), what it asks lands in the host's state folder,
+    its row there carries it, and the answer from here goes back to it."""
+
+    def setUp(self):
+        super().setUp()
+        self.folder = self.fake_home / "srv-app"
+        self.folder.mkdir()
+        (self.fake_home / ".claude/.claude.json").write_text(json.dumps({
+            "oauthAccount": {"accountUuid": "r", "organizationType": "claude_max", "displayName": "Remote Me"},
+            "projects": {str(self.folder): {"hasTrustDialogAccepted": True}}}))
+        self.claude.write_text(HOST_CLAUDE.format(python=sys.executable))
+        here = Path(self.tmp.name) / "local-home"
+        here.mkdir()
+        homed = mock.patch.object(cs.Path, "home", return_value=here)
+        homed.start()
+        self.addCleanup(homed.stop)
+        self.saved.setdefault("XDG_DATA_HOME", os.environ.get("XDG_DATA_HOME"))   # (tearDown puts it back)
+        os.environ["XDG_DATA_HOME"] = str(here / ".local/share")
+        import pane
+        self.pane = pane
+
+    def cli(self, *args):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.pane.main(list(args))
+        return json.loads(out.getvalue())
+
+    def test_a_chat_started_there_asks_here_and_takes_the_answer(self):
+        answer = self.cli("--start", ".claude", "--cwd", str(self.folder), "--text", "Build it", "--model", "haiku",
+                          "--host", "lab")
+        self.assertEqual((answer["ok"], answer["chat"], answer["hooked"]),
+                         (True, "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", True), answer)
+        # (your text and the hook's code on stdin, not on the command line there)
+        command = self.calls()[-1][1]
+        self.assertEqual(command, "python3 -I - --remote --start .claude --cwd " + str(self.folder) + " --model haiku")
+        copy = self.fake_home / ".local/share/talpy-den/permission-hook.py"
+        self.assertEqual(copy.read_bytes(), (CODE / "permission_hook.py").read_bytes())
+        self.assertEqual(oct(copy.stat().st_mode & 0o777), "0o600")
+        argv = json.loads((self.fake_home / "claude-args").read_text().splitlines()[-1])
+        self.assertEqual(argv[:2], ["--bg", "--settings"])
+        self.assertIn(str(copy), argv[2])
+        self.assertEqual(argv[-1], "Build it")
+        # what it asks: in the host's state folder, and on its row there
+        asks = self.fake_home / ".local/state/talpy-den/permissions"
+        deadline = time.time() + 10
+        while time.time() < deadline and not (asks.is_dir() and os.listdir(asks)):
+            time.sleep(0.05)
+        (name,) = os.listdir(asks)
+        rid = name[:-len(".json")]
+        rows = [s for g in remote.status("lab", tokens=False)["result"]["groups"] for s in g["sessions"]]
+        (row,) = [s for s in rows if s["sessionId"] == "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"]
+        self.assertEqual((row["permission"]["answer"], row["permission"]["request"]), ("hook", rid))
+        # answered from here: the hook there allows it
+        self.assertEqual(self.cli("--answer", rid, "--decision", "allow", "--host", "lab"),
+                         {"ok": True, "message": "Allowed"})
+        said = self.fake_home / "hook-said"
+        deadline = time.time() + 10
+        while time.time() < deadline and not said.exists():
+            time.sleep(0.05)
+        decision = json.loads(said.read_text())["hookSpecificOutput"]["decision"]
+        self.assertEqual(decision, {"behavior": "allow"})
+        # a second answer (another window's) finds it gone
+        again = self.cli("--answer", rid, "--decision", "deny", "--host", "lab")
+        self.assertEqual((again["ok"], again["changed"]), (False, True))
+
+    def test_a_folder_claude_doesnt_trust_there(self):
+        other = self.fake_home / "elsewhere"
+        other.mkdir()
+        answer = self.cli("--start", ".claude", "--cwd", str(other), "--text", "Build it", "--host", "lab")
+        self.assertEqual((answer["ok"], answer["untrusted"]), (False, True))
+        self.assertFalse((self.fake_home / "claude-args").exists())
+
+
 class UnreachedTests(TwoAccountHost):
     def test_an_answer_says_when_the_host_couldnt_be_reached(self):
         # (a queued go-on then starts once the host answers again: KeepGoingOnHostsTests)

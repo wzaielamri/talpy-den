@@ -2004,6 +2004,29 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('source: active ? "NewChatOptions.qml" : ""', pane)   # (its QML read only then too)
         self.assertNotIn("ComboBox", pane)
 
+    def test_talpy_chat_on_ssh_hosts_and_in_containers(self):
+        # (2026-11-06) a host or container whose last check answered: its new chats start there (pane.py
+        # --start --host, never this computer's extra Claude folders), their windows keyed by host, only its
+        # own folders; its background chats no terminal shows open there; Answer it in a terminal attaches
+        # over ssh (its row's openCommand); a container sharing this computer's home isn't offered yet
+        main = (ROOT / "ui/main.qml").read_text()
+        off = main[main.index("function talpyChatOff(host, resuming) {"):]
+        off = off[:off.index("\n    }\n")]
+        self.assertIn("if (!r || !r.ok || !r.result || r.cached)", off)
+        self.assertIn('f.homeId === facts[""].homeId', off)
+        self.assertIn('return "home"', off)
+        self.assertIn("host ? !!folder.path && folder.trusted !== false", main)
+        self.assertIn("openNewChat(group, folder, text, plan, host)", main)
+        self.assertIn('const win = paneWindowFor(chat, (host || "") + "|" + id)', main)
+        self.assertEqual(main.count("if (host && !direct && windowIsTalpyChat("), 2)
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn('(host ? " --host " + root.shellQuote(host) : root.configDirArgs)   // (started there', pane)
+        self.assertIn('+ (host ? " --host " + root.shellQuote(host) : root.configDirArgs)\n', pane)   # (paneArgs)
+        self.assertIn('attachable: !!pane.row && pane.row.kind === "bg" && !!pane.row.pid && (!pane.host || !!pane.row.openCommand)', pane)
+        self.assertIn("result.hooked === false", pane)
+        switch = (ROOT / "ui/OpenInSwitch.qml").read_text()
+        self.assertIn("tipTitle: root.talpyChatTitle(openIn.remoteHost, openIn.resuming)", switch)
+
     def test_stop_is_made_only_for_a_chat_it_can_stop_and_keeps_the_line_still(self):
         # Talpy Chat's Stop (A1): its button's QML is read and made only while a chat it can stop
         # works; the working line is as tall without it (nothing moves when it comes or goes), as

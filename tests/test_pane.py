@@ -407,7 +407,8 @@ class ConversationTests(PaneFixture):
         self.assertEqual(answer, {"ok": True, "items": []})
         # (with its word tables for Claude's questions: --suggest reads them there)
         asked.assert_called_once_with("gpu", ["--conversation", SID, "--profile", ".claude-work", "--limit", "40"],
-                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"))
+                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"),
+                                      timeout=60)
 
 
 # Claude Code's own fixed sentences around a No (always in English; the note after them is yours)
@@ -905,7 +906,8 @@ class ToolUseTests(PaneFixture):
             answer = self.cli("--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1", "--host", "gpu")
         self.assertTrue(answer["changed"])
         self.assertEqual(asked.call_args[0][1], ["--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1"])
-        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py")})
+        # (none of the modules: --keys needs none of them, and each is more to send and compile there)
+        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": (), "timeout": 60})
 
 
 class HookTests(unittest.TestCase):
@@ -1339,7 +1341,7 @@ class SendTests(SendFixture):
         with mock.patch("remote.host_answer", return_value=asked) as host, \
                 mock.patch.object(pane, "copy_to_clipboard", return_value=True) as copy:
             answer = self.cli("--send", SID, "--host", "lab", "--text", "and the docs", "--how", "enter")
-        self.assertEqual(host.call_args[0][1], ["--send", SID, "--text", "and the docs", "--how", "enter"])
+        self.assertEqual(host.call_args[0][1][:6], ["--send", SID, "--text", "and the docs", "--how", "enter"])
         self.assertEqual(answer["how"], "copy")
         copy.assert_called_once_with("and the docs")  # (this computer's clipboard)
         with mock.patch("remote.host_answer", return_value={"ok": True, "how": "typed", "message": "Sent"}), \
@@ -1381,7 +1383,7 @@ class SendTests(SendFixture):
         f.write_text("and the docs", encoding="utf-8")
         with mock.patch("remote.host_answer", return_value={"ok": True, "how": "typed", "message": "Sent"}) as host:
             self.cli("--send", SID, "--host", "lab", "--text-file", str(f), "--how", "auto")
-        self.assertEqual(host.call_args[0][1], ["--send", SID, "--text", "and the docs", "--how", "auto"])
+        self.assertEqual(host.call_args[0][1][:6], ["--send", SID, "--text", "and the docs", "--how", "auto"])
         # only a text file of the cache's
         other = self.home / "notes.txt"
         other.write_text("secret", encoding="utf-8")
@@ -1460,7 +1462,8 @@ class TalpyChatHookTests(SendFixture):
     def test_a_new_chat_starts_in_the_background_with_its_own_hook(self):
         answer = self.start(model="haiku", effort="low", mode="default")
         self.assertEqual(answer, {"ok": True, "how": "background", "id": self.JOB, "chat": self.NEW,
-                                  "profileDir": ".claude-work", "message": "Started in the background on work"})
+                                  "profileDir": ".claude-work", "message": "Started in the background on work",
+                                  "hooked": True})
         self.assertEqual(self.calls(), [["--bg", "--settings", self.hook(), "--model", "haiku", "--effort", "low",
                                          "--permission-mode", "default", "Fix the tests"]])
         self.assertEqual(self.scopes, ["claude"])   # (in a systemd scope of its own)
@@ -1646,11 +1649,20 @@ class TalpyChatHookTests(SendFixture):
         self.assertEqual((answer["ok"], answer["chat"]), (True, self.NEW))
         self.assertEqual(self.calls()[-1], ["--bg", "--settings", self.hook(), "--model", "sonnet",
                                             "--permission-mode", "acceptEdits", "Fix the tests"])
-        # not on an SSH host yet: its prompts can't reach Talpy Chat
-        with mock.patch("remote.host_answer") as host:
+        # on an SSH host (or in a container): started there, with the hook's code for its copy there
+        with mock.patch("remote.host_answer", return_value={"ok": True, "chat": self.NEW, "hooked": True}) as host:
             answer = self.cli("--start", ".claude-work", "--cwd", "~", "--text", "x", "--host", "lab")
-        self.assertEqual(answer, {"ok": False, "message": "Talpy Chat starts chats on this computer only, for now"})
-        host.assert_not_called()
+        self.assertEqual(answer, {"ok": True, "chat": self.NEW, "hooked": True})
+        args = host.call_args[0][1]
+        self.assertEqual(args[:6], ["--start", ".claude-work", "--cwd", "~", "--text", "x"])
+        self.assertEqual(base64.b64decode(args[args.index("--hook-source") + 1]), (CODE / "permission_hook.py").read_bytes())
+        # (a start waits for claude's background service there: longer than other actions; none of the modules)
+        self.assertEqual(host.call_args[1], {"name": "pane.py", "also": (), "timeout": pane.HOST_START_TIMEOUT})
+        # it got there and took too long: it may have started, so it isn't sent again
+        with mock.patch("remote.host_answer", return_value={"ok": False, "timedOut": True, "message": "lab didn't answer"}):
+            answer = self.cli("--start", ".claude-work", "--cwd", "~", "--text", "x", "--host", "lab")
+        self.assertEqual((answer["ok"], answer["maybe"]), (False, True))
+        self.assertIn("the chat may have started there", answer["message"])
 
     def test_a_job_record_that_never_names_its_chat(self):
         with mock.patch.object(pane, "JOB_RECORD_WAIT_S", 0.2):
@@ -1658,6 +1670,140 @@ class TalpyChatHookTests(SendFixture):
             answer = pane.start_chat(self.home, [], ".claude-work", str(self.folder), "x", claude=str(self.bin / "claude"))
         self.assertFalse(answer["ok"])
         self.assertIn("It started (1a2b3c4d)", answer["message"])
+
+
+class HostHookTests(SendFixture):
+    """Talpy Chat on an SSH host or in a container (pane.py there, its code
+    on stdin with no file of its own): the hook's copy there comes from the
+    code the computer that asks sends (--hook-source), only ever newer; the
+    chats it starts or wakes there get it as here, with no systemd scope."""
+
+    JOB, NEW, start = TalpyChatHookTests.JOB, TalpyChatHookTests.NEW, TalpyChatHookTests.start
+
+    def source(self, revision):
+        return (CODE / "permission_hook.py").read_text().replace("HOOK_REVISION = 3", f"HOOK_REVISION = {revision}")
+
+    def copy(self):
+        return self.home / ".local/share/talpy-den/permission-hook.py"
+
+    def test_its_copy_comes_from_the_code_sent_and_only_ever_newer(self):
+        with mock.patch.object(pane, "__file__", "-"):   # (on a host: no file next to it to copy)
+            self.assertEqual(pane.place_hook(self.home), (None, "its code isn't here to copy"))
+            path, why = pane.place_hook(self.home, source=self.source(3))
+        self.assertEqual((path, why), (self.copy(), ""))
+        self.assertEqual(self.copy().read_text(), self.source(3))
+        self.assertEqual(oct(self.copy().stat().st_mode & 0o777), "0o600")
+        self.assertEqual(oct(self.copy().parent.stat().st_mode & 0o777), "0o700")
+        # a newer one replaces it; an older one (a front end of an older version) doesn't
+        pane.place_hook(self.home, source=self.source(5))
+        pane.place_hook(self.home, source=self.source(4))
+        self.assertIn("HOOK_REVISION = 5", self.copy().read_text())
+        # nor does turning the hook on for every chat from it
+        pane.relay(self.home, [], True, source=self.source(4))
+        self.assertIn("HOOK_REVISION = 5", self.copy().read_text())
+        self.assertEqual(list(self.copy().parent.glob("*.tmp")) + list(self.copy().parent.glob(".*.tmp")), [])
+
+    def test_not_in_a_folder_others_may_write_in(self):
+        # (an XDG_DATA_HOME on shared space: whoever may write there could swap in a hook that allows anything)
+        self.copy().parent.mkdir(parents=True)
+        os.chmod(self.copy().parent, 0o777)
+        path, why = pane.place_hook(self.home, source=self.source(3))
+        self.assertIsNone(path)
+        self.assertIn("others may write in", why)
+        self.assertFalse(self.copy().exists())
+        answer = self.start()
+        self.assertEqual((answer["ok"], answer["hooked"]), (True, False))
+        self.assertIn("Talpy Den couldn't put its permission hook in place: others may write in", answer["hookWhy"])
+        self.assertEqual(self.calls()[-1], ["--bg", "Fix the tests"])   # (it starts all the same, unhooked)
+        with self.assertRaises(ValueError):
+            pane.install_hook(self.home, [], True, "relay")
+        os.chmod(self.copy().parent, 0o700)
+
+    def test_hooked_says_whether_talpy_chat_answers_what_it_asks(self):
+        profile = next(p for p in cs.discover_profiles(self.home) if p.key == ".claude-work")
+        self.assertEqual(pane.chat_hook_of(self.home, profile)["hooked"], True)
+        # the hook for every chat in its settings: none of its own, and hooked all the same
+        pane.relay(self.home, [], True)
+        self.assertEqual(pane.chat_hook_of(self.home, profile), {"settings": None, "hooked": True, "why": ""})
+        self.assertEqual(self.start()["hooked"], True)
+        with mock.patch.object(cs, "managed_hooks_only", return_value=True):
+            self.assertEqual(pane.chat_hook_of(self.home, profile),
+                             {"settings": None, "hooked": False, "why": "managed settings let only their own hooks run"})
+
+    def test_started_there_with_no_scope(self):
+        self.scopes.clear()
+        answer = self.start(scoped=False, hook_source=self.source(3))
+        self.assertEqual((answer["ok"], answer["hooked"], answer["chat"]), (True, True, self.NEW))
+        self.assertEqual(self.calls()[-1][:3], ["--bg", "--settings", self.hook()])
+        self.assertEqual(self.scopes, [])   # (no systemd scope there: jump.py and plasmashell aren't)
+        self.assertEqual(self.copy().read_text(), self.source(3))
+
+    def test_a_folder_claude_doesnt_trust_there(self):
+        other = self.home / "elsewhere"
+        other.mkdir()
+        answer = self.start(other, scoped=False)
+        self.assertEqual((answer["ok"], answer["untrusted"]), (False, True))
+        self.assertNotIn("untrusted", pane.start_chat(self.home, [], ".claude-work", str(self.home / "gone"), "x",
+                                                      claude=str(self.bin / "claude")))
+
+    def test_a_stopped_job_there_wakes_with_it(self):
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "respawnFlags": ["--model", "opus"]})
+        self.scopes.clear()
+        answer = pane.send(self.home, [], ".claude-work", SID, "and the docs", None, "auto", str(self.bin / "claude"),
+                           scoped=False, hook_source=self.source(3))
+        self.assertEqual((answer["how"], answer["hooked"]), ("background", True))
+        # (the full id, no flags: what it saved, with the hook, wakes it; no copy)
+        self.assertEqual(self.calls(), [["--bg", "--resume", SID, "and the docs"]])
+        self.assertEqual(json.loads(state.read_text())["respawnFlags"], ["--model", "opus", "--settings", self.hook()])
+        self.assertEqual(self.scopes, [])
+
+    def test_its_row_says_whether_its_prompts_are_answered_here(self):
+        # (a background chat's prompts reach Talpy Chat through the hook: Talpy Chat's for it, in what
+        # Claude wakes it with, or the one for every chat in its account's settings)
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "state": "working", "respawnFlags": ["--model", "opus"]})
+        self.live(kind="bg", status="busy", jobId=SID[:8])
+        self.assertFalse(self.rows()[SID]["hooked"])
+        write(state, {"sessionId": SID, "state": "working", "respawnFlags": ["--settings", self.hook()]})
+        self.assertTrue(self.rows()[SID]["hooked"])
+        write(state, {"sessionId": SID, "state": "working", "respawnFlags": []})
+        pane.relay(self.home, [], True)
+        self.assertTrue(self.rows()[SID]["hooked"])
+        # (one in a terminal asks in its own dialog there)
+        self.live(kind="interactive", status="busy")
+        self.assertFalse(self.rows()[SID]["hooked"])
+
+    def test_which_home_it_is(self):
+        # (a container that shares your home answers the same: its chats, hook and requests are this computer's)
+        here = cs.home_id(self.home)
+        self.assertRegex(here, "^[0-9a-f]{12}$")
+        self.assertEqual(cs.home_id(self.home), here)
+        self.assertNotEqual(cs.home_id(self.folder), here)
+        self.assertEqual(cs.home_id(self.home / "gone"), "")
+
+    def test_two_windows_answering_one_prompt(self):
+        # (Plasma's window and VS Code's tab a moment apart: only the first answer counts)
+        cache = self.cache
+        folder = cs.requests_dir(cache)
+        folder.mkdir(parents=True)
+        rid = "1700000000000-0a1b2c3d"
+        write(folder / f"{rid}.json", {"id": rid, "at": int(time.time() * 1000), "hookPid": os.getpid(),
+                                       "sessionId": SID, "tool": "Bash", "input": {"command": "make"}})
+        write(folder / f"{rid}.answer.json", {"behavior": "allow"})   # (the other window's)
+        self.assertEqual(pane.answer_request(cache, rid, "deny"), (False, pane.ANSWERED_ELSEWHERE))
+        self.assertEqual(json.loads((folder / f"{rid}.answer.json").read_text()), {"behavior": "allow"})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            pane.main(["--answer", rid, "--decision", "deny"])
+        self.assertEqual(json.loads(out.getvalue()), {"ok": False, "message": pane.ANSWERED_ELSEWHERE, "changed": True})
+        # where the folder takes no hard links: written as before
+        (folder / f"{rid}.answer.json").unlink()
+        import errno
+        with mock.patch.object(os, "link", side_effect=OSError(errno.EPERM, "no links")), \
+                mock.patch.object(time, "sleep", side_effect=lambda s: (folder / f"{rid}.json").unlink()):
+            self.assertEqual(pane.answer_request(cache, rid, "deny"), (True, "Denied"))
+        self.assertEqual(json.loads((folder / f"{rid}.answer.json").read_text())["behavior"], "deny")
 
 
 class ChatPickTests(SendFixture):

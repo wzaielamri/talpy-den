@@ -994,7 +994,7 @@ def host_answer(host, args, name="talpy_den.py", also=(), timeout=RUN_TIMEOUT):
     try:
         r = ssh(host, command, script, timeout)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "message": f"{p.label} didn't answer within {timeout} s"}
+        return {"ok": False, "timedOut": True, "message": f"{p.label} didn't answer within {timeout} s"}
     except OSError as exc:
         return {"ok": False, "reached": False, "message": cant_run(p, exc)}
     answer = answer_after_mark(r.stdout)
@@ -1012,8 +1012,9 @@ def host_answer(host, args, name="talpy_den.py", also=(), timeout=RUN_TIMEOUT):
 # answers: a command is seen in the process list by every user of the host
 # (sh -c there) and of this computer (ssh's), the stdin isn't; it holds any
 # length too (one argument of a command holds 128 KiB at most), and a login
-# shell there never reads it.
-TEXT_ARGS = ("--text", "--prompt", "--note", "--answers", "--message")
+# shell there never reads it. The permission hook's code (pane.py
+# --hook-source) goes the same way: long, and no business of the process list.
+TEXT_ARGS = ("--text", "--prompt", "--note", "--answers", "--message", "--hook-source")
 
 
 def with_texts(script, args):

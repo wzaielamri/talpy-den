@@ -23,7 +23,6 @@
   `~/.cache/talpy-den/bookmarks` (an SSH host's chat's on this computer too),
   follow a chat Claude moves to the background, go with a deleted chat and keep
   a chat from Talpy Den's cleanup of old chats, as a star does.
-
 - **What Claude made, in Talpy Chat:** a picture, a plan or a page Claude
   wrote, edited or looked at shows under the step that made it (or the reply
   that names it), on both tabs, folded: *icon.svg · 2 KB*, *Plan: …*. A click
@@ -33,6 +32,15 @@
   read only then, capped, only a file the chat's transcript names, a picture
   as a `data:` URL the tab's content policy already allows (an SVG as a
   picture: no script runs); an SSH host's file is fetched then too.
+- **Talpy Chat on SSH hosts and containers:** New Chat… on a host or a
+  container whose last check answered has *In a Talpy Chat tab* with its own
+  folders: the chat starts in the background there and its tab goes on with
+  it; recent chats there reopen in Talpy Chat; a background chat there no
+  terminal shows opens in its tab. What it asks is answered there: Talpy Den
+  puts its permission hook in your home there (one file, only ever a newer
+  copy), named only by those chats. **Answer it in a terminal** attaches over
+  ssh. Two windows answering one prompt: the first answer counts. Not yet in a
+  container that shares this computer's home.
 - **Model and effort for one chat:** in a background chat or one that isn't
   open, `/model` and `/effort` list the models and effort levels as you type,
   and the one you pick (or `/model sonnet` typed) is for that chat alone:

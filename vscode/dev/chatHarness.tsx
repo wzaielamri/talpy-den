@@ -3,6 +3,7 @@
 
 import "../webview/chat";
 import type { Asks, Conversation, PaneChat, PaneHostMessage, PaneItem, ReviewAnswer, UsualReplies } from "../src/shared/pane";
+import { unhookedText } from "../src/shared/pane";
 
 const params = new URLSearchParams(location.search);
 const now = Date.now();
@@ -345,6 +346,11 @@ window.addEventListener("harness-post", (e: Event) => {
                c.text.endsWith("\n…") ? 300 : 0);
   } else if (m.type === "typeIn") {
     setTimeout(() => send({ type: "result", kind: "typein", ok: true, message: "It's in the clipboard. Paste it into its terminal" }), 300);
+  } else if (m.type === "send" && params.get("unhooked") === "1") {
+    // (?new=task&unhooked=1: a new chat on an SSH host that started without Talpy Den's permission hook there)
+    const s = m as unknown as { id?: number };
+    setTimeout(() => send({ type: "result", kind: "send", ok: true, went: true, warn: true, id: s.id,
+                            message: unhookedText("Talpy Den couldn't put its permission hook in place: others may write in /shared/data/talpy-den") }), 600);
   } else if (m.type === "setOptions") {   // (pane.py --set-options: an idle background chat woken again with them)
     const o = m as unknown as { model?: string; effort?: string };
     setTimeout(() => send({ type: "result", kind: "options", ok: true,

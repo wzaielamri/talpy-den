@@ -743,14 +743,16 @@ def compact_tokens(value):
     return int(round(min(COMPACT_WINDOW_MAX, max(COMPACT_WINDOW_MIN, tokens))))
 
 
-_COMPACT_SETTINGS = {}  # settings.json path -> ((mtime_ns, size), its env value, its setting, its modelSettings)
+# settings.json path -> ((mtime_ns, size), its env value, its setting, its modelSettings, whether it names the
+# permission hook)
+_COMPACT_SETTINGS = {}
 
 
-def compact_window(profile_path, model):
-    """The auto-compact window you set for a chat on this model in the
-    account's settings (its env's CLAUDE_CODE_AUTO_COMPACT_WINDOW, else
-    autoCompactWindow: the model's in modelSettings first), or None (Claude's
-    own: the model's window). Read once a run per file and change."""
+def profile_settings(profile_path):
+    """What the status reads of an account's settings.json, once a run per
+    file and change: (CLAUDE_CODE_AUTO_COMPACT_WINDOW in its env,
+    autoCompactWindow, modelSettings, whether its PermissionRequest hooks
+    name Talpy Den's permission hook), or None (no settings)."""
     path = os.path.join(str(profile_path), "settings.json")
     try:
         st = os.stat(path)
@@ -763,8 +765,28 @@ def compact_window(profile_path, model):
         data = data if isinstance(data, dict) else {}
         env = data.get("env") if isinstance(data.get("env"), dict) else {}
         models = data.get("modelSettings") if isinstance(data.get("modelSettings"), dict) else {}
-        kept = _COMPACT_SETTINGS[path] = (stamp, env.get(COMPACT_WINDOW_ENV), data.get("autoCompactWindow"), models)
-    _, env_value, setting, models = kept
+        hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+        relay = PERMISSION_HOOK_FILE in json.dumps(hooks.get("PermissionRequest") or [])
+        kept = _COMPACT_SETTINGS[path] = (stamp, env.get(COMPACT_WINDOW_ENV), data.get("autoCompactWindow"), models, relay)
+    return kept[1:]
+
+
+def relay_in_settings(profile_path):
+    """Whether the account's settings have Talpy Den's permission hook (on
+    for every chat: "Answer permission prompts from Talpy Den")."""
+    kept = profile_settings(profile_path)
+    return bool(kept and kept[3])
+
+
+def compact_window(profile_path, model):
+    """The auto-compact window you set for a chat on this model in the
+    account's settings (its env's CLAUDE_CODE_AUTO_COMPACT_WINDOW, else
+    autoCompactWindow: the model's in modelSettings first), or None (Claude's
+    own: the model's window). Read once a run per file and change."""
+    kept = profile_settings(profile_path)
+    if kept is None:
+        return None
+    env_value, setting, models, _relay = kept
     tokens = compact_tokens(env_value)
     if tokens is not None:
         return tokens
@@ -836,6 +858,7 @@ def make_session(profile, home, *, sid, pid, name, cwd, kind, entrypoint, state,
         "shared": None,
         "tmux": False,  # runs in a tmux pane: it can be interrupted (Esc)
         "bgStop": False,  # a live background session Talpy Chat's Stop can interrupt (interrupt_background)
+        "hooked": False,  # a background chat whose prompts Talpy Den's permission hook answers (finish_row)
         "terminalApp": None,  # the terminal it runs in otherwise, by name (Konsole, kitty…): terminal_name
         "attached": None,  # a background session shown in a terminal (claude attach): {"in", "app"} (attached_in)
         "peek": None,  # what it's doing, your last prompt, Claude's last reply (chat_peek)
@@ -1044,6 +1067,10 @@ def finish_row(row, job, job_id, profile, ctx, alive):
     row["jobId"] = job_id
     row["reply"] = reply_route(row)
     row["jobSessionId"] = job["sessionId"] if isinstance(job, dict) and valid_id(job.get("sessionId")) else None
+    # (a background chat whose prompts Talpy Den answers: the hook Talpy Chat gave it, in what Claude wakes it
+    # with, or the one for every chat in its account's settings; it has no terminal of its own to ask in)
+    row["hooked"] = row["kind"] == "bg" and (
+        bool(isinstance(job, dict) and hook_settings(job.get("respawnFlags"))) or relay_in_settings(profile.path))
     row["chatId"], row["shared"] = chat_link(row, job, profile, ctx)
     # (only the run that's going on now: a chat resumed or gone on keeps its id)
     attach_snapshot(row, ctx.snapshot_root, profile, [row["sessionId"], row["chatId"], row["jobSessionId"]],
@@ -3033,6 +3060,40 @@ def managed_hooks_only(dirs=None):
 def hooks_dir(home):
     """Where pane.py --relay/--live on keeps the hooks' copies that Claude's settings name."""
     return Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share") / "talpy-den"
+
+
+def safe_folder(folder):
+    """Make folder (0700, with its parents) for a file Claude runs as you (a
+    hook's copy) or one that answers for you (a request's answer), and say
+    whether it's safe there: a folder of yours, not a link, that nobody else
+    may write in (an XDG_DATA_HOME or XDG_STATE_HOME on shared space, as
+    some sites set them: anyone's file there would run, or answer, as you).
+    None when it is, else why not."""
+    import stat
+    try:
+        Path(folder).mkdir(mode=0o700, parents=True, exist_ok=True)
+        st = os.lstat(str(folder))
+    except OSError as exc:
+        return f"couldn't make {folder}: {exc.strerror or exc}"
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
+        return f"{folder} isn't a folder of yours"
+    if st.st_mode & 0o022:
+        return f"others may write in {folder}"
+    return None
+
+
+def home_id(home):
+    """Which home folder this is, on which running system, in 12 characters
+    (no path in it): the same in a container that shares your home (a
+    Toolbox, a Distrobox, a folder bind-mounted) as here, whose ~/.claude*,
+    hook copies and requests are this computer's. "" when unknown."""
+    try:
+        with open("/proc/sys/kernel/random/boot_id", encoding="ascii") as f:
+            boot = f.read().strip()
+        st = os.stat(str(home))
+    except (OSError, ValueError):
+        return ""
+    return hashlib.sha1(f"{boot}:{st.st_dev}:{st.st_ino}".encode()).hexdigest()[:12]
 
 
 def live_hook_on(home):
@@ -7188,6 +7249,9 @@ def task_command(profile, prompt, home=None, claude="claude", options=()):
     return f"{new_chat_command(profile, home, claude, options)} {prompt_word(prompt)}"
 
 
+UNTRUSTED = "Claude doesn't trust "   # (how start_background says it: a folder Claude hasn't been told it may trust)
+
+
 def start_background(profile, folder, prompt, home=None, claude="claude", wait=BACKGROUND_WAIT, prefix=(),
                      resume=None, options=(), notes=None):
     """Start a background session on this profile in folder, with prompt:
@@ -7209,7 +7273,7 @@ def start_background(profile, folder, prompt, home=None, claude="claude", wait=B
         return False, f"The folder {short_folder(folder, home)} isn't there", None
     if not folder_trusted(profile, folder, home):
         where = "your home folder" if Path(folder) == home else short_folder(folder, home)
-        return False, (f"Claude doesn't trust {where} yet, and a background chat can't ask: start a chat there "
+        return False, (f"{UNTRUSTED}{where} yet, and a background chat can't ask: start a chat there "
                        "in a terminal once (Claude asks whether you trust it), or pick a project folder"), None
     env = {k: v for k, v in os.environ.items() if k not in SESSION_ENV and k != NO_AGENT_VIEW}
     value = config_dir_value(profile, home, for_job=True)  # through the service's own name
@@ -11941,6 +12005,7 @@ def main(argv=None):
                 result["cli"] = {"installed": claude is not None, "hooks": not managed_hooks_only()}
             except Exception as exc:
                 result["errors"].append(f"claude command: {exc}")
+            result["homeId"] = home_id(home)
             if instance is not None:
                 try:
                     result["notifier"] = elect_notifier(cache_root, instance, interval_ms, int(time.time() * 1000))

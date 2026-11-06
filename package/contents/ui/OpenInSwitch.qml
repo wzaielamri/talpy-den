@@ -8,8 +8,8 @@ import "icons.mjs" as Icons
 // Where chats open: Talpy Chat | Terminal | Claude Code panel, at the top of
 // an account's new-chat folders and of its recent chats (GroupSection.qml).
 // One choice for both (openChatsIn), kept for next time. A half is greyed
-// out where it can't work: Talpy Chat on an SSH host or in a container (it
-// can't answer a background chat's prompts there yet), or where managed
+// out where it can't work: Talpy Chat on an SSH host or in a container that
+// isn't connected, or one that shares this computer's home, or where managed
 // settings let no hook of Talpy Den's run; no claude command (on that SSH
 // host), no VS Code, or VS Code's Claude on another account (root.openIn
 // picks another one then; a new chat on an SSH host's other account switches
@@ -44,10 +44,7 @@ ColumnLayout {
             checked: openIn.where === "talpyChat"
             iconName: root.iconDir + Icons.plasma.talpyChatLogo   // (Talpa with a speech bubble, in colour)
             text: i18n("Talpy Chat")
-            tipTitle: openIn.remoteHost ? i18n("This computer's chats for now")
-                      : !openIn.terminalHere ? i18n("No claude command")
-                      : !openIn.talpyHere ? i18n("Hooks are off here")
-                      : openIn.resuming ? i18n("Reopen chats in Talpy Chat") : i18n("New chats in Talpy Chat")
+            tipTitle: root.talpyChatTitle(openIn.remoteHost, openIn.resuming)
             tip: root.talpyChatHint(openIn.remoteHost, openIn.resuming)
             onClicked: Plasmoid.configuration.openChatsIn = "talpyChat"
         }

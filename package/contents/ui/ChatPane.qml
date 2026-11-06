@@ -780,9 +780,10 @@ Window {
         }
     }
 
+    // (this computer's extra Claude folders are this computer's: not sent to an SSH host or a container)
     function paneArgs() {
         return (profileDir ? " --profile " + root.shellQuote(profileDir) : "")
-               + (host ? " --host " + root.shellQuote(host) : "") + root.configDirArgs
+               + (host ? " --host " + root.shellQuote(host) : root.configDirArgs)
     }
 
     // (the time makes a click run its command again; the conversation, read
@@ -1720,6 +1721,13 @@ Window {
         info = result.message || (result.ok ? "" : i18n("That didn't work"))
         infoBad = !result.ok
         infoTimer.restart()
+        if (kind === "send" && result.ok && result.hooked === false) {
+            // (started or woken in the background without Talpy Den's permission hook: what it asks waits in
+            // its own prompt, Answer it in a terminal)
+            info = i18n("It went, but Talpy Chat can't answer what it asks (%1): answer its prompts in a terminal.",
+                        result.hookWhy || i18n("no permission hook"))
+            infoBad = true
+        }
         if (kind === "send" && result.ok) {
             if (result.how === "ask") {
                 askHow = true
@@ -2163,7 +2171,8 @@ Window {
         if (f)
             return "--start " + root.shellQuote(f.profile) + " --cwd " + root.shellQuote(f.cwd) + " --text " + root.shellQuote(asked.text)
                    + root.chatOptions + (f.plan ? " --plan " + root.shellQuote(f.plan.slug) + " --plan-profile " + root.shellQuote(f.plan.profileDir) : "")
-                   + (suggestOn ? " --suggest" : "") + root.configDirArgs
+                   + (suggestOn ? " --suggest" : "")
+                   + (host ? " --host " + root.shellQuote(host) : root.configDirArgs)   // (started there: an SSH host's, a container's)
         return "--send " + root.shellQuote(asked.chat) + " --text " + root.shellQuote(asked.text)
                + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + " --how " + asked.how
                + (asked.kind === "later" ? " --after-turn --name " + root.shellQuote(chatName) : "") + (suggestOn ? " --suggest" : "") + paneArgs()
@@ -3844,8 +3853,9 @@ Window {
                         planHeight: Kirigami.Units.gridUnit * 1000   // (the box scrolls)
                         keyed: true   // (Alt+Y / Alt+A / Alt+N: pressKey, from the keys)
                         onAnswered: (decision, note, answers) => pane.answer(decision, note, answers)
-                        // (a background chat started without Talpy Den's hook: claude attach on it)
-                        attachable: !pane.host && !!pane.row && pane.row.kind === "bg" && !!pane.row.pid
+                        // (a background chat started without Talpy Den's hook: claude attach on it; an SSH
+                        // host's over ssh, a container's in it: its row's openCommand)
+                        attachable: !!pane.row && pane.row.kind === "bg" && !!pane.row.pid && (!pane.host || !!pane.row.openCommand)
                         onInTerminal: root.openRow(pane.row, pane.host, true)
                         // (a plan too long to show whole: its file, by its name)
                         onWholePlan: root.openPlan(permission.plan.file.split("/").pop().replace(/\.md$/, ""), pane.profileDir, pane.host)

@@ -48,6 +48,7 @@ import {
   shellQuote,
   talpyChatHere,
   talpyChatOff,
+  talpyPlace,
 } from "./shared/model";
 import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "./shared/types";
 import { asPaste, attachClients, localAncestors, type Place, type Terminals } from "./terminals";
@@ -1047,19 +1048,22 @@ export class Actions {
         description: "the model, effort and permissions it starts with (not in a Claude Code panel): change…",
         start: "options",
       });
-    // In a Talpy Chat tab, first: this computer's chats, where a hook given to one chat runs (a folder
-    // Claude doesn't trust yet opens in a terminal: a background chat can't ask)
-    if (talpyChatHere(machineStatus(state, host), host, false)) {
+    // In a Talpy Chat tab, first: where a hook given to one chat runs, here, on an SSH host or in a
+    // container (a folder Claude doesn't trust yet opens in a terminal: a background chat can't ask;
+    // a host's or a container's own folders only)
+    if (talpyChatHere(talpyPlace(state, host), host, false)) {
       items.push({ label: "In a Talpy Chat tab", kind: vscode.QuickPickItemKind.Separator });
       for (const f of folders.filter((f) => f.path))
         items.push(f.trusted === false
           ? { label: label(f), description: "in a terminal: Claude doesn't trust it yet", start: "terminal", folder: f }
           : { label: label(f), description: hasTask ? "in the background, its tab open on it" : "your first message there starts it, in the background",
               start: "talpy", folder: f });
-      items.push({ label: "$(folder-opened) Choose folder…", start: "talpy", choose: "dialog" });
+      if (!host) items.push({ label: "$(folder-opened) Choose folder…", start: "talpy", choose: "dialog" });
+      else if (!folders.some((f) => f.path))
+        items.push({ label: "$(info) No project folder there yet", description: "start a chat in one in a terminal once" });
     } else {
-      // Not offered here (an SSH host, a container, hooks off): a line in its place says so and why
-      const off = talpyChatOff(machineStatus(state, host), host);
+      // Not offered here (not connected, hooks off…): a line in its place says so and why
+      const off = talpyChatOff(talpyPlace(state, host), host);
       if (off)
         items.push({ label: "In a Talpy Chat tab", kind: vscode.QuickPickItemKind.Separator },
                    { label: `$(info) Talpy Chat: ${off.title[0].toLowerCase()}${off.title.slice(1)}`, description: off.why });
@@ -1345,8 +1349,8 @@ export class Actions {
     const state = this.dash.state();
     const status = machineStatus(state, chat.host);
     const session = (status?.groups ?? []).flatMap((g) => g.sessions ?? []).find((s) => s.sessionId === chat.sessionId);
-    return opensInTalpyChat({ kind: chat.kind, pid: chat.pid, attached: session?.attached ?? null }, settings.reopenIn(), status, chat.host,
-                            this.claudeCodeFor(chat));
+    return opensInTalpyChat({ kind: chat.kind, pid: chat.pid, attached: session?.attached ?? null }, settings.reopenIn(),
+                            talpyPlace(state, chat.host), chat.host, this.claudeCodeFor(chat));
   }
 
   // There's a claude command on the machine (here, or that host) for chats in a terminal

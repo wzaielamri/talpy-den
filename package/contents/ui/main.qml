@@ -1593,14 +1593,15 @@ PlasmoidItem {
     // (an account to share with: what handoverTarget reads of it, its usage but the forecasts)
     function noteFacts(host, result, clockOffset) {
         const share = result && result.canShare === true ? result.groups.filter(g => !!g.shareProfile) : []
-        const seen = JSON.stringify([result ? result.cli || null : null, clockOffset || 0,
+        const seen = JSON.stringify([result ? result.cli || null : null, clockOffset || 0, result ? result.homeId || "" : "",
                                      share.map(g => [g.title, g.shareProfile, g.profileKeys,
                                                      g.limits ? g.limits.windows.map(w => [w.key, w.label, w.pct]) : null])])
         if (factsSeen[host] === seen)
             return
         factsSeen[host] = seen
+        // (homeId: which home folder it is; a container that shares yours answers this computer's)
         facts = Object.assign({}, facts, { [host]: { cli: result ? result.cli || null : null, share: share, clockOffset: clockOffset || 0,
-                                                     known: !!result } })
+                                                     known: !!result, homeId: result ? result.homeId || "" : "" } })
     }
 
     function outputKey(stdout) {
@@ -2177,23 +2178,61 @@ PlasmoidItem {
         return openChatsIn === "talpyChat" && talpyChatHere(host, resuming) ? "talpyChat" : "terminal"
     }
 
-    // Chats can open in Talpy Chat: on this computer, with a claude command;
-    // a new one only where a hook given to one chat runs (it answers what a
-    // background chat asks: managed settings may let only their own run)
+    // Chats can open in Talpy Chat: here, on an SSH host or in a container
+    // whose last check answered, with a claude command there; a new one only
+    // where a hook given to one chat runs (it answers what a background chat
+    // asks: managed settings may let only their own run). Not yet in a
+    // container that shares this computer's home folder (its hook's requests
+    // would be this computer's too)
     function talpyChatHere(host, resuming) {
-        const here = facts[""]
-        return !host && cliHere("") && (resuming || !here || !here.cli || here.cli.hooks !== false)
+        return talpyChatOff(host, resuming) === ""
+    }
+
+    // Why Talpy Chat can't open host's chats ("" when it can): "connect",
+    // "cli", "home" or "hooks"
+    function talpyChatOff(host, resuming) {
+        if (host) {
+            const r = remote[host]
+            if (!r || !r.ok || !r.result || r.cached)
+                return "connect"
+        }
+        if (!cliHere(host))
+            return "cli"
+        const f = facts[host || ""]
+        if (host && f && f.homeId && facts[""] && f.homeId === facts[""].homeId)
+            return "home"
+        return resuming || !f || !f.cli || f.cli.hooks !== false ? "" : "hooks"
+    }
+
+    // The Talpy Chat half's title: what it does, or why it's greyed out
+    function talpyChatTitle(host, resuming) {
+        const off = talpyChatOff(host, resuming)
+        return off === "connect" ? (isContainer(host) && remote[host] && remote[host].stopped ? i18n("Stopped") : i18n("Not connected"))
+             : off === "cli" ? i18n("No claude command")
+             : off === "home" ? i18n("Shares this computer's home")
+             : off === "hooks" ? i18n("Hooks are off here")
+             : resuming ? i18n("Reopen chats in Talpy Chat") : i18n("New chats in Talpy Chat")
     }
 
     // The Talpy Chat half's tooltip (resuming: for the recent chats' switch)
     function talpyChatHint(host, resuming) {
+        const off = talpyChatOff(host, resuming)
+        const there = !host ? "" : isContainer(host) ? i18nc("where a chat runs", "in %1", hostLabel(host))
+                                                     : i18nc("where a chat runs", "on %1", host)
+        if (off === "connect")
+            return isContainer(host) && remote[host] && remote[host].stopped
+                ? i18n("%1 is stopped: Talpy Chat opens its chats once it runs and answers.", hostLabel(host))
+                : i18n("%1 hasn't answered its last check: Talpy Chat opens its chats once it does.", hostLabel(host))
+        if (off === "cli")
+            return terminalHint(host || "", resuming)
+        if (off === "home")
+            return i18n("%1 shares this computer's home folder, so what its chats ask would be asked here too: Talpy Chat doesn't open its chats yet, so they open in a terminal or in VS Code.", hostLabel(host))
+        if (off === "hooks")
+            return host ? i18n("Managed settings %1 let only their own hooks run (allowManagedHooksOnly), and Talpy Chat answers what a background chat asks through a hook of Talpy Den's.", there)
+                        : i18n("Managed settings here let only their own hooks run (allowManagedHooksOnly), and Talpy Chat answers what a background chat asks through a hook of Talpy Den's.")
         if (host)
-            return isContainer(host) ? i18n("Talpy Chat can't answer the prompts of a background chat in %1 yet, so its chats open in a terminal or in VS Code.", hostLabel(host))
-                                     : i18n("Talpy Chat can't answer the prompts of a background chat on %1 yet, so its chats open in a terminal or in VS Code.", host)
-        if (!cliHere(""))
-            return terminalHint("", resuming)
-        if (!talpyChatHere(host, resuming))
-            return i18n("Managed settings here let only their own hooks run (allowManagedHooksOnly), and Talpy Chat answers what a background chat asks through a hook of Talpy Den's.")
+            return resuming ? i18n("A chat %1 that isn't running opens in Talpy Chat: your next message goes on with it in the background there, and you answer Claude's prompts here. Open one in a terminal any time.", there)
+                            : i18n("New chats %1 run in the background there and open here: reply, answer Claude's prompts, see what changed. Talpy Den puts its permission hook there for them (one file). Open one in a terminal any time.", there)
         return resuming ? i18n("A chat that isn't running opens in Talpy Chat: your next message goes on with it in the background, and you answer Claude's prompts there. Open one in a terminal any time.")
                         : i18n("New chats run in the background and open here: reply, answer Claude's prompts, see what changed. Open one in a terminal any time.")
     }
@@ -3653,13 +3692,19 @@ PlasmoidItem {
                               + profileArg(profileDir) + configDirArgs + " # " + Date.now())
     }
 
+    // A background chat no terminal shows (here, on an SSH host, in a
+    // container): its window is its Talpy Chat window, whatever Open in says
+    function windowIsTalpyChat(row, host) {
+        return !!row && row.kind === "bg" && !!row.pid && !row.attached && talpyChatHere(host || "", true)
+    }
+
     // The chat's window. A background chat no terminal shows has none: it's
     // its Talpy Chat window, whatever Open in says (its pet, Open its window,
     // its notifications); direct: a terminal on it all the same (claude
     // attach: Answer it in a terminal, Talpy Chat's Open in a terminal)
     function jumpTo(sessionId, profileDir, direct) {
         const row = listedRow(sessionId, profileDir, "")
-        if (!direct && row && row.kind === "bg" && row.pid && !row.attached && talpyChatHere("", true)) {
+        if (!direct && windowIsTalpyChat(row, "")) {
             openPane(row, "", "chat")
             return
         }
@@ -4304,7 +4349,9 @@ PlasmoidItem {
     // (claude attach), also where its window is Talpy Chat (jumpTo)
     function openRow(s, host, direct) {
         if (s && s.pid !== undefined && s.key && s.key.indexOf("/recent") < 0 && s.key.indexOf("/starred") < 0) {
-            if (host)
+            if (host && !direct && windowIsTalpyChat(s, host))
+                openPane(s, host, "chat")
+            else if (host)
                 remoteShow(host, s)
             else
                 jumpTo(s.sessionId, s.profileDir, direct)
@@ -4578,7 +4625,9 @@ PlasmoidItem {
     function openChatById(chatId, profileDir, cwd, openCommand, groupId, host, direct) {
         const row = listedRow(chatId, profileDir, host)
         if (row) {
-            if (host)
+            if (host && !direct && windowIsTalpyChat(row, host))
+                openPane(row, host, "chat")
+            else if (host)
                 remoteShow(host, row)
             else
                 jumpTo(row.sessionId, row.profileDir, direct)
@@ -5451,9 +5500,11 @@ PlasmoidItem {
         }
         const inVscode = where === "vscode"
         // In Talpy Chat: its window opens on a new chat, which your task (if any) starts at once in
-        // the background; a folder you pick is asked for first; one Claude doesn't trust yet opens
-        // in a terminal (a background chat can't ask)
-        if (where === "talpyChat" && !host && !background && (folder.trusted !== false || !folder.path)) {
+        // the background; a folder you pick is asked for first (not on an SSH host or in a container:
+        // their own folders only); one Claude doesn't trust yet opens in a terminal (a background chat
+        // can't ask)
+        if (where === "talpyChat" && !background && (host ? !!folder.path && folder.trusted !== false
+                                                           : folder.trusted !== false || !folder.path)) {
             newChatGroup = ""
             planComposer = ""
             taskText = ""
@@ -5462,7 +5513,7 @@ PlasmoidItem {
             taskLater = false
             pictureOffer = null
             if (folder.path)
-                openNewChat(group, folder, text, plan)
+                openNewChat(group, folder, text, plan, host)
             else
                 pickNewChatFolder(group, text, plan)
             return
@@ -5525,15 +5576,16 @@ PlasmoidItem {
     // A new chat in Talpy Chat: its window, for that account and folder, with
     // nothing started yet; your first message there starts it in the
     // background (ChatPane: fresh), the task you wrote at once. plan: a plan
-    // it carries out (its first message, with what you wrote)
+    // it carries out (its first message, with what you wrote). host: an SSH
+    // host's or a container's account, where it starts
     property int newChats: 0
-    function openNewChat(group, folder, text, plan) {
+    function openNewChat(group, folder, text, plan, host) {
         const id = "new-" + Date.now() + "-" + (++newChats)
-        const chat = { chatId: id, sessionId: "", profileDir: group.chatProfile, host: "", name: "", cwd: folder.path,
+        const chat = { chatId: id, sessionId: "", profileDir: group.chatProfile, host: host || "", name: "", cwd: folder.path,
                        tab: "chat", at: Date.now(), key: "",
                        fresh: { profile: group.chatProfile, account: group.title, cwd: folder.path, short: folder.short || folder.path,
                                 plan: plan ? { slug: plan.slug, profileDir: plan.profileDir, title: plan.title } : null } }
-        const win = paneWindowFor(chat, "|" + id)
+        const win = paneWindowFor(chat, (host || "") + "|" + id)
         if (!win)
             return
         paneListChanged()

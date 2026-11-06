@@ -944,7 +944,8 @@ function ChatApp() {
             if (p && (!m.ok || m.ask)) setText((t) => p.text + (t.trim() ? "\n" + t : ""));
           }
           if (m.ask) setAskHow(true);
-          if (!m.ok || m.ask || !m.went) setInfo(m.message ? { ok: m.ok && !m.ask, message: m.message } : null);
+          // (warn: it went, but the line says what's wrong: no permission hook for it, say)
+          if (!m.ok || m.ask || !m.went || m.warn) setInfo(m.message ? { ok: m.ok && !m.ask && !m.warn, message: m.message } : null);
           return;
         }
         if (m.kind === "send" || m.kind === "later") {
@@ -1957,7 +1958,7 @@ function ChatApp() {
             ) : null}
           </div>
           {chat?.permission ? <AskBox ask={chat.permission} onAnswer={answer} busy={answering > 0} pressed={askKey} keyed={keyed}
-            onTerminal={chat.where === "background" && !chat.host ? () => post({ type: "openWindow" }) : undefined} /> : null}
+            onTerminal={chat.where === "background" ? () => post({ type: "openWindow" }) : undefined} /> : null}
           {chat?.queued ? (
             <div class="pane-queued">
               <span>Sent when this turn ends: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}</span>

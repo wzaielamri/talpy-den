@@ -21,6 +21,7 @@ import {
   talpyChatHint,
   talpyChatOff,
   talpyChatTitle,
+  talpyPlace,
   terminalReopenHint,
   thisWindowFirst,
 } from "../src/shared/model";
@@ -70,12 +71,14 @@ test("recent chats reopen where you picked, or in Claude Code without a claude c
   assert.equal(reopensInClaudeCode("claudeCode", true, false), false, "Claude Code isn't on this account");
 });
 
-test("Talpy Chat is one more choice: this computer's chats, a new one where a hook given to one chat runs", () => {
+test("Talpy Chat is one more choice: a machine that answers, a new chat where a hook given to one chat runs", () => {
   const here = { cli: { installed: true } };
   const managed = { cli: { installed: true, hooks: false } };
   assert.equal(talpyChatHere(here, undefined, false), true);
   assert.equal(talpyChatHere(null, undefined, false), true, "not known yet: there");
-  assert.equal(talpyChatHere(here, "lab", true), false, "an SSH host's prompts can't reach it yet");
+  assert.equal(talpyChatHere(here, "lab", true), true, "an SSH host that answered");
+  assert.equal(talpyChatHere(null, "lab", true), false, "a host not checked yet");
+  assert.equal(talpyChatHere({ ...here, reach: "connect" }, "lab", true), false, "its last check didn't answer");
   assert.equal(talpyChatHere({ cli: { installed: false } }, undefined, true), false);
   assert.equal(talpyChatHere(managed, undefined, false), false, "managed settings: only their own hooks");
   assert.equal(talpyChatHere(managed, undefined, true), true, "a chat that isn't running still opens there");
@@ -83,15 +86,17 @@ test("Talpy Chat is one more choice: this computer's chats, a new one where a ho
   assert.equal(openChatsIn("terminal", here, undefined, true, true), "terminal", "nobody's choice changes");
   assert.equal(openChatsIn("claudeCode", here, undefined, true, true), "claudeCode");
   assert.equal(openChatsIn("talpyChat", here, undefined, true, true), "talpyChat");
-  assert.equal(openChatsIn("talpyChat", here, "lab", true, true), "terminal");
+  assert.equal(openChatsIn("talpyChat", here, "lab", true, true), "talpyChat");
+  assert.equal(openChatsIn("talpyChat", { reach: "connect" }, "lab", true, true), "terminal");
   assert.equal(openChatsIn("talpyChat", { cli: { installed: false } }, undefined, true, true), "claudeCode", "no claude command");
   assert.equal(openChatsIn("talpyChat", managed, undefined, false, false), "terminal");
   // its window: a chat that isn't running, or a background one no terminal shows
   assert.equal(opensInTalpyChat({ kind: "chat", pid: null }, "talpyChat", here, undefined, false), true);
-  // a background chat no terminal shows: Talpy Chat whatever Open in says (this computer's; a host's in its terminal)
+  // a background chat no terminal shows: Talpy Chat whatever Open in says (here, on a host that answers)
   assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "terminal", here, undefined, false), true);
   assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "claudeCode", here, undefined, true), true);
-  assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "talpyChat", here, "gpu", false), false);
+  assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "terminal", here, "gpu", false), true);
+  assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "talpyChat", { reach: "connect" }, "gpu", false), false);
   assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: null }, "talpyChat", here, undefined, false), true);
   assert.equal(opensInTalpyChat({ kind: "bg", pid: 7, attached: { in: "terminal", app: "Konsole" } }, "talpyChat", here, undefined, false), false,
                "the terminal it's shown in");
@@ -101,15 +106,37 @@ test("Talpy Chat is one more choice: this computer's chats, a new one where a ho
   assert.equal(talpyChatTitle(here, undefined, false), "New chats in Talpy Chat");
   assert.equal(talpyChatHint(here, undefined, false),
                "New chats run in the background and open here: reply, answer Claude's prompts, see what changed. Open one in a terminal any time.");
-  assert.equal(talpyChatTitle(here, "lab", true), "This computer's chats for now");
-  assert.equal(talpyChatTitle(here, "podman:web", false), "This computer's chats for now");
+  assert.equal(talpyChatTitle(here, "lab", true), "Reopen chats in Talpy Chat");
+  assert.match(talpyChatHint(here, "lab", false), /^New chats on lab run in the background there and open here: .*its permission hook there/);
+  assert.equal(talpyChatTitle({ reach: "connect" }, "lab", true), "Not connected");
+  assert.equal(talpyChatTitle({ reach: "stopped" }, "podman:web", false), "Stopped");
+  assert.equal(talpyChatTitle({ ...here, reach: "home" }, "podman:web", false), "Shares this computer's home");
   assert.match(talpyChatHint(managed, undefined, false), /allowManagedHooksOnly/);
+  assert.match(talpyChatHint(managed, "lab", false), /^Managed settings on lab let only their own hooks run/);
   // New Chat…'s line where its Talpy Chat section isn't offered: the switch's title and why
-  assert.deepEqual(talpyChatOff(here, "lab"), { title: "This computer's chats for now", why: "it can't answer the prompts of a chat on lab yet" });
-  assert.deepEqual(talpyChatOff(here, "podman:web"), { title: "This computer's chats for now", why: "it can't answer the prompts of a chat in web yet" });
+  assert.deepEqual(talpyChatOff({ reach: "connect" }, "lab"), { title: "Not connected", why: "lab hasn't answered its last check" });
+  assert.deepEqual(talpyChatOff({ ...here, reach: "home" }, "podman:web"),
+                   { title: "Shares this computer's home", why: "web shares this computer's home folder" });
   assert.deepEqual(talpyChatOff(managed, undefined), { title: "Hooks are off here", why: "managed settings here let only their own hooks run" });
   assert.equal(talpyChatOff(here, undefined), null, "offered");
+  assert.equal(talpyChatOff(here, "lab"), null, "offered on a host that answers");
   assert.equal(talpyChatOff({ cli: { installed: false } }, "lab"), null, "no claude command: the terminal's section says so");
+});
+
+test("a host's place: answered, not yet, stopped, or sharing this computer's home", () => {
+  const status = { groups: [], cli: { installed: true }, homeId: "aaaaaaaaaaaa" } as never;
+  const host = (name: string, more: Record<string, unknown>) =>
+    ({ name, ok: true, loading: false, error: "", updatedAt: 0, current: false, result: { groups: [], cli: { installed: true }, homeId: "bbbbbbbbbbbb" }, ...more });
+  const state = { status, hosts: [host("lab", {}), host("gpu", { ok: false }), host("box", { cached: true }),
+                                   host("podman:web", { ok: false, stopped: true }),
+                                   host("podman:teleop", { result: { groups: [], cli: { installed: true }, homeId: "aaaaaaaaaaaa" } })] } as never;
+  assert.equal(talpyPlace(state, undefined), status);
+  assert.deepEqual(talpyPlace(state, "lab"), { groups: [], cli: { installed: true }, homeId: "bbbbbbbbbbbb" });
+  assert.equal(talpyPlace(state, "gpu")?.reach, "connect", "its last check failed");
+  assert.equal(talpyPlace(state, "box")?.reach, "connect", "only what it said last time, not checked since this start");
+  assert.equal(talpyPlace(state, "podman:web")?.reach, "stopped");
+  assert.equal(talpyPlace(state, "podman:teleop")?.reach, "home", "its home is this computer's");
+  assert.equal(talpyPlace(state, "nowhere")?.reach, "connect");
 });
 
 test("in a Remote-SSH window, the section of its host comes first, then this computer's, then the other hosts", () => {
@@ -118,7 +145,7 @@ test("in a Remote-SSH window, the section of its host comes first, then this com
   assert.deepEqual(thisWindowFirst([h("lab"), h("podman:web")]), { first: [], rest: [h("lab"), h("podman:web")] }, "a local window: as before");
 });
 
-test("New Chat… on an SSH host says where Talpy Chat isn't offered, in its section's place", async () => {
+test("New Chat… on an SSH host offers Talpy Chat in its folders, or says why not in its section's place", async () => {
   const stub = vscode as unknown as typeof import("./vscode-stub");
   const window = stub.window as unknown as Record<string, unknown>;
   const pick = window.showQuickPick;
@@ -129,20 +156,28 @@ test("New Chat… on an SSH host says where Talpy Chat isn't offered, in its sec
       id: host || "w", title: "work", chatProfile: ".claude", profileKeys: [".claude"], sessions: [], homeChatCommand: "cd ~ 2>/dev/null; claude", host: host || undefined,
       projects: [{ path: "/srv/app", short: "~/app", newChatCommand: "cd /srv/app 2>/dev/null; claude", trusted: true }],
     } as unknown as Group);
+    let answered = true;
     const dash = { opened() {}, demo: false, currentHost: "build-server",
-      state: () => ({ status: { groups: [group("")], cli: { installed: true } }, hosts: [{ name: "build-server", current: true, result: { groups: [group("build-server")], cli: { installed: true } } }] }),
+      state: () => ({ status: { groups: [group("")], cli: { installed: true } },
+                      hosts: [{ name: "build-server", current: true, ok: answered, result: { groups: [group("build-server")], cli: { installed: true } } }] }),
       setActionError: () => undefined, isVisible: () => true };
     const actions = new Actions({ action: async () => ({ ok: true, message: "" }) } as unknown as Backend, dash as unknown as Dashboard,
       {} as unknown as Terminals, { warn: () => undefined } as unknown as vscode.LogOutputChannel, {} as AccountSwitch);
     await actions.newChat("build-server", "build-server");
-    const labels = shown[0].map((i) => i.label);
+    const there = shown[0].map((i) => i.label);
+    const first = there.indexOf("In a Talpy Chat tab");
+    assert.equal(there[first + 1], "$(folder) ~/app", "its own folders");
+    assert.equal(there[first + 2], "In a terminal", "no folder dialog: it can't be browsed");
+    answered = false;   // (its last check didn't answer)
+    await actions.newChat("build-server", "build-server");
+    const labels = shown[1].map((i) => i.label);
     const at = labels.indexOf("In a Talpy Chat tab");
     assert.ok(at >= 0, labels.join(" | "));
-    assert.equal(labels[at + 1], "$(info) Talpy Chat: this computer's chats for now");
-    assert.equal(shown[0][at + 2].label, "In a terminal", "only the line");
-    assert.equal(shown[0][at + 1].description, "it can't answer the prompts of a chat on build-server yet");
+    assert.equal(labels[at + 1], "$(info) Talpy Chat: not connected");
+    assert.equal(shown[1][at + 2].label, "In a terminal", "only the line");
+    assert.equal(shown[1][at + 1].description, "build-server hasn't answered its last check");
     await actions.newChat("w");
-    const here = shown[1].map((i) => i.label);
+    const here = shown[2].map((i) => i.label);
     assert.ok(!here.some((l) => l.startsWith("$(info) Talpy Chat")), "offered on this computer");
     assert.equal(here[here.indexOf("In a Talpy Chat tab") + 1], "$(folder) ~/app");
   } finally {

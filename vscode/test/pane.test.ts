@@ -670,6 +670,48 @@ test("a new chat's tab starts it with its first message, then goes on with it", 
   }
 });
 
+// (2026-11-06) A new chat on an SSH host (or in a container) in a Talpy Chat tab: started there (pane.py --start
+// --host, never this computer's extra Claude folders), the tab under "host|chat" after, that host checked at once;
+// one that started without Talpy Den's permission hook says so on its line
+test("a new chat on an SSH host starts there, and its tab goes on with it under the host's key", async () => {
+  const NEW = "c0ffee00-0000-4000-8000-000000000002";
+  const calls: string[][] = [];
+  const polled: string[] = [];
+  const backend = { pane: async (args: string[]) => {
+    calls.push(args);
+    if (args[0] === "--start") return { ok: true, how: "background", chat: NEW, id: NEW.slice(0, 8), profileDir: ".claude", message: "Started",
+                                        hooked: false, hookWhy: "Talpy Den couldn't put its permission hook in place: others may write in /x" };
+    return { ok: false, missing: true, message: "not yet" };
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async (host?: string) => void polled.push(host ?? ""), pollHost: async (host: string) => void polled.push(host),
+                 onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false,
+                 setActionError() {}, setActionInfo() {} };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+  p.openNew({ id: "lab/g", title: "main", chatProfile: ".claude", host: "lab" } as never, { path: "/srv/app", short: "~/app" });
+  const panel = recorded.panels.at(-1)!;
+  const keys = () => [...(p as unknown as { panes: Map<string, unknown> }).panes.keys()];
+  try {
+    panel.show(true);
+    panel.receive({ type: "ready" });
+    await tick();
+    assert.ok(keys().some((k) => k.startsWith("lab|new-")), keys().join(" "));
+    panel.receive({ type: "send", text: "Build it", how: "auto", afterTurn: false, id: 1 });
+    await tick(50);
+    const start = calls.find((c) => c[0] === "--start")!;
+    assert.deepEqual(start.slice(-2), ["--host", "lab"]);
+    assert.ok(!start.includes("--config-dir"), "this computer's extra Claude folders stay here");
+    assert.deepEqual(keys(), [`lab|${NEW}`]);
+    const result = panel.sent.find((m) => (m as { type: string }).type === "result") as { ok: boolean; went: boolean; warn: boolean; message: string };
+    assert.deepEqual([result.ok, result.went, result.warn], [true, true, true]);
+    assert.match(result.message, /^It went, but Talpy Chat can't answer what it asks \(Talpy Den couldn't put its permission hook in place/);
+    assert.ok(calls.some((c) => c[0] === "--conversation" && c[1] === NEW && c.includes("lab")), "read there");
+  } finally {
+    p.dispose();
+  }
+});
+
 // Closing a chat's terminal, Claude moves it to the background under a new id
 // (the status's "moved"): its tab goes on with it there, not with the old
 // transcript, which stops at the move
