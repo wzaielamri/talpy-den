@@ -121,6 +121,21 @@ class ChatTests(Home):
         self.assertGreaterEqual(r["files"], 4)
         self.assertGreater(r["bytes"], 0)
 
+    def test_a_chat_with_a_bookmark_stays_however_old(self):
+        marked, emptied, elsewhere = self.chat(A, 40), self.chat(B, 40), self.chat(S, 40)
+        cs.change_bookmark(self.cache, A, "", "msg_1", True, "claude", 1000, "kept")
+        cs.change_bookmark(self.cache, B, "", "msg_1", True, "claude", 1000, "taken off again")
+        cs.change_bookmark(self.cache, B, "", "msg_1", False)  # (its file stays, with no bookmark in it)
+        cs.change_bookmark(self.cache, S, "lab", "msg_1", True, "claude", 1000, "a host's chat of that id")
+        self.assertEqual(cleanup.kept_here(self.cache), ({A}, set()))
+        self.assertEqual(cleanup.kept_here(self.cache, "lab"), ({S}, set()))
+        self.talpy()
+        r = self.run_here()
+        self.assertTrue(marked.exists())
+        self.assertFalse(emptied.exists())
+        self.assertFalse(elsewhere.exists())
+        self.assertEqual((r["ok"], r["chats"], r["keptChats"]), (True, 2, 1))
+
     def test_claudes_memories_and_what_isnt_a_chat_stay_however_old(self):
         memory = self.thing("projects/-w/memory", 400, folder=True)
         index = self.thing("projects/-w/memory/MEMORY.md", 400)
@@ -304,6 +319,8 @@ class ClaudeSettingTests(Home):
     def test_kept_from_cleaning_through_the_link_and_put_back(self):
         r = self.talpy()
         self.assertTrue(r["ok"], r)
+        self.assertEqual(r["message"], "Talpy Den cleans up from now on: chats you haven't used for 30 days, and old plans "
+                                       "to the Trash; the starred and bookmarked ones stay")
         self.assertEqual(self.settings(), {"theme": "dark", "cleanupPeriodDays": 3650})
         self.assertTrue(self.work.joinpath("settings.json").is_symlink())  # (written through it)
         self.assertEqual(list(cleanup.load_changed(self.cache)), [str(self.shared_settings)])  # (once: one real file)
@@ -435,6 +452,16 @@ class HostsTests(Home):
         self.assertEqual((host, args), ("lab", ["--place", "21", "--keep-chats", A, "--keep-plans", "my-plan"]))
         self.assertEqual(asked.call_args[1], {"name": "cleanup.py", "also": ("accounts.py", "sharing.py"), "timeout": 600})
 
+    def test_a_hosts_bookmarked_chats_go_with_its_run(self):
+        import remote
+        cs.change_stars(self.cache, "chats", A, "lab")
+        cs.change_bookmark(self.cache, B, "lab", "msg_1", True, "you", 1000, "a message of a host's chat")
+        cs.change_bookmark(self.cache, S, "", "msg_1", True, "claude", 1000, "this computer's")
+        cs.change_bookmark(self.cache, D, "docker:web", "msg_1", True, "claude", 1000, "a container's")
+        with mock.patch.object(remote, "host_answer", return_value={"ok": True}) as asked:
+            cleanup.on_host("lab", self.cache, "talpy", 21)
+        self.assertEqual(asked.call_args[0][:2], ("lab", ["--place", "21", "--keep-chats", A + "," + B]))
+
     def test_a_host_out_of_reach_keeps_what_it_did_before(self):
         import remote
         self.talpy()
@@ -460,11 +487,11 @@ from test_remote import FakeSSH  # noqa: E402  (a stand-in ssh: runs the command
 class OverSSHTests(FakeSSH):
     """cleanup.py on a host: on python3's stdin there, after talpy_den.py and accounts.py."""
 
-    def test_a_hosts_old_chats_go_its_starred_ones_stay_and_claudes_comes_back(self):
+    def test_a_hosts_old_chats_go_its_starred_and_bookmarked_ones_stay_and_claudes_comes_back(self):
         now = time.time()
         folder = self.fake_home / ".claude/projects/-p"
-        old, starred = folder / (A + ".jsonl"), folder / (S + ".jsonl")
-        for path in (old, starred):
+        old, starred, marked = folder / (A + ".jsonl"), folder / (S + ".jsonl"), folder / (B + ".jsonl")
+        for path in (old, starred, marked):
             path.write_text(json.dumps({"type": "user", "entrypoint": "cli"}) + "\n")
             aged(path, 40, now)
         plan = self.fake_home / ".claude/plans/old-plan.md"
@@ -473,11 +500,13 @@ class OverSSHTests(FakeSSH):
         aged(plan, 40, now)
         here = cs.cache_dir(Path.home())
         cs.change_stars(here, "chats", S, "lab")
+        cs.change_bookmark(here, B, "lab", "msg_1", True, "claude", 1000, "kept here, for the host's chat")
         r = cleanup.on_host("lab", here, "talpy", 30)
         self.assertTrue(r["ok"], r)
-        self.assertEqual((r["chats"], r["plans"], r["keptChats"], r["raised"]), (1, 1, 1, True))
+        self.assertEqual((r["chats"], r["plans"], r["keptChats"], r["raised"]), (1, 1, 2, True))
         self.assertFalse(old.exists())
         self.assertTrue(starred.exists())
+        self.assertTrue(marked.exists())
         self.assertTrue((self.fake_home / ".local/share/Trash/files/old-plan.md").exists())
         settings = self.fake_home / ".claude/settings.json"
         self.assertEqual(json.loads(settings.read_text()), {"cleanupPeriodDays": 3650})

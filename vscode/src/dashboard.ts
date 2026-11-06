@@ -1030,7 +1030,7 @@ export class Dashboard implements vscode.Disposable {
             modal: true,
             detail: `Talpy Den's first run deletes ${preview ? cleanupText(preview.preview) : "what's that old"} here, then once a day ` +
               "what you haven't used for that long, on the SSH hosts and containers shown too; old plans go to the Trash. What you " +
-              "starred stays, and so do chats that are open, queued or keep going. Claude Code's own cleanup is off meanwhile." +
+              "starred or bookmarked stays, and so do chats that are open, queued or keep going. Claude Code's own cleanup is off meanwhile." +
               (preview && preview.overrides.length ? `\n\n${overridesNote(preview.overrides)}` : ""),
           }, "Use It");
         if (pick !== "Use It") return void this.syncOldChats();

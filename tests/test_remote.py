@@ -417,7 +417,10 @@ class ActionTests(FakeSSH):
         (prof / "plans/calm-red-owl.md").write_text("# Calm plan\n")
         local = cs.cache_dir(Path.home())
         cs.change_stars(local, "chats", "chat9", host="lab")  # (an SSH host's stars are kept here)
+        cs.change_bookmark(local, "chat9", "lab", "msg_1", True, "claude", 1000, "Old work done")  # (its bookmarks too)
+        cs.change_bookmark(local, "chat9", "", "msg_1", True, "claude", 1000, "this computer's chat9")
         asked = remote.delete("lab", "chat", "chat9", describe=True)
+        self.assertEqual(len(cs.load_bookmarks(local, "chat9", "lab")[0]), 1)  # (asked: nothing goes yet)
         self.assertEqual((asked["ok"], asked["accounts"], asked["question"]),
                          (True, ["Remote Me"], "Delete “Old work” on Remote Me? It goes to the Trash with its subagents and "
                                           "checkpoints; the Recap keeps its numbers."))
@@ -426,6 +429,8 @@ class ActionTests(FakeSSH):
         self.assertEqual(sorted(f.name for f in trash.iterdir()), ["chat9", "chat9.jsonl"])
         self.assertFalse((prof / "projects/-p/chat9.jsonl").exists())
         self.assertEqual(cs.load_stars(local)["chats"], [])
+        self.assertEqual(cs.load_bookmarks(local, "chat9", "lab"), ([], 0))
+        self.assertEqual(len(cs.load_bookmarks(local, "chat9")[0]), 1)  # (this computer's chat of that id keeps its own)
         r = subprocess.run([sys.executable, "-I", str(CODE / "remote.py"), "--delete-plan", "lab", "calm-red-owl",
                             ".claude", "--describe"], capture_output=True, text=True, env=os.environ)
         self.assertEqual(json.loads(r.stdout)["question"], "Delete the plan “Calm plan” on Remote Me? It goes to the Trash.")
@@ -1052,6 +1057,31 @@ class KeepGoingThereTests(TwoAccountHost):
         self.assertEqual([k["chat"] for k in cs.load_keep(cache)["chats"]], [new])
         cs.look_after_kept(Path.home(), cache, [], [], now)
         self.assertEqual([(t["host"], t["chat"]) for t in cs.load_queue(cache)], [("lab", new)])
+
+
+    def test_a_hosts_chat_moved_to_the_background_takes_its_bookmarks_along(self):
+        # (kept here, as its star: the host's answer that says it moved moves them)
+        new = "9a8b7c6d-0000-4000-8000-000000000003"
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 120))
+        line = lambda sid: json.dumps({"type": "user", "uuid": "u1", "timestamp": stamp, "cwd": str(self.folder),
+                                       "sessionId": sid, "session_id": self.CHAT,
+                                       "message": {"role": "user", "content": "fix it"}}, separators=(",", ":")) + "\n"
+        self.chat.write_text(line(self.CHAT))
+        self.chat.with_name(f"{new}.jsonl").write_text(line(new))  # (Claude's copy of it, under its new id)
+        cache = cs.cache_dir(Path.home())
+        cs.change_bookmark(cache, self.CHAT, "lab", "u1", True, "you", 1000, "fix it", now_ms=5000)
+        cs.change_bookmark(cache, new, "lab", "msg_2", True, "claude", 2000, "Fixed.", now_ms=6000)  # (one under its new id)
+        cs.change_bookmark(cache, self.CHAT, "", "mine", True, "claude", 1000, "this computer's chat of that id")
+        answer = remote.status("lab", tokens=False)
+        self.assertEqual(answer["result"]["moved"], {self.CHAT: new})
+        marks, v = cs.load_bookmarks(cache, new, "lab")
+        self.assertEqual(([m["key"] for m in marks], v > 6000), (["u1", "msg_2"], True))
+        self.assertEqual(cs.load_bookmarks(cache, self.CHAT, "lab"), ([], 0))
+        self.assertEqual([m["key"] for m in cs.load_bookmarks(cache, self.CHAT)[0]], ["mine"])
+        self.assertFalse((self.fake_home / ".cache/talpy-den/bookmarks").exists())  # (nothing of them goes there)
+        # the next answer says it moved again: nothing left to move, the list stays as it is
+        self.assertEqual(remote.status("lab", tokens=False)["result"]["moved"], {self.CHAT: new})
+        self.assertEqual(cs.load_bookmarks(cache, new, "lab"), (marks, v))
 
 
 class UnreachedTests(TwoAccountHost):

@@ -1558,6 +1558,39 @@ class BookmarkStoreTests(unittest.TestCase):
         cs.forget_bookmarks(self.cache, self.CHAT)  # (none any more)
         cs.forget_bookmarks(self.cache, "..")
 
+    def test_a_deleted_chat_takes_its_bookmarks_along_here_and_on_a_host(self):
+        # (sharing.delete_chat here, remote.delete for a host's: forget_deleted)
+        self.mark("k1")
+        self.mark("k1", host="build-box")
+        self.mark("k1", chat="other")
+        cs.forget_deleted(self.cache, "chats", self.CHAT, "build-box")
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT, "build-box"), ([], 0))
+        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, self.CHAT)[0]), ["k1"])  # (this computer's stays)
+        cs.forget_deleted(self.cache, "chats", self.CHAT)
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 0))
+        self.assertFalse((self.cache / "bookmarks" / (self.CHAT + ".json")).exists())
+        cs.forget_deleted(self.cache, "plans", "other")  # (a plan of that name isn't the chat)
+        cs.forget_deleted(self.cache, "memories", "other")
+        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, "other")[0]), ["k1"])
+
+    def test_a_check_takes_moved_chats_bookmarks_along_only_when_a_chat_moved(self):
+        home = self.cache.parent / "home"
+        home.mkdir()
+        with mock.patch.object(cs, "chat_moves", return_value={}), mock.patch.object(cs, "bookmarks_moved") as moved:
+            status = cs.collect(home, self.cache, with_tokens=False)
+        self.assertEqual((status["ok"], moved.call_count), (True, 0))
+        with mock.patch.object(cs, "chat_moves", return_value={"old-1": "new-1"}), \
+                mock.patch.object(cs, "bookmarks_moved") as moved:
+            status = cs.collect(home, self.cache, with_tokens=False)
+        moved.assert_called_once_with(self.cache, {"old-1": "new-1"})
+        self.assertEqual([e for e in status["errors"] if "bookmark" in e], [])
+        # (one that fails is said, and the check goes on)
+        with mock.patch.object(cs, "chat_moves", return_value={"old-1": "new-1"}), \
+                mock.patch.object(cs, "bookmarks_moved", side_effect=OSError("No space left on device")):
+            status = cs.collect(home, self.cache, with_tokens=False)
+        self.assertTrue(status["ok"])
+        self.assertIn("bookmarks of moved chats: No space left on device", status["errors"])
+
     def test_bookmarked_chats_are_those_with_a_bookmark(self):
         self.assertEqual(cs.bookmarked_chats(self.cache), set())
         self.mark("k1", chat="kept")

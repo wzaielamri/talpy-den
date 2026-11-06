@@ -11,9 +11,9 @@ and on the SSH hosts and containers shown, and Talpy Den deletes once a day
 what you haven't used for the days you picked, as Claude would (the same
 files, by the same dates), but never:
 
-  - a chat you starred, nor one that keeps going, has a go-on queued, or is
-    open now (its process runs), nor one Claude Desktop still has
-    (Claude's own exception);
+  - a chat you starred or bookmarked, nor one that keeps going, has a go-on
+    queued, or is open now (its process runs), nor one Claude Desktop still
+    has (Claude's own exception);
   - a chat's undo history, files or folder while its chat stays;
   - a plan you starred, one a queued task carries out, nor one whose chat
     stays; an old plan goes to your Trash, not away for good;
@@ -25,9 +25,10 @@ state folder notes what it was), unless you changed it since.
 
 The status check of one copy starts the daily run (talpy_den.cleanup_due,
 start_cleanup): this computer first, then each SSH host and container that
-answered a check in the last day, over ssh (its starred chats and plans are
-kept here: they go with it). Plans of a project's own folder, memories,
-CLAUDE.md and what Claude keeps outside an account's folder aren't touched.
+answered a check in the last day, over ssh (its starred and bookmarked
+chats and starred plans are kept here: they go with it). Plans of a
+project's own folder, memories, CLAUDE.md and what Claude keeps outside an
+account's folder aren't touched.
 
     cleanup.py --status [--days N] [--config-dir DIR]...
                                                 the setting, the last runs, and what a run would
@@ -290,9 +291,10 @@ class Tally:
 
 def kept_here(cache_root, host=""):
     """(chat ids, plan slugs) that stay on host ("": this computer), as kept
-    on this computer: starred, keeping going, a queued go-on or plan."""
+    on this computer: starred, bookmarked, keeping going, a queued go-on or plan."""
     stars = cs.starred_of(cs.load_stars(cache_root), host)
     chats, plans = set(stars["chats"]), set(stars["plans"])
+    chats |= cs.bookmarked_chats(cache_root, host)
     chats |= {k["chat"] for k in cs.load_keep(cache_root)["chats"] if k["host"] == host}
     for t in cs.load_queue(cache_root):
         if (t.get("host") or "") != host:
@@ -440,7 +442,7 @@ def sweep_chats(root, cutoff, keep, gone, stays, t, dry):
                 if when is None or when >= cutoff or chat in keep or from_desktop(e.path):
                     stays.add(chat)
                     if when is not None and when < cutoff and chat in keep:
-                        t.kept_chats += 1  # (old: it stays because it's starred, open, queued or keeps going)
+                        t.kept_chats += 1  # (old: it stays because it's starred, bookmarked, open, queued or keeps going)
                     continue
                 parts = [e.path] + [os.path.join(d.path, chat + c) for c in COMPANIONS] + [os.path.join(d.path, chat)]
                 size = sum(size_of(x) for x in parts)
@@ -673,7 +675,7 @@ def hosts_to_visit(cache_root, mode, now):
 
 
 def on_host(host, cache_root, mode, days, dry=False):
-    """A host's run, over ssh (its starred chats and plans are kept here)."""
+    """A host's run, over ssh (its starred and bookmarked chats and starred plans are kept here)."""
     import remote
     chats, plans = kept_here(cache_root, host)
     args = ["--place", "claude" if mode == "claude" else str(days)]
@@ -749,7 +751,7 @@ def set_mode(home, cache_root, extra_dirs, mode, days=None, start=True):
         cs.start_cleanup(cache_root, extra_dirs)
     if mode == "talpy":
         message = ("Talpy Den cleans up from now on: chats you haven't used for %d days, and old plans to the Trash; "
-                   "the starred ones stay" % s["days"])
+                   "the starred and bookmarked ones stay" % s["days"])
     else:
         message = "Claude Code cleans up again, as before"
     return {"ok": not problems, "message": "; ".join(problems) if problems else message, "mode": s["mode"], "days": s["days"]}

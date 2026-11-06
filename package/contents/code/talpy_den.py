@@ -4786,13 +4786,18 @@ def follow_host_moves(cache_root, host, moved, starred, kept):
     """An SSH host's (or a container's) chats Claude moved to the background
     there under a new id (its answer's "moved": {old id: new id}): what's
     kept of them here follows them, as this computer's do (collect,
-    look_after_kept), their stars, keeping going and queued go-ons and
-    replies. starred, kept: that host's (starred_of, keep.json's entries),
-    as read for the check. Once per answer, and only when one of them moved."""
+    look_after_kept), their stars, bookmarks, keeping going and queued
+    go-ons and replies. starred, kept: that host's (starred_of, keep.json's
+    entries), as read for the check. Once per answer, and only when one of
+    them moved."""
     moved = {old: new for old, new in moved.items() if valid_id(old) and valid_id(new) and old != new} \
         if isinstance(moved, dict) else {}
     if not moved:
         return
+    try:  # (one listing of its folder; a bookmark file that couldn't move yet does at the next answer)
+        bookmarks_moved(cache_root, moved, host)
+    except OSError:
+        pass
     for old in [c for c in starred["chats"] if c in moved]:
         change_stars(cache_root, "chats", moved_chat(old, moved), host, on=True)
         change_stars(cache_root, "chats", old, host, on=False)
@@ -10385,10 +10390,10 @@ def plan_tasks_go(tasks):
 
 def forget_deleted(cache_root, kind, item_id, host=""):
     """A chat, a plan or a memory was deleted (sharing.delete_chat, …):
-    the stars, the queue, keep going and what's hidden here forget it (of
-    host: its stars, queued tasks and keep going, kept here; the rest is the
-    host's). A plan's queued tasks go too, as a chat's go-ons (Delete's
-    question says so: plan_tasks_go)."""
+    the stars, a chat's bookmarks, the queue, keep going and what's hidden
+    here forget it (of host: its stars, bookmarks, queued tasks and keep
+    going, kept here; the rest is the host's). A plan's queued tasks go too,
+    as a chat's go-ons (Delete's question says so: plan_tasks_go)."""
     if kind in ("chats", "plans"):
         change_stars(cache_root, kind, item_id, host, on=False)
     if kind == "plans" and queued_for_plan(cache_root, item_id, host):
@@ -10401,6 +10406,7 @@ def forget_deleted(cache_root, kind, item_id, host=""):
             if t.get("chat") == item_id and (t.get("host") or "") == (host or ""):
                 change_queue(cache_root, take=t["id"])
         keep_chat(cache_root, "", item_id, on=False, host=host)
+        forget_bookmarks(cache_root, item_id, host)
     if host:
         return
     if kind == "chats":
@@ -10597,6 +10603,14 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
             dismissed = change_dismissed(cache_root, add=moved_chat(old, moves), forget=[old], now_ms=dismissed[old])
     except Exception as exc:
         errors.append(f"hidden chats moved to the background: {exc}")
+    try:
+        # (a chat Claude moved to the background under a new id: its bookmarks go with it, in the check
+        # whose answer tells a window it moved; one listing of a folder while a chat moved lately)
+        moves = chat_moves(ctx)
+        if moves:
+            bookmarks_moved(cache_root, moves)
+    except Exception as exc:
+        errors.append(f"bookmarks of moved chats: {exc}")
     forget, dismissed_rows = set(), 0
     for g in groups:
         shown = []
