@@ -407,7 +407,7 @@ class ConversationTests(PaneFixture):
         self.assertEqual(answer, {"ok": True, "items": []})
         # (with its word tables for Claude's questions: --suggest reads them there)
         asked.assert_called_once_with("gpu", ["--conversation", SID, "--profile", ".claude-work", "--limit", "40"],
-                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py"))
+                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"))
 
 
 # Claude Code's own fixed sentences around a No (always in English; the note after them is yours)
@@ -905,7 +905,7 @@ class ToolUseTests(PaneFixture):
             answer = self.cli("--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1", "--host", "gpu")
         self.assertTrue(answer["changed"])
         self.assertEqual(asked.call_args[0][1], ["--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1"])
-        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py")})
+        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py")})
 
 
 class HookTests(unittest.TestCase):

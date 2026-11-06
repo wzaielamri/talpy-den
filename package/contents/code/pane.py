@@ -69,6 +69,14 @@ its permission prompt and its review.
         idle stopped and woken again with them; one with no job kept for its
         next wake from here. {"ok", "message", "how": "now"|"next"|"terminal",
         "model", "effort"}
+  --made CHAT --path PATH [--step ID] [--profile P] [--as-file]
+        a picture, a plan or a page the chat made, as Talpy Chat shows it
+        unfolded (made.py show: only one its transcript names, capped): a
+        picture's bytes ("data", base64, "mime"), a plan's or a page's first
+        lines ("text", "cut"). --step (a Read's tool call): the picture Claude
+        saw there, from the transcript. --as-file (Plasma's, for an SSH
+        host's picture or one Claude saw): a copy here, its path ("file"), in
+        place of the bytes
   --type-in CHAT --text T [--session ID] [--profile P] [--no-copy]
         a command that needs Claude's own panel (commands.py), put in the
         chat's own prompt for you to press Enter there: typed into its tmux
@@ -558,12 +566,15 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
     question or a plan Claude asked has "asked" (asked_of), and your answer
     to it, or your note to a No, comes after it as yours (your_answer). A
     command you ran (/compact, !ls) is yours with "command" (commands.py:
-    what it printed on it).
+    what it printed on it). A picture, a plan or a page a step made, or a
+    picture a reply names, comes right after it as {"kind": "made"} (made.py).
     Entries of subagents (sidechains) aren't in it. ends: a dict given gets
     how the last turn ended (replies.TurnEnd.result); so_far: one given gets
     Claude's turn so far ("turn": turns.TurnSoFar, also how full its context is)."""
     items, tools = [], {}
     import turns   # (a module of its own, as replies.py: compiled once and kept)
+    import made   # (the same)
+    found = made.Collector()   # (what Claude made: placed under its steps and replies at the end)
     ending = turn_end(ends is not None)
     end = turns.TurnSoFar(ending)
     # Messages sent while Claude works: the transcript has each one when it's
@@ -670,6 +681,8 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
                         item["diff"] = capped(full)
                         if full:
                             item["summary"] = change_summary(item["name"], full, item["summary"])
+                    if not c.get("is_error"):
+                        found.step(item, inp, c, e.get("toolUseResult") if len(results) == 1 else None, output, e.get("cwd"))
                     said = your_answer(item, e, output, bool(c.get("is_error")),
                                        e.get("toolUseResult") if len(results) == 1 else None)
                     if said is not None:
@@ -723,6 +736,8 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
                     if thought:
                         item["thinking"] = True
                     items.append(item)
+                    if not thought:   # (a thinking line names nothing Claude made)
+                        found.reply(item, e.get("cwd"))
             elif c.get("type") == "tool_use" and isinstance(c.get("id"), str):
                 end.steps += 1
                 inp = c.get("input") if isinstance(c.get("input"), dict) else {}
@@ -751,7 +766,7 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
         ends["reply"] = ending.reply
     if so_far is not None:
         so_far["turn"] = end
-    return items
+    return found.place(items)
 
 
 def within_budget(items):
@@ -2437,7 +2452,7 @@ def forward(host, args):
     """Run this file on an SSH host with args: its answer."""
     import remote
     return remote.host_answer(host, args, name="pane.py",
-                              also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py"))
+                              also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"))
 
 
 def main(argv=None):
@@ -2459,8 +2474,8 @@ def main(argv=None):
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
-               "--hide-reply", "--type-in", "--reply-text", "--set-options", "--bookmark")
-    osd, suggest, no_copy, keep_copy = False, False, False, False
+               "--hide-reply", "--type-in", "--reply-text", "--set-options", "--bookmark", "--made")
+    osd, suggest, no_copy, keep_copy, as_file, made_path, step = False, False, False, False, False, None, None
     cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
     mark_kind, mark_at, reach = "", 0, None   # (--bookmark's --kind and --at; --conversation's --reach)
     while args:
@@ -2475,6 +2490,10 @@ def main(argv=None):
             session = args.pop(0)
         elif arg == "--key" and args:
             key = args.pop(0)
+        elif arg == "--path" and args:
+            made_path = args.pop(0)
+        elif arg == "--step" and args:
+            step = args.pop(0)
         elif arg == "--text" and args:
             text = args.pop(0)
         elif arg == "--text-file" and args:
@@ -2541,6 +2560,8 @@ def main(argv=None):
             no_copy = True
         elif arg == "--keep-copy":
             keep_copy = True
+        elif arg == "--as-file":
+            as_file = True
         elif arg == "--off":
             off = True
         elif arg == "--remote":
@@ -2591,6 +2612,9 @@ def main(argv=None):
                 pictures_here(answer.get("items"))
                 if not answer.get("unchanged"):   # (--reach went with the rest: the host reads that far)
                     cs.bookmarks_answer(answer, cache_root, target, host)
+            if action == "--made" and as_file:   # (its picture as a file here, for Plasma's Talpy Chat)
+                import made
+                answer = made.keep_copy(str(cs.images_dir(home)), f"{host}\0{target}\0{step or made_path}", answer)
             if action in ("--send", "--type-in"):
                 answer = host_vscode_link(answer, (session, target), text)
             if action == "--send" and how == "enter" and answer.get("how") == "ask":
@@ -2623,6 +2647,12 @@ def main(argv=None):
                 import jump
                 prefix = jump.scope_prefix("claude")
             result = chatpick.set_options(home, config_dirs, profile, target, model, effort, prefix=prefix)
+        elif action == "--made":
+            import made   # (a module of its own, as replies.py: compiled once and kept)
+            found = find_transcript(home, config_dirs, target, profile)[1] if cs.valid_id(target) else None
+            result = made.show(found, made_path, step) if found is not None else {"ok": False, "missing": True, "message": NO_CHAT}
+            if as_file and not remote:   # (what Claude saw, as a file here, for Plasma's Talpy Chat)
+                result = made.keep_copy(str(cs.images_dir(home)), f"\0{target}\0{step or made_path}", result)
         elif action == "--type-in":
             result = type_in(home, config_dirs, profile, target, text, session, copy=not (remote or no_copy))
         elif action == "--answer":
