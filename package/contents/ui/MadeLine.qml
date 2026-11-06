@@ -18,17 +18,18 @@ ColumnLayout {
     id: madeBox
     spacing: 0
 
-    readonly property var m: entry.madeData || ({ path: "", type: "file", name: "", size: null })
-    readonly property bool unfolded: pane.openTools[entry.key] === true
+    required property Item row   // (its row in the list: key, text and, as JSON in input, what was made: pane.py made.py)
+    readonly property var m: row.input ? JSON.parse(row.input) : ({ path: "", type: "file", name: "", size: null })
+    readonly property bool unfolded: pane.openTools[row.key] === true
     readonly property bool local: pane.host === ""
     readonly property bool canOpen: local && !m.gone
     // what it asks pane.py for, unfolded (none for a file gone, a PDF, or a page whose source isn't shown)
     readonly property bool wanted: unfolded && !m.gone && m.type !== "file" && (m.type !== "page" || source)
-    readonly property var shown: pane.madeShown[entry.key] || null
+    readonly property var shown: pane.madeShown[row.key] || null
     property bool source: false   // (a page: its source shown)
 
-    onWantedChanged: if (wanted) pane.madeAsk(entry.key, m.path, m.step || "", m.type === "picture")
-    Component.onCompleted: if (wanted) pane.madeAsk(entry.key, m.path, m.step || "", m.type === "picture")
+    onWantedChanged: if (wanted) pane.madeAsk(row.key, m.path, m.step || "", m.type === "picture")
+    Component.onCompleted: if (wanted) pane.madeAsk(row.key, m.path, m.step || "", m.type === "picture")
 
     // "2 KB" (VS Code shared/pane.ts madeSize: the same rule)
     function sizeText(bytes) {
@@ -78,7 +79,7 @@ ColumnLayout {
             PlasmaComponents3.Label {
                 Layout.fillWidth: true
                 textFormat: Text.PlainText
-                text: [entry.text || madeBox.m.name, madeBox.m.gone ? i18n("not there any more") : madeBox.sizeText(madeBox.m.size)]
+                text: [row.text || madeBox.m.name, madeBox.m.gone ? i18n("not there any more") : madeBox.sizeText(madeBox.m.size)]
                       .filter(s => !!s).join(" · ")
                 elide: Text.ElideMiddle
                 color: lineHover.hovered ? pane.textColor : pane.mix(pane.textColor, 0.85)
@@ -93,7 +94,7 @@ ColumnLayout {
         TapHandler {
             onTapped: {
                 const next = Object.assign({}, pane.openTools)
-                next[entry.key] = !madeBox.unfolded
+                next[row.key] = !madeBox.unfolded
                 pane.openTools = next
             }
         }

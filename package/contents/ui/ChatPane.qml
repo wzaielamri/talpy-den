@@ -481,6 +481,16 @@ Window {
     property string loadError: ""
     property bool loadMissing: false   // (no transcript: it hasn't started yet, or it's gone: a note, not an error)
     property var openTools: ({})   // key -> unfolded: a step's details, a long text ("<key>/out": its output); unsaid: foldOpen's
+    // What Claude made, under its step or reply: "icon.svg · 2 KB", folded (MadeLine.qml: read and made
+    // only for such a line, so a window opens as quickly as before). Here, not in the list's delegate:
+    // no row has one more part; its row is its Loader's parent's parent (the delegate's body)
+    Component {
+        id: madeItem
+
+        Loader {
+            Component.onCompleted: setSource("MadeLine.qml", { row: parent.parent })
+        }
+    }
     // What Claude made, unfolded (MadeLine.qml): pane.py --made's answer, by the line's key; asked again at each unfold
     property var madeShown: ({})
     function madeAsk(key, path, step, asFile) {
@@ -1001,21 +1011,22 @@ Window {
             }
             days.steps[day] = true
             firsts.steps = firsts.steps || day
+            // (what Claude made, as JSON in input: a made line has none of its own, and no row has one more role)
             const flat = { kind: it.kind, key: String(it.key), text: it.text || "", line: it.line || "",
-                           name: it.name || "", status: it.status || "", input: it.input || "", output: it.output || "",
+                           name: it.name || "", status: it.status || "", output: it.output || "",
+                           input: it.kind === "made" ? JSON.stringify(it.made || {}) : it.input || "",
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
                            diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
                            pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n"),
-                            asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "", thinking: !!it.thinking,
-                            command: it.command ? JSON.stringify(it.command) : "", day: day, fold: "",
-                            made: it.made ? JSON.stringify(it.made) : "" }
+                           asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "", thinking: !!it.thinking,
+                           command: it.command ? JSON.stringify(it.command) : "", day: day, fold: "" }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
                 if (old.text !== flat.text || old.status !== flat.status || old.output !== flat.output
                         || old.input !== flat.input || old.summary !== flat.summary || old.prev !== flat.prev || old.diff !== flat.diff
                         || old.queued !== flat.queued || old.until !== flat.until || old.pictures !== flat.pictures
                         || old.here !== flat.here || old.asked !== flat.asked || old.answered !== flat.answered
-                        || old.command !== flat.command || old.day !== flat.day || old.made !== flat.made)
+                        || old.command !== flat.command || old.day !== flat.day)
                     items.set(i, withFold(flat, it))
             } else if (i < items.count) {
                 items.insert(i, withFold(flat, it))
@@ -3323,8 +3334,6 @@ Window {
                         required property string command    // (yours: a command you ran, as JSON: pane.py commands.py)
                         required property bool thinking     // (Claude's: a thinking line, not its reply: pane.py THOUGHT)
                         required property string fold       // (a long one: where it folds, as JSON: withFold; "" for the rest)
-                        required property string made       // (what Claude made, as JSON: pane.py made.py; "" for the rest)
-                        readonly property var madeData: made !== "" ? JSON.parse(made) : null
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
                         property int late: pane.lateDefault   // (Ctrl+O: its turn came, FoldAll.qml)
                         readonly property bool unfolded: pane.openTools[key] === true   // (a step's details: a click, a search's step)
@@ -3614,16 +3623,6 @@ Window {
                             Loader {
                                 Component.onCompleted: setSource("AskedCard.qml", { pane: pane, key: entry.key, asked: entry.askedData })
                                 onLoaded: item.asked = Qt.binding(() => entry.askedData)
-                            }
-                        }
-
-                        // What Claude made, under its step or reply: "icon.svg · 2 KB", folded (MadeLine.qml:
-                        // read and made only for such a line, so a window opens as quickly as before)
-                        Component {
-                            id: madeItem
-
-                            Loader {
-                                source: "MadeLine.qml"
                             }
                         }
 

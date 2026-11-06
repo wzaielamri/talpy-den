@@ -74,9 +74,9 @@ its permission prompt and its review.
         unfolded (made.py show: only one its transcript names, capped): a
         picture's bytes ("data", base64, "mime"), a plan's or a page's first
         lines ("text", "cut"). --step (a Read's tool call): the picture Claude
-        saw there, from the transcript. --as-file (Plasma's, for an SSH
-        host's picture or one Claude saw): a copy here, its path ("file"), in
-        place of the bytes
+        saw there, from the transcript. --as-file (Plasma's): a picture as a
+        file here ("file", in place of the bytes): this computer's own once
+        it's known to be a plain file, an SSH host's or one Claude saw a copy
   --type-in CHAT --text T [--session ID] [--profile P] [--no-copy]
         a command that needs Claude's own panel (commands.py), put in the
         chat's own prompt for you to press Enter there: typed into its tmux
