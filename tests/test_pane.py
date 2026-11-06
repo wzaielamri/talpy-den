@@ -1703,21 +1703,34 @@ class HostHookTests(SendFixture):
         self.assertIn("HOOK_REVISION = 5", self.copy().read_text())
         self.assertEqual(list(self.copy().parent.glob("*.tmp")) + list(self.copy().parent.glob(".*.tmp")), [])
 
-    def test_not_in_a_folder_others_may_write_in(self):
-        # (an XDG_DATA_HOME on shared space: whoever may write there could swap in a hook that allows anything)
+    def test_a_folder_others_may_write_in(self):
+        # (an XDG_DATA_HOME on shared space: whoever may write there could swap in a hook that allows anything.
+        # One of yours made under a looser umask, 0775 (dictation makes it too): made 0700, and a copy in it
+        # that someone else may have put or changed is written anew)
         self.copy().parent.mkdir(parents=True)
         os.chmod(self.copy().parent, 0o777)
+        self.copy().write_text("HOOK_REVISION = 99\nimport os  # allows everything\n")
+        os.chmod(self.copy(), 0o666)
+        path, why = pane.place_hook(self.home, source=self.source(3))
+        self.assertEqual((path, why), (self.copy(), ""))
+        self.assertEqual(oct(self.copy().parent.stat().st_mode & 0o777), "0o700")
+        self.assertEqual(self.copy().read_text(), self.source(3))
+        self.assertEqual(oct(self.copy().stat().st_mode & 0o777), "0o600")
+        # a link where its folder goes: not a folder of yours, no copy; the chat starts all the same, unhooked
+        shutil.rmtree(self.copy().parent)
+        elsewhere = self.home / "elsewhere-data"
+        elsewhere.mkdir()
+        self.copy().parent.symlink_to(elsewhere)
         path, why = pane.place_hook(self.home, source=self.source(3))
         self.assertIsNone(path)
-        self.assertIn("others may write in", why)
-        self.assertFalse(self.copy().exists())
+        self.assertIn("isn't a folder of yours", why)
         answer = self.start()
         self.assertEqual((answer["ok"], answer["hooked"]), (True, False))
-        self.assertIn("Talpy Den couldn't put its permission hook in place: others may write in", answer["hookWhy"])
-        self.assertEqual(self.calls()[-1], ["--bg", "Fix the tests"])   # (it starts all the same, unhooked)
+        self.assertIn("Talpy Den couldn't put its permission hook in place:", answer["hookWhy"])
+        self.assertEqual(self.calls()[-1], ["--bg", "Fix the tests"])
         with self.assertRaises(ValueError):
             pane.install_hook(self.home, [], True, "relay")
-        os.chmod(self.copy().parent, 0o700)
+        self.assertEqual(list(elsewhere.iterdir()), [])
 
     def test_hooked_says_whether_talpy_chat_answers_what_it_asks(self):
         profile = next(p for p in cs.discover_profiles(self.home) if p.key == ".claude-work")
@@ -1790,7 +1803,13 @@ class HostHookTests(SendFixture):
         pane.relay(self.home, [], True)
         self.assertEqual(pane.forget_hook(self.home, [])["kept"], "every")
         pane.relay(self.home, [], False, keep_copy=True)
-        # none of them: gone, with its requests
+        # a request waiting there: a hook still waits (a chat that runs where this can't see it: a home shared
+        # over the network), nothing goes
+        self.assertEqual(pane.forget_hook(self.home, [])["kept"], "asking")
+        self.assertTrue(self.copy().is_file())
+        (requests / "1-0a1b2c3d.json").unlink()
+        write(requests / "1-0a1b2c3d.answer.json", {"behavior": "allow"})   # (an answer nobody took)
+        # none of them: gone, with its requests folder
         with mock.patch.object(cs, "find_claude", return_value=str(self.bin / "claude")):
             answer = self.cli("--relay", "forget")
         self.assertEqual(answer, {"ok": True, "message": "Talpy Den's permission hook and its requests are gone from there"})
@@ -1824,10 +1843,26 @@ class HostHookTests(SendFixture):
         # where the folder takes no hard links: written as before
         (folder / f"{rid}.answer.json").unlink()
         import errno
+        taken = []
+
+        def hook_takes_it(seconds):   # (as the hook does: it reads the answer, then removes the request and it)
+            answer = folder / f"{rid}.answer.json"
+            if answer.exists():
+                taken.append(json.loads(answer.read_text()))
+            for p in (folder / f"{rid}.json", answer):
+                if p.exists():
+                    p.unlink()
         with mock.patch.object(os, "link", side_effect=OSError(errno.EPERM, "no links")), \
-                mock.patch.object(time, "sleep", side_effect=lambda s: (folder / f"{rid}.json").unlink()):
+                mock.patch.object(time, "sleep", side_effect=hook_takes_it):
             self.assertEqual(pane.answer_request(cache, rid, "deny"), (True, "Denied"))
-        self.assertEqual(json.loads((folder / f"{rid}.answer.json").read_text())["behavior"], "deny")
+        self.assertEqual(taken[0]["behavior"], "deny")
+        # its hook gone before the answer came (another window's taken, or the chat answered): the answer
+        # left there is taken back, and it says so (not "Allowed")
+        write(folder / f"{rid}.json", {"id": rid, "at": int(time.time() * 1000), "hookPid": os.getpid(),
+                                       "sessionId": SID, "tool": "Bash", "input": {"command": "make"}})
+        with mock.patch.object(time, "sleep", side_effect=lambda s: (folder / f"{rid}.json").exists() and (folder / f"{rid}.json").unlink()):
+            self.assertEqual(pane.answer_request(cache, rid, "allow"), (False, pane.NOT_ASKING))
+        self.assertFalse((folder / f"{rid}.answer.json").exists())
 
 
 class ChatPickTests(SendFixture):

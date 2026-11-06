@@ -37,8 +37,8 @@ Window {
     readonly property string chatName: row && row.name ? row.name : (chat.name || (fresh ? i18n("New chat in %1", fresh.short) : ""))
     // Your first message started it, and it isn't listed yet: "Starting…" on its working line
     readonly property bool starting: (!!fresh && pendingSent.some(p => p.chat === chatId && p.state !== "held"))
-    onStartingChanged: if (host) root.watchesChanged()
                                      || (!!chat.startedAt && !row)
+    onStartingChanged: if (host) root.watchesChanged()
     readonly property string chatState: row ? row.state : "done"
     readonly property bool busy: chatState === "working" || chatState === "waiting"
     readonly property string route: row && row.reply ? row.reply : "background"

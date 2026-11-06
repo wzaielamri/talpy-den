@@ -1054,6 +1054,10 @@ def watch(host, name, timeout=WATCH_S):
     host = check_host(host)
     if not WATCH_NAME.match(name or ""):
         raise ValueError(f"not a watcher's name: {name!r}")
+    # (with this computer's name in it: two computers watching one host never share what they were told)
+    import hashlib
+    import socket
+    name = hashlib.sha1(f"{socket.gethostname()} {name}".encode()).hexdigest()[:12]
     timeout = max(1, min(int(timeout), WATCH_S))
     script = PYTHON_CHECK + (HERE / "live.py").read_text(encoding="utf-8")
     p = place(host)

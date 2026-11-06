@@ -1209,7 +1209,11 @@ class HostWatchTests(FakeSSH):
     def test_it_answers_when_something_changes_there(self):
         first = remote.watch("lab", "a1b2c3d4e5f6", 5)
         self.assertEqual((first["ok"], first["host"], first["sessions"], first["requests"]), (True, "lab", True, True), first)
-        self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --wait --requests --remote --as a1b2c3d4e5f6 --timeout 5"])
+        # (the name it goes by there: a hash of the one asked for and this computer's name)
+        import hashlib
+        import socket
+        there = hashlib.sha1(f"{socket.gethostname()} a1b2c3d4e5f6".encode()).hexdigest()[:12]
+        self.assertEqual(self.calls()[-1], ["lab", f"python3 -I - --wait --requests --remote --as {there} --timeout 5"])
         # (the hook's requests folder there, made so it can be watched)
         asks = self.fake_home / ".local/state/talpy-den/permissions"
         self.assertTrue(asks.is_dir())
@@ -1247,8 +1251,8 @@ class HostWatchTests(FakeSSH):
                 mock.patch.object(remote, "exec_user", return_value=("vscode", True)):
             self.assertTrue(remote.watch("docker:web", "a1b2c3d4e5f6", 50)["ok"])
             self.assertTrue(remote.watch("podman:web@lab", "a1b2c3d4e5f6", 50)["ok"])
-        self.assertEqual(lines[0], ["docker", "exec", "-i", "-u", "vscode", "web", "sh", "-c",
-                                    "python3 -I - --wait --requests --remote --as a1b2c3d4e5f6 --timeout 50"])
+        self.assertEqual(lines[0][:8], ["docker", "exec", "-i", "-u", "vscode", "web", "sh", "-c"])
+        self.assertRegex(lines[0][8], r"^python3 -I - --wait --requests --remote --as [0-9a-f]{12} --timeout 50$")
         self.assertEqual(lines[1][0], "ssh")
         self.assertIn("podman exec -i -u vscode web sh -c", lines[1][-1])
 

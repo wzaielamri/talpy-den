@@ -1092,13 +1092,25 @@ def answer_request(cache_root, request_id, decision, note="", answers=None):
         return False, "It asks for a permission, not a question"
     if not plan:
         answer = decision_of(decision, note, req.get("suggestions") or [], inp, given)
-    if not answer_file(folder / (request_id + ".answer.json"), answer):
+    answer_path = folder / (request_id + ".answer.json")
+    if not answer_file(answer_path, answer):
         return False, ANSWERED_ELSEWHERE
     deadline = time.time() + 5
     while (folder / (request_id + ".json")).exists() and time.time() < deadline:
         time.sleep(0.1)
     if (folder / (request_id + ".json")).exists():
         return False, "The chat didn't take the answer: answer it there"
+    # (its hook takes the answer and removes it with the request; one still there came after the hook had
+    # left: another window's answer, or the chat's own, came first)
+    grace = time.time() + 0.3
+    while answer_path.exists() and time.time() < grace:
+        time.sleep(0.05)
+    if answer_path.exists():
+        try:
+            answer_path.unlink()
+        except OSError:
+            pass
+        return False, NOT_ASKING
     if plan:
         return True, {"approve": "Approved: it starts", "approve-edits": "Approved: it starts, accepting edits"}.get(
             decision, "It keeps planning" + (" with your note" if (note or "").strip() else ""))
@@ -2303,6 +2315,11 @@ def forget_hook(home, extra_dirs):
     if running:
         return {"ok": True, "kept": running, "message": plural(running, "chat") + " Talpy Chat started there still "
                 + ("runs" if running == 1 else "run") + ": its permission hook stays there for them"}
+    # (a request waiting there is a hook still waiting: a chat that runs where this one can't see it, as in a
+    # home shared over the network; nothing goes then, and the folder only once it's empty)
+    folder = cs.requests_dir(cs.cache_dir(home))
+    if any(n.endswith(".json") and not n.endswith(".answer.json") for n in cs.names_in(folder)):
+        return {"ok": True, "kept": "asking", "message": "A chat there is asking something through its permission hook: it stays"}
     gone = []
     target = hook_path(home)
     try:
@@ -2310,10 +2327,14 @@ def forget_hook(home, extra_dirs):
         gone.append(target.name)
     except OSError:
         pass
-    folder = cs.requests_dir(cs.cache_dir(home))
-    if folder.is_dir() and not folder.is_symlink():
-        shutil.rmtree(str(folder), ignore_errors=True)
-        gone.append(folder.name)
+    try:
+        if folder.is_dir() and not folder.is_symlink():
+            for name in cs.names_in(folder):   # (answers nobody took)
+                (folder / name).unlink()
+            folder.rmdir()
+            gone.append(folder.name)
+    except OSError:
+        pass
     return {"ok": True, "message": "Talpy Den's permission hook and its requests are gone from there" if gone else "Nothing of Talpy Chat's there"}
 
 
@@ -2343,8 +2364,8 @@ def place_hook(home, kind="relay", source=None):
     why = cs.safe_folder(target.parent)
     if why:
         return None, why
-    try:
-        installed = target.read_bytes() if target.is_file() else None
+    try:   # (a copy that isn't a plain file of yours alone is no copy: it's written anew)
+        installed = target.read_bytes() if cs.own_file(target) else None
     except OSError:
         installed = None
     new = source.encode("utf-8") if isinstance(source, str) else None

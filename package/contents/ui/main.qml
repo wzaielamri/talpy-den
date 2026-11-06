@@ -2667,8 +2667,10 @@ PlasmoidItem {
         for (const host in remote)
             if (!(host in next)) {
                 forgetSource("ssh:" + host)  // shown again later, it starts afresh
-                // (taken off the list: Talpy Chat's permission hook there goes, unless a chat it started there runs)
-                if (notifier && remote[host].ok && pickedHosts.indexOf(host) < 0)
+                // (taken off the list: Talpy Chat's permission hook there goes, unless a chat it started there runs;
+                // never one sharing this computer's home: that copy and its requests are this computer's)
+                if (notifier && remote[host].ok && pickedHosts.indexOf(host) < 0
+                        && !(facts[host] && facts[host].homeId && facts[""] && facts[host].homeId === facts[""].homeId))
                     hookForgetter.connectSource("python3 -I " + shellQuote(codeDir + "pane.py") + " --relay forget --host "
                                                 + shellQuote(host) + " # " + Date.now())
             }

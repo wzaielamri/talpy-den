@@ -3068,6 +3068,8 @@ def safe_folder(folder):
     whether it's safe there: a folder of yours, not a link, that nobody else
     may write in (an XDG_DATA_HOME or XDG_STATE_HOME on shared space, as
     some sites set them: anyone's file there would run, or answer, as you).
+    One of yours that others may write in (made under a looser umask) is
+    made 0700; what's in it is checked by whoever reads it (place_hook).
     None when it is, else why not."""
     import stat
     try:
@@ -3077,9 +3079,23 @@ def safe_folder(folder):
         return f"couldn't make {folder}: {exc.strerror or exc}"
     if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
         return f"{folder} isn't a folder of yours"
-    if st.st_mode & 0o022:
-        return f"others may write in {folder}"
+    if st.st_mode & 0o077:
+        try:
+            os.chmod(str(folder), 0o700)
+        except OSError as exc:
+            return f"others may write in {folder}: {exc.strerror or exc}" if st.st_mode & 0o022 else None
     return None
+
+
+def own_file(path):
+    """Whether path is a plain file of yours that nobody else may write (not
+    a link): one put in a folder others could write in before is not."""
+    import stat
+    try:
+        st = os.lstat(str(path))
+    except OSError:
+        return False
+    return stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o022
 
 
 def home_id(home):

@@ -199,6 +199,7 @@ def load_seen(path):
 
 
 def save_seen(path, snap, at):
+    """Keep what NAME was told: whether it could be (a full disk, a quota)."""
     # (a new file of its own, never through a link someone put at its name: the cache may be shared)
     tmp = "%s.%d.%s.tmp" % (path, os.getpid(), os.urandom(4).hex())
     try:
@@ -206,11 +207,13 @@ def save_seen(path, snap, at):
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(dict(snap, at=at), f, separators=(",", ":"))
         os.replace(tmp, path)
+        return True
     except OSError:
         try:
             os.unlink(tmp)
         except OSError:
             pass
+        return False
 
 
 def tidy_seen(home, now):
@@ -340,7 +343,11 @@ def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, req
                       "timeout": False}
             if requests:
                 answer.update(requests=asked, changed=changed_chats(seen, snap))
-            save_seen(path, snap, now)
+            if not save_seen(path, snap, now) and seen is None and remote:
+                # (what it was told can't be kept there: every run would answer at once, and the caller run
+                # again at once, for good. It waits for a change from now on instead)
+                seen = dict(snap, at=now)
+                continue
             return answer
         left = timeout - abs(now - start)  # (the clock set back meanwhile: time's up)
         if left <= 0:

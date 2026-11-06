@@ -252,10 +252,19 @@ QtObject {
         const rest = Object.assign({}, w)
         delete rest[id]
         const next = Object.assign({}, watchWanted)
-        if (Object.keys(rest).length)
+        if (Object.keys(rest).length) {
             next[host] = rest
-        else
+        } else {
             delete next[host]   // (the run in flight ends by itself within 50 s; its answer is let go)
+            // (wanted again later: it starts afresh, no old trouble on its tag nor an old wait)
+            delete watchFailures[host]
+            delete watchNext[host]
+            if (host in watchTrouble) {
+                const t = Object.assign({}, watchTrouble)
+                delete t[host]
+                watchTrouble = t
+            }
+        }
         watchWanted = next
     }
 
@@ -292,6 +301,15 @@ QtObject {
             watchTrouble = Object.assign({}, watchTrouble, { [host]: unreached ? "check" : why })
     }
 
+    property Timer watchAgain: Timer {
+        interval: 260
+        onTriggered: {
+            for (const host in hub.watchWanted)
+                if (!hub.watchRuns[host])
+                    hub.runWatch(host)
+        }
+    }
+
     property Exec watchRunner: Exec {
         staleMs: hub.watchStaleMs
         onNewData: (source, data) => {
@@ -302,6 +320,7 @@ QtObject {
                     host = h
             if (!host)
                 return
+            const startedAt = hub.watchRuns[host].at
             delete hub.watchRuns[host]
             let answer = null
             try {
@@ -321,7 +340,15 @@ QtObject {
                 delete t[host]
                 hub.watchTrouble = t
             }
-            Qt.callLater(hub.runWatch, host)   // (first: a copy's handler that throws doesn't stop it)
+            // (again at once, first: a copy's handler that throws doesn't stop it; a function of its own for each
+            // host, Qt.callLater runs one function once a pass. One that answered at once runs again a moment
+            // later: never again and again)
+            if (Date.now() - startedAt < 250) {
+                hub.watchNext[host] = startedAt + 250
+                watchAgain.restart()
+            } else {
+                Qt.callLater(() => hub.runWatch(host))
+            }
             if (answer.sessions || answer.requests)
                 hub.hostChanged(host, answer)
         }

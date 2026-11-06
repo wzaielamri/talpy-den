@@ -2027,7 +2027,8 @@ class NewChatTests(unittest.TestCase):
         switch = (ROOT / "ui/OpenInSwitch.qml").read_text()
         self.assertIn("tipTitle: root.talpyChatTitle(openIn.remoteHost, openIn.resuming)", switch)
         # a host taken off the list (the copy that notifies, one that answered): its hook there goes, said when it stays
-        self.assertIn("if (notifier && remote[host].ok && pickedHosts.indexOf(host) < 0)", main)
+        self.assertIn("if (notifier && remote[host].ok && pickedHosts.indexOf(host) < 0\n", main)
+        self.assertIn("&& !(facts[host] && facts[host].homeId && facts[\"\"] && facts[host].homeId === facts[\"\"].homeId))", main)
         self.assertIn('" --relay forget --host "', main)
         self.assertIn("if (result.ok && result.kept)", main)
 
@@ -2042,7 +2043,12 @@ class NewChatTests(unittest.TestCase):
                      "signal hostChanged(string host, var answer)", 'Qt.md5("talpy-den plasma " + instanceName).slice(0, 12)'):
             self.assertIn(name, hub)
         self.assertIn("watchNext[host] = Date.now() + (n >= 3 ? 60000 : 5000)", hub)
-        self.assertLess(hub.index("Qt.callLater(hub.runWatch, host)"), hub.index("hub.hostChanged(host, answer)"))
+        # (again first, a function of its own per host: Qt.callLater runs one function once a pass; one that
+        # answered at once a moment later; dropped, it starts afresh)
+        self.assertLess(hub.index("Qt.callLater(() => hub.runWatch(host))"), hub.index("hub.hostChanged(host, answer)"))
+        self.assertIn("if (Date.now() - startedAt < 250) {", hub)
+        drop = hub[hub.index("function dropWatch(id, host) {"):]
+        self.assertIn("delete watchFailures[host]", drop[:drop.index("\n    }\n")])
         main = (ROOT / "ui/main.qml").read_text()
         wanted = main[main.index("function hostWatchWanted() {"):]
         wanted = wanted[:wanted.index("\n    }\n")]
@@ -2053,6 +2059,9 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Hub.watchChecked(host)", main)
         self.assertNotIn("flatMap", main[main.index("function onHostChanged(host, answer)"):][:1500])   # (QML's lists have none)
         pane = (ROOT / "ui/ChatPane.qml").read_text()
+        # (a binding's second line stays its own: a handler put between them took it)
+        self.assertIn('readonly property bool starting: (!!fresh && pendingSent.some(p => p.chat === chatId && p.state !== "held"))\n'
+                      '                                     || (!!chat.startedAt && !row)\n', pane)
         self.assertIn('interval: pane.host ? (pane.hostWatched && pane.chatState !== "working" && pane.chatState !== "waiting" ? 60000 : 5000)', pane)
         self.assertIn("caution: pane.hostTrouble !== \"\"", pane)
 

@@ -418,6 +418,15 @@ class HostWatchTests(WaitTests):
     def test_a_clock_set_back_doesnt_hold_steps_back(self):
         pass
 
+    def test_what_it_was_told_cant_be_kept_there(self):
+        # (a full disk or a quota there: every run would answer at once, everything new, and the front end
+        # run it again at once, a check of the host each time, for good; it waits for a change instead)
+        with mock.patch.object(live, "save_seen", return_value=False):
+            answer, took = self.wait(timeout=1)
+            self.assertTrue(answer["timeout"])
+            answer, took = self.wait(later=lambda: self.ask("3-0a1b2c3d", "chat-4"))
+        self.assertEqual((answer["requests"], answer["changed"]), (True, ["chat-4"]))
+
     def test_not_a_requests_folder_others_may_write_in(self):
         self.asks.mkdir(parents=True)
         os.chmod(self.asks, 0o777)

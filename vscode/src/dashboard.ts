@@ -454,8 +454,11 @@ export class Dashboard implements vscode.Disposable {
         const was = this.hosts.get(name);
         this.hosts.delete(name);
         this.tracker.forget("ssh:" + name); // a host that comes back starts over
-        // (taken off the list: Talpy Chat's permission hook there goes, unless a chat it started there runs)
-        if (was?.ok && !this.demo && this.notifier.isLeader() && !settings.sshHosts().includes(name)) void this.forgetHook(name);
+        // (taken off the list: Talpy Chat's permission hook there goes, unless a chat it started there runs; never
+        // one sharing this computer's home: that copy and its requests are this computer's)
+        const home = was?.result?.homeId;
+        if (was?.ok && !this.demo && this.notifier.isLeader() && !settings.sshHosts().includes(name) && !(home && home === this.status?.homeId))
+          void this.forgetHook(name);
       }
     }
     for (const name of shown) {

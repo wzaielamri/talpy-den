@@ -466,14 +466,18 @@ test("a host taken off the list forgets Talpy Chat's hook there, and says when i
   const backend = { pane: async (args: string[]) => (asked.push(args), { ok: true, kept: 1, message: "1 chat Talpy Chat started there still runs: its permission hook stays there for them" }) } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
   const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
-  const d = dash as unknown as { hosts: Map<string, unknown>; syncHosts(): void; actionInfo: string };
+  const d = dash as unknown as { hosts: Map<string, unknown>; syncHosts(): void; actionInfo: string; status: Status | null };
   overrides.set("sshHosts", []);
   try {
+    d.status = { ...structuredClone(demoState(NOW).status!), homeId: "here00000000" };
     d.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result: null, updatedAt: NOW, current: false });
     d.hosts.set("gpu", { name: "gpu", loading: false, ok: false, error: "timed out", result: null, updatedAt: NOW, current: false });
+    d.hosts.set("podman:box", { name: "podman:box", loading: false, ok: true, error: "", updatedAt: NOW, current: false,
+                                result: { groups: [], homeId: "here00000000" } });
     d.syncHosts();
     await new Promise((r) => setTimeout(r, 10));
-    assert.deepEqual(asked, [["--relay", "forget", "--host", "lab"]], "not a host that didn't answer");
+    // (not a host that didn't answer, nor a container sharing this computer's home: that copy is this computer's)
+    assert.deepEqual(asked, [["--relay", "forget", "--host", "lab"]]);
     assert.equal(d.actionInfo, "lab: 1 chat Talpy Chat started there still runs: its permission hook stays there for them");
   } finally {
     overrides.clear();
