@@ -51,6 +51,13 @@ its permission prompt and its review.
         Esc in its terminal: Ctrl+C in its tmux pane, or Esc into a
         background chat through Claude's background service. The chat stays
         where it runs and takes your next message
+  --set-options CHAT --profile P [--model M] [--effort E]
+        the chat's own model and effort, picked in Talpy Chat (/model,
+        /effort; "" or "default": Claude's), for it alone, never your
+        settings (chatpick.py): a background chat's saved options, one open
+        idle stopped and woken again with them; one with no job kept for its
+        next wake from here. {"ok", "message", "how": "now"|"next"|"terminal",
+        "model", "effort"}
   --type-in CHAT --text T [--session ID] [--profile P] [--no-copy]
         a command that needs Claude's own panel (commands.py), put in the
         chat's own prompt for you to press Enter there: typed into its tmux
@@ -2296,7 +2303,8 @@ def reply_text(home, extra_dirs, chat_id, profile_key, key):
 def forward(host, args):
     """Run this file on an SSH host with args: its answer."""
     import remote
-    return remote.host_answer(host, args, name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py"))
+    return remote.host_answer(host, args, name="pane.py",
+                              also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py"))
 
 
 def main(argv=None):
@@ -2318,7 +2326,7 @@ def main(argv=None):
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
-               "--hide-reply", "--type-in", "--reply-text")
+               "--hide-reply", "--type-in", "--reply-text", "--set-options")
     osd, suggest, no_copy = False, False, False
     cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
     while args:
@@ -2459,6 +2467,13 @@ def main(argv=None):
         elif action == "--interrupt":
             ok, said = interrupt(home, config_dirs, profile, target, session)
             result = {"ok": ok, "message": said}
+        elif action == "--set-options":
+            import chatpick   # (a module of its own, as replies.py: compiled once and kept)
+            prefix = []
+            if not remote:   # (a chat woken again here: in a systemd scope of its own, as go_on_in_background's)
+                import jump
+                prefix = jump.scope_prefix("claude")
+            result = chatpick.set_options(home, config_dirs, profile, target, model, effort, prefix=prefix)
         elif action == "--type-in":
             result = type_in(home, config_dirs, profile, target, text, session, copy=not (remote or no_copy))
         elif action == "--answer":

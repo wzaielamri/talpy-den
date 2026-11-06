@@ -379,7 +379,7 @@ class ConversationTests(PaneFixture):
         self.assertEqual(answer, {"ok": True, "items": []})
         # (with its word tables for Claude's questions: --suggest reads them there)
         asked.assert_called_once_with("gpu", ["--conversation", SID, "--profile", ".claude-work", "--limit", "40"],
-                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py"))
+                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py"))
 
 
 # Claude Code's own fixed sentences around a No (always in English; the note after them is yours)
@@ -877,7 +877,7 @@ class ToolUseTests(PaneFixture):
             answer = self.cli("--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1", "--host", "gpu")
         self.assertTrue(answer["changed"])
         self.assertEqual(asked.call_args[0][1], ["--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1"])
-        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py", "commands.py", "turns.py")})
+        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py")})
 
 
 class HookTests(unittest.TestCase):
@@ -1596,6 +1596,112 @@ class TalpyChatHookTests(SendFixture):
             answer = pane.start_chat(self.home, [], ".claude-work", str(self.folder), "x", claude=str(self.bin / "claude"))
         self.assertFalse(answer["ok"])
         self.assertIn("It started (1a2b3c4d)", answer["message"])
+
+
+class ChatPickTests(SendFixture):
+    """A chat's own model and effort, picked in Talpy Chat (pane.py
+    --set-options, chatpick.py): for that chat alone, never your settings
+    (Claude's /model and /effort save them as your default for every new chat)."""
+
+    def setUp(self):
+        super().setUp()
+        import chatpick
+        self.pick = chatpick
+        self.state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        self.settings = self.home / ".claude-work/settings.json"
+        write(self.settings, {"model": "opus"})
+        # (never the real claude: one found by asking your shell would wake a real background chat)
+        found = mock.patch.object(cs, "find_claude", return_value=str(self.bin / "claude"))
+        found.start()
+        self.addCleanup(found.stop)
+
+    def set(self, **kw):
+        kw.setdefault("claude", str(self.bin / "claude"))
+        kw.setdefault("wait", 1)
+        return self.pick.set_options(self.home, [], ".claude-work", SID, **kw)
+
+    def flags(self):
+        return json.loads(self.state.read_text())["respawnFlags"]
+
+    def test_a_settled_background_job_wakes_with_them_next(self):
+        write(self.state, {"sessionId": SID, "respawnFlags": ["--permission-mode", "auto", "--model", "haiku",
+                                                              "--effort=low", "--settings", "{}"]})
+        answer = self.set(model="Sonnet", effort="medium")
+        self.assertEqual(answer, {"ok": True, "how": "next", "model": "sonnet", "effort": "medium",
+                                  "message": "Sonnet · medium effort for this chat, from your next message"})
+        self.assertEqual(self.flags(), ["--permission-mode", "auto", "--settings", "{}",
+                                        "--model", "sonnet", "--effort", "medium"])
+        # one alone; "default": Claude's own (none saved)
+        self.assertTrue(self.set(effort="default")["ok"])
+        self.assertEqual(self.flags(), ["--permission-mode", "auto", "--settings", "{}", "--model", "sonnet"])
+        self.assertEqual(self.set(model="claude-opus-5-5")["message"], "Opus 5.5 for this chat, from your next message")
+        self.assertEqual(self.flags()[-2:], ["--model", "claude-opus-5-5"])
+        # nothing started, your settings untouched
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(json.loads(self.settings.read_text()), {"model": "opus"})
+
+    def test_an_idle_background_chat_is_woken_again_with_them_at_once(self):
+        # (live-checked on 2.1.318: claude stop, its saved options changed, claude --bg --resume FULL-ID with no
+        # message: the same job, idle, its next turn on the new model, no "Switch model?")
+        self.live(kind="bg", status="idle", jobId=SID[:8])
+        write(self.state, {"sessionId": SID, "respawnFlags": ["--model", "haiku", "--effort", "low"]})
+        stopped = []
+        def stop(profile, job_id, job=None, home=None, claude=None):
+            stopped.append(job_id)
+            (self.home / ".claude-work/sessions/30.json").unlink()   # (its process ends)
+            return True, "stopped"
+        with mock.patch.object(cs, "stop_background", side_effect=stop), \
+                mock.patch.object(cs, "daemon_holds", return_value=False):
+            answer = self.cli("--set-options", SID, "--profile", ".claude-work", "--model", "sonnet")
+        self.assertEqual((answer["ok"], answer["how"], answer["model"]), (True, "now", "sonnet"), answer)
+        self.assertEqual(stopped, [SID[:8]])
+        self.assertEqual(self.flags(), ["--effort", "low", "--model", "sonnet"])
+        self.assertEqual(self.calls(), [["--bg", "--resume", SID]])   # (woken with no message)
+        self.assertEqual(self.scopes, ["claude"])   # (in a systemd scope of its own, as a wake from here)
+        self.assertEqual(json.loads(self.settings.read_text()), {"model": "opus"})
+
+    def test_the_answer_of_a_wake(self):
+        self.live(kind="bg", status="idle", jobId=SID[:8])
+        write(self.state, {"sessionId": SID, "respawnFlags": []})
+        gone = lambda *a, **k: (self.home / ".claude-work/sessions/30.json").unlink() or (True, "stopped")
+        with mock.patch.object(cs, "stop_background", side_effect=gone), \
+                mock.patch.object(cs, "daemon_holds", return_value=False):
+            answer = self.set(model="haiku")
+        self.assertEqual(answer, {"ok": True, "how": "now", "model": "haiku", "effort": None,
+                                  "message": "Haiku for this chat from now on"})
+
+    def test_not_now_and_not_from_here(self):
+        write(self.state, {"sessionId": SID, "respawnFlags": ["--model", "haiku"]})
+        with mock.patch.object(cs, "stop_background") as stopped:
+            self.live(kind="bg", status="busy", jobId=SID[:8])
+            self.assertEqual(self.set(model="sonnet")["message"], "Claude is at work: pick it again once this turn ends")
+            self.live(kind="bg", status="waiting", waitingFor="permission prompt", jobId=SID[:8])
+            self.assertEqual(self.set(model="sonnet")["message"], "It's asking you something: answer that first")
+            # its background commands would end with it
+            self.live(kind="bg", status="idle", jobId=SID[:8])
+            with mock.patch.object(cs, "background_commands", return_value=["npm run dev"]):
+                said = self.set(model="sonnet")["message"]
+            self.assertIn("It runs a command in the background (npm run dev)", said)
+            # a terminal's: /model there
+            self.live(kind="interactive", status="idle")
+            answer = self.set(model="sonnet")
+            self.assertEqual((answer["ok"], answer["how"]), (False, "terminal"))
+        self.assertEqual(stopped.call_count, 0)
+        self.assertEqual(self.flags(), ["--model", "haiku"])
+        self.assertEqual(self.set(model="gpt 5")["message"], "Not a model: gpt 5")
+        self.assertEqual(self.set(effort="huge")["message"], "Not an effort level: huge (one of low, medium, high, xhigh, max)")
+        self.assertEqual(self.set()["message"], "Pick a model or an effort level")
+
+    def test_a_chat_with_no_job_of_its_own_wakes_with_them_from_here(self):
+        # (it last ran in a terminal, closed now: kept for its next wake from Talpy Chat or a go-on)
+        answer = self.set(model="haiku", effort="max")
+        self.assertEqual((answer["ok"], answer["how"]), (True, "next"))
+        self.assertEqual(cs.picked_options(self.home, SID), {"model": "haiku", "effort": "max"})
+        self.assertEqual(self.send()["how"], "background")
+        argv = self.calls()[-1]
+        self.assertEqual(argv[argv.index("--model") + 1:argv.index("--model") + 4], ["haiku", "--effort", "max"])
+        self.assertEqual(cs.picked_options(self.home, SID), {})   # (its job has them now)
+        self.assertEqual(json.loads(self.settings.read_text()), {"model": "opus"})
 
 
 class ManagedHooksTests(unittest.TestCase):
@@ -2403,17 +2509,20 @@ class CommandKindsTests(unittest.TestCase):
         offers = {c["name"]: c for c in commands_py.builtin_offers()}
         self.assertEqual(len(offers), len(commands_py.BUILTIN_COMMANDS))
         for c in offers.values():
-            self.assertIn(c["run"], ("here", "page", "terminal"), c)
-            self.assertEqual(bool(c.get("why")), c["run"] == "terminal", c)   # (each one that opens there says why)
+            self.assertIn(c["run"], ("here", "page", "picker", "terminal"), c)
+            # (each one that opens there says why; the picker's too, for a chat in a terminal)
+            self.assertEqual(bool(c.get("why")), c["run"] in ("terminal", "picker"), c)
         here = {"/compact", "/context", "/recap", "/rename", "/plan", "/fork", "/subtask", "/init", "/insights",
                 "/code-review", "/security-review", "/simplify", "/debug", "/doctor"}
         self.assertEqual({n for n, c in offers.items() if c["run"] == "here"}, here)
         self.assertEqual({n for n, c in offers.items() if c["run"] == "page"}, {"/permissions"})
         # (with an argument: /export FILE writes it, /goal COND sets it; without, Claude asks or shows a box)
         self.assertEqual({n: c["runArgs"] for n, c in offers.items() if "runArgs" in c}, {"/export": "here", "/goal": "here"})
-        # /model and /effort save your default for every new chat: never sent from here, with or without a name
+        # /model and /effort save your default for every new chat: never sent from here, with or without a
+        # name; Talpy Chat's own list sets them for the chat alone (chatpick.py), a terminal's opens them there
         for name in ("/model", "/effort"):
-            self.assertEqual((offers[name]["run"], offers[name].get("runArgs")), ("terminal", None))
+            self.assertEqual((offers[name]["run"], offers[name].get("runArgs")), ("picker", None))
+            self.assertIn("as your default", offers[name]["why"])
         # (gone in 2.1.318: no longer offered)
         self.assertFalse({"/pr-comments", "/todos", "/cost", "/review", "/agents"} & set(offers))
 

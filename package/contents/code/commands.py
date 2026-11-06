@@ -8,9 +8,10 @@ reply box's / list):
   conversation_items: one item of yours with what it printed;
 - BUILTIN_COMMANDS: Claude's own commands the / list offers, each with how
   Talpy Chat runs it (its kind): "here" (sent as it is: it runs and prints
-  in the chat), "page" (Talpy Den has its own page for it) or "terminal"
-  (it needs Claude's own panel or dialog: opened in the chat's terminal,
-  typed in there; a background chat would sit in it unseen);
+  in the chat), "page" (Talpy Den has its own page for it), "picker" (Talpy
+  Chat's own list: /model and /effort, for that chat alone, chatpick.py) or
+  "terminal" (it needs Claude's own panel or dialog: opened in the chat's
+  terminal, typed in there; a background chat would sit in it unseen);
 - completions: what the reply box offers as you type (pane.py --complete).
 
 Python 3.7+ and the standard library only (the SSH host backend too).
@@ -31,7 +32,9 @@ import talpy_den as cs
 # kind with an argument (None: the same), why it opens in a terminal).
 # /model and /effort save what you pick as your default for every new chat
 # (Claude writes them into your own settings, whatever the chat was started
-# with), so they open in the chat's terminal, where Claude says so too.
+# with): Talpy Chat's own list sets them for the chat alone (a background or
+# closed one: pane.py --set-options); a chat in a terminal opens them there,
+# where Claude says so too (their why).
 
 BUILTIN_COMMANDS = (
     ("add-dir", "Add a working folder", "terminal", None, "asks first for a folder outside the chat's"),
@@ -46,7 +49,7 @@ BUILTIN_COMMANDS = (
     ("debug", "Turn on debug logging and look into a problem", "here", None, ""),
     ("diff", "Show the changes, turn by turn", "terminal", None, "opens Claude's changes panel"),
     ("doctor", "Check Claude Code's setup and fix issues", "here", None, ""),
-    ("effort", "Set the effort level", "terminal", None, "saves it as your default effort for every new chat"),
+    ("effort", "Set the effort level", "picker", None, "saves it as your default effort for every new chat"),
     ("export", "Export the conversation (a file name: to that file)", "terminal", "here", "asks where to"),
     ("fork", "Copy this conversation into a new background chat", "here", None, ""),
     ("goal", "Set a goal Claude checks before stopping", "terminal", "here", "shows the goal in a box till you close it"),
@@ -56,7 +59,7 @@ BUILTIN_COMMANDS = (
     ("insights", "A report about your Claude Code chats", "here", None, ""),
     ("mcp", "Manage MCP servers", "terminal", None, "opens Claude's MCP panel"),
     ("memory", "Edit CLAUDE.md and memory", "terminal", None, "opens Claude's memory panel"),
-    ("model", "Set the model", "terminal", None, "saves it as your default model for every new chat"),
+    ("model", "Set the model", "picker", None, "saves it as your default model for every new chat"),
     ("permissions", "What Claude may do without asking", "page", None, ""),
     ("plan", "Plan mode, or the chat's plan", "here", None, ""),
     ("recap", "A one-line recap of the chat", "here", None, ""),

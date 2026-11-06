@@ -7048,10 +7048,12 @@ def start_background(profile, folder, prompt, home=None, claude="claude", wait=B
     with (claude --bg --resume: the same chat, if nothing has it open).
     options: claude's, e.g. chat_options' (going on with a chat: only
     go_on_options', else Claude would start a copy of it). notes: a list
-    that gets the notes claude printed (say, that it started a copy)."""
+    that gets the notes claude printed (say, that it started a copy).
+    prompt None, going on with a chat (resume): woken with no message, idle
+    till one comes (Claude 2.1.318: "idle — send a prompt to start")."""
     import subprocess
     home = home or Path.home()
-    if not prompt.strip():
+    if prompt is None and not resume or prompt is not None and not prompt.strip():
         return False, "Write what Claude should do first", None
     if not os.path.isdir(folder):
         return False, f"The folder {short_folder(folder, home)} isn't there", None
@@ -7068,7 +7070,8 @@ def start_background(profile, folder, prompt, home=None, claude="claude", wait=B
     folder_bin = os.path.dirname(claude)
     if folder_bin and os.path.isfile(os.path.join(folder_bin, "node")):
         env["PATH"] = folder_bin + os.pathsep + env.get("PATH", "")
-    argv = [*prefix, claude, "--bg", *(["--resume", resume] if resume else []), *options, prompt_arg(prompt)]
+    argv = [*prefix, claude, "--bg", *(["--resume", resume] if resume else []), *options,
+            *([prompt_arg(prompt)] if prompt is not None else [])]
     try:
         r = subprocess.run(argv, cwd=folder, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE, timeout=wait)
@@ -7192,6 +7195,53 @@ def last_model(path):
         if nbytes >= size or nbytes >= PEEK_TAIL_MAX:
             return None
         nbytes *= 4
+
+
+def replace_options(flags, model=None, effort=None):
+    """claude's options (a job's respawnFlags) with the model and effort
+    given in place of the ones they name (None: as they are; "": none, so
+    Claude's default)."""
+    drop = ({"--model", "-m"} if model is not None else set()) | ({"--effort"} if effort is not None else set())
+    out, i = [], 0
+    while i < len(flags):
+        name = flags[i].partition("=")[0] if isinstance(flags[i], str) else ""
+        if name in drop:
+            i += 1 if "=" in flags[i] else 2
+            continue
+        out.append(flags[i])
+        i += 1
+    return out + chat_options(model or None, effort or None)
+
+
+# A model or effort picked in Talpy Chat for a chat with no background job of
+# its own (it last ran in a terminal, now closed: chatpick.py): its next wake
+# from here goes on with them (go_on_with), and its job has them from then on
+PICKED_FILE = "chat-options.json"
+
+
+def picked_options(home, chat_id):
+    """{"model"?, "effort"?} picked in Talpy Chat for a chat's next wake, or {}."""
+    data = read_json(state_dir(cache_dir(home)) / PICKED_FILE)
+    got = data.get(chat_id) if isinstance(data, dict) else None
+    return {k: v for k, v in got.items() if k in ("model", "effort") and isinstance(v, str)} \
+        if isinstance(got, dict) else {}
+
+
+def keep_picked(home, chat_id, model=None, effort=None, drop=False):
+    """Keep a chat's picked model and effort (None: as they are; "": Claude's
+    default) for its next wake, or drop them (it woke with them)."""
+    path = state_dir(cache_dir(home)) / PICKED_FILE
+    data = read_json(path)
+    data = data if isinstance(data, dict) else {}
+    if drop:
+        if chat_id not in data:
+            return
+        data.pop(chat_id)
+    else:
+        now = dict(data[chat_id]) if isinstance(data.get(chat_id), dict) else {}
+        now.update({k: v for k, v in (("model", model), ("effort", effort)) if v is not None})
+        data[chat_id] = dict(now, at=int(time.time() * 1000))
+    write_json_atomic(path, data, private=True)
 
 
 def has_settings_flag(flags):
@@ -7436,6 +7486,12 @@ def go_on_with(home, extra_dirs, profile_key, chat_id, folder, text, claude, pre
     flags = saved_flags(record.get("respawnFlags")) if own_job else {}
     mode = flags.get("mode") or mode
     model, effort = flags.get("model") or guess_model, flags.get("effort") or guess_effort
+    # (a model or effort you picked in Talpy Chat for it while it had no job of its own: "" is Claude's default)
+    picked = picked_options(home, chat_id)
+    if "model" in picked:
+        model = picked["model"] or None
+    if "effort" in picked:
+        effort = picked["effort"] or None
     wakes = own_job and settled
     if settings is None and own_job and not wakes:
         settings = hook_settings(record.get("respawnFlags"))   # (a copy of a chat Talpy Chat hooked keeps the hook)
@@ -7446,6 +7502,8 @@ def go_on_with(home, extra_dirs, profile_key, chat_id, folder, text, claude, pre
     notes = []
     ok, message, job = start_background(profile, folder, prompt, home, claude, prefix=prefix, resume=chat_id,
                                         options=options, notes=notes)
+    if ok and picked:
+        keep_picked(home, chat_id, drop=True)   # (they're in its job now)
     if ok:
         named = (model_label(model) or (model.capitalize() if model.isalpha() else model)) if model else None
         how = " · ".join(w for w in (named, effort) if w) if carried else ""
