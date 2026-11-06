@@ -29,9 +29,7 @@ as a script, is compiled at every call. Python 3.7+ and the standard library
 only (the SSH host backend too).
 """
 import base64
-import hashlib
 import json
-import mmap
 import os
 import re
 import stat
@@ -46,6 +44,8 @@ PAGES = (".html", ".htm")
 PLANS = (".md", ".markdown")
 FILES = {".pdf": "application/pdf"}   # (a Read result's document: opened only, never read here)
 STEP_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+TOOLS = frozenset(STEP_TOOLS + ("Read", "Bash"))   # (the steps that can make or show one: Collector.step)
+KNOWN = frozenset(tuple(PICTURES) + PAGES + PLANS)   # (the extensions of what a step can make)
 
 # A picture's name in a text: a quick look first (most texts have none), then each path, up
 # to NAMED_MAX of them (a word of the text that ends with a picture's extension: absolute,
@@ -145,7 +145,8 @@ class Collector:
         made = None
         if name in STEP_TOOLS:
             path = inp.get("file_path") or inp.get("notebook_path")
-            if isinstance(path, str) and path.startswith("/"):
+            # (most edits are of code: its extension says so at once)
+            if isinstance(path, str) and path.startswith("/") and path[path.rfind("."):].lower() in KNOWN:
                 path = os.path.normpath(path)
                 kind = type_of(path)
                 if kind is not None:
@@ -155,9 +156,9 @@ class Collector:
                     made = [(path, kind, len(content.encode("utf-8", "replace")) if content is not None else None, "made")]
         elif name == "Read":
             path = inp.get("file_path")
-            if isinstance(path, str) and path.startswith("/"):
+            ext = path[path.rfind("."):].lower() if isinstance(path, str) else ""
+            if (ext in PICTURES or ext in FILES) and path.startswith("/"):   # (most reads are of code: nothing more to look at)
                 path = os.path.normpath(path)
-                ext = os.path.splitext(path)[1].lower()
                 file = result.get("file") if isinstance(result, dict) and isinstance(result.get("file"), dict) else {}
                 size = file.get("originalSize") if isinstance(file.get("originalSize"), int) else None
                 seen = [s.get("data") for s in (i.get("source") for i in results_of(block, "image"))
@@ -169,7 +170,7 @@ class Collector:
                     made = [(path, "picture", None, "made")]
                 elif results_of(block, "document") and ext in FILES:
                     made = [(path, "file", size, "made")]
-        elif name == "Bash" and output:
+        elif name == "Bash" and output and PICTURE_IN.search(output):
             made = [(p, "picture", None, "new") for p in named_paths(output, cwd)]
         if made:
             self.steps[item["key"]] = made
@@ -188,17 +189,25 @@ class Collector:
                 self.stats[path] = None
         return self.stats[path]
 
-    def place(self, items):
-        """items with what was made after each step and reply that made or named it: {"kind":
-        "made", "key": "<its key>/made/<n>", "of": its key, "at", "text" (its name, or "Plan: "
-        and its title), "made": {"path", "type", "name", "size" (bytes, or None), "gone" (made
-        by a step, not there now), "step" (a Read's: what Claude saw is in the transcript,
-        show(step=…))}}. A file shows once a turn, under the first that made or named it (a
-        picture Claude read: each other picture it saw there); one a command or a reply names
-        only when it's there (a command's, when it's newer than the turn)."""
+    def place(self, items, first=0):
+        """items[first:] with what was made after each step and reply that made or named it:
+        {"kind": "made", "key": "<its key>/made/<n>", "of": its key, "at", "text" (its name, or
+        "Plan: " and its title), "made": {"path", "type", "name", "size" (bytes, or None),
+        "gone" (made by a step, not there now), "step" (a Read's: what Claude saw is in the
+        transcript, show(step=…))}}. A file shows once a turn, under the first that made or
+        named it (a picture Claude read: each other picture it saw there); one a command or a
+        reply names only when it's there (a command's, when it's newer than the turn). Those
+        before first aren't listed (the conversation's newest only): only those of the turn
+        first is in are gone through, for what that turn showed already."""
         out, start, shown = [], None, set()
-        for it in items:
-            out.append(it)
+        begin = first
+        while begin > 0 and not (items[begin].get("kind") == "you" and not items[begin].get("answered") and not items[begin].get("queued")):
+            begin -= 1
+        for i in range(begin, len(items)):
+            it = items[i]
+            listed = i >= first
+            if listed:
+                out.append(it)
             kind = it.get("kind")
             if kind == "you":
                 if not it.get("answered") and not it.get("queued"):
@@ -229,8 +238,9 @@ class Collector:
                 elif st is None:
                     made["gone"] = True
                 title = (self.titles.get(path) or os.path.splitext(name)[0]) if what == "plan" else None
-                out.append({"kind": "made", "key": f"{it['key']}/made/{n}", "of": it["key"], "at": it.get("at"),
-                            "text": "Plan: " + title if title else name, "made": made})
+                if listed:
+                    out.append({"kind": "made", "key": f"{it['key']}/made/{n}", "of": it["key"], "at": it.get("at"),
+                                "text": "Plan: " + title if title else name, "made": made})
         return out
 
 
@@ -239,6 +249,7 @@ class Collector:
 def lines_with(transcript, needle, most):
     """The transcript's lines (bytes) that have needle, the first most of them; [] for a
     transcript over TRANSCRIPT_LOOK_MAX or none."""
+    import mmap   # (only for what's unfolded: a conversation's read doesn't take it)
     out = []
     try:
         with open(transcript, "rb") as f:
@@ -363,6 +374,7 @@ def keep_copy(folder, key, answer):
     Talpy Chat, named after key (the host, the chat, and the file or the step): in folder
     (cs.images_dir: the pictures there go after IMAGES_KEEP_DAYS), yours alone; the answer
     with "file" (its path here) in place of "data"."""
+    import hashlib
     ext = dict(PICTURE_MIMES, **{"image/svg+xml": ".svg"}).get(answer.get("mime"))
     if not answer.get("ok") or ext is None or not isinstance(answer.get("data"), str):
         return answer

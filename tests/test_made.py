@@ -103,6 +103,20 @@ class MadeItemsTests(MadeFixture):
         self.assertEqual([(k, text) for k, _, text, *_ in self.made(items)],
                          [("w1/made/0", "Plan: Ship it"), ("e3/made/0", "Plan: Ship it")])   # (its title from the Write)
 
+    def test_only_the_items_listed_get_theirs_as_the_whole_turn_says(self):
+        # (the newest items only: what the turn showed before them still counts, nothing above is listed)
+        svg = self.folder / "icon.svg"
+        write(svg, SVG)
+        entries = [tool_use("w1", "Write", {"file_path": str(svg), "content": SVG}, self.at(1), "m1"), tool_result("w1", self.at(2)),
+                   tool_use("e1", "Edit", {"file_path": str(svg), "old_string": "a", "new_string": "b"}, self.at(3), "m2"),
+                   tool_result("e1", self.at(4))]
+        for e in entries:
+            e["cwd"] = self.cwd
+        self.chat(prompt("draw", self.t, cwd=self.cwd), *entries)
+        self.assertEqual([i["key"] for i in pane.conversation(self.transcript, limit=10)[0] if i["kind"] != "you"], ["w1", "w1/made/0", "e1"])
+        self.assertEqual([i["key"] for i in pane.conversation(self.transcript, limit=1)[0]], ["e1"])
+        self.assertEqual([i["key"] for i in pane.conversation(self.transcript, limit=2)[0]], ["w1", "w1/made/0", "e1"])
+
     def test_a_plan_edited_without_its_write_is_named_after_its_file(self):
         plan = self.home / "repos/app/.claude/plans/tidy-plan.md"
         write(plan, "# Tidy\n")

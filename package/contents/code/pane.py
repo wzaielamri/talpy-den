@@ -552,7 +552,7 @@ def commands_of(items, due, end):
     return commands.Commands(items, due, end)
 
 
-def conversation_items(lines, pictures=None, ends=None, so_far=None):
+def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None):
     """The pane's items from transcript lines (oldest first): {"kind": "you",
     "text"} for a prompt of yours (one sent while Claude works shows when you
     send it, not once Claude takes it in), {"kind": "claude", "text"} for Claude's
@@ -574,7 +574,8 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
     items, tools = [], {}
     import turns   # (a module of its own, as replies.py: compiled once and kept)
     import made   # (the same)
-    found = made.Collector()   # (what Claude made: placed under its steps and replies at the end)
+    place = found is None   # (what Claude made: placed under its steps and replies at the end; found given: by the caller)
+    found = made.Collector() if place else found
     ending = turn_end(ends is not None)
     end = turns.TurnSoFar(ending)
     # Messages sent while Claude works: the transcript has each one when it's
@@ -681,7 +682,7 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
                         item["diff"] = capped(full)
                         if full:
                             item["summary"] = change_summary(item["name"], full, item["summary"])
-                    if not c.get("is_error"):
+                    if not c.get("is_error") and item["name"] in made.TOOLS:
                         found.step(item, inp, c, e.get("toolUseResult") if len(results) == 1 else None, output, e.get("cwd"))
                     said = your_answer(item, e, output, bool(c.get("is_error")),
                                        e.get("toolUseResult") if len(results) == 1 else None)
@@ -766,7 +767,7 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
         ends["reply"] = ending.reply
     if so_far is not None:
         so_far["turn"] = end
-    return found.place(items)
+    return found.place(items) if place else items
 
 
 def within_budget(items):
@@ -821,9 +822,11 @@ def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None, 
     further than PANE_TAIL_MAX bytes) or "gone"."""
     size = path.stat().st_size
     nbytes = PANE_TAIL_BYTES
+    import made
     while True:
         lines, whole, start = tail_lines(path, size, nbytes)
-        items = conversation_items(lines, pictures, ends, so_far)
+        found = made.Collector()
+        items = conversation_items(lines, pictures, ends, so_far, found)
         if so_far is not None:
             so_far["start"] = start
         if reach is not None:
@@ -839,7 +842,9 @@ def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None, 
                 so_far.update(reached=reached, **({"limit": limit} if reached == "here" else {}))
             reach = None
         if whole or len(items) > limit or nbytes >= PANE_TAIL_MAX:
-            return within_budget(file_pictures(items[-limit:])), len(items) > limit or not whole
+            # (what was made, placed in the items listed only: their replies alone are looked at)
+            shown = found.place(items, max(0, len(items) - limit))
+            return within_budget(file_pictures(shown)), len(items) > limit or not whole
         nbytes *= 4
 
 
