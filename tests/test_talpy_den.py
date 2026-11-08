@@ -1886,19 +1886,24 @@ class JobsFileTests(unittest.TestCase):
         self.path = Path(self.tmp.name) / "run/talpy-den/jobs.json"
         self.cache = Path(self.tmp.name) / "cache"
         self.groups = [
-            {"name": "work", "sessions": [
+            {"name": "work", "id": "a1", "plan": "Team", "sessions": [
                 {"key": ".claude-work/s1/live", "name": "Fix the parser", "state": "waiting", "since": 1000,
                  "cwdShort": "~/app", "peek": "a secret prompt", "waitingFor": "Bash(rm -rf secret)"},
-                {"key": ".claude-work/s2/job", "name": "", "state": "idle", "since": 2000, "cwdShort": "~/docs"}]},
-            {"name": "personal", "sessions": [
+                {"key": ".claude-work/s2/job", "name": "", "state": "idle", "since": 2000, "cwdShort": "~/docs"}],
+             "limits": {"updatedAt": 4000, "windows": [
+                 {"key": "five_hour", "label": "5h", "pct": 40.0, "resetsAt": 9000, "reset": False,
+                  "forecast": {"fullAt": 8000, "secret": 1}},
+                 {"key": "seven_day", "label": "7d", "pct": 0.0, "resetsAt": None, "reset": True, "endedAt": 3500}]}},
+            {"name": "personal", "id": "b2", "plan": "Pro", "sessions": [
                 {"key": ".claude-personal/s3/live", "name": "Release notes", "state": "done", "since": 3000,
                  "cwdShort": "~/site"}]}]
 
     def here(self, now):   # (this computer's check)
-        return cs.publish_jobs(self.path, self.cache, "", cs.place_jobs(self.groups), now)
+        return cs.publish_jobs(self.path, self.cache, "", cs.place_jobs(self.groups), now,
+                               cs.place_accounts(self.groups))
 
-    def jobs(self):
-        return json.loads(self.path.read_text())["jobs"]
+    def jobs(self, key="jobs"):
+        return json.loads(self.path.read_text())[key]
 
     def test_only_what_a_status_shows(self):
         self.assertTrue(self.here(5000))
@@ -1908,7 +1913,11 @@ class JobsFileTests(unittest.TestCase):
             {"id": ".claude-work/s2/job", "name": "", "state": "idle", "since": 2000,
              "account": "work", "folder": "~/docs", "host": "", "where": "local"},
             {"id": ".claude-personal/s3/live", "name": "Release notes", "state": "done", "since": 3000,
-             "account": "personal", "folder": "~/site", "host": "", "where": "local"}]})
+             "account": "personal", "folder": "~/site", "host": "", "where": "local"}], "accounts": [
+            {"id": "a1", "name": "work", "plan": "Team", "host": "", "where": "local", "windows": [
+                {"key": "five_hour", "label": "5h", "pct": 40.0, "resetsAt": 9000},
+                {"key": "seven_day", "label": "7d", "pct": 0.0, "resetsAt": None}]},   # (past its reset: 0%)
+            {"id": "b2", "name": "personal", "plan": "Pro", "host": "", "where": "local", "windows": []}]})
         self.assertNotIn("secret", self.path.read_text())   # (no prompts, nor what a chat asks)
         self.assertEqual(oct(self.path.stat().st_mode & 0o777), "0o600")
         self.assertEqual(oct(self.path.parent.stat().st_mode & 0o777), "0o700")
@@ -1927,6 +1936,11 @@ class JobsFileTests(unittest.TestCase):
         self.groups[0]["sessions"].pop()   # a chat that's gone
         self.assertTrue(self.here(8000))
         self.assertEqual(len(self.jobs()), 2)
+        self.groups[0]["limits"]["windows"][0]["pct"] = 41.0   # a plan's usage that moves on: written too
+        self.assertTrue(self.here(9000))
+        self.assertEqual(self.jobs("accounts")[0]["windows"][0]["pct"], 41.0)
+        self.groups[0]["limits"]["updatedAt"] = 8500   # read again, the same numbers: nothing to write
+        self.assertFalse(self.here(9500))
 
     def test_each_machines_chats(self):
         (self.cache / "hosts").mkdir(parents=True)
@@ -1936,10 +1950,12 @@ class JobsFileTests(unittest.TestCase):
             kept.write_text("{}")
             os.utime(str(kept), (at_ms / 1000, at_ms / 1000))
         now = 10_000_000
-        lab = [{"name": "work", "sessions": [
-            {"key": ".claude/s9/job", "name": "Train", "state": "working", "since": 2000, "cwdShort": "/srv"}]}]
+        lab = [{"name": "work", "id": "a1", "plan": "Team", "sessions": [
+            {"key": ".claude/s9/job", "name": "Train", "state": "working", "since": 2000, "cwdShort": "/srv"}],
+            "limits": {"windows": [{"key": "five_hour", "label": "5h", "pct": 42.0, "resetsAt": 9000}]}}]
         answered("lab", now)
-        cs.publish_jobs(self.path, self.cache, "lab", cs.place_jobs(lab, "lab", "ssh", offset_ms=500), now)
+        cs.publish_jobs(self.path, self.cache, "lab", cs.place_jobs(lab, "lab", "ssh", offset_ms=500), now,
+                        cs.place_accounts(lab, "lab", "ssh", offset_ms=500))
         answered("podman:web", now)
         cs.publish_jobs(self.path, self.cache, "podman:web", cs.place_jobs(lab, "podman:web", "podman"), now)
         self.here(now)
@@ -1947,6 +1963,9 @@ class JobsFileTests(unittest.TestCase):
                          [("", "local", "Fix the parser"), ("", "local", ""), ("", "local", "Release notes"),
                           ("lab", "ssh", "Train"), ("podman:web", "podman", "Train")])   # (this computer's first)
         self.assertEqual((self.jobs()[3]["id"], self.jobs()[3]["since"]), ("lab:.claude/s9/job", 2500))   # (our clock)
+        # the same account logged in there too: the same id, so a reader can tell
+        self.assertEqual([(a["id"], a["host"], a["windows"][0]["resetsAt"] if a["windows"] else None)
+                          for a in self.jobs("accounts")], [("a1", "", 9000), ("b2", "", None), ("a1", "lab", 9500)])
         # this computer's check changes its own only
         self.groups.pop()
         self.here(now + 1000)
@@ -1954,6 +1973,7 @@ class JobsFileTests(unittest.TestCase):
         # a check that couldn't reach a place takes its chats out: they can't be seen
         self.assertTrue(cs.publish_jobs(self.path, self.cache, "lab", None, now + 2000))
         self.assertEqual([j["host"] for j in self.jobs()], ["", "", "podman:web"])
+        self.assertEqual([a["host"] for a in self.jobs("accounts")], [""])   # (its accounts too; "work" here stays)
         # a place nothing checks any more (no longer picked): its chats go once its last answer is 15 minutes old
         self.assertFalse(self.here(now + cs.JOBS_HOST_FRESH_MS))
         self.assertTrue(self.here(now + cs.JOBS_HOST_FRESH_MS + 1000))

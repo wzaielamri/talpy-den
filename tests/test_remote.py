@@ -311,9 +311,11 @@ class StatusTests(FakeSSH):
         self.assertEqual({k: job[k] for k in ("name", "state", "host", "where", "folder")},
                          {"name": "remote job", "state": "done", "host": "lab", "where": "ssh", "folder": "/srv/x"})
         self.assertTrue(job["id"].startswith("lab:"), job["id"])
+        (account,) = json.loads(path.read_text())["accounts"]   # (and its account, with its plan's usage)
+        self.assertEqual((account["name"], account["host"], account["where"]), ("Remote Me", "lab", "ssh"))
         self.mode("unreachable")   # it can't be reached: its chats can't be seen, so they go
         self.assertFalse(remote.status("lab", tokens=False)["ok"])
-        self.assertEqual(json.loads(path.read_text())["jobs"], [])
+        self.assertEqual((json.loads(path.read_text())["jobs"], json.loads(path.read_text())["accounts"]), ([], []))
 
     def test_a_chat_id_that_is_a_flag_is_dropped(self):
         # (passed on as a word of jump.py's command line, "--screenshot" was taken for that flag)

@@ -803,17 +803,19 @@ def status(host, *args, **kw):
 
 
 def publish_host_jobs(out):
-    """A host's or container's chats in the jobs file (talpy_den.py's, for other programs), on this
-    computer's clock; none while it can't be reached (a check that failed)."""
+    """A host's or container's chats and accounts in the jobs file (talpy_den.py's, for other programs), on
+    this computer's clock; none while it can't be reached (a check that failed)."""
     try:
         p, now = place(out["host"]), int(time.time() * 1000)
         result = out.get("result") if out.get("ok") else None
-        jobs = None
+        jobs = accounts = None
         if isinstance(result, dict):
             offset = now - (cs.number(result.get("generatedAt")) or now)   # (as remember_answer has it)
-            jobs = cs.place_jobs(result.get("groups"), p.id, p.engine if p.container else "ssh", offset)
+            where = p.engine if p.container else "ssh"
+            jobs = cs.place_jobs(result.get("groups"), p.id, where, offset)
+            accounts = cs.place_accounts(result.get("groups"), p.id, where, offset)
         cache = cs.cache_dir(Path.home())
-        cs.publish_jobs(cs.jobs_file_path(Path.home(), cache), cache, p.id, jobs, now)
+        cs.publish_jobs(cs.jobs_file_path(Path.home(), cache), cache, p.id, jobs, now, accounts)
     except (OSError, ValueError, TypeError, KeyError):
         pass
 

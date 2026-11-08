@@ -8660,6 +8660,26 @@ def place_jobs(groups, host="", where="local", offset_ms=0):
     return jobs
 
 
+def place_accounts(groups, host="", where="local", offset_ms=0):
+    """The jobs file's accounts of groups (a status check's), each with its plan's usage: the windows as the
+    widget shows them (one past its reset at 0%), their resets on this computer's clock. Its id is the
+    account's (a one-way hash), the same on every machine it's logged in on."""
+    accounts = []
+    for g in groups if isinstance(groups, list) else []:
+        if not isinstance(g, dict):
+            continue
+        limits = g.get("limits") if isinstance(g.get("limits"), dict) else {}
+        windows = []
+        for w in limits.get("windows") or []:
+            if isinstance(w, dict) and isinstance(w.get("key"), str) and number(w.get("pct")) is not None:
+                resets = number(w.get("resetsAt"))
+                windows.append({"key": w["key"], "label": w.get("label") or w["key"], "pct": w["pct"],
+                                "resetsAt": int(resets + offset_ms) if resets is not None else None})
+        accounts.append({"id": str(g.get("id") or ""), "name": g.get("name") or "", "plan": g.get("plan") or "",
+                         "host": host, "where": where, "windows": windows})
+    return accounts
+
+
 def place_fresh(cache_root, host, now_ms):
     """Whether the place's chats stay in the jobs file: this computer's always (its own check takes them
     out), an SSH host's or container's while its last answer (remote.py's, hosts/<host>.json) is fresh."""
@@ -8673,23 +8693,30 @@ def place_fresh(cache_root, host, now_ms):
         return False
 
 
-def publish_jobs(path, cache_root, host, jobs, now_ms):
-    """Put host's jobs (place_jobs'; host "" for this computer; None: none, as its check failed) in the
-    jobs file in place of its last ones, keeping the other places' while they're fresh, and write it if
-    anything changed; True when it wrote. This computer's come first, then each place's by its name."""
+def publish_jobs(path, cache_root, host, jobs, now_ms, accounts=None):
+    """Put host's jobs and accounts (place_jobs' and place_accounts'; host "" for this computer; None: none,
+    as its check failed) in the jobs file in place of its last ones, keeping the other places' while they're
+    fresh, and write it if anything changed; True when it wrote. This computer's come first, then each
+    place's by its name."""
     private_dir(cache_root)
     with open(cache_root / "jobs.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         old = read_json(path)
-        last = old.get("jobs") if isinstance(old, dict) and old.get("version") == JOBS_FILE_VERSION else None
-        last = last if isinstance(last, list) else []
-        others = [j for j in last if isinstance(j, dict) and j.get("host", "") != host
-                  and place_fresh(cache_root, j.get("host", ""), now_ms)]
-        new = sorted(list(jobs or []) + others, key=lambda j: (j.get("host", "") != "", j.get("host", "")))
-        if isinstance(old, dict) and old.get("version") == JOBS_FILE_VERSION and new == last:
+        old = old if isinstance(old, dict) and old.get("version") == JOBS_FILE_VERSION else None
+
+        def merged(key, mine):
+            last = old.get(key) if old is not None else None
+            last = last if isinstance(last, list) else []
+            others = [e for e in last if isinstance(e, dict) and e.get("host", "") != host
+                      and place_fresh(cache_root, e.get("host", ""), now_ms)]
+            return last, sorted(list(mine or []) + others, key=lambda e: (e.get("host", "") != "", e.get("host", "")))
+        last_jobs, new_jobs = merged("jobs", jobs)
+        last_accounts, new_accounts = merged("accounts", accounts)
+        if old is not None and "accounts" in old and new_jobs == last_jobs and new_accounts == last_accounts:
             return False
         private_dir(path.parent)
-        write_json_atomic(path, {"version": JOBS_FILE_VERSION, "updatedAt": now_ms, "jobs": new}, private=True)
+        write_json_atomic(path, {"version": JOBS_FILE_VERSION, "updatedAt": now_ms, "jobs": new_jobs,
+                                 "accounts": new_accounts}, private=True)
         return True
 
 
@@ -11733,9 +11760,9 @@ def main(argv=None):
                 except Exception as exc:
                     result["errors"].append(f"chats that keep going: {exc}")
             if (not remote or local) and (keep_going or cleanup_check or result.get("notifier") is True):
-                try:  # (this computer's chats for other programs: the jobs file, when they changed)
+                try:  # (this computer's chats and accounts for other programs: the jobs file, when they changed)
                     publish_jobs(jobs_file_path(home, cache_root), cache_root, "", place_jobs(result["groups"]),
-                                 int(time.time() * 1000))
+                                 int(time.time() * 1000), place_accounts(result["groups"]))
                 except Exception as exc:
                     result["errors"].append(f"jobs file: {exc}")
                 try:  # (old chats: Talpy Den's daily cleanup, when it's the one that cleans, cleanup.py)

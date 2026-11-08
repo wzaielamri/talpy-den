@@ -46,18 +46,23 @@ talpy_den.py (one copy's check) + remote.py --status (each host's) ──(a chat
 
 ## The jobs file
 
-For other programs (a status bar, a desk display, a script): the chats and their states, this computer's and those of the SSH hosts and containers shown, with where each one runs, in `$XDG_RUNTIME_DIR/talpy-den/jobs.json` (`/run/user/<uid>/talpy-den/`: only you can read it, it's kept in memory and gone when you log out; on a system without that folder, `~/.cache/talpy-den/jobs.json`). Each check writes its own machine's: the copy of Talpy Den that does the once-a-computer work (the one that notifies, VS Code's window that does, or GNOME's) this computer's, each SSH host's and container's check (`remote.py --status`) that place's, and only when a chat's state changed, so the file changes as soon as Talpy Den sees a chat change, and only then.
+For other programs (a status bar, a desk display, a script): the chats and their states, this computer's and those of the SSH hosts and containers shown, with where each one runs, and each account's plan usage, in `$XDG_RUNTIME_DIR/talpy-den/jobs.json` (`/run/user/<uid>/talpy-den/`: only you can read it, it's kept in memory and gone when you log out; on a system without that folder, `~/.cache/talpy-den/jobs.json`). Each check writes its own machine's: the copy of Talpy Den that does the once-a-computer work (the one that notifies, VS Code's window that does, or GNOME's) this computer's, each SSH host's and container's check (`remote.py --status`) that place's, and only when a chat's state or an account's usage changed, so the file changes as soon as Talpy Den sees it change, and only then.
 
 ```json
 {"version": 1, "updatedAt": 1794145062163, "jobs": [
   {"id": ".claude-work/2f0c1a9e-…/job", "name": "Fix the parser", "state": "idle",
    "since": 1793964429847, "account": "work", "folder": "~/src/app", "host": "", "where": "local"},
   {"id": "lab:.claude/8d41b7c0-…/live", "name": "Train the model", "state": "working",
-   "since": 1794144961022, "account": "lab", "folder": "~/train", "host": "lab", "where": "ssh"}]}
+   "since": 1794144961022, "account": "lab", "folder": "~/train", "host": "lab", "where": "ssh"}],
+ "accounts": [
+  {"id": "3f9a1c7e5b20", "name": "work", "plan": "Team", "host": "", "where": "local", "windows": [
+    {"key": "five_hour", "label": "5h", "pct": 40.0, "resetsAt": 1794158400000},
+    {"key": "seven_day", "label": "7d", "pct": 84.0, "resetsAt": 1794304800000}]}]}
 ```
 
 - `state` is `waiting` (it needs you), `working`, `idle` (its turn is over and the chat is open) or `done` (a finished background chat, listed for 24 hours unless your settings say otherwise). `since` is when it got there and `updatedAt` when the file was written, in milliseconds since 1970, on this computer's clock (a host's times are moved by how far its clock is from this one's). `id` stays the same while the chat is listed. Only what a status shows: no prompts, replies or what a chat asks.
 - `host` and `where` say where it runs: `""` and `local` on this computer, the SSH host's name (as in `~/.ssh/config`) and `ssh`, or the container as Talpy Den names it (`podman:web`, or `docker:web@lab` on the SSH host `lab`) and its engine (`docker`, `podman` or `nerdctl`). This computer's chats come first, then each place's by its name, each grouped by account.
-- A place that can't be reached (its check failed: the host is down, the container stopped) has its chats taken out, as Talpy Den can't see them; one nothing checks any more (no longer picked) once its last answer is 15 minutes old.
+- `accounts` has each account's plan usage, as the popup shows it: its `windows` (`five_hour`, `seven_day`, and the week's per model ones a Max plan has), each with `pct` (how much of it is used; 0 once it has reset) and `resetsAt` (on this computer's clock; null when not known). An account's `id` is a one-way hash of it, the same on every machine it's logged in on, so one listed for this computer and an SSH host is the same account; `host` and `where` say which machine's check it comes from.
+- A place that can't be reached (its check failed: the host is down, the container stopped) has its chats and accounts taken out, as Talpy Den can't see them; one nothing checks any more (no longer picked) once its last answer is 15 minutes old.
 - It's written in one go (a new file renamed over it), so a reader always gets a whole one, with no lock (the checks that write it take turns, `~/.cache/talpy-den/jobs.lock`). To wait for a change instead of reading it again and again, watch its folder for a file moved into it (inotify's `IN_MOVED_TO`), e.g. `inotifywait -m -e moved_to "$XDG_RUNTIME_DIR/talpy-den"`. Read it once at the start too: inotify only tells what changes.
 - New fields may come; a change to what one means raises `version`.

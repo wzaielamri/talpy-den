@@ -6,9 +6,10 @@
 
 - **Your chats' states for other programs:** your chats, here and on
   your SSH hosts and containers, with their states and where each one
-  runs, go to `$XDG_RUNTIME_DIR/talpy-den/jobs.json` whenever one
-  changes, for a status bar, a desk display or a script to follow (it
-  can wait for the file with inotify instead of asking again and again).
+  runs, and your accounts' plan usage, go to
+  `$XDG_RUNTIME_DIR/talpy-den/jobs.json` whenever one changes, for a
+  status bar, a desk display or a script to follow (it can wait for the
+  file with inotify instead of asking again and again).
 - **Model and effort for one chat:** in a background chat or one that isn't
   open, `/model` and `/effort` list the models and effort levels as you type,
   and the one you pick (or `/model sonnet` typed) is for that chat alone:
