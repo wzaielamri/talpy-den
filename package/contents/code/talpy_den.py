@@ -8612,15 +8612,19 @@ def elect_notifier(cache_root, instance, interval_ms, now_ms):
 
 # ---------------------------------------------------------------- the jobs file
 #
-# This computer's chats and their states, for other programs: a status bar, a
-# desk display, a script (docs/how-it-works.md#the-jobs-file). The copy that
-# does the once-a-computer work (it notifies, or VS Code's leading window, or
-# GNOME's copy) writes it after its check, and only when a chat's state
-# changed, in one go (a new file renamed over it): whoever reads it always gets
-# a whole one, and can wait for that rename (inotify's IN_MOVED_TO on its
-# folder) instead of reading it again and again.
+# The chats and their states, for other programs: a status bar, a desk
+# display, a script (docs/how-it-works.md#the-jobs-file). Each check writes
+# its own machine's: the copy that does the once-a-computer work (it notifies,
+# or VS Code's leading window, or GNOME's copy) this computer's after its
+# check, each SSH host's and container's check (remote.py --status) that
+# place's, or takes them out when it couldn't reach it. Under a lock, as two
+# checks can end at once; only when something changed, and in one go (a new
+# file renamed over it): whoever reads it always gets a whole one, and can wait
+# for that rename (inotify's IN_MOVED_TO on its folder) instead of reading it
+# again and again.
 
 JOBS_FILE_VERSION = 1
+JOBS_HOST_FRESH_MS = 15 * 60_000  # a place nothing checks any more: its chats go once its last answer is this old
 
 
 def jobs_file_path(home, cache_root):
@@ -8638,18 +8642,55 @@ def jobs_file_path(home, cache_root):
     return cache_root / "jobs.json"
 
 
-def publish_jobs(path, groups, now_ms):
-    """Write the chats of groups (collect's), each with its state and since when, if that changed since
-    the last time; True when it wrote. Only what a status shows: no prompts, replies or what a chat asks."""
-    jobs = [{"id": s.get("key") or "", "name": s.get("name") or "", "state": s["state"],
-             "since": number(s.get("since")), "account": g.get("name") or "", "folder": s.get("cwdShort") or ""}
-            for g in groups for s in g.get("sessions") or [] if s.get("state") in STATE_ORDER]
-    old = read_json(path)
-    if isinstance(old, dict) and old.get("version") == JOBS_FILE_VERSION and old.get("jobs") == jobs:
+def place_jobs(groups, host="", where="local", offset_ms=0):
+    """The jobs file's entries for the chats of groups (a status check's): of this computer (host ""), else
+    of the SSH host or container host (where: "ssh", or its engine), their times put on this computer's
+    clock (offset_ms: how far its clock is from this one's). Only what a status shows: no prompts, replies
+    or what a chat asks."""
+    jobs = []
+    for g in groups if isinstance(groups, list) else []:
+        for s in g.get("sessions") or [] if isinstance(g, dict) else []:
+            if not isinstance(s, dict) or s.get("state") not in STATE_ORDER:
+                continue
+            since = number(s.get("since"))
+            jobs.append({"id": (host + ":" if host else "") + str(s.get("key") or ""), "name": s.get("name") or "",
+                         "state": s["state"], "since": int(since + offset_ms) if since is not None else None,
+                         "account": g.get("name") or "", "folder": s.get("cwdShort") or "",
+                         "host": host, "where": where})
+    return jobs
+
+
+def place_fresh(cache_root, host, now_ms):
+    """Whether the place's chats stay in the jobs file: this computer's always (its own check takes them
+    out), an SSH host's or container's while its last answer (remote.py's, hosts/<host>.json) is fresh."""
+    if not host:
+        return True
+    if not isinstance(host, str) or "/" in host or host.startswith("."):
         return False
-    private_dir(path.parent)
-    write_json_atomic(path, {"version": JOBS_FILE_VERSION, "updatedAt": now_ms, "jobs": jobs}, private=True)
-    return True
+    try:
+        return now_ms - (cache_root / "hosts" / (host + ".json")).stat().st_mtime * 1000 <= JOBS_HOST_FRESH_MS
+    except OSError:
+        return False
+
+
+def publish_jobs(path, cache_root, host, jobs, now_ms):
+    """Put host's jobs (place_jobs'; host "" for this computer; None: none, as its check failed) in the
+    jobs file in place of its last ones, keeping the other places' while they're fresh, and write it if
+    anything changed; True when it wrote. This computer's come first, then each place's by its name."""
+    private_dir(cache_root)
+    with open(cache_root / "jobs.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        old = read_json(path)
+        last = old.get("jobs") if isinstance(old, dict) and old.get("version") == JOBS_FILE_VERSION else None
+        last = last if isinstance(last, list) else []
+        others = [j for j in last if isinstance(j, dict) and j.get("host", "") != host
+                  and place_fresh(cache_root, j.get("host", ""), now_ms)]
+        new = sorted(list(jobs or []) + others, key=lambda j: (j.get("host", "") != "", j.get("host", "")))
+        if isinstance(old, dict) and old.get("version") == JOBS_FILE_VERSION and new == last:
+            return False
+        private_dir(path.parent)
+        write_json_atomic(path, {"version": JOBS_FILE_VERSION, "updatedAt": now_ms, "jobs": new}, private=True)
+        return True
 
 
 def config_defaults(main_xml=None):
@@ -11693,7 +11734,8 @@ def main(argv=None):
                     result["errors"].append(f"chats that keep going: {exc}")
             if (not remote or local) and (keep_going or cleanup_check or result.get("notifier") is True):
                 try:  # (this computer's chats for other programs: the jobs file, when they changed)
-                    publish_jobs(jobs_file_path(home, cache_root), result["groups"], int(time.time() * 1000))
+                    publish_jobs(jobs_file_path(home, cache_root), cache_root, "", place_jobs(result["groups"]),
+                                 int(time.time() * 1000))
                 except Exception as exc:
                     result["errors"].append(f"jobs file: {exc}")
                 try:  # (old chats: Talpy Den's daily cleanup, when it's the one that cleans, cleanup.py)

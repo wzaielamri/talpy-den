@@ -223,9 +223,10 @@ class FakeSSH(unittest.TestCase):
             {"state": "done", "tempo": "idle", "sessionId": "abc12345", "name": "remote job", "cwd": "/srv/x",
              "updatedAt": stamp, "createdAt": stamp}))
         python_dir = str(Path(sys.executable).parent)
+        (root / "runtime").mkdir()  # (a status puts the host's chats in the jobs file there: not in yours)
         self.env = {"PATH": f"{self.bin}:{os.environ['PATH']}", "FAKE_HOME": str(self.fake_home),
                     "FAKE_PATH": f"{python_dir}:/usr/bin:/bin", "FAKE_SSH_LOG": str(self.log),
-                    "XDG_CACHE_HOME": str(root / "local-cache")}
+                    "XDG_CACHE_HOME": str(root / "local-cache"), "XDG_RUNTIME_DIR": str(root / "runtime")}
         self.saved = {k: os.environ.get(k) for k in [*self.env, "FAKE_SSH_MODE"]}
         os.environ.update(self.env)
 
@@ -302,6 +303,17 @@ class StatusTests(FakeSSH):
         # how old the host's plan usage may get before Claude Code fetches it there
         self.assertTrue(remote.status("lab", tokens=False, usage_refresh=15)["ok"])
         self.assertEqual(self.calls()[-1][1], "python3 -I - --remote --no-tokens --usage-refresh 15")
+
+    def test_its_chats_go_in_the_jobs_file(self):
+        path = Path(os.environ["XDG_RUNTIME_DIR"]) / "talpy-den/jobs.json"
+        self.assertTrue(remote.status("lab", tokens=False)["ok"])
+        (job,) = json.loads(path.read_text())["jobs"]
+        self.assertEqual({k: job[k] for k in ("name", "state", "host", "where", "folder")},
+                         {"name": "remote job", "state": "done", "host": "lab", "where": "ssh", "folder": "/srv/x"})
+        self.assertTrue(job["id"].startswith("lab:"), job["id"])
+        self.mode("unreachable")   # it can't be reached: its chats can't be seen, so they go
+        self.assertFalse(remote.status("lab", tokens=False)["ok"])
+        self.assertEqual(json.loads(path.read_text())["jobs"], [])
 
     def test_a_chat_id_that_is_a_flag_is_dropped(self):
         # (passed on as a word of jump.py's command line, "--screenshot" was taken for that flag)

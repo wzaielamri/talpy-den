@@ -795,7 +795,30 @@ def explain(host, code, stderr):
     return f"{host}: {last}" if last else f"{host}: ssh failed (exit {code})"
 
 
-def status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, plans=None, memories=None):
+def status(host, *args, **kw):
+    """The widget's status of host (host_status's), its chats put in the jobs file too."""
+    out = host_status(host, *args, **kw)
+    publish_host_jobs(out)
+    return out
+
+
+def publish_host_jobs(out):
+    """A host's or container's chats in the jobs file (talpy_den.py's, for other programs), on this
+    computer's clock; none while it can't be reached (a check that failed)."""
+    try:
+        p, now = place(out["host"]), int(time.time() * 1000)
+        result = out.get("result") if out.get("ok") else None
+        jobs = None
+        if isinstance(result, dict):
+            offset = now - (cs.number(result.get("generatedAt")) or now)   # (as remember_answer has it)
+            jobs = cs.place_jobs(result.get("groups"), p.id, p.engine if p.container else "ssh", offset)
+        cache = cs.cache_dir(Path.home())
+        cs.publish_jobs(cs.jobs_file_path(Path.home(), cache), cache, p.id, jobs, now)
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+
+
+def host_status(host, done_hours=None, recent=None, tokens=True, usage_refresh=None, plans=None, memories=None):
     """The widget's status of host, as talpy_den.py --remote prints it there."""
     host = check_host(host)
     args = ["--remote"]

@@ -1878,12 +1878,13 @@ class SeveralWidgetsTests(unittest.TestCase):
 
 
 class JobsFileTests(unittest.TestCase):
-    """This computer's chats and their states, for other programs: a status bar, a desk display."""
+    """The chats, their states and where they run, for other programs: a status bar, a desk display."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / "run/talpy-den/jobs.json"
+        self.cache = Path(self.tmp.name) / "cache"
         self.groups = [
             {"name": "work", "sessions": [
                 {"key": ".claude-work/s1/live", "name": "Fix the parser", "state": "waiting", "since": 1000,
@@ -1893,33 +1894,70 @@ class JobsFileTests(unittest.TestCase):
                 {"key": ".claude-personal/s3/live", "name": "Release notes", "state": "done", "since": 3000,
                  "cwdShort": "~/site"}]}]
 
+    def here(self, now):   # (this computer's check)
+        return cs.publish_jobs(self.path, self.cache, "", cs.place_jobs(self.groups), now)
+
+    def jobs(self):
+        return json.loads(self.path.read_text())["jobs"]
+
     def test_only_what_a_status_shows(self):
-        self.assertTrue(cs.publish_jobs(self.path, self.groups, 5000))
+        self.assertTrue(self.here(5000))
         self.assertEqual(json.loads(self.path.read_text()), {"version": 1, "updatedAt": 5000, "jobs": [
             {"id": ".claude-work/s1/live", "name": "Fix the parser", "state": "waiting", "since": 1000,
-             "account": "work", "folder": "~/app"},
+             "account": "work", "folder": "~/app", "host": "", "where": "local"},
             {"id": ".claude-work/s2/job", "name": "", "state": "idle", "since": 2000,
-             "account": "work", "folder": "~/docs"},
+             "account": "work", "folder": "~/docs", "host": "", "where": "local"},
             {"id": ".claude-personal/s3/live", "name": "Release notes", "state": "done", "since": 3000,
-             "account": "personal", "folder": "~/site"}]})
+             "account": "personal", "folder": "~/site", "host": "", "where": "local"}]})
         self.assertNotIn("secret", self.path.read_text())   # (no prompts, nor what a chat asks)
         self.assertEqual(oct(self.path.stat().st_mode & 0o777), "0o600")
         self.assertEqual(oct(self.path.parent.stat().st_mode & 0o777), "0o700")
 
     def test_written_again_only_when_a_chat_changes(self):
-        cs.publish_jobs(self.path, self.groups, 5000)
+        self.here(5000)
         first = self.path.stat()
-        self.assertFalse(cs.publish_jobs(self.path, self.groups, 6000))   # the same: no new file, so no event
+        self.assertFalse(self.here(6000))   # the same: no new file, so no event
         self.assertEqual((self.path.stat().st_ino, json.loads(self.path.read_text())["updatedAt"]),
                          (first.st_ino, 5000))
         self.groups[0]["sessions"][0].update(state="working", since=5500)
-        self.assertTrue(cs.publish_jobs(self.path, self.groups, 7000))
+        self.assertTrue(self.here(7000))
         self.assertNotEqual(self.path.stat().st_ino, first.st_ino)   # a new file renamed over it (IN_MOVED_TO)
-        self.assertEqual(json.loads(self.path.read_text())["jobs"][0]["state"], "working")
+        self.assertEqual(self.jobs()[0]["state"], "working")
         self.assertEqual([p.name for p in self.path.parent.iterdir()], ["jobs.json"])   # (no temporary file left)
         self.groups[0]["sessions"].pop()   # a chat that's gone
-        self.assertTrue(cs.publish_jobs(self.path, self.groups, 8000))
-        self.assertEqual(len(json.loads(self.path.read_text())["jobs"]), 2)
+        self.assertTrue(self.here(8000))
+        self.assertEqual(len(self.jobs()), 2)
+
+    def test_each_machines_chats(self):
+        (self.cache / "hosts").mkdir(parents=True)
+
+        def answered(host, at_ms):   # (remote.py keeps each place's last answer there)
+            kept = self.cache / "hosts" / (host + ".json")
+            kept.write_text("{}")
+            os.utime(str(kept), (at_ms / 1000, at_ms / 1000))
+        now = 10_000_000
+        lab = [{"name": "work", "sessions": [
+            {"key": ".claude/s9/job", "name": "Train", "state": "working", "since": 2000, "cwdShort": "/srv"}]}]
+        answered("lab", now)
+        cs.publish_jobs(self.path, self.cache, "lab", cs.place_jobs(lab, "lab", "ssh", offset_ms=500), now)
+        answered("podman:web", now)
+        cs.publish_jobs(self.path, self.cache, "podman:web", cs.place_jobs(lab, "podman:web", "podman"), now)
+        self.here(now)
+        self.assertEqual([(j["host"], j["where"], j["name"]) for j in self.jobs()],
+                         [("", "local", "Fix the parser"), ("", "local", ""), ("", "local", "Release notes"),
+                          ("lab", "ssh", "Train"), ("podman:web", "podman", "Train")])   # (this computer's first)
+        self.assertEqual((self.jobs()[3]["id"], self.jobs()[3]["since"]), ("lab:.claude/s9/job", 2500))   # (our clock)
+        # this computer's check changes its own only
+        self.groups.pop()
+        self.here(now + 1000)
+        self.assertEqual([j["host"] for j in self.jobs()], ["", "", "lab", "podman:web"])
+        # a check that couldn't reach a place takes its chats out: they can't be seen
+        self.assertTrue(cs.publish_jobs(self.path, self.cache, "lab", None, now + 2000))
+        self.assertEqual([j["host"] for j in self.jobs()], ["", "", "podman:web"])
+        # a place nothing checks any more (no longer picked): its chats go once its last answer is 15 minutes old
+        self.assertFalse(self.here(now + cs.JOBS_HOST_FRESH_MS))
+        self.assertTrue(self.here(now + cs.JOBS_HOST_FRESH_MS + 1000))
+        self.assertEqual([j["host"] for j in self.jobs()], ["", ""])
 
     def test_in_your_runtime_folder(self):
         import pwd
