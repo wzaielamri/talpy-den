@@ -1862,9 +1862,12 @@ class SeveralWidgetsTests(unittest.TestCase):
         env = dict(os.environ, HOME=str(home), XDG_CACHE_HOME=str(Path(self.tmp.name)))
         run = lambda *a: json.loads(subprocess.run([sys.executable, "-I", str(ROOT / "package/contents/code/talpy_den.py"),
                                                     "--no-tokens", *a], capture_output=True, text=True, env=env).stdout)
+        jobs = Path(self.tmp.name) / "talpy-den/jobs.json"   # (another home than this account's: in its cache)
         self.assertNotIn("notifier", run())   # GNOME and VS Code: one copy, no question
+        self.assertFalse(jobs.exists())   # (not the copy that does the computer's work: it doesn't write the jobs file)
         first = run("--instance", "12/3", "--interval-ms", "2000")
         self.assertEqual((first["notifier"], first["sharedSettings"]), (True, None))
+        self.assertEqual(json.loads(jobs.read_text())["jobs"], [])   # (the one that notifies does; no chats here)
         self.assertFalse(run("--instance", "40/1", "--interval-ms", "2000")["notifier"])
         jump = [sys.executable, "-I", str(ROOT / "package/contents/code/jump.py")]
         out = subprocess.run(jump + ["--save-settings", json.dumps({"sshHosts": "lab"}), "--by", "12/3"],
@@ -1872,6 +1875,66 @@ class SeveralWidgetsTests(unittest.TestCase):
         self.assertTrue(json.loads(out)["ok"], out)
         shared = run("--instance", "40/1")["sharedSettings"]
         self.assertEqual((shared["by"], shared["values"]), ("12/3", {"sshHosts": "lab"}))
+
+
+class JobsFileTests(unittest.TestCase):
+    """This computer's chats and their states, for other programs: a status bar, a desk display."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / "run/talpy-den/jobs.json"
+        self.groups = [
+            {"name": "work", "sessions": [
+                {"key": ".claude-work/s1/live", "name": "Fix the parser", "state": "waiting", "since": 1000,
+                 "cwdShort": "~/app", "peek": "a secret prompt", "waitingFor": "Bash(rm -rf secret)"},
+                {"key": ".claude-work/s2/job", "name": "", "state": "idle", "since": 2000, "cwdShort": "~/docs"}]},
+            {"name": "personal", "sessions": [
+                {"key": ".claude-personal/s3/live", "name": "Release notes", "state": "done", "since": 3000,
+                 "cwdShort": "~/site"}]}]
+
+    def test_only_what_a_status_shows(self):
+        self.assertTrue(cs.publish_jobs(self.path, self.groups, 5000))
+        self.assertEqual(json.loads(self.path.read_text()), {"version": 1, "updatedAt": 5000, "jobs": [
+            {"id": ".claude-work/s1/live", "name": "Fix the parser", "state": "waiting", "since": 1000,
+             "account": "work", "folder": "~/app"},
+            {"id": ".claude-work/s2/job", "name": "", "state": "idle", "since": 2000,
+             "account": "work", "folder": "~/docs"},
+            {"id": ".claude-personal/s3/live", "name": "Release notes", "state": "done", "since": 3000,
+             "account": "personal", "folder": "~/site"}]})
+        self.assertNotIn("secret", self.path.read_text())   # (no prompts, nor what a chat asks)
+        self.assertEqual(oct(self.path.stat().st_mode & 0o777), "0o600")
+        self.assertEqual(oct(self.path.parent.stat().st_mode & 0o777), "0o700")
+
+    def test_written_again_only_when_a_chat_changes(self):
+        cs.publish_jobs(self.path, self.groups, 5000)
+        first = self.path.stat()
+        self.assertFalse(cs.publish_jobs(self.path, self.groups, 6000))   # the same: no new file, so no event
+        self.assertEqual((self.path.stat().st_ino, json.loads(self.path.read_text())["updatedAt"]),
+                         (first.st_ino, 5000))
+        self.groups[0]["sessions"][0].update(state="working", since=5500)
+        self.assertTrue(cs.publish_jobs(self.path, self.groups, 7000))
+        self.assertNotEqual(self.path.stat().st_ino, first.st_ino)   # a new file renamed over it (IN_MOVED_TO)
+        self.assertEqual(json.loads(self.path.read_text())["jobs"][0]["state"], "working")
+        self.assertEqual([p.name for p in self.path.parent.iterdir()], ["jobs.json"])   # (no temporary file left)
+        self.groups[0]["sessions"].pop()   # a chat that's gone
+        self.assertTrue(cs.publish_jobs(self.path, self.groups, 8000))
+        self.assertEqual(len(json.loads(self.path.read_text())["jobs"]), 2)
+
+    def test_in_your_runtime_folder(self):
+        import pwd
+        runtime, cache = Path(self.tmp.name) / "run", Path(self.tmp.name) / "cache"
+        runtime.mkdir()
+        own = Path(pwd.getpwuid(os.getuid()).pw_dir)
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(runtime)}):
+            self.assertEqual(cs.jobs_file_path(own, cache), runtime / "talpy-den/jobs.json")
+            # another home than your account's (a sandbox, the tests): in its own cache folder
+            self.assertEqual(cs.jobs_file_path(Path(self.tmp.name) / "home", cache), cache / "jobs.json")
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(runtime / "gone")}):
+            self.assertEqual(cs.jobs_file_path(own, cache), cache / "jobs.json")
+        with mock.patch.dict(os.environ):
+            os.environ.pop("XDG_RUNTIME_DIR", None)
+            self.assertEqual(cs.jobs_file_path(own, cache), cache / "jobs.json")
 
 
 def chat_line(kind, content, msg_id=None, stop=None, ts=None, **kw):

@@ -8610,6 +8610,48 @@ def elect_notifier(cache_root, instance, interval_ms, now_ms):
     return first == instance
 
 
+# ---------------------------------------------------------------- the jobs file
+#
+# This computer's chats and their states, for other programs: a status bar, a
+# desk display, a script (docs/how-it-works.md#the-jobs-file). The copy that
+# does the once-a-computer work (it notifies, or VS Code's leading window, or
+# GNOME's copy) writes it after its check, and only when a chat's state
+# changed, in one go (a new file renamed over it): whoever reads it always gets
+# a whole one, and can wait for that rename (inotify's IN_MOVED_TO on its
+# folder) instead of reading it again and again.
+
+JOBS_FILE_VERSION = 1
+
+
+def jobs_file_path(home, cache_root):
+    """$XDG_RUNTIME_DIR/talpy-den/jobs.json: private, in memory, gone when you log out. The runtime folder is
+    your login's, so a check for another home than your account's (a sandbox, the tests) keeps its file in
+    its own cache folder, as does a system without that folder."""
+    import pwd
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    try:
+        own_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve() == Path(home).resolve()
+    except (KeyError, OSError):
+        own_home = False
+    if runtime and own_home and os.path.isdir(runtime):
+        return Path(runtime) / "talpy-den" / "jobs.json"
+    return cache_root / "jobs.json"
+
+
+def publish_jobs(path, groups, now_ms):
+    """Write the chats of groups (collect's), each with its state and since when, if that changed since
+    the last time; True when it wrote. Only what a status shows: no prompts, replies or what a chat asks."""
+    jobs = [{"id": s.get("key") or "", "name": s.get("name") or "", "state": s["state"],
+             "since": number(s.get("since")), "account": g.get("name") or "", "folder": s.get("cwdShort") or ""}
+            for g in groups for s in g.get("sessions") or [] if s.get("state") in STATE_ORDER]
+    old = read_json(path)
+    if isinstance(old, dict) and old.get("version") == JOBS_FILE_VERSION and old.get("jobs") == jobs:
+        return False
+    private_dir(path.parent)
+    write_json_atomic(path, {"version": JOBS_FILE_VERSION, "updatedAt": now_ms, "jobs": jobs}, private=True)
+    return True
+
+
 def config_defaults(main_xml=None):
     """{key: default} of the widget's settings (contents/config/main.xml)."""
     import xml.etree.ElementTree as ET
@@ -11650,6 +11692,10 @@ def main(argv=None):
                 except Exception as exc:
                     result["errors"].append(f"chats that keep going: {exc}")
             if (not remote or local) and (keep_going or cleanup_check or result.get("notifier") is True):
+                try:  # (this computer's chats for other programs: the jobs file, when they changed)
+                    publish_jobs(jobs_file_path(home, cache_root), result["groups"], int(time.time() * 1000))
+                except Exception as exc:
+                    result["errors"].append(f"jobs file: {exc}")
                 try:  # (old chats: Talpy Den's daily cleanup, when it's the one that cleans, cleanup.py)
                     if cleanup_due(cache_root, time.time()):
                         start_cleanup(cache_root, config_dirs)

@@ -6,6 +6,7 @@
 <profile>/jobs/<id>/state.json ┼─▶ package/contents/code/talpy_den.py ──JSON──▶ Plasma, GNOME, VS Code (when a chat changes, else every 2–20 s)
 <profile>/projects/**/*.jsonl ─┘
 <profile>/sessions/ + ~/.cache/talpy-den/live/ ──▶ live.py --wait (inotify) ──▶ "check now" + each step (live mode)
+talpy_den.py (one copy's check, when a chat's state changed) ──▶ $XDG_RUNTIME_DIR/talpy-den/jobs.json ──▶ other programs
 ```
 
 <details>
@@ -42,3 +43,17 @@
 - **Each host's last answer** is kept in `~/.cache/talpy-den/hosts/<host>.json` (only your user can read it) with how far the host's clock was from this one's: at start it shows at once (`remote.py --last`), dimmed, until the first check answers.
 
 </details>
+
+## The jobs file
+
+For other programs (a status bar, a desk display, a script): this computer's chats and their states, in `$XDG_RUNTIME_DIR/talpy-den/jobs.json` (`/run/user/<uid>/talpy-den/`: only you can read it, it's kept in memory and gone when you log out; on a system without that folder, `~/.cache/talpy-den/jobs.json`). The copy of Talpy Den that does the once-a-computer work (the one that notifies, VS Code's window that does, or GNOME's) writes it after its check, and only when a chat's state changed, so it changes as soon as Talpy Den sees a chat change, and only then.
+
+```json
+{"version": 1, "updatedAt": 1794145062163, "jobs": [
+  {"id": ".claude-work/2f0c1a9e-…/job", "name": "Fix the parser", "state": "idle",
+   "since": 1793964429847, "account": "work", "folder": "~/src/app"}]}
+```
+
+- `state` is `waiting` (it needs you), `working`, `idle` (its turn is over and the chat is open) or `done` (a finished background chat, listed for 24 hours unless your settings say otherwise). `since` is when it got there and `updatedAt` when the file was written, in milliseconds since 1970. `id` stays the same while the chat is listed. The chats come grouped by account. Only what a status shows: no prompts, replies or what a chat asks.
+- It's written in one go (a new file renamed over it), so a reader always gets a whole one, with no lock. To wait for a change instead of reading it again and again, watch its folder for a file moved into it (inotify's `IN_MOVED_TO`), e.g. `inotifywait -m -e moved_to "$XDG_RUNTIME_DIR/talpy-den"`. Read it once at the start too: inotify only tells what changes.
+- New fields may come; a change to what one means raises `version`.
