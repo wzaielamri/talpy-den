@@ -10,6 +10,20 @@
   `$XDG_RUNTIME_DIR/talpy-den/jobs.json` whenever one changes, for a
   status bar, a desk display or a script to follow (it can wait for the
   file with inotify instead of asking again and again).
+- **Bookmarks in Talpy Chat:** with the pointer on a message, the ribbon beside
+  its **Copy** bookmarks Claude's reply or your message (or Ctrl+D, or
+  *Bookmark message* on its right-click menu), and its dot becomes a ribbon. The
+  count at the right of the tabs (Ctrl+Shift+B) lists the chat's bookmarks on
+  the side (beside the conversation in a wide tab, where it stays open), each
+  with its first words: a click goes to it, reading further back first when it
+  isn't shown yet; × removes one; Alt+↑ / Alt+↓ go from one to the next. New
+  commands under **Talpy Chat:** (Bookmark the Message, Show or Hide the Chat's
+  Bookmarks, Go to the Previous / Next Bookmark); Ctrl+Shift+B takes the place
+  of Run Build Task in a Talpy Chat tab only. Bookmarks are kept in
+  `~/.cache/talpy-den/bookmarks` (an SSH host's chat's on this computer too),
+  follow a chat Claude moves to the background, go with a deleted chat and keep
+  a chat from Talpy Den's cleanup of old chats, as a star does.
+
 - **Model and effort for one chat:** in a background chat or one that isn't
   open, `/model` and `/effort` list the models and effort levels as you type,
   and the one you pick (or `/model sonnet` typed) is for that chat alone:

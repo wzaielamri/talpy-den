@@ -35,6 +35,7 @@
 | *Context 69% left* in Talpy Chat's header | What's left of the chat's context before Claude compacts it on its own (auto-compact), counted as Claude Code counts it; in the warning colour once that's close. Hover it for the tokens used and where Claude compacts it. |
 | *8m 12s · 58 steps* on Talpy Chat's working line | While Claude works: the time since your message and the steps (tool calls) it took since. |
 | **Copy** on a message in Talpy Chat | With the pointer on it, beside its time: puts Claude's reply on the clipboard as Markdown, as Claude wrote it, all of it (one Talpy Chat shows cut is read whole first), or your message as you wrote it; *Copied* once it's there. |
+| The ribbon on a message in Talpy Chat (**Bookmark**) | With the pointer on it, beside **Copy**: bookmarks Claude's reply or your message (or Ctrl+D; again, the bookmark goes), and its dot (your ›) becomes a ribbon. The ribbon and count at the right of the tabs (Ctrl+Shift+B) list the chat's bookmarks on the side, in the chat's order, each with its first words: a click goes to it (one further back than what's shown is read first; one further back than the last 2000 steps Talpy Chat shows is copied), × removes it; Alt+↑ / Alt+↓ go to the one before / after what you read. |
 | *2 new ↓* at the bottom of Talpy Chat | Scrolled up while new messages came in below: goes to the end. |
 | **Stop** on Talpy Chat's working line | While Claude works: stops what it does now, as Esc in its terminal; the chat stays and takes your next message. For a chat in tmux or in the background; elsewhere the line's tooltip says where to stop it. |
 | A chip above Talpy Chat's reply box | Once Claude's turn is over: sends that reply, as if you typed it (an answer to Claude's question, or what you usually reply then). Shift+click, or *Edit before sending* on its right-click menu: in the box first; Alt+1…4: the first to the fourth; *Don't suggest this* (right-click, one of your usual replies): never again. In the box, Tab or → takes the grey rest of a usual reply you started typing. |
@@ -65,6 +66,9 @@
 | Alt+Y / Alt+A / Alt+N | Allow once / Always allow / Deny… what it asks (a plan: Approve / Approve, accept edits / Keep planning…; questions: Send answers / – / Decline…) |
 | PageUp / PageDown | Scroll the conversation a page, from the box too |
 | Ctrl+↑ / Ctrl+↓ | Your previous / next message (past the last: the end) |
+| Ctrl+D | Bookmark the message under the pointer (else Claude's last reply, or the message at the top of what you read); again, the bookmark goes |
+| Ctrl+Shift+B | The chat's bookmarks, on the side: a click goes to one; again, hides them |
+| Alt+↑ / Alt+↓ | The bookmark before / after what you read (past the last: the end) |
 | Ctrl+F | Search the chat: a find bar over its top right; Enter or F3 the next match, Shift+Enter or Shift+F3 the one before, Esc closes it |
 | Ctrl+O | Unfold every long message, reply and output, and your answered questions and plans; again, fold them back |
 | Ctrl+1 / Ctrl+2 / Ctrl+3 | The Chat, Steps and Review tabs |
@@ -76,9 +80,9 @@
 | Ctrl+Shift+O | Open its window (a background chat: in a terminal) |
 | Ctrl+W | Close Talpy Chat's window |
 | Ctrl+Tab / Ctrl+Shift+Tab | Your other Talpy Chat windows, the last one in front first |
-| Esc | Closes what's open first, one a press: a menu, the big picture, the `/` and `@` list, the find bar, the list of keys, the grey completion; then, in an empty box while Claude works, **Stop** |
+| Esc | Closes what's open first, one a press: a menu, the big picture, the `/` and `@` list, the find bar, the bookmarks, the list of keys, the grey completion; then, in an empty box while Claude works, **Stop** |
 
-**Right-click** the conversation for *Copy* (what you selected), *Copy message* (the one you clicked, as its Copy button: a reply as Markdown) and *Select all*, or the reply box for *Undo*, *Redo*, *Cut*, *Copy*, *Paste* (a picture too, as Ctrl+V) and *Select all*; each item names its key.
+**Right-click** the conversation for *Copy* (what you selected), *Copy message* (the one you clicked, as its Copy button: a reply as Markdown), *Bookmark message* (*Remove bookmark* once it is) and *Select all*, or the reply box for *Undo*, *Redo*, *Cut*, *Copy*, *Paste* (a picture too, as Ctrl+V) and *Select all*; each item names its key.
 
 ## Settings
 
