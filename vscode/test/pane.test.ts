@@ -15,6 +15,7 @@ import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
 import { inline, Markdown } from "../webview/util/markdown";
+import { ribbonCss } from "../webview/util/ribbons";
 import { ESC_ORDER, escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mjs";
 
 const NOW = 1_800_000_000_000;
@@ -1539,6 +1540,107 @@ test("bookmarks: where each one is, Alt+↑ / Alt+↓ from what you read, and wh
   assert.equal(staysOpen(780, 260, false), true);
   assert.equal(staysOpen(700, 260, false), false);
   assert.equal(staysOpen(300, 260, true), true);
+});
+
+test("bookmarks' ribbons: one rule for them all, in place of each one's dot or ›, nothing without bookmarks", () => {
+  const g = globalThis as { CSS?: { escape(s: string): string } };
+  const had = g.CSS;
+  g.CSS = { escape: (s: string) => s.replace(/[^A-Za-z0-9_-]/g, (c) => "\\" + c) };   // (a browser's CSS.escape, for these keys)
+  try {
+    const m = (key: string) => ({ key, kind: "claude", at: 1, text: "", made: 1 }) as Bookmark;
+    assert.equal(ribbonCss([]), "");
+    const css = ribbonCss([m("msg_1"), m("u.2")]);
+    assert.ok(css.startsWith('.pane-list>:is([data-key="msg_1"],[data-key="u\\.2"])>.pane-gutter{'), css);
+    assert.equal(css.split("{").length, 2, "one rule");
+    assert.ok(css.includes("background:var(--pane-mark,var(--pane-claude))") && css.includes("mask:var(--pane-ribbon) center/.7em .9em no-repeat"));
+    assert.ok(!/content:|position:|::after/.test(css), "no box of its own: nothing to lay out again");
+  } finally {
+    g.CSS = had;
+  }
+});
+
+test("a bookmark is written by pane.py --bookmark, a host's chat's with --host (kept here), one write at a time in click order", async () => {
+  const calls: string[][] = [];
+  const done: string[] = [];
+  let v = 10;
+  const backend = { pane: async (args: string[]) => {
+    if (args[0] !== "--bookmark") return { ok: true, unchanged: true };
+    calls.push(own(args));
+    // (the first write is the slow one: the second still waits for it)
+    await new Promise((r) => setTimeout(r, calls.length === 1 ? 40 : 1));
+    done.push(args.includes("--off") ? "off" : "on");
+    return args[3] === "bad" ? { ok: false, message: "Which message?", bookmarks: [], bookmarksV: v }
+      : { ok: true, message: "", bookmarks: args.includes("--off") ? [] : [{ key: args[3], kind: "claude", at: 5, text: "Done", made: 6 }], bookmarksV: ++v };
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: "mark-1", sessionId: "mark-1", profileDir: ".claude-work", name: "x", host: "lab" } as never);
+  const panel = recorded.panels.at(-1)!;
+  const answers = () => panel.sent.filter((m) => (m as { type: string }).type === "bookmarks");
+  panel.receive({ type: "bookmark", id: 1, key: "m1", on: true, kind: "claude", at: 5, text: "Done\n  and   dusted" });
+  panel.receive({ type: "bookmark", id: 2, key: "m1", on: false, kind: "claude", at: 5, text: "" });
+  await new Promise((r) => setTimeout(r, 80));
+  assert.deepEqual(calls, [
+    ["--bookmark", "mark-1", "--key", "m1", "--kind", "claude", "--at", "5", "--text", "Done and dusted", "--profile", ".claude-work", "--host", "lab"],
+    ["--bookmark", "mark-1", "--key", "m1", "--off", "--profile", ".claude-work", "--host", "lab"],
+  ]);
+  assert.deepEqual(done, ["on", "off"], "the second waited for the first");
+  assert.deepEqual(answers(), [
+    { type: "bookmarks", id: 1, chatId: "mark-1", ok: true, message: "", bookmarks: [{ key: "m1", kind: "claude", at: 5, text: "Done", made: 6 }], bookmarksV: 11 },
+    { type: "bookmarks", id: 2, chatId: "mark-1", ok: true, message: "", bookmarks: [], bookmarksV: 12 },
+  ]);
+  // (a refusal is answered as one, with why; what isn't a message's key, or a kind that isn't yours
+  // or Claude's, doesn't go to pane.py at all)
+  panel.receive({ type: "bookmark", id: 3, key: "bad", on: false, kind: "you", at: 0, text: "" });
+  for (const m of [{ key: "-x" }, { key: "pending-3" }, { key: "t1/answer" }, { kind: "tool" }, { id: "4" }, { text: 7 }])
+    panel.receive({ type: "bookmark", id: 4, key: "m2", on: true, kind: "you", at: 1, text: "Hi", ...m });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(calls.length, 3);
+  assert.deepEqual(answers().at(-1), { type: "bookmarks", id: 3, chatId: "mark-1", ok: false, message: "Which message?", bookmarks: [], bookmarksV: 12 });
+  // this computer's chat: its config folders, no --host
+  p.open({ chatId: "mark-2", sessionId: "mark-2", profileDir: ".claude", name: "y" } as never);
+  recorded.panels.at(-1)!.receive({ type: "bookmark", id: 1, key: "u1", on: true, kind: "you", at: 7, text: "Fix it" });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(calls.at(-1), ["--bookmark", "mark-2", "--key", "u1", "--kind", "you", "--at", "7", "--text", "Fix it", "--profile", ".claude"]);
+  p.dispose();
+});
+
+test("a bookmark further back than what's shown: the next read has --reach, and its answer's limit is taken before its stamp is compared", async () => {
+  const reads: string[][] = [];
+  const answer = (args: string[]) => {
+    const limit = args[args.indexOf("--limit") + 1];
+    if (args.includes("--reach")) return { ok: true, items: [{ kind: "you", key: "u0", text: "old", at: 1 }], more: true, stamp: "900:5/480", limit: 480, reach: "u0", reached: "here" };
+    return { ok: true, items: [], more: true, stamp: `800:4/${limit}` };
+  };
+  const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true } : (reads.push(own(args)), answer(args))) };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: "reach-1", sessionId: "reach-1", profileDir: ".claude", name: "x" } as never);
+  const panel = recorded.panels.at(-1)!;
+  const tick = () => new Promise((r) => setTimeout(r, 10));
+  panel.show(true);
+  panel.receive({ type: "ready" });
+  await tick();
+  panel.receive({ type: "reach", key: "u0" });
+  await tick();
+  panel.receive({ type: "reach", key: "--limit" });   // (not a message's key: nothing read)
+  panel.receive({ type: "more" });
+  await tick();
+  panel.dispose();
+  const conv = panel.sent.filter((m) => (m as { type: string }).type === "conversation").map((m) => (m as { answer: Record<string, unknown> }).answer);
+  assert.deepEqual(reads.map((a) => a.slice(0, 4).concat(a.includes("--reach") ? a.slice(4, 6) : [])), [
+    ["--conversation", "reach-1", "--limit", "120"],
+    ["--conversation", "reach-1", "--limit", "120", "--reach", "u0"],
+    ["--conversation", "reach-1", "--limit", "960"],   // (Show earlier doubles from the reach's 480)
+  ]);
+  assert.ok(!reads[1].includes("--if-changed"), "a reach reads in any case");
+  assert.deepEqual([conv[1].reach, conv[1].reached, conv[1].stamp], ["u0", "here", "900:5/480"], "taken: read for the limit it needed");
+  assert.equal(conv.length, 3);
+  // (as stampFresher sees it: refused at the old limit, taken at the new one)
+  assert.equal(stampFresher("900:5/480", "800:4/120", 120), false);
+  assert.equal(stampFresher("900:5/480", "800:4/120", 480), true);
+  assert.equal(stampFresher("800:4/480", "900:5/480", 480), false, "and an older one at that limit isn't");
 });
 
 test("the keys table: each command's key is its default keybinding, in a chat tab only", async () => {

@@ -5,6 +5,7 @@
 
 import { clockText, formatTokens, hostLabel } from "./model";
 import type { Answers, AskShown, Decision, PermissionAsk, Question, QueuedTask, RecentChat, Review, Session, SessionState, Status } from "./types";
+import type { Bookmark } from "../../vendor/bookmarks.mjs";
 
 // What came of a message (or a new chat's start) sent from Talpy Chat: went, to the chat itself;
 // ask: its terminal takes no text, you choose; warn: it went, but message says what's wrong
@@ -137,6 +138,15 @@ export interface Conversation {
   context?: ContextLeft | null; // how full its context is (null: not known)
   turn?: TurnSoFar | null; // Claude's turn so far, while it's going on
   options?: ChatOptions; // the model and effort it uses now (/model and /effort's lists mark them)
+  // its bookmarks (pane.py: a chat that has had one) and their version, which only grows (adoptable)
+  bookmarks?: Bookmark[];
+  bookmarksV?: number;
+  // (--reach KEY: read far enough back to show that message) the limit read for, which the tab takes
+  // before the stamp is compared (stampFresher), the key, and whether it's here now, further back than
+  // a tab shows (far) or not in the chat any more (gone)
+  limit?: number;
+  reach?: string;
+  reached?: "here" | "far" | "gone";
 }
 
 // One file a chat changed (pane.py: chat_review)
@@ -293,6 +303,9 @@ export type PaneHostMessage =
   // a made file unfolded (madeAsk; pane.py --made): a picture as a data: URL (src), a plan's or a page's
   // first lines (text; cut: there's more), or why not (gone: not there any more; big: too big to show)
   | { type: "made"; id: number; ok: boolean; src?: string; text?: string; cut?: boolean; message?: string; gone?: boolean; big?: boolean }
+  // a bookmark kept or taken away (pane.py --bookmark, the page's id): the chat's whole list and its
+  // version, or why not (the page undoes it)
+  | { type: "bookmarks"; id: number; chatId: string; ok: boolean; message: string; bookmarks: Bookmark[]; bookmarksV: number }
   | { type: "key"; key: string }; // a key's command (talpyDen.chat.*, package.json): an id of keys.mjs's table
 
 // tab -> extension
@@ -319,7 +332,11 @@ export type PaneMessage =
   | { type: "paste" } // the right-click menu's Paste in the reply box: VS Code's paste, as Ctrl+V (a picture too)
   // Copy on a message, or Ctrl+Shift+C: its text (copyText), all of it: one shown cut (copyCut) is
   // read whole from the transcript first; answered with copied once it's on the clipboard
-  | { type: "copyItem"; id: number; key: string; text: string }
+  | { type: "copyItem"; id: number; key: string; text: string; whole?: boolean } // whole: read from the transcript in any case (a bookmark too far back to show)
+  // a message bookmarked (on) or its bookmark taken away: written in click order, answered with
+  // bookmarks (id); kind, at and text: what the bookmark keeps of it (entryOf)
+  | { type: "bookmark"; id: number; key: string; on: boolean; kind: "you" | "claude"; at: number; text: string }
+  | { type: "reach"; key: string } // the chat read far enough back to show that message (a bookmark further back than what's shown)
   | { type: "openPicture"; path: string } // a picture of yours, in VS Code's image viewer
   | { type: "made"; id: number; path: string; step?: string } // a made file unfolded (madeAsk): answered with "made"
   // a made file opened (this computer's): a picture in VS Code's image viewer, a plan in its editor, a page or

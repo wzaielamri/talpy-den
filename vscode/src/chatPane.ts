@@ -21,7 +21,7 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, chatWhere, copyCut, HOLD_MS, madeOf, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult } from "./shared/pane";
+import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -438,6 +438,10 @@ class Pane implements vscode.Disposable {
   private terminalHere = false;
   private starting: Promise<{ ok: boolean; message: string; went?: boolean }> | null = null; // (a new chat's first message, on its way)
   private startedAt = 0; // (it started: its transcript may not be there for a moment)
+  // Bookmarks: written one at a time, in click order (the last write on its way); a bookmark
+  // further back than what's shown, read far enough back for at the next read (--reach)
+  private bookmarkChain: Promise<unknown> = Promise.resolve();
+  private reachKey = "";
 
   constructor(
     private owner: ChatPanes,
@@ -659,7 +663,8 @@ class Pane implements vscode.Disposable {
     const chatId = this.chatId;
     try {
       const r = await this.owner.ext.backend.pane([
-        "--conversation", chatId, "--limit", String(this.limit), ...(this.stamp ? ["--if-changed", this.stamp] : []),
+        "--conversation", chatId, "--limit", String(this.limit),
+        ...(this.reachKey ? ["--reach", this.reachKey] : this.stamp ? ["--if-changed", this.stamp] : []),
         ...(Pane.suggests() ? ["--suggest"] : []),
         ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...(this.host ? ["--host", this.host] : configDirArgs()),
       ], this.host ? 60000 : 30000);
@@ -684,6 +689,12 @@ class Pane implements vscode.Disposable {
 
   // A read's answer, or the watcher's (not one read before what's shown: stampFresher)
   private take(r: Record<string, any>): boolean {
+    // (a reach's answer was read for the limit it needed: taken first, so its stamp is one to show)
+    if (r.ok && typeof r.reach === "string" && typeof r.limit === "number" && r.limit > 0) {
+      this.limit = Math.min(LIMIT_MAX, r.limit);
+      this.reachKey = "";
+    }
+    if (!r.ok) this.reachKey = "";
     if (r.ok && !stampFresher(r.stamp, this.stamp, this.limit)) return false;
     // (your pictures, small: those in Talpy Den's folder of them, by the address the tab can load; not an SSH host's)
     if (r.ok && Array.isArray(r.items) && !this.host)
@@ -840,6 +851,32 @@ class Pane implements vscode.Disposable {
         this.stamp = "";
         await this.load();
         break;
+      case "reach":
+        // a bookmark further back than what's shown: read back far enough to show it (pane.py --reach)
+        if (typeof m.key !== "string" || !canBookmark({ kind: "you", key: m.key, at: null }) || this.fresh) break;
+        this.reachKey = m.key;
+        this.stamp = "";
+        await this.load();
+        break;
+      case "bookmark": {
+        // kept by pane.py on this computer (a host's chat's too, as stars are), one write at a time
+        // in click order; the answer is the chat's whole list, or why not (the page undoes it)
+        if (typeof m.id !== "number" || typeof m.key !== "string" || this.fresh) break;
+        const on = m.on === true;
+        if (on ? !canBookmark({ kind: m.kind, key: m.key, at: null }) || typeof m.text !== "string" || typeof m.at !== "number"
+               : !canBookmark({ kind: "you", key: m.key, at: null })) break;
+        const chatId = this.chatId;
+        const args = ["--bookmark", chatId, "--key", m.key,
+                      ...(on ? ["--kind", m.kind, "--at", String(Number.isFinite(m.at) ? Math.max(0, Math.floor(m.at)) : 0), "--text", oneLine(m.text)] : ["--off"]),
+                      ...profile, ...where];
+        const run = this.bookmarkChain.then(() => backend.pane(args, this.host ? 30000 : 15000))
+          .catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as Record<string, any>);
+        this.bookmarkChain = run;
+        const r = await run;
+        this.post({ type: "bookmarks", id: m.id, chatId, ok: !!r.ok, message: String(r.message ?? (r.ok ? "" : "That didn't work")),
+                    bookmarks: Array.isArray(r.bookmarks) ? r.bookmarks : [], bookmarksV: typeof r.bookmarksV === "number" ? r.bookmarksV : 0 });
+        break;
+      }
       case "hold":
         if (typeof m.id === "number" && typeof m.text === "string" && ["auto", "background", "enter"].includes(m.how))
           this.held.set(m.id, { text: m.text, how: m.how, until: Date.now() + HOLD_MS });
@@ -962,7 +999,8 @@ class Pane implements vscode.Disposable {
         // Copied is said once it's on the clipboard
         if (typeof m.text !== "string" || typeof m.key !== "string" || typeof m.id !== "number") break;
         let text = m.text;
-        if (copyCut(text) && !this.fresh) {
+        // (whole: a bookmark further back than the tab shows, read from the transcript in any case)
+        if ((copyCut(text) || m.whole === true) && !this.fresh) {
           const r = await backend.pane(["--reply-text", this.chatId, "--key", m.key, ...profile, ...where], this.host ? 30000 : 15000);
           if (!r.ok || typeof r.text !== "string") {
             this.post({ type: "copied", id: m.id, ok: false, message: `Couldn't copy all of it: ${String(r.message ?? "it couldn't be read")}` });

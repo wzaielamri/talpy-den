@@ -19,6 +19,8 @@ export type Meaning =
   | "keepGoing"
   | "star"
   | "starred"
+  | "bookmark"
+  | "bookmarked"
   | "share"
   | "continueOn"
   | "moveTo"

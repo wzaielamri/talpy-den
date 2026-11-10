@@ -6,7 +6,8 @@
   ?where=background|closed|claude|vscode|terminal (where it runs; else tmux)
   ?tab=steps (the tab it shows first)
   ?ask=hook|keys|none (it waits for a permission)  ?route=terminal (its
-  terminal takes no text)
+  terminal takes no text)  ?bookmarks=u1,m2,old1,far1,gone1&open=1 (bookmarks, their
+  list open; &wide=1: beside the chat, &mark=fail: keeping one fails; see chatHarness.tsx)
 -->
 <html lang="en">
   <head>
@@ -158,7 +159,7 @@
           theme === "light" ? "vscode-light" : theme === "hc" ? "vscode-high-contrast"
           : theme === "hcl" ? "vscode-high-contrast vscode-high-contrast-light" : "vscode-dark";
         if (params.get("tab") === "1") document.body.classList.add("tab");
-        document.body.style.width = (Number(params.get("width")) || 700) + "px";
+        document.body.style.width = (Number(params.get("width")) || (params.get("wide") === "1" ? 1500 : 700)) + "px";
         document.body.classList.add("chat-page");
         if (params.get("hover") === "1") {
           const style = document.createElement("style");

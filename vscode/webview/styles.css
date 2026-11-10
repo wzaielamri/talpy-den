@@ -3293,6 +3293,8 @@ body.chat-page {
   --pane-strong: var(--vscode-terminal-ansiBrightBlue, var(--vscode-textLink-foreground, #3daee9));
   --pane-you: var(--cs-working);
   --pane-gutter: 1.6em;
+  /* a bookmarked message's ribbon (icons.tsx bookmarkFull), in place of its dot or ›: its gutter painted through it (webview/util/ribbons.ts) */
+  --pane-ribbon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 1.5 9 13'%3E%3Cpath d='M4.25 2.25h7.5v11.5L8 10.75l-3.75 3z' fill='%23000' stroke='%23000' stroke-width='1.3' stroke-linejoin='round'/%3E%3C/svg%3E");
   --pane-block-bg: color-mix(in srgb, #000 22%, var(--cs-bg));
   --pane-code-bg: color-mix(in srgb, var(--cs-fg) 11%, transparent);
   box-sizing: border-box;
@@ -3459,6 +3461,24 @@ body.vscode-high-contrast-light .pane {
   font-weight: 700;
 }
 
+/* The chat's bookmarks, at the tab row's end: their count; framed thin while their list is open
+   (no taller than a tab, so the row never changes) */
+.pane-tabs .pane-tabs-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 3px 0 3px auto;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pane-tabs .pane-tabs-marks[aria-pressed="true"] {
+  border-color: var(--cs-tag-border);
+  color: inherit;
+}
+
 .pane-info {
   color: var(--cs-idle);
 }
@@ -3469,7 +3489,9 @@ body.vscode-high-contrast-light .pane {
 
 .pane-list {
   position: relative; /* (the hovered message's time and Copy scroll with it: .pane-hoverbar) */
-  flex: 1 1 auto;
+  /* (all the room the tab has left, whatever its content: a change above it, a count in the tab row,
+     the line under the tabs, doesn't have Chromium measure the whole conversation again) */
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
   display: flex;
@@ -3554,6 +3576,7 @@ body.vscode-high-contrast-light .pane {
 }
 
 .pane-you .pane-gutter {
+  --pane-mark: var(--pane-you); /* (its ribbon once it's bookmarked: webview/util/ribbons.ts) */
   width: calc(var(--pane-gutter) - 3px);
   color: var(--pane-you);
 }
@@ -4034,6 +4057,29 @@ body.vscode-high-contrast-light .pane {
   white-space: nowrap;
 }
 
+/* (its bookmark, between the time and Copy: framed thin while the pointer is on it, as Copy) */
+.pane-hoverbar .pane-mark-btn {
+  min-width: 0;
+  height: auto;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--cs-muted);
+}
+
+.pane-hoverbar .pane-mark-btn:hover,
+.pane-hoverbar .pane-mark-btn:active {
+  border-color: var(--vscode-focusBorder, #007fd4);
+  background: none;
+  color: inherit;
+}
+
+.pane-hoverbar .pane-mark-btn .icon {
+  width: 1.15em;
+  height: 1.15em;
+}
+
 /* (Copy and Copied in one place: the button is as wide with either) */
 .pane-swap {
   display: inline-grid;
@@ -4129,6 +4175,172 @@ body.vscode-high-contrast-light .pane {
 ::highlight(talpy-find-now) {
   background-color: var(--vscode-editor-findMatchBackground, rgba(255, 170, 60, 0.8));
   color: var(--vscode-editor-foreground, inherit);
+}
+
+/* The chat's bookmarks (Ctrl+Shift+B): a card over the list's top right, as the find bar (below it
+   while it's open), made only while it's open, outside the list (fixed: BookmarkList.tsx places it);
+   beside the chat where the tab is wide enough (BESIDE_MIN), where it covers nothing */
+.pane-bookmarks {
+  position: fixed;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(260px, calc(100vw - 64px));
+  overflow: hidden;
+  border: 1px solid var(--vscode-widget-border, var(--cs-border));
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background, var(--cs-bg));
+  color: var(--vscode-editorWidget-foreground, inherit);
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+  line-height: 1.4;
+}
+
+.pane-bookmarks.beside {
+  left: calc(50% + 446px);
+  width: 260px;
+}
+
+.pane-bookmarks-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 3px 3px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--cs-border) 70%, transparent);
+  font-size: 0.9em;
+}
+
+.pane-bookmarks-count {
+  color: var(--cs-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pane-bookmarks-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.pane-bookmarks-empty {
+  padding: 8px 10px 10px;
+  color: var(--cs-muted);
+  font-size: 0.9em;
+}
+
+/* One bookmark: who wrote it, its first words (two lines at most) and when; on hover × in the time's
+   place (nothing moves); the one gone to last framed thin; one not in what's shown dimmed */
+.pane-bm {
+  position: relative;
+  content-visibility: auto;   /* (only those in view are laid out when it opens) */
+  contain-intrinsic-size: auto 2.9em;
+}
+
+.pane-bm-go {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 8px 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pane-bm-go:hover,
+.pane-bm:focus-within .pane-bm-go {
+  background: var(--cs-hover);
+}
+
+.pane-bm.current .pane-bm-go {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.pane-bm.far .pane-bm-who,
+.pane-bm.far .pane-bm-text,
+.pane-bm.gone .pane-bm-who,
+.pane-bm.gone .pane-bm-text {
+  opacity: 0.55;
+}
+
+.pane-bm-who {
+  width: 6px;
+  height: 6px;
+  margin-top: 0.5em;
+  border-radius: 50%;
+  background: var(--pane-claude);
+}
+
+.pane-bm-who.you {
+  width: 3px;
+  height: 1.1em;
+  margin: 0.15em 1px 0 2px;
+  border-radius: 1px;
+  background: var(--pane-you);
+}
+
+.pane-bm-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-family: var(--pane-font, inherit);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.pane-bm-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--cs-muted);
+  font-size: 0.8em;
+  line-height: calc(1.4em * 0.9 / 0.8);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pane-bm-up {
+  width: 1.1em;
+  height: 1.1em;
+  transform: rotate(-90deg);
+}
+
+.pane-bm-x {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 2px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pane-bm:hover .pane-bm-x,
+.pane-bm:focus-within .pane-bm-x {
+  display: flex;
+}
+
+.pane-bm:hover .pane-bm-when,
+.pane-bm:focus-within .pane-bm-when {
+  visibility: hidden;
+}
+
+.pane-bm-x:hover,
+.pane-bm-x:focus-visible {
+  border-color: var(--vscode-focusBorder, #007fd4);
 }
 
 /* "3 new ↓": at the bottom of the list while you're scrolled up and something came in below;

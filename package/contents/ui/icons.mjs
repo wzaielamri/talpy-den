@@ -70,7 +70,7 @@ const TABLE = {
     next:            ['go-next',                       'chevron',    'go-next-symbolic'],
     goTo:            ['go-next',                       'chevron',    'go-next-symbolic'],                 // the chat that needs you, a project in its tab
     more:            ['go-down-skip',                  'more',       'go-bottom-symbolic'],               // Show N more
-    earlier:         ['go-up',                         null,         'go-up-symbolic'],                   // Show earlier
+    earlier:         ['go-up',                         'chevron',    'go-up-symbolic'],                   // Show earlier; a bookmark further back than what's shown (VS Code turns its chevron)
     folded:          ['arrow-right',                   'chevron',    'pan-end-symbolic'],                 // a fold, closed
     unfolded:        ['arrow-down',                    'chevron',    'pan-down-symbolic'],                // (VS Code turns its chevron)
     expandAll:       ['expand-all',                    null,         'pan-down-symbolic'],

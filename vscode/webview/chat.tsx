@@ -6,9 +6,10 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { adoptable, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
+import { BookmarkList } from "./components/BookmarkList";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
 import type { Answers, Decision, Session } from "../src/shared/types";
 import { agentsNow, agentsRunningFirst, modeHint, modeText } from "../src/shared/model";
@@ -19,6 +20,7 @@ import { Tag, TestsTag } from "./components/Tag";
 import { TalpyIcon } from "./components/TalpyIcon";
 import { I, Icon, T } from "./util/icons";
 import { Markdown } from "./util/markdown";
+import { ribbonCss } from "./util/ribbons";
 import { DARK, LIGHT, runs as ansiRuns } from "../vendor/ansi.mjs";
 import { escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mjs";
 
@@ -67,9 +69,10 @@ function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
 // message); on the reply box, Undo, Redo, Cut, Copy, Paste (VS Code's own, as Ctrl+V: a picture
 // too) and Select all. Elsewhere in the tab, VS Code's own menu (Cut, Copy, Paste)
 type EditAt = { where: "list" | "box"; x: number; y: number; it: PaneItem | null; chosen: string };
-type EditDo = "copy" | "copyMessage" | "selectAll" | "undo" | "redo" | "cut" | "paste";
-const EDIT_KEYS: Record<string, string> = { copy: "Ctrl+C", selectAll: "Ctrl+A", undo: "Ctrl+Z", redo: MAC ? "Ctrl+Shift+Z" : "Ctrl+Y", cut: "Ctrl+X", paste: "Ctrl+V" };
-function EditMenu({ at, onDo }: { at: EditAt; onDo: (what: EditDo) => void }) {
+type EditDo = "copy" | "copyMessage" | "bookmark" | "selectAll" | "undo" | "redo" | "cut" | "paste";
+const EDIT_KEYS: Record<string, string> = { copy: "Ctrl+C", bookmark: "Ctrl+D", selectAll: "Ctrl+A", undo: "Ctrl+Z", redo: MAC ? "Ctrl+Shift+Z" : "Ctrl+Y", cut: "Ctrl+X", paste: "Ctrl+V" };
+function EditMenu({ at, marked, onDo }: { at: EditAt; marked: boolean; onDo: (what: EditDo) => void }) {
+  const mark = at.where === "list" && !!at.it && canBookmark(at.it);   // (yours, or Claude's reply, once it's in the chat)
   const item = (what: EditDo, text: string, enabled = true) => (
     <button type="button" role="menuitem" disabled={!enabled} onClick={() => onDo(what)}>
       <span class="grow">{text}</span>
@@ -78,12 +81,13 @@ function EditMenu({ at, onDo }: { at: EditAt; onDo: (what: EditDo) => void }) {
   );
   // (no focus taken: the box keeps its cursor and the conversation its selection)
   return (
-    <div class="pane-chip-menu pane-edit-menu" role="menu" style={{ left: `${Math.min(at.x, window.innerWidth - 220)}px`, top: `${Math.min(at.y, window.innerHeight - (at.where === "box" ? 190 : 90))}px` }}
+    <div class="pane-chip-menu pane-edit-menu" role="menu" style={{ left: `${Math.min(at.x, window.innerWidth - 220)}px`, top: `${Math.min(at.y, window.innerHeight - (at.where === "box" ? 190 : mark ? 120 : 90))}px` }}
          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}>
       {at.where === "list" ? (
         <>
           {item("copy", "Copy", at.chosen !== "")}
           {at.it ? item("copyMessage", at.it.kind === "claude" ? "Copy message (Markdown)" : "Copy message") : null}
+          {mark ? item("bookmark", marked ? "Remove bookmark" : "Bookmark message") : null}
           {item("selectAll", "Select all")}
         </>
       ) : (
@@ -105,10 +109,14 @@ function EditMenu({ at, onDo }: { at: EditAt; onDo: (what: EditDo) => void }) {
 // On the message under the pointer (yours, or Claude's reply): its time, and Copy (copyText: a
 // reply as Markdown, yours as you typed it), at its top right corner, over it, so nothing moves.
 // One for the list, moved to the message hovered: a long chat has nothing more for each message
-// (its time is worked out only here), and Copied says it for a moment, as a code block's Copy
-function HoverBar({ list, itemOf, copied, onCopy }: { list: { current: HTMLDivElement | null }; itemOf: (key: string) => PaneItem | undefined;
-                    copied: string; onCopy: (it: PaneItem) => void }) {
+// (its time is worked out only here), and Copied says it for a moment, as a code block's Copy. Between
+// them its bookmark (filled once it's bookmarked: marked), so Copy stays where it was; hovered: the
+// key it's on, for Ctrl+D while the pointer is on the bar
+function HoverBar({ list, itemOf, copied, onCopy, marked, onMark, hovered }: { list: { current: HTMLDivElement | null }; itemOf: (key: string) => PaneItem | undefined;
+                    copied: string; onCopy: (it: PaneItem) => void; marked: (key: string) => boolean; onMark: (it: PaneItem) => void;
+                    hovered: { current: string } }) {
   const [on, setOn] = useState<{ key: string; top: number; right: number } | null>(null);
+  hovered.current = on?.key ?? "";
   useEffect(() => {
     const el = list.current;
     if (!el) return undefined;
@@ -131,9 +139,17 @@ function HoverBar({ list, itemOf, copied, onCopy }: { list: { current: HTMLDivEl
   const it = on ? itemOf(on.key) : undefined;
   if (!on || !it) return null;
   const done = copied === on.key;
+  const isMarked = marked(it.key);
   return (
     <div class="pane-hoverbar" style={{ top: `${on.top}px`, right: `${on.right}px` }}>
       {it.at ? <span class="pane-when">{timeText(it.at, Date.now())}</span> : null}
+      {canBookmark(it) ? (
+        <button type="button" class="icon-btn pane-mark-btn" aria-label={isMarked ? "Remove the bookmark" : "Bookmark"}
+          title={keyed(isMarked ? "Remove the bookmark" : it.kind === "claude" ? "Bookmark this reply" : "Bookmark your message", "bookmark")}
+          onClick={() => onMark(it)}>
+          <Icon name={isMarked ? I.bookmarked : I.bookmark} />
+        </button>
+      ) : null}
       <button type="button" class={done ? "md-copy copied" : "md-copy"}
         title={it.thinking ? "Copy this thinking line" : it.kind === "claude" ? "Copy this reply, as Markdown" : "Copy your message, as you wrote it"}
         onClick={() => onCopy(it)}>
@@ -229,6 +245,19 @@ const marking = typeof CSS !== "undefined" && "highlights" in CSS && typeof High
 function rowsOf(list: HTMLElement, key: string): HTMLElement[] {
   const k = CSS.escape(key);
   return [...list.querySelectorAll<HTMLElement>(`:scope > [data-key="${k}"], :scope > [data-of="${k}"]`)];
+}
+// Each key's first row in the list (one pass over its rows: a bookmark's, to go to it)
+function firstRows(list: HTMLElement): Map<string, HTMLElement> {
+  const out = new Map<string, HTMLElement>();
+  for (const row of list.children) {
+    const key = (row as HTMLElement).dataset?.key;
+    if (key !== undefined && !out.has(key)) out.set(key, row as HTMLElement);
+  }
+  return out;
+}
+// Two lists of bookmarks the same (each one's key and words, in order)
+function sameMarks(a: readonly Bookmark[], b: readonly Bookmark[]): boolean {
+  return a.length === b.length && a.every((m, i) => m.key === b[i].key && m.text === b[i].text);
 }
 function rangesIn(rows: HTMLElement[], query: string, max: number): Range[] {
   const texts: Text[] = [];
@@ -590,6 +619,28 @@ function ChatApp() {
   // the tab shows (one timer, once a day), and when it shows again on another day
   const [today, setToday] = useState(() => Date.now());
   const reply = useRef<HTMLTextAreaElement>(null);
+  // Bookmarks (the hover bar's ribbon, the right-click menu, Ctrl+D; Ctrl+Shift+B lists them, Alt+↑ /
+  // Alt+↓ go to them): changed here at once, then kept by the extension (pane.py --bookmark: one write
+  // at a time, in click order); one that fails is undone, and the line under the tabs says why. An
+  // answer's list (a read's, a write's) is taken only once none of yours is on its way, and only a
+  // newer one (bookmarks.mjs adoptable: its version only grows)
+  const [marks, setMarks] = useState<{ list: Bookmark[]; v: number }>({ list: [], v: 0 });
+  const marksNow = useRef(marks);   // (as the message handler and two quick clicks see them)
+  const putMarks = (next: { list: Bookmark[]; v: number }) => {
+    marksNow.current = next;
+    setMarks(next);
+  };
+  const markBusy = useRef(0);   // (writes on their way)
+  const markOps = useRef(new Map<number, { key: string; on: boolean; entry: Bookmark }>());
+  const markId = useRef(0);
+  const chatIdNow = useRef("");
+  chatIdNow.current = chat?.chatId ?? "";
+  const [marksOn, setMarksOn] = useState(false);   // (their list, open)
+  const [markGoing, setGoing] = useState("");   // (one further back than what's shown, read for now: "Going there…")
+  const [settled, setSettled] = useState<Readonly<Record<string, "far" | "gone">>>({});   // (what a read for one found)
+  const [current, setCurrent] = useState("");   // (the one gone to last: framed in the list)
+  const [pendingJump, setPendingJump] = useState<{ key: string; close: boolean } | null>(null);   // (to go to once it's drawn)
+  const hoverKey = useRef("");   // (the message the hover bar is on)
 
   // Pictures pasted into the reply: saved by the extension (an SSH host's chat
   // gets a copy there once you say so), then named in it as [Image: path]
@@ -837,6 +888,7 @@ function ChatApp() {
       else if (m.type === "replies") setUsual(m.replies);
       else if (m.type === "key") keyNow.current(m.key);
       else if (m.type === "copied") copiedNow.current(m);
+      else if (m.type === "bookmarks") marksTookNow.current(m);
       else if (m.type === "suggest") {
         setSuggest(m.on);
         if (!m.on) setUsual(null);
@@ -889,6 +941,7 @@ function ChatApp() {
         if (!a.ok) {
           setLoadError(a.message || "Can't read this chat");
           setLoadMissing(!!a.missing);
+          setGoing("");   // (a read further back for a bookmark: it didn't)
         }
         else if (!a.unchanged) {
           if (!firstRead.current && a.items?.length) firstRead.current = { at: Date.now(), last: lastReply(a.items)?.key ?? "" };
@@ -902,6 +955,13 @@ function ChatApp() {
           setMore(!!a.more);
           setCapped(!!a.capped);
           setLoaded(true);
+          // (its bookmarks, a newer list than shown and none of yours on its way; a read further back
+          // for one: go to it once it's drawn, or say where it is)
+          const was = marksNow.current;
+          if (typeof a.bookmarksV === "number" && adoptable(was.v, markBusy.current > 0, a.bookmarksV)
+              && (a.bookmarksV > was.v || !sameMarks(was.list, a.bookmarks ?? [])))
+            putMarks({ list: Array.isArray(a.bookmarks) ? a.bookmarks : [], v: a.bookmarksV });
+          if (typeof a.reach === "string" && a.reach) reachedNow.current(a.reach, a.reached);
         }
       } else if (m.type === "review") {
         setReviewLoading(false);
@@ -1210,7 +1270,7 @@ function ChatApp() {
   // reply shown cut is read whole first); Copied is said once it's on the clipboard, on the message
   // (copiedKey) or, from the key, under the conversation
   const copyId = useRef(0);
-  const copying = useRef(new Map<number, { key: string; hover: boolean }>());
+  const copying = useRef(new Map<number, { key: string; hover: boolean; far?: boolean }>());
   const [copiedKey, setCopiedKey] = useState("");
   useEffect(() => {
     if (!copiedKey) return undefined;
@@ -1228,9 +1288,145 @@ function ChatApp() {
     const c = copying.current.get(m.id);
     copying.current.delete(m.id);
     if (!m.ok) setInfo({ ok: false, message: m.message });
+    else if (c?.far) setInfo({ ok: true, message: "Copied: it's further back than the last 2000 steps Talpy Chat shows" });
     else if (c?.hover) setCopiedKey(c.key);
     else if (c) setInfo({ ok: true, message: "Copied Claude's last reply" });
   });
+
+  // A bookmark on or off: shown at once (its ribbon, the hover bar, the count and the list), then
+  // written. Full: it says so and nothing changes
+  const changeMark = (entry: Bookmark, on: boolean) => {
+    if (!chat || chat.fresh) return;
+    const was = marksNow.current;
+    const next = on ? withBookmark(was.list, entry) : withoutBookmark(was.list, entry.key);
+    if (!next) {
+      setInfo({ ok: false, message: `A chat keeps up to ${BOOKMARKS_MAX} bookmarks: remove one first` });
+      return;
+    }
+    putMarks({ list: next, v: was.v });
+    const id = ++markId.current;
+    markOps.current.set(id, { key: entry.key, on, entry });
+    markBusy.current += 1;
+    post({ type: "bookmark", id, key: entry.key, on, kind: entry.kind, at: entry.at, text: entry.text });
+  };
+  const toggleMark = (it: PaneItem | null | undefined) => {
+    if (!it || !canBookmark(it)) return;
+    const had = marksNow.current.list.find((m) => m.key === it.key);
+    changeMark(had ?? entryOf(it, Date.now()), !had);
+  };
+  // A write's answer: one that failed is undone (the line says why); the last one's list is taken
+  const marksTookNow = useRef((m: Extract<PaneHostMessage, { type: "bookmarks" }>) => {
+    markBusy.current = Math.max(0, markBusy.current - 1);
+    const op = markOps.current.get(m.id);
+    markOps.current.delete(m.id);
+    const was = marksNow.current;
+    if (!m.ok) {
+      if (op && m.chatId === chatIdNow.current)
+        putMarks({ list: op.on ? withoutBookmark(was.list, op.key) : withBookmark(was.list, op.entry) ?? was.list, v: was.v });
+      setInfo({ ok: false, message: `Couldn't keep the bookmark: ${m.message || "that didn't work"}` });
+    } else if (markBusy.current === 0 && m.chatId === chatIdNow.current && adoptable(was.v, false, m.bookmarksV))
+      putMarks({ list: Array.isArray(m.bookmarks) ? m.bookmarks : [], v: m.bookmarksV });
+  });
+  // Ctrl+D's message: the one under the pointer; else, at the end, Claude's last reply; else the first
+  // that reaches below the top of what you read
+  const markTarget = (): PaneItem | null => {
+    const el = list.current;
+    if (!el) return null;
+    const byKey = (key: string | undefined) => (key ? shownNow.current.find((it) => String(it.key) === key) ?? null : null);
+    const pointed = el.querySelector<HTMLElement>(":scope > .pane-you[data-key]:hover, :scope > .pane-claude[data-key]:not(.pane-asked):not(.pane-thinking):hover");
+    const under = pointed ? byKey(pointed.dataset.key) : el.querySelector(":scope > .pane-hoverbar:hover") ? byKey(hoverKey.current) : null;
+    if (under && canBookmark(under)) return under;
+    if (follow.current) {
+      const last = lastReply(itemsNow.current);
+      if (last && canBookmark(last)) return last;
+    }
+    const top = el.scrollTop + 4;
+    for (const row of el.querySelectorAll<HTMLElement>(":scope > .pane-you[data-key], :scope > .pane-claude[data-key]:not(.pane-asked):not(.pane-thinking)")) {
+      if (row.offsetTop + row.offsetHeight <= top) continue;
+      const it = byKey(row.dataset.key);
+      if (it && canBookmark(it)) return it;
+    }
+    return null;
+  };
+  // Going to one: at the list's top as Ctrl+↑ puts your message, framed a moment (a flash that fades
+  // out over 900 ms, without its fade with reduced motion: an animation, so drawing the list again
+  // can't cut it short); one not drawn yet is gone to once it is
+  const flashing = useRef<Animation | null>(null);
+  const focusColor = useRef("");
+  const goToRow = (el: HTMLElement, row: HTMLElement, key: string) => {
+    follow.current = false;
+    el.scrollTop = Math.max(0, row.offsetTop - 8);
+    setCurrent(key);
+    if (typeof row.animate !== "function") return;
+    if (!focusColor.current)
+      focusColor.current = getComputedStyle(document.documentElement).getPropertyValue("--vscode-focusBorder").trim() || "#007fd4";
+    flashing.current?.cancel();
+    const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    flashing.current = row.animate([{ boxShadow: `inset 0 0 0 2px ${focusColor.current}` }, { boxShadow: "inset 0 0 0 2px transparent" }],
+                                   { duration: 900, easing: still ? "steps(1, end)" : "ease-out" });
+  };
+  const goToMark = (key: string, close = false) => {
+    const el = list.current;
+    const row = el ? firstRows(el).get(key) : undefined;
+    if (!el || !row) return setPendingJump({ key, close });
+    goToRow(el, row, key);
+    if (close) closeMarks();
+  };
+  // One further back than what's shown: the chat read back far enough (pane.py --reach), then gone to
+  const closeAfterReach = useRef("");
+  const reachMark = (key: string, close = false) => {
+    setGoing(key);
+    closeAfterReach.current = close ? key : "";
+    post({ type: "reach", key });
+  };
+  const reachedNow = useRef((_key: string, _reached: Conversation["reached"]) => {});
+  reachedNow.current = (key, reached) => {
+    setGoing((g) => (g === key ? "" : g));
+    if (reached === "here") setPendingJump({ key, close: closeAfterReach.current === key });
+    else if (reached === "far" || reached === "gone") {
+      setSettled((was) => ({ ...was, [key]: reached }));
+      if (reached === "gone") setInfo({ ok: false, message: "That message isn't in the chat any more" });
+    }
+    if (closeAfterReach.current === key) closeAfterReach.current = "";
+  };
+  const closeMarks = () => {
+    setMarksOn(false);
+    reply.current?.focus();
+  };
+  // Alt+↑ / Alt+↓: the bookmark before / after what you read (bookmarks.mjs step: from the rows'
+  // tops); past the last, the end; up past the first, the newest one further back, read then
+  const stepMark = (back: boolean) => {
+    const el = list.current;
+    const all = marksNow.current.list;
+    if (!el || !all.length) return;
+    const rows = firstRows(el);
+    const loadedKeys = new Set(shownNow.current.map((it) => String(it.key)));
+    const states: Record<string, BookmarkState> = {};
+    const tops: Record<string, number> = {};
+    for (const m of all) {
+      states[m.key] = stateOf(m, loadedKeys, more, capped, settled);
+      const row = states[m.key] === "here" ? rows.get(m.key) : undefined;
+      if (row) tops[m.key] = row.offsetTop - 8;
+    }
+    const r = bookmarkStep(all, states, tops, el.scrollTop, back);
+    if (!r) return;
+    if ("key" in r) goToMark(r.key);
+    else if ("reach" in r) reachMark(r.reach);
+    else toEnd();
+  };
+  // A click in the list (BookmarkList): here, it's gone to; earlier, read for, then gone to; too far
+  // back, copied (read from the transcript); gone, it says so. The list closes after a jump unless
+  // it's beside the chat or the chat is wide enough (stays), and your reply box has the focus
+  const goFromList = (m: Bookmark, state: BookmarkState, stays: boolean) => {
+    if (state === "here") goToMark(m.key, !stays);
+    else if (state === "earlier") {
+      if (markGoing !== m.key) reachMark(m.key, !stays);
+    } else if (state === "far") {
+      const id = ++copyId.current;
+      copying.current.set(id, { key: m.key, hover: false, far: true });
+      post({ type: "copyItem", id, key: m.key, text: "", whole: true });
+    } else setInfo({ ok: false, message: "That message isn't in the chat any more" });
+  };
 
   // The ? list of Talpy Chat's keys; Alt+Y / Alt+A / Alt+N for what it asks (AskBox does it, as a click)
   const [help, setHelp] = useState(false);
@@ -1480,6 +1676,19 @@ function ChatApp() {
     const view = el.getBoundingClientRect();
     if (box.top < view.top + 8 || box.bottom > view.bottom - 8) el.scrollTop += box.top - view.top - el.clientHeight / 3;
   }, [findGo]);
+  useLayoutEffect(() => {   // (a bookmark to go to once it's drawn: read further back, or the list made again)
+    const el = list.current, p = pendingJump;
+    if (!p || !el || !conversation) return;
+    const row = firstRows(el).get(p.key);
+    if (row) {
+      setPendingJump(null);
+      goToRow(el, row, p.key);
+      if (p.close) closeMarks();
+    } else if (!shownItems.some((it) => it.key === p.key)) setPendingJump(null);
+  }, [steps, pendingJump]);
+  const ribbons = useMemo(() => ribbonCss(marks.list), [marks.list]);   // (the bookmarked messages' ribbons: util/ribbons.ts)
+  const loadedKeys = useMemo(() => (marksOn ? new Set(shownItems.map((it) => String(it.key))) : new Set<string>()), [marksOn, shownItems]);
+  const markedKeys = useMemo(() => keysOf(marks.list), [marks.list]);
   // Talpy Chat's keys (keys.mjs): VS Code's commands send them here (talpyDen.chat.*, bound only
   // while this tab has the focus); each does what its button does, where that button shows
   const jumpPrompt = (down: boolean) => {   // (Ctrl+↑ / Ctrl+↓: your previous / next message, at the list's top)
@@ -1563,6 +1772,20 @@ function ChatApp() {
       case "fold":
         foldAll();
         return;
+      case "bookmark":
+        if (conversation) toggleMark(markTarget());
+        return;
+      case "bookmarks":
+        if (!chat || chat.fresh) return;
+        if (!conversation) {
+          showTab("chat");
+          setMarksOn(true);
+        } else setMarksOn(!marksOn);
+        return;
+      case "bookmarkUp":
+      case "bookmarkDown":
+        if (conversation) stepMark(k === "bookmarkUp");
+        return;
       default: {
         const n = /^(chip|edit)([1-9])$/.exec(k);
         if (n && chips[Number(n[2]) - 1]) takeChip(chips[Number(n[2]) - 1], n[1] === "edit");
@@ -1594,6 +1817,7 @@ function ChatApp() {
         post({ type: "copy", text: at.chosen });
         setInfo({ ok: true, message: "Copied" });
       } else if (what === "copyMessage" && at.it) copyItem(at.it, true);
+      else if (what === "bookmark" && at.it) toggleMark(at.it);
       else if (what === "selectAll") selectAllNow.current();
       return;
     }
@@ -1607,16 +1831,18 @@ function ChatApp() {
     else if (what === "undo" || what === "redo") document.execCommand(what);
     else if (what === "selectAll") box.select();
   };
-  // Esc does the nearest thing first (escTarget): a menu, the big picture, the / and @ list, the keys,
-  // the grey completion; only then, in an empty box while Stop shows, it stops Claude. Nothing to do:
+  // Esc does the nearest thing first (escTarget): a menu, the big picture, the / and @ list, the find
+  // bar, the bookmarks, the keys, the grey completion; only then, in an empty box while Stop shows, it stops Claude. Nothing to do:
   // VS Code has it
   const escapeNow = useRef((): boolean => false);
   escapeNow.current = () => {
     const inBox = !!reply.current && document.activeElement === reply.current;
-    const what = escTarget({ menu: !!chipMenu || !!editMenu, big: !!big, list: inBox && offered.items.length > 0, find: find.open && conversation, help,
+    const what = escTarget({ menu: !!chipMenu || !!editMenu, big: !!big, list: inBox && offered.items.length > 0, find: find.open && conversation,
+                             bookmarks: marksOn && conversation, help,
                              ghost: inBox && !!ghost, stop: inBox && text === "" && stop.can && !stopping });
     if (what === "menu") { setChipMenu(null); setEditMenu(null); }
     else if (what === "find") closeFind();
+    else if (what === "bookmarks") closeMarks();
     else if (what === "big") setBig(null);
     else if (what === "list") setDismissed(offered.token);
     else if (what === "help") setHelp(false);
@@ -1668,6 +1894,11 @@ function ChatApp() {
         return;
       }
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      // (Option+↑ / ↓ on a Mac, Alt+↑ / ↓'s bookmarks: the caret doesn't move too; VS Code's command still runs)
+      if (MAC && !e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && marksNow.current.list.length) {
+        e.preventDefault();
+        return;
+      }
       const chip = /^Digit([1-9])$/.exec(e.code);
       const shown = chip ? chipsNow.current[Number(chip[1]) - 1] : undefined;
       if (shown && e.shiftKey) {   // (Alt+Shift+1…: the chip in the box first; no command of its own)
@@ -1776,6 +2007,7 @@ function ChatApp() {
 
   return (
     <div class="pane pane-grow" style={{ "--pane-scale": String(scale), ...(font ? { "--pane-font": font } : {}) }}>
+      {ribbons ? <style>{ribbons}</style> : null}
       {big ? (
         <div class="pane-big" role="dialog" aria-label="A picture of yours" onClick={() => setBig(null)}>
           <img src={big.src} alt="" />
@@ -1873,6 +2105,15 @@ function ChatApp() {
             {chat?.changes ? `Review ±${chat.changes}${chat.reviewPending ? " •" : ""}` : "Review"}
           </button>
         )}
+        {/* (the chat's bookmarks: on every tab alike, so the row is the same on each) */}
+        {marks.list.length || marksOn ? (
+          <button type="button" class="pane-tabs-marks" aria-pressed={marksOn} aria-label="Bookmarks"
+            title={`${keyed("Bookmarks in this chat", "bookmarks")}\n${keyText("bookmarkSteps", "vscode", MAC)}: the one before / after what you read`}
+            onClick={() => onKey("bookmarks")}>
+            <Icon name={I.bookmarked} />
+            {marks.list.length}
+          </button>
+        ) : null}
       </div>
       {info ? <div class={info.ok ? "pane-info" : "pane-info bad"}>{info.message}</div> : null}
 
@@ -1948,7 +2189,8 @@ function ChatApp() {
                 ) : null}
               </div>
             ) : null}
-            <HoverBar list={list} itemOf={(key) => shownNow.current.find((it) => it.key === key)} copied={copiedKey} onCopy={(it) => copyItem(it, true)} />
+            <HoverBar list={list} itemOf={(key) => shownNow.current.find((it) => it.key === key)} copied={copiedKey} onCopy={(it) => copyItem(it, true)}
+              marked={(key) => !!markedKeys[key]} onMark={toggleMark} hovered={hoverKey} />
             {/* (at the list's bottom, over it: it moves nothing; gone at the end) */}
             {unseen > 0 ? (
               <div class="pane-below-at">
@@ -1958,6 +2200,11 @@ function ChatApp() {
               </div>
             ) : null}
           </div>
+          {/* (the chat's bookmarks: over the list's top right, or beside it; outside it, so it's laid out alone) */}
+          {marksOn ? (
+            <BookmarkList marks={marks.list} loaded={loadedKeys} more={more} capped={capped} settled={settled} going={markGoing} current={current}
+              findOpen={find.open} list={list} mac={MAC} onGo={goFromList} onRemove={(m) => changeMark(m, false)} onClose={closeMarks} />
+          ) : null}
           {chat?.permission ? <AskBox ask={chat.permission} onAnswer={answer} busy={answering > 0} pressed={askKey} keyed={keyed}
             onTerminal={chat.where === "background" ? () => post({ type: "openWindow" }) : undefined} /> : null}
           {chat?.queued ? (
@@ -2001,7 +2248,7 @@ function ChatApp() {
               ))}
             </div>
           ) : null}
-          {editMenu ? <EditMenu at={editMenu} onDo={editDo} /> : null}
+          {editMenu ? <EditMenu at={editMenu} marked={!!editMenu.it && !!markedKeys[editMenu.it.key]} onDo={editDo} /> : null}
           {chipMenu ? (
             <div class="pane-chip-menu" role="menu" style={{ left: `${chipMenu.x}px`, top: `${chipMenu.y}px` }} onMouseDown={(e) => e.stopPropagation()}>
               <button type="button" role="menuitem" onClick={() => takeChip(chipMenu.chip, true)}><Icon name={I.edit} />Edit before sending</button>
