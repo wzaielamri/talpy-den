@@ -210,22 +210,13 @@ RowLayout {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.leftMargin: Kirigami.Units.largeSpacing
                     anchors.rightMargin: Kirigami.Units.largeSpacing
-                    readonly property string html: Md.toHtml(askedBox.a.plan, askedBox.pane.mdStyle, -1)
-                    text: html
+                    text: Md.toHtml(askedBox.a.plan, askedBox.pane.mdStyle, -1)
                     textFormat: TextEdit.RichText
                     readOnly: true
                     selectByMouse: true
                     wrapMode: TextEdit.Wrap
                     color: askedBox.pane.textColor
-                    // (a selection change draws a plan with tables whole: WholeRedraw.qml)
-                    selectionColor: planRedraw.color
-                    onSelectionStartChanged: planRedraw.again()
-                    onSelectionEndChanged: planRedraw.again()
-                    WholeRedraw {
-                        id: planRedraw
-                        base: Kirigami.Theme.focusColor
-                        on: planText.html.indexOf("<table") >= 0
-                    }
+                    selectionColor: Kirigami.Theme.focusColor
                     selectedTextColor: Kirigami.Theme.highlightedTextColor
                     font.family: askedBox.pane.chatFamily
                     font.pointSize: askedBox.pane.pt
@@ -234,6 +225,12 @@ RowLayout {
                             askedBox.pane.copyText(Md.clipboardCode(Md.codeBlocks(askedBox.a.plan)[Number(link.slice(5))] || ""), true)
                         else
                             Qt.openUrlExternally(link)
+                    }
+
+                    // (a selection change draws a plan with tables whole: WholeRedraw.qml)
+                    WholeRedraw {
+                        edit: planText
+                        base: Kirigami.Theme.focusColor
                     }
                 }
             }

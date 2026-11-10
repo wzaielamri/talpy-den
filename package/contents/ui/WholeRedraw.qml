@@ -11,21 +11,47 @@ import QtQuick
 // hair's breadth another each time (not one you can see).
 //
 //     TextEdit {
-//         selectionColor: redraw.color
-//         onSelectionStartChanged: redraw.again()
-//         onSelectionEndChanged: redraw.again()
-//         WholeRedraw { id: redraw; base: Kirigami.Theme.focusColor; on: parent.text.indexOf("<table") >= 0 }
+//         id: reply
+//         WholeRedraw { edit: reply; base: Kirigami.Theme.focusColor }
 //     }
-QtObject {
+//
+// It sets the TextEdit's selectionColor itself (base, the color it would
+// have), and looks whether the text has a table only when a selection first
+// changes (reading a rich text back is work: a reply nobody selects in costs
+// nothing).
+Item {
     id: redraw
 
+    required property TextEdit edit
     property color base              // the selection's color
-    property bool on: true           // (a text without tables is drawn right as it is)
     property bool flip: false
-    readonly property color color: flip ? Qt.rgba(base.r, base.g, base.b, base.a * 0.996) : base
+    property int tables: -1          // 1: the text has tables, 0: none, -1: not looked yet
+    visible: false
+    width: 0
+    height: 0
 
     function again() {
-        if (on)
+        if (tables < 0)
+            tables = edit.text.indexOf("<table") >= 0 ? 1 : 0
+        if (tables > 0)
             flip = !flip
+    }
+
+    Binding {
+        target: redraw.edit
+        property: "selectionColor"
+        value: redraw.flip ? Qt.rgba(redraw.base.r, redraw.base.g, redraw.base.b, redraw.base.a * 0.996) : redraw.base
+    }
+    Connections {
+        target: redraw.edit
+        function onSelectionStartChanged() {
+            redraw.again()
+        }
+        function onSelectionEndChanged() {
+            redraw.again()
+        }
+        function onTextChanged() {
+            redraw.tables = -1
+        }
     }
 }

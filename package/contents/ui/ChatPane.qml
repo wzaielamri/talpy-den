@@ -3415,8 +3415,7 @@ Window {
                                     property int copied: -1
                                     Component.onCompleted: entry.textBox = replyText
                                     Layout.fillWidth: true
-                                    readonly property string html: Md.toHtml(entry.whole ? entry.text : entry.foldData.cut, pane.mdStyle, copied)
-                                    text: html
+                                    text: Md.toHtml(entry.whole ? entry.text : entry.foldData.cut, pane.mdStyle, copied)
                                     textFormat: TextEdit.RichText
                                     readOnly: true
                                     persistentSelection: true   // (selectAcross clears it)
@@ -3424,16 +3423,7 @@ Window {
                                     selectByMouse: true
                                     wrapMode: TextEdit.Wrap
                                     color: Kirigami.Theme.textColor
-                                    // (a selection change draws a text with tables whole: WholeRedraw.qml,
-                                    // else its code blocks' text was drawn twice and looked bold)
-                                    selectionColor: replyRedraw.color
-                                    onSelectionStartChanged: replyRedraw.again()
-                                    onSelectionEndChanged: replyRedraw.again()
-                                    WholeRedraw {
-                                        id: replyRedraw
-                                        base: Kirigami.Theme.focusColor
-                                        on: replyText.html.indexOf("<table") >= 0
-                                    }
+                                    selectionColor: Kirigami.Theme.focusColor
                                     selectedTextColor: Kirigami.Theme.highlightedTextColor
                                     font.family: pane.chatFamily
                                     font.pointSize: pane.pt
@@ -3493,6 +3483,13 @@ Window {
                                     HoverHandler {
                                         id: replyHover
                                         cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor
+                                    }
+
+                                    // (a selection change draws a reply with tables whole, else its code blocks'
+                                    // text was drawn twice and looked bold: WholeRedraw.qml)
+                                    WholeRedraw {
+                                        edit: replyText
+                                        base: Kirigami.Theme.focusColor
                                     }
                                 }
                                 // (a long one: Show more · N more lines, FoldMore.qml, made only for one)

@@ -1,8 +1,9 @@
-// Where a Talpy Chat shows: an editor tab of its own (a webview panel), or
-// Talpy Chat's view in the secondary side bar, beside Claude Code's and
-// Copilot's chats, where no file opens over it (talpyDen.chatPlace:
-// "sideBar"; VS Code 1.106 and later lets an extension put a view there).
-// The view holds one chat at a time: the next one opened takes its place.
+// Talpy Chat in the secondary side bar, beside Claude Code's and Copilot's
+// chats, where no file opens over it (talpyDen.chatPlace: "sideBar"; VS Code
+// 1.106 and later lets an extension put a view there). The view holds one
+// chat at a time: the next one opened takes its place. A chat's page is
+// written for an editor tab (a webview panel), so the view is handed to it as
+// one (ViewSurface).
 
 import * as vscode from "vscode";
 
@@ -16,33 +17,25 @@ export function sideBarSupported(version: string = vscode.version): boolean {
   return major > 1 || (major === 1 && minor >= 106);
 }
 
-// What a chat's page needs of where it shows (a vscode.WebviewPanel is one as it is)
-export interface ChatSurface {
-  readonly webview: vscode.Webview;
-  readonly visible: boolean;
-  readonly active: boolean; // in front, with the focus (its keys go to it)
-  title: string;
-  iconPath?: vscode.WebviewPanel["iconPath"];
-  reveal(): void;
-  readonly onDidChangeViewState: vscode.Event<unknown>;
-  readonly onDidDispose: vscode.Event<void>;
-  dispose(): void;
-}
-
-// Talpy Chat's view, while one chat shows in it. Closing the chat (dispose)
-// gives the view back, it doesn't close it: released() says so, for whoever
-// shows the next one (or the empty view's words).
-export class ViewSurface implements ChatSurface {
+// Talpy Chat's view as the panel of the chat it shows. Closing the chat
+// (dispose) gives the view back, it doesn't close it: whoever shows the next
+// one (or the empty view's words) goes on with it.
+export class ViewSurface implements vscode.WebviewPanel {
+  readonly viewType = "talpyDen.chat";
+  readonly options: vscode.WebviewPanelOptions = {};
+  readonly viewColumn = undefined;
+  iconPath: vscode.WebviewPanel["iconPath"] = undefined; // (a view's icon is its container's)
   private gone = new vscode.EventEmitter<void>();
   readonly onDidDispose = this.gone.event;
-  readonly onDidChangeViewState: vscode.Event<unknown>;
-  iconPath: vscode.WebviewPanel["iconPath"] = undefined; // (a view's icon is its container's)
+  private changed = new vscode.EventEmitter<vscode.WebviewPanelOnDidChangeViewStateEvent>();
+  readonly onDidChangeViewState = this.changed.event;
+  private watching: vscode.Disposable;
   private released = false;
   private focused = false; // (the page says: VS Code doesn't tell which view has the focus)
 
   constructor(private view: vscode.WebviewView, options: vscode.WebviewOptions) {
     view.webview.options = options;
-    this.onDidChangeViewState = view.onDidChangeVisibility;
+    this.watching = view.onDidChangeVisibility(() => this.changed.fire({ webviewPanel: this }));
   }
 
   get webview(): vscode.Webview {
@@ -51,6 +44,7 @@ export class ViewSurface implements ChatSurface {
   get visible(): boolean {
     return !this.released && this.view.visible;
   }
+  // In front, with the focus (its keys go to it)
   get active(): boolean {
     return this.visible && this.focused;
   }
@@ -70,6 +64,8 @@ export class ViewSurface implements ChatSurface {
   dispose(): void {
     if (this.released) return;
     this.released = true;
+    this.watching.dispose();
+    this.changed.dispose();
     this.gone.fire();
     this.gone.dispose();
   }

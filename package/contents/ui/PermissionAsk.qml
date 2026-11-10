@@ -227,23 +227,20 @@ ColumnLayout {
             x: Kirigami.Units.smallSpacing
             y: Kirigami.Units.smallSpacing
             width: parent.width - Kirigami.Units.smallSpacing * 2
-            readonly property string html: ask.plan ? Md.toHtml(ask.plan.text, ask.planStyle) : ""
-            text: html
+            text: ask.plan ? Md.toHtml(ask.plan.text, ask.planStyle) : ""
             textFormat: TextEdit.RichText
             readOnly: true
             selectByMouse: true
             wrapMode: TextEdit.Wrap
             color: Kirigami.Theme.textColor
-            // (a selection change draws a plan with tables whole: WholeRedraw.qml)
-            selectionColor: planRedraw.color
-            onSelectionStartChanged: planRedraw.again()
-            onSelectionEndChanged: planRedraw.again()
-            WholeRedraw {
-                id: planRedraw
-                base: Kirigami.Theme.focusColor
-                on: planText.html.indexOf("<table") >= 0
-            }
+            selectionColor: Kirigami.Theme.focusColor
             onLinkActivated: link => Qt.openUrlExternally(link)
+
+            // (a selection change draws a plan with tables whole: WholeRedraw.qml)
+            WholeRedraw {
+                edit: planText
+                base: Kirigami.Theme.focusColor
+            }
 
             // where a link goes, under the pointer while it's hovered (made only then)
             HoverHandler {
