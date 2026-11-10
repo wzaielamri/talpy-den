@@ -1118,8 +1118,22 @@ export class Actions {
         const answer = await this.backend.action("jump.py", ["--pick-folder", group.chatProfile, "--cwd", picked[0].fsPath, ...configDirArgs()]);
         if (!this.report(answer, "Couldn't open a new chat")) return;
         where = { path: String(answer.path ?? picked[0].fsPath), short: String(answer.short ?? picked[0].fsPath) };
-        if (answer.trusted !== true) {
-          // (a background chat can't ask whether you trust it: this one starts in a terminal, where Claude asks)
+        let trusted = answer.trusted === true;
+        if (!trusted && typeof answer.trustQuestion === "string" && answer.trustQuestion) {
+          // A background chat can't ask whether you trust its folder: asked here, in the words of Claude's
+          // own question (jump.py trust_question), and yes is kept where Claude keeps it (--trust-folder)
+          const trust = "Trust It, Open in Talpy Chat";
+          const terminal = "Open in a Terminal";
+          const choice = await vscode.window.showWarningMessage(`Trust ${where.short}?`, { modal: true, detail: answer.trustQuestion }, trust, terminal);
+          if (!choice) return;
+          if (choice === trust) {
+            const done = await this.backend.action("jump.py", ["--trust-folder", group.chatProfile, "--cwd", where.path, ...configDirArgs()]);
+            if (!this.report(done, `Couldn't trust ${where.short}`)) return;
+            trusted = true;
+          }
+        }
+        if (!trusted) {
+          // (one whose trust Claude never keeps, your home folder, or Open in a Terminal: Claude asks there)
           this.dash.setActionInfo(`Claude doesn't trust ${where.short} yet: this chat opens in a terminal, where it asks.`);
           pick = { label: "", start: "terminal", folder: { path: where.path, short: where.short, trusted: false } as Project };
         }

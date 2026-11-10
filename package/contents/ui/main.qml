@@ -1338,7 +1338,8 @@ PlasmoidItem {
                 onActivated: root.answerPermission(ask.row, ask.host, "allow", "")
             }
             property QtObject alwaysAction: NotificationAction {
-                label: i18n("Always allow")
+                // (what it does, when that changes the chat's mode: Allow all edits, talpy_den.always_label)
+                label: ask.row && ask.row.permission && ask.row.permission.alwaysLabel ? ask.row.permission.alwaysLabel : i18n("Always allow")
                 onActivated: root.answerPermission(ask.row, ask.host, "always", "")
             }
             property QtObject denyAction: NotificationAction {
@@ -4420,7 +4421,8 @@ PlasmoidItem {
         const asked = p.command ? head.text : p.file ? i18n("Change %1", p.file) : [p.line].concat(head.text ? [head.text] : []).join("\n")
         // (what its Always allow button lets through from now on, where the click is)
         return [i18n("%1 asks for a permission", s.name),
-                p.answer === "hook" && p.always && !head.cut ? asked + "\n" + i18n("Always allow: %1", p.always) : asked]
+                p.answer === "hook" && p.always && !head.cut
+                ? asked + "\n" + (p.alwaysLabel ? p.alwaysLabel + ": " + p.always : i18n("Always allow: %1", p.always)) : asked]
     }
 
     // What a notification shows of a permission's command (or of an MCP tool's, a page's arguments, a

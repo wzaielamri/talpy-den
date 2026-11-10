@@ -67,9 +67,24 @@
           "title": "Talpy Den",
           "icon": "media/talpy.svg"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "talpyDenChat",
+          "title": "Talpy Chat",
+          "icon": "media/talpy.svg"
+        }
       ]
     },
     "views": {
+      "talpyDenChat": [
+        {
+          "type": "webview",
+          "id": "talpyDen.chatView",
+          "name": "Talpy Chat",
+          "when": "talpyDen.chatSideBar"
+        }
+      ],
       "talpyDen": [
         {
           "type": "webview",
@@ -405,127 +420,127 @@
         "command": "talpyDen.chat.sendNow",
         "key": "ctrl+enter",
         "mac": "cmd+enter",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.sendWhenTurnEnds",
         "key": "alt+enter",
         "mac": "alt+enter",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.sendInBackground",
         "key": "ctrl+shift+enter",
         "mac": "cmd+shift+enter",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.clear",
         "key": "ctrl+l",
         "mac": "cmd+l",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.reply1",
         "key": "alt+1",
         "mac": "alt+1",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.reply2",
         "key": "alt+2",
         "mac": "alt+2",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.reply3",
         "key": "alt+3",
         "mac": "alt+3",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.reply4",
         "key": "alt+4",
         "mac": "alt+4",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.allow",
         "key": "alt+y",
         "mac": "alt+y",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.alwaysAllow",
         "key": "alt+a",
         "mac": "alt+a",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.deny",
         "key": "alt+n",
         "mac": "alt+n",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.previousPrompt",
         "key": "ctrl+up",
         "mac": "cmd+up",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.nextPrompt",
         "key": "ctrl+down",
         "mac": "cmd+down",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.showChat",
         "key": "ctrl+1",
         "mac": "cmd+1",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.showSteps",
         "key": "ctrl+2",
         "mac": "cmd+2",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.showReview",
         "key": "ctrl+3",
         "mac": "cmd+3",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.toggleTasks",
         "key": "ctrl+t",
         "mac": "cmd+t",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.copyLastReply",
         "key": "ctrl+shift+c",
         "mac": "cmd+shift+c",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.find",
         "key": "ctrl+f",
         "mac": "cmd+f",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.foldAll",
         "key": "ctrl+o",
         "mac": "cmd+o",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.openWindow",
         "key": "ctrl+shift+o",
         "mac": "cmd+shift+o",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       }
     ],
     "menus": {
@@ -645,95 +660,95 @@
       "commandPalette": [
         {
           "command": "talpyDen.chat.sendNow",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.sendWhenTurnEnds",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.sendInBackground",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.clear",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.stop",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.reply1",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.reply2",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.reply3",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.reply4",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.allow",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.alwaysAllow",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.deny",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.previousPrompt",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.nextPrompt",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.showChat",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.showSteps",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.showReview",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.toggleTasks",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.copyLastReply",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.find",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.foldAll",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.openWindow",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.keys",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.planComment.add",
@@ -834,6 +849,20 @@
               "type": "boolean",
               "default": true,
               "markdownDescription": "A click on a chat opens it in Talpy Chat, an editor tab: its conversation as it goes, a box to reply, what it asks for (Allow / Deny), and what it changed (Undo, Commit, Mark reviewed). Off: a click opens the chat itself, as `#talpyDen.openIn#` says (the tab is then a button beside it).",
+              "order": 3
+            },
+            "talpyDen.chatPlace": {
+              "type": "string",
+              "enum": [
+                "tab",
+                "sideBar"
+              ],
+              "enumDescriptions": [
+                "Each chat in an editor tab of its own.",
+                "In Talpy Chat's view in the secondary side bar, beside Claude Code's and Copilot's chats, where no file opens over it: one chat at a time, the next one you open takes its place (VS Code 1.106 or later; an older one opens tabs)."
+              ],
+              "default": "tab",
+              "markdownDescription": "Where Talpy Chat shows a chat: in an editor **tab** of its own, or in its view in the secondary **side bar** (one chat at a time). You can drag that view to another place, as any view.",
               "order": 3
             },
             "talpyDen.newChatModel": {

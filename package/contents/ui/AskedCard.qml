@@ -210,13 +210,22 @@ RowLayout {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.leftMargin: Kirigami.Units.largeSpacing
                     anchors.rightMargin: Kirigami.Units.largeSpacing
-                    text: Md.toHtml(askedBox.a.plan, askedBox.pane.mdStyle, -1)
+                    readonly property string html: Md.toHtml(askedBox.a.plan, askedBox.pane.mdStyle, -1)
+                    text: html
                     textFormat: TextEdit.RichText
                     readOnly: true
                     selectByMouse: true
                     wrapMode: TextEdit.Wrap
                     color: askedBox.pane.textColor
-                    selectionColor: Kirigami.Theme.focusColor
+                    // (a selection change draws a plan with tables whole: WholeRedraw.qml)
+                    selectionColor: planRedraw.color
+                    onSelectionStartChanged: planRedraw.again()
+                    onSelectionEndChanged: planRedraw.again()
+                    WholeRedraw {
+                        id: planRedraw
+                        base: Kirigami.Theme.focusColor
+                        on: planText.html.indexOf("<table") >= 0
+                    }
                     selectedTextColor: Kirigami.Theme.highlightedTextColor
                     font.family: askedBox.pane.chatFamily
                     font.pointSize: askedBox.pane.pt

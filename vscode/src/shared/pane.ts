@@ -227,6 +227,7 @@ export type PaneHostMessage =
 // tab -> extension
 export type PaneMessage =
   | { type: "ready" }
+  | { type: "focus"; on: boolean } // the page has the focus or lost it (the side bar's view: which chat its keys are for)
   | { type: "more" } // older items too
   | { type: "send"; text: string; how: "auto" | "background" | "copy" | "enter"; afterTurn: boolean; id?: number } // id: shown at once (PendingSent)
   | { type: "hold"; id: number; text: string; how: "auto" | "background" | "copy" | "enter" } // held a moment (PendingSent "held"): goes even if the tab closes meanwhile

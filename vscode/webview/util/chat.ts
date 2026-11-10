@@ -71,6 +71,13 @@ export function canRemove(s: Session): boolean {
   return s.state === "done";
 }
 
+// Hide: a finished row, and one no process runs that a usage limit or an
+// expired login stopped (talpy_den.row_over: it had no button that took it
+// off the list; it comes back once it runs again)
+export function canHide(s: Session): boolean {
+  return canRemove(s) || (s.state === "idle" && s.pid === null && !!s.stopped);
+}
+
 // Background jobs with a running process (`claude stop`; a host's come with
 // the command that stops them there), and idle chats in a terminal (canEndChat)
 export function canStop(s: Session, host?: string): boolean {

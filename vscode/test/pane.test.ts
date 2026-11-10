@@ -1421,14 +1421,22 @@ test("the keys table: each command's key is its default keybinding, in a chat ta
       assert.ok(b, `${command} has a key`);
       assert.equal(b!.key, key);
       assert.equal(b!.mac, key.replace(/ctrl\+/g, "cmd+"));
-      if (command.startsWith("talpyDen.chat.")) assert.equal(b!.when, "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus", command);
+      // (a chat's tab with the focus, or Talpy Chat's view in the side bar with it: talpyDen.chatPlace)
+      if (command.startsWith("talpyDen.chat."))
+        assert.equal(b!.when, "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'", command);
     }
   }
   // (each of the tab's commands is in the table, but Stop and the list itself: Esc and ? are the page's)
   for (const c of commands) if (c.startsWith("talpyDen.chat.")) assert.ok(named.has(c) || ["talpyDen.chat.stop", "talpyDen.chat.keys"].includes(c), c);
   // (in the command palette only where they act)
   const palette: { command: string; when: string }[] = manifest.contributes.menus.commandPalette;
-  for (const c of commands) if (c.startsWith("talpyDen.chat.")) assert.equal(palette.find((m) => m.command === c)?.when, "activeWebviewPanelId == 'talpyDen.chat'", c);
+  for (const c of commands)
+    if (c.startsWith("talpyDen.chat."))
+      assert.equal(palette.find((m) => m.command === c)?.when, "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible", c);
+  // Talpy Chat's view in the secondary side bar: shown only where the extension says the bar is there
+  // (an older VS Code would list a view of a container it doesn't know under Explorer)
+  assert.deepEqual(manifest.contributes.viewsContainers.secondarySidebar.map((c: { id: string }) => c.id), ["talpyDenChat"]);
+  assert.deepEqual(manifest.contributes.views.talpyDenChat, [{ type: "webview", id: "talpyDen.chatView", name: "Talpy Chat", when: "talpyDen.chatSideBar" }]);
   assert.equal(keyText("sendNow", "vscode"), "Ctrl+Enter");
   assert.equal(keyText("sendNow", "vscode", true), "Cmd+Enter");
   assert.equal(withKey("Send now", "sendNow", "plasma"), "Send now (Ctrl+Enter)");

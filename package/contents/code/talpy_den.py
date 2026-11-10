@@ -1810,16 +1810,35 @@ def message_text(msg):
     return ""
 
 
+# What the Claude Code panel (VS Code, JetBrains) puts in front of a prompt
+# sent from it, each a text block of its own: the file open in the editor
+# (<ide_opened_file>), the lines selected there (<ide_selection>). Claude
+# reads them; they aren't what you typed.
+IDE_NOTE = re.compile(r"\s*<(ide_[a-z_]+)>.*?</\1>\s*", re.S)
+
+
+def typed_part(text):
+    """text without the editor's notes before it (IDE_NOTE): what you typed
+    in a prompt sent from the Claude Code panel, "" when it's a note alone."""
+    while text.lstrip().startswith("<ide_"):
+        note = IDE_NOTE.match(text)
+        if note is None:
+            break
+        text = text[note.end():]
+    return text
+
+
 def human_prompt(e):
     """What you typed, if this transcript entry is a prompt of yours (not a
-    tool result, a command's output or a note of Claude Code's own)."""
+    tool result, a command's output or a note of Claude Code's own); one sent
+    from the Claude Code panel without the editor's notes before it."""
     if e.get("type") != "user" or e.get("isMeta") or e.get("isCompactSummary") or e.get("isSidechain"):
         return None
     msg = e.get("message") if isinstance(e.get("message"), dict) else {}
     if isinstance(msg.get("content"), list) and any(
             isinstance(c, dict) and c.get("type") == "tool_result" for c in msg["content"]):
         return None
-    text = message_text(msg).strip()
+    text = typed_part(message_text(msg)).strip()
     if not text or text.startswith("<") or text.startswith("[Request interrupted"):
         return None
     return text
@@ -2706,7 +2725,8 @@ def permission_view(tool, inp, cwd, suggestions=()):
             del view["diff"][DIFF_LINES:]
     if not view["command"] and not view["diff"]:
         view["args"] = tool_args(inp, skip=("file_path", "notebook_path") if view["file"] else ())
-    view["always"] = always_allow(suggestions)[1]
+    kept, view["always"] = always_allow(suggestions)
+    view["alwaysLabel"] = always_label(kept, tool)
     return view
 
 
@@ -2774,6 +2794,26 @@ def always_allow(suggestions):
         what = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1] + ","
         text.append("%s %s" % (what, where))
     return kept, "; ".join(text)
+
+
+# What the Always allow button reads when it does more than allow what's
+# asked from now on: it changes the chat's mode (Claude's own second choice
+# for an edit is "Yes, allow all edits during this session", its accept
+# edits mode: the chat's mode tag changes with it, and commands still ask)
+ALWAYS_LABELS = {"acceptEdits": "Allow all edits", "bypassPermissions": "Allow everything", "auto": "Switch to auto mode"}
+
+
+def always_label(kept, tool=None):
+    """The Always allow button's words for the suggestions it sends
+    (always_allow's): the mode it changes the chat to, said as what that
+    lets through ("Allow all edits"), else "" (Always allow: a rule, a
+    folder). With no suggestions (a prompt answered with keys in its
+    terminal, where the button is Claude's second choice): an edit's is
+    "Allow all edits" too."""
+    for s in kept:
+        if s.get("type") == "setMode":
+            return ALWAYS_LABELS.get(s.get("mode"), "")
+    return ALWAYS_LABELS["acceptEdits"] if not kept and tool in EDIT_TOOLS else ""
 
 
 def plan_view(inp):
@@ -4278,8 +4318,11 @@ def read_chat_info(path, size):
                 cwd = e["cwd"]
             if kind == "user" and not first_prompt and not e.get("isMeta"):
                 content = e["message"].get("content") if isinstance(e.get("message"), dict) else None
-                if isinstance(content, list):
-                    content = next((c.get("text") for c in content if isinstance(c, dict) and c.get("type") == "text"), "")
+                if isinstance(content, list):  # (its first words: after the editor's notes of a Claude Code panel's)
+                    content = next((t for t in (typed_part(c["text"]) for c in content if isinstance(c, dict)
+                                                and c.get("type") == "text" and isinstance(c.get("text"), str)) if t.strip()), "")
+                elif isinstance(content, str):
+                    content = typed_part(content)
                 if isinstance(content, str) and content.strip() and not content.lstrip().startswith("<"):
                     first_prompt = content
     name = next((found[k] for k, _ in TITLE_KINDS if k in found), first_prompt)
@@ -6874,14 +6917,95 @@ def config_dir_value(profile, home=None, job=None, for_job=False):
 def trusted_folders(profile, home=None):
     """The folders Claude's "do you trust this folder?" question was answered
     yes for (in this profile's account file)."""
-    home = home or Path.home()
-    data = read_json(profile.path / ".claude.json")
-    if profile.is_default and not profile.path.is_symlink() and not (data or {}).get("projects"):
-        data = read_json(home / ".claude.json")
-    projects = (data or {}).get("projects")
+    projects = (account_file(profile, home)[1] or {}).get("projects")
     if not isinstance(projects, dict):
         return set()
     return {k for k, v in projects.items() if isinstance(v, dict) and v.get("hasTrustDialogAccepted") is True}
+
+
+def account_file(profile, home=None):
+    """(the file Claude keeps this profile's account in, with what it knows
+    of each folder: its trust; its content, or None): the profile's own
+    .claude.json, or the home folder's for ~/.claude itself with none."""
+    home = home or Path.home()
+
+    def read(path):  # (None for one that isn't what Claude writes)
+        data = read_json(path)
+        return data if isinstance(data, dict) else None
+    path = profile.path / ".claude.json"
+    data = read(path)
+    if profile.is_default and not profile.path.is_symlink() and not (data or {}).get("projects"):
+        return home / ".claude.json", read(home / ".claude.json")
+    return path, data
+
+
+# A folder's entry in that file as Claude starts it (2.1.322), before anything is kept there
+NEW_PROJECT = {"allowedTools": [], "mcpContextUris": [], "mcpServers": {}, "enabledMcpjsonServers": [],
+               "disabledMcpjsonServers": [], "hasTrustDialogAccepted": False,
+               "hasClaudeMdExternalIncludesApproved": False, "hasClaudeMdExternalIncludesWarningShown": False}
+# Claude settings a folder can have of its own, which count once it's trusted (hooks, MCP servers, rules)
+TRUST_SETTINGS = (".claude/settings.json", ".claude/settings.local.json", ".mcp.json")
+
+
+def trust_place(folder, home=None):
+    """What trusting folder for Claude means: {"key": the folder Claude keeps
+    it under (its git repository's, the main one's for a worktree: the whole
+    repository is trusted with it; else the folder itself), "repo": whether
+    that's a repository's, "settings": the Claude settings of its own it has
+    there (TRUST_SETTINGS)}; None for one whose trust Claude never keeps (your
+    home folder: it asks there every time) or that isn't a folder."""
+    home = home or Path.home()
+    if not isinstance(folder, str) or not folder.startswith("/") or not os.path.isdir(folder):
+        return None
+    path = Path(os.path.realpath(folder))  # (as Claude's own folder is, once it runs there)
+    root = git_root(path)
+    repo = root is not None and root != home
+    key = main_repository(root) if repo else path
+    if home in (path, key):
+        return None
+    found = [name for base in dict.fromkeys((key, path)) for name in TRUST_SETTINGS if (base / name).is_file()]
+    return {"key": str(key), "repo": repo, "settings": list(dict.fromkeys(found))}
+
+
+def trust_folder(profile, folder, home=None):
+    """Answer Claude's "do you trust this folder?" with yes for folder on
+    this profile, where its own dialog keeps it (the folder's entry in the
+    account file: hasTrustDialogAccepted), so a chat can start there in the
+    background, where Claude can't ask: (ok, message). Only once you said
+    so (jump.py's question: pick_folder, --trust-folder); the Permissions
+    tab lists it, with Revoke."""
+    home = home or Path.home()
+    place = trust_place(folder, home)
+    if place is None:
+        return False, "Claude keeps no trust for that folder (your home folder: it asks there every time, in a terminal)"
+    with claude_settings_lock(home):
+        for _ in range(3):
+            path, data = account_file(profile, home)
+            real = Path(os.path.realpath(str(path)))  # (a link stays a link: its file changes)
+            try:
+                before = real.stat().st_mtime_ns
+            except OSError:
+                before = None
+            if (data is None and before is not None) or not isinstance((data or {}).get("projects", {}), dict):
+                return False, f"{short_folder(str(path), home)} isn't JSON Talpy Den can change: trust the folder in a terminal"
+            data = data or {}
+            projects = data.setdefault("projects", {})
+            entry = projects.get(place["key"])
+            if isinstance(entry, dict):
+                entry["hasTrustDialogAccepted"] = True
+            else:
+                projects[place["key"]] = dict(NEW_PROJECT, hasTrustDialogAccepted=True)
+            try:
+                if (real.stat().st_mtime_ns if before is not None else None) != before:
+                    continue  # (Claude wrote it meanwhile: read again, so nothing of that is lost)
+            except OSError:
+                continue
+            try:
+                write_claude_settings(real, data)
+            except OSError as exc:
+                return False, f"Couldn't write {short_folder(str(path), home)}: {exc}"
+            return True, "Trusted"
+    return False, "Claude kept writing its account file: try again"
 
 
 def git_root(folder):
@@ -10119,6 +10243,14 @@ HIDE_WORDS = {"chats": ("chat", "chats"), "plans": ("plan", "plans"), "memories"
 HIDDEN_ID_MAX = 4096
 
 
+def row_over(s):
+    """A chat's row that Hide takes out of the list: a finished one, or one
+    no process runs that a usage limit or an expired login stopped (a
+    background chat Claude's service let go of: it waits for you to go on
+    with it, and nothing of it runs). It comes back once it runs again."""
+    return s["state"] == "done" or (s["state"] == "idle" and s.get("pid") is None and bool(s.get("stopped")))
+
+
 def hidden_id_ok(kind, item_id):
     if kind == "chats":
         return valid_id(item_id)
@@ -10423,7 +10555,7 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
             # the ids it had where it was removed
             former = s.pop("formerIds", None) or []
             ids = [i for i in (s["sessionId"], s.get("chatId"), *former) if i in dismissed]
-            if ids and s["state"] == "done":
+            if ids and row_over(s):
                 dismissed_rows += 1
             else:
                 forget.update(ids)  # it runs again: it comes back (and is forgotten)

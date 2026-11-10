@@ -115,6 +115,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(dash.onState(() => planFolders()));
   // each chat's tab: its conversation, a reply box, what it asks, its review
   const panes = new ChatPanes(context.extensionUri, backend, dash, actions, terminals, log);
+  context.subscriptions.push(panes.sideBar()); // (Talpy Chat's view in the secondary side bar: talpyDen.chatPlace)
   view.panes = panes;
   notifier.panes = panes;
   actions.panes = panes;

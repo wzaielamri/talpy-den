@@ -228,6 +228,9 @@ export enum ViewColumn {
   Active = -1,
 }
 
+// (one that has a secondary side bar for extensions' views: chatSurface.ts sideBarSupported)
+export const version = "1.110.0";
+
 export enum ConfigurationTarget {
   Global = 1,
 }

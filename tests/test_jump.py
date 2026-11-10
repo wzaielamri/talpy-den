@@ -810,7 +810,8 @@ class ChooseFolderTests(Fixture):
         for chosen, said in ((str(trusted), (True, "", {"path": str(trusted), "short": "~/repos/b", "trusted": True})),
                              (str(other), (True, "", {"path": str(other), "short": "~/repos/c", "trusted": False})),
                              (None, (True, "", {}))):
-            with Patch(choose_folder=lambda title, start: (chosen, "")):
+            # (one it doesn't trust: asked whether you do, here answered "Open in a terminal")
+            with Patch(choose_folder=lambda title, start: (chosen, ""), ask_trust=lambda title, question: "terminal"):
                 self.assertEqual(jump.pick_folder(self.home, [], ".claude-work"), said)
         with Patch(choose_folder=lambda title, start: (None, "No folder dialog found (install kdialog)")):
             self.assertEqual(jump.pick_folder(self.home, [], ".claude-work"), (False, "No folder dialog found (install kdialog)", {}))
@@ -825,6 +826,60 @@ class ChooseFolderTests(Fixture):
             jump.main(["--pick-folder", ".claude-work"])
         self.assertEqual(json.loads(out.getvalue()), {"ok": True, "message": "", "path": str(trusted), "short": "~/repos/b",
                                                       "trusted": True})
+
+    def test_a_new_folder_for_talpy_chat_is_trusted_once_you_say_so(self):
+        # (Choose folder… for a new chat in Talpy Chat opened a terminal for every folder Claude didn't
+        # know yet: now the question it would ask there is asked here, and yes is kept where Claude keeps it)
+        new, repo = self.home / "new project", self.home / "repos/app"
+        (repo / "src").mkdir(parents=True)
+        (repo / ".git").mkdir()
+        (repo / ".claude").mkdir()
+        (repo / ".claude/settings.json").write_text("{}")
+        new.mkdir()
+        account = self.home / ".claude-work/.claude.json"
+        before = json.loads(account.read_text())
+        asked = []
+
+        def ask(answer):
+            return lambda title, question: asked.append((title, question)) or answer
+        with Patch(choose_folder=lambda title, start: (str(new), ""), ask_trust=ask(None)):   # (cancelled: nothing opens)
+            self.assertEqual(jump.pick_folder(self.home, [], ".claude-work"), (True, "", {}))
+        self.assertEqual(json.loads(account.read_text()), before)
+        self.assertEqual(asked[0][0], "Trust ~/new project?")
+        self.assertIn("Is this a project you created or one you trust?", asked[0][1])
+        self.assertNotIn("repository", asked[0][1])
+        with Patch(choose_folder=lambda title, start: (str(new), ""), ask_trust=ask("trust")):
+            self.assertEqual(jump.pick_folder(self.home, [], ".claude-work"),
+                             (True, "", {"path": str(new), "short": "~/new project", "trusted": True}))
+        after = json.loads(account.read_text())
+        self.assertEqual(after["projects"][str(new)], dict(cs.NEW_PROJECT, hasTrustDialogAccepted=True))   # (as Claude starts one)
+        self.assertEqual({k: v for k, v in after.items() if k != "projects"}, {k: v for k, v in before.items() if k != "projects"})
+        with Patch(choose_folder=lambda title, start: (str(new), ""), ask_trust=lambda *a: self.fail("asked again")):
+            self.assertTrue(jump.pick_folder(self.home, [], ".claude-work")[2]["trusted"])
+        # a folder in a repository: the repository is what Claude trusts, and the question says so, and its own settings
+        said = jump.pick_folder(self.home, [], ".claude-work", str(repo / "src"))[2]   # (VS Code's dialog picked it: it asks)
+        self.assertFalse(said["trusted"])
+        self.assertIn("part of the repository at ~/repos/app: trusting it trusts that whole repository", said["trustQuestion"])
+        self.assertIn("Claude settings of its own (.claude/settings.json)", said["trustQuestion"])
+        self.assertEqual(jump.trust_folder(self.home, [], ".claude-work", str(repo / "src")), (True, "Trusted"))
+        self.assertTrue(json.loads(account.read_text())["projects"][str(repo)]["hasTrustDialogAccepted"])
+        work = next(p for p in cs.discover_profiles(self.home, []) if cs.matches_profile(p, ".claude-work"))
+        self.assertTrue(cs.folder_trusted(work, str(repo / "src"), self.home))
+        self.assertEqual(jump.trust_folder(self.home, [], ".claude-work", str(repo)), (True, "Trusted already"))
+        # an entry Claude has for it already keeps what's in it; the home folder's trust is never kept
+        data = json.loads(account.read_text())
+        data["projects"][str(new)] = {"hasTrustDialogAccepted": False, "allowedTools": ["Bash(ls:*)"], "lastCost": 2}
+        account.write_text(json.dumps(data))
+        self.assertEqual(jump.trust_folder(self.home, [], ".claude-work", str(new)), (True, "Trusted"))
+        self.assertEqual(json.loads(account.read_text())["projects"][str(new)],
+                         {"hasTrustDialogAccepted": True, "allowedTools": ["Bash(ls:*)"], "lastCost": 2})
+        self.assertNotIn("trustQuestion", jump.pick_folder(self.home, [], ".claude-work", str(self.home))[2])
+        self.assertFalse(jump.trust_folder(self.home, [], ".claude-work", str(self.home))[0])
+        self.assertFalse(jump.trust_folder(self.home, [], ".claude-work", str(self.home / "gone"))[0])
+        # (an account file that isn't what Claude writes is left alone)
+        account.write_text("[1, 2]")
+        ok, message = jump.trust_folder(self.home, [], ".claude-work", str(repo / "src"))
+        self.assertEqual((ok, account.read_text()), (False, "[1, 2]"), message)
 
     def test_command_line(self):
         calls = []

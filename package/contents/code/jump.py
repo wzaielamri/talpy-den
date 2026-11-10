@@ -42,7 +42,11 @@ a new chat (used by the Talpy Den widget).
     python3 -I jump.py --pick-files [FOLDER]     (files to attach, from the desktop's file dialog: their paths)
     python3 -I jump.py --pick-folder PROFILE [--cwd FOLDER]
                                                  (a folder for a new chat in Talpy Chat, from the desktop's folder
-                                                 dialog, or FOLDER: its path, short name and whether Claude trusts it)
+                                                 dialog, or FOLDER: its path, short name and whether Claude trusts it;
+                                                 one it doesn't: you're asked whether you trust it, or with FOLDER
+                                                 the question to ask comes back)
+    python3 -I jump.py --trust-folder PROFILE --cwd FOLDER
+                                                 (trust FOLDER for Claude on that profile, after that question)
     python3 -I jump.py --copy-image PATH         (a PNG to the clipboard: wl-copy, else xclip)
     python3 -I jump.py --agent-run AGENT_ID --chat CHAT_ID [--profile PROFILE] [--no-open]
                                                  (a subagent's whole run, as a Markdown file)
@@ -1363,24 +1367,90 @@ def pick_files(home, start):
     return True, "", {"paths": paths}
 
 
+def trust_question(place, folder, home):
+    """What to ask before a folder is trusted for Claude from here
+    (cs.trust_place's facts), in the words of Claude's own question."""
+    lines = [f"Claude doesn't trust {cs.short_folder(folder, home)} yet, and a chat in Talpy Chat runs in the background, "
+             "where Claude can't ask you.",
+             "Is this a project you created or one you trust? Trusting it lets Claude Code read, edit and run files there, "
+             "and the folder's own Claude settings count from then on (hooks, MCP servers, permission rules: they can "
+             "run programs)."]
+    if place["repo"] and place["key"] != os.path.realpath(folder):
+        lines.append(f"It's part of the repository at {cs.short_folder(place['key'], home)}: trusting it trusts that whole "
+                     "repository.")
+    if place["settings"]:
+        lines.append(f"It has Claude settings of its own ({', '.join(place['settings'])}): look at them first if the project "
+                     "isn't yours.")
+    lines.append("Talpy Den's Permissions tab lists the folders you trust, each with Revoke.")
+    return "\n\n".join(lines)
+
+
+def ask_trust(title, question):
+    """The trust question in a desktop dialog (KDE's, else GTK's; on GNOME
+    GTK's first): "trust", "terminal" (open it in a terminal, where Claude
+    asks itself) or None (cancelled, or no dialog to ask with: GTK's has two
+    buttons, so closing it is the terminal there)."""
+    yes, no = "Trust It, Open in Talpy Chat", "Open in a Terminal"
+    kde = ["kdialog", "--title", title, "--warningyesnocancel", question, "--yes-label", yes, "--no-label", no]
+    gtk = ["zenity", "--question", "--icon=dialog-warning", "--title", title, "--text", question, "--ok-label", yes,
+           "--cancel-label", no, "--width=520"]
+    args = next((a for a in ([gtk, kde] if on_gnome() else [kde, gtk]) if shutil.which(a[0])), None)
+    if args is None:
+        return "terminal"
+    code = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+    if code == 0:
+        return "trust"
+    return "terminal" if code == 1 else None
+
+
 def pick_folder(home, extra_dirs, profile_key, folder=None):
     """--pick-folder: (ok, message, {"path", "short", "trusted"}) of a folder
     for a new chat in Talpy Chat, picked in the desktop's folder dialog (it
     opens in your home folder), or folder (VS Code's own dialog picked it);
     cancelled: ok with no path. trusted: Claude trusts it on that profile
-    already (a background chat can't ask)."""
+    (a background chat can't ask). One it doesn't trust yet, whose trust
+    Claude can keep (not your home folder): picked in the desktop's dialog,
+    you're asked here whether you trust it (trust_question: yes trusts it,
+    cs.trust_folder; cancelled: no path); for VS Code's, "trustQuestion" is
+    what to ask (then --trust-folder)."""
     profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
     if profile is None:
         return False, f"No Claude profile called {profile_key}", {}
-    error = ""
+    error, here = "", not folder
     if not folder:
         folder, error = choose_folder(f"New Claude chat on {profile.label} in…", home)
     if folder is None:
         return not error, error, {}
     if not os.path.isdir(folder):
         return False, f"The folder {cs.short_folder(folder, home)} isn't there", {}
-    return True, "", {"path": folder, "short": cs.short_folder(folder, home),
-                      "trusted": cs.folder_trusted(profile, folder, home)}
+    out = {"path": folder, "short": cs.short_folder(folder, home), "trusted": cs.folder_trusted(profile, folder, home)}
+    place = None if out["trusted"] else cs.trust_place(folder, home)
+    if place is not None and not here:
+        out["trustQuestion"] = trust_question(place, folder, home)
+    elif place is not None:
+        answer = ask_trust(f"Trust {out['short']}?", trust_question(place, folder, home))
+        if answer is None:
+            return True, "", {}
+        if answer == "trust":
+            ok, message = cs.trust_folder(profile, folder, home)
+            if not ok:
+                return False, message, {}
+            out["trusted"] = True
+    return True, "", out
+
+
+def trust_folder(home, extra_dirs, profile_key, folder):
+    """--trust-folder: Claude's "do you trust this folder?" answered yes for
+    folder on that profile (cs.trust_folder), after the question
+    --pick-folder gave: (ok, message)."""
+    profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
+    if profile is None:
+        return False, f"No Claude profile called {profile_key}"
+    if not folder or not os.path.isdir(folder):
+        return False, f"The folder {cs.short_folder(folder or '', home)} isn't there"
+    if cs.folder_trusted(profile, folder, home):
+        return True, "Trusted already"
+    return cs.trust_folder(profile, folder, home)
 
 
 # ---------------------------------------------------------------- pictures in a task
@@ -2946,6 +3016,8 @@ def main(argv=None):
             attach_path = args.pop(0) if args and not args[0].startswith("--") else ""
         elif arg == "--pick-folder" and args:
             action, attach_path, session_id = pick_folder, args.pop(0), "-"
+        elif arg == "--trust-folder" and args:
+            action, attach_path, session_id = trust_folder, args.pop(0), "-"
         elif arg == "--turn":
             turn = True
         elif arg == "--list":
@@ -3131,6 +3203,8 @@ def main(argv=None):
             ok, message, extra_out = pick_files(Path.home(), attach_path)
         elif action is pick_folder:
             ok, message, extra_out = pick_folder(Path.home(), extra, attach_path, folder)
+        elif action is trust_folder:
+            ok, message = trust_folder(Path.home(), extra, attach_path, folder)
         elif action is show_agent_run:
             ok, message, run_file = show_agent_run(Path.home(), extra, session_id, agent_id, profile_dir, open_it)
         elif action is show_changes and listing:

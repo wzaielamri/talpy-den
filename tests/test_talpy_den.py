@@ -1342,6 +1342,16 @@ class DismissTests(Fixture):
         # another copy of the script (other settings): forgotten after a while
         self.assertEqual(set(cs.load_dismissed(self.cache)), {"bgdone", "gone"})
 
+    def test_a_chat_a_limit_stopped_with_no_process_can_be_hidden(self):
+        # (a background chat a usage limit stopped, let go of by Claude's service: "Limit reset · go on",
+        # Not open, idle. It had no Hide, and a hidden one came back: only finished rows stayed hidden)
+        stop = {"kind": "limit", "over": True}
+        self.assertTrue(cs.row_over({"state": "done", "pid": 7, "stopped": None}))
+        self.assertTrue(cs.row_over({"state": "idle", "pid": None, "stopped": stop}))
+        self.assertFalse(cs.row_over({"state": "idle", "pid": 7, "stopped": stop}))      # (its Claude still runs: Stop first)
+        self.assertFalse(cs.row_over({"state": "idle", "pid": None, "stopped": None}))
+        self.assertFalse(cs.row_over({"state": "waiting", "pid": None, "stopped": None}))  # (it asks you something)
+
     def test_removing_while_a_check_runs(self):
         cs.private_dir(self.cache)
         cs.save_dismissed(self.cache, {"busy": int(self.now * 1000)})

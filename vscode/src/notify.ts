@@ -129,18 +129,20 @@ export class Notifier implements vscode.Disposable {
       // (two chats on the same files, a limit that reset: Open only)
       // (a command it can't show whole: Open, its tab with all of it, Allow once and Deny; askHead)
       const cut = asks && askHead(p!).cut;
+      // (Always allow says what it does when that changes the chat's mode: Allow all edits)
+      const alwaysButton = (asks && p!.alwaysLabel) || "Always allow";
       const buttons = cut ? ["Open", "Allow once", "Deny"]
-        : asks ? ["Allow once", ...(p!.answer === "keys" || p!.always ? ["Always allow"] : []), "Deny", "Deny with a note…", "Open"]
+        : asks ? ["Allow once", ...(p!.answer === "keys" || p!.always ? [alwaysButton] : []), "Deny", "Deny with a note…", "Open"]
         : this.panes && (n.kind === "done" || (n.kind === "waiting" && !p)) ? ["Reply…", "Open"] : ["Open"];
       // (what Always allow lets through from now on, next to the button)
-      const always = asks && !cut && p!.answer === "hook" && p!.always ? ` · Always allow: ${p!.always}` : "";
+      const always = asks && !cut && p!.answer === "hook" && p!.always ? ` · ${alwaysButton}: ${p!.always}` : "";
       void show(noLinks(text + always), ...buttons).then(async (choice) => {
         const panes = this.panes;
         if (choice === "Open") {
           if (panes && (cut || settings.clickOpensPane())) panes.open(chat, "chat");
           else this.open(chat);
-        } else if (panes && (choice === "Allow once" || choice === "Always allow" || choice === "Deny")) {
-          this.told(chat, await panes.answer(chat, choice === "Allow once" ? "allow" : choice === "Always allow" ? "always" : "deny", shown));
+        } else if (panes && (choice === "Allow once" || choice === alwaysButton || choice === "Deny")) {
+          this.told(chat, await panes.answer(chat, choice === "Allow once" ? "allow" : choice === alwaysButton ? "always" : "deny", shown));
         } else if (panes && choice === "Deny with a note…") {
           const note = await vscode.window.showInputBox({ title: `Deny ${n.session.name}`, prompt: "What should Claude do instead? (optional)", ignoreFocusOut: true });
           if (note !== undefined) this.told(chat, await panes.answer(chat, "deny", shown, note.trim()));

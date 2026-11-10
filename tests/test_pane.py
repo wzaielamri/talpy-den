@@ -169,6 +169,30 @@ class ConversationTests(PaneFixture):
         self.assertEqual([(i["kind"], i.get("text") or i.get("line")) for i in items],
                          [("you", "tidy the tags"), ("claude", "Making every tag start with a capital."), ("tool", "Bash: ls")])
 
+    def test_a_prompt_from_the_claude_code_panel_shows(self):
+        # (the panel puts the file open in the editor, or the lines selected there, in front of what
+        # you typed, each a text block of its own: such a prompt started with "<" and was left out,
+        # 133 of 213 of a real account's panel prompts)
+        t = self.now - 100
+
+        def panel(ts, *texts):
+            return {"type": "user", "timestamp": iso(ts), "entrypoint": "claude-vscode", "promptSource": "sdk", "cwd": str(self.folder),
+                    "message": {"role": "user", "content": [{"type": "text", "text": x} for x in texts]}}
+        opened = "<ide_opened_file>The user opened the file /x/a.c in the IDE. This may or may not be related to the current task.</ide_opened_file>"
+        picked = "<ide_selection>The user selected the lines 3 to 4 from /x/a.c:\nint a;\n</a>\n\nThis may or may not be related.</ide_selection>"
+        self.chat(panel(t, opened, "do step 4"),
+                  text_reply("Done.", t + 1, "m1", stop="end_turn"),
+                  panel(t + 2, opened, picked, "and <b>this</b> one?"),
+                  text_reply("Yes.", t + 3, "m2", stop="end_turn"),
+                  panel(t + 4, opened))   # (a note alone: nothing of yours)
+        items, _ = pane.conversation(self.transcript)
+        self.assertEqual([(i["kind"], i["text"]) for i in items],
+                         [("you", "do step 4"), ("claude", "Done."), ("you", "and <b>this</b> one?"), ("claude", "Yes.")])
+        self.assertEqual(cs.read_chat_info(self.transcript, self.transcript.stat().st_size)[0], "do step 4")   # (its name: your first words)
+        self.assertEqual(pane.typed_text([{"type": "text", "text": picked}, {"type": "text", "text": "queued from the panel"}]),
+                         "queued from the panel")
+        self.assertEqual(cs.typed_part("<ide_opened_file>never closed"), "<ide_opened_file>never closed")
+
     def test_items(self):
         t = self.now - 100
         a = str(self.folder / "a.py")
@@ -593,6 +617,18 @@ class PermissionViewTests(PaneFixture):
         view = cs.permission_view("Write", {"file_path": str(self.home / "other/x"), "content": "hi"}, str(self.folder), outside)
         self.assertEqual(view["always"], "all edits (accept edits mode) and access to ~/other, in this chat")
         self.assertEqual(pane.decision_of("always", "", outside)["updatedPermissions"], outside[:2])  # (what it says: no more)
+        # The button says what it does where that changes the chat's mode: it read "Always allow", and
+        # the chat was in accept edits mode after the click (its commands still asking)
+        self.assertEqual(view["alwaysLabel"], "Allow all edits")
+        rule = [{"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "git push:*"}], "behavior": "allow",
+                 "destination": "localSettings"}]
+        view = cs.permission_view("Bash", {"command": "git push"}, str(self.folder), rule)
+        self.assertEqual((view["always"], view["alwaysLabel"]),
+                         ("Bash(git push:*) in this project (.claude/settings.local.json)", ""))   # (a rule: Always allow)
+        # (answered with keys in its terminal, Claude's second choice: an edit's is "allow all edits during this session")
+        self.assertEqual(cs.permission_view("Edit", {"file_path": str(self.folder / "a"), "old_string": "a", "new_string": "b"},
+                                            str(self.folder))["alwaysLabel"], "Allow all edits")
+        self.assertEqual(cs.permission_view("Bash", {"command": "ls"}, str(self.folder))["alwaysLabel"], "")
 
     def test_a_write_over_a_big_file_or_a_pipe(self):
         # (each check made the view: it read the whole file and diffed it, minutes of CPU for a big one)

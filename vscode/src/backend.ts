@@ -68,6 +68,7 @@ export interface Answer {
   path?: string; // --pick-folder: the folder, as it's written (short), and whether Claude trusts it
   short?: string;
   trusted?: boolean;
+  trustQuestion?: string; // (one Claude doesn't trust yet, whose trust it can keep: what to ask before --trust-folder)
   // --start-queued: a chat's go-on waits for its background commands (what the
   // queue says), or ended them to go on; notify: say so (once, as it starts
   // waiting, and when it ends them)

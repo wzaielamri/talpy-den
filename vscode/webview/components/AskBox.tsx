@@ -148,7 +148,8 @@ export function AskBox({ ask, onAnswer, onWholePlan, onTerminal, busy = false, m
                 : `From now on, without asking: ${ask.always}.`, "always")}
               onClick={() => onAnswer("always", "")}
             >
-              <Icon name={I.always} tone={T.always} />Always allow
+              {/* (what it does, when that changes the chat's mode: Allow all edits, talpy_den.always_label) */}
+              <Icon name={I.always} tone={T.always} />{ask.alwaysLabel || "Always allow"}
             </button>
           ) : null}
           <button type="button" class="btn secondary" disabled={off} onClick={() => setDenying(true)} title={keyed ? tip("Deny, with a note", "deny") : undefined}><Icon name={I.deny} tone={T.deny} />Deny…</button>

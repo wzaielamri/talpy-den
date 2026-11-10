@@ -4235,11 +4235,16 @@ body.vscode-high-contrast-light .pane {
   border-collapse: collapse;
 }
 
+/* A table's words stay whole: the chat's text may break anywhere (.pane-body),
+   which let a table squeeze a column down to a letter or two ("tim" / "e");
+   a table too wide for the tab scrolls sideways (.md-table) */
 .md-table th,
 .md-table td {
   padding: 4px 10px;
   border: 1px solid var(--cs-border);
   text-align: left;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .md-table th {

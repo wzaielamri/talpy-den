@@ -29,6 +29,8 @@ ColumnLayout {
     signal inTerminal()
 
     readonly property bool canAnswer: !!permission && (permission.answer === "hook" || permission.answer === "keys")
+    // The Always allow button's words: what it does when that changes the chat's mode (Allow all edits)
+    readonly property string alwaysText: permission && permission.alwaysLabel ? permission.alwaysLabel : i18n("Always allow")
     readonly property var diff: permission && permission.diff ? permission.diff : []
     // What it asks with when there's no command or change to show (an MCP tool's, a page's): "key: value"
     // lines; in a row the first argRows, one line each, the pane all of them
@@ -225,13 +227,22 @@ ColumnLayout {
             x: Kirigami.Units.smallSpacing
             y: Kirigami.Units.smallSpacing
             width: parent.width - Kirigami.Units.smallSpacing * 2
-            text: ask.plan ? Md.toHtml(ask.plan.text, ask.planStyle) : ""
+            readonly property string html: ask.plan ? Md.toHtml(ask.plan.text, ask.planStyle) : ""
+            text: html
             textFormat: TextEdit.RichText
             readOnly: true
             selectByMouse: true
             wrapMode: TextEdit.Wrap
             color: Kirigami.Theme.textColor
-            selectionColor: Kirigami.Theme.focusColor
+            // (a selection change draws a plan with tables whole: WholeRedraw.qml)
+            selectionColor: planRedraw.color
+            onSelectionStartChanged: planRedraw.again()
+            onSelectionEndChanged: planRedraw.again()
+            WholeRedraw {
+                id: planRedraw
+                base: Kirigami.Theme.focusColor
+                on: planText.html.indexOf("<table") >= 0
+            }
             onLinkActivated: link => Qt.openUrlExternally(link)
 
             // where a link goes, under the pointer while it's hovered (made only then)
@@ -370,13 +381,15 @@ ColumnLayout {
             enabled: !ask.busy && !ask.settling
             icon.name: Icons.plasma.always
             icon.color: Icons.color("always", Kirigami.Theme)
-            text: i18n("Always allow")
+            // (what it does, when that's more than a rule: "Allow all edits" for one that puts the chat in
+            // accept edits mode, talpy_den.always_label)
+            text: ask.alwaysText
             onClicked: ask.answered("always", "", null)
 
             TipArea {
                 textFormat: Text.PlainText
                 anchors.fill: parent
-                mainText: ask.keyed ? i18n("Always allow (Alt+A)") : i18n("Always allow")
+                mainText: ask.keyed ? i18n("%1 (Alt+A)", ask.alwaysText) : ask.alwaysText
                 subText: !ask.permission ? ""
                          : ask.permission.answer === "keys" ? i18n("Like \"Yes, and don't ask again\" in its dialog (for an edit, \"Yes, allow all edits during this session\").")
                          : i18n("From now on, without asking: %1.", ask.permission.always)

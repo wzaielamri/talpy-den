@@ -17,6 +17,7 @@ import type { Actions } from "./actions";
 import { AGENT_ID } from "./agentRun";
 import type { Backend } from "./backend";
 import { openComparison } from "./changes";
+import { CHAT_VIEW, CHAT_VIEW_CONTEXT, emptyView, sideBarSupported, ViewSurface, type ChatSurface } from "./chatSurface";
 import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } from "./config";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
@@ -114,9 +115,72 @@ export class ChatPanes implements vscode.Disposable {
     const key = `${chat.host ?? ""}|${findPaneRow(this.dash.state(), chat.host ?? "", chatId).movedTo ?? chatId}`;
     const pane = this.panes.get(key);
     if (pane) return pane.reveal(tab);
-    const created = new Pane(this, chat, tab);
+    this.place(key, (surface) => new Pane(this, chat, tab, null, surface));
+  }
+
+  // ---------------------------------------------------------------- where a chat shows
+  //
+  // An editor tab of its own, or (talpyDen.chatPlace: sideBar) Talpy Chat's view in the secondary
+  // side bar, beside Claude Code's and Copilot's chats, where no file opens over it: one chat at a
+  // time there, the next one opened takes its place (chatSurface.ts).
+
+  private sideView: vscode.WebviewView | undefined; // Talpy Chat's view, once VS Code made it
+  private side: Pane | undefined; // the chat it shows
+  private sideNext: ((view: vscode.WebviewView) => void) | undefined; // (one to show as soon as the view is made)
+
+  private inSideBar(): boolean {
+    return settings.chatPlace() === "sideBar" && sideBarSupported();
+  }
+
+  // The view's provider, and the context key it shows by (package.json: its "when")
+  sideBar(): vscode.Disposable {
+    const context = () => void vscode.commands.executeCommand("setContext", CHAT_VIEW_CONTEXT, this.inSideBar());
+    context();
+    const made = [
+      vscode.window.registerWebviewViewProvider(CHAT_VIEW, {
+        resolveWebviewView: (view) => {
+          this.sideView = view;
+          view.onDidDispose(() => {
+            if (this.sideView === view) this.sideView = undefined;
+            this.side?.dispose();
+          });
+          const next = this.sideNext;
+          this.sideNext = undefined;
+          if (next) next(view);
+          else emptyView(view);
+        },
+      }, { webviewOptions: { retainContextWhenHidden: true } }),
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (!e.affectsConfiguration("talpyDen.chatPlace")) return;
+        context();
+        if (!this.inSideBar()) this.side?.dispose(); // (its view goes: the chat opens in a tab the next time)
+      }),
+    ];
+    return { dispose: () => made.forEach((d) => d.dispose()) };
+  }
+
+  private keep(key: string, created: Pane): void {
     this.panes.set(key, created);
     created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
+  }
+
+  private place(key: string, make: (surface?: ChatSurface) => Pane): void {
+    if (!this.inSideBar()) return this.keep(key, make());
+    const show = (view: vscode.WebviewView) => {
+      this.side?.dispose(); // (the chat that was there: a message it held still goes)
+      const created = make(new ViewSurface(view, chatWebviewOptions(this.extensionUri)));
+      this.side = created;
+      created.onClosed(() => {
+        if (this.side !== created) return;
+        this.side = undefined;
+        if (this.sideView === view) emptyView(view); // (closed with nothing after it)
+      });
+      this.keep(key, created);
+      view.show(false);
+    };
+    if (this.sideView) return show(this.sideView);
+    this.sideNext = show;
+    void vscode.commands.executeCommand(`${CHAT_VIEW}.focus`); // (VS Code makes the view: resolveWebviewView shows it)
   }
 
   // A new chat in a tab of its own, for that account and folder, with nothing started yet: your first
@@ -129,9 +193,7 @@ export class ChatPanes implements vscode.Disposable {
     const fresh: Fresh = { profile: group.chatProfile, account: group.title, cwd: folder.path, short: folder.short,
                            plan: plan ? { slug: plan.slug, profileDir: plan.profileDir, title: plan.title } : null,
                            task: task || (plan ? "Implement this plan." : "") };
-    const created = new Pane(this, chat, "chat", fresh);
-    this.panes.set(`|${id}`, created);
-    created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
+    this.place(`|${id}`, (surface) => new Pane(this, chat, "chat", fresh, surface));
   }
 
   // A tab's chat Claude moved to the background under a new id goes on under that one (Pane.follow)
@@ -375,7 +437,8 @@ export class ChatPanes implements vscode.Disposable {
   // A key's command (talpyDen.chat.*, bound only while a chat tab has the focus): to the tab in
   // front, whose page does what it says (keys.mjs's id); false: no chat tab is in front
   key(key: string): boolean {
-    const pane = [...new Set(this.panes.values())].find((p) => p.active);
+    // (the side bar's chat first, when it has the focus: a tab can be the editor in front all the while)
+    const pane = this.side?.active ? this.side : [...new Set(this.panes.values())].find((p) => p.active);
     if (!pane) return false;
     pane.key(key);
     return true;
@@ -400,8 +463,14 @@ function inPictures(file: string): boolean {
   return path.resolve(file).startsWith(picturesDir() + path.sep);
 }
 
+// A chat's page may run its script and load the extension's files and the
+// pictures in your messages, shown small (Talpy Den's folder of them)
+function chatWebviewOptions(uri: vscode.Uri): vscode.WebviewOptions {
+  return { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(uri, "dist"), vscode.Uri.file(picturesDir())] };
+}
+
 class Pane implements vscode.Disposable {
-  private panel: vscode.WebviewPanel;
+  private panel: ChatSurface; // its editor tab, or Talpy Chat's view in the side bar (chatSurface.ts)
   private host: string;
   private chatId: string;
   private chat: ChatRef;
@@ -427,17 +496,16 @@ class Pane implements vscode.Disposable {
     chat: ChatRef,
     tab: "chat" | "review",
     private fresh: Fresh | null = null,
+    surface?: ChatSurface, // (the side bar's view; none: a tab of its own)
   ) {
     this.chat = chat;
     this.host = chat.host ?? "";
     this.chatId = chat.chatId || chat.sessionId;
     const { uri } = owner.ext;
-    this.panel = vscode.window.createWebviewPanel("talpyDen.chat", chat.name || this.chatId.slice(0, 8), vscode.ViewColumn.Active, {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-      // (and the pictures in your messages, shown small: Talpy Den's folder of them)
-      localResourceRoots: [vscode.Uri.joinPath(uri, "dist"), vscode.Uri.file(picturesDir())],
-    });
+    const title = chat.name || this.chatId.slice(0, 8);
+    this.panel = surface ?? vscode.window.createWebviewPanel("talpyDen.chat", title, vscode.ViewColumn.Active,
+                                                             { ...chatWebviewOptions(uri), retainContextWhenHidden: true });
+    if (surface) surface.title = title;
     this.panel.iconPath = vscode.Uri.joinPath(uri, "media", "talpy-chat.svg");   // (Talpa with a speech bubble, in colour: both themes)
     this.shown = this.panel.visible;
     this.panel.webview.html = this.html(tab);
@@ -777,6 +845,9 @@ class Pane implements vscode.Disposable {
     const where = this.host ? ["--host", this.host] : configDirArgs();
     const profile = this.chat.profileDir ? ["--profile", this.chat.profileDir] : [];
     switch (m.type) {
+      case "focus": // (the side bar's view: whether its keys are this chat's, ChatPanes.key)
+        if (this.panel instanceof ViewSurface) this.panel.focus(m.on === true);
+        break;
       case "ready":
         this.ready = true;
         await this.pushChat();

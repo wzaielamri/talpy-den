@@ -273,7 +273,7 @@ def typed_text(content):
     """What a message you sent while Claude worked says (a string, or the
     text blocks of one with pictures), "" for one that isn't yours to read
     (a task notification, a subagent's report)."""
-    text = cs.message_text({"content": content}).strip()
+    text = cs.typed_part(cs.message_text({"content": content})).strip()  # (the Claude Code panel's: after its editor's notes)
     return "" if text.startswith("<") else text
 
 

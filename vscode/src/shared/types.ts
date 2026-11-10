@@ -290,6 +290,8 @@ export interface PermissionAsk {
   // tool's, a page's): "key: value" lines; older backends leave it out
   args?: string[];
   always: string; // what Always allow lets through, and where, or "" (nothing to remember): "Bash(git push:*) in this project (.claude/settings.local.json)"
+  // the Always allow button's words when it changes the chat's mode ("Allow all edits": accept edits mode), else ""; older backends leave it out
+  alwaysLabel?: string;
   // Claude's multiple-choice questions (its AskUserQuestion tool), answered
   // with "answer"; older backends leave it out
   questions?: Question[];

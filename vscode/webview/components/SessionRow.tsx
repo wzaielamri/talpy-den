@@ -34,7 +34,7 @@ import { attachedTag, chatWhere, reviewPending, shownAsk, testsText, whereTag } 
 import type { Group, Session } from "../../src/shared/types";
 import { post } from "../env";
 import { pets } from "../pets";
-import { canRemove, canShare, canStop, chatRefOf, deleteHint, hideHint, isBackground, openHint, rowKeyOf, sharedTagTitle, shareTitle } from "../util/chat";
+import { canHide, canRemove, canShare, canStop, chatRefOf, deleteHint, hideHint, isBackground, openHint, rowKeyOf, sharedTagTitle, shareTitle } from "../util/chat";
 import { useStore } from "../util/store";
 import { useLiveView } from "../util/stores";
 import { toggleAgentDetail, toggleAgents, togglePeek, uiState } from "../util/ui";
@@ -423,7 +423,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
             <IconButton icon={I.delete} tone={T.delete} label="Delete this chat…" title={`Delete this chat…\n${deleteHint("chat")}`}
               onClick={() => askDelete(`chat|${rowKey}`, { kind: "chat", chat })} />
           ) : null}
-          {remove ? (
+          {canHide(s) ? (
             <IconButton icon={I.hide} label="Hide this chat" title={`Hide this chat\n${hideHint("chats", host)}`}
               onClick={() => post({ type: "dismiss", chat })} />
           ) : null}

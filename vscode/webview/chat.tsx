@@ -967,7 +967,17 @@ function ChatApp() {
     };
     window.addEventListener("message", onMessage);
     post({ type: "ready" });
-    return () => window.removeEventListener("message", onMessage);
+    // (in the side bar's view VS Code doesn't say which view has the focus: the page does, for its keys)
+    const focused = () => post({ type: "focus", on: true });
+    const blurred = () => post({ type: "focus", on: false });
+    window.addEventListener("focus", focused);
+    window.addEventListener("blur", blurred);
+    if (document.hasFocus()) focused();
+    return () => {
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("focus", focused);
+      window.removeEventListener("blur", blurred);
+    };
   }, []);
 
   useEffect(() => {

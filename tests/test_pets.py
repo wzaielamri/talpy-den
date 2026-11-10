@@ -2144,7 +2144,8 @@ class NewChatTests(unittest.TestCase):
             self.assertTrue(any(key in t for t in table), key)
         self.assertIn("keyed: true", pane)
         ask = (ROOT / "ui/PermissionAsk.qml").read_text()
-        for words in ('"Allow once (Alt+Y)"', '"Deny, with a note (Alt+N)"', '"Always allow (Alt+A)"'):
+        # (Always allow's names what it does: "Allow all edits (Alt+A)" where it changes the chat's mode)
+        for words in ('"Allow once (Alt+Y)"', '"Deny, with a note (Alt+N)"', '"%1 (Alt+A)", ask.alwaysText'):
             self.assertIn(words, ask)
         self.assertIn("function pressKey(key)", ask)
         help = (ROOT / "ui/KeysHelp.qml").read_text()

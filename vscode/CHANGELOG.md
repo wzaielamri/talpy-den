@@ -138,6 +138,17 @@
   act on that host (reopen, star, move, hide, delete); *New chat here* starts
   on it, with the command its read sent; a plan drags only onto a project of
   its own machine; the eye button next to its name shows what you hid there.
+- **Talpy Chat in the side bar:** set `talpyDen.chatPlace` to `sideBar` and
+  chats open in Talpy Chat's view in the secondary side bar, beside Claude
+  Code's and Copilot's chats, where no file opens over them: one chat at a
+  time, the next one you open takes its place. Its keys work while the view
+  has the focus (VS Code 1.106 or later; the default stays a tab each).
+- **A new folder opens in Talpy Chat:** *Choose folder…* under *In a Talpy
+  Chat tab* opened a terminal for every folder Claude didn't know yet. Now
+  you're asked whether you trust it, in the words of Claude's own question:
+  **Trust It, Open in Talpy Chat** keeps your yes where Claude keeps it (the
+  Permissions tab lists the folder, with **Revoke**), **Open in a Terminal**
+  is as before.
 
 ### Better
 
@@ -189,6 +200,19 @@
   as a copy (Keep going, a queued go-on) still has its prompts answered there.
 - **One wake for two windows:** sending from Plasma's Talpy Chat and this
   tab to one stopped chat at once wakes it once (no copy of the chat).
+
+### Fixed
+- **Messages sent from the Claude Code panel show in Talpy Chat:** the panel
+  puts a note in front of what you type (the file open in the editor, the
+  lines selected there), and a message that started with one was left out:
+  about two of three sent from the panel.
+- **A table's words stay whole in Talpy Chat:** a narrow column was squeezed
+  to a letter or two; a table too wide for the tab scrolls sideways now.
+- **Always allow says what it does:** for a file edit, where Claude offers
+  only its accept edits mode, the button reads **Allow all edits** (in a
+  row, Talpy Chat and a notification).
+- **A chat a usage limit stopped can be hidden:** one whose process is gone
+  (*Limit reset · go on*, *Not open*) has **Hide** now.
 
 ## 1.18.0
 
