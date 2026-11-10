@@ -95,6 +95,7 @@ real_cache="${XDG_CACHE_HOME:-$HOME/.cache}/talpy-den"
 if [ -d "$real_cache" ]; then
   [ -d "$real_cache/statusline" ] && cp -a "$real_cache/statusline" "$cache/talpy-den/"
   [ -d "$real_cache/live" ] && cp -a "$real_cache/live" "$cache/talpy-den/"  # (live mode's steps)
+  [ -d "$real_cache/bookmarks" ] && cp -a "$real_cache/bookmarks" "$cache/talpy-den/"  # (Talpy Chat's bookmarks)
   find "$real_cache" -maxdepth 1 -name '*.json' ! -name instances.json ! -name settings.json \
     -exec cp -p {} "$cache/talpy-den/" \;
 fi

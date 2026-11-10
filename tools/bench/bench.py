@@ -4,7 +4,7 @@ widget from this repository rendered offscreen (tools/render_popup.sh) on
 made-up chats (fake_chats.py, in a home folder of their own), with
 bench.qml driving its Talpy Chat windows.
 
-    tools/bench/bench.py [open|send|turn|scroll|idle|find|reads|all ...] [--out DIR] [--idle-seconds N] [--warm]
+    tools/bench/bench.py [open|send|turn|scroll|idle|find|bookmarks|reads|all ...] [--out DIR] [--idle-seconds N] [--warm]
 
     open    opening a chat's window: first window, a new one, a closed one again (short and long chat)
     first   the first window only (open's first number, quicker: for comparing two packages often)
@@ -15,6 +15,9 @@ bench.qml driving its Talpy Chat windows.
     find    Talpy Chat's search on a 500-item chat (Steps tab): till all is searched, the longest the
             window waits meanwhile (a 5 ms timer's late ticks), steps to matches; and Ctrl+O on a chat
             of long replies and messages (fake_chats.make_folds, made for this scenario only)
+    bookmarks  the long chat's 100 bookmarks: its window's first frame, then the one its ribbons show in;
+            on 500 items, what each read costs them (place), a bookmark taken away and back (each
+            one's frame), the list opened (first, then warm), Alt+↓, and a reach to the oldest one
     reads   pane.py --conversation from the shell (no window): the read alone
 
     --warm  each scenario runs twice with the widget's QML disk cache and data kept between them
@@ -48,8 +51,8 @@ REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 import fake_chats  # noqa: E402
 
-SCENARIOS = ("open", "send", "turn", "scroll", "idle", "find", "first")
-SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 90, "find": 90, "first": 30}   # (the render's limit; each ends sooner)
+SCENARIOS = ("open", "send", "turn", "scroll", "idle", "find", "first", "bookmarks")
+SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 90, "find": 90, "first": 30, "bookmarks": 90}   # (the render's limit; each ends sooner)
 TICK = os.sysconf("SC_CLK_TCK")
 RENDER_ID = "org.wzaielamri.talpyden.rendertest"
 
@@ -266,6 +269,14 @@ def report_find(lines):
     return out
 
 
+def report_bookmarks(lines):
+    out = {}
+    for kind, d in lines:
+        if kind in ("bookmarksOpen", "place", "toggle", "list", "step", "reach", "bookmarks"):
+            out.setdefault(kind, []).append(d)
+    return out
+
+
 def report_reads():
     """pane.py --conversation run from the shell on the made-up chats: its read alone (median of 5, ms),
     with its modules compiled once and kept, as the installed widget's are (pane.py: pycache)."""
@@ -335,7 +346,8 @@ def main(argv):
                 shutil.rmtree(keep, ignore_errors=True)
             results[s] = {"open": lambda: report_open(lines), "first": lambda: report_open(lines), "send": lambda: report_send(lines),
                           "turn": lambda: report_turn(lines, written), "scroll": lambda: report_scroll(lines),
-                          "idle": lambda: report_idle(lines, sampler), "find": lambda: report_find(lines)}[s]()
+                          "idle": lambda: report_idle(lines, sampler), "find": lambda: report_find(lines),
+                          "bookmarks": lambda: report_bookmarks(lines)}[s]()
             if s != "open":
                 results[s]["window"] = report_open(lines)
         print(f"{s}: {json.dumps(results[s], indent=1)}", flush=True)

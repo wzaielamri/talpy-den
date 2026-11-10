@@ -2199,9 +2199,10 @@ class NewChatTests(unittest.TestCase):
             self.assertNotIn(per_row, delegate)
         table = set(re.findall(r'(?:plasma|vscode|what): "([^"]+)"', keys))   # (F3: in the find key's words)
         # (ChatPane.qml's tooltips, and those of its parts made only when they show)
-        tips = pane + "".join((ROOT / "ui" / f).read_text() for f in ("BigPicture.qml", "QueueLine.qml", "FindBar.qml"))
+        tips = pane + "".join((ROOT / "ui" / f).read_text() for f in ("BigPicture.qml", "QueueLine.qml", "FindBar.qml", "MessageTools.qml",
+                                                                      "BookmarkList.qml", "BookmarkPill.qml"))
         named = {k for text in re.findall(r'i18n\("[^"]*\(([^)"]*)\)', tips) for k in re.findall(r"(?:Ctrl\+|Alt\+|Shift\+)+[^\s;,:)]+|\bEsc\b|\bF3\b", text)}
-        self.assertTrue({"Ctrl+Enter", "Ctrl+Shift+Enter", "Alt+Enter", "Ctrl+Shift+O", "Ctrl+1", "Esc"} <= named, named)
+        self.assertTrue({"Ctrl+Enter", "Ctrl+Shift+Enter", "Alt+Enter", "Ctrl+Shift+O", "Ctrl+1", "Esc", "Ctrl+D", "Ctrl+Shift+B", "Alt+↑"} <= named, named)
         for key in named:
             self.assertTrue(any(key in t for t in table), key)
         self.assertIn("keyed: true", pane)
@@ -2211,6 +2212,72 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("function pressKey(key)", ask)
         help = (ROOT / "ui/KeysHelp.qml").read_text()
         self.assertIn("PaneKeys.KEYS", help)
+
+    def test_bookmarks_are_made_only_when_wanted(self):
+        # Talpy Chat's bookmarks (6i): what they do (Bookmarks.qml, with bookmarks.mjs), their list
+        # (BookmarkList.qml) and the tab row's count (BookmarkPill.qml) are files of their own, read and
+        # made only for a chat with a bookmark, once you act or while they're listed, so a window opens as
+        # quickly; the ribbons (BookmarkFlag.qml) are made on the bookmarked rows only, by Bookmarks.qml;
+        # each row gains nothing but its mark's name (the dot, the ›), and your band and a ribbon's ground
+        # are one colour; the keys (PaneKeys.qml) and Esc's order
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        keys = (ROOT / "ui/PaneKeys.qml").read_text()
+        logic = (ROOT / "ui/Bookmarks.qml").read_text()
+        self.assertNotIn('"bookmarks.mjs"', pane)
+        self.assertNotIn('"bookmarks.mjs"', keys)
+        self.assertIn('import "bookmarks.mjs" as Bm', logic)
+        for source in ("Bookmarks.qml", "BookmarkList.qml", "BookmarkPill.qml"):
+            at = pane.index(f'source: active ? "{source}" : ""')
+            self.assertEqual(pane.count(f'source: active ? "{source}" : ""'), 1, source)
+            opened = pane.rindex("{", 0, at)   # (the item it's in: a Loader)
+            self.assertEqual(pane[opened - len("Loader "):opened], "Loader ", source)
+        self.assertRegex(pane, r"id: bookmarkLogic\n\s+active: false\n\s+asynchronous: true\n")
+        self.assertIn("active: pane.bookmarksOn && pane.conversationTab\n", pane)
+        self.assertIn("active: pane.bookmarks.length > 0 || pane.bookmarksOn\n", pane)
+        for path in (ROOT / "ui").glob("*.qml"):
+            made = 'Qt.createComponent("BookmarkFlag.qml")' in path.read_text()
+            self.assertEqual(made, path.name == "Bookmarks.qml", path.name)
+        delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
+        self.assertNotIn("bookmark", delegate)
+        self.assertNotIn("Bookmark", delegate)
+        self.assertEqual(delegate.count('objectName: "rowMark"'), 2)   # (Claude's dot, your › or $)
+        band = delegate[delegate.index("id: youBand"):]
+        self.assertIn("color: waits ? pane.mix(pane.textColor, 0.07) : pane.youGround", band[:band.index("Rectangle {")])
+        self.assertIn("pane.youGround", (ROOT / "ui/BookmarkFlag.qml").read_text())
+        # (a chat without bookmarks: its read's answer makes nothing; one with them, asynchronously)
+        take = pane[pane.index("    function takeConversation(result) {"):pane.index("    function fresher(s) {")]
+        self.assertIn("bookmarkLogic.active = true", take)
+        self.assertNotIn("bookmarksNow()", take)
+        self.assertNotIn("asynchronous", take)
+        for key in ("ctrlShift && k === Qt.Key_B", "ctrl && k === Qt.Key_D", "alt && (k === Qt.Key_Up || k === Qt.Key_Down)",
+                    "bookmarks: pane.bookmarksOn && pane.conversationTab", 'case "bookmarkUp":', 'what === "bookmarks"'):
+            self.assertIn(key, keys)
+        # (Ctrl+Shift+B from Review too; the rest only on Chat and Steps)
+        self.assertLess(keys.index("Qt.Key_B"), keys.index("if (!pane.conversationTab)\n            return \"\""))
+        self.assertGreater(keys.index("Qt.Key_D"), keys.index("if (!pane.conversationTab)\n            return \"\""))
+        # the words (VS Code's the same)
+        tools = (ROOT / "ui/MessageTools.qml").read_text()
+        menu = (ROOT / "ui/EditMenu.qml").read_text()
+        listed = (ROOT / "ui/BookmarkList.qml").read_text()
+        pill = (ROOT / "ui/BookmarkPill.qml").read_text()
+        for words in ("Bookmark this reply (Ctrl+D)", "Bookmark your message (Ctrl+D)", "Remove the bookmark (Ctrl+D)"):
+            self.assertIn(f'i18n("{words}")', tools)
+        for words in ("Bookmark message", "Remove bookmark"):
+            self.assertIn(f'i18n("{words}")', menu)
+        self.assertIn('keys: i18nc("a key", "Ctrl+D")', menu)
+        for words in ("Bookmarks in this chat (Ctrl+Shift+B)", "Alt+↑ / Alt+↓: the one before / after what you read", "Bookmarks"):
+            self.assertIn(f'i18n("{words}")', pill)
+        for words in ("Bookmarks", "Close (Ctrl+Shift+B, Esc)", "Go to it (Alt+↑ / Alt+↓: the one before / after)",
+                      "Further back than what's shown: a click reads more of the chat and goes there", "Going there…",
+                      "Too far back", "Further back than the last 2000 steps Talpy Chat shows: a click copies it",
+                      "Not in the chat any more", "Not in this chat any more: × removes the bookmark", "Remove this bookmark",
+                      "No bookmarks in this chat yet. Hover a message and click its bookmark, or press Ctrl+D.",
+                      "That message isn't in the chat any more"):
+            self.assertIn(f'i18n("{words}")', listed)
+        self.assertIn('i18n("Couldn\'t keep the bookmark: %1"', logic)
+        self.assertIn('i18n("A chat keeps up to 100 bookmarks: remove one first")', logic)
+        self.assertIn('i18n("That message isn\'t in the chat any more")', logic)
+        self.assertIn('i18n("Copied: it\'s further back than the last 2000 steps Talpy Chat shows")', pane)
 
     def test_search_and_folds_are_made_only_when_wanted(self):
         # Talpy Chat's search (A3) and folds (A6): the find bar (FindBar.qml), its marks (FindMarks.qml,

@@ -250,6 +250,8 @@ Window {
     readonly property color mutedColor: mix(textColor, 0.62)
     readonly property color borderColor: mix(textColor, 0.16)
     readonly property color youColor: surface.Kirigami.Theme.focusColor
+    // (your messages' band; under a bookmarked one's ribbon too, BookmarkFlag.qml: the same colour)
+    readonly property color youGround: Qt.tint(surface.Kirigami.Theme.backgroundColor, Qt.rgba(youColor.r, youColor.g, youColor.b, 0.13))
     // Bold, as Claude's terminal draws it (Breeze's blue there): the theme's
     // accent (focusColor: a Plasma 6 window's highlightColor is a pale
     // selection tint), darker on a light theme so it reads on white. Also
@@ -402,9 +404,14 @@ Window {
             copied(key, hover)
             return
         }
+        copyWhole(key, false, hover)
+    }
+    // (all of a message, read from the transcript: one shown cut, or a bookmark's further back than the
+    // last 2000 steps shown, far: BookmarkList.qml)
+    function copyWhole(key, far, hover) {
         start("--reply-text " + root.shellQuote(chatId) + " --key " + root.shellQuote(key)
               + paneArgs() + " # " + Date.now(),
-              { kind: "copy", chat: chatId, host: host, key: key, hover: hover })
+              { kind: "copy", chat: chatId, host: host, key: key, hover: !!hover, far: !!far })
     }
     function copyLast() {
         for (let i = lastItems.length - 1; i >= 0; i--)
@@ -434,6 +441,28 @@ Window {
         id: editMenu
         active: false
         source: active ? "EditMenu.qml" : ""
+    }
+    // Bookmarks (Ctrl+D; a message's ribbon on hover, its right-click menu): the chat's bookmarked
+    // messages, kept by pane.py --bookmark in the widget's cache, each one's dot or › a ribbon, listed on
+    // the side (Ctrl+Shift+B: BookmarkList.qml), Alt+↑ / Alt+↓ the one before / after what you read.
+    // What does it (Bookmarks.qml, with bookmarks.mjs) is read and made only once the chat has a
+    // bookmark (after its read, asynchronously) or you act (at once: bookmarksNow), so a chat without
+    // any runs none of it
+    property var bookmarks: []         // [{key, kind, at, text, made}], in the chat's order
+    property real bookmarksV: 0        // (its version, pane.py's: an older answer's list isn't taken)
+    property var bookmarked: ({})      // key -> true
+    property bool bookmarksOn: false   // (the list on the side)
+    property string reachKey: ""       // (one further back than what's shown: the next read reads that far, --reach)
+    Loader {
+        id: bookmarkLogic
+        active: false
+        asynchronous: true
+        source: active ? "Bookmarks.qml" : ""
+    }
+    function bookmarksNow() {
+        bookmarkLogic.asynchronous = false   // (one being made: done now)
+        bookmarkLogic.active = true
+        return bookmarkLogic.item
     }
     function keyAction(event) {
         return paneKeys.item ? paneKeys.item.keyAction(event) : ""
@@ -657,6 +686,13 @@ Window {
         firstRead = null
         shownList = []
         findOn = false   // (another chat: its find bar closed; what it looked for stays for Ctrl+F)
+        bookmarks = []
+        bookmarksV = 0
+        bookmarked = {}
+        bookmarksOn = false
+        reachKey = ""
+        if (bookmarkLogic.item)
+            bookmarkLogic.item.clear()   // (the chat before's ribbons and reach; its writes still go)
         info = ""
         review = null
         reviewFor = ""
@@ -823,8 +859,10 @@ Window {
         }
         loading = true
         loadingSince = Date.now()
+        // (a bookmark further back than what's shown: read as far back as its message, Bookmarks.qml reach)
         run("conversation", "--conversation " + root.shellQuote(chatId) + " --limit " + limit
-            + (stamp ? " --if-changed " + root.shellQuote(stamp) : "") + (suggestOn ? " --suggest" : "") + paneArgs())
+            + (reachKey !== "" ? " --reach " + root.shellQuote(reachKey) : stamp ? " --if-changed " + root.shellQuote(stamp) : "")
+            + (suggestOn ? " --suggest" : "") + paneArgs())
     }
 
     // Live (hub/Hub.qml): with the live hook, the conversation is read the
@@ -939,8 +977,18 @@ Window {
     // earlier meanwhile), isn't taken
     function takeConversation(result) {
         loadError = ""
-        if (result.unchanged || !fresher(result.stamp))
+        // (a read as far back as a bookmark's message: at the length it read, which the next ones read too)
+        const reach = !!result.reach && result.limit > 0
+        if (reach) {
+            limit = result.limit
+            if (result.reach === reachKey)
+                reachKey = ""
+        }
+        if (result.unchanged || !fresher(result.stamp)) {
+            if (reach && bookmarkLogic.item)
+                bookmarkLogic.item.reached(result)
             return
+        }
         const following = !loaded || nearEnd()
         stamp = result.stamp || ""
         more = !!result.more
@@ -955,6 +1003,20 @@ Window {
         const handoff = {}
         merge(withPending(lastItems, handoff), handoff)
         countUnseen()
+        // (its bookmarks, as pane.py keeps them: not while a change of yours is on its way, nor a list no
+        // newer than what's shown; with one, what draws them is made, off this frame: bookmarkLogic)
+        if (Array.isArray(result.bookmarks) && result.bookmarksV > bookmarksV && !(bookmarkLogic.item && bookmarkLogic.item.busy)) {
+            const keys = {}
+            for (const m of result.bookmarks)
+                keys[m.key] = true
+            bookmarks = result.bookmarks
+            bookmarked = keys
+            bookmarksV = result.bookmarksV
+        }
+        if (bookmarks.length > 0)
+            bookmarkLogic.active = true
+        if (reach && bookmarkLogic.item)
+            bookmarkLogic.item.reached(result)
         // (how its turn ended: its chips, made once the conversation is in the list)
         turnEnded = result.ended || ""
         turnOver = !!result.over
@@ -1574,6 +1636,10 @@ Window {
                 Plasmoid.configuration.paneTerminalFont = result.family
             return
         }
+        if (kind === "bookmark") {   // (a bookmark kept, or why not: Bookmarks.qml, whichever chat it was of)
+            bookmarksNow().took(result, asked)
+            return
+        }
         if (kind === "made") {   // (what Claude made, unfolded: MadeLine.qml shows it)
             if (asked.chat === chatId) {
                 const next = Object.assign({}, madeShown)
@@ -1585,7 +1651,12 @@ Window {
         if (kind === "copy") {   // (all of a reply shown cut: on the clipboard now, Copied)
             if (result.ok && typeof result.text === "string") {
                 copyText(result.text, true)
-                copied(asked.key, asked.hover)
+                if (asked.far) {   // (a bookmark's message, further back than the list goes)
+                    info = i18n("Copied: it's further back than the last 2000 steps Talpy Chat shows")
+                    infoBad = false
+                    infoTimer.restart()
+                } else
+                    copied(asked.key, asked.hover)
             } else {
                 info = i18n("Couldn't copy all of it: %1", result.message || i18n("it couldn't be read"))
                 infoBad = true
@@ -1691,6 +1762,11 @@ Window {
                 Qt.callLater(load)
             }
             if (!result.ok) {
+                if (reachKey !== "") {   // (a bookmark's read further back: not tried again, Going there… goes)
+                    reachKey = ""
+                    if (bookmarkLogic.item)
+                        bookmarkLogic.item.reached(result)
+                }
                 // (a chat just started has no transcript for a moment: your message shows meanwhile)
                 if (result.missing && chat.startedAt && Date.now() - chat.startedAt < 60000) {
                     loadError = ""
@@ -3125,6 +3201,13 @@ Window {
                 Item {
                     Layout.fillWidth: true
                 }
+                // The chat's bookmarks: how many, a click lists them (BookmarkPill.qml: read and made only for
+                // a chat with one, or while they're listed; on every tab, as tall as a tab: the row never changes)
+                Loader {
+                    active: pane.bookmarks.length > 0 || pane.bookmarksOn
+                    Layout.alignment: Qt.AlignVCenter
+                    source: active ? "BookmarkPill.qml" : ""
+                }
             }
             Rectangle {
                 Layout.fillWidth: true
@@ -3416,8 +3499,7 @@ Window {
                                 readonly property color mark: waits ? pane.mutedColor : pane.youColor
                                 implicitHeight: youColumn.implicitHeight + Kirigami.Units.largeSpacing * 1.5
                                 radius: Kirigami.Units.cornerRadius
-                                color: waits ? pane.mix(pane.textColor, 0.07)
-                                     : Qt.tint(Kirigami.Theme.backgroundColor, Qt.rgba(pane.youColor.r, pane.youColor.g, pane.youColor.b, 0.13))
+                                color: waits ? pane.mix(pane.textColor, 0.07) : pane.youGround
 
                                 Rectangle {
                                     width: 3
@@ -3439,6 +3521,7 @@ Window {
                                     spacing: 0
 
                                     PlasmaComponents3.Label {
+                                        objectName: "rowMark"
                                         Layout.preferredWidth: pane.gutter
                                         Layout.alignment: Qt.AlignTop
                                         horizontalAlignment: Text.AlignHCenter
@@ -3532,6 +3615,7 @@ Window {
                                 spacing: 0
 
                                 Dot {
+                                    objectName: "rowMark"
                                     visible: !entry.thinking
                                     Layout.alignment: Qt.AlignTop
                                     color: pane.claudeColor
@@ -3827,6 +3911,20 @@ Window {
                 anchors.rightMargin: Kirigami.Units.gridUnit
                 active: pane.findOn && pane.conversationTab
                 source: active ? "FindBar.qml" : ""
+            }
+            // The chat's bookmarks (Ctrl+Shift+B, the tab row's ribbon): BookmarkList.qml over the list's top
+            // right, under the find bar while it's open, clear of the scroll bar (nothing moves), read and made
+            // only while it's open
+            Loader {
+                id: bookmarkList
+                parent: scroll
+                z: 12
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.topMargin: Kirigami.Units.smallSpacing * 0.5 + (findBar.item ? findBar.item.height + Kirigami.Units.smallSpacing : 0)
+                anchors.rightMargin: Kirigami.Units.gridUnit
+                active: pane.bookmarksOn && pane.conversationTab
+                source: active ? "BookmarkList.qml" : ""
             }
             // "3 new ↓" at the list's bottom while you're scrolled up and something came in below (NewBelow.qml:
             // made only then); over the list, so it moves nothing; a click goes to the end

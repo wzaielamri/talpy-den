@@ -2,10 +2,12 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
+import "bookmarks.mjs" as Bm
 
 // Talpy Chat's right-click menu, each item with its key: on the conversation,
 // Copy (what's selected, across messages too), Copy message (the message
-// right-clicked, as its Copy button: a reply as Markdown, all of it) and Select
+// right-clicked, as its Copy button: a reply as Markdown, all of it), Bookmark
+// message or Remove bookmark (one that can be: Bookmarks.qml) and Select
 // all (every message); on the reply box, Undo, Redo, Cut, Copy, Paste (a picture
 // too, as Ctrl+V) and Select all. ChatPane.qml makes one for the window the
 // first time it's right-clicked (a Loader) and opens it where it's clicked:
@@ -71,6 +73,12 @@ PlasmaComponents3.Menu {
         shown: menu.where === "list" && menu.row !== null
         text: menu.row && menu.row.kind === "claude" ? i18n("Copy message (Markdown)") : i18n("Copy message")
         onTriggered: pane.copyItem(menu.row.key, menu.row.text, true)   // (all of it: Copied once it's on the clipboard)
+    }
+    KeyItem {
+        shown: menu.where === "list" && menu.row !== null && Bm.canBookmark(menu.row)
+        text: menu.row && pane.bookmarked[menu.row.key] === true ? i18n("Remove bookmark") : i18n("Bookmark message")
+        keys: i18nc("a key", "Ctrl+D")
+        onTriggered: pane.bookmarksNow().toggle(menu.row)
     }
     KeyItem {
         shown: menu.where === "list"
