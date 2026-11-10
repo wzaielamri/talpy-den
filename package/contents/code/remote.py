@@ -267,7 +267,9 @@ def host_script(name="talpy_den.py", also=()):
     """What runs on a host, on python3's stdin: talpy_den.py, or another
     script of this folder that imports it (sharing.py), after talpy_den.py
     (and the scripts also, e.g. accounts.py) loaded as those modules; each
-    after PYTHON_CHECK."""
+    after PYTHON_CHECK. Each module is one line of ASCII (!a): Python 3.7
+    reads a program on stdin in pieces of a few KB and refuses one that ends
+    inside a character of more than one byte."""
     status = (HERE / "talpy_den.py").read_text(encoding="utf-8")
     if name == "talpy_den.py":
         return PYTHON_CHECK + status
@@ -275,7 +277,7 @@ def host_script(name="talpy_den.py", also=()):
     for module in ("talpy_den.py", *also):
         text = status if module == "talpy_den.py" else (HERE / module).read_text(encoding="utf-8")
         script += (f"module = sys.modules[{module[:-3]!r}] = types.ModuleType({module[:-3]!r})\n"
-                   f"exec(compile({text!r}, {module!r}, 'exec'), module.__dict__)\n")
+                   f"exec(compile({text!a}, {module!r}, 'exec'), module.__dict__)\n")
     return script + (HERE / name).read_text(encoding="utf-8")
 
 

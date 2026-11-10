@@ -196,6 +196,15 @@ class HostListTests(unittest.TestCase):
                 exec(compile(script, "<stdin>", "exec"), {"__name__": "__main__"})
             self.assertEqual(remote.answer_after_mark(out.getvalue())["error"], "python3 there is 3.6; Talpy Den needs 3.7 or newer")
 
+    def test_the_modules_sent_along_are_ascii_lines(self):
+        # (2026-11-10) Python 3.7 reads a program on stdin a few KB at a time and refused one whose piece ended
+        # inside a character of two bytes ("Non-UTF-8 code starting with '\\xc2'"): each module is one ASCII line
+        script = remote.host_script("pane.py", ("replies.py", "made.py"))
+        lines = [line for line in script.splitlines() if line.startswith("exec(compile(")]
+        self.assertEqual(len(lines), 3)
+        for line in lines:
+            self.assertTrue(line.isascii(), line[:80])
+
     def test_host_names_checked(self):
         for bad in ("-oProxyCommand=evil", "a b", "", "x;rm", "$(id)"):
             with self.assertRaises(ValueError):
