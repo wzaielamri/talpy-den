@@ -143,6 +143,101 @@
         return out;
       }
 
+      // Bookmarks (6i), on the page loaded again: the 500-item chat with 100 of its messages bookmarked,
+      // Claude's last reply the 100th (their ribbons: one <style> for the list): drawn and scrolled as
+      // above; Ctrl+D on that last reply → its ribbon gone, then back, on screen; the list opened (first
+      // time, then again); Alt+↑ to one; Enter → shown. In a build without bookmarks the toggles, the
+      // list and the jumps aren't there: null
+      function withMarks(answer, n, v) {
+        const can = answer.items.filter((i) => (i.kind === "you" || i.kind === "claude") && !i.thinking && /^[A-Za-z0-9_.:@][A-Za-z0-9_.:@-]*$/.test(i.key));
+        const last = [...can].reverse().find((i) => i.kind === "claude");
+        const rest = can.filter((i) => i !== last);
+        const k = Math.min(n - 1, rest.length);
+        const pick = Array.from({ length: k }, (_, j) => rest[Math.floor(j * rest.length / k)]).concat(last ? [last] : []);
+        const marks = pick.map((i, j) => ({ key: i.key, kind: i.kind, at: i.at || 0, text: String(i.text || "").replace(/\s+/g, " ").slice(0, 140), made: j }));
+        return { ...answer, bookmarks: marks, bookmarksV: v };
+      }
+      async function reload() {
+        const loaded = new Promise((r) => f.addEventListener("load", r, { once: true }));
+        w.location.reload();
+        await loaded;
+        w = f.contentWindow;
+        d = w.document;
+        await until(() => d.querySelector(".pane-list .pane-item"));
+        await sleep(1000);
+      }
+      async function bookmarksBench(data) {
+        const out = {};
+        await reload();
+        const marked = withMarks(data.long500, 100, 1000);
+        out.marks = marked.bookmarks.length;
+        const runs = [];
+        for (let r = 0; r < 3; r++) runs.push(await show({ ...marked, bookmarksV: 1000 + r }));
+        out["render 500 + 100 bookmarks"] = { layout: median(runs.map((x) => x.layout)), paint: median(runs.map((x) => x.paint)) };
+        await sleep(1000);
+        out["scroll 500 + 100 bookmarks"] = await scroll();
+        // Ctrl+D (at the end: Claude's last reply), till its gutter shows the ribbon; again, till it's gone
+        const list = d.querySelector(".pane-list");
+        list.scrollTop = list.scrollHeight;
+        await sleep(500);
+        const last = [...data.long500.items].reverse().find((i) => i.kind === "claude" && !i.thinking);
+        const gutter = () => d.querySelector(`.pane-list > [data-key="${CSS.escape(last.key)}"] > .pane-gutter`);
+        const ribbon = () => { const g = gutter(); if (!g) return false; const cs = w.getComputedStyle(g); return (cs.maskImage || cs.webkitMaskImage || "none") !== "none"; };
+        const toggles = [];
+        for (let r = 0; r < 6; r++) {
+          const want = !ribbon();   // (off first: it's the 100th)
+          const t0 = w.performance.now();
+          w.postMessage({ type: "key", key: "bookmark" }, "*");
+          try { await until(() => ribbon() === want, 2000); } catch { out.toggle = null; break; }
+          const shown = w.performance.now() - t0;
+          await frame();
+          toggles.push({ shown, paint: (await frame()) - t0 });
+          await sleep(400);
+        }
+        if (toggles.length) out.toggle = { runs: toggles.length, shown: median(toggles.map((x) => x.shown)), paint: median(toggles.map((x) => x.paint)) };
+        // the list: opened (first time and again), drawn and on screen
+        const opens = [];
+        for (let r = 0; r < 6; r++) {
+          const t0 = w.performance.now();
+          w.postMessage({ type: "key", key: "bookmarks" }, "*");
+          try { await until(() => d.querySelector(".pane-bookmarks .pane-bm, .pane-bookmarks-empty"), 2000); } catch { opens.length = 0; break; }
+          void d.body.offsetHeight;
+          const layout = w.performance.now() - t0;
+          await frame();
+          opens.push({ layout, paint: (await frame()) - t0 });
+          await sleep(300);
+          w.postMessage({ type: "key", key: "bookmarks" }, "*");
+          await until(() => !d.querySelector(".pane-bookmarks"), 2000);
+          await sleep(300);
+        }
+        out.listOpen = opens.length ? { first: Math.round(opens[0].paint * 10) / 10, again: median(opens.slice(1).map((x) => x.paint)),
+                                         againLayout: median(opens.slice(1).map((x) => x.layout)) } : null;
+        // Alt+↑ from the end, five times: each till the list has moved and the next frame
+        list.scrollTop = list.scrollHeight;
+        await sleep(500);
+        const jumps = [];
+        for (let r = 0; r < 5; r++) {
+          const was = list.scrollTop;
+          const t0 = w.performance.now();
+          w.postMessage({ type: "key", key: "bookmarkUp" }, "*");
+          try { await until(() => list.scrollTop !== was, 2000); } catch { break; }
+          await frame();
+          jumps.push((await frame()) - t0);
+          await sleep(1000);
+        }
+        out.jump = jumps.length ? { runs: jumps.length, paint: median(jumps) } : null;
+        // Enter → shown, with the 100 bookmarks there
+        await show(withMarks(data.short, 10, 5000));
+        await sleep(500);
+        const sends = [];
+        for (let i = 1; i <= 5; i++) {
+          sends.push(await send(i));
+          await sleep(800);
+        }
+        out["send with bookmarks"] = { layout: median(sends.map((x) => x.layout)), paint: median(sends.map((x) => x.paint)) };
+        return out;
+      }
+
       async function run() {
         w = f.contentWindow;
         d = w.document;
@@ -170,9 +265,10 @@
         await show(data.long500);
         await sleep(1000);
         out.find = await findBench(data);
+        out.bookmarks = await bookmarksBench(data);
         await fetch("/result?" + encodeURIComponent(JSON.stringify(out)));
       }
-      f.addEventListener("load", () => run().catch((e) => fetch("/result?" + encodeURIComponent(JSON.stringify({ error: String(e) })))));
+      f.addEventListener("load", () => run().catch((e) => fetch("/result?" + encodeURIComponent(JSON.stringify({ error: String(e) })))), { once: true });
     </script>
   </body>
 </html>

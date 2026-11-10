@@ -12,13 +12,18 @@ with performance.now() (vscode_bench.html).
 - send: Enter in the reply box → your message in the list;
 - find: search on the 500 items (a query typed → its count; the longest frame
   meanwhile), 20 steps to matches, and Ctrl+O on a chat of long replies and
-  messages (every long one unfolded, and back); none in a build without search.
+  messages (every long one unfolded, and back); none in a build without search;
+- bookmarks (the page loaded again first): the 500-item chat with 100
+  bookmarks drawn and scrolled, Ctrl+D → its ribbon gone / back, the list
+  opened (first time, again), Alt+↑ to one, Enter → shown; null for what a
+  build without bookmarks doesn't have.
 
 It builds the extension and its harness first (node esbuild.mjs, then
 --harness; vscode/node_modules must be there). Firefox runs with a new,
 empty profile, and the page is served on 127.0.0.1 only. Like bench.py's,
 these numbers are for comparing one step with the one before, on this
-computer: Firefox isn't VS Code's Chromium.
+computer: Firefox isn't VS Code's Chromium (TALPY_BENCH_CHROME=/path/to/chrome
+runs it in a Chromium instead).
 """
 
 import http.server
@@ -103,8 +108,10 @@ def main(argv):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         profile = work / "firefox"
         profile.mkdir()
-        fox = subprocess.Popen(["firefox", "--headless", "--no-remote", "--profile", str(profile), "--window-size", "760,960",
-                                f"http://127.0.0.1:{server.server_port}/bench.html"],
+        url = f"http://127.0.0.1:{server.server_port}/bench.html"
+        chrome = os.environ.get("TALPY_BENCH_CHROME")   # (a Chromium to run it in instead: VS Code's own engine)
+        fox = subprocess.Popen([chrome, "--headless=new", f"--user-data-dir={profile}", "--no-first-run", "--window-size=760,960", url] if chrome
+                               else ["firefox", "--headless", "--no-remote", "--profile", str(profile), "--window-size", "760,960", url],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             if not got.wait(180):
