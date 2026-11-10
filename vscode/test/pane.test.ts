@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1428,6 +1428,77 @@ test("the new-messages badge: what came in below since you scrolled up, as its t
 // Talpy Chat's keys (A10): one table for the ? list and the tooltips (keys.mjs, the
 // widget's too); each action is a command whose key applies only while a chat tab has
 // the focus (not with it in the terminal or the side bar: editorAreaFocus)
+test("bookmarks (bookmarks.mjs, Plasma's too): Claude's replies and your messages once they're in the chat; their first words on a line; the list in the chat's order, 100 at most", () => {
+  const you = (key: string, more: Partial<PaneItem> = {}): PaneItem => ({ kind: "you", key, text: "hi", at: 5, ...more });
+  assert.equal(canBookmark({ kind: "claude", key: "msg_1", text: "a", at: 1 }), true);
+  assert.equal(canBookmark(you("0b1c-uuid")), true);
+  assert.equal(canBookmark(you("queued-1762400000000")), true);   // (keyed by its enqueue: it's in the chat)
+  for (const not of [{ kind: "claude", key: "msg_1/thinking", thinking: true }, { kind: "tool", key: "toolu_1" }, { kind: "note", key: "n1" },
+                     { kind: "you", key: "pending-3" }, { kind: "you", key: "u1", status: "sending" }, { kind: "you", key: "u1", status: "held" },
+                     { kind: "you", key: "u1", queued: true }, { kind: "you", key: "u1", until: 99 }, { kind: "you", key: "u1", sending: true },
+                     { kind: "you", key: "toolu_1/answer", answered: "question" }, { kind: "you", key: "-rf" }, { kind: "you", key: "" }])
+    assert.equal(canBookmark({ at: 1, ...not } as PaneItem), false, JSON.stringify(not));
+  assert.equal(canBookmark(null), false);
+
+  assert.equal(snippetOf({ kind: "claude", key: "m", at: 1, text: "## Done\n\n- **all** `tests` pass\n- [docs](https://x.org)" }), "Done all tests pass docs");
+  assert.equal(snippetOf(you("u", { text: "look [Image: /tmp/a.png] and [Image: /tmp/b.png] and [Image: /tmp/a.png]" })), "look [Image #1] and [Image #2] and [Image #1]");
+  assert.equal(snippetOf(you("u", { text: "!ls -la", command: { shell: true } })), "ls -la");
+  const long = snippetOf({ kind: "claude", key: "m", at: 1, text: "word ".repeat(60) });
+  assert.equal(long.length, 140);
+  assert.ok(long.endsWith("word…"), long);
+  assert.equal(snippetOf({ kind: "claude", key: "m", at: 1, text: "x".repeat(140) }), "x".repeat(140));   // (140 fit)
+  assert.deepEqual(entryOf(you("u", { at: 7.6, text: "one\ntwo" }), 99), { key: "u", kind: "you", at: 7, text: "one two", made: 99 });
+  assert.equal(entryOf(you("u", { at: null }), 99).at, 0);
+
+  const m = (key: string, at: number, made = 1): Bookmark => ({ key, kind: "claude", at, text: key, made });
+  const list = withBookmark([m("b", 20), m("a", 10)], m("c", 15))!;
+  assert.deepEqual(list.map((x) => x.key), ["a", "c", "b"]);
+  assert.deepEqual(withBookmark(list, m("c", 15, 50))!.map((x) => x.made), [1, 1, 1]);   // (one a message: the first stays)
+  assert.deepEqual(withBookmark([m("x", 5, 9), m("y", 5, 3)], m("z", 5, 6))!.map((x) => x.key), ["y", "z", "x"]);   // (same time: by when it was bookmarked)
+  assert.deepEqual(withoutBookmark(list, "c").map((x) => x.key), ["a", "b"]);
+  assert.deepEqual(withoutBookmark(list, "nope").map((x) => x.key), ["a", "c", "b"]);
+  const full = Array.from({ length: BOOKMARKS_MAX }, (_, i) => m("k" + i, i));
+  assert.equal(withBookmark(full, m("one-more", 1000)), null);
+  assert.equal(withBookmark(full, m("k3", 3))!.length, BOOKMARKS_MAX);   // (one it has: no change, not refused)
+  assert.deepEqual(keysOf(list), { a: true, c: true, b: true });
+});
+
+test("bookmarks: where each one is, Alt+↑ / Alt+↓ from what you read, and which answer's list is taken", () => {
+  const m = (key: string): Bookmark => ({ key, kind: "claude", at: 1, text: key, made: 1 });
+  const loaded = new Map([["a", 0], ["b", 1]]);
+  assert.equal(stateOf(m("a"), loaded, true, false), "here");
+  assert.equal(stateOf(m("a"), { a: 0 }, true, false), "here");
+  assert.equal(stateOf(m("z"), loaded, true, false), "earlier");   // (Show earlier, or a reach, reads it)
+  assert.equal(stateOf(m("z"), loaded, true, true), "far");        // (further back than the most the tab shows)
+  assert.equal(stateOf(m("z"), loaded, false, false), "gone");     // (all of the chat is there: it isn't)
+  assert.equal(stateOf(m("z"), loaded, true, false, { z: "gone" }), "gone");
+  assert.equal(stateOf(m("z"), loaded, true, false, { z: "far" }), "far");
+  assert.equal(stateOf(m("toString"), {}, false, false), "gone");   // (an object's own keys only)
+
+  const list = ["e1", "e2", "f", "g", "a", "b", "c"].map(m);
+  const states = { e1: "earlier", e2: "earlier", f: "far", g: "gone", a: "here", b: "here", c: "here" } as const;
+  const tops = { a: 100, b: 500, c: 900 };
+  assert.deepEqual(bookmarkStep(list, states, tops, 0, false), { key: "a" });
+  assert.deepEqual(bookmarkStep(list, states, tops, 100, false), { key: "b" });     // (the one at the top is the one you read)
+  assert.deepEqual(bookmarkStep(list, states, tops, 98, false), { key: "b" });      // (within 4 px)
+  assert.deepEqual(bookmarkStep(list, states, tops, 900, false), { end: true });    // (past the last: the end)
+  assert.deepEqual(bookmarkStep(list, states, tops, 900, true), { key: "b" });
+  assert.deepEqual(bookmarkStep(list, states, tops, 600, true), { key: "b" });
+  assert.deepEqual(bookmarkStep(list, states, tops, 100, true), { reach: "e2" });   // (the newest further back; far and gone skipped)
+  assert.equal(bookmarkStep(["f", "g", "a"].map(m), states, tops, 50, true), null);
+  assert.deepEqual(bookmarkStep([], {}, {}, 0, false), { end: true });
+
+  assert.equal(adoptable(5, false, 5), true);
+  assert.equal(adoptable(5, false, 7), true);
+  assert.equal(adoptable(5, false, 4), false);     // (an older list)
+  assert.equal(adoptable(5, true, 9), false);      // (a change of ours on its way)
+  assert.equal(adoptable(0, false, undefined), true);
+  assert.equal(adoptable(3, false, undefined), false);
+  assert.equal(staysOpen(780, 260, false), true);
+  assert.equal(staysOpen(700, 260, false), false);
+  assert.equal(staysOpen(300, 260, true), true);
+});
+
 test("the keys table: each command's key is its default keybinding, in a chat tab only", async () => {
   const fs = await import("node:fs");
   const manifest = JSON.parse(fs.readFileSync("package.json", "utf8"));

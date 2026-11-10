@@ -29,6 +29,7 @@ export const FOLD_LINES: number;
 export const FOLD_SHOWN: number;
 export function foldOf(text: string | undefined | null, how?: "markdown" | "plain" | "ansi"): Fold | null;
 export function plainOf(md: string | undefined | null): string;
+export function yoursShown(it: FindItem): string;
 export function findParts(it: FindItem, steps: boolean): [string, string];
 export function findIn(items: readonly FindItem[], query: string, steps: boolean, from?: number, budget?: number, hits?: FindHit[]): { hits: FindHit[]; next: number };
 export function findCount(total: number, at: number, done: boolean): string;

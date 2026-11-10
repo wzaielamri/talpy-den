@@ -938,6 +938,10 @@ export function lastReply(items: readonly PaneItem[]): PaneItem | null {
 // Talpy Chat counts the same matches and folds the same texts (see there)
 export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, plainOf, type FindHit, type Fold } from "../../vendor/find.mjs";
 
+// Bookmarks (Ctrl+D, the list, Alt+↑ / Alt+↓): the widget's bookmarks.mjs, so Plasma's Talpy Chat
+// bookmarks the same messages and goes to the same one (see there)
+export { adoptable, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, oneLine, SNIPPET_CHARS, snippetOf, stateOf, staysOpen, step as bookmarkStep, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, type BookmarkStep } from "../../vendor/bookmarks.mjs";
+
 // Does it show on that tab: Chat leaves out Claude's tool calls, but not a question or a plan you
 // answered, nor a call you denied with a note
 export function showsOn(it: PaneItem, steps: boolean): boolean {
