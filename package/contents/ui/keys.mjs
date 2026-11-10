@@ -42,6 +42,13 @@ export const KEYS = [
     { id: "prompts", group: "Reading", plasma: "Ctrl+↑ / Ctrl+↓", vscode: "Ctrl+↑ / Ctrl+↓",
       commands: [[VS + "previousPrompt", "ctrl+up"], [VS + "nextPrompt", "ctrl+down"]],
       what: "Your previous / next message (past the last: the end)" },
+    { id: "bookmark", group: "Reading", plasma: "Ctrl+D", vscode: "Ctrl+D", commands: [[VS + "toggleBookmark", "ctrl+d"]],
+      what: "Bookmark the message under the pointer (else Claude's last reply, or the message at the top of what you read); again: the bookmark goes" },
+    { id: "bookmarks", group: "Reading", plasma: "Ctrl+Shift+B", vscode: "Ctrl+Shift+B", commands: [[VS + "bookmarks", "ctrl+shift+b"]],
+      what: "This chat's bookmarks, on the side: a click goes to one (again: hides them)" },
+    { id: "bookmarkSteps", group: "Reading", plasma: "Alt+↑ / Alt+↓", vscode: "Alt+↑ / Alt+↓",
+      commands: [[VS + "previousBookmark", "alt+up"], [VS + "nextBookmark", "alt+down"]],
+      what: "The bookmark before / after what you read (past the last: the end)" },
     { id: "find", group: "Reading", plasma: "Ctrl+F", vscode: "Ctrl+F", commands: [[VS + "find", "ctrl+f"]],
       what: "Search the chat (Enter or F3: the next match; Shift+Enter or Shift+F3: the one before; Esc closes it)" },
     { id: "fold", group: "Reading", plasma: "Ctrl+O", vscode: "Ctrl+O", commands: [[VS + "foldAll", "ctrl+o"]],
@@ -67,7 +74,7 @@ export const KEYS = [
 
     { id: "help", group: "Help", plasma: "?", vscode: "?", what: "These keys (in an empty box)" },
     { id: "escape", group: "Help", plasma: "Esc", vscode: "Esc",
-      what: "Closes what's open first: a menu, the big picture, the / and @ list, the find bar, these keys, the grey completion; then, in an empty box while Claude works, Stop" },
+      what: "Closes what's open first: a menu, the big picture, the / and @ list, the find bar, the bookmarks, these keys, the grey completion; then, in an empty box while Claude works, Stop" },
 ];
 
 export function keyOf(id) {
@@ -89,9 +96,10 @@ export function withKey(title, id, where, mac = false) {
 
 // Esc does the nearest thing first, one thing a press: what's open closes, in
 // this order; only then, in an empty box while Stop shows (and isn't already
-// on its way), it stops Claude. open: {menu, big, list, find, help, ghost,
-// stop}, each true when there's that to close (stop: Stop can be pressed now)
-export const ESC_ORDER = ["menu", "big", "list", "find", "help", "ghost", "stop"];
+// on its way), it stops Claude. open: {menu, big, list, find, bookmarks,
+// help, ghost, stop}, each true when there's that to close (stop: Stop can be
+// pressed now)
+export const ESC_ORDER = ["menu", "big", "list", "find", "bookmarks", "help", "ghost", "stop"];
 export function escTarget(open) {
     return ESC_ORDER.find((what) => !!(open && open[what])) || "";
 }

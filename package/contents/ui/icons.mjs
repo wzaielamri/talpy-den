@@ -35,6 +35,8 @@ const TABLE = {
     star:            ['non-starred-symbolic',          'star',       'non-starred-symbolic'],
     starred:         ['starred-symbolic',              'starFull',   'starred-symbolic'],
     makeDefault:     ['starred-symbolic',              'starFull',   'starred-symbolic'],                 // an account's Make Default (plain: not a starred chat's yellow)
+    bookmark:        ['bookmarks',                     'bookmark',   'bookmark-new-symbolic'],            // Talpy Chat: bookmark a message (its hover bar, an outline)
+    bookmarked:      ['bookmarks-bookmarked',          'bookmarkFull', 'user-bookmarks-symbolic'],        // a bookmarked message, the chat's Bookmarks and their count
     share:           ['document-share',                'share',      'emblem-shared-symbolic'],           // share or continue on another account
     continueOn:      ['mail-forward',                  'move',       'system-switch-user-symbolic'],      // continue on the account with room left (Plasma: an arrow, as VS Code's)
     moveTo:          ['go-next',                       'move',       'go-next-symbolic'],                 // keep only on, move a chat to Claude Code

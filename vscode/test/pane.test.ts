@@ -1528,18 +1528,25 @@ test("the keys table: each command's key is its default keybinding, in a chat ta
   assert.equal(keyText("sendNow", "vscode", true), "Cmd+Enter");
   assert.equal(withKey("Send now", "sendNow", "plasma"), "Send now (Ctrl+Enter)");
   assert.equal(withKey("Your other windows", "chats", "vscode"), "Your other windows");   // (none there: VS Code's own)
+  assert.equal(withKey("Bookmark this reply", "bookmark", "vscode", true), "Bookmark this reply (Cmd+D)");
+  // (each command of the tab goes to the page as the id its onKey takes)
+  const { CHAT_KEYS } = await import("../src/chatPane");
+  for (const [command, id] of [["toggleBookmark", "bookmark"], ["bookmarks", "bookmarks"], ["previousBookmark", "bookmarkUp"], ["nextBookmark", "bookmarkDown"]])
+    assert.equal(CHAT_KEYS["talpyDen.chat." + command], id, command);
 });
 
 test("Esc does the nearest thing first, one thing a press: Stop only once nothing is open", () => {
   assert.equal(escTarget({ menu: true, big: true, list: true, help: true, ghost: true, stop: true }), "menu");
   assert.equal(escTarget({ big: true, list: true, stop: true }), "big");
   assert.equal(escTarget({ list: true, help: true, stop: true }), "list");
+  assert.equal(escTarget({ find: true, bookmarks: true, help: true }), "find");
+  assert.equal(escTarget({ bookmarks: true, help: true, ghost: true, stop: true }), "bookmarks");
   assert.equal(escTarget({ help: true, ghost: true, stop: true }), "help");
   assert.equal(escTarget({ ghost: true, stop: true }), "ghost");
   assert.equal(escTarget({ stop: true }), "stop");
   assert.equal(escTarget({ stop: false }), "");
   assert.equal(escTarget({}), "");
-  assert.deepEqual([...ESC_ORDER], ["menu", "big", "list", "find", "help", "ghost", "stop"]);
+  assert.deepEqual([...ESC_ORDER], ["menu", "big", "list", "find", "bookmarks", "help", "ghost", "stop"]);
 });
 
 test("a key's command goes to the chat tab in front, and only to it", async () => {

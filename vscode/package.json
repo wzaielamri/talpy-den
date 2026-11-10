@@ -370,6 +370,26 @@
         "category": "Talpy Chat"
       },
       {
+        "command": "talpyDen.chat.toggleBookmark",
+        "title": "Bookmark the Message",
+        "category": "Talpy Chat"
+      },
+      {
+        "command": "talpyDen.chat.bookmarks",
+        "title": "Show or Hide the Chat's Bookmarks",
+        "category": "Talpy Chat"
+      },
+      {
+        "command": "talpyDen.chat.previousBookmark",
+        "title": "Go to the Previous Bookmark",
+        "category": "Talpy Chat"
+      },
+      {
+        "command": "talpyDen.chat.nextBookmark",
+        "title": "Go to the Next Bookmark",
+        "category": "Talpy Chat"
+      },
+      {
         "command": "talpyDen.chat.openWindow",
         "title": "Open Its Window",
         "category": "Talpy Chat"
@@ -519,6 +539,30 @@
         "command": "talpyDen.chat.foldAll",
         "key": "ctrl+o",
         "mac": "cmd+o",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+      },
+      {
+        "command": "talpyDen.chat.toggleBookmark",
+        "key": "ctrl+d",
+        "mac": "cmd+d",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+      },
+      {
+        "command": "talpyDen.chat.bookmarks",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+      },
+      {
+        "command": "talpyDen.chat.previousBookmark",
+        "key": "alt+up",
+        "mac": "alt+up",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+      },
+      {
+        "command": "talpyDen.chat.nextBookmark",
+        "key": "alt+down",
+        "mac": "alt+down",
         "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
       },
       {
@@ -725,6 +769,22 @@
         },
         {
           "command": "talpyDen.chat.foldAll",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+        },
+        {
+          "command": "talpyDen.chat.toggleBookmark",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+        },
+        {
+          "command": "talpyDen.chat.bookmarks",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+        },
+        {
+          "command": "talpyDen.chat.previousBookmark",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+        },
+        {
+          "command": "talpyDen.chat.nextBookmark",
           "when": "activeWebviewPanelId == 'talpyDen.chat'"
         },
         {

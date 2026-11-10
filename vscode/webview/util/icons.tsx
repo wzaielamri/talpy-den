@@ -8,7 +8,7 @@ import type { JSX } from "preact";
 import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
 import talpyChatSvg from "../../media/talpy-chat.svg";   // (a data: URL: esbuild's dataurl loader)
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit" | "export" | "import" | "talpyChat";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "bookmarkFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit" | "export" | "import" | "talpyChat";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -246,6 +246,7 @@ const shapes: Record<IconName, JSX.Element> = {
     </>
   ),
   bookmark: <path d="M4.25 2.25h7.5v11.5L8 10.75l-3.75 3z" />,
+  bookmarkFull: <path d="M4.25 2.25h7.5v11.5L8 10.75l-3.75 3z" fill="currentColor" />,
   note: <path d="M3.25 2.25h6.5l3 3v8.5h-9.5zM9.75 2.25v3h3M5.5 8.25h5M5.5 11h5" />,
   more: <path d="M8 2.5v7M4.75 6.5L8 9.75l3.25-3.25M3 13.25h10" />,
   trash: <path d="M2.75 4.25h10.5M6.25 4.25v-1.5h3.5v1.5M4 4.25l.75 9.25h6.5l.75-9.25M6.75 6.75v4.5M9.25 6.75v4.5" />,

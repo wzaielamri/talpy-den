@@ -51,6 +51,10 @@ export const CHAT_KEYS: Record<string, string> = {
   "talpyDen.chat.copyLastReply": "copyLast",
   "talpyDen.chat.find": "find",
   "talpyDen.chat.foldAll": "fold",
+  "talpyDen.chat.toggleBookmark": "bookmark",
+  "talpyDen.chat.bookmarks": "bookmarks",
+  "talpyDen.chat.previousBookmark": "bookmarkUp",
+  "talpyDen.chat.nextBookmark": "bookmarkDown",
   "talpyDen.chat.openWindow": "openWindow",
   "talpyDen.chat.keys": "help",
 };
