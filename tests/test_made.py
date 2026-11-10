@@ -1,6 +1,7 @@
 """What Claude made, in Talpy Chat (made.py, pane.py --conversation's "made"
 items and --made): pictures, plans and pages under the steps and replies that
 made or named them, folded; unfolded, one file the transcript names, capped."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import base64
 import os
 import sys
