@@ -401,10 +401,12 @@ def mtime_of(e):
 
 def sweep(home, cache_root, profiles, days, keep_chats, keep_plans, now, dry=False):
     """Delete (dry: count) what Claude Code's cleanup would at days, but what
-    stays (keep_chats, keep_plans: kept_here; and the module's list): a Tally."""
+    stays (keep_chats, keep_plans: kept_here; and the module's list): a Tally.
+    The accounts you hid (accounts.py --hide) are left as they are."""
     t = Tally()
     cutoff = now - days * 86400
-    live_chats, live_jobs = running(profiles)
+    live_chats, live_jobs = running(profiles)  # (of every account: a chat shared with a hidden one stays too)
+    profiles = cs.shown_profiles(profiles, cache_root)
     keep = set(keep_chats) | live_chats
     roots, seen = [], set()
     for p in profiles:

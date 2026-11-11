@@ -537,6 +537,8 @@ export interface Group {
   // One of its plan windows is at the usage cap (talpyDen.usageCap): until
   // it resets, queued tasks wait. Older backends leave it out.
   cap?: { pct: number; label: string; key: string; resetsAt: number } | null;
+  // An account you hid (accounts.py --hide) that shows all the same: chats of it are in the list
+  hidden?: boolean;
 }
 
 export interface Status {
@@ -545,6 +547,9 @@ export interface Status {
   overall: string;
   counts: Counts;
   groups: Group[];
+  // The accounts you hid (Claude Accounts → Hide), left out of groups (and of
+  // what shows), without their lists, for Make Default. Older backends leave it out.
+  hiddenGroups?: Group[];
   dismissed: number; // chats hidden (Hide this chat)
   hiddenPlans?: number; // plans, memories and projects hidden (Hide this plan…), left out of their lists
   hiddenMemories?: number;

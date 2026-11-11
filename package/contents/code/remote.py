@@ -47,7 +47,7 @@
     python3 -I remote.py --disconnect HOST          close the connection you logged in with
     python3 -I remote.py --vscode-account HOST CONFIG_DIR|-   VS Code's Claude on HOST runs on that account
     python3 -I remote.py --accounts HOST ACCOUNTS_ARGS... [--print-command]   the host's Claude accounts
-                                                    (accounts.py there: --list, --add, --login, --default, …)
+                                                    (accounts.py there: --list, --add, --login, --default, --hide, …)
 
 --status runs talpy_den.py on HOST: the script goes to `python3 -I -` on
 the host's stdin, so nothing is installed there (it keeps its caches in the
@@ -1354,7 +1354,8 @@ def continue_chat(host, profile, chat_id, folder="", text="", ends_at=None, forc
     return host_answer(host, args)
 
 
-ACCOUNT_ACTIONS = ("--list", "--add", "--login", "--logout", "--remove", "--command", "--no-command", "--default")
+ACCOUNT_ACTIONS = ("--list", "--add", "--login", "--logout", "--remove", "--command", "--no-command", "--default",
+                   "--hide", "--show")
 
 
 def accounts(host, args):

@@ -354,6 +354,18 @@ class RecapTests(Home):
         p = self.recap()["projects"][0]
         self.assertEqual((p["path"], p["folder"]), ("~/repos/app", app))
 
+    def test_a_hidden_account_isnt_read_nor_counted(self):
+        t0 = self.t0
+        self.write(Transcript().prompt(t0).reply(t0 + 60_000, "a").duration(t0 + 120_000, 120_000))
+        self.write(Transcript().prompt(t0).reply(t0 + 60_000, "b").duration(t0 + 60_000, 60_000), chat="chat-p",
+                   profile="personal")
+        cache = self.scan()  # (read before it was hidden: the cache has it)
+        cs.change_hidden(self.cache_root, "accounts", add=".claude-personal")
+        profiles, skip = week.shown_profiles(self.home, (), self.cache_root)
+        self.assertEqual(([p.key for p in profiles], skip), ([".claude-work"], {".claude-personal"}))
+        chats = week.chats_between(cache, profiles, self.now - 14 * week.DAY_MS, self.now + week.DAY_MS, self.home, skip)
+        self.assertEqual(list(chats), ["chat-a"])
+
     def test_the_week_before(self):
         before = self.t0 - 7 * week.DAY_MS
         self.write(Transcript().prompt(before).reply(before + 1000, "a").duration(before + 30_000, 30_000))

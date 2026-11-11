@@ -883,6 +883,14 @@ class cache_lock:
         os.close(self.fd)
 
 
+def shown_profiles(home, config_dirs, cache_root):
+    """(the profiles but those of the accounts you hid, which aren't read
+    (talpy_den.shown_profiles); the hidden ones' keys, for chats_between)."""
+    every = cs.discover_profiles(home, config_dirs)
+    profiles = cs.shown_profiles(every, cache_root)
+    return profiles, frozenset(p.key for p in every if p not in profiles)
+
+
 def updated_cache(cache_root, profiles, now_ms):
     """The cache with what the transcripts added since; while another run is
     reading them, the cache it writes."""
@@ -1070,16 +1078,19 @@ def project_of(folder, home, roots):
     return roots[folder]
 
 
-def chats_between(cache, profiles, since, until, home):
+def chats_between(cache, profiles, since, until, home, skip=frozenset()):
     """{chat id: {"profiles", "accounts", "folder", "project", "name",
     "turns", "prompts", "limits", "hours", "startTokens"}}: what the cache has
-    of the profiles' chats between since and until (ms), with the turns going on."""
+    of the profiles' chats between since and until (ms), with the turns going on.
+    skip: the profiles (keys) of the accounts you hid: what the cache has of their chats is left out."""
     by_profile, _ = account_ids(profiles)
     roots = {}
     chats = {}
     for rec in cache.get("files", {}).values():
         data = rec.get("data") if isinstance(rec, dict) else None
         if not isinstance(data, dict):
+            continue
+        if skip and rec.get("profiles") and all(k in skip for k in rec["profiles"]):
             continue
         c = chats.get(rec["chat"])
         if c is None:
@@ -3399,7 +3410,7 @@ def main(argv=None):
         return emit(result)
     if limits_asked:   # (the Recap's How your limits changed, unfolded)
         try:
-            result = limit_history(cache_root, cs.discover_profiles(home, config_dirs), now_ms, account, home)
+            result = limit_history(cache_root, shown_profiles(home, config_dirs, cache_root)[0], now_ms, account, home)
             result["currency"] = currency_of(currency, cache_root, now_ms / 1000)
         except Exception as exc:  # the widget must always get parseable output
             result = {"ok": False, "error": "{}: {}".format(type(exc).__name__, exc), "generatedAt": now_ms}
@@ -3411,9 +3422,9 @@ def main(argv=None):
             return emit({"host": on, "ok": False, "error": "{}: {}".format(type(exc).__name__, exc)})
     if projects_asked:   # (the Projects tab: every chat the cache has, plan and memory, by project)
         try:
-            profiles = cs.discover_profiles(home, config_dirs)
+            profiles, skip = shown_profiles(home, config_dirs, cache_root)
             cache = updated_cache(cache_root, profiles, now_ms)
-            chats = chats_between(cache, profiles, 0, now_ms + 1, home)
+            chats = chats_between(cache, profiles, 0, now_ms + 1, home, skip)
             for cid, c in chats.items():
                 c["id"] = cid
             ctx, items = project_items(home, cache_root, profiles, now_ms)
@@ -3438,12 +3449,12 @@ def main(argv=None):
             week = monday_due(cache_root, now_ms / 1000)
             if week is None:
                 return emit({"ok": True, "due": False})
-            profiles = cs.discover_profiles(home, config_dirs)
+            profiles, skip = shown_profiles(home, config_dirs, cache_root)
             cache = updated_cache(cache_root, profiles, now_ms)
             first_ms = first_activity(cache)
             days = span_days("week", 0, now_ms, first_ms)
             since, until = span_since("week", 0, now_ms, first_ms), days[-1][2]
-            chats = chats_between(cache, profiles, since, until, home)
+            chats = chats_between(cache, profiles, since, until, home, skip)
             _, accounts = account_ids(profiles)
             sources = [{"host": "", "chats": chats, "accounts": accounts}]
             if hosts:  # (the SSH hosts shown: as the Recap it opens counts them)
@@ -3455,7 +3466,11 @@ def main(argv=None):
             result = {"ok": False, "due": False, "error": "{}: {}".format(type(exc).__name__, exc)}
         return emit(result)
     try:
-        profiles = cs.discover_profiles(home, config_dirs)
+        # (the Permissions tab: every account's, a hidden one's too, as it lets things through; the Recap: not those)
+        if perms:
+            profiles, skip = cs.discover_profiles(home, config_dirs), frozenset()
+        else:
+            profiles, skip = shown_profiles(home, config_dirs, cache_root)
         cache = updated_cache(cache_root, profiles, now_ms)
         if perms:
             result = permissions(cache, profiles, now_ms, home, load_added(cache_root))
@@ -3472,7 +3487,7 @@ def main(argv=None):
             moved = now_ms - asked.get("--now", now_ms)
             moved = moved if abs(moved) > 5000 else 0
             since, until = asked["--since"] + moved, asked["--until"] + moved
-        chats = chats_between(cache, profiles, since, until, home)
+        chats = chats_between(cache, profiles, since, until, home, skip)
         _, accounts = account_ids(profiles)
         if data:  # ("now" as it answers: the computer asking sets this one's clock against its own)
             result = {"ok": True, "now": int(time.time() * 1000), "chats": chats, "accounts": accounts,

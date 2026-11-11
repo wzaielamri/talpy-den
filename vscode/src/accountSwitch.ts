@@ -116,6 +116,16 @@ export class AccountSwitch {
       return;
     }
     const groups = this.dash.state().status?.groups ?? [];
+    const hidden = this.dash.state().status?.hiddenGroups ?? [];
+    if (groups.length < 2 && hidden.length) {
+      const names = hidden.map((g) => g.name).join(", ");
+      const show = await vscode.window.showInformationMessage(
+        noLinks(`The other Claude account${hidden.length === 1 ? ` on this computer, ${names}, is` : `s on this computer, ${names}, are`} hidden. Show ${hidden.length === 1 ? "it" : "them"} again to pick ${hidden.length === 1 ? "it" : "one"} (Claude Accounts → Show), or make ${hidden.length === 1 ? "it" : "one"} the default there.`),
+        "Claude Accounts…",
+      );
+      if (show) await vscode.commands.executeCommand("talpyDen.accounts");
+      return;
+    }
     if (groups.length < 2) {
       const add = await vscode.window.showInformationMessage(
         "There's one Claude account on this computer. Add another one (a ~/.claude-NAME folder, logged in with Claude's own login) to switch between them.",
@@ -256,7 +266,14 @@ export class AccountSwitch {
     }
     const groups = machineStatus(this.dash.state(), host)?.groups ?? [];
     if (groups.length < 2) {
-      void vscode.window.showInformationMessage(noLinks(`There's one Claude account on ${hostLabel(host)}, so there's nothing to switch to.`));
+      const hidden = machineStatus(this.dash.state(), host)?.hiddenGroups?.length ?? 0;
+      void vscode.window.showInformationMessage(
+        noLinks(
+          hidden
+            ? `The other Claude account${hidden === 1 ? " is" : "s are"} hidden on ${hostLabel(host)}: Claude Accounts → Show lists ${hidden === 1 ? "it" : "them"} again.`
+            : `There's one Claude account on ${hostLabel(host)}, so there's nothing to switch to.`,
+        ),
+      );
       return;
     }
     const pick = await vscode.window.showQuickPick(
