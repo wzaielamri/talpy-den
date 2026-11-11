@@ -2213,6 +2213,37 @@ class NewChatTests(unittest.TestCase):
         help = (ROOT / "ui/KeysHelp.qml").read_text()
         self.assertIn("PaneKeys.KEYS", help)
 
+    def test_bookmarks_say_the_same_in_plasma_and_vs_code(self):
+        # Talpy Chat's bookmarks (6i) in both front ends: the same words (VS Code's keys come from keys.mjs,
+        # Cmd on a Mac), and nothing of them in VS Code's rows: the steps memo keeps its inputs, the ribbons
+        # are one <style> rule (util/ribbons.ts), as Plasma's rows gain only their marks' names
+        plasma = "".join((ROOT / "ui" / f).read_text() for f in (
+            "Bookmarks.qml", "BookmarkList.qml", "BookmarkPill.qml", "MessageTools.qml", "EditMenu.qml", "ChatPane.qml"))
+        webview = ROOT.parent.parent / "vscode/webview"
+        chat = (webview / "chat.tsx").read_text()
+        vs = chat + (webview / "components/BookmarkList.tsx").read_text()
+        for words in ("Bookmark this reply", "Bookmark your message", "Remove the bookmark", "Bookmark message",
+                      "Remove bookmark", "Bookmarks in this chat", "the one before / after what you read", "Go to it",
+                      "Further back than what's shown: a click reads more of the chat and goes there", "Going there…",
+                      "Too far back", "Further back than the last 2000 steps Talpy Chat shows: a click copies it",
+                      "Not in the chat any more", "Not in this chat any more: × removes the bookmark",
+                      "Remove this bookmark", "Couldn't keep the bookmark: ", "That message isn't in the chat any more",
+                      "Copied: it's further back than the last 2000 steps Talpy Chat shows",
+                      "No bookmarks in this chat yet. Hover a message and click its bookmark, or press "):
+            self.assertIn(words, plasma)
+            self.assertIn(words, vs)
+        self.assertIn("A chat keeps up to 100 bookmarks: remove one first", plasma)
+        self.assertIn("A chat keeps up to ${BOOKMARKS_MAX} bookmarks: remove one first", vs)
+        code = "\n".join(line.split("//")[0] for line in vs.splitlines() if "const EDIT_KEYS" not in line)
+        for key in ("Ctrl+D", "Ctrl+Shift+B", "Alt+↑"):   # (VS Code names them through keys.mjs; the menu's EDIT_KEYS)
+            self.assertNotIn(key, code)
+        memo = chat[chat.index("  const steps = useMemo("):]
+        memo = memo[:memo.index("\n  // ")]
+        self.assertIn("[shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today]", memo)
+        rows = chat[chat.index("  function shownStep("):]
+        self.assertNotRegex(rows[:rows.index("\n  }\n")], r"(?i)bookmark|ribbon")
+        self.assertIn("ribbonCss(", chat)
+
     def test_bookmarks_are_made_only_when_wanted(self):
         # Talpy Chat's bookmarks (6i): what they do (Bookmarks.qml, with bookmarks.mjs), their list
         # (BookmarkList.qml) and the tab row's count (BookmarkPill.qml) are files of their own, read and
