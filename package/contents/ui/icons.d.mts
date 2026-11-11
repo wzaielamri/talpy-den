@@ -60,6 +60,7 @@ export type Meaning =
   | "expandAll"
   | "collapseAll"
   | "compact"
+  | "quote"
   | "peekOpen"
   | "peekClosed"
   | "zoomIn"

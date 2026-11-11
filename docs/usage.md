@@ -83,7 +83,7 @@
 | Ctrl+Tab / Ctrl+Shift+Tab | Your other Talpy Chat windows, the last one in front first |
 | Esc | Closes what's open first, one a press: a menu, the big picture, the `/` and `@` list, the find bar, the bookmarks, the list of keys, the grey completion; then, in an empty box while Claude works, **Stop** |
 
-**Right-click** the conversation for *Copy* (what you selected), *Copy message* (the one you clicked, as its Copy button: a reply as Markdown), *Bookmark message* (*Remove bookmark* once it is) and *Select all*, or the reply box for *Undo*, *Redo*, *Cut*, *Copy*, *Paste* (a picture too, as Ctrl+V) and *Select all*; each item names its key.
+Select words in a message for **Reply to this**: they go in the reply box as a quote (`> …`), the cursor under it. **Right-click** the conversation for *Copy* (what you selected), *Quote in reply* (the same), *Copy message* (the one you clicked, as its Copy button: a reply as Markdown), *Bookmark message* (*Remove bookmark* once it is) and *Select all*, or the reply box for *Undo*, *Redo*, *Cut*, *Copy*, *Paste* (a picture too, as Ctrl+V) and *Select all*; each item names its key.
 
 ## Settings
 

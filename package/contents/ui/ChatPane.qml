@@ -8,6 +8,7 @@ import "hub"
 import "markdown.mjs" as Md
 import "codehtml.mjs" as Code
 import "icons.mjs" as Icons
+import "quote.mjs" as Quote
 
 // A chat beside the popup (main.qml: openPane): its conversation, updating
 // while it works, drawn the way Claude's terminal draws it (a dot before each
@@ -679,6 +680,7 @@ Window {
         awayAsking = false
         shownUpTo = 0
         handoffAsked = false
+        quoteAt = null
         if (compactMenu.item)
             compactMenu.item.close()
         stamp = ""
@@ -2601,6 +2603,21 @@ Window {
         }
         selOthers = next
     }
+    // Quote in reply: what you selected, as a Markdown quote at the top of the box, the cursor under it
+    // (quote.mjs withQuote; VS Code chat.tsx the same); offered by a "Reply to this" button where a drag
+    // that selected something ended (gone with a new press, a scroll or another chat) and the right-click menu
+    property var quoteAt: null   // {x, y} in the scroll view, or null
+    function offerQuote(p) {
+        quoteAt = selectionText().trim() !== "" ? { x: Math.max(0, Math.min(p.x, scroll.width - Kirigami.Units.gridUnit * 7)),
+                                                    y: Math.min(p.y + Kirigami.Units.smallSpacing, scroll.height - Kirigami.Units.gridUnit * 2) } : null
+    }
+    function quoteIn(selected) {
+        const q = Quote.withQuote(replyBox.text, selected)
+        quoteAt = null
+        replyBox.text = q.text
+        replyBox.cursorPosition = q.cursor
+        replyBox.forceActiveFocus()
+    }
     function selectionText() {
         return Object.keys(selOthers).map(k => selIndex(k, selOthers[k])).concat([selIndex(selFrom, selFromAt)])
             .filter(i => i >= 0).sort((a, b) => a - b)
@@ -3390,6 +3407,7 @@ Window {
                     onMovementStarted: {   // (you scroll: it doesn't pull you back)
                         settle.stop()
                         holdTop.stop()
+                        pane.quoteAt = null
                         pane.away = null   // (and you read it yourself: Since you last looked goes)
                     }
                     onContentHeightChanged: pane.keepPlace()
@@ -4039,16 +4057,45 @@ Window {
                 parent: scroll
                 anchors.fill: parent
                 z: 10
+                property point dragEnd
                 PointHandler {
                     acceptedButtons: Qt.LeftButton
                     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                    onActiveChanged: if (active) pane.selectStart(selectOver.mapToItem(list, point.position.x, point.position.y))
-                    onPointChanged: if (active) pane.selectAcross(selectOver.mapToItem(list, point.position.x, point.position.y))
+                    onActiveChanged: {
+                        if (active) {
+                            pane.quoteAt = null
+                            pane.selectStart(selectOver.mapToItem(list, point.position.x, point.position.y))
+                        } else   // (let go: a selection made offers Reply to this there)
+                            Qt.callLater(pane.offerQuote, selectOver.dragEnd)
+                    }
+                    onPointChanged: {
+                        if (!active)
+                            return
+                        selectOver.dragEnd = point.position
+                        pane.selectAcross(selectOver.mapToItem(list, point.position.x, point.position.y))
+                    }
                 }
                 // (a right-click: Copy, Copy message, Select all, EditMenu.qml)
                 TapHandler {
                     acceptedButtons: Qt.RightButton
                     onTapped: (point, button) => pane.editMenuAt("list", point.position)
+                }
+            }
+            // "Reply to this" where a selection's drag ended (made only then)
+            Loader {
+                parent: scroll
+                z: 13
+                x: pane.quoteAt ? pane.quoteAt.x : 0
+                y: pane.quoteAt ? pane.quoteAt.y : 0
+                active: pane.quoteAt !== null && pane.conversationTab
+                sourceComponent: PlasmaComponents3.Button {
+                    icon.name: Icons.plasma.quote
+                    text: Quote.QUOTE_BUTTON
+                    focusPolicy: Qt.NoFocus
+                    onClicked: pane.quoteIn(pane.selectionText())
+                    PlasmaComponents3.ToolTip.text: i18n("Reply to this: what you selected, as a quote at the top of your reply")
+                    PlasmaComponents3.ToolTip.visible: hovered
+                    PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                 }
             }
             // Search (Ctrl+F): FindBar.qml over the list's top right, clear of its scroll bar (nothing

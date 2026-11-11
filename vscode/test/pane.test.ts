@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1524,6 +1524,22 @@ test("compact now and continue in a new chat: the command, the handoff note once
   assert.equal(handoffNote(items.slice(0, 3), true), null);   // (asked, nothing written)
   assert.equal(handoffNote(items.slice(0, 2), true), null);   // (never asked)
   assert.equal(handoffDraft("fix parser", "Goal: x."), "Continuing from the chat “fix parser”. Its handoff note:\n\nGoal: x.");
+});
+
+// Quote in reply (quote.mjs, Plasma's too): a selection as a Markdown quote at the top of the box
+test("quote in reply: each line quoted, blank runs one, the cursor under it, what you wrote kept below", () => {
+  assert.equal(quoteOf("Use weeksInYear(date)\n\n\n  and a test\n"), "> Use weeksInYear(date)\n>\n>   and a test");
+  assert.equal(quoteOf("\n\n  \n"), "");
+  assert.equal(quoteOf("a\u2029b"), "> a\n> b");   // (Qt's paragraph separator)
+  assert.ok(quoteOf("x".repeat(5000)).endsWith("…"));
+  const q = withQuote("", "Should I merge?");
+  assert.deepEqual(q, { text: "> Should I merge?\n\n", cursor: 19 });
+  const kept = withQuote("  yes, but first", "Should I merge?");
+  assert.equal(kept.text, "> Should I merge?\n\nyes, but first");
+  assert.equal(kept.text.slice(kept.cursor), "yes, but first");
+  assert.deepEqual(withQuote("draft", "  "), { text: "draft", cursor: 5 });   // (nothing selected: as it was)
+  assert.equal(QUOTE_BUTTON, "Reply to this");
+  assert.equal(QUOTE_MENU, "Quote in reply");
 });
 
 test("Continue in a new chat opens a new chat in the same account and folder with the note in its box, not sent", async () => {

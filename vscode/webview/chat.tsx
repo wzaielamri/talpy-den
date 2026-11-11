@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
@@ -69,7 +69,7 @@ function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
 // message); on the reply box, Undo, Redo, Cut, Copy, Paste (VS Code's own, as Ctrl+V: a picture
 // too) and Select all. Elsewhere in the tab, VS Code's own menu (Cut, Copy, Paste)
 type EditAt = { where: "list" | "box"; x: number; y: number; it: PaneItem | null; chosen: string };
-type EditDo = "copy" | "copyMessage" | "bookmark" | "selectAll" | "undo" | "redo" | "cut" | "paste";
+type EditDo = "copy" | "quote" | "copyMessage" | "bookmark" | "selectAll" | "undo" | "redo" | "cut" | "paste";
 const EDIT_KEYS: Record<string, string> = { copy: "Ctrl+C", bookmark: "Ctrl+D", selectAll: "Ctrl+A", undo: "Ctrl+Z", redo: MAC ? "Ctrl+Shift+Z" : "Ctrl+Y", cut: "Ctrl+X", paste: "Ctrl+V" };
 function EditMenu({ at, marked, onDo }: { at: EditAt; marked: boolean; onDo: (what: EditDo) => void }) {
   const mark = at.where === "list" && !!at.it && canBookmark(at.it);   // (yours, or Claude's reply, once it's in the chat)
@@ -86,6 +86,7 @@ function EditMenu({ at, marked, onDo }: { at: EditAt; marked: boolean; onDo: (wh
       {at.where === "list" ? (
         <>
           {item("copy", "Copy", at.chosen !== "")}
+          {item("quote", QUOTE_MENU, at.chosen.trim() !== "")}
           {at.it ? item("copyMessage", at.it.kind === "claude" ? "Copy message (Markdown)" : "Copy message") : null}
           {mark ? item("bookmark", marked ? "Remove bookmark" : "Bookmark message") : null}
           {item("selectAll", "Select all")}
@@ -1881,6 +1882,44 @@ function ChatApp() {
     sel?.addRange(range);
     return true;
   };
+  // Quote in reply: what you selected in the conversation, as a Markdown quote at the top of the box, the
+  // cursor under it (quote.mjs withQuote); offered by a "Reply to this" button by the selection (it goes
+  // with the selection, a scroll or a click elsewhere) and the right-click menu
+  const [quoteAt, setQuoteAt] = useState<{ x: number; y: number; text: string } | null>(null);
+  const quoteIn = (selected: string) => {
+    const q = withQuote(text, selected);
+    setQuoteAt(null);
+    window.getSelection()?.removeAllRanges();
+    setText(q.text);
+    window.setTimeout(() => {
+      const box = reply.current;
+      if (!box) return;
+      box.focus();
+      box.setSelectionRange(q.cursor, q.cursor);
+    }, 0);
+  };
+  const offerQuote = () => {
+    const el = list.current;
+    const sel = window.getSelection();
+    const said = sel && !sel.isCollapsed ? sel.toString() : "";
+    if (!el || !sel || !said.trim() || !el.contains(sel.anchorNode) || !el.contains(sel.focusNode)) return setQuoteAt(null);
+    const r = sel.getRangeAt(sel.rangeCount - 1).getBoundingClientRect();
+    setQuoteAt({ x: Math.max(4, Math.min(r.right - 40, window.innerWidth - 130)), y: Math.min(r.bottom + 6, window.innerHeight - 40), text: said });
+  };
+  useEffect(() => {
+    if (!quoteAt) return undefined;
+    const gone = () => { const sel = window.getSelection(); if (!sel || sel.isCollapsed) setQuoteAt(null); };
+    const away = () => setQuoteAt(null);
+    document.addEventListener("selectionchange", gone);
+    window.addEventListener("scroll", away, true);
+    window.addEventListener("blur", away);
+    return () => {
+      document.removeEventListener("selectionchange", gone);
+      window.removeEventListener("scroll", away, true);
+      window.removeEventListener("blur", away);
+    };
+  }, [quoteAt]);
+
   const editDo = (what: EditDo) => {
     const at = editMenu;
     setEditMenu(null);
@@ -1890,7 +1929,8 @@ function ChatApp() {
       if (what === "copy" && at.chosen) {
         post({ type: "copy", text: at.chosen });
         setInfo({ ok: true, message: "Copied" });
-      } else if (what === "copyMessage" && at.it) copyItem(at.it, true);
+      } else if (what === "quote" && at.chosen.trim()) quoteIn(at.chosen);
+      else if (what === "copyMessage" && at.it) copyItem(at.it, true);
       else if (what === "bookmark" && at.it) toggleMark(at.it);
       else if (what === "selectAll") selectAllNow.current();
       return;
@@ -2218,6 +2258,7 @@ function ChatApp() {
               zoom(e.deltaY < 0 ? 1 : -1);
             }}
             onTouchMove={away ? () => setAway(null) : undefined}
+            onMouseUp={(e) => { if (e.button === 0) window.setTimeout(offerQuote, 0); }}
             onPointerDown={away ? (e) => { if (e.target === e.currentTarget) setAway(null); } : undefined}
             onContextMenu={(e) => {
               const t = e.target as HTMLElement;
@@ -2339,6 +2380,13 @@ function ChatApp() {
             </div>
           ) : null}
           {editMenu ? <EditMenu at={editMenu} marked={!!editMenu.it && !!markedKeys[editMenu.it.key]} onDo={editDo} /> : null}
+          {quoteAt ? (
+            <button type="button" class="pane-quote-btn" style={{ left: `${quoteAt.x}px`, top: `${quoteAt.y}px` }}
+              title={`${QUOTE_BUTTON}: what you selected, as a quote at the top of your reply`}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => quoteIn(quoteAt.text)}>
+              <Icon name={I.quote} />{QUOTE_BUTTON}
+            </button>
+          ) : null}
           {ctxMenu && soFar.context ? (
             <div class="pane-chip-menu pane-ctx-menu" role="menu" aria-label="Context" style={{ left: `${ctxMenu.x}px`, top: `${ctxMenu.y}px` }}
               onMouseDown={(e) => e.stopPropagation()}>

@@ -1132,6 +1132,8 @@ export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, 
 
 // Bookmarks (Ctrl+D, the list, Alt+↑ / Alt+↓): the widget's bookmarks.mjs, so Plasma's Talpy Chat
 // bookmarks the same messages and goes to the same one (see there)
+// Quote in reply (a selection's "Reply to this", the right-click menu): the widget's quote.mjs, as Plasma's
+export { QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote } from "../../vendor/quote.mjs";
 export { adoptable, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, oneLine, SNIPPET_CHARS, snippetOf, stateOf, staysOpen, step as bookmarkStep, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, type BookmarkStep } from "../../vendor/bookmarks.mjs";
 
 // Does it show on that tab: Chat leaves out Claude's tool calls, but not a question or a plan you

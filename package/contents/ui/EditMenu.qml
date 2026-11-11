@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 import "bookmarks.mjs" as Bm
+import "quote.mjs" as Quote
 
 // Talpy Chat's right-click menu, each item with its key: on the conversation,
 // Copy (what's selected, across messages too), Copy message (the message
@@ -68,6 +69,12 @@ PlasmaComponents3.Menu {
         text: i18n("Copy")
         keys: i18nc("a key", "Ctrl+C")
         onTriggered: pane.copyText(menu.chosen)
+    }
+    KeyItem {
+        shown: menu.where === "list"
+        enabled: menu.chosen.trim() !== ""
+        text: Quote.QUOTE_MENU
+        onTriggered: pane.quoteIn(menu.chosen)
     }
     KeyItem {
         shown: menu.where === "list" && menu.row !== null

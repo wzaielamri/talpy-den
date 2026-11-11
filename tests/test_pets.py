@@ -2331,6 +2331,22 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Compact now…", pane)
         self.assertIn("Compact now…", chat)
 
+    def test_quote_in_reply_is_one_rule_in_both_front_ends(self):
+        # Quote in reply: quote.mjs's rules and words in both (vendored to VS Code), the button made only
+        # while a selection offers it, the right-click menu's item in both, nothing of it per message
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        menu = (ROOT / "ui/EditMenu.qml").read_text()
+        chat = (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text()
+        self.assertIn('import "quote.mjs" as Quote', pane)
+        self.assertIn("Quote.withQuote(replyBox.text, selected)", pane)
+        self.assertIn("active: pane.quoteAt !== null && pane.conversationTab", pane)
+        self.assertIn("text: Quote.QUOTE_MENU", menu)
+        self.assertIn('item("quote", QUOTE_MENU, at.chosen.trim() !== "")', chat)
+        self.assertIn("const q = withQuote(text, selected);", chat)
+        self.assertIn("quote)\\.(mjs|d\\.mts)$", (ROOT.parent.parent / "vscode/esbuild.mjs").read_text())
+        delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
+        self.assertNotIn("quote", delegate.lower())
+
     def test_bookmarks_are_made_only_when_wanted(self):
         # Talpy Chat's bookmarks (6i): what they do (Bookmarks.qml, with bookmarks.mjs), their list
         # (BookmarkList.qml) and the tab row's count (BookmarkPill.qml) are files of their own, read and

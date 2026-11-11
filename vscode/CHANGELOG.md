@@ -4,6 +4,9 @@
 
 ### New
 
+- **Quote in reply:** select words in Talpy Chat's conversation and
+  **Reply to this** (or *Quote in reply* on the right-click menu) puts them in
+  your reply box as a quote, the cursor under it.
 - **Compact now, or go on in a new chat:** a click on Talpy Chat's
   *Context 31% used* (it said *69% left*; its bar now coloured as the usage
   bars) opens a menu: **Compact now**, with what the summary must keep, or

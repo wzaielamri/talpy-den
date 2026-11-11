@@ -76,6 +76,7 @@ const TABLE = {
     expandAll:       ['expand-all',                    null,         'pan-down-symbolic'],
     collapseAll:     ['collapse-all',                  null,         'pan-up-symbolic'],
     compact:         ['collapse',                      'compress',   'view-restore-symbolic'],                            // Talpy Chat: Compact now (the context tag's menu)
+    quote:           ['format-text-blockquote',        'quote',      'mail-reply-sender-symbolic'],       // Talpy Chat: Reply to this (a selection, quoted in the box)
     peekOpen:        ['arrow-up',                      'chevron',    'pan-up-symbolic'],                  // what's under a line, shown
     peekClosed:      ['arrow-down',                    'chevron',    'pan-down-symbolic'],
     zoomIn:          ['zoom-in',                       'zoomIn',     'zoom-in-symbolic'],
