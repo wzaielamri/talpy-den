@@ -10,6 +10,45 @@
   `$XDG_RUNTIME_DIR/talpy-den/jobs.json` whenever one changes, for a
   status bar, a desk display or a script to follow (it can wait for the
   file with inotify instead of asking again and again).
+- **Bookmarks in Talpy Chat:** with the pointer on a message, the ribbon beside
+  its **Copy** bookmarks Claude's reply or your message (or Ctrl+D, or
+  *Bookmark message* on its right-click menu), and its dot becomes a ribbon. The
+  count at the right of the tabs (Ctrl+Shift+B) lists the chat's bookmarks on
+  the side (beside the conversation in a wide tab, where it stays open), each
+  with its first words: a click goes to it, reading further back first when it
+  isn't shown yet; × removes one; Alt+↑ / Alt+↓ go from one to the next. New
+  commands under **Talpy Chat:** (Bookmark the Message, Show or Hide the Chat's
+  Bookmarks, Go to the Previous / Next Bookmark); Ctrl+Shift+B takes the place
+  of Run Build Task in a Talpy Chat tab only. Bookmarks are kept in
+  `~/.cache/talpy-den/bookmarks` (an SSH host's chat's on this computer too),
+  follow a chat Claude moves to the background, go with a deleted chat and keep
+  a chat from Talpy Den's cleanup of old chats, as a star does.
+- **What Claude made, in Talpy Chat:** a picture, a plan or a page Claude
+  wrote, edited or looked at shows under the step that made it (or the reply
+  that names it), on both tabs, folded: *icon.svg · 2 KB*, *Plan: …*. A click
+  shows it: a picture at the tab's width (what Claude saw, for one it read),
+  a plan rendered, a page's **Show source** and **Open in browser** (never
+  drawn in the tab), and **Open** (VS Code's image viewer or editor). It's
+  read only then, capped, only a file the chat's transcript names, a picture
+  as a `data:` URL the tab's content policy already allows (an SVG as a
+  picture: no script runs); an SSH host's file is fetched then too.
+- **Talpy Chat on SSH hosts and containers:** New Chat… on a host or a
+  container whose last check answered has *In a Talpy Chat tab* with its own
+  folders: the chat starts in the background there and its tab goes on with
+  it; recent chats there reopen in Talpy Chat; a background chat there no
+  terminal shows opens in its tab. What it asks is answered there: Talpy Den
+  puts its permission hook in your home there (one file, only ever a newer
+  copy), named only by those chats. **Answer it in a terminal** attaches over
+  ssh. Two windows answering one prompt: the first answer counts. Not yet in a
+  container that shares this computer's home.
+- **A host's prompts within a second:** while a Talpy Chat tab of a chat on a
+  host shows (or, in the window that notifies, while a hooked chat there works
+  or waits), Talpy Den watches that host, so what it asks shows within about
+  a second, not at the next check; the tab then reads every minute while
+  Claude neither works nor waits there.
+  A host taken off the list loses the hook's copy, unless a chat Talpy Chat
+  started there still runs; in a Remote-SSH window, New Chat… lists the
+  window's open folders first.
 - **Model and effort for one chat:** in a background chat or one that isn't
   open, `/model` and `/effort` list the models and effort levels as you type,
   and the one you pick (or `/model sonnet` typed) is for that chat alone:
@@ -152,6 +191,21 @@
 
 ### Better
 
+- **Talpy Chat: Claude's own guess at your reply.** With
+  `talpyDen.suggestReplies` on, the chats Talpy Chat starts or wakes in the
+  background predict your reply (Claude's grey suggestion); once Claude asks
+  you something, its guess is the first chip, sent only with a click.
+- **Talpy Chat: ultracode for one chat, and what a chat uses now.**
+  `/effort`'s list has *Turn ultracode on* (Extra high effort, with
+  ultracode) or *Turn ultracode off*, for that chat alone, your settings
+  untouched. `/model` and `/effort`'s lists mark what the chat uses with ✓
+  (*now*, or *from your next message*), and the line under the box says it
+  (*Now: Opus · Extra high effort*).
+- **Talpy Chat: Claude's thinking isn't shown as its reply.** The lines
+  Claude Code writes to sum up Claude's thinking while it works are dimmed,
+  in italics, after *∴*, as in Claude's terminal: such a line can tell what
+  Claude means to do as if it were done. *Copy* on one copies that line
+  alone, and Ctrl+Shift+C still copies Claude's last reply.
 - **Talpy Chat:** a wake-up Claude scheduled for itself is a small note in
   its place, no longer a message of yours at the end of the chat; an
   answered question's options are a bulleted list, each with what it means

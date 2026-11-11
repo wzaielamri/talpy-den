@@ -2,6 +2,7 @@
 answering its permission prompt (with the hook, permission_hook.py, or keys
 in tmux) and reviewing what it changed (Undo, Commit, Mark reviewed); and
 what the status rows carry for it (talpy_den.py)."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import base64
 import contextlib
 import io
@@ -152,22 +153,30 @@ class CompleteTests(PaneFixture):
 
 
 class ConversationTests(PaneFixture):
-    def test_thinking_shown_as_updates_is_a_reply(self):
-        # (Claude Code shows a thinking block's text as a reply when thinking is
-        # shown as updates; thinking it keeps to itself has no text)
+    def test_thinking_shown_as_updates_is_a_line_of_its_own(self):
+        # (when thinking is shown as updates, Claude Code writes a line summing
+        # up Claude's thinking: shown as thinking, not as Claude's reply, as
+        # its terminal shows it; thinking Claude keeps to itself has no text)
         t = self.now - 100
 
-        def thinking(text, ts, display="updates"):
+        def thinking(text, ts, mid="m1", display="updates"):
             return {"type": "assistant", "timestamp": iso(ts), "thinkingDisplay": display,
-                    "message": {"id": "m1", "role": "assistant", "content": [{"type": "thinking", "thinking": text, "signature": "x"}]}}
+                    "message": {"id": mid, "role": "assistant", "content": [{"type": "thinking", "thinking": text, "signature": "x"}]}}
         self.chat(prompt("tidy the tags", t, cwd=str(self.folder)),
                   thinking("", t + 1),
                   thinking("Making every tag start with a capital.", t + 2),
                   tool_use("t1", "Bash", {"command": "ls"}, t + 3, "m1"),
-                  thinking("A thought of its own.", t + 4, display=None))
+                  tool_result("t1", t + 4),
+                  thinking("Pushing it.", t + 5, "m2"),
+                  thinking("Then the tags.", t + 5, "m2"),
+                  text_reply("Done: every tag has a capital.", t + 6, "m2"),
+                  thinking("A thought of its own.", t + 7, "m3", display=None))
         items, _ = pane.conversation(self.transcript)
-        self.assertEqual([(i["kind"], i.get("text") or i.get("line")) for i in items],
-                         [("you", "tidy the tags"), ("claude", "Making every tag start with a capital."), ("tool", "Bash: ls")])
+        self.assertEqual([(i["kind"], i["key"], i.get("text") or i.get("line"), i.get("thinking")) for i in items][1:],
+                         [("claude", "m1/thinking", "Making every tag start with a capital.", True),
+                          ("tool", "t1", "Bash: ls", None),
+                          ("claude", "m2/thinking", "Pushing it.\n\nThen the tags.", True),
+                          ("claude", "m2", "Done: every tag has a capital.", None)])
 
     def test_a_prompt_from_the_claude_code_panel_shows(self):
         # (the panel puts the file open in the editor, or the lines selected there, in front of what
@@ -422,7 +431,8 @@ class ConversationTests(PaneFixture):
         self.assertEqual(answer, {"ok": True, "items": []})
         # (with its word tables for Claude's questions: --suggest reads them there)
         asked.assert_called_once_with("gpu", ["--conversation", SID, "--profile", ".claude-work", "--limit", "40"],
-                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py"))
+                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"),
+                                      timeout=60)
 
 
 # Claude Code's own fixed sentences around a No (always in English; the note after them is yours)
@@ -932,7 +942,8 @@ class ToolUseTests(PaneFixture):
             answer = self.cli("--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1", "--host", "gpu")
         self.assertTrue(answer["changed"])
         self.assertEqual(asked.call_args[0][1], ["--keys", "tmuxed", "--decision", "allow", "--expect", "toolu_1"])
-        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py")})
+        # (none of the modules: --keys needs none of them, and each is more to send and compile there)
+        self.assertEqual(asked.call_args[1], {"name": "pane.py", "also": (), "timeout": 60})
 
 
 class HookTests(unittest.TestCase):
@@ -1366,7 +1377,7 @@ class SendTests(SendFixture):
         with mock.patch("remote.host_answer", return_value=asked) as host, \
                 mock.patch.object(pane, "copy_to_clipboard", return_value=True) as copy:
             answer = self.cli("--send", SID, "--host", "lab", "--text", "and the docs", "--how", "enter")
-        self.assertEqual(host.call_args[0][1], ["--send", SID, "--text", "and the docs", "--how", "enter"])
+        self.assertEqual(host.call_args[0][1][:6], ["--send", SID, "--text", "and the docs", "--how", "enter"])
         self.assertEqual(answer["how"], "copy")
         copy.assert_called_once_with("and the docs")  # (this computer's clipboard)
         with mock.patch("remote.host_answer", return_value={"ok": True, "how": "typed", "message": "Sent"}), \
@@ -1408,7 +1419,7 @@ class SendTests(SendFixture):
         f.write_text("and the docs", encoding="utf-8")
         with mock.patch("remote.host_answer", return_value={"ok": True, "how": "typed", "message": "Sent"}) as host:
             self.cli("--send", SID, "--host", "lab", "--text-file", str(f), "--how", "auto")
-        self.assertEqual(host.call_args[0][1], ["--send", SID, "--text", "and the docs", "--how", "auto"])
+        self.assertEqual(host.call_args[0][1][:6], ["--send", SID, "--text", "and the docs", "--how", "auto"])
         # only a text file of the cache's
         other = self.home / "notes.txt"
         other.write_text("secret", encoding="utf-8")
@@ -1487,7 +1498,8 @@ class TalpyChatHookTests(SendFixture):
     def test_a_new_chat_starts_in_the_background_with_its_own_hook(self):
         answer = self.start(model="haiku", effort="low", mode="default")
         self.assertEqual(answer, {"ok": True, "how": "background", "id": self.JOB, "chat": self.NEW,
-                                  "profileDir": ".claude-work", "message": "Started in the background on work"})
+                                  "profileDir": ".claude-work", "message": "Started in the background on work",
+                                  "hooked": True})
         self.assertEqual(self.calls(), [["--bg", "--settings", self.hook(), "--model", "haiku", "--effort", "low",
                                          "--permission-mode", "default", "Fix the tests"]])
         self.assertEqual(self.scopes, ["claude"])   # (in a systemd scope of its own)
@@ -1496,6 +1508,40 @@ class TalpyChatHookTests(SendFixture):
         self.assertEqual(hook.read_bytes(), (CODE / "permission_hook.py").read_bytes())
         # nothing of the account's settings changes
         self.assertFalse((self.home / ".claude-work/settings.json").exists())
+
+    def test_claudes_predicted_reply_on_with_suggest_replies(self):
+        # (Suggest replies on: the chats Talpy Chat starts or wakes predict your reply, Claude's grey
+        # suggestion, written into their job's record; with the hook, or alone where the hook runs anyway)
+        predict = '"env":{"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION":"true"}'
+        self.start(predict=True)
+        self.assertEqual(self.calls()[-1][:3], ["--bg", "--settings", self.hook()[:-1] + "," + predict + "}"])
+        pane.relay(self.home, [], True)
+        self.assertEqual(pane.send(self.home, [], ".claude-work", SID, "and the docs", None, "auto", str(self.bin / "claude"),
+                                   predict=True)["how"], "background")
+        self.assertEqual(self.calls()[-1], ["--bg", "--resume", SID, "--settings", "{" + predict + "}", "and the docs"])
+        self.start()   # (off: none)
+        self.assertEqual(self.calls()[-1], ["--bg", "Fix the tests"])
+
+    def test_claudes_predicted_reply_is_in_the_conversation(self):
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "tempo": "blocked", "needs": "pick one", "respawnFlags": []})
+        self.chat(prompt("tidy up", self.now - 9, cwd=str(self.folder)),
+                  text_reply("Should I delete the old logs or keep them?", self.now - 8, "m1"))
+        ask = lambda **kw: self.cli("--conversation", SID, "--profile", ".claude-work", "--suggest", *kw.get("more", []))
+        first = ask()
+        self.assertEqual((first["ended"], first["predicted"]), ("asked", None))
+        # a few seconds later, Claude's guess: a change, though the transcript isn't
+        write(state, {"sessionId": SID, "tempo": "blocked", "needs": "pick one", "respawnFlags": [],
+                      "suggestedReply": "  delete   them "})
+        again = ask(more=["--if-changed", first["stamp"]])
+        self.assertEqual(again["predicted"], "delete them")
+        self.assertTrue(ask(more=["--if-changed", again["stamp"]])["unchanged"])
+        # not while it works again, nor for a permission prompt, nor with Suggest replies off
+        write(state, {"sessionId": SID, "tempo": "active", "suggestedReply": "delete them"})
+        self.assertIsNone(ask()["predicted"])
+        write(state, {"sessionId": SID, "tempo": "blocked", "block": {"kind": "permission"}, "suggestedReply": "yes"})
+        self.assertIsNone(ask()["predicted"])
+        self.assertNotIn("predicted", self.cli("--conversation", SID, "--profile", ".claude-work"))
 
     def test_no_hook_of_its_own_where_the_hook_runs_anyway_or_cant(self):
         # the setting for every chat on: the account's settings have the hook (it would run twice)
@@ -1639,11 +1685,20 @@ class TalpyChatHookTests(SendFixture):
         self.assertEqual((answer["ok"], answer["chat"]), (True, self.NEW))
         self.assertEqual(self.calls()[-1], ["--bg", "--settings", self.hook(), "--model", "sonnet",
                                             "--permission-mode", "acceptEdits", "Fix the tests"])
-        # not on an SSH host yet: its prompts can't reach Talpy Chat
-        with mock.patch("remote.host_answer") as host:
+        # on an SSH host (or in a container): started there, with the hook's code for its copy there
+        with mock.patch("remote.host_answer", return_value={"ok": True, "chat": self.NEW, "hooked": True}) as host:
             answer = self.cli("--start", ".claude-work", "--cwd", "~", "--text", "x", "--host", "lab")
-        self.assertEqual(answer, {"ok": False, "message": "Talpy Chat starts chats on this computer only, for now"})
-        host.assert_not_called()
+        self.assertEqual(answer, {"ok": True, "chat": self.NEW, "hooked": True})
+        args = host.call_args[0][1]
+        self.assertEqual(args[:6], ["--start", ".claude-work", "--cwd", "~", "--text", "x"])
+        self.assertEqual(base64.b64decode(args[args.index("--hook-source") + 1]), (CODE / "permission_hook.py").read_bytes())
+        # (a start waits for claude's background service there: longer than other actions; none of the modules)
+        self.assertEqual(host.call_args[1], {"name": "pane.py", "also": (), "timeout": pane.HOST_START_TIMEOUT})
+        # it got there and took too long: it may have started, so it isn't sent again
+        with mock.patch("remote.host_answer", return_value={"ok": False, "timedOut": True, "message": "lab didn't answer"}):
+            answer = self.cli("--start", ".claude-work", "--cwd", "~", "--text", "x", "--host", "lab")
+        self.assertEqual((answer["ok"], answer["maybe"]), (False, True))
+        self.assertIn("the chat may have started there", answer["message"])
 
     def test_a_job_record_that_never_names_its_chat(self):
         with mock.patch.object(pane, "JOB_RECORD_WAIT_S", 0.2):
@@ -1651,6 +1706,199 @@ class TalpyChatHookTests(SendFixture):
             answer = pane.start_chat(self.home, [], ".claude-work", str(self.folder), "x", claude=str(self.bin / "claude"))
         self.assertFalse(answer["ok"])
         self.assertIn("It started (1a2b3c4d)", answer["message"])
+
+
+class HostHookTests(SendFixture):
+    """Talpy Chat on an SSH host or in a container (pane.py there, its code
+    on stdin with no file of its own): the hook's copy there comes from the
+    code the computer that asks sends (--hook-source), only ever newer; the
+    chats it starts or wakes there get it as here, with no systemd scope."""
+
+    JOB, NEW, start = TalpyChatHookTests.JOB, TalpyChatHookTests.NEW, TalpyChatHookTests.start
+
+    def source(self, revision):
+        return (CODE / "permission_hook.py").read_text().replace("HOOK_REVISION = 3", f"HOOK_REVISION = {revision}")
+
+    def copy(self):
+        return self.home / ".local/share/talpy-den/permission-hook.py"
+
+    def test_its_copy_comes_from_the_code_sent_and_only_ever_newer(self):
+        with mock.patch.object(pane, "__file__", "-"):   # (on a host: no file next to it to copy)
+            self.assertEqual(pane.place_hook(self.home), (None, "its code isn't here to copy"))
+            path, why = pane.place_hook(self.home, source=self.source(3))
+        self.assertEqual((path, why), (self.copy(), ""))
+        self.assertEqual(self.copy().read_text(), self.source(3))
+        self.assertEqual(oct(self.copy().stat().st_mode & 0o777), "0o600")
+        self.assertEqual(oct(self.copy().parent.stat().st_mode & 0o777), "0o700")
+        # a newer one replaces it; an older one (a front end of an older version) doesn't
+        pane.place_hook(self.home, source=self.source(5))
+        pane.place_hook(self.home, source=self.source(4))
+        self.assertIn("HOOK_REVISION = 5", self.copy().read_text())
+        # nor does turning the hook on for every chat from it
+        pane.relay(self.home, [], True, source=self.source(4))
+        self.assertIn("HOOK_REVISION = 5", self.copy().read_text())
+        self.assertEqual(list(self.copy().parent.glob("*.tmp")) + list(self.copy().parent.glob(".*.tmp")), [])
+
+    def test_a_folder_others_may_write_in(self):
+        # (an XDG_DATA_HOME on shared space: whoever may write there could swap in a hook that allows anything.
+        # One of yours made under a looser umask, 0775 (dictation makes it too): made 0700, and a copy in it
+        # that someone else may have put or changed is written anew)
+        self.copy().parent.mkdir(parents=True)
+        os.chmod(self.copy().parent, 0o777)
+        self.copy().write_text("HOOK_REVISION = 99\nimport os  # allows everything\n")
+        os.chmod(self.copy(), 0o666)
+        path, why = pane.place_hook(self.home, source=self.source(3))
+        self.assertEqual((path, why), (self.copy(), ""))
+        self.assertEqual(oct(self.copy().parent.stat().st_mode & 0o777), "0o700")
+        self.assertEqual(self.copy().read_text(), self.source(3))
+        self.assertEqual(oct(self.copy().stat().st_mode & 0o777), "0o600")
+        # a link where its folder goes: not a folder of yours, no copy; the chat starts all the same, unhooked
+        shutil.rmtree(self.copy().parent)
+        elsewhere = self.home / "elsewhere-data"
+        elsewhere.mkdir()
+        self.copy().parent.symlink_to(elsewhere)
+        path, why = pane.place_hook(self.home, source=self.source(3))
+        self.assertIsNone(path)
+        self.assertIn("isn't a folder of yours", why)
+        answer = self.start()
+        self.assertEqual((answer["ok"], answer["hooked"]), (True, False))
+        self.assertIn("Talpy Den couldn't put its permission hook in place:", answer["hookWhy"])
+        self.assertEqual(self.calls()[-1], ["--bg", "Fix the tests"])
+        with self.assertRaises(ValueError):
+            pane.install_hook(self.home, [], True, "relay")
+        self.assertEqual(list(elsewhere.iterdir()), [])
+
+    def test_hooked_says_whether_talpy_chat_answers_what_it_asks(self):
+        profile = next(p for p in cs.discover_profiles(self.home) if p.key == ".claude-work")
+        self.assertEqual(pane.chat_hook_of(self.home, profile)["hooked"], True)
+        # the hook for every chat in its settings: none of its own, and hooked all the same
+        pane.relay(self.home, [], True)
+        self.assertEqual(pane.chat_hook_of(self.home, profile), {"settings": None, "hooked": True, "why": ""})
+        self.assertEqual(self.start()["hooked"], True)
+        with mock.patch.object(cs, "managed_hooks_only", return_value=True):
+            self.assertEqual(pane.chat_hook_of(self.home, profile),
+                             {"settings": None, "hooked": False, "why": "managed settings let only their own hooks run"})
+
+    def test_started_there_with_no_scope(self):
+        self.scopes.clear()
+        answer = self.start(scoped=False, hook_source=self.source(3))
+        self.assertEqual((answer["ok"], answer["hooked"], answer["chat"]), (True, True, self.NEW))
+        self.assertEqual(self.calls()[-1][:3], ["--bg", "--settings", self.hook()])
+        self.assertEqual(self.scopes, [])   # (no systemd scope there: jump.py and plasmashell aren't)
+        self.assertEqual(self.copy().read_text(), self.source(3))
+
+    def test_a_folder_claude_doesnt_trust_there(self):
+        other = self.home / "elsewhere"
+        other.mkdir()
+        answer = self.start(other, scoped=False)
+        self.assertEqual((answer["ok"], answer["untrusted"]), (False, True))
+        self.assertNotIn("untrusted", pane.start_chat(self.home, [], ".claude-work", str(self.home / "gone"), "x",
+                                                      claude=str(self.bin / "claude")))
+
+    def test_a_stopped_job_there_wakes_with_it(self):
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "respawnFlags": ["--model", "opus"]})
+        self.scopes.clear()
+        answer = pane.send(self.home, [], ".claude-work", SID, "and the docs", None, "auto", str(self.bin / "claude"),
+                           scoped=False, hook_source=self.source(3))
+        self.assertEqual((answer["how"], answer["hooked"]), ("background", True))
+        # (the full id, no flags: what it saved, with the hook, wakes it; no copy)
+        self.assertEqual(self.calls(), [["--bg", "--resume", SID, "and the docs"]])
+        self.assertEqual(json.loads(state.read_text())["respawnFlags"], ["--model", "opus", "--settings", self.hook()])
+        self.assertEqual(self.scopes, [])
+
+    def test_its_row_says_whether_its_prompts_are_answered_here(self):
+        # (a background chat's prompts reach Talpy Chat through the hook: Talpy Chat's for it, in what
+        # Claude wakes it with, or the one for every chat in its account's settings)
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "state": "working", "respawnFlags": ["--model", "opus"]})
+        self.live(kind="bg", status="busy", jobId=SID[:8])
+        self.assertFalse(self.rows()[SID]["hooked"])
+        write(state, {"sessionId": SID, "state": "working", "respawnFlags": ["--settings", self.hook()]})
+        self.assertTrue(self.rows()[SID]["hooked"])
+        write(state, {"sessionId": SID, "state": "working", "respawnFlags": []})
+        pane.relay(self.home, [], True)
+        self.assertTrue(self.rows()[SID]["hooked"])
+        # (one in a terminal asks in its own dialog there)
+        self.live(kind="interactive", status="busy")
+        self.assertFalse(self.rows()[SID]["hooked"])
+
+    def test_a_host_taken_off_the_list_forgets_the_hook_unless_a_chat_still_uses_it(self):
+        # (user, 2026-11-05: its copy and its requests folder go, if no chat Talpy Chat started there still runs)
+        self.start()
+        requests = cs.requests_dir(self.cache)
+        write(requests / "1-0a1b2c3d.json", {"id": "1-0a1b2c3d"})
+        state = self.home / f".claude-work/jobs/{SID[:8]}/state.json"
+        write(state, {"sessionId": SID, "state": "working", "respawnFlags": ["--settings", self.hook()]})
+        self.live(kind="bg", status="busy", jobId=SID[:8])
+        answer = pane.forget_hook(self.home, [])
+        self.assertEqual((answer["kept"], answer["message"]), (1, "1 chat Talpy Chat started there still runs: its permission hook stays there for them"))
+        self.assertTrue(self.copy().is_file())
+        # the one for every chat: it stays
+        (self.home / ".claude-work/sessions/30.json").unlink()
+        pane.relay(self.home, [], True)
+        self.assertEqual(pane.forget_hook(self.home, [])["kept"], "every")
+        pane.relay(self.home, [], False, keep_copy=True)
+        # a request waiting there: a hook still waits (a chat that runs where this can't see it: a home shared
+        # over the network), nothing goes
+        self.assertEqual(pane.forget_hook(self.home, [])["kept"], "asking")
+        self.assertTrue(self.copy().is_file())
+        (requests / "1-0a1b2c3d.json").unlink()
+        write(requests / "1-0a1b2c3d.answer.json", {"behavior": "allow"})   # (an answer nobody took)
+        # none of them: gone, with its requests folder
+        with mock.patch.object(cs, "find_claude", return_value=str(self.bin / "claude")):
+            answer = self.cli("--relay", "forget")
+        self.assertEqual(answer, {"ok": True, "message": "Talpy Den's permission hook and its requests are gone from there"})
+        self.assertFalse(self.copy().exists())
+        self.assertFalse(requests.exists())
+        self.assertEqual(pane.forget_hook(self.home, [])["message"], "Nothing of Talpy Chat's there")
+
+    def test_which_home_it_is(self):
+        # (a container that shares your home answers the same: its chats, hook and requests are this computer's)
+        here = cs.home_id(self.home)
+        self.assertRegex(here, "^[0-9a-f]{12}$")
+        self.assertEqual(cs.home_id(self.home), here)
+        self.assertNotEqual(cs.home_id(self.folder), here)
+        self.assertEqual(cs.home_id(self.home / "gone"), "")
+
+    def test_two_windows_answering_one_prompt(self):
+        # (Plasma's window and VS Code's tab a moment apart: only the first answer counts)
+        cache = self.cache
+        folder = cs.requests_dir(cache)
+        folder.mkdir(parents=True)
+        rid = "1700000000000-0a1b2c3d"
+        write(folder / f"{rid}.json", {"id": rid, "at": int(time.time() * 1000), "hookPid": os.getpid(),
+                                       "sessionId": SID, "tool": "Bash", "input": {"command": "make"}})
+        write(folder / f"{rid}.answer.json", {"behavior": "allow"})   # (the other window's)
+        self.assertEqual(pane.answer_request(cache, rid, "deny"), (False, pane.ANSWERED_ELSEWHERE))
+        self.assertEqual(json.loads((folder / f"{rid}.answer.json").read_text()), {"behavior": "allow"})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            pane.main(["--answer", rid, "--decision", "deny"])
+        self.assertEqual(json.loads(out.getvalue()), {"ok": False, "message": pane.ANSWERED_ELSEWHERE, "changed": True})
+        # where the folder takes no hard links: written as before
+        (folder / f"{rid}.answer.json").unlink()
+        import errno
+        taken = []
+
+        def hook_takes_it(seconds):   # (as the hook does: it reads the answer, then removes the request and it)
+            answer = folder / f"{rid}.answer.json"
+            if answer.exists():
+                taken.append(json.loads(answer.read_text()))
+            for p in (folder / f"{rid}.json", answer):
+                if p.exists():
+                    p.unlink()
+        with mock.patch.object(os, "link", side_effect=OSError(errno.EPERM, "no links")), \
+                mock.patch.object(time, "sleep", side_effect=hook_takes_it):
+            self.assertEqual(pane.answer_request(cache, rid, "deny"), (True, "Denied"))
+        self.assertEqual(taken[0]["behavior"], "deny")
+        # its hook gone before the answer came (another window's taken, or the chat answered): the answer
+        # left there is taken back, and it says so (not "Allowed")
+        write(folder / f"{rid}.json", {"id": rid, "at": int(time.time() * 1000), "hookPid": os.getpid(),
+                                       "sessionId": SID, "tool": "Bash", "input": {"command": "make"}})
+        with mock.patch.object(time, "sleep", side_effect=lambda s: (folder / f"{rid}.json").exists() and (folder / f"{rid}.json").unlink()):
+            self.assertEqual(pane.answer_request(cache, rid, "allow"), (False, pane.NOT_ASKING))
+        self.assertFalse((folder / f"{rid}.answer.json").exists())
 
 
 class ChatPickTests(SendFixture):
@@ -1744,8 +1992,43 @@ class ChatPickTests(SendFixture):
         self.assertEqual(stopped.call_count, 0)
         self.assertEqual(self.flags(), ["--model", "haiku"])
         self.assertEqual(self.set(model="gpt 5")["message"], "Not a model: gpt 5")
-        self.assertEqual(self.set(effort="huge")["message"], "Not an effort level: huge (one of low, medium, high, xhigh, max)")
+        self.assertEqual(self.set(effort="huge")["message"], "Not an effort level: huge (one of low, medium, high, xhigh, max, ultracode)")
         self.assertEqual(self.set()["message"], "Pick a model or an effort level")
+
+    def test_ultracode_on_and_off_for_this_chat(self):
+        # (live-checked on 2.1.318: woken with --effort ultracode, its next message notes ultra_effort_enter;
+        # woken with --effort xhigh after it, ultra_effort_exit)
+        write(self.state, {"sessionId": SID, "respawnFlags": ["--model", "haiku", "--effort", "low"]})
+        self.assertEqual(self.set(effort="Ultracode")["message"],
+                         "ultracode, with xhigh effort for this chat, from your next message")
+        self.assertEqual(self.flags(), ["--model", "haiku", "--effort", "ultracode"])
+        self.assertEqual(self.pick.options_now(self.home, self.profile(), SID),
+                         {"model": "haiku", "effort": "xhigh", "ultracode": True, "next": False})
+        self.assertTrue(self.set(effort="xhigh")["ok"])   # (off: the effort it had with it)
+        self.assertEqual(self.pick.options_now(self.home, self.profile(), SID, ultracode=True),
+                         {"model": "haiku", "effort": "xhigh", "ultracode": False, "next": False})
+        self.assertEqual(json.loads(self.settings.read_text()), {"model": "opus"})
+
+    def profile(self):
+        return next(p for p in cs.discover_profiles(self.home, []) if p.key == ".claude-work")
+
+    def test_what_it_uses_now(self):
+        # (what the lists mark: what Claude wakes it with, "" for Claude's default; else what you picked for its
+        # next wake; else what it last ran on)
+        write(self.state, {"sessionId": SID, "respawnFlags": ["--permission-mode", "auto"]})
+        self.assertEqual(self.pick.options_now(self.home, self.profile(), SID),
+                         {"model": "", "effort": "", "ultracode": False, "next": False})
+        self.state.unlink()
+        with mock.patch.object(cs, "chat_model", return_value=("claude-opus-5-5", "high")):
+            self.assertEqual(self.pick.options_now(self.home, self.profile(), SID, ultracode=True),
+                             {"model": "claude-opus-5-5", "effort": "high", "ultracode": True, "next": False})
+            self.set(effort="medium")
+            self.assertEqual(self.pick.options_now(self.home, self.profile(), SID, ultracode=True),
+                             {"model": "claude-opus-5-5", "effort": "medium", "ultracode": False, "next": True})
+        # in the conversation's answer
+        self.chat(prompt("hello", self.now - 5, cwd=str(self.folder)))
+        options = self.cli("--conversation", SID, "--profile", ".claude-work")["options"]
+        self.assertEqual((options["effort"], options["next"]), ("medium", True))
 
     def test_a_chat_with_no_job_of_its_own_wakes_with_them_from_here(self):
         # (it last ran in a terminal, closed now: kept for its next wake from Talpy Chat or a go-on)
@@ -2684,7 +2967,8 @@ class WholeReplyTests(PaneFixture):
                                                                               {"type": "text", "text": "Found it."}]}}
         self.chat(dict(prompt(long, t, cwd=str(self.folder)), uuid="u-9"), updates)
         self.assertEqual(self.cli("--reply-text", SID, "--key", "u-9")["text"], long.strip())
-        self.assertEqual(self.cli("--reply-text", SID, "--key", "m9")["text"], "Looking at it.\n\nFound it.")
+        self.assertEqual(self.cli("--reply-text", SID, "--key", "m9")["text"], "Found it.")
+        self.assertEqual(self.cli("--reply-text", SID, "--key", "m9/thinking")["text"], "Looking at it.")
 
     def test_none_with_that_key(self):
         self.chat(dict(prompt("hello", self.now - 5, cwd=str(self.folder)), uuid="u-1"))
@@ -2692,6 +2976,186 @@ class WholeReplyTests(PaneFixture):
                          {"ok": False, "message": "That message isn't in the chat any more"})
         self.assertFalse(self.cli("--reply-text", "not-a-chat!", "--key", "u-1")["ok"])
         self.assertFalse(self.cli("--reply-text", SID)["ok"])   # (no key)
+
+
+class BookmarkTests(PaneFixture):
+    """Talpy Chat's bookmarks (pane.py --bookmark): kept on this computer, an
+    SSH host's chat's too (never sent there), and carried in --conversation's
+    answers once the chat has had one."""
+
+    def mark(self, key, *more):
+        return self.cli("--bookmark", SID, "--key", key, *more)
+
+    def keys(self, answer):
+        return [m["key"] for m in answer["bookmarks"]]
+
+    def test_it_answers_the_whole_list_and_its_v(self):
+        got = self.mark("m1", "--kind", "claude", "--at", "2000", "--text", "Done:  the tests\npass.")
+        self.assertEqual((got["ok"], got["message"], len(got["bookmarks"])), (True, "", 1), got)
+        self.assertEqual({k: got["bookmarks"][0][k] for k in ("key", "kind", "at", "text")},
+                         {"key": "m1", "kind": "claude", "at": 2000, "text": "Done: the tests pass."})
+        first = got["bookmarksV"]
+        self.assertGreater(first, 0)
+        got = self.mark("u1", "--kind", "you", "--at", "1000", "--text", "run the tests")
+        self.assertEqual(self.keys(got), ["u1", "m1"])   # (in the chat's order)
+        self.assertGreater(got["bookmarksV"], first)
+        self.assertEqual((got["bookmarks"], got["bookmarksV"]), tuple(cs.load_bookmarks(self.cache, SID)))
+        self.assertEqual(oct(os.stat(self.cache / "bookmarks" / f"{SID}.json").st_mode & 0o777), "0o600")
+        # removed; again, and adding one it has: done, nothing written
+        got = self.mark("m1", "--off")
+        self.assertEqual((got["ok"], self.keys(got)), (True, ["u1"]))
+        again = self.mark("m1", "--off")
+        self.assertEqual((again["ok"], again["bookmarks"], again["bookmarksV"]), (True, got["bookmarks"], got["bookmarksV"]))
+        self.assertEqual(self.mark("u1", "--kind", "you", "--at", "1000")["bookmarksV"], got["bookmarksV"])
+        # refused: a message on its way, no key, a key that is a flag, a kind other than yours or Claude's, not a chat
+        for refused in (self.mark("pending-3", "--kind", "you"), self.cli("--bookmark", SID, "--kind", "you"),
+                        self.mark("-x", "--kind", "you"), self.mark("t1", "--kind", "tool")):
+            self.assertEqual((refused["ok"], refused["message"], self.keys(refused)), (False, "Which message?", ["u1"]))
+        self.assertEqual(self.cli("--bookmark", "../x", "--key", "m1", "--kind", "claude"),
+                         {"ok": False, "message": "Not a chat: ../x", "bookmarks": [], "bookmarksV": 0})
+        self.assertFalse((self.cache / "bookmarks" / "x.json").exists())
+
+    def test_a_hosts_is_kept_here_and_never_sent_there(self):
+        with mock.patch("remote.host_answer", side_effect=AssertionError("forwarded")) as asked, \
+                mock.patch.object(pane, "forward", side_effect=AssertionError("forwarded")) as forwarded:
+            got = self.cli("--bookmark", SID, "--key", "m1", "--kind", "claude", "--at", "5", "--text", "hi", "--host", "gpu")
+            off = self.cli("--bookmark", SID, "--key", "m2", "--off", "--host", "gpu")
+        self.assertEqual((got["ok"], self.keys(got), off["ok"], self.keys(off)), (True, ["m1"], True, ["m1"]), got)
+        asked.assert_not_called()
+        forwarded.assert_not_called()
+        root = self.cache / "bookmarks"
+        self.assertEqual(os.listdir(root), ["host-" + cs.short_id("gpu")])
+        self.assertEqual(cs.load_bookmarks(self.cache, SID, "gpu")[0], got["bookmarks"])
+        self.assertEqual(cs.load_bookmarks(self.cache, SID), ([], 0))   # (not this computer's chat of that id)
+
+    def test_the_conversation_carries_them_once_there_are_some(self):
+        t = self.now - 100
+        self.chat(dict(prompt("run the tests", t, cwd=str(self.folder)), uuid="u1"),
+                  text_reply("They pass.", t + 1, "m1", "end_turn"))
+        first = self.cli("--conversation", SID)
+        self.assertTrue(first["ok"], first)
+        self.assertNotIn("bookmarks", first)   # (none yet: no file, nothing said)
+        self.assertNotIn("bookmarksV", first)
+        marked = self.mark("m1", "--kind", "claude", "--at", str(first["items"][1]["at"]), "--text", "They pass.")
+        got = self.cli("--conversation", SID)
+        self.assertEqual((got["bookmarks"], got["bookmarksV"]), (marked["bookmarks"], marked["bookmarksV"]))
+        # an unchanged answer is only that (the list comes with the next changed one)
+        self.assertEqual(self.cli("--conversation", SID, "--if-changed", got["stamp"]), {"ok": True, "unchanged": True})
+        # the last one removed: an empty list, its v still growing (so it wins over the list before)
+        gone = self.mark("m1", "--off")
+        got = self.cli("--conversation", SID)
+        self.assertEqual((got["bookmarks"], got["bookmarksV"]), ([], gone["bookmarksV"]))
+        self.assertGreater(gone["bookmarksV"], marked["bookmarksV"])
+        # on an SSH host (--remote): none of the host's own (they're kept on the computer that asks)
+        self.mark("u1", "--kind", "you", "--at", "1")
+        self.assertNotIn("bookmarks", self.cli("--conversation", SID, "--remote"))
+
+    def test_a_hosts_conversation_gets_this_computers_list(self):
+        self.cli("--bookmark", SID, "--key", "m1", "--kind", "claude", "--at", "5", "--text", "hi", "--host", "gpu")
+        self.mark("u9", "--kind", "you", "--at", "1")   # (this computer's chat of that id: not the host's)
+        there = {"ok": True, "items": [], "stamp": "1:2/120", "more": False}
+        with mock.patch("remote.host_answer", side_effect=lambda *a, **kw: dict(there)) as asked:
+            got = self.cli("--conversation", SID, "--host", "gpu", "--reach", "m1")
+            other = self.cli("--conversation", SID, "--host", "box")
+        self.assertEqual([m["key"] for m in got["bookmarks"]], ["m1"])
+        self.assertEqual(got["bookmarksV"], cs.load_bookmarks(self.cache, SID, "gpu")[1])
+        self.assertNotIn("bookmarks", other)
+        # (--reach goes with the rest: the host reads that far back)
+        self.assertEqual(asked.call_args_list[0][0], ("gpu", ["--conversation", SID, "--reach", "m1"]))
+        with mock.patch("remote.host_answer", return_value={"ok": True, "unchanged": True}):
+            self.assertEqual(self.cli("--conversation", SID, "--host", "gpu", "--if-changed", "1:2/120"),
+                             {"ok": True, "unchanged": True})
+        with mock.patch("remote.host_answer", return_value={"ok": False, "message": "Couldn't reach gpu"}):
+            self.assertNotIn("bookmarks", self.cli("--conversation", SID, "--host", "gpu"))
+
+    def test_the_usage_says_so(self):
+        self.assertIn("--bookmark CHAT --key KEY [--off] [--kind you|claude] [--at MS] [--text TEXT] [--host HOST]", pane.__doc__)
+        self.assertIn("[--suggest] [--reach KEY]", pane.__doc__)
+
+
+class ReachTests(PaneFixture):
+    """A bookmark further back than what's shown (pane.py --conversation
+    --reach KEY): the answer shows it, its limit grown as Show earlier grows
+    it, or says it's too far back ("far") or not in the chat any more ("gone")."""
+
+    def prompts(self, n, start=0):
+        t = self.now - 10000
+        return [dict(prompt(f"prompt {k}", t + k), uuid=f"u{k}") for k in range(start, start + n)]
+
+    def reach(self, key, *more):
+        return self.cli("--conversation", SID, "--reach", key, *more)
+
+    def test_the_limit_grows_as_show_earlier_grows_it(self):
+        self.assertEqual([pane.reach_limit(120, 303), pane.reach_limit(40, 10), pane.reach_limit(960, 1000),
+                          pane.reach_limit(1920, 1999), pane.reach_limit(2000, 2000)], [480, 120, 1920, 2000, 2000])
+
+    def test_a_key_300_items_back(self):
+        self.chat(*self.prompts(600))
+        # (not in the first read, which has more than the limit's items: further back, as Show earlier)
+        with mock.patch.object(pane, "PANE_TAIL_BYTES", 20000):
+            got = self.reach("u300")
+        self.assertEqual((got["limit"], got["reach"], got["reached"], len(got["items"]), got["more"]),
+                         (480, "u300", "here", 480, True))
+        self.assertTrue(got["stamp"].endswith("/480"))
+        keys = [i["key"] for i in got["items"]]
+        self.assertGreaterEqual(keys.index("u300"), pane.REACH_ABOVE)
+        self.assertEqual(keys[-1], "u599")
+        # (the next look, at that limit, is the same answer)
+        self.assertEqual(self.cli("--conversation", SID, "--limit", "480", "--if-changed", got["stamp"]),
+                         {"ok": True, "unchanged": True})
+
+    def test_a_key_already_loaded_keeps_the_limit(self):
+        self.chat(*self.prompts(600))
+        got = self.reach("u590")
+        self.assertEqual((got["limit"], got["reached"], len(got["items"])), (120, "here", 120))
+        self.assertTrue(got["stamp"].endswith("/120"))
+        self.assertEqual(self.reach("u400", "--limit", "240")["limit"], 240)
+        plain = self.cli("--conversation", SID)
+        self.assertFalse({"limit", "reach", "reached"} & set(plain))   # (only with --reach)
+
+    def test_more_than_pane_items_max_back_is_far(self):
+        self.chat(*self.prompts(2100))
+        far = self.reach("u50")
+        self.assertEqual((far["reached"], far["limit"], len(far["items"])), ("far", 120, 120))
+        self.assertTrue(far["stamp"].endswith("/120"))
+        edge = self.reach("u103")   # (2000 with the three above it: the most Talpy Chat shows)
+        self.assertEqual((edge["reached"], edge["limit"], edge["items"][pane.REACH_ABOVE]["key"]), ("here", 2000, "u103"))
+
+    def test_a_key_not_in_the_chat_is_gone(self):
+        self.chat(*self.prompts(600))
+        got = self.reach("m-gone")
+        self.assertEqual((got["reached"], got["limit"], len(got["items"])), ("gone", 120, 120))
+        # (not found in all it may read of a huge one: further back than that)
+        with mock.patch.object(pane, "PANE_TAIL_BYTES", 1000), mock.patch.object(pane, "PANE_TAIL_MAX", 4000):
+            self.assertEqual(self.reach("m-gone")["reached"], "far")
+
+    def test_a_queued_prompt_is_found_once_the_read_grows(self):
+        # (sent while Claude worked: keyed queued-<ms> while its enqueue line
+        # is read, else by the line Claude took it in with)
+        t = self.now - 20000
+        self.chat(dict(prompt("go", t, cwd=str(self.folder)), uuid="u-go"),
+                  tool_use("t1", "Bash", {"command": "sleep 60"}, t + 1, "m1"),
+                  {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(t + 2), "content": "also this"},
+                  tool_result("t1", t + 9),
+                  {"type": "queue-operation", "operation": "remove", "timestamp": iso(t + 9), "content": "also this",
+                   "commandUuid": "c1"},
+                  {"type": "attachment", "uuid": "a-1", "timestamp": iso(t + 9), "attachment": {
+                      "type": "queued_command", "prompt": "also this", "source_uuid": "c1", "commandMode": "prompt",
+                      "origin": {"kind": "human"}}},
+                  *self.prompts(300))
+        key = next(i["key"] for i in pane.conversation(self.transcript, limit=400)[0] if i.get("text") == "also this")
+        self.assertTrue(key.startswith("queued-"), key)
+        with mock.patch.object(pane, "PANE_TAIL_BYTES", 15000):   # (more than the limit's items, the enqueue line not in it)
+            self.assertNotIn(key, [i["key"] for i in self.cli("--conversation", SID)["items"]])
+            got = self.reach(key)
+        self.assertEqual((got["reached"], got["limit"]), ("here", 480))
+        self.assertIn(key, [i["key"] for i in got["items"]])
+
+    def test_if_changed_isnt_looked_at(self):
+        self.chat(*self.prompts(600))
+        first = self.cli("--conversation", SID)
+        got = self.cli("--conversation", SID, "--if-changed", first["stamp"], "--reach", "u300")
+        self.assertEqual((got["ok"], got.get("unchanged"), got["reached"], got["limit"]), (True, None, "here", 480))
 
 
 class ContextAndTurnTests(PaneFixture):

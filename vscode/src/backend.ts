@@ -411,6 +411,12 @@ export class Backend {
     return { ok: !!r?.ok, message: String(r?.message ?? "the helper gave no answer") };
   }
 
+  // Talpy Chat's watcher of an SSH host or a container (remote.py --watch HOST --as NAME): what changed
+  // there, the moment it does (hostWatch.ts)
+  async watchHost(args: string[], timeoutMs: number): Promise<Record<string, any>> {
+    return (await this.json(args, timeoutMs)) ?? { ok: false, message: "the helper gave no answer" };
+  }
+
   // That picture copied to an SSH host (remote.py --put-image): the copy's path there
   async putImage(host: string, path: string): Promise<{ path?: string; message: string }> {
     const r = await this.json(["remote.py", "--put-image", host, path], 120000);

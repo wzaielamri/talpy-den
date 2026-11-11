@@ -6,6 +6,7 @@ chat's row in the popup or the view (AgentTree.qml, AgentTree.tsx: what each
 does now, the running ones first, click one for its task, steps and report).
 The header's Agents tag unfolds only the subagents. Hidden without either;
 what's unfolded is made only then, so the window opens as quickly."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import re
 import unittest
 from pathlib import Path

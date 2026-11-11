@@ -1,5 +1,6 @@
 """Recaps, permission modes, usage limits that stopped chats, plans, finding
 chats and starting tasks (talpy_den.py, jump.py, sharing.py, remote.py)."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import base64
 import contextlib
 import importlib.util
@@ -1490,9 +1491,10 @@ class MovedChatTests(TaskFixture):
         self.assertEqual(answer, {"ok": True, "message": ""})
         self.assertEqual(self.calls(), [])
 
-    def test_its_row_star_keep_and_queued_go_on_follow_it(self):
+    def test_its_row_star_bookmarks_keep_and_queued_go_on_follow_it(self):
         cs.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
         cs.change_stars(self.cache_root(), "chats", self.OLD)
+        cs.change_bookmark(self.cache_root(), self.OLD, "", "u1", True, "you", 1000, "fix it")  # (a key the copy keeps)
         at = int(time.time() * 1000) + 3600_000
         self.assertTrue(self.queue("--queue-continue", self.OLD, "--profile", ".claude-work", "--at", str(at),
                                    "--name", "talpy-den-64")["ok"])
@@ -1505,6 +1507,9 @@ class MovedChatTests(TaskFixture):
         self.assertTrue(row["starred"])
         self.assertNotIn(self.OLD, [r["sessionId"] for g in status["groups"] for r in g["recent"]])
         self.assertEqual(cs.starred_of(cs.load_stars(self.cache_root()))["chats"], {self.NEW})
+        # its bookmarks, in the same check: a window that follows it to the new id finds them there
+        self.assertEqual([m["key"] for m in cs.load_bookmarks(self.cache_root(), self.NEW)[0]], ["u1"])
+        self.assertEqual(cs.load_bookmarks(self.cache_root(), self.OLD), ([], 0))
         # the keep engine moves keep.json and the queue over, named as it's called now
         cs.look_after_kept(self.home, self.cache_root(), [], status["groups"], int(self.now * 1000), 0, status["moved"])
         (kept,) = cs.kept_chats(self.cache_root())

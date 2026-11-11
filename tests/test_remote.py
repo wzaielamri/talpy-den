@@ -1,5 +1,6 @@
 """SSH hosts: the host list, and status/open/run through a stand-in ssh that
 runs the command locally in a fake remote home."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import contextlib
 import importlib.util
 import io
@@ -194,6 +195,15 @@ class HostListTests(unittest.TestCase):
                     self.assertRaises(SystemExit):
                 exec(compile(script, "<stdin>", "exec"), {"__name__": "__main__"})
             self.assertEqual(remote.answer_after_mark(out.getvalue())["error"], "python3 there is 3.6; Talpy Den needs 3.7 or newer")
+
+    def test_the_modules_sent_along_are_ascii_lines(self):
+        # (2026-11-10) Python 3.7 reads a program on stdin a few KB at a time and refused one whose piece ended
+        # inside a character of two bytes ("Non-UTF-8 code starting with '\\xc2'"): each module is one ASCII line
+        script = remote.host_script("pane.py", ("replies.py", "made.py"))
+        lines = [line for line in script.splitlines() if line.startswith("exec(compile(")]
+        self.assertEqual(len(lines), 3)
+        for line in lines:
+            self.assertTrue(line.isascii(), line[:80])
 
     def test_host_names_checked(self):
         for bad in ("-oProxyCommand=evil", "a b", "", "x;rm", "$(id)"):
@@ -416,7 +426,10 @@ class ActionTests(FakeSSH):
         (prof / "plans/calm-red-owl.md").write_text("# Calm plan\n")
         local = cs.cache_dir(Path.home())
         cs.change_stars(local, "chats", "chat9", host="lab")  # (an SSH host's stars are kept here)
+        cs.change_bookmark(local, "chat9", "lab", "msg_1", True, "claude", 1000, "Old work done")  # (its bookmarks too)
+        cs.change_bookmark(local, "chat9", "", "msg_1", True, "claude", 1000, "this computer's chat9")
         asked = remote.delete("lab", "chat", "chat9", describe=True)
+        self.assertEqual(len(cs.load_bookmarks(local, "chat9", "lab")[0]), 1)  # (asked: nothing goes yet)
         self.assertEqual((asked["ok"], asked["accounts"], asked["question"]),
                          (True, ["Remote Me"], "Delete “Old work” on Remote Me? It goes to the Trash with its subagents and "
                                           "checkpoints; the Recap keeps its numbers."))
@@ -425,6 +438,8 @@ class ActionTests(FakeSSH):
         self.assertEqual(sorted(f.name for f in trash.iterdir()), ["chat9", "chat9.jsonl"])
         self.assertFalse((prof / "projects/-p/chat9.jsonl").exists())
         self.assertEqual(cs.load_stars(local)["chats"], [])
+        self.assertEqual(cs.load_bookmarks(local, "chat9", "lab"), ([], 0))
+        self.assertEqual(len(cs.load_bookmarks(local, "chat9")[0]), 1)  # (this computer's chat of that id keeps its own)
         r = subprocess.run([sys.executable, "-I", str(CODE / "remote.py"), "--delete-plan", "lab", "calm-red-owl",
                             ".claude", "--describe"], capture_output=True, text=True, env=os.environ)
         self.assertEqual(json.loads(r.stdout)["question"], "Delete the plan “Calm plan” on Remote Me? It goes to the Trash.")
@@ -1051,6 +1066,204 @@ class KeepGoingThereTests(TwoAccountHost):
         self.assertEqual([k["chat"] for k in cs.load_keep(cache)["chats"]], [new])
         cs.look_after_kept(Path.home(), cache, [], [], now)
         self.assertEqual([(t["host"], t["chat"]) for t in cs.load_queue(cache)], [("lab", new)])
+
+
+    def test_a_hosts_chat_moved_to_the_background_takes_its_bookmarks_along(self):
+        # (kept here, as its star: the host's answer that says it moved moves them)
+        new = "9a8b7c6d-0000-4000-8000-000000000003"
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 120))
+        line = lambda sid: json.dumps({"type": "user", "uuid": "u1", "timestamp": stamp, "cwd": str(self.folder),
+                                       "sessionId": sid, "session_id": self.CHAT,
+                                       "message": {"role": "user", "content": "fix it"}}, separators=(",", ":")) + "\n"
+        self.chat.write_text(line(self.CHAT))
+        self.chat.with_name(f"{new}.jsonl").write_text(line(new))  # (Claude's copy of it, under its new id)
+        cache = cs.cache_dir(Path.home())
+        cs.change_bookmark(cache, self.CHAT, "lab", "u1", True, "you", 1000, "fix it", now_ms=5000)
+        cs.change_bookmark(cache, new, "lab", "msg_2", True, "claude", 2000, "Fixed.", now_ms=6000)  # (one under its new id)
+        cs.change_bookmark(cache, self.CHAT, "", "mine", True, "claude", 1000, "this computer's chat of that id")
+        answer = remote.status("lab", tokens=False)
+        self.assertEqual(answer["result"]["moved"], {self.CHAT: new})
+        marks, v = cs.load_bookmarks(cache, new, "lab")
+        self.assertEqual(([m["key"] for m in marks], v > 6000), (["u1", "msg_2"], True))
+        self.assertEqual(cs.load_bookmarks(cache, self.CHAT, "lab"), ([], 0))
+        self.assertEqual([m["key"] for m in cs.load_bookmarks(cache, self.CHAT)[0]], ["mine"])
+        self.assertFalse((self.fake_home / ".cache/talpy-den/bookmarks").exists())  # (nothing of them goes there)
+        # the next answer says it moved again: nothing left to move, the list stays as it is
+        self.assertEqual(remote.status("lab", tokens=False)["result"]["moved"], {self.CHAT: new})
+        self.assertEqual(cs.load_bookmarks(cache, new, "lab"), (marks, v))
+
+
+# The host's claude, for Talpy Chat there: claude --bg writes its job's record,
+# and its background worker asks for a permission through the hook --settings
+# names (as Claude runs a hook: sh -c, the request on its stdin), while its
+# session file says it waits; what the hook answers is kept in ~/hook-said
+HOST_CLAUDE = r'''#!{python}
+import json, os, subprocess, sys, time
+args = sys.argv[1:]
+home = os.environ["HOME"]
+with open(os.path.join(home, "claude-args"), "a") as f:
+    f.write(json.dumps(args) + "\n")
+if "--bg" not in args:
+    sys.exit(0)
+config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+job, chat = "1a2b3c4d", "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+os.makedirs(os.path.join(config, "jobs", job), exist_ok=True)
+with open(os.path.join(config, "jobs", job, "state.json"), "w") as f:
+    json.dump({{"sessionId": chat, "state": "working", "respawnFlags": args[1:-1]}}, f)
+settings = json.loads(args[args.index("--settings") + 1]) if "--settings" in args else None
+if settings and os.fork() == 0:
+    os.setsid()
+    null = os.open(os.devnull, os.O_RDWR)
+    for fd in (0, 1, 2):
+        os.dup2(null, fd)
+    command = settings["hooks"]["PermissionRequest"][0]["hooks"][0]["command"]
+    session = os.path.join(config, "sessions", "%d.json" % os.getpid())
+    os.makedirs(os.path.dirname(session), exist_ok=True)
+    with open(session, "w") as f:
+        json.dump({{"pid": os.getpid(), "sessionId": chat, "cwd": os.getcwd(), "kind": "bg", "jobId": job,
+                   "status": "waiting", "waitingFor": "permission prompt", "statusUpdatedAt": int(time.time() * 1000),
+                   "startedAt": int(time.time() * 1000)}}, f)
+    asked = json.dumps({{"session_id": chat, "tool_name": "Bash", "tool_input": {{"command": "make"}},
+                        "cwd": os.getcwd(), "permission_suggestions": []}})
+    r = subprocess.run(["sh", "-c", command], input=asked.encode(), stdout=subprocess.PIPE, timeout=60)
+    with open(os.path.join(home, "hook-said"), "wb") as f:
+        f.write(r.stdout)
+    os.unlink(session)
+    os._exit(0)
+print("backgrounded · " + job)
+'''
+
+
+class TalpyChatThereTests(TwoAccountHost):
+    """(2026-11-06) Talpy Chat on an SSH host, end to end through the stand-in
+    ssh: a new chat started there gets the permission hook (its copy from
+    the code sent on stdin), what it asks lands in the host's state folder,
+    its row there carries it, and the answer from here goes back to it."""
+
+    def setUp(self):
+        super().setUp()
+        self.folder = self.fake_home / "srv-app"
+        self.folder.mkdir()
+        (self.fake_home / ".claude/.claude.json").write_text(json.dumps({
+            "oauthAccount": {"accountUuid": "r", "organizationType": "claude_max", "displayName": "Remote Me"},
+            "projects": {str(self.folder): {"hasTrustDialogAccepted": True}}}))
+        self.claude.write_text(HOST_CLAUDE.format(python=sys.executable))
+        here = Path(self.tmp.name) / "local-home"
+        here.mkdir()
+        homed = mock.patch.object(cs.Path, "home", return_value=here)
+        homed.start()
+        self.addCleanup(homed.stop)
+        self.saved.setdefault("XDG_DATA_HOME", os.environ.get("XDG_DATA_HOME"))   # (tearDown puts it back)
+        os.environ["XDG_DATA_HOME"] = str(here / ".local/share")
+        import pane
+        self.pane = pane
+
+    def cli(self, *args):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.pane.main(list(args))
+        return json.loads(out.getvalue())
+
+    def test_a_chat_started_there_asks_here_and_takes_the_answer(self):
+        answer = self.cli("--start", ".claude", "--cwd", str(self.folder), "--text", "Build it", "--model", "haiku",
+                          "--host", "lab")
+        self.assertEqual((answer["ok"], answer["chat"], answer["hooked"]),
+                         (True, "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", True), answer)
+        # (your text and the hook's code on stdin, not on the command line there)
+        command = self.calls()[-1][1]
+        self.assertEqual(command, "python3 -I - --remote --start .claude --cwd " + str(self.folder) + " --model haiku")
+        copy = self.fake_home / ".local/share/talpy-den/permission-hook.py"
+        self.assertEqual(copy.read_bytes(), (CODE / "permission_hook.py").read_bytes())
+        self.assertEqual(oct(copy.stat().st_mode & 0o777), "0o600")
+        argv = json.loads((self.fake_home / "claude-args").read_text().splitlines()[-1])
+        self.assertEqual(argv[:2], ["--bg", "--settings"])
+        self.assertIn(str(copy), argv[2])
+        self.assertEqual(argv[-1], "Build it")
+        # what it asks: in the host's state folder, and on its row there
+        asks = self.fake_home / ".local/state/talpy-den/permissions"
+        deadline = time.time() + 10
+        while time.time() < deadline and not (asks.is_dir() and os.listdir(asks)):
+            time.sleep(0.05)
+        (name,) = os.listdir(asks)
+        rid = name[:-len(".json")]
+        rows = [s for g in remote.status("lab", tokens=False)["result"]["groups"] for s in g["sessions"]]
+        (row,) = [s for s in rows if s["sessionId"] == "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"]
+        self.assertEqual((row["permission"]["answer"], row["permission"]["request"]), ("hook", rid))
+        # answered from here: the hook there allows it
+        self.assertEqual(self.cli("--answer", rid, "--decision", "allow", "--host", "lab"),
+                         {"ok": True, "message": "Allowed"})
+        said = self.fake_home / "hook-said"
+        deadline = time.time() + 10
+        while time.time() < deadline and not said.exists():
+            time.sleep(0.05)
+        decision = json.loads(said.read_text())["hookSpecificOutput"]["decision"]
+        self.assertEqual(decision, {"behavior": "allow"})
+        # a second answer (another window's) finds it gone
+        again = self.cli("--answer", rid, "--decision", "deny", "--host", "lab")
+        self.assertEqual((again["ok"], again["changed"]), (False, True))
+
+    def test_a_folder_claude_doesnt_trust_there(self):
+        other = self.fake_home / "elsewhere"
+        other.mkdir()
+        answer = self.cli("--start", ".claude", "--cwd", str(other), "--text", "Build it", "--host", "lab")
+        self.assertEqual((answer["ok"], answer["untrusted"]), (False, True))
+        self.assertFalse((self.fake_home / "claude-args").exists())
+
+
+class HostWatchTests(FakeSSH):
+    """(2026-11-06) Talpy Chat's watcher of a host (remote.py --watch): live.py
+    there, through the stand-in ssh, answering the moment a session file or
+    a permission request there changes."""
+
+    def test_it_answers_when_something_changes_there(self):
+        first = remote.watch("lab", "a1b2c3d4e5f6", 5)
+        self.assertEqual((first["ok"], first["host"], first["sessions"], first["requests"]), (True, "lab", True, True), first)
+        # (the name it goes by there: a hash of the one asked for and this computer's name)
+        import hashlib
+        import socket
+        there = hashlib.sha1(f"{socket.gethostname()} a1b2c3d4e5f6".encode()).hexdigest()[:12]
+        self.assertEqual(self.calls()[-1], ["lab", f"python3 -I - --wait --requests --remote --as {there} --timeout 5"])
+        # (the hook's requests folder there, made so it can be watched)
+        asks = self.fake_home / ".local/state/talpy-den/permissions"
+        self.assertTrue(asks.is_dir())
+        import threading
+        threading.Timer(0.6, lambda: (asks / "1-0a1b2c3d.json").write_text(json.dumps({"sessionId": "chat-1"}))).start()
+        started = time.time()
+        answer = remote.watch("lab", "a1b2c3d4e5f6", 5)
+        self.assertEqual((answer["requests"], answer["changed"], answer["timeout"]), (True, ["chat-1"], False), answer)
+        self.assertLess(time.time() - started, 3)
+        answer = remote.watch("lab", "a1b2c3d4e5f6", 1)
+        self.assertEqual((answer["ok"], answer["timeout"]), (True, True))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            remote.main(["--watch", "lab", "--as", "a1b2c3d4e5f6", "--timeout", "1"])
+        self.assertTrue(json.loads(out.getvalue())["timeout"])
+
+    def test_a_host_it_cant_reach(self):
+        self.mode("unreachable")
+        answer = remote.watch("lab", "a1b2c3d4e5f6")
+        self.assertEqual((answer["ok"], answer["reached"]), (False, False))
+        self.assertIn("Can't reach lab", answer["error"])
+        with self.assertRaises(ValueError):   # (the name shows in the host's process list: a hash, nothing else)
+            remote.watch("lab", "my laptop; rm -rf ~")
+        # (sshd's MaxSessions: the checks, the watchers and Talpy Chat's reads share one connection)
+        self.assertEqual(remote.explain("lab", 255, "channel 3: open failed: administratively prohibited: open failed\n"),
+                         "lab refused another ssh session (its sshd's MaxSessions): Talpy Den tries again in a moment.")
+
+    def test_in_a_container(self):
+        # (the engine's exec, over ssh for a host's container; argv only)
+        lines = []
+        def capped(line, stdin=None, timeout=None, binary=False):
+            lines.append(line)
+            return subprocess.CompletedProcess(line, 0, "\n" + cs.REMOTE_MARK + ' {"ok": true, "timeout": true}\n', "")
+        with mock.patch.object(remote, "run_capped", side_effect=capped), \
+                mock.patch.object(remote, "exec_user", return_value=("vscode", True)):
+            self.assertTrue(remote.watch("docker:web", "a1b2c3d4e5f6", 50)["ok"])
+            self.assertTrue(remote.watch("podman:web@lab", "a1b2c3d4e5f6", 50)["ok"])
+        self.assertEqual(lines[0][:8], ["docker", "exec", "-i", "-u", "vscode", "web", "sh", "-c"])
+        self.assertRegex(lines[0][8], r"^python3 -I - --wait --requests --remote --as [0-9a-f]{12} --timeout 50$")
+        self.assertEqual(lines[1][0], "ssh")
+        self.assertIn("podman exec -i -u vscode web sh -c", lines[1][-1])
 
 
 class UnreachedTests(TwoAccountHost):

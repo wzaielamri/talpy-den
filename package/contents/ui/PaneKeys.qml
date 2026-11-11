@@ -6,7 +6,8 @@ import "keys.mjs" as PaneKeys
 // with it now), then takeKey does it. A file of its own, read and made once the window shows (a
 // Loader, asynchronous): every window opens as quickly. Esc does the nearest thing first, one a
 // press (keys.mjs escTarget). Ctrl+F the find bar (FindBar.qml; F3 / Shift+F3 its next / previous
-// match), Ctrl+O every fold.
+// match), Ctrl+O every fold, Ctrl+D a bookmark, Ctrl+Shift+B the bookmarks, Alt+↑ / Alt+↓ the one
+// before / after what you read (Bookmarks.qml, made at the first of them).
 QtObject {
     function keyAction(event) {
         const k = event.key, m = event.modifiers & ~Qt.KeypadModifier
@@ -34,8 +35,14 @@ QtObject {
             return !pane.conversationTab ? "" : !pane.findOn ? "find" : plain ? "findNext" : "findBack"
         if (alt && (k === Qt.Key_Y || k === Qt.Key_A || k === Qt.Key_N))
             return pane.permission && askColumn.canAnswer ? (k === Qt.Key_Y ? "allow" : k === Qt.Key_A ? "always" : "deny") : ""
+        if (ctrlShift && k === Qt.Key_B)   // (from Review too: to Chat, listed)
+            return pane.fresh ? "" : "bookmarks"
         if (!pane.conversationTab)
             return ""
+        if (ctrl && k === Qt.Key_D)
+            return list.hoverRow !== null || items.count > 0 ? "bookmark" : ""
+        if (alt && (k === Qt.Key_Up || k === Qt.Key_Down))
+            return pane.bookmarks.length > 0 ? (k === Qt.Key_Up ? "bookmarkUp" : "bookmarkDown") : ""
         const enter = k === Qt.Key_Return || k === Qt.Key_Enter
         if (enter && (ctrl || alt || ctrlShift))
             return ctrl ? "sendNow" : alt ? "sendLater" : "sendBackground"
@@ -62,11 +69,12 @@ QtObject {
         return true
     }
     // Esc does the nearest thing first, one a press (keys.mjs escTarget): the big picture, the / and
-    // @ list, the keys, the grey completion; only then, in an empty box while Stop shows, it stops
-    // Claude (a chip's menu closes itself first)
+    // @ list, the find bar, the bookmarks, the keys, the grey completion; only then, in an empty box
+    // while Stop shows, it stops Claude (a chip's menu closes itself first)
     function escapeTarget() {
         return PaneKeys.escTarget({ big: pane.bigPicture !== "", list: pane.suggestions.length > 0 && replyBox.activeFocus,
-                                    find: pane.findOn && pane.conversationTab, help: pane.helpOn,
+                                    find: pane.findOn && pane.conversationTab, bookmarks: pane.bookmarksOn && pane.conversationTab,
+                                    help: pane.helpOn,
                                     ghost: !!ghostLine.item && ghostLine.item.rest !== "",
                                     stop: replyBox.activeFocus && replyBox.text === "" && pane.canStop && !pane.stopping })
     }
@@ -84,6 +92,10 @@ QtObject {
                 pane.suggestions = []
             } else if (what === "find")
                 pane.closeFind()
+            else if (what === "bookmarks") {
+                pane.bookmarksOn = false
+                replyBox.forceActiveFocus()
+            }
             else if (what === "help")
                 pane.helpOn = false
             else if (what === "ghost")
@@ -153,6 +165,18 @@ QtObject {
             return findBar.item ? findBar.item.step(id === "findBack") : undefined
         case "fold":
             return pane.foldAll()
+        case "bookmark":
+            return pane.bookmarksNow().toggleHere()
+        case "bookmarks":
+            if (!pane.conversationTab) {
+                pane.tab = "chat"
+                pane.bookmarksOn = true
+            } else
+                pane.bookmarksOn = !pane.bookmarksOn
+            return
+        case "bookmarkUp":
+        case "bookmarkDown":
+            return pane.bookmarksNow().step(id === "bookmarkUp")
         }
         const chip = /^(chip|edit)([1-9])$/.exec(id)
         if (chip && chipsRow.item && chipsRow.item.shown[Number(chip[2]) - 1])

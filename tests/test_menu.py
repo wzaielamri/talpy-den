@@ -4,6 +4,7 @@ its lists ScrollViews, which take every mouse button, so Plasma's desktop
 never got the right press. The catcher lies over it all and takes the right
 button only: a left click, the wheel and a right click in a text field go to
 what's under it, as before."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import os
 import subprocess
 import tempfile

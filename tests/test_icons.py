@@ -1,5 +1,6 @@
 """One icon per meaning in every front end (package/contents/ui/icons.mjs),
 plain in the theme's text color unless it says something is wrong."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
 import re
 import shutil

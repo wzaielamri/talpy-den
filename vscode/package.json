@@ -385,6 +385,26 @@
         "category": "Talpy Chat"
       },
       {
+        "command": "talpyDen.chat.toggleBookmark",
+        "title": "Bookmark the Message",
+        "category": "Talpy Chat"
+      },
+      {
+        "command": "talpyDen.chat.bookmarks",
+        "title": "Show or Hide the Chat's Bookmarks",
+        "category": "Talpy Chat"
+      },
+      {
+        "command": "talpyDen.chat.previousBookmark",
+        "title": "Go to the Previous Bookmark",
+        "category": "Talpy Chat"
+      },
+      {
+        "command": "talpyDen.chat.nextBookmark",
+        "title": "Go to the Next Bookmark",
+        "category": "Talpy Chat"
+      },
+      {
         "command": "talpyDen.chat.openWindow",
         "title": "Open Its Window",
         "category": "Talpy Chat"
@@ -535,6 +555,30 @@
         "key": "ctrl+o",
         "mac": "cmd+o",
         "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
+      },
+      {
+        "command": "talpyDen.chat.toggleBookmark",
+        "key": "ctrl+d",
+        "mac": "cmd+d",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+      },
+      {
+        "command": "talpyDen.chat.bookmarks",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+      },
+      {
+        "command": "talpyDen.chat.previousBookmark",
+        "key": "alt+up",
+        "mac": "alt+up",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+      },
+      {
+        "command": "talpyDen.chat.nextBookmark",
+        "key": "alt+down",
+        "mac": "alt+down",
+        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
       },
       {
         "command": "talpyDen.chat.openWindow",
@@ -741,6 +785,22 @@
         {
           "command": "talpyDen.chat.foldAll",
           "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
+        },
+        {
+          "command": "talpyDen.chat.toggleBookmark",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+        },
+        {
+          "command": "talpyDen.chat.bookmarks",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+        },
+        {
+          "command": "talpyDen.chat.previousBookmark",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+        },
+        {
+          "command": "talpyDen.chat.nextBookmark",
+          "when": "activeWebviewPanelId == 'talpyDen.chat'"
         },
         {
           "command": "talpyDen.chat.openWindow",
@@ -978,7 +1038,7 @@
               "enumItemLabels": ["Claude Code's own cleanup", "Talpy Den, keeping what you starred"],
               "markdownEnumDescriptions": [
                 "When it starts, Claude Code deletes every chat, and every plan of an account's plans folder, older than its `cleanupPeriodDays` (30 days unless set): starred or not, for good.",
-                "Once a day Talpy Den deletes the chats you haven't used for **Old Chats Days**, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code's own cleanup is off on every account, here and on the SSH hosts and containers shown (`cleanupPeriodDays` 3650); choosing it again puts it back."
+                "Once a day Talpy Den deletes the chats you haven't used for **Old Chats Days**, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred or bookmarked stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code's own cleanup is off on every account, here and on the SSH hosts and containers shown (`cleanupPeriodDays` 3650); choosing it again puts it back."
               ],
               "default": "claude",
               "scope": "application",

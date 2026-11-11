@@ -22,6 +22,7 @@ import {
   petKeyOf,
   queuedChat,
   opensInTalpyChat,
+  talpyPlace,
   reopensInClaudeCode,
   resetAtText,
   shareAccounts,
@@ -112,7 +113,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
   const move = canMoveToClaudeCode(s, codeHere);
   const reopenInCode = s.kind === "chat" && reopensInClaudeCode(view.settings.reopenIn, cliInstalled(machineStatus(view, host)), codeHere);
   // (Talpy Chat picked in Open in: a chat that isn't running, or a background one no terminal shows, opens there)
-  const inTalpy = opensInTalpyChat(s, view.settings.reopenIn, machineStatus(view, host), host, codeHere);
+  const inTalpy = opensInTalpyChat(s, view.settings.reopenIn, talpyPlace(view, host), host, codeHere);
   const mode = modeText(s.peek?.mode);
   const ultracode = s.peek?.ultracode === true;
   const ctxFill = s.contextLeft != null ? 100 - s.contextLeft : s.context ?? null;   // (its context bar: up to where Claude compacts it)

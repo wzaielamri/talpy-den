@@ -4,7 +4,7 @@ its permission prompt and its review.
 
     python3 -I pane.py ACTION [--host HOST] [--config-dir DIR]... [--remote] [--pretty]
 
-  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP [--wait S]] [--suggest]
+  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP [--wait S]] [--suggest] [--reach KEY]
         the chat as the pane shows it: your prompts, Claude's replies
         (markdown), each tool call as one line with how it went, and notes
         (a usage limit, an interruption); the newest N items. STAMP: the
@@ -15,9 +15,20 @@ its permission prompt and its review.
         once, not at the next look). Not on an SSH host (it's left out there).
         Also how full its context is, "context" (turns.context_left), and
         Claude's turn so far while it's going on, "turn": {"startedAt",
-        "steps"} (turns.TurnSoFar).
+        "steps"} (turns.TurnSoFar); its bookmarks, "bookmarks" and
+        "bookmarksV", once it has had one (kept here for a host's chat too).
         --suggest (Suggest replies): how its last turn ended, "ended" and
         "over", and the question it ends with as chips, "asks" (replies.asks_of)
+        --reach KEY (a bookmark further back than what's shown): enough
+        items to show the message with that key and a few above it, the
+        limit grown as Show earlier grows it ("limit"; STAMP isn't looked
+        at), and "reached": "here", "far" (further back than PANE_ITEMS_MAX
+        items) or "gone" (not in the chat any more)
+  --bookmark CHAT --key KEY [--off] [--kind you|claude] [--at MS] [--text TEXT] [--host HOST]
+        bookmark the message with that key (yours or Claude's reply, written
+        at MS, its first words TEXT), or not any more (--off); kept on this
+        computer, a host's chat's too (talpy_den.change_bookmark). {"ok",
+        "message", "bookmarks": the chat's now, "bookmarksV"}
   --replies CHAT [--profile P]
         your usual replies for the chat (replies.usual_replies): {"ok", "chips": {how
         a turn ended: [replies]}, "ranked": [replies, to complete what you
@@ -58,6 +69,14 @@ its permission prompt and its review.
         idle stopped and woken again with them; one with no job kept for its
         next wake from here. {"ok", "message", "how": "now"|"next"|"terminal",
         "model", "effort"}
+  --made CHAT --path PATH [--step ID] [--profile P] [--as-file]
+        a picture, a plan or a page the chat made, as Talpy Chat shows it
+        unfolded (made.py show: only one its transcript names, capped): a
+        picture's bytes ("data", base64, "mime"), a plan's or a page's first
+        lines ("text", "cut"). --step (a Read's tool call): the picture Claude
+        saw there, from the transcript. --as-file (Plasma's): a picture as a
+        file here ("file", in place of the bytes): this computer's own once
+        it's known to be a plain file, an SSH host's or one Claude saw a copy
   --type-in CHAT --text T [--session ID] [--profile P] [--no-copy]
         a command that needs Claude's own panel (commands.py), put in the
         chat's own prompt for you to press Enter there: typed into its tmux
@@ -89,10 +108,13 @@ its permission prompt and its review.
         repository they are in
   --reviewed CHAT [--off]
         mark the chat reviewed (until it changes files again), or not
-  --relay on|off|status [--keep-copy]
+  --relay on|off|status|forget [--keep-copy]
         the permission hook in each Claude profile's settings.json (status: also
         "hooked", the chats Talpy Chat started that answer their prompts with
-        a hook of their own; off --keep-copy: they keep it)
+        a hook of their own; off --keep-copy: they keep it). forget (with
+        --host: a host taken off the list): the hook's copy Talpy Chat put
+        there and its requests go, unless a chat it started there still runs
+        or the hook is on for every chat there (forget_hook)
   --live on|off|status
         live mode: the live hook (live_hook.py) in each Claude profile's
         settings.json, so the widget shows each step of each chat as it happens
@@ -130,6 +152,7 @@ import stat
 import subprocess
 import sys
 import time
+import zlib
 from pathlib import Path
 
 sys.dont_write_bytecode = True  # no __pycache__ inside the installed widget...
@@ -153,6 +176,7 @@ DETAIL_CHARS = 1200  # of a tool call's input or output, unfolded
 DETAIL_LINES = 24
 PANE_LINE = re.compile(rb'"type":\s*"(?:user|assistant|system|queue-operation|queued_command)"')
 INTERRUPTED = "[Request interrupted"
+THOUGHT = "/thinking"   # (a thinking line's key: its message's id and this; replies.THOUGHT)
 NO_CHAT = "This chat hasn't started yet, or it isn't there any more"   # (no transcript: none yet, or deleted)
 
 
@@ -531,7 +555,7 @@ def commands_of(items, due, end):
     return commands.Commands(items, due, end)
 
 
-def conversation_items(lines, pictures=None, ends=None, so_far=None):
+def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None):
     """The pane's items from transcript lines (oldest first): {"kind": "you",
     "text"} for a prompt of yours (one sent while Claude works shows when you
     send it, not once Claude takes it in), {"kind": "claude", "text"} for Claude's
@@ -545,12 +569,16 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
     question or a plan Claude asked has "asked" (asked_of), and your answer
     to it, or your note to a No, comes after it as yours (your_answer). A
     command you ran (/compact, !ls) is yours with "command" (commands.py:
-    what it printed on it).
+    what it printed on it). A picture, a plan or a page a step made, or a
+    picture a reply names, comes right after it as {"kind": "made"} (made.py).
     Entries of subagents (sidechains) aren't in it. ends: a dict given gets
     how the last turn ended (replies.TurnEnd.result); so_far: one given gets
     Claude's turn so far ("turn": turns.TurnSoFar, also how full its context is)."""
     items, tools = [], {}
     import turns   # (a module of its own, as replies.py: compiled once and kept)
+    import made   # (the same)
+    place = found is None   # (what Claude made: placed under its steps and replies at the end; found given: by the caller)
+    found = made.Collector() if place else found
     ending = turn_end(ends is not None)
     end = turns.TurnSoFar(ending)
     # Messages sent while Claude works: the transcript has each one when it's
@@ -657,6 +685,8 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
                         item["diff"] = capped(full)
                         if full:
                             item["summary"] = change_summary(item["name"], full, item["summary"])
+                    if not c.get("is_error") and item["name"] in made.TOOLS:
+                        found.step(item, inp, c, e.get("toolUseResult") if len(results) == 1 else None, output, e.get("cwd"))
                     said = your_answer(item, e, output, bool(c.get("is_error")),
                                        e.get("toolUseResult") if len(results) == 1 else None)
                     if said is not None:
@@ -690,19 +720,28 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
                 items.append({"kind": "note", "key": uid, "text": cs.short_text(text, 300), "at": at, "error": True})
             continue
         mid = msg.get("id") if isinstance(msg.get("id"), str) else None
-        # (thinking shown as updates: Claude Code shows a thinking block's text
-        # as a reply then, what Claude tells you as it works; thinking it keeps
-        # to itself comes without text)
+        # (thinking shown as updates: a thinking block's text is a line Claude
+        # Code writes while Claude thinks, summing it up; not Claude's reply,
+        # it can tell what Claude means to do as if it were done. An item of
+        # its own, "thinking", shown dimmed in italics as Claude Code's
+        # terminal shows it (after ∴); thinking Claude keeps to itself comes
+        # without text)
         updates = e.get("thinkingDisplay") == "updates"
         for c in blocks:
-            said = c.get("text") if c.get("type") == "text" else c.get("thinking") if c.get("type") == "thinking" and updates else None
+            thought = updates and c.get("type") == "thinking"
+            said = c.get("text") if c.get("type") == "text" else c.get("thinking") if thought else None
             if isinstance(said, str) and said.strip():
+                key = (mid or uid) + THOUGHT if thought else mid or uid
                 last = items[-1] if items else None
-                if last is not None and last["kind"] == "claude" and mid is not None and last["key"] == mid:
+                if last is not None and last["kind"] == "claude" and mid is not None and last["key"] == key:
                     last["text"] = clip(last["text"] + "\n\n" + said.strip(), TEXT_CHARS, 10 ** 6)
                 else:
-                    items.append({"kind": "claude", "key": mid or uid, "text": clip(said.strip(), TEXT_CHARS, 10 ** 6),
-                                  "at": at})
+                    item = {"kind": "claude", "key": key, "text": clip(said.strip(), TEXT_CHARS, 10 ** 6), "at": at}
+                    if thought:
+                        item["thinking"] = True
+                    items.append(item)
+                    if not thought:   # (a thinking line names nothing Claude made)
+                        found.reply(item, e.get("cwd"))
             elif c.get("type") == "tool_use" and isinstance(c.get("id"), str):
                 end.steps += 1
                 inp = c.get("input") if isinstance(c.get("input"), dict) else {}
@@ -731,7 +770,7 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None):
         ends["reply"] = ending.reply
     if so_far is not None:
         so_far["turn"] = end
-    return items
+    return found.place(items) if place else items
 
 
 def within_budget(items):
@@ -764,20 +803,51 @@ def tail_lines(path, size, nbytes):
     return lines, whole, start
 
 
-def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None):
+REACH_ABOVE = 3  # items shown above a message --reach goes to
+
+
+def reach_limit(limit, need):
+    """The limit that shows need items: limit doubled as Show earlier doubles
+    it (so the next Show earlier goes on from there), at most PANE_ITEMS_MAX."""
+    n = max(limit, PANE_ITEMS)
+    while n < need and n < PANE_ITEMS_MAX:
+        n = min(PANE_ITEMS_MAX, n * 2)
+    return n
+
+
+def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None, reach=None):
     """(items, more) of a chat: its newest limit items (conversation_items,
     pasted pictures saved in pictures; ends: how its last turn ended; so_far:
     its turn so far, and where the lines read start, "start"), and whether
-    there are older ones."""
+    there are older ones. reach: the key of a message to show (--reach): read
+    back until it's there, the limit grown to show it (so_far "limit"), and
+    so_far "reached": "here", "far" (more than PANE_ITEMS_MAX items back, or
+    further than PANE_TAIL_MAX bytes) or "gone"."""
     size = path.stat().st_size
     nbytes = PANE_TAIL_BYTES
+    import made
     while True:
         lines, whole, start = tail_lines(path, size, nbytes)
-        items = conversation_items(lines, pictures, ends, so_far)
+        found = made.Collector()
+        items = conversation_items(lines, pictures, ends, so_far, found)
         if so_far is not None:
             so_far["start"] = start
+        if reach is not None:
+            at = next((n for n, item in enumerate(items) if item.get("key") == reach), -1)
+            if at < 0 and not whole and nbytes < PANE_TAIL_MAX:
+                nbytes *= 4   # (as Show earlier reads further back)
+                continue
+            need = len(items) - at + REACH_ABOVE
+            reached = "here" if at >= 0 and need <= PANE_ITEMS_MAX else "far" if at >= 0 or not whole else "gone"
+            if reached == "here":
+                limit = reach_limit(limit, need)
+            if so_far is not None:
+                so_far.update(reached=reached, **({"limit": limit} if reached == "here" else {}))
+            reach = None
         if whole or len(items) > limit or nbytes >= PANE_TAIL_MAX:
-            return within_budget(file_pictures(items[-limit:])), len(items) > limit or not whole
+            # (what was made, placed in the items listed only: their replies alone are looked at)
+            shown = found.place(items, max(0, len(items) - limit))
+            return within_budget(file_pictures(shown)), len(items) > limit or not whole
         nbytes *= 4
 
 
@@ -793,17 +863,18 @@ WAIT_GATHER_S = 0.04  # after a change: what Claude writes with it (a prompt and
 WAIT_MASK = 0x2 | 0x4 | 0x8 | 0x400 | 0x800
 
 
-def wait_for_change(path, stamp, seconds, clock=time.time):
+def wait_for_change(path, stamp, seconds, clock=time.time, look=stamp_of):
     """Wait up to seconds for the transcript at path to be other than stamp
-    (stamp_of): whether it is. inotify on the file (elsewhere: a look every
-    half second); it ends as soon as whoever started it is gone."""
+    (look: stamp_of, or what else the answer depends on with it): whether it
+    is. inotify on the file (elsewhere: a look every half second), and a look
+    every second; it ends as soon as whoever started it is gone."""
     import live  # (its Watch: the same inotify the widget's watcher uses)
     watch = live.Watch([str(path)], WAIT_MASK)  # (watching first: nothing between the look and the wait is missed)
     parent, end = os.getppid(), clock() + max(0.0, seconds)
     try:
         while True:
             try:
-                if stamp_of(path) != stamp:
+                if look(path) != stamp:
                     return True
             except OSError:
                 return True  # (gone: the read says so)
@@ -829,30 +900,41 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
 
 
 def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None,
-                      suggest=False):
-    """--conversation. "context": how full its context is (turns.context_left),
+                      suggest=False, reach=None):
+    """--conversation. "options": the model and effort it uses now
+    (chatpick.options_now). "context": how full its context is (turns.context_left),
     "turn": Claude's turn so far, while it's going on (turns.TurnSoFar.now:
     the start of a long one kept in the cache folder's turns/). suggest (Suggest
     replies on): how its last turn ended, "ended" and "over"
-    (replies.TurnEnd.result), and the question it ends with as chips, "asks"
-    (replies.asks_of)."""
+    (replies.TurnEnd.result), the question it ends with as chips, "asks"
+    (replies.asks_of), and Claude's own predicted reply to it, "predicted"
+    (predicted_reply: its background job writes it a few seconds after the
+    turn's end, so the stamp says whether there is one). reach: the key of a
+    message to show, if_changed not looked at (conversation): the answer has
+    "limit" (the stamp's), "reach" and "reached"."""
     if not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
     if path is None:
         return {"ok": False, "missing": True, "message": NO_CHAT}
-    stamp = stamp_of(path)
-    if if_changed and if_changed == f"{stamp}/{limit}":
-        if not (wait > 0 and wait_for_change(path, stamp, min(wait, WAIT_MAX_S))):
+    import chatpick
+
+    def look(path):
+        said = predicted_reply(chatpick.job_record(profile, chat_id)) if suggest else None
+        return stamp_of(path) + (f"~{zlib.crc32(said.encode('utf-8')):08x}" if said else "")
+    stamp = look(path)
+    if if_changed and not reach and if_changed == f"{stamp}/{limit}":
+        if not (wait > 0 and wait_for_change(path, stamp, min(wait, WAIT_MAX_S), look=look)):
             return {"ok": True, "unchanged": True}
         if not path.exists():  # (moved: where it is now)
             profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
         try:
-            stamp = stamp_of(path)  # (before it's read: what's written meanwhile is a change the next time)
+            stamp = look(path)  # (before it's read: what's written meanwhile is a change the next time)
         except (OSError, AttributeError):
             return {"ok": False, "missing": True, "message": NO_CHAT}
     ends, so_far = {} if suggest else None, {}
-    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends, so_far)
+    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends, so_far, reach or None)
+    limit = so_far.get("limit", limit)   # (grown to show what --reach goes to)
     name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
     peek = cs.chat_peek(path) or {}
     import turns
@@ -863,11 +945,29 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
               "context": turns.context_left(turn.usage, turn.model, lambda: turns.status_window(home, profile, chat_id, turn.model),
                                             cs.compact_window(profile.path, turn.model)),
               "turn": turn.now(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")}
+    record = chatpick.job_record(profile, chat_id)   # (what /model and /effort's lists mark as what it uses now)
+    result["options"] = chatpick.options_now(home, profile, chat_id, bool(peek.get("ultracode")), record)
+    if reach:   # (the front end takes the limit before the stamp: an answer read for another limit isn't taken)
+        result.update(limit=limit, reach=reach, reached=so_far.get("reached"))
     if suggest:
         import replies
         ended = ends.get("ended")
-        result.update(ended=ended, over=bool(ends.get("over")), asks=replies.asks_of(ends.get("reply")) if ended == "asked" else None)
+        result.update(ended=ended, over=bool(ends.get("over")), asks=replies.asks_of(ends.get("reply")) if ended == "asked" else None,
+                      predicted=predicted_reply(record) if ended == "asked" else None)
     return result
+
+
+PREDICTED_CHARS = 300
+
+
+def predicted_reply(record):
+    """Claude's predicted reply to what its background chat asks you (its
+    job's suggestedReply: PREDICT_ENV), while it waits for it (tempo
+    "blocked", not a permission prompt), or None."""
+    said = record.get("suggestedReply") if isinstance(record, dict) else None
+    if not isinstance(said, str) or not said.strip() or record.get("tempo") != "blocked" or record.get("block"):
+        return None
+    return " ".join(said.split())[:PREDICTED_CHARS]
 
 
 # ---------------------------------------------------------------- permission requests the hook relays
@@ -931,13 +1031,37 @@ def plan_decision(decision, note, inp):
     return out
 
 
-NOT_ASKING = "It isn't asking any more (answered in the chat?)"
+NOT_ASKING = "It isn't asking any more: answered in the chat or another window"
+ANSWERED_ELSEWHERE = "It was just answered from another window"
+
+
+def answer_file(path, answer):
+    """Write a request's answer, the first one only (two windows, Plasma's
+    and VS Code's, answering one prompt a moment apart: the second gets
+    False, not "Allowed" when it was denied). Linked into place in one go
+    (cs.write_atomic new: the hook never reads half an answer, which it
+    would remove); where the folder takes no hard links (some FUSE or
+    shared-folder homes), replaced as before."""
+    data = json.dumps(answer, separators=(",", ":")).encode("utf-8")
+    try:
+        cs.write_atomic(path, data, mode=0o600, new=True)
+    except FileExistsError:
+        return False
+    except OSError as exc:
+        import errno
+        if exc.errno not in (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK):
+            raise
+        if path.exists():
+            return False
+        cs.write_atomic(path, data, mode=0o600)
+    return True
 
 
 def answer_request(cache_root, request_id, decision, note="", answers=None):
     """Answer a relayed request: (ok, message). A question takes "answer"
     (answers: {question: [labels or text]}) or "deny". One that's gone:
-    (False, NOT_ASKING); one its chat asked again after: (False, ASKS_ELSE)."""
+    (False, NOT_ASKING); one its chat asked again after: (False, ASKS_ELSE);
+    one another window answered first: (False, ANSWERED_ELSEWHERE)."""
     if decision not in DECISIONS + PLAN_DECISIONS:
         return False, f"Not an answer: {decision}"
     if not re.fullmatch(r"[0-9]+-[0-9a-f]{8}", request_id or ""):
@@ -968,12 +1092,25 @@ def answer_request(cache_root, request_id, decision, note="", answers=None):
         return False, "It asks for a permission, not a question"
     if not plan:
         answer = decision_of(decision, note, req.get("suggestions") or [], inp, given)
-    cs.write_json_atomic(folder / (request_id + ".answer.json"), answer)
+    answer_path = folder / (request_id + ".answer.json")
+    if not answer_file(answer_path, answer):
+        return False, ANSWERED_ELSEWHERE
     deadline = time.time() + 5
     while (folder / (request_id + ".json")).exists() and time.time() < deadline:
         time.sleep(0.1)
     if (folder / (request_id + ".json")).exists():
         return False, "The chat didn't take the answer: answer it there"
+    # (its hook takes the answer and removes it with the request; one still there came after the hook had
+    # left: another window's answer, or the chat's own, came first)
+    grace = time.time() + 0.3
+    while answer_path.exists() and time.time() < grace:
+        time.sleep(0.05)
+    if answer_path.exists():
+        try:
+            answer_path.unlink()
+        except OSError:
+            pass
+        return False, NOT_ASKING
     if plan:
         return True, {"approve": "Approved: it starts", "approve-edits": "Approved: it starts, accepting edits"}.get(
             decision, "It keeps planning" + (" with your note" if (note or "").strip() else ""))
@@ -1341,15 +1478,17 @@ def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped
     return answer
 
 
-def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None, scoped=True):
+def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None, scoped=True,
+         hooked=True, hook_source=None, predict=False):
     """Send your message to a chat the way it takes one (cs.reply_route):
     {"ok", "message", "how": "typed"|"background"|"vscode"|"copy"|"ask",
-    "link" (vscode), "copied" (copy)}. how "ask": the chat runs in a
-    terminal that takes no text from outside, and you choose (how
-    background or copy). scoped: a chat it wakes in the background in a
-    systemd scope of its own (go_on_in_background), with the permission hook
-    for it (chat_hook); not on an SSH host, where Talpy Den has no hook of
-    its own."""
+    "link" (vscode), "copied" (copy); woken in the background: "hooked",
+    "hookWhy" (chat_hook_of)}. how "ask": the chat runs in a terminal that
+    takes no text from outside, and you choose (how background or copy).
+    scoped: a chat it wakes in the background in a systemd scope of its own
+    (go_on_in_background; not on an SSH host or in a container); hooked:
+    with the permission hook for it (chat_hook_of; hook_source: its code,
+    from the computer that asks, for a host's copy)."""
     text = (text or "").strip()
     if not text:
         return {"ok": False, "message": "Write your message first"}
@@ -1369,10 +1508,12 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
     with cs.wake_lock(home, chat_id) as waited:
         if waited:
             cs.wake_settle(home, extra_dirs, chat_id)
-        return send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile)
+        return send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile,
+                        hooked, hook_source, predict)
 
 
-def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile):
+def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile,
+             hooked=True, hook_source=None, predict=False):
     """send's sending, under its lock."""
     entry = None
     for sid in (session_id, chat_id):
@@ -1420,9 +1561,12 @@ def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, clau
         ok, message = cs.stop_chat(entry)
         if not ok:
             return {"ok": False, "message": message}
-    hook = chat_hook(home, next((p for p in profiles if cs.matches_profile(p, profile_key)), profile)) if scoped else None
-    answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped, hook)
+    hook = chat_hook_of(home, next((p for p in profiles if cs.matches_profile(p, profile_key)), profile), hook_source,
+                        predict, hooked)
+    answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped, hook["settings"])
     answer["how"] = "background"
+    if hooked and answer.get("ok"):
+        answer.update(hooked=hook["hooked"], **({"hookWhy": hook["why"]} if hook["why"] else {}))
     return answer
 
 
@@ -1473,15 +1617,18 @@ def type_in(home, extra_dirs, profile_key, chat_id, text, session_id=None, copy=
 
 
 def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=None, mode=None, plan=None,
-               plan_profile=None, claude=None, scoped=True):
+               plan_profile=None, claude=None, scoped=True, hook_source=None, predict=False):
     """A new chat Talpy Chat starts with your first message (text; or a
     plan's, with what you add): in the background on the profile, in folder
-    (claude --bg, in a systemd scope of its own: go_on_in_background), with
-    that model, effort and permission mode, and the permission hook for it
-    alone (chat_hook), so what it asks is answered in Talpy Chat. Only in a
-    folder Claude trusts (a background chat can't ask). {"ok", "message",
-    "how": "background", "id": its job's short id, "chat": its chat id
-    (from its job's record), "profileDir"}."""
+    (claude --bg, in a systemd scope of its own unless not scoped, as on an
+    SSH host or in a container: go_on_in_background), with that model,
+    effort and permission mode, and the permission hook for it alone
+    (chat_hook_of; hook_source: its code, from the computer that asks, for a
+    host's copy), so what it asks is answered in Talpy Chat. Only in a
+    folder Claude trusts (a background chat can't ask: "untrusted" true).
+    {"ok", "message", "how": "background", "id": its job's short id, "chat":
+    its chat id (from its job's record), "profileDir", "hooked" (whether
+    Talpy Chat answers what it asks), "hookWhy" (why not)}."""
     text = (text or "").strip()
     if not text and not plan:
         return {"ok": False, "message": "Write your message first"}
@@ -1501,8 +1648,8 @@ def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=N
     claude = claude or cs.find_claude(home, ask_shell=True)
     if claude is None:
         return {"ok": False, "message": "No claude command found"}
-    hook = chat_hook(home, profile) if scoped else None
-    options = (["--settings", hook] if hook else []) + options + cs.picture_options(home, text)
+    hook = chat_hook_of(home, profile, hook_source, predict)
+    options = (["--settings", hook["settings"]] if hook["settings"] else []) + options + cs.picture_options(home, text)
     prefix = []
     if scoped:
         import jump
@@ -1511,12 +1658,13 @@ def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=N
     ok, message, job = cs.start_background(profile, folder, cs.task_prompt(text, plan_path, home), home, claude,
                                            prefix=prefix, options=options)
     if not ok:
-        return {"ok": False, "message": message}
+        return {"ok": False, "message": message, **({"untrusted": True} if message.startswith(cs.UNTRUSTED) else {})}
     chat = job_chat(profile, job)
     if chat is None:
         return {"ok": False, "message": f"It started ({job}), but its chat isn't there to show: find it in the list"}
     return {"ok": True, "how": "background", "id": job, "chat": chat, "profileDir": profile.key,
-            "message": "Started in the background on " + profile.label}
+            "message": "Started in the background on " + profile.label, "hooked": hook["hooked"],
+            **({"hookWhy": hook["why"]} if hook["why"] else {})}
 
 
 JOB_RECORD_WAIT_S = 2.0
@@ -2085,17 +2233,14 @@ def upgrade_hooks(home, extra_dirs=()):
 def install_hook(home, extra_dirs, on, kind, source=None, keep_copy=False):
     """Put the hook in each profile's settings (on) or take it out: how many
     settings files changed (ValueError: one isn't JSON). source: the hook's
-    code (else its file next to this one). keep_copy: taken out, its copy
-    stays (chats Talpy Chat started name it in settings of their own)."""
+    code (else its file next to this one): a copy that's there is replaced
+    only by a newer one (place_hook). keep_copy: taken out, its copy stays
+    (chats Talpy Chat started name it in settings of their own)."""
     target = hook_path(home, kind)
     if on:
-        if source is None:
-            source = (Path(__file__).resolve().parent / HOOKS[kind]["source"]).read_text(encoding="utf-8")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if read_bytes(target) != source.encode():
-            tmp = target.with_name(target.name + ".tmp")
-            tmp.write_text(source, encoding="utf-8")
-            os.replace(tmp, target)
+        placed, why = place_hook(home, kind, source)
+        if placed is None:
+            raise ValueError("Talpy Den couldn't put its hook in place: " + why)
     changed = 0
     with cs.claude_settings_lock(home):  # (read to written: another helper's change isn't lost)
         for path in settings_files(home, extra_dirs):
@@ -2154,6 +2299,45 @@ def hooked_chats(home, extra_dirs):
     return count
 
 
+def forget_hook(home, extra_dirs):
+    """An SSH host (or a container) taken off Talpy Den's list: the permission
+    hook's copy Talpy Chat put there, and its requests folder, go, unless a
+    chat Talpy Chat started there still runs (it would ask in its own prompt
+    then) or the hook is on for every chat there (its settings name the copy).
+    {"ok", "message", "kept": the chats that run with it, or "every"}."""
+    if relay_status(home, extra_dirs)["some"]:
+        return {"ok": True, "kept": "every", "message": "Its permission hook stays: it's on for every chat there"}
+    running = 0
+    for entry, runs_on, _holder in cs.live_entries_all(cs.discover_profiles(home, extra_dirs)):
+        if entry.get("kind") == "bg" and cs.valid_id(entry.get("jobId") or "") and not entry.get("spare"):
+            job = cs.read_job([runs_on], entry["jobId"])
+            running += bool(isinstance(job, dict) and cs.hook_settings(job.get("respawnFlags")))
+    if running:
+        return {"ok": True, "kept": running, "message": plural(running, "chat") + " Talpy Chat started there still "
+                + ("runs" if running == 1 else "run") + ": its permission hook stays there for them"}
+    # (a request waiting there is a hook still waiting: a chat that runs where this one can't see it, as in a
+    # home shared over the network; nothing goes then, and the folder only once it's empty)
+    folder = cs.requests_dir(cs.cache_dir(home))
+    if any(n.endswith(".json") and not n.endswith(".answer.json") for n in cs.names_in(folder)):
+        return {"ok": True, "kept": "asking", "message": "A chat there is asking something through its permission hook: it stays"}
+    gone = []
+    target = hook_path(home)
+    try:
+        target.unlink()
+        gone.append(target.name)
+    except OSError:
+        pass
+    try:
+        if folder.is_dir() and not folder.is_symlink():
+            for name in cs.names_in(folder):   # (answers nobody took)
+                (folder / name).unlink()
+            folder.rmdir()
+            gone.append(folder.name)
+    except OSError:
+        pass
+    return {"ok": True, "message": "Talpy Den's permission hook and its requests are gone from there" if gone else "Nothing of Talpy Chat's there"}
+
+
 def live(home, extra_dirs, on, source=None):
     """Live mode: the live hook in each profile's settings (on) or out of
     them: (ok, message)."""
@@ -2166,38 +2350,87 @@ def live(home, extra_dirs, on, source=None):
     return True, "Chats show their steps at each check"
 
 
-def hook_copy(home, kind="relay"):
-    """The hook's copy in Talpy Den's data folder, put there if it isn't (a
-    chat Talpy Chat starts names it in settings of its own, while the
-    setting for every chat may be off; a status check brings it up to date,
-    talpy_den.refresh_hooks): its path, or None (no hook here to copy)."""
+def place_hook(home, kind="relay", source=None):
+    """The hook's copy in Talpy Den's data folder (a chat Talpy Chat starts
+    names it in settings of its own, while the setting for every chat may be
+    off): (its path, or None and why not). One that's there stays, unless
+    source (the hook's code, sent by the computer that asks: on an SSH host
+    or in a container this file comes on stdin, without the hooks) is newer
+    (its HOOK_REVISION, as talpy_den.refresh_hooks has it: front ends of
+    other versions never make it older). With none there, it's written from
+    source, else from the hook next to this file: in one go, 0600, in a
+    folder only you may write in (cs.safe_folder: Claude runs it as you)."""
     target = hook_path(home, kind)
-    if target.is_file():
-        return target
+    why = cs.safe_folder(target.parent)
+    if why:
+        return None, why
+    try:   # (a copy that isn't a plain file of yours alone is no copy: it's written anew)
+        installed = target.read_bytes() if cs.own_file(target) else None
+    except OSError:
+        installed = None
+    new = source.encode("utf-8") if isinstance(source, str) else None
+    if installed is not None and (new is None or cs.hook_revision(new) <= cs.hook_revision(installed)):
+        return target, ""
+    if new is None:
+        try:
+            new = (Path(__file__).resolve().parent / HOOKS[kind]["source"]).read_bytes()
+        except (OSError, NameError):
+            return None, "its code isn't here to copy"
     try:
-        data = (Path(__file__).resolve().parent / HOOKS[kind]["source"]).read_bytes()
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(target.name + ".tmp")
-        tmp.write_bytes(data)
-        os.replace(tmp, target)
-    except (OSError, NameError):
-        return None
-    return target
+        cs.write_atomic(target, new, mode=0o600)
+    except OSError as exc:
+        return None, f"couldn't write {cs.short_path(str(target), home)}: {exc.strerror or exc}"
+    return target, ""
 
 
-def chat_hook(home, profile):
-    """The permission hook for one chat, as claude --settings takes it
-    (JSON: the same entry --relay on writes), so a background chat Talpy
-    Chat starts or wakes asks its permission prompts and questions where
-    Talpy Chat answers them: it has no terminal to ask in. None when the
-    profile's own settings have the hook (on for every chat: it would run
-    twice), or managed settings let only their own hooks run."""
-    if cs.managed_hooks_only() or has_hook(cs.read_json(profile.path / "settings.json") or {}):
-        return None
-    target = hook_copy(home)
-    if target is None:
-        return None
-    return json.dumps(set_hook({}, hook_command(target), True), separators=(",", ":"))
+# Claude's predicted next prompt (its grey suggestion in a terminal), for a
+# chat Talpy Chat starts or wakes while Suggest replies is on: a background
+# chat writes it into its job's record (suggestedReply) once a reply of
+# Claude's ends asking you something, and Talpy Chat shows it as the first
+# chip. Off by default for many accounts (a flag of Claude's own, and off
+# near a usage limit): this turns it on for that chat alone (Claude Code
+# 2.1.318, live-checked: research Q4)
+PREDICT_ENV = {"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true"}
+
+
+def hook_copy(home, kind="relay", source=None):
+    """place_hook's path, or None (no hook here to copy, or nowhere safe to put it)."""
+    return place_hook(home, kind, source)[0]
+
+
+def chat_hook_of(home, profile, source=None, predict=False, hook=True):
+    """Settings of its own for one chat, as claude --settings takes them
+    (JSON). The permission hook (the same entry --relay on writes), so a
+    background chat Talpy Chat starts or wakes asks its permission prompts
+    and questions where Talpy Chat answers them: it has no terminal to ask
+    in. Here, on an SSH host or in a container (source: the hook's code,
+    from the computer that asks: place_hook). {"settings": that JSON or
+    None, "hooked": whether Talpy Chat answers what the chat asks, "why":
+    why not}. No hook of its own when the profile's own settings have the
+    hook (on for every chat: it would run twice; hooked all the same), or
+    managed settings let only their own hooks run (not hooked); none either
+    with hook False. predict: Claude's predicted reply on too (PREDICT_ENV)."""
+    settings, hooked, why = {}, False, ""
+    if not hook:
+        pass
+    elif cs.managed_hooks_only():
+        why = "managed settings let only their own hooks run"
+    elif has_hook(cs.read_json(profile.path / "settings.json") or {}):
+        hooked = True
+    else:
+        target, why = place_hook(home, source=source)
+        if target is None:
+            why = "Talpy Den couldn't put its permission hook in place: " + why
+        else:
+            settings, hooked, why = set_hook({}, hook_command(target), True), True, ""
+    if predict:
+        settings["env"] = dict(PREDICT_ENV)
+    return {"settings": json.dumps(settings, separators=(",", ":")) if settings else None, "hooked": hooked, "why": why}
+
+
+def chat_hook(home, profile, source=None, predict=False):
+    """chat_hook_of's settings: the JSON, or None."""
+    return chat_hook_of(home, profile, source, predict)["settings"]
 
 
 def relay_status(home, extra_dirs, kind="relay"):
@@ -2339,11 +2572,33 @@ def reply_text(home, extra_dirs, chat_id, profile_key, key):
     return {"ok": True, "text": text} if text is not None else {"ok": False, "message": "That message isn't in the chat any more"}
 
 
-def forward(host, args):
-    """Run this file on an SSH host with args: its answer."""
+# The modules each action imports, sent along with this file to an SSH host
+# (each is ~10-40 ms more to send and compile there); any other action gets them all
+ACTION_MODULES = {
+    "--conversation": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"),
+    "--made": ("made.py",), "--bookmark": (),
+    "--complete": ("commands.py",), "--replies": ("reply_words.py", "replies.py"),
+    "--reply-text": ("reply_words.py", "replies.py"), "--hide-reply": ("reply_words.py", "replies.py"),
+    "--set-options": ("chatpick.py",),
+    "--send": (), "--start": (), "--answer": (), "--interrupt": (), "--keys": (), "--type-in": (), "--relay": (),
+    "--live": (), "--review": (), "--undo": (), "--commit": (),
+}
+# A start or a wake there may wait for claude's background service (60 s),
+# after asking the login shell for claude: longer than other actions
+HOST_START_TIMEOUT = 110
+MAY_HAVE_STARTED = "{where} didn't answer in time: the chat may have started there, so look for it in the list before you send it again"
+
+
+def forward(host, args, action=None):
+    """Run this file on an SSH host (or in a container) with args: its answer."""
     import remote
-    return remote.host_answer(host, args, name="pane.py",
-                              also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py"))
+    also = ACTION_MODULES.get(action, ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"))
+    long = action in ("--start", "--send")
+    answer = remote.host_answer(host, args, name="pane.py", also=also,
+                                timeout=HOST_START_TIMEOUT if long else remote.RUN_TIMEOUT)
+    if long and answer.get("timedOut"):   # (it got there and took too long: sent again, it could start a second chat)
+        answer = dict(answer, maybe=True, message=MAY_HAVE_STARTED.format(where=remote.place(host).label))
+    return answer
 
 
 def main(argv=None):
@@ -2365,9 +2620,10 @@ def main(argv=None):
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
-               "--hide-reply", "--type-in", "--reply-text", "--set-options")
-    osd, suggest, no_copy, keep_copy = False, False, False, False
+               "--hide-reply", "--type-in", "--reply-text", "--set-options", "--bookmark", "--made")
+    osd, suggest, no_copy, keep_copy, as_file, made_path, step = False, False, False, False, False, None, None
     cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
+    mark_kind, mark_at, reach = "", 0, None   # (--bookmark's --kind and --at; --conversation's --reach)
     while args:
         arg = args.pop(0)
         if arg in actions and args and action is None:
@@ -2380,6 +2636,10 @@ def main(argv=None):
             session = args.pop(0)
         elif arg == "--key" and args:
             key = args.pop(0)
+        elif arg == "--path" and args:
+            made_path = args.pop(0)
+        elif arg == "--step" and args:
+            step = args.pop(0)
         elif arg == "--text" and args:
             text = args.pop(0)
         elif arg == "--text-file" and args:
@@ -2419,6 +2679,12 @@ def main(argv=None):
             stamp = args.pop(0)
         elif arg == "--limit" and args and args[0].isdigit():
             limit = int(args.pop(0))
+        elif arg == "--kind" and args:
+            mark_kind = args.pop(0)
+        elif arg == "--at" and args and args[0].isdigit():
+            mark_at = int(args.pop(0))
+        elif arg == "--reach" and args:
+            reach = args.pop(0)
         elif arg == "--wait" and args:
             try:
                 wait = max(0.0, float(args.pop(0)))
@@ -2440,6 +2706,8 @@ def main(argv=None):
             no_copy = True
         elif arg == "--keep-copy":
             keep_copy = True
+        elif arg == "--as-file":
+            as_file = True
         elif arg == "--off":
             off = True
         elif arg == "--remote":
@@ -2466,6 +2734,9 @@ def main(argv=None):
         i = rest.index("--text-file")
         rest[i:i + 2] = ["--text", text]  # (a host gets the text: remote.host_answer takes it there)
     try:
+        if action == "--bookmark":  # (kept here, a host's chat's too, as stars are: never forwarded)
+            ok, said, marks, v = cs.change_bookmark(cache_root, target, host, key or "", not off, mark_kind, mark_at, text or "")
+            return emit({"ok": ok, "message": said, "bookmarks": marks, "bookmarksV": v})
         if host and action == "--reviewed":  # (kept here, as stars are)
             mark_reviewed(cache_root, target, host, on=not off)
             return emit({"ok": True, "message": "Marked reviewed" if not off else "Not marked reviewed"})
@@ -2474,17 +2745,24 @@ def main(argv=None):
         if host and action == "--send" and after:  # (queued here: the widget here sends it then)
             ok, said = send_later(home, config_dirs, profile, target, text, session, how, host, name)
             return emit({"ok": ok, "message": said})
-        if host and action == "--start":  # (a host's prompts can't reach Talpy Chat yet)
-            return emit({"ok": False, "message": "Talpy Chat starts chats on this computer only, for now"})
         if host:
-            if action in ("--relay", "--live") and target == "on" and source is None:
-                path = Path(__file__).resolve().parent / HOOKS[action[2:]]["source"]
+            # (the hook's code goes along, on stdin: its copy there, for the chats Talpy Chat starts or
+            # wakes there, or for every chat; a copy there that's newer stays)
+            hook_kind = action[2:] if action in ("--relay", "--live") and target == "on" else \
+                "relay" if action in ("--start", "--send") else None
+            if hook_kind and source is None:
+                path = Path(__file__).resolve().parent / HOOKS[hook_kind]["source"]
                 rest += ["--hook-source", base64.b64encode(path.read_bytes()).decode()]
-            answer = forward(host, rest)
+            answer = forward(host, rest, action)
             if action == "--review" and answer.get("ok"):
                 answer["reviewedAt"] = cs.load_reviewed(cache_root).get(cs.review_key(target, host))
             if action == "--conversation" and answer.get("ok"):
                 pictures_here(answer.get("items"))
+                if not answer.get("unchanged"):   # (--reach went with the rest: the host reads that far)
+                    cs.bookmarks_answer(answer, cache_root, target, host)
+            if action == "--made" and as_file:   # (its picture as a file here, for Plasma's Talpy Chat)
+                import made
+                answer = made.keep_copy(str(cs.images_dir(home)), f"{host}\0{target}\0{step or made_path}", answer)
             if action in ("--send", "--type-in"):
                 answer = host_vscode_link(answer, (session, target), text)
             if action == "--send" and how == "enter" and answer.get("how") == "ask":
@@ -2493,18 +2771,21 @@ def main(argv=None):
         if action == "--conversation":
             # (pasted pictures saved for the thumbnails: not on an SSH host, where the pane doesn't look)
             result = chat_conversation(home, config_dirs, target, profile, limit, stamp, wait,
-                                       None if remote else cs.images_dir(home), suggest)
+                                       None if remote else cs.images_dir(home), suggest, reach)
+            if not remote and result.get("ok") and not result.get("unchanged"):   # (a host's: kept here, above)
+                cs.bookmarks_answer(result, cache_root, target)
         elif action == "--send":
             if after:
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)
                 result = {"ok": ok, "message": said}
             else:
-                result = send(home, config_dirs, profile, target, text, session, how, scoped=not remote)
+                result = send(home, config_dirs, profile, target, text, session, how, scoped=not remote,
+                              hook_source=source, predict=suggest)
                 if how == "enter" and result.get("how") == "ask" and not remote:  # (on a host: copied here, above)
                     result = copy_answer((text or "").strip(), ENTER_COPIES)
         elif action == "--start":
             result = start_chat(home, config_dirs, target, cwd, text, model, effort, mode, plan, plan_profile,
-                                scoped=not remote)
+                                scoped=not remote, hook_source=source, predict=suggest)
         elif action == "--interrupt":
             ok, said = interrupt(home, config_dirs, profile, target, session)
             result = {"ok": ok, "message": said}
@@ -2515,12 +2796,20 @@ def main(argv=None):
                 import jump
                 prefix = jump.scope_prefix("claude")
             result = chatpick.set_options(home, config_dirs, profile, target, model, effort, prefix=prefix)
+        elif action == "--made":
+            import made   # (a module of its own, as replies.py: compiled once and kept)
+            found = find_transcript(home, config_dirs, target, profile)[1] if cs.valid_id(target) else None
+            result = made.show(found, made_path, step, as_file and not remote) if found is not None \
+                else {"ok": False, "missing": True, "message": NO_CHAT}
+            if as_file and not remote:   # (what Claude saw, as a file here, for Plasma's Talpy Chat)
+                result = made.keep_copy(str(cs.images_dir(home)), f"\0{target}\0{step or made_path}", result)
         elif action == "--type-in":
             result = type_in(home, config_dirs, profile, target, text, session, copy=not (remote or no_copy))
         elif action == "--answer":
             ok, said = answer_request(cache_root, target, decision, note, answers)
             # (changed: the request you answered is gone; the chat may ask something else now)
-            result = {"ok": ok, "message": said, **({"changed": True} if not ok and said in (NOT_ASKING, ASKS_ELSE) else {})}
+            result = {"ok": ok, "message": said,
+                      **({"changed": True} if not ok and said in (NOT_ASKING, ASKS_ELSE, ANSWERED_ELSEWHERE) else {})}
         elif action == "--complete":
             result = completions(home, config_dirs, target, profile, cwd)
         elif action == "--replies":
@@ -2565,6 +2854,8 @@ def main(argv=None):
             kind = action[2:]
             if target == "status":
                 result = relay_status(home, config_dirs, kind)
+            elif target == "forget" and kind == "relay":   # (a host taken off the list: forget_hook, there)
+                result = forget_hook(home, config_dirs)
             elif target in ("on", "off"):
                 ok, said = relay(home, config_dirs, target == "on", source, keep_copy) if kind == "relay" \
                     else live(home, config_dirs, target == "on", source)

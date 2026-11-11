@@ -592,12 +592,18 @@ def hide_reply(cache_root, text, on=True):
     return True, ("It won't be suggested again" if on else "Suggested again")
 
 
+THOUGHT = "/thinking"   # (pane.THOUGHT)
+
+
 def whole_text(path, key):
     """All of a reply of Claude's (key: its message's id, or its entry's uuid),
-    joined as pane.py's conversation_items joins it (text, and thinking shown
-    as updates), or of a prompt of yours (key: its entry's uuid), for Copy
-    where Talpy Chat shows it cut; None if no entry has that key. Only the
-    lines the key is in are parsed."""
+    joined as pane.py's conversation_items joins it, or of the thinking lines
+    Claude Code wrote with it (thinking shown as updates; key: the reply's and
+    THOUGHT), or of a prompt of yours (key: its entry's uuid), for Copy where
+    Talpy Chat shows it cut; None if no entry has that key. Only the lines the
+    key is in are parsed."""
+    thought = key.endswith(THOUGHT)
+    key = key[:-len(THOUGHT)] if thought else key
     needle = json.dumps(key)[1:-1].encode("utf-8")
     said, prompt = [], None
     try:
@@ -618,8 +624,8 @@ def whole_text(path, key):
                         and (msg.get("id") == key or e.get("uuid") == key):
                     updates = e.get("thinkingDisplay") == "updates"
                     for c in blocks:
-                        text = c.get("text") if c.get("type") == "text" \
-                            else c.get("thinking") if c.get("type") == "thinking" and updates else None
+                        text = c.get("thinking") if thought and updates and c.get("type") == "thinking" \
+                            else c.get("text") if not thought and c.get("type") == "text" else None
                         if isinstance(text, str) and text.strip():
                             said.append(text.strip())
     except OSError:

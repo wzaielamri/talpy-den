@@ -743,14 +743,16 @@ def compact_tokens(value):
     return int(round(min(COMPACT_WINDOW_MAX, max(COMPACT_WINDOW_MIN, tokens))))
 
 
-_COMPACT_SETTINGS = {}  # settings.json path -> ((mtime_ns, size), its env value, its setting, its modelSettings)
+# settings.json path -> ((mtime_ns, size), its env value, its setting, its modelSettings, whether it names the
+# permission hook)
+_COMPACT_SETTINGS = {}
 
 
-def compact_window(profile_path, model):
-    """The auto-compact window you set for a chat on this model in the
-    account's settings (its env's CLAUDE_CODE_AUTO_COMPACT_WINDOW, else
-    autoCompactWindow: the model's in modelSettings first), or None (Claude's
-    own: the model's window). Read once a run per file and change."""
+def profile_settings(profile_path):
+    """What the status reads of an account's settings.json, once a run per
+    file and change: (CLAUDE_CODE_AUTO_COMPACT_WINDOW in its env,
+    autoCompactWindow, modelSettings, whether its PermissionRequest hooks
+    name Talpy Den's permission hook), or None (no settings)."""
     path = os.path.join(str(profile_path), "settings.json")
     try:
         st = os.stat(path)
@@ -763,8 +765,28 @@ def compact_window(profile_path, model):
         data = data if isinstance(data, dict) else {}
         env = data.get("env") if isinstance(data.get("env"), dict) else {}
         models = data.get("modelSettings") if isinstance(data.get("modelSettings"), dict) else {}
-        kept = _COMPACT_SETTINGS[path] = (stamp, env.get(COMPACT_WINDOW_ENV), data.get("autoCompactWindow"), models)
-    _, env_value, setting, models = kept
+        hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+        relay = PERMISSION_HOOK_FILE in json.dumps(hooks.get("PermissionRequest") or [])
+        kept = _COMPACT_SETTINGS[path] = (stamp, env.get(COMPACT_WINDOW_ENV), data.get("autoCompactWindow"), models, relay)
+    return kept[1:]
+
+
+def relay_in_settings(profile_path):
+    """Whether the account's settings have Talpy Den's permission hook (on
+    for every chat: "Answer permission prompts from Talpy Den")."""
+    kept = profile_settings(profile_path)
+    return bool(kept and kept[3])
+
+
+def compact_window(profile_path, model):
+    """The auto-compact window you set for a chat on this model in the
+    account's settings (its env's CLAUDE_CODE_AUTO_COMPACT_WINDOW, else
+    autoCompactWindow: the model's in modelSettings first), or None (Claude's
+    own: the model's window). Read once a run per file and change."""
+    kept = profile_settings(profile_path)
+    if kept is None:
+        return None
+    env_value, setting, models, _relay = kept
     tokens = compact_tokens(env_value)
     if tokens is not None:
         return tokens
@@ -836,6 +858,7 @@ def make_session(profile, home, *, sid, pid, name, cwd, kind, entrypoint, state,
         "shared": None,
         "tmux": False,  # runs in a tmux pane: it can be interrupted (Esc)
         "bgStop": False,  # a live background session Talpy Chat's Stop can interrupt (interrupt_background)
+        "hooked": False,  # a background chat whose prompts Talpy Den's permission hook answers (finish_row)
         "terminalApp": None,  # the terminal it runs in otherwise, by name (Konsole, kitty…): terminal_name
         "attached": None,  # a background session shown in a terminal (claude attach): {"in", "app"} (attached_in)
         "peek": None,  # what it's doing, your last prompt, Claude's last reply (chat_peek)
@@ -1044,6 +1067,10 @@ def finish_row(row, job, job_id, profile, ctx, alive):
     row["jobId"] = job_id
     row["reply"] = reply_route(row)
     row["jobSessionId"] = job["sessionId"] if isinstance(job, dict) and valid_id(job.get("sessionId")) else None
+    # (a background chat whose prompts Talpy Den answers: the hook Talpy Chat gave it, in what Claude wakes it
+    # with, or the one for every chat in its account's settings; it has no terminal of its own to ask in)
+    row["hooked"] = row["kind"] == "bg" and (
+        bool(isinstance(job, dict) and hook_settings(job.get("respawnFlags"))) or relay_in_settings(profile.path))
     row["chatId"], row["shared"] = chat_link(row, job, profile, ctx)
     # (only the run that's going on now: a chat resumed or gone on keeps its id)
     attach_snapshot(row, ctx.snapshot_root, profile, [row["sessionId"], row["chatId"], row["jobSessionId"]],
@@ -3075,6 +3102,56 @@ def hooks_dir(home):
     return Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share") / "talpy-den"
 
 
+def safe_folder(folder):
+    """Make folder (0700, with its parents) for a file Claude runs as you (a
+    hook's copy) or one that answers for you (a request's answer), and say
+    whether it's safe there: a folder of yours, not a link, that nobody else
+    may write in (an XDG_DATA_HOME or XDG_STATE_HOME on shared space, as
+    some sites set them: anyone's file there would run, or answer, as you).
+    One of yours that others may write in (made under a looser umask) is
+    made 0700; what's in it is checked by whoever reads it (place_hook).
+    None when it is, else why not."""
+    import stat
+    try:
+        Path(folder).mkdir(mode=0o700, parents=True, exist_ok=True)
+        st = os.lstat(str(folder))
+    except OSError as exc:
+        return f"couldn't make {folder}: {exc.strerror or exc}"
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
+        return f"{folder} isn't a folder of yours"
+    if st.st_mode & 0o077:
+        try:
+            os.chmod(str(folder), 0o700)
+        except OSError as exc:
+            return f"others may write in {folder}: {exc.strerror or exc}" if st.st_mode & 0o022 else None
+    return None
+
+
+def own_file(path):
+    """Whether path is a plain file of yours that nobody else may write (not
+    a link): one put in a folder others could write in before is not."""
+    import stat
+    try:
+        st = os.lstat(str(path))
+    except OSError:
+        return False
+    return stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o022
+
+
+def home_id(home):
+    """Which home folder this is, on which running system, in 12 characters
+    (no path in it): the same in a container that shares your home (a
+    Toolbox, a Distrobox, a folder bind-mounted) as here, whose ~/.claude*,
+    hook copies and requests are this computer's. "" when unknown."""
+    try:
+        with open("/proc/sys/kernel/random/boot_id", encoding="ascii") as f:
+            boot = f.read().strip()
+        st = os.stat(str(home))
+    except (OSError, ValueError):
+        return ""
+    return hashlib.sha1(f"{boot}:{st.st_dev}:{st.st_ino}".encode()).hexdigest()[:12]
+
+
 def live_hook_on(home):
     """Whether the live hook is on (pane.py --live on keeps its copy here)."""
     return (hooks_dir(home) / LIVE_HOOK_FILE).is_file()
@@ -4829,13 +4906,18 @@ def follow_host_moves(cache_root, host, moved, starred, kept):
     """An SSH host's (or a container's) chats Claude moved to the background
     there under a new id (its answer's "moved": {old id: new id}): what's
     kept of them here follows them, as this computer's do (collect,
-    look_after_kept), their stars, keeping going and queued go-ons and
-    replies. starred, kept: that host's (starred_of, keep.json's entries),
-    as read for the check. Once per answer, and only when one of them moved."""
+    look_after_kept), their stars, bookmarks, keeping going and queued
+    go-ons and replies. starred, kept: that host's (starred_of, keep.json's
+    entries), as read for the check. Once per answer, and only when one of
+    them moved."""
     moved = {old: new for old, new in moved.items() if valid_id(old) and valid_id(new) and old != new} \
         if isinstance(moved, dict) else {}
     if not moved:
         return
+    try:  # (one listing of its folder; a bookmark file that couldn't move yet does at the next answer)
+        bookmarks_moved(cache_root, moved, host)
+    except OSError:
+        pass
     for old in [c for c in starred["chats"] if c in moved]:
         change_stars(cache_root, "chats", moved_chat(old, moved), host, on=True)
         change_stars(cache_root, "chats", old, host, on=False)
@@ -7118,6 +7200,10 @@ def resume_command(profile, session_id, home=None, folder=None, claude="claude")
 
 MODEL_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9._\[\]-]{0,79}$")  # an alias (opus, sonnet, fable) or a model's full name
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+# claude --effort ultracode: xhigh with ultracode on (Claude Code 2.1.312+; a
+# chat woken with it notes ultra_effort_enter at its next message, and one
+# woken with --effort xhigh after it ultra_effort_exit: live-checked, 2.1.318)
+ULTRACODE = "ultracode"
 # claude --permission-mode's ("manual" is newer Claude's name for "default",
 # which older ones on SSH hosts know only by that)
 PERMISSION_MODES = ("default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions")
@@ -7133,8 +7219,8 @@ def chat_options(model=None, effort=None, mode=None):
             raise ValueError(f"Not a model name: {model}")
         words += ["--model", model]
     if effort:
-        if effort not in EFFORT_LEVELS:
-            raise ValueError(f"Not an effort level: {effort} (it's low, medium, high, xhigh or max)")
+        if effort not in EFFORT_LEVELS + (ULTRACODE,):
+            raise ValueError(f"Not an effort level: {effort} (it's low, medium, high, xhigh, max or ultracode)")
         words += ["--effort", effort]
     if mode:
         mode = "default" if mode == "manual" else mode
@@ -7303,6 +7389,9 @@ def task_command(profile, prompt, home=None, claude="claude", options=()):
     return f"{new_chat_command(profile, home, claude, options)} {prompt_word(prompt)}"
 
 
+UNTRUSTED = "Claude doesn't trust "   # (how start_background says it: a folder Claude hasn't been told it may trust)
+
+
 def start_background(profile, folder, prompt, home=None, claude="claude", wait=BACKGROUND_WAIT, prefix=(),
                      resume=None, options=(), notes=None):
     """Start a background session on this profile in folder, with prompt:
@@ -7324,7 +7413,7 @@ def start_background(profile, folder, prompt, home=None, claude="claude", wait=B
         return False, f"The folder {short_folder(folder, home)} isn't there", None
     if not folder_trusted(profile, folder, home):
         where = "your home folder" if Path(folder) == home else short_folder(folder, home)
-        return False, (f"Claude doesn't trust {where} yet, and a background chat can't ask: start a chat there "
+        return False, (f"{UNTRUSTED}{where} yet, and a background chat can't ask: start a chat there "
                        "in a terminal once (Claude asks whether you trust it), or pick a project folder"), None
     env = {k: v for k, v in os.environ.items() if k not in SESSION_ENV and k != NO_AGENT_VIEW}
     value = config_dir_value(profile, home, for_job=True)  # through the service's own name
@@ -10195,6 +10284,184 @@ def starred_of(stars, host=""):
     return {kind: {i["id"] for i in stars[kind] if i["host"] == (host or "")} for kind in STAR_KINDS}
 
 
+# ---------------------------------------------------------------- bookmarked messages
+#
+# Talpy Chat's bookmarks: the messages of a chat you bookmarked, listed on its
+# side to go back to. A chat's are a file of their own in the widget's cache
+# (bookmarks/<chat>.json; an SSH host's or a container's chat's under
+# host-<short_id(host)>/, kept here as stars are), each with its message's key
+# (pane.py's item key), when it was written and its first BOOKMARK_TEXT
+# characters, so the list can show one before it's loaded. v grows with every
+# change, so a front end can tell a newer list from an older one.
+
+BOOKMARKS_DIR = "bookmarks"
+BOOKMARKS_MAX = 100  # a chat's bookmarks at most
+BOOKMARK_TEXT = 140  # characters of a message's text kept with its bookmark
+BOOKMARK_KEY = re.compile(r"^[A-Za-z0-9_.:@-]{1,200}$")  # (matched whole: fullmatch, as $ lets a last \n by)
+BOOKMARKS_READ = 256 << 10  # bytes of a file read at most (100 of the longest keys and texts, written as JSON escapes)
+BOOKMARK_KINDS = ("you", "claude")
+BOOKMARK_FULL = "A chat keeps up to %d bookmarks: remove one first" % BOOKMARKS_MAX
+
+
+def bookmark_key_ok(key):
+    """A message's key a bookmark can be of: never a message on its way (pending-N) nor a word that is a flag."""
+    return isinstance(key, str) and bool(BOOKMARK_KEY.fullmatch(key)) and not key.startswith(("pending-", "-"))
+
+
+def bookmark_text(text):
+    """A message's text as its bookmark keeps it: on one line, its first BOOKMARK_TEXT characters (… where cut)."""
+    text = " ".join(text.split()) if isinstance(text, str) else ""
+    return text if len(text) <= BOOKMARK_TEXT else text[:BOOKMARK_TEXT - 1].rstrip() + "…"
+
+
+def bookmarks_folder(cache_root, host=""):
+    """Where a computer's bookmark files are: a host's under the hash of its name, never the name itself."""
+    folder = Path(cache_root) / BOOKMARKS_DIR
+    return folder / ("host-" + short_id(host)) if host else folder
+
+
+def bookmarks_path(cache_root, chat, host=""):
+    """A chat's bookmark file, or None for something that isn't a chat id."""
+    if not valid_id(chat) or "\0" in chat:
+        return None
+    return bookmarks_folder(cache_root, host) / (chat + ".json")
+
+
+def whole_ms(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def load_bookmarks(cache_root, chat, host=""):
+    """(marks, v): a chat's bookmarks, in the chat's order ((at, made)), each
+    {"key", "kind", "at", "text", "made"}, and its file's version; ([], 0)
+    when it has none (no file: one failed open). Malformed ones are left out."""
+    path = bookmarks_path(cache_root, chat, host)
+    data = read_json(path, BOOKMARKS_READ) if path is not None else None
+    if not isinstance(data, dict):
+        return [], 0
+    marks, seen, key_ok = [], set(), BOOKMARK_KEY.fullmatch
+    for m in data.get("marks") if isinstance(data.get("marks"), list) else ():  # (read at every look at the chat)
+        key = m.get("key") if type(m) is dict else None
+        if type(key) is not str or key in seen or not key_ok(key) or key[0] == "-" or key.startswith("pending-") \
+                or m.get("kind") not in BOOKMARK_KINDS:
+            continue
+        seen.add(key)
+        at, made, text = m.get("at"), m.get("made"), m.get("text")
+        marks.append({"key": key, "kind": m["kind"], "at": at if type(at) is int and at > 0 else 0,
+                      "text": text if type(text) is str and len(text) <= BOOKMARK_TEXT and "\n" not in text
+                      else bookmark_text(text), "made": made if type(made) is int and made > 0 else 0})
+        if len(marks) == BOOKMARKS_MAX:
+            break
+    marks.sort(key=lambda m: (m["at"], m["made"]))
+    return marks, whole_ms(data.get("v")) or 1
+
+
+def save_bookmarks(cache_root, chat, host, marks, v):
+    """Write a chat's bookmark file (in folders only you can open, a file only you can read; in one go)."""
+    private_dir(Path(cache_root) / BOOKMARKS_DIR)
+    if host:
+        private_dir(bookmarks_folder(cache_root, host))
+    data = {"chat": chat, "host": host or "", "v": v, "marks": marks}
+    write_json_atomic(bookmarks_path(cache_root, chat, host), data, private=True)
+
+
+@contextlib.contextmanager
+def bookmarks_lock(cache_root):
+    """Every copy of pane.py and of the status check changes bookmark files under it."""
+    private_dir(Path(cache_root))
+    with open(Path(cache_root) / "bookmarks.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def change_bookmark(cache_root, chat, host, key, on, kind="", at=0, text="", now_ms=None):
+    """Bookmark a chat's message (on: of kind "you" or "claude", written at
+    at ms, its text), or not any more: (ok, what went wrong, the chat's
+    bookmarks now, their v). Adding one twice keeps one, removing one that
+    isn't there is done. A file whose last bookmark went stays (v only ever
+    grows: forget_bookmarks alone deletes it)."""
+    if bookmarks_path(cache_root, chat, host) is None:
+        return False, f"Not a chat: {chat}", [], 0
+    if not bookmark_key_ok(key) or (on and kind not in BOOKMARK_KINDS):
+        return (False, "Which message?") + load_bookmarks(cache_root, chat, host)
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    with bookmarks_lock(cache_root):
+        marks, v = load_bookmarks(cache_root, chat, host)
+        if bool(on) == any(m["key"] == key for m in marks):
+            return True, "", marks, v
+        if on and len(marks) >= BOOKMARKS_MAX:
+            return False, BOOKMARK_FULL, marks, v
+        new = [m for m in marks if m["key"] != key]
+        if on:
+            new.append({"key": key, "kind": kind, "at": whole_ms(at), "text": bookmark_text(text), "made": now_ms})
+            new.sort(key=lambda m: (m["at"], m["made"]))
+        try:
+            save_bookmarks(cache_root, chat, host, new, max(v + 1, now_ms))
+        except OSError as exc:
+            return False, exc.strerror or str(exc), marks, v
+        return True, "", new, max(v + 1, now_ms)
+
+
+def bookmarks_answer(result, cache_root, chat, host=""):
+    """Add a chat's bookmarks to pane.py's answer (bookmarks, bookmarksV) when it has a bookmark file."""
+    marks, v = load_bookmarks(cache_root, chat, host)
+    if v > 0:
+        result["bookmarks"] = marks
+        result["bookmarksV"] = v
+    return result
+
+
+def bookmarks_moved(cache_root, moves, host=""):
+    """The bookmarks of chats Claude moved to the background under a new id
+    (moves: chat_moves, or a host's) go with them: merged into the file of
+    the id each goes on under (moved_chat; its own bookmarks win), the old
+    file deleted. One listing of the folder when none moved."""
+    try:
+        names = set(os.listdir(bookmarks_folder(cache_root, host)))
+    except OSError:
+        return
+    olds = [(old, moved_chat(old, moves)) for old in moves if old + ".json" in names]
+    olds = [(old, new) for old, new in olds if new != old and bookmarks_path(cache_root, old, host) is not None
+            and bookmarks_path(cache_root, new, host) is not None]
+    if not olds:
+        return
+    now_ms = int(time.time() * 1000)
+    with bookmarks_lock(cache_root):
+        for old, new in olds:
+            old_marks, old_v = load_bookmarks(cache_root, old, host)
+            if old_v:
+                marks, v = load_bookmarks(cache_root, new, host)
+                keep = {m["key"]: m for m in marks}
+                for m in sorted(old_marks, key=lambda m: -m["made"]):  # (the newest first, up to the cap)
+                    if len(keep) >= BOOKMARKS_MAX:
+                        break
+                    keep.setdefault(m["key"], m)
+                merged = sorted(keep.values(), key=lambda m: (m["at"], m["made"]))
+                save_bookmarks(cache_root, new, host, merged, max(max(v, old_v) + 1, now_ms))
+            forget_bookmarks(cache_root, old, host)
+
+
+def forget_bookmarks(cache_root, chat, host=""):
+    """A deleted chat's bookmarks go (its file)."""
+    path = bookmarks_path(cache_root, chat, host)
+    if path is None:
+        return
+    try:
+        os.unlink(path)
+    except OSError:  # (none: Python 3.7 has no missing_ok; nor anything else, a delete goes on)
+        pass
+
+
+def bookmarked_chats(cache_root, host=""):
+    """The ids of the chats (of this computer, or of host) with a bookmark: for cleanup, which keeps them."""
+    try:
+        names = os.listdir(bookmarks_folder(cache_root, host))
+    except OSError:
+        return set()
+    return {name[:-5] for name in names if name.endswith(".json") and not name.startswith(".")
+            and load_bookmarks(cache_root, name[:-5], host)[0]}
+
+
 def load_dismissed(cache_root):
     """Finished sessions the user removed from the widget's list: {session id: when}."""
     data = read_json(cache_root / "dismissed.json")
@@ -10335,10 +10602,10 @@ def plan_tasks_go(tasks):
 
 def forget_deleted(cache_root, kind, item_id, host=""):
     """A chat, a plan or a memory was deleted (sharing.delete_chat, …):
-    the stars, the queue, keep going and what's hidden here forget it (of
-    host: its stars, queued tasks and keep going, kept here; the rest is the
-    host's). A plan's queued tasks go too, as a chat's go-ons (Delete's
-    question says so: plan_tasks_go)."""
+    the stars, a chat's bookmarks, the queue, keep going and what's hidden
+    here forget it (of host: its stars, bookmarks, queued tasks and keep
+    going, kept here; the rest is the host's). A plan's queued tasks go too,
+    as a chat's go-ons (Delete's question says so: plan_tasks_go)."""
     if kind in ("chats", "plans"):
         change_stars(cache_root, kind, item_id, host, on=False)
     if kind == "plans" and queued_for_plan(cache_root, item_id, host):
@@ -10351,6 +10618,7 @@ def forget_deleted(cache_root, kind, item_id, host=""):
             if t.get("chat") == item_id and (t.get("host") or "") == (host or ""):
                 change_queue(cache_root, take=t["id"])
         keep_chat(cache_root, "", item_id, on=False, host=host)
+        forget_bookmarks(cache_root, item_id, host)
     if host:
         return
     if kind == "chats":
@@ -10547,6 +10815,14 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
             dismissed = change_dismissed(cache_root, add=moved_chat(old, moves), forget=[old], now_ms=dismissed[old])
     except Exception as exc:
         errors.append(f"hidden chats moved to the background: {exc}")
+    try:
+        # (a chat Claude moved to the background under a new id: its bookmarks go with it, in the check
+        # whose answer tells a window it moved; one listing of a folder while a chat moved lately)
+        moves = chat_moves(ctx)
+        if moves:
+            bookmarks_moved(cache_root, moves)
+    except Exception as exc:
+        errors.append(f"bookmarks of moved chats: {exc}")
     forget, dismissed_rows = set(), 0
     for g in groups:
         shown = []
@@ -11877,6 +12153,7 @@ def main(argv=None):
                 result["cli"] = {"installed": claude is not None, "hooks": not managed_hooks_only()}
             except Exception as exc:
                 result["errors"].append(f"claude command: {exc}")
+            result["homeId"] = home_id(home)
             if instance is not None:
                 try:
                     result["notifier"] = elect_notifier(cache_root, instance, interval_ms, int(time.time() * 1000))

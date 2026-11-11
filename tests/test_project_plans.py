@@ -2,6 +2,7 @@
 plansDirectory setting (the account's, a project's, its local one), each plan
 listed once, the project a plan keeps once its chat is gone, and plans whose
 project isn't known."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import contextlib
 import importlib.util
 import io

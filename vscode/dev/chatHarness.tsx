@@ -2,7 +2,7 @@
 // chat, its conversation, and its review when the page asks for it.
 
 import "../webview/chat";
-import type { Asks, Conversation, PaneChat, PaneHostMessage, PaneItem, ReviewAnswer, UsualReplies } from "../src/shared/pane";
+import { entryOf, unhookedText, type Asks, type Bookmark, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type ReviewAnswer, type UsualReplies } from "../src/shared/pane";
 
 const params = new URLSearchParams(location.search);
 const now = Date.now();
@@ -23,6 +23,8 @@ function send(message: PaneHostMessage): void {
 
 const chat: PaneChat = {
   host: params.get("host") ?? "", // ?host=lab: an SSH host's chat
+  // ?host=lab&watch=fail: its host's watcher keeps failing (the host tag in the warning colour, its tooltip says why)
+  watchTrouble: params.get("watch") === "fail" ? "lab: Connection closed by remote host" : "",
   chatId: "demo-chat",
   sessionId: "demo-chat",
   profileDir: ".claude",
@@ -93,6 +95,7 @@ const items: PaneItem[] = [
   { kind: "claude", key: "m1", text: "I'll look at how **week numbers** are computed in `src/parse.ts` first.", at: now - 390_000 },
   { kind: "tool", key: "t1", name: "Read", line: "Read: parse.ts", status: "ok", input: "file_path: /home/alice/projects/webapp/src/parse.ts", output: "     1\timport { isoWeek } from './dates';\n     2\t\n     3\texport function parse(text: string) {\n     4\t  const date = new Date(text); // UTC\n     5\t  return { date, week: isoWeek(date) };\n     6\t}", summary: "6 lines", at: now - 380_000 },
   { kind: "tool", key: "t2", name: "Bash", line: "Bash: npm test -- parser", status: "error", input: "$ npm test -- parser", output: "FAIL src/parse.test.ts\n  ✕ week 53 of 2026 (4 ms)", summary: "FAIL src/parse.test.ts … +1 line", at: now - 300_000 },
+  { kind: "claude", key: "m2/thinking", thinking: true, text: "The test fails at the year's last week, so `isoWeek` is where to look.", at: now - 210_000 },
   {
     kind: "claude",
     key: "m2",
@@ -134,8 +137,8 @@ if (unfold)
     if (params.get("agents") === "open") setTimeout(() => document.querySelector<HTMLButtonElement>(".ag-running .agent-head")?.click(), 100);
   }, 700);
 
-// ?open=1: every tool call unfolded (clicked once the conversation shows)
-if (params.get("open") === "1")
+// ?open=1: every tool call unfolded (clicked once the conversation shows; with ?bookmarks: their list)
+if (params.get("open") === "1" && !params.get("bookmarks"))
   setTimeout(() => document.querySelectorAll<HTMLButtonElement>(".pane-tool-line").forEach((b, i) => setTimeout(() => b.click(), 60 * i)), 900);
 
 // ?pics=1: your last message with two pictures (thumbnails; ?pics=big: the first one opened big)
@@ -193,6 +196,42 @@ if (params.get("answers")) {
     setTimeout(() => document.querySelectorAll<HTMLButtonElement>(".pane-asked-toggle").forEach((b) => b.click()), 900);
 }
 
+// ?made=1: what Claude made under its steps and its reply (a picture it wrote, one it read, a plan, a
+// page, one gone, a PDF); ?made=open: each unfolded (a page's source too); &host=lab: an SSH host's
+const madeSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" fill="#2aa198"/>'
+  + '<path d="M18 34l9 9 19-21" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round"/></svg>';
+const madeFiles: Record<string, { src?: string; text?: string; cut?: boolean } | { ok: false; message: string }> = {
+  "/home/alice/projects/webapp/media/badge.svg": { src: "data:image/svg+xml;base64," + btoa(madeSvg) },
+  "/tmp/shots/week53.png": { src: "../media/icon.png" },
+  "/home/alice/.claude/plans/brave-otter.md": { text: "# Fix the week numbers\n\n1. Make `isoWeek` count 53 weeks in a long year.\n2. Add a test for **2026-12-31**.\n3. Check week 1 of 2027." },
+  "/home/alice/projects/webapp/report/weeks.html": { text: "<!doctype html>\n<title>Weeks</title>\n<table>\n  <tr><td>2026-W53</td><td>ok</td></tr>\n</table>", cut: true },
+};
+if (params.get("made")) {
+  const made = (key: string, path: string, type: "picture" | "plan" | "page" | "file", size: number | null, more: object = {}, text?: string): PaneItem =>
+    ({ kind: "made", key, of: key.split("/made/")[0], at: now - 100_000, text: text ?? path.split("/").pop(),
+       made: { path, type, name: path.split("/").pop()!, size, ...more } });
+  items.splice(0, items.length,
+    { kind: "you", key: "u1", text: "Draw a badge for week 53, check how the report looks, and write down the plan.", at: now - 400_000 },
+    { kind: "tool", key: "w1", name: "Write", line: "Write: badge.svg", status: "ok", summary: "1 line", at: now - 390_000, diff: [] },
+    made("w1/made/0", "/home/alice/projects/webapp/media/badge.svg", "picture", 241),
+    { kind: "tool", key: "p1", name: "Write", line: "Write: brave-otter.md", status: "ok", summary: "6 lines", at: now - 380_000, diff: [] },
+    made("p1/made/0", "/home/alice/.claude/plans/brave-otter.md", "plan", 3172, {}, "Plan: Fix the week numbers"),
+    { kind: "tool", key: "e1", name: "Edit", line: "Edit: weeks.html", status: "ok", summary: "2 lines added, 1 removed", at: now - 370_000, diff: [] },
+    made("e1/made/0", "/home/alice/projects/webapp/report/weeks.html", "page", 18_400),
+    { kind: "tool", key: "r1", name: "Read", line: "Read: week53.png", status: "ok", summary: "", at: now - 360_000 },
+    made("r1/made/0", "/tmp/shots/week53.png", "picture", 41_532, { step: "r1" }),
+    { kind: "tool", key: "r2", name: "Read", line: "Read: spec.pdf", status: "ok", summary: "", at: now - 350_000 },
+    made("r2/made/0", "/home/alice/projects/webapp/docs/spec.pdf", "file", 242_891),
+    { kind: "claude", key: "m1", text: "The badge is in `media/badge.svg`, and the old one, `/tmp/old-badge.png`, is gone now.", at: now - 300_000 },
+    made("m1/made/0", "/tmp/old-badge.png", "picture", 3_880, { gone: true }),
+  );
+  if (params.get("made") === "open")
+    setTimeout(() => {
+      document.querySelectorAll<HTMLButtonElement>(".pane-made-line").forEach((b) => b.click());
+      setTimeout(() => document.querySelectorAll<HTMLButtonElement>(".pane-made-tools button[aria-pressed]").forEach((b) => b.click()), 200);
+    }, 900);
+}
+
 // ?ask=question&answering=1: your answer shows at once, as yours, under the question, till the conversation has it
 if (ask === "question" && params.get("answering") === "1") {
   items.push({ kind: "tool", key: "aq", name: "AskUserQuestion", line: "AskUserQuestion: Which weeks should the fix cover?", status: "open", at: now - 5_000,
@@ -240,7 +279,7 @@ const asks: Record<string, Asks> = {
 const usual: UsualReplies = { chips: { asked: ["yes please", "go"], limit: ["continue"], stopped: ["go on"] },
                               ranked: ["continue", "commit and push", "go on", "yes please", "go"] };
 const turnEnd: Partial<Conversation> = chipsOf === "limit" ? { ended: "limit", over: true, asks: null }
-  : chipsOf ? { ended: "asked", over: true, asks: asks[chipsOf] ?? null } : {};
+  : chipsOf ? { ended: "asked", over: true, asks: asks[chipsOf] ?? null, predicted: params.get("predicted") } : {};
 if (chipsOf)
   Object.assign(chat, { state: "done", stateText: "done 1 min ago", busy: false, atWork: false, permission: null, queued: null, activity: "" });
 // how full its context is (?context=near: close to Claude compacting it; ?context=0: not known), and
@@ -264,10 +303,18 @@ window.addEventListener("harness-post", (e: Event) => {
   const m = (e as CustomEvent).detail as { type: string };
   if (m.type === "ready") {
     send({ type: "chat", chat });
-    send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1", ...turnEnd } });
+    send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1", ...turnEnd, ...marksOf(),
+      // (what /model and /effort's lists mark: ?ultracode for a chat with it on)
+      options: { model: "claude-opus-5-5", effort: params.has("ultracode") ? "xhigh" : "high", ultracode: params.has("ultracode"), next: false } } });
     if (fresh === "task") setTimeout(() => send({ type: "startWith", text: "Fix the flaky date test in tests/parser.test.ts" }), 100);
     const tab = params.get("tab");   // ?tab=steps
     if (tab) send({ type: "result", kind: "tab:" + tab, ok: true, message: "" });
+    settleMarks();
+  } else if (m.type === "made") {   // (pane.py --made: a moment later, as reading it takes)
+    const a = m as unknown as { id: number; path: string };
+    const f = madeFiles[a.path];
+    setTimeout(() => send(f && !("ok" in f) ? { type: "made", id: a.id, ok: true, ...f }
+                                           : { type: "made", id: a.id, ok: false, message: "It isn't there any more", gone: true }), 120);
   } else if (m.type === "picture") {
     const id = (m as unknown as { id: string }).id;
     setTimeout(() => send({ type: "picture", id, path: `/home/alice/.cache/talpy-den/images/20261026-1015${id.slice(-2)}.png`, error: "" }), 200);
@@ -299,14 +346,78 @@ window.addEventListener("harness-post", (e: Event) => {
     setTimeout(() => send({ type: "copied", id: c.id, ok: params.get("copy") !== "fail",
                             message: params.get("copy") === "fail" ? "Couldn't copy all of it: That message isn't in the chat any more" : "" }),
                c.text.endsWith("\n…") ? 300 : 0);
+  } else if (m.type === "bookmark") {
+    // (kept, or ?mark=fail: it couldn't be: the page undoes it and says why)
+    const b = m as unknown as { id: number; key: string; on: boolean; kind: "you" | "claude"; at: number; text: string };
+    const fail = params.get("mark") === "fail";
+    if (!fail) {
+      marks = marks.filter((x) => x.key !== b.key);
+      if (b.on) marks = [...marks, { key: b.key, kind: b.kind, at: b.at, text: b.text, made: Date.now() }].sort((x, y) => x.at - y.at || x.made - y.made);
+      marksV += 1;
+    }
+    setTimeout(() => send({ type: "bookmarks", id: b.id, chatId: chat.chatId, ok: !fail, message: fail ? "No space left on device" : "",
+                            bookmarks: marks, bookmarksV: marksV }), 150);
+  } else if (m.type === "reach") {
+    // (a bookmark further back than what's shown: "gone…" keys aren't in the chat any more, "far…" ones
+    // further back than a tab shows; others are read in, at the top)
+    const key = (m as unknown as { key: string }).key;
+    const reached = key.startsWith("gone") ? "gone" : key.startsWith("far") ? "far" : "here";
+    if (reached === "here" && !items.some((it) => it.key === key)) {
+      const was = marks.find((x) => x.key === key);
+      items.unshift({ kind: was?.kind ?? "you", key, text: was?.text ?? "An earlier message", at: was?.at ?? now - 3 * 86_400_000 });
+    }
+    setTimeout(() => send({ type: "conversation", answer: { ok: true, items: [...items], more: true,
+      stamp: `r${Date.now()}`, ...turnEnd, ...marksOf(), limit: 240, reach: key, reached } }), 400);
   } else if (m.type === "typeIn") {
     setTimeout(() => send({ type: "result", kind: "typein", ok: true, message: "It's in the clipboard. Paste it into its terminal" }), 300);
+  } else if (m.type === "send" && params.get("unhooked") === "1") {
+    // (?new=task&unhooked=1: a new chat on an SSH host that started without Talpy Den's permission hook there)
+    const s = m as unknown as { id?: number };
+    setTimeout(() => send({ type: "result", kind: "send", ok: true, went: true, warn: true, id: s.id,
+                            message: unhookedText("Talpy Den couldn't put its permission hook in place: others may write in /shared/data/talpy-den") }), 600);
   } else if (m.type === "setOptions") {   // (pane.py --set-options: an idle background chat woken again with them)
     const o = m as unknown as { model?: string; effort?: string };
     setTimeout(() => send({ type: "result", kind: "options", ok: true,
                             message: `${o.model ? o.model[0].toUpperCase() + o.model.slice(1) : `${o.effort} effort`} for this chat from now on` }), 600);
   }
 });
+
+// ?bookmarks=KEY,KEY…: those messages bookmarked (a key not in the chat: one further back than what's
+// shown; "far…" ones further back than a tab shows, "gone…" ones not in the chat any more, as a read
+// for them finds); &open=1: their list open (not the steps unfolded); with ?width=1500 (or &wide=1)
+// beside the chat; &mark=fail: keeping one fails (it's undone); &go=KEY: that one clicked in the list;
+// ?long=N: N more made-up messages first, to go up and down in
+let marks: Bookmark[] = [];
+let marksV = 0;
+const marked = (params.get("bookmarks") ?? "").split(",").filter(Boolean);
+const extra = Number(params.get("long") ?? 0);
+if (extra > 0)
+  items.unshift(...Array.from({ length: extra }, (_, i): PaneItem => i % 2
+    ? { kind: "claude", key: `L${i}`, text: `Step ${i}: the parser reads each date's week again and checks it against the calendar, then **writes** what it found.\n\n- one\n- two`, at: now - 3_600_000 + i * 1000 }
+    : { kind: "you", key: `L${i}`, text: `Message ${i}: look at the week numbers once more.`, at: now - 3_600_000 + i * 1000 }));
+function marksOf(): Partial<Conversation> {
+  if (!marked.length) return {};
+  if (!marksV) {
+    marks = marked.map((key, i): Bookmark => {
+      const it = items.find((x) => x.key === key);
+      return it ? entryOf(it, now + i)
+        : { key, kind: i % 2 ? "claude" : "you", at: now - (10 - i) * 86_400_000, made: now + i,
+            text: key.startsWith("gone") ? "Run the old migration script again, then check the table sizes"
+              : key.startsWith("far") ? "The first plan: split the parser into a reader and a checker, each with its own tests"
+              : "Before the parser: how dates were read in the first version, and why it was replaced" };
+    }).sort((a, b) => a.at - b.at || a.made - b.made);
+    marksV = 1;
+  }
+  return { bookmarks: marks, bookmarksV: marksV };
+}
+function settleMarks(): void {
+  marked.filter((k) => /^(far|gone)/.test(k)).forEach((key, i) => setTimeout(() => send({ type: "conversation", answer: {
+    ok: true, items: [...items], more: true, stamp: `s${i}`, ...turnEnd, ...marksOf(), limit: 120, reach: key, reached: key.startsWith("gone") ? "gone" : "far" } }), 200 + 100 * i));
+  if (marked.length && params.get("open") === "1") setTimeout(() => send({ type: "key", key: "bookmarks" }), 600);
+  // &go=KEY: that one clicked in the list (a jump, a read further back, a copy…)
+  const go = params.get("go");
+  if (go) setTimeout(() => document.querySelector<HTMLButtonElement>(`.pane-bm[data-mark="${CSS.escape(go)}"] .pane-bm-go`)?.click(), 1000);
+}
 
 // ?commands=1: commands you ran in the conversation, with what they printed (Claude's colours)
 if (params.get("commands") === "1") {

@@ -23,27 +23,35 @@ Flow {
         return ({ asked: i18n("Claude's questions"), finished: i18n("a finished turn"), limit: i18n("a usage limit"),
                   interrupted: i18n("an interruption"), failed: i18n("an error"), stopped: i18n("a chat that stopped") })[ended] || ended
     }
-    // The chips (VS Code's shared/pane.ts chipsOf, the same rule and words): Claude's question's
-    // (more options than fit: the ones it recommends, then the first ones, in their order), then
-    // your usual replies after a turn that ended so, each once and none you hid; at most chipsMax
-    function chipsOf(asked, ended, yours, hidden) {
+    // The chips (VS Code's shared/pane.ts chipsOf, the same rule and words): Claude's own guess at
+    // your reply (predicted: a background chat's), then Claude's question's (more options than fit:
+    // the ones it recommends, then the first ones, in their order), then your usual replies after a
+    // turn that ended so, each once and none you hid; at most chipsMax
+    function chipsOf(asked, ended, yours, hidden, predicted) {
+        const guess = String(predicted || "").trim()
+        const room = chipsMax - (guess ? 1 : 0)
         let choices = asked && asked.choices ? asked.choices : []
-        if (choices.length > chipsMax) {
-            const marked = choices.filter(c => c.recommended).slice(0, chipsMax)
-            const rest = choices.filter(c => !c.recommended).slice(0, chipsMax - marked.length)
+        if (choices.length > room) {
+            const marked = choices.filter(c => c.recommended).slice(0, room)
+            const rest = choices.filter(c => !c.recommended).slice(0, room - marked.length)
             choices = choices.filter(c => marked.indexOf(c) >= 0 || rest.indexOf(c) >= 0)
         }
         const out = [], seen = {}
-        const add = (label, send, recommended, mine) => {
+        const add = (label, send, recommended, mine, guessed) => {
             const n = out.length + 1
-            out.push({ label: label, send: send, recommended: recommended, usual: mine,
-                       title: mine ? i18n("Your usual reply after %1: sends “%2” (Alt+%3). Shift+click: put it in the box first, to add to it. Right-click: don't suggest it again.", endedAfter(ended), send, n)
+            out.push({ label: label, send: send, recommended: recommended, usual: mine, predicted: !!guessed,
+                       title: guessed ? i18n("Claude's own guess at your reply: sends “%1” (Alt+%2).", send, n) + " "
+                                        + i18n("Shift+click: put it in the box first, to add to it.")
+                            : mine ? i18n("Your usual reply after %1: sends “%2” (Alt+%3). Shift+click: put it in the box first, to add to it. Right-click: don't suggest it again.", endedAfter(ended), send, n)
                                    : i18n("Answers Claude's question with “%1” (Alt+%2).", send, n) + (recommended ? " " + i18n("Claude recommends this one.") : "")
                                      + " " + i18n("Shift+click: put it in the box first, to add to it.") })
             seen[pane.replyKey(send)] = true
         }
+        if (guess)
+            add(guess, guess, false, false, true)
         for (const c of choices)
-            add(c.label, c.send, !!c.recommended, false)
+            if (!seen[pane.replyKey(c.send)])
+                add(c.label, c.send, !!c.recommended, false)
         for (const t of (ended && yours && yours.chips && yours.chips[ended]) || []) {
             if (out.length >= chipsMax)
                 break
@@ -53,7 +61,7 @@ Flow {
         }
         return out
     }
-    readonly property var chips: chipsOf(pane.asks, pane.turnEnded, pane.usual, pane.hiddenReplies)
+    readonly property var chips: chipsOf(pane.asks, pane.turnEnded, pane.usual, pane.hiddenReplies, pane.predicted)
     // (as shown: the same list while they're the same, so no chip is made again; the window's
     // Alt+1…4 and its backing off go by it)
     property var shown: []

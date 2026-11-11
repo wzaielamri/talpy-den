@@ -1,4 +1,4 @@
-import { ago, claudeCodeHere, claudeCodeReopenHint, cliInstalled, folderIn, goOnAt, hostLabel, keptChat, keptTitle, machineStatus, openChatsIn, queuedChat, startText, stopText, talpyChatHere, talpyChatHint, talpyChatTitle, terminalReopenHint } from "../../src/shared/model";
+import { ago, claudeCodeHere, claudeCodeReopenHint, cliInstalled, folderIn, goOnAt, hostLabel, keptChat, keptTitle, machineStatus, openChatsIn, queuedChat, startText, stopText, talpyChatHere, talpyChatHint, talpyChatTitle, talpyPlace, terminalReopenHint } from "../../src/shared/model";
 import { reviewPending, testsText } from "../../src/shared/pane";
 import type { Group, RecentChat, ViewState } from "../../src/shared/types";
 import { post } from "../env";
@@ -36,16 +36,17 @@ export function reopenOf(view: ViewState, group: Group): Reopen {
   const status = machineStatus(view, group.host);
   const cliHere = cliInstalled(status);
   const codeHere = claudeCodeHere(group, view.claudeCode);
-  const where = openChatsIn(view.settings.reopenIn, status, group.host, codeHere, true);
+  const place = talpyPlace(view, group.host);
+  const where = openChatsIn(view.settings.reopenIn, place, group.host, codeHere, true);
   const inCode = where === "claudeCode";
   const inTalpy = where === "talpyChat";
-  const talpyHint = talpyChatHint(status, group.host, true);
+  const talpyHint = talpyChatHint(place, group.host, true);
   const terminalHint = terminalReopenHint(group.host, cliHere);
   const codeHint = claudeCodeReopenHint(group, view.claudeCode, view.status?.groups ?? []);
   const canOpen = inCode || cliHere;
   const reopen = !canOpen ? `${terminalHint}\n${codeHint}` : inCode ? codeHint : inTalpy ? talpyHint : terminalHint;
-  return { talpyHere: talpyChatHere(status, group.host, true), cliHere, codeHere, inTalpy, inCode, canOpen,
-           talpyTitle: talpyChatTitle(status, group.host, true), talpyHint, terminalHint, codeHint, reopen, share: canShareRecent(status) };
+  return { talpyHere: talpyChatHere(place, group.host, true), cliHere, codeHere, inTalpy, inCode, canOpen,
+           talpyTitle: talpyChatTitle(place, group.host, true), talpyHint, terminalHint, codeHint, reopen, share: canShareRecent(status) };
 }
 
 // One of an account's chats that no Claude has open (Recent chats, ★ Starred

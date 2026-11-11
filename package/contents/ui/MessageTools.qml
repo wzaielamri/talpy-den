@@ -2,17 +2,21 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
+import "bookmarks.mjs" as Bm
+import "icons.mjs" as Icons
 
 // On the message under the pointer in Talpy Chat (yours, or Claude's reply):
-// its time ("14:32"; "Yesterday 14:32" for an earlier day) and Copy, over its
+// its time ("14:32"; "Yesterday 14:32" for an earlier day), its bookmark and Copy, over its
 // top right corner, so nothing moves. ChatPane.qml makes one for the list the
 // first time a message is hovered and moves it to the one hovered: a long chat
 // has nothing more for each message, and a time is worked out only here. Copy
 // puts a reply on the clipboard as Markdown, as the transcript has it (not as
 // it's shown; all of it: one shown cut is read whole first, ChatPane copyItem),
 // and yours as you wrote it (a command too); Copied says it for a moment in the
-// same place, as wide, once it's on the clipboard. No MouseArea: hover stays the list's (its
-// HoverHandler picks the message). VS Code chat.tsx HoverBar: the same words.
+// same place, as wide, once it's on the clipboard. The ribbon bookmarks it (filled once it's
+// bookmarked: a click takes it away; Bookmarks.qml), before Copy, so Copy stays where it is. No
+// MouseArea: hover stays the list's (its HoverHandler picks the message). VS Code chat.tsx HoverBar:
+// the same words.
 Rectangle {
     id: tools
 
@@ -44,6 +48,40 @@ Rectangle {
             color: pane.mutedColor
             font.family: pane.chatFamily
             font.pointSize: pane.pt * 0.85
+        }
+        // Bookmark (yours or Claude's reply, once it's in the chat: bookmarks.mjs canBookmark): the outline
+        // ribbon, filled once it's bookmarked; framed thin while the pointer is on it, as Copy
+        Rectangle {
+            readonly property bool marked: tools.row !== null && pane.bookmarked[tools.row.key] === true
+            visible: tools.row !== null && Bm.canBookmark(tools.row)
+            Layout.preferredWidth: markIcon.width + Kirigami.Units.smallSpacing * 2
+            Layout.preferredHeight: copyLabel.implicitHeight
+            radius: Kirigami.Units.cornerRadius
+            color: "transparent"
+            border.width: 1
+            border.color: markHover.hovered ? Kirigami.Theme.focusColor : "transparent"
+
+            Kirigami.Icon {
+                id: markIcon
+                anchors.centerIn: parent
+                width: Math.min(Kirigami.Units.iconSizes.small, Math.round(copyLabel.implicitHeight * 0.9))
+                height: width
+                source: parent.marked ? Icons.plasma.bookmarked : Icons.plasma.bookmark
+                isMask: true
+                color: markHover.hovered ? Kirigami.Theme.textColor : pane.mutedColor
+            }
+            HoverHandler {
+                id: markHover
+                cursorShape: Qt.PointingHandCursor
+            }
+            TapHandler {
+                gesturePolicy: TapHandler.ReleaseWithinBounds   // (the press is its own: no selection starts under it)
+                onTapped: pane.bookmarksNow().toggle(tools.row)
+            }
+            PlasmaComponents3.ToolTip.text: marked ? i18n("Remove the bookmark (Ctrl+D)")
+                                          : tools.row && tools.row.kind === "claude" ? i18n("Bookmark this reply (Ctrl+D)") : i18n("Bookmark your message (Ctrl+D)")
+            PlasmaComponents3.ToolTip.visible: markHover.hovered
+            PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
         }
         // Copy: framed thin while the pointer is on it, and while it says Copied (as a code block's)
         Rectangle {
@@ -81,7 +119,8 @@ Rectangle {
                 gesturePolicy: TapHandler.ReleaseWithinBounds   // (the press is Copy's: no selection starts under it)
                 onTapped: pane.copyItem(tools.row.key, tools.row.text, true)   // (all of it: Copied once it's on the clipboard)
             }
-            PlasmaComponents3.ToolTip.text: tools.row && tools.row.kind === "claude" ? i18n("Copy this reply, as Markdown") : i18n("Copy your message, as you wrote it")
+            PlasmaComponents3.ToolTip.text: tools.row && tools.row.thinking ? i18n("Copy this thinking line")
+                                          : tools.row && tools.row.kind === "claude" ? i18n("Copy this reply, as Markdown") : i18n("Copy your message, as you wrote it")
             PlasmaComponents3.ToolTip.visible: copyHover.hovered
             PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
         }

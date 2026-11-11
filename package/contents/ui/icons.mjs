@@ -35,6 +35,8 @@ const TABLE = {
     star:            ['non-starred-symbolic',          'star',       'non-starred-symbolic'],
     starred:         ['starred-symbolic',              'starFull',   'starred-symbolic'],
     makeDefault:     ['starred-symbolic',              'starFull',   'starred-symbolic'],                 // an account's Make Default (plain: not a starred chat's yellow)
+    bookmark:        ['bookmarks',                     'bookmark',   'bookmark-new-symbolic'],            // Talpy Chat: bookmark a message (its hover bar, an outline)
+    bookmarked:      ['bookmarks-bookmarked',          'bookmarkFull', 'user-bookmarks-symbolic'],        // a bookmarked message, the chat's Bookmarks and their count
     share:           ['document-share',                'share',      'emblem-shared-symbolic'],           // share or continue on another account
     continueOn:      ['mail-forward',                  'move',       'system-switch-user-symbolic'],      // continue on the account with room left (Plasma: an arrow, as VS Code's)
     moveTo:          ['go-next',                       'move',       'go-next-symbolic'],                 // keep only on, move a chat to Claude Code
@@ -68,7 +70,7 @@ const TABLE = {
     next:            ['go-next',                       'chevron',    'go-next-symbolic'],
     goTo:            ['go-next',                       'chevron',    'go-next-symbolic'],                 // the chat that needs you, a project in its tab
     more:            ['go-down-skip',                  'more',       'go-bottom-symbolic'],               // Show N more
-    earlier:         ['go-up',                         null,         'go-up-symbolic'],                   // Show earlier
+    earlier:         ['go-up',                         'chevron',    'go-up-symbolic'],                   // Show earlier; a bookmark further back than what's shown (VS Code turns its chevron)
     folded:          ['arrow-right',                   'chevron',    'pan-end-symbolic'],                 // a fold, closed
     unfolded:        ['arrow-down',                    'chevron',    'pan-down-symbolic'],                // (VS Code turns its chevron)
     expandAll:       ['expand-all',                    null,         'pan-down-symbolic'],
@@ -101,6 +103,11 @@ const TABLE = {
     chooseFile:      ['document-open',                 null,         'document-open-symbolic'],
     vscodeApp:       ['vscode',                        null,         'text-editor-symbolic'],             // VS Code's own icon (GNOME: if it has none)
     talpyChatLogo:   ['talpy-chat.svg',                null,         'chat-bubbles-symbolic'],            // Talpy Chat's own icon, in colour: the Open in switch (VS Code: an image, TalpyChatLogo in icons.tsx)
+    showSource:      ['code-context',                  'code',       'text-x-script-symbolic'],           // a page Claude made: its source, in Talpy Chat
+    // ---- what Claude made, folded under its step in Talpy Chat (a plan: plan)
+    madePicture:     ['insert-image',                  'image',      'image-x-generic-symbolic'],
+    madePage:        ['globe',                         'globe',      'text-html-symbolic'],
+    madeFile:        ['note',                          'note',       'text-x-generic-symbolic'],
     // ---- things
     chats:           ['dialog-messages',               'chat',       'user-available-symbolic'],          // the Talpy Den tab (GNOME: a speech bubble Adwaita and Yaru have)
     account:         ['user-identity',                 'user',       'avatar-default-symbolic'],

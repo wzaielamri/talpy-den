@@ -1,3 +1,4 @@
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import contextlib
 import importlib.util
 import io
@@ -1366,6 +1367,251 @@ class DismissTests(Fixture):
         with mock.patch.object(cs, "load_dismissed", load_then_remove):
             self.collect(with_tokens=False)
         self.assertEqual(set(cs.load_dismissed(self.cache)), {"bgdone"})
+
+
+class BookmarkStoreTests(unittest.TestCase):
+    """Talpy Chat's bookmarks, kept in the widget's cache (talpy_den's bookmarked messages)."""
+
+    CHAT = "11111111-2222-3333-4444-555555555555"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cache = Path(tmp.name) / "cache"
+        old = os.umask(0o022)  # (what most desktops have: the files are private whatever it is)
+        self.addCleanup(os.umask, old)
+
+    def mark(self, key, on=True, kind="claude", at=1000, text="a reply", now=5000, chat=CHAT, host=""):
+        return cs.change_bookmark(self.cache, chat, host, key, on, kind, at, text, now_ms=now)
+
+    def keys(self, marks):
+        return [m["key"] for m in marks]
+
+    def test_adding_and_removing_twice_change_once_and_the_list_keeps_the_chats_order(self):
+        ok, said, marks, v = self.mark("msg_b", at=2000, now=5000)
+        self.assertEqual((ok, said, v), (True, "", 5000))
+        self.assertEqual(marks, [{"key": "msg_b", "kind": "claude", "at": 2000, "text": "a reply", "made": 5000}])
+        self.assertEqual(self.mark("msg_b", at=2000, now=6000), (True, "", marks, 5000))  # (nothing written)
+        self.mark("uuid-a", kind="you", at=1000, text="mine", now=7000)
+        ok, _, marks, v = self.mark("msg_c", at=2000, now=4000)  # (written as msg_b, bookmarked before it)
+        self.assertEqual((self.keys(marks), v), (["uuid-a", "msg_c", "msg_b"], 7001))
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), (marks, 7001))
+        ok, said, marks, v = self.mark("msg_c", on=False, now=8000)
+        self.assertEqual((ok, said, self.keys(marks), v), (True, "", ["uuid-a", "msg_b"], 8000))
+        self.assertEqual(self.mark("msg_c", on=False, now=9000), (True, "", marks, 8000))
+        self.assertEqual(self.mark("never-there", on=False, kind="", now=9000), (True, "", marks, 8000))
+        # removing needs no kind; a key Claude Code gives a queued prompt or a host's message is one too
+        self.assertEqual(self.mark("queued-1730000000000", kind="you", now=9500)[3], 9500)
+        self.assertTrue(self.mark("msg_01AbC:x@y.z", now=9600)[0])
+
+    def test_the_text_is_one_line_of_140_characters_at_most(self):
+        text = self.mark("k1", text="  line one\n\n  line\ttwo  \r\n")[2][0]["text"]
+        self.assertEqual(text, "line one line two")
+        text = self.mark("k2", text="x" * 500)[2][1]["text"]
+        self.assertEqual(text, "x" * 139 + "…")
+        self.assertEqual(len(text), cs.BOOKMARK_TEXT)
+        self.assertEqual(self.mark("k3", text="y" * 140)[2][2]["text"], "y" * 140)  # (not cut)
+        self.assertEqual(self.mark("k4", text="word " * 100)[2][3]["text"][-6:], " word…")
+        self.assertEqual(self.mark("k5", text="")[2][4]["text"], "")
+
+    def test_what_it_refuses(self):
+        for key in ("pending-3", "a/b", "--off", "-x", "", "a b", "k\n", "x" * 201, "ü", None, 7):
+            self.assertEqual(self.mark(key), (False, "Which message?", [], 0), key)
+        self.assertEqual(self.mark("x" * 200)[:2], (True, ""))
+        for kind in ("tool", "", None, "you "):
+            ok, said, marks, v = self.mark("k1", kind=kind)
+            self.assertEqual((ok, said, self.keys(marks), v), (False, "Which message?", ["x" * 200], 5000), kind)
+        self.assertTrue(self.mark("x" * 200, on=False, kind="tool", now=6000)[0])  # (removing: any kind)
+        for chat in ("..", ".", "a/b", "", "-x", "a\0b", None):
+            self.assertEqual(self.mark("k1", chat=chat), (False, f"Not a chat: {chat}", [], 0), chat)
+        self.assertEqual(os.listdir(self.cache / "bookmarks"), [self.CHAT + ".json"])
+
+    def test_a_chat_keeps_up_to_100(self):
+        for n in range(cs.BOOKMARKS_MAX):
+            self.mark(f"k{n}", at=n, now=5000 + n)
+        ok, said, marks, v = self.mark("k100", at=100, now=9000)
+        self.assertEqual((ok, said, len(marks), v), (False, "A chat keeps up to 100 bookmarks: remove one first",
+                                                     100, 5099))
+        self.assertNotIn("k100", self.keys(cs.load_bookmarks(self.cache, self.CHAT)[0]))
+        self.assertEqual(self.mark("k5", at=5, now=9000)[:2], (True, ""))  # (one it has: done)
+        self.mark("k5", on=False, now=9001)
+        ok, _, marks, v = self.mark("k100", at=100, now=9002)
+        self.assertEqual((ok, len(marks), marks[-1]["key"], v), (True, 100, "k100", 9002))
+
+    def test_the_files_are_private_and_written_in_one_go(self):
+        with mock.patch.object(cs, "write_json_atomic", wraps=cs.write_json_atomic) as write_json:
+            self.mark("k1", host="build-box")
+            self.mark("k1")
+        self.assertEqual([c[1] for c in write_json.call_args_list], [{"private": True}] * 2)
+        root = self.cache / "bookmarks"
+        host = root / ("host-" + cs.short_id("build-box"))
+        self.assertEqual(sorted(os.listdir(root)), sorted([self.CHAT + ".json", host.name]))  # (nothing left over)
+        self.assertEqual(os.listdir(host), [self.CHAT + ".json"])
+        for folder in (root, host):
+            self.assertEqual(stat.S_IMODE(folder.stat().st_mode), 0o700, folder)
+            self.assertEqual(stat.S_IMODE((folder / (self.CHAT + ".json")).stat().st_mode), 0o600)
+        self.assertEqual(json.loads((root / (self.CHAT + ".json")).read_text()),
+                         {"chat": self.CHAT, "host": "", "v": 5000, "marks": [
+                             {"key": "k1", "kind": "claude", "at": 1000, "text": "a reply", "made": 5000}]})
+        # a write that fails changes nothing and says why
+        before = (root / (self.CHAT + ".json")).read_bytes()
+        with mock.patch.object(cs, "write_json_atomic", side_effect=OSError(28, "No space left on device")):
+            ok, said, marks, v = self.mark("k2", now=6000)
+        self.assertEqual((ok, said, self.keys(marks), v), (False, "No space left on device", ["k1"], 5000))
+        self.assertEqual((root / (self.CHAT + ".json")).read_bytes(), before)
+
+    def test_v_grows_with_every_change_and_an_emptied_list_keeps_its_file(self):
+        self.assertEqual(self.mark("k1", now=5000)[3], 5000)
+        self.assertEqual(self.mark("k2", now=3000)[3], 5001)  # (a clock set back: still newer)
+        self.assertEqual(self.mark("k1", on=False, now=5001)[3], 5002)
+        self.assertEqual(self.mark("k2", on=False, now=9000)[3], 9000)
+        self.assertTrue((self.cache / "bookmarks" / (self.CHAT + ".json")).exists())
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 9000))
+        self.assertEqual(self.mark("k3", now=9000)[3], 9001)
+        # pane.py's answer carries the list once the chat has a file (an empty one too), else nothing
+        self.mark("k3", on=False, now=9500)
+        self.assertEqual(cs.bookmarks_answer({"ok": True}, self.cache, self.CHAT),
+                         {"ok": True, "bookmarks": [], "bookmarksV": 9500})
+        self.assertEqual(cs.bookmarks_answer({"ok": True}, self.cache, "other-chat"), {"ok": True})
+        self.assertEqual(cs.load_bookmarks(self.cache, "other-chat"), ([], 0))
+
+    def test_a_hosts_file_is_under_a_hash_of_its_name(self):
+        _, _, marks, _ = self.mark("k1", host="build-box")
+        path = self.cache / "bookmarks" / ("host-" + cs.short_id("build-box")) / (self.CHAT + ".json")
+        self.assertEqual(cs.bookmarks_path(self.cache, self.CHAT, "build-box"), path)
+        self.assertTrue(path.exists())
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT, "build-box"), (marks, 5000))
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 0))  # (this computer's chat of that id)
+        for host in ("..", "../..", "a/../../b"):
+            self.mark("k1", host=host)
+            where = cs.bookmarks_path(self.cache, self.CHAT, host)
+            self.assertEqual(where.parent.parent, self.cache / "bookmarks", host)
+            self.assertTrue(where.exists(), host)
+            self.assertEqual(where.resolve().parent.parent, (self.cache / "bookmarks").resolve(), host)
+        found = [str(p.relative_to(self.cache)) for p in self.cache.rglob("*")]
+        self.assertFalse([p for p in found if "build-box" in p or ".." in p], found)
+
+    def test_malformed_entries_are_left_out(self):
+        path = self.cache / "bookmarks" / (self.CHAT + ".json")
+        good = {"key": "k1", "kind": "you", "at": 10, "text": "hi", "made": 20}
+        write(path, {"chat": self.CHAT, "v": 7, "marks": [
+            {"key": "k2", "kind": "claude", "at": 5, "text": "a\nb", "made": "soon"}, good, dict(good, text="twice"),
+            {"key": "k3", "kind": "tool"}, {"key": "pending-1", "kind": "you"}, {"kind": "you"}, "k4", None,
+            {"key": "k5", "kind": "claude", "at": True, "text": ["x"]}]})
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([
+            {"key": "k5", "kind": "claude", "at": 0, "text": "", "made": 0},
+            {"key": "k2", "kind": "claude", "at": 5, "text": "a b", "made": 0}, good], 7))
+        write(path, {"v": "x", "marks": {}})
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 1))
+        for broken in ("{", "[]", "x" * (cs.BOOKMARKS_READ + 1)):
+            write(path, broken)
+            self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 0))
+
+    def test_a_full_list_of_the_longest_marks_is_read_back(self):
+        for n in range(cs.BOOKMARKS_MAX):
+            self.mark(f"{n:03d}" + "k" * 197, text="\U0001F600" * 500, now=5000 + n)
+        path = self.cache / "bookmarks" / (self.CHAT + ".json")
+        self.assertLess(path.stat().st_size, cs.BOOKMARKS_READ)
+        marks, v = cs.load_bookmarks(self.cache, self.CHAT)
+        self.assertEqual((len(marks), v, marks[0]["text"]), (100, 5099, "\U0001F600" * 139 + "…"))
+
+    def test_writes_at_once_all_land(self):
+        import threading
+        threads = [threading.Thread(target=self.mark, args=(f"k{n}",), kwargs={"now": 5000 + n}) for n in range(12)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        marks, v = cs.load_bookmarks(self.cache, self.CHAT)
+        self.assertEqual((sorted(self.keys(marks)), v >= 5011), (sorted(f"k{n}" for n in range(12)), True))
+        self.assertEqual(sorted(os.listdir(self.cache / "bookmarks")), [self.CHAT + ".json"])
+
+    def test_a_moved_chats_bookmarks_follow_it(self):
+        self.mark("k1", at=1, text="old one", chat="old-1", now=5000)
+        self.mark("k2", at=2, text="old two", chat="old-1", now=5001)
+        self.mark("k2", at=2, text="new two", chat="new-1", now=6000)
+        self.mark("k3", at=3, chat="new-1", now=6001)
+        self.mark("h1", chat="old-1", host="build-box")
+        before = int(time.time() * 1000)
+        cs.bookmarks_moved(self.cache, {"old-1": "mid-1", "mid-1": "new-1", "gone": "new-2"})
+        marks, v = cs.load_bookmarks(self.cache, "new-1")
+        self.assertEqual([(m["key"], m["text"]) for m in marks], [("k1", "old one"), ("k2", "new two"), ("k3", "a reply")])
+        self.assertGreaterEqual(v, before)
+        self.assertEqual(cs.load_bookmarks(self.cache, "old-1"), ([], 0))
+        self.assertFalse((self.cache / "bookmarks" / "old-1.json").exists())
+        self.assertFalse((self.cache / "bookmarks" / "new-2.json").exists())
+        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, "old-1", "build-box")[0]), ["h1"])  # (another computer's)
+        # a host's: in its own folder; to an id with no file yet
+        cs.bookmarks_moved(self.cache, {"old-1": "new-9"}, "build-box")
+        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, "new-9", "build-box")[0]), ["h1"])
+        self.assertEqual(cs.load_bookmarks(self.cache, "old-1", "build-box"), ([], 0))
+        self.assertEqual(cs.load_bookmarks(self.cache, "new-9"), ([], 0))
+
+    def test_moves_without_bookmarks_touch_nothing(self):
+        with mock.patch.object(cs, "bookmarks_lock") as lock:
+            cs.bookmarks_moved(self.cache, {"old-1": "new-1"})  # (no folder)
+        self.assertFalse(self.cache.exists())
+        self.mark("k1", chat="other")
+        with mock.patch.object(cs, "bookmarks_lock") as lock_too:
+            cs.bookmarks_moved(self.cache, {"old-1": "new-1", "a/b": "c", "other": "other"})
+        self.assertEqual((lock.call_count, lock_too.call_count), (0, 0))
+        self.assertEqual(os.listdir(self.cache / "bookmarks"), ["other.json"])
+
+    def test_forgetting_a_deleted_chats_bookmarks(self):
+        self.mark("k1")
+        self.mark("k1", host="build-box")
+        cs.forget_bookmarks(self.cache, self.CHAT)
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 0))
+        self.assertEqual(len(cs.load_bookmarks(self.cache, self.CHAT, "build-box")[0]), 1)
+        cs.forget_bookmarks(self.cache, self.CHAT, "build-box")
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT, "build-box"), ([], 0))
+        cs.forget_bookmarks(self.cache, self.CHAT)  # (none any more)
+        cs.forget_bookmarks(self.cache, "..")
+
+    def test_a_deleted_chat_takes_its_bookmarks_along_here_and_on_a_host(self):
+        # (sharing.delete_chat here, remote.delete for a host's: forget_deleted)
+        self.mark("k1")
+        self.mark("k1", host="build-box")
+        self.mark("k1", chat="other")
+        cs.forget_deleted(self.cache, "chats", self.CHAT, "build-box")
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT, "build-box"), ([], 0))
+        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, self.CHAT)[0]), ["k1"])  # (this computer's stays)
+        cs.forget_deleted(self.cache, "chats", self.CHAT)
+        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 0))
+        self.assertFalse((self.cache / "bookmarks" / (self.CHAT + ".json")).exists())
+        cs.forget_deleted(self.cache, "plans", "other")  # (a plan of that name isn't the chat)
+        cs.forget_deleted(self.cache, "memories", "other")
+        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, "other")[0]), ["k1"])
+
+    def test_a_check_takes_moved_chats_bookmarks_along_only_when_a_chat_moved(self):
+        home = self.cache.parent / "home"
+        home.mkdir()
+        with mock.patch.object(cs, "chat_moves", return_value={}), mock.patch.object(cs, "bookmarks_moved") as moved:
+            status = cs.collect(home, self.cache, with_tokens=False)
+        self.assertEqual((status["ok"], moved.call_count), (True, 0))
+        with mock.patch.object(cs, "chat_moves", return_value={"old-1": "new-1"}), \
+                mock.patch.object(cs, "bookmarks_moved") as moved:
+            status = cs.collect(home, self.cache, with_tokens=False)
+        moved.assert_called_once_with(self.cache, {"old-1": "new-1"})
+        self.assertEqual([e for e in status["errors"] if "bookmark" in e], [])
+        # (one that fails is said, and the check goes on)
+        with mock.patch.object(cs, "chat_moves", return_value={"old-1": "new-1"}), \
+                mock.patch.object(cs, "bookmarks_moved", side_effect=OSError("No space left on device")):
+            status = cs.collect(home, self.cache, with_tokens=False)
+        self.assertTrue(status["ok"])
+        self.assertIn("bookmarks of moved chats: No space left on device", status["errors"])
+
+    def test_bookmarked_chats_are_those_with_a_bookmark(self):
+        self.assertEqual(cs.bookmarked_chats(self.cache), set())
+        self.mark("k1", chat="kept")
+        self.mark("k1", chat="emptied")
+        self.mark("k1", chat="emptied", on=False, now=6000)
+        self.mark("k1", chat="on-host", host="build-box")
+        write(self.cache / "bookmarks" / "broken.json", "{")
+        write(self.cache / "bookmarks" / "notes.txt", "x")
+        self.assertEqual(cs.bookmarked_chats(self.cache), {"kept"})
+        self.assertEqual(cs.bookmarked_chats(self.cache, "build-box"), {"on-host"})
+        self.assertEqual(cs.bookmarked_chats(self.cache, "elsewhere"), set())
 
 
 class SharedChatTests(Fixture):

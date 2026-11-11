@@ -10,11 +10,12 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { answerFor, answerKind, answersOf, answersTaken, answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
 import { inline, Markdown } from "../webview/util/markdown";
+import { ribbonCss } from "../webview/util/ribbons";
 import { ESC_ORDER, escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mjs";
 
 const NOW = 1_800_000_000_000;
@@ -188,6 +189,24 @@ test("a command runs as its kind says on the chat's route (Plasma's commandRun: 
                     ["Claude's default model", "/model default", true]]);
   assert.deepEqual(suggestFor("/effort x", null, "", closed).items.map((o) => o.insert), ["/effort xhigh"]);
   assert.deepEqual(suggestFor("/model ", OFFERS, "", tmux).items, []);   // (a terminal's: Claude's own list there)
+  // what it uses now, marked (its full name as the list names it); the line under the box says it
+  const now: ChatOptions = { model: "claude-sonnet-5-5[1m]", effort: "high", ultracode: false, next: false };
+  assert.deepEqual(suggestFor("/model ", OFFERS, "", closed, now).items.filter((o) => o.now).map((o) => [o.text, o.about]),
+                   [["Sonnet", "now · for this chat alone"]]);
+  assert.match(commandHint(commandRun("/model ", OFFERS, closed), "background", "", now)!, /^Now: Sonnet · High effort\. Enter lists the models/);
+  // /effort turns ultracode on or off (Extra high effort, with ultracode: claude --effort ultracode)
+  const effort = (o: ChatOptions) => suggestFor("/effort ", null, "", closed, o).items.map((s) => [s.text, s.insert, s.about, !!s.now]);
+  assert.deepEqual(effort(now).slice(2, 6), [["High", "/effort high", "now · for this chat alone", true],
+    ["Extra high", "/effort xhigh", "for this chat alone", false], ["Max", "/effort max", "for this chat alone", false],
+    ["Turn ultracode on", "/effort ultracode", "with Extra high effort · for this chat alone", false]]);
+  const on = withPick(now, "effort", "ultracode", "next");
+  assert.deepEqual(on, { model: "claude-sonnet-5-5[1m]", effort: "xhigh", ultracode: true, next: true });
+  assert.deepEqual(effort(on).slice(3, 6), [["Extra high", "/effort xhigh", "from your next message, with ultracode · for this chat alone", true],
+    ["Max", "/effort max", "for this chat alone", false], ["Turn ultracode off", "/effort xhigh", "Extra high effort stays · for this chat alone", false]]);
+  assert.match(commandHint(commandRun("/effort ", null, closed), "background", "", on)!,
+               /^From your next message: Sonnet · Extra high effort, with ultracode\. Enter lists/);
+  assert.deepEqual(withPick(on, "effort", "xhigh", "now"), { ...on, ultracode: false, next: false });
+  assert.equal(pickLabel("effort", "ultracode"), "Ultracode, with Extra high effort");
   assert.equal(commandRun("/export", OFFERS, tmux)!.run, "terminal");
   assert.equal(commandRun("/export chat.md", OFFERS, tmux)!.run, "here");
   assert.equal(commandRun("/permissions", OFFERS, tmux)!.run, "page");
@@ -649,6 +668,48 @@ test("a new chat's tab starts it with its first message, then goes on with it", 
   } finally {
     p.dispose();
     release();
+  }
+});
+
+// (2026-11-06) A new chat on an SSH host (or in a container) in a Talpy Chat tab: started there (pane.py --start
+// --host, never this computer's extra Claude folders), the tab under "host|chat" after, that host checked at once;
+// one that started without Talpy Den's permission hook says so on its line
+test("a new chat on an SSH host starts there, and its tab goes on with it under the host's key", async () => {
+  const NEW = "c0ffee00-0000-4000-8000-000000000002";
+  const calls: string[][] = [];
+  const polled: string[] = [];
+  const backend = { pane: async (args: string[]) => {
+    calls.push(args);
+    if (args[0] === "--start") return { ok: true, how: "background", chat: NEW, id: NEW.slice(0, 8), profileDir: ".claude", message: "Started",
+                                        hooked: false, hookWhy: "Talpy Den couldn't put its permission hook in place: others may write in /x" };
+    return { ok: false, missing: true, message: "not yet" };
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async (host?: string) => void polled.push(host ?? ""), pollHost: async (host: string) => void polled.push(host),
+                 onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false,
+                 setActionError() {}, setActionInfo() {} };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+  p.openNew({ id: "lab/g", title: "main", chatProfile: ".claude", host: "lab" } as never, { path: "/srv/app", short: "~/app" });
+  const panel = recorded.panels.at(-1)!;
+  const keys = () => [...(p as unknown as { panes: Map<string, unknown> }).panes.keys()];
+  try {
+    panel.show(true);
+    panel.receive({ type: "ready" });
+    await tick();
+    assert.ok(keys().some((k) => k.startsWith("lab|new-")), keys().join(" "));
+    panel.receive({ type: "send", text: "Build it", how: "auto", afterTurn: false, id: 1 });
+    await tick(50);
+    const start = calls.find((c) => c[0] === "--start")!;
+    assert.deepEqual(start.slice(-2), ["--host", "lab"]);
+    assert.ok(!start.includes("--config-dir"), "this computer's extra Claude folders stay here");
+    assert.deepEqual(keys(), [`lab|${NEW}`]);
+    const result = panel.sent.find((m) => (m as { type: string }).type === "result") as { ok: boolean; went: boolean; warn: boolean; message: string };
+    assert.deepEqual([result.ok, result.went, result.warn], [true, true, true]);
+    assert.match(result.message, /^It went, but Talpy Chat can't answer what it asks \(Talpy Den couldn't put its permission hook in place/);
+    assert.ok(calls.some((c) => c[0] === "--conversation" && c[1] === NEW && c.includes("lab")), "read there");
+  } finally {
+    p.dispose();
   }
 });
 
@@ -1266,6 +1327,12 @@ test("suggested replies: Claude's question's chips first, then your usual ones a
   assert.deepEqual(chipsOf(null, "limit", usual).map((c) => c.send), ["continue"]);
   assert.deepEqual(chipsOf(null, "limit", usual, new Set([replyKey("Continue!")])), []);
   assert.deepEqual(chipsOf(null, "finished", null), []);
+  // Claude's own guess at your reply first (a background chat's), each once, still at most 4
+  const guessed = chipsOf(yesno, "asked", usual, new Set(), " yes ");
+  assert.deepEqual(guessed.map((c) => [c.send, !!c.predicted, c.usual]),
+                   [["yes", true, false], ["No", false, false], ["yes please", false, true], ["go", false, true]]);
+  assert.match(guessed[0].title, /^Claude's own guess at your reply: sends “yes” \(Alt\+1\)/);
+  assert.equal(chipsOf(null, "asked", usual, new Set(), "keep the old logs").length, 4);
   // six options: the one Claude recommends stays, with the first ones, in their order
   const six: Asks = { kind: "options", choices: [1, 2, 3, 4, 5, 6].map((n) => ({ label: `${n} · Step ${n}`, send: `${n}. Step ${n}`, recommended: n === 6 })) };
   const shown = chipsOf(six, "asked", usual);
@@ -1404,6 +1471,178 @@ test("the new-messages badge: what came in below since you scrolled up, as its t
 // Talpy Chat's keys (A10): one table for the ? list and the tooltips (keys.mjs, the
 // widget's too); each action is a command whose key applies only while a chat tab has
 // the focus (not with it in the terminal or the side bar: editorAreaFocus)
+test("bookmarks (bookmarks.mjs, Plasma's too): Claude's replies and your messages once they're in the chat; their first words on a line; the list in the chat's order, 100 at most", () => {
+  const you = (key: string, more: Partial<PaneItem> = {}): PaneItem => ({ kind: "you", key, text: "hi", at: 5, ...more });
+  assert.equal(canBookmark({ kind: "claude", key: "msg_1", text: "a", at: 1 }), true);
+  assert.equal(canBookmark(you("0b1c-uuid")), true);
+  assert.equal(canBookmark(you("queued-1762400000000")), true);   // (keyed by its enqueue: it's in the chat)
+  for (const not of [{ kind: "claude", key: "msg_1/thinking", thinking: true }, { kind: "tool", key: "toolu_1" }, { kind: "note", key: "n1" },
+                     { kind: "you", key: "pending-3" }, { kind: "you", key: "u1", status: "sending" }, { kind: "you", key: "u1", status: "held" },
+                     { kind: "you", key: "u1", queued: true }, { kind: "you", key: "u1", until: 99 }, { kind: "you", key: "u1", sending: true },
+                     { kind: "you", key: "toolu_1/answer", answered: "question" }, { kind: "you", key: "-rf" }, { kind: "you", key: "" }])
+    assert.equal(canBookmark({ at: 1, ...not } as PaneItem), false, JSON.stringify(not));
+  assert.equal(canBookmark(null), false);
+
+  assert.equal(snippetOf({ kind: "claude", key: "m", at: 1, text: "## Done\n\n- **all** `tests` pass\n- [docs](https://x.org)" }), "Done all tests pass docs");
+  assert.equal(snippetOf(you("u", { text: "look [Image: /tmp/a.png] and [Image: /tmp/b.png] and [Image: /tmp/a.png]" })), "look [Image #1] and [Image #2] and [Image #1]");
+  assert.equal(snippetOf(you("u", { text: "!ls -la", command: { shell: true } })), "ls -la");
+  const long = snippetOf({ kind: "claude", key: "m", at: 1, text: "word ".repeat(60) });
+  assert.equal(long.length, 140);
+  assert.ok(long.endsWith("word…"), long);
+  assert.equal(snippetOf({ kind: "claude", key: "m", at: 1, text: "x".repeat(140) }), "x".repeat(140));   // (140 fit)
+  assert.deepEqual(entryOf(you("u", { at: 7.6, text: "one\ntwo" }), 99), { key: "u", kind: "you", at: 7, text: "one two", made: 99 });
+  assert.equal(entryOf(you("u", { at: null }), 99).at, 0);
+
+  const m = (key: string, at: number, made = 1): Bookmark => ({ key, kind: "claude", at, text: key, made });
+  const list = withBookmark([m("b", 20), m("a", 10)], m("c", 15))!;
+  assert.deepEqual(list.map((x) => x.key), ["a", "c", "b"]);
+  assert.deepEqual(withBookmark(list, m("c", 15, 50))!.map((x) => x.made), [1, 1, 1]);   // (one a message: the first stays)
+  assert.deepEqual(withBookmark([m("x", 5, 9), m("y", 5, 3)], m("z", 5, 6))!.map((x) => x.key), ["y", "z", "x"]);   // (same time: by when it was bookmarked)
+  assert.deepEqual(withoutBookmark(list, "c").map((x) => x.key), ["a", "b"]);
+  assert.deepEqual(withoutBookmark(list, "nope").map((x) => x.key), ["a", "c", "b"]);
+  const full = Array.from({ length: BOOKMARKS_MAX }, (_, i) => m("k" + i, i));
+  assert.equal(withBookmark(full, m("one-more", 1000)), null);
+  assert.equal(withBookmark(full, m("k3", 3))!.length, BOOKMARKS_MAX);   // (one it has: no change, not refused)
+  assert.deepEqual(keysOf(list), { a: true, c: true, b: true });
+});
+
+test("bookmarks: where each one is, Alt+↑ / Alt+↓ from what you read, and which answer's list is taken", () => {
+  const m = (key: string): Bookmark => ({ key, kind: "claude", at: 1, text: key, made: 1 });
+  const loaded = new Map([["a", 0], ["b", 1]]);
+  assert.equal(stateOf(m("a"), loaded, true, false), "here");
+  assert.equal(stateOf(m("a"), { a: 0 }, true, false), "here");
+  assert.equal(stateOf(m("z"), loaded, true, false), "earlier");   // (Show earlier, or a reach, reads it)
+  assert.equal(stateOf(m("z"), loaded, true, true), "far");        // (further back than the most the tab shows)
+  assert.equal(stateOf(m("z"), loaded, false, false), "gone");     // (all of the chat is there: it isn't)
+  assert.equal(stateOf(m("z"), loaded, true, false, { z: "gone" }), "gone");
+  assert.equal(stateOf(m("z"), loaded, true, false, { z: "far" }), "far");
+  assert.equal(stateOf(m("toString"), {}, false, false), "gone");   // (an object's own keys only)
+
+  const list = ["e1", "e2", "f", "g", "a", "b", "c"].map(m);
+  const states = { e1: "earlier", e2: "earlier", f: "far", g: "gone", a: "here", b: "here", c: "here" } as const;
+  const tops = { a: 100, b: 500, c: 900 };
+  assert.deepEqual(bookmarkStep(list, states, tops, 0, false), { key: "a" });
+  assert.deepEqual(bookmarkStep(list, states, tops, 100, false), { key: "b" });     // (the one at the top is the one you read)
+  assert.deepEqual(bookmarkStep(list, states, tops, 98, false), { key: "b" });      // (within 4 px)
+  assert.deepEqual(bookmarkStep(list, states, tops, 900, false), { end: true });    // (past the last: the end)
+  assert.deepEqual(bookmarkStep(list, states, tops, 900, true), { key: "b" });
+  assert.deepEqual(bookmarkStep(list, states, tops, 600, true), { key: "b" });
+  assert.deepEqual(bookmarkStep(list, states, tops, 100, true), { reach: "e2" });   // (the newest further back; far and gone skipped)
+  assert.equal(bookmarkStep(["f", "g", "a"].map(m), states, tops, 50, true), null);
+  assert.deepEqual(bookmarkStep([], {}, {}, 0, false), { end: true });
+
+  assert.equal(adoptable(5, false, 5), true);
+  assert.equal(adoptable(5, false, 7), true);
+  assert.equal(adoptable(5, false, 4), false);     // (an older list)
+  assert.equal(adoptable(5, true, 9), false);      // (a change of ours on its way)
+  assert.equal(adoptable(0, false, undefined), true);
+  assert.equal(adoptable(3, false, undefined), false);
+  assert.equal(staysOpen(780, 260, false), true);
+  assert.equal(staysOpen(700, 260, false), false);
+  assert.equal(staysOpen(300, 260, true), true);
+});
+
+test("bookmarks' ribbons: one rule for them all, in place of each one's dot or ›, nothing without bookmarks", () => {
+  const g = globalThis as { CSS?: { escape(s: string): string } };
+  const had = g.CSS;
+  g.CSS = { escape: (s: string) => s.replace(/[^A-Za-z0-9_-]/g, (c) => "\\" + c) };   // (a browser's CSS.escape, for these keys)
+  try {
+    const m = (key: string) => ({ key, kind: "claude", at: 1, text: "", made: 1 }) as Bookmark;
+    assert.equal(ribbonCss([]), "");
+    const css = ribbonCss([m("msg_1"), m("u.2")]);
+    assert.ok(css.startsWith('.pane-list>:is([data-key="msg_1"],[data-key="u\\.2"])>.pane-gutter{'), css);
+    assert.equal(css.split("{").length, 2, "one rule");
+    assert.ok(css.includes("background:var(--pane-mark,var(--pane-claude))") && css.includes("mask:var(--pane-ribbon) center/.7em .9em no-repeat"));
+    assert.ok(!/content:|position:|::after/.test(css), "no box of its own: nothing to lay out again");
+  } finally {
+    g.CSS = had;
+  }
+});
+
+test("a bookmark is written by pane.py --bookmark, a host's chat's with --host (kept here), one write at a time in click order", async () => {
+  const calls: string[][] = [];
+  const done: string[] = [];
+  let v = 10;
+  const backend = { pane: async (args: string[]) => {
+    if (args[0] !== "--bookmark") return { ok: true, unchanged: true };
+    calls.push(own(args));
+    // (the first write is the slow one: the second still waits for it)
+    await new Promise((r) => setTimeout(r, calls.length === 1 ? 40 : 1));
+    done.push(args.includes("--off") ? "off" : "on");
+    return args[3] === "bad" ? { ok: false, message: "Which message?", bookmarks: [], bookmarksV: v }
+      : { ok: true, message: "", bookmarks: args.includes("--off") ? [] : [{ key: args[3], kind: "claude", at: 5, text: "Done", made: 6 }], bookmarksV: ++v };
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: "mark-1", sessionId: "mark-1", profileDir: ".claude-work", name: "x", host: "lab" } as never);
+  const panel = recorded.panels.at(-1)!;
+  const answers = () => panel.sent.filter((m) => (m as { type: string }).type === "bookmarks");
+  panel.receive({ type: "bookmark", id: 1, key: "m1", on: true, kind: "claude", at: 5, text: "Done\n  and   dusted" });
+  panel.receive({ type: "bookmark", id: 2, key: "m1", on: false, kind: "claude", at: 5, text: "" });
+  await new Promise((r) => setTimeout(r, 80));
+  assert.deepEqual(calls, [
+    ["--bookmark", "mark-1", "--key", "m1", "--kind", "claude", "--at", "5", "--text", "Done and dusted", "--profile", ".claude-work", "--host", "lab"],
+    ["--bookmark", "mark-1", "--key", "m1", "--off", "--profile", ".claude-work", "--host", "lab"],
+  ]);
+  assert.deepEqual(done, ["on", "off"], "the second waited for the first");
+  assert.deepEqual(answers(), [
+    { type: "bookmarks", id: 1, chatId: "mark-1", ok: true, message: "", bookmarks: [{ key: "m1", kind: "claude", at: 5, text: "Done", made: 6 }], bookmarksV: 11 },
+    { type: "bookmarks", id: 2, chatId: "mark-1", ok: true, message: "", bookmarks: [], bookmarksV: 12 },
+  ]);
+  // (a refusal is answered as one, with why; what isn't a message's key, or a kind that isn't yours
+  // or Claude's, doesn't go to pane.py at all)
+  panel.receive({ type: "bookmark", id: 3, key: "bad", on: false, kind: "you", at: 0, text: "" });
+  for (const m of [{ key: "-x" }, { key: "pending-3" }, { key: "t1/answer" }, { kind: "tool" }, { id: "4" }, { text: 7 }])
+    panel.receive({ type: "bookmark", id: 4, key: "m2", on: true, kind: "you", at: 1, text: "Hi", ...m });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(calls.length, 3);
+  assert.deepEqual(answers().at(-1), { type: "bookmarks", id: 3, chatId: "mark-1", ok: false, message: "Which message?", bookmarks: [], bookmarksV: 12 });
+  // this computer's chat: its config folders, no --host
+  p.open({ chatId: "mark-2", sessionId: "mark-2", profileDir: ".claude", name: "y" } as never);
+  recorded.panels.at(-1)!.receive({ type: "bookmark", id: 1, key: "u1", on: true, kind: "you", at: 7, text: "Fix it" });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(calls.at(-1), ["--bookmark", "mark-2", "--key", "u1", "--kind", "you", "--at", "7", "--text", "Fix it", "--profile", ".claude"]);
+  p.dispose();
+});
+
+test("a bookmark further back than what's shown: the next read has --reach, and its answer's limit is taken before its stamp is compared", async () => {
+  const reads: string[][] = [];
+  const answer = (args: string[]) => {
+    const limit = args[args.indexOf("--limit") + 1];
+    if (args.includes("--reach")) return { ok: true, items: [{ kind: "you", key: "u0", text: "old", at: 1 }], more: true, stamp: "900:5/480", limit: 480, reach: "u0", reached: "here" };
+    return { ok: true, items: [], more: true, stamp: `800:4/${limit}` };
+  };
+  const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true } : (reads.push(own(args)), answer(args))) };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: "reach-1", sessionId: "reach-1", profileDir: ".claude", name: "x" } as never);
+  const panel = recorded.panels.at(-1)!;
+  const tick = () => new Promise((r) => setTimeout(r, 10));
+  panel.show(true);
+  panel.receive({ type: "ready" });
+  await tick();
+  panel.receive({ type: "reach", key: "u0" });
+  await tick();
+  panel.receive({ type: "reach", key: "--limit" });   // (not a message's key: nothing read)
+  panel.receive({ type: "more" });
+  await tick();
+  panel.dispose();
+  const conv = panel.sent.filter((m) => (m as { type: string }).type === "conversation").map((m) => (m as { answer: Record<string, unknown> }).answer);
+  assert.deepEqual(reads.map((a) => a.slice(0, 4).concat(a.includes("--reach") ? a.slice(4, 6) : [])), [
+    ["--conversation", "reach-1", "--limit", "120"],
+    ["--conversation", "reach-1", "--limit", "120", "--reach", "u0"],
+    ["--conversation", "reach-1", "--limit", "960"],   // (Show earlier doubles from the reach's 480)
+  ]);
+  assert.ok(!reads[1].includes("--if-changed"), "a reach reads in any case");
+  assert.deepEqual([conv[1].reach, conv[1].reached, conv[1].stamp], ["u0", "here", "900:5/480"], "taken: read for the limit it needed");
+  assert.equal(conv.length, 3);
+  // (as stampFresher sees it: refused at the old limit, taken at the new one)
+  assert.equal(stampFresher("900:5/480", "800:4/120", 120), false);
+  assert.equal(stampFresher("900:5/480", "800:4/120", 480), true);
+  assert.equal(stampFresher("800:4/480", "900:5/480", 480), false, "and an older one at that limit isn't");
+});
+
 test("the keys table: each command's key is its default keybinding, in a chat tab only", async () => {
   const fs = await import("node:fs");
   const manifest = JSON.parse(fs.readFileSync("package.json", "utf8"));
@@ -1441,18 +1680,25 @@ test("the keys table: each command's key is its default keybinding, in a chat ta
   assert.equal(keyText("sendNow", "vscode", true), "Cmd+Enter");
   assert.equal(withKey("Send now", "sendNow", "plasma"), "Send now (Ctrl+Enter)");
   assert.equal(withKey("Your other windows", "chats", "vscode"), "Your other windows");   // (none there: VS Code's own)
+  assert.equal(withKey("Bookmark this reply", "bookmark", "vscode", true), "Bookmark this reply (Cmd+D)");
+  // (each command of the tab goes to the page as the id its onKey takes)
+  const { CHAT_KEYS } = await import("../src/chatPane");
+  for (const [command, id] of [["toggleBookmark", "bookmark"], ["bookmarks", "bookmarks"], ["previousBookmark", "bookmarkUp"], ["nextBookmark", "bookmarkDown"]])
+    assert.equal(CHAT_KEYS["talpyDen.chat." + command], id, command);
 });
 
 test("Esc does the nearest thing first, one thing a press: Stop only once nothing is open", () => {
   assert.equal(escTarget({ menu: true, big: true, list: true, help: true, ghost: true, stop: true }), "menu");
   assert.equal(escTarget({ big: true, list: true, stop: true }), "big");
   assert.equal(escTarget({ list: true, help: true, stop: true }), "list");
+  assert.equal(escTarget({ find: true, bookmarks: true, help: true }), "find");
+  assert.equal(escTarget({ bookmarks: true, help: true, ghost: true, stop: true }), "bookmarks");
   assert.equal(escTarget({ help: true, ghost: true, stop: true }), "help");
   assert.equal(escTarget({ ghost: true, stop: true }), "ghost");
   assert.equal(escTarget({ stop: true }), "stop");
   assert.equal(escTarget({ stop: false }), "");
   assert.equal(escTarget({}), "");
-  assert.deepEqual([...ESC_ORDER], ["menu", "big", "list", "find", "help", "ghost", "stop"]);
+  assert.deepEqual([...ESC_ORDER], ["menu", "big", "list", "find", "bookmarks", "help", "ghost", "stop"]);
 });
 
 test("a key's command goes to the chat tab in front, and only to it", async () => {
@@ -1511,6 +1757,9 @@ test("Copy copies all of it: a reply shown cut is read whole first, and Copied i
   assert.equal(lastReply([{ kind: "claude", key: "m1", text: "one", at: 1 }, { kind: "you", key: "u2", text: "two", at: 2 },
                           { kind: "claude", key: "m3", text: "three", at: 3 }, { kind: "tool", key: "t4", name: "Bash", at: 4 }])?.key, "m3");
   assert.equal(lastReply([{ kind: "you", key: "u2", text: "two", at: 2 }]), null);
+  // (a thinking line isn't Claude's reply)
+  assert.equal(lastReply([{ kind: "claude", key: "m3", text: "three", at: 3 },
+                          { kind: "claude", key: "m4/thinking", text: "Pushing it.", thinking: true, at: 4 }])?.key, "m3");
   p.dispose();
 });
 

@@ -8,9 +8,12 @@ compared with the ones before it. Nothing here is real data.
     python3 fake_chats.py --turn PATH N   one more turn, at once (a check)
 
 Each chat's id is in CHATS. bench.py's turn test appends turn() to TURN's
-transcript line by line, as Claude writes them.
+transcript line by line, as Claude writes them. The long chat has 100
+bookmarks (Talpy Chat's, kept in ~/.cache/talpy-den/bookmarks: every other
+one of your messages and Claude's replies, from its end); the others none.
 """
 
+import calendar
 import json
 import os
 import random
@@ -27,6 +30,7 @@ CHATS = {
 SHORT, LONG, TURN = list(CHATS)
 FOLDS = "b0000000-0000-4000-8000-000000000004"   # (only for bench.py's find: long replies and messages, make_folds)
 FOLDER = "repos/bench-app"
+BOOKMARKED = 100   # (the long chat's bookmarks)
 MODEL = "claude-opus-5-5"
 
 WORDS = ("parser config cache request handler schema token buffer worker queue index session route "
@@ -135,6 +139,28 @@ class Writer:
         return lines
 
 
+def bookmarks(home, sid, entries, n):
+    """n bookmarks of a chat (every other of your messages and Claude's replies, from its end), in
+    its file of Talpy Chat's bookmarks (talpy_den.py save_bookmarks: the same fields)."""
+    marks = []
+    for e in entries:
+        m = e.get("message") or {}
+        if e.get("type") == "user" and isinstance(m.get("content"), str):
+            mark = ("you", e["uuid"], m["content"])
+        elif e.get("type") == "assistant" and m.get("content") and m["content"][0].get("type") == "text":
+            mark = ("claude", m["id"], m["content"][0]["text"])
+        else:
+            continue
+        at = calendar.timegm(time.strptime(e["timestamp"][:19], "%Y-%m-%dT%H:%M:%S")) * 1000 + int(e["timestamp"][20:23])
+        text = " ".join(mark[2].split())
+        marks.append({"key": mark[1], "kind": mark[0], "at": at,
+                      "text": text if len(text) <= 140 else text[:139].rstrip() + "…", "made": at + 60000})
+    marks = marks[::-1][::2][:n][::-1]
+    folder = home / ".cache/talpy-den/bookmarks"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{sid}.json").write_text(json.dumps({"chat": sid, "host": "", "v": int(time.time() * 1000), "marks": marks}))
+
+
 def dump(entries):
     return "".join(json.dumps(e, separators=(",", ":")) + "\n" for e in entries)
 
@@ -162,6 +188,8 @@ def make(home):
         path.write_text(dump(lines))
         t = now - 3600 * (len(CHATS) - k)
         os.utime(path, (t, t))
+        if sid == LONG:
+            bookmarks(home, sid, lines, BOOKMARKED)
     return home
 
 

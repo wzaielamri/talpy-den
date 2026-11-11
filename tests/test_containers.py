@@ -1,6 +1,7 @@
 """Containers like SSH hosts: the list (Docker, Podman, nerdctl; this
 computer's and an SSH host's), and status/run/start/attach through stand-in
 engines that run the command here in a fake home of the container."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import contextlib
 import io
 import json

@@ -445,12 +445,204 @@
             watch()
         }
 
+        // Talpy Chat's bookmarks on the long chat (100 of them, fake_chats.py): once its window opens,
+        // the frame its ribbons show in; on its 500 items, what each read costs them (Bookmarks.qml
+        // place(): the rows unchanged, nothing made), a bookmark taken away and given back (the frame its
+        // ribbon goes or comes in), the list opened (its first frame, then again: warm), Alt+↓ (its frame),
+        // and a reach: from the 120 items a window reads first, to the oldest bookmark (till it's gone to)
+        function logicOf(win) { return find(win.contentItem, o => o.objectName === "bookmarkLogic") }
+        function flagsOf(win, under) {
+            let n = 0
+            const walk = item => {
+                if (item.objectName === "bookmarkFlag" && item.visible)
+                    n++
+                for (const k of item.children || [])
+                    walk(k)
+            }
+            walk(under || win.contentItem)
+            return n
+        }
+        function runBookmarks() {
+            const t0 = Date.now()
+            root.openPane(chatOf(ids.long), "", "chat")
+            const win = windowOf(ids.long)
+            if (!win || win.bookmarksNow === undefined) {
+                log("bookmarks", { error: "no bookmarks in this package" })
+                return done()
+            }
+            const r = { dataFrame: -1, flagsFrame: -1, flags: 0 }
+            const onFrame = function() {
+                const t = Date.now() - t0
+                if (win.loaded && win.visible && r.dataFrame < 0)
+                    r.dataFrame = t
+                if (r.dataFrame >= 0 && r.flagsFrame < 0 && flagsOf(win) > 0) {
+                    r.flagsFrame = t
+                    r.flags = flagsOf(win)
+                    win.frameSwapped.disconnect(onFrame)
+                }
+            }
+            win.frameSwapped.connect(onFrame)
+            when(() => r.flagsFrame >= 0, () => {
+                log("bookmarksOpen", r)
+                after(1500, () => {
+                    win.limit = 500
+                    win.stamp = ""
+                    win.load()
+                    when(() => win.loaded && win.lastItems.length >= 500 && flagsOf(win) >= 90, () => after(2000, () => marksOn500(win)), 30000, "500 items")
+                })
+            }, 15000, "ribbons")
+        }
+        function marksOn500(win) {
+            const lg = logicOf(win), n = 100
+            let t = Date.now()
+            for (let i = 0; i < n; i++)
+                lg.place()
+            log("place", { ms: (Date.now() - t) / n, flags: flagsOf(win), items: win.shownList.length, marks: win.bookmarks.length })
+            // (and every ribbon made again: as a window shows a chat's 100 at once)
+            lg.clear()
+            t = Date.now()
+            lg.place()
+            log("placeMade", { ms: Date.now() - t, flags: flagsOf(win), missing: lg.missing })
+            // (those out of sight a few a frame: each frame's time till all are made)
+            const made = { frames: 0, worst: 0, last: Date.now() }
+            const onMade = function() {
+                const now = Date.now()
+                made.frames++
+                made.worst = Math.max(made.worst, now - made.last)
+                made.last = now
+                if (lg.missing === 0) {
+                    win.frameSwapped.disconnect(onMade)
+                    log("placeAll", { ms: now - t, frames: made.frames, worstFrameMs: made.worst, flags: flagsOf(win) })
+                }
+            }
+            win.frameSwapped.connect(onMade)
+            // the Chat tab scrolled with its 100 ribbons, then without them (the same window)
+            after(1500, () => scrollTab(win, "chat, 100 ribbons", () => {
+                const saved = win.bookmarked
+                win.bookmarked = {}
+                lg.place()
+                after(1500, () => scrollTab(win, "chat, no ribbons", () => {
+                    win.bookmarked = saved
+                    lg.place()
+                    after(1500, () => scrollTab(win, "chat, 100 ribbons again", () => after(1500, () => toggleTwice(win, lg))))
+                }))
+            }))
+        }
+        function toggleTwice(win, lg) {
+            let t = 0
+            const list = listOf(win)
+            let at = -1
+            for (let i = win.shownList.length - 1; i >= 0 && at < 0; i--)
+                if (win.bookmarked[String(win.shownList[i].key)] === true && list.itemAtIndex(i))
+                    at = i
+            const row = list.itemAtIndex(at), key = String(win.shownList[at].key)
+            list.contentY = Math.max(list.originY, row.y - 40)
+            after(800, () => {
+                t = Date.now()
+                lg.toggle(row)
+                const off = Date.now() - t
+                nextFrame(win, f1 => {
+                    const offFrame = f1 - t
+                    const gone = flagsOf(win, row) === 0
+                    after(1500, () => {
+                        t = Date.now()
+                        lg.toggle(row)
+                        const on = Date.now() - t
+                        nextFrame(win, f2 => {
+                            log("toggle", { offMs: off, offFrameMs: offFrame, goneThatFrame: gone, onMs: on, onFrameMs: f2 - t,
+                                            shownThatFrame: flagsOf(win, row) === 1, key: key })
+                            after(1500, () => listTwice(win, lg))
+                        })
+                    })
+                })
+            })
+        }
+        function listTwice(win, lg) {
+            const once = (label, cb) => {
+                const t = Date.now()
+                win.bookmarksOn = true
+                const call = Date.now() - t
+                nextFrame(win, f => {
+                    log("list", { label: label, callMs: call, frameMs: f - t, open: find(win.contentItem, o => o.capped !== undefined && o.go !== undefined) !== null })
+                    after(1000, () => {
+                        win.bookmarksOn = false
+                        after(1000, cb)
+                    })
+                })
+            }
+            once("first", () => once("warm", () => once("warm", () => pillOnce(win, () => {
+                const list = listOf(win)
+                list.contentY = list.originY
+                after(1000, () => {
+                    const t = Date.now()
+                    lg.step(false)
+                    const call = Date.now() - t
+                    nextFrame(win, f => {
+                        log("step", { callMs: call, frameMs: f - t, current: lg.current })
+                        after(1500, () => reachOnce(win, lg))
+                    })
+                })
+            }))))
+        }
+        // (the tab row's count made, as a window shows a chat with bookmarks: what it costs then)
+        function pillOnce(win, cb) {
+            const saved = win.bookmarks
+            win.bookmarks = []
+            after(1000, () => {
+                const t = Date.now()
+                win.bookmarks = saved
+                const call = Date.now() - t
+                log("pill", { callMs: call })
+                after(1500, cb)
+            })
+        }
+        function reachOnce(win, lg) {
+            win.limit = 120
+            win.stamp = ""
+            win.load()
+            when(() => win.lastItems.length === 120, () => after(2000, () => {
+                const key = win.bookmarks[0].key
+                const t = Date.now()
+                let answered = -1
+                const onLimit = () => { if (answered < 0) answered = Date.now() - t }
+                win.limitChanged.connect(onLimit)
+                lg.reach(key, false)
+                when(() => lg.going === "" && lg.current === key, () => {
+                    win.limitChanged.disconnect(onLimit)
+                    const all = Date.now() - t, limit = win.limit
+                    nextFrame(win, f => {
+                        log("reach", { answerMs: answered, ms: all, frameMs: f - t, limit: limit, items: win.lastItems.length, current: lg.current === key })
+                        // (Show earlier to that length, from the same 120: the same rows put in)
+                        after(1500, () => earlierOnce(win, limit))
+                    })
+                }, 20000, "reach")
+            }), 20000, "120 items")
+        }
+        function earlierOnce(win, limit) {
+            win.limit = 120
+            win.stamp = ""
+            win.load()
+            when(() => win.lastItems.length === 120, () => after(2000, () => {
+                const t = Date.now()
+                win.limit = limit
+                win.stamp = ""
+                win.load()
+                when(() => win.lastItems.length > 120, () => {
+                    const all = Date.now() - t
+                    nextFrame(win, f => {
+                        log("earlier", { ms: all, frameMs: f - t, limit: limit, items: win.lastItems.length })
+                        after(1000, done)
+                    })
+                }, 20000, "show earlier")
+            }), 20000, "120 items again")
+        }
+
         Component.onCompleted: {
             // the made-up chats listed first (at most a minute), then a moment for the
             // widget's first checks to settle
             when(() => rowOf(ids.short) !== null && rowOf(ids.long) !== null, () => {
                 log("start", { scenario: scenario, listed: rowOf(ids.short) !== null })
-                after(3000, () => ({ open: runOpen, send: runSend, turn: runTurn, scroll: runScroll, idle: runIdle, find: runFind,
+                after(3000, () => ({ open: runOpen, send: runSend, turn: runTurn, scroll: runScroll, idle: runIdle, find: runFind, bookmarks: runBookmarks,
                                      first: () => open(ids.short, "first window (short chat)", w => after(1500, done)) })[scenario]())
             }, 60000, "the made-up chats listed")
         }

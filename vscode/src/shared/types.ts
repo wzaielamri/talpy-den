@@ -241,6 +241,7 @@ export interface Session {
   jobSessionId: string | null;
   tmux?: boolean; // runs in a tmux pane: a working one can be interrupted (Ctrl+C)
   bgStop?: boolean; // a live background session Talpy Chat's Stop can interrupt (Esc through Claude's background service)
+  hooked?: boolean; // a background chat whose prompts Talpy Den's permission hook answers (Talpy Chat's, or the one for every chat)
   peek?: Peek | null;
   changes?: ChangeSummary | null;
   tasks?: TaskProgress | null;
@@ -555,6 +556,7 @@ export interface Status {
   // Whether the claude command is on this machine (missing when unsure); hooks: whether a hook
   // given to one chat runs (false where managed settings let only their own run)
   cli?: { installed: boolean; hooks?: boolean };
+  homeId?: string; // which home folder it is: a container that shares this computer's answers the same
   queue?: QueuedTask[]; // this computer's status only: tasks waiting for a usage limit
   keep?: KeptChat[]; // this computer's status only: the chats that keep going
   moved?: Record<string, string>; // chat id -> the id it goes on under: chats Claude moved to the background under a new id

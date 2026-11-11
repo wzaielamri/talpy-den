@@ -22,7 +22,7 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, chatWhere, copyCut, HOLD_MS, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, type PaneChat, type PaneHostMessage, type PaneMessage } from "./shared/pane";
+import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -52,6 +52,10 @@ export const CHAT_KEYS: Record<string, string> = {
   "talpyDen.chat.copyLastReply": "copyLast",
   "talpyDen.chat.find": "find",
   "talpyDen.chat.foldAll": "fold",
+  "talpyDen.chat.toggleBookmark": "bookmark",
+  "talpyDen.chat.bookmarks": "bookmarks",
+  "talpyDen.chat.previousBookmark": "bookmarkUp",
+  "talpyDen.chat.nextBookmark": "bookmarkDown",
   "talpyDen.chat.openWindow": "openWindow",
   "talpyDen.chat.keys": "help",
 };
@@ -118,7 +122,15 @@ export class ChatPanes implements vscode.Disposable {
     if (pane) return pane.reveal(tab);
     const created = new Pane(this, chat, tab);
     this.panes.set(key, created);
-    created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
+    created.onClosed(() => (this.panes.forEach((p, k) => p === created && this.panes.delete(k)), this.watchesChanged()));
+    this.watchesChanged();
+  }
+
+  // Which hosts' watchers the tabs want (Dashboard: remote.py --watch): of a chat there that shows, or starts
+  watchesChanged(): void {
+    const hosts = new Set<string>();
+    for (const p of this.panes.values()) if (p.wantsWatch()) hosts.add(p.host);
+    this.dash.setPaneHosts?.(hosts);
   }
 
   // A new chat in a tab of its own, for that account and folder, with nothing started yet: your first
@@ -127,14 +139,16 @@ export class ChatPanes implements vscode.Disposable {
   openNew(group: Group, folder: { path: string; short: string }, task = "", plan?: PlanItem): void {
     if (this.sideBarFirst(() => this.openNew(group, folder, task, plan))) return; // (as open)
     const id = `new-${Date.now()}-${++this.newChats}`;
+    const host = group.host ?? "";   // (an SSH host's or a container's account: it starts there)
     const chat: ChatRef = { key: id, sessionId: "", chatId: id, profileDir: group.chatProfile, name: `New chat in ${folder.short}`,
-                            cwd: folder.path, kind: "chat", pid: null };
+                            cwd: folder.path, kind: "chat", pid: null, ...(host ? { host } : {}) };
     const fresh: Fresh = { profile: group.chatProfile, account: group.title, cwd: folder.path, short: folder.short,
                            plan: plan ? { slug: plan.slug, profileDir: plan.profileDir, title: plan.title } : null,
                            task: task || (plan ? "Implement this plan." : "") };
     const created = new Pane(this, chat, "chat", fresh);
-    this.panes.set(`|${id}`, created);
-    created.onClosed(() => this.panes.forEach((p, k) => p === created && this.panes.delete(k)));
+    this.panes.set(`${host}|${id}`, created);
+    created.onClosed(() => (this.panes.forEach((p, k) => p === created && this.panes.delete(k)), this.watchesChanged()));
+    this.watchesChanged();
   }
 
   // A tab's chat Claude moved to the background under a new id goes on under that one (Pane.follow)
@@ -221,7 +235,7 @@ export class ChatPanes implements vscode.Disposable {
   // sent while another is still on its way goes once that one has (never
   // dropped). went: it went into the chat itself (typed in, or on in the
   // background), not into VS Code's input or the clipboard.
-  async send(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<{ ok: boolean; message: string; ask?: boolean; went?: boolean }> {
+  async send(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<SendResult> {
     text = text.trim();
     if (!text) return { ok: false, message: "Write your message first" };
     if (text.length > TEXT_MAX) return { ok: false, message: "That message is too long" };
@@ -244,7 +258,7 @@ export class ChatPanes implements vscode.Disposable {
 
   private sending = new Map<string, Promise<unknown>>(); // "<host>|<chat id>": the last message on its way to it
 
-  private async sendNow(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<{ ok: boolean; message: string; ask?: boolean; went?: boolean }> {
+  private async sendNow(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<SendResult> {
     const host = chat.host ?? "";
     // (to where the chat is now: one Claude moved to the background meanwhile
     // goes on under its new id, also for a message that waited its turn)
@@ -274,6 +288,7 @@ export class ChatPanes implements vscode.Disposable {
     // (enter goes as auto: the copy is VS Code's clipboard, also in a remote window)
     const args = ["--send", chatId, ...(file ? ["--text-file", file] : ["--text", text]), "--how", how === "enter" ? "auto" : how, ...(sid ? ["--session", sid] : []),
                   ...(chat.profileDir ? ["--profile", chat.profileDir] : []), ...(afterTurn ? ["--after-turn", "--name", chat.name || ""] : []),
+                  ...(Pane.suggests() ? ["--suggest"] : []),   // (a chat it wakes predicts your reply: pane.py PREDICT_ENV)
                   ...(host ? ["--host", host] : configDirArgs())];
     let r: Record<string, any>;
     try {
@@ -297,6 +312,8 @@ export class ChatPanes implements vscode.Disposable {
       }
     }
     this.refresh(host);
+    // (woken in the background without Talpy Den's permission hook: what it asks waits in its own prompt)
+    if (r.ok && r.hooked === false) return { ok: true, message: unhookedText(r.hookWhy), went: true, warn: true };
     return { ok: !!r.ok, message: String(r.message ?? ""), went: !!r.ok && (r.how === "typed" || r.how === "background") };
   }
 
@@ -478,7 +495,7 @@ function chatWebviewOptions(uri: vscode.Uri): vscode.WebviewOptions {
 
 class Pane implements vscode.Disposable {
   private panel: vscode.WebviewPanel;
-  private host: string;
+  readonly host: string;   // (its chat's SSH host or container, "" for this computer)
   private chatId: string;
   private chat: ChatRef;
   private stamp = "";
@@ -497,6 +514,10 @@ class Pane implements vscode.Disposable {
   private terminalHere = false;
   private starting: Promise<{ ok: boolean; message: string; went?: boolean }> | null = null; // (a new chat's first message, on its way)
   private startedAt = 0; // (it started: its transcript may not be there for a moment)
+  // Bookmarks: written one at a time, in click order (the last write on its way); a bookmark
+  // further back than what's shown, read far enough back for at the next read (--reach)
+  private bookmarkChain: Promise<unknown> = Promise.resolve();
+  private reachKey = "";
 
   constructor(
     private owner: ChatPanes,
@@ -527,6 +548,7 @@ class Pane implements vscode.Disposable {
       this.panel.onDidChangeViewState(() => {
         if (this.disposed || this.panel.visible === this.shown) return;
         this.shown = this.panel.visible;
+        if (this.host) this.owner.watchesChanged();   // (an SSH host's chat shown: its host watched, or not)
         this.post({ type: "visible", visible: this.shown });
         // (the look's pace once the read has started the watcher again: 15 s, not 1.5)
         if (this.shown && this.ready) void this.load().finally(() => this.schedule());
@@ -534,6 +556,14 @@ class Pane implements vscode.Disposable {
       }),
       this.panel.onDidDispose(() => this.dispose()),
       owner.ext.dash.onState(() => void this.pushChat()),
+      // an SSH host's or a container's watcher: its chat changed there (a request, its state): a check of the
+      // host (at most every 2 s) and the conversation now; a new chat starting there: the check
+      ...(owner.ext.dash.onHostChanged ? [owner.ext.dash.onHostChanged((e) => {
+        if (this.disposed || !this.host || e.host !== this.host) return;
+        const mine = e.changed.includes(this.chatId) || (!!this.chat.sessionId && e.changed.includes(this.chat.sessionId));
+        if ((mine || this.starting) && !e.requests) this.owner.ext.dash.pollHostSoon(this.host);
+        if (mine && this.panel.visible) void this.load();
+      })] : []),
       // live mode: the chat did a step: what it does now, and the conversation at once
       owner.ext.dash.onLive((e) => {
         if (this.host || !this.chat.sessionId || !e.changed.includes(this.chat.sessionId)) return;
@@ -638,6 +668,8 @@ class Pane implements vscode.Disposable {
       busy: session?.state === "working" || session?.state === "waiting",
       atWork: session?.state === "working" && session.reason !== "background shell",
       bgStop: !!session?.bgStop,
+      // (its host's watcher fails: what it asks shows at the host's next check)
+      watchTrouble: this.host ? (this.owner.ext.dash.hostWatchTrouble?.(this.host) ?? "") : "",
       activity: session ? doingText(session, this.host ? null : liveOf(session, state.live)) : "",
       permission: session?.state === "waiting" ? (session.permission ?? null) : null,
       changes: (session?.changes ?? recent?.changes)?.count ?? 0,
@@ -685,11 +717,16 @@ class Pane implements vscode.Disposable {
     if (this.disposed || !this.panel.visible) return; // (closed: the reading stops)
     // (with the watcher, only for what it can't see: a moment it wasn't running; an SSH host's chat
     // every second just after you sent it something, till that shows: chaseUntil)
-    const every = this.host ? (Date.now() < this.chaseUntil ? 1000 : 5000) : this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
+    // (an SSH host's: every minute while its watcher answers and Claude neither works nor waits there,
+    // what changes coming with the watcher's answer: dash.onHostChanged)
+    const hostBusy = () => ["working", "waiting"].includes(findPaneRow(this.owner.ext.dash.state(), this.host, this.chatId).session?.state ?? "");
+    const every = this.host ? (Date.now() < this.chaseUntil ? 1000 : this.owner.ext.dash.hostWatched?.(this.host) && !hostBusy() ? 60000 : 5000)
+      : this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
     this.timer = setTimeout(() => void this.load().finally(() => this.schedule()), every);
   }
 
   private chaseUntil = 0;
+  private made: ReturnType<typeof madeOf> = madeOf([]);   // (the files and Read steps the conversation shows as made)
   private async load(): Promise<void> {
     if (this.disposed) return;
     if (this.fresh) {   // (nothing to read yet: it shows empty, ready for your first message)
@@ -704,7 +741,8 @@ class Pane implements vscode.Disposable {
     const chatId = this.chatId;
     try {
       const r = await this.owner.ext.backend.pane([
-        "--conversation", chatId, "--limit", String(this.limit), ...(this.stamp ? ["--if-changed", this.stamp] : []),
+        "--conversation", chatId, "--limit", String(this.limit),
+        ...(this.reachKey ? ["--reach", this.reachKey] : this.stamp ? ["--if-changed", this.stamp] : []),
         ...(Pane.suggests() ? ["--suggest"] : []),
         ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...(this.host ? ["--host", this.host] : configDirArgs()),
       ], this.host ? 60000 : 30000);
@@ -729,6 +767,12 @@ class Pane implements vscode.Disposable {
 
   // A read's answer, or the watcher's (not one read before what's shown: stampFresher)
   private take(r: Record<string, any>): boolean {
+    // (a reach's answer was read for the limit it needed: taken first, so its stamp is one to show)
+    if (r.ok && typeof r.reach === "string" && typeof r.limit === "number" && r.limit > 0) {
+      this.limit = Math.min(LIMIT_MAX, r.limit);
+      this.reachKey = "";
+    }
+    if (!r.ok) this.reachKey = "";
     if (r.ok && !stampFresher(r.stamp, this.stamp, this.limit)) return false;
     // (your pictures, small: those in Talpy Den's folder of them, by the address the tab can load; not an SSH host's)
     if (r.ok && Array.isArray(r.items) && !this.host)
@@ -737,6 +781,7 @@ class Pane implements vscode.Disposable {
           it.thumbs = it.pictures.filter((f: unknown): f is string => typeof f === "string" && inPictures(f))
             .map((f: string) => ({ path: f, src: this.panel.webview.asWebviewUri(vscode.Uri.file(f)).toString() }));
     if (r.ok && typeof r.stamp === "string") this.stamp = r.stamp;
+    if (r.ok && Array.isArray(r.items)) this.made = madeOf(r.items);   // (what the tab may unfold: madeOf)
     // (at the most a tab shows: no Show earlier, it says so instead)
     const capped = r.ok && !!r.more && this.limit >= LIMIT_MAX;
     this.post({ type: "conversation", answer: (r.ok ? { ...r, more: !!r.more && !capped, capped } : r) as never });
@@ -789,7 +834,7 @@ class Pane implements vscode.Disposable {
   // A new chat's first message: it starts in the background (pane.py --start: on its account, in
   // its folder, with the new-chat model, effort and mode, and the permission hook for it alone),
   // and the tab goes on with it under its id. One sent while that's on its way goes to it after.
-  private async start(text: string): Promise<{ ok: boolean; message: string; went?: boolean }> {
+  private async start(text: string): Promise<SendResult> {
     if (this.starting) {
       const first = await this.starting;
       if (!first.ok || this.fresh) return { ok: false, message: "The chat didn't start: send it again once it has" };
@@ -805,9 +850,12 @@ class Pane implements vscode.Disposable {
           fs.mkdirSync(cacheDir(), { recursive: true, mode: 0o700 });
           fs.writeFileSync(file, text, { mode: 0o600, flag: "wx" });
         }
+        // (on an SSH host or in a container: started there, with Talpy Den's permission hook copied there;
+        // this computer's extra Claude folders stay here)
         r = await this.owner.ext.backend.pane([
           "--start", f.profile, "--cwd", f.cwd, ...(file ? ["--text-file", file] : ["--text", text]), ...chatOptionArgs(),
-          ...(f.plan ? ["--plan", f.plan.slug, "--plan-profile", f.plan.profileDir] : []), ...configDirArgs(),
+          ...(f.plan ? ["--plan", f.plan.slug, "--plan-profile", f.plan.profileDir] : []), ...(Pane.suggests() ? ["--suggest"] : []),
+          ...(this.host ? ["--host", this.host] : configDirArgs()),
         ], 180000);
       } catch (e) {
         r = { ok: false, message: e instanceof Error ? e.message : String(e) };
@@ -818,18 +866,21 @@ class Pane implements vscode.Disposable {
       const from = this.chatId;
       this.fresh = null;
       this.startedAt = Date.now();
-      this.owner.moved(this, `|${from}`, `|${r.chat}`);
+      this.owner.moved(this, `${this.host}|${from}`, `${this.host}|${r.chat}`);
       this.chatId = r.chat;
       this.chat = { ...this.chat, key: r.chat, chatId: r.chat, sessionId: r.chat, profileDir: typeof r.profileDir === "string" ? r.profileDir : this.chat.profileDir };
       this.stamp = "";
-      this.owner.refresh("");
+      this.owner.refresh(this.host);
+      if (r.hooked === false) return { ok: true, message: unhookedText(r.hookWhy), went: true, warn: true };
       return { ok: true, message: "", went: true };
     })();
     void this.pushChat();   // (Starting…)
+    if (this.host) this.owner.watchesChanged();
     try {
       return await this.starting;
     } finally {
       this.starting = null;
+      if (this.host) this.owner.watchesChanged();
       void this.pushChat();
       void this.load();
     }
@@ -843,9 +894,9 @@ class Pane implements vscode.Disposable {
     this.post({ type: "review", answer: r.ok ? (r as never) : null, error: r.ok ? "" : String(r.message ?? "") });
   }
 
-  private result(kind: string, r: { ok: boolean; message: string; ask?: boolean; went?: boolean }, id?: number): void {
+  private result(kind: string, r: SendResult & { how?: string }, id?: number): void {
     this.post({ type: "result", kind, ok: r.ok, message: r.message, ...(r.ask ? { ask: true } : {}), ...(r.went ? { went: true } : {}),
-                ...(typeof id === "number" ? { id } : {}) });
+                ...(r.warn ? { warn: true } : {}), ...(r.how ? { how: r.how } : {}), ...(typeof id === "number" ? { id } : {}) });
   }
 
   private async receive(raw: unknown): Promise<void> {
@@ -881,6 +932,32 @@ class Pane implements vscode.Disposable {
         this.stamp = "";
         await this.load();
         break;
+      case "reach":
+        // a bookmark further back than what's shown: read back far enough to show it (pane.py --reach)
+        if (typeof m.key !== "string" || !canBookmark({ kind: "you", key: m.key, at: null }) || this.fresh) break;
+        this.reachKey = m.key;
+        this.stamp = "";
+        await this.load();
+        break;
+      case "bookmark": {
+        // kept by pane.py on this computer (a host's chat's too, as stars are), one write at a time
+        // in click order; the answer is the chat's whole list, or why not (the page undoes it)
+        if (typeof m.id !== "number" || typeof m.key !== "string" || this.fresh) break;
+        const on = m.on === true;
+        if (on ? !canBookmark({ kind: m.kind, key: m.key, at: null }) || typeof m.text !== "string" || typeof m.at !== "number"
+               : !canBookmark({ kind: "you", key: m.key, at: null })) break;
+        const chatId = this.chatId;
+        const args = ["--bookmark", chatId, "--key", m.key,
+                      ...(on ? ["--kind", m.kind, "--at", String(Number.isFinite(m.at) ? Math.max(0, Math.floor(m.at)) : 0), "--text", oneLine(m.text)] : ["--off"]),
+                      ...profile, ...where];
+        const run = this.bookmarkChain.then(() => backend.pane(args, this.host ? 30000 : 15000))
+          .catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as Record<string, any>);
+        this.bookmarkChain = run;
+        const r = await run;
+        this.post({ type: "bookmarks", id: m.id, chatId, ok: !!r.ok, message: String(r.message ?? (r.ok ? "" : "That didn't work")),
+                    bookmarks: Array.isArray(r.bookmarks) ? r.bookmarks : [], bookmarksV: typeof r.bookmarksV === "number" ? r.bookmarksV : 0 });
+        break;
+      }
       case "hold":
         if (typeof m.id === "number" && typeof m.text === "string" && ["auto", "background", "enter"].includes(m.how))
           this.held.set(m.id, { text: m.text, how: m.how, until: Date.now() + HOLD_MS });
@@ -959,6 +1036,31 @@ class Pane implements vscode.Disposable {
         if (typeof m.path === "string" && !this.host && inPictures(m.path))
           await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(m.path));
         break;
+      case "made": {
+        // a made file unfolded: only one the conversation shows (madeOf), read by pane.py --made (which
+        // checks the transcript names it, and caps it); a picture as a data: URL, which the tab's CSP allows
+        if (typeof m.id !== "number" || typeof m.path !== "string") break;
+        const step = typeof m.step === "string" && this.made.steps.has(m.step) ? m.step : undefined;
+        if (!this.made.paths.has(m.path) || (m.step !== undefined && !step)) {
+          this.post({ type: "made", id: m.id, ok: false, message: "Not a file this chat made" });
+          break;
+        }
+        const r = await backend.pane(["--made", this.chatId, "--path", m.path, ...(step ? ["--step", step] : []), ...profile, ...where],
+                                     this.host ? 60000 : 20000);
+        const src = r.ok && typeof r.data === "string" && typeof r.mime === "string" && /^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(r.mime)
+          ? `data:${r.mime};base64,${r.data}` : undefined;
+        this.post(r.ok ? { type: "made", id: m.id, ok: true, ...(src ? { src } : {}), ...(typeof r.text === "string" ? { text: r.text, cut: !!r.cut } : {}) }
+          : { type: "made", id: m.id, ok: false, message: String(r.message ?? "It couldn't be read"), ...(r.gone ? { gone: true } : {}), ...(r.big ? { big: true } : {}) });
+        break;
+      }
+      case "openMade": {
+        // this computer's: a picture in VS Code's image viewer, a plan in its editor, a page in your browser, a PDF in its app
+        if (typeof m.path !== "string" || this.host || !this.made.paths.has(m.path)) break;
+        const file = vscode.Uri.file(m.path);
+        if (/\.(png|jpe?g|gif|webp|svg|md|markdown)$/i.test(m.path)) await vscode.commands.executeCommand("vscode.open", file);
+        else await vscode.env.openExternal(file);
+        break;
+      }
       case "paste":
         // (the right-click menu's Paste in the reply box: what Ctrl+V runs there, so a picture on the
         // clipboard comes in as a pasted one)
@@ -978,7 +1080,8 @@ class Pane implements vscode.Disposable {
         // Copied is said once it's on the clipboard
         if (typeof m.text !== "string" || typeof m.key !== "string" || typeof m.id !== "number") break;
         let text = m.text;
-        if (copyCut(text) && !this.fresh) {
+        // (whole: a bookmark further back than the tab shows, read from the transcript in any case)
+        if ((copyCut(text) || m.whole === true) && !this.fresh) {
           const r = await backend.pane(["--reply-text", this.chatId, "--key", m.key, ...profile, ...where], this.host ? 30000 : 15000);
           if (!r.ok || typeof r.text !== "string") {
             this.post({ type: "copied", id: m.id, ok: false, message: `Couldn't copy all of it: ${String(r.message ?? "it couldn't be read")}` });
@@ -1056,7 +1159,7 @@ class Pane implements vscode.Disposable {
         const r = await backend.pane(["--set-options", this.chatId, ...(model !== undefined ? ["--model", model] : []),
           ...(effort !== undefined ? ["--effort", effort] : []), ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []),
           ...where], this.host ? 90000 : 60000);
-        this.result("options", { ok: !!r.ok, message: String(r.message ?? (r.ok ? "" : "That didn't work")) });
+        this.result("options", { ok: !!r.ok, message: String(r.message ?? (r.ok ? "" : "That didn't work")), how: typeof r.how === "string" ? r.how : "" });
         if (r.ok) this.owner.refresh(this.host);
         break;
       }
@@ -1218,6 +1321,11 @@ class Pane implements vscode.Disposable {
   }
 
   private disposed = false;
+
+  // Its host's watcher is wanted: a chat there that shows, or one starting there
+  wantsWatch(): boolean {
+    return !this.disposed && !!this.host && (this.panel.visible || !!this.starting);
+  }
 
   dispose(): void {
     if (this.disposed) return; // (closing the panel calls this again)

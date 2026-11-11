@@ -9,7 +9,7 @@ export interface PaneKey {
     what: string;
     commands?: [string, string][]; // [command, its default keybinding]
 }
-export type EscTarget = "" | "menu" | "big" | "list" | "find" | "help" | "ghost" | "stop";
+export type EscTarget = "" | "menu" | "big" | "list" | "find" | "bookmarks" | "help" | "ghost" | "stop";
 
 export const KEY_GROUPS: readonly string[];
 export const KEYS: readonly PaneKey[];

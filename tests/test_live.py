@@ -1,5 +1,6 @@
 """Live mode: the live hook (live_hook.py), the watcher (live.py --wait),
 turning it on and off (pane.py --live) and the rows that carry it."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
 import os
 import shutil
@@ -354,6 +355,114 @@ class WaitTests(unittest.TestCase):
         out = subprocess.run([sys.executable, "-I", str(CODE / "live.py"), "--wait", "--as", "x", "--timeout", "1"],
                              env=dict(os.environ, HOME=str(self.home)), capture_output=True, text=True, timeout=20)
         self.assertTrue(json.loads(out.stdout)["ok"])
+
+
+class HostWatchTests(WaitTests):
+    """(2026-11-06) live.py on an SSH host or in a container (remote.py
+    --watch): the permission hook's requests too (a prompt shows within a
+    second), what changed between two runs never lost, no live files, and
+    gone as soon as the connection that asked is."""
+
+    def setUp(self):
+        super().setUp()
+        self.asks = self.home / ".local/state/talpy-den/permissions"   # (beside ~/.cache, as the hook has it)
+
+    def wait(self, timeout=5, later=None, after=0.3):
+        if later:
+            threading.Timer(after, later).start()
+        started = time.time()
+        answer = live.wait(self.home, (), "host", timeout, requests=True, remote=True)
+        return answer, time.time() - started
+
+    def ask(self, rid, sid="s1"):
+        write(self.asks / f"{rid}.json", {"id": rid, "sessionId": sid, "tool": "Bash"})
+
+    def test_first_answer_then_only_changes(self):
+        answer, took = self.wait()
+        self.assertEqual((answer["sessions"], answer["requests"], answer["changed"], answer["live"]), (True, True, [], []))
+        self.assertEqual(oct(self.asks.stat().st_mode & 0o777), "0o700")   # (made, so it can be watched)
+        answer, took = self.wait(timeout=1)
+        self.assertEqual((answer["timeout"], answer["requests"], answer["changed"]), (True, False, []))
+        # no live files there: a step of a chat doesn't wake it (nothing there uses them)
+        self.put("a", "Stop")
+        answer, _ = self.wait(timeout=1)
+        self.assertTrue(answer["timeout"])
+
+    def test_a_request_wakes_it_at_once(self):
+        self.wait()
+        answer, took = self.wait(later=lambda: self.ask("1-0a1b2c3d", "chat-1"))
+        self.assertEqual((answer["requests"], answer["urgent"], answer["sessions"], answer["changed"]),
+                         (True, True, False, ["chat-1"]))
+        self.assertLess(took, 1)
+        # your answer beside it isn't one; its going is (answered)
+        answer, _ = self.wait(timeout=1, later=lambda: write(self.asks / "1-0a1b2c3d.answer.json", {"behavior": "allow"}))
+        self.assertTrue(answer["timeout"])
+        answer, _ = self.wait(later=lambda: (self.asks / "1-0a1b2c3d.json").unlink())
+        self.assertEqual((answer["requests"], answer["changed"]), (True, ["chat-1"]))
+        # a session file: the chats whose files changed, a gone one's too
+        answer, _ = self.wait(later=lambda: write(self.sessions / "123.json", session("chat-2", status="busy")))
+        self.assertEqual((answer["sessions"], answer["requests"], answer["changed"]), (True, False, ["chat-2"]))
+        answer, _ = self.wait(later=lambda: (self.sessions / "123.json").unlink())
+        self.assertEqual(answer["changed"], ["chat-2"])
+
+    def test_nothing_between_two_runs_is_missed(self):
+        self.wait()
+        self.ask("2-0a1b2c3d", "chat-3")   # (while no watcher runs: the request comes before the next run)
+        answer, took = self.wait()
+        self.assertEqual((answer["requests"], answer["changed"]), (True, ["chat-3"]))
+        self.assertLess(took, 1)
+
+    def test_steps_alone_come_at_most_every_gap(self):
+        pass   # (no live files there)
+
+    def test_a_clock_set_back_doesnt_hold_steps_back(self):
+        pass
+
+    def test_what_it_was_told_cant_be_kept_there(self):
+        # (a full disk or a quota there: every run would answer at once, everything new, and the front end
+        # run it again at once, a check of the host each time, for good; it waits for a change instead)
+        with mock.patch.object(live, "save_seen", return_value=False):
+            answer, took = self.wait(timeout=1)
+            self.assertTrue(answer["timeout"])
+            answer, took = self.wait(later=lambda: self.ask("3-0a1b2c3d", "chat-4"))
+        self.assertEqual((answer["requests"], answer["changed"]), (True, ["chat-4"]))
+
+    def test_not_a_requests_folder_others_may_write_in(self):
+        self.asks.mkdir(parents=True)
+        os.chmod(self.asks, 0o777)
+        self.assertEqual(live.request_dirs(self.home), [])
+        os.chmod(self.asks, 0o700)
+        self.assertEqual(live.request_dirs(self.home), [str(self.asks)])
+
+    def test_command_line_after_the_marker(self):
+        out = subprocess.run([sys.executable, "-I", "-", "--wait", "--requests", "--remote", "--as", "x", "--timeout", "1"],
+                             input=(CODE / "live.py").read_text(), env=dict(os.environ, HOME=str(self.home)),
+                             capture_output=True, text=True, timeout=20)
+        self.assertTrue(out.stdout.startswith("\n" + cs.REMOTE_MARK + " "), out.stdout)
+        self.assertTrue(json.loads(out.stdout.split(cs.REMOTE_MARK)[1])["ok"])
+
+    def test_command_line(self):
+        pass
+
+    def test_gone_with_the_connection_that_asked(self):
+        # (ssh killed here: sshd closes the channel, its stdout hangs up; an orphan would wait out its 50 s)
+        r, w = os.pipe()
+        proc = subprocess.Popen([sys.executable, "-I", str(CODE / "live.py"), "--wait", "--requests", "--remote",
+                                 "--as", "x", "--timeout", "30"], stdout=w, env=dict(os.environ, HOME=str(self.home)))
+        os.close(w)
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        first = os.read(r, 65536)   # (the first answer: everything is new to "x")
+        self.assertIn(cs.REMOTE_MARK.encode(), first)
+        proc.wait(5)
+        proc = subprocess.Popen([sys.executable, "-I", str(CODE / "live.py"), "--wait", "--requests", "--remote",
+                                 "--as", "x", "--timeout", "30"], stdout=subprocess.PIPE, env=dict(os.environ, HOME=str(self.home)))
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        time.sleep(0.5)
+        proc.stdout.close()   # (whoever asked is gone)
+        started = time.time()
+        proc.wait(5)
+        self.assertLess(time.time() - started, 2)
+        os.close(r)
 
 
 class LiveSwitchTests(Fixture):

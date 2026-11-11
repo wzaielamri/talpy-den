@@ -181,64 +181,113 @@ export function reopensInClaudeCode(prefer: ReopenIn, cliHere: boolean, codeHere
   return codeHere && (prefer === "claudeCode" || !cliHere);
 }
 
-// Chats can open in Talpy Chat: on this computer, with a claude command; a
-// new one only where a hook given to one chat runs (it answers what a
-// background chat asks: managed settings may let only their own run).
-// resuming: a chat that isn't running (it reopens), not a new one
-export function talpyChatHere(status: Pick<Status, "cli"> | null | undefined, host: string | undefined, resuming: boolean): boolean {
-  return !host && cliInstalled(status) && (resuming || status?.cli?.hooks !== false);
+// A chat whose prompts only Talpy Den can show: a background chat Talpy Den's hook answers, at work
+// or waiting, or one waiting on a request the hook relayed (the window that notifies watches its host)
+export function hookedAtWork(s: Pick<Session, "hooked" | "state" | "permission">): boolean {
+  return (!!s.hooked && (s.state === "working" || s.state === "waiting"))
+    || (s.state === "waiting" && s.permission?.answer === "hook");
+}
+
+// What Talpy Chat needs to know of the machine a chat is on (talpyPlace):
+// its claude command and hooks, and for an SSH host or a container, why its
+// chats can't open there now: "connect" (its last check didn't answer, or
+// not yet since this start), "stopped" (a stopped container) or "home" (a
+// container that shares this computer's home: its hook's requests would be
+// this computer's too)
+export type TalpyPlace = Pick<Status, "cli"> & { reach?: "connect" | "stopped" | "home" };
+
+export function talpyPlace(state: Pick<ViewState, "status" | "hosts">, host?: string): TalpyPlace | null | undefined {
+  if (!host) return state.status;
+  const h = state.hosts.find((x) => x.name === host);
+  if (!h || !h.ok || !h.result || h.cached) return { cli: h?.result?.cli, reach: h?.stopped ? "stopped" : "connect" };
+  const home = h.result.homeId;
+  return home && home === state.status?.homeId ? { cli: h.result.cli, reach: "home" } : h.result;
+}
+
+// Why Talpy Chat can't open a machine's chats ("" when it can): not
+// reachable now (TalpyPlace), no claude command, or (a new chat) no hook
+// given to one chat runs (it answers what a background chat asks: managed
+// settings may let only their own run). resuming: a chat that isn't running
+// (it reopens), not a new one
+export function talpyChatWhyNot(place: TalpyPlace | null | undefined, host: string | undefined,
+                                resuming: boolean): "" | "connect" | "stopped" | "home" | "cli" | "hooks" {
+  if (host && (!place || place.reach)) return place?.reach ?? "connect";
+  if (!cliInstalled(place)) return "cli";
+  return resuming || place?.cli?.hooks !== false ? "" : "hooks";
+}
+
+// Chats can open in Talpy Chat: here, or on an SSH host or in a container
+// whose last check answered (talpyChatWhyNot)
+export function talpyChatHere(place: TalpyPlace | null | undefined, host: string | undefined, resuming: boolean): boolean {
+  return talpyChatWhyNot(place, host, resuming) === "";
 }
 
 // Where chats open, "talpyChat" | "terminal" | "claudeCode": Claude Code as
 // reopensInClaudeCode says, else Talpy Chat where you picked it and it can be
-export function openChatsIn(prefer: ReopenIn, status: Pick<Status, "cli"> | null | undefined, host: string | undefined,
+export function openChatsIn(prefer: ReopenIn, place: TalpyPlace | null | undefined, host: string | undefined,
                             codeHere: boolean, resuming: boolean): ReopenIn {
-  if (reopensInClaudeCode(prefer, cliInstalled(status), codeHere)) return "claudeCode";
-  return prefer === "talpyChat" && talpyChatHere(status, host, resuming) ? "talpyChat" : "terminal";
+  if (reopensInClaudeCode(prefer, cliInstalled(place), codeHere)) return "claudeCode";
+  return prefer === "talpyChat" && talpyChatHere(place, host, resuming) ? "talpyChat" : "terminal";
 }
 
 // A chat whose window is its Talpy Chat tab, with Talpy Chat picked in Open
 // in: one that isn't running (it reopens there), or a background one no
 // terminal shows (it has none: its pet, its row, its notifications open it there)
 export function opensInTalpyChat(c: { kind?: string; pid?: number | null; attached?: Session["attached"] | null },
-                                 prefer: ReopenIn, status: Pick<Status, "cli"> | null | undefined, host: string | undefined,
+                                 prefer: ReopenIn, place: TalpyPlace | null | undefined, host: string | undefined,
                                  codeHere: boolean): boolean {
-  // a background chat no terminal shows: its window is Talpy Chat, whatever Open in says (this computer's: a
-  // host's prompts can't reach Talpy Chat yet); Open in a terminal there still shows it in one (claude attach)
-  if (c.kind === "bg" && !!c.pid && !c.attached) return talpyChatHere(status, host, true);
+  // a background chat no terminal shows: its window is Talpy Chat, whatever Open in says (here, on an SSH
+  // host, in a container); Open in a terminal there still shows it in one (claude attach)
+  if (c.kind === "bg" && !!c.pid && !c.attached) return talpyChatHere(place, host, true);
   // a chat that isn't running: as Open in says
-  return openChatsIn(prefer, status, host, codeHere, true) === "talpyChat" && c.kind === "chat" && !c.pid;
+  return openChatsIn(prefer, place, host, codeHere, true) === "talpyChat" && c.kind === "chat" && !c.pid;
 }
 
 // The Talpy Chat half's tooltip (Plasma's talpyChatHint, the same words)
-export function talpyChatHint(status: Pick<Status, "cli"> | null | undefined, host: string | undefined, resuming: boolean): string {
+export function talpyChatHint(place: TalpyPlace | null | undefined, host: string | undefined, resuming: boolean): string {
+  const why = talpyChatWhyNot(place, host, resuming);
+  const there = host ? hostWhere(host) : "";
+  if (why === "stopped") return `${hostLabel(host!)} is stopped: Talpy Chat opens its chats once it runs and answers.`;
+  if (why === "connect") return `${hostLabel(host!)} hasn't answered its last check: Talpy Chat opens its chats once it does.`;
+  if (why === "cli") return terminalReopenHint(host, false);
+  if (why === "home")
+    return `${hostLabel(host!)} shares this computer's home folder, so what its chats ask would be asked here too: Talpy Chat doesn't open its chats yet, so they open in a terminal or in VS Code.`;
+  if (why === "hooks")
+    return `Managed settings ${host ? there : "here"} let only their own hooks run (allowManagedHooksOnly), and Talpy Chat answers what a background chat asks through a hook of Talpy Den's.`;
   if (host)
-    return containerOf(host)
-      ? `Talpy Chat can't answer the prompts of a background chat in ${hostLabel(host)} yet, so its chats open in a terminal or in VS Code.`
-      : `Talpy Chat can't answer the prompts of a background chat on ${host} yet, so its chats open in a terminal or in VS Code.`;
-  if (!cliInstalled(status)) return terminalReopenHint(undefined, false);
-  if (!talpyChatHere(status, host, resuming))
-    return "Managed settings here let only their own hooks run (allowManagedHooksOnly), and Talpy Chat answers what a background chat asks through a hook of Talpy Den's.";
+    return resuming
+      ? `A chat ${there} that isn't running opens in Talpy Chat: your next message goes on with it in the background there, and you answer Claude's prompts here. Open one in a terminal any time.`
+      : `New chats ${there} run in the background there and open here: reply, answer Claude's prompts, see what changed. Talpy Den puts its permission hook there for them (one file). Open one in a terminal any time.`;
   return resuming
     ? "A chat that isn't running opens in Talpy Chat: your next message goes on with it in the background, and you answer Claude's prompts there. Open one in a terminal any time."
     : "New chats run in the background and open here: reply, answer Claude's prompts, see what changed. Open one in a terminal any time.";
 }
 
 // The Talpy Chat half's title: what it does, or why it's greyed out
-export function talpyChatTitle(status: Pick<Status, "cli"> | null | undefined, host: string | undefined, resuming: boolean): string {
-  if (host) return "This computer's chats for now";
-  if (!cliInstalled(status)) return "No claude command";
-  if (!talpyChatHere(status, host, resuming)) return "Hooks are off here";
+export function talpyChatTitle(place: TalpyPlace | null | undefined, host: string | undefined, resuming: boolean): string {
+  switch (talpyChatWhyNot(place, host, resuming)) {
+    case "stopped": return "Stopped";
+    case "connect": return "Not connected";
+    case "home": return "Shares this computer's home";
+    case "cli": return "No claude command";
+    case "hooks": return "Hooks are off here";
+  }
   return resuming ? "Reopen chats in Talpy Chat" : "New chats in Talpy Chat";
 }
 
 // New Chat… where its Talpy Chat section isn't offered: a line in its place,
 // the switch's title and a short why (none without a claude command: the
 // terminal's section says that)
-export function talpyChatOff(status: Pick<Status, "cli"> | null | undefined, host: string | undefined): { title: string; why: string } | null {
-  if (!cliInstalled(status) || talpyChatHere(status, host, false)) return null;
-  if (host) return { title: talpyChatTitle(status, host, false), why: `it can't answer the prompts of a chat ${hostWhere(host)} yet` };
-  return { title: talpyChatTitle(status, host, false), why: "managed settings here let only their own hooks run" };
+export function talpyChatOff(place: TalpyPlace | null | undefined, host: string | undefined): { title: string; why: string } | null {
+  const why = talpyChatWhyNot(place, host, false);
+  if (why === "" || why === "cli") return null;
+  const words = {
+    stopped: `${hostLabel(host ?? "")} is stopped`,
+    connect: `${hostLabel(host ?? "")} hasn't answered its last check`,
+    home: `${hostLabel(host ?? "")} shares this computer's home folder`,
+    hooks: `managed settings ${host ? hostWhere(host) : "here"} let only their own hooks run`,
+  };
+  return { title: talpyChatTitle(place, host, false), why: words[why] };
 }
 
 // A chat running in a terminal (VS Code's or another, here or on an SSH

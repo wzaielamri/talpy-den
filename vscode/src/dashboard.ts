@@ -12,11 +12,12 @@ import { AwayWatch } from "./away";
 import type { Backend, HostContainers, SshHost } from "./backend";
 import { claudePanelAvailable, localPanelProfileKey } from "./claudePanel";
 import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSettings } from "./config";
+import { HostWatch, watchName, type WatchAnswer } from "./hostWatch";
 import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";
 import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
-import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
 import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "./oldChats";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
@@ -94,6 +95,18 @@ export class Dashboard implements vscode.Disposable {
   private usageTimer: ReturnType<typeof setTimeout> | undefined;
   private live: LiveWatch;
   private liveViews: Record<string, LiveView> = {};
+  // Talpy Chat's watchers of SSH hosts and containers (hostWatch.ts): one per host while a Talpy Chat
+  // tab of a chat there shows (paneHosts, ChatPanes), or, in the window that notifies, a chat there
+  // whose prompts Talpy Den's hook answers works or waits
+  private watches = new Map<string, HostWatch>();
+  private paneHosts = new Set<string>();
+  private hostPolledAt = new Map<string, number>(); // host -> when its check was last asked for
+  private hostPollDue = new Map<string, NodeJS.Timeout>(); // a check held back by the 2 s between two
+  private readonly watchAs = watchName(vscode.env.sessionId ?? "");
+  private readonly onHostChangedEmitter = new vscode.EventEmitter<{ host: string; changed: string[]; requests: boolean }>();
+  // A host's watcher answered: the chats there whose session files or requests changed (a tab of one
+  // reads it at once)
+  readonly onHostChanged = this.onHostChangedEmitter.event;
   private again = false; // a chat changed while a check ran: check again once it's done
 
   constructor(
@@ -266,7 +279,88 @@ export class Dashboard implements vscode.Disposable {
     clearInterval(this.demoTimer);
     clearTimeout(this.messageTimers.error);
     clearTimeout(this.messageTimers.info);
+    for (const w of this.watches.values()) w.stop();
+    this.watches.clear();
+    for (const t of this.hostPollDue.values()) clearTimeout(t);
+    this.onHostChangedEmitter.dispose();
     for (const d of this.disposables) d.dispose();
+  }
+
+  // ---------------------------------------------------------------- watching SSH hosts and containers
+
+  // A host taken off the list: the permission hook Talpy Chat put there, and its requests, go (pane.py
+  // --relay forget there); said only when it stays (a chat Talpy Chat started there still runs)
+  private async forgetHook(host: string): Promise<void> {
+    const r = await this.backend.pane(["--relay", "forget", "--host", host], 60000);
+    if (r.ok && r.kept) this.setActionInfo(`${hostLabel(host)}: ${String(r.message ?? "")}`);
+  }
+
+  // The hosts of Talpy Chat tabs that show (or start a chat), from ChatPanes
+  setPaneHosts(hosts: Iterable<string>): void {
+    const next = new Set(hosts);
+    if (next.size === this.paneHosts.size && [...next].every((h) => this.paneHosts.has(h))) return;
+    this.paneHosts = next;
+    this.updateWatches();
+  }
+
+  // Whether host's watcher answers: what changes there comes with it (a tab there reads less often)
+  hostWatched(host: string): boolean {
+    const w = this.watches.get(host);
+    return !!w && w.running && !w.trouble;
+  }
+
+  // Why host can't be watched now ("" when it can, or isn't watched); "check": not reached, till its next check
+  hostWatchTrouble(host: string): string {
+    return this.watches.get(host)?.trouble ?? "";
+  }
+
+  private updateWatches(): void {
+    if (this.demo || this.disposed) return;
+    const state = { status: this.status, hosts: [...this.hosts.values()] };
+    const want = new Set(this.paneHosts);
+    if (this.notifier.isLeader())
+      for (const h of this.hosts.values())
+        if (h.ok && h.result && !h.cached && h.result.groups.some((g) => (g.sessions ?? []).some(hookedAtWork))) want.add(h.name);
+    // (only one whose last check answered, not one sharing this computer's home)
+    for (const host of [...want]) if (!this.hosts.has(host) || !talpyChatHere(talpyPlace(state, host), host, true)) want.delete(host);
+    for (const [host, w] of this.watches)
+      if (!want.has(host)) {
+        w.stop();
+        this.watches.delete(host);
+      }
+    for (const host of want)
+      if (!this.watches.has(host)) {
+        const w = new HostWatch(host, async (args, ms) => (await this.backend.watchHost(args, ms)) as WatchAnswer, this.watchAs,
+                                (h, a) => this.hostChanged(h, a), () => this.emit());
+        this.watches.set(host, w);
+        w.start();
+      }
+  }
+
+  // What a host's watcher said: a permission request there checks it at once, a hooked chat that
+  // changed at most every 2 s; the tabs of chats that changed read them (and ask for a check: pollHostSoon)
+  private hostChanged(host: string, a: WatchAnswer): void {
+    const changed = Array.isArray(a.changed) ? a.changed.filter((c) => typeof c === "string") : null;
+    const hooked = (this.hosts.get(host)?.result?.groups ?? []).some((g) => (g.sessions ?? []).some((s) =>
+      hookedAtWork(s) && !!changed && (changed.includes(s.sessionId) || (!!s.chatId && changed.includes(s.chatId)))));
+    if (a.requests) this.pollHostNow(host);
+    else if (!changed || hooked) this.pollHostSoon(host);
+    this.onHostChangedEmitter.fire({ host, changed: changed ?? [], requests: !!a.requests });
+  }
+
+  pollHostNow(host: string): void {
+    const due = this.hostPollDue.get(host);
+    if (due) clearTimeout(due);
+    this.hostPollDue.delete(host);
+    this.hostPolledAt.set(host, Date.now());
+    void this.pollHost(host, true);
+  }
+
+  // A check of host soon: at once, or 2 s after the one before (the last change of a burst is checked too)
+  pollHostSoon(host: string): void {
+    const wait = (this.hostPolledAt.get(host) ?? 0) + 2000 - Date.now();
+    if (wait <= 0) return this.pollHostNow(host);
+    if (!this.hostPollDue.has(host)) this.hostPollDue.set(host, setTimeout(() => this.pollHostNow(host), wait));
   }
 
   // Whether the Claude Code extension can open chats in this window (its
@@ -357,8 +451,14 @@ export class Dashboard implements vscode.Disposable {
     const shown = this.shownHosts();
     for (const name of [...this.hosts.keys()]) {
       if (!shown.includes(name)) {
+        const was = this.hosts.get(name);
         this.hosts.delete(name);
         this.tracker.forget("ssh:" + name); // a host that comes back starts over
+        // (taken off the list: Talpy Chat's permission hook there goes, unless a chat it started there runs; never
+        // one sharing this computer's home: that copy and its requests are this computer's)
+        const home = was?.result?.homeId;
+        if (was?.ok && !this.demo && this.notifier.isLeader() && !settings.sshHosts().includes(name) && !(home && home === this.status?.homeId))
+          void this.forgetHook(name);
       }
     }
     for (const name of shown) {
@@ -369,6 +469,7 @@ export class Dashboard implements vscode.Disposable {
       const now = this.hosts.get(name)!;
       if (containerOf(name)) now.detail = containerDetail(name, this.containerInfo(name));
     }
+    this.updateWatches(); // (a host taken off the list isn't watched any more)
     this.emit();
   }
 
@@ -606,6 +707,7 @@ export class Dashboard implements vscode.Disposable {
         Object.assign(now, { loading: false, ok: true, error: "", result, updatedAt: Date.now(), login: false, loggedIn: !!answer.loggedIn, stopped: false, gone: false, cached: false });
         this.hostAnswered.set(host, asked);
         this.react(changes, resets);
+        this.watches.get(host)?.checked(); // (a watcher that couldn't reach it runs again)
       } else {
         // keep the last answer to show (dimmed) with the error
         Object.assign(now, { loading: false, ok: false, error: answer.error || "no answer", login: !!answer.login, loggedIn: false, stopped: !!answer.stopped, gone: !!answer.gone, cached: false });
@@ -616,6 +718,7 @@ export class Dashboard implements vscode.Disposable {
       const h2 = this.hosts.get(host);
       if (h2) h2.loading = false;
       this.emit();
+      this.updateWatches(); // (its hooked chats at work, or it can't be watched any more)
       if (this.hostAgain.delete(host) && h2) void this.pollHost(host);
     }
   }
@@ -1030,7 +1133,7 @@ export class Dashboard implements vscode.Disposable {
             modal: true,
             detail: `Talpy Den's first run deletes ${preview ? cleanupText(preview.preview) : "what's that old"} here, then once a day ` +
               "what you haven't used for that long, on the SSH hosts and containers shown too; old plans go to the Trash. What you " +
-              "starred stays, and so do chats that are open, queued or keep going. Claude Code's own cleanup is off meanwhile." +
+              "starred or bookmarked stays, and so do chats that are open, queued or keep going. Claude Code's own cleanup is off meanwhile." +
               (preview && preview.overrides.length ? `\n\n${overridesNote(preview.overrides)}` : ""),
           }, "Use It");
         if (pick !== "Use It") return void this.syncOldChats();

@@ -5,6 +5,7 @@ click him before he ducks, he's quicker each round, and after a few he
 dances and the holes close. 10 to 30 s, ending by itself; Esc, a click
 outside, a chat that needs you or the stage out of sight end it at once. No
 scores. Ticked and drawn only while it runs."""
+import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
 import re
 import unittest

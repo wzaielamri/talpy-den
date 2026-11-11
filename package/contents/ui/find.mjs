@@ -93,8 +93,8 @@ function noAnsi(text) {
 }
 
 // Your message as shown: each picture as [Image #1], [Image #2]… (shared/pane.ts numberedPictures,
-// ChatPane shownText); a shell command without its !
-function yours(it) {
+// ChatPane shownText); a shell command without its ! (also a bookmark's text: bookmarks.mjs)
+export function yoursShown(it) {
     const text = it.text || "";
     if (it.command && it.command.shell)
         return text.replace(/^!\s*/, "");
@@ -121,7 +121,7 @@ function askedShown(it) {
 export function findParts(it, steps) {
     switch (it.kind) {
     case "you": {
-        const text = yours(it);
+        const text = yoursShown(it);
         const out = it.command && it.command.output ? noAnsi(it.command.output) : "";
         const f = foldOf(text, "plain");
         const fo = out ? foldOf(it.command.output, "ansi") : null;
@@ -134,6 +134,7 @@ export function findParts(it, steps) {
         return f ? [plainOf(f.shown), plainOf((it.text || "").slice(f.at))] : [plainOf(it.text), ""];
     }
     case "note":
+    case "made":   // (what a step made, on both tabs: its name, or Plan: and its title)
         return [it.text || "", ""];
     case "tool": {
         if (askedShown(it)) {

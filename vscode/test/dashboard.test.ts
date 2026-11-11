@@ -406,3 +406,81 @@ test("a setting checks again only what it changes: the chat tab's text size or a
     dash.dispose();
   }
 });
+
+// (2026-11-06) Talpy Chat's watchers of SSH hosts (remote.py --watch): one per host while a tab of a chat
+// there shows, or (the window that notifies) a hooked chat there works or waits; only for a host that
+// answered and doesn't share this computer's home. What it says: a request checks the host at once, a
+// hooked chat that changed at most every 2 s (the last change of a burst too)
+test("a host is watched only while Talpy Chat wants it; what changes there checks it", async () => {
+  const watched: string[] = [];
+  const polls: string[] = [];
+  let release: () => void = () => undefined;
+  const backend = {
+    watchHost: (args: string[]) => (watched.push(args[2]), new Promise((r) => (release = () => r({ ok: true, timeout: true })))),
+  } as unknown as Backend;
+  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
+  let leader = false;
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => leader } as unknown as Notifier, log);
+  const d = dash as unknown as { hosts: Map<string, unknown>; status: Status | null; pollHost(h: string): Promise<void>;
+                                 hostChanged(h: string, a: object): void; updateWatches(): void };
+  d.pollHost = async (h: string) => void polls.push(h);
+  const result = structuredClone(demoState(NOW).hosts[0].result!);
+  const chat = result.groups[0].sessions[0];
+  Object.assign(chat, { kind: "bg", hooked: true, state: "idle" });
+  d.status = { ...structuredClone(demoState(NOW).status!), homeId: "here00000000" };
+  d.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result: { ...result, homeId: "lab000000000" }, updatedAt: NOW });
+  d.hosts.set("box", { name: "box", loading: false, ok: true, error: "", result: { ...result, homeId: "here00000000" }, updatedAt: NOW });
+  try {
+    d.updateWatches();
+    assert.deepEqual(watched, [], "nothing wants it: nothing runs there");
+    dash.setPaneHosts(["lab", "box"]);
+    assert.deepEqual(watched, ["lab"], "a tab there shows; not one sharing this computer's home");
+    assert.equal(dash.hostWatched("lab"), true);
+    dash.setPaneHosts([]);
+    assert.equal(dash.hostWatched("lab"), false, "the tab hidden: it stops");
+    leader = true;
+    d.updateWatches();
+    assert.deepEqual(watched, ["lab"], "an idle hooked chat: not yet");
+    chat.state = "working";
+    d.updateWatches();
+    assert.deepEqual(watched, ["lab", "lab"], "the window that notifies: a hooked chat at work there");
+    d.hostChanged("lab", { ok: true, requests: true, changed: ["x"] });
+    assert.deepEqual(polls, ["lab"], "a request: at once");
+    d.hostChanged("lab", { ok: true, sessions: true, changed: ["someone-else"] });
+    assert.deepEqual(polls, ["lab"], "another chat's change: the host's next check is soon enough");
+    d.hostChanged("lab", { ok: true, sessions: true, changed: [chat.sessionId] });
+    assert.deepEqual(polls, ["lab"], "within 2 s of the last check: held back");
+    await new Promise((r) => setTimeout(r, 2100));
+    assert.deepEqual(polls, ["lab", "lab"], "then checked (the last change of a burst too)");
+  } finally {
+    dash.dispose();
+    release();
+  }
+});
+
+// (2026-11-06) A host taken off the list: the permission hook Talpy Chat put there goes (pane.py --relay forget
+// there), from the window that notifies, for a host that answered; said only when it stays
+test("a host taken off the list forgets Talpy Chat's hook there, and says when it stays", async () => {
+  const { overrides } = await import("./vscode-stub");
+  const asked: string[][] = [];
+  const backend = { pane: async (args: string[]) => (asked.push(args), { ok: true, kept: 1, message: "1 chat Talpy Chat started there still runs: its permission hook stays there for them" }) } as unknown as Backend;
+  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const d = dash as unknown as { hosts: Map<string, unknown>; syncHosts(): void; actionInfo: string; status: Status | null };
+  overrides.set("sshHosts", []);
+  try {
+    d.status = { ...structuredClone(demoState(NOW).status!), homeId: "here00000000" };
+    d.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result: null, updatedAt: NOW, current: false });
+    d.hosts.set("gpu", { name: "gpu", loading: false, ok: false, error: "timed out", result: null, updatedAt: NOW, current: false });
+    d.hosts.set("podman:box", { name: "podman:box", loading: false, ok: true, error: "", updatedAt: NOW, current: false,
+                                result: { groups: [], homeId: "here00000000" } });
+    d.syncHosts();
+    await new Promise((r) => setTimeout(r, 10));
+    // (not a host that didn't answer, nor a container sharing this computer's home: that copy is this computer's)
+    assert.deepEqual(asked, [["--relay", "forget", "--host", "lab"]]);
+    assert.equal(d.actionInfo, "lab: 1 chat Talpy Chat started there still runs: its permission hook stays there for them");
+  } finally {
+    overrides.clear();
+    dash.dispose();
+  }
+});

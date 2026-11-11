@@ -38,6 +38,7 @@ Window {
     // Your first message started it, and it isn't listed yet: "Starting…" on its working line
     readonly property bool starting: (!!fresh && pendingSent.some(p => p.chat === chatId && p.state !== "held"))
                                      || (!!chat.startedAt && !row)
+    onStartingChanged: if (host) root.watchesChanged()
     readonly property string chatState: row ? row.state : "done"
     readonly property bool busy: chatState === "working" || chatState === "waiting"
     readonly property string route: row && row.reply ? row.reply : "background"
@@ -249,6 +250,8 @@ Window {
     readonly property color mutedColor: mix(textColor, 0.62)
     readonly property color borderColor: mix(textColor, 0.16)
     readonly property color youColor: surface.Kirigami.Theme.focusColor
+    // (your messages' band; under a bookmarked one's ribbon too, BookmarkFlag.qml: the same colour)
+    readonly property color youGround: Qt.tint(surface.Kirigami.Theme.backgroundColor, Qt.rgba(youColor.r, youColor.g, youColor.b, 0.13))
     // Bold, as Claude's terminal draws it (Breeze's blue there): the theme's
     // accent (focusColor: a Plasma 6 window's highlightColor is a pale
     // selection tint), darker on a light theme so it reads on white. Also
@@ -261,6 +264,8 @@ Window {
         blockBg: hex(dark ? Qt.tint(surface.Kirigami.Theme.backgroundColor, Qt.rgba(0, 0, 0, 0.28)) : mix(textColor, 0.04)),
         border: hex(borderColor), link: hex(surface.Kirigami.Theme.linkColor)
     })
+    // A thinking line's: all of it muted (its list items and bold words too)
+    readonly property var thoughtStyle: Object.assign({}, mdStyle, { text: mdStyle.muted, strong: mdStyle.muted })
     // Code and changes (codehtml.mjs): a tool call's details
     readonly property var codeStyle: Code.palette(dark, hex(textColor), mdStyle.blockBg, monoFamily, pt,
                                                   codeFm.font.pointSize && codeFm.advanceWidth("M"))
@@ -292,6 +297,25 @@ Window {
     readonly property string chatFamily: Plasmoid.configuration.paneFont === "desktop"
                                          ? surface.Kirigami.Theme.defaultFont.family : monoFamily
     readonly property real gutter: Math.round(fm.height * 1.3)   // where the dots go
+
+    // ∴ before a thinking line, as in Claude Code's terminal (VS Code shared/pane.ts THINKING_TIP:
+    // the same words)
+    Component {
+        id: thoughtMark
+        Text {
+            text: "∴"
+            textFormat: Text.PlainText
+            color: pane.mutedColor
+            font.family: pane.chatFamily
+            font.pointSize: pane.pt
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            TipArea {
+                anchors.fill: parent
+                mainText: i18n("Claude's thinking, as Claude Code sums it up while Claude works: not its reply. It can tell what Claude means to do as if it were done.")
+            }
+        }
+    }
 
     // ● before a reply or a tool call, on its first line (blinking: still going)
     component Dot: Item {
@@ -380,13 +404,18 @@ Window {
             copied(key, hover)
             return
         }
+        copyWhole(key, false, hover)
+    }
+    // (all of a message, read from the transcript: one shown cut, or a bookmark's further back than the
+    // last 2000 steps shown, far: BookmarkList.qml)
+    function copyWhole(key, far, hover) {
         start("--reply-text " + root.shellQuote(chatId) + " --key " + root.shellQuote(key)
               + paneArgs() + " # " + Date.now(),
-              { kind: "copy", chat: chatId, host: host, key: key, hover: hover })
+              { kind: "copy", chat: chatId, host: host, key: key, hover: !!hover, far: !!far })
     }
     function copyLast() {
         for (let i = lastItems.length - 1; i >= 0; i--)
-            if (lastItems[i].kind === "claude")
+            if (lastItems[i].kind === "claude" && !lastItems[i].thinking)   // (a thinking line isn't its reply)
                 return copyItem(String(lastItems[i].key), lastItems[i].text || "", false)
         info = i18n("Claude hasn't replied in this chat yet")
         infoBad = true
@@ -412,6 +441,28 @@ Window {
         id: editMenu
         active: false
         source: active ? "EditMenu.qml" : ""
+    }
+    // Bookmarks (Ctrl+D; a message's ribbon on hover, its right-click menu): the chat's bookmarked
+    // messages, kept by pane.py --bookmark in the widget's cache, each one's dot or › a ribbon, listed on
+    // the side (Ctrl+Shift+B: BookmarkList.qml), Alt+↑ / Alt+↓ the one before / after what you read.
+    // What does it (Bookmarks.qml, with bookmarks.mjs) is read and made only once the chat has a
+    // bookmark (after its read, asynchronously) or you act (at once: bookmarksNow), so a chat without
+    // any runs none of it
+    property var bookmarks: []         // [{key, kind, at, text, made}], in the chat's order
+    property real bookmarksV: 0        // (its version, pane.py's: an older answer's list isn't taken)
+    property var bookmarked: ({})      // key -> true
+    property bool bookmarksOn: false   // (the list on the side)
+    property string reachKey: ""       // (one further back than what's shown: the next read reads that far, --reach)
+    Loader {
+        id: bookmarkLogic
+        active: false
+        asynchronous: true
+        source: active ? "Bookmarks.qml" : ""
+    }
+    function bookmarksNow() {
+        bookmarkLogic.asynchronous = false   // (one being made: done now)
+        bookmarkLogic.active = true
+        return bookmarkLogic.item
     }
     function keyAction(event) {
         return paneKeys.item ? paneKeys.item.keyAction(event) : ""
@@ -460,6 +511,25 @@ Window {
     property string loadError: ""
     property bool loadMissing: false   // (no transcript: it hasn't started yet, or it's gone: a note, not an error)
     property var openTools: ({})   // key -> unfolded: a step's details, a long text ("<key>/out": its output); unsaid: foldOpen's
+    // What Claude made, under its step or reply: "icon.svg · 2 KB", folded (MadeLine.qml: read and made
+    // only for such a line, so a window opens as quickly as before). Here, not in the list's delegate:
+    // no row has one more part; its row is its Loader's parent's parent (the delegate's body)
+    Component {
+        id: madeItem
+
+        Loader {
+            Component.onCompleted: setSource("MadeLine.qml", { row: parent.parent })
+        }
+    }
+    // What Claude made, unfolded (MadeLine.qml): pane.py --made's answer, by the line's key; asked again at each unfold
+    property var madeShown: ({})
+    function madeAsk(key, path, step, asFile) {
+        const next = Object.assign({}, madeShown)
+        delete next[key]   // (reading it…)
+        madeShown = next
+        start("--made " + root.shellQuote(chatId) + " --path " + root.shellQuote(path) + (step ? " --step " + root.shellQuote(step) : "")
+              + (asFile ? " --as-file" : "") + paneArgs() + " # " + Date.now(), { kind: "made", chat: chatId, host: host, key: key })
+    }
     // Long texts fold (find.mjs foldOf: past about 40 lines, their first 24 show, then Show more:
     // FoldMore.qml). Unsaid, what the window first read folds, but Claude's last reply then; what
     // comes in while it shows doesn't (you watch it come); only a click, a search's step into it and
@@ -592,8 +662,11 @@ Window {
         turnEnded = ""
         turnOver = false
         asks = null
+        predicted = ""
         contextLeft = null
         turnNow = null
+        usesNow = null
+        picking = null
         usual = null
         usualAt = 0
         chipsSeen = []
@@ -607,11 +680,19 @@ Window {
         loaded = false
         loadError = ""
         openTools = {}
+        madeShown = {}
         allOpen = false
         openBefore = {}
         firstRead = null
         shownList = []
         findOn = false   // (another chat: its find bar closed; what it looked for stays for Ctrl+F)
+        bookmarks = []
+        bookmarksV = 0
+        bookmarked = {}
+        bookmarksOn = false
+        reachKey = ""
+        if (bookmarkLogic.item)
+            bookmarkLogic.item.clear()   // (the chat before's ribbons and reach; its writes still go)
         info = ""
         review = null
         reviewFor = ""
@@ -736,9 +817,10 @@ Window {
         }
     }
 
+    // (this computer's extra Claude folders are this computer's: not sent to an SSH host or a container)
     function paneArgs() {
         return (profileDir ? " --profile " + root.shellQuote(profileDir) : "")
-               + (host ? " --host " + root.shellQuote(host) : "") + root.configDirArgs
+               + (host ? " --host " + root.shellQuote(host) : root.configDirArgs)
     }
 
     // (the time makes a click run its command again; the conversation, read
@@ -777,8 +859,10 @@ Window {
         }
         loading = true
         loadingSince = Date.now()
+        // (a bookmark further back than what's shown: read as far back as its message, Bookmarks.qml reach)
         run("conversation", "--conversation " + root.shellQuote(chatId) + " --limit " + limit
-            + (stamp ? " --if-changed " + root.shellQuote(stamp) : "") + (suggestOn ? " --suggest" : "") + paneArgs())
+            + (reachKey !== "" ? " --reach " + root.shellQuote(reachKey) : stamp ? " --if-changed " + root.shellQuote(stamp) : "")
+            + (suggestOn ? " --suggest" : "") + paneArgs())
     }
 
     // Live (hub/Hub.qml): with the live hook, the conversation is read the
@@ -788,6 +872,8 @@ Window {
     // (minimized, it reads nothing: once it's back, the conversation now)
     readonly property bool shown: visible && visibility !== Window.Minimized
     onShownChanged: {
+        if (host)
+            root.watchesChanged()   // (an SSH host's chat shown: its host watched, Hub's remote.py --watch)
         if (shown)
             paneKeys.active = true   // (its keys: made once it shows)
         if (shown)
@@ -796,8 +882,11 @@ Window {
             load()
     }
     Timer {
-        // (with the watcher, only for what it can't see: a moment it wasn't running)
-        interval: pane.host ? 5000 : pane.watchOk ? 15000 : pane.followsLive ? 5000 : 1500
+        // (with the watcher, only for what it can't see: a moment it wasn't running. An SSH host's or a
+        // container's: every 5 s, but every minute while its host's watcher answers and Claude doesn't work
+        // or wait there: what changes comes with the watcher's answer, root.onHostChanged)
+        interval: pane.host ? (pane.hostWatched && pane.chatState !== "working" && pane.chatState !== "waiting" ? 60000 : 5000)
+                  : pane.watchOk ? 15000 : pane.followsLive ? 5000 : 1500
         running: pane.shown && pane.chatId !== "" && !pane.fresh
         repeat: true
         onTriggered: pane.load()
@@ -809,6 +898,9 @@ Window {
     // not at the next look. Not for an SSH host's (a look every 5 s, and
     // often just after you sent something, chase)
     readonly property bool watching: shown && !host && chatId !== "" && loaded && stamp !== "" && watchFailures < 3
+    // (an SSH host's or a container's chat: its host's watcher answers, root.watchedHosts)
+    readonly property bool hostWatched: !!host && !!root.watchedHosts[host] && Hub.watching(host)
+    readonly property string hostTrouble: host && root.watchedHosts[host] ? Hub.watchTrouble[host] || "" : ""
     readonly property bool watchOk: watching && watchLine !== "" && watchFailures === 0
     property string watchLine: ""     // the one running (an answer from another is left out)
     property real watchStartedAt: 0
@@ -885,8 +977,18 @@ Window {
     // earlier meanwhile), isn't taken
     function takeConversation(result) {
         loadError = ""
-        if (result.unchanged || !fresher(result.stamp))
+        // (a read as far back as a bookmark's message: at the length it read, which the next ones read too)
+        const reach = !!result.reach && result.limit > 0
+        if (reach) {
+            limit = result.limit
+            if (result.reach === reachKey)
+                reachKey = ""
+        }
+        if (result.unchanged || !fresher(result.stamp)) {
+            if (reach && bookmarkLogic.item)
+                bookmarkLogic.item.reached(result)
             return
+        }
         const following = !loaded || nearEnd()
         stamp = result.stamp || ""
         more = !!result.more
@@ -894,19 +996,36 @@ Window {
         if (firstRead === null && lastItems.length) {
             let last = ""
             for (let i = lastItems.length - 1; i >= 0 && last === ""; i--)
-                if (lastItems[i].kind === "claude")
+                if (lastItems[i].kind === "claude" && !lastItems[i].thinking)
                     last = String(lastItems[i].key)
             firstRead = { at: Date.now(), last: last }
         }
         const handoff = {}
         merge(withPending(lastItems, handoff), handoff)
         countUnseen()
+        // (its bookmarks, as pane.py keeps them: not while a change of yours is on its way, nor a list no
+        // newer than what's shown; with one, what draws them is made, off this frame: bookmarkLogic)
+        if (Array.isArray(result.bookmarks) && result.bookmarksV > bookmarksV && !(bookmarkLogic.item && bookmarkLogic.item.busy)) {
+            const keys = {}
+            for (const m of result.bookmarks)
+                keys[m.key] = true
+            bookmarks = result.bookmarks
+            bookmarked = keys
+            bookmarksV = result.bookmarksV
+        }
+        if (bookmarks.length > 0)
+            bookmarkLogic.active = true
+        if (reach && bookmarkLogic.item)
+            bookmarkLogic.item.reached(result)
         // (how its turn ended: its chips, made once the conversation is in the list)
         turnEnded = result.ended || ""
         turnOver = !!result.over
         asks = result.asks || null
+        predicted = result.predicted || ""
         contextLeft = result.context || null
         turnNow = result.turn || null
+        if (result.options)
+            usesNow = result.options
         if (turnEnded !== "" && usual === null)
             usualSoon.restart()
         loaded = true
@@ -964,12 +1083,14 @@ Window {
             }
             days.steps[day] = true
             firsts.steps = firsts.steps || day
+            // (what Claude made, as JSON in input: a made line has none of its own, and no row has one more role)
             const flat = { kind: it.kind, key: String(it.key), text: it.text || "", line: it.line || "",
-                           name: it.name || "", status: it.status || "", input: it.input || "", output: it.output || "",
+                           name: it.name || "", status: it.status || "", output: it.output || "",
+                           input: it.kind === "made" ? JSON.stringify(it.made || {}) : it.input || "",
                            summary: it.summary || "", at: it.at || 0, bad: !!it.error, prev: i > 0 ? list[i - 1].kind : "",
                            diff: (it.diff || []).join("\n"), queued: !!it.queued, until: it.until || 0,
                            pictures: (it.pictures || []).join("\n"), here: (it.here || []).join("\n"),
-                           asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "",
+                           asked: it.asked ? JSON.stringify(it.asked) : "", answered: it.answered || "", thinking: !!it.thinking,
                            command: it.command ? JSON.stringify(it.command) : "", day: day, fold: "" }
             if (i < items.count && items.get(i).key === flat.key) {
                 const old = items.get(i)
@@ -1287,20 +1408,63 @@ Window {
         const v = String(value || "").toLowerCase()
         if (v === "" || v === "default")
             return kind === "model" ? i18n("Claude's default model") : i18n("Claude's default effort")
+        if (kind === "effort" && v === "ultracode")
+            return i18n("Ultracode, with Extra high effort")
         const known = (kind === "model" ? chatModels : chatEfforts).find(k => k[0] === v)
         return kind === "effort" ? i18n("%1 effort", known ? known[1] : value) : known ? known[1] : value
     }
+    // What the chat uses now (pane.py --conversation's "options", chatpick.options_now: VS Code's
+    // ChatOptions): {model, effort ("" Claude's default, null not known; xhigh with ultracode),
+    // ultracode, next (from your next message)}; each pick sets it at once (withPick)
+    property var usesNow: null
+    property var picking: null   // ({kind, value}: a pick on its way)
+    function modelKey(model) {   // (a full name as the list names it: "claude-opus-5-5[1m]" is opus)
+        const m = String(model).toLowerCase()
+        const known = chatModels.find(k => k[0] && m.indexOf(k[0]) >= 0)
+        return known ? known[0] : m
+    }
+    function withPick(was, kind, value, how) {
+        const now = Object.assign({ model: null, effort: null, ultracode: false, next: false }, was || {})
+        const v = String(value).toLowerCase() === "default" ? "" : String(value).toLowerCase()
+        if (kind === "model")
+            return Object.assign(now, { model: v, next: how === "next" })
+        return Object.assign(now, { effort: v === "ultracode" ? "xhigh" : v, ultracode: v === "ultracode", next: how === "next" })
+    }
+    function nowText(now) {   // ("Opus · Extra high effort, with ultracode"; "": nothing known)
+        if (!now || (now.model === null && now.effort === null))
+            return ""
+        return [now.model === null ? "" : pickLabel("model", modelKey(now.model)),
+                now.effort === null ? "" : pickLabel("effort", now.effort) + (now.ultracode ? i18n(", with ultracode") : "")]
+            .filter(w => w).join(" · ")
+    }
+    // The list for /model or /effort: each with what it sets, the one the chat uses now marked (✓,
+    // "now" or "from your next message"); /effort's also turns ultracode on or off
     function pickerItems(kind, q) {
         const query = String(q || "").toLowerCase()
-        return (kind === "model" ? chatModels : chatEfforts)
-            .filter(k => !query || (k[0] || "default").startsWith(query) || k[1].toLowerCase().split(/[\s']+/).some(w => w.startsWith(query)))
-            .map(k => ({ text: k[1], about: i18n("for this chat alone"), insert: "/" + kind + " " + (k[0] || "default"), run: true, off: false, tag: "", tip: "" }))
+        const now = usesNow
+        const on = !!(now && now.ultracode)
+        const rows = (kind === "model" ? chatModels : chatEfforts).map(k => ({ v: k[0], label: k[1], insert: "/" + kind + " " + (k[0] || "default") }))
+        if (kind === "effort")
+            rows.splice(rows.length - 1, 0, { v: "ultracode", label: on ? i18n("Turn ultracode off") : i18n("Turn ultracode on"),
+                                              insert: "/effort " + (on ? "xhigh" : "ultracode"), toggle: true })
+        const used = v => !!now && (kind === "model" ? now.model !== null && now.model !== undefined && modelKey(now.model) === v
+                                                     : now.effort !== null && now.effort !== undefined && now.effort === v)
+        return rows
+            .filter(r => !query || (r.v || "default").startsWith(query) || r.label.toLowerCase().split(/[\s']+/).some(w => w.startsWith(query)))
+            .map(r => {
+                const mark = !r.toggle && used(r.v)
+                const about = [mark ? (now.next ? i18n("from your next message") : i18n("now")) + (kind === "effort" && on ? i18n(", with ultracode") : "") : "",
+                               r.toggle ? (on ? i18n("Extra high effort stays") : i18n("with Extra high effort")) : "",
+                               i18n("for this chat alone")]
+                return { text: r.label, about: about.filter(w => w).join(" · "), insert: r.insert, run: true, now: mark, off: false, tag: "", tip: "" }
+            })
     }
     property bool pickBusy: false   // (a pick on its way: pane.py --set-options)
     function setOptions(kind, value) {
         if (pickBusy)
             return
         pickBusy = true
+        picking = { kind: kind, value: value }
         start("--set-options " + root.shellQuote(chatId) + " --" + kind + " " + root.shellQuote(value === "default" ? "" : value)
               + paneArgs() + " # " + Date.now(), { kind: "options", chat: chatId, host: host, text: replyBox.text.trim() })
     }
@@ -1389,6 +1553,7 @@ Window {
     property string turnEnded: ""      // how its last turn ended ("": mid-turn, a message queued, or not asked)
     property bool turnOver: false      // (the transcript says so; else the chat's state does)
     property var asks: null            // the question it ended with, as chips
+    property string predicted: ""      // Claude's own guess at your reply to it (a background chat's: pane.py predicted_reply)
     property var usual: null           // {chips: {how a turn ended: [your replies then]}, ranked: [all of them]}
     property real usualAt: 0
     property var hiddenReplies: ({})   // reply key -> true: Don't suggest this, gone at once
@@ -1433,7 +1598,7 @@ Window {
             return false
         if (!turnOver && (chatState === "working" || Date.now() - sentAt <= 15000))
             return false
-        return (!!asks && !!asks.choices && asks.choices.length > 0)
+        return (!!asks && !!asks.choices && asks.choices.length > 0) || predicted !== ""
                || ((usual && usual.chips && usual.chips[turnEnded]) || []).some(t => !hiddenReplies[replyKey(t)])
     }
     onChipsOnChanged: if (loaded && nearEnd()) keepEnd()   // (the row above the box comes or goes: the end stays in view)
@@ -1471,10 +1636,27 @@ Window {
                 Plasmoid.configuration.paneTerminalFont = result.family
             return
         }
+        if (kind === "bookmark") {   // (a bookmark kept, or why not: Bookmarks.qml, whichever chat it was of)
+            bookmarksNow().took(result, asked)
+            return
+        }
+        if (kind === "made") {   // (what Claude made, unfolded: MadeLine.qml shows it)
+            if (asked.chat === chatId) {
+                const next = Object.assign({}, madeShown)
+                next[asked.key] = result
+                madeShown = next
+            }
+            return
+        }
         if (kind === "copy") {   // (all of a reply shown cut: on the clipboard now, Copied)
             if (result.ok && typeof result.text === "string") {
                 copyText(result.text, true)
-                copied(asked.key, asked.hover)
+                if (asked.far) {   // (a bookmark's message, further back than the list goes)
+                    info = i18n("Copied: it's further back than the last 2000 steps Talpy Chat shows")
+                    infoBad = false
+                    infoTimer.restart()
+                } else
+                    copied(asked.key, asked.hover)
             } else {
                 info = i18n("Couldn't copy all of it: %1", result.message || i18n("it couldn't be read"))
                 infoBad = true
@@ -1495,6 +1677,9 @@ Window {
             infoTimer.restart()
             if (result.ok && asked.chat === chatId && pickerOf(replyBox.text))
                 replyBox.text = ""   // (the /model you picked goes)
+            if (result.ok && asked.chat === chatId && picking)
+                usesNow = withPick(usesNow, picking.kind, picking.value, result.how || "")   // (marked at once: what it uses now)
+            picking = null
             if (result.ok)
                 root.refresh()
             return
@@ -1577,6 +1762,11 @@ Window {
                 Qt.callLater(load)
             }
             if (!result.ok) {
+                if (reachKey !== "") {   // (a bookmark's read further back: not tried again, Going there… goes)
+                    reachKey = ""
+                    if (bookmarkLogic.item)
+                        bookmarkLogic.item.reached(result)
+                }
                 // (a chat just started has no transcript for a moment: your message shows meanwhile)
                 if (result.missing && chat.startedAt && Date.now() - chat.startedAt < 60000) {
                     loadError = ""
@@ -1616,6 +1806,13 @@ Window {
         info = result.message || (result.ok ? "" : i18n("That didn't work"))
         infoBad = !result.ok
         infoTimer.restart()
+        if (kind === "send" && result.ok && result.hooked === false) {
+            // (started or woken in the background without Talpy Den's permission hook: what it asks waits in
+            // its own prompt, Answer it in a terminal)
+            info = i18n("It went, but Talpy Chat can't answer what it asks (%1): answer its prompts in a terminal.",
+                        result.hookWhy || i18n("no permission hook"))
+            infoBad = true
+        }
         if (kind === "send" && result.ok) {
             if (result.how === "ask") {
                 askHow = true
@@ -2052,16 +2249,18 @@ Window {
     }
     // pane.py --send's arguments for your message (asked), to the chat shown; a new chat's first
     // one starts it (--start: in the background, on its account, in its folder, with the model,
-    // effort and mode of its ⚙ line, the new-chat ones; with the permission hook for it alone)
+    // effort and mode of its ⚙ line, the new-chat ones; with the permission hook for it alone).
+    // Suggest replies on: a chat it starts or wakes predicts your reply (pane.py PREDICT_ENV)
     function sendArgs(asked) {
         const f = asked.fresh
         if (f)
             return "--start " + root.shellQuote(f.profile) + " --cwd " + root.shellQuote(f.cwd) + " --text " + root.shellQuote(asked.text)
                    + root.chatOptions + (f.plan ? " --plan " + root.shellQuote(f.plan.slug) + " --plan-profile " + root.shellQuote(f.plan.profileDir) : "")
-                   + root.configDirArgs
+                   + (suggestOn ? " --suggest" : "")
+                   + (host ? " --host " + root.shellQuote(host) : root.configDirArgs)   // (started there: an SSH host's, a container's)
         return "--send " + root.shellQuote(asked.chat) + " --text " + root.shellQuote(asked.text)
                + (sessionId ? " --session " + root.shellQuote(sessionId) : "") + " --how " + asked.how
-               + (asked.kind === "later" ? " --after-turn --name " + root.shellQuote(chatName) : "") + paneArgs()
+               + (asked.kind === "later" ? " --after-turn --name " + root.shellQuote(chatName) : "") + (suggestOn ? " --suggest" : "") + paneArgs()
     }
     // Held (sent while Claude works): it goes to Claude when its moment is up
     // (Claude takes it in at its next step), or at once with Send now; Edit
@@ -2411,7 +2610,9 @@ Window {
             const kind = p ? p.kind : "model"
             const exact = !!ran.arg && pickerItems(kind, "").some(s => s.insert === "/" + kind + " " + ran.arg.toLowerCase())
             const named = !ran.arg ? "" : exact || !pickerItems(kind, ran.arg).length ? pickLabel(kind, ran.arg) : ""
-            return (named ? i18n("Enter: %1 for this chat alone", named)
+            const used = nowText(usesNow)
+            return (used ? (usesNow.next ? i18n("From your next message: %1.", used) : i18n("Now: %1.", used)) + " " : "")
+                + (named ? i18n("Enter: %1 for this chat alone", named)
                     : ran.arg ? (kind === "effort" ? i18n("Enter: the effort level picked in the list, for this chat alone")
                                                    : i18n("Enter: the model picked in the list, for this chat alone"))
                     : kind === "effort" ? i18n("Enter lists the effort levels: for this chat alone") : i18n("Enter lists the models: for this chat alone"))
@@ -2669,8 +2870,14 @@ Window {
                 Tag {
                     visible: pane.host !== ""
                     text: root.hostLabel(pane.host)
-                    tooltip: root.isContainer(pane.host) ? i18n("This chat runs in the container %1.", root.hostLabel(pane.host))
-                                                         : i18n("This chat runs on the SSH host %1.", pane.host)
+                    // (its watcher fails: in the warning colour, and the tooltip says what that means)
+                    caution: pane.hostTrouble !== ""
+                    tooltip: (root.isContainer(pane.host) ? i18n("This chat runs in the container %1.", root.hostLabel(pane.host))
+                                                          : i18n("This chat runs on the SSH host %1.", pane.host))
+                             + (pane.hostTrouble === "" ? ""
+                                : "\n\n" + i18n("What it asks shows at its next check: Talpy Den can't watch %1 right now (%2).",
+                                                root.hostLabel(pane.host),
+                                                pane.hostTrouble === "check" ? i18n("it couldn't be reached") : pane.hostTrouble))
                 }
                 // what it's doing, in its state's color
                 Rectangle {
@@ -2994,6 +3201,13 @@ Window {
                 Item {
                     Layout.fillWidth: true
                 }
+                // The chat's bookmarks: how many, a click lists them (BookmarkPill.qml: read and made only for
+                // a chat with one, or while they're listed; on every tab, as tall as a tab: the row never changes)
+                Loader {
+                    active: pane.bookmarks.length > 0 || pane.bookmarksOn
+                    Layout.alignment: Qt.AlignVCenter
+                    source: active ? "BookmarkPill.qml" : ""
+                }
             }
             Rectangle {
                 Layout.fillWidth: true
@@ -3225,6 +3439,7 @@ Window {
                         required property string asked      // (a question or a plan Claude asked, as JSON: pane.py asked_of)
                         required property string answered   // (yours: your answer to the call before it, pane.py your_answer)
                         required property string command    // (yours: a command you ran, as JSON: pane.py commands.py)
+                        required property bool thinking     // (Claude's: a thinking line, not its reply: pane.py THOUGHT)
                         required property string fold       // (a long one: where it folds, as JSON: withFold; "" for the rest)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
                         property int late: pane.lateDefault   // (Ctrl+O: its turn came, FoldAll.qml)
@@ -3241,7 +3456,7 @@ Window {
                         // more room before your prompt (a new turn) than between steps; your answer: right under what it answers
                         readonly property real gap: index === 0 ? 0
                             : kind === "you" && answered === "" ? Kirigami.Units.gridUnit * 1.6
-                            : kind === "tool" && prev === "tool" ? Kirigami.Units.smallSpacing * 1.5
+                            : (kind === "tool" && (prev === "tool" || prev === "made")) || kind === "made" ? Kirigami.Units.smallSpacing * 1.5
                             : Kirigami.Units.gridUnit * 0.8
                         // (the Chat tab: a call you denied with a note too, its note under it)
                         readonly property bool shows: (kind !== "tool" || pane.listTab === "steps" || card
@@ -3260,7 +3475,7 @@ Window {
                             y: entry.gap
                             width: parent.width
                             sourceComponent: entry.card ? askedItem : entry.kind === "you" ? youItem : entry.kind === "claude" ? claudeItem
-                                           : entry.kind === "tool" ? toolItem : noteItem
+                                           : entry.kind === "tool" ? toolItem : entry.kind === "made" ? madeItem : noteItem
                         }
 
                         // Yours: a band in your accent color, after a ›. Queued (sent
@@ -3284,8 +3499,7 @@ Window {
                                 readonly property color mark: waits ? pane.mutedColor : pane.youColor
                                 implicitHeight: youColumn.implicitHeight + Kirigami.Units.largeSpacing * 1.5
                                 radius: Kirigami.Units.cornerRadius
-                                color: waits ? pane.mix(pane.textColor, 0.07)
-                                     : Qt.tint(Kirigami.Theme.backgroundColor, Qt.rgba(pane.youColor.r, pane.youColor.g, pane.youColor.b, 0.13))
+                                color: waits ? pane.mix(pane.textColor, 0.07) : pane.youGround
 
                                 Rectangle {
                                     width: 3
@@ -3307,6 +3521,7 @@ Window {
                                     spacing: 0
 
                                     PlasmaComponents3.Label {
+                                        objectName: "rowMark"
                                         Layout.preferredWidth: pane.gutter
                                         Layout.alignment: Qt.AlignTop
                                         horizontalAlignment: Text.AlignHCenter
@@ -3390,7 +3605,9 @@ Window {
                             }
                         }
 
-                        // Claude's reply: ● and its Markdown, rendered
+                        // Claude's reply: ● and its Markdown, rendered. A thinking line (Claude
+                        // Code's, while Claude thinks: thinking shown as updates) dimmed, in
+                        // italics, after ∴, as Claude Code's terminal shows it: not its reply
                         Component {
                             id: claudeItem
 
@@ -3398,10 +3615,20 @@ Window {
                                 spacing: 0
 
                                 Dot {
+                                    objectName: "rowMark"
+                                    visible: !entry.thinking
                                     Layout.alignment: Qt.AlignTop
                                     color: pane.claudeColor
                                     gutter: pane.gutter
                                     lineHeight: fm.height
+                                }
+                                Loader {
+                                    active: entry.thinking
+                                    visible: active
+                                    Layout.preferredWidth: pane.gutter
+                                    Layout.preferredHeight: fm.height
+                                    Layout.alignment: Qt.AlignTop
+                                    sourceComponent: thoughtMark
                                 }
                                 ColumnLayout {
                                 Layout.fillWidth: true
@@ -3415,18 +3642,19 @@ Window {
                                     property int copied: -1
                                     Component.onCompleted: entry.textBox = replyText
                                     Layout.fillWidth: true
-                                    text: Md.toHtml(entry.whole ? entry.text : entry.foldData.cut, pane.mdStyle, copied)
+                                    text: Md.toHtml(entry.whole ? entry.text : entry.foldData.cut, entry.thinking ? pane.thoughtStyle : pane.mdStyle, copied)
                                     textFormat: TextEdit.RichText
                                     readOnly: true
                                     persistentSelection: true   // (selectAcross clears it)
                                     Keys.onPressed: event => pane.copyAcross(event)
                                     selectByMouse: true
                                     wrapMode: TextEdit.Wrap
-                                    color: Kirigami.Theme.textColor
+                                    color: entry.thinking ? pane.mutedColor : Kirigami.Theme.textColor
                                     selectionColor: Kirigami.Theme.focusColor
                                     selectedTextColor: Kirigami.Theme.highlightedTextColor
                                     font.family: pane.chatFamily
                                     font.pointSize: pane.pt
+                                    font.italic: entry.thinking
                                     onLinkActivated: link => {
                                         if (link.indexOf("copy:") === 0) {
                                             copied = Number(link.slice(5))
@@ -3691,6 +3919,20 @@ Window {
                 active: pane.findOn && pane.conversationTab
                 source: active ? "FindBar.qml" : ""
             }
+            // The chat's bookmarks (Ctrl+Shift+B, the tab row's ribbon): BookmarkList.qml over the list's top
+            // right, under the find bar while it's open, clear of the scroll bar (nothing moves), read and made
+            // only while it's open
+            Loader {
+                id: bookmarkList
+                parent: scroll
+                z: 12
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.topMargin: Kirigami.Units.smallSpacing * 0.5 + (findBar.item ? findBar.item.height + Kirigami.Units.smallSpacing : 0)
+                anchors.rightMargin: Kirigami.Units.gridUnit
+                active: pane.bookmarksOn && pane.conversationTab
+                source: active ? "BookmarkList.qml" : ""
+            }
             // "3 new ↓" at the list's bottom while you're scrolled up and something came in below (NewBelow.qml:
             // made only then); over the list, so it moves nothing; a click goes to the end
             Loader {
@@ -3731,8 +3973,9 @@ Window {
                         planHeight: Kirigami.Units.gridUnit * 1000   // (the box scrolls)
                         keyed: true   // (Alt+Y / Alt+A / Alt+N: pressKey, from the keys)
                         onAnswered: (decision, note, answers) => pane.answer(decision, note, answers)
-                        // (a background chat started without Talpy Den's hook: claude attach on it)
-                        attachable: !pane.host && !!pane.row && pane.row.kind === "bg" && !!pane.row.pid
+                        // (a background chat started without Talpy Den's hook: claude attach on it; an SSH
+                        // host's over ssh, a container's in it: its row's openCommand)
+                        attachable: !!pane.row && pane.row.kind === "bg" && !!pane.row.pid && (!pane.host || !!pane.row.openCommand)
                         onInTerminal: root.openRow(pane.row, pane.host, true)
                         // (a plan too long to show whole: its file, by its name)
                         onWholePlan: root.openPlan(permission.plan.file.split("/").pop().replace(/\.md$/, ""), pane.profileDir, pane.host)

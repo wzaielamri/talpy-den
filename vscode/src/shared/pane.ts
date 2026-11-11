@@ -5,12 +5,30 @@
 
 import { clockText, formatTokens, hostLabel } from "./model";
 import type { Answers, AskShown, Decision, PermissionAsk, Question, QueuedTask, RecentChat, Review, Session, SessionState, Status } from "./types";
+import type { Bookmark } from "../../vendor/bookmarks.mjs";
+
+// What came of a message (or a new chat's start) sent from Talpy Chat: went, to the chat itself;
+// ask: its terminal takes no text, you choose; warn: it went, but message says what's wrong
+export interface SendResult {
+  ok: boolean;
+  message: string;
+  ask?: boolean;
+  went?: boolean;
+  warn?: boolean;
+}
+
+// A chat started or woken in the background without Talpy Den's permission hook (pane.py's
+// "hooked": false, "hookWhy"): what it asks waits in its own prompt (Plasma's words too)
+export function unhookedText(why: unknown): string {
+  return `It went, but Talpy Chat can't answer what it asks (${typeof why === "string" && why ? why : "no permission hook"}): answer its prompts in a terminal.`;
+}
 
 // One item of a chat's conversation (pane.py: conversation_items)
 export interface PaneItem {
-  kind: "you" | "claude" | "tool" | "note";
+  kind: "you" | "claude" | "tool" | "note" | "made";
   key: string; // the same in the next answer, while it's listed
   text?: string; // you, claude (markdown), note
+  thinking?: boolean; // claude: a line Claude Code wrote while Claude thought, summing it up (thinking shown as updates), not its reply: dimmed, in italics, after ∴ (key "<its reply's>/thinking")
   name?: string; // tool: its name, e.g. "Bash"
   line?: string; // tool: one line, e.g. "Bash: npm test"
   status?: "ok" | "error" | "open"; // tool: how it went ("open": no result yet)
@@ -29,6 +47,54 @@ export interface PaneItem {
   answered?: "question" | "plan" | "permission"; // you: your answer to the call before it (key "<tool id>/answer")
   answers?: { header: string; question: string; answer: string; notes: string }[]; // you: a question's, each answered
   command?: { shell?: boolean; output?: string; error?: boolean }; // you: a command you ran (/compact, !ls: pane.py commands.py), what it printed (ANSI colours kept: ansi.mjs)
+  of?: string; // made: the key of the step or the reply it's under
+  made?: Made; // made: what it is (pane.py made.py); its text is its name, or "Plan: " and its title
+}
+
+// What Claude made, under the step that made it or the reply that names it (pane.py made.py): a
+// picture, a plan (Markdown in a plans folder), a page (HTML) or another file (a PDF it read).
+// Folded, only its name and size; unfolded, the file as it is now (a picture Claude read: what
+// it saw, from the transcript, "step"), asked for then (madeAsk)
+export interface Made {
+  path: string; // where it is (on its SSH host, for a host's chat)
+  type: "picture" | "plan" | "page" | "file";
+  name: string;
+  size: number | null; // bytes, when known
+  gone?: boolean; // made by a step, not there now
+  step?: string; // a Read's tool call: what Claude saw is in the transcript (pane.py --made --step)
+}
+
+// "2 KB", as a made file's folded line says it (Plasma's MadeLine.qml: the same rule)
+export function madeSize(bytes: number | null | undefined): string {
+  if (bytes == null || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// The folded line: "icon.svg · 2 KB", "Plan: Ship it · 3 KB", "shot.png · not there any more"
+export function madeLine(it: Pick<PaneItem, "text" | "made">): string {
+  const m = it.made;
+  const size = madeSize(m?.size);
+  return [it.text ?? m?.name ?? "", m?.gone ? "not there any more" : size].filter(Boolean).join(" · ");
+}
+
+// What unfolding it asks the extension for (null: nothing to read: another file, or one gone)
+export function madeAsk(m: Made): { path: string; step?: string } | null {
+  if (m.step) return { path: m.path, step: m.step };
+  return m.gone || m.type === "file" ? null : { path: m.path };
+}
+
+// The files and Read steps a conversation shows as made: the only ones its tab may ask for (the
+// extension's check, before pane.py's own)
+export function madeOf(items: readonly PaneItem[] | undefined): { paths: Set<string>; steps: Set<string> } {
+  const out = { paths: new Set<string>(), steps: new Set<string>() };
+  for (const it of items ?? []) {
+    if (it.kind !== "made" || !it.made || typeof it.made.path !== "string") continue;
+    out.paths.add(it.made.path);
+    if (it.made.step) out.steps.add(it.made.step);
+  }
+  return out;
 }
 
 // What Claude asked (pane.py asked_of): its questions, each with the options
@@ -68,8 +134,19 @@ export interface Conversation {
   ended?: TurnEnded | null;
   over?: boolean;
   asks?: Asks | null;
+  predicted?: string | null; // Claude's own guess at your reply to its question (a background chat's: its first chip)
   context?: ContextLeft | null; // how full its context is (null: not known)
   turn?: TurnSoFar | null; // Claude's turn so far, while it's going on
+  options?: ChatOptions; // the model and effort it uses now (/model and /effort's lists mark them)
+  // its bookmarks (pane.py: a chat that has had one) and their version, which only grows (adoptable)
+  bookmarks?: Bookmark[];
+  bookmarksV?: number;
+  // (--reach KEY: read far enough back to show that message) the limit read for, which the tab takes
+  // before the stamp is compared (stampFresher), the key, and whether it's here now, further back than
+  // a tab shows (far) or not in the chat any more (gone)
+  limit?: number;
+  reach?: string;
+  reached?: "here" | "far" | "gone";
 }
 
 // One file a chat changed (pane.py: chat_review)
@@ -111,6 +188,7 @@ export interface PaneChat {
   busy: boolean; // working or waiting
   atWork: boolean; // working, its turn not over (only a background command after it isn't): a message waits a moment
   bgStop: boolean; // a background chat Stop can interrupt (its row's: the Claude Code versions that was checked on)
+  watchTrouble?: string; // an SSH host's chat: why its host's watcher can't watch it now ("check": it couldn't be reached)
   activity: string; // what it does now
   permission: PermissionAsk | null;
   changes: number; // files it changed
@@ -199,7 +277,7 @@ export type PaneHostMessage =
   | { type: "review"; answer: ReviewAnswer | null; error: string }
   // ask: its terminal takes no text: choose; id: the message it's for (send); went: it went into the chat
   // itself (typed in, or on in the background: not VS Code's input or the clipboard)
-  | { type: "result"; kind: string; ok: boolean; message: string; ask?: boolean; id?: number; went?: boolean }
+  | { type: "result"; kind: string; ok: boolean; message: string; ask?: boolean; id?: number; went?: boolean; how?: string; warn?: boolean } // how: an "options" result's (now, next)
   | { type: "textSize"; scale: number } // talpyDen.chatTextScale
   | { type: "font"; family: string } // talpyDen.chatFont, as a CSS font-family ("": VS Code's own)
   | { type: "diffLayout"; split: boolean } // talpyDen.diffSideBySide
@@ -222,6 +300,12 @@ export type PaneHostMessage =
   | { type: "answering"; id: number; ask: PermissionAsk; decision: Decision; note: string; answers?: Answers }
   | { type: "answered"; id: number; ok: boolean }
   | { type: "copied"; id: number; ok: boolean; message: string } // a copyItem on the clipboard (ok), or why not
+  // a made file unfolded (madeAsk; pane.py --made): a picture as a data: URL (src), a plan's or a page's
+  // first lines (text; cut: there's more), or why not (gone: not there any more; big: too big to show)
+  | { type: "made"; id: number; ok: boolean; src?: string; text?: string; cut?: boolean; message?: string; gone?: boolean; big?: boolean }
+  // a bookmark kept or taken away (pane.py --bookmark, the page's id): the chat's whole list and its
+  // version, or why not (the page undoes it)
+  | { type: "bookmarks"; id: number; chatId: string; ok: boolean; message: string; bookmarks: Bookmark[]; bookmarksV: number }
   | { type: "key"; key: string }; // a key's command (talpyDen.chat.*, package.json): an id of keys.mjs's table
 
 // tab -> extension
@@ -249,8 +333,16 @@ export type PaneMessage =
   | { type: "paste" } // the right-click menu's Paste in the reply box: VS Code's paste, as Ctrl+V (a picture too)
   // Copy on a message, or Ctrl+Shift+C: its text (copyText), all of it: one shown cut (copyCut) is
   // read whole from the transcript first; answered with copied once it's on the clipboard
-  | { type: "copyItem"; id: number; key: string; text: string }
+  | { type: "copyItem"; id: number; key: string; text: string; whole?: boolean } // whole: read from the transcript in any case (a bookmark too far back to show)
+  // a message bookmarked (on) or its bookmark taken away: written in click order, answered with
+  // bookmarks (id); kind, at and text: what the bookmark keeps of it (entryOf)
+  | { type: "bookmark"; id: number; key: string; on: boolean; kind: "you" | "claude"; at: number; text: string }
+  | { type: "reach"; key: string } // the chat read far enough back to show that message (a bookmark further back than what's shown)
   | { type: "openPicture"; path: string } // a picture of yours, in VS Code's image viewer
+  | { type: "made"; id: number; path: string; step?: string } // a made file unfolded (madeAsk): answered with "made"
+  // a made file opened (this computer's): a picture in VS Code's image viewer, a plan in its editor, a page or
+  // another file in your browser or the app for it
+  | { type: "openMade"; path: string }
   | { type: "textSize"; scale: number } // A− / A+: talpyDen.chatTextScale
   | { type: "diffLayout"; split: boolean } // side by side or one after the other: talpyDen.diffSideBySide
   | { type: "pickFiles" } // + : files to attach, from VS Code's file dialog (answered with "picked")
@@ -346,21 +438,70 @@ export function pickerOf(text: string): { kind: "model" | "effort"; value: strin
 export function pickLabel(kind: "model" | "effort", value: string): string {
   const v = value.toLowerCase();
   if (v === "" || v === "default") return kind === "model" ? "Claude's default model" : "Claude's default effort";
+  if (kind === "effort" && v === ULTRACODE) return "Ultracode, with Extra high effort";
   const known = (kind === "model" ? CHAT_MODELS : CHAT_EFFORTS).find(([k]) => k === v);
   if (kind === "effort") return `${known ? known[1] : value} effort`;
   return known ? known[1] : value;
 }
 
-// The list for /model or /effort as you type its name (suggestFor): each with what it sets
-export function pickerItems(kind: "model" | "effort", q: string): Suggestion[] {
+// Claude's ultracode (an effort of its own: Extra high, with ultracode on; /effort's toggle here)
+export const ULTRACODE = "ultracode";
+
+// What a chat uses now (pane.py --conversation's "options", chatpick.options_now): what Claude
+// wakes it with, else what you picked for its next message (next), else what it last ran on (its
+// last reply's model, e.g. "claude-opus-5-5"); "" is Claude's default, null not known
+export interface ChatOptions {
+  model: string | null;
+  effort: string | null; // xhigh when ultracode is on
+  ultracode: boolean;
+  next: boolean;
+}
+
+// A model as the list names it: its alias for a full name ("claude-opus-5-5[1m]": "opus")
+export function modelKey(model: string): string {
+  const m = model.toLowerCase();
+  return CHAT_MODELS.find(([k]) => k && m.includes(k))?.[0] ?? m;
+}
+
+// What the chat uses once a pick is set (how: "now", or "next": from its next message)
+export function withPick(now: ChatOptions | null, kind: "model" | "effort", value: string, how: string): ChatOptions {
+  const was = now ?? { model: null, effort: null, ultracode: false, next: false };
+  const v = value.toLowerCase() === "default" ? "" : value.toLowerCase();
+  const next = how === "next";
+  return kind === "model" ? { ...was, model: v, next } : { ...was, effort: v === ULTRACODE ? "xhigh" : v, ultracode: v === ULTRACODE, next };
+}
+
+// "Opus · Extra high effort, with ultracode" (null: nothing known)
+export function nowText(now: ChatOptions | null | undefined): string | null {
+  if (!now || (now.model === null && now.effort === null)) return null;
+  const words = [now.model === null ? "" : pickLabel("model", modelKey(now.model)),
+    now.effort === null ? "" : pickLabel("effort", now.effort) + (now.ultracode ? ", with ultracode" : "")];
+  return words.filter(Boolean).join(" · ");
+}
+
+// The list for /model or /effort as you type its name (suggestFor): each with what it sets, the one
+// the chat uses now marked (✓, "now" or "from your next message"); /effort's also turns ultracode
+// on or off
+export function pickerItems(kind: "model" | "effort", q: string, now?: ChatOptions | null): Suggestion[] {
   const query = q.toLowerCase();
-  return (kind === "model" ? CHAT_MODELS : CHAT_EFFORTS)
-    .filter(([v, label]) => !query || (v || "default").startsWith(query) || label.toLowerCase().split(/[\s']+/).some((w) => w.startsWith(query)))
-    .map(([v, label]) => ({ text: label, about: "for this chat alone", insert: `/${kind} ${v || "default"}`, run: true }));
+  const on = !!now?.ultracode;
+  const rows: { v: string; label: string; insert: string; toggle?: boolean }[] =
+    (kind === "model" ? CHAT_MODELS : CHAT_EFFORTS).map(([v, label]) => ({ v, label, insert: `/${kind} ${v || "default"}` }));
+  if (kind === "effort")
+    rows.splice(rows.length - 1, 0, { v: ULTRACODE, label: on ? "Turn ultracode off" : "Turn ultracode on", insert: `/effort ${on ? "xhigh" : ULTRACODE}`, toggle: true });
+  const used = (v: string) => !!now && (kind === "model" ? now.model !== null && modelKey(now.model) === v : now.effort !== null && now.effort === v);
+  return rows
+    .filter((r) => !query || (r.v || "default").startsWith(query) || r.label.toLowerCase().split(/[\s']+/).some((w) => w.startsWith(query)))
+    .map((r) => {
+      const mark = !r.toggle && used(r.v);
+      const about = [mark ? (now!.next ? "from your next message" : "now") + (kind === "effort" && on ? ", with ultracode" : "") : "",
+        r.toggle ? (on ? "Extra high effort stays" : "with Extra high effort") : "", "for this chat alone"];
+      return { text: r.label, about: about.filter(Boolean).join(" · "), insert: r.insert, run: true, ...(mark ? { now: true } : {}) };
+    });
 }
 
 // What the line under the box says of a command (null: what it says of any message, routeHint)
-export function commandHint(ran: CommandRun | null, route: PaneChat["route"] | undefined, host = ""): string | null {
+export function commandHint(ran: CommandRun | null, route: PaneChat["route"] | undefined, host = "", now?: ChatOptions | null): string | null {
   if (!ran) return null;
   const where = host ? ` (on ${hostLabel(host)})` : "";
   if (ran.run === "off") return ran.why;
@@ -369,9 +510,11 @@ export function commandHint(ran: CommandRun | null, route: PaneChat["route"] | u
     const p = pickerOf(ran.name);
     const words = p?.kind === "effort" ? "effort level" : "model";
     const kind = p?.kind ?? "model";
-    const exact = !!ran.arg && pickerItems(kind, "").some((s) => s.insert === `/${kind} ${ran.arg!.toLowerCase()}`);
-    const named = !ran.arg ? "" : exact || !pickerItems(kind, ran.arg).length ? pickLabel(kind, ran.arg) : "";
-    return (named ? `Enter: ${named} for this chat alone` : ran.arg ? `Enter: the ${words} picked in the list, for this chat alone`
+    const exact = !!ran.arg && pickerItems(kind, "", now).some((s) => s.insert === `/${kind} ${ran.arg!.toLowerCase()}`);
+    const named = !ran.arg ? "" : exact || !pickerItems(kind, ran.arg, now).length ? pickLabel(kind, ran.arg) : "";
+    const used = nowText(now);
+    return (used ? `${now!.next ? "From your next message" : "Now"}: ${used}. ` : "")
+      + (named ? `Enter: ${named} for this chat alone` : ran.arg ? `Enter: the ${words} picked in the list, for this chat alone`
       : `Enter lists the ${words}s: for this chat alone`)
       + ` (in its terminal, Claude's ${ran.name} would also make it your default for every new chat).${where}`;
   }
@@ -404,17 +547,19 @@ export interface Suggestion {
   off?: boolean; // one that can't run on this chat: greyed, about says why
   tip?: string;
   run?: boolean; // taken, it runs at once (a model or effort of the picker's list)
+  now?: boolean; // the picker's: what the chat uses now (✓)
 }
 
 // For the text before the cursor: where the word being completed starts and
 // what fits it (at most 8: commands that start with it first, files whose
 // name starts with it first, then shorter paths); none for a word you closed
 // the list for (dismissed)
-export function suggestFor(before: string, offers: Offers | null, dismissed = "", chat?: Pick<PaneChat, "where" | "route"> | null): { start: number; items: Suggestion[]; token: string } {
+export function suggestFor(before: string, offers: Offers | null, dismissed = "", chat?: Pick<PaneChat, "where" | "route"> | null,
+                           now?: ChatOptions | null): { start: number; items: Suggestion[]; token: string } {
   // (/model or /effort and a space, on a chat Talpy Chat sets them for: its own list of them)
   const pick = /^\/(model|effort)\s+(\S*)$/.exec(before);
   if (pick && before !== dismissed && commandRun("/" + pick[1], offers, chat)?.run === "picker")
-    return { start: 0, items: pickerItems(pick[1] as "model" | "effort", pick[2]), token: before };
+    return { start: 0, items: pickerItems(pick[1] as "model" | "effort", pick[2], now), token: before };
   const command = /^\/([^\s]*)$/.exec(before);
   const file = /(^|\s)@("?)([^\s"]*)$/.exec(before);
   const token = command ? before : file ? before.slice(before.length - file[0].length + file[1].length) : "";
@@ -870,9 +1015,12 @@ export function copyText(it: PaneItem): string {
 export function copyCut(text: string): boolean {
   return text.endsWith("\n…");
 }
-// Claude's last reply (Ctrl+Shift+C copies it)
+// A thinking line's mark (∴, as in Claude Code's terminal), on hover (Plasma ChatPane: the same words)
+export const THINKING_TIP = "Claude's thinking, as Claude Code sums it up while Claude works: not its reply. It can tell what Claude means to do as if it were done.";
+
+// Claude's last reply (Ctrl+Shift+C copies it; not a thinking line)
 export function lastReply(items: readonly PaneItem[]): PaneItem | null {
-  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "claude") return items[i];
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "claude" && !items[i].thinking) return items[i];
   return null;
 }
 
@@ -880,8 +1028,12 @@ export function lastReply(items: readonly PaneItem[]): PaneItem | null {
 // Talpy Chat counts the same matches and folds the same texts (see there)
 export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, plainOf, type FindHit, type Fold } from "../../vendor/find.mjs";
 
+// Bookmarks (Ctrl+D, the list, Alt+↑ / Alt+↓): the widget's bookmarks.mjs, so Plasma's Talpy Chat
+// bookmarks the same messages and goes to the same one (see there)
+export { adoptable, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, oneLine, SNIPPET_CHARS, snippetOf, stateOf, staysOpen, step as bookmarkStep, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, type BookmarkStep } from "../../vendor/bookmarks.mjs";
+
 // Does it show on that tab: Chat leaves out Claude's tool calls, but not a question or a plan you
-// answered, nor a call you denied with a note
+// answered, nor a call you denied with a note (what a call made shows on both, under it)
 export function showsOn(it: PaneItem, steps: boolean): boolean {
   return steps || it.kind !== "tool" || askedShows(it) || it.asked?.state === "denied";
 }
@@ -923,6 +1075,7 @@ export interface ReplyChip {
   recommended: boolean; // (Claude says it would take this option)
   usual: boolean; // (one of your usual replies: "Don't suggest this" hides it)
   title: string;
+  predicted?: boolean; // (Claude's own guess at your reply: Conversation.predicted)
 }
 export const CHIPS_MAX = 4;
 export const CHIPS_IGNORED = 5; // turns in a row with chips and none used: none for CHIPS_REST_MS then
@@ -940,27 +1093,33 @@ export function replyKey(text: string): string {
     .replace(/[\s.!?,;:…。！？]+$/u, "").split(/\s+/).filter(Boolean).join(" ");
 }
 
-// The chips for a turn that's over: Claude's question's (more options than fit: the ones it
-// recommends, then the first ones, in their order), then your usual replies after a turn that
-// ended so, each once and none you hid; at most CHIPS_MAX
+// The chips for a turn that's over: Claude's own guess at your reply (predicted: a background
+// chat's), then Claude's question's (more options than fit: the ones it recommends, then the first
+// ones, in their order), then your usual replies after a turn that ended so, each once and none you
+// hid; at most CHIPS_MAX
 export function chipsOf(asks: Asks | null | undefined, ended: TurnEnded | null | undefined, usual: UsualReplies | null | undefined,
-                        hidden: ReadonlySet<string> = new Set()): ReplyChip[] {
+                        hidden: ReadonlySet<string> = new Set(), predicted?: string | null): ReplyChip[] {
+  const guess = (predicted ?? "").trim();
+  const room = CHIPS_MAX - (guess ? 1 : 0);
   let choices = asks?.choices ?? [];
-  if (choices.length > CHIPS_MAX) {
-    const marked = choices.filter((c) => c.recommended).slice(0, CHIPS_MAX);
-    const rest = choices.filter((c) => !c.recommended).slice(0, CHIPS_MAX - marked.length);
+  if (choices.length > room) {
+    const marked = choices.filter((c) => c.recommended).slice(0, room);
+    const rest = choices.filter((c) => !c.recommended).slice(0, room - marked.length);
     choices = choices.filter((c) => marked.includes(c) || rest.includes(c));
   }
   const out: ReplyChip[] = [];
   const seen = new Set<string>();
-  const add = (label: string, send: string, recommended: boolean, usual: boolean) => {
+  const add = (label: string, send: string, recommended: boolean, usual: boolean, guessed = false) => {
     const n = out.length + 1;
-    out.push({ label, send, recommended, usual, title: usual
+    out.push({ label, send, recommended, usual, ...(guessed ? { predicted: true } : {}), title: guessed
+      ? `Claude's own guess at your reply: sends “${send}” (Alt+${n}). Shift+click: put it in the box first, to add to it.`
+      : usual
       ? `Your usual reply after ${ENDED_AFTER[ended!]}: sends “${send}” (Alt+${n}). Shift+click: put it in the box first, to add to it. Right-click: don't suggest it again.`
       : `Answers Claude's question with “${send}” (Alt+${n}).${recommended ? " Claude recommends this one." : ""} Shift+click: put it in the box first, to add to it.` });
     seen.add(replyKey(send));
   };
-  for (const c of choices) add(c.label, c.send, !!c.recommended, false);
+  if (guess) add(guess, guess, false, false, true);
+  for (const c of choices) if (!seen.has(replyKey(c.send))) add(c.label, c.send, !!c.recommended, false);
   for (const t of (ended && usual?.chips?.[ended]) || []) {
     if (out.length >= CHIPS_MAX) break;
     const key = replyKey(t);

@@ -23,7 +23,7 @@ const onlyVendor = process.argv.includes("--vendor");
 const VENDOR = [
   ["../package/contents/code", "code", (name) => name.endsWith(".py")],
   ["../package/contents/ui/talpy", "talpy", (name) => name.endsWith(".mjs") || name.endsWith(".d.mts")],
-  ["../package/contents/ui", ".", (name) => /^(codeview|icons|ansi|keys|find)\.(mjs|d\.mts)$/.test(name)],
+  ["../package/contents/ui", ".", (name) => /^(codeview|icons|ansi|keys|find|bookmarks)\.(mjs|d\.mts)$/.test(name)],
   ["..", ".", (name) => name === "statusline-snippet.sh"],
 ];
 
