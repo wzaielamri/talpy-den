@@ -498,6 +498,25 @@
             for (let i = 0; i < n; i++)
                 lg.place()
             log("place", { ms: (Date.now() - t) / n, flags: flagsOf(win), items: win.shownList.length, marks: win.bookmarks.length })
+            // (and every ribbon made again: as a window shows a chat's 100 at once)
+            lg.clear()
+            t = Date.now()
+            lg.place()
+            log("placeMade", { ms: Date.now() - t, flags: flagsOf(win), missing: lg.missing })
+            // the Chat tab scrolled with its 100 ribbons, then without them (the same window)
+            after(1500, () => scrollTab(win, "chat, 100 ribbons", () => {
+                const saved = win.bookmarked
+                win.bookmarked = {}
+                lg.place()
+                after(1500, () => scrollTab(win, "chat, no ribbons", () => {
+                    win.bookmarked = saved
+                    lg.place()
+                    after(1500, () => scrollTab(win, "chat, 100 ribbons again", () => after(1500, () => toggleTwice(win, lg))))
+                }))
+            }))
+        }
+        function toggleTwice(win, lg) {
+            let t = 0
             const list = listOf(win)
             let at = -1
             for (let i = win.shownList.length - 1; i >= 0 && at < 0; i--)
@@ -510,13 +529,14 @@
                 lg.toggle(row)
                 const off = Date.now() - t
                 nextFrame(win, f1 => {
+                    const offFrame = f1 - t
                     const gone = flagsOf(win, row) === 0
                     after(1500, () => {
                         t = Date.now()
                         lg.toggle(row)
                         const on = Date.now() - t
                         nextFrame(win, f2 => {
-                            log("toggle", { offMs: off, offFrameMs: f1 - t, goneThatFrame: gone, onMs: on, onFrameMs: f2 - t,
+                            log("toggle", { offMs: off, offFrameMs: offFrame, goneThatFrame: gone, onMs: on, onFrameMs: f2 - t,
                                             shownThatFrame: flagsOf(win, row) === 1, key: key })
                             after(1500, () => listTwice(win, lg))
                         })
@@ -537,7 +557,7 @@
                     })
                 })
             }
-            once("first", () => once("warm", () => once("warm", () => {
+            once("first", () => once("warm", () => once("warm", () => pillOnce(win, () => {
                 const list = listOf(win)
                 list.contentY = list.originY
                 after(1000, () => {
@@ -549,7 +569,19 @@
                         after(1500, () => reachOnce(win, lg))
                     })
                 })
-            })))
+            }))))
+        }
+        // (the tab row's count made, as a window shows a chat with bookmarks: what it costs then)
+        function pillOnce(win, cb) {
+            const saved = win.bookmarks
+            win.bookmarks = []
+            after(1000, () => {
+                const t = Date.now()
+                win.bookmarks = saved
+                const call = Date.now() - t
+                log("pill", { callMs: call })
+                after(1500, cb)
+            })
         }
         function reachOnce(win, lg) {
             win.limit = 120
@@ -558,12 +590,38 @@
             when(() => win.lastItems.length === 120, () => after(2000, () => {
                 const key = win.bookmarks[0].key
                 const t = Date.now()
+                let answered = -1
+                const onLimit = () => { if (answered < 0) answered = Date.now() - t }
+                win.limitChanged.connect(onLimit)
                 lg.reach(key, false)
                 when(() => lg.going === "" && lg.current === key, () => {
-                    log("reach", { ms: Date.now() - t, limit: win.limit, items: win.lastItems.length, current: lg.current === key })
-                    after(1000, done)
+                    win.limitChanged.disconnect(onLimit)
+                    const all = Date.now() - t, limit = win.limit
+                    nextFrame(win, f => {
+                        log("reach", { answerMs: answered, ms: all, frameMs: f - t, limit: limit, items: win.lastItems.length, current: lg.current === key })
+                        // (Show earlier to that length, from the same 120: the same rows put in)
+                        after(1500, () => earlierOnce(win, limit))
+                    })
                 }, 20000, "reach")
             }), 20000, "120 items")
+        }
+        function earlierOnce(win, limit) {
+            win.limit = 120
+            win.stamp = ""
+            win.load()
+            when(() => win.lastItems.length === 120, () => after(2000, () => {
+                const t = Date.now()
+                win.limit = limit
+                win.stamp = ""
+                win.load()
+                when(() => win.lastItems.length > 120, () => {
+                    const all = Date.now() - t
+                    nextFrame(win, f => {
+                        log("earlier", { ms: all, frameMs: f - t, limit: limit, items: win.lastItems.length })
+                        after(1000, done)
+                    })
+                }, 20000, "show earlier")
+            }), 20000, "120 items again")
         }
 
         Component.onCompleted: {

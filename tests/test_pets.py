@@ -2243,7 +2243,10 @@ class NewChatTests(unittest.TestCase):
         self.assertEqual(delegate.count('objectName: "rowMark"'), 2)   # (Claude's dot, your › or $)
         band = delegate[delegate.index("id: youBand"):]
         self.assertIn("color: waits ? pane.mix(pane.textColor, 0.07) : pane.youGround", band[:band.index("Rectangle {")])
-        self.assertIn("pane.youGround", (ROOT / "ui/BookmarkFlag.qml").read_text())
+        flag = (ROOT / "ui/BookmarkFlag.qml").read_text()
+        self.assertIn("pane.youGround", flag)
+        self.assertNotIn("Kirigami", flag)   # (drawn, not a themed icon: a window making 100 at once stays quick)
+        self.assertIn("cacheBuffer: 0", (ROOT / "ui/BookmarkList.qml").read_text())
         # (a chat without bookmarks: its read's answer makes nothing; one with them, asynchronously)
         take = pane[pane.index("    function takeConversation(result) {"):pane.index("    function fresher(s) {")]
         self.assertIn("bookmarkLogic.active = true", take)

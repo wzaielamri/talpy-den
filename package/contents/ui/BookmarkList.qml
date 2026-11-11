@@ -25,6 +25,34 @@ Rectangle {
         return keys
     }
     readonly property bool capped: pane.more && pane.limit >= pane.limitMax
+    // (an entry's line: its words' and its time's, measured once for all)
+    TextMetrics {
+        id: snippetLine
+        font.family: pane.chatFamily
+        font.pointSize: pane.pt * 0.9
+        text: "M"
+    }
+    TextMetrics {
+        id: sideLine
+        font.family: pane.chatFamily
+        font.pointSize: pane.pt * 0.8
+        text: "0"
+    }
+    // The tooltip of the entry under the pointer: one for the card, made the first time one is hovered
+    property Item tipFor: null
+    Loader {
+        active: card.tipFor !== null
+        sourceComponent: PlasmaComponents3.ToolTip {
+            parent: card.tipFor || card
+            visible: card.tipFor !== null && card.tipFor.hovered && !card.tipFor.onRemove
+            delay: Kirigami.Units.toolTipDelay
+            textFormat: Text.PlainText
+            text: !card.tipFor ? "" : card.tipFor.where === "here" ? card.tipFor.mark.text + "\n" + i18n("Go to it (Alt+↑ / Alt+↓: the one before / after)")
+                  : card.tipFor.where === "earlier" ? i18n("Further back than what's shown: a click reads more of the chat and goes there")
+                  : card.tipFor.where === "far" ? i18n("Further back than the last 2000 steps Talpy Chat shows: a click copies it")
+                  : i18n("Not in this chat any more: × removes the bookmark")
+        }
+    }
 
     width: Math.min(Kirigami.Units.gridUnit * 16, scroll.width - Kirigami.Units.gridUnit * 4)
     height: Math.min(column.implicitHeight + Kirigami.Units.smallSpacing * 2,
@@ -72,24 +100,46 @@ Rectangle {
                 isMask: true
                 color: pane.textColor
             }
-            PlasmaComponents3.Label {
+            // (plain texts and a drawn button, not the theme's controls: the card opens within a frame)
+            Text {
                 textFormat: Text.PlainText
                 text: i18n("Bookmarks")
                 font.weight: Font.Bold
+                color: pane.textColor
             }
-            PlasmaComponents3.Label {
+            Text {
                 Layout.fillWidth: true
                 textFormat: Text.PlainText
                 text: pane.bookmarks.length
                 color: pane.mutedColor
             }
-            PlasmaComponents3.ToolButton {
-                icon.name: Icons.plasma.close
-                display: PlasmaComponents3.AbstractButton.IconOnly
-                text: i18n("Close (Ctrl+Shift+B, Esc)")
-                onClicked: card.close()
-                PlasmaComponents3.ToolTip.text: text
-                PlasmaComponents3.ToolTip.visible: hovered
+            // Close: framed thin while the pointer is on it
+            Rectangle {
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing * 2
+                Layout.preferredHeight: Layout.preferredWidth
+                radius: Kirigami.Units.cornerRadius
+                color: "transparent"
+                border.width: 1
+                border.color: closeHover.hovered ? pane.youColor : "transparent"
+                Accessible.role: Accessible.Button
+                Accessible.name: i18n("Close (Ctrl+Shift+B, Esc)")
+
+                Kirigami.Icon {
+                    anchors.centerIn: parent
+                    width: Kirigami.Units.iconSizes.small
+                    height: width
+                    source: Icons.plasma.close
+                    color: closeHover.hovered ? pane.textColor : pane.mutedColor
+                }
+                HoverHandler {
+                    id: closeHover
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    onTapped: card.close()
+                }
+                PlasmaComponents3.ToolTip.text: i18n("Close (Ctrl+Shift+B, Esc)")
+                PlasmaComponents3.ToolTip.visible: closeHover.hovered
                 PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
         }
@@ -117,6 +167,7 @@ Rectangle {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             model: pane.bookmarks
+            cacheBuffer: 0   // (the entries in sight only: the rest as it scrolls)
             PlasmaComponents3.ScrollBar.vertical: PlasmaComponents3.ScrollBar {
                 id: entriesBar
             }
@@ -130,6 +181,8 @@ Rectangle {
                 readonly property bool going: !!card.logic && card.logic.going === mark.key
                 readonly property bool dim: where === "far" || where === "gone"
                 readonly property bool hovered: hover.hovered
+                readonly property bool onRemove: !!remove.item && remove.item.containsMouse
+                onHoveredChanged: if (hovered) card.tipFor = entry
 
                 width: entries.width - (entriesBar.visible ? entriesBar.width : 0)   // (clear of its scroll bar)
                 height: Math.max(snippet.implicitHeight, side.height) + Kirigami.Units.smallSpacing * 2
@@ -163,11 +216,6 @@ Rectangle {
                     radius: yours ? 1.5 : width / 2
                     color: yours ? pane.youColor : pane.claudeColor
                     opacity: entry.dim ? 0.5 : 1
-                }
-                TextMetrics {
-                    id: snippetLine
-                    font: snippet.font
-                    text: "M"
                 }
                 Text {
                     id: snippet
@@ -207,11 +255,6 @@ Rectangle {
                                 source: Icons.plasma.earlier
                                 color: pane.mutedColor
                             }
-                        }
-                        TextMetrics {
-                            id: sideLine
-                            font: sideText.font
-                            text: "0"
                         }
                         Text {
                             id: sideText
@@ -254,13 +297,6 @@ Rectangle {
                     }
                 }
 
-                PlasmaComponents3.ToolTip.text: !entry.hovered ? ""
-                    : entry.where === "here" ? entry.mark.text + "\n" + i18n("Go to it (Alt+↑ / Alt+↓: the one before / after)")
-                    : entry.where === "earlier" ? i18n("Further back than what's shown: a click reads more of the chat and goes there")
-                    : entry.where === "far" ? i18n("Further back than the last 2000 steps Talpy Chat shows: a click copies it")
-                    : i18n("Not in this chat any more: × removes the bookmark")
-                PlasmaComponents3.ToolTip.visible: entry.hovered && !(remove.item && remove.item.containsMouse)
-                PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
         }
     }

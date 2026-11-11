@@ -219,6 +219,7 @@ Item {
         going = ""
         current = ""
         jumpKey = ""
+        jumpDrawn = ""
         jumpRetry.stop()
         if (flashing) {
             flashing.end()
@@ -277,11 +278,14 @@ Item {
         return Math.max(list.originY, Math.min(list.originY + list.contentHeight - list.height, row.y + row.gap - fm.height * 0.5))
     }
 
-    // To the message with that key, once it's drawn (fromList: a click in the list)
-    function jump(key, fromList) {
+    // To the message with that key, once it's drawn (fromList: a click in the list; read: just read
+    // further back, the rows above it still being made)
+    property bool jumpRead: false
+    function jump(key, fromList, read) {
         jumpKey = key
         jumpTries = 15
         closeAfter = !!fromList
+        jumpRead = !!read
         jumpRetry.stop()
         jumpNow()
     }
@@ -307,8 +311,11 @@ Item {
         settle.stop()
         holdTop.stop()
         list.contentY = topOf(row)
-        // (rows above it still getting their height: it stays at the top meanwhile, till you scroll)
+        // (rows above it still getting their height, read just now: it stays at the top meanwhile, till you
+        // scroll; without, it drifted a screen away)
         pane.chatTop = [row.key, row.y - list.contentY, i]
+        if (jumpRead)
+            holdTop.interval = 2500
         holdTop.restart()
         flash(row)
         current = jumpKey
@@ -362,7 +369,7 @@ Item {
             return
         if (result.reached === "here") {
             if (mine)
-                Qt.callLater(() => logic.jump(key, logic.closeAfter))
+                jumpDrawn = key   // (once the rows just read are made and drawn: going there first made them twice)
         } else if (result.reached === "far" || result.reached === "gone") {
             const next = Object.assign({}, settled)
             next[key] = result.reached
@@ -372,6 +379,17 @@ Item {
                 pane.infoBad = true
                 infoTimer.restart()
             }
+        }
+    }
+
+    property string jumpDrawn: ""
+    Connections {
+        target: pane
+        enabled: logic.jumpDrawn !== ""
+        function onFrameSwapped() {
+            const key = logic.jumpDrawn
+            logic.jumpDrawn = ""
+            logic.jump(key, logic.closeAfter, true)
         }
     }
 

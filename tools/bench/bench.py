@@ -52,7 +52,7 @@ sys.path.insert(0, str(HERE))
 import fake_chats  # noqa: E402
 
 SCENARIOS = ("open", "send", "turn", "scroll", "idle", "find", "first", "bookmarks")
-SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 90, "find": 90, "first": 30, "bookmarks": 90}   # (the render's limit; each ends sooner)
+SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 90, "find": 90, "first": 30, "bookmarks": 150}   # (the render's limit; each ends sooner)
 TICK = os.sysconf("SC_CLK_TCK")
 RENDER_ID = "org.wzaielamri.talpyden.rendertest"
 
@@ -272,7 +272,7 @@ def report_find(lines):
 def report_bookmarks(lines):
     out = {}
     for kind, d in lines:
-        if kind in ("bookmarksOpen", "place", "toggle", "list", "step", "reach", "bookmarks"):
+        if kind in ("bookmarksOpen", "place", "placeMade", "scroll", "toggle", "list", "pill", "step", "reach", "earlier", "bookmarks"):
             out.setdefault(kind, []).append(d)
     return out
 

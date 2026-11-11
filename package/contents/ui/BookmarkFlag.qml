@@ -1,10 +1,11 @@
 import QtQuick
-import org.kde.kirigami as Kirigami
-import "icons.mjs" as Icons
+import QtQuick.Shapes
 
 // A bookmarked message's ribbon, in place of its mark (Claude's dot, your › or $), in the same colour
 // and on the same spot: over the mark, on its own ground, so nothing moves and no text is covered.
 // Bookmarks.qml makes one on each bookmarked row only (a child of the row's rowMark), at most 100.
+// Drawn here (Breeze's bookmarks-bookmarked, the filled ribbon: the list's and the hover bar's icon),
+// not a themed icon: a window making 100 at once stays as quick.
 Item {
     id: flag
     objectName: "bookmarkFlag"
@@ -23,7 +24,7 @@ Item {
         height: parent.height
         color: flag.yours ? pane.youGround : surface.color
     }
-    Kirigami.Icon {
+    Shape {
         id: ribbon
         width: Math.round(fm.height * 0.8)
         height: width
@@ -31,8 +32,15 @@ Item {
         readonly property real dot: Math.round(flag.height * 0.42)
         x: flag.yours ? Math.round((flag.width - width) / 2) : Math.round((flag.width - dot) * 0.4 + dot / 2 - width / 2)
         anchors.verticalCenter: parent.verticalCenter
-        source: Icons.plasma.bookmarked
-        isMask: true
-        color: flag.yours ? pane.youColor : pane.claudeColor
+        preferredRendererType: Shape.CurveRenderer
+
+        ShapePath {
+            fillColor: flag.yours ? pane.youColor : pane.claudeColor
+            strokeWidth: -1
+            scale: Qt.size(ribbon.width / 16, ribbon.height / 16)
+            PathPolyline {   // (16 by 16: m4 2v12l4-1.594 4 1.594v-12z)
+                path: [Qt.point(4, 2), Qt.point(12, 2), Qt.point(12, 14), Qt.point(8, 12.406), Qt.point(4, 14), Qt.point(4, 2)]
+            }
+        }
     }
 }
