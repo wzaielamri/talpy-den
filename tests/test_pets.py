@@ -2257,6 +2257,12 @@ class NewChatTests(unittest.TestCase):
         self.assertNotIn('"bookmarks.mjs"', pane)
         self.assertNotIn('"bookmarks.mjs"', keys)
         self.assertIn('import "bookmarks.mjs" as Bm', logic)
+        # (the ribbons are placed without laying the list out again: a forceLayout while it fills in stopped it
+        # making the rows out of sight ahead, so they were made while you scrolled; a row not made yet is looked
+        # at again as frames are drawn, alone: placeMissing)
+        place = logic[logic.index("    function place() {"):logic.index("    function flagOn(")]
+        self.assertNotIn("forceLayout()", place)
+        self.assertIn("function onFrameSwapped() { logic.placeMissing() }", logic)
         for source in ("Bookmarks.qml", "BookmarkList.qml", "BookmarkPill.qml"):
             at = pane.index(f'source: active ? "{source}" : ""')
             self.assertEqual(pane.count(f'source: active ? "{source}" : ""'), 1, source)

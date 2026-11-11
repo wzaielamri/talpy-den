@@ -129,9 +129,11 @@ Item {
 
     property var flags: new Map()   // key -> [BookmarkFlag]
     property var flagMaker: null
-    property int missing: 0         // (bookmarked rows not made yet: further than the list makes ahead)
-    property int tries: 0
-    property real placedY: 0
+    property int missing: 0         // (bookmarked rows not made yet: the list makes those out of sight a few a frame)
+    property var pending: []        // [key, its index] of each of them, looked at again as frames are drawn
+    // (ribbons made in one go out of sight at most: a chat's 100 cost ~12 ms; those in sight are made at once,
+    // the rest a few a frame, so a window's first frame isn't held up by them)
+    readonly property int perFrame: 12
     function placeSoon() {
         Qt.callLater(place)
     }
@@ -140,8 +142,9 @@ Item {
     function place() {
         const want = pane.bookmarked, shown = pane.shownList
         const rows = new Map()   // key -> its indices (a message of two parts: both)
+        // (no forceLayout here: while the list fills in, it would stop it making the rows out of sight
+        // ahead, and they'd be made as you scroll; a row not made yet gets its ribbon a frame later)
         if (pane.bookmarks.length) {
-            list.forceLayout()   // (rows just put in: made now, not after this frame)
             for (let i = 0; i < shown.length; i++) {
                 const k = String(shown[i].key)
                 if (want[k] === true) {
@@ -153,26 +156,14 @@ Item {
                 }
             }
         }
-        const next = new Map(), kept = new Set()
-        let lost = 0
+        const next = new Map(), kept = new Set(), lost = [], budget = { left: perFrame }
         rows.forEach((at, k) => {
             const had = flags.get(k) || [], now = []
             for (const i of at) {
-                const row = list.itemAtIndex(i)
-                if (!row || !row.listed) {
-                    lost++
-                    continue
-                }
-                let flag = had.find(f => f.row === row && !!f.parent)
+                const flag = flagOn(list.itemAtIndex(i), had, shown[i].kind, budget)
                 if (!flag) {
-                    const mark = markOf(row, 0)
-                    if (!mark) {
-                        lost++
-                        continue
-                    }
-                    if (!flagMaker)
-                        flagMaker = Qt.createComponent("BookmarkFlag.qml")
-                    flag = flagMaker.createObject(mark, { row: row, kind: shown[i].kind })
+                    lost.push([k, i])
+                    continue
                 }
                 now.push(flag)
                 kept.add(flag)
@@ -188,9 +179,47 @@ Item {
                 }
         })
         flags = next
-        missing = lost
-        placedY = list.contentY
-        tries = lost ? tries + 1 : 0
+        pending = lost
+        missing = lost.length
+    }
+    // (a row's ribbon: the one it has, else one made on its mark; null while the row isn't made, or when
+    // this frame has made its share and the row is out of sight)
+    function flagOn(row, had, kind, budget) {
+        if (!row || !row.listed)
+            return null
+        const flag = had.find(f => f.row === row && !!f.parent)
+        if (flag)
+            return flag
+        if (budget.left <= 0 && (row.y + row.height < list.contentY || row.y > list.contentY + list.height))
+            return null
+        budget.left--
+        const mark = markOf(row, 0)
+        if (!mark)
+            return null
+        if (!flagMaker)
+            flagMaker = Qt.createComponent("BookmarkFlag.qml")
+        return flagMaker.createObject(mark, { row: row, kind: kind })
+    }
+    // The rows that weren't made yet (or whose ribbon waits its turn), looked at again as each frame is
+    // drawn: only those (no new layout, no look through the whole list), so a list making its rows, or
+    // scrolled, isn't slowed
+    function placeMissing() {
+        const shown = pane.shownList, left = [], budget = { left: perFrame }
+        for (const p of pending) {
+            const k = p[0], i = p[1]
+            if (i >= shown.length || String(shown[i].key) !== k || pane.bookmarked[k] !== true)
+                continue   // (the list changed: place() runs for that anyway)
+            const had = flags.get(k) || []
+            const flag = flagOn(list.itemAtIndex(i), had, shown[i].kind, budget)
+            if (!flag) {
+                left.push(p)
+                continue
+            }
+            if (had.indexOf(flag) < 0)
+                flags.set(k, had.concat([flag]))
+        }
+        pending = left
+        missing = left.length
     }
     function markOf(item, depth) {
         for (const k of item.children) {
@@ -213,8 +242,8 @@ Item {
                 }
         })
         flags = new Map()
+        pending = []
         missing = 0
-        tries = 0
         settled = {}
         going = ""
         current = ""
@@ -235,19 +264,11 @@ Item {
                 logic.placeSoon()
         }
     }
-    // (a row not made yet: once the next frame is drawn, and again as you go far from where it was looked for)
+    // (a row not made yet: looked at again as each frame is drawn, till it's made)
     Connections {
         target: pane
-        enabled: logic.missing > 0 && logic.tries < 3
-        function onFrameSwapped() { logic.placeSoon() }
-    }
-    Connections {
-        target: list
         enabled: logic.missing > 0
-        function onContentYChanged() {
-            if (Math.abs(list.contentY - logic.placedY) > list.height)
-                logic.placeSoon()
-        }
+        function onFrameSwapped() { logic.placeMissing() }
     }
     Component.onCompleted: placeSoon()
     Component.onDestruction: clear()

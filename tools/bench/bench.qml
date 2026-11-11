@@ -503,6 +503,19 @@
             t = Date.now()
             lg.place()
             log("placeMade", { ms: Date.now() - t, flags: flagsOf(win), missing: lg.missing })
+            // (those out of sight a few a frame: each frame's time till all are made)
+            const made = { frames: 0, worst: 0, last: Date.now() }
+            const onMade = function() {
+                const now = Date.now()
+                made.frames++
+                made.worst = Math.max(made.worst, now - made.last)
+                made.last = now
+                if (lg.missing === 0) {
+                    win.frameSwapped.disconnect(onMade)
+                    log("placeAll", { ms: now - t, frames: made.frames, worstFrameMs: made.worst, flags: flagsOf(win) })
+                }
+            }
+            win.frameSwapped.connect(onMade)
             // the Chat tab scrolled with its 100 ribbons, then without them (the same window)
             after(1500, () => scrollTab(win, "chat, 100 ribbons", () => {
                 const saved = win.bookmarked

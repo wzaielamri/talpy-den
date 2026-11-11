@@ -272,7 +272,7 @@ def report_find(lines):
 def report_bookmarks(lines):
     out = {}
     for kind, d in lines:
-        if kind in ("bookmarksOpen", "place", "placeMade", "scroll", "toggle", "list", "pill", "step", "reach", "earlier", "bookmarks"):
+        if kind in ("bookmarksOpen", "place", "placeMade", "placeAll", "scroll", "toggle", "list", "pill", "step", "reach", "earlier", "bookmarks"):
             out.setdefault(kind, []).append(d)
     return out
 
