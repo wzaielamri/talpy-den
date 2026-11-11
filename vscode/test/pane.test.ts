@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1366,9 +1366,12 @@ test("suggested replies back off: five sends in a row with chips and none of the
   assert.deepEqual(chipsAfterSend(3, [], "no", 5), { ignored: 3, restUntil: 0 });   // (none showed: nothing counts)
 });
 
-test("context left in the header, and Claude's turn so far on the working line (Plasma's words)", () => {
+test("context used in the header, coloured as the rows' bars, and Claude's turn so far on the working line (Plasma's words)", () => {
   const c = { used: 300000, window: 1000000, compactAt: 967000, left: 69, near: false };
-  assert.equal(contextText(c), "Context 69% left");
+  assert.equal(contextText(c), "Context 31% used");
+  assert.equal(contextUsed(c), 31);
+  assert.deepEqual([contextLevel(c), contextLevel({ ...c, left: 30 }), contextLevel({ ...c, left: 10 }), contextLevel({ ...c, left: 40, near: true })],
+                   ["low", "medium", "high", "high"]);   // (70% and 90% as model.ts usageLevel; Claude Code saying it's close: high)
   assert.equal(contextHint(c), "300.0k of its 1.0M tokens of context are used. Claude compacts the chat on its own at about 967.0k: it sums up the conversation so far and goes on from that.");
   assert.match(contextHint({ ...c, left: 2, near: true }), / That's soon: run \/compact now to say what it keeps, if you'd rather choose\.$/);
   const t = { startedAt: 1_000_000, steps: 12 };

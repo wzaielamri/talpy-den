@@ -126,8 +126,10 @@
   messages come in, *2 new ↓* shows over the bottom of the conversation; a
   click goes to the end. Nothing moves what you're reading, and a long chat
   costs nothing more per message.
-- **Context left and the turn so far in Talpy Chat:** its header has a tag,
-  *Context 69% left*: what's left before Claude compacts the chat on its own,
+- **Context used and the turn so far in Talpy Chat:** its header has a tag,
+  *Context 31% used*, with a small bar: how much of the chat's context is used,
+  up to where Claude compacts it on its own (the warning colour from 70%, red
+  from 90%),
   counted as Claude Code counts it (what Claude's last message read against
   its model's window), in the warning colour once Claude Code would say it's
   close, its tooltip suggesting `/compact` then; none when it can't be
@@ -228,8 +230,8 @@
   under it.
 - **Background chats open in Talpy Chat** whatever `talpyDen.reopenIn` says
   (one on this computer that no terminal shows); **Interrupt or stop** on a
-  background chat's row at work; rows say *51% left* before Claude compacts
-  the chat, counting your `autoCompactWindow`; Talpy Chat's header says
+  background chat's row at work; rows say *49% used* toward where Claude
+  compacts the chat, counting your `autoCompactWindow`; Talpy Chat's header says
   *Working* without a second time; **Alt+Y** sends the answers to Claude's
   questions; turning the permission hook off asks whether the chats Talpy
   Chat started keep theirs.

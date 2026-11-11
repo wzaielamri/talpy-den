@@ -551,6 +551,25 @@ button:focus-visible {
   --lvl: var(--cs-usage-low);
 }
 
+/* Talpy Chat's "Context 31% used": a tag with a small bar, outlined and written in its level's colour */
+.pane-ctx {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 1px solid var(--lvl);
+  border-radius: 4px;
+  color: var(--lvl);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.pane-ctx > .meter {
+  width: 2.2em;
+  height: 4px;
+  flex: none;
+}
+
 /* ---------------------------------------------------------------------------
    An account */
 

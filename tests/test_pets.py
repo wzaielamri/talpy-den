@@ -2114,7 +2114,12 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('active: pane.chatState === "working" && pane.turnNow !== null\n', pane)
         self.assertIn('source: active ? "WorkingMeta.qml" : ""', pane)
         self.assertLess(pane.index('source: active ? "WorkingMeta.qml"'), pane.index('source: active ? "StopButton.qml"'))   # (Stop stays at the end)
-        self.assertIn("caution: !!ctx && ctx.near", pane)
+        # (the context's tag: ContextPill.qml, coloured by level as the rows' bars and VS Code's contextLevel)
+        self.assertIn("ctx: pane.fresh ? null : pane.contextLeft", pane)
+        pill = (ROOT / "ui/ContextPill.qml").read_text()
+        self.assertIn('ctx && (ctx.near || usedPct >= 90) ? "high" : usedPct >= 70 ? "medium" : "low"', pill)
+        self.assertIn('return c.near || used >= 90 ? "high" : used >= 70 ? "medium" : "low";',
+                      (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text())
         meta = (ROOT / "ui/WorkingMeta.qml").read_text()
         self.assertIn("running: meta.visible && pane.shown && pane.conversationTab", meta)
         self.assertIn("interval: 1000 - meta.ms % 1000 + 20", meta)
@@ -2123,10 +2128,10 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('"%1h %2m %3s", Math.floor(m / 60), m % 60, s % 60)', meta)
         self.assertIn("property bool caution: false", (ROOT / "ui/Tag.qml").read_text())
         shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
-        for words in ("Context %1% left", "tokens of context are used. Claude compacts the chat on its own at about %3: it sums up the conversation so far and goes on from that.",
+        for words in ("Context %1% used", "tokens of context are used. Claude compacts the chat on its own at about %3: it sums up the conversation so far and goes on from that.",
                       "That's soon: run /compact now to say what it keeps, if you'd rather choose."):
-            self.assertIn(words, pane)
-            self.assertIn(re.sub(r"%\d", "", words).split(" at about")[0].replace("Context ", ""), shared.replace("${c.left}", ""))
+            self.assertIn(words, pane + (ROOT / "ui/ContextPill.qml").read_text())
+            self.assertIn(re.sub(r"%\d", "", words).split(" at about")[0].replace("Context ", ""), shared.replace("${contextUsed(c)}", ""))
         self.assertIn("Claude's turn so far: %2 since your message, %1 steps (its tool calls, in the Steps tab).", meta)
         self.assertIn("Claude's turn so far: ${turnTime(now - t.startedAt)} since your message,", shared)
         self.assertIn("(its tool calls, in the Steps tab).", shared)

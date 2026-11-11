@@ -250,8 +250,8 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           ) : null}
           {ctxFill != null ? (
             <>
-              {/* Context: what's left before Claude compacts it on its own, as Talpy Chat's header says it
-                  (the bar fills up to there), else how full its window is */}
+              {/* Context: how much is used toward where Claude compacts it on its own, as Talpy Chat's header
+                  says it (the bar fills up to there), else how full its window is */}
               <span
                 class={`meter ctx-meter lvl-${usageLevel(ctxFill)}`}
                 role="meter"
@@ -263,9 +263,9 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
                 <span style={{ width: `${Math.min(100, Math.max(0, ctxFill))}%` }} />
               </span>
               <span class="muted nowrap ctx-pct"
-                title={s.contextLeft != null ? "What's left of the chat's context before Claude compacts it on its own (/compact: you choose what it keeps)"
+                title={s.contextLeft != null ? "How much of the chat's context is used, up to where Claude compacts it on its own (/compact: you choose what it keeps)"
                   : "How full the chat's context window is"}>
-                {s.contextLeft != null ? `${s.contextLeft}% left` : `ctx ${Math.round(s.context!)}%`}
+                {s.contextLeft != null ? `${100 - s.contextLeft}% used` : `ctx ${Math.round(s.context!)}%`}
               </span>
             </>
           ) : null}

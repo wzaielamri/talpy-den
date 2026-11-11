@@ -287,7 +287,9 @@ if (chipsOf)
 const contextOf = params.get("context");
 turnEnd.context = contextOf === "0" ? null : contextOf === "near"
   ? { used: 952000, window: 1000000, compactAt: 967000, left: 2, near: true }
-  : { used: 300000, window: 1000000, compactAt: 967000, left: 69, near: false };
+  : /^\d+$/.test(contextOf ?? "")   // (?context=78: that much used)
+    ? { used: Math.round(9670 * Number(contextOf)), window: 1000000, compactAt: 967000, left: 100 - Number(contextOf), near: false }
+    : { used: 300000, window: 1000000, compactAt: 967000, left: 69, near: false };
 const turnOf = params.get("turn");
 turnEnd.turn = turnOf === "0" ? null : turnOf === "new" ? { startedAt: Date.now() - 7000, steps: 1 } : { startedAt: Date.now() - 252000, steps: 12 };
 if (params.get("chipmenu") === "1")

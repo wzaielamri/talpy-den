@@ -834,8 +834,8 @@ RowLayout {
                              .filter(t => t).join("\n")
                 }
             }
-            // Context: what's left before Claude compacts it on its own, as Talpy Chat's header says
-            // it (talpy_den.context_left; the bar fills up to there), else how full its window is
+            // Context: how much is used toward where Claude compacts it on its own, as Talpy Chat's header
+            // says it (talpy_den.context_left; the bar fills up to there), else how full its window is
             Rectangle {
                 visible: row.session.context !== null || row.ctxLeft !== null
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 2.5
@@ -853,7 +853,7 @@ RowLayout {
             RowText {
                 colors: row.colors
                 visible: row.session.context !== null || row.ctxLeft !== null
-                text: row.ctxLeft !== null ? i18nc("context left before Claude compacts the chat", "%1% left", row.ctxLeft)
+                text: row.ctxLeft !== null ? i18nc("context used toward where Claude compacts the chat", "%1% used", 100 - row.ctxLeft)
                                            : i18nc("context window fill", "ctx %1%", Math.round(row.session.context || 0))
                 opacity: 0.7
                 font: row.colors.smallFont

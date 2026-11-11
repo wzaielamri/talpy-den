@@ -3059,13 +3059,12 @@ Window {
                                             + (agents.failed ? i18n(", %1 failed", agents.failed) : "") + ". "
                                             + i18n("Click to %1 what each one is doing.", pane.agentsOpen ? i18n("hide") : i18n("show"))
                 }
-                // how full its context is: what's left till Claude compacts the chat on its own, in the warning
-                // colour once Claude Code says it's close (VS Code shared/pane.ts contextText, contextHint)
-                Tag {
-                    readonly property var ctx: pane.fresh ? null : pane.contextLeft
+                // how full its context is: how far toward where Claude compacts the chat on its own, with a bar,
+                // coloured by how close (ContextPill.qml; VS Code shared/pane.ts contextText, contextLevel, contextHint)
+                ContextPill {
+                    id: contextPill
+                    ctx: pane.fresh ? null : pane.contextLeft
                     visible: ctx !== null
-                    text: ctx ? i18n("Context %1% left", ctx.left) : ""
-                    caution: !!ctx && ctx.near
                     tooltip: !ctx ? "" : i18n("%1 of its %2 tokens of context are used. Claude compacts the chat on its own at about %3: it sums up the conversation so far and goes on from that.",
                                               root.formatTokens(ctx.used), root.formatTokens(ctx.window), root.formatTokens(ctx.compactAt))
                                          + (ctx.near ? " " + i18n("That's soon: run /compact now to say what it keeps, if you'd rather choose.") : "")

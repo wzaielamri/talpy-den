@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
@@ -247,6 +247,19 @@ function rowsOf(list: HTMLElement, key: string): HTMLElement[] {
   return [...list.querySelectorAll<HTMLElement>(`:scope > [data-key="${k}"], :scope > [data-of="${k}"]`)];
 }
 // Each key's first row in the list (one pass over its rows: a bookmark's, to go to it)
+// "Context 31% used" in the header: how far the chat's context has come toward where Claude compacts it
+// on its own, with a small bar, in the rows' colours (shared/pane.ts contextLevel); Plasma's
+// ContextPill.qml the same
+function ContextPill({ ctx }: { ctx: ContextLeft }) {
+  const used = contextUsed(ctx);
+  return (
+    <span class={`pane-ctx lvl-${contextLevel(ctx)}`} title={`${contextText(ctx)}\n${contextHint(ctx)}`}>
+      <span class="meter" aria-hidden="true"><span style={{ width: `${used}%` }} /></span>
+      {contextText(ctx)}
+    </span>
+  );
+}
+
 function firstRows(list: HTMLElement): Map<string, HTMLElement> {
   const out = new Map<string, HTMLElement>();
   for (const row of list.children) {
@@ -2111,9 +2124,7 @@ function ChatApp() {
               (chat.agents.failed ? `, ${chat.agents.failed} failed` : "") + `. Click to ${strip.agents ? "hide" : "show"} what each one is doing.`}
             onClick={() => setStrip({ ...strip, agents: !strip.agents })} />
         ) : null}
-        {soFar.context && !chat?.fresh ? (
-          <Tag text={contextText(soFar.context)} caution={soFar.context.near} title={`${contextText(soFar.context)}\n${contextHint(soFar.context)}`} />
-        ) : null}
+        {soFar.context && !chat?.fresh ? <ContextPill ctx={soFar.context} /> : null}
         <span class="pane-path">{(chat?.host ? chat.host + ":" : "") + (chat?.fresh ? chat.fresh.folder : chat?.cwd ?? "")}</span>
       </div>
       {chat?.tasks || (chat?.agents && chat.agents.total > 0) ? (

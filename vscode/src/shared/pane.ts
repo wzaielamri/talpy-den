@@ -996,8 +996,17 @@ export interface ContextLeft {
   left: number; // % till then
   near: boolean;
 }
+export function contextUsed(c: ContextLeft): number {   // (% of the way to where Claude compacts it)
+  return Math.max(0, Math.min(100, 100 - c.left));
+}
 export function contextText(c: ContextLeft): string {
-  return `Context ${c.left}% left`;
+  return `Context ${contextUsed(c)}% used`;
+}
+// Its colour, as the rows' bars (model.ts usageLevel): the accent, the warning colour from 70%, the
+// negative one from 90% or once Claude Code says it's close
+export function contextLevel(c: ContextLeft): "high" | "medium" | "low" {
+  const used = contextUsed(c);
+  return c.near || used >= 90 ? "high" : used >= 70 ? "medium" : "low";
 }
 export function contextHint(c: ContextLeft): string {
   return `${formatTokens(c.used)} of its ${formatTokens(c.window)} tokens of context are used. Claude compacts the chat on its own at about ${formatTokens(c.compactAt)}: it sums up the conversation so far and goes on from that.` +
