@@ -86,6 +86,14 @@ class Home(unittest.TestCase):
 
 
 class ChatTests(Home):
+    def test_a_hidden_accounts_chats_stay(self):
+        mine, theirs = self.chat(A, 40), self.chat(B, 40, profile="personal")
+        cs.change_hidden(self.cache, "accounts", add=".claude-personal")
+        self.talpy()
+        self.run_here()
+        self.assertFalse(os.path.lexists(str(mine)))
+        self.assertTrue(os.path.lexists(str(theirs)))
+
     def test_an_old_chat_goes_with_its_files_what_stays_stays(self):
         old = self.chat(A, 40)
         for rel in (A + ".ccr-tip.json", A + ".precompact.json"):

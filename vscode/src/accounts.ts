@@ -34,6 +34,7 @@ export interface AccountInfo {
   command: boolean; // ~/.local/bin/claude-work is there (made by Talpy Den)
   notRemovable: string; // why it can't be removed, or ""
   handOver?: string; // what Remove moves to the other accounts first (they link to it), in a sentence, or ""
+  hidden?: boolean; // left out of what Talpy Den shows (--hide; never the default). Older backends leave it out.
 }
 
 export function accountDetail(a: AccountInfo): string {
@@ -45,6 +46,7 @@ export function accountDetail(a: AccountInfo): string {
   if (a.main) parts.push("plain claude");
   if (a.vscode) parts.push("VS Code's Claude");
   if (a.chats > 0) parts.push(a.chats === 1 ? "1 chat running" : `${a.chats} chats running`);
+  if (a.hidden) parts.push("hidden");
   return parts.join(" · ");
 }
 
@@ -139,7 +141,7 @@ export class Accounts {
         label: `$(${a.loggedIn ? "account" : "circle-slash"}) ${a.label}`,
         description: a.folder,
         detail: accountDetail(a),
-        run: () => this.actionsFor(a, host),
+        run: () => this.actionsFor(a, host, accounts),
       })),
     ];
     const pick = await vscode.window.showQuickPick(items, {
@@ -149,7 +151,7 @@ export class Accounts {
     if (pick?.run) await pick.run();
   }
 
-  private async actionsFor(a: AccountInfo, host?: string): Promise<void> {
+  private async actionsFor(a: AccountInfo, host: string | undefined, all: AccountInfo[]): Promise<void> {
     const items: Item<() => Promise<void>>[] = [];
     if (!a.loggedIn)
       items.push({ label: "$(sign-in) Log In…", detail: "A terminal with Claude's own login: sign in in your browser", run: () => this.login(a.key, host) });
@@ -176,6 +178,15 @@ export class Accounts {
         label: "$(sign-out) Log Out…",
         detail: a.chats > 0 ? "Close its chats first: they'd lose the login" : "Claude deletes this account's login",
         run: () => this.logout(a, host),
+      });
+    // An account you don't use, out of the view (never the default, nor the last one shown)
+    if (a.hidden)
+      items.push({ label: "$(eye) Show", detail: "Listed in the view again, with its usage and recent chats", run: () => this.hide(a, false, host) });
+    else if (!a.default && all.length > 1 && all.some((o) => o !== a && !o.hidden))
+      items.push({
+        label: "$(eye-closed) Hide",
+        detail: "Out of the view, the status bar and Continue on… (in the Plasma widget and GNOME too); Talpy Den stops reading it, and it shows again while one of its chats runs",
+        run: () => this.hide(a, true, host),
       });
     items.push({ label: "$(trash) Remove…", detail: a.notRemovable || "Logs out and moves the folder to the Trash", run: () => this.remove(a, host) });
     const pick = await vscode.window.showQuickPick(items, { title: `${a.label} (${a.folder}${this.where(host)})`, placeHolder: accountDetail(a) });
@@ -260,6 +271,10 @@ export class Accounts {
     if (ok === "Remove") this.said(await this.call(["--remove", a.key], host), `Couldn't remove ${a.label}`, host);
   }
 
+  private async hide(a: AccountInfo, hide: boolean, host?: string): Promise<void> {
+    this.said(await this.call([hide ? "--hide" : "--show", a.key], host), `Couldn't ${hide ? "hide" : "show"} ${a.label}`, host);
+  }
+
   private async command(a: AccountInfo, on: boolean, host?: string): Promise<void> {
     this.said(await this.call([on ? "--command" : "--no-command", a.key], host), `Couldn't change ${a.commandName}`, host);
   }
@@ -270,7 +285,10 @@ export class Accounts {
   // there does it all, its VS Code server's settings included.
   private async makeDefault(a: AccountInfo, host?: string): Promise<void> {
     const status = machineStatus(this.dash.state(), host);
-    const group: Group | undefined = (status?.groups ?? []).find((g) => g.profileKeys.includes(a.key));
+    // (a hidden one too: made the default, it shows again)
+    const group: Group | undefined = [...(status?.groups ?? []), ...(status?.hiddenGroups ?? [])].find((g) =>
+      g.profileKeys.includes(a.key),
+    );
     if (!host || host === this.dash.currentHost) {
       if (!group) return this.fail(`${a.label} isn't in the list yet: try again in a moment.`);
       if (host) {

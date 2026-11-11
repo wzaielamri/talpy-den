@@ -4,6 +4,14 @@
 
 ### New
 
+- **Hide an account you don't use:** Claude Accounts → the account → **Hide**
+  leaves it out of the view, the status bar item, **Continue on …** and the
+  new-chat account picker (and out of the Plasma widget's and GNOME's lists
+  too), and Talpy Den stops reading it, so its checks are quicker. Its
+  login, chats, history and memories stay as they are; it shows again while
+  one of its chats runs, and **Show** brings it back. The default account
+  is always shown.
+
 - **Model and effort for one chat:** in a background chat or one that isn't
   open, `/model` and `/effort` list the models and effort levels as you type,
   and the one you pick (or `/model sonnet` typed) is for that chat alone:

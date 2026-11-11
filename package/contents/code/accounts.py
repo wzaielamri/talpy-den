@@ -10,6 +10,7 @@ VS Code extension's).
     python3 -I accounts.py --remove PROFILE
     python3 -I accounts.py --command PROFILE | --no-command PROFILE
     python3 -I accounts.py --default PROFILE [--no-vscode]
+    python3 -I accounts.py --hide PROFILE | --show PROFILE
     [--config-dir DIR]...                         extra Claude config dirs
     [--remote]                                    on an SSH host (remote.py --accounts HOST …)
 
@@ -41,6 +42,11 @@ Claude keeps the login in the folder. This script never reads it.
   does it itself), and plain claude too where ~/.claude is a link (it's
   pointed there; a ~/.claude folder stays as it is). Refused while a Claude
   process runs through the name ~/.claude: it would go on on the other account.
+- --hide leaves an account you don't use out of what Talpy Den shows and
+  reads (the popup, the right-click menu, Continue on…, the Recap, the
+  cleanup of old chats; talpy_den.accounts_left_out), on every front end
+  here, until --show; it shows again while one of its chats runs. Nothing
+  of the account changes. Not the default account, nor the last one shown.
 
 On an SSH host, remote.py runs it there the way it runs sharing.py (on
 python3's stdin, with talpy_den.py loaded first): nothing is installed
@@ -500,6 +506,7 @@ def list_accounts(home, extra, check=False):
             linked = default.resolve()
         except (OSError, RuntimeError):
             pass
+    hidden = cs.load_hidden(cache_root)["accounts"]
     accounts = []
     for p in profiles:
         chats = running_chats(p, profiles)
@@ -523,6 +530,8 @@ def list_accounts(home, extra, check=False):
             # (on an SSH host, only where VS Code ever connected: vscode_state)
             "vscode": vscode_here and vscode_on is not None and vscode_on.real == p.real,
             "default": chosen is not None and chosen.real == p.real,
+            # left out of what Talpy Den shows (--hide; the default never is)
+            "hidden": p.key in hidden and not (chosen is not None and chosen.real == p.real),
             "commandName": name,
             "command": bool(name) and ours(bin_dir(home) / name),
             "notRemovable": not_removable(p, profiles, home, vscode_on, chats),
@@ -951,7 +960,38 @@ def make_default(home, extra, key, vscode=True):
                 done.append("VS Code's Claude (new chats there; a window's Claude Code panel once the window reloads)")
     message = f"{profile.label} is the default account" + (f": {' and '.join(done)} run{'s' if len(done) == 1 else ''} on it" if done
                                                             else "" if failed else " already")
+    if done or not failed:  # (the default is always shown: hidden, it shows again)
+        try:
+            cs.change_hidden(cs.cache_dir(home), "accounts", forget=[profile.key])
+        except OSError:
+            pass
     return not (failed and not done), "; ".join([message, *failed, *notes])
+
+
+# ---------------------------------------------------------------- hiding
+
+def hide_account(home, extra, key, hide):
+    """(ok, message): the account is left out of what Talpy Den shows (hide),
+    or shown again. Kept in hidden.json, which talpy_den.hide_accounts reads."""
+    profile, profiles = find_profile(home, extra, key)
+    if profile is None:
+        return False, f"No Claude profile called {key}"
+    cache_root = cs.cache_dir(home)
+    if not hide:
+        cs.change_hidden(cache_root, "accounts", forget=[profile.key])
+        return True, f"{profile.label} shows again"
+    try:
+        chosen = cs.default_profile(home, profiles, REMOTE, cache_root)[3]
+    except Exception:  # VS Code's settings are only one of the reasons
+        chosen = cs.plain_profile(home, profiles)
+    if chosen is not None and chosen.real == profile.real:
+        return False, (f"{profile.label} is the default account, which is always shown: "
+                       "make another one the default first")
+    hidden = cs.load_hidden(cache_root)["accounts"]
+    if all(p.real == profile.real or p.key in hidden for p in profiles):
+        return False, f"{profile.label} is the only account shown: one always is"
+    cs.change_hidden(cache_root, "accounts", add=profile.key)
+    return True, f"{profile.label} is hidden: Talpy Den doesn't read it any more, and it shows again while one of its chats runs"
 
 
 # ---------------------------------------------------------------- main
@@ -962,6 +1002,7 @@ USAGE = ("usage: accounts.py --list [--check] [--config-dir DIR]...\n"
          "       accounts.py --logout PROFILE | --remove PROFILE\n"
          "       accounts.py --command PROFILE | --no-command PROFILE\n"
          "       accounts.py --default PROFILE [--no-vscode]\n"
+         "       accounts.py --hide PROFILE | --show PROFILE\n"
          "       … [--config-dir DIR]... [--remote]")
 
 
@@ -974,7 +1015,8 @@ def main(argv=None):
         arg = args.pop(0)
         if arg == "--list" and action is None:
             action = arg
-        elif arg in ("--add", "--login", "--logout", "--remove", "--no-command", "--default") and args and action is None:
+        elif (arg in ("--add", "--login", "--logout", "--remove", "--no-command", "--default", "--hide", "--show")
+              and args and action is None):
             action, target = arg, args.pop(0)
         elif arg == "--command" and action is None and args and not args[0].startswith("-"):
             action, target = arg, args.pop(0)
@@ -1021,6 +1063,8 @@ def main(argv=None):
             ok, message = logout(home, extra, target)
         elif action == "--remove":
             ok, message = remove_account(home, extra, target)
+        elif action in ("--hide", "--show"):
+            ok, message = hide_account(home, extra, target, action == "--hide")
         elif action == "--default":
             ok, message = make_default(home, extra, target, vscode)
             profile, _ = find_profile(home, extra, target)

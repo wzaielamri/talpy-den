@@ -324,9 +324,11 @@ ConfigPage {
                                 parts.push([a.email || a.account || i18n("Logged in"), a.plan].filter(t => t).join(" · "))
                             if (a.chats > 0)
                                 parts.push(i18np("1 chat running", "%1 chats running", a.chats))
+                            if (a.hidden)
+                                parts.push(i18n("hidden"))
                             return parts.join(" · ")
                         }
-                        opacity: card.account.loggedIn ? 1 : 0.8
+                        opacity: card.account.loggedIn && !card.account.hidden ? 1 : 0.8
                     }
 
                     // Asks first: logging out, removing (as every question: in the
@@ -396,6 +398,20 @@ ConfigPage {
                             QQC2.ToolTip.visible: hovered
                             QQC2.ToolTip.text: card.account.chats > 0 ? i18n("Close its chats first: they'd lose the login.")
                                                                       : i18n("Claude deletes this account's login (claude auth logout).")
+                        }
+                        // An account you don't use, out of the popup (never the default, nor the last one shown)
+                        QQC2.Button {
+                            readonly property bool last: !card.account.hidden && page.accounts.filter(a => !a.hidden).length < 2
+                            visible: card.account.hidden || (!card.account.default && page.accounts.length > 1)
+                            text: card.account.hidden ? i18n("Show") : i18n("Hide")
+                            icon.name: card.account.hidden ? Icons.plasma.showHidden : Icons.plasma.hide
+                            enabled: page.busy === "" && !last
+                            onClicked: page.act([card.account.hidden ? "--show" : "--hide", card.account.key], card.account.key)
+                            QQC2.ToolTip.visible: hovered
+                            QQC2.ToolTip.text: card.account.hidden
+                                ? i18n("Lists it in the popup again, with its usage and recent chats.")
+                                : last ? i18n("The other accounts are hidden: one is always shown.")
+                                : i18n("Leaves it out of the popup, its right-click menu and Continue on… (in VS Code and GNOME too); Talpy Den stops reading it, which makes its checks quicker, and it shows again while one of its chats runs. Its chats, history and memories stay as they are.")
                         }
                         QQC2.Button {
                             text: i18n("Remove…")

@@ -391,6 +391,8 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
             parts.push(...[a.email || a.account || 'logged in', a.plan].filter(t => t));
         if (a.chats > 0)
             parts.push(a.chats === 1 ? '1 chat running' : `${a.chats} chats running`);
+        if (a.hidden)
+            parts.push('hidden');
         const row = new Adw.ActionRow({title: esc(a.label), subtitle: esc(parts.join(' · '))});
         // (each with its icon, as Plasma's; a question's do-it button with the asking one's)
         const button = (label, meaning, onClick, tip = '') => {
@@ -436,6 +438,17 @@ export default class TalpyDenPreferences extends ExtensionPreferences {
                 rerender();
             }, a.chats > 0 ? "Close its chats first: they'd lose the login." : "Claude deletes this account's login (claude auth logout).");
             out.sensitive = !state.busy && a.chats === 0;
+        }
+        // An account you don't use, out of the top bar's menu (never the default, nor the last one shown)
+        if (a.hidden) {
+            button('Show', 'showHidden', () => act(['--show', a.key], a.key),
+                'Lists it in the menu again, with its usage and recent chats.');
+        } else if (!a.default && state.accounts.length > 1) {
+            const last = state.accounts.filter(o => !o.hidden).length < 2;
+            const hide = button('Hide', 'hide', () => act(['--hide', a.key], a.key), last
+                ? 'The other accounts are hidden: one is always shown.'
+                : "Leaves it out of the menu and Continue on… (in Plasma's widget and VS Code too); Talpy Den stops reading it, which makes its checks quicker, and it shows again while one of its chats runs. Its chats, history and memories stay as they are.");
+            hide.sensitive = !state.busy && !last;
         }
         const remove = button('Remove…', 'delete', () => {
             state.confirm = `remove:${a.key}`;

@@ -10001,9 +10001,12 @@ def change_dismissed(cache_root, add=None, forget=(), clear=False, now_ms=None):
 # its list, on this computer (an SSH host's on that host: remote.py --hide);
 # Show Hidden … Again brings that kind back. Chats are kept in dismissed.json
 # (above), the others in hidden.json: a plan by its slug, a memory by its
-# key, a project by its folder. Nothing of Claude's is touched.
+# key, a project by its folder. Nothing of Claude's is touched. An account
+# is hidden from the settings' Accounts page (accounts.py --hide), by its
+# folder's name (Profile.key), in hidden.json too: hide_accounts.
 
 HIDE_KINDS = ("chats", "plans", "memories", "projects")
+HIDDEN_KINDS = ("plans", "memories", "projects", "accounts")  # (what hidden.json keeps)
 HIDE_WORDS = {"chats": ("chat", "chats"), "plans": ("plan", "plans"), "memories": ("memory", "memories"),
               "projects": ("project", "projects")}
 HIDDEN_ID_MAX = 4096
@@ -10015,23 +10018,25 @@ def hidden_id_ok(kind, item_id):
     if kind == "plans":
         return isinstance(item_id, str) and bool(PLAN_SLUG.match(item_id))
     return (isinstance(item_id, str) and 0 < len(item_id) <= HIDDEN_ID_MAX and "\n" not in item_id
-            and (kind != "projects" or item_id.startswith("/")))
+            and (kind != "projects" or item_id.startswith("/")) and (kind != "accounts" or "/" not in item_id))
 
 
 def load_hidden(cache_root):
-    """{"plans": {slug: when}, "memories": {key: when}, "projects": {folder: when}}: what you hid."""
+    """{"plans": {slug: when}, "memories": {key: when}, "projects": {folder: when},
+    "accounts": {folder name: when}}: what you hid."""
     data = read_json(cache_root / "hidden.json")
     data = data if isinstance(data, dict) else {}
     out = {}
-    for kind in HIDE_KINDS[1:]:
+    for kind in HIDDEN_KINDS:
         items = data.get(kind) if isinstance(data.get(kind), dict) else {}
         out[kind] = {i: t for i, t in items.items() if hidden_id_ok(kind, i)}
     return out
 
 
 def change_hidden(cache_root, kind, add=None, forget=(), clear=False, now_ms=None):
-    """Change what's hidden of kind ("plans", "memories", "projects") under
-    a lock: every copy of Talpy Den writes hidden.json. What's hidden of it now."""
+    """Change what's hidden of kind ("plans", "memories", "projects",
+    "accounts") under a lock: every copy of Talpy Den writes hidden.json.
+    What's hidden of it now."""
     private_dir(cache_root)
     with open(cache_root / "hidden.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -10076,6 +10081,98 @@ def show_hidden(cache_root, kind):
     else:
         change_hidden(cache_root, kind, clear=True)
     return True, f"Showing {count} hidden {one if count == 1 else many} again"
+
+
+# ---------------------------------------------------------------- hidden accounts
+#
+# An account you don't use can be hidden (accounts.py --hide): nothing of
+# it is read any more, so every check is quicker, and nothing of it changes
+# (its chats, history and memories stay as they are). The status leaves it
+# out of "groups" (the popup, the right-click menu's default accounts,
+# Continue on…, the new-chat picker, VS Code's status bar item, …) and lists
+# it in "hiddenGroups" by its name only, for what manages accounts (VS
+# Code's Make Default); the Recap, the Projects tab and the daily cleanup of
+# old chats leave it out too (shown_profiles). One with a chat going on
+# (account_in_use: a few small files are all a check reads of it) is read
+# as before, marked "hidden": nothing at work goes out of sight. The
+# default account is never hidden (once an account is the default, its
+# hide is forgotten), nor is every account.
+
+
+def account_in_use(profile, now_ms):
+    """Whether a chat of profile goes on: a live session process (Claude
+    open on it), or a background job at work or blocked on you (as
+    parked_job_state has them; one that finished doesn't count)."""
+    try:
+        files = list((profile.path / "sessions").glob("*.json"))
+    except OSError:
+        files = []
+    if any(isinstance(entry, dict) and is_alive(entry) for entry in map(read_json, files)):
+        return True
+    status = read_json(profile.path / "daemon.status.json")
+    roster = status.get("workers") if isinstance(status, dict) else None
+    roster = roster if isinstance(roster, dict) else {}
+    for d in job_dirs(profile):
+        job = read_json(d / "state.json")
+        worker = roster.get(d.name)
+        state = parked_job_state(job, isinstance(worker, dict) and is_alive(worker), now_ms) \
+            if isinstance(job, dict) else None
+        if state is not None and state[0] != "done":
+            return True
+    return False
+
+
+def accounts_left_out(profiles, home, cache_root, remote=False, now_ms=None):
+    """(the profiles of the accounts you hid that a check leaves out unread,
+    those it reads all the same: a chat of theirs goes on). Never the
+    default account's (its hide is forgotten), nor every profile."""
+    hidden = load_hidden(cache_root)["accounts"]
+    out = [p for p in profiles if p.key in hidden]
+    if not out:
+        return [], []
+    try:
+        default = default_profile(home, profiles, remote, cache_root)[3]
+    except Exception:  # VS Code's settings are only one of the reasons
+        default = plain_profile(home, profiles)
+    if default is not None:
+        is_default = [p for p in out if p.real == default.real or (default.account_id and p.account_id == default.account_id)]
+        if is_default:
+            try:
+                change_hidden(cache_root, "accounts", forget=[p.key for p in is_default])
+            except OSError:
+                pass  # (the next check forgets it)
+            out = [p for p in out if p not in is_default]
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    in_use = [p for p in out if account_in_use(p, now_ms)]
+    out = [p for p in out if p not in in_use]
+    return (out, in_use) if len(out) < len(profiles) else ([], [])
+
+
+def shown_profiles(profiles, cache_root):
+    """profiles without the accounts you hid (the Recap, the Projects tab,
+    the cleanup of old chats); all of them if that leaves none."""
+    hidden = load_hidden(cache_root)["accounts"]
+    shown = [p for p in profiles if p.key not in hidden]
+    return shown or profiles
+
+
+def hidden_groups(profiles, logged_out):
+    """The groups of the accounts a check left out, by their names only (for
+    Make Default: the VS Code extension's switch needs its folder)."""
+    out = []
+    for gid, members in group_profiles(profiles):
+        named = next((p for p in members if not p.is_default), members[0])
+        plan = next((p.plan for p in members if p.plan), None)
+        out.append({
+            "hidden": True, "loggedOut": all(needs_login(p, logged_out) for p in members), "id": short_id(gid),
+            "name": named.label, "plan": plan, "planDetail": next((p.plan_detail for p in members if p.plan), None),
+            "title": f"{named.label} · {plan}" if plan else named.label,
+            "profiles": [p.label for p in members], "profileKeys": [p.key for p in members],
+            "chatProfile": named.key, "shareProfile": named.key,
+            "sessions": [], "limits": None, "tokens": None, "stats": None, "projects": [], "sharedHere": [],
+            "recent": [], "starred": [], "plans": [], "starredPlans": [], "memories": [], "instructions": [],
+        })
+    return out
 
 
 def queued_for_plan(cache_root, slug, host=""):
@@ -10131,8 +10228,9 @@ class Context:
 
 def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_done_hours=KEEP_DONE_HOURS,
             recent=RECENT_CHATS, plans=PLANS_LISTED, usage_cap=0, starred=None, usage_refresh=0,
-            memories=MEMORIES_LISTED, kept=None, history=None):
-    """starred: {"chats", "plans"} starred here (starred_of), else this
+            memories=MEMORIES_LISTED, kept=None, history=None, remote=False):
+    """remote: an SSH host's or a container's own check (which account is
+    the default there: default_profile). starred: {"chats", "plans"} starred here (starred_of), else this
     computer's from the cache. kept: chats here that keep going from the
     computer that asks (an SSH host's run: --kept-chats), listed as this
     computer's own (list_kept). history: the Recap's history setting
@@ -10152,6 +10250,13 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
         private_dir(cache_root)
     except OSError as exc:
         errors.append(f"cache: {exc}")
+    # The accounts you hid aren't read (accounts_left_out)
+    try:
+        unread, in_use = accounts_left_out(profiles, home, cache_root, remote, now_ms)
+    except Exception as exc:
+        errors.append(f"hidden accounts: {exc}")
+        unread, in_use = [], []
+    profiles = [p for p in profiles if p not in unread]
 
     histories = {p.real: history_tail(p) for p in profiles}
     ctx = Context(
@@ -10235,6 +10340,8 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
                 "shareProfile": named.key,
                 "projects": recent_projects([histories[p.real] for p in members], home),
             }
+            if any(p in in_use for p in members):
+                group["hidden"] = True  # (one you hid: shown while a chat of it is listed)
             # (a task can start in the background only where Claude trusts the folder)
             trusted = trusted_folders(named, home)
             for project in group["projects"]:
@@ -10423,6 +10530,7 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
         "moved": {old: moved_chat(old, ctx.moves) for old in getattr(ctx, "moves", None) or {}},
         "counts": counts,
         "groups": groups,
+        "hiddenGroups": hidden_groups(unread, logged_out),  # (the accounts you hid, not read: names only)
         "dismissed": dismissed_rows,  # (the finished chats you hid: Show Hidden Chats Again)
         # what you hid of the others (Show Hidden Plans / Memories / Projects Again)
         "hiddenPlans": len(left_out["plans"]),
@@ -10820,7 +10928,7 @@ def add_vscode(result, home, extra_dirs=(), remote=False, cache_root=None):
     # (whether accounts.py --default can point anything elsewhere: VS Code's
     # Claude, or plain claude through a ~/.claude link)
     result["canDefault"] = bool(installed) or (home / ".claude").is_symlink()
-    for g in result.get("groups", []):
+    for g in result.get("groups", []) + result.get("hiddenGroups", []):
         keys = g.get("profileKeys", [])
         g["vscodeHere"] = profile is not None and profile.key in keys
         g["plainHere"] = plain is not None and plain.key in keys
@@ -11285,6 +11393,9 @@ def add_remote_commands(result, home, extra_dirs=(), claude=None):
     claude = claude or find_claude(home)
     profiles = {p.key: p for p in discover_profiles(home, extra_dirs)}
     result["claude"] = claude
+    for g in result.get("hiddenGroups", []):  # (what VS Code's Make Default there needs of it)
+        named = profiles.get(g.get("chatProfile"))
+        g["configDir"] = config_dir_value(named, home) if named is not None else None
     for g in result.get("groups", []):
         named = profiles.get(g.get("chatProfile"))
         # what VS Code's Claude there needs to run on this account (jump.py
@@ -11621,7 +11732,7 @@ def main(argv=None):
                              # (on an SSH host: the host's stars, from the computer that asks)
                              starred={"chats": starred_chats, "plans": starred_plans} if remote and not local else None,
                              usage_refresh=usage_refresh, kept=kept_here if remote and not local else None,
-                             history=history if remote and not local else None)
+                             history=history if remote and not local else None, remote=remote and not local)
             try:
                 add_vscode(result, home, config_dirs, remote and not local, cache_root)
             except Exception as exc:

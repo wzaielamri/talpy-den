@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import os
 import shlex
@@ -475,7 +476,7 @@ class RemoveTests(Home):
             self.assertTrue(accounts.remove_account(self.home, [], ".claude-work")[0])
 
 
-class DefaultTests(Home):
+class LinkedHome(Home):
     """~/.claude links to work; VS Code's Claude runs on the folder its
     settings name (a file with comments)."""
 
@@ -521,6 +522,8 @@ class DefaultTests(Home):
         cs.add_vscode(result, self.home)
         return [(g["name"], g["defaultHere"], g["vscodeHere"], g["plainHere"]) for g in result["groups"]]
 
+
+class DefaultTests(LinkedHome):
     def test_the_default_is_vscodes_and_comes_first(self):
         self.assertEqual(self.first(), [("personal", True, True, False), ("work", False, False, True)])
         listed = self.listed()
@@ -644,6 +647,79 @@ class DefaultTests(Home):
         self.settings.unlink()
         self.assertEqual(self.first(), [("work", True, True, True)])
         self.assertIn("already", accounts.make_default(self.home, [], ".claude-work")[1])
+
+
+class HideTests(LinkedHome):
+    """Hiding an account you don't use (personal is the default: VS Code's
+    Claude runs on it; ~/.claude links to work)."""
+
+    def status(self):
+        result = cs.collect(self.home, cs.cache_dir(self.home), with_tokens=False)
+        cs.add_vscode(result, self.home)
+        return [g["name"] for g in result["groups"]], [g["name"] for g in result["hiddenGroups"]], result
+
+    def test_nothing_of_a_hidden_account_is_read(self):
+        self.assertTrue(accounts.hide_account(self.home, [], ".claude-work", True)[0])
+        read = []
+        history_tail, live_entries_all = cs.history_tail, cs.live_entries_all
+        with mock.patch.object(cs, "history_tail", lambda p: read.append(p.key) or history_tail(p)), \
+                mock.patch.object(cs, "live_entries_all", lambda ps: read.extend(p.key for p in ps) or live_entries_all(ps)):
+            self.status()
+        self.assertEqual(set(read), {".claude-personal"})
+
+    def test_hide_leaves_it_out_until_shown(self):
+        ok, message = accounts.hide_account(self.home, [], ".claude-work", True)
+        self.assertTrue(ok, message)
+        self.assertIn("work is hidden", message)
+        self.assertEqual({k: a["hidden"] for k, a in self.listed().items()}, {".claude-personal": False, ".claude-work": True})
+        shown, hidden, result = self.status()
+        self.assertEqual((shown, hidden), (["personal"], ["work"]))
+        # (what Make Default needs of it, without its lists)
+        self.assertEqual((result["hiddenGroups"][0]["chatProfile"], result["hiddenGroups"][0]["recent"]), (".claude-work", []))
+        ok, message = accounts.hide_account(self.home, [], ".claude-work", False)
+        self.assertEqual((ok, message), (True, "work shows again"))
+        self.assertEqual(self.status()[:2], (["personal", "work"], []))
+
+    def test_not_the_default_nor_the_last_one_shown(self):
+        ok, message = accounts.hide_account(self.home, [], ".claude-personal", True)
+        self.assertFalse(ok)
+        self.assertIn("personal is the default account", message)
+        self.assertEqual(cs.load_hidden(cs.cache_dir(self.home))["accounts"], {})
+        with mock.patch.object(cs, "default_profile", lambda *a, **k: (False, None, None, None)):
+            self.assertTrue(accounts.hide_account(self.home, [], ".claude-work", True)[0])
+            ok, message = accounts.hide_account(self.home, [], ".claude-personal", True)
+        self.assertFalse(ok)
+        self.assertIn("the only account shown", message)
+
+    def test_one_with_a_chat_going_on_shows(self):
+        self.assertTrue(accounts.hide_account(self.home, [], ".claude-work", True)[0])
+        # a background chat that finished doesn't count
+        updated = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 600))
+        write(self.home / ".claude-work/jobs/0a1b2c3d/state.json",
+              {"sessionId": "chat", "state": "done", "tempo": "idle", "updatedAt": updated, "createdAt": updated})
+        self.assertEqual(self.status()[:2], (["personal"], ["work"]))
+        self.chat_through(self.home / ".claude-work")
+        shown, hidden, result = self.status()
+        self.assertEqual((shown, hidden), (["personal", "work"], []))
+        self.assertTrue(result["groups"][1]["hidden"])
+
+    def test_the_default_shows_again(self):
+        self.assertTrue(accounts.hide_account(self.home, [], ".claude-work", True)[0])
+        self.assertTrue(accounts.make_default(self.home, [], ".claude-work")[0])
+        self.assertEqual(cs.load_hidden(cs.cache_dir(self.home))["accounts"], {})
+        # made the default elsewhere (VS Code's own setting): the status forgets its hide
+        self.assertTrue(accounts.hide_account(self.home, [], ".claude-personal", True)[0])
+        write(self.settings, '{"claudeCode.environmentVariables": [{"name": "CLAUDE_CONFIG_DIR", "value": "%s"}]}'
+              % (self.home / ".claude-personal"))
+        self.assertEqual(self.status()[:2], (["personal", "work"], []))
+        self.assertEqual(cs.load_hidden(cs.cache_dir(self.home))["accounts"], {})
+
+    def test_from_the_command_line(self):
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            accounts.main(["--hide", ".claude-work"])
+        self.assertTrue(json.loads(out.getvalue())["ok"])
+        self.assertIn(".claude-work", cs.load_hidden(cs.cache_dir(self.home))["accounts"])
 
 
 class CommandLineTests(unittest.TestCase):
