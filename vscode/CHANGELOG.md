@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.19.0
 
 ### New
 
@@ -251,7 +251,6 @@
   the other hosts.
 - **One name: Talpy Chat.** A chat's tab is called Talpy Chat everywhere:
   *Open in Talpy Chat* on a row, in tooltips, settings and the docs.
-
 - **Plan usage stays at its newest numbers.** An idle chat's status line,
   drawn again an hour after its last reply, no longer pulls an account's
   plan usage back to that hour's numbers (100% showed as 32%): each counts
@@ -283,6 +282,7 @@
   tab to one stopped chat at once wakes it once (no copy of the chat).
 
 ### Fixed
+
 - **An either/or question's first chip is its choice:** *Should the next
   file be named alpha.txt or beta.txt?* gave *Should the next file be named
   alpha.txt* and *Beta.txt*; now *Alpha.txt* and *Beta.txt*.

@@ -1,33 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.19.0 (2026-11-11)
 
 ### Highlights
 
-- **Your chats' states for other programs:** a status bar, a desk display or a script can follow your chats, here and on your SSH hosts and containers, with where each one runs, and your accounts' plan usage, in a small file that changes as soon as they do, and wait for it instead of asking again and again (Plasma, GNOME and VS Code).
-- **Quote in reply:** select words in a reply and **Reply to this** puts them in your reply box as a quote, to answer that part (Plasma and VS Code).
-- **Compact now, or go on in a new chat, from Talpy Chat's context tag:** *Context 31% used* (it said *69% left*) has a small bar coloured as the usage bars, and a click on it offers **Compact now**, with what it must keep, and **Continue in a new chat…**, which has Claude write a handoff note and puts it in a new chat's box (Plasma and VS Code).
-- **Since you last looked, in Talpy Chat:** a chat that went on without you says what it did when you open it again, in one line under the conversation: its steps, the files it changed, whether its tests passed, whether it waits for you; a click goes to where you left, and **Recap** has Claude sum it up in a few sentences (Plasma and VS Code).
-- **Bookmarks in Talpy Chat:** bookmark Claude's reply or your message (the ribbon beside Copy, or Ctrl+D), and the chat's bookmarks list on the side (Ctrl+Shift+B) to go back to one in a click, even one further back than what's shown; Alt+↑ / Alt+↓ go from one to the next (Plasma and VS Code).
-- **What Claude made, in the chat:** a picture, a plan or a page Claude wrote, edited or looked at shows in Talpy Chat under the step that made it, folded (*icon.svg · 2 KB*, *Plan: …*); a click shows it: the picture at the window's width, the plan rendered, a page's source (Plasma and VS Code).
-- **Talpy Chat on SSH hosts and containers:** start and reopen chats there in Talpy Chat; what they ask shows within a second and is answered from it, as here (Plasma and VS Code).
-- **Model and effort for one chat, from Talpy Chat:** `/model` and `/effort` list the models and effort levels, and the one you pick is for that chat alone, never your default for every new chat as Claude's own commands make it; a background chat takes it in under a second (Plasma and VS Code).
-- **Smooth long lists in Plasma's popup:** with dozens of chats it no longer freezes: a chat that starts, ends or changes touches its own row only, **Hide** takes a chat away at once, the popup opens at once and fills in its rows a few a frame, and the copies on your desktops rest while windows cover them (Plasma).
-- **Right-click in Talpy Chat:** Copy, Copy message and Select all on the conversation; Undo, Redo, Cut, Copy, Paste (a picture too) and Select all on the reply box, each with its key (Plasma and VS Code).
-- **Talpy Chat has its own icon:** Talpa with a speech bubble, on the *Open in* switch, the buttons that open a chat in Talpy Chat, VS Code's Talpy Chat tabs and, in Plasma, the Talpy Chat window in the taskbar.
-- **Search and folds in Talpy Chat:** Ctrl+F finds anything in the chat (what each step ran and got too, on the Steps tab), with the matches marked and Enter going from one to the next, without moving what you read till you do; long messages, replies and outputs fold to their first lines with *Show more*, and Ctrl+O unfolds every long one (Plasma and VS Code).
-- **Keys in Talpy Chat:** Ctrl+Enter sends now, Alt+Enter when the turn ends, Alt+1…4 a suggested reply, Alt+Y / Alt+A / Alt+N answer what it asks, Ctrl+↑ / Ctrl+↓ go from message to message, Ctrl+Shift+C copies Claude's last reply, Esc closes what's open and then stops Claude, and more; **?** lists them, and Copy copies all of a long reply (Plasma and VS Code).
-- **Times, Copy and new messages in Talpy Chat:** a line between days, a message's time and **Copy** on hover (a reply as Markdown), and *2 new ↓* when Claude goes on below while you read further up (Plasma and VS Code).
-- **Context used and the turn so far in Talpy Chat:** its header says how much of the chat's context is used, up to where Claude compacts it on its own, with a small bar that turns to the warning colour and then red as it gets close, and its working line how long Claude has worked on your message and how many steps it took (Plasma and VS Code).
-- **Commands in Talpy Chat:** a command you ran shows in the chat with what it printed, in Claude's colours; the `/` list runs each where it can: from here, Talpy Den's Permissions tab, or in the chat's terminal for those that need Claude's own panel (`/config`, `/model`…), never left stuck in a background chat (Plasma and VS Code).
-- **Suggested replies in Talpy Chat:** once Claude's turn is over, chips answer the question it ended with (its options, Yes or No) or offer what you usually reply then (after a usage limit, a chat that stopped), and what you type is completed from your usual replies; nothing is sent without a click (Plasma and VS Code).
-- **Stop in Talpy Chat:** while Claude works, Stop on the working line stops what it's doing, as Esc in its terminal; the chat stays (tmux, VS Code's terminals, background chats; Plasma and VS Code).
-- **Open in: Talpy Chat:** one more choice, listed first: new chats run in the background and open in Talpy Chat, where you answer what they ask; recent chats reopen there (Plasma and VS Code).
-- **Your answers show in the chat:** Claude's question or plan stays in Talpy Chat with your answer under it, wherever you answered (Plasma and VS Code).
-- **One name: Talpy Chat** for the chat window, everywhere (Plasma and VS Code).
-- **Old chats, your stars kept:** Claude Code deletes every chat and plan 30 days after its last change, starred or not. Settings → Chats → *Old chats* can have Talpy Den do it instead, once a day: it keeps what you starred (and open, queued or kept-going chats), moves old plans to the Trash, and says what it deletes before you choose it; here and on your SSH hosts and containers (Plasma, GNOME and VS Code).
-- **SSH hosts' projects in the Projects tab:** each SSH host and container shown has its projects there too, under its name, with their chats, plans and memories, read on that host (Plasma and VS Code).
-- **Hide an account you don't use:** **Hide** on the settings' Accounts page leaves it out of everything Talpy Den shows, and Talpy Den stops reading it, so every check is quicker; its chats, history and memories stay as they are, and it shows again while one of its chats runs (Plasma, GNOME and VS Code; here and on your SSH hosts).
+- **Talpy Chat, everywhere:** *Open in: Talpy Chat* is the first choice now: new chats run in the background and open there, where you answer what they ask, and recent chats reopen there; it works on your SSH hosts and containers too, has its own icon (Talpa with a speech bubble) and one name everywhere (Plasma and VS Code).
+- **Find your way in a long chat:** Ctrl+F finds anything, long texts fold to their first lines, bookmarks (Ctrl+D) have a list on the side, a line marks each day, a message's time and **Copy** show on hover, *2 new ↓* says Claude went on below, a right-click menu, and keys for nearly everything (**?** lists them) (Plasma and VS Code).
+- **Reply in a click:** suggested replies once Claude's turn is over, **Reply to this** to quote what you selected, **Stop** on the working line, and your answers to Claude's questions and plans kept in the chat (Plasma and VS Code).
+- **Context, compacting, model and effort for one chat:** *Context 31% used* has a bar that turns amber, then red; a click offers **Compact now** or **Continue in a new chat…** with a handoff note Claude writes; `/model` and `/effort` change that chat alone, never your default (Plasma and VS Code).
+- **Since you last looked:** a chat that went on without you says what it did in one line (its steps, the files it changed, its tests, whether it waits for you), and **Recap** has Claude sum it up (Plasma and VS Code).
+- **What Claude made, in the chat:** a picture, plan or page Claude wrote or looked at shows folded under its step, and a command you ran shows with what it printed, in Claude's colours (Plasma and VS Code).
+- **Your chats' states for other programs:** a status bar, a desk display or a script can follow your chats, here and on your SSH hosts and containers, and your plan usage, in a small file that changes as soon as they do (Plasma, GNOME and VS Code).
+- **SSH hosts' projects in the Projects tab:** each host's and container's projects, with their chats, plans and memories, read on that host (Plasma and VS Code).
+- **Old chats, your stars kept:** Talpy Den can clean up old chats instead of Claude Code, once a day, keeping what you starred and moving old plans to the Trash (Plasma, GNOME and VS Code).
+- **Hide an account you don't use:** Talpy Den stops reading it, so every check is quicker (Plasma, GNOME and VS Code).
+- **Smooth long lists in Plasma's popup:** with dozens of chats it opens at once and no longer freezes (Plasma).
 
 ### Every change
 
