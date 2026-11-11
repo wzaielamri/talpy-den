@@ -112,7 +112,7 @@ export function cleanupText(r: CleanupCounts): string {
 
 export function keptText(r: CleanupCounts): string {
   const k = (r.keptChats || 0) + (r.keptPlans || 0);
-  return k ? `${k} old starred, bookmarked, open or queued ${k === 1 ? "one stays" : "ones stay"}` : "";
+  return k ? `${k} old starred, open or queued ${k === 1 ? "one stays" : "ones stay"}` : "";
 }
 
 // Each place's last run, a line each: "This computer, 5 Nov, 14:02: 3 chats (412.0 MB); 2 old … stay"
@@ -133,7 +133,7 @@ export function runsLines(status: CleanupStatus, when: (ms: number) => string): 
 // What the Old Chats command says: who deletes them, the next run here, the last runs
 export function oldChatsDetail(status: CleanupStatus, when: (ms: number) => string): string {
   const lines = [status.mode === "talpy"
-    ? `Talpy Den deletes the chats you haven't used for ${n(status.days, "day", "days")} once a day; old plans go to the Trash, and what you starred or bookmarked stays. ` +
+    ? `Talpy Den deletes the chats you haven't used for ${n(status.days, "day", "days")} once a day; old plans go to the Trash, and what you starred stays. ` +
       `Its next run would delete ${cleanupText(status.preview)} here.${keptText(status.preview) ? ` ${keptText(status.preview)}.` : ""}`
     : `Claude Code's own cleanup deletes every chat, and every plan of an account's plans folder, older than its cleanupPeriodDays (${
       status.claudeDays.map((a) => `${a.account}: ${a.days} days`).join(", ") || "30 days"}): starred or not, for good.`];
