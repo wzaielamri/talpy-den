@@ -2245,6 +2245,36 @@ class NewChatTests(unittest.TestCase):
         self.assertNotRegex(rows[:rows.index("\n  }\n")], r"(?i)bookmark|ribbon")
         self.assertIn("ribbonCss(", chat)
 
+    def test_since_you_last_looked_says_the_same_in_plasma_and_vs_code(self):
+        # Since you last looked (6b, A9): one line under the conversation, made only when there's one to
+        # show (AwayLine.qml: not per message, nothing in the delegate), the same words in both front ends;
+        # each read says how far the window showed the chat (--seen), the first one asks (--away) and the
+        # watcher waits for it, so it doesn't move what that read is asked against
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        line = (ROOT / "ui/AwayLine.qml").read_text()
+        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        self.assertIn('source: active ? "AwayLine.qml" : ""', pane)
+        self.assertIn("active: pane.away !== null && pane.conversationTab", pane)
+        delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
+        self.assertNotIn("away", delegate.lower().replace("always", ""))
+        self.assertIn('seenArg() + (awayAsking ? " --away" : "")', pane)
+        self.assertIn('" --wait 50" + (suggestOn ? " --suggest" : "") + seenArg()', pane)
+        self.assertIn("watchFailures < 3 && !awayNext", pane)
+        for words in ("Since you last looked", "Since your last message", "tests passed", "tests failed",
+                      "it waits for your answer", "it asks you something", "Files changed:",
+                      "Click to go to where you left. Scrolling or × closes it."):
+            self.assertIn(words, line)
+            self.assertIn(words, shared)
+        for qml, ts in (('"%1 step", "%1 steps"', '"step", "steps"'), ('"%1 reply", "%1 replies"', '"reply", "replies"'),
+                        ('"%1 file changed", "%1 files changed"', '"file changed", "files changed"'),
+                        ('"%1+ steps"', '${plus} '),
+                        ('"Since a Talpy Chat window last showed this chat, at %1"', "`Since a Talpy Chat window last showed this chat, at ${when}`"),
+                        ('"Since your last message, at %1"', "`Since your last message, at ${when}`"),
+                        ('"and %1 more"', "`  and ${a.fileCount - a.files.length} more`"),
+                        ('"Tests passed: %1"', '`Tests ${a.test.ok ? "passed" : "failed"}: ${a.test.command}`')):
+            self.assertIn(qml, line)
+            self.assertIn(ts, shared)
+
     def test_bookmarks_are_made_only_when_wanted(self):
         # Talpy Chat's bookmarks (6i): what they do (Bookmarks.qml, with bookmarks.mjs), their list
         # (BookmarkList.qml) and the tab row's count (BookmarkPill.qml) are files of their own, read and

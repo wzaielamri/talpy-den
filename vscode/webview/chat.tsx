@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { adoptable, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
@@ -615,6 +615,10 @@ function ChatApp() {
   // left the end, till you're back at it
   const [seen, setSeen] = useState<ReadonlySet<string> | null>(null);
   const seenNow = useRef<ReadonlySet<string> | null>(null);
+  // Since you last looked (shared/pane.ts Away): what the chat did since a Talpy Chat window last showed
+  // it, one line over the list's bottom when the tab shows it again; a click goes to where you left,
+  // scrolling, sending or × closes it
+  const [away, setAway] = useState<Away | null>(null);
   // Today, for the lines between days ("Today", "Yesterday"): moved on at midnight, only while
   // the tab shows (one timer, once a day), and when it shows again on another day
   const [today, setToday] = useState(() => Date.now());
@@ -856,7 +860,11 @@ function ChatApp() {
       if (m.type === "chat") setChat(m.chat);
       else if (m.type === "textSize") setScale(m.scale);
       else if (m.type === "font") setFont(m.family);
-      else if (m.type === "visible") setShown(m.visible);
+      else if (m.type === "visible") {
+        setShown(m.visible);
+        if (!m.visible) setAway(null);   // (shown again: what it did meanwhile, asked again)
+      }
+      else if (m.type === "away") setAway(m.away);
       else if (m.type === "diffLayout") setSplit(m.split);
       else if (m.type === "picked") attachPaths(m.paths);
       else if (m.type === "picture") {
@@ -1222,6 +1230,7 @@ function ChatApp() {
     }
     // (Claude at work: it waits a moment, queued, to be taken back, as ↑ does in Claude's terminal)
     const holds = !!chat?.atWork && !now;
+    setAway(null);
     const id = ++sentCount.current;
     setOutgoing((was) => [...was, { id, text: said, at: Date.now(), state: holds ? "held" : "sending", sentAt: 0,
                                     known: items.filter((it) => it.kind === "you").map((it) => String(it.key)),
@@ -1544,6 +1553,15 @@ function ChatApp() {
     seenNow.current = null;
     setSeen(null);
     if (el) el.scrollTop = el.scrollHeight;
+  };
+  // Since you last looked's click: to where you left (on Steps, the first step since), read further back
+  // first when it's before what's shown, as a bookmark is gone to
+  const goAway = () => {
+    const key = away ? awayTarget(away, tab === "steps") : "";
+    setAway(null);
+    if (!key) return;
+    if (shownItems.some((it) => String(it.key) === key)) goToMark(key);
+    else if (more) reachMark(key);
   };
   // Show more / Show less (now: whether it shows all of it now). Show less keeps its button where it
   // was, under the pointer: the text above it folds away, not what's below
@@ -2147,10 +2165,15 @@ function ChatApp() {
               }
             }}
             onWheel={(e) => {
-              if (!e.ctrlKey) return;
+              if (!e.ctrlKey) {
+                if (away) setAway(null);   // (you scroll: you read it yourself)
+                return;
+              }
               e.preventDefault();
               zoom(e.deltaY < 0 ? 1 : -1);
             }}
+            onTouchMove={away ? () => setAway(null) : undefined}
+            onPointerDown={away ? (e) => { if (e.target === e.currentTarget) setAway(null); } : undefined}
             onContextMenu={(e) => {
               const t = e.target as HTMLElement;
               if (t.closest("input, textarea")) return;   // (the find bar's field: VS Code's own menu)
@@ -2214,6 +2237,18 @@ function ChatApp() {
           {marksOn ? (
             <BookmarkList marks={marks.list} loaded={loadedKeys} more={more} capped={capped} settled={settled} going={markGoing} current={current}
               findOpen={find.open} list={list} mac={MAC} onGo={goFromList} onRemove={(m) => changeMark(m, false)} onClose={closeMarks} />
+          ) : null}
+          {/* (Since you last looked: a line under the list, above what it asks and your reply; not over the
+              list, where it hid the working line. It comes with the tab's first read, before you read) */}
+          {away ? (
+            <div class="pane-away" role="status">
+              <button type="button" class="pane-away-go" title={awayTip(away, timeText(away.since, Date.now()))} onClick={goAway}>
+                <strong>{awayHead(away)}:</strong> {awayParts(away, !!chat?.permission).join(" · ")}
+              </button>
+              <button type="button" class="pane-away-x" title="Close" aria-label="Close" onClick={() => setAway(null)}>
+                <Icon name={I.close} />
+              </button>
+            </div>
           ) : null}
           {chat?.permission ? <AskBox ask={chat.permission} onAnswer={answer} busy={answering > 0} pressed={askKey} keyed={keyed}
             onTerminal={chat.where === "background" ? () => post({ type: "openWindow" }) : undefined} /> : null}

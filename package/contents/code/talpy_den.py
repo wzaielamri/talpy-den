@@ -4918,6 +4918,7 @@ def follow_host_moves(cache_root, host, moved, starred, kept):
         bookmarks_moved(cache_root, moved, host)
     except OSError:
         pass
+    seen_moved(cache_root, moved, host)   # (how far a Talpy Chat window showed it: "Since you last looked")
     for old in [c for c in starred["chats"] if c in moved]:
         change_stars(cache_root, "chats", moved_chat(old, moved), host, on=True)
         change_stars(cache_root, "chats", old, host, on=False)
@@ -10452,6 +10453,93 @@ def forget_bookmarks(cache_root, chat, host=""):
         pass
 
 
+# ---------------------------------------------------------------- when you last looked at a chat
+# Talpy Chat's "Since you last looked" (pane.py --conversation --seen / --away):
+# when a Talpy Chat window last showed each chat, on the clock of the computer
+# the chat runs on (its transcript's times are). Chat ids and times only, the
+# newest SEEN_MAX; a chat deleted, its mark goes; moved, it goes along.
+SEEN = "seen.json"
+SEEN_MAX = 500
+
+
+def load_seen(cache_root):
+    """{review_key: ms} of the chats a Talpy Chat window showed."""
+    data = read_json(Path(cache_root) / SEEN)
+    chats = data.get("chats") if isinstance(data, dict) else None
+    return {k: v for k, v in chats.items() if type(v) is int and v > 0} if isinstance(chats, dict) else {}
+
+
+def seen_mark(cache_root, chat, host=""):
+    """When a Talpy Chat window last showed the chat (ms), 0 if never."""
+    return load_seen(cache_root).get(review_key(chat, host), 0) if valid_id(chat) else 0
+
+
+@contextlib.contextmanager
+def seen_lock(cache_root):
+    private_dir(Path(cache_root))
+    with open(Path(cache_root) / "seen.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def change_seen(cache_root, edit):
+    """Change seen.json under its lock (edit changes the dict, says whether it did)."""
+    with seen_lock(cache_root):
+        chats = load_seen(cache_root)
+        if not edit(chats):
+            return
+        if len(chats) > SEEN_MAX:
+            chats = dict(sorted(chats.items(), key=lambda kv: kv[1])[-SEEN_MAX:])
+        write_json_atomic(Path(cache_root) / SEEN, {"chats": chats}, private=True)
+
+
+def mark_seen(cache_root, chat, host, at):
+    """A Talpy Chat window showed the chat at at (ms); a mark only moves on."""
+    if not valid_id(chat) or "\0" in chat or type(at) is not int or at <= 0:
+        return
+    key = review_key(chat, host)
+
+    def edit(chats):
+        if chats.get(key, 0) >= at:
+            return False
+        chats[key] = at
+        return True
+    try:
+        change_seen(cache_root, edit)
+    except OSError:
+        pass
+
+
+def forget_seen(cache_root, chats, host=""):
+    """Deleted chats' marks go."""
+    keys = {review_key(c, host) for c in chats if isinstance(c, str) and valid_id(c)}
+    if not keys or not any(k in keys for k in load_seen(cache_root)):
+        return
+    try:
+        change_seen(cache_root, lambda marks: [marks.pop(k) for k in keys if k in marks] != [])
+    except OSError:
+        pass
+
+
+def seen_moved(cache_root, moves, host=""):
+    """A chat Claude moved to the background goes on under its new id (moved_chat): its mark too."""
+    marks = load_seen(cache_root)
+    olds = [(old, moved_chat(old, moves)) for old in moves if review_key(old, host) in marks]
+    olds = [(old, new) for old, new in olds if new != old and valid_id(new)]
+    if not olds:
+        return
+
+    def edit(chats):
+        for old, new in olds:
+            at = chats.pop(review_key(old, host), 0)
+            chats[review_key(new, host)] = max(at, chats.get(review_key(new, host), 0))
+        return True
+    try:
+        change_seen(cache_root, edit)
+    except OSError:
+        pass
+
+
 def load_dismissed(cache_root):
     """Finished sessions the user removed from the widget's list: {session id: when}."""
     data = read_json(cache_root / "dismissed.json")
@@ -10706,6 +10794,7 @@ def forget_deleted(cache_root, kind, item_id, host=""):
                 change_queue(cache_root, take=t["id"])
         keep_chat(cache_root, "", item_id, on=False, host=host)
         forget_bookmarks(cache_root, item_id, host)
+        forget_seen(cache_root, [item_id], host)
     if host:
         return
     if kind == "chats":
@@ -10918,6 +11007,7 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
         moves = chat_moves(ctx)
         if moves:
             bookmarks_moved(cache_root, moves)
+            seen_moved(cache_root, moves)   # (and when a Talpy Chat window last showed it)
     except Exception as exc:
         errors.append(f"bookmarks of moved chats: {exc}")
     forget, dismissed_rows = set(), 0

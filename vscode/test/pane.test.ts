@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1466,6 +1466,75 @@ test("the new-messages badge: what came in below since you scrolled up, as its t
   assert.equal(newText(3), "3 new");
   assert.equal(newHint(1), "One new item below, since you scrolled up. Click to go to the end.");
   assert.equal(newHint(4), "4 new items below, since you scrolled up. Click to go to the end.");
+});
+
+// Since you last looked (A9): a chat that went on without you, as one line when its window shows it
+// again (pane.py --away: turns.Away), Plasma's AwayLine.qml the same words
+test("since you last looked: its steps, files, tests and what it waits for, in a line; the rest in its tooltip", () => {
+  const a: Away = { from: "seen", since: 1000, key: "m5", stepKey: "t1", steps: 12, replies: 2, files: ["src/a.py", "b.qml"],
+                    fileCount: 2, test: { command: "npm test", ok: true }, asks: "question", partial: false };
+  assert.equal(awayHead(a), "Since you last looked");
+  assert.deepEqual(awayParts(a), ["12 steps", "2 files changed", "tests passed", "it asks you something"]);
+  assert.deepEqual(awayParts({ ...a, from: "you", steps: 1, fileCount: 1, files: ["a"], test: { command: "x", ok: false } }, true),
+                   ["1 step", "1 file changed", "tests failed", "it waits for your answer"]);   // (waiting on a prompt: its row says)
+  assert.equal(awayHead({ ...a, from: "you" }), "Since your last message");
+  // (only replies: how many; read from after then: at least)
+  assert.deepEqual(awayParts({ ...a, steps: 0, replies: 1, fileCount: 0, files: [], test: null, asks: "" }), ["1 reply"]);
+  assert.deepEqual(awayParts({ ...a, partial: true, steps: 1, fileCount: 1, test: null, asks: "" }), ["1+ steps", "1+ files changed"]);
+  assert.equal(awayTip({ ...a, fileCount: 11 }, "14:02"), [
+    "Since a Talpy Chat window last showed this chat, at 14:02", "", "Files changed:", "  src/a.py", "  b.qml", "  and 9 more", "",
+    "Tests passed: npm test", "", "Click to go to where you left. Scrolling or × closes it."].join("\n"));
+  assert.equal(awayTip({ ...a, from: "you", fileCount: 0, test: null }, "Yesterday 9:15"),
+               "Since your last message, at Yesterday 9:15\n\nClick to go to where you left. Scrolling or × closes it.");
+  // where a click goes: Claude's first reply since, on Steps the first step
+  assert.equal(awayTarget(a, false), "m5");
+  assert.equal(awayTarget(a, true), "t1");
+  assert.equal(awayTarget({ ...a, stepKey: "" }, true), "m5");
+  // how far a window shows a chat: its newest item's time
+  assert.equal(shownUpTo([{ at: 5 }, { at: 9 }, {}, { at: 7 }], 0), 9);
+  assert.equal(shownUpTo([{ at: 5 }], 8), 8);
+  assert.equal(shownUpTo(undefined, 3), 3);
+});
+
+// A chat's tab tells pane.py how far it showed the chat (--seen), and asks what it did since a
+// window last showed it once, when it first reads it and again once shown again (--away)
+test("a chat's tab asks what the chat did since you last looked: when it first reads it and once it shows again", async () => {
+  const calls: string[][] = [];
+  const items = [{ kind: "you", key: "u1", text: "hi", at: 5000 }, { kind: "claude", key: "m1", text: "Done", at: 9000 }];
+  const away = { from: "seen", since: 4000, key: "m1", stepKey: "m1", steps: 0, replies: 1, files: [], fileCount: 0, test: null, asks: "", partial: false };
+  const backend = { pane: async (args: string[]) => {
+    if (args[0] !== "--conversation") return { ok: true };
+    calls.push(args);
+    if (args.includes("--wait")) return new Promise(() => {});   // (the watcher: nothing new)
+    return args.includes("--if-changed") ? { ok: true, unchanged: true }
+      : { ok: true, items, more: false, stamp: "10:1/120", ...(args.includes("--away") ? { away } : {}) };
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: "looked", sessionId: "looked", profileDir: ".claude", name: "x" } as never);
+  const panel = recorded.panels.at(-1)!;
+  const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+  try {
+    panel.show(true);
+    panel.receive({ type: "ready" });
+    await tick();
+    const reads = calls.filter((c) => !c.includes("--wait"));
+    assert.ok(reads[0].includes("--away") && !reads[0].includes("--seen"), "the first read asks, having shown nothing");
+    assert.deepEqual(panel.sent.filter((m) => (m as { type: string }).type === "away"), [{ type: "away", away }]);
+    const watch = calls.find((c) => c.includes("--wait"))!;
+    assert.deepEqual(watch.slice(watch.indexOf("--seen"), watch.indexOf("--seen") + 2), ["--seen", "9000"]);
+    assert.ok(!watch.includes("--away"));
+    panel.show(false);
+    panel.show(true);
+    await tick();
+    const again = calls.filter((c) => !c.includes("--wait")).at(-1)!;
+    assert.ok(again.includes("--away") && again.includes("--if-changed"), "shown again: asked again");
+    assert.deepEqual(again.slice(again.indexOf("--seen"), again.indexOf("--seen") + 2), ["--seen", "9000"]);
+    assert.equal(panel.sent.filter((m) => (m as { type: string }).type === "away").length, 1, "nothing new: nothing said");
+  } finally {
+    p.dispose();
+  }
 });
 
 // Talpy Chat's keys (A10): one table for the ? list and the tooltips (keys.mjs, the

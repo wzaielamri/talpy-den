@@ -22,7 +22,7 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult } from "./shared/pane";
+import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, shownUpTo, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -519,6 +519,11 @@ class Pane implements vscode.Disposable {
   // further back than what's shown, read far enough back for at the next read (--reach)
   private bookmarkChain: Promise<unknown> = Promise.resolve();
   private reachKey = "";
+  // Since you last looked: how far the tab has shown the chat (the newest item time it took: pane.py
+  // --seen, kept for every window and front end), and whether its next read asks what the chat did
+  // since a window last showed it (--away: the tab's first read, and its first once shown again)
+  private shownUpTo = 0;
+  private awayNext = true;
 
   constructor(
     private owner: ChatPanes,
@@ -550,6 +555,7 @@ class Pane implements vscode.Disposable {
         if (this.disposed || this.panel.visible === this.shown) return;
         this.shown = this.panel.visible;
         if (this.host) this.owner.watchesChanged();   // (an SSH host's chat shown: its host watched, or not)
+        if (this.shown) this.awayNext = true;   // (shown again: what it did meanwhile, Since you last looked)
         this.post({ type: "visible", visible: this.shown });
         // (the look's pace once the read has started the watcher again: 15 s, not 1.5)
         if (this.shown && this.ready) void this.load().finally(() => this.schedule());
@@ -740,14 +746,19 @@ class Pane implements vscode.Disposable {
     }
     this.loading = true;
     const chatId = this.chatId;
+    const away = this.awayNext;
     try {
       const r = await this.owner.ext.backend.pane([
         "--conversation", chatId, "--limit", String(this.limit),
         ...(this.reachKey ? ["--reach", this.reachKey] : this.stamp ? ["--if-changed", this.stamp] : []),
-        ...(Pane.suggests() ? ["--suggest"] : []),
+        ...(Pane.suggests() ? ["--suggest"] : []), ...this.seenArgs(), ...(away ? ["--away"] : []),
         ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...(this.host ? ["--host", this.host] : configDirArgs()),
       ], this.host ? 60000 : 30000);
       if (this.disposed) return;
+      if (away && chatId === this.chatId) {   // (asked once: what it did since, or nothing new since it showed)
+        this.awayNext = false;
+        if (r.ok && !r.unchanged) this.post({ type: "away", away: r.away ?? null });
+      }
       if (r.ok && r.unchanged) return void this.watch(); // (shown again, nothing new: it waits on it again)
       // (a chat just started has no transcript for a moment: your message shows meanwhile)
       if (!r.ok && r.missing && this.startedAt && Date.now() - this.startedAt < 60000) return;
@@ -782,11 +793,19 @@ class Pane implements vscode.Disposable {
           it.thumbs = it.pictures.filter((f: unknown): f is string => typeof f === "string" && inPictures(f))
             .map((f: string) => ({ path: f, src: this.panel.webview.asWebviewUri(vscode.Uri.file(f)).toString() }));
     if (r.ok && typeof r.stamp === "string") this.stamp = r.stamp;
-    if (r.ok && Array.isArray(r.items)) this.made = madeOf(r.items);   // (what the tab may unfold: madeOf)
+    if (r.ok && Array.isArray(r.items)) {
+      this.made = madeOf(r.items);   // (what the tab may unfold: madeOf)
+      this.shownUpTo = shownUpTo(r.items, this.shownUpTo);
+    }
     // (at the most a tab shows: no Show earlier, it says so instead)
     const capped = r.ok && !!r.more && this.limit >= LIMIT_MAX;
     this.post({ type: "conversation", answer: (r.ok ? { ...r, more: !!r.more && !capped, capped } : r) as never });
     return true;
+  }
+
+  // (how far the tab has shown it, with each read: pane.py keeps it before the read and its wait)
+  private seenArgs(): string[] {
+    return this.shownUpTo > 0 ? ["--seen", String(this.shownUpTo)] : [];
   }
 
   // The watcher: a chat of this computer is read the moment its transcript
@@ -809,7 +828,7 @@ class Pane implements vscode.Disposable {
         const asked = Date.now();
         const r = await this.owner.ext.backend.pane([
           "--conversation", chatId, "--limit", String(limit), "--if-changed", stamp, "--wait", "50", ...(Pane.suggests() ? ["--suggest"] : []),
-          ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...configDirArgs(),
+          ...this.seenArgs(), ...(this.chat.profileDir ? ["--profile", this.chat.profileDir] : []), ...configDirArgs(),
         ], 70000);
         if (this.disposed) return;
         if (chatId !== this.chatId) continue; // (Claude moved it meanwhile: its new id's is waited on now)

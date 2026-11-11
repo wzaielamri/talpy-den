@@ -694,10 +694,12 @@ def on_host(host, cache_root, mode, days, dry=False):
 
 
 def forget_bookmarks(cache_root, chats, host=""):
-    """The bookmarks of the chats a run deleted (here, or on host: kept here) go too, as a deleted chat's do."""
-    for chat in chats if isinstance(chats, list) else ():
-        if isinstance(chat, str) and cs.valid_id(chat):
-            cs.forget_bookmarks(cache_root, chat, host)
+    """The bookmarks of the chats a run deleted (here, or on host: kept here) go too, as a deleted chat's do,
+    and when a Talpy Chat window last showed them (talpy_den.forget_seen)."""
+    chats = [c for c in chats if isinstance(c, str) and cs.valid_id(c)] if isinstance(chats, list) else []
+    for chat in chats:
+        cs.forget_bookmarks(cache_root, chat, host)
+    cs.forget_seen(cache_root, chats, host)
 
 
 def run(home, cache_root, extra_dirs=(), now=None, wait=False):

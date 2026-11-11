@@ -121,6 +121,103 @@ class TurnSoFar:
         return {"startedAt": started, "steps": steps} if started else None
 
 
+# ---------------------------------------------------------------- since you last looked
+AWAY_MIN_MS = 60 * 1000   # (looked at it less than a minute before: nothing to tell)
+AWAY_STEPS = 3            # (since your last message, fewer steps and no file or test: just its reply)
+AWAY_FILES = 8            # file names an answer lists (fileCount says how many)
+
+
+class Away:
+    """What a chat did since you last looked (A9, pane.py --conversation
+    --away), followed entry by entry in conversation_items: since a Talpy
+    Chat window last showed it (seen: talpy_den.seen_mark, ms on the clock
+    of the computer it runs on; 0 if never), or since your last message when
+    that's later ("from": "seen" or "you"). Its steps, Claude's replies, the
+    files it changed (edits that went through) and its newest test run
+    (talpy_den.is_test_run: the rows' Tests badge's rule). Per entry only a
+    tuple; worked out once, at the end (result). Your last message before
+    what was read (a long turn's: turn_before) is given with the steps from
+    it to there (before)."""
+    __slots__ = ("seen", "prompt", "first", "events", "earlier")
+
+    def __init__(self, seen=0):
+        self.seen = seen if type(seen) is int and seen > 0 else 0
+        self.prompt, self.first, self.events, self.earlier = 0, None, [], 0
+
+    def again(self):
+        self.prompt, self.first, self.events, self.earlier = 0, None, [], 0
+
+    def before(self, at, steps):
+        """Your message that started the turn, before what was read, and Claude's steps from it to there."""
+        if not self.prompt and type(at) is int and at > 0:
+            self.prompt, self.earlier = at, steps if type(steps) is int and steps > 0 else 0
+
+    def entry(self, at):
+        if self.first is None and at:
+            self.first = at
+
+    def you(self, at):
+        self.prompt = max(self.prompt, at or 0)
+
+    def step(self, at, key):
+        self.events.append((at or 0, "step", key))
+
+    def reply(self, at, key):
+        self.events.append((at or 0, "reply", key))
+
+    def done(self, name, inp, ok, at, cwd):
+        """A step's result came: an edit's file, a test run's outcome."""
+        if name in ("Edit", "MultiEdit", "Write", "NotebookEdit") and ok:
+            path = inp.get("file_path") or inp.get("notebook_path")
+            if isinstance(path, str) and path:
+                if isinstance(cwd, str) and cwd and path.startswith(cwd.rstrip("/") + "/"):
+                    path = path[len(cwd.rstrip("/")) + 1:]
+                self.events.append((at or 0, "file", path))
+        elif name == "Bash" and cs.is_test_run(inp.get("command")):
+            command = cs.short_text(inp["command"].split("\n", 1)[0], 120)
+            self.events.append((at or 0, "test", {"command": command, "ok": bool(ok)}))
+
+    def result(self, now_ms, whole, asks=""):
+        """{"from", "since", "key" (Claude's first reply since: where you
+        left, on the Chat tab), "stepKey" (the first item since, on Steps),
+        "steps", "replies", "files" (the newest AWAY_FILES, relative to the
+        chat's folder), "fileCount", "test" ({"command", "ok"}, the newest),
+        "asks" (what it waits for: "question", the question its turn ended
+        with, or ""; a prompt it waits on, the front ends say from its row),
+        "partial" (what was read starts after since: the counts are at
+        least)}, or None: nothing to tell (less than AWAY_MIN_MS ago,
+        nothing done since; since your last message, its reply alone)."""
+        since, by = (self.seen, "seen") if self.seen >= self.prompt else (self.prompt, "you")
+        if since <= 0 or now_ms - since < AWAY_MIN_MS:
+            return None
+        steps = replies = 0
+        key = step_key = ""
+        files, test = {}, None
+        for at, what, value in self.events:
+            if at <= since:
+                continue
+            if what == "step":
+                steps += 1
+                step_key = step_key or value
+            elif what == "reply":
+                replies += 1
+                key = key or value
+                step_key = step_key or value
+            elif what == "file":
+                files.pop(value, None)   # (newest last)
+                files[value] = True
+            else:
+                test = value
+        if by == "you" and since == self.prompt:
+            steps += self.earlier   # (before what was read, from your message on)
+        if not (steps or replies) or (by == "you" and steps < AWAY_STEPS and not files and test is None):
+            return None
+        names = list(files)
+        return {"from": by, "since": since, "key": key, "stepKey": step_key, "steps": steps, "replies": replies,
+                "files": names[-AWAY_FILES:], "fileCount": len(names), "test": test, "asks": asks or "",
+                "partial": not whole and (self.first is None or self.first > since)}
+
+
 # ---------------------------------------------------------------- a long turn's start
 
 TOOL_CALL_LINE = rb'"type":\s*"tool_use"'

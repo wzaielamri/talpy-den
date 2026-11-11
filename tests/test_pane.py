@@ -3158,6 +3158,166 @@ class ReachTests(PaneFixture):
         self.assertEqual((got["ok"], got.get("unchanged"), got["reached"], got["limit"]), (True, None, "here", 480))
 
 
+class AwayTests(PaneFixture):
+    """Since you last looked (A9): a Talpy Chat window that shows a chat says
+    so (--seen: when, kept here, a host's chat's too), and one that shows it
+    again asks what it did since (--away: its steps, the files it changed,
+    its newest test run, what it waits for), or since your last message."""
+
+    def work(self, t, tests_ok=True):
+        """A prompt of yours at t, then Claude's work: two edits (one refused), a file written, a test run and a reply."""
+        cwd = str(self.folder)
+        return [dict(prompt("fix the parser", t, cwd=cwd), uuid="u1"),
+                tool_use("t1", "Edit", {"file_path": cwd + "/src/parse.py", "old_string": "a", "new_string": "b"}, t + 10, "m1"),
+                dict(tool_result("t1", t + 11), cwd=cwd),
+                tool_use("t2", "Edit", {"file_path": cwd + "/src/lex.py", "old_string": "a", "new_string": "b"}, t + 20, "m2"),
+                dict(tool_result("t2", t + 21, error=True, text="String not found"), cwd=cwd),
+                tool_use("t3", "Write", {"file_path": "/etc/elsewhere.conf", "content": "x"}, t + 30, "m3"),
+                dict(tool_result("t3", t + 31), cwd=cwd),
+                tool_use("t4", "Bash", {"command": "python3 -m pytest tests | tail -3\necho done"}, t + 40, "m4"),
+                dict(tool_result("t4", t + 41, error=not tests_ok, text="3 passed" if tests_ok else "1 failed"), cwd=cwd),
+                text_reply("Fixed: the parser reads nested lists now.", t + 50, "m5", "end_turn")]
+
+    def away(self, *more):
+        return self.cli("--conversation", SID, "--away", *more)["away"]
+
+    def test_since_your_last_message(self):
+        t = self.now - 600
+        self.chat(*self.work(t))
+        got = self.away()
+        self.assertEqual(got, {"from": "you", "since": int(t * 1000), "key": "m5", "stepKey": "t1", "steps": 4,
+                               "replies": 1, "files": ["src/parse.py", "/etc/elsewhere.conf"], "fileCount": 2,
+                               "test": {"command": "python3 -m pytest tests | tail -3", "ok": True}, "asks": "",
+                               "partial": False})
+        self.chat(*self.work(t, tests_ok=False))
+        self.assertEqual(self.away()["test"], {"command": "python3 -m pytest tests | tail -3", "ok": False})
+        # without --away: nothing of it is worked out
+        self.assertNotIn("away", self.cli("--conversation", SID))
+
+    def test_nothing_to_tell(self):
+        t = self.now - 600
+        # since your last message, Claude's reply alone (or a step or two): that's what the chat shows
+        self.chat(dict(prompt("what is a monad?", t, cwd=str(self.folder)), uuid="u1"),
+                  tool_use("t1", "Read", {"file_path": "/x"}, t + 1, "m1"), tool_result("t1", t + 2),
+                  text_reply("A monoid in the category of endofunctors.", t + 5, "m2", "end_turn"))
+        self.assertIsNone(self.away())
+        # less than a minute ago
+        self.chat(*self.work(self.now - 55))
+        self.assertIsNone(self.away())
+        # no message of yours and never shown: since when?
+        self.chat(*self.work(t)[1:])
+        self.assertIsNone(self.away())
+
+    def test_since_a_window_last_showed_it(self):
+        t = self.now - 3600
+        self.chat(*self.work(t), dict(prompt("and the docs", t + 100, cwd=str(self.folder)), uuid="u2"),
+                  text_reply("Done.", t + 200, "m6", "end_turn"))
+        # shown after its last reply: nothing since
+        cs.mark_seen(self.cache, SID, "", int((t + 300) * 1000))
+        self.assertIsNone(self.away())
+        # shown before Claude's last reply: that reply, though it's only one (you were away)
+        cs.mark_seen(self.cache, SID, "", 1)   # (a mark only moves on)
+        self.assertEqual(cs.seen_mark(self.cache, SID), int((t + 300) * 1000))
+        (self.cache / cs.SEEN).unlink()
+        cs.mark_seen(self.cache, SID, "", int((t + 150) * 1000))
+        got = self.away()
+        self.assertEqual({k: got[k] for k in ("from", "since", "key", "stepKey", "steps", "replies", "fileCount", "test")},
+                         {"from": "seen", "since": int((t + 150) * 1000), "key": "m6", "stepKey": "m6", "steps": 0,
+                          "replies": 1, "fileCount": 0, "test": None})
+        # your message after the window last showed it: since then (there, its reply alone: nothing to tell)
+        (self.cache / cs.SEEN).unlink()
+        cs.mark_seen(self.cache, SID, "", int((t + 30) * 1000))
+        self.assertIsNone(self.away())
+        self.chat(dict(prompt("hi", t, cwd=str(self.folder)), uuid="u0"), text_reply("Hello.", t + 5, "m0", "end_turn"),
+                  dict(prompt("and the docs", t + 45, cwd=str(self.folder)), uuid="u2"), *self.work(t + 100)[1:])
+        got = self.away()
+        self.assertEqual((got["from"], got["since"], got["steps"], got["stepKey"]), ("you", int((t + 45) * 1000), 4, "t1"))
+
+    def test_what_it_waits_for(self):
+        t = self.now - 600
+        self.chat(*self.work(t))
+        # (a step not done yet isn't a prompt it waits on: the front ends tell that from its row's state)
+        with mock.patch.object(cs, "pending_permission", return_value=cs.permission_view("Bash", {"command": "ls"}, "")):
+            self.assertEqual(self.away()["asks"], "")
+        entries = self.work(t)
+        entries[-1] = text_reply("Should I also fix the lexer?", t + 50, "m5", "end_turn")
+        self.chat(*entries)
+        self.assertEqual(self.away()["asks"], "question")
+
+    def test_seen_is_kept_here(self):
+        t = self.now - 600
+        self.chat(*self.work(t))
+        shown = int((t + 21) * 1000)   # (the newest item the window shows: what it took of the answers before)
+        first = self.cli("--conversation", SID, "--seen", str(shown))
+        self.assertEqual(cs.seen_mark(self.cache, SID), shown)
+        self.assertEqual(oct(os.stat(self.cache / cs.SEEN).st_mode & 0o777), "0o600")
+        # kept before the read: a watcher's wait doesn't hold it back
+        with mock.patch.object(pane, "wait_for_change", side_effect=lambda *a, **kw: self.assertEqual(
+                cs.seen_mark(self.cache, SID), shown + 5) or False):
+            self.assertEqual(self.cli("--conversation", SID, "--seen", str(shown + 5), "--if-changed", first["stamp"],
+                                      "--wait", "5"), {"ok": True, "unchanged": True})
+        # --away and --seen together: what it did since what a window showed before, then the mark moves
+        got = self.cli("--conversation", SID, "--away", "--seen", str(int((t + 50) * 1000)))["away"]
+        self.assertEqual((got["from"], got["since"], got["steps"], got["stepKey"]), ("seen", shown + 5, 2, "t3"))
+        self.assertIsNone(self.cli("--conversation", SID, "--away")["away"])
+        # on an SSH host (--remote): nothing kept there; away from the --since the computer asking gives
+        (self.cache / cs.SEEN).unlink()
+        self.cli("--conversation", SID, "--seen", "5", "--remote")
+        self.assertFalse((self.cache / cs.SEEN).exists())
+        got = self.cli("--conversation", SID, "--away", "--since", str(int((t + 35) * 1000)), "--remote")["away"]
+        self.assertEqual((got["from"], got["steps"], got["fileCount"]), ("seen", 1, 0))
+
+    def test_a_hosts_mark_is_kept_here(self):
+        cs.mark_seen(self.cache, SID, "gpu", 5000)
+        cs.mark_seen(self.cache, SID, "", 9000)   # (this computer's chat of that id: not the host's)
+        there = {"ok": True, "items": [], "stamp": "1:2/120", "more": False, "away": None}
+
+        def answer(*a, **kw):
+            self.assertEqual(cs.seen_mark(self.cache, SID, "gpu"), 7000)   # (kept before it's asked there)
+            return dict(there)
+        with mock.patch("remote.host_answer", side_effect=answer) as asked:
+            self.cli("--conversation", SID, "--host", "gpu", "--away", "--seen", "7000")
+        # (the mark before goes as --since; --seen isn't sent there)
+        self.assertEqual(asked.call_args_list[0][0], ("gpu", ["--conversation", SID, "--away", "--since", "5000"]))
+        self.assertEqual((cs.seen_mark(self.cache, SID, "gpu"), cs.seen_mark(self.cache, SID)), (7000, 9000))
+        with mock.patch("remote.host_answer", return_value={"ok": True, "unchanged": True}):
+            self.cli("--conversation", SID, "--host", "gpu", "--if-changed", "1:2/120")   # (no --seen: nothing kept)
+        self.assertEqual(cs.seen_mark(self.cache, SID, "gpu"), 7000)
+
+    def test_marks_follow_the_chat(self):
+        other = "6d2e8b7f-1e5a-4b9c-8b62-2a3f4e5d6c7b"
+        for chat, at in ((SID, 1000), (other, 2000)):
+            cs.mark_seen(self.cache, chat, "", at)
+        cs.mark_seen(self.cache, SID, "gpu", 3000)
+        # moved to the background under a new id: its mark goes along (the newer of the two)
+        new = "7e3f9c80-2f6b-4cad-9c73-3b4f5e6d7e8c"
+        cs.seen_moved(self.cache, {SID: new})
+        self.assertEqual((cs.seen_mark(self.cache, SID), cs.seen_mark(self.cache, new)), (0, 1000))
+        # deleted: gone (a host's of that id stays)
+        cs.forget_seen(self.cache, [new, "not an id"])
+        self.assertEqual(cs.load_seen(self.cache), {other: 2000, cs.review_key(SID, "gpu"): 3000})
+        # the newest SEEN_MAX kept
+        with mock.patch.object(cs, "SEEN_MAX", 2):
+            cs.mark_seen(self.cache, new, "", 4000)
+        self.assertEqual(set(cs.load_seen(self.cache)), {cs.review_key(SID, "gpu"), new})
+
+    def test_read_from_further_on(self):
+        away = turns.Away(1000)
+        away.entry(5000)
+        away.step(6000, "t1")
+        away.step(7000, "t2")
+        away.reply(8000, "m1")
+        self.assertTrue(away.result(10 ** 9, whole=False)["partial"])   # (what came before 5000 wasn't read)
+        self.assertFalse(away.result(10 ** 9, whole=True)["partial"])
+        away = turns.Away(5000)
+        away.entry(4000)
+        away.reply(8000, "m1")
+        self.assertFalse(away.result(10 ** 9, whole=False)["partial"])
+
+    def test_the_usage_says_so(self):
+        self.assertIn("[--suggest] [--reach KEY] [--seen MS] [--away]", pane.__doc__)
+
+
 class ContextAndTurnTests(PaneFixture):
     """Talpy Chat's header says how much of the chat's context is left till
     Claude compacts it (A7), its working line how long Claude's turn has run

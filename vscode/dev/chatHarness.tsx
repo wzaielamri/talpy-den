@@ -307,6 +307,12 @@ window.addEventListener("harness-post", (e: Event) => {
       // (what /model and /effort's lists mark: ?ultracode for a chat with it on)
       options: { model: "claude-opus-5-5", effort: params.has("ultracode") ? "xhigh" : "high", ultracode: params.has("ultracode"), next: false } } });
     if (fresh === "task") setTimeout(() => send({ type: "startWith", text: "Fix the flaky date test in tests/parser.test.ts" }), 100);
+    // ?away=seen|you|long: Since you last looked (pane.py --away), as the tab's first read answers it
+    const awayOf = params.get("away");
+    if (awayOf) send({ type: "away", away: {
+      from: awayOf === "you" ? "you" : "seen", since: now - 2 * 3600_000, key: "m1", stepKey: "t1", steps: awayOf === "long" ? 128 : 12,
+      replies: 3, files: ["src/parse.ts", "tests/parser.test.ts", "docs/dates.md"], fileCount: awayOf === "long" ? 14 : 3,
+      test: { command: "npm test -- parser", ok: awayOf !== "long" }, asks: awayOf === "long" ? "" : "question", partial: awayOf === "long" } });
     const tab = params.get("tab");   // ?tab=steps
     if (tab) send({ type: "result", kind: "tab:" + tab, ok: true, message: "" });
     settleMarks();

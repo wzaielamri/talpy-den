@@ -4375,6 +4375,55 @@ body.vscode-high-contrast-light .pane {
   background: var(--vscode-button-hoverBackground, #1177bb);
 }
 
+/* Since you last looked: a line under the list, above what it asks and the reply box; one line, cut
+   with … when longer (the whole of it in its tooltip) */
+.pane-away {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-top: 6px;
+  border: 1px solid var(--vscode-focusBorder, #007fd4);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-focusBorder, #007fd4) 8%, transparent);
+  font-size: 0.9em;
+}
+
+.pane-away-go {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 4px 4px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.pane-away-go:hover strong,
+.pane-away-go:focus-visible strong {
+  text-decoration: underline;
+}
+
+.pane-away-x {
+  flex: none;
+  display: inline-flex;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pane-away-x:hover,
+.pane-away-x:focus-visible {
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
 /* While it works: Talpy thinking and what it's doing, in the working color */
 .pane-working {
   margin-top: 0.8em;

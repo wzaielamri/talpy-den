@@ -4,7 +4,7 @@ its permission prompt and its review.
 
     python3 -I pane.py ACTION [--host HOST] [--config-dir DIR]... [--remote] [--pretty]
 
-  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP [--wait S]] [--suggest] [--reach KEY]
+  --conversation CHAT [--profile P] [--limit N] [--if-changed STAMP [--wait S]] [--suggest] [--reach KEY] [--seen MS] [--away]
         the chat as the pane shows it: your prompts, Claude's replies
         (markdown), each tool call as one line with how it went, and notes
         (a usage limit, an interruption); the newest N items. STAMP: the
@@ -24,6 +24,15 @@ its permission prompt and its review.
         limit grown as Show earlier grows it ("limit"; STAMP isn't looked
         at), and "reached": "here", "far" (further back than PANE_ITEMS_MAX
         items) or "gone" (not in the chat any more)
+        --seen MS (a Talpy Chat window shows it): the time of the newest of
+        its items that window shows (what it took of the answers before),
+        kept as how far a window showed it (talpy_den.mark_seen; a host's
+        chat's here, never sent there), before the read and its wait. --away
+        (that window shows it again, or for the first time): what it did
+        since what a window last showed of it (the mark before this read's),
+        or since your last message, "away" (turns.Away.result: its steps,
+        the files it changed, its newest test run, what it waits for; null:
+        nothing to tell)
   --bookmark CHAT --key KEY [--off] [--kind you|claude] [--at MS] [--text TEXT] [--host HOST]
         bookmark the message with that key (yours or Claude's reply, written
         at MS, its first words TEXT), or not any more (--off); kept on this
@@ -555,7 +564,7 @@ def commands_of(items, due, end):
     return commands.Commands(items, due, end)
 
 
-def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None):
+def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None, away=None):
     """The pane's items from transcript lines (oldest first): {"kind": "you",
     "text"} for a prompt of yours (one sent while Claude works shows when you
     send it, not once Claude takes it in), {"kind": "claude", "text"} for Claude's
@@ -573,7 +582,8 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None)
     picture a reply names, comes right after it as {"kind": "made"} (made.py).
     Entries of subagents (sidechains) aren't in it. ends: a dict given gets
     how the last turn ended (replies.TurnEnd.result); so_far: one given gets
-    Claude's turn so far ("turn": turns.TurnSoFar, also how full its context is)."""
+    Claude's turn so far ("turn": turns.TurnSoFar, also how full its context is);
+    away: a turns.Away given follows what it did (Since you last looked)."""
     items, tools = [], {}
     import turns   # (a module of its own, as replies.py: compiled once and kept)
     import made   # (the same)
@@ -614,10 +624,14 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None)
             continue
         kind, at = e.get("type"), cs.to_ms(e.get("timestamp"))
         uid = e["uuid"] if isinstance(e.get("uuid"), str) else f"{kind}-{at}-{len(items)}"
+        if away is not None and away.first is None:
+            away.entry(at)
         if kind == "queue-operation":
             op, text = e.get("operation"), typed_text(e.get("content"))
             if op == "enqueue" and text:
                 waiting.append(you(f"queued-{at}", text, at, e.get("content")))
+                if away is not None:   # (sent while Claude worked: you were there)
+                    away.you(at)
             elif op == "remove" and text:
                 item = find_waiting(text)
                 if item is not None:
@@ -687,6 +701,8 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None)
                             item["summary"] = change_summary(item["name"], full, item["summary"])
                     if not c.get("is_error") and item["name"] in made.TOOLS:
                         found.step(item, inp, c, e.get("toolUseResult") if len(results) == 1 else None, output, e.get("cwd"))
+                    if away is not None:
+                        away.done(item["name"], inp, not c.get("is_error"), at, e.get("cwd"))
                     said = your_answer(item, e, output, bool(c.get("is_error")),
                                        e.get("toolUseResult") if len(results) == 1 else None)
                     if said is not None:
@@ -695,6 +711,8 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None)
             prompt = cs.human_prompt(e)
             if prompt is not None:
                 end.prompt(at)
+                if away is not None:
+                    away.you(at)
                 if due:
                     shown = due.pop(0)
                     if same_text(shown["text"], prompt):
@@ -739,11 +757,15 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None)
                     item = {"kind": "claude", "key": key, "text": clip(said.strip(), TEXT_CHARS, 10 ** 6), "at": at}
                     if thought:
                         item["thinking"] = True
+                    elif away is not None:
+                        away.reply(at, key)
                     items.append(item)
                     if not thought:   # (a thinking line names nothing Claude made)
                         found.reply(item, e.get("cwd"))
             elif c.get("type") == "tool_use" and isinstance(c.get("id"), str):
                 end.steps += 1
+                if away is not None:
+                    away.step(at, c["id"])
                 inp = c.get("input") if isinstance(c.get("input"), dict) else {}
                 item = {"kind": "tool", "key": c["id"], "name": c.get("name") or "tool", "line": cs.describe_tool(c),
                         "status": "open", "input": clip(tool_input_text(c)), "output": "", "summary": "", "at": at,
@@ -815,23 +837,27 @@ def reach_limit(limit, need):
     return n
 
 
-def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None, reach=None):
+def conversation(path, limit=PANE_ITEMS, pictures=None, ends=None, so_far=None, reach=None, away=None):
     """(items, more) of a chat: its newest limit items (conversation_items,
     pasted pictures saved in pictures; ends: how its last turn ended; so_far:
     its turn so far, and where the lines read start, "start"), and whether
     there are older ones. reach: the key of a message to show (--reach): read
     back until it's there, the limit grown to show it (so_far "limit"), and
     so_far "reached": "here", "far" (more than PANE_ITEMS_MAX items back, or
-    further than PANE_TAIL_MAX bytes) or "gone"."""
+    further than PANE_TAIL_MAX bytes) or "gone"; so_far "whole": whether
+    it read the transcript from its start. away: a turns.Away, followed in
+    what was read (conversation_items)."""
     size = path.stat().st_size
     nbytes = PANE_TAIL_BYTES
     import made
     while True:
         lines, whole, start = tail_lines(path, size, nbytes)
         found = made.Collector()
-        items = conversation_items(lines, pictures, ends, so_far, found)
+        if away is not None:
+            away.again()   # (read again from further back: followed again)
+        items = conversation_items(lines, pictures, ends, so_far, found, away)
         if so_far is not None:
-            so_far["start"] = start
+            so_far["start"], so_far["whole"] = start, whole
         if reach is not None:
             at = next((n for n, item in enumerate(items) if item.get("key") == reach), -1)
             if at < 0 and not whole and nbytes < PANE_TAIL_MAX:
@@ -900,7 +926,7 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
 
 
 def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None,
-                      suggest=False, reach=None):
+                      suggest=False, reach=None, away=None):
     """--conversation. "options": the model and effort it uses now
     (chatpick.options_now). "context": how full its context is (turns.context_left),
     "turn": Claude's turn so far, while it's going on (turns.TurnSoFar.now:
@@ -911,7 +937,10 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     (predicted_reply: its background job writes it a few seconds after the
     turn's end, so the stamp says whether there is one). reach: the key of a
     message to show, if_changed not looked at (conversation): the answer has
-    "limit" (the stamp's), "reach" and "reached"."""
+    "limit" (the stamp's), "reach" and "reached". away (--away: a window that
+    shows it again, or for the first time): when one last showed it (ms, 0:
+    never); the answer has what it did since, "away" (turns.Away.result,
+    None: nothing to tell)."""
     if not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
@@ -932,12 +961,13 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
             stamp = look(path)  # (before it's read: what's written meanwhile is a change the next time)
         except (OSError, AttributeError):
             return {"ok": False, "missing": True, "message": NO_CHAT}
-    ends, so_far = {} if suggest else None, {}
-    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends, so_far, reach or None)
+    import turns
+    ends, so_far = {} if suggest or away is not None else None, {}
+    gone = turns.Away(away) if away is not None else None
+    items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends, so_far, reach or None, gone)
     limit = so_far.get("limit", limit)   # (grown to show what --reach goes to)
     name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
     peek = cs.chat_peek(path) or {}
-    import turns
     turn = so_far["turn"]
     result = {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or cs.chat_folder(path) or "",
               "items": items, "more": more, "stamp": f"{stamp}/{limit}", "mode": peek.get("mode"),
@@ -949,6 +979,15 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     result["options"] = chatpick.options_now(home, profile, chat_id, bool(peek.get("ultracode")), record)
     if reach:   # (the front end takes the limit before the stamp: an answer read for another limit isn't taken)
         result.update(limit=limit, reach=reach, reached=so_far.get("reached"))
+    if gone is not None:
+        if not gone.prompt and so_far.get("start"):   # (your message further back than what was read: a long turn's)
+            before = turns.turn_before(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")
+            if before:
+                gone.before(*before)
+        # (what it waits for: a question its turn ended with; a prompt it waits on, the front ends know
+        # from its row's state, as their ask box does: "permission" is any step not done yet)
+        asks = "question" if ends.get("ended") == "asked" else ""
+        result["away"] = gone.result(int(time.time() * 1000), so_far.get("whole", True), asks)
     if suggest:
         import replies
         ended = ends.get("ended")
@@ -2608,7 +2647,8 @@ def main(argv=None):
         if args[i] == "--host" and i + 1 < len(args):
             host, i = args[i + 1], i + 2
             continue
-        if args[i] == "--wait" and i + 1 < len(args):  # (not over ssh: a host's chat is looked at again instead)
+        # (--wait: not over ssh, a host's chat is looked at again instead; --seen: kept here)
+        if args[i] in ("--wait", "--seen") and i + 1 < len(args):
             i += 2
             continue
         if args[i] not in ("--remote", "--pretty"):
@@ -2624,6 +2664,7 @@ def main(argv=None):
     osd, suggest, no_copy, keep_copy, as_file, made_path, step = False, False, False, False, False, None, None
     cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
     mark_kind, mark_at, reach = "", 0, None   # (--bookmark's --kind and --at; --conversation's --reach)
+    seen, away, since = 0, False, None   # (--conversation's --seen MS, --away and, on a host, --since)
     while args:
         arg = args.pop(0)
         if arg in actions and args and action is None:
@@ -2685,6 +2726,12 @@ def main(argv=None):
             mark_at = int(args.pop(0))
         elif arg == "--reach" and args:
             reach = args.pop(0)
+        elif arg == "--since" and args and args[0].isdigit():
+            since = int(args.pop(0))
+        elif arg == "--seen" and args and args[0].isdigit():
+            seen = int(args.pop(0))
+        elif arg == "--away":
+            away = True
         elif arg == "--wait" and args:
             try:
                 wait = max(0.0, float(args.pop(0)))
@@ -2753,6 +2800,10 @@ def main(argv=None):
             if hook_kind and source is None:
                 path = Path(__file__).resolve().parent / HOOKS[hook_kind]["source"]
                 rest += ["--hook-source", base64.b64encode(path.read_bytes()).decode()]
+            if action == "--conversation" and away and since is None:   # (how far a window here last showed it)
+                rest += ["--since", str(cs.seen_mark(cache_root, target, host))]
+            if action == "--conversation" and seen:   # (the host's times, kept here)
+                cs.mark_seen(cache_root, target, host, seen)
             answer = forward(host, rest, action)
             if action == "--review" and answer.get("ok"):
                 answer["reviewedAt"] = cs.load_reviewed(cache_root).get(cs.review_key(target, host))
@@ -2770,8 +2821,13 @@ def main(argv=None):
             return emit(answer)
         if action == "--conversation":
             # (pasted pictures saved for the thumbnails: not on an SSH host, where the pane doesn't look)
+            if away and since is None and not remote:
+                since = cs.seen_mark(cache_root, target)
+            if seen and not remote:   # (before the read: its wait can be long; a host's: kept by the computer asking)
+                cs.mark_seen(cache_root, target, "", seen)
             result = chat_conversation(home, config_dirs, target, profile, limit, stamp, wait,
-                                       None if remote else cs.images_dir(home), suggest, reach)
+                                       None if remote else cs.images_dir(home), suggest, reach,
+                                       (since or 0) if away else None)
             if not remote and result.get("ok") and not result.get("unchanged"):   # (a host's: kept here, above)
                 cs.bookmarks_answer(result, cache_root, target)
         elif action == "--send":

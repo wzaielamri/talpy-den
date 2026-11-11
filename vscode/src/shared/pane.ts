@@ -147,6 +147,63 @@ export interface Conversation {
   limit?: number;
   reach?: string;
   reached?: "here" | "far" | "gone";
+  // (--away: the first read of a window that shows the chat, again or for the first time) what it did
+  // since a Talpy Chat window last showed it, or since your last message; null: nothing to tell
+  away?: Away | null;
+}
+
+// Since you last looked (pane.py --conversation --away: turns.Away; Plasma AwayLine.qml: the same words
+// and rules): one line over the bottom of the conversation when its window shows a chat that went on
+// without you. A click goes to where you left; scrolling, sending or × closes it
+export interface Away {
+  from: "seen" | "you";   // since a Talpy Chat window last showed it, or since your last message (later)
+  since: number;          // ms, on the clock of the computer the chat runs on
+  key: string;            // Claude's first reply since: where you left, on the Chat tab ("": none yet)
+  stepKey: string;        // the first item since, on Steps
+  steps: number;
+  replies: number;
+  files: string[];        // the newest few it changed, relative to the chat's folder
+  fileCount: number;
+  test: { command: string; ok: boolean } | null;   // its newest test run since
+  asks: "question" | "";  // the question its turn ended with (a prompt it waits on: its row's state, awayParts)
+  partial: boolean;       // what was read starts after then: the counts are "at least" (12+ steps)
+}
+export function awayHead(a: Away): string {
+  return a.from === "seen" ? "Since you last looked" : "Since your last message";
+}
+// (waiting: it waits on a prompt now, as its row says: the ask box shows)
+export function awayParts(a: Away, waiting = false): string[] {
+  const plus = a.partial ? "+" : "";
+  const count = (n: number, one: string, many: string) => `${n}${plus} ${n === 1 && !plus ? one : many}`;
+  const parts: string[] = [];
+  if (a.steps) parts.push(count(a.steps, "step", "steps"));
+  else if (a.replies) parts.push(count(a.replies, "reply", "replies"));
+  if (a.fileCount) parts.push(count(a.fileCount, "file changed", "files changed"));
+  if (a.test) parts.push(a.test.ok ? "tests passed" : "tests failed");
+  if (waiting) parts.push("it waits for your answer");
+  else if (a.asks === "question") parts.push("it asks you something");
+  return parts;
+}
+// (when: the time it's since, as a message's time shows: timeText)
+export function awayTip(a: Away, when: string): string {
+  const lines = [a.from === "seen" ? `Since a Talpy Chat window last showed this chat, at ${when}` : `Since your last message, at ${when}`];
+  if (a.fileCount) {
+    lines.push("", "Files changed:", ...a.files.map((f) => `  ${f}`));
+    if (a.fileCount > a.files.length) lines.push(`  and ${a.fileCount - a.files.length} more`);
+  }
+  if (a.test) lines.push("", `Tests ${a.test.ok ? "passed" : "failed"}: ${a.test.command}`);
+  lines.push("", "Click to go to where you left. Scrolling or × closes it.");
+  return lines.join("\n");
+}
+// Where a click goes: Claude's first reply since (the Chat tab), the first step or reply since (Steps)
+export function awayTarget(a: Away, steps: boolean): string {
+  return steps ? a.stepKey || a.key : a.key;
+}
+// The newest item time a window shows of a chat (pane.py --seen: how far a window showed it)
+export function shownUpTo(items: readonly { at?: number }[] | undefined, was: number): number {
+  let up = was;
+  for (const it of items ?? []) if (typeof it.at === "number" && it.at > up) up = it.at;
+  return up;
 }
 
 // One file a chat changed (pane.py: chat_review)
@@ -274,6 +331,7 @@ export function whereTag(where: ChatWhere, terminalApp = "", account = ""): { ta
 export type PaneHostMessage =
   | { type: "chat"; chat: PaneChat }
   | { type: "conversation"; answer: Conversation }
+  | { type: "away"; away: Away | null } // since you last looked: the answer of the read that asked (--away)
   | { type: "review"; answer: ReviewAnswer | null; error: string }
   // ask: its terminal takes no text: choose; id: the message it's for (send); went: it went into the chat
   // itself (typed in, or on in the background: not VS Code's input or the clipboard)

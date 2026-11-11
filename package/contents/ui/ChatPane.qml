@@ -674,6 +674,10 @@ Window {
         items.clear()
         seenKeys = null
         unseen = 0
+        away = null
+        awayNext = true
+        awayAsking = false
+        shownUpTo = 0
         stamp = ""
         limit = 120
         more = false
@@ -859,10 +863,11 @@ Window {
         }
         loading = true
         loadingSince = Date.now()
+        awayAsking = awayNext
         // (a bookmark further back than what's shown: read as far back as its message, Bookmarks.qml reach)
         run("conversation", "--conversation " + root.shellQuote(chatId) + " --limit " + limit
             + (reachKey !== "" ? " --reach " + root.shellQuote(reachKey) : stamp ? " --if-changed " + root.shellQuote(stamp) : "")
-            + (suggestOn ? " --suggest" : "") + paneArgs())
+            + (suggestOn ? " --suggest" : "") + seenArg() + (awayAsking ? " --away" : "") + paneArgs())
     }
 
     // Live (hub/Hub.qml): with the live hook, the conversation is read the
@@ -878,6 +883,10 @@ Window {
             paneKeys.active = true   // (its keys: made once it shows)
         if (shown)
             newDay()
+        if (shown)
+            awayNext = true   // (shown again: what it did meanwhile)
+        else
+            away = null
         if (shown && loaded)
             load()
     }
@@ -897,7 +906,7 @@ Window {
     // and runs again), so your message and what Claude writes show at once,
     // not at the next look. Not for an SSH host's (a look every 5 s, and
     // often just after you sent something, chase)
-    readonly property bool watching: shown && !host && chatId !== "" && loaded && stamp !== "" && watchFailures < 3
+    readonly property bool watching: shown && !host && chatId !== "" && loaded && stamp !== "" && watchFailures < 3 && !awayNext
     // (an SSH host's or a container's chat: its host's watcher answers, root.watchedHosts)
     readonly property bool hostWatched: !!host && !!root.watchedHosts[host] && Hub.watching(host)
     readonly property string hostTrouble: host && root.watchedHosts[host] ? Hub.watchTrouble[host] || "" : ""
@@ -912,7 +921,7 @@ Window {
         if (!watching || watchRetry.running)
             return
         const line = "python3 -I " + root.shellQuote(root.codeDir + "pane.py") + " --conversation " + root.shellQuote(chatId)
-                     + " --limit " + limit + " --if-changed " + root.shellQuote(stamp) + " --wait 50" + (suggestOn ? " --suggest" : "") + paneArgs()
+                     + " --limit " + limit + " --if-changed " + root.shellQuote(stamp) + " --wait 50" + (suggestOn ? " --suggest" : "") + seenArg() + paneArgs()
         if (line === watchLine && Date.now() - watchStartedAt < watcher.staleMs)
             return
         watchLine = line
@@ -993,6 +1002,11 @@ Window {
         stamp = result.stamp || ""
         more = !!result.more
         lastItems = result.items || []
+        let upTo = shownUpTo   // (how far it shows the chat: the next read's --seen)
+        for (const it of lastItems)
+            if (it.at > upTo)
+                upTo = it.at
+        shownUpTo = upTo
         if (firstRead === null && lastItems.length) {
             let last = ""
             for (let i = lastItems.length - 1; i >= 0 && last === ""; i--)
@@ -1168,6 +1182,31 @@ Window {
     // the keys there when you left the end, till you're back at it (VS Code shared/pane.ts newBelow)
     property var seenKeys: null
     property int unseen: 0
+
+    // Since you last looked (A9): what the chat did since a Talpy Chat window last showed it, or since
+    // your last message (pane.py --away: turns.Away), one line over the list's bottom (AwayLine.qml:
+    // made only then) when the window shows it, at first or again. pane.py keeps how far a window
+    // showed each chat (--seen: the newest item time it took, with each read, before its wait); the
+    // watcher waits for the --away read (one before it would move what it's asked against). A click
+    // goes to where you left; scrolling, sending or × closes it (VS Code shared/pane.ts Away)
+    property var away: null
+    property bool awayNext: true     // (the next read asks: the window's first, or its first once shown again)
+    property bool awayAsking: false  // (the read on its way asks)
+    property real shownUpTo: 0
+    function seenArg() {
+        return shownUpTo > 0 ? " --seen " + Math.round(shownUpTo) : ""
+    }
+    function goAway() {   // (to where you left: on Steps, the first step since; read further back first, as a bookmark)
+        const key = away ? (listTab === "steps" ? away.stepKey || away.key : away.key) : ""
+        away = null
+        if (!key)
+            return
+        const here = shownList.some(it => String(it.key) === key)
+        if (here)
+            bookmarksNow().jump(key, false)
+        else if (more)
+            bookmarksNow().reach(key, false)
+    }
     readonly property bool atEnd: list.originY + list.contentHeight - list.contentY - list.height < Kirigami.Units.gridUnit * 2
     onAtEndChanged: {
         if (atEnd) {
@@ -1757,6 +1796,12 @@ Window {
         }
         if (kind === "conversation") {
             loading = false
+            if (awayAsking && asked.chat === chatId) {   // (asked once: what it did since, or nothing new)
+                awayAsking = false
+                awayNext = false
+                if (result.ok && !result.unchanged)
+                    away = result.away || null
+            }
             if (loadAgain) {
                 loadAgain = false
                 Qt.callLater(load)
@@ -2188,6 +2233,7 @@ Window {
             infoTimer.restart()
             return
         }
+        away = null   // (you're answering: Since you last looked goes)
         // (backing off, as Claude Code does with its own suggestions: chips showed this turn, and
         // you sent none of them, typed or clicked; 5 in a row, and none for half an hour)
         if (chipsSeen.length) {
@@ -3247,6 +3293,7 @@ Window {
                     onMovementStarted: {   // (you scroll: it doesn't pull you back)
                         settle.stop()
                         holdTop.stop()
+                        pane.away = null   // (and you read it yourself: Since you last looked goes)
                     }
                     onContentHeightChanged: pane.keepPlace()
                     onHeightChanged: pane.keepPlace()
@@ -3291,6 +3338,7 @@ Window {
                         onWheel: {
                             settle.stop()
                             holdTop.stop()
+                            pane.away = null
                         }
                     }
 
@@ -3943,6 +3991,16 @@ Window {
                 anchors.bottomMargin: Kirigami.Units.largeSpacing
                 active: pane.unseen > 0 && pane.conversationTab
                 source: active ? "NewBelow.qml" : ""
+            }
+            // Since you last looked (AwayLine.qml: made only when there's one): a line under the list, above
+            // what it asks and your reply (not over the list: there it hid the working line); it comes with
+            // the window's first read, before you read, and going it gives the list its room back at the
+            // bottom, so what you read stays where it is
+            Loader {
+                Layout.fillWidth: true
+                active: pane.away !== null && pane.conversationTab
+                visible: active
+                source: active ? "AwayLine.qml" : ""
             }
 
             // What it asks while it waits: Allow once / Always allow / Deny, or its questions
