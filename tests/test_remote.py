@@ -316,6 +316,11 @@ class StatusTests(FakeSSH):
 
     def test_its_chats_go_in_the_jobs_file(self):
         path = Path(os.environ["XDG_RUNTIME_DIR"]) / "talpy-den/jobs.json"
+        # (the check here is for your own home, whatever the account file says it is: in CI's containers
+        # $HOME isn't root's home there, and the file went to the cache folder, as for a sandbox's check)
+        own = mock.patch("pwd.getpwuid", return_value=mock.Mock(pw_dir=str(Path.home())))
+        own.start()
+        self.addCleanup(own.stop)
         self.assertTrue(remote.status("lab", tokens=False)["ok"])
         (job,) = json.loads(path.read_text())["jobs"]
         self.assertEqual({k: job[k] for k in ("name", "state", "host", "where", "folder")},
