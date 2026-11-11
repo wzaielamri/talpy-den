@@ -8,9 +8,11 @@ of your plan is left, and Talpy, a pet who acts it all out.
   chats and Claude Code panels, here, on your SSH hosts and in your Docker,
   Podman or nerdctl containers (also from a Remote-SSH or Dev Containers
   window), with each account's plan usage and where your pace leads.
-- **Act without switching**: click a chat for its tab to follow the
-  conversation, reply, answer its permission prompts and questions, and
-  review or undo what it changed.
+- **Act without switching**: click a chat for **Talpy Chat** to follow the
+  conversation, reply (suggested replies, commands, its own model and
+  effort), answer its permission prompts and questions, stop it, search and
+  bookmark it, see what it did since you last looked, and review or undo
+  what it changed.
 - **Notifications** when a chat needs you or finishes, and one key
   (Ctrl+Alt+Shift+C) for the chat that needs you.
 - **Start chats** in a terminal, a Claude Code panel or the background, with

@@ -25,7 +25,7 @@ And Talpy, a pet that acts out what each chat is doing.
 ## What it does
 
 - **Every chat in one place:** terminal chats, background chats and VS Code's Claude tabs, on this computer, your SSH hosts and your Docker or Podman containers, per Claude account: which need you (and for what), which work (and on what), which are done, and each account's plan usage with where your pace leads.
-- **Act without switching:** jump to a chat's terminal or VS Code tab, or chat with it right from the panel: reply, answer its permission prompts and questions, see what it changed and undo it.
+- **Act without switching:** jump to a chat's terminal or VS Code tab, or chat with it right from the panel in **Talpy Chat**: reply (suggested replies, commands, its own model and effort), answer its permission prompts and questions, stop it, search and bookmark it, see what it did since you last looked and what it changed, and undo it; here, on your SSH hosts and in containers.
 - **Start chats** in a terminal, in VS Code or in the background, with a task, later, or once a usage limit resets; a chat a limit stopped can keep going by itself.
 - **Find and reuse:** any chat by its words, recent chats, plans and memories; continue a chat on another account when one hits its limit; hide what you don't need, or delete it to the Trash.
 - **Recap and Permissions:** your day, week or everything with Claude (time, tokens, what it would cost at API prices, what would use less of your plan), and every permission you gave, to revoke.
