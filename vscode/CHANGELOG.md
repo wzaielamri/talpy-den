@@ -272,6 +272,9 @@
   tab to one stopped chat at once wakes it once (no copy of the chat).
 
 ### Fixed
+- **An either/or question's first chip is its choice:** *Should the next
+  file be named alpha.txt or beta.txt?* gave *Should the next file be named
+  alpha.txt* and *Beta.txt*; now *Alpha.txt* and *Beta.txt*.
 - **Messages sent from the Claude Code panel show in Talpy Chat:** the panel
   puts a note in front of what you type (the file open in the editor, the
   lines selected there), and a message that started with one was left out:

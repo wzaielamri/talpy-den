@@ -2544,6 +2544,12 @@ class AsksTests(unittest.TestCase):
                          ("either", [("Run the screening first", "Run the screening first", False),
                                      ("Start the rename on a branch", "Start the rename on a branch", False)]))
         self.assertEqual(chips(replies.asks_of("Soll ich zuerst testen oder gleich mergen?"))[1][1][0], "Gleich mergen")
+        # the question's start that no either/or start takes isn't part of the first half (seen live, 2.1.322)
+        self.assertEqual(chips(replies.asks_of("Should the next file be named alpha.txt or beta.txt?")),
+                         ("either", [("Alpha.txt", "Alpha.txt", False), ("Beta.txt", "Beta.txt", False)]))
+        self.assertEqual([c[0] for c in chips(replies.asks_of("Do the tests pass or fail?"))[1]], ["Pass", "Fail"])
+        self.assertEqual([c[0] for c in chips(replies.asks_of("Should we keep the old parser or rewrite it?"))[1]],
+                         ["Keep the old parser", "Rewrite it"])   # (taken by its either/or start: as it was)
         # "or not" isn't a choice
         self.assertEqual(chips(replies.asks_of("Should I keep it or not?"))[0], "yesno")
 

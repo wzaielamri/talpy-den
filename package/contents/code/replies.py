@@ -296,6 +296,10 @@ def asks_of(reply):
         if len(left.split()) > ASK_HALF_WORDS:
             left = re.split(r",\s*", left)[-1]
         left, right = left.strip(" ,."), QMARK.sub("", q[at.end():]).strip(" ,.")
+        # (the question's own start still there, as no either/or start took it: "Should the next file be named
+        # alpha.txt or beta.txt?": the first half is as long as the second, at its end)
+        if any(verb.match(left.lower()) for _, verb in rules["verbs"]) and len(left.split()) > len(right.split()):
+            left = " ".join(left.split()[-len(right.split()):])
         if not (1 <= len(left.split()) <= ASK_HALF_WORDS and 1 <= len(right.split()) <= ASK_HALF_WORDS):
             return None   # (a long either/or)
         return {"kind": "either", "choices": [chip(short_label(first_up(half)), first_up(half)) for half in (left, right)]}
