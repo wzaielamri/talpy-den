@@ -208,6 +208,12 @@ ColumnLayout {
                             else
                                 Qt.openUrlExternally(link)
                         }
+
+                        // (a selection draws a plan with tables whole: WholeRedraw.qml)
+                        WholeRedraw {
+                            edit: madeText
+                            base: Kirigami.Theme.focusColor
+                        }
                     }
                 }
             }

@@ -1629,6 +1629,31 @@ class ThemeTests(unittest.TestCase):
             self.assertIsNone(re.search(r"Theme\.highlightColor", p.read_text()), p.name)
 
 
+class WholeRedrawTests(unittest.TestCase):
+    # Qt 6.11 draws a table's text once more, over itself, whenever part of a
+    # rich text is drawn again (it looks bold): WholeRedraw.qml has the whole
+    # text drawn instead.
+
+    def test_it_hears_every_redraw_of_a_selection(self):
+        # Qt redraws a selection on every move of a drag and on the release,
+        # changed or not: selectionStart and selectionEnd say nothing then, and
+        # a table got bolder with each move. These two come every time.
+        qml = (ROOT / "ui/WholeRedraw.qml").read_text()
+        code = "\n".join(line for line in qml.splitlines() if not line.lstrip().startswith("//"))
+        self.assertIn("function onSelectedTextChanged()", code)
+        self.assertIn("function onCursorPositionChanged()", code)
+        self.assertNotIn("onSelectionStartChanged", code)
+        self.assertNotIn("onSelectionEndChanged", code)
+
+    def test_every_markdown_text_you_can_select_in_has_it(self):
+        # (markdown.mjs writes tables, code blocks and quotes as tables)
+        for p in sorted((ROOT / "ui").glob("*.qml")):
+            qml = p.read_text()
+            shown = len(re.findall(r"^\s*text: .*Md\.toHtml\(", qml, re.M))
+            if shown:
+                self.assertEqual(len(re.findall(r"^\s*WholeRedraw \{", qml, re.M)), shown, p.name)
+
+
 class PetEventTests(unittest.TestCase):
     def test_every_pet_event_passes_kind_text_and_key(self):
         # petEvent(kind, text, key) called with two arguments throws "Insufficient
