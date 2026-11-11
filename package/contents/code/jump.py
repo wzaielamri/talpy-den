@@ -55,7 +55,9 @@ Sharing is done by sharing.py; a chat that's open in a session isn't touched
 (it can be open in one at a time).
 
 `--stop` runs `claude stop <id>` for a background session: it's interrupted,
-its conversation is kept, and `claude attach <id>` resumes it. A chat in a
+its conversation is kept, and `claude attach <id>` resumes it (one whose job
+Claude Code has lost, its record gone while it runs on, has its process
+ended instead: talpy_den.lost_background). A chat in a
 terminal or in VS Code is stopped too (talpy_den.stop_chat): Claude quits,
 its terminal stays open (VS Code's tab goes on with the next message), and
 `claude --resume <id>` reopens it; only an idle one unless --busy (you were

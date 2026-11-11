@@ -590,6 +590,37 @@ class ChatStopTests(Fixture):
         self.assertTrue(cs.stop_chat_by_id(self.home, [], "dialog-open")[0])
         self.assertEqual(proc.wait(timeout=5), -15)
 
+    def stop_background(self, sid, stderr):
+        """jump.stop on a background chat, with a claude stop that fails saying stderr: (result, its words)."""
+        calls = []
+
+        def run(args, **kw):
+            calls.append(args[1:])
+            return type("R", (), {"returncode": 1, "stdout": "", "stderr": stderr})()
+
+        with Patch(shutil=type("W", (), {"which": staticmethod(lambda n: "/usr/bin/" + n)})), \
+                mock.patch.object(subprocess, "run", run):
+            return jump.stop(self.home, [], sid), calls
+
+    def test_background_chat_claude_lost_is_ended(self):
+        # Claude Code lost the job (its jobs/<id> record deleted with the chat's files) while its
+        # process runs on: claude stop can't find it, so the process is ended as a terminal chat's
+        proc = self.chat("lost", kind="bg", jobId="lostjob1")
+        result, calls = self.stop_background(
+            "lost", "No job matching 'lostjob1'. Run 'claude agents' to list running sessions.\n")
+        self.assertEqual(calls, [["stop", "lostjob1"]])   # Claude's own stop first
+        self.assertEqual(result, (True, "Stopped: Claude Code had lost track of this background chat, "
+                                        "so its process was ended"))
+        self.assertEqual(proc.wait(timeout=5), -15)
+
+    def test_background_chat_claude_still_has_is_left_to_claude(self):
+        # its job record there: claude stop's error is said and the process left alone
+        proc = self.chat("kept", kind="bg", jobId="keptjob1")
+        write(self.home / ".claude-work/jobs/keptjob1/state.json", {"state": "working"})
+        result, _ = self.stop_background("kept", "Background service not running.\n")
+        self.assertEqual(result, (False, "Background service not running."))
+        self.assertIsNone(proc.poll())
+
     def test_one_that_hangs_on_is_killed(self):
         proc = self.chat("stuck", "import signal; signal.signal(signal.SIGTERM, signal.SIG_IGN)")
         ok, message = cs.stop_chat_by_id(self.home, [], "stuck", wait=0.5)

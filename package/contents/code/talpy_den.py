@@ -7981,10 +7981,19 @@ def stop_chat(entry, busy_ok=False, wait=END_WAIT):
     state = session_state(entry)
     if not busy_ok and state != "idle":
         return False, ("It's working again" if state == "working" else "It's waiting for you now") + ", so it wasn't stopped"
+    sig = signal.SIGINT if entry.get("entrypoint") == "claude-vscode" else signal.SIGTERM
+    return end_process(entry, sig, wait, "Stopped; the chat is kept",
+                       f"It hadn't quit after {wait} s, so it was killed; the chat is kept")
+
+
+def end_process(entry, sig, wait, stopped, killed_words):
+    """End a session's process: sig, a kill if it hasn't quit after wait
+    seconds, then the commands it leaves behind. (ok, message): stopped or
+    killed_words, and the commands ended."""
+    import signal
     if process_gone(entry):
         return True, "It had quit already"
     tree = process_tree(entry["pid"])
-    sig = signal.SIGINT if entry.get("entrypoint") == "claude-vscode" else signal.SIGTERM
     try:
         os.kill(entry["pid"], sig)
     except ProcessLookupError:
@@ -8001,8 +8010,7 @@ def stop_chat(entry, busy_ok=False, wait=END_WAIT):
         except OSError:
             pass
     leftovers = end_leftovers(tree)
-    message = (f"It hadn't quit after {wait} s, so it was killed; the chat is kept" if killed
-               else "Stopped; the chat is kept")
+    message = killed_words if killed else stopped
     if leftovers:
         message += f" (and {leftovers} command{'s' if leftovers > 1 else ''} it was running ended)"
     return True, message
@@ -8650,8 +8658,29 @@ def stop_background(profile, job_id, job=None, home=None, claude=None):
         return False, f"claude stop didn't finish: {exc}"
     lines = [l.strip() for l in (r.stdout + "\n" + r.stderr).splitlines() if l.strip()]
     if r.returncode != 0:
+        lost = lost_background(profile, job_id)
+        if lost is not None:
+            import signal
+            return end_process(lost, signal.SIGTERM, END_WAIT,
+                               "Stopped: Claude Code had lost track of this background chat, so its process was ended",
+                               "Claude Code had lost track of this background chat and its process didn't quit, "
+                               "so it was killed")
         return False, lines[-1] if lines else f"claude stop failed (exit {r.returncode})"
     return True, lines[-1] if lines else "Stopped"
+
+
+def lost_background(profile, job_id):
+    """The live entry of a background session whose job Claude Code has lost
+    (its jobs/<id> record gone, say deleted with the chat's files, while its
+    process runs on: claude stop and claude attach say "No job matching", and
+    `claude agents` doesn't list it), or None."""
+    if read_job([profile], job_id) is not None:
+        return None
+    for entry, _runs_on, _holder in live_entries_all([profile]):
+        if entry.get("jobId") == job_id and entry.get("kind") == "bg" \
+                and not entry.get("spare") and not entry.get("parkedJobId"):
+            return entry
+    return None
 
 
 def end_for_handover(home, profiles, chat_id, claude=None):

@@ -297,6 +297,10 @@
   row, Talpy Chat and a notification).
 - **A chat a usage limit stopped can be hidden:** one whose process is gone
   (*Limit reset · go on*, *Not open*) has **Hide** now.
+- **Stop works on a background chat Claude Code lost track of:** one whose
+  job record is gone (say, deleted with its files) while it still runs said
+  *Couldn't stop the chat: No job matching …*; Talpy Den ends its process
+  now, and the row goes.
 
 ## 1.18.0
 
