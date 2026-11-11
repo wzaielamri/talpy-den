@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1524,6 +1524,23 @@ test("compact now and continue in a new chat: the command, the handoff note once
   assert.equal(handoffNote(items.slice(0, 3), true), null);   // (asked, nothing written)
   assert.equal(handoffNote(items.slice(0, 2), true), null);   // (never asked)
   assert.equal(handoffDraft("fix parser", "Goal: x."), "Continuing from the chat “fix parser”. Its handoff note:\n\nGoal: x.");
+});
+
+// Since you last looked's recap: Claude's own (no request) when written after then, else the /recap you ran
+test("since you last looked: Claude's recap, its own after then or the /recap you ran from the line", () => {
+  const a: Away = { from: "seen", since: 5000, key: "", stepKey: "", steps: 3, replies: 1, files: [], fileCount: 0, test: null, asks: "", partial: false };
+  const items: PaneItem[] = [
+    { kind: "you", key: "r1", text: "/recap", command: { output: "An old recap." }, at: 1000 },
+    { kind: "claude", key: "m1", text: "Done.", at: 6000 },
+  ];
+  assert.equal(awayRecap(a, null, items, null), "");   // (nothing asked: an old /recap isn't this one)
+  assert.equal(awayRecap(a, { text: "You asked …; next: merge.", at: 7000 }, items, null), "You asked …; next: merge.");
+  assert.equal(awayRecap(a, { text: "Before you left.", at: 4000 }, items, null), "");   // (older than then)
+  const before = new Set(["r1"]);
+  assert.equal(awayRecap(a, null, items, before), "");   // (asked: not in yet)
+  const ran = [...items, { kind: "you" as const, key: "r2", text: "/recap", command: { output: "\x1b[1mThe parser is fixed.\x1b[0m " }, at: 8000 }];
+  assert.equal(awayRecap(a, null, ran, before), "The parser is fixed.");
+  assert.equal(RECAP_BUTTON, "Recap");
 });
 
 // Quote in reply (quote.mjs, Plasma's too): a selection as a Markdown quote at the top of the box

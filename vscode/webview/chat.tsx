@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
@@ -635,6 +635,9 @@ function ChatApp() {
   // it, one line over the list's bottom when the tab shows it again; a click goes to where you left,
   // scrolling, sending or × closes it
   const [away, setAway] = useState<Away | null>(null);
+  // (its Recap: the /recap items there when you clicked, so the one it ran is told apart; Claude's own recap)
+  const [recapBefore, setRecapBefore] = useState<ReadonlySet<string> | null>(null);
+  const [claudeRecap, setClaudeRecap] = useState<{ text: string; at: number } | null>(null);
   // Today, for the lines between days ("Today", "Yesterday"): moved on at midnight, only while
   // the tab shows (one timer, once a day), and when it shows again on another day
   const [today, setToday] = useState(() => Date.now());
@@ -983,6 +986,7 @@ function ChatApp() {
           setLoadError("");
           setTurn({ ended: a.ended ?? null, over: !!a.over, asks: a.asks ?? null, predicted: a.predicted ?? null });
           setSoFar({ context: a.context ?? null, turn: a.turn ?? null });
+          setClaudeRecap(a.recap ?? null);
           if (a.options) setChatOptions(a.options);
           setItems(a.items ?? []);
           setMore(!!a.more);
@@ -1603,6 +1607,14 @@ function ChatApp() {
   };
   // Since you last looked's click: to where you left (on Steps, the first step since), read further back
   // first when it's before what's shown, as a bookmark is gone to
+  // (Recap on the line: Claude's /recap, now or when the turn ends; its answer shows under the line)
+  const askRecap = () => {
+    setRecapBefore(new Set(items.filter((it) => it.kind === "you" && (it.text ?? "").trim() === "/recap").map((it) => String(it.key))));
+    send("auto", chat?.state === "working", "/recap");
+  };
+  useEffect(() => {
+    if (!away) setRecapBefore(null);
+  }, [away]);
   const goAway = () => {
     const key = away ? awayTarget(away, tab === "steps") : "";
     setAway(null);
@@ -2331,10 +2343,19 @@ function ChatApp() {
               <button type="button" class="pane-away-go" title={awayTip(away, timeText(away.since, Date.now()))} onClick={goAway}>
                 <strong>{awayHead(away)}:</strong> {awayParts(away, !!chat?.permission).join(" · ")}
               </button>
+              {!awayRecap(away, claudeRecap, items, recapBefore) ? (
+                <button type="button" class="pane-away-recap" disabled={!!text.trim() || !!recapBefore}
+                  title={text.trim() ? BOX_IN_USE : RECAP_TIP} onClick={askRecap}>
+                  {recapBefore ? "Recapping…" : RECAP_BUTTON}
+                </button>
+              ) : null}
               <button type="button" class="pane-away-x" title="Close" aria-label="Close" onClick={() => setAway(null)}>
                 <Icon name={I.close} />
               </button>
             </div>
+          ) : null}
+          {away && awayRecap(away, claudeRecap, items, recapBefore) ? (
+            <div class="pane-away-recap-text"><strong>{RECAP_HEAD}</strong> {awayRecap(away, claudeRecap, items, recapBefore)}</div>
           ) : null}
           {chat?.permission ? <AskBox ask={chat.permission} onAnswer={answer} busy={answering > 0} pressed={askKey} keyed={keyed}
             onTerminal={chat.where === "background" ? () => post({ type: "openWindow" }) : undefined} /> : null}

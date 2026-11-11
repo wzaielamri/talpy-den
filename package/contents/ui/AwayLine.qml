@@ -47,15 +47,35 @@ Rectangle {
         return out.join("\n")
     }
 
-    implicitHeight: row.implicitHeight + Kirigami.Units.smallSpacing
+    implicitHeight: row.implicitHeight + Kirigami.Units.smallSpacing + (recapLine.visible ? recapLine.implicitHeight + Kirigami.Units.smallSpacing : 0)
     radius: Kirigami.Units.cornerRadius
     color: Qt.rgba(Kirigami.Theme.focusColor.r, Kirigami.Theme.focusColor.g, Kirigami.Theme.focusColor.b, 0.08)
     border.width: 1
     border.color: Kirigami.Theme.focusColor
 
+    // Claude's recap under the line: its own, else what the line's Recap (its /recap) printed
+    PlasmaComponents3.Label {
+        id: recapLine
+        visible: pane.awayRecap !== ""
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: Kirigami.Units.largeSpacing
+        anchors.rightMargin: Kirigami.Units.largeSpacing
+        anchors.bottomMargin: Kirigami.Units.smallSpacing
+        textFormat: Text.StyledText
+        text: "<b>" + i18n("Claude's recap:") + "</b> " + pane.awayRecap.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        wrapMode: Text.Wrap
+        maximumLineCount: 4
+        elide: Text.ElideRight
+        font.pointSize: pane.pt * 0.9
+    }
     RowLayout {
         id: row
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: implicitHeight + Kirigami.Units.smallSpacing
         anchors.leftMargin: Kirigami.Units.largeSpacing
         anchors.rightMargin: Kirigami.Units.smallSpacing * 0.5
         spacing: Kirigami.Units.smallSpacing
@@ -78,6 +98,17 @@ Rectangle {
             }
             PlasmaComponents3.ToolTip.text: line.tip
             PlasmaComponents3.ToolTip.visible: hover.hovered
+            PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+        }
+        PlasmaComponents3.Button {
+            visible: pane.awayRecap === ""
+            enabled: pane.replyText.trim() === "" && pane.recapBefore === null
+            text: pane.recapBefore !== null ? i18n("Recapping…") : i18n("Recap")
+            focusPolicy: Qt.NoFocus
+            onClicked: pane.askRecap()
+            PlasmaComponents3.ToolTip.text: pane.replyText.trim() !== "" ? i18n("Your reply box has text: send it or clear it first.")
+                                            : i18n("Claude's recap of what happened (its /recap): one small request on your plan")
+            PlasmaComponents3.ToolTip.visible: hovered
             PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
         }
         PlasmaComponents3.ToolButton {

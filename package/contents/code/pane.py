@@ -971,6 +971,7 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     turn = so_far["turn"]
     result = {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or cs.chat_folder(path) or "",
               "items": items, "more": more, "stamp": f"{stamp}/{limit}", "mode": peek.get("mode"),
+              "recap": peek.get("recap"),   # (Claude's own recap, written when you came back to it: Since you last looked shows it)
               "permission": cs.pending_permission(path, cwd),
               "context": turns.context_left(turn.usage, turn.model, lambda: turns.status_window(home, profile, chat_id, turn.model),
                                             cs.compact_window(profile.path, turn.model)),

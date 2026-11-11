@@ -2331,6 +2331,18 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Compact now…", pane)
         self.assertIn("Compact now…", chat)
 
+    def test_since_you_last_looked_recap_says_the_same_in_both(self):
+        # Its Recap (Claude's /recap, only on a click) and Claude's recap under the line, in both front ends
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        line = (ROOT / "ui/AwayLine.qml").read_text()
+        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        for words in ("Recap", "Recapping…", "Claude's recap:", "Claude's recap of what happened (its /recap): one small request on your plan"):
+            self.assertIn(words, line + pane)
+            self.assertIn(words, shared + (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text())
+        self.assertIn('sendAsTyped("/recap")', pane)
+        self.assertIn("return claudeRecap && claudeRecap.at > away.since ? claudeRecap.text : \"\"", pane)
+        self.assertIn("return recap && recap.at > a.since ? recap.text : \"\";", shared)
+
     def test_quote_in_reply_is_one_rule_in_both_front_ends(self):
         # Quote in reply: quote.mjs's rules and words in both (vendored to VS Code), the button made only
         # while a selection offers it, the right-click menu's item in both, nothing of it per message

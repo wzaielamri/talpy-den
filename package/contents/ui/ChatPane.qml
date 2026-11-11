@@ -1044,6 +1044,7 @@ Window {
         asks = result.asks || null
         predicted = result.predicted || ""
         contextLeft = result.context || null
+        claudeRecap = result.recap || null
         turnNow = result.turn || null
         if (result.options)
             usesNow = result.options
@@ -1197,6 +1198,31 @@ Window {
     // watcher waits for the --away read (one before it would move what it's asked against). A click
     // goes to where you left; scrolling, sending or × closes it (VS Code shared/pane.ts Away)
     property var away: null
+    // (its Recap: the /recap items there when you clicked, so the one it ran is told apart; Claude's own
+    // recap, written when you came back to its terminal: VS Code shared/pane.ts awayRecap the same)
+    property var recapBefore: null
+    property var claudeRecap: null
+    readonly property string awayRecap: {
+        if (!away)
+            return ""
+        if (recapBefore)
+            for (let i = lastItems.length - 1; i >= 0; i--) {
+                const it = lastItems[i]
+                if (it.kind === "you" && String(it.text || "").trim() === "/recap" && !recapBefore[String(it.key)]
+                        && it.command && it.command.output)
+                    return String(it.command.output).replace(/\x1b\[[0-9;]*m/g, "").trim()
+            }
+        return claudeRecap && claudeRecap.at > away.since ? claudeRecap.text : ""
+    }
+    function askRecap() {
+        const before = {}
+        for (const it of lastItems)
+            if (it.kind === "you" && String(it.text || "").trim() === "/recap")
+                before[String(it.key)] = true
+        recapBefore = before
+        sendAsTyped("/recap")
+    }
+    onAwayChanged: if (!away) recapBefore = null
     property bool awayNext: true     // (the next read asks: the window's first, or its first once shown again)
     property bool awayAsking: false  // (the read on its way asks)
     property real shownUpTo: 0

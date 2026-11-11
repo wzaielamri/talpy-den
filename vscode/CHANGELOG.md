@@ -17,7 +17,8 @@
   conversation (*Since you last looked: 24 steps · 3 files changed · tests
   passed · it asks you something*); its tooltip names the files and the test
   command; a click goes to where you left, and scrolling, sending or × closes
-  it. How far a tab showed each chat is kept in `~/.cache/talpy-den/seen.json`
+  it; **Recap** has Claude sum it up (its `/recap`), shown under the line.
+  How far a tab showed each chat is kept in `~/.cache/talpy-den/seen.json`
   (chat ids and times only).
 - **Your chats' states for other programs:** your chats, here and on
   your SSH hosts and containers, with their states and where each one

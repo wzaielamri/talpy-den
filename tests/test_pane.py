@@ -3200,6 +3200,18 @@ class AwayTests(PaneFixture):
         # without --away: nothing of it is worked out
         self.assertNotIn("away", self.cli("--conversation", SID))
 
+    def test_claudes_own_recap_comes_with_it(self):
+        # (Claude Code writes one when you come back to its terminal: an away_summary system entry; a prompt
+        # or a reply after it makes it old, as the rows' Recap line)
+        t = self.now - 600
+        recap = {"type": "system", "subtype": "away_summary", "timestamp": iso(t + 60),
+                 "content": "You asked to fix the parser; it's fixed and tested. (disable recaps in /config)"}
+        self.chat(*self.work(t), recap)
+        got = self.cli("--conversation", SID)["recap"]
+        self.assertEqual(got, {"text": "You asked to fix the parser; it's fixed and tested.", "at": int((t + 60) * 1000)})
+        self.chat(*self.work(t), recap, dict(prompt("thanks", t + 70, cwd=str(self.folder)), uuid="u9"))
+        self.assertIsNone(self.cli("--conversation", SID)["recap"])
+
     def test_nothing_to_tell(self):
         t = self.now - 600
         # since your last message, Claude's reply alone (or a step or two): that's what the chat shows

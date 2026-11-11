@@ -309,6 +309,8 @@ window.addEventListener("harness-post", (e: Event) => {
   if (m.type === "ready") {
     send({ type: "chat", chat });
     send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1", ...turnEnd, ...marksOf(),
+      // (?recap=1: Claude's own recap, written when you came back: Since you last looked shows it)
+      recap: params.get("recap") === "1" ? { text: "You asked to fix the week numbers in the date parser. It's fixed, the parser tests pass, and the next step is to decide whether to merge.", at: now } : null,
       // (what /model and /effort's lists mark: ?ultracode for a chat with it on)
       options: { model: "claude-opus-5-5", effort: params.has("ultracode") ? "xhigh" : "high", ultracode: params.has("ultracode"), next: false } } });
     if (fresh === "task") setTimeout(() => send({ type: "startWith", text: "Fix the flaky date test in tests/parser.test.ts" }), 100);

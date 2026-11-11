@@ -150,6 +150,7 @@ export interface Conversation {
   // (--away: the first read of a window that shows the chat, again or for the first time) what it did
   // since a Talpy Chat window last showed it, or since your last message; null: nothing to tell
   away?: Away | null;
+  recap?: { text: string; at: number } | null; // Claude's own recap, written when you came back to its terminal (none after it)
 }
 
 // Since you last looked (pane.py --conversation --away: turns.Away; Plasma AwayLine.qml: the same words
@@ -194,6 +195,22 @@ export function awayTip(a: Away, when: string): string {
   if (a.test) lines.push("", `Tests ${a.test.ok ? "passed" : "failed"}: ${a.test.command}`);
   lines.push("", "Click to go to where you left. Scrolling or × closes it.");
   return lines.join("\n");
+}
+// Claude's recap on the line (Plasma AwayLine.qml the same): its own, written when you came back to its
+// terminal after then (no request), else what a /recap you ran from the line's Recap printed (the newest
+// /recap not there when you clicked: before)
+export const RECAP_BUTTON = "Recap";
+export const RECAP_TIP = "Claude's recap of what happened (its /recap): one small request on your plan";
+export const RECAP_HEAD = "Claude's recap:";
+export function awayRecap(a: Away, recap: { text: string; at: number } | null | undefined, items: readonly PaneItem[],
+                          before: ReadonlySet<string> | null): string {
+  if (before)
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.kind === "you" && (it.text ?? "").trim() === "/recap" && !before.has(String(it.key)) && it.command?.output)
+        return it.command.output.replace(/\x1b\[[0-9;]*m/g, "").trim();
+    }
+  return recap && recap.at > a.since ? recap.text : "";
 }
 // Where a click goes: Claude's first reply since (the Chat tab), the first step or reply since (Steps)
 export function awayTarget(a: Away, steps: boolean): string {

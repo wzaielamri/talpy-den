@@ -5671,3 +5671,29 @@ body.vscode-high-contrast-light .pane {
 .pane-quote-btn:hover {
   background: var(--vscode-button-hoverBackground, #1177bb);
 }
+
+/* Since you last looked's Recap (Claude's /recap) and the recap under the line */
+.pane-away-recap {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--vscode-button-secondaryBackground, var(--cs-border));
+  border-radius: 3px;
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, inherit);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pane-away-recap:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pane-away-recap-text {
+  flex: none;
+  margin-top: 2px;
+  padding: 3px 10px;
+  border-left: 2px solid var(--vscode-focusBorder, #007fd4);
+  font-size: 0.9em;
+  opacity: 0.9;
+}
