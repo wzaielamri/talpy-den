@@ -228,8 +228,13 @@ export enum ViewColumn {
   Active = -1,
 }
 
-// (one that has a secondary side bar for extensions' views: chatSurface.ts sideBarSupported)
-export const version = "1.110.0";
+// The oldest VS Code the extension runs in, which has no secondary side bar for extensions' views: a chat
+// opens in a tab of its own, as every test of a chat's tab has it. setVersion: a later one (the side bar's
+// view: chatSurface.ts sideBarSupported)
+export let version = "1.90.0";
+export function setVersion(v: string): void {
+  version = v;
+}
 
 export enum ConfigurationTarget {
   Global = 1,

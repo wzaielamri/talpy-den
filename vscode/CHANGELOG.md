@@ -33,7 +33,7 @@
   as a `data:` URL the tab's content policy already allows (an SVG as a
   picture: no script runs); an SSH host's file is fetched then too.
 - **Talpy Chat on SSH hosts and containers:** New Chat… on a host or a
-  container whose last check answered has *In a Talpy Chat tab* with its own
+  container whose last check answered has *In Talpy Chat* with its own
   folders: the chat starts in the background there and its tab goes on with
   it; recent chats there reopen in Talpy Chat; a background chat there no
   terminal shows opens in its tab. What it asks is answered there: Talpy Den
@@ -152,7 +152,7 @@
   (`talpyDen.reopenIn`: `talpyChat`; the default stays `terminal`). A chat
   that isn't running opens in its Talpy Chat tab, where your next message
   goes on with it in the background, and a background chat no terminal
-  shows opens there too. *New Chat…* lists *In a Talpy Chat tab* first: an
+  shows opens there too. *New Chat…* lists *In Talpy Chat* first: an
   empty tab for that account and folder with a ⚙ line (model, effort,
   permission mode), and your first message starts the chat in the
   background, shown at once with *Starting…*; a task goes as its first
@@ -177,13 +177,14 @@
   act on that host (reopen, star, move, hide, delete); *New chat here* starts
   on it, with the command its read sent; a plan drags only onto a project of
   its own machine; the eye button next to its name shows what you hid there.
-- **Talpy Chat in the side bar:** set `talpyDen.chatPlace` to `sideBar` and
-  chats open in Talpy Chat's view in the secondary side bar, beside Claude
-  Code's and Copilot's chats, where no file opens over them: one chat at a
-  time, the next one you open takes its place. Its keys work while the view
-  has the focus (VS Code 1.106 or later; the default stays a tab each).
-- **A new folder opens in Talpy Chat:** *Choose folder…* under *In a Talpy
-  Chat tab* opened a terminal for every folder Claude didn't know yet. Now
+- **Talpy Chat in the side bar:** chats open in Talpy Chat's view in the
+  secondary side bar now, beside Claude Code's and Copilot's chats, where no
+  file opens over them: one chat at a time, the next one you open takes its
+  place. Its keys work while the view has the focus. Set
+  `talpyDen.chatPlace` to `tab` for an editor tab for each chat, as it was
+  (a VS Code older than 1.106 has no such bar for extensions: tabs there).
+- **A new folder opens in Talpy Chat:** *Choose folder…* under *In Talpy
+  Chat* opened a terminal for every folder Claude didn't know yet. Now
   you're asked whether you trust it, in the words of Claude's own question:
   **Trust It, Open in Talpy Chat** keeps your yes where Claude keeps it (the
   Permissions tab lists the folder, with **Revoke**), **Open in a Terminal**

@@ -560,25 +560,25 @@
         "command": "talpyDen.chat.toggleBookmark",
         "key": "ctrl+d",
         "mac": "cmd+d",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.bookmarks",
         "key": "ctrl+shift+b",
         "mac": "cmd+shift+b",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.previousBookmark",
         "key": "alt+up",
         "mac": "alt+up",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.nextBookmark",
         "key": "alt+down",
         "mac": "alt+down",
-        "when": "activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus"
+        "when": "(activeWebviewPanelId == 'talpyDen.chat' && editorAreaFocus) || focusedView == 'talpyDen.chatView'"
       },
       {
         "command": "talpyDen.chat.openWindow",
@@ -788,19 +788,19 @@
         },
         {
           "command": "talpyDen.chat.toggleBookmark",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.bookmarks",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.previousBookmark",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.nextBookmark",
-          "when": "activeWebviewPanelId == 'talpyDen.chat'"
+          "when": "activeWebviewPanelId == 'talpyDen.chat' || view.talpyDen.chatView.visible"
         },
         {
           "command": "talpyDen.chat.openWindow",
@@ -908,21 +908,21 @@
             "talpyDen.clickOpensPane": {
               "type": "boolean",
               "default": true,
-              "markdownDescription": "A click on a chat opens it in Talpy Chat, an editor tab: its conversation as it goes, a box to reply, what it asks for (Allow / Deny), and what it changed (Undo, Commit, Mark reviewed). Off: a click opens the chat itself, as `#talpyDen.openIn#` says (the tab is then a button beside it).",
+              "markdownDescription": "A click on a chat opens it in Talpy Chat (its view in the side bar, or an editor tab: `#talpyDen.chatPlace#`): its conversation as it goes, a box to reply, what it asks for (Allow / Deny), and what it changed (Undo, Commit, Mark reviewed). Off: a click opens the chat itself, as `#talpyDen.openIn#` says (the tab is then a button beside it).",
               "order": 3
             },
             "talpyDen.chatPlace": {
               "type": "string",
               "enum": [
-                "tab",
-                "sideBar"
+                "sideBar",
+                "tab"
               ],
               "enumDescriptions": [
-                "Each chat in an editor tab of its own.",
-                "In Talpy Chat's view in the secondary side bar, beside Claude Code's and Copilot's chats, where no file opens over it: one chat at a time, the next one you open takes its place (VS Code 1.106 or later; an older one opens tabs)."
+                "In Talpy Chat's view in the secondary side bar, beside Claude Code's and Copilot's chats, where no file opens over it: one chat at a time, the next one you open takes its place (VS Code 1.106 or later; an older one opens tabs).",
+                "Each chat in an editor tab of its own."
               ],
-              "default": "tab",
-              "markdownDescription": "Where Talpy Chat shows a chat: in an editor **tab** of its own, or in its view in the secondary **side bar** (one chat at a time). You can drag that view to another place, as any view.",
+              "default": "sideBar",
+              "markdownDescription": "Where Talpy Chat shows a chat: in its view in the secondary **side bar**, beside Claude Code's and Copilot's chats (one chat at a time), or in an editor **tab** of its own for each chat. You can drag that view to another place, as any view.",
               "order": 3
             },
             "talpyDen.newChatModel": {

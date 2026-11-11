@@ -408,9 +408,10 @@ export class ChatPanes implements vscode.Disposable {
 
   // ---------------------------------------------------------------- Talpy Chat in the side bar
   //
-  // talpyDen.chatPlace "sideBar": a chat opens in Talpy Chat's view in the secondary side bar, beside
-  // Claude Code's and Copilot's chats, where no file opens over it, instead of an editor tab: one chat
-  // at a time, the next one opened takes its place (chatSurface.ts: the view as the panel a Pane has).
+  // talpyDen.chatPlace "sideBar" (the default): a chat opens in Talpy Chat's view in the secondary side
+  // bar, beside Claude Code's and Copilot's chats, where no file opens over it, instead of an editor tab
+  // ("tab"): one chat at a time, the next one opened takes its place (chatSurface.ts: the view as the
+  // panel a Pane has).
 
   private sideView: vscode.WebviewView | undefined; // the view, once VS Code made it
   private side: Pane | undefined; // the chat it shows

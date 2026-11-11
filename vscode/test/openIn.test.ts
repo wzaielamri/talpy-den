@@ -172,13 +172,13 @@ test("New Chat… on an SSH host offers Talpy Chat in its folders, or says why n
       workspace.workspaceFolders = undefined;
     }
     const there = shown[0].map((i) => i.label);
-    const first = there.indexOf("In a Talpy Chat tab");
+    const first = there.indexOf("In Talpy Chat");
     assert.deepEqual(there.slice(first + 1, first + 3), ["$(folder) ~/web", "$(folder) ~/app"], "its own folders, the window's first");
     assert.equal(there[first + 3], "In a terminal", "no folder dialog: it can't be browsed");
     answered = false;   // (its last check didn't answer)
     await actions.newChat("build-server", "build-server");
     const labels = shown[1].map((i) => i.label);
-    const at = labels.indexOf("In a Talpy Chat tab");
+    const at = labels.indexOf("In Talpy Chat");
     assert.ok(at >= 0, labels.join(" | "));
     assert.equal(labels[at + 1], "$(info) Talpy Chat: not connected");
     assert.equal(shown[1][at + 2].label, "In a terminal", "only the line");
@@ -186,7 +186,7 @@ test("New Chat… on an SSH host offers Talpy Chat in its folders, or says why n
     await actions.newChat("w");
     const here = shown[2].map((i) => i.label);
     assert.ok(!here.some((l) => l.startsWith("$(info) Talpy Chat")), "offered on this computer");
-    assert.equal(here[here.indexOf("In a Talpy Chat tab") + 1], "$(folder) ~/app");
+    assert.equal(here[here.indexOf("In Talpy Chat") + 1], "$(folder) ~/app");
   } finally {
     window.showQuickPick = pick;
   }

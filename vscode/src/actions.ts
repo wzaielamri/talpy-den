@@ -1057,11 +1057,11 @@ export class Actions {
     // container (a folder Claude doesn't trust yet opens in a terminal: a background chat can't ask;
     // a host's or a container's own folders only)
     if (talpyChatHere(talpyPlace(state, host), host, false)) {
-      items.push({ label: "In a Talpy Chat tab", kind: vscode.QuickPickItemKind.Separator });
+      items.push({ label: "In Talpy Chat", kind: vscode.QuickPickItemKind.Separator });
       for (const f of folders.filter((f) => f.path))
         items.push(f.trusted === false
           ? { label: label(f), description: "in a terminal: Claude doesn't trust it yet", start: "terminal", folder: f }
-          : { label: label(f), description: hasTask ? "in the background, its tab open on it" : "your first message there starts it, in the background",
+          : { label: label(f), description: hasTask ? "in the background, Talpy Chat open on it" : "your first message there starts it, in the background",
               start: "talpy", folder: f });
       if (!host) items.push({ label: "$(folder-opened) Choose folder…", start: "talpy", choose: "dialog" });
       else if (!folders.some((f) => f.path))
@@ -1070,7 +1070,7 @@ export class Actions {
       // Not offered here (not connected, hooks off…): a line in its place says so and why
       const off = talpyChatOff(talpyPlace(state, host), host);
       if (off)
-        items.push({ label: "In a Talpy Chat tab", kind: vscode.QuickPickItemKind.Separator },
+        items.push({ label: "In Talpy Chat", kind: vscode.QuickPickItemKind.Separator },
                    { label: `$(info) Talpy Chat: ${off.title[0].toLowerCase()}${off.title.slice(1)}`, description: off.why });
     }
     if (cli) {

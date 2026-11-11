@@ -29,8 +29,8 @@ export const settings = {
   sshHosts: () => [...new Set((cfg().get<string[]>("sshHosts", []) ?? []).map((h) => String(h).trim()).filter(Boolean))], // (a host twice would be two rows)
   includeCurrentRemote: () => cfg().get<boolean>("includeCurrentRemote", true),
   clickOpensPane: () => cfg().get<boolean>("clickOpensPane", true) !== false,
-  // Where Talpy Chat shows: an editor tab for each chat, or its view in the secondary side bar (one chat at a time)
-  chatPlace: (): "tab" | "sideBar" => (cfg().get<string>("chatPlace", "tab") === "sideBar" ? "sideBar" : "tab"),
+  // Where Talpy Chat shows: its view in the secondary side bar (one chat at a time; the default), or an editor tab for each chat
+  chatPlace: (): "tab" | "sideBar" => (cfg().get<string>("chatPlace", "sideBar") === "tab" ? "tab" : "sideBar"),
   openIn: () => (cfg().get<string>("openIn", "vscode") === "system" ? "system" : "vscode"),
   reopenIn: (): ReopenIn => {
     const v = cfg().get<string>("reopenIn", "terminal");

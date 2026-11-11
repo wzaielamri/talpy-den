@@ -1,6 +1,7 @@
 // Talpy Chat in the secondary side bar, beside Claude Code's and Copilot's
-// chats, where no file opens over it (talpyDen.chatPlace: "sideBar"; VS Code
-// 1.106 and later lets an extension put a view there). The view holds one
+// chats, where no file opens over it (talpyDen.chatPlace: "sideBar", the
+// default; "tab": an editor tab for each chat, as it was. VS Code 1.106 and
+// later lets an extension put a view there: an older one opens tabs). The view holds one
 // chat at a time: the next one opened takes its place. A chat's page is
 // written for an editor tab (a webview panel), so the view is handed to it as
 // one (ViewSurface).
@@ -89,7 +90,7 @@ export function emptyView(view: vscode.WebviewView): void {
 <body>
 <p><strong>No chat here yet.</strong></p>
 <p>Click a chat in Talpy Den's list, or start one with New Chat…: it opens here, one at a time.</p>
-<p>To open chats in editor tabs again, set <em>Talpy Den: Chat Place</em> to <em>tab</em> in the settings.</p>
+<p>For an editor tab for each chat instead, set <em>Talpy Den: Chat Place</em> to <em>tab</em> in the settings.</p>
 </body>
 </html>`;
 }

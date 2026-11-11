@@ -9,7 +9,7 @@ import { ChatPanes } from "../src/chatPane";
 import { emptyView, sideBarSupported, ViewSurface } from "../src/chatSurface";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
-import { changeSettings, overrides, recorded } from "./vscode-stub";
+import { changeSettings, overrides, recorded, setVersion } from "./vscode-stub";
 
 const NOW = 1_800_000_000_000;
 
@@ -81,7 +81,7 @@ test("the view is a chat's place until the chat closes: its name beside the view
   assert.match(view.webview.html, /No chat here yet/);
 });
 
-test("with Chat Place on the side bar a chat opens in Talpy Chat's view, one at a time; else in a tab of its own", async () => {
+test("a chat opens in Talpy Chat's view in the side bar, one at a time; with Chat Place on tab, in a tab of its own", async () => {
   const state = demoState(NOW);
   const rows = state.status!.groups.flatMap((g) => g.sessions);
   const dash = {
@@ -96,16 +96,26 @@ test("with Chat Place on the side bar a chat opens in Talpy Chat's view, one at 
   const tabs = () => recorded.panels.length;
   const before = tabs();
 
-  // (the setting's default: a tab, as it was)
-  panes.open(chatRefOf(rows[0]));
-  assert.equal(tabs(), before + 1);
-
-  overrides.set("chatPlace", "sideBar");
-  changeSettings("talpyDen.chatPlace");
   try {
+    // (a VS Code without that bar: a tab, whatever the setting says)
+    panes.open(chatRefOf(rows[0]));
+    assert.equal(tabs(), before + 1);
+    recorded.panels.at(-1)!.dispose();
+    setVersion("1.110.0");
+    changeSettings("talpyDen.chatPlace");
+
+    // (set to tab: an editor tab for each chat, as it was)
+    overrides.set("chatPlace", "tab");
+    changeSettings("talpyDen.chatPlace");
+    panes.open(chatRefOf(rows[0]));
+    assert.equal(tabs(), before + 2);
+
+    // the setting's default: the side bar
+    overrides.delete("chatPlace");
+    changeSettings("talpyDen.chatPlace");
     // the view isn't made yet: VS Code makes it (its focus command), and the chat shows once it has
     panes.open(chatRefOf(rows[1]));
-    assert.equal(tabs(), before + 1, "no tab for it");
+    assert.equal(tabs(), before + 2, "no tab for it");
     const made = fakeView();
     provider.resolveWebviewView(made.view);
     assert.equal(made.view.description, rows[1].name);
@@ -128,16 +138,17 @@ test("with Chat Place on the side bar a chat opens in Talpy Chat's view, one at 
     assert.equal(made.view.description, rows[2].name);
     assert.equal(made.view.shown, 2);
     panes.open(chatRefOf(rows[2]));
-    assert.deepEqual([made.view.description, made.view.shown, tabs()], [rows[2].name, 3, before + 1]);
+    assert.deepEqual([made.view.description, made.view.shown, tabs()], [rows[2].name, 3, before + 2]);
 
     // back to tabs: the view's chat closes (its view goes), and the next one opens in a tab
-    overrides.delete("chatPlace");
+    overrides.set("chatPlace", "tab");
     changeSettings("talpyDen.chatPlace");
     assert.match(made.view.webview.html, /No chat here yet/);
     panes.open(chatRefOf(rows[2]));
-    assert.equal(tabs(), before + 2);
+    assert.equal(tabs(), before + 3);
   } finally {
     overrides.delete("chatPlace");
+    setVersion("1.90.0");
     side.dispose();
     panes.dispose();
   }
