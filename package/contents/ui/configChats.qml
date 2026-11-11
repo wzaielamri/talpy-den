@@ -179,7 +179,7 @@ ConfigPage {
     }
 
     // Old chats (cleanup.py --status [--days N], --set claude | --set talpy DAYS): who deletes them,
-    // Claude Code's own cleanup or Talpy Den's, which keeps what you starred or bookmarked. One choice for every copy
+    // Claude Code's own cleanup or Talpy Den's, which keeps what you starred. One choice for every copy
     // of the widget and the VS Code extension, in Talpy Den's state folder: it changes at once (not with
     // Apply), and Talpy Den's, or fewer days, only once you saw what its first run deletes
     property var cleanup: null           // cleanup.py --status
@@ -279,7 +279,7 @@ ConfigPage {
 
     function keptText(r) {
         const kept = (r.keptChats || 0) + (r.keptPlans || 0)
-        return kept ? i18np("%1 old starred, bookmarked, open or queued one stays", "%1 old starred, bookmarked, open or queued ones stay", kept) : ""
+        return kept ? i18np("%1 old starred, open or queued one stays", "%1 old starred, open or queued ones stay", kept) : ""
     }
 
     // Each place's last run: "This computer, today 14:02: …", then each SSH host and container
@@ -554,7 +554,7 @@ ConfigPage {
                      : page.cleanup.mode !== "talpy" && !page.cleanupAsking   // (asked: what Talpy Den's does, read first)
                      ? i18n("When it starts, Claude Code deletes every chat, and every plan of an account's plans folder, older than its cleanupPeriodDays (%1): starred or not, for good.",
                             page.cleanup.claudeDays.map(a => i18nc("an account: its days", "%1: %2 days", a.account, a.days)).join(", "))
-                     : i18n("Once a day Talpy Den deletes the chats you haven't used for that long, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred or bookmarked stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code's own cleanup is off on every account, here and on the SSH hosts and containers shown (cleanupPeriodDays 3650); choosing it again puts it back."))
+                     : i18n("Once a day Talpy Den deletes the chats you haven't used for that long, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code's own cleanup is off on every account, here and on the SSH hosts and containers shown (cleanupPeriodDays 3650); choosing it again puts it back."))
                   + (page.cleanup && (page.cleanup.mode === "talpy" || page.cleanupAsking) && (page.cleanup.overrides || []).length
                      ? "\n\n" + i18n("These settings still have Claude Code delete old chats, starred or not, when it runs there: %1. Talpy Den doesn't change them: set their cleanupPeriodDays higher, or take it out, to keep what you starred.",
                                     page.overridesText(page.cleanup.overrides))

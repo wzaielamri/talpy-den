@@ -21,8 +21,9 @@
   Bookmarks, Go to the Previous / Next Bookmark); Ctrl+Shift+B takes the place
   of Run Build Task in a Talpy Chat tab only. Bookmarks are kept in
   `~/.cache/talpy-den/bookmarks` (an SSH host's chat's on this computer too),
-  follow a chat Claude moves to the background, go with a deleted chat and keep
-  a chat from Talpy Den's cleanup of old chats, as a star does.
+  follow a chat Claude moves to the background, and go with a deleted chat,
+  also one Talpy Den's cleanup of old chats deletes (a star keeps a chat from
+  it, a bookmark doesn't).
 - **What Claude made, in Talpy Chat:** a picture, a plan or a page Claude
   wrote, edited or looked at shows under the step that made it (or the reply
   that names it), on both tabs, folded: *icon.svg · 2 KB*, *Plan: …*. A click

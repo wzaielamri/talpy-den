@@ -1591,18 +1591,6 @@ class BookmarkStoreTests(unittest.TestCase):
         self.assertTrue(status["ok"])
         self.assertIn("bookmarks of moved chats: No space left on device", status["errors"])
 
-    def test_bookmarked_chats_are_those_with_a_bookmark(self):
-        self.assertEqual(cs.bookmarked_chats(self.cache), set())
-        self.mark("k1", chat="kept")
-        self.mark("k1", chat="emptied")
-        self.mark("k1", chat="emptied", on=False, now=6000)
-        self.mark("k1", chat="on-host", host="build-box")
-        write(self.cache / "bookmarks" / "broken.json", "{")
-        write(self.cache / "bookmarks" / "notes.txt", "x")
-        self.assertEqual(cs.bookmarked_chats(self.cache), {"kept"})
-        self.assertEqual(cs.bookmarked_chats(self.cache, "build-box"), {"on-host"})
-        self.assertEqual(cs.bookmarked_chats(self.cache, "elsewhere"), set())
-
 
 class SharedChatTests(Fixture):
     """A chat shared across profiles = one transcript hard-linked into each."""

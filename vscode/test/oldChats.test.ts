@@ -11,7 +11,7 @@ test("what a run deletes says each kind once, its size, and plans to the Trash",
   assert.equal(cleanupText({ chats: 3, backgroundChats: 1, files: 12, plans: 1, bytes: 432 * 1024 * 1024 }),
     "3 chats, 1 background chat, 12 other files (432.0 MB), 1 plan to the Trash");
   assert.equal(cleanupText({ plans: 2 }), "2 plans to the Trash");
-  assert.equal(keptText({ keptChats: 1 }), "1 old starred, bookmarked, open or queued one stays");
+  assert.equal(keptText({ keptChats: 1 }), "1 old starred, open or queued one stays");
   assert.equal(keptText({}), "");
   assert.deepEqual([sizeText(500), sizeText(3 * 1024 ** 3)], ["0 KB", "3.0 GB"]);
 });
@@ -54,7 +54,7 @@ test("each place's last run, this computer first, a host out of reach by why", (
       "docker:web": { ok: true, at: 3, mode: "claude", raised: false } },
   })!;
   assert.deepEqual(runsLines(st, when), [
-    "This computer, t1: 1 chat (2 KB); 1 old starred, bookmarked, open or queued one stays",
+    "This computer, t1: 1 chat (2 KB); 1 old starred, open or queued one stays",
     "docker:web, t3: Claude Code's cleanup is back",
     "lab, t2: lab didn't answer",
   ]);

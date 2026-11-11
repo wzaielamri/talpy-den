@@ -10328,16 +10328,6 @@ def forget_bookmarks(cache_root, chat, host=""):
         pass
 
 
-def bookmarked_chats(cache_root, host=""):
-    """The ids of the chats (of this computer, or of host) with a bookmark: for cleanup, which keeps them."""
-    try:
-        names = os.listdir(bookmarks_folder(cache_root, host))
-    except OSError:
-        return set()
-    return {name[:-5] for name in names if name.endswith(".json") and not name.startswith(".")
-            and load_bookmarks(cache_root, name[:-5], host)[0]}
-
-
 def load_dismissed(cache_root):
     """Finished sessions the user removed from the widget's list: {session id: when}."""
     data = read_json(cache_root / "dismissed.json")

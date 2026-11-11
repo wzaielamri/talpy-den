@@ -1009,7 +1009,7 @@
               "enumItemLabels": ["Claude Code's own cleanup", "Talpy Den, keeping what you starred"],
               "markdownEnumDescriptions": [
                 "When it starts, Claude Code deletes every chat, and every plan of an account's plans folder, older than its `cleanupPeriodDays` (30 days unless set): starred or not, for good.",
-                "Once a day Talpy Den deletes the chats you haven't used for **Old Chats Days**, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred or bookmarked stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code's own cleanup is off on every account, here and on the SSH hosts and containers shown (`cleanupPeriodDays` 3650); choosing it again puts it back."
+                "Once a day Talpy Den deletes the chats you haven't used for **Old Chats Days**, with their undo history and files, and finished background chats; old plans go to the Trash. What you starred stays, and so do chats that are open, queued or keep going, and a plan while its chat stays. Meanwhile Claude Code's own cleanup is off on every account, here and on the SSH hosts and containers shown (`cleanupPeriodDays` 3650); choosing it again puts it back."
               ],
               "default": "claude",
               "scope": "application",
