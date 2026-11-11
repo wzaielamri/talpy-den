@@ -332,6 +332,7 @@ export type PaneHostMessage =
   | { type: "chat"; chat: PaneChat }
   | { type: "conversation"; answer: Conversation }
   | { type: "away"; away: Away | null } // since you last looked: the answer of the read that asked (--away)
+  | { type: "prefill"; text: string } // a new chat's box filled in, not sent (Continue in a new chat's note)
   | { type: "review"; answer: ReviewAnswer | null; error: string }
   // ask: its terminal takes no text: choose; id: the message it's for (send); went: it went into the chat
   // itself (typed in, or on in the background: not VS Code's input or the clipboard)
@@ -382,6 +383,7 @@ export type PaneMessage =
   | { type: "commit"; message: string }
   | { type: "reviewed"; on: boolean }
   | { type: "openWindow" }
+  | { type: "handoff"; text: string } // Continue in a new chat: a new chat in its folder, the handoff note in its box
   | { type: "stop" } // Stop on its working line: what Claude does now (stopOf)
   | { type: "chatOptions"; model: string; effort: string; mode: string } // a new chat's ⚙ line (kept for the next new chat)
   | { type: "openPlan" } // the plan it made
@@ -1011,6 +1013,39 @@ export function contextLevel(c: ContextLeft): "high" | "medium" | "low" {
 export function contextHint(c: ContextLeft): string {
   return `${formatTokens(c.used)} of its ${formatTokens(c.window)} tokens of context are used. Claude compacts the chat on its own at about ${formatTokens(c.compactAt)}: it sums up the conversation so far and goes on from that.` +
     (c.near ? " That's soon: run /compact now to say what it keeps, if you'd rather choose." : "");
+}
+
+// The context tag's menu (a click on it; Plasma CompactMenu.qml: the same words): its numbers, Compact
+// now (Claude's /compact, with what it must keep), or when the turn ends while Claude works, and Continue
+// in a new chat (Claude writes a handoff note here, then a new chat in the same folder opens with it in
+// its box: sent only by you)
+export const HANDOFF_PROMPT = "Write a handoff note for a new chat that will take over this work: what we're trying to do, " +
+  "what's done, what's left, the files and decisions that matter, and anything to watch out for. Reply with the note alone.";
+export const COMPACT_KEEP = "What it must keep (optional)";
+export const BOX_IN_USE = "Your reply box has text: send it or clear it first.";
+export const HANDOFF_CAPTION = "Claude writes a handoff note here, then a new chat in this folder opens with it in its box, for you to send.";
+export function contextNumbers(c: ContextLeft): string {
+  return `${formatTokens(c.used)} of ${formatTokens(c.window)} tokens used · Claude compacts on its own at about ${formatTokens(c.compactAt)}`;
+}
+export function compactCommand(keep: string): string {
+  const k = keep.replace(/\s+/g, " ").trim();
+  return k ? `/compact ${k}` : "/compact";
+}
+export function compactLabel(working: boolean): string {
+  return working ? "Compact when this turn ends" : "Compact now";
+}
+// Claude's handoff note: its reply to the last handoff prompt in the conversation, once that turn is
+// over (null: none asked, or not written yet)
+export function handoffNote(items: readonly PaneItem[], over: boolean): string | null {
+  let at = -1;
+  for (let i = items.length - 1; i >= 0 && at < 0; i--)
+    if (items[i].kind === "you" && (items[i].text ?? "").trim() === HANDOFF_PROMPT) at = i;
+  if (at < 0 || !over) return null;
+  const said = items.slice(at + 1).filter((it) => it.kind === "claude" && !it.thinking).map((it) => (it.text ?? "").trim()).filter(Boolean);
+  return said.length ? said.join("\n\n") : null;
+}
+export function handoffDraft(name: string, note: string): string {
+  return `Continuing from the chat “${name}”. Its handoff note:\n\n${note}`;
 }
 
 // Claude's turn so far (pane.py: talpy_den.TurnSoFar), at the working line's end while it works:

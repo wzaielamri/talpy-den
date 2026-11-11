@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
-import { contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1501,6 +1501,62 @@ test("since you last looked: its steps, files, tests and what it waits for, in a
 
 // A chat's tab tells pane.py how far it showed the chat (--seen), and asks what it did since a
 // window last showed it once, when it first reads it and again once shown again (--away)
+// The context tag's menu (Plasma's CompactMenu.qml: the same words): Compact now with what it must keep,
+// and Continue in a new chat (Claude's handoff note, once its turn is over, in a new chat's box)
+test("compact now and continue in a new chat: the command, the handoff note once it's written, the new chat's draft", () => {
+  assert.equal(compactCommand(""), "/compact");
+  assert.equal(compactCommand("  the parser work,\n the open bug "), "/compact the parser work, the open bug");
+  assert.equal(compactLabel(false), "Compact now");
+  assert.equal(compactLabel(true), "Compact when this turn ends");
+  assert.equal(contextNumbers({ used: 300000, window: 1000000, compactAt: 967000, left: 69, near: false }),
+               "300.0k of 1.0M tokens used · Claude compacts on its own at about 967.0k");
+  const items: PaneItem[] = [
+    { kind: "you", key: "u1", text: "fix it", at: 1 },
+    { kind: "claude", key: "m1", text: "Done.", at: 2 },
+    { kind: "you", key: "u2", text: HANDOFF_PROMPT, at: 3 },
+    { kind: "claude", key: "m2/thinking", text: "Summing up the work", thinking: true, at: 4 },
+    { kind: "claude", key: "m2", text: "Goal: fix the parser.", at: 5 },
+    { kind: "tool", key: "t1", name: "Read", line: "Read a.py", status: "ok", input: "", output: "", summary: "", at: 6 },
+    { kind: "claude", key: "m3", text: "Left: the lexer.", at: 7 },
+  ];
+  assert.equal(handoffNote(items, true), "Goal: fix the parser.\n\nLeft: the lexer.");   // (its replies after it, no thinking line)
+  assert.equal(handoffNote(items, false), null);   // (still writing)
+  assert.equal(handoffNote(items.slice(0, 3), true), null);   // (asked, nothing written)
+  assert.equal(handoffNote(items.slice(0, 2), true), null);   // (never asked)
+  assert.equal(handoffDraft("fix parser", "Goal: x."), "Continuing from the chat “fix parser”. Its handoff note:\n\nGoal: x.");
+});
+
+test("Continue in a new chat opens a new chat in the same account and folder with the note in its box, not sent", async () => {
+  const calls: string[][] = [];
+  const backend = { pane: async (args: string[]) => (calls.push(args), args[0] === "--conversation" ? { ok: true, unchanged: true } : { ok: true }) };
+  const state = demoState(NOW);
+  const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: true };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  const row = state.status!.groups[0].sessions[0];
+  p.open(chatRefOf(row));
+  const old = recorded.panels.at(-1)!;
+  const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+  try {
+    old.show(true);
+    old.receive({ type: "ready" });
+    await tick();
+    old.receive({ type: "handoff", text: "Continuing from the chat “x”. Its handoff note:\n\nGoal: y." });
+    await tick();
+    const fresh = recorded.panels.at(-1)!;
+    assert.notEqual(fresh, old, "a new chat's tab");
+    fresh.show(true);
+    fresh.receive({ type: "ready" });
+    await tick();
+    assert.deepEqual(fresh.sent.filter((m) => (m as { type: string }).type === "prefill"),
+                     [{ type: "prefill", text: "Continuing from the chat “x”. Its handoff note:\n\nGoal: y." }]);
+    assert.ok(!fresh.sent.some((m) => (m as { type: string }).type === "startWith"), "not sent: you read it and send it");
+    assert.ok(!calls.some((c) => c[0] === "--start"), "nothing started");
+  } finally {
+    p.dispose();
+  }
+});
+
 test("a chat's tab asks what the chat did since you last looked: when it first reads it and once it shows again", async () => {
   const calls: string[][] = [];
   const items = [{ kind: "you", key: "u1", text: "hi", at: 5000 }, { kind: "claude", key: "m1", text: "Done", at: 9000 }];

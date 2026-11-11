@@ -292,6 +292,9 @@ turnEnd.context = contextOf === "0" ? null : contextOf === "near"
     : { used: 300000, window: 1000000, compactAt: 967000, left: 69, near: false };
 const turnOf = params.get("turn");
 turnEnd.turn = turnOf === "0" ? null : turnOf === "new" ? { startedAt: Date.now() - 7000, steps: 1 } : { startedAt: Date.now() - 252000, steps: 12 };
+// ?ctxmenu=1: the context tag's menu, open (Compact now, Continue in a new chat)
+if (params.get("ctxmenu") === "1")
+  setTimeout(() => document.querySelector<HTMLButtonElement>(".pane-ctx")?.click(), 400);
 if (params.get("chipmenu") === "1")
   setTimeout(() => {
     const all = document.querySelectorAll<HTMLButtonElement>(".pane-chip");

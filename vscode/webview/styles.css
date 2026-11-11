@@ -570,6 +570,61 @@ button:focus-visible {
   flex: none;
 }
 
+button.pane-ctx {
+  background: none;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+button.pane-ctx:hover,
+button.pane-ctx[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--lvl) 14%, transparent);
+}
+
+/* Its menu (a click on it): the numbers, Compact now with what it must keep, Continue in a new chat */
+.pane-ctx-menu {
+  width: 320px;
+  gap: 4px;
+}
+
+.pane-ctx-numbers,
+.pane-ctx-caption {
+  padding: 2px 8px;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+.pane-ctx-keep {
+  margin: 2px 4px 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--vscode-input-border, var(--cs-border));
+  border-radius: 2px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+}
+
+.pane-ctx-menu button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* "Context 92% used · Compact now…" under the box, once it's close */
+.pane-ctx-near {
+  color: var(--lvl);
+}
+
+.pane-ctx-near .linklike {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vscode-textLink-foreground);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* ---------------------------------------------------------------------------
    An account */
 

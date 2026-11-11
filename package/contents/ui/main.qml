@@ -5714,7 +5714,8 @@ PlasmoidItem {
     // it carries out (its first message, with what you wrote). host: an SSH
     // host's or a container's account, where it starts
     property int newChats: 0
-    function openNewChat(group, folder, text, plan, host) {
+    // (draft: put in its box, not sent: Continue in a new chat's handoff note)
+    function openNewChat(group, folder, text, plan, host, draft) {
         const id = "new-" + Date.now() + "-" + (++newChats)
         const chat = { chatId: id, sessionId: "", profileDir: group.chatProfile, host: host || "", name: "", cwd: folder.path,
                        tab: "chat", at: Date.now(), key: "",
@@ -5727,6 +5728,8 @@ PlasmoidItem {
         placePane(win)
         if (text || plan)
             win.startWith(text)
+        else if (draft)
+            win.prefill(draft)
     }
 
     // Choose folder… for a new chat in Talpy Chat: the desktop's folder dialog

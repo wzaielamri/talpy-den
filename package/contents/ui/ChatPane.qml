@@ -678,6 +678,9 @@ Window {
         awayNext = true
         awayAsking = false
         shownUpTo = 0
+        handoffAsked = false
+        if (compactMenu.item)
+            compactMenu.item.close()
         stamp = ""
         limit = 120
         more = false
@@ -1002,6 +1005,8 @@ Window {
         stamp = result.stamp || ""
         more = !!result.more
         lastItems = result.items || []
+        if (handoffAsked)
+            Qt.callLater(checkHandoff)
         let upTo = shownUpTo   // (how far it shows the chat: the next read's --seen)
         for (const it of lastItems)
             if (it.at > upTo)
@@ -1292,6 +1297,7 @@ Window {
             load()   // (its turn began or ended, it asks something: the conversation now)
         if (loaded && nearEnd())
             keepEnd()   // (the working line comes or goes)
+        checkHandoff()   // (Continue in a new chat: its turn over, the note may be in)
     }
 
     // ---------------------------------------------------------------- what the box offers
@@ -2183,6 +2189,96 @@ Window {
         replyBox.text = text || (fresh && fresh.plan ? "Implement this plan." : "")
         send("auto", false)
     }
+    // (a new chat's box filled in, not sent: Continue in a new chat's handoff note, to read and send)
+    function prefill(text) {
+        replyBox.text = text
+        replyBox.cursorPosition = replyBox.length
+        replyBox.forceActiveFocus()
+    }
+
+    // The context tag's menu (a click on it: CompactMenu.qml, made the first time): Compact now, with what
+    // it must keep, or when the turn ends while Claude works; Continue in a new chat: the handoff prompt,
+    // then, once Claude's note is in and its turn over, a new chat in this folder and account with it in
+    // its box (VS Code chat.tsx: the same, shared/pane.ts HANDOFF_PROMPT, handoffNote, handoffDraft)
+    readonly property string handoffPrompt: "Write a handoff note for a new chat that will take over this work: what we're trying to do, "
+                                            + "what's done, what's left, the files and decisions that matter, and anything to watch out for. Reply with the note alone."
+    property bool compactMenuOpen: false
+    property bool handoffAsked: false   // (asked: Claude's note awaited)
+    readonly property string replyText: replyBox.text
+    Loader {
+        id: compactMenu
+        active: false
+        source: active ? "CompactMenu.qml" : ""
+        onLoaded: item.anchorItem = contextPill
+    }
+    function toggleCompactMenu() {
+        compactMenu.active = true
+        if (compactMenuOpen) {
+            compactMenu.item.close()
+            return
+        }
+        compactMenuOpen = true
+        compactMenu.item.open()
+    }
+    function sendAsTyped(text) {   // (the box is empty: the menu's actions wait for one that isn't)
+        if (replyBox.text.trim() !== "")
+            return
+        replyBox.text = text
+        send("auto", chatState === "working")
+    }
+    function compactNow(keep) {
+        const k = String(keep || "").replace(/\s+/g, " ").trim()
+        sendAsTyped(k ? "/compact " + k : "/compact")
+    }
+    function continueInNewChat() {
+        handoffAsked = true
+        sendAsTyped(handoffPrompt)
+        info = i18n("Claude writes a handoff note; a new chat opens with it once it's done")
+        infoBad = false
+        infoTimer.restart()
+    }
+    function handoffNote() {   // (Claude's reply to the last handoff prompt, once that turn is over; "": not yet)
+        if (chatState === "working" || chatState === "waiting")
+            return ""
+        let at = -1
+        for (let i = lastItems.length - 1; i >= 0 && at < 0; i--)
+            if (lastItems[i].kind === "you" && String(lastItems[i].text || "").trim() === handoffPrompt)
+                at = i
+        if (at < 0)
+            return ""
+        const said = []
+        for (let i = at + 1; i < lastItems.length; i++)
+            if (lastItems[i].kind === "claude" && !lastItems[i].thinking && String(lastItems[i].text || "").trim() !== "")
+                said.push(String(lastItems[i].text).trim())
+        return said.join("\n\n")
+    }
+    function checkHandoff() {
+        if (!handoffAsked)
+            return
+        const note = handoffNote()
+        if (note === "")
+            return
+        handoffAsked = false
+        let group = null
+        for (const g of root.hostGroups(host))
+            if (!group && (g.sessions || []).some(s => s.chatId === chatId || s.sessionId === chatId))
+                group = g
+        for (const g of root.hostGroups(host))
+            if (!group && (g.chatProfile === profileDir || (g.profileKeys || []).indexOf(profileDir) >= 0))
+                group = g
+        const folder = row ? row.cwd : chat.cwd
+        if (!group || !folder) {
+            info = i18n("Couldn't tell which account and folder to start it in")
+            infoBad = true
+            infoTimer.restart()
+            return
+        }
+        root.openNewChat(group, { path: folder, short: row && row.cwdShort ? row.cwdShort : folder }, "", null, host,
+                         i18n("Continuing from the chat “%1”. Its handoff note:", chat.name || (row ? row.name : "") || i18n("this chat")) + "\n\n" + note)
+        info = i18n("The handoff note is in a new chat's box: read it, then send it")
+        infoBad = false
+        infoTimer.restart()
+    }
 
     function send(how, afterTurn, now) {   // (now: Ctrl+Enter, no 5 s wait while Claude works)
         const text = replyBox.text.trim()
@@ -3065,6 +3161,8 @@ Window {
                     id: contextPill
                     ctx: pane.fresh ? null : pane.contextLeft
                     visible: ctx !== null
+                    open: pane.compactMenuOpen
+                    onClicked: pane.toggleCompactMenu()
                     tooltip: !ctx ? "" : i18n("%1 of its %2 tokens of context are used. Claude compacts the chat on its own at about %3: it sums up the conversation so far and goes on from that.",
                                               root.formatTokens(ctx.used), root.formatTokens(ctx.window), root.formatTokens(ctx.compactAt))
                                          + (ctx.near ? " " + i18n("That's soon: run /compact now to say what it keeps, if you'd rather choose.") : "")
@@ -4268,6 +4366,21 @@ Window {
                     visible: active
                     Layout.fillWidth: true
                     source: active ? "ReplyAsks.qml" : ""
+                }
+                // "Context 92% used · Compact now…" once it's close (the context tag's level high): its menu
+                PlasmaComponents3.Label {
+                    Layout.fillWidth: true
+                    visible: contextPill.visible && contextPill.level === "high" && !pane.compactMenuOpen
+                    textFormat: Text.StyledText
+                    text: i18n("Context %1% used", contextPill.usedPct) + " · <a href=\"compact\">" + i18n("Compact now…") + "</a>"
+                    wrapMode: Text.Wrap
+                    font.pointSize: pane.pt * 0.85
+                    color: Kirigami.Theme.negativeTextColor
+                    linkColor: Kirigami.Theme.linkColor
+                    onLinkActivated: pane.toggleCompactMenu()
+                    HoverHandler {
+                        cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    }
                 }
                 PlasmaComponents3.Label {
                     textFormat: Text.PlainText

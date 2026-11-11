@@ -4,6 +4,11 @@
 
 ### New
 
+- **Compact now, or go on in a new chat:** a click on Talpy Chat's
+  *Context 31% used* (it said *69% left*; its bar now coloured as the usage
+  bars) opens a menu: **Compact now**, with what the summary must keep, or
+  **Continue in a new chat…**: Claude writes a handoff note, and a new chat
+  in the same folder opens with it in its box, for you to send.
 - **Since you last looked, in Talpy Chat:** a chat that went on without you
   says what it did when its tab shows it again, in one line under the
   conversation (*Since you last looked: 24 steps · 3 files changed · tests

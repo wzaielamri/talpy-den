@@ -93,6 +93,18 @@ interface Fresh {
   short: string;
   plan: { slug: string; profileDir: string; title: string } | null;
   task: string; // sent as its first message once the tab is ready
+  draft?: string; // or put in its box, to send yourself (Continue in a new chat's handoff note)
+}
+
+// The account a tab's chat is on, to start another chat there (Continue in a new chat): the group
+// that lists it, else the one of its profile
+export function paneGroup(state: Pick<ViewState, "status" | "hosts">, host: string, chatId: string, profileDir: string): Group | undefined {
+  const where = host ? state.hosts.find((h) => h.name === host)?.result : state.status;
+  const groups = where?.groups ?? [];
+  const has = (g: Group) => [...(g.sessions ?? []), ...(g.recent ?? []), ...(g.starred ?? [])]
+    .some((x) => x.sessionId === chatId || ("chatId" in x && x.chatId === chatId));
+  const found = groups.find(has) ?? groups.find((g) => g.chatProfile === profileDir);
+  return found && host ? { ...found, host } : found;
 }
 
 export class ChatPanes implements vscode.Disposable {
@@ -136,15 +148,15 @@ export class ChatPanes implements vscode.Disposable {
   // A new chat in a tab of its own, for that account and folder, with nothing started yet: your first
   // message there starts it in the background (pane.py --start, with the permission hook for it
   // alone), a task at once; plan: one it carries out (its first message, with what you wrote)
-  openNew(group: Group, folder: { path: string; short: string }, task = "", plan?: PlanItem): void {
-    if (this.sideBarFirst(() => this.openNew(group, folder, task, plan))) return; // (as open)
+  openNew(group: Group, folder: { path: string; short: string }, task = "", plan?: PlanItem, draft = ""): void {
+    if (this.sideBarFirst(() => this.openNew(group, folder, task, plan, draft))) return; // (as open)
     const id = `new-${Date.now()}-${++this.newChats}`;
     const host = group.host ?? "";   // (an SSH host's or a container's account: it starts there)
     const chat: ChatRef = { key: id, sessionId: "", chatId: id, profileDir: group.chatProfile, name: `New chat in ${folder.short}`,
                             cwd: folder.path, kind: "chat", pid: null, ...(host ? { host } : {}) };
     const fresh: Fresh = { profile: group.chatProfile, account: group.title, cwd: folder.path, short: folder.short,
                            plan: plan ? { slug: plan.slug, profileDir: plan.profileDir, title: plan.title } : null,
-                           task: task || (plan ? "Implement this plan." : "") };
+                           task: task || (plan ? "Implement this plan." : ""), ...(draft ? { draft } : {}) };
     const created = new Pane(this, chat, "chat", fresh);
     this.panes.set(`${host}|${id}`, created);
     created.onClosed(() => (this.panes.forEach((p, k) => p === created && this.panes.delete(k)), this.watchesChanged()));
@@ -942,6 +954,9 @@ class Pane implements vscode.Disposable {
         if (this.fresh?.task) {
           this.post({ type: "startWith", text: this.fresh.task });
           this.fresh.task = "";
+        } else if (this.fresh?.draft) {   // (in its box, for you to read and send)
+          this.post({ type: "prefill", text: this.fresh.draft });
+          this.fresh.draft = "";
         }
         break;
       case "chatOptions":
@@ -1046,6 +1061,18 @@ class Pane implements vscode.Disposable {
         // (a background chat's: a terminal on it, claude attach, also where its window is this tab)
         if (!this.fresh) await actions.open(this.chat, true);
         break;
+      case "handoff": {
+        // (Continue in a new chat: Claude's note, in a new chat's box in the same folder and account)
+        if (this.fresh || typeof m.text !== "string" || !m.text.trim()) break;
+        const group = paneGroup(this.owner.ext.dash.state(), this.host, this.chatId, this.chat.profileDir);
+        const cwd = this.chat.cwd ?? "";
+        if (!group || !cwd) {
+          this.result("handoff", { ok: false, message: "Couldn't tell which account and folder to start it in" });
+          break;
+        }
+        this.owner.openNew(group, { path: cwd, short: cwd.replace(/^\/home\/[^/]+/, "~") }, "", undefined, m.text);
+        break;
+      }
       case "stop":
         if (!this.fresh) this.result("stop", await this.owner.interrupt(this.chat));
         break;

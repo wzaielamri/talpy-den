@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
@@ -250,13 +250,15 @@ function rowsOf(list: HTMLElement, key: string): HTMLElement[] {
 // "Context 31% used" in the header: how far the chat's context has come toward where Claude compacts it
 // on its own, with a small bar, in the rows' colours (shared/pane.ts contextLevel); Plasma's
 // ContextPill.qml the same
-function ContextPill({ ctx }: { ctx: ContextLeft }) {
+function ContextPill({ ctx, open, onOpen }: { ctx: ContextLeft; open: boolean; onOpen: (at: DOMRect) => void }) {
   const used = contextUsed(ctx);
   return (
-    <span class={`pane-ctx lvl-${contextLevel(ctx)}`} title={`${contextText(ctx)}\n${contextHint(ctx)}`}>
+    <button type="button" class={`pane-ctx lvl-${contextLevel(ctx)}`} aria-expanded={open} aria-haspopup="menu"
+      title={open ? undefined : `${contextText(ctx)}\n${contextHint(ctx)}\n\nClick: Compact now, or continue in a new chat`}
+      onMouseDown={(e) => e.stopPropagation()} onClick={(e) => onOpen(e.currentTarget.getBoundingClientRect())}>
       <span class="meter" aria-hidden="true"><span style={{ width: `${used}%` }} /></span>
       {contextText(ctx)}
-    </span>
+    </button>
   );
 }
 
@@ -768,9 +770,14 @@ function ChatApp() {
   const [focused, setFocused] = useState(false);
   const [chipMenu, setChipMenu] = useState<{ chip: ReplyChip; x: number; y: number } | null>(null);
   const [editMenu, setEditMenu] = useState<EditAt | null>(null);   // (the right-click menu, EditMenu)
+  // The context tag's menu (a click on it): Compact now, with what it must keep; Continue in a new chat
+  // (handoff: asked, Claude's note awaited; then a new chat in this folder with it in its box)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [keep, setKeep] = useState("");
+  const [handoff, setHandoff] = useState(false);
   useEffect(() => {
-    if (!chipMenu && !editMenu) return undefined;
-    const close = () => { setChipMenu(null); setEditMenu(null); };   // (Esc: escTarget's "menu")
+    if (!chipMenu && !editMenu && !ctxMenu) return undefined;
+    const close = () => { setChipMenu(null); setEditMenu(null); setCtxMenu(null); };   // (Esc: escTarget's "menu")
     window.addEventListener("mousedown", close);
     window.addEventListener("blur", close);
     window.addEventListener("scroll", close, true);
@@ -779,7 +786,7 @@ function ChatApp() {
       window.removeEventListener("blur", close);
       window.removeEventListener("scroll", close, true);
     };
-  }, [chipMenu, editMenu]);
+  }, [chipMenu, editMenu, ctxMenu]);
 
   // The microphone: record, then whisper writes it down on this computer
   const [dictating, setDictating] = useState<"" | "starting" | "recording" | "writing" | "model" | "setup">("");
@@ -878,6 +885,10 @@ function ChatApp() {
         if (!m.visible) setAway(null);   // (shown again: what it did meanwhile, asked again)
       }
       else if (m.type === "away") setAway(m.away);
+      else if (m.type === "prefill") {   // (a new chat's box: Continue in a new chat's note, to read and send)
+        setText(m.text);
+        window.setTimeout(() => reply.current?.focus(), 0);
+      }
       else if (m.type === "diffLayout") setSplit(m.split);
       else if (m.type === "picked") attachPaths(m.paths);
       else if (m.type === "picture") {
@@ -1560,6 +1571,28 @@ function ChatApp() {
   // A line before the first item of each new day (dayBreaks), and what came in below since you scrolled up
   const breaks = useMemo(() => dayBreaks(shownItems, tab === "steps"), [shownItems, tab]);
   const unseen = useMemo(() => (seen ? newBelow(seen, shownItems, tab === "steps") : 0), [seen, shownItems, tab]);
+  // The context menu's actions: /compact (what it must keep), when the turn ends while Claude works;
+  // the handoff prompt, then (the effect below) Claude's note in a new chat's box
+  const compactNow = () => {
+    send("auto", chat?.state === "working", compactCommand(keep));
+    setKeep("");
+    setCtxMenu(null);
+  };
+  const continueNew = () => {
+    send("auto", chat?.state === "working", HANDOFF_PROMPT);
+    setHandoff(true);
+    setCtxMenu(null);
+    setInfo({ ok: true, message: "Claude writes a handoff note; a new chat opens with it once it's done" });
+  };
+  useEffect(() => {
+    if (!handoff || !chat) return;
+    const note = handoffNote(items, chat.state !== "working" && chat.state !== "waiting");
+    if (!note) return;
+    setHandoff(false);
+    post({ type: "handoff", text: handoffDraft(chat.name || "this chat", note) });
+    setInfo({ ok: true, message: "The handoff note is in a new chat's box: read it, then send it" });
+  }, [handoff, items, chat?.state]);
+
   const toEnd = () => {
     const el = list.current;
     follow.current = true;
@@ -1878,10 +1911,10 @@ function ChatApp() {
   const escapeNow = useRef((): boolean => false);
   escapeNow.current = () => {
     const inBox = !!reply.current && document.activeElement === reply.current;
-    const what = escTarget({ menu: !!chipMenu || !!editMenu, big: !!big, list: inBox && offered.items.length > 0, find: find.open && conversation,
+    const what = escTarget({ menu: !!chipMenu || !!editMenu || !!ctxMenu, big: !!big, list: inBox && offered.items.length > 0, find: find.open && conversation,
                              bookmarks: marksOn && conversation, help,
                              ghost: inBox && !!ghost, stop: inBox && text === "" && stop.can && !stopping });
-    if (what === "menu") { setChipMenu(null); setEditMenu(null); }
+    if (what === "menu") { setChipMenu(null); setEditMenu(null); setCtxMenu(null); }
     else if (what === "find") closeFind();
     else if (what === "bookmarks") closeMarks();
     else if (what === "big") setBig(null);
@@ -2124,7 +2157,8 @@ function ChatApp() {
               (chat.agents.failed ? `, ${chat.agents.failed} failed` : "") + `. Click to ${strip.agents ? "hide" : "show"} what each one is doing.`}
             onClick={() => setStrip({ ...strip, agents: !strip.agents })} />
         ) : null}
-        {soFar.context && !chat?.fresh ? <ContextPill ctx={soFar.context} /> : null}
+        {soFar.context && !chat?.fresh ? <ContextPill ctx={soFar.context} open={!!ctxMenu}
+          onOpen={(r) => setCtxMenu(ctxMenu ? null : { x: Math.max(4, Math.min(r.left, window.innerWidth - 330)), y: r.bottom + 4 })} /> : null}
         <span class="pane-path">{(chat?.host ? chat.host + ":" : "") + (chat?.fresh ? chat.fresh.folder : chat?.cwd ?? "")}</span>
       </div>
       {chat?.tasks || (chat?.agents && chat.agents.total > 0) ? (
@@ -2305,6 +2339,22 @@ function ChatApp() {
             </div>
           ) : null}
           {editMenu ? <EditMenu at={editMenu} marked={!!editMenu.it && !!markedKeys[editMenu.it.key]} onDo={editDo} /> : null}
+          {ctxMenu && soFar.context ? (
+            <div class="pane-chip-menu pane-ctx-menu" role="menu" aria-label="Context" style={{ left: `${ctxMenu.x}px`, top: `${ctxMenu.y}px` }}
+              onMouseDown={(e) => e.stopPropagation()}>
+              <div class="pane-ctx-numbers">{contextNumbers(soFar.context)}</div>
+              <input type="text" class="pane-ctx-keep" placeholder={COMPACT_KEEP} value={keep} aria-label={COMPACT_KEEP}
+                onInput={(e) => setKeep(e.currentTarget.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !text.trim()) { e.preventDefault(); compactNow(); } }} />
+              {text.trim() ? <div class="pane-ctx-caption">{BOX_IN_USE}</div> : null}
+              <button type="button" role="menuitem" disabled={!!text.trim()} onClick={compactNow}><Icon name={I.compact} />{compactLabel(chat?.state === "working")}</button>
+              <div class="pane-menu-sep" />
+              <button type="button" role="menuitem" disabled={handoff || !!text.trim()} onClick={continueNew} title={HANDOFF_CAPTION}>
+                <Icon name={I.newChat} />{handoff ? "Waiting for Claude's handoff note…" : "Continue in a new chat…"}
+              </button>
+              <div class="pane-ctx-caption">{HANDOFF_CAPTION}</div>
+            </div>
+          ) : null}
           {chipMenu ? (
             <div class="pane-chip-menu" role="menu" style={{ left: `${chipMenu.x}px`, top: `${chipMenu.y}px` }} onMouseDown={(e) => e.stopPropagation()}>
               <button type="button" role="menuitem" onClick={() => takeChip(chipMenu.chip, true)}><Icon name={I.edit} />Edit before sending</button>
@@ -2430,6 +2480,15 @@ function ChatApp() {
             </div>
           ) : null}
           {saving ? <div class="pane-hint">{chat?.host ? `Copying the picture to ${chat.host}…` : "Adding it to your reply…"}</div> : null}
+          {soFar.context && !chat?.fresh && contextLevel(soFar.context) === "high" && !ctxMenu ? (
+            <div class={`pane-hint pane-ctx-near lvl-high`}>
+              {contextText(soFar.context)} ·{" "}
+              <button type="button" class="linklike" onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCtxMenu({ x: Math.max(4, Math.min(r.left, window.innerWidth - 330)), y: Math.max(4, r.top - 190) }); }}>
+                Compact now…
+              </button>
+            </div>
+          ) : null}
           {offerSetup ? (
             <div class="pane-hint ask-buttons">
               <span>Set up dictation? It installs faster-whisper, speech to text that runs on this computer, and its base speech model: about {offerSetup} MB from pypi.org and huggingface.co into ~/.local/share/talpy-den/whisper, no sudo needed; a few minutes. What you say never leaves the computer. Other models: Talpy Den: Dictation Models.</span>

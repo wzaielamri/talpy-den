@@ -59,6 +59,7 @@ export type Meaning =
   | "unfolded"
   | "expandAll"
   | "collapseAll"
+  | "compact"
   | "peekOpen"
   | "peekClosed"
   | "zoomIn"

@@ -2305,6 +2305,32 @@ class NewChatTests(unittest.TestCase):
             self.assertIn(qml, line)
             self.assertIn(ts, shared)
 
+    def test_the_context_menu_says_the_same_in_plasma_and_vs_code(self):
+        # Compact now and Continue in a new chat (the context tag's menu): made the first time it opens, the
+        # same words and the same handoff prompt in both front ends; a new chat's draft is put in its box,
+        # never sent (main.qml openNewChat's draft, VS Code's "prefill")
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        menu = (ROOT / "ui/CompactMenu.qml").read_text()
+        main = (ROOT / "ui/main.qml").read_text()
+        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        chat = (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text()
+        self.assertIn('source: active ? "CompactMenu.qml" : ""', pane)
+        self.assertIn("onClicked: pane.toggleCompactMenu()", pane)
+        for words in ("What it must keep (optional)", "Compact when this turn ends", "Compact now", "Continue in a new chat…",
+                      "Waiting for Claude's handoff note…",
+                      "Claude writes a handoff note here, then a new chat in this folder opens with it in its box, for you to send.",
+                      "Your reply box has text: send it or clear it first.", "tokens used · Claude compacts on its own at about"):
+            self.assertIn(words, menu + pane)
+            self.assertIn(words, shared + chat)
+        prompt = re.search(r'readonly property string handoffPrompt: "(.*?)"\n\s*\+ "(.*?)"', pane)
+        self.assertIsNotNone(prompt)
+        self.assertIn('"' + prompt.group(1) + '" +\n  "' + prompt.group(2) + '"', shared)   # (HANDOFF_PROMPT: one text)
+        self.assertIn("Continuing from the chat “%1”. Its handoff note:", pane)
+        self.assertIn("Continuing from the chat “${name}”. Its handoff note:", shared)
+        self.assertIn("else if (draft)\n            win.prefill(draft)", main)
+        self.assertIn("Compact now…", pane)
+        self.assertIn("Compact now…", chat)
+
     def test_bookmarks_are_made_only_when_wanted(self):
         # Talpy Chat's bookmarks (6i): what they do (Bookmarks.qml, with bookmarks.mjs), their list
         # (BookmarkList.qml) and the tab row's count (BookmarkPill.qml) are files of their own, read and
