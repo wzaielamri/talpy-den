@@ -67,3 +67,5 @@ For other programs (a status bar, a desk display, a script): the chats and their
 - A place that can't be reached (its check failed: the host is down, the container stopped) has its chats and accounts taken out, as Talpy Den can't see them; one nothing checks any more (no longer picked) once its last answer is 15 minutes old.
 - It's written in one go (a new file renamed over it), so a reader always gets a whole one, with no lock (the checks that write it take turns, `~/.cache/talpy-den/jobs.lock`). To wait for a change instead of reading it again and again, watch its folder for a file moved into it (inotify's `IN_MOVED_TO`), e.g. `inotifywait -m -e moved_to "$XDG_RUNTIME_DIR/talpy-den"`. Read it once at the start too: inotify only tells what changes.
 - New fields may come; a change to what one means raises `version`.
+
+One program that reads it: [Talpy Den Display](https://github.com/wzaielamri/talpy-den-display), a 4.3" touch screen for your desk. Its `host/sync.py` watches this file and passes the chats and plan usage on to the screen over USB.

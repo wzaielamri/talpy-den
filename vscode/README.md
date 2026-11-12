@@ -23,6 +23,9 @@ of your plan is left, and Talpy, a pet who acts it all out.
 - **Recent chats, ★ starred chats and plans** under each account, a page at a
   time; **every chat, plan and memory by project** on the Projects tab; and
   Find a Chat. Star, hide or delete them.
+- **On your desk**: [Talpy Den Display](https://github.com/wzaielamri/talpy-den-display),
+  a small touch screen beside your keyboard, shows which chats work, which
+  need you and your plan usage, fed by your Linux PC over USB.
 
 <!-- Screenshots show demo data only (Talpy Den: Toggle Demo Data, or dev/harness.html), never real chats. -->
 <p>

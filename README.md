@@ -30,6 +30,7 @@ And Talpy, a pet that acts out what each chat is doing.
 - **Find and reuse:** any chat by its words, recent chats, plans and memories; continue a chat on another account when one hits its limit; hide what you don't need, or delete it to the Trash.
 - **Recap and Permissions:** your day, week or everything with Claude (time, tokens, what it would cost at API prices, what would use less of your plan), and every permission you gave, to revoke.
 - **Notifications** when a chat needs you or finishes, one summary when you come back, and to your phone if you like.
+- **On your desk:** [Talpy Den Display](https://github.com/wzaielamri/talpy-den-display), a small touch screen beside your keyboard, shows which chats work, which need you and your plan usage, fed by your PC over USB.
 
 <p align="center"><img src="docs/screenshots/pets.gif" alt="Pets reacting: a chat finishes and its pet celebrates, a new chat's pet digs up out of the ground, and the big Talpy cheers when a usage limit resets" width="500"></p>
 
