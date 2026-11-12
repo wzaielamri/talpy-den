@@ -1874,13 +1874,15 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   creation + cache read tokens of Claude's last message of its own. A status line's `context_window_size` wins
   over the table.
   - Used in: talpy_den.py CONTEXT_WINDOWS, CONTEXT_1M, COMPACT_ROOM, COMPACT_CLOSE, USAGE_READ, model_key,
-    context_window, context_left; turns.py context_left, status_window.
+    context_window, context_left, snapshot_window, reply_usage and reply_context (the rows, without a status line);
+    turns.py context_left, status_window.
   - Check: `has 'Autocompact buffer'`. In a throwaway chat on each new model, run `/context` (read-only) and
     compare its total and autocompact buffer (33k) with Talpy Chat's header. For a new model id, compare the
     status line's `context_window.context_window_size` and add it to CONTEXT_WINDOWS.
   - Breaks: the "% left before compacting" header and "near" are wrong, and new models show no meter.
   - Test: ContextAndTurnTests.test_context_left_till_claude_compacts_the_chat, test_the_window_by_model,
-    test_context_is_claudes_last_message_of_its_own, test_the_status_line_says_which_window (test_pane.py).
+    test_context_is_claudes_last_message_of_its_own, test_the_status_line_says_which_window (test_pane.py);
+    ReplyContextTests (test_chats.py).
 - [ ] **The auto-compact window you set.** Read from code (2.1.318), likely undocumented.
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (COMPACT_WINDOW_ENV) in settings.json's `env` comes first (`200k`, `1M`, a
   number, or a bare 100–1000 meaning thousands). Then `autoCompactWindow`, with

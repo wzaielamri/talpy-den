@@ -3362,7 +3362,7 @@ class ContextAndTurnTests(PaneFixture):
         for model in ("claude-opus-4-20250514", "claude-opus-4-1-20250805", "claude-haiku-4-5-20251001",
                       "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "claude-opus-4-1@20250805", "claude-opus-4-6"):
             self.assertEqual(left(u(1000), model)["window"], 200000, model)
-        for model in ("claude-opus-5-5", "claude-opus-4-7", "claude-sonnet-5", "claude-haiku-5-5", "claude-fable-5-1"):
+        for model in ("claude-opus-5-5", "claude-opus-4-7", "claude-sonnet-5", "claude-haiku-5-5", "claude-fable-5-1", "claude-fable-5-2"):
             self.assertEqual(left(u(1000), model)["window"], 1000000, model)
         # 1M chosen ([1m], or the status line says so), or a chat already past 200k: 1M
         self.assertEqual(left(u(1000), "claude-sonnet-4-6[1m]")["window"], 1000000)

@@ -51,7 +51,7 @@ A hook that is already on is only brought up to date. `--yes` answers yes to eve
 <details>
 <summary><b>No status line yet?</b></summary>
 
-Plan usage and context come from Claude Code's status line. If you don't have one yet, this minimal one shows the model and the folder:
+Plan usage comes from Claude Code's status line, and so do a chat's context, effort and cost where it runs (without one, a row counts the context from the chat's newest reply). If you don't have one yet, this minimal one shows the model and the folder:
 
 ```bash
 cat > ~/.claude/statusline.sh <<'EOF'

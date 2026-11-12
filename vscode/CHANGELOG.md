@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Better
+
+- **Every row says how full its chat's context is.** *31% used* showed only
+  where Claude Code's status line runs with Talpy Den's snippet; now chats on
+  SSH hosts and in containers, chats in VS Code's Claude panel and accounts
+  without the snippet show it too, counted from the chat's newest reply as
+  Talpy Chat's *Context 31% used* tag counts it. Fable 5.2 chats show it in
+  Talpy Chat too.
+
 ## 1.19.0
 
 ### New

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Highlights
+
+- **How full a chat's context is, on every row:** *31% used* now shows for chats on your SSH hosts and in containers, in VS Code's Claude panel and in accounts without Talpy Den's status line, from the chat's newest reply (Plasma and VS Code).
+
+### Every change
+
+- **Rows say how full a chat's context is without a status line.** A row's *31% used* came only from Claude Code's status line (the copy Talpy Den's snippet keeps), so it was missing wherever none runs: chats on an SSH host or in a container whose accounts have no status line set up, chats in VS Code's Claude panel (it never runs one), and accounts whose status line doesn't have the snippet. Now, where the status line of a chat's run hasn't said it, the row counts it from the token counts of the chat's newest reply in its transcript, as Talpy Chat's *Context 31% used* tag does: what that reply read (cached or not) against its model's window, up to where Claude compacts the chat, or the auto-compact window you set; the window a status line gave in an earlier run of the chat when there is one (1M chosen on a 200k model). Not after the chat was compacted (until Claude's next reply), not from an API error or Claude Code's stand-in reply, and not for a model whose window isn't known. The status line still knows best where it runs. It's read with what the rows already read of each chat, so the check takes no longer; the chats' kept peeks are read again once. Fable 5.2 is in the table of model windows (1M): Talpy Chat's tag stayed empty for a Fable 5.2 chat without a status line. (Plasma and VS Code)
+
 ## 1.19.0 (2026-11-11)
 
 ### Highlights

@@ -259,6 +259,93 @@ class ProfileLinkTests(World):
         self.assertFalse((self.cache / "tokens-.claude.json").exists())
 
 
+def used(uuid, ts, sid, model, tokens, **kw):
+    """A reply of Claude's that read this many tokens (its context: input + cache)."""
+    e = reply(uuid, ts, sid, **kw)
+    e["message"].update(model=model, usage={"input_tokens": 10, "cache_read_input_tokens": tokens - 10, "output_tokens": 5})
+    return e
+
+
+class ReplyContextTests(World):
+    """A row's context where no status line gave it (an SSH host's or a
+    container's chat, VS Code's Claude panel, no status line set up): from
+    its chat's newest reply, as Talpy Chat's header counts it."""
+
+    def test_from_the_newest_reply(self):
+        self.live("work", "50", "chat-r", startedAt=int((self.now - 600) * 1000))
+        self.transcript("work", "chat-r", [user("u1", self.now - 100, "chat-r"),
+                                           used("a1", self.now - 90, "chat-r", "claude-opus-5-5", 100000),
+                                           user("u2", self.now - 80, "chat-r"),
+                                           used("a2", self.now - 70, "chat-r", "claude-opus-5-5", 300000)])
+        row = self.row(self.collect(), "chat-r")
+        # (300k of 1M, compacted at 967k: 69% left)
+        self.assertEqual((row["context"], row["contextLeft"], row["contextNear"]), (None, 69, False))
+        self.assertEqual(row["peek"]["usage"], {"model": "claude-opus-5-5", "used": 300000})
+        # its run's status line knows best
+        self.snapshot(".claude-work", "chat-r", age=5, model={"id": "claude-opus-5-5", "display_name": "Opus 5.5"},
+                      context_window={"used_percentage": 50, "context_window_size": 1000000,
+                                      "current_usage": {"input_tokens": 10, "cache_read_input_tokens": 499990}})
+        row = self.row(self.collect(), "chat-r")
+        self.assertEqual((row["context"], row["contextLeft"]), (50, 48))
+
+    def test_close_to_compacting(self):
+        self.live("work", "50", "chat-r")
+        self.transcript("work", "chat-r", [user("u1", self.now - 100, "chat-r"),
+                                           used("a1", self.now - 90, "chat-r", "claude-fable-5-2", 950000)])
+        row = self.row(self.collect(), "chat-r")
+        self.assertEqual((row["contextLeft"], row["contextNear"]), (2, True))
+
+    def test_not_after_a_compaction_or_from_a_stand_in(self):
+        start = [user("u1", self.now - 100, "chat-r"), used("a1", self.now - 90, "chat-r", "claude-opus-5-5", 300000)]
+        limit = {"type": "assistant", "timestamp": iso(self.now - 80), "sessionId": "chat-r", "isApiErrorMessage": True,
+                 "message": {"id": "e", "role": "assistant", "model": "<synthetic>", "usage": {"input_tokens": 0},
+                             "content": [{"type": "text", "text": "You've hit your session limit"}]}}
+        sub = used("s1", self.now - 85, "chat-r", "claude-haiku-5-5", 900000, isSidechain=True)
+        self.live("work", "50", "chat-r")
+        self.transcript("work", "chat-r", [*start, sub, limit])
+        self.assertEqual(self.row(self.collect(), "chat-r")["contextLeft"], 69)
+        compacted = {"type": "system", "subtype": "compact_boundary", "timestamp": iso(self.now - 60), "sessionId": "chat-r"}
+        self.transcript("work", "chat-r", [*start, compacted])
+        self.assertIsNone(self.row(self.collect(), "chat-r")["contextLeft"])   # (known once Claude says something again)
+        self.transcript("work", "chat-r", [*start, compacted, user("u2", self.now - 50, "chat-r"),
+                                           used("a2", self.now - 40, "chat-r", "claude-opus-5-5", 30000)])
+        self.assertEqual(self.row(self.collect(), "chat-r")["contextLeft"], 97)
+        # a model whose window isn't known: nothing rather than a guess
+        self.transcript("work", "chat-r", [user("u1", self.now - 100, "chat-r"),
+                                           used("a1", self.now - 90, "chat-r", "claude-mystery-9", 30000)])
+        self.assertIsNone(self.row(self.collect(), "chat-r")["contextLeft"])
+
+    def test_the_window_an_earlier_runs_status_line_gave(self):
+        # Sonnet 4.6 with 1M chosen: an earlier run's status line said so, this run has none
+        self.live("work", "50", "chat-r", startedAt=int((self.now - 600) * 1000))
+        self.transcript("work", "chat-r", [user("u1", self.now - 100, "chat-r"),
+                                           used("a1", self.now - 90, "chat-r", "claude-sonnet-4-6", 100000)])
+        self.assertEqual(self.row(self.collect(), "chat-r")["contextLeft"], 40)   # (of 200k)
+        self.snapshot(".claude-work", "chat-r", age=3600, model={"id": "claude-sonnet-4-6[1m]"},
+                      context_window={"used_percentage": 5, "context_window_size": 1000000})
+        row = self.row(self.collect(), "chat-r")
+        self.assertEqual((row["context"], row["contextLeft"]), (None, 90))   # (of 1M; its old fill isn't shown)
+
+    def test_the_auto_compact_window_you_set(self):
+        write(self.dir("work") / "settings.json", {"autoCompactWindow": 200000})
+        self.live("work", "50", "chat-r")
+        self.transcript("work", "chat-r", [user("u1", self.now - 100, "chat-r"),
+                                           used("a1", self.now - 90, "chat-r", "claude-opus-5-5", 150000)])
+        self.assertEqual(self.row(self.collect(), "chat-r")["contextLeft"], 10)
+
+    def test_an_older_cached_peek_is_read_again(self):
+        self.live("work", "50", "chat-r")
+        path = self.transcript("work", "chat-r", [user("u1", self.now - 100, "chat-r"),
+                                                  used("a1", self.now - 90, "chat-r", "claude-opus-5-5", 300000)])
+        self.collect()
+        chats = cs.read_json(self.cache / "chats.json")
+        for kept in chats["peeks"].values():
+            kept[2].pop("usage")   # (as an older copy of this script kept it)
+        write(self.cache / "chats.json", chats)
+        self.assertEqual(self.row(self.collect(), "chat-r")["contextLeft"], 69)
+        self.assertTrue(path.exists())
+
+
 class LiveAttributionTests(World):
     def test_same_process_in_two_profiles_listed_once_where_it_runs(self):
         # Started on work through ~/.claude, which was then switched to personal:

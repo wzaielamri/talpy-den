@@ -22,7 +22,7 @@ import time
 import talpy_den as cs
 
 # ---------------------------------------------------------------- context left
-# (talpy_den's: the popup's rows say it too, from their status lines)
+# (talpy_den's: the popup's rows say it too, from their status lines, else from the newest reply)
 CONTEXT_1M, CONTEXT_WINDOWS, COMPACT_ROOM, COMPACT_CLOSE = cs.CONTEXT_1M, cs.CONTEXT_WINDOWS, cs.COMPACT_ROOM, cs.COMPACT_CLOSE
 model_key, context_window, context_left = cs.model_key, cs.context_window, cs.context_left
 
@@ -30,17 +30,9 @@ model_key, context_window, context_left = cs.model_key, cs.context_window, cs.co
 def status_window(home, profile, chat_id, model):
     """The context window a chat's newest status-line snapshot gives
     (context_window_size, or 1M for a model named with [1m]), when it's of
-    the model of Claude's last message; else None."""
-    for _, path in cs.snapshot_paths(cs.cache_dir(home) / "statusline", profile, [chat_id]):
-        snap = cs.read_json(path)
-        part = lambda key: snap.get(key) if isinstance(snap, dict) and isinstance(snap.get(key), dict) else {}
-        named, size = part("model").get("id"), part("context_window").get("context_window_size")
-        if not isinstance(named, str) or not isinstance(model, str) or named.split("[")[0] != model.split("[")[0]:
-            return None
-        if isinstance(size, int) and not isinstance(size, bool) and size > 0:
-            return size
-        return CONTEXT_1M if "[1m]" in named.lower() else None
-    return None
+    the model of Claude's last message; else None (talpy_den.snapshot_window:
+    the rows' rule too, where no status line of the run gave them one)."""
+    return cs.snapshot_window(cs.cache_dir(home) / "statusline", profile, [chat_id], model)
 
 
 # ---------------------------------------------------------------- the turn so far

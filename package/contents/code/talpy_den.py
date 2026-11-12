@@ -651,7 +651,7 @@ def snapshot_paths(snapshot_root, profile, ids):
 CONTEXT_1M = 1000000
 CONTEXT_WINDOWS = dict(
     {m: CONTEXT_1M for m in ("claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5",
-                             "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1")},
+                             "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1", "claude-fable-5-2")},
     # (200k, or 1M where it's chosen: "sonnet[1m]")
     **{m: 200000 for m in ("claude-opus-4", "claude-opus-4-1", "claude-opus-4-5", "claude-opus-4-6", "claude-sonnet-4",
                            "claude-sonnet-4-5", "claude-sonnet-4-6", "claude-haiku-4-5")})
@@ -686,7 +686,7 @@ def model_key(model):
 
 def context_window(model, used=0, told=None):
     """The context window of a chat on this model (tokens), None when it isn't
-    known. told(): the window its status line gives (status_window), else
+    known. told(): the window its status line gives (snapshot_window), else
     Claude Code's table; 1M where that's chosen ([1m]) or the chat is past its
     model's own window already."""
     said = told() if told is not None else None
@@ -796,6 +796,41 @@ def compact_window(profile_path, model):
                None) if key else None
     value = own if own is not None else setting
     return None if value == "auto" else compact_tokens(value) if not isinstance(value, str) else None
+
+
+def snapshot_window(snapshot_root, profile, ids, model):
+    """The context window the newest status-line snapshot of these session
+    ids gives (context_window_size, or 1M for a model named with [1m]), when
+    it's of this model (Claude's last message's); else None. A snapshot of
+    any run: the window a chat has doesn't change with its run."""
+    for _, path in snapshot_paths(snapshot_root, profile, ids):
+        snap = read_json(path)
+        part = lambda key: snap.get(key) if isinstance(snap, dict) and isinstance(snap.get(key), dict) else {}
+        named, size = part("model").get("id"), part("context_window").get("context_window_size")
+        if not isinstance(named, str) or not isinstance(model, str) or named.split("[")[0] != model.split("[")[0]:
+            return None
+        if isinstance(size, int) and not isinstance(size, bool) and size > 0:
+            return size
+        return CONTEXT_1M if "[1m]" in named.lower() else None
+    return None
+
+
+def reply_context(row, snapshot_root, profile, ids):
+    """A row's context fill where no status line of this run gave it (an SSH
+    host's or a container's chat, one in VS Code's Claude panel, an account
+    whose status line isn't set up): from the token counts of its chat's
+    newest reply (its peek's "usage"), as Talpy Chat's header counts it, the
+    window from a snapshot of an earlier run if there's one."""
+    usage = (row.get("peek") or {}).get("usage")
+    if row.get("contextLeft") is not None or not isinstance(usage, dict):
+        return
+    model, used = usage.get("model"), usage.get("used")
+    if not isinstance(model, str) or type(used) is not int:
+        return
+    left = context_left({"input_tokens": used}, model, lambda: snapshot_window(snapshot_root, profile, ids, model),
+                        compact_window(profile.path, model))
+    if left:
+        row["contextLeft"], row["contextNear"] = left["left"], left["near"]
 
 
 def attach_snapshot(session, snapshot_root, profile, ids=None, since=None):
@@ -1093,6 +1128,7 @@ def finish_row(row, job, job_id, profile, ctx, alive):
         peek = row["peek"] or {}
         if row["model"] is None:  # (no status line in this run: the model of its newest reply)
             row["model"] = peek.get("model")
+        reply_context(row, ctx.snapshot_root, profile, [row["sessionId"], row["chatId"], row["jobSessionId"]])
         row["plan"] = plan_of(profile, peek.get("slug"), ctx)
         went_on = (CONTINUE_PROMPT[:30], RETRY_PROMPT[:30])
         if row["name"].startswith(went_on) and path is not None and getattr(ctx, "links", None) is not None:
@@ -1805,7 +1841,7 @@ PEEK_PROMPT_CHARS = 300
 PEEK_LINE = re.compile(rb'"type":\s*"(?:user|assistant|last-prompt)"')
 PEEK_MORE_LINE = re.compile(rb'"type":\s*"(?:user|assistant|last-prompt|system|permission-mode)"')
 ULTRA_LINE = re.compile(rb'"type":\s*"ultra_effort_(?:enter|exit)"')  # (of all attachments, only these are read)
-PEEK_ADDED = ("recap", "mode", "slug", "stopped", "ultracode", "model")  # a cached peek without them (an older copy's) is read again
+PEEK_ADDED = ("recap", "mode", "slug", "stopped", "ultracode", "model", "usage")  # a cached peek without them (an older copy's) is read again
 RECAP_NOTE = re.compile(r"\s*\(disable recaps in /config\)\s*$")
 # Claude's names for the plan windows in "You've hit your … limit" (its
 # rate-limit types: five_hour is the session limit, the 5-hour limit since
@@ -1986,8 +2022,32 @@ def peek_from(entries):
         "slug": next((e["slug"] for e in entries if isinstance(e.get("slug"), str) and PLAN_SLUG.match(e["slug"])), None),
         "stopped": stopped_by(turn) if turn is not None else None,
         "model": transcript_model(convo),
+        "usage": reply_usage(entries),
     }
     return peek, prompt is not None or (bool(parts) and bool(last_prompt))
+
+
+def reply_usage(entries):
+    """How full a chat's context is from its newest reply of Claude's own, of
+    transcript entries newest first: {"model": its model id, "used": the
+    tokens it read, cached or not, which the next one starts from}, as
+    Talpy Chat's header counts it (turns.TurnSoFar: not an API error or
+    Claude Code's stand-in reply); None when there's none, or the chat was
+    compacted since (known once Claude says something again)."""
+    for e in entries:
+        if e.get("isSidechain"):
+            continue
+        if e.get("type") == "system" and e.get("subtype") == "compact_boundary":
+            return None
+        msg = e.get("message") if isinstance(e.get("message"), dict) else {}
+        if e.get("type") != "assistant" or e.get("isApiErrorMessage") or msg.get("model") == "<synthetic>":
+            continue
+        usage, model = msg.get("usage"), msg.get("model")
+        if not isinstance(usage, dict) or not isinstance(model, str):
+            return None
+        used = sum(n for n in (usage.get(k) for k in USAGE_READ) if type(n) is int and n > 0)
+        return {"model": model, "used": used} if used else None
+    return None
 
 
 def names_mode(e):
@@ -2059,7 +2119,7 @@ def stopped_by(e):
 
 def chat_peek(path):
     """{"activity", "prompt", "reply", "replyLine", "at", "recap", "mode", "ultracode",
-    "slug", "stopped", "model"} of a chat, read from the end of its transcript (more
+    "slug", "stopped", "model", "usage"} of a chat, read from the end of its transcript (more
     of it while that isn't enough)."""
     try:
         size = path.stat().st_size
@@ -4173,7 +4233,9 @@ def place_chats(groups, ctx):
             "context": None, "contextLeft": None, "contextNear": False, "model": None, "costUsd": None,
             "formerIds": [i for _, s in entries for i in (s["sessionId"], s.get("jobSessionId")) if i],
         })
-        attach_snapshot(moved, ctx.snapshot_root, home, [chat, *(i for _, s in entries for i in (s["sessionId"], s.get("jobSessionId")))])
+        ids = [chat, *(i for _, s in entries for i in (s["sessionId"], s.get("jobSessionId")))]
+        attach_snapshot(moved, ctx.snapshot_root, home, ids)
+        reply_context(moved, ctx.snapshot_root, home, ids)
         drop(entries)
         if moved["shared"] is not None:
             moved["shared"].pop("stoppedCopies", None)
