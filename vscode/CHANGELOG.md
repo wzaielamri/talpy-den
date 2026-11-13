@@ -11,6 +11,15 @@
   Talpy Chat's *Context 31% used* tag counts it. Fable 5.2 chats show it in
   Talpy Chat too.
 
+### Fixed
+
+- **A background chat you cleared shows the conversation it's on.** After
+  `/clear`, its row kept the conversation before it (its last reply, its
+  context). Once that chat was sent a message with nothing running, Claude
+  Code went on with it as a new background chat, and the old one stayed
+  beside it, waiting for you, with no Hide or Stop. Now the row follows the
+  `/clear`, and the old record goes.
+
 ## 1.19.0
 
 ### New

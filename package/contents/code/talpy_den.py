@@ -1096,6 +1096,22 @@ def parked_row(profile, home, ctx, d, job, roster):
     return None if handed_over(profile, row["chatId"], ctx.profiles) else row
 
 
+def without_taken_over(rows):
+    """An account's rows without the background records (no process) whose
+    conversation another background job took on after they last changed:
+    resumed under the id it went on in after a /clear, it's a job of its
+    own (claude --bg --resume finds a job by the id's first 8 characters
+    only), and the old record stays as it was, "blocked" say, though
+    nothing of it runs or will."""
+    started = {}
+    for s in rows:
+        if s.get("jobId") and s.get("startedAt"):
+            cid = chat_id(s)
+            started[cid] = max(started.get(cid, 0), s["startedAt"])
+    return [s for s in rows if s["pid"] is not None or not s.get("jobId")
+            or started.get(chat_id(s), 0) <= (s["since"] or s.get("startedAt") or 0)]
+
+
 def finish_row(row, job, job_id, profile, ctx, alive):
     """Which conversation the row shows, whether it's shared, its status-line
     snapshot and its subagents."""
@@ -4028,14 +4044,18 @@ def copied_from(profile, session_id, ctx):
 def chat_link(row, job, profile, ctx):
     """(chatId, shared info or None) of a row.
 
-    chatId is the conversation the row shows: its own transcript, or, when its
+    chatId is the conversation the row shows: its own transcript, or the one
+    its background job went on in after a /clear (cleared_to), or, when its
     own file holds no messages, the chat it took over (the job's
     resumeSessionId, else the chat whose `continued-in` record names it).
     """
     own = row["sessionId"]
     job = job if isinstance(job, dict) else {}
     chat, continues = own, None
-    if not has_own_messages(profile, own):
+    now_on = cleared_to(job, own, profile)
+    if now_on is not None:
+        chat = now_on
+    elif not has_own_messages(profile, own):
         target = job.get("resumeSessionId") if valid_id(job.get("resumeSessionId")) else None
         if target == own:
             target = None
@@ -4063,6 +4083,22 @@ def chat_link(row, job, profile, ctx):
         if info:
             return chat, {**info, "forkOf": origin, "forkOn": profile.label}
     return chat, None
+
+
+def cleared_to(job, own, profile):
+    """The conversation a background job went on in under another id than
+    the row's own, or None: when its session moves to another conversation
+    (/clear in it), Claude writes that one's id to resumeSessionId and its
+    transcript to linkScanPath together, and reads the job as that
+    conversation from then on (resumeSessionId ?? sessionId). Not a job
+    whose resumeSessionId names the chat it started from (a fork), which
+    writes a transcript of its own."""
+    now_on = job.get("resumeSessionId")
+    scan = job.get("linkScanPath")
+    if not valid_id(now_on) or now_on == own or not isinstance(scan, str) \
+            or os.path.basename(scan) != now_on + ".jsonl":
+        return None
+    return now_on if transcript_path(profile, now_on) is not None else None
 
 
 def handed_over(profile, chat, profiles):
@@ -10994,6 +11030,8 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
                 errors.append(f"{p.label}: background jobs: {exc}")
         for p, row in newest_job.values():
             rows[p.real].append(row)
+        for real in rows:
+            rows[real] = without_taken_over(rows[real])
 
         logged_out = logged_out_notes(cache_root)
         for gid, members in group_profiles(profiles):

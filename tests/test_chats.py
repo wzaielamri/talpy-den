@@ -463,6 +463,50 @@ class ChatLinkTests(World):
         self.assertEqual(cache.first_uuid(path), "X-first")
 
 
+class ClearedJobTests(World):
+    """A background chat you /clear goes on in the same job under a new
+    conversation: Claude notes it in the job's resumeSessionId, with its
+    transcript in linkScanPath (the job's conversation is resumeSessionId ??
+    sessionId), and that's the chat the row shows. Resumed under that id
+    later (claude --bg --resume finds jobs by the id's first 8 characters
+    only), it's a new job: the old record, with no process and still
+    "blocked", isn't listed beside it."""
+
+    J, R = "11111111-aaaa", "22222222-bbbb"
+
+    def cleared(self, age=600, **kw):
+        self.transcript("work", self.J, [user("j-u", self.now - 90000, self.J, "fix the mesh"),
+                                         reply("j-a", self.now - 89990, self.J, "the old reply")])
+        # (the process writing it started as the job's first id: Claude's session_id)
+        path = self.transcript("work", self.R, [user("r-u", self.now - 3000, self.R, "is it standalone?"),
+                                                reply("r-a", self.now - 2990, self.R, "the new reply", session_id=self.J)])
+        return self.job("work", self.J, age=age, state="blocked", tempo="blocked", needs="login required — run /login",
+                        resumeSessionId=self.R, linkScanPath=str(path), **kw)
+
+    def ids(self, r=None):
+        return [s["sessionId"] for g in (r or self.collect())["groups"] for s in g["sessions"]]
+
+    def test_its_row_shows_the_conversation_it_is_on(self):
+        self.cleared()
+        s = self.row(self.collect(), self.J)
+        self.assertEqual((s["state"], s["chatId"], s["peek"]["replyLine"]), ("waiting", self.R, "the new reply"))
+
+    def test_resumed_as_a_job_of_its_own_the_old_record_isnt_listed(self):
+        self.cleared(age=600)
+        self.job("work", self.R, age=60, state="done", createdAt=iso(self.now - 300))
+        self.live("work", "77", self.R, kind="bg", jobId=self.R[:8])
+        self.assertEqual(self.ids(), [self.R])
+        # (and once that one has no process either, as long as it's listed)
+        os.remove(self.dir("work") / "sessions" / "77.json")
+        self.assertEqual(self.ids(), [self.R])
+
+    def test_one_started_before_the_record_last_changed_doesnt_take_its_place(self):
+        self.cleared(age=60)
+        self.job("work", self.R, age=600, state="done", createdAt=iso(self.now - 900))
+        self.live("work", "77", self.R, kind="bg", jobId=self.R[:8])
+        self.assertEqual(sorted(self.ids()), sorted([self.J, self.R]))
+
+
 class LinkCacheTests(World):
     def test_incremental_scan(self):
         path = self.transcript("personal", "T", [user("u1", self.now, "T"), reply("a1", self.now, "T")])

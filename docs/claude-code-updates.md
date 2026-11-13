@@ -342,6 +342,24 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
     record wins.
   - Test: SessionTests.test_parked_and_finished_jobs_listed (test_talpy_den.py),
     LiveAttributionTests.test_job_in_two_profiles_listed_once (test_chats.py).
+- [ ] **A job's conversation after /clear.** `/clear` in a background chat keeps its job (and its short id):
+  Claude writes the new conversation's id to `resumeSessionId` and its transcript to `linkScanPath` together
+  (both at once whenever the session changes), and reads the job as `resumeSessionId ?? sessionId` from then
+  on (respawn, `claude attach`, its transcript in `claude agents`). The new transcript starts with the
+  `/clear` command, and its entries carry the job's first id in `session_id`. `claude --bg --resume <id>`
+  looks for a job only at `jobs/<id[:8]>`, so resuming the cleared-to id starts a job of its own, and the old
+  record stays as it was (`blocked`, say) with nothing running; `claude agents --all` keeps listing it. A
+  fork's record can name the chat it started from in `resumeSessionId` without `linkScanPath` naming it.
+  Checked on 2.1.323.
+  - Used in: talpy_den.py cleared_to, chat_link, without_taken_over.
+  - Check: a throwaway background chat, `/clear` in it (`claude attach $SHORT`), one prompt, then
+    `jq '{sessionId,resumeSessionId,linkScanPath}' $C/jobs/$SHORT/state.json`: `linkScanPath` should end in
+    `<resumeSessionId>.jsonl`. Stop it, `claude --bg --resume <resumeSessionId> 'hi'`, and `ls $C/jobs/`
+    should show a second job; Talpy Den should list one row for the chat.
+  - Breaks: a cleared background chat's row shows the conversation before the `/clear` (its last reply, its
+    context, what stopped it), and once it's resumed the old record stays listed beside it, waiting for you,
+    with nothing that takes it off the list.
+  - Test: ClearedJobTests (test_chats.py).
 - [ ] **One-shot exec jobs.** `template` `exec` with no `respawnFlags` marks a one-shot job. Once its process
   is gone, it is never "waiting" or "settled".
   - Used in: talpy_den.py parked_job_state.
