@@ -10720,10 +10720,12 @@ HIDDEN_ID_MAX = 4096
 
 def row_over(s):
     """A chat's row that Hide takes out of the list: a finished one, or one
-    no process runs that a usage limit or an expired login stopped (a
-    background chat Claude's service let go of: it waits for you to go on
-    with it, and nothing of it runs). It comes back once it runs again."""
-    return s["state"] == "done" or (s["state"] == "idle" and s.get("pid") is None and bool(s.get("stopped")))
+    no process runs that a usage limit or an expired login stopped, or that
+    waits for you (a background chat Claude's service let go of: it waits
+    for you to go on with it, and nothing of it runs; one whose Claude runs
+    and asks you something has no Hide). It comes back once it runs again."""
+    return s["state"] == "done" or (s.get("pid") is None and (
+        s["state"] == "waiting" or s["state"] == "idle" and bool(s.get("stopped"))))
 
 
 def hidden_id_ok(kind, item_id):

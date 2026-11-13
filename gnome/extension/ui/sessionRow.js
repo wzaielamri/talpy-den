@@ -123,9 +123,9 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
             hoverButtons.push(del);
         end.add_child(del);
     }
-    if (s.state === 'done' || (s.state === 'idle' && s.pid === null && s.stopped)) {
+    if (s.state === 'done' || (s.pid === null && (s.state === 'waiting' || (s.state === 'idle' && s.stopped)))) {
         // Hide a finished chat here (nothing is deleted); also one no process runs that a usage
-        // limit or an expired login stopped (talpy_den.row_over)
+        // limit or an expired login stopped, or that waits for you (talpy_den.row_over)
         const hide = iconButton(Icons.gnome.hide,
             () => (remoteHost ? ctx.remoteDismiss(remoteHost, s.sessionId) : ctx.dismissSession(s.sessionId)));
         tips.add(hide, ['Hide this chat', L.hideHint(remoteHost)]);

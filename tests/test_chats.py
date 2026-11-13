@@ -506,6 +506,16 @@ class ClearedJobTests(World):
         self.live("work", "77", self.R, kind="bg", jobId=self.R[:8])
         self.assertEqual(sorted(self.ids()), sorted([self.J, self.R]))
 
+    def test_one_waiting_for_you_with_nothing_running_stays_hidden_until_it_runs_again(self):
+        self.job("work", "B", age=600, state="blocked", tempo="blocked", needs="Which file?")
+        cs.private_dir(self.cache)
+        cs.change_dismissed(self.cache, add="B")
+        r = self.collect()
+        self.assertEqual((self.ids(r), r["counts"]["waiting"], r["dismissed"]), ([], 0, 1))
+        self.live("work", "70", "B", kind="bg", jobId="B", status="waiting", waitingFor="Bash")  # (woken, it asks again)
+        self.assertEqual(self.ids(), ["B"])
+        self.assertNotIn("B", cs.load_dismissed(self.cache))
+
 
 class LinkCacheTests(World):
     def test_incremental_scan(self):

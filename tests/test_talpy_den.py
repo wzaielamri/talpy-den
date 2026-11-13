@@ -1351,7 +1351,12 @@ class DismissTests(Fixture):
         self.assertTrue(cs.row_over({"state": "idle", "pid": None, "stopped": stop}))
         self.assertFalse(cs.row_over({"state": "idle", "pid": 7, "stopped": stop}))      # (its Claude still runs: Stop first)
         self.assertFalse(cs.row_over({"state": "idle", "pid": None, "stopped": None}))
-        self.assertFalse(cs.row_over({"state": "waiting", "pid": None, "stopped": None}))  # (it asks you something)
+
+    def test_a_chat_waiting_for_you_with_nothing_running_can_be_hidden(self):
+        # (a background chat Claude's service let go of while it waited for you: listed for good, with no
+        # Stop, as nothing of it runs; one whose Claude runs and asks you something keeps no Hide)
+        self.assertTrue(cs.row_over({"state": "waiting", "pid": None, "stopped": None}))
+        self.assertFalse(cs.row_over({"state": "waiting", "pid": 7, "stopped": None}))
 
     def test_removing_while_a_check_runs(self):
         cs.private_dir(self.cache)

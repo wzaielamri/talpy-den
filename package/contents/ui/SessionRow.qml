@@ -759,10 +759,11 @@ RowLayout {
                     }
                     HoverButton {
                         // Hide a finished chat here (nothing is deleted); also one no process runs that a
-                        // usage limit or an expired login stopped (talpy_den.row_over: it had no button
-                        // that took it off the list)
+                        // usage limit or an expired login stopped, or that waits for you (talpy_den.row_over:
+                        // it had no button that took it off the list)
                         visible: row.session.state === "done"
-                                 || (row.session.state === "idle" && row.session.pid === null && !!row.session.stopped)
+                                 || (row.session.pid === null && (row.session.state === "waiting"
+                                     || (row.session.state === "idle" && !!row.session.stopped)))
                         icon.name: Icons.plasma.hide
                         text: i18n("Hide this chat")
                         Layout.alignment: Qt.AlignTop

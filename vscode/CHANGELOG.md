@@ -19,6 +19,11 @@
   Code went on with it as a new background chat, and the old one stayed
   beside it, waiting for you, with no Hide or Stop. Now the row follows the
   `/clear`, and the old record goes.
+- **Hide a background chat that waits for you with nothing running.** One
+  Claude's service let go of while it waited for you stayed listed until you
+  went on with it, with no Stop (nothing of it runs) and no Hide. It has
+  Hide now, as a finished chat has, and comes back once it runs again; one
+  whose Claude runs and asks you something still has none.
 
 ## 1.19.0
 
