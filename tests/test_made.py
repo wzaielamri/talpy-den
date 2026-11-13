@@ -174,6 +174,25 @@ class MadeItemsTests(MadeFixture):
             tool_result("b2", self.at(5), text="out/render.png  app.py"))   # (relative to the folder: the same file, shown already)
         self.assertEqual(self.made(items), [("b1/made/0", "b1", "render.png", "picture", str(new), len(PNG), False)])
 
+    def test_a_picture_a_command_named_then_claude_read_shows_once(self):
+        # (a screenshot made and listed (ls -l) by a command, then read: one line, under the command,
+        # that unfolds to what Claude saw; a picture made anew and read again: its own)
+        shot = self.folder / "kp/shot.png"
+        shot.parent.mkdir()
+        shot.write_bytes(PNG)
+        os.utime(shot, (self.at(2), self.at(2)))
+        items = self.items(
+            tool_use("b1", "Bash", {"command": "firefox --screenshot kp/shot.png && ls -l kp/shot.png"}, self.at(1), "m1"),
+            tool_result("b1", self.at(3), text=f"-rw-------. 1 me me 149949 Nov 13 14:11 {shot}"),
+            tool_use("r1", "Read", {"file_path": str(shot)}, self.at(4), "m2"),
+            result("r1", self.at(5), [image_block()], toolUseResult={"type": "image", "file": {"type": "image/png", "originalSize": 999}}),
+            tool_use("r2", "Read", {"file_path": str(shot)}, self.at(6), "m3"),
+            result("r2", self.at(7), [image_block(PNG + b"2")]),
+            text_reply(f"See {shot}", self.at(8), "r9"))
+        self.assertEqual(self.made(items), [("b1/made/0", "b1", "shot.png", "picture", str(shot), 999, False),
+                                            ("r2/made/0", "r2", "shot.png", "picture", str(shot), len(PNG) + 1, False)])
+        self.assertEqual([i["made"].get("step") for i in items if i["kind"] == "made"], ["r1", "r2"])
+
     def test_pictures_a_reply_names_that_are_there(self):
         shot, rel = self.home / "shots/final.png", self.folder / "docs/look.webp"
         write(shot, "x")

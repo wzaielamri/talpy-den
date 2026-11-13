@@ -195,11 +195,13 @@ class Collector:
         "Plan: " and its title), "made": {"path", "type", "name", "size" (bytes, or None),
         "gone" (made by a step, not there now), "step" (a Read's: what Claude saw is in the
         transcript, show(step=…))}}. A file shows once a turn, under the first that made or
-        named it (a picture Claude read: each other picture it saw there); one a command or a
-        reply names only when it's there (a command's, when it's newer than the turn). Those
-        before first aren't listed (the conversation's newest only): only those of the turn
-        first is in are gone through, for what that turn showed already."""
-        out, start, shown = [], None, set()
+        named it (a picture Claude read: each other picture it saw there; the first it saw of
+        a file shown already goes on that line, which shows what Claude saw: a screenshot a
+        command made and named, then read, is one line); one a command or a reply names only
+        when it's there (a command's, when it's newer than the turn). Those before first
+        aren't listed (the conversation's newest only): only those of the turn first is in
+        are gone through, for what that turn showed already."""
+        out, start, shown, unseen = [], None, set(), {}   # (unseen: path -> the line of a file shown with nothing Claude saw on it)
         begin = first
         while begin > 0 and not (items[begin].get("kind") == "you" and not items[begin].get("answered") and not items[begin].get("queued")):
             begin -= 1
@@ -211,7 +213,7 @@ class Collector:
             kind = it.get("kind")
             if kind == "you":
                 if not it.get("answered") and not it.get("queued"):
-                    start, shown = it.get("at"), set()   # (a turn of its own)
+                    start, shown, unseen = it.get("at"), set(), {}   # (a turn of its own)
                 continue
             if kind == "tool":
                 found = self.steps.get(it.get("key"))
@@ -222,6 +224,12 @@ class Collector:
             for n, (path, what, size, how) in enumerate(found or ()):
                 seen = isinstance(how, tuple)
                 if (path, how[1]) in shown if seen else path in shown:
+                    continue
+                if seen and path in unseen:   # (on the line of it shown already: what Claude saw)
+                    shown.add((path, how[1]))
+                    line = unseen.pop(path)
+                    line.pop("gone", None)
+                    line.update(size=size, step=it["key"])
                     continue
                 st = None if seen else self.stat(path)
                 if how in ("new", "named"):
@@ -235,8 +243,11 @@ class Collector:
                 made = {"path": path, "type": what, "name": name, "size": st.st_size if st is not None else size}
                 if seen:
                     made["step"] = it["key"]
-                elif st is None:
-                    made["gone"] = True
+                else:
+                    if what == "picture":
+                        unseen[path] = made
+                    if st is None:
+                        made["gone"] = True
                 title = (self.titles.get(path) or os.path.splitext(name)[0]) if what == "plan" else None
                 if listed:
                     out.append({"kind": "made", "key": f"{it['key']}/made/{n}", "of": it["key"], "at": it.get("at"),

@@ -31,6 +31,11 @@
   reach the chat you use. Now the pick goes to where the chat moved, and an
   idle old copy shown in no terminal isn't listed, so the tab follows the move.
 
+- **A picture a command made and Claude then looked at shows once.** A
+  screenshot a command made and named (`ls -l shot.png`), then read, was
+  listed twice in Talpy Chat, under the command and under the read. Now it's
+  one line, under the command, that shows what Claude saw.
+
 ## 1.19.0
 
 ### New
