@@ -1186,10 +1186,12 @@ class TalpyChatThereTests(TwoAccountHost):
         self.assertEqual(argv[-1], "Build it")
         # what it asks: in the host's state folder, and on its row there
         asks = self.fake_home / ".local/state/talpy-den/permissions"
+        # (the request itself, <id>.json: the hook writes <id>.json.tmp first, then renames it)
+        requests = lambda: [n for n in os.listdir(asks) if n.endswith(".json")] if asks.is_dir() else []
         deadline = time.time() + 10
-        while time.time() < deadline and not (asks.is_dir() and os.listdir(asks)):
+        while time.time() < deadline and not requests():
             time.sleep(0.05)
-        (name,) = os.listdir(asks)
+        (name,) = requests()
         rid = name[:-len(".json")]
         rows = [s for g in remote.status("lab", tokens=False)["result"]["groups"] for s in g["sessions"]]
         (row,) = [s for s in rows if s["sessionId"] == "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"]

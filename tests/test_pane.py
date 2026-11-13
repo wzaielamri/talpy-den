@@ -480,7 +480,8 @@ class AnswersInChatTests(PaneFixture):
                          {"kind": "you", "key": "q1/answer", "text": "Teal", "answered": "question"})
         self.assertEqual(you["answers"], [{"header": "Colour", "question": "Which colour should the logo be?",
                                            "answer": "Teal", "notes": ""}])
-        self.assertEqual(you["at"], int((t + 5) * 1000))
+        # (ms read back from the entry's ISO time: a float, so .802 can come back as 801)
+        self.assertAlmostEqual(you["at"], int((t + 5) * 1000), delta=1)
 
     def test_still_asking(self):
         items = self.items(self.ask(self.now - 90, self.QUESTION))
