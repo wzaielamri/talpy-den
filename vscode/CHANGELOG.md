@@ -24,6 +24,12 @@
   went on with it, with no Stop (nothing of it runs) and no Hide. It has
   Hide now, as a finished chat has, and comes back once it runs again; one
   whose Claude runs and asks you something still has none.
+- **A model picked for a moved chat goes where it moved.** When Claude moved
+  a chat to the background under a new id, its old copy's process could stay
+  on, idle, listed beside it; a model picked in a Talpy Chat tab still on the
+  old copy woke that copy again (two of the conversation at work) and didn't
+  reach the chat you use. Now the pick goes to where the chat moved, and an
+  idle old copy shown in no terminal isn't listed, so the tab follows the move.
 
 ## 1.19.0
 

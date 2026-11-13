@@ -4283,12 +4283,21 @@ def follow_moved(groups, ctx):
     """A chat Claude moved to the background under a new id (chat_moves) is
     that one now: a row of its old id with no process isn't listed (a
     process still on the old id is a chat at work, and stays), nor is the
-    old id among the recent chats."""
+    old id among the recent chats. Nor is one whose background process lives
+    on idle there, shown in no terminal (Claude's service keeps one for
+    hours): a Talpy Chat window on it would stay on the old copy, and what it
+    sends or picks would go there."""
     moves = chat_moves(ctx)
     if not moves:
         return
+    left = lambda s: s.get("kind") == "bg" and s["state"] not in ("working", "waiting")
+    rows = [s for g in groups for s in g["sessions"]]
+    if any(s["pid"] is not None and chat_id(s) in moves and left(s) for s in rows):
+        clients, reals = attach_clients(), {p.key: p.real for p in ctx.profiles}
+        bg = [s for s in rows if s.get("kind") == "bg"]
+        left = lambda s, idle=left: idle(s) and not attached_in(s, bg, clients, reals)
     for g in groups:
-        g["sessions"] = [s for s in g["sessions"] if s["pid"] is not None or chat_id(s) not in moves]
+        g["sessions"] = [s for s in g["sessions"] if chat_id(s) not in moves or s["pid"] is not None and not left(s)]
     ctx.moved_on = set(getattr(ctx, "moved_on", None) or ()) | set(moves)
 
 

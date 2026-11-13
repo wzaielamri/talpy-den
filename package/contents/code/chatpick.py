@@ -129,7 +129,11 @@ def set_options(home, extra_dirs, profile_key, chat_id, model=None, effort=None,
     """Set a chat's own model and effort (None: as it is; "" or "default":
     Claude's default): {"ok", "message", "how": "now" (it goes on with them
     at once) | "next" (from your next message) | "terminal" (not from here),
-    "model", "effort"}. One wake of a chat at a time (talpy_den.wake_lock)."""
+    "model", "effort"}. One wake of a chat at a time (talpy_den.wake_lock).
+    A chat Claude moved to the background under a new id gets them there, as
+    its go-on goes on there (talpy_den.continuation): never the old id, whose
+    process may live on, idle, and would be stopped and woken again, a second
+    copy of the conversation at work."""
     try:
         model = pick_value(model)
         effort = pick_value(effort, cs.EFFORT_LEVELS + (cs.ULTRACODE,))
@@ -143,6 +147,10 @@ def set_options(home, extra_dirs, profile_key, chat_id, model=None, effort=None,
     profile = next((p for p in profiles if cs.matches_profile(p, profile_key)), None)
     if profile is None or cs.transcript_path(profile, chat_id) is None:
         return {"ok": False, "message": "That chat isn't on this account any more"}
+    now_id = cs.continuation(home, extra_dirs, profile.key, chat_id)
+    if now_id != chat_id:
+        chat_id = now_id
+        profile = next((p for p in [profile] + profiles if cs.transcript_path(p, chat_id) is not None), profile)
     with cs.wake_lock(home, chat_id) as waited:
         if waited:
             cs.wake_settle(home, extra_dirs, chat_id)

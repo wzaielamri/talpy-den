@@ -1491,6 +1491,43 @@ class MovedChatTests(TaskFixture):
         self.assertEqual(answer, {"ok": True, "message": ""})
         self.assertEqual(self.calls(), [])
 
+    def test_a_model_picked_for_it_goes_where_it_moved_never_waking_the_old_id(self):
+        # (2026-11-13: Talpy Chat on the old id, whose background process lived on, idle: the model picked
+        # there stopped that one, was saved in its job and woke it, a second copy of the conversation at
+        # work, and the chat that went on kept its model)
+        import chatpick
+        old_job, new_job = (self.home / f".claude-work/jobs/{i[:8]}/state.json" for i in (self.OLD, self.NEW))
+        write(old_job, {"sessionId": self.OLD, "respawnFlags": ["--model", "haiku"]})
+        write(new_job, {"sessionId": self.NEW, "respawnFlags": ["--permission-mode", "auto", "--model", "fable"]})
+        write(self.home / ".claude-work/sessions/50.json",
+              session(self.OLD, kind="bg", status="idle", jobId=self.OLD[:8], cwd=str(self.folder)))
+        with mock.patch.object(cs, "stop_background") as stopped:
+            answer = chatpick.set_options(self.home, [], ".claude-work", self.OLD, model="opus",
+                                          claude=str(self.bin / "claude"), wait=1)
+        self.assertEqual((answer["ok"], answer["how"]), (True, "next"), answer)
+        self.assertEqual(json.loads(new_job.read_text())["respawnFlags"], ["--permission-mode", "auto", "--model", "opus"])
+        self.assertEqual(json.loads(old_job.read_text())["respawnFlags"], ["--model", "haiku"])
+        self.assertEqual((stopped.call_count, self.calls()), (0, []))
+
+    def test_an_idle_background_process_left_on_the_old_id_isnt_the_chat(self):
+        # (2026-11-13: the old id's background process lived on idle for hours after the move: its row stayed
+        # beside the chat's, and a Talpy Chat window on it, which follows a move only once nothing runs under the
+        # old id, sent what you picked or wrote to the old copy)
+        write(self.home / f".claude-work/jobs/{self.OLD[:8]}/state.json",
+              {"sessionId": self.OLD, "state": "done", "tempo": "idle", "updatedAt": iso(self.now - 600)})
+        entry = self.home / ".claude-work/sessions/50.json"
+        old_rows = lambda: [s["sessionId"] for s in self.rows(self.status()) if s["sessionId"] == self.OLD]
+        with mock.patch.object(cs, "attach_clients", return_value=[]):
+            write(entry, session(self.OLD, kind="bg", status="idle", jobId=self.OLD[:8], cwd=str(self.folder)))
+            self.assertEqual(old_rows(), [])
+            self.assertIn(self.OLD, self.status()["moved"])   # (a window on it follows the move)
+            # at work there, or shown in a terminal: a chat someone uses, listed as before
+            write(entry, session(self.OLD, kind="bg", status="busy", jobId=self.OLD[:8], cwd=str(self.folder)))
+            self.assertEqual(old_rows(), [self.OLD])
+            write(entry, session(self.OLD, kind="bg", status="idle", jobId=self.OLD[:8], cwd=str(self.folder)))
+            with mock.patch.object(cs, "attached_in", return_value={"in": "terminal", "app": "Konsole"}):
+                self.assertEqual(old_rows(), [self.OLD])
+
     def test_its_row_star_bookmarks_keep_and_queued_go_on_follow_it(self):
         cs.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
         cs.change_stars(self.cache_root(), "chats", self.OLD)
