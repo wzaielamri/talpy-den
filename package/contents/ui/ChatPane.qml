@@ -1324,14 +1324,18 @@ Window {
     // there. Its rows wrap again, taller in a narrower window, and the end went down out of
     // view: you saw older messages. Where the list was is noted once its changes are done
     // (Qt.callLater): a new size lays it out again at once, its rows wrapped before the
-    // window says it has a new width
+    // window says it has a new width. The end now, and once more when what the new size
+    // changed is laid out: no more (not keepEnd, which follows the end for 0.8 s, a jump
+    // back down for each row laid out meanwhile: a resize felt laggy with it)
     property bool endKept: true   // (at the end: noted as the list moves or its rows change, list onContentYChanged…)
     function noteEnd() {
         endKept = nearEnd()
     }
     function resized() {
-        if (endKept && !holdTop.running && !scrolling())
-            keepEnd()
+        if (endKept && !holdTop.running && !scrolling()) {
+            followEnd()
+            Qt.callLater(followEnd)
+        }
     }
     onWidthChanged: resized()
     onHeightChanged: resized()

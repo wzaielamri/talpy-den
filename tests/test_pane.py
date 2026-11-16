@@ -3865,7 +3865,8 @@ class ResizeKeepsTheEndTests(unittest.TestCase):
         pane = (UI / "ChatPane.qml").read_text()
         resized = pane[pane.index("    function resized() {"):]
         resized = resized[:resized.index("\n    }\n") + 6]
-        self.assertIn("if (endKept && !holdTop.running && !scrolling())\n            keepEnd()", resized)   # (scrolled up: it stays where you are)
+        self.assertIn("if (endKept && !holdTop.running && !scrolling()) {\n            followEnd()\n            Qt.callLater(followEnd)\n        }", resized)   # (scrolled up: it stays where you are)
+        self.assertNotIn("keepEnd()", resized)   # (no following for a while after: a resize was laggy with it)
         self.assertIn("\n    onWidthChanged: resized()\n    onHeightChanged: resized()\n", pane)   # (the window's)
         # where the list is, noted once its changes are done: a new size lays the list out again
         # and its rows wrap at once, before the window says it has a new width
