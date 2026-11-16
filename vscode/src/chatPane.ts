@@ -22,7 +22,7 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, defaultGroup, doingText, hostLabel, liveOf, machineStatus, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, shownUpTo, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult } from "./shared/pane";
+import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, shownUpTo, sideAnswerOf, sidePickOf, sidesOf, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult, type SidePick } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -66,6 +66,12 @@ const TEXT_IN_ARGS = 32_000; // bytes of a message that go to pane.py as an argu
 type DictationState = Extract<PaneHostMessage, { type: "dictation" }>["state"];
 const LIMIT = 120;
 const LIMIT_MAX = 2000;
+// A side question waits for its answer (pane.py: up to 240 s, an SSH host's a minute more to get there)
+const SIDE_TIMEOUT_MS = 300_000;
+const HOST_SIDE_TIMEOUT_MS = 360_000;
+// The side questions panel's pick and whether it's open, kept for every Talpy Chat (globalState)
+const SIDE_OPEN_KEY = "talpyDen.sideQuestions.open";
+const SIDE_PICK_KEY = "talpyDen.sideQuestions.pick";
 
 // The chat's row now: a listed session, else one of its account's recent chats.
 // One Claude moved to the background under a new id (its terminal closed: the
@@ -363,6 +369,17 @@ export class ChatPanes implements vscode.Disposable {
 
   // /permissions (commandRun "page"): Talpy Den's Permissions tab (extension.ts sets it)
   openPermissions: () => Promise<void> = async () => undefined;
+
+  // Where the side questions panel's pick and whether it's open are kept (extension.ts: the extension's
+  // globalState, for every window); none: each tab starts closed, on the chat's own model
+  memory: vscode.Memento | undefined;
+  sidePrefs(): { open: boolean; pick: SidePick } {
+    return { open: this.memory?.get(SIDE_OPEN_KEY) === true, pick: sidePickOf(this.memory?.get(SIDE_PICK_KEY)) ?? "" };
+  }
+  async keepSidePrefs(open: boolean | undefined, pick: SidePick | undefined): Promise<void> {
+    if (open !== undefined) await this.memory?.update(SIDE_OPEN_KEY, open);
+    if (pick !== undefined) await this.memory?.update(SIDE_PICK_KEY, pick);
+  }
 
   // Stop on a chat's working line (shared/pane.ts stopOf): what Claude does
   // now stops and the chat stays. In one of this window's terminals Ctrl+C is
@@ -828,7 +845,10 @@ class Pane implements vscode.Disposable {
     }
     // (at the most a tab shows: no Show earlier, it says so instead)
     const capped = r.ok && !!r.more && this.limit >= LIMIT_MAX;
-    this.post({ type: "conversation", answer: (r.ok ? { ...r, more: !!r.more && !capped, capped } : r) as never });
+    // (its side questions, each only as what it can be)
+    const sides = r.ok && r.sides !== undefined
+      ? { sides: sidesOf(r.sides), sidesV: typeof r.sidesV === "number" && Number.isFinite(r.sidesV) ? r.sidesV : 0 } : {};
+    this.post({ type: "conversation", answer: (r.ok ? { ...r, more: !!r.more && !capped, capped, ...sides } : r) as never });
     return true;
   }
 
@@ -1010,6 +1030,48 @@ class Pane implements vscode.Disposable {
                     bookmarks: Array.isArray(r.bookmarks) ? r.bookmarks : [], bookmarksV: typeof r.bookmarksV === "number" ? r.bookmarksV : 0 });
         break;
       }
+      case "sideAsk": {
+        // a side question (Claude's /btw): answered by a copy of the chat Claude doesn't keep, with no tools,
+        // nothing added to the chat (pane.py --side-question: it waits for the answer); several go at once,
+        // none waits for another. Kept on this computer, a host's chat's too (asked there)
+        if (typeof m.id !== "number" || typeof m.text !== "string" || this.fresh) break;
+        const pick = sidePickOf(m.pick ?? "");
+        const text = m.text.trim();
+        const chatId = this.chatId;
+        if (pick === null || !text || text.length > TEXT_MAX) {
+          this.post(sideAnswerOf("ask", m.id, chatId, { ok: false, message: !text ? "Write your question first" : pick === null ? "Not a model side questions can use" : "That question is too long" }));
+          break;
+        }
+        // (a long one in a file of its own, as a message is; a host's too, out of the process list)
+        const file = this.host || Buffer.byteLength(text) > TEXT_IN_ARGS ? path.join(cacheDir(), `text-${crypto.randomUUID()}.txt`) : "";
+        let r: Record<string, unknown>;
+        try {
+          if (file) {
+            fs.mkdirSync(cacheDir(), { recursive: true, mode: 0o700 });
+            fs.writeFileSync(file, text, { mode: 0o600, flag: "wx" });
+          }
+          r = await backend.pane(["--side-question", chatId, ...(file ? ["--text-file", file] : ["--text", text]), ...(pick ? ["--model", pick] : []),
+                                  ...profile, ...where], this.host ? HOST_SIDE_TIMEOUT_MS : SIDE_TIMEOUT_MS);
+        } catch (e) {
+          r = { ok: false, message: e instanceof Error ? e.message : String(e) };
+        } finally {
+          if (file) fs.rmSync(file, { force: true });
+        }
+        this.post(sideAnswerOf("ask", m.id, chatId, r));
+        break;
+      }
+      case "sideRemove": {
+        // one of the chat's side questions removed, or all of them (kept here, a host's chat's too)
+        if (typeof m.id !== "number" || typeof m.side !== "string" || !(m.side === "all" || /^[0-9a-f]{12}$/.test(m.side)) || this.fresh) break;
+        const chatId = this.chatId;
+        const r = await backend.pane(["--side-question", chatId, "--remove", m.side, ...where], this.host ? 30000 : 15000)
+          .catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as Record<string, unknown>);
+        this.post(sideAnswerOf("remove", m.id, chatId, r));
+        break;
+      }
+      case "sidePrefs":
+        await this.owner.keepSidePrefs(typeof m.open === "boolean" ? m.open : undefined, sidePickOf(m.pick) ?? undefined);
+        break;
       case "hold":
         if (typeof m.id === "number" && typeof m.text === "string" && ["auto", "background", "enter"].includes(m.how))
           this.held.set(m.id, { text: m.text, how: m.how, until: Date.now() + HOLD_MS });
@@ -1357,8 +1419,9 @@ class Pane implements vscode.Disposable {
     const { uri } = this.owner.ext;
     const nonce = crypto.randomBytes(16).toString("base64");
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(uri, ...p)).toString();
+    // (side: the side questions panel's pick and whether it was open, kept; fresh: a new chat's, which has none)
     const config = JSON.stringify({ tab, local: !this.host, scale: Pane.textScale(), split: Pane.sideBySide(), font: Pane.chatFont(),
-                                    suggest: Pane.suggests() });
+                                    suggest: Pane.suggests(), side: this.owner.sidePrefs(), fresh: !!this.fresh });
     const csp = [
       "default-src 'none'",
       "base-uri 'none'",

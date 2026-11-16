@@ -77,6 +77,8 @@ const TABLE = {
     collapseAll:     ['collapse-all',                  null,         'pan-up-symbolic'],
     compact:         ['collapse',                      'compress',   'view-restore-symbolic'],                            // Talpy Chat: Compact now (the context tag's menu)
     quote:           ['format-text-blockquote',        'quote',      'mail-reply-sender-symbolic'],       // Talpy Chat: Reply to this (a selection, quoted in the box)
+    sideQuestions:   ['side-questions-symbolic.svg',   'question',   'dialog-question-symbolic'],         // Talpy Chat: the side questions panel (Claude's /btw beside the chat; a bubble asking, VS Code's shape)
+    explain:         ['explain-symbolic.svg',          'lightbulb',  'dialog-information-symbolic'],      // Talpy Chat: Explain this (a selection, asked as a side question; Breeze's help-hint is an "i")
     peekOpen:        ['arrow-up',                      'chevron',    'pan-up-symbolic'],                  // what's under a line, shown
     peekClosed:      ['arrow-down',                    'chevron',    'pan-down-symbolic'],
     zoomIn:          ['zoom-in',                       'zoomIn',     'zoom-in-symbolic'],

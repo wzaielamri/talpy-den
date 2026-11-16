@@ -2,7 +2,7 @@
 // chat, its conversation, and its review when the page asks for it.
 
 import "../webview/chat";
-import { entryOf, unhookedText, type Asks, type Bookmark, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type ReviewAnswer, type UsualReplies } from "../src/shared/pane";
+import { entryOf, unhookedText, type Asks, type Bookmark, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type ReviewAnswer, type Side, type UsualReplies } from "../src/shared/pane";
 
 const params = new URLSearchParams(location.search);
 const now = Date.now();
@@ -308,7 +308,7 @@ window.addEventListener("harness-post", (e: Event) => {
   const m = (e as CustomEvent).detail as { type: string };
   if (m.type === "ready") {
     send({ type: "chat", chat });
-    send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1", ...turnEnd, ...marksOf(),
+    send({ type: "conversation", answer: { ok: true, items: fresh ? [] : items, more: !fresh, stamp: "1", ...turnEnd, ...marksOf(), ...sidesOfHarness(),
       // (?recap=1: Claude's own recap, written when you came back: Since you last looked shows it)
       recap: params.get("recap") === "1" ? { text: "You asked to fix the week numbers in the date parser. It's fixed, the parser tests pass, and the next step is to decide whether to merge.", at: now } : null,
       // (what /model and /effort's lists mark: ?ultracode for a chat with it on)
@@ -571,3 +571,81 @@ if (params.get("scroll") === "top")
     const list = document.querySelector<HTMLElement>(".pane-list");
     if (list) list.scrollTop = Number(params.get("by") ?? 0);
   }, 1200);
+
+// ?sides=1: the chat's side questions (one answered on Haiku, one on the chat's model with a quote and
+// code, a stand-in Claude wrote, one with no answer, one on its way); &side=open: the panel open (kept
+// so: dev/chat.html); a question asked is answered after ?sidewait=MS (1500), or fails with ?sidefail=1;
+// ?sideask=TEXT: asked from the box; ?sidemenu=1: the model's menu open; ?sideclear=1: Remove all's
+// question; ?sidehover=N: the pointer on the Nth (its actions); ?explain=1: a reply's words selected
+// (Reply to this and Explain this by them), ?explain=go: Explain this clicked
+let sides: Side[] = [];
+let sidesV = 0;
+let sideN = 0;
+if (params.get("sides") === "1") {
+  const at = (minutes: number) => now - minutes * 60_000;
+  sides = [
+    { id: "a00000000001", q: "Why does `isoWeek` cap weeks at 52?", at: at(42), pick: "haiku", model: "claude-haiku-4-5", done: at(41.9),
+      a: "Because it was written for years with 52 weeks only. A year has **53** ISO weeks when it starts on a Thursday (or a leap year starting on a Wednesday), so the cap turns week 53 into week 1." },
+    { id: "a00000000002", q: "Explain this part of the chat:\n\n> if (week > weeksInYear(date)) return 1;", at: at(20), pick: "", model: "claude-opus-5-5", done: at(19.8),
+      a: "It wraps a week past the year's last one round to week 1 of the next year:\n\n```ts\nweeksInYear(new Date(\"2026-06-01\")) // 53\n```\n\nSo 2026-12-31 stays in week 53." },
+    { id: "a00000000003", q: "Is Claude done with the tests?", at: at(9), pick: "sonnet", model: "claude-sonnet-4-5", done: at(8.9), synthetic: true,
+      a: "No answer: the chat had nothing to say about that yet." },
+    { id: "a00000000004", q: "Which file holds the calendar helpers?", at: at(5), pick: "", model: "", done: at(1), error: "No answer came: ask again" },
+    { id: "a00000000005", q: "What does the parser do with time zones?", at: now - 4000, pick: "", model: "", pending: true },
+  ];
+  sidesV = 3;
+}
+function sidesOfHarness(): Partial<Conversation> {
+  return sidesV ? { sides, sidesV } : {};
+}
+window.addEventListener("harness-post", (e: Event) => {
+  const m = (e as CustomEvent).detail as { type: string; id: number; text?: string; pick?: Side["pick"]; side?: string };
+  if (m.type === "sideAsk") {
+    const id = `b${String(++sideN).padStart(11, "0")}`;
+    const item: Side = { id, q: m.text ?? "", at: Date.now(), pick: m.pick ?? "", model: "", pending: true };
+    sides = [...sides, item];
+    sidesV += 1;
+    setTimeout(() => {
+      const fail = params.get("sidefail") === "1";
+      const done: Side = fail ? { ...item, pending: undefined, done: Date.now(), error: "Claude's background service didn't answer" }
+        : { ...item, pending: undefined, done: Date.now(), model: m.pick === "haiku" ? "claude-haiku-4-5" : m.pick === "sonnet" ? "claude-sonnet-4-5" : "claude-opus-5-5",
+            a: `About that: **${(m.text ?? "").split("\n")[0].slice(0, 40)}**, the chat so far says the parser reads each date in UTC.` };
+      sides = sides.map((s) => (s.id === id ? done : s));
+      sidesV += 1;
+      send({ type: "side", kind: "ask", id: m.id, chatId: chat.chatId, ok: !fail, message: fail ? done.error! : "", side: done, sides, sidesV });
+    }, Number(params.get("sidewait") ?? 1500));
+  } else if (m.type === "sideRemove") {
+    sides = m.side === "all" ? [] : sides.filter((s) => s.id !== m.side);
+    sidesV += 1;
+    setTimeout(() => send({ type: "side", kind: "remove", id: m.id, chatId: chat.chatId, ok: true, message: "", sides, sidesV }), 150);
+  }
+});
+const sideAsk = params.get("sideask");
+if (sideAsk)
+  setTimeout(() => {
+    const box = document.querySelector<HTMLTextAreaElement>(".pane-side .pane-reply");
+    if (!box) return;
+    box.value = sideAsk;
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    setTimeout(() => box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })), 50);
+  }, 700);
+if (params.get("sidemenu") === "1") setTimeout(() => document.querySelector<HTMLButtonElement>(".pane-side-pick")?.click(), 700);
+if (params.get("sideclear") === "1") setTimeout(() => document.querySelector<HTMLButtonElement>(".pane-side-head .btn")?.click(), 700);
+const sideHover = params.get("sidehover");
+if (sideHover) {
+  const style = document.createElement("style");
+  style.textContent = `.pane-side-item:nth-child(${Number(sideHover)}) .pane-side-acts { display: flex; }`;
+  document.head.appendChild(style);
+}
+const explainOf = params.get("explain");
+if (explainOf)
+  setTimeout(() => {
+    const code = document.querySelector<HTMLElement>('[data-key="m2"] .pane-body p');
+    if (!code) return;
+    const range = document.createRange();
+    range.selectNodeContents(code);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    document.querySelector(".pane-list")?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    if (explainOf === "go") setTimeout(() => document.querySelectorAll<HTMLButtonElement>(".pane-quote-btn")[1]?.click(), 200);
+  }, 700);

@@ -17,7 +17,7 @@ import { IconButton } from "./IconButton";
 export const BESIDE_MIN = 1428;
 const FIRST = 24;   // (made at once: more than the card shows)
 
-export function BookmarkList({ marks, loaded, more, capped, settled, going, current, findOpen, list, mac, onGo, onRemove, onClose }: {
+export function BookmarkList({ marks, loaded, more, capped, settled, going, current, findOpen, besideOk = true, list, mac, onGo, onRemove, onClose }: {
   marks: readonly Bookmark[];
   loaded: ReadonlySet<string>; // the keys the tab shows now
   more: boolean; // Show earlier can read more
@@ -26,6 +26,7 @@ export function BookmarkList({ marks, loaded, more, capped, settled, going, curr
   going: string; // the one read further back for, now
   current: string; // the one gone to last
   findOpen: boolean;
+  besideOk?: boolean; // false: the side questions are beside the chat, so it goes over the list's top right
   list: { current: HTMLDivElement | null };
   mac: boolean;
   onGo: (m: Bookmark, state: BookmarkState, stays: boolean) => void;
@@ -45,7 +46,7 @@ export function BookmarkList({ marks, loaded, more, capped, settled, going, curr
     if (!el || !c) return undefined;
     const place = () => {
       const r = el.getBoundingClientRect();
-      const side = window.innerWidth >= BESIDE_MIN;
+      const side = besideOk && window.innerWidth >= BESIDE_MIN;
       const bar = !side && findOpen ? el.querySelector<HTMLElement>(".pane-find") : null;
       const top = bar ? bar.getBoundingClientRect().bottom + 4 : r.top + 2;
       beside.current = side;
@@ -64,7 +65,7 @@ export function BookmarkList({ marks, loaded, more, capped, settled, going, curr
       watch?.disconnect();
       window.removeEventListener("resize", place);
     };
-  }, [findOpen]);
+  }, [findOpen, besideOk]);
   // (a long list: the first ones, as many as the card shows, at once; the rest a frame later)
   const [all, setAll] = useState(marks.length <= FIRST);
   useEffect(() => {

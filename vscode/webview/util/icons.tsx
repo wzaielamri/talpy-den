@@ -8,7 +8,7 @@ import type { JSX } from "preact";
 import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
 import talpyChatSvg from "../../media/talpy-chat.svg";   // (a data: URL: esbuild's dataurl loader)
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "bookmarkFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit" | "export" | "import" | "talpyChat" | "image" | "code" | "compress" | "quote";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "bookmarkFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit" | "export" | "import" | "talpyChat" | "image" | "code" | "compress" | "quote" | "question";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -135,6 +135,14 @@ const shapes: Record<IconName, JSX.Element> = {
   check: <path d="M3 8.5l3 3 7-7" />,
   compress: <path d="M8 1.5V6M5.5 3.5L8 6l2.5-2.5M8 14.5V10m-2.5 2.5L8 10l2.5 2.5M3 8h10" />,
   quote: <path d="M3 4.5h10M6 8h7M6 11.5h7M3 7v5.5" />,
+  // Side questions: a speech bubble (as chat) asking something
+  question: (
+    <>
+      <path d="M2.5 3.75c0-.7.55-1.25 1.25-1.25h8.5c.7 0 1.25.55 1.25 1.25v5.5c0 .7-.55 1.25-1.25 1.25H7l-3 2.75V10.5h-.25c-.7 0-1.25-.55-1.25-1.25z" />
+      <path d="M6.65 5.15a1.4 1.4 0 0 1 2.7.45c0 .9-1.35 1.05-1.35 1.9" />
+      <path d="M8 8.75v.1" stroke-width="1.6" />
+    </>
+  ),
   checkAll: <path d="M1.75 8.75l2.75 2.75 6.25-6.5M7.5 11.25l.25.25 6.5-6.75" />,
   // (a circle struck through: no, as Breeze's dialog-cancel)
   deny: (

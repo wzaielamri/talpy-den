@@ -10552,7 +10552,17 @@ def bookmarks_moved(cache_root, moves, host=""):
     """The bookmarks of chats Claude moved to the background under a new id
     (moves: chat_moves, or a host's) go with them: merged into the file of
     the id each goes on under (moved_chat; its own bookmarks win), the old
-    file deleted. One listing of the folder when none moved."""
+    file deleted; their side questions too (sides_moved). One listing of
+    each folder when none moved."""
+    try:
+        names = set(os.listdir(sides_folder(cache_root, host)))
+    except OSError:
+        names = set()
+    olds = [(old, moved_chat(old, moves)) for old in moves if old + ".json" in names]
+    olds = [(old, new) for old, new in olds if new != old and sides_path(cache_root, old, host) is not None
+            and sides_path(cache_root, new, host) is not None]
+    if olds:
+        sides_moved(cache_root, olds, host)
     try:
         names = set(os.listdir(bookmarks_folder(cache_root, host)))
     except OSError:
@@ -10579,13 +10589,254 @@ def bookmarks_moved(cache_root, moves, host=""):
 
 
 def forget_bookmarks(cache_root, chat, host=""):
-    """A deleted chat's bookmarks go (its file)."""
+    """A deleted chat's bookmarks go (its file), and its side questions (forget_sides)."""
+    forget_sides(cache_root, chat, host)
     path = bookmarks_path(cache_root, chat, host)
     if path is None:
         return
     try:
         os.unlink(path)
     except OSError:  # (none: Python 3.7 has no missing_ok; nor anything else, a delete goes on)
+        pass
+
+
+# ---------------------------------------------------------------- side questions
+#
+# Talpy Chat's side questions (Claude's /btw, beside the chat): asked about a
+# chat without adding to it, answered by a copy of it Claude doesn't keep
+# (side.py). A chat's are a file of their own in the widget's cache
+# (side-questions/<chat>.json; an SSH host's or a container's chat's under
+# host-<short_id(host)>/, kept here as bookmarks are), so they stay to read
+# again; they go when the chat is deleted and move with it (bookmarks_moved,
+# forget_bookmarks). Each: {"id", "q": the question, "at": when asked (ms),
+# "pick": the model picked ("" the chat's own, or SIDE_PICKS), "model": the
+# one that answered, "a": the answer, "done": when it came (ms), "error": why
+# none came, "synthetic": Claude's stand-in for an answer}. One on its way has
+# no "done" ("pending" true as read); one that waited longer than a helper
+# can (SIDE_LOST_MS: its helper died) reads as failed. v grows with every
+# change, as bookmarks'.
+
+SIDES_DIR = "side-questions"
+SIDES_MAX = 50           # a chat's side questions at most (the oldest answered ones go first)
+SIDE_TEXT = 20000        # characters of a question kept (a quote of the chat with it)
+SIDE_ANSWER = 60000      # characters of an answer kept
+SIDES_READ = 8 << 20     # bytes of a file read at most (SIDES_MAX of the longest, written as JSON escapes)
+SIDE_ID = re.compile(r"^[0-9a-f]{12}$")
+SIDE_PICKS = ("sonnet", "haiku")   # the smaller models a side question can be answered on ("": the chat's own)
+SIDE_WAIT_S = 240        # how long side.py waits for an answer
+SIDE_LOST_MS = (SIDE_WAIT_S + 150) * 1000   # (an SSH host's: its wait, the way there and back)
+SIDE_LOST = "No answer came: ask again"
+SIDE_HISTORY = 6         # earlier answers a new question goes with (Claude's /btw takes them: follow-ups)
+SIDE_HISTORY_TEXT = 30000   # characters of them at most, the newest first
+
+
+def sides_folder(cache_root, host=""):
+    """Where a computer's side-question files are: a host's under the hash of its name, never the name itself."""
+    folder = Path(cache_root) / SIDES_DIR
+    return folder / ("host-" + short_id(host)) if host else folder
+
+
+def sides_path(cache_root, chat, host=""):
+    """A chat's side-question file, or None for something that isn't a chat id."""
+    if not valid_id(chat) or "\0" in chat:
+        return None
+    return sides_folder(cache_root, host) / (chat + ".json")
+
+
+def side_pick(value):
+    """A model picked for side questions: "" (the chat's own) or one of SIDE_PICKS; None for one that isn't."""
+    value = (value or "").strip().lower() if isinstance(value, str) or value is None else None
+    return value if value == "" or value in SIDE_PICKS else None
+
+
+def side_item(s, now_ms):
+    """One side question as read (malformed: None)."""
+    if type(s) is not dict or type(s.get("id")) is not str or not SIDE_ID.fullmatch(s["id"]) \
+            or type(s.get("q")) is not str or not s["q"].strip():
+        return None
+    at, done = whole_ms(s.get("at")), whole_ms(s.get("done"))
+    item = {"id": s["id"], "q": s["q"][:SIDE_TEXT], "at": at, "pick": side_pick(s.get("pick")) or "",
+            "model": s["model"] if type(s.get("model")) is str else ""}
+    if done:
+        item["done"] = done
+        if type(s.get("a")) is str and s["a"]:
+            item["a"] = s["a"][:SIDE_ANSWER]
+            if s.get("synthetic") is True:
+                item["synthetic"] = True
+        else:
+            item["error"] = s["error"] if type(s.get("error")) is str and s["error"] else SIDE_LOST
+    elif now_ms - at > SIDE_LOST_MS:   # (its helper is gone: what it would have written never comes)
+        item.update(done=at + SIDE_LOST_MS, error=SIDE_LOST)
+    else:
+        item["pending"] = True
+    return item
+
+
+def load_sides(cache_root, chat, host="", now_ms=None):
+    """(items, v): a chat's side questions, oldest first, and its file's
+    version; ([], 0) when it has none. Malformed ones are left out."""
+    path = sides_path(cache_root, chat, host)
+    data = read_json(path, SIDES_READ) if path is not None else None
+    if not isinstance(data, dict):
+        return [], 0
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    items, seen = [], set()
+    for s in data.get("items") if isinstance(data.get("items"), list) else ():
+        item = side_item(s, now_ms)
+        if item is not None and item["id"] not in seen:
+            seen.add(item["id"])
+            items.append(item)
+    items.sort(key=lambda s: s["at"])
+    return items[-SIDES_MAX:], whole_ms(data.get("v")) or 1
+
+
+def save_sides(cache_root, chat, host, items, v):
+    """Write a chat's side-question file (in folders only you can open, a file only you can read; in one go)."""
+    private_dir(Path(cache_root) / SIDES_DIR)
+    if host:
+        private_dir(sides_folder(cache_root, host))
+    kept = [{k: val for k, val in s.items() if k != "pending"} for s in items]
+    write_json_atomic(sides_path(cache_root, chat, host), {"chat": chat, "host": host or "", "v": v, "items": kept},
+                      private=True)
+
+
+@contextlib.contextmanager
+def sides_lock(cache_root):
+    """Every copy of pane.py (a question on its way, one removed) changes side-question files under it."""
+    private_dir(Path(cache_root))
+    with open(Path(cache_root) / "side-questions.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def change_sides(cache_root, chat, host, edit, now_ms=None):
+    """edit(items) changes a chat's side questions in place (False: nothing
+    to write): (ok, what went wrong, the items now, their v)."""
+    if sides_path(cache_root, chat, host) is None:
+        return False, f"Not a chat: {chat}", [], 0
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    with sides_lock(cache_root):
+        items, v = load_sides(cache_root, chat, host, now_ms)
+        if edit(items) is False:
+            return True, "", items, v
+        try:
+            save_sides(cache_root, chat, host, items, max(v + 1, now_ms))
+        except OSError as exc:
+            return (False, exc.strerror or str(exc)) + load_sides(cache_root, chat, host, now_ms)
+        return True, "", [dict(s) for s in items], max(v + 1, now_ms)
+
+
+def ask_side(cache_root, chat, host, question, pick="", now_ms=None):
+    """A side question on its way (pending, until finish_side): (ok, what
+    went wrong, the new item, the items now, their v). The oldest answered
+    ones go past SIDES_MAX."""
+    question = (question or "").strip()
+    pick = side_pick(pick)
+    if not question:
+        return False, "Write your question first", None, [], 0
+    if pick is None:
+        return False, "Not a model side questions can use", None, [], 0
+    if len(question) > SIDE_TEXT:
+        return False, f"That's too long for a side question (up to {SIDE_TEXT} characters)", None, [], 0
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    item = {"id": os.urandom(6).hex(), "q": question, "at": now_ms, "pick": pick, "model": "", "pending": True}
+
+    def edit(items):
+        items.append(item)
+        while len(items) > SIDES_MAX:
+            done = next((s for s in items if not s.get("pending")), None)
+            items.remove(done if done is not None else items[0])
+    ok, said, items, v = change_sides(cache_root, chat, host, edit, now_ms)
+    return ok, said, item if ok else None, items, v
+
+
+def finish_side(cache_root, chat, host, side_id, answer=None, error="", model="", synthetic=False, now_ms=None):
+    """A side question's answer (or why none came) written in: (items, v).
+    One removed meanwhile stays removed."""
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+
+    def edit(items):
+        s = next((s for s in items if s["id"] == side_id), None)
+        if s is None:
+            return False
+        s.pop("pending", None)
+        s.pop("error", None)
+        s.update(done=now_ms, model=model if isinstance(model, str) else "")
+        if isinstance(answer, str) and answer.strip():
+            s["a"] = answer[:SIDE_ANSWER]
+            if synthetic:
+                s["synthetic"] = True
+        else:
+            s["error"] = error or SIDE_LOST
+    return change_sides(cache_root, chat, host, edit, now_ms)[2:]
+
+
+def remove_side(cache_root, chat, host, side_id):
+    """Remove a side question ("all": every one of the chat's): (ok, what went wrong, the items now, their v)."""
+    if side_id != "all" and not (isinstance(side_id, str) and SIDE_ID.fullmatch(side_id)):
+        return (False, "Which side question?") + load_sides(cache_root, chat, host)
+
+    def edit(items):
+        keep = [s for s in items if side_id != "all" and s["id"] != side_id]
+        if len(keep) == len(items):
+            return False
+        items[:] = keep
+    return change_sides(cache_root, chat, host, edit)
+
+
+def side_history(items, before_id=None):
+    """The earlier answers a new side question goes with, as Claude's
+    side_question takes them ([{"question", "response"}], oldest first):
+    the newest SIDE_HISTORY answered ones before before_id, up to
+    SIDE_HISTORY_TEXT characters."""
+    answered = []
+    for s in items:
+        if s["id"] == before_id:
+            break
+        if s.get("a") and not s.get("synthetic"):
+            answered.append({"question": s["q"], "response": s["a"]})
+    kept, size = [], 0
+    for h in reversed(answered[-SIDE_HISTORY:]):
+        size += len(h["question"]) + len(h["response"])
+        if size > SIDE_HISTORY_TEXT:
+            break
+        kept.append(h)
+    return kept[::-1]
+
+
+def sides_answer(result, cache_root, chat, host=""):
+    """Add a chat's side questions to pane.py's answer (sides, sidesV) when it has a file of them."""
+    items, v = load_sides(cache_root, chat, host)
+    if v > 0:
+        result["sides"] = items
+        result["sidesV"] = v
+    return result
+
+
+def sides_moved(cache_root, olds, host=""):
+    """The side questions of chats Claude moved to the background under a new
+    id (olds: [(old, new)], as bookmarks_moved found them) go with them:
+    merged into the new id's file, the old file deleted."""
+    now_ms = int(time.time() * 1000)
+    with sides_lock(cache_root):
+        for old, new in olds:
+            old_items, old_v = load_sides(cache_root, old, host, now_ms)
+            if old_v:
+                items, v = load_sides(cache_root, new, host, now_ms)
+                ids = {s["id"] for s in items}
+                merged = sorted(items + [s for s in old_items if s["id"] not in ids], key=lambda s: s["at"])
+                save_sides(cache_root, new, host, merged[-SIDES_MAX:], max(max(v, old_v) + 1, now_ms))
+            forget_sides(cache_root, old, host)
+
+
+def forget_sides(cache_root, chat, host=""):
+    """A deleted chat's side questions go (its file)."""
+    path = sides_path(cache_root, chat, host)
+    if path is None:
+        return
+    try:
+        os.unlink(path)
+    except OSError:
         pass
 
 

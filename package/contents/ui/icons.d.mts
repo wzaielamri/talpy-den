@@ -61,6 +61,8 @@ export type Meaning =
   | "collapseAll"
   | "compact"
   | "quote"
+  | "sideQuestions"
+  | "explain"
   | "peekOpen"
   | "peekClosed"
   | "zoomIn"

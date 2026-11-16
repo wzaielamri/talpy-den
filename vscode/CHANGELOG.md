@@ -4,6 +4,14 @@
 
 ### New
 
+- **Side questions beside the chat, and Explain this.** Talpy Chat's header
+  has **Side questions**: a panel where you ask about the chat without adding
+  to it, as Claude's `/btw`, and Claude answers from what the chat has so far
+  while it goes on with its work. **Explain this**, beside **Reply to this**,
+  asks about what you selected. Follow-ups go with the answers before them,
+  and the answers stay with the chat to read again. Answered on the chat's
+  own model, or on Sonnet or Haiku to use less of your limit; the line under
+  the box says how many tokens the first question in an hour sends again.
 - **A new chat in the folder you have open.** Talpy Chat's empty view in
   the side bar has a button for each folder the window has open, **New chat
   in talpy-den**: a new chat there on the default account in a click (your

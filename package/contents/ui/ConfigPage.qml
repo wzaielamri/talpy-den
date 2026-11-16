@@ -185,6 +185,10 @@ KCM.SimpleKCM {
     property var cfg_paneFontDefault
     property var cfg_suggestReplies
     property var cfg_suggestRepliesDefault
+    property var cfg_sideQuestionModel
+    property var cfg_sideQuestionModelDefault
+    property var cfg_sideQuestionsOpen
+    property var cfg_sideQuestionsOpenDefault
     property var cfg_paneTerminalFont
     property var cfg_paneTerminalFontDefault
     property var cfg_openChatsIn

@@ -3974,3 +3974,169 @@ console.log(JSON.stringify({ diff: at(H.diffHtml(lines, 'a.py', guess, 0)), diff
         self.assertEqual(r["listing"], [21, 21])
 
 
+
+
+# A claude that answers a side question as Claude Code 2.1.325's stream-json mode does: notes how it was
+# run and what it was asked, answers the control request, and ends when its stdin closes.
+FAKE_SIDE_CLAUDE = """#!{python}
+import json, os, sys, time
+note = lambda d: open({log!r}, "a").write(json.dumps(d) + "\\n")
+note({{"argv": sys.argv[1:], "cwd": os.getcwd(), "config": os.environ.get("CLAUDE_CONFIG_DIR"),
+       "session": os.environ.get("CLAUDECODE")}})
+req = json.loads(sys.stdin.readline())
+note({{"request": req}})
+q, rid = req["request"]["question"], req["request_id"]
+print(json.dumps({{"type": "system", "subtype": "init", "tools": ["Bash"] * 50}}), flush=True)
+if "fail" in q:
+    print(json.dumps({{"type": "control_response", "response": {{"subtype": "error", "request_id": rid,
+                                                                 "error": "Side question cancelled"}}}}), flush=True)
+elif "quiet" in q:
+    sys.stderr.write("noise\\nError: No conversation found with session ID: x\\n")
+    sys.exit(1)
+elif "slow" in q:
+    time.sleep(30)
+else:
+    sys.stderr.write("x" * 200000)   # (more than a pipe holds: read as it comes)
+    print(json.dumps({{"type": "control_response", "response": {{"subtype": "success", "request_id": "other"}}}}))
+    print(json.dumps({{"type": "control_response", "response": {{"subtype": "success", "request_id": rid,
+          "response": {{"response": "About " + q + " (" + str(len(req["request"]["history"])) + " before)",
+                        "synthetic": "stand-in" in q}}}}}}), flush=True)
+sys.stdin.read()
+"""
+
+
+class SideQuestionTests(PaneFixture):
+    """Side questions (pane.py --side-question, side.py): put to a copy of the
+    chat Claude doesn't keep, kept on this computer per chat (a host's chat's
+    too, asked there), carried in --conversation's answers."""
+
+    def setUp(self):
+        super().setUp()
+        self.bin = self.home / "bin"
+        self.log = self.home / "claude.log"
+        write(self.bin / "claude", FAKE_SIDE_CLAUDE.format(python=sys.executable, log=str(self.log)))
+        (self.bin / "claude").chmod(0o755)
+        found = mock.patch.object(cs, "find_claude", return_value=str(self.bin / "claude"))
+        found.start()
+        self.addCleanup(found.stop)
+        t = self.now - 100
+        reply = text_reply("Done.", t + 1, "m1", "end_turn")
+        reply["message"]["model"] = "claude-opus-5-5"
+        self.chat(dict(prompt("fix it", t, cwd=str(self.folder)), uuid="u1"), reply)
+
+    def ask(self, text, *more):
+        return self.cli("--side-question", SID, "--text", text, *more)
+
+    def calls(self):
+        return [json.loads(l) for l in self.log.read_text().splitlines()] if self.log.exists() else []
+
+    def test_a_question_goes_to_a_copy_of_the_chat_and_is_kept(self):
+        got = self.ask("why that file?")
+        self.assertTrue(got["ok"], got)
+        side = got["side"]
+        self.assertEqual({k: side[k] for k in ("q", "a", "pick", "model")},
+                         {"q": "why that file?", "a": "About why that file? (0 before)", "pick": "",
+                          "model": "claude-opus-5-5"})   # (the chat's own model)
+        self.assertGreaterEqual(side["done"], side["at"])
+        self.assertNotIn("pending", side)
+        self.assertEqual((got["sides"], got["sidesV"]), tuple(cs.load_sides(self.cache, SID)))
+        self.assertEqual(oct(os.stat(self.cache / "side-questions" / f"{SID}.json").st_mode & 0o777), "0o600")
+        run, asked = self.calls()
+        self.assertEqual(run["argv"], ["-p", "--resume", SID, "--fork-session", "--no-session-persistence",
+                                       "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+                                       "--model", "claude-opus-5-5", "--settings", '{"disableAllHooks":true}'])
+        self.assertEqual((run["cwd"], run["session"]), (str(self.folder), None))   # (where the chat ran; not ours)
+        self.assertTrue(run["config"].endswith(".claude-work"), run)
+        self.assertEqual(asked["request"]["request"], {"subtype": "side_question", "question": "why that file?",
+                                                       "history": []})
+        # nothing of it in the chat
+        self.assertEqual(len(self.transcript.read_text().splitlines()), 2)
+
+    def test_a_follow_up_goes_with_the_answers_before_it(self):
+        self.ask("first?")
+        self.ask("fail now")   # (none came: not in what the next one goes with)
+        got = self.ask("and then?", "--model", "haiku")
+        self.assertEqual((got["side"]["a"], got["side"]["pick"], got["side"]["model"]),
+                         ("About and then? (1 before)", "haiku", "haiku"))
+        last = self.calls()[-1]["request"]["request"]
+        self.assertEqual(last["history"], [{"question": "first?", "response": "About first? (0 before)"}])
+        self.assertIn("haiku", self.calls()[-2]["argv"])
+        self.assertEqual([s["q"] for s in got["sides"]], ["first?", "fail now", "and then?"])
+
+    def test_why_no_answer_came_is_kept_with_it(self):
+        got = self.ask("fail this")
+        self.assertEqual((got["ok"], got["message"], got["side"]["error"]),
+                         (False, "Side question cancelled", "Side question cancelled"))
+        got = self.ask("quiet please")
+        self.assertEqual((got["ok"], got["side"]["error"]),
+                         (False, "Error: No conversation found with session ID: x"))
+        import side
+        with mock.patch.object(side, "STOP_WAIT_S", 0.5):
+            slow = side.ask(self.home, [], "work", SID, "slow one", wait=1, claude=str(self.bin / "claude"))
+        self.assertEqual(slow, {"ok": False, "message": "No answer within 1 s"})
+        stand_in = self.ask("a stand-in")
+        self.assertTrue(stand_in["side"]["synthetic"])
+        self.assertEqual([s.get("error", "") != "" for s in stand_in["sides"]], [True, True, False])
+
+    def test_what_is_refused_keeps_nothing(self):
+        for args, said in ((("--side-question", SID, "--text", "  "), "Write your question first"),
+                           (("--side-question", SID, "--text", "q", "--model", "gpt"), "Not a model side questions can use"),
+                           (("--side-question", "../x", "--text", "q"), "Not a chat: ../x")):
+            got = self.cli(*args)
+            self.assertEqual((got["ok"], got["message"]), (False, said), args)
+        self.assertEqual(self.calls(), [])
+        self.assertFalse((self.cache / "side-questions").exists())
+        gone = self.cli("--side-question", "0" * 8 + SID[8:], "--text", "where?")   # (no such chat)
+        self.assertEqual((gone["ok"], gone["message"], gone["side"]["error"]),
+                         (False, "That chat isn't there any more", "That chat isn't there any more"))
+
+    def test_remove_one_or_all(self):
+        a, b = self.ask("one?")["side"], self.ask("two?")["side"]
+        got = self.cli("--side-question", SID, "--remove", a["id"])
+        self.assertEqual((got["ok"], [s["id"] for s in got["sides"]]), (True, [b["id"]]))
+        self.assertEqual(self.cli("--side-question", SID, "--remove", "nope")["message"], "Which side question?")
+        got = self.cli("--side-question", SID, "--remove", "all")
+        self.assertEqual((got["ok"], got["sides"]), (True, []))
+        self.assertGreater(got["sidesV"], 0)   # (an empty list, newer than the one shown)
+
+    def test_the_conversation_carries_them_once_there_are_some(self):
+        self.assertNotIn("sides", self.cli("--conversation", SID))
+        asked = self.ask("what now?")
+        got = self.cli("--conversation", SID)
+        self.assertEqual((got["sides"], got["sidesV"]), (asked["sides"], asked["sidesV"]))
+        self.assertNotIn("sides", self.cli("--conversation", SID, "--remote"))   # (kept on the computer that asks)
+
+    def test_a_hosts_chat_is_asked_there_and_kept_here(self):
+        there = {"ok": True, "answer": "From the host", "model": "claude-fable-5-2", "synthetic": False}
+        with mock.patch.object(pane, "forward", return_value=dict(there)) as forwarded:
+            first = self.cli("--side-question", SID, "--text", "how far?", "--profile", "work", "--host", "gpu")
+            then = self.cli("--side-question", SID, "--text", "and?", "--host", "gpu")
+            removed = self.cli("--side-question", SID, "--remove", first["side"]["id"], "--host", "gpu")
+        self.assertEqual((first["ok"], first["side"]["a"], first["side"]["model"], then["ok"]),
+                         (True, "From the host", "claude-fable-5-2", True))
+        host, args, action = forwarded.call_args_list[0][0]
+        self.assertEqual((host, action), ("gpu", "--side-question"))
+        self.assertEqual(args, ["--side-question", SID, "--text", "how far?", "--profile", "work", "--history", "[]"])
+        self.assertEqual(json.loads(forwarded.call_args_list[1][0][1][-1]),
+                         [{"question": "how far?", "response": "From the host"}])
+        self.assertEqual(forwarded.call_count, 2)   # (a removal is never sent there)
+        self.assertEqual([s["q"] for s in removed["sides"]], ["and?"])
+        self.assertEqual(os.listdir(self.cache / "side-questions"), ["host-" + cs.short_id("gpu")])
+        self.assertEqual(cs.load_sides(self.cache, SID), ([], 0))   # (not this computer's chat of that id)
+        with mock.patch.object(pane, "forward", return_value={"ok": False, "timedOut": True, "message": "gpu didn't answer"}):
+            failed = self.cli("--side-question", SID, "--text", "late?", "--host", "gpu")
+        self.assertEqual((failed["ok"], failed["side"]["error"]), (False, "gpu didn't answer"))
+
+    def test_on_a_host_it_asks_and_keeps_nothing(self):
+        history = [{"question": "q0", "response": "a0"}, {"no": "shape"}]
+        got = self.cli("--side-question", SID, "--text", "next?", "--history", json.dumps(history), "--remote")
+        self.assertEqual((got["ok"], got["answer"]), (True, "About next? (1 before)"))
+        self.assertEqual(self.calls()[-1]["request"]["request"]["history"], history[:1])
+        self.assertFalse((self.cache / "side-questions").exists())
+
+    def test_the_usage_says_so(self):
+        self.assertIn("--side-question CHAT --text Q [--model sonnet|haiku] [--profile P] [--host HOST]", pane.__doc__)
+        self.assertIn("--side-question CHAT --remove ID|all [--host HOST]", pane.__doc__)
+        import remote
+        self.assertIn("--history", remote.TEXT_ARGS)   # (on stdin to a host, as your text)
+        self.assertEqual(pane.ACTION_MODULES["--side-question"], ("side.py",))

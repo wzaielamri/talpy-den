@@ -6,6 +6,7 @@
 import { clockText, formatTokens, hostLabel } from "./model";
 import type { Answers, AskShown, Decision, PermissionAsk, Question, QueuedTask, RecentChat, Review, Session, SessionState, Status } from "./types";
 import type { Bookmark } from "../../vendor/bookmarks.mjs";
+import type { Side } from "../../vendor/sides.mjs";
 
 // What came of a message (or a new chat's start) sent from Talpy Chat: went, to the chat itself;
 // ask: its terminal takes no text, you choose; warn: it went, but message says what's wrong
@@ -141,6 +142,10 @@ export interface Conversation {
   // its bookmarks (pane.py: a chat that has had one) and their version, which only grows (adoptable)
   bookmarks?: Bookmark[];
   bookmarksV?: number;
+  // its side questions (pane.py: a chat that has had one; the extension's sidesOf) and their version,
+  // which only grows (newerSides)
+  sides?: Side[];
+  sidesV?: number;
   // (--reach KEY: read far enough back to show that message) the limit read for, which the tab takes
   // before the stamp is compared (stampFresher), the key, and whether it's here now, further back than
   // a tab shows (far) or not in the chat any more (gone)
@@ -382,6 +387,9 @@ export type PaneHostMessage =
   // a bookmark kept or taken away (pane.py --bookmark, the page's id): the chat's whole list and its
   // version, or why not (the page undoes it)
   | { type: "bookmarks"; id: number; chatId: string; ok: boolean; message: string; bookmarks: Bookmark[]; bookmarksV: number }
+  // a side question asked (sideAsk) or removed (sideRemove), the page's id: pane.py's answer (side: the question
+  // with its answer, or why none came), the chat's whole list and its version (sideAnswerOf)
+  | { type: "side"; kind: "ask" | "remove"; id: number; chatId: string; ok: boolean; message: string; side?: Side; sides: Side[]; sidesV: number }
   | { type: "key"; key: string }; // a key's command (talpyDen.chat.*, package.json): an id of keys.mjs's table
 
 // tab -> extension
@@ -415,6 +423,11 @@ export type PaneMessage =
   // bookmarks (id); kind, at and text: what the bookmark keeps of it (entryOf)
   | { type: "bookmark"; id: number; key: string; on: boolean; kind: "you" | "claude"; at: number; text: string }
   | { type: "reach"; key: string } // the chat read far enough back to show that message (a bookmark further back than what's shown)
+  // a side question about the chat (pane.py --side-question, answered with side, id): several at once,
+  // each on its own; one removed, or all of them ("all"); the panel's pick and whether it's open, kept
+  | { type: "sideAsk"; id: number; text: string; pick: SidePick }
+  | { type: "sideRemove"; id: number; side: string }
+  | { type: "sidePrefs"; open?: boolean; pick?: SidePick }
   | { type: "openPicture"; path: string } // a picture of yours, in VS Code's image viewer
   | { type: "made"; id: number; path: string; step?: string } // a made file unfolded (madeAsk): answered with "made"
   // a made file opened (this computer's): a picture in VS Code's image viewer, a plan in its editor, a page or
@@ -1152,6 +1165,83 @@ export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, 
 // Quote in reply (a selection's "Reply to this", the right-click menu): the widget's quote.mjs, as Plasma's
 export { QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote } from "../../vendor/quote.mjs";
 export { adoptable, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, oneLine, SNIPPET_CHARS, snippetOf, stateOf, staysOpen, step as bookmarkStep, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, type BookmarkStep } from "../../vendor/bookmarks.mjs";
+// Side questions (the side panel, "Explain this"): the widget's sides.mjs, as Plasma's
+export { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, pickLabel as sidePickLabel, SIDE_ACTIONS, SIDE_AGAIN, SIDE_BUTTON, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_COST_TIP, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS, SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TIP, SIDE_TITLE, sideModelLabel, sideState, sideWarm, tokensText, WARM_MS, type Side } from "../../vendor/sides.mjs";
+
+// The panel sits beside the chat in a view at least this wide (px); narrower, it covers the chat
+// under the tabs
+export const SIDE_WIDE = 720;
+export type SidePick = Side["pick"];
+// A pick as the page or a setting says it: "" (the chat's own model), "sonnet" or "haiku"; null for
+// anything else
+export function sidePickOf(v: unknown): SidePick | null {
+  return v === "" || v === "sonnet" || v === "haiku" ? v : null;
+}
+
+// A side question as pane.py gives it (--conversation's "sides", --side-question's "side" and
+// "sides"), each field only as what it can be; null for one that isn't a side question
+export function sideOf(v: unknown): Side | null {
+  if (!v || typeof v !== "object") return null;
+  const s = v as Record<string, unknown>;
+  if (typeof s.id !== "string" || !/^[0-9a-f]{12}$/.test(s.id) || typeof s.q !== "string" || !s.q.trim()) return null;
+  const ms = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x > 0 ? Math.floor(x) : 0);
+  const out: Side = { id: s.id, q: s.q, at: ms(s.at), pick: sidePickOf(s.pick) ?? "", model: typeof s.model === "string" ? s.model : "" };
+  if (s.pending === true) return { ...out, pending: true };
+  if (ms(s.done)) out.done = ms(s.done);
+  if (typeof s.a === "string" && s.a) {
+    out.a = s.a;
+    if (s.synthetic === true) out.synthetic = true;
+  } else out.error = typeof s.error === "string" && s.error ? s.error : "Claude couldn't answer it";
+  return out;
+}
+export function sidesOf(v: unknown): Side[] {
+  return Array.isArray(v) ? v.map(sideOf).filter((s): s is Side => s !== null) : [];
+}
+
+// A side question this page asked, till pane.py's list has it (shown at once as on its way), or one
+// that never got there (error: the helper said why); gone: removed while on its way
+export interface AskedSide {
+  local: number;
+  q: string;
+  pick: SidePick;
+  at: number;
+  error?: string;
+  gone?: boolean;
+}
+// (pane.py's own item for a question this page asked is made a moment later on the same clock: the
+// extension and pane.py run on this computer, a host's chat's questions are kept here too)
+const SAME_ASK_MS = 2000;
+// One shown: pane.py's, or this page's (local: its id here)
+export type ShownSide = Side & { local?: number };
+
+// The panel's list: the chat's side questions, oldest first, but those being removed, then the ones
+// this page asked that its list doesn't have yet (each one's own item, once it's there, in its place)
+export function sidesShown(list: readonly Side[], asked: readonly AskedSide[], removing: ReadonlySet<string>): ShownSide[] {
+  const twins = new Map<string, AskedSide>();
+  const found = new Set<AskedSide>();
+  for (const a of asked) {
+    const twin = list.find((s) => !twins.has(s.id) && !removing.has(s.id) && s.q === a.q && s.pick === a.pick && s.at >= a.at - SAME_ASK_MS);
+    if (!twin) continue;
+    twins.set(twin.id, a);
+    found.add(a);
+  }
+  const out: ShownSide[] = list.filter((s) => !removing.has(s.id) && !twins.get(s.id)?.gone);
+  for (const a of asked)
+    if (!a.gone && !found.has(a))
+      out.push({ id: `local-${a.local}`, q: a.q, at: a.at, pick: a.pick, model: "", local: a.local,
+                 ...(a.error ? { done: a.at, error: a.error } : { pending: true }) });
+  return out;
+}
+
+// The answer to a side question asked or removed (pane.py --side-question), as the page gets it:
+// each field only as what it can be
+export function sideAnswerOf(kind: "ask" | "remove", id: number, chatId: string, r: Record<string, unknown>): Extract<PaneHostMessage, { type: "side" }> {
+  const side = sideOf(r.side);
+  return { type: "side", kind, id, chatId, ok: r.ok === true,
+           message: typeof r.message === "string" ? r.message : r.ok === true ? "" : "That didn't work",
+           ...(side ? { side } : {}), sides: sidesOf(r.sides),
+           sidesV: typeof r.sidesV === "number" && Number.isFinite(r.sidesV) && r.sidesV > 0 ? r.sidesV : 0 };
+}
 
 // Does it show on that tab: Chat leaves out Claude's tool calls, but not a question or a plan you
 // answered, nor a call you denied with a note (what a call made shows on both, under it)

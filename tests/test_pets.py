@@ -2355,9 +2355,157 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("text: Quote.QUOTE_MENU", menu)
         self.assertIn('item("quote", QUOTE_MENU, at.chosen.trim() !== "")', chat)
         self.assertIn("const q = withQuote(text, selected);", chat)
-        self.assertIn("quote)\\.(mjs|d\\.mts)$", (ROOT.parent.parent / "vscode/esbuild.mjs").read_text())
+        vendored = (ROOT.parent.parent / "vscode/esbuild.mjs").read_text()
+        self.assertIn("|quote|sides)\\.(mjs|d\\.mts)$", vendored)   # (and the side questions' words: sides.mjs)
         delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
         self.assertNotIn("quote", delegate.lower())
+
+    def test_side_questions_are_made_only_when_wanted(self):
+        # Side questions (Claude's /btw beside the chat): what asks and takes the answers (Sides.qml, with
+        # sides.mjs), the panel (SidePanel.qml), the tab row's toggle (SideToggle.qml) and Explain this
+        # (ExplainButton.qml) are files of their own, read and made only once you ask or the panel shows (the
+        # toggle and the panel after the window's first frame); nothing of them per message; a read of the
+        # chat takes its list without making anything
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertNotIn('"sides.mjs"', pane)
+        for name in ("Sides.qml", "SidePanel.qml", "SideToggle.qml", "ExplainButton.qml", "EditMenu.qml"):
+            self.assertIn('import "sides.mjs" as Sides', (ROOT / "ui" / name).read_text(), name)
+        for source in ("Sides.qml", "SidePanel.qml", "SideToggle.qml", "ExplainButton.qml"):
+            at = pane.index(f'source: active ? "{source}" : ""')
+            self.assertEqual(pane.count(f'source: active ? "{source}" : ""'), 1, source)
+            opened = pane.rindex("{", 0, at)
+            self.assertEqual(pane[opened - len("Loader "):opened], "Loader ", source)
+        self.assertRegex(pane, r"id: sideLogic\n\s+active: false\n\s+source: ")
+        panel = pane[pane.index("id: sidePanel\n"):]
+        panel = panel[:panel.index('source: active ? "SidePanel.qml" : ""')]
+        self.assertIn("active: pane.sideShows\n", panel)
+        self.assertIn("asynchronous: true\n", panel)
+        # (beside the chat, top to bottom at the window's right, the column narrower by its width; else over
+        # the chat under the tab row: VS Code's SIDE_WIDE, the same width)
+        self.assertIn("x: pane.sideBeside ? parent.width - width : 0\n", panel)
+        self.assertIn("y: pane.sideBeside ? 0 : mainColumn.y + tabLine.y + tabLine.height\n", panel)
+        self.assertIn("anchors.rightMargin: Kirigami.Units.largeSpacing + (pane.sideBeside ? pane.sideWidth : 0)", pane)
+        self.assertIn("readonly property real sideWidth: Math.round(Math.max(280, Math.min(520, width * 0.38)))", pane)
+        wide = re.search(r"export const SIDE_WIDE = (\d+);", (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text())
+        self.assertIn(f"readonly property int sideWideMin: {wide.group(1)}\n", pane)
+        # (beside only where the chat keeps room for the send buttons it can show: they don't shrink)
+        self.assertIn("readonly property bool sideWide: width >= sideWideMin && width - sideWidth >= sendRoom", pane)
+        self.assertIn("readonly property bool sideCan: chatId !== \"\" && !fresh && !starting", pane)
+        toggle = pane[:pane.index('source: active ? "SideToggle.qml" : ""')]
+        self.assertIn("active: pane.sideCan\n                    asynchronous: true\n", toggle[toggle.rindex("Loader {"):])
+        # (right before the bookmarks' ribbon in the tab row)
+        self.assertLess(pane.index('"SideToggle.qml"'), pane.index('"BookmarkPill.qml"'))
+        delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
+        self.assertNotRegex(delegate, r"(?i)side|explain")
+        take = pane[pane.index("    function takeConversation(result) {"):pane.index("    function fresher(s) {")]
+        self.assertIn("if (Array.isArray(result.sides) && result.sidesV > sidesV) {", take)
+        self.assertNotIn("sidesNow()", take)
+        self.assertNotIn("sideLogic.active", take)
+        # (an answer is Sides.qml's whichever chat it was of: taken before the answers for another chat go)
+        handle = pane[pane.index("    function handle(kind, result, asked) {"):]
+        self.assertLess(handle.index('if (kind === "side") {'), handle.index("if (asked.chat !== chatId) {"))
+        self.assertIn("sidesNow().took(result, asked)", handle[:handle.index("if (asked.chat !== chatId) {")])
+        # (a window opened for a chat: none of the chat before's; the panel as you last left it, but on its own
+        # only where it's beside the chat: over it, it would hide every chat you open)
+        reset = pane[pane.index("    function reset() {"):pane.index("    function follow() {")]
+        for line in ("sides = []", "sidesV = 0", "sidesOn = Plasmoid.configuration.sideQuestionsOpen === true && sideWide",
+                     "sideLogic.item.clear()"):
+            self.assertIn(line, reset)
+        shows = pane[pane.index("    function showSides(on, focus) {"):]
+        shows = shows[:shows.index("\n    }\n")]
+        self.assertIn("Plasmoid.configuration.sideQuestionsOpen = on", shows)
+        self.assertIn("if (!sideWide)\n                bookmarksOn = false", shows)
+        # (over the chat it makes way, not kept: a tab switch, Ctrl+F, the bookmarks' list, an answer quoted)
+        away = pane[pane.index("    function sideAway() {"):]
+        self.assertIn("if (sidesOn && !sideWide)\n            sidesOn = false", away[:away.index("\n    }\n")])
+        self.assertIn("onBookmarksOnChanged: if (bookmarksOn) sideAway()", pane)
+        self.assertIn("sideAway()", pane[pane.index("    function openFind() {"):pane.index("    function closeFind() {")])
+        self.assertIn("    onTabChanged: {\n        sideAway()", pane)
+        self.assertIn("pane.sideAway()", (ROOT / "ui/SidePanel.qml").read_text())
+        # Explain this: right after Reply to this where a selection's drag ended, and after Quote in reply in the
+        # right-click menu; both ask through pane.explain (Sides.qml explain: explainQuestion, the panel opened)
+        offer = pane[pane.index("text: Quote.QUOTE_BUTTON"):]
+        self.assertLess(offer.index("onClicked: pane.quoteIn(pane.selectionText())"), offer.index('"ExplainButton.qml"'))
+        self.assertIn("onClicked: pane.explain(pane.selectionText())", (ROOT / "ui/ExplainButton.qml").read_text())
+        menu = (ROOT / "ui/EditMenu.qml").read_text()
+        self.assertLess(menu.index("text: Quote.QUOTE_MENU"), menu.index("text: Sides.EXPLAIN_BUTTON"))
+        self.assertLess(menu.index("text: Sides.EXPLAIN_BUTTON"), menu.index("Copy message (Markdown)"))
+        self.assertIn("onTriggered: pane.explain(menu.chosen)", menu)
+        logic = (ROOT / "ui/Sides.qml").read_text()
+        explain = logic[logic.index("    function explain(selected) {"):]
+        explain = explain[:explain.index("\n    }\n")]
+        self.assertIn("Sides.explainQuestion(selected)", explain)
+        self.assertIn("pane.showSides(true, true)", explain)
+
+    def test_side_questions_ask_take_and_say_it_as_sides_mjs_does(self):
+        # The words are sides.mjs's (VS Code's the same), never written again in the QML; asking runs pane.py
+        # --side-question (the model picked: sideQuestionModel, every copy's), a removal its --remove; an answer's
+        # list is taken only when it's newer (newerSides); the panel's box keeps Enter, Esc and Ctrl+L its own
+        logic = (ROOT / "ui/Sides.qml").read_text()
+        panel = (ROOT / "ui/SidePanel.qml").read_text()
+        toggle = (ROOT / "ui/SideToggle.qml").read_text()
+        button = (ROOT / "ui/ExplainButton.qml").read_text()
+        words = (ROOT / "ui/sides.mjs").read_text()
+        qml = "".join((ROOT / "ui" / f).read_text() for f in ("ChatPane.qml", "Sides.qml", "SidePanel.qml", "SideToggle.qml",
+                                                              "ExplainButton.qml", "EditMenu.qml"))
+        code = "\n".join(re.sub(r"(^|\s)//.*$", "", line) for line in qml.splitlines())   # (comments may name them)
+        for name in re.findall(r'export const (SIDE_\w+|EXPLAIN_\w+) = "', words):
+            said = re.search(r'export const %s = "([^"]*)"' % name, words).group(1)
+            self.assertFalse('"' + said + '"' in code, name)   # (Sides.<name>, not its words again)
+        for name in ("SIDE_TITLE", "SIDE_EMPTY", "SIDE_PLACEHOLDER", "SIDE_PENDING", "SIDE_REMOVE", "SIDE_CLEAR", "SIDE_CLEAR_ASK",
+                     "SIDE_CLOSE", "SIDE_COPY", "SIDE_QUOTE", "SIDE_AGAIN", "SIDE_COST_TIP", "SIDE_ACTIONS", "SIDE_PICKS"):
+            self.assertIn("Sides." + name, panel, name)
+        for call in ("Sides.costNote(", "Sides.sideWarm(", "Sides.sideModelLabel(", "Sides.sideState(", "Sides.pickLabel("):
+            self.assertIn(call, panel, call)
+        self.assertIn("Sides.SIDE_TIP", toggle)
+        self.assertIn("text: Sides.EXPLAIN_BUTTON", button)
+        self.assertIn("Sides.EXPLAIN_TIP", button)
+        self.assertIn("Icons.plasma.sideQuestions", toggle)
+        self.assertIn("Icons.plasma.explain", button)
+        # (the actions on hover: in SIDE_ACTIONS' order, Copy answer and Quote in reply once there's an answer)
+        self.assertIn('model: Sides.SIDE_ACTIONS.filter(w => w === "remove" || entry.phase === "answered")', panel)
+        self.assertIn('pane.quoteIn(entry.a)', panel)
+        # asking, and removing
+        ask = logic[logic.index("    function ask(text) {"):]
+        ask = ask[:ask.index("\n    }\n")]
+        self.assertIn('pane.start("--side-question " + root.shellQuote(pane.chatId) + " --text " + root.shellQuote(q)', ask)
+        self.assertIn('(pick ? " --model " + pick : "") + pane.paneArgs()', ask)
+        self.assertIn('kind: "side"', ask)
+        self.assertIn('" --remove " + root.shellQuote(id)', logic)
+        self.assertIn('Plasmoid.configuration.sideQuestionModel', logic)
+        self.assertEqual(logic.count("Sides.newerSides(result.sides, result.sidesV, pane.sidesV)"), 2)
+        # (Ask again: the failed one goes, its question again on the model picked now)
+        again = logic[logic.index("    function askAgain(s) {"):]
+        self.assertIn("remove(String(s.id))\n        ask(s.q)", again[:again.index("\n    }\n")])
+        # the box: Enter asks, Shift+Enter a new line, taken before the window's keys; Esc anywhere in the panel
+        # closes it (kept closed)
+        box = panel[panel.index("id: box\n"):]
+        box = box[:box.index("\n        }\n")]
+        self.assertIn("Keys.onShortcutOverride:", box)
+        self.assertIn("panel.ask()", box)
+        self.assertIn('insert(cursorPosition, "\\n")', box)
+        head = panel[:panel.index("    function focusBox() {")]
+        self.assertIn("Keys.onShortcutOverride:", head)
+        self.assertIn("event.key === Qt.Key_Escape", head)
+        self.assertIn("panel.close()", head)
+        self.assertIn("pane.showSides(false)", panel)
+        # (Copy: the words, Copied a moment, as a message's Copy; the model's button says what it is)
+        self.assertIn('text: i18n("Copy")', panel)
+        self.assertIn('text: i18n("Copied")', panel)
+        self.assertIn("Sides.SIDE_PICK_TIP", panel)
+        self.assertIn("Icons.plasma.unfolded", panel)
+        # (only you leave the newest: a drag, the wheel or the scroll bar)
+        self.assertIn("onMovementStarted: panel.stuck = false", panel)
+        self.assertIn("onContentHeightChanged: if (panel.stuck) panel.followEnd()", panel)
+        # settings: shared with the other copies, set in the panel (every settings page puts them back as they are)
+        config = (ROOT / "config/main.xml").read_text()
+        self.assertIn('<entry name="sideQuestionModel" type="String">', config)
+        self.assertIn('<entry name="sideQuestionsOpen" type="Bool">', config)
+        shared = (ROOT / "ui/main.qml").read_text()
+        shared = shared[shared.index("readonly property var sharedKeys: ["):]
+        shared = shared[:shared.index("]")]
+        self.assertIn('"sideQuestionModel"', shared)
+        self.assertIn('"sideQuestionsOpen"', shared)
 
     def test_bookmarks_are_made_only_when_wanted(self):
         # Talpy Chat's bookmarks (6i): what they do (Bookmarks.qml, with bookmarks.mjs), their list
@@ -2700,7 +2848,7 @@ class SettingsPageTests(unittest.TestCase):
             defaults.update(own_defaults)
         # (the ones set in the popup are ConfigPage's on every page: it puts them back as they are now on Apply)
         popup = {"focusView", "sshHosts", "newChatInVscode", "openChatsIn", "newChatModel", "newChatEffort", "newChatMode",
-                 "diffSideBySide", "paneTextPercent", "paneTerminalFont"}
+                 "diffSideBySide", "paneTextPercent", "paneTerminalFont", "sideQuestionModel", "sideQuestionsOpen"}
         self.assertEqual(found, {k: v for k, v in kinds.items() if k not in popup})
         self.assertEqual({k + "Default": v for k, v in kinds.items() if k not in popup}, defaults)
 

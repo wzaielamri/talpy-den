@@ -465,6 +465,69 @@ Window {
         bookmarkLogic.active = true
         return bookmarkLogic.item
     }
+    // Side questions (Claude's /btw beside the chat): asked about the chat without adding to it, answered
+    // by a copy of it Claude doesn't keep (pane.py --side-question), kept per chat in the widget's cache.
+    // The tab row's toggle (SideToggle.qml) shows them in a panel (SidePanel.qml) on every tab: beside the
+    // chat in a window at least sideWideMin wide (the chat's column narrows by sideWidth), else over the
+    // chat under the tab row, where a tab switch, Ctrl+F, the bookmarks' list and an answer quoted in your
+    // reply move it out of the way (sideAway: not kept). Kept for the next window as you leave it
+    // (sideQuestionsOpen), but one opens on its own only where it's beside the chat (over it, it would hide
+    // every chat you open). "Explain this" by a selection (ExplainButton.qml) and in the right-click menu
+    // asks about what you selected. What asks and takes the answers (Sides.qml, with sides.mjs) is read and
+    // made only once you ask or the panel shows; the toggle and the panel after the window's first frame.
+    // VS Code chat.tsx: the same rules (shared/pane.ts SIDE_WIDE)
+    property var sides: []          // [{id, q, at, pick, model, a, done, error, synthetic, pending}], oldest first: pane.py's
+    property real sidesV: 0         // (its version, pane.py's: an older answer's list isn't taken)
+    property bool sidesOn: false    // (the panel)
+    property bool sideFocus: false  // (opened by you: its box takes the focus once it's made)
+    readonly property bool sideCan: chatId !== "" && !fresh && !starting   // (a new chat has nothing to ask about yet)
+    readonly property bool sideShows: sidesOn && sideCan
+    readonly property int sideWideMin: 720
+    // (and where the chat keeps room for the send buttons it can show, which don't shrink: a terminal's three
+    // need about 600 px, so there it's beside from about 960; the others' two fit from 720)
+    readonly property real sendRoom: (route === "terminal" || askHow ? widestSend.width : widestSend.width - widestCopy.width - widestSend.spacing)
+                                     + Kirigami.Units.largeSpacing * 2
+    readonly property bool sideWide: width >= sideWideMin && width - sideWidth >= sendRoom
+    readonly property bool sideBeside: sideShows && sideWide
+    readonly property real sideWidth: Math.round(Math.max(280, Math.min(520, width * 0.38)))
+    Loader {
+        id: sideLogic
+        active: false
+        source: active ? "Sides.qml" : ""
+    }
+    function sidesNow() {
+        sideLogic.active = true
+        return sideLogic.item
+    }
+    readonly property int sideCount: sideLogic.item ? sideLogic.item.shown.length : sides.length
+    // Opened or closed with its toggle, its ×, Esc in it: kept (focus: its box takes it)
+    function showSides(on, focus) {
+        if (on) {
+            quoteAt = null
+            if (!sideWide)
+                bookmarksOn = false   // (over the chat: their card would be under it)
+        }
+        sidesOn = on
+        Plasmoid.configuration.sideQuestionsOpen = on
+        if (!on) {
+            replyBox.forceActiveFocus()
+            return
+        }
+        if (focus && sidePanel.item)
+            sidePanel.item.focusBox()
+        else
+            sideFocus = focus
+    }
+    // (over the chat: hidden for what you went to under it, not kept)
+    function sideAway() {
+        if (sidesOn && !sideWide)
+            sidesOn = false
+    }
+    onBookmarksOnChanged: if (bookmarksOn) sideAway()
+    function explain(selected) {   // (Explain this: what you selected, a side question)
+        quoteAt = null
+        sidesNow().explain(selected)
+    }
     function keyAction(event) {
         return paneKeys.item ? paneKeys.item.keyAction(event) : ""
     }
@@ -635,6 +698,7 @@ Window {
     function openFind() {
         if (!conversationTab)
             return
+        sideAway()   // (over the chat: the find bar is under it)
         if (findOn && findBar.item)
             findBar.item.focusField()
         findOn = true
@@ -702,6 +766,12 @@ Window {
         reachKey = ""
         if (bookmarkLogic.item)
             bookmarkLogic.item.clear()   // (the chat before's ribbons and reach; its writes still go)
+        sides = []
+        sidesV = 0
+        sidesOn = Plasmoid.configuration.sideQuestionsOpen === true && sideWide   // (as you last left it, where it's beside the chat)
+        sideFocus = false
+        if (sideLogic.item)
+            sideLogic.item.clear()   // (the chat before's asked and removed ones; their answers are left out)
         info = ""
         review = null
         reviewFor = ""
@@ -1038,6 +1108,11 @@ Window {
             bookmarkLogic.active = true
         if (reach && bookmarkLogic.item)
             bookmarkLogic.item.reached(result)
+        // (its side questions, as pane.py keeps them: a list no newer than what's shown isn't taken)
+        if (Array.isArray(result.sides) && result.sidesV > sidesV) {
+            sides = result.sides
+            sidesV = result.sidesV
+        }
         // (how its turn ended: its chips, made once the conversation is in the list)
         turnEnded = result.ended || ""
         turnOver = !!result.over
@@ -1730,6 +1805,10 @@ Window {
         }
         if (kind === "bookmark") {   // (a bookmark kept, or why not: Bookmarks.qml, whichever chat it was of)
             bookmarksNow().took(result, asked)
+            return
+        }
+        if (kind === "side") {   // (a side question's answer, or one removed: Sides.qml, whichever chat it was of)
+            sidesNow().took(result, asked)
             return
         }
         if (kind === "made") {   // (what Claude made, unfolded: MadeLine.qml shows it)
@@ -2916,6 +2995,7 @@ Window {
     // the view, and for a few frames it showed an older part of the chat)
     property string listTab: "chat"
     onTabChanged: {
+        sideAway()   // (over the chat: the tab you went to shows)
         if (tab === "review")
             reviewPage.active = true   // (its page: made now, then kept)
         if (tab === "review" && review === null)
@@ -3001,7 +3081,7 @@ Window {
         id: widestSend
         visible: false
         spacing: Kirigami.Units.smallSpacing
-        PlasmaComponents3.Button { icon.name: Icons.plasma.copy; text: i18n("Copy and open its tab") }
+        PlasmaComponents3.Button { id: widestCopy; icon.name: Icons.plasma.copy; text: i18n("Copy and open its tab") }
         PlasmaComponents3.Button { icon.name: Icons.plasma.later; text: i18n("Send when this turn ends") }
         PlasmaComponents3.Button { icon.name: Icons.plasma.send; text: i18n("Send, go on in the background") }
     }
@@ -3053,8 +3133,10 @@ Window {
         }
 
         ColumnLayout {
+            id: mainColumn
             anchors.fill: parent
             anchors.margins: Kirigami.Units.largeSpacing
+            anchors.rightMargin: Kirigami.Units.largeSpacing + (pane.sideBeside ? pane.sideWidth : 0)   // (side questions beside it)
             spacing: Kirigami.Units.smallSpacing
 
             // Its name, where it runs and what it's doing
@@ -3411,6 +3493,14 @@ Window {
                 Item {
                     Layout.fillWidth: true
                 }
+                // Side questions: the panel's toggle, and how many the chat has (SideToggle.qml: read and made
+                // after the window's first frame, as tall as a tab; not for a new chat, with nothing to ask about yet)
+                Loader {
+                    active: pane.sideCan
+                    asynchronous: true
+                    Layout.alignment: Qt.AlignVCenter
+                    source: active ? "SideToggle.qml" : ""
+                }
                 // The chat's bookmarks: how many, a click lists them (BookmarkPill.qml: read and made only for
                 // a chat with one, or while they're listed; on every tab, as tall as a tab: the row never changes)
                 Loader {
@@ -3420,6 +3510,7 @@ Window {
                 }
             }
             Rectangle {
+                id: tabLine
                 Layout.fillWidth: true
                 Layout.topMargin: -Kirigami.Units.smallSpacing
                 implicitHeight: 1
@@ -4137,21 +4228,30 @@ Window {
                     onTapped: (point, button) => pane.editMenuAt("list", point.position)
                 }
             }
-            // "Reply to this" where a selection's drag ended (made only then)
+            // "Reply to this", then "Explain this" (ExplainButton.qml: a side question about it; not in a new
+            // chat), where a selection's drag ended (made only then), all of it inside the list's width
             Loader {
                 parent: scroll
                 z: 13
-                x: pane.quoteAt ? pane.quoteAt.x : 0
+                x: pane.quoteAt ? Math.max(0, Math.min(pane.quoteAt.x, scroll.width - width - Kirigami.Units.smallSpacing)) : 0
                 y: pane.quoteAt ? pane.quoteAt.y : 0
                 active: pane.quoteAt !== null && pane.conversationTab
-                sourceComponent: PlasmaComponents3.Button {
-                    icon.name: Icons.plasma.quote
-                    text: Quote.QUOTE_BUTTON
-                    focusPolicy: Qt.NoFocus
-                    onClicked: pane.quoteIn(pane.selectionText())
-                    PlasmaComponents3.ToolTip.text: i18n("Reply to this: what you selected, as a quote at the top of your reply")
-                    PlasmaComponents3.ToolTip.visible: hovered
-                    PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+                sourceComponent: Row {
+                    spacing: Kirigami.Units.smallSpacing
+
+                    PlasmaComponents3.Button {
+                        icon.name: Icons.plasma.quote
+                        text: Quote.QUOTE_BUTTON
+                        focusPolicy: Qt.NoFocus
+                        onClicked: pane.quoteIn(pane.selectionText())
+                        PlasmaComponents3.ToolTip.text: i18n("Reply to this: what you selected, as a quote at the top of your reply")
+                        PlasmaComponents3.ToolTip.visible: hovered
+                        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    }
+                    Loader {
+                        active: pane.sideCan
+                        source: active ? "ExplainButton.qml" : ""
+                    }
                 }
             }
             // Search (Ctrl+F): FindBar.qml over the list's top right, clear of its scroll bar (nothing
@@ -4635,6 +4735,21 @@ Window {
                 Layout.fillHeight: true
                 source: active ? "ReviewPage.qml" : ""
             }
+        }
+
+        // The chat's side questions (the tab row's toggle, Explain this): SidePanel.qml beside the chat, top to
+        // bottom at the window's right (the column made room for it), or over the chat under the tab row, read
+        // and made only while it's open, after the window's first frame
+        Loader {
+            id: sidePanel
+            z: 20
+            x: pane.sideBeside ? parent.width - width : 0
+            y: pane.sideBeside ? 0 : mainColumn.y + tabLine.y + tabLine.height
+            width: pane.sideBeside ? pane.sideWidth : parent.width
+            height: parent.height - y
+            active: pane.sideShows
+            asynchronous: true
+            source: active ? "SidePanel.qml" : ""
         }
 
         // Talpy Chat's keys (? in an empty box): KeysHelp.qml, read and made only while it shows

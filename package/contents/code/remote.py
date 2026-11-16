@@ -1020,7 +1020,7 @@ def host_answer(host, args, name="talpy_den.py", also=(), timeout=RUN_TIMEOUT):
 # length too (one argument of a command holds 128 KiB at most), and a login
 # shell there never reads it. The permission hook's code (pane.py
 # --hook-source) goes the same way: long, and no business of the process list.
-TEXT_ARGS = ("--text", "--prompt", "--note", "--answers", "--message", "--hook-source")
+TEXT_ARGS = ("--text", "--prompt", "--note", "--answers", "--message", "--hook-source", "--history")
 
 
 def with_texts(script, args):

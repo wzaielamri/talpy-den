@@ -6,6 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, SIDE_BUTTON, SIDE_TIP, SIDE_WIDE, sidePickOf, sidesShown, sideWarm, type AskedSide, type ShownSide, type Side, type SidePick } from "../src/shared/pane";
 import { awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
@@ -16,6 +17,7 @@ import { agentsNow, agentsRunningFirst, modeHint, modeText } from "../src/shared
 import { sharedTagTitle } from "./util/chat";
 import { IconButton } from "./components/IconButton";
 import { MadeLine } from "./components/MadeLine";
+import { SidePanel } from "./components/SidePanel";
 import { Tag, TestsTag } from "./components/Tag";
 import { TalpyIcon } from "./components/TalpyIcon";
 import { I, Icon, T } from "./util/icons";
@@ -26,7 +28,9 @@ import { escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mj
 
 declare global {
   interface Window {
-    CLAUDE_CHAT: { tab: "chat" | "review"; local: boolean; scale?: number; split?: boolean; font?: string; suggest?: boolean };
+    // (side: the side questions panel's pick and whether it was open, kept; fresh: a new chat, which has none)
+    CLAUDE_CHAT: { tab: "chat" | "review"; local: boolean; scale?: number; split?: boolean; font?: string; suggest?: boolean;
+                   side?: { open: boolean; pick: string }; fresh?: boolean };
   }
 }
 
@@ -69,10 +73,12 @@ function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
 // message); on the reply box, Undo, Redo, Cut, Copy, Paste (VS Code's own, as Ctrl+V: a picture
 // too) and Select all. Elsewhere in the tab, VS Code's own menu (Cut, Copy, Paste)
 type EditAt = { where: "list" | "box"; x: number; y: number; it: PaneItem | null; chosen: string };
-type EditDo = "copy" | "quote" | "copyMessage" | "bookmark" | "selectAll" | "undo" | "redo" | "cut" | "paste";
+type EditDo = "copy" | "quote" | "explain" | "copyMessage" | "bookmark" | "selectAll" | "undo" | "redo" | "cut" | "paste";
 const EDIT_KEYS: Record<string, string> = { copy: "Ctrl+C", bookmark: "Ctrl+D", selectAll: "Ctrl+A", undo: "Ctrl+Z", redo: MAC ? "Ctrl+Shift+Z" : "Ctrl+Y", cut: "Ctrl+X", paste: "Ctrl+V" };
-function EditMenu({ at, marked, onDo }: { at: EditAt; marked: boolean; onDo: (what: EditDo) => void }) {
+// (explain: the chat can have side questions, Explain this after Quote in reply)
+function EditMenu({ at, marked, explain, onDo }: { at: EditAt; marked: boolean; explain: boolean; onDo: (what: EditDo) => void }) {
   const mark = at.where === "list" && !!at.it && canBookmark(at.it);   // (yours, or Claude's reply, once it's in the chat)
+  const tall = at.where === "box" ? 190 : (mark ? 120 : 90) + (explain ? 26 : 0);
   const item = (what: EditDo, text: string, enabled = true) => (
     <button type="button" role="menuitem" disabled={!enabled} onClick={() => onDo(what)}>
       <span class="grow">{text}</span>
@@ -81,12 +87,13 @@ function EditMenu({ at, marked, onDo }: { at: EditAt; marked: boolean; onDo: (wh
   );
   // (no focus taken: the box keeps its cursor and the conversation its selection)
   return (
-    <div class="pane-chip-menu pane-edit-menu" role="menu" style={{ left: `${Math.min(at.x, window.innerWidth - 220)}px`, top: `${Math.min(at.y, window.innerHeight - (at.where === "box" ? 190 : mark ? 120 : 90))}px` }}
+    <div class="pane-chip-menu pane-edit-menu" role="menu" style={{ left: `${Math.min(at.x, window.innerWidth - 220)}px`, top: `${Math.min(at.y, window.innerHeight - tall)}px` }}
          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}>
       {at.where === "list" ? (
         <>
           {item("copy", "Copy", at.chosen !== "")}
           {item("quote", QUOTE_MENU, at.chosen.trim() !== "")}
+          {explain ? item("explain", EXPLAIN_BUTTON, at.chosen.trim() !== "") : null}
           {at.it ? item("copyMessage", at.it.kind === "claude" ? "Copy message (Markdown)" : "Copy message") : null}
           {mark ? item("bookmark", marked ? "Remove bookmark" : "Bookmark message") : null}
           {item("selectAll", "Select all")}
@@ -665,6 +672,116 @@ function ChatApp() {
   const [pendingJump, setPendingJump] = useState<{ key: string; close: boolean } | null>(null);   // (to go to once it's drawn)
   const hoverKey = useRef("");   // (the message the hover bar is on)
 
+  // Side questions (Claude's /btw, beside the chat: SidePanel): asked here, shown at once as on their way
+  // (asked) till the chat's list (pane.py's, newer versions only: newerSides) has them, several at once;
+  // one removed is hidden at once (removing) till its answer's list comes. The panel's open (made only
+  // then) and its pick are kept for every Talpy Chat (the extension's); a remembered open one opens only
+  // where it sits beside the chat (over it, it would hide each chat you open)
+  const [sideOpen, setSideOpen] = useState(() => !!config.side?.open && !config.fresh && window.innerWidth >= SIDE_WIDE);
+  const [sideWide, setSideWide] = useState(() => window.innerWidth >= SIDE_WIDE);
+  const [sides, setSides] = useState<{ list: Side[]; v: number }>({ list: [], v: 0 });
+  const sidesNow = useRef(sides);
+  const putSides = (next: { list: Side[]; v: number }) => {
+    sidesNow.current = next;
+    setSides(next);
+  };
+  const [asked, setAsked] = useState<AskedSide[]>([]);
+  const askedNow = useRef(asked);
+  askedNow.current = asked;
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  const sideOps = useRef(new Map<number, string[]>());   // (removes on their way: the ids each one hides)
+  const sideId = useRef(0);
+  const [askedCount, setAskedCount] = useState(0);
+  const [sidePick, setSidePick] = useState<SidePick>(() => sidePickOf(config.side?.pick) ?? "");
+  const [pickOpen, setPickOpen] = useState(false);
+  const [sideNote, setSideNote] = useState("");
+  const sideDraft = useRef("");
+  const tabsRow = useRef<HTMLDivElement>(null);
+  const shownSides = useMemo(() => sidesShown(sides.list, asked, removing), [sides, asked, removing]);
+  // (a new chat has none till it's started; before the extension says which chat, its page does: so a panel
+  // kept open is there from the first frame, and the chat's column doesn't move once it's drawn)
+  const sideCan = chat ? !chat.fresh && !chat.starting : !config.fresh;
+  const sideShows = sideOpen && sideCan;
+  useEffect(() => {   // (beside the chat or over it, as the view is now: only while it's open)
+    if (!sideOpen) return undefined;
+    const sized = () => setSideWide(window.innerWidth >= SIDE_WIDE);
+    sized();
+    window.addEventListener("resize", sized);
+    return () => window.removeEventListener("resize", sized);
+  }, [sideOpen]);
+  useEffect(() => {
+    if (!sideNote) return undefined;
+    const t = setTimeout(() => setSideNote(""), 12000);
+    return () => clearTimeout(t);
+  }, [sideNote]);
+  // Opened or closed with its toggle, its ×, Esc in it: kept (keep false: hidden for a moment, over the chat,
+  // for what you went to under it: the box, a tab, the bookmarks)
+  const openSide = () => {
+    const wide = window.innerWidth >= SIDE_WIDE;
+    setSideWide(wide);
+    setQuoteAt(null);
+    if (!wide) setMarksOn(false);   // (over the chat: their card would be under it)
+    if (!sideOpen) post({ type: "sidePrefs", open: true });
+    setSideOpen(true);
+  };
+  const closeSide = (keep = true) => {
+    setSideOpen(false);
+    setPickOpen(false);
+    if (keep) {
+      post({ type: "sidePrefs", open: false });
+      reply.current?.focus();
+    }
+  };
+  const pickSide = (pick: SidePick) => {
+    setSidePick(pick);
+    post({ type: "sidePrefs", pick });
+  };
+  // A question: shown at once at the list's end, on its way (each one goes on its own: none waits for another)
+  const askSide = (q: string, pick: SidePick = sidePick) => {
+    const text = q.trim();
+    if (!text || !chat || chat.fresh || chat.starting) return;
+    const id = ++sideId.current;
+    setAsked((was) => [...was, { local: id, q: text, pick, at: Date.now() }]);
+    setAskedCount((n) => n + 1);
+    post({ type: "sideAsk", id, text, pick });
+  };
+  // Removed: hidden at once; one this page asked that's still on its way, once it's there (gone)
+  const removeSides = (ids: string[], which: string) => {
+    const id = ++sideId.current;
+    sideOps.current.set(id, ids);
+    setRemoving((was) => new Set([...was, ...ids]));
+    post({ type: "sideRemove", id, side: which });
+  };
+  const removeSide = (s: ShownSide) => {
+    if (s.local !== undefined) setAsked((was) => was.flatMap((a) => (a.local !== s.local ? [a] : a.error ? [] : [{ ...a, gone: true }])));
+    else removeSides([s.id], s.id);
+  };
+  const removeAllSides = () => {
+    setAsked((was) => was.flatMap((a) => (a.error ? [] : [{ ...a, gone: true }])));
+    removeSides(sidesNow.current.list.map((s) => s.id), "all");
+  };
+  // Ask again (one with no answer): it goes, and the same question is asked again on the pick now
+  const againSide = (s: ShownSide) => {
+    removeSide(s);
+    askSide(s.q);
+  };
+  // pane.py's answer: an asked one's place is its own item now (one that never got there says why); a
+  // removed one's ids shown again unless its list is without them; the chat's list, if it's newer
+  const sideTookNow = useRef((_m: Extract<PaneHostMessage, { type: "side" }>) => {});
+  sideTookNow.current = (m) => {
+    if (m.kind === "ask") {
+      const a = askedNow.current.find((x) => x.local === m.id);
+      if (a?.gone && m.side && m.sides.some((s) => s.id === m.side!.id)) removeSides([m.side.id], m.side.id);   // (removed while on its way)
+      setAsked((was) => was.flatMap((x) => (x.local !== m.id ? [x] : m.side || x.gone ? [] : [{ ...x, error: m.message || "Claude couldn't answer it" }])));
+    } else {
+      const ids = sideOps.current.get(m.id) ?? [];
+      sideOps.current.delete(m.id);
+      setRemoving((was) => new Set([...was].filter((x) => !ids.includes(x))));
+      if (!m.ok) setSideNote(`Couldn't remove it: ${m.message || "that didn't work"}`);
+    }
+    if (m.chatId === chatIdNow.current && newerSides(m.sides, m.sidesV, sidesNow.current.v)) putSides({ list: m.sides, v: m.sidesV });
+  };
+
   // Pictures pasted into the reply: saved by the extension (an SSH host's chat
   // gets a copy there once you say so), then named in it as [Image: path]
   const [thumbs, setThumbs] = useState<Record<string, string>>({}); // path -> the picture, to show
@@ -925,6 +1042,7 @@ function ChatApp() {
       else if (m.type === "key") keyNow.current(m.key);
       else if (m.type === "copied") copiedNow.current(m);
       else if (m.type === "bookmarks") marksTookNow.current(m);
+      else if (m.type === "side") sideTookNow.current(m);
       else if (m.type === "suggest") {
         setSuggest(m.on);
         if (!m.on) setUsual(null);
@@ -998,6 +1116,8 @@ function ChatApp() {
           if (typeof a.bookmarksV === "number" && adoptable(was.v, markBusy.current > 0, a.bookmarksV)
               && (a.bookmarksV > was.v || !sameMarks(was.list, a.bookmarks ?? [])))
             putMarks({ list: Array.isArray(a.bookmarks) ? a.bookmarks : [], v: a.bookmarksV });
+          // (its side questions: a newer list than shown)
+          if (newerSides(a.sides, a.sidesV, sidesNow.current.v)) putSides({ list: a.sides ?? [], v: a.sidesV ?? 0 });
           if (typeof a.reach === "string" && a.reach) reachedNow.current(a.reach, a.reached);
         }
       } else if (m.type === "review") {
@@ -1170,6 +1290,7 @@ function ChatApp() {
       if (it) topItem.current = { key: it.dataset.key ?? "", at: it.getBoundingClientRect().top - top };
     }
     setTab(t);
+    if (window.innerWidth < SIDE_WIDE) setSideOpen(false);   // (side questions over the chat: the tab you went to shows)
   };
   useLayoutEffect(() => {
     const el = list.current;
@@ -1721,6 +1842,7 @@ function ChatApp() {
   };
   const openFind = () => {
     if (!conversation) return;
+    if (window.innerWidth < SIDE_WIDE) setSideOpen(false);   // (side questions over the chat: the find bar is under them)
     setFind((f) => (f.open ? f : { ...f, open: true }));
     requestAnimationFrame(() => {
       findInput.current?.focus();
@@ -1864,6 +1986,7 @@ function ChatApp() {
         return;
       case "bookmarks":
         if (!chat || chat.fresh) return;
+        if (!marksOn && !sideWide) setSideOpen(false);   // (side questions over the chat: the bookmarks' card would be under them)
         if (!conversation) {
           showTab("chat");
           setMarksOn(true);
@@ -1910,13 +2033,31 @@ function ChatApp() {
       box.setSelectionRange(q.cursor, q.cursor);
     }, 0);
   };
+  // Explain this (beside Reply to this, and the right-click menu's): what you selected, asked as a side
+  // question at once (the panel opens), on the panel's pick; nothing is added to the chat
+  const explain = (selected: string) => {
+    const q = explainQuestion(selected);
+    setQuoteAt(null);
+    window.getSelection()?.removeAllRanges();
+    if (!q || !sideCan) return;
+    openSide();
+    askSide(q);
+  };
+  // An answer quoted in your reply (as Quote in reply quotes a selection); over the chat, the panel makes way
+  const quoteSide = (s: ShownSide) => {
+    if (!s.a) return;
+    if (!sideWide) closeSide(false);
+    quoteIn(s.a);
+  };
   const offerQuote = () => {
     const el = list.current;
     const sel = window.getSelection();
     const said = sel && !sel.isCollapsed ? sel.toString() : "";
     if (!el || !sel || !said.trim() || !el.contains(sel.anchorNode) || !el.contains(sel.focusNode)) return setQuoteAt(null);
     const r = sel.getRangeAt(sel.rangeCount - 1).getBoundingClientRect();
-    setQuoteAt({ x: Math.max(4, Math.min(r.right - 40, window.innerWidth - 130)), y: Math.min(r.bottom + 6, window.innerHeight - 40), text: said });
+    // (Reply to this, and Explain this after it where the chat has side questions: as wide as both)
+    const wide = sideCan ? 250 : 130;
+    setQuoteAt({ x: Math.max(4, Math.min(r.right - 40, window.innerWidth - wide)), y: Math.min(r.bottom + 6, window.innerHeight - 40), text: said });
   };
   useEffect(() => {
     if (!quoteAt) return undefined;
@@ -1942,6 +2083,7 @@ function ChatApp() {
         post({ type: "copy", text: at.chosen });
         setInfo({ ok: true, message: "Copied" });
       } else if (what === "quote" && at.chosen.trim()) quoteIn(at.chosen);
+      else if (what === "explain" && at.chosen.trim()) explain(at.chosen);
       else if (what === "copyMessage" && at.it) copyItem(at.it, true);
       else if (what === "bookmark" && at.it) toggleMark(at.it);
       else if (what === "selectAll") selectAllNow.current();
@@ -1962,6 +2104,15 @@ function ChatApp() {
   // VS Code has it
   const escapeNow = useRef((): boolean => false);
   escapeNow.current = () => {
+    // (in the side questions panel: its model's menu, else the panel, once no other menu is open)
+    if (sideShows && pickOpen) {
+      setPickOpen(false);
+      return true;
+    }
+    if (sideShows && !chipMenu && !editMenu && !ctxMenu && (document.activeElement as HTMLElement | null)?.closest?.(".pane-side")) {
+      closeSide();
+      return true;
+    }
     const inBox = !!reply.current && document.activeElement === reply.current;
     const what = escTarget({ menu: !!chipMenu || !!editMenu || !!ctxMenu, big: !!big, list: inBox && offered.items.length > 0, find: find.open && conversation,
                              bookmarks: marksOn && conversation, help,
@@ -2131,8 +2282,10 @@ function ChatApp() {
     );
   }
 
+  const textStyle = { "--pane-scale": String(scale), ...(font ? { "--pane-font": font } : {}) };
   return (
-    <div class="pane pane-grow" style={{ "--pane-scale": String(scale), ...(font ? { "--pane-font": font } : {}) }}>
+    <>
+    <div class={"pane pane-grow" + (sideShows && sideWide ? " side-beside" : "")} style={textStyle}>
       {ribbons ? <style>{ribbons}</style> : null}
       {big ? (
         <div class="pane-big" role="dialog" aria-label="A picture of yours" onClick={() => setBig(null)}>
@@ -2217,7 +2370,7 @@ function ChatApp() {
         <TaskStrip key={chat.chatId} tasks={chat.tasks} agents={chat.agents && chat.agents.total > 0 ? chat.agents : null} open={strip}
           setOpen={setStrip} host={chat.host} />
       ) : null}
-      <div class="pane-tabs" role="tablist">
+      <div class="pane-tabs" role="tablist" ref={tabsRow}>
         {(["chat", "steps"] as const).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} class={tab === t ? "on" : ""} onClick={() => showTab(t)}
             title={`${t === "chat" ? "Your messages and Claude's replies" : "Claude's steps too: each tool call"} (${MAC ? "Cmd" : "Ctrl"}+${t === "chat" ? 1 : 2})`}>
@@ -2230,6 +2383,14 @@ function ChatApp() {
             {chat?.changes ? `Review ±${chat.changes}${chat.reviewPending ? " •" : ""}` : "Review"}
           </button>
         )}
+        {/* (its side questions, and how many it has: on every tab alike, as the bookmarks after them) */}
+        {sideCan ? (
+          <button type="button" class="pane-tabs-side" aria-pressed={sideShows} aria-label={SIDE_BUTTON} title={SIDE_TIP}
+            onClick={() => (sideShows ? closeSide() : openSide())}>
+            <Icon name={I.sideQuestions} />
+            {shownSides.length ? <span class="pane-tabs-count">{shownSides.length}</span> : null}
+          </button>
+        ) : null}
         {/* (the chat's bookmarks: on every tab alike, so the row is the same on each) */}
         {marks.list.length || marksOn ? (
           <button type="button" class="pane-tabs-marks" aria-pressed={marksOn} aria-label="Bookmarks"
@@ -2334,7 +2495,7 @@ function ChatApp() {
           {/* (the chat's bookmarks: over the list's top right, or beside it; outside it, so it's laid out alone) */}
           {marksOn ? (
             <BookmarkList marks={marks.list} loaded={loadedKeys} more={more} capped={capped} settled={settled} going={markGoing} current={current}
-              findOpen={find.open} list={list} mac={MAC} onGo={goFromList} onRemove={(m) => changeMark(m, false)} onClose={closeMarks} />
+              findOpen={find.open} besideOk={!(sideShows && sideWide)} list={list} mac={MAC} onGo={goFromList} onRemove={(m) => changeMark(m, false)} onClose={closeMarks} />
           ) : null}
           {/* (Since you last looked: a line under the list, above what it asks and your reply; not over the
               list, where it hid the working line. It comes with the tab's first read, before you read) */}
@@ -2400,13 +2561,21 @@ function ChatApp() {
               ))}
             </div>
           ) : null}
-          {editMenu ? <EditMenu at={editMenu} marked={!!editMenu.it && !!markedKeys[editMenu.it.key]} onDo={editDo} /> : null}
+          {editMenu ? <EditMenu at={editMenu} marked={!!editMenu.it && !!markedKeys[editMenu.it.key]} explain={sideCan} onDo={editDo} /> : null}
           {quoteAt ? (
-            <button type="button" class="pane-quote-btn" style={{ left: `${quoteAt.x}px`, top: `${quoteAt.y}px` }}
-              title={`${QUOTE_BUTTON}: what you selected, as a quote at the top of your reply`}
-              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => quoteIn(quoteAt.text)}>
-              <Icon name={I.quote} />{QUOTE_BUTTON}
-            </button>
+            <div class="pane-quote-at" style={{ left: `${quoteAt.x}px`, top: `${quoteAt.y}px` }}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+              <button type="button" class="pane-quote-btn"
+                title={`${QUOTE_BUTTON}: what you selected, as a quote at the top of your reply`}
+                onClick={() => quoteIn(quoteAt.text)}>
+                <Icon name={I.quote} />{QUOTE_BUTTON}
+              </button>
+              {sideCan ? (
+                <button type="button" class="pane-quote-btn" title={EXPLAIN_TIP} onClick={() => explain(quoteAt.text)}>
+                  <Icon name={I.explain} />{EXPLAIN_BUTTON}
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {ctxMenu && soFar.context ? (
             <div class="pane-chip-menu pane-ctx-menu" role="menu" aria-label="Context" style={{ left: `${ctxMenu.x}px`, top: `${ctxMenu.y}px` }}
@@ -2745,6 +2914,15 @@ function ChatApp() {
         </>
       )}
     </div>
+    {/* (side questions: outside the chat's column, so it's laid out alone; made only while open) */}
+    {sideShows ? (
+      <SidePanel items={shownSides} wide={sideWide} anchor={tabsRow} shown={shown} loaded={loaded} asked={askedCount} draft={sideDraft}
+        pick={sidePick} pickOpen={pickOpen} setPickOpen={setPickOpen} note={sideNote} style={textStyle}
+        cost={costNote(soFar.context?.used ?? 0, sideWarm(sides.list, sidePick, Date.now()))}
+        onAsk={(q) => askSide(q)} onPick={pickSide} onRemove={removeSide} onRemoveAll={removeAllSides} onAgain={againSide}
+        onCopy={(s) => { if (s.a) post({ type: "copy", text: s.a }); }} onQuote={quoteSide} onCopyCode={copyCode} onClose={() => closeSide()} />
+    ) : null}
+    </>
   );
 }
 

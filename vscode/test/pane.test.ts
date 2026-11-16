@@ -11,6 +11,7 @@ import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
 import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -2034,4 +2035,158 @@ test("the find bar's count and its steps: from what you read, then one after ano
   assert.equal(nthIn("A parser", "parser", 1), null);
   assert.deepEqual(allIn("aXa xa", "A"), [[0, 1], [2, 3], [5, 6]]);
   assert.equal(allIn("aaaa", "a", 2).length, 2);
+});
+
+// Side questions (sides.mjs, Plasma's too; the panel: webview/components/SidePanel.tsx): what pane.py
+// gives is taken only as what it can be; the panel shows the chat's list, then the questions this tab
+// asked till that list has them
+test("side questions: pane.py's list taken only as what it can be, the malformed left out", () => {
+  const ok = { id: "0123456789ab", q: "Why 52?", at: 5, pick: "haiku", model: "claude-haiku-4-5", a: "Because…", done: 9 };
+  assert.deepEqual(sideOf(ok), ok);
+  assert.deepEqual(sideOf({ ...ok, pick: "opus", extra: "x", synthetic: true }), { ...ok, pick: "", synthetic: true });   // (not a pick: the chat's own)
+  assert.deepEqual(sideOf({ id: "0123456789ab", q: "Q", at: 5, pick: "", model: "", pending: true, a: "x", error: "y" }),
+                   { id: "0123456789ab", q: "Q", at: 5, pick: "", model: "", pending: true });   // (on its way: nothing else)
+  assert.deepEqual(sideOf({ id: "0123456789ab", q: "Q", at: 5, done: 7, error: "No answer came: ask again" }),
+                   { id: "0123456789ab", q: "Q", at: 5, pick: "", model: "", done: 7, error: "No answer came: ask again" });
+  assert.equal(sideOf({ id: "0123456789ab", q: "Q", at: 5, done: 7 })!.error, "Claude couldn't answer it");   // (no answer: why, always)
+  assert.equal(sideOf({ ...ok, synthetic: "yes" })!.synthetic, undefined);
+  assert.deepEqual([sideOf({ ...ok, at: "5", done: -1 })!.at, sideOf({ ...ok, at: "5", done: -1 })!.done], [0, undefined]);
+  for (const bad of [null, "x", [], { id: "nope", q: "Q" }, { id: "0123456789ab", q: "  " }, { id: "0123456789ab" }, { id: 7, q: "Q" }, { id: "0123456789AB", q: "Q" }])
+    assert.equal(sideOf(bad), null, JSON.stringify(bad));
+  assert.deepEqual(sidesOf([ok, { id: "bad" }, 3]).map((s) => s.id), ["0123456789ab"]);
+  assert.deepEqual(sidesOf("x"), []);
+  assert.deepEqual([sidePickOf(""), sidePickOf("sonnet"), sidePickOf("haiku"), sidePickOf("opus"), sidePickOf(undefined), sidePickOf(0)], ["", "sonnet", "haiku", null, null, null]);
+  // the page's answer: the helper's own fields, each only as what it can be
+  assert.deepEqual(sideAnswerOf("ask", 3, "c1", { ok: true, message: 1, side: { ...ok, junk: 1 }, sides: [ok, {}], sidesV: 9, extra: "x" }),
+                   { type: "side", kind: "ask", id: 3, chatId: "c1", ok: true, message: "", side: ok, sides: [ok], sidesV: 9 });
+  assert.deepEqual(sideAnswerOf("remove", 4, "c1", { ok: false, side: "x", sidesV: "9" }),
+                   { type: "side", kind: "remove", id: 4, chatId: "c1", ok: false, message: "That didn't work", sides: [], sidesV: 0 });
+});
+
+test("side questions: the panel shows the chat's list, then the ones this tab asked till that list has them, several at once", () => {
+  const s = (id: string, q: string, at: number, more: Partial<Side> = {}) => ({ id, q, at, pick: "", model: "", ...more }) as Side;
+  const a1: AskedSide = { local: 1, q: "Why 52?", pick: "", at: NOW };
+  const a2: AskedSide = { local: 2, q: "Why 52?", pick: "haiku", at: NOW + 100 };
+  const old = s("aaaaaaaaaaaa", "Earlier", NOW - 3_600_000, { a: "Yes", done: NOW - 3_590_000 });
+  // nothing of them in the list yet: on their way, after it, in the order asked
+  let shown = sidesShown([old], [a1, a2], new Set());
+  assert.deepEqual(shown.map((x) => [x.id, sideState(x), x.local]), [["aaaaaaaaaaaa", "answered", undefined], ["local-1", "pending", 1], ["local-2", "pending", 2]]);
+  // pane.py's own item for the first (the same question and pick, a moment later): in its place, once
+  const twin = s("bbbbbbbbbbbb", "Why 52?", NOW + 300, { pending: true });
+  shown = sidesShown([old, twin], [a1, a2], new Set());
+  assert.deepEqual(shown.map((x) => x.id), ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "local-2"]);   // (the Haiku one is another)
+  // one being removed is hidden; one removed while it was on its way, and its own item
+  assert.deepEqual(sidesShown([old, twin], [{ ...a1, gone: true }, a2], new Set(["aaaaaaaaaaaa"])).map((x) => x.id), ["local-2"]);
+  assert.deepEqual(sidesShown([old], [{ ...a1, gone: true }], new Set()).map((x) => x.id), ["aaaaaaaaaaaa"]);
+  // Ask again: the same question asked again isn't the failed one, asked before it
+  const failed = s("cccccccccccc", "Why 52?", NOW - 10_000, { done: NOW - 5_000, error: "timed out" });
+  assert.deepEqual(sidesShown([failed], [a1], new Set(["cccccccccccc"])).map((x) => x.id), ["local-1"]);
+  assert.deepEqual(sidesShown([failed], [a1], new Set()).map((x) => x.id), ["cccccccccccc", "local-1"]);
+  // one that never got there (the helper said why): why, in its place
+  const lost = sidesShown([], [{ ...a1, error: "That's too long for a side question (up to 20000 characters)" }], new Set())[0];
+  assert.deepEqual([lost.id, sideState(lost), lost.error, lost.local], ["local-1", "error", "That's too long for a side question (up to 20000 characters)", 1]);
+  // the same question twice at once: each its own
+  const b1 = s("dddddddddddd", "Why 52?", NOW + 200), b2 = s("eeeeeeeeeeee", "Why 52?", NOW + 250);
+  assert.deepEqual(sidesShown([b1, b2], [a1, { ...a1, local: 3, at: NOW + 1 }], new Set()).map((x) => x.id), ["dddddddddddd", "eeeeeeeeeeee"]);
+});
+
+test("side questions: which list is newer, what the next one costs, Explain this's question, the meta line's model, the actions' order", () => {
+  assert.equal(newerSides([], 5, 4), true);
+  assert.equal(newerSides([], 5, 5), false);
+  assert.equal(newerSides(undefined, 5, 0), false);
+  assert.equal(newerSides([], undefined, 0), false);
+  const answered = { id: "aaaaaaaaaaaa", q: "Q", at: NOW - 60_000, pick: "haiku", model: "claude-haiku-4-5", a: "A", done: NOW - 50_000 } as Side;
+  assert.equal(sideWarm([answered], "haiku", NOW), true);
+  assert.equal(sideWarm([answered], "", NOW), false);   // (another model: its own cache)
+  assert.equal(sideWarm([answered], "haiku", NOW - 50_000 + WARM_MS + 1), false);
+  assert.equal(sideWarm([{ ...answered, a: undefined, error: "x" }], "haiku", NOW), false);
+  assert.equal(costNote(300_000, false), "The first question re-reads the chat: 300k tokens");
+  assert.equal(costNote(300_000, true), "Follow-ups reuse the chat from the cache");
+  assert.equal(costNote(0, false), "");   // (its context not known: nothing said)
+  assert.equal(explainQuestion("isoWeek caps it\n\nat 52"), "Explain this part of the chat:\n\n> isoWeek caps it\n>\n> at 52");
+  assert.equal(explainQuestion("  \n "), "");
+  assert.equal(sideModelLabel({ ...answered, pick: "", model: "claude-opus-5-5" }), "Opus 5.5");
+  assert.equal(sideModelLabel(answered), "Haiku");
+  assert.deepEqual(SIDE_ACTIONS, ["copy", "quote", "remove"]);
+  assert.deepEqual(SIDE_PICKS.map((p) => [p.value, sidePickLabel(p.value)]), [["", "Same model as the chat"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]]);
+});
+
+test("a side question goes to pane.py --side-question (a host's with --host, in a file of its own), several at once; its answer only as what it can be", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-side-"));
+  const calls: string[][] = [];
+  const texts: string[] = [];
+  const item = (q: string) => ({ id: "0123456789ab", q, at: NOW, pick: "", model: "claude-opus-5-5", a: `About ${q}`, done: NOW + 5 });
+  let v = 20;
+  const backend = { pane: async (args: string[]) => {
+    if (args[0] !== "--side-question") return { ok: true, unchanged: true };
+    calls.push(own(args));
+    if (args.includes("--text-file")) texts.push(fs.readFileSync(args[args.indexOf("--text-file") + 1], "utf8"));
+    if (args.includes("--remove")) return { ok: true, message: "", sides: [], sidesV: ++v };
+    const q = args.includes("--text") ? args[args.indexOf("--text") + 1] : texts.at(-1)!;
+    await new Promise((r) => setTimeout(r, q === "slow" ? 60 : 1));   // (the first is slow: the second doesn't wait for it)
+    return { ok: true, message: "", side: { ...item(q), junk: 1 }, sides: [item(q), { bad: 1 }], sidesV: ++v, extra: "x" };
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: "side-1", sessionId: "side-1", profileDir: ".claude", name: "x" } as never);
+  const panel = recorded.panels.at(-1)!;
+  const answers = () => panel.sent.filter((m) => (m as { type: string }).type === "side") as { kind: string; id: number; ok: boolean; message: string }[];
+  panel.receive({ type: "sideAsk", id: 1, text: "slow", pick: "" });
+  panel.receive({ type: "sideAsk", id: 2, text: "  Why 52?  ", pick: "haiku" });
+  await new Promise((r) => setTimeout(r, 120));
+  assert.deepEqual(calls, [["--side-question", "side-1", "--text", "slow", "--profile", ".claude"],
+                           ["--side-question", "side-1", "--text", "Why 52?", "--model", "haiku", "--profile", ".claude"]]);
+  assert.deepEqual(answers().map((m) => m.id), [2, 1], "the second didn't wait for the first");
+  assert.deepEqual(answers()[0], { type: "side", kind: "ask", id: 2, chatId: "side-1", ok: true, message: "", side: item("Why 52?"), sides: [item("Why 52?")], sidesV: 21 });
+  // removed: one, or all; what isn't a side question's id, a pick that isn't one, nothing to ask: not run, said why
+  panel.receive({ type: "sideRemove", id: 3, side: "0123456789ab" });
+  panel.receive({ type: "sideRemove", id: 4, side: "all" });
+  for (const bad of [{ side: "../x" }, { side: 7 }, { id: "5" }]) panel.receive({ type: "sideRemove", id: 5, side: "0123456789ab", ...bad });
+  panel.receive({ type: "sideAsk", id: 6, text: "Q", pick: "opus" });
+  panel.receive({ type: "sideAsk", id: 7, text: "   ", pick: "" });
+  panel.receive({ type: "sideAsk", id: "8", text: "Q", pick: "" });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(calls.slice(2), [["--side-question", "side-1", "--remove", "0123456789ab"], ["--side-question", "side-1", "--remove", "all"]]);
+  assert.deepEqual(answers().slice(2).map((m) => [m.kind, m.id, m.ok, m.message]).sort((x, y) => Number(x[1]) - Number(y[1])),
+                   [["remove", 3, true, ""], ["remove", 4, true, ""], ["ask", 6, false, "Not a model side questions can use"], ["ask", 7, false, "Write your question first"]]);
+  // an SSH host's chat: asked there (--host; kept here), the question in a file of its own (out of the process list), gone after
+  p.open({ chatId: "side-2", sessionId: "side-2", profileDir: ".claude-work", name: "y", host: "lab" } as never);
+  recorded.panels.at(-1)!.receive({ type: "sideAsk", id: 1, text: "On the host?", pick: "sonnet" });
+  await new Promise((r) => setTimeout(r, 30));
+  const last = calls.at(-1)!;
+  assert.deepEqual([...last.slice(0, 3), ...last.slice(4)], ["--side-question", "side-2", "--text-file", "--model", "sonnet", "--profile", ".claude-work", "--host", "lab"]);
+  assert.equal(texts.at(-1), "On the host?");
+  assert.deepEqual(fs.readdirSync(path.join(process.env.XDG_CACHE_HOME, "talpy-den")).filter((f) => f.startsWith("text-")), [], "gone after");
+  p.dispose();
+});
+
+test("the side questions panel's pick and whether it's open are kept for every Talpy Chat; a chat's list comes with its conversation, only as what it can be", async () => {
+  const kept = new Map<string, unknown>();
+  const memory = { get: (k: string) => kept.get(k), update: async (k: string, v: unknown) => void kept.set(k, v), keys: () => [...kept.keys()] };
+  const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true }
+    : { ok: true, items: [], more: false, stamp: "s1", sides: [{ id: "0123456789ab", q: "Q", at: 5, pending: true, junk: 1 }, "x"], sidesV: 7 }) };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  assert.deepEqual(p.sidePrefs(), { open: false, pick: "" });   // (nowhere to keep them: closed, the chat's own model)
+  p.memory = memory as never;
+  p.open({ chatId: "pref-1", sessionId: "pref-1", profileDir: ".claude", name: "x" } as never);
+  const panel = recorded.panels.at(-1)!;
+  panel.receive({ type: "sidePrefs", open: true });
+  panel.receive({ type: "sidePrefs", pick: "haiku" });
+  panel.receive({ type: "sidePrefs", open: "yes", pick: "opus" });   // (neither is one: nothing kept)
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(p.sidePrefs(), { open: true, pick: "haiku" });
+  // the next tab starts with them
+  p.open({ chatId: "pref-2", sessionId: "pref-2", profileDir: ".claude", name: "y" } as never);
+  const next = recorded.panels.at(-1)! as unknown as { webview: { html: string }; receive(m: unknown): void; sent: unknown[] };
+  assert.ok(next.webview.html.includes('"side":{"open":true,"pick":"haiku"},"fresh":false'), next.webview.html);
+  next.receive({ type: "ready" });
+  await new Promise((r) => setTimeout(r, 30));
+  const read = next.sent.find((m) => (m as { type: string }).type === "conversation") as { answer: Record<string, unknown> };
+  assert.deepEqual([read.answer.sides, read.answer.sidesV], [[{ id: "0123456789ab", q: "Q", at: 5, pick: "", model: "", pending: true }], 7]);
+  p.dispose();
 });

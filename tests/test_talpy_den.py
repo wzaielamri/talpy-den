@@ -3124,3 +3124,91 @@ class UsageRefreshCommandTests(unittest.TestCase):
             with mock.patch("shutil.which", lambda name, *a, **kw: None):
                 argv, _ = cs.usage_refresh_command(profile, home, str(claude), folder)
             self.assertEqual(argv[5:7], [str(claude), "-p"])
+
+
+class SideStoreTests(unittest.TestCase):
+    """Talpy Chat's side questions, kept in the widget's cache (talpy_den's side questions)."""
+
+    CHAT = "11111111-2222-3333-4444-555555555555"
+    NEW = "99999999-2222-3333-4444-555555555555"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cache = Path(tmp.name) / "cache"
+
+    def ask(self, q, now, chat=CHAT, host="", pick=""):
+        ok, said, item, items, v = cs.ask_side(self.cache, chat, host, q, pick, now_ms=now)
+        self.assertTrue(ok, said)
+        return item
+
+    def answer(self, item, text, now, chat=CHAT, host="", **kw):
+        return cs.finish_side(self.cache, chat, host, item["id"], text, now_ms=now, **kw)
+
+    def test_one_whose_helper_died_reads_as_failed(self):
+        item = self.ask("still there?", 1000)
+        self.assertTrue(cs.load_sides(self.cache, self.CHAT, now_ms=2000)[0][0]["pending"])
+        late = cs.load_sides(self.cache, self.CHAT, now_ms=1000 + cs.SIDE_LOST_MS + 1)[0][0]
+        self.assertEqual((late.get("pending"), late["error"], late["done"]), (None, cs.SIDE_LOST, 1000 + cs.SIDE_LOST_MS))
+        # its answer coming after all wins
+        items, _ = self.answer(item, "Yes.", 1000 + cs.SIDE_LOST_MS + 5)
+        self.assertEqual((items[0]["a"], items[0].get("error")), ("Yes.", None))
+        # one removed while on its way stays removed
+        other = self.ask("gone?", 3000)
+        cs.remove_side(self.cache, self.CHAT, "", other["id"])
+        self.assertEqual([s["q"] for s in self.answer(other, "late", 4000)[0]], ["still there?"])
+
+    def test_the_oldest_answered_ones_go_past_the_cap(self):
+        on_way = self.ask("q0", 1)
+        for n in range(1, cs.SIDES_MAX + 2):
+            self.answer(self.ask(f"q{n}", 1 + n), "a", 1 + n)
+        items, _ = cs.load_sides(self.cache, self.CHAT, now_ms=100)
+        self.assertEqual(len(items), cs.SIDES_MAX)
+        self.assertEqual([s["q"] for s in items[:2]], ["q0", "q3"])   # (the one on its way stays)
+        self.assertTrue(items[0]["pending"])
+        self.assertEqual(on_way["id"], items[0]["id"])
+
+    def test_a_follow_up_goes_with_the_newest_answers_up_to_a_size(self):
+        items = []
+        for n in range(9):
+            item = self.ask(f"q{n}", 10 + n)
+            if n == 4:
+                cs.finish_side(self.cache, self.CHAT, "", item["id"], None, "no answer", now_ms=10 + n)
+            elif n == 5:
+                cs.finish_side(self.cache, self.CHAT, "", item["id"], "(a stand-in)", synthetic=True, now_ms=10 + n)
+            else:
+                self.answer(item, f"a{n}", 10 + n)
+        items, _ = cs.load_sides(self.cache, self.CHAT, now_ms=100)
+        self.assertEqual([h["question"] for h in cs.side_history(items, items[-1]["id"])],
+                         ["q0", "q1", "q2", "q3", "q6", "q7"])   # (before it, answered for real, the newest 6)
+        self.assertEqual(len(cs.side_history(items)), cs.SIDE_HISTORY)
+        big = self.ask("big?", 50)
+        self.answer(big, "x" * cs.SIDE_HISTORY_TEXT, 50)
+        items, _ = cs.load_sides(self.cache, self.CHAT, now_ms=100)
+        self.assertEqual(cs.side_history(items), [])   # (the newest alone is past the size: none)
+
+    def test_they_move_with_a_chat_and_go_with_it(self):
+        mine = self.ask("mine?", 10)
+        self.answer(mine, "yes", 11)
+        there = self.ask("its?", 20, chat=self.NEW)
+        self.answer(there, "also", 21, chat=self.NEW)
+        cs.bookmarks_moved(self.cache, {self.CHAT: self.NEW})
+        self.assertEqual(cs.load_sides(self.cache, self.CHAT), ([], 0))
+        self.assertEqual([s["q"] for s in cs.load_sides(self.cache, self.NEW)[0]], ["mine?", "its?"])
+        hosted = self.ask("on gpu?", 30, host="gpu")
+        cs.forget_bookmarks(self.cache, self.CHAT, "gpu")   # (a deleted chat: its bookmarks and side questions)
+        self.assertEqual(cs.load_sides(self.cache, self.CHAT, "gpu"), ([], 0))
+        self.assertTrue(hosted)
+        cs.forget_bookmarks(self.cache, self.NEW)
+        self.assertFalse((self.cache / cs.SIDES_DIR / f"{self.NEW}.json").exists())
+
+    def test_what_isnt_kept(self):
+        for q, pick, said in (("", "", "Write your question first"), ("q", "opus", "Not a model side questions can use"),
+                              ("q" * (cs.SIDE_TEXT + 1), "", "That's too long for a side question (up to %d characters)" % cs.SIDE_TEXT)):
+            self.assertEqual(cs.ask_side(self.cache, self.CHAT, "", q, pick)[:2], (False, said))
+        self.assertEqual(cs.ask_side(self.cache, "a/b", "", "q")[:2], (False, "Not a chat: a/b"))
+        write(self.cache / cs.SIDES_DIR / f"{self.CHAT}.json",
+              {"v": 7, "items": [{"id": "zz", "q": "bad id"}, {"id": "0123456789ab", "q": " "}, "x",
+                                 {"id": "0123456789ab", "q": "ok", "at": 5, "done": 6, "a": "fine", "pick": "gpt"}]})
+        items, v = cs.load_sides(self.cache, self.CHAT)
+        self.assertEqual((v, [(s["q"], s["pick"], s["a"]) for s in items]), (7, [("ok", "", "fine")]))

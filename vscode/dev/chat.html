@@ -8,6 +8,7 @@
   ?ask=hook|keys|none (it waits for a permission)  ?route=terminal (its
   terminal takes no text)  ?bookmarks=u1,m2,old1,far1,gone1&open=1 (bookmarks, their
   list open; &wide=1: beside the chat, &mark=fail: keeping one fails; see chatHarness.tsx)
+  ?sides=1&side=open (side questions, their panel open; &sideask=TEXT, &sidemenu=1, &explain=1|go: see chatHarness.tsx)
 -->
 <html lang="en">
   <head>
@@ -146,7 +147,9 @@
             },
           };
         };
-        window.CLAUDE_CHAT = { tab: params.get("review") === "1" ? "review" : "chat", local: true };
+        // (?side=open: the side questions panel kept open, &pick=haiku its model; ?new=1: a new chat's)
+        window.CLAUDE_CHAT = { tab: params.get("review") === "1" ? "review" : "chat", local: true,
+                               side: { open: params.get("side") === "open", pick: params.get("pick") || "" }, fresh: !!params.get("new") };
       })();
     </script>
   </head>

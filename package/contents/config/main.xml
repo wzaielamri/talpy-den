@@ -185,6 +185,14 @@
       <label>Talpy Chat suggests replies once Claude's turn is over (chips above the box: the answers to its question, your usual replies after a turn that ended the same way) and completes what you type from your usual replies; off: nothing is read for it</label>
       <default>true</default>
     </entry>
+    <entry name="sideQuestionModel" type="String">
+      <label>The model Talpy Chat's side questions are answered on, picked under their box (sonnet, haiku; empty: the chat's own)</label>
+      <default></default>
+    </entry>
+    <entry name="sideQuestionsOpen" type="Bool">
+      <label>Talpy Chat's side questions panel shows (as it was last left, in any chat's window)</label>
+      <default>false</default>
+    </entry>
     <entry name="paneTerminalFont" type="String">
       <label>Your terminal's font, as last found (pane.py --terminal-font, each time a Talpy Chat window is made): known as it opens</label>
       <default></default>

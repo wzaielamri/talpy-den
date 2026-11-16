@@ -16,7 +16,8 @@ its permission prompt and its review.
         Also how full its context is, "context" (turns.context_left), and
         Claude's turn so far while it's going on, "turn": {"startedAt",
         "steps"} (turns.TurnSoFar); its bookmarks, "bookmarks" and
-        "bookmarksV", once it has had one (kept here for a host's chat too).
+        "bookmarksV", once it has had one (kept here for a host's chat too);
+        its side questions, "sides" and "sidesV", the same way.
         --suggest (Suggest replies): how its last turn ended, "ended" and
         "over", and the question it ends with as chips, "asks" (replies.asks_of)
         --reach KEY (a bookmark further back than what's shown): enough
@@ -38,6 +39,18 @@ its permission prompt and its review.
         at MS, its first words TEXT), or not any more (--off); kept on this
         computer, a host's chat's too (talpy_den.change_bookmark). {"ok",
         "message", "bookmarks": the chat's now, "bookmarksV"}
+  --side-question CHAT --text Q [--model sonnet|haiku] [--profile P] [--host HOST]
+        a side question about the chat (Claude's /btw): answered by a copy
+        of it Claude doesn't keep, with no tools, nothing added to the chat
+        (side.ask), on the chat's own model or the one named; it goes with
+        the chat's earlier answers (follow-ups). Kept on this computer, a
+        host's chat's too (asked there): talpy_den.ask_side, finish_side.
+        {"ok", "message", "side": the question with its answer ("a") or why
+        none came ("error"), "sides": the chat's now, "sidesV"}. Waits for
+        the answer (up to talpy_den.SIDE_WAIT_S)
+  --side-question CHAT --remove ID|all [--host HOST]
+        remove one of the chat's side questions, or all: {"ok", "message",
+        "sides", "sidesV"}
   --replies CHAT [--profile P]
         your usual replies for the chat (replies.usual_replies): {"ok", "chips": {how
         a turn ended: [replies]}, "ranked": [replies, to complete what you
@@ -2612,11 +2625,41 @@ def reply_text(home, extra_dirs, chat_id, profile_key, key):
     return {"ok": True, "text": text} if text is not None else {"ok": False, "message": "That message isn't in the chat any more"}
 
 
+def side_question(home, extra_dirs, cache_root, chat_id, host, profile_key, question, pick, rest, ask=None):
+    """--side-question: the question kept as on its way (another window, or
+    this one opened again, shows it so), put to a copy of the chat here
+    (side.ask) or on host (rest: the arguments as it gets them, with the
+    chat's earlier answers), its answer or why none came kept with it.
+    ask: side.ask's stand-in (tests)."""
+    ok, said, item, items, v = cs.ask_side(cache_root, chat_id, host, question, pick)
+    if not ok:
+        return {"ok": False, "message": said, **({"sides": items, "sidesV": v} if v else {})}
+    history = cs.side_history(items, item["id"])
+    if host:
+        answer = forward(host, rest + ["--history", json.dumps(history)], "--side-question")
+    else:
+        if ask is None:
+            import side
+            ask = side.ask
+        try:
+            answer = ask(home, extra_dirs, profile_key, chat_id, item["q"], item["pick"], history)
+        except Exception as exc:   # (never left on its way)
+            answer = {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
+    got = answer.get("answer") if answer.get("ok") else None
+    items, v = cs.finish_side(cache_root, chat_id, host, item["id"], got,
+                              "" if got else (answer.get("message") or "Claude couldn't answer it"),
+                              answer.get("model") if isinstance(answer.get("model"), str) else "",
+                              answer.get("synthetic") is True)
+    side = next((s for s in items if s["id"] == item["id"]), None)
+    return {"ok": bool(got), "message": "" if got else (answer.get("message") or "Claude couldn't answer it"),
+            "side": side, "sides": items, "sidesV": v}
+
+
 # The modules each action imports, sent along with this file to an SSH host
 # (each is ~10-40 ms more to send and compile there); any other action gets them all
 ACTION_MODULES = {
     "--conversation": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"),
-    "--made": ("made.py",), "--bookmark": (),
+    "--made": ("made.py",), "--bookmark": (), "--side-question": ("side.py",),
     "--complete": ("commands.py",), "--replies": ("reply_words.py", "replies.py"),
     "--reply-text": ("reply_words.py", "replies.py"), "--hide-reply": ("reply_words.py", "replies.py"),
     "--set-options": ("chatpick.py",),
@@ -2626,6 +2669,7 @@ ACTION_MODULES = {
 # A start or a wake there may wait for claude's background service (60 s),
 # after asking the login shell for claude: longer than other actions
 HOST_START_TIMEOUT = 110
+HOST_SIDE_TIMEOUT = cs.SIDE_WAIT_S + 60   # (a side question there: its wait, and claude found there)
 MAY_HAVE_STARTED = "{where} didn't answer in time: the chat may have started there, so look for it in the list before you send it again"
 
 
@@ -2635,7 +2679,8 @@ def forward(host, args, action=None):
     also = ACTION_MODULES.get(action, ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"))
     long = action in ("--start", "--send")
     answer = remote.host_answer(host, args, name="pane.py", also=also,
-                                timeout=HOST_START_TIMEOUT if long else remote.RUN_TIMEOUT)
+                                timeout=HOST_START_TIMEOUT if long else HOST_SIDE_TIMEOUT
+                                if action == "--side-question" else remote.RUN_TIMEOUT)
     if long and answer.get("timedOut"):   # (it got there and took too long: sent again, it could start a second chat)
         answer = dict(answer, maybe=True, message=MAY_HAVE_STARTED.format(where=remote.place(host).label))
     return answer
@@ -2661,11 +2706,13 @@ def main(argv=None):
     after, off, remote, pretty, source, expect, text_file, wait = False, False, False, False, None, None, None, 0.0
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
-               "--hide-reply", "--type-in", "--reply-text", "--set-options", "--bookmark", "--made")
+               "--hide-reply", "--type-in", "--reply-text", "--set-options", "--bookmark", "--made",
+               "--side-question")
     osd, suggest, no_copy, keep_copy, as_file, made_path, step = False, False, False, False, False, None, None
     cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
     mark_kind, mark_at, reach = "", 0, None   # (--bookmark's --kind and --at; --conversation's --reach)
     seen, away, since = 0, False, None   # (--conversation's --seen MS, --away and, on a host, --since)
+    side_remove, history = None, []   # (--side-question's --remove ID, and --history, on a host)
     while args:
         arg = args.pop(0)
         if arg in actions and args and action is None:
@@ -2727,6 +2774,15 @@ def main(argv=None):
             mark_at = int(args.pop(0))
         elif arg == "--reach" and args:
             reach = args.pop(0)
+        elif arg == "--remove" and args:
+            side_remove = args.pop(0)
+        elif arg == "--history" and args:
+            try:
+                history = json.loads(args.pop(0))
+            except ValueError:
+                history = []
+            history = [h for h in history if type(h) is dict and type(h.get("question")) is str
+                       and type(h.get("response")) is str] if type(history) is list else []
         elif arg == "--since" and args and args[0].isdigit():
             since = int(args.pop(0))
         elif arg == "--seen" and args and args[0].isdigit():
@@ -2785,6 +2841,11 @@ def main(argv=None):
         if action == "--bookmark":  # (kept here, a host's chat's too, as stars are: never forwarded)
             ok, said, marks, v = cs.change_bookmark(cache_root, target, host, key or "", not off, mark_kind, mark_at, text or "")
             return emit({"ok": ok, "message": said, "bookmarks": marks, "bookmarksV": v})
+        if action == "--side-question" and side_remove is not None:   # (kept here, a host's chat's too)
+            ok, said, items, v = cs.remove_side(cache_root, target, host, side_remove)
+            return emit({"ok": ok, "message": said, "sides": items, "sidesV": v})
+        if action == "--side-question" and not remote:   # (kept here; a host's chat's asked there)
+            return emit(side_question(home, config_dirs, cache_root, target, host, profile, text, model or "", rest))
         if host and action == "--reviewed":  # (kept here, as stars are)
             mark_reviewed(cache_root, target, host, on=not off)
             return emit({"ok": True, "message": "Marked reviewed" if not off else "Not marked reviewed"})
@@ -2812,6 +2873,7 @@ def main(argv=None):
                 pictures_here(answer.get("items"))
                 if not answer.get("unchanged"):   # (--reach went with the rest: the host reads that far)
                     cs.bookmarks_answer(answer, cache_root, target, host)
+                    cs.sides_answer(answer, cache_root, target, host)
             if action == "--made" and as_file:   # (its picture as a file here, for Plasma's Talpy Chat)
                 import made
                 answer = made.keep_copy(str(cs.images_dir(home)), f"{host}\0{target}\0{step or made_path}", answer)
@@ -2831,6 +2893,10 @@ def main(argv=None):
                                        (since or 0) if away else None)
             if not remote and result.get("ok") and not result.get("unchanged"):   # (a host's: kept here, above)
                 cs.bookmarks_answer(result, cache_root, target)
+                cs.sides_answer(result, cache_root, target)
+        elif action == "--side-question":   # (on a host, for the computer that keeps them: side_question)
+            import side
+            result = side.ask(home, config_dirs, profile, target, text, model or "", history)
         elif action == "--send":
             if after:
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)

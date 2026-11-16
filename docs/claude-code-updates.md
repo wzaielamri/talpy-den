@@ -1028,6 +1028,24 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
     HistoryTests.test_a_chat_claude_moved_to_another_folder_counts_once,
     PromptTests.test_a_forked_chat_counts_its_prompts_and_compactions_once (test_week.py);
     AgentTests.test_a_forks_copy_of_the_call_isnt_its_work (test_talpy_den.py).
+- [ ] **Side questions.** Talpy Chat's side questions (Claude's `/btw` beside the chat) go to a copy of the
+  chat: `claude -p --resume <id> --fork-session --no-session-persistence --input-format stream-json
+  --output-format stream-json --verbose [--model M] --settings '{"disableAllHooks":true}'`, with one line on
+  stdin, `{"type":"control_request","request_id":…,"request":{"subtype":"side_question","question":…,
+  "history":[{"question","response"}]}}`, answered by a `control_response` whose `response.response` is
+  `{"response": text, "synthetic": bool}` (an error: `response.subtype` "error", `response.error`); stdin closed,
+  the copy ends. Live-checked on 2.1.325: 2–3.5 s on Haiku, follow-ups through `history`, no transcript written,
+  a chat in the middle of a tool call answered too. A resumed chat keeps the context it started with (its
+  `session_context` entry), so copies start alike and later questions read the cache; a background chat's
+  system prompt names its own job, so its copy doesn't share the chat's cache.
+  - Used in: side.py ask, command, request, read_answer; talpy_den.py ask_side, finish_side, side_history,
+    SIDE_WAIT_S; pane.py side_question, --side-question.
+  - Check: `strings ~/.local/share/claude/versions/<new> | grep -c 'subtype==="side_question"'` (should print
+    1 or more) and the flags in `claude --help`; ask a throwaway `claude -p --model haiku` chat a side question
+    (pane.py --side-question) and look that no new transcript appears in its project folder.
+  - Breaks: no answer ("side_question is not supported in this context", "Claude ended without answering"), a
+    copy saved as a chat of its own (a new transcript), or hooks running for it (a short-lived extra row).
+  - Test: SideQuestionTests (test_pane.py), SideStoreTests (test_talpy_den.py). Fixtures only.
 - [ ] **Bookmarks and their reach.** Bookmarks are Talpy Den's own files
   (`~/.cache/talpy-den/bookmarks/<chat>.json`), but each keeps a message's item key: your prompt's `uuid` or
   Claude's `message.id`. They rely on those ids being the same at every read and in a moved chat's copy

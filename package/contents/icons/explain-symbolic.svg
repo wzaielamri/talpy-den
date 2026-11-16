@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Explain this (a selection, asked as a side question): a light bulb, the shape VS Code's view draws (webview/util/icons.tsx lightbulb; Breeze's help-hint is an "i"). In the theme's text color: Plasma reads the ColorScheme-Text stylesheet -->
+  <defs>
+    <style type="text/css" id="current-color-scheme">.ColorScheme-Text { color:#232629; }</style>
+  </defs>
+  <g class="ColorScheme-Text" style="fill:none;stroke:currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 11.25v-1C4.65 9.45 3.75 8.05 3.75 6.5a4.25 4.25 0 0 1 8.5 0c0 1.55-.9 2.95-2.25 3.75v1zM6.25 13.75h3.5"/>
+  </g>
+</svg>

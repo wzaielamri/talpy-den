@@ -4,15 +4,18 @@ import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 import "bookmarks.mjs" as Bm
 import "quote.mjs" as Quote
+import "sides.mjs" as Sides
 
 // Talpy Chat's right-click menu, each item with its key: on the conversation,
-// Copy (what's selected, across messages too), Copy message (the message
-// right-clicked, as its Copy button: a reply as Markdown, all of it), Bookmark
-// message or Remove bookmark (one that can be: Bookmarks.qml) and Select
-// all (every message); on the reply box, Undo, Redo, Cut, Copy, Paste (a picture
-// too, as Ctrl+V) and Select all. ChatPane.qml makes one for the window the
-// first time it's right-clicked (a Loader) and opens it where it's clicked:
-// nothing more per message. VS Code chat.tsx EditMenu: the same items and words.
+// Copy (what's selected, across messages too), Quote in reply and Explain this
+// (what's selected: quoted in your reply, or asked as a side question,
+// Sides.qml), Copy message (the message right-clicked, as its Copy button: a
+// reply as Markdown, all of it), Bookmark message or Remove bookmark (one that
+// can be: Bookmarks.qml) and Select all (every message); on the reply box,
+// Undo, Redo, Cut, Copy, Paste (a picture too, as Ctrl+V) and Select all.
+// ChatPane.qml makes one for the window the first time it's right-clicked (a
+// Loader) and opens it where it's clicked: nothing more per message. VS Code
+// chat.tsx EditMenu: the same items and words.
 PlasmaComponents3.Menu {
     id: menu
 
@@ -75,6 +78,12 @@ PlasmaComponents3.Menu {
         enabled: menu.chosen.trim() !== ""
         text: Quote.QUOTE_MENU
         onTriggered: pane.quoteIn(menu.chosen)
+    }
+    KeyItem {
+        shown: menu.where === "list" && pane.sideCan
+        enabled: menu.chosen.trim() !== ""
+        text: Sides.EXPLAIN_BUTTON
+        onTriggered: pane.explain(menu.chosen)
     }
     KeyItem {
         shown: menu.where === "list" && menu.row !== null
