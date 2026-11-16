@@ -235,6 +235,13 @@ ColumnLayout {
             color: Kirigami.Theme.textColor
             selectionColor: Kirigami.Theme.focusColor
             onLinkActivated: link => Qt.openUrlExternally(link)
+            // Ctrl+C: what's selected, as text (Md.copiedText: not the box's own copy, which puts a new line before a list item's)
+            Keys.onPressed: event => {
+                if (event.matches(StandardKey.Copy) && selectedText !== "") {
+                    root.copyText(Md.copiedText(selectedText))
+                    event.accepted = true
+                }
+            }
 
             // (a selection change draws a plan with tables whole: WholeRedraw.qml)
             WholeRedraw {

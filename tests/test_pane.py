@@ -3751,8 +3751,110 @@ class PaneMarkdownTests(unittest.TestCase):
         self.assertNotRegex(text, r"\?\.[\w(\[]|\?\?")
         self.assertNotIn("(?<", text)
 
+    def test_copied_text_is_what_was_selected_as_text(self):
+        # (a TextEdit's selectedText in rich text: U+2029 between paragraphs, U+FDD0 / U+FDD1
+        # where a table or a cell starts or ends, a spacer line's no-break space)
+        selected = "item two\u2029nested\u2028line\u2029\u00a0\ufdd0\ufdd0a quote\ufdd1\u2029end"
+        self.assertEqual(markdown(f"Md.copiedText({json.dumps(selected)})"), "item two\nnested\nline\n \n\na quote\n\nend")
+        self.assertEqual(markdown('Md.copiedText("one word")'), "one word")
+
 
 UI = Path(__file__).resolve().parent.parent / "package/contents/ui"
+
+NEEDS_PYSIDE6 = unittest.skipUnless(subprocess.run(["python3", "-c", "import PySide6.QtQuick, PySide6.QtTest"],
+                                                   capture_output=True).returncode == 0, "needs PySide6")
+
+# A reply's or a plan's rich text (markdown.mjs), its Ctrl+C the one a plan box has (copy_key):
+# Ctrl+C on what's selected, then what the clipboard has, as JSON by the box's objectName
+COPY_PAGE = """import QtQuick
+import "%(md)s" as Md
+Item {
+    id: page
+    width: 600; height: 900
+    property var style: %(style)s
+    property string md: %(text)s
+    TextEdit { id: clip; visible: false }
+    // (main.qml's root and ChatPane.qml's pane: their copyText puts the text on the clipboard)
+    QtObject { id: root; function copyText(text, quiet) { clip.text = text; clip.selectAll(); clip.copy(); clip.text = "" } }
+    QtObject { id: pane; function copyText(text, quiet) { root.copyText(text) } }
+    QtObject { id: askedBox; property QtObject pane: root }
+    Column {
+        width: parent.width
+%(boxes)s
+    }
+}
+"""
+COPY_BOX = """        TextEdit {
+            objectName: "%(name)s"
+            width: 580
+            text: Md.toHtml(page.md, page.style, -1)
+            textFormat: TextEdit.RichText
+            readOnly: true
+            selectByMouse: true
+            %(keys)s
+        }
+"""
+COPY_SCRIPT = """import sys, json
+from PySide6.QtCore import QObject, QUrl, Qt, QMetaObject, Q_ARG, Q_RETURN_ARG
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQuick import QQuickView
+from PySide6.QtTest import QTest
+app = QGuiApplication(sys.argv)
+view = QQuickView(); view.setSource(QUrl.fromLocalFile(sys.argv[1]))
+if view.status() != QQuickView.Ready:
+    sys.exit(str([e.toString() for e in view.errors()]))
+view.show(); QTest.qWaitForWindowExposed(view)
+wanted, out = sys.argv[2], {}
+for name in sys.argv[3:]:
+    box = view.rootObject().findChild(QObject, name)
+    text = QMetaObject.invokeMethod(box, "getText", Q_RETURN_ARG("QString"), Q_ARG(int, 0), Q_ARG(int, box.property("length")))
+    at = text.index(wanted)
+    QMetaObject.invokeMethod(box, "forceActiveFocus")
+    QMetaObject.invokeMethod(box, "select", Q_ARG(int, at), Q_ARG(int, at + len(wanted)))
+    QGuiApplication.clipboard().clear()
+    QTest.keyClick(view, Qt.Key_C, Qt.ControlModifier)
+    out[name] = QGuiApplication.clipboard().text()
+print(json.dumps(out))
+"""
+
+
+def copy_key(name, box):
+    """The Ctrl+C handler of the text box with id box in the QML file name."""
+    src = (UI / name).read_text()
+    start = src.index("Keys.onPressed: event => {", src.index(f"id: {box}\n"))
+    indent = src[src.rindex("\n", 0, start) + 1:start]
+    return src[start:src.index("\n" + indent + "}", start) + len(indent) + 2]
+
+
+class CopyAsTextTests(unittest.TestCase):
+    """Ctrl+C in Claude's reply or a plan (Qt rich text) copies what's selected and no more: Qt's
+    own copy put a new line before a list item's text (its QTextDocumentFragment)."""
+
+    @NEEDS_PYSIDE6
+    def test_ctrl_c_in_a_list_item_copies_no_new_line_before_it(self):
+        boxes = {"qt": "",   # (the box's own copy, as before)
+                 "permission": copy_key("PermissionAsk.qml", "planText"),
+                 "asked": copy_key("AskedCard.qml", "planText"),
+                 "made": copy_key("MadeLine.qml", "madeText")}
+        with tempfile.TemporaryDirectory() as tmp:
+            qml = Path(tmp) / "page.qml"
+            qml.write_text(COPY_PAGE % {"md": MARKDOWN.as_uri(), "style": json.dumps(STYLE),
+                                        "text": json.dumps("The plan:\n\n1. item one\n2. item two\n   - nested\n\nend"),
+                                        "boxes": "".join(COPY_BOX % {"name": n, "keys": k} for n, k in boxes.items())})
+            out = subprocess.run(["python3", "-c", COPY_SCRIPT, str(qml), "item two", *boxes], capture_output=True, text=True,
+                                 timeout=60, env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+        self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+        copied = json.loads(out.stdout.strip().splitlines()[-1])
+        self.assertEqual(copied, {"qt": "\nitem two", "permission": "item two", "asked": "item two", "made": "item two"})
+
+    def test_ctrl_c_in_the_conversation_copies_the_selection_as_text(self):
+        pane = (UI / "ChatPane.qml").read_text()
+        across = pane[pane.index("function copyAcross("):pane.index("function selectAllMessages(")]
+        self.assertIn("if (event.matches(StandardKey.Copy)) {\n            const text = selectionText()", across)   # (one message too, not only across)
+        self.assertNotIn("selOthers", across)
+        chosen = pane[pane.index("function selectionText("):pane.index("function copyAcross(")]
+        self.assertIn(".map(b => Md.copiedText(b.selectedText))", chosen)
+        self.assertEqual(pane.count("Keys.onPressed: event => pane.copyAcross(event)"), 2)   # (yours and Claude's)
 
 
 @unittest.skipUnless(shutil.which("node"), "node isn't installed")

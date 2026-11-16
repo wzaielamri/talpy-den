@@ -2554,7 +2554,9 @@ Window {
     // message is a text of its own, where a drag selects only in it; one
     // that goes on into the next ones selects them too, the whole of each it
     // passes and the last up to the pointer. Ctrl+C in a message copies all
-    // of it, each message's text after a blank line
+    // of it, each message's text after a blank line, as text (Md.copiedText:
+    // Talpy Chat's, not the text box's own copy, which puts a new line before
+    // a list item's text)
     // (each by its key, its index a hint: a new step can take rows off the top, every index moving)
     property string selFrom: ""   // the message the drag started in
     property int selFromAt: -1
@@ -2648,12 +2650,15 @@ Window {
         return Object.keys(selOthers).map(k => selIndex(k, selOthers[k])).concat([selIndex(selFrom, selFromAt)])
             .filter(i => i >= 0).sort((a, b) => a - b)
             .map(i => boxAt(i)).filter(b => b && b.selectedText !== "")
-            .map(b => b.selectedText.replace(/[\u2028\u2029]/g, "\n")).join("\n\n")
+            .map(b => Md.copiedText(b.selectedText)).join("\n\n")
     }
-    function copyAcross(event) {   // (Ctrl+C in a message: with others selected too, all of it; Ctrl+A: every message)
-        if (event.matches(StandardKey.Copy) && Object.keys(selOthers).length > 0) {
-            copyText(selectionText())
-            event.accepted = true
+    function copyAcross(event) {   // (Ctrl+C in a message: what's selected, in others too; Ctrl+A: every message)
+        if (event.matches(StandardKey.Copy)) {
+            const text = selectionText()
+            if (text !== "") {
+                copyText(text)
+                event.accepted = true
+            }
         } else if (event.matches(StandardKey.SelectAll)) {
             selectAllMessages()
             event.accepted = true

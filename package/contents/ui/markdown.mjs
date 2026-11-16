@@ -224,6 +224,17 @@ export function clipboardCode(code) {
     return lines.map(line => line.replace(/^!\s+/, "")).join("\n");
 }
 
+// What copying a selection in a reply or a plan (Qt rich text) puts on the
+// clipboard: what's selected (a TextEdit's selectedText) as Qt's own copy
+// writes it (QTextDocument::toPlainText): a paragraph or line break, and the
+// start or end of a table or one of its cells (U+FDD0 / U+FDD1: a code block,
+// a quote, a table), as a new line; a no-break space as a space. Not Qt's copy
+// itself: from a selection that starts in a list item it writes a new line
+// first, one that isn't in what you selected
+export function copiedText(selected) {
+    return selected.replace(/[\u2028\u2029\ufdd0\ufdd1]/g, "\n").replace(/\u00a0/g, " ");
+}
+
 const HEADING_SIZE = [1.5, 1.3, 1.15, 1.05, 1, 1];
 
 // A code block's text in its language's colors (codeview.mjs highlight), as escaped HTML

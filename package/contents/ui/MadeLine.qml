@@ -208,6 +208,13 @@ ColumnLayout {
                             else
                                 Qt.openUrlExternally(link)
                         }
+                        // Ctrl+C: what's selected, as text (Md.copiedText: not the box's own copy, which puts a new line before a list item's)
+                        Keys.onPressed: event => {
+                            if (event.matches(StandardKey.Copy) && selectedText !== "") {
+                                pane.copyText(Md.copiedText(selectedText), true)
+                                event.accepted = true
+                            }
+                        }
 
                         // (a selection draws a plan with tables whole: WholeRedraw.qml)
                         WholeRedraw {
