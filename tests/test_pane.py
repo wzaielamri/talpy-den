@@ -3857,6 +3857,27 @@ class CopyAsTextTests(unittest.TestCase):
         self.assertEqual(pane.count("Keys.onPressed: event => pane.copyAcross(event)"), 2)   # (yours and Claude's)
 
 
+class ResizeKeepsTheEndTests(unittest.TestCase):
+    """Talpy Chat maximized and back at the end of the conversation stays at the end: the rows
+    wrap again (taller when narrower) and the list kept its place, showing older messages."""
+
+    def test_a_new_window_size_keeps_the_end_when_it_was_at_the_end(self):
+        pane = (UI / "ChatPane.qml").read_text()
+        resized = pane[pane.index("    function resized() {"):]
+        resized = resized[:resized.index("\n    }\n") + 6]
+        self.assertIn("if (endKept && !holdTop.running && !scrolling())\n            keepEnd()", resized)   # (scrolled up: it stays where you are)
+        self.assertIn("\n    onWidthChanged: resized()\n    onHeightChanged: resized()\n", pane)   # (the window's)
+        # where the list is, noted once its changes are done: a new size lays the list out again
+        # and its rows wrap at once, before the window says it has a new width
+        listview = pane[pane.index("                ListView {\n                    id: list\n"):]
+        listview = listview[:listview.index("section.property")]
+        for change in ("onContentYChanged", "onOriginYChanged"):
+            self.assertIn(f"{change}: Qt.callLater(pane.noteEnd)", listview)
+        self.assertIn("pane.keepPlace()\n                        Qt.callLater(pane.noteEnd)", listview)
+        self.assertNotIn("pane.resized()", listview)
+        self.assertIn("function noteEnd() {\n        endKept = nearEnd()\n    }", pane)
+
+
 @unittest.skipUnless(shutil.which("node"), "node isn't installed")
 class AnsiTests(unittest.TestCase):
     """ansi.mjs: what a command printed, its colours as runs (VS Code) and as Qt rich text (Plasma)."""

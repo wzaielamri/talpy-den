@@ -1320,6 +1320,21 @@ Window {
         else if (holdTop.running)
             showTop()
     }
+    // The window made bigger or smaller (maximized and back): at the end before, it stays
+    // there. Its rows wrap again, taller in a narrower window, and the end went down out of
+    // view: you saw older messages. Where the list was is noted once its changes are done
+    // (Qt.callLater): a new size lays it out again at once, its rows wrapped before the
+    // window says it has a new width
+    property bool endKept: true   // (at the end: noted as the list moves or its rows change, list onContentYChanged…)
+    function noteEnd() {
+        endKept = nearEnd()
+    }
+    function resized() {
+        if (endKept && !holdTop.running && !scrolling())
+            keepEnd()
+    }
+    onWidthChanged: resized()
+    onHeightChanged: resized()
     onChatStateChanged: {
         if (shown)
             load()   // (its turn began or ended, it asks something: the conversation now)
@@ -3441,8 +3456,14 @@ Window {
                         pane.quoteAt = null
                         pane.away = null   // (and you read it yourself: Since you last looked goes)
                     }
-                    onContentHeightChanged: pane.keepPlace()
+                    onContentHeightChanged: {
+                        pane.keepPlace()
+                        Qt.callLater(pane.noteEnd)
+                    }
                     onHeightChanged: pane.keepPlace()
+                    // (where the list is, as it moves or its rows change: endKept)
+                    onContentYChanged: Qt.callLater(pane.noteEnd)
+                    onOriginYChanged: Qt.callLater(pane.noteEnd)
 
                     // A line between days, before the first item of each later day the tab shows
                     // (DayLine.qml: read and made only for a chat with more than one day)
