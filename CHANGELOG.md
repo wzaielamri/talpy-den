@@ -1,12 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.20.0 (2026-11-16)
 
 ### Highlights
 
 - **Side questions beside the chat:** ask about a chat without adding to it or stopping it, as Claude's `/btw`, or select words and **Explain this**; the answers stay with the chat to read again, on the chat's own model or a smaller one that uses less of your limit (Plasma and VS Code).
 - **How full a chat's context is, on every row:** *31% used* now shows for chats on your SSH hosts and in containers, in VS Code's Claude panel and in accounts without Talpy Den's status line, from the chat's newest reply (Plasma and VS Code).
 - **A new chat in the folder you have open:** VS Code's empty Talpy Chat view starts one there in a click, and New Chat… lists that folder first, also when no chat ran there yet (VS Code).
+- **Fixes:** Ctrl+C in Talpy Chat copies just what you selected, a window at the end of a chat stays there when maximized and back, a picture a command made shows once, a background chat you cleared or Claude moved shows the conversation it's on, and one that waits for you with nothing running can be hidden (Plasma, GNOME and VS Code).
 
 ### Every change
 
