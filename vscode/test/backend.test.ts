@@ -148,6 +148,24 @@ test("an action's answer keeps how plan feedback reaches the chat", async () => 
   assert.equal((await backend.action("jump.py", ["something else"])).how, undefined);
 });
 
+test("an action's answer keeps a folder's trust, what to ask first, and a go-on that waits", async () => {
+  // (--pick-folder: a new chat in Talpy Chat in a folder Claude doesn't trust yet asks before it opens there,
+  // instead of always going to a terminal; --remote-vscode's question; --start-queued's waits/ended/notify)
+  const ext = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-ext-"));
+  fs.mkdirSync(path.join(ext, "vendor", "code"), { recursive: true });
+  fs.writeFileSync(
+    path.join(ext, "vendor", "code", "jump.py"),
+    "import json, sys\nprint(json.dumps({\"ok\": True, \"message\": \"\", **json.loads(sys.argv[1])}))\n",
+  );
+  const backend = new Backend(ext, () => "python3");
+  const answer = (out: object) => backend.action("jump.py", [JSON.stringify(out)]);
+  assert.deepEqual(await answer({ path: "/p/x", short: "~/x", trusted: false, trustQuestion: "Trust it?" }),
+                   { ok: true, message: "", path: "/p/x", short: "~/x", trusted: false, trustQuestion: "Trust it?" });
+  assert.deepEqual(await answer({ ask: "vscode", waits: "Waits for npm test", ended: ["npm test", 3], notify: true }),
+                   { ok: true, message: "", ask: "vscode", waits: "Waits for npm test", ended: ["npm test"], notify: true });
+  assert.deepEqual(await answer({ ask: "other", trusted: "yes", path: 3 }), { ok: true, message: "" }, "only what each field can be");
+});
+
 test("a missing Python is explained", async () => {
   const backend = new Backend(path.resolve("."), () => "python3-that-does-not-exist");
   assert.match(await backend.checkPython(), /Install Python 3\.7 or newer/);

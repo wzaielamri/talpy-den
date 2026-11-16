@@ -173,7 +173,7 @@ test("New Chat… on an SSH host offers Talpy Chat in its folders, or says why n
     }
     const there = shown[0].map((i) => i.label);
     const first = there.indexOf("In Talpy Chat");
-    assert.deepEqual(there.slice(first + 1, first + 3), ["$(folder) ~/web", "$(folder) ~/app"], "its own folders, the window's first");
+    assert.deepEqual(there.slice(first + 1, first + 3), ["$(folder) ~/web  (open here)", "$(folder) ~/app"], "its own folders, the window's first");
     assert.equal(there[first + 3], "In a terminal", "no folder dialog: it can't be browsed");
     answered = false;   // (its last check didn't answer)
     await actions.newChat("build-server", "build-server");
@@ -189,6 +189,75 @@ test("New Chat… on an SSH host offers Talpy Chat in its folders, or says why n
     assert.equal(here[here.indexOf("In Talpy Chat") + 1], "$(folder) ~/app");
   } finally {
     window.showQuickPick = pick;
+  }
+});
+
+test("New Chat… lists the folder this window has open first, also one no chat ran in yet; its button starts a chat there at once", async () => {
+  const stub = vscode as unknown as typeof import("./vscode-stub");
+  const window = stub.window as unknown as Record<string, unknown>;
+  const workspace = stub.workspace as unknown as Record<string, unknown>;
+  const saved = { pick: window.showQuickPick, warn: window.showWarningMessage, folders: workspace.workspaceFolders };
+  const shown: { label: string; description?: string; kind?: number }[][] = [];
+  let chosen: string | undefined;
+  window.showQuickPick = async (items: { label: string; description?: string }[]) => (shown.push(items), items.find((i) => i.label === chosen));
+  const asked: string[] = [];
+  let answer: string | undefined;
+  window.showWarningMessage = async (m: string) => (asked.push(m), answer);
+  const fresh = path.join(os.homedir(), "repos", "fresh");   // (no chat ran there yet: not the account's)
+  const uri = { scheme: "file", path: fresh, fsPath: fresh, toString: () => `file://${fresh}` };
+  workspace.workspaceFolders = [{ uri, name: "fresh", index: 0 }, { uri: { scheme: "vscode-remote", path: "/srv/x" }, name: "x", index: 1 }];
+  try {
+    const group = (id: string, more: Record<string, unknown> = {}) => ({
+      id, title: id, chatProfile: `.claude-${id}`, profileKeys: [`.claude-${id}`], sessions: [], homeChatCommand: "cd ~ 2>/dev/null; claude",
+      projects: [{ path: "/srv/app", short: "/srv/app", newChatCommand: "cd /srv/app 2>/dev/null; claude", trusted: true }], ...more,
+    } as unknown as Group);
+    const helpers: string[][] = [];
+    let trusted = false;
+    const backend = { action: async (_script: string, args: string[]) => (helpers.push(args), args[0] === "--pick-folder"
+      ? { ok: true, message: "", path: fresh, short: "~/repos/fresh", trusted, ...(trusted ? {} : { trustQuestion: "Do you trust it?" }) }
+      : { ok: true, message: "" }) };
+    const dash = { opened() {}, demo: false, currentHost: undefined, setActionError: () => undefined, setActionInfo: () => undefined, isVisible: () => true,
+      state: () => ({ status: { groups: [group("personal"), group("work", { defaultHere: true })], cli: { installed: true } }, hosts: [] }) };
+    const runs: string[] = [];
+    const actions = new Actions(backend as unknown as Backend, dash as unknown as Dashboard,
+      { run: async (_k: string, _n: string, command: string) => void runs.push(command) } as unknown as Terminals,
+      { warn: () => undefined } as unknown as vscode.LogOutputChannel, {} as AccountSwitch);
+    const opened: [string, string][] = [];
+    actions.panes = { openNew: (g: Group, where: { path: string }) => void opened.push([g.id, where.path]) } as never;
+
+    // New Chat…: first in each section, marked; this computer's folders only (not the remote one)
+    await actions.newChat("work");
+    const labels = shown[0].map((i) => i.label);
+    const mine = "$(folder) ~/repos/fresh  (open here)";
+    assert.deepEqual(labels.slice(labels.indexOf("In Talpy Chat") + 1, labels.indexOf("In Talpy Chat") + 3), [mine, "$(folder) /srv/app"]);
+    assert.deepEqual(labels.slice(labels.indexOf("In a terminal") + 1, labels.indexOf("In a terminal") + 3), [mine, "$(folder) /srv/app"]);
+    assert.ok(!labels.some((l) => l.includes("/srv/x")), "a Remote-SSH folder isn't this computer's");
+    assert.equal(helpers.length, 0, "nothing asked before it's picked");
+
+    // picked in Talpy Chat: whether Claude trusts it is asked first, as for Choose folder…
+    chosen = mine;
+    answer = "Trust It, Open in Talpy Chat";
+    await actions.newChat("work");
+    assert.deepEqual(asked, ["Trust ~/repos/fresh?"]);
+    assert.deepEqual(helpers.map((a) => a.slice(0, 4)), [["--pick-folder", ".claude-work", "--cwd", fresh], ["--trust-folder", ".claude-work", "--cwd", fresh]]);
+    assert.deepEqual(opened, [["work", fresh]]);
+    // ... Open in a Terminal: in a terminal there, where Claude asks
+    answer = "Open in a Terminal";
+    await actions.newChat("work");
+    assert.deepEqual([opened.length, runs], [1, [`cd ${fresh} 2>/dev/null; claude --model opus --effort xhigh`]]);
+
+    // the empty view's button: on the default account, at once, no list
+    trusted = true;
+    helpers.length = 0;
+    const lists = shown.length;
+    await actions.newChatHere(uri.toString());
+    assert.equal(shown.length, lists, "no list to pick from");
+    assert.deepEqual(helpers.map((a) => a.slice(0, 2)), [["--pick-folder", ".claude-work"]], "work: the default account");
+    assert.deepEqual(opened.at(-1), ["work", fresh]);
+  } finally {
+    window.showQuickPick = saved.pick;
+    window.showWarningMessage = saved.warn;
+    workspace.workspaceFolders = saved.folders;
   }
 });
 

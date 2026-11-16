@@ -155,6 +155,12 @@ export function cliInstalled(status: Pick<Status, "cli"> | null | undefined): bo
   return status?.cli?.installed !== false;
 }
 
+// A machine's default account (VS Code's Claude's, else plain claude's: listed
+// first), else its first one that's logged in
+export function defaultGroup(groups: Group[]): Group | undefined {
+  return groups.find((g) => g.defaultHere && !g.loggedOut) ?? groups.find((g) => !g.loggedOut) ?? groups[0];
+}
+
 // The status of the machine a chat is on: this computer's, or an SSH host's
 // last good answer
 export function machineStatus(state: Pick<ViewState, "status" | "hosts">, host?: string): Status | null | undefined {

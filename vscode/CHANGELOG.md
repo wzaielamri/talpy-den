@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### New
+
+- **A new chat in the folder you have open.** Talpy Chat's empty view in
+  the side bar has a button for each folder the window has open, **New chat
+  in talpy-den**: a new chat there on the default account in a click (your
+  first message starts it), and **Other folder or account…** for New Chat….
+  New Chat… lists the window's folders first, marked *(open here)*, also
+  one no chat ran in yet; Claude's trust question comes first where it's
+  needed.
+
 ### Better
 
 - **Every row says how full its chat's context is.** *31% used* showed only
@@ -13,6 +23,12 @@
 
 ### Fixed
 
+- **Choose folder… opens a new chat in Talpy Chat, asking first.** A folder
+  picked for a new chat in Talpy Chat always went to a terminal, without
+  Claude's trust question: part of the helper's answer was dropped. The
+  same dropped the question before a Claude Code panel chat opens on an SSH
+  host or in a container with no window there (shown as an error instead),
+  and the note that a go-on waits for a chat's background commands.
 - **A background chat you cleared shows the conversation it's on.** After
   `/clear`, its row kept the conversation before it (its last reply, its
   context). Once that chat was sent a message with nothing running, Claude

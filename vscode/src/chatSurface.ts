@@ -72,11 +72,35 @@ export class ViewSurface implements vscode.WebviewPanel {
   }
 }
 
-// The view with no chat in it: what to do, in the theme's colours (no script)
-export function emptyView(view: vscode.WebviewView): void {
-  view.description = undefined;
-  view.webview.options = { enableScripts: false };
-  view.webview.html = `<!DOCTYPE html>
+// The folders this window has open on that machine, with each one's path there: this computer's (no host) in a
+// window of its own, a host's or a container's in a Remote-SSH or Dev Containers window on it (currentHost)
+export function windowFolders(host: string | undefined, currentHost: string | undefined): { folder: vscode.WorkspaceFolder; path: string }[] {
+  const open = vscode.workspace.workspaceFolders ?? [];
+  if (!host) return open.filter((f) => f.uri.scheme === "file").map((folder) => ({ folder, path: folder.uri.fsPath }));
+  return host === currentHost ? open.filter((f) => f.uri.scheme !== "file").map((folder) => ({ folder, path: folder.uri.path })) : [];
+}
+
+// The command the empty view's "New chat in <folder>" runs (a folder this window has open, by its URI)
+export const NEW_CHAT_HERE = "talpyDen.newChatHere";
+
+// What the empty view offers: a new chat in each folder this window has open (on the default account,
+// named when the machine has more), and New Chat… for any other folder or account
+export interface EmptyStarts {
+  folders: { uri: string; name: string; path: string }[];
+  account?: string;
+}
+
+function escaped(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+// The view with no chat in it, in the theme's colours (no script: its buttons are command links)
+export function emptyHtml(starts: EmptyStarts): string {
+  const here = starts.folders.map((f) =>
+    `<a class="button" href="command:${NEW_CHAT_HERE}?${escaped(encodeURIComponent(JSON.stringify([f.uri])))}" title="${escaped(f.path)}">New chat in ${escaped(f.name)}</a>`);
+  const other = `<a class="button${here.length ? " secondary" : ""}" href="command:talpyDen.newChat">${here.length ? "Other folder or account…" : "New chat…"}</a>`;
+  const account = here.length && starts.account ? `<p class="small">On ${escaped(starts.account)}, the default account.</p>` : "";
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -84,13 +108,35 @@ export function emptyView(view: vscode.WebviewView): void {
 <style>
   body { margin: 0; padding: 16px; color: var(--vscode-descriptionForeground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.5; }
   strong { color: var(--vscode-foreground); }
+  .starts { display: flex; flex-direction: column; gap: 8px; max-width: 300px; margin: 12px 0; }
+  .button { display: block; box-sizing: border-box; padding: 4px 8px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; text-align: center;
+            text-decoration: none; overflow-wrap: anywhere; /* (a narrow side bar: the folder's whole name, on two lines) */
+            color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+  .button:hover { background: var(--vscode-button-hoverBackground); }
+  .button:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+  .button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+  .button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  .small { margin: 0; font-size: 0.9em; }
 </style>
 <title>Talpy Chat</title>
 </head>
 <body>
 <p><strong>No chat here yet.</strong></p>
-<p>Click a chat in Talpy Den's list, or start one with New Chat…: it opens here, one at a time.</p>
+<div class="starts">
+${[...here, other].join("\n")}
+${account}
+</div>
+<p>Or click a chat in Talpy Den's list: it opens here, one at a time.</p>
 <p>For an editor tab for each chat instead, set <em>Talpy Den: Chat Place</em> to <em>tab</em> in the settings.</p>
 </body>
 </html>`;
+}
+
+// The view with no chat in it: what to start (only set when it changes: a new page reloads the view)
+export function emptyView(view: vscode.WebviewView, starts: EmptyStarts = { folders: [] }): void {
+  view.description = undefined;
+  const html = emptyHtml(starts);
+  if (view.webview.options.enableScripts === false && view.webview.html === html) return;
+  view.webview.options = { enableScripts: false, enableCommandUris: [NEW_CHAT_HERE, "talpyDen.newChat"] };
+  view.webview.html = html;
 }

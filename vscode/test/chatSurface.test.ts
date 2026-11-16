@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
-import { emptyView, sideBarSupported, ViewSurface } from "../src/chatSurface";
+import { emptyHtml, emptyView, sideBarSupported, ViewSurface } from "../src/chatSurface";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf } from "../src/shared/model";
 import { changeSettings, overrides, recorded, setVersion } from "./vscode-stub";
@@ -79,6 +79,30 @@ test("the view is a chat's place until the chat closes: its name beside the view
   assert.equal(view.description, undefined);
   assert.equal(view.webview.options.enableScripts, false);
   assert.match(view.webview.html, /No chat here yet/);
+});
+
+test("the empty view starts a chat in each folder this window has open, or any other: command links, no script", () => {
+  const page = emptyHtml({ folders: [{ uri: "file:///home/me/repos/talpy-den", name: "talpy-den", path: "/home/me/repos/talpy-den" },
+                                     { uri: "file:///home/me/a&b", name: "<a&b>", path: "/home/me/a&b" }], account: "work" });
+  const links = [...page.matchAll(/<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)<\/a>/g)]
+    .map((m) => [m[1], decodeURIComponent(m[2].replace(/&#38;/g, "&")), m[3]]);
+  assert.deepEqual(links, [
+    ["button", 'command:talpyDen.newChatHere?["file:///home/me/repos/talpy-den"]', "New chat in talpy-den"],
+    ["button", 'command:talpyDen.newChatHere?["file:///home/me/a&b"]', "New chat in &#60;a&#38;b&#62;"],
+    ["button secondary", "command:talpyDen.newChat", "Other folder or account…"],
+  ]);
+  assert.match(page, /On work, the default account\./);
+  assert.doesNotMatch(page, /<script/);
+  const none = emptyHtml({ folders: [], account: "work" });
+  assert.match(none, /<a class="button" href="command:talpyDen.newChat">New chat…<\/a>/, "no folder open: New chat… only");
+  assert.doesNotMatch(none, /default account/);
+
+  const { view } = fakeView();
+  emptyView(view as never, { folders: [{ uri: "file:///p", name: "p", path: "/p" }] });
+  const set = view.webview.options as { enableScripts?: boolean; enableCommandUris?: unknown };
+  assert.deepEqual([set.enableScripts, set.enableCommandUris], [false, ["talpyDen.newChatHere", "talpyDen.newChat"]], "only its own two commands");
+  emptyView(view as never, { folders: [{ uri: "file:///p", name: "p", path: "/p" }] });
+  assert.equal(view.webview.options, set, "the same page isn't set again (it would reload)");
 });
 
 test("a chat opens in Talpy Chat's view in the side bar, one at a time; with Chat Place on tab, in a tab of its own", async () => {

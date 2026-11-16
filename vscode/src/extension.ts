@@ -22,6 +22,7 @@ import { carryOverSettings, settingNames } from "./legacySettings";
 import { noLinks, Notifier } from "./notify";
 import { PlanReview, planFileOf } from "./planReview";
 import { allGroups, countStates, duration, hiddenCount, type HiddenKind } from "./shared/model";
+import { NEW_CHAT_HERE } from "./chatSurface";
 import { StatusBar } from "./statusBar";
 import { registerPreview, setUpUsageBars } from "./statusline";
 import { terminalLinkOf, Terminals } from "./terminals";
@@ -219,6 +220,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("talpyDen.pickHosts", () => a.pickHosts()),
     vscode.commands.registerCommand("talpyDen.openInEditor", () => view.openInEditor()),
     vscode.commands.registerCommand("talpyDen.newChat", () => a.newChat()),
+    // (the empty Talpy Chat view's "New chat in <folder>": a folder this window has open, by its URI)
+    vscode.commands.registerCommand(NEW_CHAT_HERE, (uri?: unknown) => a.newChatHere(typeof uri === "string" ? uri : undefined)),
     vscode.commands.registerCommand("talpyDen.findChat", () => a.findChat()),
     vscode.commands.registerCommand("talpyDen.showRemoved", () => a.showHidden("chats")),
     vscode.commands.registerCommand("talpyDen.showHiddenPlans", () => a.showHidden("plans")),

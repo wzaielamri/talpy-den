@@ -17,11 +17,11 @@ import type { Actions } from "./actions";
 import { AGENT_ID } from "./agentRun";
 import type { Backend } from "./backend";
 import { openComparison } from "./changes";
-import { CHAT_VIEW, CHAT_VIEW_CONTEXT, emptyView, sideBarSupported, ViewSurface } from "./chatSurface";
+import { CHAT_VIEW, CHAT_VIEW_CONTEXT, emptyView, sideBarSupported, ViewSurface, windowFolders } from "./chatSurface";
 import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } from "./config";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
-import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
+import { chatRefOf, defaultGroup, doingText, hostLabel, liveOf, machineStatus, petKeyOf, recentRef, stateText } from "./shared/model";
 import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, shownUpTo, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
@@ -448,7 +448,7 @@ export class ChatPanes implements vscode.Disposable {
           const next = this.sideNext;
           this.sideNext = undefined;
           next?.();
-          if (!this.side) emptyView(view); // (nothing to show in it yet, or what opened has a tab already)
+          if (!this.side) this.showEmpty(view); // (nothing to show in it yet, or what opened has a tab already)
         },
       }, { webviewOptions: { retainContextWhenHidden: true } }),
       vscode.workspace.onDidChangeConfiguration((e) => {
@@ -456,8 +456,25 @@ export class ChatPanes implements vscode.Disposable {
         context();
         if (!this.inSideBar()) this.side?.dispose(); // (its view goes: the chat opens in a tab the next time)
       }),
+      // (the empty view's buttons: the folders this window has open, the account they start on)
+      vscode.workspace.onDidChangeWorkspaceFolders(() => this.emptyAgain()),
+      this.dash.onState(() => this.emptyAgain()),
     ];
     return { dispose: () => made.forEach((d) => d.dispose()) };
+  }
+
+  // The view with no chat in it: a new chat in each folder this window has open, on the default account of
+  // their machine (named when it has more), or any other (chatSurface.ts emptyView)
+  private showEmpty(view: vscode.WebviewView): void {
+    const host = this.dash.currentHost;
+    const groups = machineStatus(this.dash.state(), host)?.groups ?? [];
+    emptyView(view, {
+      folders: windowFolders(host, host).map(({ folder, path: where }) => ({ uri: folder.uri.toString(), name: folder.name, path: (host ? `${host}:` : "") + where })),
+      account: groups.length > 1 ? defaultGroup(groups)?.title : undefined,
+    });
+  }
+  private emptyAgain(): void {
+    if (this.sideView && !this.side) this.showEmpty(this.sideView);
   }
 
   // Before a chat opens (open, openNew): with the side bar its place and the view not made yet, VS Code
@@ -479,7 +496,7 @@ export class ChatPanes implements vscode.Disposable {
     pane.onClosed(() => {
       if (this.side !== pane) return;
       this.side = undefined;
-      if (this.sideView === view) emptyView(view); // (closed with nothing after it)
+      if (this.sideView === view) this.showEmpty(view); // (closed with nothing after it)
     });
     view.show(false);
     return new ViewSurface(view, chatWebviewOptions(this.extensionUri));

@@ -364,6 +364,14 @@ export class Backend {
       ...(r.how === "resumed" || r.how === "typed" || r.how === "clipboard" ? { how: r.how } : {}),
       ...(typeof r.text === "string" ? { text: r.text } : {}),
       ...(typeof r.question === "string" ? { question: r.question } : {}),
+      ...(r.ask === "vscode" ? { ask: r.ask } : {}),
+      ...(typeof r.path === "string" ? { path: r.path } : {}),
+      ...(typeof r.short === "string" ? { short: r.short } : {}),
+      ...(typeof r.trusted === "boolean" ? { trusted: r.trusted } : {}),
+      ...(typeof r.trustQuestion === "string" ? { trustQuestion: r.trustQuestion } : {}),
+      ...(typeof r.waits === "string" ? { waits: r.waits } : {}),
+      ...(Array.isArray(r.ended) ? { ended: r.ended.filter((e: unknown) => typeof e === "string") } : {}),
+      ...(typeof r.notify === "boolean" ? { notify: r.notify } : {}),
     };
   }
 

@@ -32,6 +32,7 @@ import {
   cliInstalled,
   containerOf,
   containerPlaces,
+  defaultGroup,
   groupLabel,
   hostLabel,
   hostWhere,
@@ -54,6 +55,7 @@ import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, M
 import { asPaste, attachClients, localAncestors, type Place, type Terminals } from "./terminals";
 import type { PlanReview } from "./planReview";
 import type { ChatPanes } from "./chatPane";
+import { windowFolders } from "./chatSurface";
 import { windowHostFile } from "./remoteHost";
 
 const CHAT_LINK = "vscode://anthropic.claude-code/open?session=";
@@ -90,6 +92,11 @@ export function chatCommandOf(command: string): string | null {
 
 export function inFolder(folder: string, command: string): string {
   return folder.startsWith("/") ? `cd ${shellQuote(folder)} 2>/dev/null; ${command}` : command;
+}
+
+// A folder as its machine's home folder names it: ~/repos/x
+export function tildeFolder(folder: string, home: string | null): string {
+  return home && (folder === home || folder.startsWith(home + "/")) ? "~" + folder.slice(home.length) : folder;
 }
 
 // "cd /home/someone 2>/dev/null; …" → "/home/someone"
@@ -985,7 +992,10 @@ export class Actions {
   // then (claude --bg: no window, listed right away; only in folders Claude
   // trusts, since it can't ask there). plan: carry out that plan of the
   // account (its text is the chat's first message, with what you add).
-  async newChat(groupId?: string, host?: string, plan?: PlanItem, task?: string, first?: Project): Promise<void> {
+  // The folders this window has open come first, listed by their account or
+  // not. here: one of them (newChatHere): the chat starts there at once, in
+  // Talpy Chat where it can (else a terminal), with no list to pick from.
+  async newChat(groupId?: string, host?: string, plan?: PlanItem, task?: string, first?: Project, here?: string): Promise<void> {
     if (this.demoOnly()) return;
     const state = this.dash.state();
     const groups = allGroups(state.status, state.hosts);
@@ -1024,14 +1034,20 @@ export class Actions {
     const home = group.homeChatCommand ?? "";
     const chat = chatCommandOf(home);
     if (cli && (!home || !chat) && !hasTask) return this.fail(`Can't start a chat on ${groupLabel(group)} from here.`);
-    // Here: recent folders, then any folder you pick. A host's folders can't be
-    // browsed unless this window is connected to it: its home folder is listed.
+    // Here: the folders this window has open, recent folders, then any folder you pick. A host's folders
+    // can't be browsed unless this window is connected to it: its home folder is listed.
     let folders: Project[] = host ? group.projects.slice() : group.projects.filter((f) => f.short !== "~");
     if (host && !folders.some((f) => f.short === "~")) folders.push({ path: "", short: "~", newChatCommand: home, trusted: false });
-    // (a Remote-SSH or Dev Containers window's own host: the folders this window has open first)
-    if (host && host === this.dash.currentHost) {
-      const open = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.path);
-      folders = [...folders.filter((f) => open.includes(f.path)), ...folders.filter((f) => !open.includes(f.path))];
+    // (this computer's, or a Remote-SSH or Dev Containers window's own host's; one no chat ran in yet isn't
+    // the account's: whether Claude trusts it is asked once it's picked, where that's needed)
+    const open = windowFolders(host, this.dash.currentHost).map((f) => f.path);
+    const unknown = new Set<string>();
+    if (open.length) {
+      const homeDir = host ? folderOf(home) : os.homedir();
+      folders = [
+        ...open.map((p) => folders.find((f) => f.path === p) ?? (unknown.add(p), { path: p, short: tildeFolder(p, homeDir) })),
+        ...folders.filter((f) => !open.includes(f.path)),
+      ];
     }
     if (plan?.cwd) {
       const own = folders.find((f) => f.path === plan.cwd);
@@ -1041,8 +1057,12 @@ export class Actions {
       folders = [folders.find((f) => f.path === first.path) ?? first, ...folders.filter((f) => f.path !== first.path)];
     }
     const label = (f: Project) =>
-      `$(${f.short === "~" ? "home" : "folder"}) ${f.short === "~" ? "Home folder (~)" : f.short}` + (plan && f.path === plan.cwd ? "  (the plan's)" : "");
-    type Item = vscode.QuickPickItem & { start?: "talpy" | "terminal" | "background" | "queue" | "schedule" | "panel" | "task" | "options"; folder?: Project; choose?: "dialog" | "type" };
+      `$(${f.short === "~" ? "home" : "folder"}) ${f.short === "~" ? "Home folder (~)" : f.short}`
+      + (plan && f.path === plan.cwd ? "  (the plan's)" : open.includes(f.path) ? "  (open here)" : "");
+    // (check: one whose trust isn't known, this computer's: asked when it's picked; a host's isn't offered where it's needed)
+    const check = (f: Project) => (unknown.has(f.path) ? { choose: "check" as const } : {});
+    const canTrust = (f: Project) => f.trusted !== false && !!f.path && !(host && unknown.has(f.path));
+    type Item = vscode.QuickPickItem & { start?: "talpy" | "terminal" | "background" | "queue" | "schedule" | "panel" | "task" | "options"; folder?: Project; choose?: "dialog" | "type" | "check" };
     const canBrowse = !host || host === this.dash.currentHost;
     const items: Item[] = [];
     if (cli && !hasTask)
@@ -1059,10 +1079,10 @@ export class Actions {
     if (talpyChatHere(talpyPlace(state, host), host, false)) {
       items.push({ label: "In Talpy Chat", kind: vscode.QuickPickItemKind.Separator });
       for (const f of folders.filter((f) => f.path))
-        items.push(f.trusted === false
-          ? { label: label(f), description: "in a terminal: Claude doesn't trust it yet", start: "terminal", folder: f }
+        items.push(!canTrust(f)
+          ? { label: label(f), description: `in a terminal: Claude ${f.trusted === false ? "doesn't trust it" : "may not trust it"} yet`, start: "terminal", folder: f }
           : { label: label(f), description: hasTask ? "in the background, Talpy Chat open on it" : "your first message there starts it, in the background",
-              start: "talpy", folder: f });
+              start: "talpy", folder: f, ...check(f) });
       if (!host) items.push({ label: "$(folder-opened) Choose folder…", start: "talpy", choose: "dialog" });
       else if (!folders.some((f) => f.path))
         items.push({ label: "$(info) No project folder there yet", description: "start a chat in one in a terminal once" });
@@ -1080,8 +1100,8 @@ export class Actions {
     }
     if (cli && hasTask) {
       items.push({ label: "In the background", kind: vscode.QuickPickItemKind.Separator });
-      const trusted = folders.filter((f) => f.trusted !== false && f.path);
-      for (const f of trusted) items.push({ label: label(f), description: "no window: listed right away", start: "background", folder: f });
+      const trusted = folders.filter(canTrust);
+      for (const f of trusted) items.push({ label: label(f), description: "no window: listed right away", start: "background", folder: f, ...check(f) });
       if (!host) items.push({ label: "$(folder-opened) Choose folder…", description: "one Claude trusts already", start: "background", choose: "dialog" });
       if (!trusted.length && host) items.push({ label: "$(info) No folder Claude trusts there yet", description: "start a chat in one in a terminal once" });
       if (trusted.length || !host) items.push({ label: "$(clock) Later, at a time you pick…", description: "a day and a time, then the folder", start: "schedule" });
@@ -1090,13 +1110,14 @@ export class Actions {
       if (reset && (trusted.length || !host)) {
         const at = new Date(reset.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         items.push({ label: `After the limit resets (in ${duration(reset.at - Date.now())}, at ${at})`, kind: vscode.QuickPickItemKind.Separator });
-        for (const f of trusted) items.push({ label: label(f), description: "waits for the limit, then starts in the background", start: "queue", folder: f });
+        for (const f of trusted) items.push({ label: label(f), description: "waits for the limit, then starts in the background", start: "queue", folder: f, ...check(f) });
         if (!host) items.push({ label: "$(folder-opened) Choose folder…", description: "one Claude trusts already", start: "queue", choose: "dialog" });
       }
     }
     if (!cli) items.push({ label: "In a terminal", kind: vscode.QuickPickItemKind.Separator }, { label: "$(warning) No claude command", description: host ? hostWhere(host) : "on this computer" });
     items.push(...panel.map((p) => ({ ...p, start: p.panel ? ("panel" as const) : undefined })));
-    let pick = await vscode.window.showQuickPick(items, {
+    const at = (start: Item["start"]) => (here ? items.find((i) => i.start === start && i.folder?.path === here) : undefined);
+    let pick = at("talpy") ?? at("terminal") ?? await vscode.window.showQuickPick(items, {
       title: plan ? `Carry out “${plan.title}” on ${where}` : task ? `“${task.length > 60 ? task.slice(0, 59) + "…" : task}” on ${where}` : undefined,
       placeHolder: plan || task ? "Start it in…" : `New chat on ${where} in…`,
     });
@@ -1121,27 +1142,17 @@ export class Actions {
     }
     if (pick.start === "talpy") {
       let where = pick.folder ? { path: pick.folder.path, short: pick.folder.short } : null;
-      if (pick.choose === "dialog") {
-        const picked = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, defaultUri: vscode.Uri.file(os.homedir()), openLabel: "Start Chat Here" });
-        if (!picked?.length) return;
-        const answer = await this.backend.action("jump.py", ["--pick-folder", group.chatProfile, "--cwd", picked[0].fsPath, ...configDirArgs()]);
-        if (!this.report(answer, "Couldn't open a new chat")) return;
-        where = { path: String(answer.path ?? picked[0].fsPath), short: String(answer.short ?? picked[0].fsPath) };
-        let trusted = answer.trusted === true;
-        if (!trusted && typeof answer.trustQuestion === "string" && answer.trustQuestion) {
-          // A background chat can't ask whether you trust its folder: asked here, in the words of Claude's
-          // own question (jump.py trust_question), and yes is kept where Claude keeps it (--trust-folder)
-          const trust = "Trust It, Open in Talpy Chat";
-          const terminal = "Open in a Terminal";
-          const choice = await vscode.window.showWarningMessage(`Trust ${where.short}?`, { modal: true, detail: answer.trustQuestion }, trust, terminal);
-          if (!choice) return;
-          if (choice === trust) {
-            const done = await this.backend.action("jump.py", ["--trust-folder", group.chatProfile, "--cwd", where.path, ...configDirArgs()]);
-            if (!this.report(done, `Couldn't trust ${where.short}`)) return;
-            trusted = true;
-          }
+      if (pick.choose === "dialog" || pick.choose === "check") {
+        let chosen = pick.folder?.path ?? "";
+        if (pick.choose === "dialog") {
+          const picked = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, defaultUri: vscode.Uri.file(os.homedir()), openLabel: "Start Chat Here" });
+          if (!picked?.length) return;
+          chosen = picked[0].fsPath;
         }
-        if (!trusted) {
+        const checked = await this.checkTrust(group, chosen, "Trust It, Open in Talpy Chat");
+        if (!checked) return;
+        where = { path: checked.path, short: checked.short };
+        if (!checked.trusted) {
           // (one whose trust Claude never keeps, your home folder, or Open in a Terminal: Claude asks there)
           this.dash.setActionInfo(`Claude doesn't trust ${where.short} yet: this chat opens in a terminal, where it asks.`);
           pick = { label: "", start: "terminal", folder: { path: where.path, short: where.short, trusted: false } as Project };
@@ -1170,7 +1181,7 @@ export class Actions {
         validateInput: (v) => (laterAt(day.day, v, new Date()) ? null : "A time still to come, e.g. 14:30"),
       });
       if (!clock) return;
-      const trusted = folders.filter((f) => f.trusted !== false && f.path);
+      const trusted = folders.filter(canTrust);
       type Where = vscode.QuickPickItem & { folder?: Project; choose?: boolean };
       const where = await vscode.window.showQuickPick<Where>(
         [...trusted.map((f) => ({ label: label(f), folder: f })), ...(host ? [] : [{ label: "$(folder-opened) Choose folder…", description: "one Claude trusts already", choose: true }])],
@@ -1178,6 +1189,7 @@ export class Actions {
       );
       if (!where) return;
       let folder = where.folder?.path ?? "";
+      if (unknown.has(folder) && !(await this.trustedToQueue(group, folder))) return;
       if (where.choose) {
         const picked = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, defaultUri: vscode.Uri.file(os.homedir()), openLabel: "Queue It Here" });
         if (!picked?.length) return;
@@ -1192,6 +1204,18 @@ export class Actions {
       ]);
       if (this.report(answer, "Couldn't queue it")) this.dash.setActionInfo(answer.message);
       return this.refresh();
+    }
+    if (pick.choose === "check" && pick.folder) {
+      // (a folder this window has open whose trust isn't known: a background chat can't ask)
+      if (pick.start === "queue" && !(await this.trustedToQueue(group, pick.folder.path))) return;
+      if (pick.start === "background") {
+        const checked = await this.checkTrust(group, pick.folder.path, "Trust It, Start in the Background");
+        if (!checked) return;
+        if (!checked.trusted) {
+          this.dash.setActionInfo(`Claude doesn't trust ${checked.short} yet: this chat opens in a terminal, where it asks.`);
+          pick = { label: "", start: "terminal", folder: { path: checked.path, short: checked.short, trusted: false } as Project };
+        }
+      }
     }
     let folder = pick.folder?.path ?? "";
     if (pick.choose === "dialog") {
@@ -1257,6 +1281,48 @@ export class Actions {
     }
     if (command && host && system) return void this.report(await this.backend.action("remote.py", ["--open", host, command]), "Couldn't open a new chat");
     if (command) await this.terminals.run(`new|${Date.now()}`, plan ? plan.title : "new chat", command, this.place(host));
+  }
+
+  // A new chat in a folder this window has open (the empty Talpy Chat view's button, by the folder's URI; the
+  // first one without it): on the default account of the machine it's on, at once (newChat's here)
+  async newChatHere(uri?: string): Promise<void> {
+    const host = this.dash.currentHost;
+    const open = windowFolders(host, host);
+    const folder = uri ? open.find((f) => f.folder.uri.toString() === uri) : open[0];
+    const group = defaultGroup(machineStatus(this.dash.state(), host)?.groups ?? []);
+    if (!folder || !group) return this.newChat();
+    return this.newChat(group.id, host, undefined, undefined, undefined, folder.path);
+  }
+
+  // Whether Claude trusts a folder, for a chat that starts in the background (picked in the dialog, or one
+  // this window has open that no chat ran in yet): a background chat can't ask, so one it doesn't trust,
+  // whose trust Claude keeps, is asked about here in the words of Claude's own question (jump.py
+  // trust_question), and yes is kept where Claude keeps it (--trust-folder). Its path and short name as
+  // the backend has them, and whether Claude trusts it now; undefined: cancelled, or it failed (said)
+  private async checkTrust(group: Group, folder: string, yes: string, terminal = true): Promise<{ path: string; short: string; trusted: boolean } | undefined> {
+    const answer = await this.backend.action("jump.py", ["--pick-folder", group.chatProfile, "--cwd", folder, ...configDirArgs()]);
+    if (!this.report(answer, "Couldn't open a new chat")) return;
+    const where = { path: String(answer.path ?? folder), short: String(answer.short ?? folder) };
+    let trusted = answer.trusted === true;
+    if (!trusted && typeof answer.trustQuestion === "string" && answer.trustQuestion) {
+      const inTerminal = "Open in a Terminal";
+      const choice = await vscode.window.showWarningMessage(`Trust ${where.short}?`, { modal: true, detail: answer.trustQuestion }, yes, ...(terminal ? [inTerminal] : []));
+      if (!choice) return;
+      if (choice === yes) {
+        const done = await this.backend.action("jump.py", ["--trust-folder", group.chatProfile, "--cwd", where.path, ...configDirArgs()]);
+        if (!this.report(done, `Couldn't trust ${where.short}`)) return;
+        trusted = true;
+      }
+    }
+    return { ...where, trusted };
+  }
+
+  // A task queued for later in a folder whose trust isn't known: trusted now (asked), else not queued (said)
+  private async trustedToQueue(group: Group, folder: string): Promise<boolean> {
+    const checked = await this.checkTrust(group, folder, "Trust It, Queue It", false);
+    if (checked && !checked.trusted)
+      this.fail(`Claude doesn't trust ${checked.short} yet, and a background chat can't ask: start a chat there in a terminal once.`);
+    return !!checked?.trusted;
   }
 
   // The model, effort and permission mode new chats start with: picked, and kept for the next ones
