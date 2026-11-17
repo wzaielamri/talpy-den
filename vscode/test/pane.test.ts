@@ -11,8 +11,7 @@ import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
 import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
-import { type BackgroundShell, SHELL_FOLD, shellFold, shellLine, shellsMore, shellsWaiting } from "../src/shared/pane";
-import { costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side } from "../src/shared/pane";
+import { type BackgroundShell, SHELL_FOLD, shellFold, shellLine, shellsMore, shellsWaiting, costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side, fromKeyOk, fromNote, SIDE_COST_TIP, SIDE_FROM_TIP, sideKeyOk, sideLine, sidePartAnswerOf, sidePartOf, sideSaw } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -2108,8 +2107,124 @@ test("side questions: which list is newer, what the next one costs, Explain this
   assert.equal(explainQuestion("  \n "), "");
   assert.equal(sideModelLabel({ ...answered, pick: "", model: "claude-opus-5-5" }), "Opus 5.5");
   assert.equal(sideModelLabel(answered), "Haiku");
-  assert.deepEqual(SIDE_ACTIONS, ["copy", "quote", "remove"]);
+  assert.deepEqual(SIDE_ACTIONS, ["copy", "quote", "whole", "remove"]);
   assert.deepEqual(SIDE_PICKS.map((p) => [p.value, sidePickLabel(p.value)]), [["", "Same model as the chat"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]]);
+});
+
+// Ask from here (a message's right-click menu; Explain this from the message selected): side questions see the
+// chat from that message's turn on (pane.py --part, --from)
+const PART = { key: "u-1", text: "fix the parser", at: 5, tokens: 52_000, of: 575_000 };
+
+test("Ask from here: since and from taken only as what they can be; which keys can be asked from", () => {
+  const ok = { id: "0123456789ab", q: "Why?", at: 5, pick: "haiku", model: "claude-haiku-4-5", a: "Because", done: 9, since: "msg_01abc", from: PART };
+  assert.deepEqual(sideOf(ok), ok);
+  // (on its way, pane.py's own keeps the message it was asked from; the part comes with the answer)
+  assert.deepEqual(sideOf({ id: "0123456789ab", q: "Q", at: 5, pending: true, since: "toolu_1/answer", from: "x" }),
+                   { id: "0123456789ab", q: "Q", at: 5, pick: "", model: "", since: "toolu_1/answer", pending: true });
+  for (const since of ["-x", "", "a b", "x".repeat(201), 7, null, ["u-1"]])
+    assert.equal(sideOf({ ...ok, since })!.since, undefined, JSON.stringify(since));
+  for (const from of [null, "u-1", { key: "-x" }, { text: "no key" }, [], { key: 3 }])
+    assert.equal(sideOf({ ...ok, from })!.from, undefined, JSON.stringify(from));
+  // (each of the part's fields only as what it can be: whole numbers from 0)
+  assert.deepEqual(sideOf({ ...ok, from: { key: "u-1", text: 3, at: -1, tokens: 1.5, of: "9", junk: 1 } })!.from, { key: "u-1", text: "", at: 0, tokens: 0, of: 0 });
+  assert.deepEqual(sidePartOf({ ...PART, junk: 1 }), PART);
+  assert.equal(sidePartOf(null), null);
+  // a message's key (pane.py's: talpy_den.side_since_ok), and of those, one in the chat (not one on its way
+  // with this page's key; one sent while Claude worked keeps its queued- key in the chat)
+  const keys = ["u-1", "msg_01X", "toolu_1/answer", "a.b:c@d", "-flag", "", "a b", "pending-3", "queued-17", "answer-2", 7];
+  assert.deepEqual(keys.map((k) => [sideKeyOk(k), fromKeyOk(k)]),
+                   [[true, true], [true, true], [true, true], [true, true], [false, false], [false, false], [false, false],
+                    [true, false], [true, true], [true, false], [false, false]]);
+  // the page's answer to --part: the part, or none (all of the chat), or why not
+  assert.deepEqual(sidePartAnswerOf(4, "c1", { ok: true, part: { ...PART, junk: 1 }, extra: 1 }),
+                   { type: "side", kind: "part", id: 4, chatId: "c1", ok: true, message: "", part: PART });
+  assert.deepEqual(sidePartAnswerOf(5, "c1", { ok: true, part: null }), { type: "side", kind: "part", id: 5, chatId: "c1", ok: true, message: "", part: null });
+  assert.deepEqual(sidePartAnswerOf(6, "c1", { ok: false, missing: true, message: "This chat hasn't started yet, or it isn't there any more" }),
+                   { type: "side", kind: "part", id: 6, chatId: "c1", ok: false, message: "This chat hasn't started yet, or it isn't there any more", part: null, missing: true });
+  assert.deepEqual(sidePartAnswerOf(7, "c1", { ok: false, part: PART, missing: "yes" }),
+                   { type: "side", kind: "part", id: 7, chatId: "c1", ok: false, message: "That didn't work", part: null });
+});
+
+test("Ask from here: one asked finds its own (asked from the same message); the panel's line says the part or what the next one costs; the meta line what it saw", () => {
+  const s = (id: string, more: Partial<Side> = {}) => ({ id, q: "Why 52?", at: NOW + 300, pick: "", model: "", pending: true, ...more }) as Side;
+  const fromHere: AskedSide = { local: 1, q: "Why 52?", pick: "", at: NOW, since: "u-1" };
+  const whole: AskedSide = { local: 2, q: "Why 52?", pick: "", at: NOW + 50 };
+  // pane.py's own for the one about all of it isn't the one asked from u-1's turn on
+  let shown = sidesShown([s("bbbbbbbbbbbb")], [fromHere, whole], new Set());
+  assert.deepEqual(shown.map((x) => [x.id, x.since, sideState(x)]), [["bbbbbbbbbbbb", undefined, "pending"], ["local-1", "u-1", "pending"]]);
+  shown = sidesShown([s("bbbbbbbbbbbb"), s("cccccccccccc", { since: "u-1" })], [fromHere, whole], new Set());
+  assert.deepEqual(shown.map((x) => x.id), ["bbbbbbbbbbbb", "cccccccccccc"]);
+  // Ask with the whole chat: the same question again, not the one about the part (which stays)
+  const aboutPart = s("dddddddddddd", { at: NOW - 60_000, pending: undefined, a: "A", done: NOW - 50_000, since: "msg_2", from: PART });
+  assert.deepEqual(sidesShown([aboutPart], [whole], new Set()).map((x) => x.id), ["dddddddddddd", "local-2"]);
+  // the line: no part, the cost (an answer about a part doesn't warm all of it); a part, where it starts and
+  // what it costs, its own cache (on the same pick)
+  const answered = { id: "aaaaaaaaaaaa", q: "Q", at: NOW - 60_000, pick: "haiku", model: "claude-haiku-4-5", a: "A", done: NOW - 50_000 } as Side;
+  const fromU1 = { ...answered, id: "eeeeeeeeeeee", since: "msg_2", from: PART } as Side;
+  assert.deepEqual(sideLine(null, [fromU1], "haiku", NOW, 300_000), { text: "The first question re-reads the chat: 300k tokens", tip: SIDE_COST_TIP });
+  assert.deepEqual(sideLine(null, [answered], "haiku", NOW, 300_000), { text: "Follow-ups reuse the chat from the cache", tip: SIDE_COST_TIP });
+  assert.deepEqual(sideLine(PART, [answered], "haiku", NOW, 300_000), { text: "From “fix the parser”: 52k of the chat's 575k tokens", tip: SIDE_FROM_TIP });
+  assert.equal(sideLine(PART, [fromU1], "haiku", NOW, 300_000).text, "From “fix the parser”: follow-ups reuse it from the cache");
+  assert.equal(sideLine(PART, [fromU1], "", NOW, 300_000).text, fromNote(PART, false));   // (another pick: its own cache)
+  assert.deepEqual(sideLine(null, [], "", NOW, 0), { text: "", tip: SIDE_COST_TIP });   // (its context not known: nothing said)
+  // the meta line's word on what it saw: the part, all of it though asked from a message, else nothing
+  assert.deepEqual([sideSaw(fromU1), sideSaw({ ...answered, since: "msg_2" }), sideSaw(answered), sideSaw(s("ffffffffffff", { since: "u-1" }))],
+                   ["from “fix the parser”", "whole chat", "", ""]);
+});
+
+test("Ask from here: --part read where the chat is (a host's with --host), a question with --from; what isn't a message's key isn't run", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-from-"));
+  const calls: string[][] = [];
+  const texts: string[] = [];
+  const answer = { id: "0123456789ab", q: "Why?", at: NOW, pick: "haiku", model: "claude-haiku-4-5", a: "A", done: NOW + 5, since: "msg_2", from: PART };
+  const backend = { pane: async (args: string[]) => {
+    if (args[0] !== "--side-question") return { ok: true, unchanged: true };
+    calls.push(own(args));
+    if (args.includes("--text-file")) texts.push(fs.readFileSync(args[args.indexOf("--text-file") + 1], "utf8"));
+    if (args.includes("--part")) {
+      const key = args[args.indexOf("--part") + 1];
+      return key === "old" ? { ok: true, part: null } : key === "gone" ? { ok: false, missing: true, message: "Not there" } : { ok: true, part: { ...PART, junk: 1 } };
+    }
+    return { ok: true, message: "", side: answer, sides: [answer], sidesV: 3 };
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  p.open({ chatId: "from-1", sessionId: "from-1", profileDir: ".claude", name: "x" } as never);
+  const panel = recorded.panels.at(-1)!;
+  const sides = () => panel.sent.filter((m) => (m as { type: string }).type === "side") as Record<string, unknown>[];
+  panel.receive({ type: "sidePart", id: 1, key: "msg_2" });
+  panel.receive({ type: "sidePart", id: 2, key: "old" });
+  panel.receive({ type: "sidePart", id: 3, key: "gone" });
+  panel.receive({ type: "sideAsk", id: 4, text: "Why?", pick: "haiku", from: "msg_2" });
+  for (const bad of [{ key: "-x" }, { key: 7 }, { id: "5" }]) panel.receive({ type: "sidePart", id: 5, key: "u-1", ...bad });
+  panel.receive({ type: "sideAsk", id: 6, text: "Q", pick: "", from: "--remove" });
+  panel.receive({ type: "sideAsk", id: 7, text: "Q", pick: "", from: 3 });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(calls, [["--side-question", "from-1", "--part", "msg_2", "--profile", ".claude"],
+                           ["--side-question", "from-1", "--part", "old", "--profile", ".claude"],
+                           ["--side-question", "from-1", "--part", "gone", "--profile", ".claude"],
+                           ["--side-question", "from-1", "--text", "Why?", "--model", "haiku", "--from", "msg_2", "--profile", ".claude"]]);
+  const got = sides().sort((x, y) => Number(x.id) - Number(y.id));
+  assert.deepEqual(got.slice(0, 3), [{ type: "side", kind: "part", id: 1, chatId: "from-1", ok: true, message: "", part: PART },
+                                     { type: "side", kind: "part", id: 2, chatId: "from-1", ok: true, message: "", part: null },
+                                     { type: "side", kind: "part", id: 3, chatId: "from-1", ok: false, message: "Not there", part: null, missing: true }]);
+  assert.deepEqual(got[3], { type: "side", kind: "ask", id: 4, chatId: "from-1", ok: true, message: "", side: answer, sides: [answer], sidesV: 3 });
+  assert.deepEqual(got.slice(4).map((m) => [m.kind, m.id, m.ok, m.message]), [["ask", 6, false, "Which message?"], ["ask", 7, false, "Which message?"]]);
+  // an SSH host's chat: read and asked there (--host), the question in a file of its own, gone after
+  p.open({ chatId: "from-2", sessionId: "from-2", profileDir: ".claude-work", name: "y", host: "lab" } as never);
+  const host = recorded.panels.at(-1)!;
+  host.receive({ type: "sidePart", id: 1, key: "u-1" });
+  host.receive({ type: "sideAsk", id: 2, text: "On the host?", pick: "", from: "u-1" });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(calls[4], ["--side-question", "from-2", "--part", "u-1", "--profile", ".claude-work", "--host", "lab"]);
+  const asked = calls[5];
+  assert.deepEqual([...asked.slice(0, 3), ...asked.slice(4)], ["--side-question", "from-2", "--text-file", "--from", "u-1", "--profile", ".claude-work", "--host", "lab"]);
+  assert.equal(texts.at(-1), "On the host?");
+  assert.deepEqual(fs.readdirSync(path.join(process.env.XDG_CACHE_HOME, "talpy-den")).filter((f) => f.startsWith("text-")), [], "gone after");
+  p.dispose();
 });
 
 test("a side question goes to pane.py --side-question (a host's with --host, in a file of its own), several at once; its answer only as what it can be", async () => {

@@ -3948,7 +3948,7 @@ def continuation(home, extra_dirs, profile_key, chat):
     moves, found = {}, []
     for folder in folders:
         try:
-            files = list(folder.glob("*.jsonl"))
+            files = [f for f in folder.glob("*.jsonl") if not side_copy(f.name)]
         except OSError:
             continue
         for f in files:
@@ -3988,7 +3988,7 @@ def shared_transcripts(folder, ctx):
                 files.sort()
         return by_folder.get(folder, [])
     try:
-        files = sorted(folder.glob("*.jsonl"))
+        files = sorted(f for f in folder.glob("*.jsonl") if not side_copy(f.name))
     except OSError:
         return []
     out = []
@@ -5710,7 +5710,7 @@ def all_transcripts(ctx):
     found = []
     for p in ctx.profiles:
         try:
-            files = list(p.path.glob("projects/*/*.jsonl"))
+            files = [f for f in p.path.glob("projects/*/*.jsonl") if not side_copy(f.name)]
         except OSError:
             continue
         for f in files:
@@ -6546,7 +6546,7 @@ def memory_folder(project):
     if folder:
         return folder, False
     try:
-        transcripts = sorted(project.glob("*.jsonl"))[:MEMORY_CWD_FILES]
+        transcripts = sorted(f for f in project.glob("*.jsonl") if not side_copy(f.name))[:MEMORY_CWD_FILES]
     except OSError:
         transcripts = []
     for path in transcripts:
@@ -6751,7 +6751,7 @@ def plan_chat(profiles, slug, limit=2000):
     found = []
     for p in profiles:
         try:
-            files = list(p.path.glob("projects/*/*.jsonl"))
+            files = [f for f in p.path.glob("projects/*/*.jsonl") if not side_copy(f.name)]
         except OSError:
             continue
         for f in files:
@@ -9877,7 +9877,7 @@ def transcript_files(profile):
             try:
                 if e.is_dir():
                     stack.append((Path(e.path), linked or e.is_symlink()))
-                elif e.name.endswith(".jsonl") and e.is_file():
+                elif e.name.endswith(".jsonl") and e.is_file() and not side_copy(e.name):
                     out.append((Path(e.path), linked))
             except OSError:
                 continue
@@ -10618,7 +10618,10 @@ def forget_bookmarks(cache_root, chat, host=""):
 # forget_bookmarks). Each: {"id", "q": the question, "at": when asked (ms),
 # "pick": the model picked ("" the chat's own, or SIDE_PICKS), "model": the
 # one that answered, "a": the answer, "done": when it came (ms), "error": why
-# none came, "synthetic": Claude's stand-in for an answer}. One on its way has
+# none came, "synthetic": Claude's stand-in for an answer, "since": the key of
+# the message it was asked from (Ask from here, Explain this), "from": the part
+# of the chat that answered it, side.part_of's {key, text, at, tokens, of}; no
+# "from": all of it}. One on its way has
 # no "done" ("pending" true as read); one that waited longer than a helper
 # can (SIDE_LOST_MS: its helper died) reads as failed. v grows with every
 # change, as bookmarks'.
@@ -10635,6 +10638,15 @@ SIDE_LOST_MS = (SIDE_WAIT_S + 150) * 1000   # (an SSH host's: its wait, the way 
 SIDE_LOST = "No answer came: ask again"
 SIDE_HISTORY = 6         # earlier answers a new question goes with (Claude's /btw takes them: follow-ups)
 SIDE_HISTORY_TEXT = 30000   # characters of them at most, the newest first
+# A side question asked from a message on (side.write_part) reads a part of the chat written beside it
+# for a moment, as a transcript under an id that starts so: every reader of transcripts skips it (a
+# chat that isn't one: its entries are the chat's, it would count twice, or look moved there)
+SIDE_COPY_PREFIX = "51de51de-c0de-4"
+
+
+def side_copy(name):
+    """Whether a transcript's file name (or id) is a side question's part of a chat (SIDE_COPY_PREFIX)."""
+    return isinstance(name, str) and name.startswith(SIDE_COPY_PREFIX)
 
 
 def sides_folder(cache_root, host=""):
@@ -10656,6 +10668,21 @@ def side_pick(value):
     return value if value == "" or value in SIDE_PICKS else None
 
 
+def side_since_ok(key):
+    """A message's key a side question can be asked from (as a bookmark's: pane.py's item key)."""
+    return isinstance(key, str) and bool(BOOKMARK_KEY.fullmatch(key.replace("/", "."))) and not key.startswith("-")
+
+
+def side_part(part):
+    """The part of a chat that answered a side question, as kept (side.part_of's), or None."""
+    if type(part) is not dict or not side_since_ok(part.get("key")):
+        return None
+    num = lambda v: v if type(v) is int and v >= 0 else 0
+    text = part.get("text") if type(part.get("text")) is str else ""
+    return {"key": part["key"], "text": short_text(" ".join(text.split()), 60), "at": num(part.get("at")),
+            "tokens": num(part.get("tokens")), "of": num(part.get("of"))}
+
+
 def side_item(s, now_ms):
     """One side question as read (malformed: None)."""
     if type(s) is not dict or type(s.get("id")) is not str or not SIDE_ID.fullmatch(s["id"]) \
@@ -10664,6 +10691,11 @@ def side_item(s, now_ms):
     at, done = whole_ms(s.get("at")), whole_ms(s.get("done"))
     item = {"id": s["id"], "q": s["q"][:SIDE_TEXT], "at": at, "pick": side_pick(s.get("pick")) or "",
             "model": s["model"] if type(s.get("model")) is str else ""}
+    if side_since_ok(s.get("since")):
+        item["since"] = s["since"]
+    part = side_part(s.get("from"))
+    if part is not None:
+        item["from"] = part
     if done:
         item["done"] = done
         if type(s.get("a")) is str and s["a"]:
@@ -10733,7 +10765,7 @@ def change_sides(cache_root, chat, host, edit, now_ms=None):
         return True, "", [dict(s) for s in items], max(v + 1, now_ms)
 
 
-def ask_side(cache_root, chat, host, question, pick="", now_ms=None):
+def ask_side(cache_root, chat, host, question, pick="", now_ms=None, since=None):
     """A side question on its way (pending, until finish_side): (ok, what
     went wrong, the new item, the items now, their v). The oldest answered
     ones go past SIDES_MAX."""
@@ -10747,6 +10779,10 @@ def ask_side(cache_root, chat, host, question, pick="", now_ms=None):
         return False, f"That's too long for a side question (up to {SIDE_TEXT} characters)", None, [], 0
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
     item = {"id": os.urandom(6).hex(), "q": question, "at": now_ms, "pick": pick, "model": "", "pending": True}
+    if since is not None:
+        if not side_since_ok(since):
+            return False, "Which message?", None, [], 0
+        item["since"] = since
 
     def edit(items):
         items.append(item)
@@ -10757,9 +10793,11 @@ def ask_side(cache_root, chat, host, question, pick="", now_ms=None):
     return ok, said, item if ok else None, items, v
 
 
-def finish_side(cache_root, chat, host, side_id, answer=None, error="", model="", synthetic=False, now_ms=None):
-    """A side question's answer (or why none came) written in: (items, v).
-    One removed meanwhile stays removed."""
+def finish_side(cache_root, chat, host, side_id, answer=None, error="", model="", synthetic=False, now_ms=None,
+                part=None):
+    """A side question's answer (or why none came) written in: (items, v),
+    with the part of the chat that answered it (side.part_of's; None: all of
+    it). One removed meanwhile stays removed."""
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
 
     def edit(items):
@@ -10769,6 +10807,9 @@ def finish_side(cache_root, chat, host, side_id, answer=None, error="", model=""
         s.pop("pending", None)
         s.pop("error", None)
         s.update(done=now_ms, model=model if isinstance(model, str) else "")
+        s.pop("from", None)
+        if side_part(part) is not None:
+            s["from"] = side_part(part)
         if isinstance(answer, str) and answer.strip():
             s["a"] = answer[:SIDE_ANSWER]
             if synthetic:
@@ -10793,15 +10834,17 @@ def remove_side(cache_root, chat, host, side_id):
 
 def side_history(items, before_id=None):
     """The earlier answers a new side question goes with, as Claude's
-    side_question takes them ([{"question", "response"}], oldest first):
-    the newest SIDE_HISTORY answered ones before before_id, up to
-    SIDE_HISTORY_TEXT characters."""
+    side_question takes them ([{"question", "response", "part": the key of
+    the part of the chat it was about, "" for all of it}], oldest first: the
+    copy keeps those about its own part, side.same_part): the newest
+    SIDE_HISTORY answered ones before before_id, up to SIDE_HISTORY_TEXT
+    characters."""
     answered = []
     for s in items:
         if s["id"] == before_id:
             break
         if s.get("a") and not s.get("synthetic"):
-            answered.append({"question": s["q"], "response": s["a"]})
+            answered.append({"question": s["q"], "response": s["a"], "part": (s.get("from") or {}).get("key", "")})
     kept, size = [], 0
     for h in reversed(answered[-SIDE_HISTORY:]):
         size += len(h["question"]) + len(h["response"])

@@ -439,7 +439,7 @@ def sweep_chats(root, cutoff, keep, gone, stays, t, dry):
         names = {e.name for e in listed}
         went = False
         for e in listed:
-            if e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False):
+            if e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False) and not cs.side_copy(e.name):
                 chat = e.name[:-6]
                 if not CHAT_ID.match(chat):
                     continue
@@ -491,7 +491,7 @@ def sweep_shared(home, cutoff, keep, gone, stays, t, dry):
         if not d.is_dir(follow_symlinks=False):
             continue
         for e in entries(d.path):
-            if not (e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False)):
+            if not (e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False)) or cs.side_copy(e.name):
                 continue
             chat = e.name[:-6]
             if not CHAT_ID.match(chat) or chat in keep or chat in stays:

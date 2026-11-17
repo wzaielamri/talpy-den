@@ -2270,7 +2270,7 @@ class NewChatTests(unittest.TestCase):
             self.assertNotIn(key, code)
         memo = chat[chat.index("  const steps = useMemo("):]
         memo = memo[:memo.index("\n  // ")]
-        self.assertIn("[shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today]", memo)
+        self.assertIn("[shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today, fromLine]", memo)
         rows = chat[chat.index("  function shownStep("):]
         self.assertNotRegex(rows[:rows.index("\n  }\n")], r"(?i)bookmark|ribbon")
         self.assertIn("ribbonCss(", chat)
@@ -2368,7 +2368,7 @@ class NewChatTests(unittest.TestCase):
         # chat takes its list without making anything
         pane = (ROOT / "ui/ChatPane.qml").read_text()
         self.assertNotIn('"sides.mjs"', pane)
-        for name in ("Sides.qml", "SidePanel.qml", "SideToggle.qml", "ExplainButton.qml", "EditMenu.qml"):
+        for name in ("Sides.qml", "SidePanel.qml", "SideToggle.qml", "ExplainButton.qml", "EditMenu.qml", "SideFromLine.qml"):
             self.assertIn('import "sides.mjs" as Sides', (ROOT / "ui" / name).read_text(), name)
         for source in ("Sides.qml", "SidePanel.qml", "SideToggle.qml", "ExplainButton.qml"):
             at = pane.index(f'source: active ? "{source}" : ""')
@@ -2411,7 +2411,7 @@ class NewChatTests(unittest.TestCase):
         for line in ("sides = []", "sidesV = 0", "sidesOn = Plasmoid.configuration.sideQuestionsOpen === true && sideWide",
                      "sideLogic.item.clear()"):
             self.assertIn(line, reset)
-        shows = pane[pane.index("    function showSides(on, focus) {"):]
+        shows = pane[pane.index("    function showSides(on, focus, key) {"):]
         shows = shows[:shows.index("\n    }\n")]
         self.assertIn("Plasmoid.configuration.sideQuestionsOpen = on", shows)
         self.assertIn("if (!sideWide)\n                bookmarksOn = false", shows)
@@ -2430,12 +2430,12 @@ class NewChatTests(unittest.TestCase):
         menu = (ROOT / "ui/EditMenu.qml").read_text()
         self.assertLess(menu.index("text: Quote.QUOTE_MENU"), menu.index("text: Sides.EXPLAIN_BUTTON"))
         self.assertLess(menu.index("text: Sides.EXPLAIN_BUTTON"), menu.index("Copy message (Markdown)"))
-        self.assertIn("onTriggered: pane.explain(menu.chosen)", menu)
+        self.assertIn("onTriggered: pane.explain(menu.chosen, menu.chosenKey)", menu)
         logic = (ROOT / "ui/Sides.qml").read_text()
-        explain = logic[logic.index("    function explain(selected) {"):]
+        explain = logic[logic.index("    function explain(selected, key) {"):]
         explain = explain[:explain.index("\n    }\n")]
         self.assertIn("Sides.explainQuestion(selected)", explain)
-        self.assertIn("pane.showSides(true, true)", explain)
+        self.assertIn("pane.showSides(true, true, key)", explain)
 
     def test_side_questions_ask_take_and_say_it_as_sides_mjs_does(self):
         # The words are sides.mjs's (VS Code's the same), never written again in the QML; asking runs pane.py
@@ -2447,7 +2447,7 @@ class NewChatTests(unittest.TestCase):
         button = (ROOT / "ui/ExplainButton.qml").read_text()
         words = (ROOT / "ui/sides.mjs").read_text()
         qml = "".join((ROOT / "ui" / f).read_text() for f in ("ChatPane.qml", "Sides.qml", "SidePanel.qml", "SideToggle.qml",
-                                                              "ExplainButton.qml", "EditMenu.qml"))
+                                                              "ExplainButton.qml", "EditMenu.qml", "SideFromLine.qml"))
         code = "\n".join(re.sub(r"(^|\s)//.*$", "", line) for line in qml.splitlines())   # (comments may name them)
         for name in re.findall(r'export const (SIDE_\w+|EXPLAIN_\w+) = "', words):
             said = re.search(r'export const %s = "([^"]*)"' % name, words).group(1)
@@ -2463,20 +2463,20 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Icons.plasma.sideQuestions", toggle)
         self.assertIn("Icons.plasma.explain", button)
         # (the actions on hover: in SIDE_ACTIONS' order, Copy answer and Quote in reply once there's an answer)
-        self.assertIn('model: Sides.SIDE_ACTIONS.filter(w => w === "remove" || entry.phase === "answered")', panel)
+        self.assertIn('model: Sides.SIDE_ACTIONS.filter(w => w === "remove" || (entry.phase === "answered" && (w !== "whole" || entry.parted)))', panel)
         self.assertIn('pane.quoteIn(entry.a)', panel)
         # asking, and removing
-        ask = logic[logic.index("    function ask(text) {"):]
+        ask = logic[logic.index("    function ask(text, since) {"):]
         ask = ask[:ask.index("\n    }\n")]
         self.assertIn('pane.start("--side-question " + root.shellQuote(pane.chatId) + " --text " + root.shellQuote(q)', ask)
-        self.assertIn('(pick ? " --model " + pick : "") + pane.paneArgs()', ask)
+        self.assertIn('(pick ? " --model " + pick : "") + (from ? " --from " + root.shellQuote(from) : "") + pane.paneArgs()', ask)
         self.assertIn('kind: "side"', ask)
         self.assertIn('" --remove " + root.shellQuote(id)', logic)
         self.assertIn('Plasmoid.configuration.sideQuestionModel', logic)
         self.assertEqual(logic.count("Sides.newerSides(result.sides, result.sidesV, pane.sidesV)"), 2)
         # (Ask again: the failed one goes, its question again on the model picked now)
         again = logic[logic.index("    function askAgain(s) {"):]
-        self.assertIn("remove(String(s.id))\n        ask(s.q)", again[:again.index("\n    }\n")])
+        self.assertIn("remove(String(s.id))\n        ask(s.q, s.since || \"\")", again[:again.index("\n    }\n")])   # (the same part)
         # the box: Enter asks, Shift+Enter a new line, taken before the window's keys; Esc anywhere in the panel
         # closes it (kept closed)
         box = panel[panel.index("id: box\n"):]
@@ -2506,6 +2506,96 @@ class NewChatTests(unittest.TestCase):
         shared = shared[:shared.index("]")]
         self.assertIn('"sideQuestionModel"', shared)
         self.assertIn('"sideQuestionsOpen"', shared)
+
+    def test_side_questions_ask_from_here(self):
+        # Ask from here (a message's right-click menu, after Explain this; only one in the chat) and Explain this
+        # make the panel see a part of the chat: pane.py --side-question --part KEY (a run, never on the UI
+        # thread), its answer taken only for the newest lookup of the chat shown; questions then go with --from;
+        # Ask with the whole chat without. The panel says where the part starts (fromNote, its own cache:
+        # sideWarm with its key) with × back to the whole chat; each answer what it saw (sideSaw). The line in
+        # the chat (SideFromLine.qml) is made by the panel only while it has a part, and sits in a row's gap or
+        # the list's head: no row's height changes (nothing you read moves), nothing more is read per poll
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        menu = (ROOT / "ui/EditMenu.qml").read_text()
+        logic = (ROOT / "ui/Sides.qml").read_text()
+        panel = (ROOT / "ui/SidePanel.qml").read_text()
+        line = (ROOT / "ui/SideFromLine.qml").read_text()
+        # the menu: right after Explain this, before Copy message, on yours or Claude's reply once it's in the chat
+        self.assertLess(menu.index("text: Sides.EXPLAIN_BUTTON"), menu.index("text: Sides.SIDE_FROM_MENU"))
+        self.assertLess(menu.index("text: Sides.SIDE_FROM_MENU"), menu.index("Copy message (Markdown)"))
+        item = menu[menu.index("text: Sides.SIDE_FROM_MENU"):]
+        item = item[:item.index("\n    }\n")]
+        self.assertIn("onTriggered: pane.askFrom(menu.row.key)", item)
+        self.assertIn("Sides.SIDE_FROM_TIP", item)
+        self.assertIn('shown: menu.where === "list" && pane.sideCan && menu.row !== null && Bm.canBookmark(menu.row) && pane.askable(menu.row.key)', menu)
+        # (in the chat: a queued- key too, not one this window shows before the chat has it)
+        askable = pane[pane.index("    function askable(key) {"):]
+        self.assertIn('return k !== "" && k.indexOf("pending-") !== 0 && k.indexOf("answer-") !== 0', askable[:askable.index("\n    }\n")])
+        self.assertIn('return at.length && askable(keyAt(at[0])) ? keyAt(at[0]) : ""', pane[pane.index("    function selectionKey() {"):pane.index("    function copyAcross(")])
+        self.assertIn("chosenKey = chosen !== \"\" ? pane.selectionKey() : \"\"", menu)
+        self.assertIn("sidesNow().fromHere(key)", pane)
+        self.assertIn("sidesNow().explain(selected, key !== undefined ? key : selectionKey())", pane)
+        # (the panel opened or closed beside the chat narrows or widens its column, its rows wrap again: the end,
+        # or the message you asked from, else the one at the top, stays where it was: holdTop, as a tab switch)
+        shows = pane[pane.index("    function showSides(on, focus, key) {"):]
+        self.assertIn("if (sideWide && sideCan && on !== sidesOn)\n            holdPlace(key || \"\")", shows[:shows.index("\n    }\n")])
+        hold = pane[pane.index("    function holdPlace(key) {"):]
+        hold = hold[:hold.index("\n    }\n")]
+        for line_ in ("keepEnd()", "? [key, r.y - list.contentY, i] : topMessage()", "holdTop.restart()"):
+            self.assertIn(line_, hold)
+        # the lookup, and asking from it
+        look = logic[logic.index("    function lookPart(key) {"):]
+        look = look[:look.index("\n    }\n")]
+        self.assertIn('" --part " + root.shellQuote(partAsked)', look)
+        self.assertIn("pane.paneArgs()", look)   # (a host's chat: --host, as the panel's other calls)
+        self.assertIn('kind: "side"', look)
+        here = logic[logic.index("    function fromHere(key) {"):]
+        here = here[:here.index("\n    }\n")]
+        self.assertIn("pane.showSides(true, true, key)", here)
+        self.assertIn("lookPart(key)", here)
+        explain = logic[logic.index("    function explain(selected, key) {"):]
+        explain = explain[:explain.index("\n    }\n")]
+        self.assertIn("lookPart(key)", explain)
+        self.assertIn("ask(q, key || undefined)", explain)
+        ask = logic[logic.index("    function ask(text, since) {"):]
+        ask = ask[:ask.index("\n    }\n")]
+        self.assertIn('const from = since !== undefined ? String(since || "") : part ? String(part.key) : partAsked', ask)
+        self.assertIn("askWhole(s) {\n        ask(s.q, \"\")", logic)
+        took = logic[logic.index("    function took(result, asked) {"):]
+        took = took[:took.index("if (asked.remove !== undefined) {")]
+        self.assertIn("if (!here || asked.part !== partAsked)", took)
+        self.assertIn("part = result.ok && result.part && result.part.key ? result.part : null", took)
+        # (none: the panel's short note says why, muted: sides.mjs's words; a failure, in the negative colour)
+        self.assertIn("say(result.ok ? Sides.SIDE_FROM_COMPACTED : result.missing ? Sides.SIDE_FROM_GONE", took)
+        self.assertIn("!result.ok && !result.missing)", took)
+        self.assertIn("color: panel.logic && !panel.logic.noteBad ? pane.mutedColor : panel.negative", panel)
+        clear = logic[logic.index("    function clear() {"):]
+        clear = clear[:clear.index("\n    }\n")]
+        self.assertIn("part = null", clear)
+        self.assertIn('partAsked = ""', clear)
+        # the panel: where the part starts and its cost, × back to all of it; what each answer saw; Ask with the
+        # whole chat only on an answer about a part
+        self.assertIn("Sides.fromNote(part, Sides.sideWarm(shown, pick, now, part.key))", panel)
+        self.assertIn("Sides.SIDE_FROM_TIP", panel)
+        self.assertIn("tip: Sides.SIDE_WHOLE_TIP", panel)
+        self.assertIn("Accessible.name: Sides.SIDE_WHOLE", panel)
+        self.assertIn("onClicked: panel.logic.wholeChat()", panel)
+        self.assertIn("saw: Sides.sideSaw(s), parted: phase === \"answered\" && !!s.from", panel)
+        self.assertIn('(entry.saw !== "" ? " · " + entry.saw : "")', panel)
+        self.assertIn("Sides.SIDE_ASK_WHOLE", panel)
+        self.assertIn("logic.askWhole({ q: entry.q })", panel)
+        # the line: the panel's (made only while it has a part), never ChatPane's; in a row's gap or the head
+        self.assertIn('active: panel.part !== null\n        source: active ? "SideFromLine.qml" : ""', panel)
+        self.assertNotIn("SideFromLine.qml\"", pane)
+        self.assertIn("Sides.SIDE_FROM_LINE", line)
+        self.assertIn('objectName: "listHead"', pane)
+        self.assertIn("parent: from.row && !from.first ? from.row : from", line)
+        self.assertIn("y: from.row ? Math.max(0, Math.round((from.row.gap - height) / 2)) : 0", line)
+        self.assertIn("parent: head || from", line)
+        self.assertNotRegex(line, r"\.(gap|height|implicitHeight)\s*=[^=]")   # (no row made taller)
+        self.assertNotIn("forceLayout", line)
+        self.assertNotIn("pane.start(", line)   # (nothing read for it)
+        self.assertIn("enabled: from.missing\n        function onFrameSwapped()", line)
 
     def test_bookmarks_are_made_only_when_wanted(self):
         # Talpy Chat's bookmarks (6i): what they do (Bookmarks.qml, with bookmarks.mjs), their list

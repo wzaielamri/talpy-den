@@ -473,10 +473,13 @@ Window {
     // reply move it out of the way (sideAway: not kept). Kept for the next window as you leave it
     // (sideQuestionsOpen), but one opens on its own only where it's beside the chat (over it, it would hide
     // every chat you open). "Explain this" by a selection (ExplainButton.qml) and in the right-click menu
-    // asks about what you selected. What asks and takes the answers (Sides.qml, with sides.mjs) is read and
-    // made only once you ask or the panel shows; the toggle and the panel after the window's first frame.
-    // VS Code chat.tsx: the same rules (shared/pane.ts SIDE_WIDE)
-    property var sides: []          // [{id, q, at, pick, model, a, done, error, synthetic, pending}], oldest first: pane.py's
+    // asks about what you selected, from its message's turn on; "Ask from here" in a message's right-click
+    // menu makes the panel's questions see only the chat from that message's turn on (a part: less to
+    // send), shown by a line in the chat while the panel is open (SideFromLine.qml). What asks and takes
+    // the answers (Sides.qml, with sides.mjs) is read and made only once you ask or the panel shows; the
+    // toggle and the panel after the window's first frame. VS Code chat.tsx: the same rules (shared/pane.ts
+    // SIDE_WIDE)
+    property var sides: []          // [{id, q, at, pick, model, a, done, error, synthetic, pending, since, from}], oldest first: pane.py's
     property real sidesV: 0         // (its version, pane.py's: an older answer's list isn't taken)
     property bool sidesOn: false    // (the panel)
     property bool sideFocus: false  // (opened by you: its box takes the focus once it's made)
@@ -500,8 +503,12 @@ Window {
         return sideLogic.item
     }
     readonly property int sideCount: sideLogic.item ? sideLogic.item.shown.length : sides.length
-    // Opened or closed with its toggle, its ×, Esc in it: kept (focus: its box takes it)
-    function showSides(on, focus) {
+    // Opened or closed with its toggle, its ×, Esc in it: kept (focus: its box takes it). Beside the chat,
+    // its column narrows or widens: what you read stays (holdPlace; key: the message to keep where it is,
+    // Ask from here's or Explain this')
+    function showSides(on, focus, key) {
+        if (sideWide && sideCan && on !== sidesOn)
+            holdPlace(key || "")
         if (on) {
             quoteAt = null
             if (!sideWide)
@@ -518,15 +525,45 @@ Window {
         else
             sideFocus = focus
     }
+    // The chat's column made narrower or wider (the panel beside it), its rows wrap again: at the end it
+    // stays there (keepEnd), at the top too (the list keeps it); else the message with that key, when it's
+    // in view (the one you asked from), or the one at the top stays where it is while they do (holdTop,
+    // keepPlace), unless you scroll
+    function holdPlace(key) {
+        if (!loaded || !conversationTab)
+            return
+        if (nearEnd()) {
+            keepEnd()
+            return
+        }
+        if (list.contentY <= list.originY + 1)
+            return
+        const i = key ? shownList.findIndex(it => String(it.key) === key) : -1
+        const r = i >= 0 ? list.itemAtIndex(i) : null
+        chatTop = r && r.listed && r.y + r.height > list.contentY && r.y < list.contentY + list.height
+                  ? [key, r.y - list.contentY, i] : topMessage()
+        if (chatTop)
+            holdTop.restart()
+    }
     // (over the chat: hidden for what you went to under it, not kept)
     function sideAway() {
         if (sidesOn && !sideWide)
             sidesOn = false
     }
     onBookmarksOnChanged: if (bookmarksOn) sideAway()
-    function explain(selected) {   // (Explain this: what you selected, a side question)
+    function explain(selected, key) {   // (Explain this: what you selected, a side question from its message's turn on)
         quoteAt = null
-        sidesNow().explain(selected)
+        sidesNow().explain(selected, key !== undefined ? key : selectionKey())
+    }
+    function askFrom(key) {   // (Ask from here, a message's right-click menu: side questions see from its turn on)
+        quoteAt = null
+        sidesNow().fromHere(key)
+    }
+    // A message side questions can be asked from: one in the chat (its queued- key too: one sent while
+    // Claude worked), not one this window shows before the chat has it (pending-, an answer shown at once)
+    function askable(key) {
+        const k = String(key || "")
+        return k !== "" && k.indexOf("pending-") !== 0 && k.indexOf("answer-") !== 0
     }
     function keyAction(event) {
         return paneKeys.item ? paneKeys.item.keyAction(event) : ""
@@ -2814,6 +2851,13 @@ Window {
             .map(i => boxAt(i)).filter(b => b && b.selectedText !== "")
             .map(b => Md.copiedText(b.selectedText)).join("\n\n")
     }
+    // (the message what's selected starts in, when it's in the chat: Explain this asks from its turn on. Only
+    // messages' text boxes select, never a day line or the side questions' line: the message after it)
+    function selectionKey() {
+        const at = Object.keys(selOthers).map(k => selIndex(k, selOthers[k])).concat([selIndex(selFrom, selFromAt)])
+            .filter(i => i >= 0 && boxAt(i) && boxAt(i).selectedText !== "").sort((a, b) => a - b)
+        return at.length && askable(keyAt(at[0])) ? keyAt(at[0]) : ""
+    }
     function copyAcross(event) {   // (Ctrl+C in a message: what's selected, in others too; Ctrl+A: every message)
         if (event.matches(StandardKey.Copy)) {
             const text = selectionText()
@@ -3680,6 +3724,7 @@ Window {
 
                         ColumnLayout {
                             id: headerColumn
+                            objectName: "listHead"   // (SideFromLine.qml puts its line last in it, above the first row)
                             width: parent.width
 
                             // (room for the find bar above the first row while it's open, so Show earlier

@@ -13,8 +13,14 @@ import "sides.mjs" as Sides
 // - Remove (×) and Remove all hide them at once, then pane.py --side-question --remove takes them out of
 //   the list it keeps; one that fails comes back, and the panel says why (note). One removed while
 //   it's on its way is taken out of pane.py's list once its answer is in.
-// - Ask again (one with no answer): that one goes, and its question is asked again on the model picked now.
+// - Ask again (one with no answer): that one goes, and its question is asked again on the model picked now,
+//   about the same part as before.
 // - The model picked (sideQuestionModel: "" the chat's own, sonnet or haiku) is every window's.
+// - Ask from here (a message's right-click menu) and Explain this: the panel's part, what side questions
+//   see: the chat from the start of that message's turn on (pane.py --side-question --part: where it
+//   starts and what it costs, ~0.2 s, never on the UI thread). Each question asked meanwhile goes with
+//   --from that part's key; Ask with the whole chat asks one again without. Kept for the chat this window
+//   shows, not for the next one (clear) nor in other windows; the line in the chat: SideFromLine.qml.
 Item {
     id: logic
     objectName: "sideLogic"
@@ -26,12 +32,23 @@ Item {
     property int count: 0
     property var gone: ({})      // id -> true: removed, pane.py's answer on its way
     property real goneBefore: 0  // (Remove all: the ones asked by then are gone, till pane.py's answer)
-    property string note: ""     // (one that couldn't be removed: why, in the panel a moment)
+    property string note: ""     // (one that couldn't be removed, a part there's none of: why, in the panel a moment)
+    property bool noteBad: false // (one that went wrong: in the theme's negative colour; a part there's none of: muted)
     Timer {
         id: noteTimer
         interval: 12000
         onTriggered: logic.note = ""
     }
+    function say(text, bad) {
+        note = text
+        noteBad = bad
+        noteTimer.restart()
+    }
+
+    // The part side questions see (pane.py's {key: your message that starts its turn, text, at, tokens,
+    // of}), null: all of the chat; partAsked: the key being looked up (an older lookup's answer isn't taken)
+    property var part: null
+    property string partAsked: ""
 
     readonly property string pick: {
         const p = String(Plasmoid.configuration.sideQuestionModel || "").toLowerCase()
@@ -47,7 +64,8 @@ Item {
         const list = pane.sides.filter(s => s && !gone[s.id] && !(goneBefore > 0 && (s.at || 0) <= goneBefore))
         const handoff = {}, claimed = {}, hidden = {}, mine = []
         for (const a of asking) {
-            const found = a.pending ? list.find(s => !claimed[s.id] && s.q === a.q && (s.pick || "") === a.pick && (s.at || 0) >= a.at - 5000) : null
+            const found = a.pending ? list.find(s => !claimed[s.id] && s.q === a.q && (s.pick || "") === a.pick
+                                                && (s.since || "") === (a.since || "") && (s.at || 0) >= a.at - 5000) : null
             if (found) {
                 claimed[found.id] = true
                 if (a.dropped)
@@ -62,26 +80,55 @@ Item {
     readonly property var shown: view.list
     readonly property var handoff: view.handoff
 
-    // A question about the chat shown, on the model picked: false when there's none to ask (or no chat)
-    function ask(text) {
+    // A question about the chat shown, on the model picked: false when there's none to ask (or no chat).
+    // since: the key of the message it's asked from (--from), "" all of the chat; left out, the panel's part
+    // (or the one being looked up)
+    function ask(text, since) {
         const q = String(text || "").trim()
         if (q === "" || !pane.chatId || pane.fresh)
             return false
         const id = "local-" + (++count)
         const at = Date.now()
-        asking = asking.concat([{ id: id, q: q, pick: pick, at: at, model: "", pending: true }])
+        const from = since !== undefined ? String(since || "") : part ? String(part.key) : partAsked
+        asking = asking.concat([{ id: id, q: q, pick: pick, at: at, model: "", pending: true, since: from }])
         pane.start("--side-question " + root.shellQuote(pane.chatId) + " --text " + root.shellQuote(q)
-                   + (pick ? " --model " + pick : "") + pane.paneArgs() + " # " + at + "." + id,
-                   { kind: "side", chat: pane.chatId, host: pane.host, local: id, q: q, pick: pick, at: at })
+                   + (pick ? " --model " + pick : "") + (from ? " --from " + root.shellQuote(from) : "") + pane.paneArgs()
+                   + " # " + at + "." + id,
+                   { kind: "side", chat: pane.chatId, host: pane.host, local: id, q: q, pick: pick, at: at, since: from })
         return true
     }
-    // Explain this: what you selected, quoted, asked in the panel (opened if it's closed)
-    function explain(selected) {
+    // Explain this: what you selected, quoted, asked in the panel (opened if it's closed), from the turn of
+    // the message it's in (key; the first one's when it spans several): that part is the panel's too
+    function explain(selected, key) {
         const q = Sides.explainQuestion(selected)
         if (q === "")
             return
-        pane.showSides(true, true)
-        ask(q)
+        pane.showSides(true, true, key)   // (beside the chat: that message stays where it is as the chat narrows)
+        if (key)
+            lookPart(key)
+        ask(q, key || undefined)
+    }
+    // Ask from here: the panel (opened if it's closed) sees the chat from that message's turn on
+    function fromHere(key) {
+        if (!key || !pane.chatId || pane.fresh)
+            return
+        pane.showSides(true, true, key)
+        lookPart(key)
+    }
+    function lookPart(key) {
+        partAsked = String(key)
+        pane.start("--side-question " + root.shellQuote(pane.chatId) + " --part " + root.shellQuote(partAsked)
+                   + pane.paneArgs() + " # " + Date.now(),
+                   { kind: "side", chat: pane.chatId, host: pane.host, part: partAsked })
+    }
+    // The panel's × on its part: all of the chat again
+    function wholeChat() {
+        part = null
+        partAsked = ""
+    }
+    // Ask with the whole chat (one asked about a part): the same question, all of the chat, on the pick now
+    function askWhole(s) {
+        ask(s.q, "")
     }
     // One of them ("all": every one of the chat's) out of the list at once, then out of pane.py's
     function remove(id) {
@@ -104,14 +151,24 @@ Item {
                    + (host ? " --host " + root.shellQuote(host) : "") + " # " + Date.now(),
                    { kind: "side", chat: chat, host: host, remove: id })
     }
-    function askAgain(s) {
+    function askAgain(s) {   // (the same part as before: its since)
         remove(String(s.id))
-        ask(s.q)
+        ask(s.q, s.since || "")
     }
 
-    // (its answer, ChatPane handle: an answer and the chat's list as pane.py keeps it, or why not)
+    // (its answer, ChatPane handle: an answer and the chat's list as pane.py keeps it, or why not; a part)
     function took(result, asked) {
         const here = asked.chat === pane.chatId && asked.host === pane.host
+        if (asked.part !== undefined) {   // (--part: the newest lookup's, for the chat shown)
+            if (!here || asked.part !== partAsked)
+                return
+            partAsked = ""
+            part = result.ok && result.part && result.part.key ? result.part : null
+            if (part === null)   // (the panel stays on the whole chat, and says why)
+                say(result.ok ? Sides.SIDE_FROM_COMPACTED : result.missing ? Sides.SIDE_FROM_GONE
+                    : result.message || i18n("That didn't work"), !result.ok && !result.missing)
+            return
+        }
         if (asked.remove !== undefined) {
             if (here && Sides.newerSides(result.sides, result.sidesV, pane.sidesV)) {
                 pane.sides = result.sides
@@ -124,10 +181,8 @@ Item {
                 delete next[asked.remove]
                 gone = next
             }
-            if (here && !result.ok) {
-                note = result.message || i18n("That didn't work")
-                noteTimer.restart()
-            }
+            if (here && !result.ok)
+                say(result.message || i18n("That didn't work"), true)
             return
         }
         const was = asking.find(a => a.id === asked.local) || null
@@ -148,15 +203,18 @@ Item {
         }
         // (one that couldn't even be asked, too long say: why, in its place, to ask again or remove)
         if (!result.ok && !result.side && !(was && was.dropped))
-            asking = asking.concat([{ id: asked.local, q: asked.q, pick: asked.pick, at: asked.at, model: "",
+            asking = asking.concat([{ id: asked.local, q: asked.q, pick: asked.pick, at: asked.at, model: "", since: asked.since,
                                       error: result.message || i18n("That didn't work"), done: Date.now() }])
     }
 
-    // Another chat shown: none of this one's (the answers still on their way are left out when they come)
+    // Another chat shown: none of this one's (the answers still on their way are left out when they come);
+    // the part side questions see: all of the new one
     function clear() {
         asking = []
         gone = {}
         goneBefore = 0
         note = ""
+        part = null
+        partAsked = ""
     }
 }

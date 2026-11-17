@@ -22,7 +22,7 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, defaultGroup, doingText, hostLabel, liveOf, machineStatus, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, shownUpTo, sideAnswerOf, sidePickOf, sidesOf, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult, type SidePick } from "./shared/pane";
+import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, shownUpTo, sideAnswerOf, sideKeyOk, sidePartAnswerOf, sidePickOf, sidesOf, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult, type SidePick } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -1063,6 +1063,11 @@ class Pane implements vscode.Disposable {
           this.post(sideAnswerOf("ask", m.id, chatId, { ok: false, message: !text ? "Write your question first" : pick === null ? "Not a model side questions can use" : "That question is too long" }));
           break;
         }
+        // (Ask from here, Explain this: about the part of the chat from that message's turn on)
+        if (m.from !== undefined && !sideKeyOk(m.from)) {
+          this.post(sideAnswerOf("ask", m.id, chatId, { ok: false, message: "Which message?" }));
+          break;
+        }
         // (a long one in a file of its own, as a message is; a host's too, out of the process list)
         const file = this.host || Buffer.byteLength(text) > TEXT_IN_ARGS ? path.join(cacheDir(), `text-${crypto.randomUUID()}.txt`) : "";
         let r: Record<string, unknown>;
@@ -1072,7 +1077,7 @@ class Pane implements vscode.Disposable {
             fs.writeFileSync(file, text, { mode: 0o600, flag: "wx" });
           }
           r = await backend.pane(["--side-question", chatId, ...(file ? ["--text-file", file] : ["--text", text]), ...(pick ? ["--model", pick] : []),
-                                  ...profile, ...where], this.host ? HOST_SIDE_TIMEOUT_MS : SIDE_TIMEOUT_MS);
+                                  ...(m.from !== undefined ? ["--from", m.from] : []), ...profile, ...where], this.host ? HOST_SIDE_TIMEOUT_MS : SIDE_TIMEOUT_MS);
         } catch (e) {
           r = { ok: false, message: e instanceof Error ? e.message : String(e) };
         } finally {
@@ -1088,6 +1093,16 @@ class Pane implements vscode.Disposable {
         const r = await backend.pane(["--side-question", chatId, "--remove", m.side, ...where], this.host ? 30000 : 15000)
           .catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as Record<string, unknown>);
         this.post(sideAnswerOf("remove", m.id, chatId, r));
+        break;
+      }
+      case "sidePart": {
+        // Ask from here: where a part of the chat from that message's turn on starts and what it costs (pane.py
+        // --side-question --part, read where the chat is: a host's there); one call per message picked
+        if (typeof m.id !== "number" || !sideKeyOk(m.key) || this.fresh) break;
+        const chatId = this.chatId;
+        const r = await backend.pane(["--side-question", chatId, "--part", m.key, ...profile, ...where], this.host ? 30000 : 15000)
+          .catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as Record<string, unknown>);
+        this.post(sidePartAnswerOf(m.id, chatId, r));
         break;
       }
       case "sidePrefs":

@@ -1038,14 +1038,28 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   a chat in the middle of a tool call answered too. A resumed chat keeps the context it started with (its
   `session_context` entry), so copies start alike and later questions read the cache; a background chat's
   system prompt names its own job, so its copy doesn't share the chat's cache.
-  - Used in: side.py ask, command, request, read_answer; talpy_den.py ask_side, finish_side, side_history,
-    SIDE_WAIT_S; pane.py side_question, --side-question.
+  - Parts (Ask from here, Explain this: `--from KEY`): Claude Code reads a chat from its newest
+    `compact_boundary` (a system entry, `parentUuid` null) and the `isCompactSummary` user entry under it, so a
+    part is a transcript of its own: such a boundary, a note that the start is left out, and the chat's entries
+    from your message that starts the turn on (the first one's `parentUuid` the note's). `claude --resume ID`
+    finds an id only in the project folder of the folder it runs in (no path form), so the part is written
+    beside the chat, under `51de51de-c0de-4…` (SIDE_COPY_PREFIX, which every reader of transcripts skips), and
+    deleted once the copy says the side question started. Every entry's `sessionId` AND `session_id` are the
+    part's: a `session_id` naming the chat is how a chat Claude moved to the background is told
+    (LinkCache.moved_from), and a part that kept it moved the chat's side questions and marks to the part (seen
+    with 1.20.0 installed). Size: what Claude read for its newest reply less what it had read and written by
+    the last reply before the part (`--part KEY`).
+  - Used in: side.py ask, command, request, read_answer, cut_at, part_of, part_size, write_part; talpy_den.py
+    ask_side, finish_side, side_history, SIDE_WAIT_S, SIDE_COPY_PREFIX, side_copy; pane.py side_question,
+    side_part, --side-question.
   - Check: `strings ~/.local/share/claude/versions/<new> | grep -c 'subtype==="side_question"'` (should print
     1 or more) and the flags in `claude --help`; ask a throwaway `claude -p --model haiku` chat a side question
     (pane.py --side-question) and look that no new transcript appears in its project folder.
   - Breaks: no answer ("side_question is not supported in this context", "Claude ended without answering"), a
-    copy saved as a chat of its own (a new transcript), or hooks running for it (a short-lived extra row).
-  - Test: SideQuestionTests (test_pane.py), SideStoreTests (test_talpy_den.py). Fixtures only.
+    copy saved as a chat of its own (a new transcript), or hooks running for it (a short-lived extra row); a
+    part answered as if it saw the whole chat (the boundary format changed), "No conversation found" for a part
+    (where --resume looks changed), or a chat's side questions moving to a `51de51de-` id (a part looked moved).
+  - Test: SideQuestionTests, SideFromTests (test_pane.py), SideStoreTests (test_talpy_den.py). Fixtures only.
 - [ ] **Bookmarks and their reach.** Bookmarks are Talpy Den's own files
   (`~/.cache/talpy-den/bookmarks/<chat>.json`), but each keeps a message's item key: your prompt's `uuid` or
   Claude's `message.id`. They rely on those ids being the same at every read and in a moved chat's copy

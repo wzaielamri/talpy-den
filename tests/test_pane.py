@@ -24,6 +24,7 @@ CODE = Path(__file__).resolve().parent.parent / "package/contents/code"
 sys.path.insert(0, str(CODE))
 import jump  # noqa: E402
 import pane  # noqa: E402
+import side  # noqa: E402
 import permission_hook  # noqa: E402
 import replies  # noqa: E402
 import commands as commands_py  # noqa: E402
@@ -4192,6 +4193,15 @@ note({{"argv": sys.argv[1:], "cwd": os.getcwd(), "config": os.environ.get("CLAUD
        "session": os.environ.get("CLAUDECODE")}})
 req = json.loads(sys.stdin.readline())
 note({{"request": req}})
+rid = sys.argv[sys.argv.index("--resume") + 1]
+if rid.startswith("51de51de-"):   # (a part of the chat: what it holds, as claude reads it)
+    import glob
+    found = glob.glob(os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", "*", rid + ".jsonl"))
+    note({{"part": [json.loads(l) for l in open(found[0])] if found else None, "path": found[0] if found else None}})
+    print(json.dumps({{"type": "system", "subtype": "control_request_progress", "request_id": req["request_id"],
+                      "status": "started"}}), flush=True)
+    time.sleep(0.3)
+    note({{"partAfterStart": os.path.exists(found[0]) if found else None}})
 q, rid = req["request"]["question"], req["request_id"]
 print(json.dumps({{"type": "system", "subtype": "init", "tools": ["Bash"] * 50}}), flush=True)
 if "fail" in q:
@@ -4212,10 +4222,8 @@ sys.stdin.read()
 """
 
 
-class SideQuestionTests(PaneFixture):
-    """Side questions (pane.py --side-question, side.py): put to a copy of the
-    chat Claude doesn't keep, kept on this computer per chat (a host's chat's
-    too, asked there), carried in --conversation's answers."""
+class SideFixture(PaneFixture):
+    """A fake claude that answers side questions (FAKE_SIDE_CLAUDE)."""
 
     def setUp(self):
         super().setUp()
@@ -4226,16 +4234,25 @@ class SideQuestionTests(PaneFixture):
         found = mock.patch.object(cs, "find_claude", return_value=str(self.bin / "claude"))
         found.start()
         self.addCleanup(found.stop)
-        t = self.now - 100
-        reply = text_reply("Done.", t + 1, "m1", "end_turn")
-        reply["message"]["model"] = "claude-opus-5-5"
-        self.chat(dict(prompt("fix it", t, cwd=str(self.folder)), uuid="u1"), reply)
 
     def ask(self, text, *more):
         return self.cli("--side-question", SID, "--text", text, *more)
 
     def calls(self):
         return [json.loads(l) for l in self.log.read_text().splitlines()] if self.log.exists() else []
+
+
+class SideQuestionTests(SideFixture):
+    """Side questions (pane.py --side-question, side.py): put to a copy of the
+    chat Claude doesn't keep, kept on this computer per chat (a host's chat's
+    too, asked there), carried in --conversation's answers."""
+
+    def setUp(self):
+        super().setUp()
+        t = self.now - 100
+        reply = text_reply("Done.", t + 1, "m1", "end_turn")
+        reply["message"]["model"] = "claude-opus-5-5"
+        self.chat(dict(prompt("fix it", t, cwd=str(self.folder)), uuid="u1"), reply)
 
     def test_a_question_goes_to_a_copy_of_the_chat_and_is_kept(self):
         got = self.ask("why that file?")
@@ -4325,7 +4342,7 @@ class SideQuestionTests(PaneFixture):
         self.assertEqual((host, action), ("gpu", "--side-question"))
         self.assertEqual(args, ["--side-question", SID, "--text", "how far?", "--profile", "work", "--history", "[]"])
         self.assertEqual(json.loads(forwarded.call_args_list[1][0][1][-1]),
-                         [{"question": "how far?", "response": "From the host"}])
+                         [{"question": "how far?", "response": "From the host", "part": ""}])   # (about all of it)
         self.assertEqual(forwarded.call_count, 2)   # (a removal is never sent there)
         self.assertEqual([s["q"] for s in removed["sides"]], ["and?"])
         self.assertEqual(os.listdir(self.cache / "side-questions"), ["host-" + cs.short_id("gpu")])
@@ -4342,8 +4359,152 @@ class SideQuestionTests(PaneFixture):
         self.assertFalse((self.cache / "side-questions").exists())
 
     def test_the_usage_says_so(self):
-        self.assertIn("--side-question CHAT --text Q [--model sonnet|haiku] [--profile P] [--host HOST]", pane.__doc__)
+        self.assertIn("--side-question CHAT --text Q [--model sonnet|haiku] [--from KEY] [--profile P] [--host HOST]",
+                      pane.__doc__)
+        self.assertIn("--side-question CHAT --part KEY [--profile P] [--host HOST]", pane.__doc__)
         self.assertIn("--side-question CHAT --remove ID|all [--host HOST]", pane.__doc__)
         import remote
         self.assertIn("--history", remote.TEXT_ARGS)   # (on stdin to a host, as your text)
         self.assertEqual(pane.ACTION_MODULES["--side-question"], ("side.py",))
+
+
+class SideFromTests(SideFixture):
+    """Ask from here and Explain this (pane.py --side-question --from KEY, --part KEY; side.write_part):
+    the copy gets the chat from the start of that message's turn on, as a transcript of its own beside the
+    chat that's gone once claude read it, and that never looks like the chat or a move of it."""
+
+    OLD = "0ld0c4a7-1111-4222-8333-444455556666"   # (the chat it moved from: entries carry it in session_id)
+
+    def reply(self, text, ts, mid, read, out=100):
+        r = text_reply(text, ts, mid, "end_turn")
+        r["message"].update(model="claude-opus-5-5", usage={"input_tokens": 0, "cache_read_input_tokens": read,
+                                                             "cache_creation_input_tokens": 0, "output_tokens": out})
+        return dict(r, uuid="e-" + mid, session_id=self.OLD)
+
+    def setUp(self):
+        super().setUp()
+        t = self.t = self.now - 100
+        mine = dict(session_id=self.OLD)
+        self.chat(dict(prompt("first task", t, cwd=str(self.folder)), uuid="u1", **mine),
+                  self.reply("did it", t + 1, "m1", 30000),
+                  dict(prompt("second task", t + 2), uuid="u2", **mine),
+                  dict(tool_use("t2", "Bash", {"command": "ls"}, t + 3, msg="m2a"), uuid="e-m2a", **mine),
+                  dict(tool_result("t2", t + 4), uuid="r2", **mine),
+                  self.reply("second done", t + 5, "m2", 45000),
+                  dict(prompt("third task", t + 6), uuid="u3", **mine),
+                  self.reply("third done", t + 7, "m3", 60000, out=200))
+
+    def part_seen(self):
+        return next(c["part"] for c in self.calls() if "part" in c)
+
+    def test_a_question_from_a_reply_reads_its_turn_on_and_says_which_part(self):
+        got = self.ask("why that?", "--from", "m2")   # (Claude's reply: from your message that started its turn)
+        self.assertTrue(got["ok"], got)
+        part = {"key": "u2", "text": "second task", "at": int((self.t + 2) * 1000), "tokens": 60200 - 30100,
+                "of": 60200}
+        self.assertEqual(got["side"]["from"], part)
+        self.assertEqual(got["side"]["since"], "m2")
+        seen = self.part_seen()
+        boundary, note, first = seen[0], seen[1], seen[2]
+        self.assertEqual((boundary["type"], boundary["subtype"], boundary["parentUuid"]), ("system", "compact_boundary", None))
+        self.assertEqual((note["isCompactSummary"], note["parentUuid"], note["message"]["content"]),
+                         (True, boundary["uuid"], side.COPY_NOTE))
+        self.assertEqual((first["uuid"], first["parentUuid"]), ("u2", note["uuid"]))
+        self.assertEqual([e["uuid"] for e in seen[2:]], ["u2", "e-m2a", "r2", "e-m2", "u3", "e-m3"])
+        rid = self.calls()[0]["argv"][2]
+        self.assertTrue(rid.startswith(cs.SIDE_COPY_PREFIX), rid)
+        self.assertEqual({e.get("sessionId") for e in seen}, {rid})
+        self.assertEqual({e["session_id"] for e in seen if "session_id" in e}, {rid})   # (never the chat's: no move)
+        self.assertIs(next(c["partAfterStart"] for c in self.calls() if "partAfterStart" in c), False)   # (gone once read)
+        self.assertEqual([n for n in os.listdir(self.transcript.parent) if cs.side_copy(n)], [])
+        self.assertEqual(self.calls()[0]["cwd"], str(self.folder))   # (the chat's folder: its project's part)
+        # the estimate says the same, at once, without asking anything
+        self.assertEqual(self.cli("--side-question", SID, "--part", "m2"), {"ok": True, "part": part})
+        whole = self.cli("--side-question", SID, "--part", "u1")["part"]
+        self.assertEqual((whole["key"], whole["tokens"], whole["of"]), ("u1", 60200, 60200))
+        self.assertEqual(self.cli("--side-question", SID, "--part", "gone"), {"ok": True, "part": None})
+        self.assertEqual(self.cli("--side-question", SID, "--part", "-x")["message"], "Which message?")
+
+    def test_a_tool_call_or_an_answer_key_starts_at_its_turn_too(self):
+        self.assertEqual(self.cli("--side-question", SID, "--part", "t2")["part"]["key"], "u2")
+        self.assertEqual(self.cli("--side-question", SID, "--part", "t2/answer")["part"]["key"], "u2")
+
+    def test_a_part_never_looks_like_the_chat_moved_and_readers_skip_it(self):
+        entries = side.read_entries(self.transcript)
+        path, rid = side.write_part(self.transcript, entries, side.cut_at(entries, "u3"))
+        links = cs.LinkCache(self.cache / "links.json")
+        self.assertEqual(links.moved_from(self.transcript), self.OLD)   # (the chat itself did move: told)
+        self.assertEqual(links.moved_from(path), "")   # (its part didn't: it would take the chat's things along)
+        profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
+        self.assertNotIn(path, [f for f, _ in cs.transcript_files(profile)])
+        self.assertEqual(cs.continuation(self.home, [], "work", SID), SID)
+        os.utime(path, (time.time() - side.COPY_STALE_S - 5,) * 2)   # (one a copy that ended badly left)
+        later, _ = side.write_part(self.transcript, entries, side.cut_at(entries, "u3"))
+        self.assertFalse(path.exists())
+        self.assertTrue(later.exists())
+
+    def test_the_whole_chat_where_no_part_can_be(self):
+        # (a message no longer in the chat: all of it, and the answer says so: no "from")
+        got = self.ask("where?", "--from", "gone")
+        self.assertEqual((got["ok"], got["side"]["since"], got["side"].get("from")), (True, "gone", None))
+        self.assertEqual(self.calls()[0]["argv"][2], SID)
+        # (compacted after the message: the chat as Claude reads it is shorter than the part)
+        with open(self.transcript, "a") as f:
+            f.write(json.dumps({"type": "system", "subtype": "compact_boundary", "uuid": "cb", "parentUuid": None}) + "\n")
+        self.assertEqual(self.cli("--side-question", SID, "--part", "m2"), {"ok": True, "part": None})
+        self.assertEqual(self.cli("--side-question", SID, "--text", "x", "--from", "-x")["message"], "Which message?")
+
+    def test_a_hosts_goes_with_its_message_there(self):
+        there = {"ok": True, "answer": "Hi", "model": "m", "from": {"key": "u2", "text": "t", "at": 1, "tokens": 5, "of": 9}}
+        with mock.patch.object(pane, "forward", return_value=dict(there)) as forwarded:
+            got = self.cli("--side-question", SID, "--text", "q?", "--from", "m2", "--host", "gpu")
+            part = self.cli("--side-question", SID, "--part", "m2", "--host", "gpu")
+        self.assertEqual(forwarded.call_args_list[0][0][1][:6], ["--side-question", SID, "--text", "q?", "--from", "m2"])
+        self.assertEqual(got["side"]["from"], there["from"])
+        self.assertEqual(forwarded.call_args_list[1][0][1], ["--side-question", SID, "--part", "m2"])
+        self.assertEqual(part["from"], there["from"])   # (the host's answer as it is)
+
+    def queued_chat(self):
+        """The chat with its second message sent while Claude worked (queued, then Claude's next prompt), and a
+        third one taken in during the third turn (a queued_command), as Claude Code writes them."""
+        t = self.t
+        q2, q3 = t + 1.5, t + 6.5
+        mine = dict(session_id=self.OLD)
+        self.chat(dict(prompt("first task", t, cwd=str(self.folder)), uuid="u1", **mine),
+                  {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(q2), "content": "second task"},
+                  self.reply("did it", t + 1, "m1", 30000),
+                  {"type": "queue-operation", "operation": "dequeue", "timestamp": iso(t + 1.8)},
+                  dict(prompt("second task", t + 2), uuid="u2", **mine),
+                  self.reply("second done", t + 5, "m2", 45000),
+                  dict(prompt("third task", t + 6), uuid="u3", **mine),
+                  {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(q3), "content": "and this"},
+                  {"type": "attachment", "uuid": "a3", "timestamp": iso(t + 6.8),
+                   "attachment": {"type": "queued_command", "commandMode": "prompt", "prompt": "and this"}},
+                  self.reply("third done", t + 7, "m3", 60000, out=200))
+        return "queued-%d" % int(q2 * 1000), "queued-%d" % int(q3 * 1000)
+
+    def test_a_message_sent_while_claude_worked_has_its_queued_key(self):
+        k2, k3 = self.queued_chat()
+        keys = [i["key"] for i in self.cli("--conversation", SID)["items"] if i["kind"] == "you"]
+        self.assertEqual(keys[:2], ["u1", k2])   # (pane.py's own keys for them)
+        self.assertIn(k3, keys)
+        for key in (k2, "m2"):   # (the queued message, or Claude's reply to it: from that turn, under its key)
+            part = self.cli("--side-question", SID, "--part", key)["part"]
+            self.assertEqual((part["key"], part["text"], part["tokens"]), (k2, "second task", 60200 - 30100))
+        part = self.cli("--side-question", SID, "--part", k3)["part"]   # (taken in mid-turn: from that turn)
+        self.assertEqual(part["key"], "u3")
+        self.assertEqual(self.cli("--side-question", SID, "--part", "queued-5"), {"ok": True, "part": None})
+        got = self.ask("why?", "--from", k2)
+        self.assertEqual(got["side"]["from"]["key"], k2)
+        self.assertEqual([e.get("uuid") for e in self.part_seen()[2:4]], ["u2", "e-m2"])
+
+    def test_follow_ups_go_with_the_answers_about_the_same_part(self):
+        self.ask("one?", "--from", "m2")
+        self.ask("all of it?")
+        second = self.ask("two?", "--from", "u2")
+        whole = self.ask("and all?")
+        self.assertEqual(second["side"]["a"], "About two? (1 before)")   # (the first part question's, not the whole one's)
+        self.assertEqual(whole["side"]["a"], "About and all? (1 before)")   # (the whole chat's one)
+        sent = [c["request"]["request"]["history"] for c in self.calls() if "request" in c]
+        self.assertEqual(sent[2], [{"question": "one?", "response": "About one? (0 before)"}])
+        self.assertEqual(sent[3], [{"question": "all of it?", "response": "About all of it? (0 before)"}])

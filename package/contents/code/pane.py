@@ -39,15 +39,23 @@ its permission prompt and its review.
         at MS, its first words TEXT), or not any more (--off); kept on this
         computer, a host's chat's too (talpy_den.change_bookmark). {"ok",
         "message", "bookmarks": the chat's now, "bookmarksV"}
-  --side-question CHAT --text Q [--model sonnet|haiku] [--profile P] [--host HOST]
+  --side-question CHAT --text Q [--model sonnet|haiku] [--from KEY] [--profile P] [--host HOST]
         a side question about the chat (Claude's /btw): answered by a copy
         of it Claude doesn't keep, with no tools, nothing added to the chat
         (side.ask), on the chat's own model or the one named; it goes with
-        the chat's earlier answers (follow-ups). Kept on this computer, a
-        host's chat's too (asked there): talpy_den.ask_side, finish_side.
-        {"ok", "message", "side": the question with its answer ("a") or why
-        none came ("error"), "sides": the chat's now, "sidesV"}. Waits for
-        the answer (up to talpy_den.SIDE_WAIT_S)
+        the chat's earlier answers (follow-ups). --from KEY (Ask from here,
+        Explain this): the copy gets the chat from the start of that
+        message's turn on, not all of it (side.write_part); the answer's
+        "from" says which part. Kept on this computer, a host's chat's too
+        (asked there): talpy_den.ask_side, finish_side. {"ok", "message",
+        "side": the question with its answer ("a") or why none came
+        ("error"), "sides": the chat's now, "sidesV"}. Waits for the answer
+        (up to talpy_den.SIDE_WAIT_S)
+  --side-question CHAT --part KEY [--profile P] [--host HOST]
+        where a part from that message would start and what it costs, for
+        the side questions' line: {"ok", "part": {"key": your message that
+        starts its turn, "text", "at", "tokens", "of": the whole chat's}, or
+        null: the whole chat (side.part_of)}
   --side-question CHAT --remove ID|all [--host HOST]
         remove one of the chat's side questions, or all: {"ok", "message",
         "sides", "sidesV"}
@@ -2657,13 +2665,30 @@ def reply_text(home, extra_dirs, chat_id, profile_key, key):
     return {"ok": True, "text": text} if text is not None else {"ok": False, "message": "That message isn't in the chat any more"}
 
 
-def side_question(home, extra_dirs, cache_root, chat_id, host, profile_key, question, pick, rest, ask=None):
+def side_part(home, extra_dirs, chat_id, profile_key, key):
+    """--side-question --part: where a part from that message starts, and its tokens (side.part_of)."""
+    if not cs.valid_id(chat_id):
+        return {"ok": False, "message": f"Not a chat: {chat_id}"}
+    if not cs.side_since_ok(key):
+        return {"ok": False, "message": "Which message?"}
+    _, path = find_transcript(home, extra_dirs, chat_id, profile_key)
+    if path is None:
+        return {"ok": False, "missing": True, "message": NO_CHAT}
+    import side
+    try:
+        return {"ok": True, "part": side.part_of(path, key)}
+    except OSError as exc:
+        return {"ok": False, "message": exc.strerror or str(exc)}
+
+
+def side_question(home, extra_dirs, cache_root, chat_id, host, profile_key, question, pick, rest, ask=None,
+                  since=None):
     """--side-question: the question kept as on its way (another window, or
     this one opened again, shows it so), put to a copy of the chat here
     (side.ask) or on host (rest: the arguments as it gets them, with the
     chat's earlier answers), its answer or why none came kept with it.
     ask: side.ask's stand-in (tests)."""
-    ok, said, item, items, v = cs.ask_side(cache_root, chat_id, host, question, pick)
+    ok, said, item, items, v = cs.ask_side(cache_root, chat_id, host, question, pick, since=since)
     if not ok:
         return {"ok": False, "message": said, **({"sides": items, "sidesV": v} if v else {})}
     history = cs.side_history(items, item["id"])
@@ -2674,14 +2699,14 @@ def side_question(home, extra_dirs, cache_root, chat_id, host, profile_key, ques
             import side
             ask = side.ask
         try:
-            answer = ask(home, extra_dirs, profile_key, chat_id, item["q"], item["pick"], history)
+            answer = ask(home, extra_dirs, profile_key, chat_id, item["q"], item["pick"], history, since=since)
         except Exception as exc:   # (never left on its way)
             answer = {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
     got = answer.get("answer") if answer.get("ok") else None
     items, v = cs.finish_side(cache_root, chat_id, host, item["id"], got,
                               "" if got else (answer.get("message") or "Claude couldn't answer it"),
                               answer.get("model") if isinstance(answer.get("model"), str) else "",
-                              answer.get("synthetic") is True)
+                              answer.get("synthetic") is True, part=answer.get("from"))
     side = next((s for s in items if s["id"] == item["id"]), None)
     return {"ok": bool(got), "message": "" if got else (answer.get("message") or "Claude couldn't answer it"),
             "side": side, "sides": items, "sidesV": v}
@@ -2745,6 +2770,7 @@ def main(argv=None):
     mark_kind, mark_at, reach = "", 0, None   # (--bookmark's --kind and --at; --conversation's --reach)
     seen, away, since = 0, False, None   # (--conversation's --seen MS, --away and, on a host, --since)
     side_remove, history = None, []   # (--side-question's --remove ID, and --history, on a host)
+    side_from, part_key = None, None   # (--side-question's --from KEY and --part KEY)
     while args:
         arg = args.pop(0)
         if arg in actions and args and action is None:
@@ -2808,13 +2834,18 @@ def main(argv=None):
             reach = args.pop(0)
         elif arg == "--remove" and args:
             side_remove = args.pop(0)
+        elif arg == "--from" and args:
+            side_from = args.pop(0)
+        elif arg == "--part" and args:
+            part_key = args.pop(0)
         elif arg == "--history" and args:
             try:
                 history = json.loads(args.pop(0))
             except ValueError:
                 history = []
             history = [h for h in history if type(h) is dict and type(h.get("question")) is str
-                       and type(h.get("response")) is str] if type(history) is list else []
+                       and type(h.get("response")) is str and type(h.get("part", "")) is str] \
+                if type(history) is list else []
         elif arg == "--since" and args and args[0].isdigit():
             since = int(args.pop(0))
         elif arg == "--seen" and args and args[0].isdigit():
@@ -2876,8 +2907,12 @@ def main(argv=None):
         if action == "--side-question" and side_remove is not None:   # (kept here, a host's chat's too)
             ok, said, items, v = cs.remove_side(cache_root, target, host, side_remove)
             return emit({"ok": ok, "message": said, "sides": items, "sidesV": v})
+        if action == "--side-question" and part_key is not None:   # (read where the chat is)
+            return emit(forward(host, rest, action) if host and not remote
+                        else side_part(home, config_dirs, target, profile, part_key))
         if action == "--side-question" and not remote:   # (kept here; a host's chat's asked there)
-            return emit(side_question(home, config_dirs, cache_root, target, host, profile, text, model or "", rest))
+            return emit(side_question(home, config_dirs, cache_root, target, host, profile, text, model or "", rest,
+                                      since=side_from))
         if action == "--trust-folder":   # (Talpy Chat's Trust it and send: a folder of this computer's)
             if host:
                 return emit({"ok": False, "message": "Trust a folder on another computer in a terminal there"})
@@ -2934,7 +2969,7 @@ def main(argv=None):
                 cs.sides_answer(result, cache_root, target)
         elif action == "--side-question":   # (on a host, for the computer that keeps them: side_question)
             import side
-            result = side.ask(home, config_dirs, profile, target, text, model or "", history)
+            result = side.ask(home, config_dirs, profile, target, text, model or "", history, since=side_from)
         elif action == "--send":
             if after:
                 ok, said = send_later(home, config_dirs, profile, target, text, session, how, "", name)

@@ -6,22 +6,24 @@
 // to its newest while you're at its end.
 //
 // Each: your question (as your messages are), the answer (as Claude's replies are; a stand-in Claude
-// wrote for one muted), when it was asked and on which model; on hover Copy, Quote in reply and Remove
-// (SIDE_ACTIONS' order). One on its way says so; one that got no answer says why, with Ask again.
+// wrote for one muted), when it was asked, on which model and what of the chat it saw (sideSaw); on hover
+// Copy, Quote in reply, Ask with the whole chat (one asked about a part) and Remove (SIDE_ACTIONS' order).
+// One on its way says so; one that got no answer says why, with Ask again.
 // At the foot the box (Enter asks, Shift+Enter: a new line), the model a question goes to and what
-// the next one costs.
+// the next one costs, or, with a part of the chat picked (Ask from here), where it starts and what it
+// costs, with × back to the whole chat.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { SIDE_ACTIONS, SIDE_AGAIN, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_COST_TIP, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS,
-         SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TITLE, sideModelLabel, sidePickLabel, sideState, timeText, type ShownSide,
-         type SidePick } from "../../src/shared/pane";
+import { SIDE_ACTIONS, SIDE_AGAIN, SIDE_ASK_WHOLE, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS,
+         SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TITLE, SIDE_WHOLE, SIDE_WHOLE_TIP, sideModelLabel, sidePickLabel, sideSaw, sideState, timeText,
+         type ShownSide, type SidePick } from "../../src/shared/pane";
 import { I, Icon, T } from "../util/icons";
 import { Markdown } from "../util/markdown";
 import { IconButton } from "./IconButton";
 import { TalpyIcon } from "./TalpyIcon";
 
-export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pick, pickOpen, setPickOpen, cost, note, style,
-                            onAsk, onPick, onRemove, onRemoveAll, onAgain, onCopy, onQuote, onCopyCode, onClose }: {
+export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pick, pickOpen, setPickOpen, line, part, note, style,
+                            onAsk, onPick, onRemove, onRemoveAll, onAgain, onAskWhole, onCopy, onQuote, onCopyCode, onWhole, onClose }: {
   items: readonly ShownSide[];
   wide: boolean; // beside the chat, else over it under its tabs (anchor)
   anchor: { current: HTMLElement | null };
@@ -32,17 +34,20 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
   pick: SidePick;
   pickOpen: boolean;
   setPickOpen: (open: boolean) => void;
-  cost: string; // costNote's line ("": none)
-  note: string; // what went wrong removing one
+  line: { text: string; tip: string }; // sideLine's: what the next one costs, or the part picked ("": none)
+  part: boolean; // a part of the chat picked (Ask from here): × back to all of it
+  note: { text: string; ok: boolean } | null; // what went wrong removing one; Ask from here's word on a part it can't be
   style: Record<string, string>;
   onAsk: (text: string) => void;
   onPick: (pick: SidePick) => void;
   onRemove: (s: ShownSide) => void;
   onRemoveAll: () => void;
   onAgain: (s: ShownSide) => void;
+  onAskWhole: (s: ShownSide) => void;
   onCopy: (s: ShownSide) => void;
   onQuote: (s: ShownSide) => void;
   onCopyCode: (code: string) => void;
+  onWhole: () => void;
   onClose: () => void;
 }) {
   const card = useRef<HTMLDivElement>(null);
@@ -54,8 +59,8 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
   const [copied, setCopied] = useState("");
   // (the rows are made again only when they change, not with each key typed in the chat: their clicks call
   // this render's handlers, which see the pick and the reply box as they are now)
-  const on = useRef({ onRemove, onAgain, onCopy, onQuote });
-  on.current = { onRemove, onAgain, onCopy, onQuote };
+  const on = useRef({ onRemove, onAgain, onAskWhole, onCopy, onQuote });
+  on.current = { onRemove, onAgain, onAskWhole, onCopy, onQuote };
   useEffect(() => {
     if (!copied) return undefined;
     const t = setTimeout(() => setCopied(""), 1500);
@@ -120,10 +125,11 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
     return items.map((s) => {
       const state = sideState(s);
       const model = sideModelLabel(s);
+      const saw = sideSaw(s);
       return (
         <div key={s.id} class="pane-side-item">
           {/* (on hover, over the question's top right, so nothing moves; held at the list's top while a long one
-              goes on below it; Copy and Quote once there's an answer) */}
+              goes on below it; Copy and Quote once there's an answer, Ask with the whole chat on one about a part) */}
           <div class="pane-side-acts-at">
             <div class="pane-side-acts">
               {SIDE_ACTIONS.map((a) => a === "copy" ? (state === "answered" ? (
@@ -133,6 +139,8 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
                 </button>
               ) : null) : a === "quote" ? (state === "answered" ? (
                 <IconButton key={a} icon={I.quote} label={SIDE_QUOTE} onClick={() => on.current.onQuote(s)} />
+              ) : null) : a === "whole" ? (state === "answered" && s.from ? (
+                <IconButton key={a} icon={I.refresh} label={SIDE_ASK_WHOLE} onClick={() => on.current.onAskWhole(s)} />
               ) : null) : (
                 <IconButton key={a} icon={I.cancel} tone={T.cancel} label={SIDE_REMOVE} onClick={() => on.current.onRemove(s)} />
               ))}
@@ -159,7 +167,7 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
               <button type="button" class="btn secondary small" onClick={() => on.current.onAgain(s)}><Icon name={I.refresh} />{SIDE_AGAIN}</button>
             </div>
           )}
-          <div class="pane-side-meta">{timeText(s.at, now)}{model ? ` · ${model}` : ""}</div>
+          <div class="pane-side-meta">{timeText(s.at, now)}{model ? ` · ${model}` : ""}{saw ? ` · ${saw}` : ""}</div>
         </div>
       );
     });
@@ -184,7 +192,7 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
           <button type="button" class="btn secondary small" onClick={() => setClearAsk(false)}>Cancel</button>
         </div>
       ) : null}
-      {note ? <div class="pane-info bad">{note}</div> : null}
+      {note ? <div class={note.ok ? "pane-info" : "pane-info bad"}>{note.text}</div> : null}
       <div class="pane-side-list" ref={list}
         onScroll={(e) => { const el = e.currentTarget; atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
         {items.length ? rows : loaded ? <div class="pane-side-empty">{SIDE_EMPTY}</div> : null}
@@ -226,7 +234,8 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
           ) : null}
         </span>
         <span class="grow" />
-        {cost ? <span class="pane-side-cost" title={SIDE_COST_TIP}>{cost}</span> : null}
+        {line.text ? <span class="pane-side-cost" title={line.tip}>{line.text}</span> : null}
+        {part ? <IconButton class="pane-side-whole" icon={I.cancel} tone={T.cancel} label={SIDE_WHOLE} title={SIDE_WHOLE_TIP} onClick={onWhole} /> : null}
       </div>
     </div>
   );

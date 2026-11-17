@@ -8,8 +8,10 @@ import "sides.mjs" as Sides
 
 // Talpy Chat's right-click menu, each item with its key: on the conversation,
 // Copy (what's selected, across messages too), Quote in reply and Explain this
-// (what's selected: quoted in your reply, or asked as a side question,
-// Sides.qml), Copy message (the message right-clicked, as its Copy button: a
+// (what's selected: quoted in your reply, or asked as a side question from its
+// message's turn on, Sides.qml), Ask from here (the message right-clicked, once
+// it's in the chat, ChatPane askable: side questions see the chat from its turn on), Copy
+// message (the message right-clicked, as its Copy button: a
 // reply as Markdown, all of it), Bookmark message or Remove bookmark (one that
 // can be: Bookmarks.qml) and Select all (every message); on the reply box,
 // Undo, Redo, Cut, Copy, Paste (a picture too, as Ctrl+V) and Select all.
@@ -22,17 +24,20 @@ PlasmaComponents3.Menu {
     property string where: ""   // "list": the conversation, "box": the reply box
     property Item row: null     // the message right-clicked (yours or Claude's reply), or null
     property string chosen: ""  // what's selected in the conversation when it opened
+    property string chosenKey: ""   // (and the message it's in, the first one's)
 
     // p: in selectOver (the conversation), or null (the reply box)
     function openAt(place, p) {
         where = place
         row = null
         chosen = ""
+        chosenKey = ""
         if (place === "list") {
             const at = selectOver.mapToItem(list.contentItem, p.x, p.y)
             const r = list.itemAt(at.x, at.y)
             row = r && r.listed && r.shows && !r.card && (r.kind === "you" || r.kind === "claude") ? r : null
             chosen = pane.selectionText()
+            chosenKey = chosen !== "" ? pane.selectionKey() : ""
         }
         popup()
     }
@@ -83,7 +88,15 @@ PlasmaComponents3.Menu {
         shown: menu.where === "list" && pane.sideCan
         enabled: menu.chosen.trim() !== ""
         text: Sides.EXPLAIN_BUTTON
-        onTriggered: pane.explain(menu.chosen)
+        onTriggered: pane.explain(menu.chosen, menu.chosenKey)
+    }
+    KeyItem {   // (yours or Claude's reply, once it's in the chat: not one still in Claude's queue, pane.askable)
+        shown: menu.where === "list" && pane.sideCan && menu.row !== null && Bm.canBookmark(menu.row) && pane.askable(menu.row.key)
+        text: Sides.SIDE_FROM_MENU
+        onTriggered: pane.askFrom(menu.row.key)
+        PlasmaComponents3.ToolTip.text: Sides.SIDE_FROM_TIP
+        PlasmaComponents3.ToolTip.visible: hovered && shown
+        PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
     }
     KeyItem {
         shown: menu.where === "list" && menu.row !== null

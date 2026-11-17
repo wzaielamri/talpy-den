@@ -25,7 +25,7 @@ export const SIDE_CLEAR_ASK = "Remove all side questions of this chat?";
 export const SIDE_CLOSE = "Close";
 export const SIDE_PICK_TIP = "The model your next side question goes to: the chat's own, or a smaller one (less of your usage limit)";
 // An answer's actions on hover, in this order in both front ends
-export const SIDE_ACTIONS = ["copy", "quote", "remove"];
+export const SIDE_ACTIONS = ["copy", "quote", "whole", "remove"];   // ("whole": Ask with the whole chat, on one asked about a part)
 
 // The model a side question was (or is being) answered on, for its meta line ("14:02 · Haiku"): the pick,
 // else the chat's model as Claude names it ("claude-opus-5-5" → "Opus 5.5"), else the first pick's label
@@ -74,9 +74,11 @@ export function sideState(s) {
 // after one answered on the same pick within WARM_MS reads the chat from the cache.
 export const WARM_MS = 55 * 60 * 1000;
 
-export function sideWarm(sides, pick, now) {
+// fromKey: the part asked about (a part's key, "": the whole chat), which has a cache of its own
+export function sideWarm(sides, pick, now, fromKey) {
     for (const s of sides || [])
-        if ((s.pick || "") === (pick || "") && sideState(s) === "answered" && now - (s.done || 0) < WARM_MS)
+        if ((s.pick || "") === (pick || "") && sideState(s) === "answered" && now - (s.done || 0) < WARM_MS
+                && ((s.from && s.from.key) || "") === (fromKey || ""))
             return true;
     return false;
 }
@@ -96,6 +98,44 @@ export function tokensText(n) {
 export const SIDE_COST_TIP = "A side question goes to a copy of this chat that Claude doesn't keep. "
     + "The first one in an hour sends the whole chat to Claude again; the ones after it, on the same model, "
     + "reuse it from the prompt cache. Sonnet or Haiku use less of your usage limit than the chat's own model.";
+
+// Ask from here (a message's right-click menu, Explain this): side questions see the chat from the start
+// of that message's turn on, not all of it (pane.py --side-question --from KEY; --part KEY says where it
+// starts and what it costs). The chat shows where with a line; the panel says it under the box.
+export const SIDE_FROM_MENU = "Ask from here";
+export const SIDE_FROM_TIP = "Side questions see the chat from this message's turn on: less to send than all of it";
+export const SIDE_FROM_LINE = "Side questions see from here";
+export const SIDE_WHOLE = "Whole chat";   // (the x on the panel's from line: back to all of it)
+export const SIDE_WHOLE_TIP = "Ask about the whole chat again";
+export const SIDE_ASK_WHOLE = "Ask with the whole chat";
+// (Ask from here on a message no part can start at: --part's null, else its "missing")
+export const SIDE_FROM_COMPACTED = "That message is before the chat was compacted: side questions see all of it";
+export const SIDE_FROM_GONE = "That message isn't in the chat any more: side questions see all of it";   // (an answer asked about a part: the same question, all of it)
+
+function quoted(text) {
+    return "\u201c" + String(text || "").replace(/\s+/g, " ").trim() + "\u201d";
+}
+
+// The panel's line when a part is picked (part: pane.py's {key, text, at, tokens, of}): where it starts and
+// what it costs; warm: sideWarm's for that part
+export function fromNote(part, warm) {
+    if (!part)
+        return "";
+    const size = tokensText(part.tokens);
+    const whole = tokensText(part.of);
+    const head = "From " + quoted(part.text);
+    if (warm)
+        return head + ": follow-ups reuse it from the cache";
+    return size ? head + ": " + size + (whole ? " of the chat's " + whole : "") + " tokens" : head;
+}
+
+// An answer's word on what it saw, for its meta line: the part ("from" and its first words), "whole chat"
+// when it was asked from a message but got all of it, else nothing (all of it, as asked)
+export function sideSaw(s) {
+    if (s && s.from)
+        return "from " + quoted(s.from.text);
+    return s && s.since && sideState(s) === "answered" ? "whole chat" : "";
+}
 
 export function costNote(used, warm) {
     const t = tokensText(used);

@@ -3212,3 +3212,18 @@ class SideStoreTests(unittest.TestCase):
                                  {"id": "0123456789ab", "q": "ok", "at": 5, "done": 6, "a": "fine", "pick": "gpt"}]})
         items, v = cs.load_sides(self.cache, self.CHAT)
         self.assertEqual((v, [(s["q"], s["pick"], s["a"]) for s in items]), (7, [("ok", "", "fine")]))
+
+    def test_the_message_asked_from_and_the_part_that_answered_are_kept(self):
+        item = self.ask("why?", 10)
+        self.assertNotIn("since", item)
+        on = cs.ask_side(self.cache, self.CHAT, "", "from there?", "", now_ms=20, since="msg_01abc")[2]
+        self.assertEqual(on["since"], "msg_01abc")
+        part = {"key": "u2", "text": "second  task\nnow", "at": 5, "tokens": 300, "of": 900, "extra": 1}
+        items, _ = cs.finish_side(self.cache, self.CHAT, "", on["id"], "Because.", now_ms=30, part=part)
+        self.assertEqual(items[1]["from"], {"key": "u2", "text": "second task now", "at": 5, "tokens": 300, "of": 900})
+        self.assertEqual(items[1]["since"], "msg_01abc")
+        items, _ = cs.finish_side(self.cache, self.CHAT, "", item["id"], "All.", now_ms=40, part={"key": "-bad"})
+        self.assertNotIn("from", items[0])   # (a part that isn't one: the whole chat)
+        self.assertEqual(cs.ask_side(self.cache, self.CHAT, "", "q", "", since="-x")[:2], (False, "Which message?"))
+        self.assertTrue(cs.side_copy(cs.SIDE_COPY_PREFIX + "123-8456-789012345678.jsonl"))
+        self.assertFalse(cs.side_copy(self.CHAT + ".jsonl"))

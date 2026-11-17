@@ -14,26 +14,32 @@ import "icons.mjs" as Icons
 // Then each question, oldest first, kept to the newest while you're at the end: yours as your messages are
 // (› and a band in your accent; Markdown, a quote as a quote), its answer as Claude's replies (● and
 // Markdown; Claude's stand-in for one, muted), Talpy thinking and Answering… while it's on its way, or why
-// none came with Ask again; when it was asked, and on which model. On hover, over its top right: Copy
-// (Copied a moment, as a message's Copy), Quote in reply, Remove (×). At its foot, the box (Enter asks,
+// none came with Ask again; when it was asked, on which model and what of the chat it saw (from “…”, or
+// whole chat). On hover, over its top right: Copy (Copied a moment, as a message's Copy), Quote in reply,
+// Ask with the whole chat (one asked about a part), Remove (×). At its foot, the box (Enter asks,
 // Shift+Enter: a new line; Esc anywhere in the panel closes it), the model a question goes to (every
-// window's) and what the next one costs. What asks and takes the answers: Sides.qml. VS Code
-// components/SidePanel.tsx: the same parts, words and clicks.
+// window's) and what the next one costs, or, with a part (Ask from here, Explain this), where it starts and
+// its cost, with × back to the whole chat; the chat shows where with a line (SideFromLine.qml, made only
+// then). What asks and takes the answers: Sides.qml. VS Code components/SidePanel.tsx: the same parts,
+// words and clicks.
 Rectangle {
     id: panel
 
     readonly property Item logic: sideLogic.item
     readonly property var shown: logic ? logic.shown : []
     readonly property string pick: logic ? logic.pick : ""
+    readonly property var part: logic ? logic.part : null   // (the part side questions see; null: all of the chat)
     readonly property bool beside: pane.sideBeside
     readonly property real pt: pane.pt * 0.92
     readonly property real gutter: Math.round(lineFm.height * 1.3)
     readonly property var answerStyle: Object.assign({}, pane.mdStyle, { pt: pt })
     readonly property var standInStyle: Object.assign({}, pane.thoughtStyle, { pt: pt })   // (Claude's stand-in for an answer)
     readonly property var askStyle: Object.assign({}, pane.mdStyle, { pt: pt, accent: pane.hex(pane.youColor) })   // (a quote in yours: your colour's bar)
-    // what the next question costs: "" when the chat's context isn't known
+    // what the next question costs: "" when the chat's context isn't known; with a part, where it starts and
+    // what it costs (a part has a cache of its own)
     property real now: Date.now()
-    readonly property string cost: Sides.costNote(pane.contextLeft ? pane.contextLeft.used || 0 : 0, Sides.sideWarm(shown, pick, now))
+    readonly property string cost: part ? Sides.fromNote(part, Sides.sideWarm(shown, pick, now, part.key))
+                                        : Sides.costNote(pane.contextLeft ? pane.contextLeft.used || 0 : 0, Sides.sideWarm(shown, pick, now, ""))
     property bool clearAsk: false   // (Remove all clicked: asked first)
     // (the theme's colours, read here once for every row: a row that reads Kirigami.Theme gets a theme of its own)
     readonly property color selection: Kirigami.Theme.focusColor
@@ -113,6 +119,9 @@ Rectangle {
         } else if (what === "quote") {
             pane.sideAway()   // (over the chat: out of the way of your reply)
             pane.quoteIn(entry.a)
+        } else if (what === "whole") {
+            logic.askWhole({ q: entry.q })
+            keepEnd()
         } else
             logic.remove(entry.sid)
     }
@@ -126,7 +135,9 @@ Rectangle {
         const phase = Sides.sideState(s)
         return { sid: String(s.id), q: String(s.q || ""), a: phase === "answered" ? String(s.a) : "",
                  err: phase === "error" ? String(s.error || "") : "", at: Number(s.at) || 0,
-                 mname: Sides.sideModelLabel(s), synthetic: s.synthetic === true, phase: phase }
+                 mname: Sides.sideModelLabel(s), synthetic: s.synthetic === true, phase: phase,
+                 saw: Sides.sideSaw(s), parted: phase === "answered" && !!s.from,   // (what it saw; asked about a part)
+                 since: String(s.since || "") }   // (the message it was asked from: Ask again asks from it again)
     }
     function rowOf(sid) {
         for (let i = 0; i < rows.count; i++)
@@ -167,7 +178,8 @@ Rectangle {
             if (i < rows.count && rows.get(i).sid === flat.sid) {
                 const old = rows.get(i)
                 if (old.q !== flat.q || old.a !== flat.a || old.err !== flat.err || old.at !== flat.at
-                        || old.mname !== flat.mname || old.synthetic !== flat.synthetic || old.phase !== flat.phase)
+                        || old.mname !== flat.mname || old.synthetic !== flat.synthetic || old.phase !== flat.phase
+                        || old.saw !== flat.saw || old.parted !== flat.parted || old.since !== flat.since)
                     rows.set(i, flat)
             } else if (i < rows.count)
                 rows.insert(i, flat)
@@ -320,14 +332,14 @@ Rectangle {
                 onCancelled: panel.clearAsk = false
             }
         }
-        // (one that couldn't be removed: why)
+        // (one that couldn't be removed: why, in the negative colour; a part there's none of: why, muted)
         Text {
             visible: !!panel.logic && panel.logic.note !== ""
             Layout.fillWidth: true
             textFormat: Text.PlainText
             text: panel.logic ? panel.logic.note : ""
             wrapMode: Text.Wrap
-            color: Kirigami.Theme.negativeTextColor
+            color: panel.logic && !panel.logic.noteBad ? pane.mutedColor : panel.negative
             font.pointSize: pane.pt * 0.85
         }
 
@@ -364,6 +376,9 @@ Rectangle {
                 required property string mname
                 required property bool synthetic
                 required property string phase
+                required property string saw
+                required property bool parted
+                required property string since
                 readonly property bool listed: index >= 0   // (Qt's ListView can leave a removed row drawn: none of it)
 
                 width: entries.width - (entriesBar.visible ? entriesBar.width : 0)
@@ -475,12 +490,12 @@ Rectangle {
                             sourceComponent: entry.phase === "answered" ? answerItem : entry.phase === "error" ? errorItem : pendingItem
                         }
                     }
-                    // When it was asked, and on which model
+                    // When it was asked, on which model, and what of the chat it saw (from “…”, whole chat)
                     Text {
                         Layout.fillWidth: true
                         Layout.leftMargin: panel.gutter
                         textFormat: Text.PlainText
-                        text: pane.timeText(entry.at) + (entry.mname !== "" ? " · " + entry.mname : "")
+                        text: pane.timeText(entry.at) + (entry.mname !== "" ? " · " + entry.mname : "") + (entry.saw !== "" ? " · " + entry.saw : "")
                         elide: Text.ElideRight
                         color: pane.mutedColor
                         font.family: pane.chatFamily
@@ -558,13 +573,14 @@ Rectangle {
                             Layout.alignment: Qt.AlignTop
                             icon.name: Icons.plasma.refresh
                             text: Sides.SIDE_AGAIN
-                            onClicked: panel.logic.askAgain({ id: entry.sid, q: entry.q })
+                            onClicked: panel.logic.askAgain({ id: entry.sid, q: entry.q, since: entry.since })
                         }
                     }
                 }
 
                 // Its actions while the pointer is on it, over its top right (made only then), in SIDE_ACTIONS'
-                // order: Copy (Copied a moment, as a message's) and Quote in reply once it has an answer, Remove (×)
+                // order: Copy (Copied a moment, as a message's) and Quote in reply once it has an answer, Ask with
+                // the whole chat on an answer about a part, Remove (×)
                 Loader {
                     active: (entryHover.hovered || panel.copied === entry.sid) && entry.listed
                     z: 5
@@ -595,17 +611,19 @@ Rectangle {
                             anchors.centerIn: parent
 
                             Repeater {
-                                model: Sides.SIDE_ACTIONS.filter(w => w === "remove" || entry.phase === "answered")
+                                model: Sides.SIDE_ACTIONS.filter(w => w === "remove" || (entry.phase === "answered" && (w !== "whole" || entry.parted)))
                                 delegate: FlatButton {
                                     required property string modelData
                                     readonly property bool isCopy: modelData === "copy"
-                                    meaning: isCopy ? "" : modelData === "remove" ? "cancel" : modelData
+                                    // (Ask with the whole chat: asked again, as VS Code's)
+                                    meaning: isCopy ? "" : modelData === "remove" ? "cancel" : modelData === "whole" ? "refresh" : modelData
                                     label: !isCopy ? "" : panel.copied === entry.sid ? copiedWord.text : copyWord.text
                                     lit: isCopy && panel.copied === entry.sid
                                     // (as wide with Copied as with Copy)
                                     implicitWidth: isCopy ? Math.max(copyWord.advanceWidth, copiedWord.advanceWidth) + Kirigami.Units.largeSpacing
                                                           : Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing * 2
-                                    tip: isCopy ? Sides.SIDE_COPY : modelData === "quote" ? Sides.SIDE_QUOTE : Sides.SIDE_REMOVE
+                                    tip: isCopy ? Sides.SIDE_COPY : modelData === "quote" ? Sides.SIDE_QUOTE
+                                         : modelData === "whole" ? Sides.SIDE_ASK_WHOLE : Sides.SIDE_REMOVE
                                     onClicked: panel.act(modelData, entry)
                                 }
                             }
@@ -694,7 +712,8 @@ Rectangle {
                 }
             }
         }
-        // The model a question goes to (its menu: the three), and what the next one costs
+        // The model a question goes to (its menu: the three), and what the next one costs; with a part, where
+        // it starts and what it costs, and × back to the whole chat
         RowLayout {
             Layout.fillWidth: true
             spacing: Kirigami.Units.smallSpacing
@@ -756,11 +775,25 @@ Rectangle {
                 HoverHandler {
                     id: costHover
                 }
-                PlasmaComponents3.ToolTip.text: Sides.SIDE_COST_TIP
+                PlasmaComponents3.ToolTip.text: panel.part ? Sides.SIDE_FROM_TIP : Sides.SIDE_COST_TIP
                 PlasmaComponents3.ToolTip.visible: costHover.hovered
                 PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
+            FlatButton {
+                visible: panel.part !== null
+                Layout.alignment: Qt.AlignTop
+                meaning: "cancel"
+                tip: Sides.SIDE_WHOLE_TIP
+                Accessible.name: Sides.SIDE_WHOLE
+                onClicked: panel.logic.wholeChat()
+            }
         }
+    }
+
+    // The line in the chat above where the part starts (SideFromLine.qml: made only while there's one)
+    Loader {
+        active: panel.part !== null
+        source: active ? "SideFromLine.qml" : ""
     }
 
     // The model's menu: the three, the one picked marked (made as it opens, gone once it's closed)

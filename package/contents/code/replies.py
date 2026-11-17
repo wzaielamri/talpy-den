@@ -480,7 +480,7 @@ def reply_history(cache_root, profile, now=None):
     for d in folders:
         try:
             for f in os.scandir(d.path):
-                if f.name.endswith(".jsonl") and f.is_file(follow_symlinks=False):
+                if f.name.endswith(".jsonl") and f.is_file(follow_symlinks=False) and not cs.side_copy(f.name):
                     st = f.stat(follow_symlinks=False)
                     if st.st_mtime >= since:
                         found[f.path] = st

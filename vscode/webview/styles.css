@@ -4151,6 +4151,14 @@ body.vscode-high-contrast-light .pane-side {
   border-top: 1px solid color-mix(in srgb, var(--cs-border) 70%, transparent);
 }
 
+/* Where side questions see the chat from (Ask from here), above that message: as a day's line, lighter,
+   not part of what you copy */
+.pane-day.pane-from-line {
+  font-weight: 400;
+  cursor: default;
+  user-select: none;
+}
+
 /* The hovered message's time and Copy, over its top right corner (one for the list) */
 .pane-hoverbar {
   position: absolute;
@@ -4693,6 +4701,19 @@ body.vscode-high-contrast-light .pane-side {
   line-height: 1.35;
   text-align: right;
   cursor: help;
+}
+
+/* (a part of the chat picked: its × back to all of it, small, right after the line) */
+.pane-side-foot .pane-side-whole {
+  min-width: 18px;
+  height: 18px;
+  margin-left: -4px;
+  padding: 0 1px;
+}
+
+.pane-side-whole .icon {
+  width: 1.05em;
+  height: 1.05em;
 }
 
 /* "3 new ↓": at the bottom of the list while you're scrolled up and something came in below;
