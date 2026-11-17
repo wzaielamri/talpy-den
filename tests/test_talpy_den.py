@@ -1910,16 +1910,20 @@ class FakeAttach:
                     continue
                 self.requests.append(json.loads(line))
                 answer = self.answer(self.requests[-1])
-                conn.sendall((json.dumps(answer) + "\n").encode())
-                if answer.get("ok"):
-                    conn.sendall(self.frame)
-                    while True:
-                        chunk = conn.recv(65536)
-                        if not chunk:
-                            break
-                        typed += chunk
-                self.typed.append(typed)
-                self.done.set()
+                try:
+                    conn.sendall((json.dumps(answer) + "\n").encode())
+                    if answer.get("ok"):
+                        conn.sendall(self.frame)
+                        while True:
+                            chunk = conn.recv(65536)
+                            if not chunk:
+                                break
+                            typed += chunk
+                except OSError:
+                    pass   # (a client that let go once it read the answer: before the frame went, or while it did)
+                finally:   # (done either way: a broken pipe here once ended the thread, and the test waited 5 s for nothing)
+                    self.typed.append(typed)
+                    self.done.set()
 
     @staticmethod
     def takes_it(request):
