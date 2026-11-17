@@ -3878,6 +3878,21 @@ class ResizeKeepsTheEndTests(unittest.TestCase):
         self.assertNotIn("pane.resized()", listview)
         self.assertIn("function noteEnd() {\n        endKept = nearEnd()\n    }", pane)
 
+    def test_a_line_over_or_under_the_list_keeps_the_end(self):
+        # Copied under the tabs (a Copy), the reply box a line taller: the list a line shorter kept
+        # its contentY, and the working line went out of view (22 px in a real window, under
+        # nearEnd's slack, so endKept stayed true and nothing put it back)
+        pane = (UI / "ChatPane.qml").read_text()
+        listview = pane[pane.index("                ListView {\n                    id: list\n"):]
+        listview = listview[:listview.index("section.property")]
+        self.assertIn("onHeightChanged: pane.listResized()", listview)
+        body = pane[pane.index("    function listResized() {"):]
+        body = body[:body.index("\n    }\n") + 6]
+        self.assertIn("if (scrolling())\n            return\n", body)   # (you scroll: it doesn't pull you back)
+        self.assertIn("if (settle.running)\n            followEnd()\n        else if (holdTop.running)\n            showTop()\n"
+                      "        else if (endKept)\n            followEnd()\n", body)   # (scrolled up: it stays where you are)
+        self.assertNotIn("keepEnd()", body)   # (once: its rows keep their width, nothing wraps again)
+
 
 @unittest.skipUnless(shutil.which("node"), "node isn't installed")
 class AnsiTests(unittest.TestCase):

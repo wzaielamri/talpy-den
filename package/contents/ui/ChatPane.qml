@@ -1414,6 +1414,21 @@ Window {
     }
     onWidthChanged: resized()
     onHeightChanged: resized()
+    // The list's own height changed: the window's, or a line over or under it came or went
+    // (Copied under the tabs, the reply box a line taller, the suggested replies): at the end
+    // before, it stays there, its working line in view. The list kept its contentY, so the end
+    // went that much out of view: a Copy took the last line away while Copied showed. Its rows
+    // keep their width, so they don't wrap again: once is enough
+    function listResized() {
+        if (scrolling())
+            return
+        if (settle.running)
+            followEnd()
+        else if (holdTop.running)
+            showTop()
+        else if (endKept)
+            followEnd()
+    }
     onChatStateChanged: {
         if (shown)
             load()   // (its turn began or ended, it asks something: the conversation now)
@@ -3555,7 +3570,7 @@ Window {
                         pane.keepPlace()
                         Qt.callLater(pane.noteEnd)
                     }
-                    onHeightChanged: pane.keepPlace()
+                    onHeightChanged: pane.listResized()
                     // (where the list is, as it moves or its rows change: endKept)
                     onContentYChanged: Qt.callLater(pane.noteEnd)
                     onOriginYChanged: Qt.callLater(pane.noteEnd)

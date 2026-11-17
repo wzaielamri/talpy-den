@@ -5,6 +5,7 @@
 ### Every change
 
 - **A new chat with a picture starts again, on Claude Code 2.1.326.** A chat whose first message named a picture you pasted (Ctrl+V) didn't start in the background: *Added folder not trusted: ~/.cache/talpy-den/images*, also when the chat's own folder was trusted. Talpy Den let the chat open the picture by adding its pictures folder (`--add-dir`), and since 2.1.326 Claude Code wants an added folder trusted, as a chat's folder is (in a terminal it asked first). Now the chat may read that folder, and only that folder, without asking (a Read permission for it), so nothing has to be trusted; the same for a reply with a picture that wakes a stopped chat, a queued chat and a chat on an SSH host (Plasma and VS Code).
+- **Copying in Talpy Chat keeps the end of the conversation in view.** After a Copy, *Copied* shows under the tabs, and the conversation lost a line at its bottom while it did: the last line, often *Working…*, went out of view. A longer message there (an error) took more. Now the conversation stays at its end when something over or under it takes room: *Copied* or another message, the reply box growing a line, the suggested replies; scrolled up, it stays where you are (Plasma).
 
 ## 1.20.0 (2026-11-16)
 
