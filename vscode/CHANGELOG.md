@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A new chat with a picture starts again, on Claude Code 2.1.326.** A
+  new chat whose task named a pasted picture didn't start in the
+  background: *Added folder not trusted: ~/.cache/talpy-den/images*. Since
+  2.1.326 Claude Code wants a folder added to a chat trusted, as the chat's
+  own folder is. Now the chat may read the pictures folder, and only that,
+  without asking, so nothing has to be trusted.
+
 ## 1.20.0
 
 ### New

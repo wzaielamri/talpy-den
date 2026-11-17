@@ -7353,10 +7353,15 @@ def images_dir(home):
 
 
 def picture_options(home, text):
-    """claude's options for a chat whose task names a pasted picture: its
-    folder (one word: --add-dir FOLDER would take the prompt as a second folder)."""
+    """claude's options for a chat whose task names a pasted picture: leave to
+    read what's in the pictures folder, and nothing more (a Read rule, "//" an
+    absolute path; one word: --allowedTools RULE would take the prompt as a
+    second rule). Not --add-dir: since Claude Code 2.1.326 a folder added so
+    has to be trusted, as a chat's folder is: `claude --bg` refuses ("Added
+    folder not trusted: …") and a terminal's claude asks first, and nobody
+    starts Claude in Talpy Den's pictures folder to trust it."""
     folder = str(images_dir(home))
-    return [f"--add-dir={folder}"] if folder + os.sep in (text or "") else []
+    return [f"--allowedTools=Read(/{folder}/**)"] if folder + os.sep in (text or "") else []
 
 
 def new_chat_command(profile, home=None, claude="claude", options=()):

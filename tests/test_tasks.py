@@ -1097,7 +1097,8 @@ class PictureTests(TaskFixture):
         self.assertEqual(len(list(cs.images_dir(self.home).iterdir())), 1)
 
     def test_a_chat_whose_task_names_a_picture_can_open_it(self):
-        # it's outside the chat's folder: Claude would ask first (claude --add-dir)
+        # it's outside the chat's folder: Claude would ask first, so the chat may read that folder
+        # (a Read rule: an added folder, --add-dir, has to be trusted since Claude Code 2.1.326)
         self.clipboard("wl-paste", ["image/png"])
         picture = self.paste()["path"]
         task = f"What's wrong here? [Image: {picture}] Fix it."
@@ -1116,7 +1117,7 @@ class PictureTests(TaskFixture):
             (queued,) = cs.load_queue(cs.cache_dir(self.home))
             jump.main(["--start-queued", queued["id"]])
         self.assertTrue(all(json.loads(l)["ok"] for l in out.getvalue().splitlines()), out.getvalue())
-        add_dir = f"--add-dir={cs.images_dir(self.home)}"
+        add_dir = f"--allowedTools=Read(/{cs.images_dir(self.home)}/**)"
         terminal, = opened
         self.assertEqual(shlex.split(terminal)[-4:], ["--model", "opus", add_dir, task])
         background, plain, later = (c["argv"] for c in self.calls())
@@ -1302,7 +1303,7 @@ class ContinueAfterResetTests(TaskFixture):
         text = f"And this? [Image: {picture}]"
         go_on = lambda: cs.continue_chat(self.home, [], ".claude-work", self.SID, None, text, str(self.bin / "claude"), force=True)
         self.assertTrue(go_on()["ok"])
-        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, f"--add-dir={picture.parent}", text])
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, f"--allowedTools=Read(/{picture.parent}/**)", text])
         # a background session of it wakes with the options it saved (any here would start a copy)
         write(self.home / f".claude-work/jobs/{self.SID[:8]}/state.json", {"sessionId": self.SID})
         self.assertTrue(go_on()["ok"])

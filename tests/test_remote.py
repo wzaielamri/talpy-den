@@ -929,7 +929,7 @@ class HostTaskTests(TwoAccountHost):
                              background=True)
         self.assertTrue(answer["ok"], answer)
         args = (self.fake_home / "claude-args").read_text().splitlines()
-        self.assertEqual(args[:2], ["--bg", f"--add-dir={there}"])
+        self.assertEqual(args[:2], ["--bg", f"--allowedTools=Read(/{there}/**)"])
 
     def test_a_plan_comes_here_and_is_shared_there(self):
         import jump

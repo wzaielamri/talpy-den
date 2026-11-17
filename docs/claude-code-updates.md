@@ -782,14 +782,14 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   xhigh with ultracode on; `xhigh` turns it off). `--permission-mode` takes `default` (shown as "Manual";
   older Claude, say on a host, knows only `default`), `acceptEdits`, `plan`, `auto`, `dontAsk` and
   `bypassPermissions`. The model aliases are `opus`, `sonnet`, `fable` and `haiku`, and a full model id maps
-  to its alias by substring (`claude-opus-5-5[1m]` → opus). `--add-dir` takes several values, so it must be
-  one word, `--add-dir=DIR`: a separate DIR would swallow the prompt.
+  to its alias by substring (`claude-opus-5-5[1m]` → opus). `--allowedTools` takes several values, so it must
+  be one word, `--allowedTools=RULE`: a separate RULE would swallow the prompt.
   - Used in: talpy_den.py chat_options, EFFORT_LEVELS, ULTRACODE, PERMISSION_MODES, GO_ON_MODES,
     go_on_options, picture_options, go_on_with; chatpick.py pick_value, label, MODEL_ALIASES; pane.py
     start_chat; vscode/src/shared/pane.ts CHAT_MODELS, CHAT_EFFORTS, CHAT_MODES, ULTRACODE, modelKey,
     withPick, pickerItems, nowText; vscode/src/actions.ts MODELS, EFFORTS, MODES; ChatPane.qml,
     NewChatOptions.qml, NewChatBox.qml.
-  - Check: `claude --help | grep -A4 -E -- '--(model|effort|permission-mode|add-dir)'`; `has ultracode`;
+  - Check: `claude --help | grep -A4 -E -- '--(model|effort|permission-mode|allowedTools)'`; `has ultracode`;
     `jq -r 'select(.type=="assistant").message.model' $C/projects/*/*.jsonl 2>/dev/null | sort -u | tail`
     (each id should still contain its family name).
   - Breaks: new chats, go-ons and wakes fail to start ("invalid option"), or the prompt is taken as a folder.
@@ -2655,7 +2655,10 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
     TerminalTests.test_the_row_of_a_session_attached_in_konsole_says_so, test_the_title_without_its_marks
     (test_talpy_den.py).
 - [ ] **Pictures named in prompts.** Talpy Den names a pasted picture as `[Image: /abs/path]` in the text, and
-  Claude opens it from that path (its Read tool takes images), with the pictures folder added by `--add-dir`.
+  Claude opens it from that path (its Read tool takes images), allowed by a Read rule for the pictures folder,
+  `--allowedTools=Read(//<pictures folder>/**)`, so it doesn't ask. Not `--add-dir`: since 2.1.326 an added
+  folder has to be trusted, as a chat's folder is (`claude --bg` refuses: "Added folder not trusted: …", a
+  terminal's claude asks first), and nobody trusts Talpy Den's pictures folder.
   Talpy Chat shows such names as `[Image #1]`, `[Image #2]`…, as Claude's terminal does. The types are png,
   jpeg, webp and gif.
   - Used in: vscode/src/shared/pane.ts picturesIn, withoutPicture, numberedPictures, PICTURE_TYPES;
@@ -2668,10 +2671,22 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
     (cd "$d" && claude -p --model haiku "[Image: $d/p.png] describe this picture in five words")
     ```
 
-    It should describe the picture.
-  - Breaks: Claude gets only a path, and pasted pictures go unseen.
+    It should describe the picture. Then a picture outside the chat's folder, as Talpy Den starts a chat:
+
+    ```bash
+    i=~/.cache/talpy-den/images; mkdir -p "$i"; cp "$(ls /usr/share/pixmaps/*.png | head -1)" "$i/check.png"
+    (cd "$(mktemp -d)" && claude -p --model haiku --permission-mode default "--allowedTools=Read(/$i/**)" \
+        "[Image: $i/check.png] describe this picture in five words")
+    ```
+
+    It should describe it too (without the `--allowedTools` word it can't read it: no permission).
+  - Breaks: Claude gets only a path, and pasted pictures go unseen; a new chat or a go-on with a picture
+    doesn't start ("Added folder not trusted", as with `--add-dir` on 2.1.326).
   - Test: vscode/test/pane.test.ts "the pictures a reply names, each once, and taking one out", "your pictures
-    read as Claude's terminal writes them: [Image #1], [Image #2], one picture named twice the same number".
+    read as Claude's terminal writes them: [Image #1], [Image #2], one picture named twice the same number";
+    test_tasks.py test_a_chat_whose_task_names_a_picture_can_open_it, test_a_message_naming_a_picture_can_open_it;
+    test_remote.py (put_image, the host's task). They check the words Talpy Den passes, not what Claude does with
+    them.
 - [ ] **File mentions.** `@path`, or `@"path with spaces"` quoted, attaches a file. Dropped and completed
   files are put in that way.
   - Used in: vscode/src/shared/pane.ts fileMention, suggestFor; vscode/webview/chat.tsx;
