@@ -4,6 +4,12 @@
 
 ### New
 
+- **Trust a folder from Talpy Chat, and the message goes.** A message to
+  a chat that isn't running didn't go when Claude doesn't trust the folder
+  it goes on in (one you renamed since, say). Now Talpy Chat asks
+  Claude's own question, as New Chat… does: *Trust It and Send* keeps
+  your yes where Claude keeps it and sends the message. The same for a
+  new chat's first message.
 - **Talpy Chat says what runs in the background.** Under its working line,
   a muted line for each shell a chat runs in the background: the
   command's first line and since when. The Steps tab has the whole

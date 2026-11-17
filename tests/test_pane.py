@@ -1264,6 +1264,39 @@ class SendFixture(PaneFixture):
 
 
 
+class TrustAndSendTests(SendFixture):
+    """A message that can't go because Claude doesn't trust the folder its chat goes on in (a folder
+    renamed since: trusted under its old name only), where a background chat can't ask: Talpy Chat
+    asks Claude's question (trustAsk), and once you said yes (--trust-folder) it goes."""
+
+    def test_a_stopped_chat_in_a_folder_claude_doesnt_trust_asks_first_then_goes(self):
+        renamed = self.home / "repos/app_renamed"
+        renamed.mkdir(parents=True)
+        self.chat(prompt("fix it", self.now - 100, cwd=str(renamed)), text_reply("Done.", self.now - 90, "m1", "end_turn"))
+        answer = self.send()
+        self.assertFalse(answer["ok"])
+        self.assertTrue(answer["message"].startswith(cs.UNTRUSTED), answer["message"])
+        ask = answer["trustAsk"]
+        self.assertEqual((ask["folder"], ask["short"]), (str(renamed), "~/repos/app_renamed"))
+        self.assertIn("a chat in Talpy Chat runs in the background, where Claude can't ask you", ask["question"])
+        self.assertNotIn("trust", answer)
+        self.assertEqual(self.calls(), [])   # (nothing started)
+        # yes: kept where Claude's own question keeps it, then it goes
+        self.assertEqual(self.cli("--trust-folder", str(renamed), "--profile", ".claude-work"), {"ok": True, "message": "Trusted"})
+        profile = next(p for p in cs.discover_profiles(self.home, []) if cs.matches_profile(p, ".claude-work"))
+        self.assertTrue(cs.folder_trusted(profile, str(renamed), self.home))
+        answer = self.send()
+        self.assertTrue(answer["ok"], answer)
+        self.assertEqual(self.calls()[-1][:3], ["--bg", "--resume", SID])
+
+    def test_nothing_to_ask_for_the_home_folder_nor_on_a_host(self):
+        self.assertIsNone(pane.trust_ask(self.home, str(self.home)))   # (Claude asks there every time)
+        self.assertIsNone(pane.trust_ask(self.home, None))
+        self.assertIsNone(pane.trust_ask(self.home, str(self.home / "gone")))
+        self.assertEqual(self.cli("--trust-folder", str(self.folder), "--profile", ".claude-work", "--host", "lab"),
+                         {"ok": False, "message": "Trust a folder on another computer in a terminal there"})
+
+
 class SendTests(SendFixture):
     def test_a_finished_chat_goes_on_in_the_background(self):
         answer = self.send()
@@ -1794,6 +1827,8 @@ class HostHookTests(SendFixture):
         other.mkdir()
         answer = self.start(other, scoped=False)
         self.assertEqual((answer["ok"], answer["untrusted"]), (False, True))
+        # (asked in Talpy Chat, then it starts: TrustAndSendTests)
+        self.assertEqual((answer["trustAsk"]["folder"], answer["trustAsk"]["short"]), (str(other), "~/elsewhere"))
         self.assertNotIn("untrusted", pane.start_chat(self.home, [], ".claude-work", str(self.home / "gone"), "x",
                                                       claude=str(self.bin / "claude")))
 

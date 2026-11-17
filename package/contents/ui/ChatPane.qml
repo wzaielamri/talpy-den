@@ -718,6 +718,8 @@ Window {
         tasksOpen = false
         agentsOpen = false
         stopping = false
+        trustAsk = null
+        trusting = false
         offers = null
         offersAt = 0
         sendAfterOffers = ""
@@ -1866,6 +1868,22 @@ Window {
                 usual = { chips: result.chips || {}, ranked: result.ranked || [] }
             return
         }
+        // Trust it and send (ReplyAsks.qml): trusted, what's in the box goes again (your message,
+        // back there when it didn't go) to the chat it was for; else why not
+        if (kind === "trust") {
+            trusting = false
+            if (!result.ok) {
+                info = result.message || i18n("That didn't work")
+                infoBad = true
+                infoTimer.restart()
+                return
+            }
+            trustAsk = null
+            if (asked.chat === chatId)
+                send("enter", false)
+            root.refresh()
+            return
+        }
         // (a model or effort picked for this chat alone: set, or why not)
         if (kind === "options") {
             pickBusy = false
@@ -2009,6 +2027,12 @@ Window {
         info = result.message || (result.ok ? "" : i18n("That didn't work"))
         infoBad = !result.ok
         infoTimer.restart()
+        if (kind === "send" && !result.ok && result.trustAsk && !host) {
+            // (Claude doesn't trust the folder it'd go on or start in, and a background chat can't ask:
+            // asked here instead, Trust it and send; its account the new chat's or this one's)
+            trustAsk = Object.assign({ profile: asked.fresh ? asked.fresh.profile : profileDir }, result.trustAsk)
+            info = ""
+        }
         if (kind === "send" && result.ok && result.hooked === false) {
             // (started or woken in the background without Talpy Den's permission hook: what it asks waits in
             // its own prompt, Answer it in a terminal)
@@ -2197,6 +2221,19 @@ Window {
     // ---------------------------------------------------------------- replying
 
     property bool askHow: false   // its terminal takes no text: background or copy?
+    // A message that couldn't go because Claude doesn't trust the folder its chat goes on (or starts) in,
+    // where a background chat can't ask: pane.py's trustAsk {folder, short, question, profile}, asked under
+    // the box (ReplyAsks.qml); yes trusts it as Claude's own question does (pane.py --trust-folder: the
+    // Permissions tab lists it, with Revoke), then what's in the box goes again
+    property var trustAsk: null
+    property bool trusting: false
+    function trustAndSend() {
+        if (!trustAsk || trusting)
+            return
+        trusting = true
+        run("trust", "--trust-folder " + root.shellQuote(trustAsk.folder)
+                     + (trustAsk.profile ? " --profile " + root.shellQuote(trustAsk.profile) : "") + root.configDirArgs)
+    }
     // what you were typing to the other chats ("host\nchatId" -> text): this copy's
     // windows share it, so it's there whichever window the chat opens in again
     readonly property var drafts: root.paneDrafts
@@ -2436,6 +2473,7 @@ Window {
         const text = replyBox.text.trim()
         if (!text)
             return
+        trustAsk = null   // (asked again if it still can't go)
         // A command: as its kind says on this chat (commandRun). One typed before the / list's
         // offers were read waits for them (else /model would go as a message, and save your default)
         if (/^\/\S/.test(text) && !offers && !offersFailed && !replyAnswers) {
@@ -4608,7 +4646,7 @@ Window {
                 // Copy a picture to an SSH host, set dictation up, download a speech model: asked first
                 // (ReplyAsks.qml, read and made only while one is asked)
                 Loader {
-                    active: pane.offerSetup || pane.offerModel
+                    active: pane.trustAsk !== null || pane.offerSetup || pane.offerModel
                             || (!!pane.host && ((!!root.pictureOffer && root.pictureOffer.host === pane.host && root.pictureOffer.target === pane.pasteTarget)
                                                 || (root.pictureCopyingTo === pane.host && root.pictureCopyTarget === pane.pasteTarget)))
                     visible: active

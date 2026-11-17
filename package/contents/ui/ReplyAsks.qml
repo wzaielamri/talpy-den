@@ -4,11 +4,44 @@ import QtQuick.Window
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.kirigami as Kirigami
 
-// What Talpy Chat asks under its reply box before it does something for you: copy a pasted picture
-// to an SSH host (and that it's copying), set dictation up, download a speech model. ChatPane.qml's
-// Loader: read and made only while one of them is asked
+// What Talpy Chat asks under its reply box before it does something for you: trust a folder your
+// message couldn't go to, copy a pasted picture to an SSH host (and that it's copying), set dictation
+// up, download a speech model. ChatPane.qml's Loader: read and made only while one of them is asked
 ColumnLayout {
     spacing: Kirigami.Units.smallSpacing
+
+    // Claude doesn't trust the folder the chat goes on (or starts) in, and a background chat can't ask:
+    // Claude's own question, in its words (pane.py trust_ask), the whole of it, then the buttons
+    ColumnLayout {
+        Layout.fillWidth: true
+        visible: pane.trustAsk !== null
+        spacing: Kirigami.Units.smallSpacing
+
+        PlasmaComponents3.Label {
+            Layout.fillWidth: true
+            textFormat: Text.PlainText
+            text: pane.trustAsk ? pane.trustAsk.question : ""
+            wrapMode: Text.Wrap
+            color: Kirigami.Theme.neutralTextColor
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.smallSpacing
+
+            Item {
+                Layout.fillWidth: true
+            }
+            PlasmaComponents3.Button {
+                text: pane.trusting ? i18n("Trusting…") : i18n("Trust %1 and send", pane.trustAsk ? pane.trustAsk.short : "")
+                enabled: !pane.trusting
+                onClicked: pane.trustAndSend()
+            }
+            PlasmaComponents3.Button {
+                text: i18n("Cancel")
+                onClicked: pane.trustAsk = null   // (your message stays in the box)
+            }
+        }
+    }
 
     // A picture for an SSH host's chat: copied there once you say so
     RowLayout {

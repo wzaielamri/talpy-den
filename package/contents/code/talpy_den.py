@@ -7982,6 +7982,8 @@ def go_on_with(home, extra_dirs, profile_key, chat_id, folder, text, claude, pre
             # in its mode, but saved only the model; its next go-on adds the rest, saved_options)
             message += f", as a copy ({job})"
     answer = {"ok": ok, "message": message, "id": job}
+    if not ok and message.startswith(UNTRUSTED):
+        answer["trust"] = folder   # (the folder it'd go on in: Talpy Chat asks whether you trust it, pane.trust_ask)
     if busy is not None:
         answer["ended"] = busy[2]
     return answer

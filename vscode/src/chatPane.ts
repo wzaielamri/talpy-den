@@ -276,6 +276,23 @@ export class ChatPanes implements vscode.Disposable {
 
   private sending = new Map<string, Promise<unknown>>(); // "<host>|<chat id>": the last message on its way to it
 
+  // A message that couldn't go because Claude doesn't trust the folder its chat goes on (or starts) in,
+  // where a background chat can't ask (pane.py trustAsk; this computer's chats): Claude's own question,
+  // in its words, as New Chat… asks it; yes trusts it where Claude keeps it (pane.py --trust-folder: the
+  // Permissions tab lists it, with Revoke). true: trusted now, so it's sent again
+  async trustFirst(r: Record<string, any>, profile: string | undefined, host: string): Promise<boolean> {
+    const ask = r.trustAsk;
+    if (r.ok || host || !ask || typeof ask.folder !== "string" || typeof ask.question !== "string") return false;
+    const short = typeof ask.short === "string" && ask.short ? ask.short : ask.folder;
+    const yes = "Trust It and Send";
+    const choice = await vscode.window.showWarningMessage(noLinks(`Trust ${short}?`), { modal: true, detail: noLinks(ask.question) }, yes);
+    if (choice !== yes) return false;
+    const done = await this.backend.pane(["--trust-folder", ask.folder, ...(profile ? ["--profile", profile] : []), ...configDirArgs()]);
+    if (done.ok) return true;
+    void vscode.window.showErrorMessage(noLinks(`Couldn't trust ${short}: ${String(done.message ?? "")}`));
+    return false;
+  }
+
   private async sendNow(chat: ChatRef, text: string, how: "auto" | "background" | "copy" | "enter", afterTurn: boolean): Promise<SendResult> {
     const host = chat.host ?? "";
     // (to where the chat is now: one Claude moved to the background meanwhile
@@ -318,6 +335,7 @@ export class ChatPanes implements vscode.Disposable {
     } finally {
       if (file) fs.rmSync(file, { force: true });
     }
+    if (!r.ok && await this.trustFirst(r, chat.profileDir, host)) return this.sendNow(chat, text, how, afterTurn);
     if (r.ok && r.how === "ask" && how === "enter")
       return copy("Its terminal takes no text from outside, so your message is in the clipboard: paste it there");
     if (r.ok && r.how === "ask") return { ok: true, message: String(r.message ?? ""), ask: true };
@@ -912,25 +930,28 @@ class Pane implements vscode.Disposable {
     const f = this.fresh;
     if (!f) return this.owner.send(this.chat, text, "auto", false);
     this.starting = (async () => {
-      const file = Buffer.byteLength(text) > TEXT_IN_ARGS ? path.join(cacheDir(), `text-${crypto.randomUUID()}.txt`) : "";
-      let r: Record<string, any>;
-      try {
-        if (file) {
-          fs.mkdirSync(cacheDir(), { recursive: true, mode: 0o700 });
-          fs.writeFileSync(file, text, { mode: 0o600, flag: "wx" });
+      const go = async (): Promise<Record<string, any>> => {
+        const file = Buffer.byteLength(text) > TEXT_IN_ARGS ? path.join(cacheDir(), `text-${crypto.randomUUID()}.txt`) : "";
+        try {
+          if (file) {
+            fs.mkdirSync(cacheDir(), { recursive: true, mode: 0o700 });
+            fs.writeFileSync(file, text, { mode: 0o600, flag: "wx" });
+          }
+          // (on an SSH host or in a container: started there, with Talpy Den's permission hook copied there;
+          // this computer's extra Claude folders stay here)
+          return await this.owner.ext.backend.pane([
+            "--start", f.profile, "--cwd", f.cwd, ...(file ? ["--text-file", file] : ["--text", text]), ...chatOptionArgs(),
+            ...(f.plan ? ["--plan", f.plan.slug, "--plan-profile", f.plan.profileDir] : []), ...(Pane.suggests() ? ["--suggest"] : []),
+            ...(this.host ? ["--host", this.host] : configDirArgs()),
+          ], 180000);
+        } catch (e) {
+          return { ok: false, message: e instanceof Error ? e.message : String(e) };
+        } finally {
+          if (file) fs.rmSync(file, { force: true });
         }
-        // (on an SSH host or in a container: started there, with Talpy Den's permission hook copied there;
-        // this computer's extra Claude folders stay here)
-        r = await this.owner.ext.backend.pane([
-          "--start", f.profile, "--cwd", f.cwd, ...(file ? ["--text-file", file] : ["--text", text]), ...chatOptionArgs(),
-          ...(f.plan ? ["--plan", f.plan.slug, "--plan-profile", f.plan.profileDir] : []), ...(Pane.suggests() ? ["--suggest"] : []),
-          ...(this.host ? ["--host", this.host] : configDirArgs()),
-        ], 180000);
-      } catch (e) {
-        r = { ok: false, message: e instanceof Error ? e.message : String(e) };
-      } finally {
-        if (file) fs.rmSync(file, { force: true });
-      }
+      };
+      let r = await go();
+      if (!r.ok && !this.disposed && await this.owner.trustFirst(r, f.profile, this.host)) r = await go();   // (its folder trusted: started now)
       if (this.disposed || !r.ok || typeof r.chat !== "string") return { ok: false, message: String(r.message ?? "It didn't start") };
       const from = this.chatId;
       this.fresh = null;

@@ -2629,7 +2629,7 @@ class NewChatTests(unittest.TestCase):
         # a message's pictures, Ctrl+O's turns
         pane = (ROOT / "ui/ChatPane.qml").read_text()
         for source, active in (("ReviewPage.qml", "active: false"), ("OfferList.qml", "active: pane.suggestions.length > 0 && replyBox.activeFocus"),
-                               ("ReplyAsks.qml", "active: pane.offerSetup || pane.offerModel"), ("BigPicture.qml", 'active: pane.bigPicture !== ""'),
+                               ("ReplyAsks.qml", "active: pane.trustAsk !== null || pane.offerSetup || pane.offerModel"), ("BigPicture.qml", 'active: pane.bigPicture !== ""'),
                                ("QueueLine.qml", "active: youBand.waits"), ("FoldAll.qml", "active: false")):
             self.assertIn(f'source: active ? "{source}" : ""', pane)
             self.assertIn(active, pane)

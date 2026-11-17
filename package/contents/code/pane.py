@@ -51,6 +51,11 @@ its permission prompt and its review.
   --side-question CHAT --remove ID|all [--host HOST]
         remove one of the chat's side questions, or all: {"ok", "message",
         "sides", "sidesV"}
+  --trust-folder FOLDER --profile P
+        Claude's trust question answered yes for a folder of this computer
+        (jump.trust_folder), after Talpy Chat asked it: a message --send or
+        --start couldn't send there, its answer's "trustAsk" (trust_ask), goes
+        then: {"ok", "message"}
   --replies CHAT [--profile P]
         your usual replies for the chat (replies.usual_replies): {"ok", "chips": {how
         a turn ended: [replies]}, "ranked": [replies, to complete what you
@@ -1531,7 +1536,29 @@ def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped
     if answer.get("ok"):
         answer["message"] = "Sent: the chat goes on with it in the background" + (
             f" ({answer['id']})" if answer.get("id") else "")
+    ask = trust_ask(home, answer.pop("trust", None))
+    if ask:
+        answer["trustAsk"] = ask
     return answer
+
+
+def trust_ask(home, folder):
+    """What Talpy Chat asks when a message couldn't go because Claude
+    doesn't trust the folder its chat would go on (or start) in, where a
+    background chat can't ask: {"folder", "short" (what trusting it trusts:
+    its repository's folder, cs.trust_place), "question" (jump.trust_question,
+    in the words of Claude's own question)}; yes: --trust-folder, then it's
+    sent again. None: no folder, or one Claude never keeps trust for (your
+    home folder: it asks there every time)."""
+    place = cs.trust_place(folder, home) if isinstance(folder, str) and folder else None
+    if place is None:
+        return None
+    try:
+        import jump
+    except ImportError:   # (on an SSH host or in a container: only what the action needs goes there, and a
+        return None       # folder there isn't asked about from here: trusted in a terminal there)
+    return {"folder": folder, "short": cs.short_folder(str(place["key"]), home),
+            "question": jump.trust_question(place, folder, home)}
 
 
 def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None, scoped=True,
@@ -1714,7 +1741,9 @@ def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=N
     ok, message, job = cs.start_background(profile, folder, cs.task_prompt(text, plan_path, home), home, claude,
                                            prefix=prefix, options=options)
     if not ok:
-        return {"ok": False, "message": message, **({"untrusted": True} if message.startswith(cs.UNTRUSTED) else {})}
+        ask = trust_ask(home, folder) if message.startswith(cs.UNTRUSTED) else None
+        return {"ok": False, "message": message, **({"untrusted": True} if message.startswith(cs.UNTRUSTED) else {}),
+                **({"trustAsk": ask} if ask else {})}
     chat = job_chat(profile, job)
     if chat is None:
         return {"ok": False, "message": f"It started ({job}), but its chat isn't there to show: find it in the list"}
@@ -2710,7 +2739,7 @@ def main(argv=None):
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
                "--hide-reply", "--type-in", "--reply-text", "--set-options", "--bookmark", "--made",
-               "--side-question")
+               "--side-question", "--trust-folder")
     osd, suggest, no_copy, keep_copy, as_file, made_path, step = False, False, False, False, False, None, None
     cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
     mark_kind, mark_at, reach = "", 0, None   # (--bookmark's --kind and --at; --conversation's --reach)
@@ -2849,6 +2878,12 @@ def main(argv=None):
             return emit({"ok": ok, "message": said, "sides": items, "sidesV": v})
         if action == "--side-question" and not remote:   # (kept here; a host's chat's asked there)
             return emit(side_question(home, config_dirs, cache_root, target, host, profile, text, model or "", rest))
+        if action == "--trust-folder":   # (Talpy Chat's Trust it and send: a folder of this computer's)
+            if host:
+                return emit({"ok": False, "message": "Trust a folder on another computer in a terminal there"})
+            import jump
+            ok, said = jump.trust_folder(home, config_dirs, profile, target)
+            return emit({"ok": ok, "message": said})
         if host and action == "--reviewed":  # (kept here, as stars are)
             mark_reviewed(cache_root, target, host, on=not off)
             return emit({"ok": True, "message": "Marked reviewed" if not off else "Not marked reviewed"})
