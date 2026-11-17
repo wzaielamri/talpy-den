@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.21.0 (2026-11-17)
 
 ### Highlights
 
 - **Ask from here:** side questions about a long chat can see just the part from a message on: right-click it for *Ask from here*; a line in the chat marks where, and the panel says how many tokens that is instead of the whole chat (Plasma and VS Code).
+- **Side questions fold and stay in step:** a click on a question's › folds it to one line, and every window, Plasma's and VS Code's, shows the same side questions at once (Plasma and VS Code).
+- **What runs in the background:** under Talpy Chat's working line, a line for each shell a chat runs in the background, and *Waiting on a background shell…* when only those run (Plasma and VS Code).
+- **Trust a folder from Talpy Chat:** a message to a chat in a folder Claude doesn't trust yet asks Claude's own question, then goes (Plasma and VS Code).
+- **Fixes:** a new chat with a pasted picture starts again on Claude Code 2.1.326; in Plasma, Copy keeps the end of the conversation in view, the reply box no longer slides sideways, and opening the side questions beside the chat keeps your place.
 
 ### Every change
 
