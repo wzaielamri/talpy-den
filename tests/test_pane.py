@@ -3894,6 +3894,86 @@ class ResizeKeepsTheEndTests(unittest.TestCase):
         self.assertNotIn("keepEnd()", body)   # (once: its rows keep their width, nothing wraps again)
 
 
+# A wrapping box in a ScrollView, as Talpy Chat's reply box: lines pasted from a terminal (padded
+# with spaces to its width), → pressed through them all; with NoSideScroll in it or not
+SIDE_PAGE = """import QtQuick
+import org.kde.plasma.components as PlasmaComponents3
+import "%(ui)s" as Ui
+Item {
+    width: 420; height: 200
+    property real cx: sv.contentItem.contentX
+    property real cy: sv.contentItem.contentY
+    property int len: box.length
+    function start() { box.forceActiveFocus(); box.cursorPosition = 0 }
+    PlasmaComponents3.ScrollView {
+        id: sv
+        anchors.fill: parent
+        contentWidth: availableWidth
+        PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
+        PlasmaComponents3.TextArea {
+            id: box
+            background: null
+            wrapMode: TextEdit.Wrap
+            font.family: "monospace"
+            text: %(text)s
+            %(fix)s
+        }
+    }
+}
+"""
+SIDE_SCRIPT = """import sys, json
+from PySide6.QtCore import QUrl, Qt, QMetaObject
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQuick import QQuickView
+from PySide6.QtTest import QTest
+app = QGuiApplication(sys.argv)
+found = {}
+for name, path in zip(sys.argv[1::2], sys.argv[2::2]):
+    view = QQuickView(); view.setSource(QUrl.fromLocalFile(path))
+    if view.status() != QQuickView.Ready:
+        sys.exit("\\n".join(e.toString() for e in view.errors()))
+    view.show(); QTest.qWait(100)
+    page = view.rootObject(); QMetaObject.invokeMethod(page, "start"); QTest.qWait(20)
+    most = 0
+    for _ in range(page.property("len") + 2):
+        QTest.keyClick(view, Qt.Key_Right); QTest.qWait(2)
+        most = max(most, abs(page.property("cx")))
+    QTest.keyClick(view, Qt.Key_End, Qt.ControlModifier); QTest.qWait(20)
+    found[name] = {"sideways": most > 0.5, "down": page.property("cy") > 0}
+print(json.dumps(found))
+"""
+
+
+class NoSideScrollTests(unittest.TestCase):
+    """The boxes you write in never scroll sideways: Qt's TextArea keeps its cursor in view by
+    moving its ScrollView's contentX, and spaces at a line's end hang past the edge, so → through
+    a pasted terminal line slid all the text out of view to the left."""
+
+    @NEEDS_PYSIDE6
+    def test_right_through_a_padded_line_leaves_the_text_where_it_is(self):
+        lines = ["it's running unit tests and reviewing the", "", "LVGL memory, so the on-screen check", "after the old build"]
+        text = "\n".join(line.ljust(90) for line in lines * 3) + "\nthe run to finish."
+        with tempfile.TemporaryDirectory() as tmp:
+            pages = []
+            for name, fix in (("qt", ""), ("fixed", "Ui.NoSideScroll { view: sv }")):
+                page = Path(tmp) / f"{name}.qml"
+                page.write_text(SIDE_PAGE % {"ui": UI.as_uri(), "text": json.dumps(text), "fix": fix})
+                pages += [name, str(page)]
+            out = subprocess.run(["python3", "-c", SIDE_SCRIPT, *pages], capture_output=True, text=True, timeout=60,
+                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+        self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+        found = json.loads(out.stdout.strip().splitlines()[-1])
+        self.assertEqual(found, {"qt": {"sideways": True, "down": True},   # (Qt's own: slid left)
+                                 "fixed": {"sideways": False, "down": True}})   # (still follows the cursor down)
+
+    def test_each_box_you_write_in_has_it(self):
+        for name, view in (("ChatPane.qml", "replyScroll"), ("SidePanel.qml", "boxScroll"), ("NewChatBox.qml", "taskScroll")):
+            qml = (UI / name).read_text()
+            self.assertIn(f"id: {view}\n", qml, name)
+            self.assertIn("NoSideScroll {", qml, name)
+            self.assertIn(f"view: {view}\n", qml, name)
+
+
 @unittest.skipUnless(shutil.which("node"), "node isn't installed")
 class AnsiTests(unittest.TestCase):
     """ansi.mjs: what a command printed, its colours as runs (VS Code) and as Qt rich text (Plasma)."""

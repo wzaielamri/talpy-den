@@ -137,6 +137,10 @@ Rectangle {
                         root.pasteImage(box.remoteHost, "task")
                     }
                 }
+                // (never sideways: → through a pasted terminal line's spaces slid it all left)
+                NoSideScroll {
+                    view: taskScroll
+                }
 
                 PlasmaCore.ToolTipArea {
                     textFormat: Text.PlainText

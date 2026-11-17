@@ -646,6 +646,7 @@ Rectangle {
                 font.weight: Font.Bold
             }
             PlasmaComponents3.ScrollView {
+                id: boxScroll
                 anchors.fill: parent
                 anchors.leftMargin: panel.gutter - box.leftPadding
                 anchors.topMargin: Kirigami.Units.smallSpacing
@@ -686,6 +687,9 @@ Rectangle {
                             return
                         }
                         event.accepted = true
+                    }
+                    NoSideScroll {   // (as the reply box: never sideways)
+                        view: boxScroll
                     }
                 }
             }

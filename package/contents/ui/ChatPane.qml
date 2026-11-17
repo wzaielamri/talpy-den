@@ -4443,6 +4443,7 @@ Window {
                         font.weight: Font.Bold
                     }
                     PlasmaComponents3.ScrollView {
+                        id: replyScroll
                         anchors.fill: parent
                         anchors.leftMargin: pane.gutter - replyBox.leftPadding
                         anchors.topMargin: Kirigami.Units.smallSpacing
@@ -4546,6 +4547,10 @@ Window {
                             TapHandler {
                                 acceptedButtons: Qt.RightButton
                                 onTapped: (point, button) => pane.editMenuAt("box", null)
+                            }
+                            // (never sideways: → through a pasted terminal line's spaces slid it all left)
+                            NoSideScroll {
+                                view: replyScroll
                             }
 
                             // What you type, completed in grey from your usual replies, where the
