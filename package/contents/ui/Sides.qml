@@ -31,6 +31,7 @@ Item {
     property var asking: []
     property int count: 0
     property var gone: ({})      // id -> true: removed, pane.py's answer on its way
+    property var folds: ({})     // id -> true/false: folded or unfolded here, pane.py's answer on its way
     property real goneBefore: 0  // (Remove all: the ones asked by then are gone, till pane.py's answer)
     property string note: ""     // (one that couldn't be removed, a part there's none of: why, in the panel a moment)
     property bool noteBad: false // (one that went wrong: in the theme's negative colour; a part there's none of: muted)
@@ -75,7 +76,9 @@ Item {
             } else if (!a.dropped)
                 mine.push(a)
         }
-        return { list: list.filter(s => !hidden[s.id]).concat(mine), handoff: handoff }
+        const shownList = list.filter(s => !hidden[s.id])
+            .map(s => folds[s.id] !== undefined && folds[s.id] !== (s.folded === true) ? Object.assign({}, s, { folded: folds[s.id] }) : s)
+        return { list: shownList.concat(mine), handoff: handoff }
     }
     readonly property var shown: view.list
     readonly property var handoff: view.handoff
@@ -145,6 +148,18 @@ Item {
         }
         removeOf(pane.chatId, pane.host, id)
     }
+    // A click on a question's ›: folded to its question (or unfolded) at once, kept by pane.py (every window,
+    // VS Code's too); one this window asked that pane.py doesn't list yet has nothing to keep
+    function fold(id, on) {
+        if (!/^[0-9a-f]{12}$/.test(String(id)) || !pane.chatId)
+            return
+        const next = Object.assign({}, folds)
+        next[id] = !!on
+        folds = next
+        pane.start("--side-question " + root.shellQuote(pane.chatId) + " --fold " + root.shellQuote(id) + (on ? "" : " --off")
+                   + (pane.host ? " --host " + root.shellQuote(pane.host) : "") + " # " + Date.now(),
+                   { kind: "side", chat: pane.chatId, host: pane.host, fold: id })
+    }
     function removeOf(chat, host, id) {
         pane.start("--side-question " + root.shellQuote(chat) + " --remove " + root.shellQuote(id)
                    + (host ? " --host " + root.shellQuote(host) : "") + " # " + Date.now(),
@@ -166,6 +181,20 @@ Item {
             if (part === null)   // (the panel stays on the whole chat, and says why)
                 say(result.ok ? Sides.SIDE_FROM_COMPACTED : result.missing ? Sides.SIDE_FROM_GONE
                     : result.message || i18n("That didn't work"), !result.ok && !result.missing)
+            return
+        }
+        if (asked.fold !== undefined) {
+            if (here && Sides.newerSides(result.sides, result.sidesV, pane.sidesV)) {
+                pane.sides = result.sides
+                pane.sidesV = result.sidesV
+            }
+            if (here && folds[asked.fold] !== undefined) {
+                const next = Object.assign({}, folds)
+                delete next[asked.fold]
+                folds = next
+            }
+            if (here && !result.ok)
+                say(result.message || i18n("That didn't work"), true)
             return
         }
         if (asked.remove !== undefined) {
@@ -211,6 +240,7 @@ Item {
     function clear() {
         asking = []
         gone = {}
+        folds = {}
         goneBefore = 0
         note = ""
         part = null

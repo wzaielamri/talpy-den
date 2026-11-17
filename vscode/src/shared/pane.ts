@@ -390,7 +390,7 @@ export type PaneHostMessage =
   | { type: "bookmarks"; id: number; chatId: string; ok: boolean; message: string; bookmarks: Bookmark[]; bookmarksV: number }
   // a side question asked (sideAsk) or removed (sideRemove), the page's id: pane.py's answer (side: the question
   // with its answer, or why none came), the chat's whole list and its version (sideAnswerOf)
-  | { type: "side"; kind: "ask" | "remove"; id: number; chatId: string; ok: boolean; message: string; side?: Side; sides: Side[]; sidesV: number }
+  | { type: "side"; kind: "ask" | "remove" | "fold"; id: number; chatId: string; ok: boolean; message: string; side?: Side; sides: Side[]; sidesV: number }
   // where a part from that message starts (sidePart; pane.py --side-question --part): part null, the whole chat
   // (that message is before the chat was compacted); not ok: why (missing: the chat isn't there any more)
   | { type: "side"; kind: "part"; id: number; chatId: string; ok: boolean; message: string; part: SidePart | null; missing?: boolean }
@@ -432,6 +432,7 @@ export type PaneMessage =
   // ("all"); where a part from a message starts (--part, Ask from here); the panel's pick and whether it's open, kept
   | { type: "sideAsk"; id: number; text: string; pick: SidePick; from?: string }
   | { type: "sideRemove"; id: number; side: string }
+  | { type: "sideFold"; id: number; side: string; on: boolean }
   | { type: "sidePart"; id: number; key: string }
   | { type: "sidePrefs"; open?: boolean; pick?: SidePick }
   | { type: "openPicture"; path: string } // a picture of yours, in VS Code's image viewer
@@ -1199,7 +1200,7 @@ export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, 
 export { QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote } from "../../vendor/quote.mjs";
 export { adoptable, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, oneLine, SNIPPET_CHARS, snippetOf, stateOf, staysOpen, step as bookmarkStep, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, type BookmarkStep } from "../../vendor/bookmarks.mjs";
 // Side questions (the side panel, "Explain this"): the widget's sides.mjs, as Plasma's
-export { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, pickLabel as sidePickLabel, SIDE_ACTIONS, SIDE_AGAIN, SIDE_BUTTON, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_COST_TIP, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS, SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TIP, SIDE_TITLE, sideModelLabel, sideState, sideWarm, tokensText, WARM_MS, SIDE_FROM_MENU, SIDE_FROM_TIP, SIDE_FROM_LINE, SIDE_FROM_SHOW, SIDE_WHOLE, SIDE_WHOLE_TIP, SIDE_ASK_WHOLE, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, fromNote, sideSaw, type Side, type SidePart } from "../../vendor/sides.mjs";
+export { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, pickLabel as sidePickLabel, SIDE_ACTIONS, SIDE_AGAIN, SIDE_BUTTON, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_COST_TIP, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS, SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TIP, SIDE_TITLE, sideModelLabel, sideState, sideWarm, tokensText, WARM_MS, SIDE_FROM_MENU, SIDE_FROM_TIP, SIDE_FROM_LINE, SIDE_FROM_SHOW, SIDE_FOLD_TIP, SIDE_UNFOLD_TIP, foldedLine, SIDE_WHOLE, SIDE_WHOLE_TIP, SIDE_ASK_WHOLE, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, fromNote, sideSaw, type Side, type SidePart } from "../../vendor/sides.mjs";
 
 // The panel sits beside the chat in a view at least this wide (px); narrower, it covers the chat
 // under the tabs
@@ -1242,6 +1243,7 @@ export function sideOf(v: unknown): Side | null {
   const ms = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x > 0 ? Math.floor(x) : 0);
   const out: Side = { id: s.id, q: s.q, at: ms(s.at), pick: sidePickOf(s.pick) ?? "", model: typeof s.model === "string" ? s.model : "" };
   if (sideKeyOk(s.since)) out.since = s.since;
+  if (s.folded === true) out.folded = true;
   const from = sidePartOf(s.from);
   if (from) out.from = from;
   if (s.pending === true) return { ...out, pending: true };
@@ -1306,7 +1308,7 @@ export function sideLine(part: SidePart | null, sides: readonly Side[], pick: Si
 
 // The answer to a side question asked or removed (pane.py --side-question), as the page gets it:
 // each field only as what it can be
-export function sideAnswerOf(kind: "ask" | "remove", id: number, chatId: string, r: Record<string, unknown>): Extract<PaneHostMessage, { type: "side" }> {
+export function sideAnswerOf(kind: "ask" | "remove" | "fold", id: number, chatId: string, r: Record<string, unknown>): Extract<PaneHostMessage, { type: "side" }> {
   const side = sideOf(r.side);
   return { type: "side", kind, id, chatId, ok: r.ok === true,
            message: typeof r.message === "string" ? r.message : r.ok === true ? "" : "That didn't work",

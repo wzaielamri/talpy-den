@@ -10621,7 +10621,7 @@ def forget_bookmarks(cache_root, chat, host=""):
 # none came, "synthetic": Claude's stand-in for an answer, "since": the key of
 # the message it was asked from (Ask from here, Explain this), "from": the part
 # of the chat that answered it, side.part_of's {key, text, at, tokens, of}; no
-# "from": all of it}. One on its way has
+# "from": all of it, "folded": shown folded to its question, in every window}. One on its way has
 # no "done" ("pending" true as read); one that waited longer than a helper
 # can (SIDE_LOST_MS: its helper died) reads as failed. v grows with every
 # change, as bookmarks'.
@@ -10693,6 +10693,8 @@ def side_item(s, now_ms):
             "model": s["model"] if type(s.get("model")) is str else ""}
     if side_since_ok(s.get("since")):
         item["since"] = s["since"]
+    if s.get("folded") is True:
+        item["folded"] = True
     part = side_part(s.get("from"))
     if part is not None:
         item["from"] = part
@@ -10817,6 +10819,39 @@ def finish_side(cache_root, chat, host, side_id, answer=None, error="", model=""
         else:
             s["error"] = error or SIDE_LOST
     return change_sides(cache_root, chat, host, edit, now_ms)[2:]
+
+
+def fold_side(cache_root, chat, host, side_id, on=True):
+    """Fold a side question to its question line ("all": every one of the chat's), or unfold it: kept in
+    the file, so every window (VS Code's too) and the next one show it so: (ok, what went wrong, the items
+    now, their v)."""
+    if side_id != "all" and not (isinstance(side_id, str) and SIDE_ID.fullmatch(side_id)):
+        return (False, "Which side question?") + load_sides(cache_root, chat, host)
+
+    def edit(items):
+        changed = False
+        for s in items:
+            if (side_id == "all" or s["id"] == side_id) and bool(s.get("folded")) != bool(on):
+                if on:
+                    s["folded"] = True
+                else:
+                    s.pop("folded", None)
+                changed = True
+        return changed
+    return change_sides(cache_root, chat, host, edit)
+
+
+def marks_stamp(cache_root, chat, host=""):
+    """What a window's look at a chat depends on besides its transcript: when its side questions and its
+    bookmarks last changed (their files' times, 0 for none), so a window sees what another window, or VS
+    Code, did to them without the chat changing (pane.py --conversation's stamp)."""
+    out = []
+    for path in (sides_path(cache_root, chat, host), bookmarks_path(cache_root, chat, host)):
+        try:
+            out.append(str(path.stat().st_mtime_ns) if path is not None else "0")
+        except OSError:
+            out.append("0")
+    return ".".join(out)
 
 
 def remove_side(cache_root, chat, host, side_id):

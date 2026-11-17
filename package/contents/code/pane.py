@@ -59,6 +59,10 @@ its permission prompt and its review.
   --side-question CHAT --remove ID|all [--host HOST]
         remove one of the chat's side questions, or all: {"ok", "message",
         "sides", "sidesV"}
+  --side-question CHAT --fold ID|all [--off] [--host HOST]
+        fold one of the chat's side questions to its question (or all of
+        them), or unfold it (--off): kept with it, so every window shows it
+        so (talpy_den.fold_side). {"ok", "message", "sides", "sidesV"}
   --trust-folder FOLDER --profile P
         Claude's trust question answered yes for a folder of this computer
         (jump.trust_folder), after Talpy Chat asked it: a message --send or
@@ -952,7 +956,7 @@ def find_transcript(home, extra_dirs, chat_id, profile_key=None):
 
 
 def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_ITEMS, if_changed=None, wait=0, pictures=None,
-                      suggest=False, reach=None, away=None):
+                      suggest=False, reach=None, away=None, marks=None):
     """--conversation. "options": the model and effort it uses now
     (chatpick.options_now). "context": how full its context is (turns.context_left),
     "turn": Claude's turn so far, while it's going on (turns.TurnSoFar.now:
@@ -967,7 +971,9 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     "limit" (the stamp's), "reach" and "reached". away (--away: a window that
     shows it again, or for the first time): when one last showed it (ms, 0:
     never); the answer has what it did since, "away" (turns.Away.result,
-    None: nothing to tell)."""
+    None: nothing to tell). marks(): what its side questions and bookmarks
+    are here (talpy_den.marks_stamp), in its stamp: one changed in another
+    window (VS Code's) is a change too, the chat as it was."""
     if not cs.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
@@ -977,7 +983,8 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
 
     def look(path):
         said = predicted_reply(chatpick.job_record(profile, chat_id)) if suggest else None
-        return stamp_of(path) + (f"~{zlib.crc32(said.encode('utf-8')):08x}" if said else "")
+        return stamp_of(path) + (f"~{zlib.crc32(said.encode('utf-8')):08x}" if said else "") \
+            + (f"~m{marks()}" if marks is not None else "")
     stamp = look(path)
     if if_changed and not reach and if_changed == f"{stamp}/{limit}":
         if not (wait > 0 and wait_for_change(path, stamp, min(wait, WAIT_MAX_S), look=look)):
@@ -2770,7 +2777,7 @@ def main(argv=None):
     mark_kind, mark_at, reach = "", 0, None   # (--bookmark's --kind and --at; --conversation's --reach)
     seen, away, since = 0, False, None   # (--conversation's --seen MS, --away and, on a host, --since)
     side_remove, history = None, []   # (--side-question's --remove ID, and --history, on a host)
-    side_from, part_key = None, None   # (--side-question's --from KEY and --part KEY)
+    side_from, part_key, side_fold = None, None, None   # (--side-question's --from KEY, --part KEY, --fold ID)
     while args:
         arg = args.pop(0)
         if arg in actions and args and action is None:
@@ -2838,6 +2845,8 @@ def main(argv=None):
             side_from = args.pop(0)
         elif arg == "--part" and args:
             part_key = args.pop(0)
+        elif arg == "--fold" and args:
+            side_fold = args.pop(0)
         elif arg == "--history" and args:
             try:
                 history = json.loads(args.pop(0))
@@ -2907,6 +2916,9 @@ def main(argv=None):
         if action == "--side-question" and side_remove is not None:   # (kept here, a host's chat's too)
             ok, said, items, v = cs.remove_side(cache_root, target, host, side_remove)
             return emit({"ok": ok, "message": said, "sides": items, "sidesV": v})
+        if action == "--side-question" and side_fold is not None:   # (kept here, a host's chat's too)
+            ok, said, items, v = cs.fold_side(cache_root, target, host, side_fold, not off)
+            return emit({"ok": ok, "message": said, "sides": items, "sidesV": v})
         if action == "--side-question" and part_key is not None:   # (read where the chat is)
             return emit(forward(host, rest, action) if host and not remote
                         else side_part(home, config_dirs, target, profile, part_key))
@@ -2939,7 +2951,20 @@ def main(argv=None):
                 rest += ["--since", str(cs.seen_mark(cache_root, target, host))]
             if action == "--conversation" and seen:   # (the host's times, kept here)
                 cs.mark_seen(cache_root, target, host, seen)
+            mine = cs.marks_stamp(cache_root, target, host) if action == "--conversation" else ""
+            if action == "--conversation" and "--if-changed" in rest:
+                # (the host's stamp, and what the chat's side questions and bookmarks are here, kept here: one
+                # changed here since, the whole answer, the host's chat as it was)
+                at = rest.index("--if-changed")
+                there, _, here = rest[at + 1].partition("/")[0].rpartition("~h")
+                if there and here != mine:
+                    del rest[at:at + 2]
+                elif there:   # (a stamp of before: as it is)
+                    rest[at + 1] = there + "/" + rest[at + 1].partition("/")[2]
             answer = forward(host, rest, action)
+            if action == "--conversation" and answer.get("ok") and isinstance(answer.get("stamp"), str):
+                head, sep, tail = answer["stamp"].partition("/")
+                answer["stamp"] = f"{head}~h{mine}{sep}{tail}"
             if action == "--review" and answer.get("ok"):
                 answer["reviewedAt"] = cs.load_reviewed(cache_root).get(cs.review_key(target, host))
             if action == "--conversation" and answer.get("ok"):
@@ -2963,7 +2988,8 @@ def main(argv=None):
                 cs.mark_seen(cache_root, target, "", seen)
             result = chat_conversation(home, config_dirs, target, profile, limit, stamp, wait,
                                        None if remote else cs.images_dir(home), suggest, reach,
-                                       (since or 0) if away else None)
+                                       (since or 0) if away else None,
+                                       None if remote else (lambda: cs.marks_stamp(cache_root, target)))
             if not remote and result.get("ok") and not result.get("unchanged"):   # (a host's: kept here, above)
                 cs.bookmarks_answer(result, cache_root, target)
                 cs.sides_answer(result, cache_root, target)

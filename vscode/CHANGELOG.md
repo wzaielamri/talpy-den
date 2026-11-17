@@ -4,6 +4,12 @@
 
 ### New
 
+- **Side questions fold, and match in every window.** A click on a side
+  question's › folds it to its question (again: unfolds it), kept with it,
+  so it stays so in every window and after a reopen. One asked, removed or
+  folded in another window (Plasma's too) shows here at once, not only once
+  the chat changes.
+
 - **Ask from here.** Right-click a message in Talpy Chat for *Ask from
   here*: side questions then see the chat from that message's turn on, not
   all of it, so a long chat's side question sends that part. The line under

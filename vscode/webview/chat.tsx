@@ -726,6 +726,9 @@ function ChatApp() {
   const askedNow = useRef(asked);
   askedNow.current = asked;
   const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  // (folded or unfolded here, pane.py's answer on its way: id -> folded)
+  const [folding, setFolding] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const foldOps = useRef(new Map<number, string>());
   const sideOps = useRef(new Map<number, string[]>());   // (removes on their way: the ids each one hides)
   const sideId = useRef(0);
   const [askedCount, setAskedCount] = useState(0);
@@ -741,7 +744,10 @@ function ChatApp() {
   const [sidePart, setSidePart] = useState<SidePart | null>(null);
   const partAsk = useRef(0);
   const tabsRow = useRef<HTMLDivElement>(null);
-  const shownSides = useMemo(() => sidesShown(sides.list, asked, removing), [sides, asked, removing]);
+  const shownSides = useMemo(() => {
+    const list = sidesShown(sides.list, asked, removing);
+    return folding.size ? list.map((s) => (folding.has(s.id) && folding.get(s.id) !== !!s.folded ? { ...s, folded: folding.get(s.id) } : s)) : list;
+  }, [sides, asked, removing, folding]);
   // (a new chat has none till it's started; before the extension says which chat, its page does: so a panel
   // kept open is there from the first frame, and the chat's column doesn't move once it's drawn)
   const sideCan = chat ? !chat.fresh && !chat.starting : !config.fresh;
@@ -811,6 +817,15 @@ function ChatApp() {
     partAsk.current = 0;
     setSidePart(null);
   };
+  // A click on a question's ›: folded to its question (or unfolded) at once, kept by pane.py (every window,
+  // Plasma's too); one this page asked that pane.py doesn't list yet has nothing to keep
+  const foldSide = (s: ShownSide, on: boolean) => {
+    if (s.local !== undefined || !/^[0-9a-f]{12}$/.test(s.id)) return;
+    const id = ++sideId.current;
+    foldOps.current.set(id, s.id);
+    setFolding((was) => new Map(was).set(s.id, on));
+    post({ type: "sideFold", id, side: s.id, on });
+  };
   // Removed: hidden at once; one this page asked that's still on its way, once it's there (gone)
   const removeSides = (ids: string[], which: string) => {
     const id = ++sideId.current;
@@ -850,7 +865,12 @@ function ChatApp() {
       } else setSideNote({ text: m.message || "That didn't work", ok: false });
       return;
     }
-    if (m.kind === "ask") {
+    if (m.kind === "fold") {
+      const sid = foldOps.current.get(m.id);
+      foldOps.current.delete(m.id);
+      if (sid !== undefined) setFolding((was) => { const next = new Map(was); next.delete(sid); return next; });
+      if (!m.ok) setSideNote({ text: m.message || "That didn't work", ok: false });
+    } else if (m.kind === "ask") {
       const a = askedNow.current.find((x) => x.local === m.id);
       if (a?.gone && m.side && m.sides.some((s) => s.id === m.side!.id)) removeSides([m.side.id], m.side.id);   // (removed while on its way)
       setAsked((was) => was.flatMap((x) => (x.local !== m.id ? [x] : m.side || x.gone ? [] : [{ ...x, error: m.message || "Claude couldn't answer it" }])));
@@ -3034,7 +3054,7 @@ function ChatApp() {
         pick={sidePick} pickOpen={pickOpen} setPickOpen={setPickOpen} note={sideNote} style={textStyle}
         line={sideLine(sidePart, sides.list, sidePick, Date.now(), soFar.context?.used ?? 0)} part={!!sidePart}
         onAsk={(q) => askSide(q)} onPick={pickSide} onRemove={removeSide} onRemoveAll={removeAllSides} onAgain={againSide} onAskWhole={askWholeSide}
-        onCopy={(s) => { if (s.a) post({ type: "copy", text: s.a }); }} onQuote={quoteSide} onCopyCode={copyCode} onWhole={wholeChat} onShowPart={showPart} onClose={() => closeSide()} />
+        onCopy={(s) => { if (s.a) post({ type: "copy", text: s.a }); }} onQuote={quoteSide} onCopyCode={copyCode} onWhole={wholeChat} onShowPart={showPart} onFold={foldSide} onClose={() => closeSide()} />
     ) : null}
     </>
   );

@@ -4508,3 +4508,61 @@ class SideFromTests(SideFixture):
         sent = [c["request"]["request"]["history"] for c in self.calls() if "request" in c]
         self.assertEqual(sent[2], [{"question": "one?", "response": "About one? (0 before)"}])
         self.assertEqual(sent[3], [{"question": "all of it?", "response": "About all of it? (0 before)"}])
+
+
+class SideSyncTests(SideFixture):
+    """What another window (VS Code's, another Talpy Chat) does to a chat's side questions or bookmarks shows
+    without the chat changing: the conversation's stamp says what they are (talpy_den.marks_stamp); and a
+    side question folded is kept so (pane.py --side-question --fold)."""
+
+    def setUp(self):
+        super().setUp()
+        t = self.now - 100
+        self.chat(dict(prompt("fix it", t, cwd=str(self.folder)), uuid="u1"), text_reply("Done.", t + 1, "m1", "end_turn"))
+
+    def test_a_change_in_another_window_is_a_change(self):
+        first = self.cli("--conversation", SID)
+        self.assertNotIn("sides", first)
+        self.assertEqual(self.cli("--conversation", SID, "--if-changed", first["stamp"]), {"ok": True, "unchanged": True})
+        asked = self.ask("what?")   # (in another window: the chat itself as it was)
+        got = self.cli("--conversation", SID, "--if-changed", first["stamp"])
+        self.assertEqual((got.get("unchanged"), got["sidesV"]), (None, asked["sidesV"]))
+        self.assertEqual(self.cli("--conversation", SID, "--if-changed", got["stamp"]), {"ok": True, "unchanged": True})
+        self.cli("--bookmark", SID, "--key", "m1", "--kind", "claude", "--at", "5", "--text", "Done.")
+        self.assertIn("bookmarks", self.cli("--conversation", SID, "--if-changed", got["stamp"]))   # (bookmarks too)
+        # (the stamp as the front ends read it: its size first, the limit after its /)
+        self.assertEqual(got["stamp"].split("/")[0].split(":")[0], first["stamp"].split("/")[0].split(":")[0])
+        self.assertEqual(got["stamp"].split("/")[1], first["stamp"].split("/")[1])
+        self.assertNotIn("~m", self.cli("--conversation", SID, "--remote")["stamp"])   # (on a host: kept here)
+
+    def test_a_hosts_chat_asks_the_host_again_when_its_marks_changed_here(self):
+        there = {"ok": True, "items": [], "stamp": "1:2~abc/120", "more": False}
+        with mock.patch("remote.host_answer", side_effect=lambda *a, **kw: dict(there)) as asked:
+            got = self.cli("--conversation", SID, "--host", "gpu")
+            mine = cs.marks_stamp(self.cache, SID, "gpu")
+            self.assertEqual(got["stamp"], f"1:2~abc~h{mine}/120")
+            self.cli("--conversation", SID, "--host", "gpu", "--if-changed", got["stamp"])
+            self.assertEqual(asked.call_args[0][1], ["--conversation", SID, "--if-changed", "1:2~abc/120"])
+            with mock.patch.object(pane, "forward", return_value={"ok": True, "answer": "A"}):
+                self.cli("--side-question", SID, "--text", "q", "--host", "gpu")
+            again = self.cli("--conversation", SID, "--host", "gpu", "--if-changed", got["stamp"])
+            self.assertEqual(asked.call_args[0][1], ["--conversation", SID])   # (changed here: all of it, with its sides)
+            self.assertEqual(len(again["sides"]), 1)
+            self.cli("--conversation", SID, "--host", "gpu", "--if-changed", "1:2/120")   # (a stamp of before: as it is)
+            self.assertEqual(asked.call_args[0][1], ["--conversation", SID, "--if-changed", "1:2/120"])
+
+    def test_fold_one_or_all_and_back(self):
+        a, b = self.ask("one?")["side"], self.ask("two?")["side"]
+        got = self.cli("--side-question", SID, "--fold", a["id"])
+        self.assertEqual([s.get("folded") for s in got["sides"]], [True, None])
+        self.assertEqual(cs.load_sides(self.cache, SID)[0][0]["folded"], True)   # (kept: every window shows it so)
+        got = self.cli("--side-question", SID, "--fold", "all")
+        self.assertEqual([s.get("folded") for s in got["sides"]], [True, True])
+        v = got["sidesV"]
+        self.assertEqual(self.cli("--side-question", SID, "--fold", "all")["sidesV"], v)   # (nothing to change: not written)
+        got = self.cli("--side-question", SID, "--fold", b["id"], "--off")
+        self.assertEqual([s.get("folded") for s in got["sides"]], [True, None])
+        self.assertEqual(self.cli("--side-question", SID, "--fold", "nope")["message"], "Which side question?")
+        with mock.patch.object(pane, "forward", side_effect=AssertionError("forwarded")):
+            self.assertTrue(self.cli("--side-question", SID, "--fold", "all", "--host", "gpu")["ok"])   # (kept here)
+        self.assertIn("--side-question CHAT --fold ID|all [--off] [--host HOST]", pane.__doc__)

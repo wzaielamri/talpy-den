@@ -12,6 +12,7 @@ export interface Side {
     synthetic?: boolean;
     pending?: boolean;
     since?: string;
+    folded?: boolean;
     from?: { key: string; text: string; at: number; tokens: number; of: number };
 }
 
@@ -30,6 +31,9 @@ export declare const SIDE_QUOTE: string;
 export declare const SIDE_AGAIN: string;
 export declare const SIDE_CLEAR_ASK: string;
 export declare const SIDE_CLOSE: string;
+export declare const SIDE_FOLD_TIP: string;
+export declare const SIDE_UNFOLD_TIP: string;
+export declare function foldedLine(q: string): string;
 export declare const SIDE_PICK_TIP: string;
 export declare const SIDE_ACTIONS: ("copy" | "quote" | "whole" | "remove")[];
 export declare function sideModelLabel(s: Side | null | undefined): string;

@@ -4546,6 +4546,28 @@ body.vscode-high-contrast-light .pane-side {
 .pane-side-item .pane-you {
   padding: 4px 12px 4px 0;
 }
+/* (a question's ›: a click folds it, pointing down while it's open; folded, its question on one line) */
+.pane-side-fold {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pane-side-fold[aria-expanded="true"] {
+  transform: rotate(90deg);
+}
+.pane-side-fold:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+.pane-side-folded {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.55em;
+}
 
 .pane-side-synthetic .pane-body {
   color: var(--cs-muted);

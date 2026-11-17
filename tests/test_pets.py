@@ -2473,7 +2473,18 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('kind: "side"', ask)
         self.assertIn('" --remove " + root.shellQuote(id)', logic)
         self.assertIn('Plasmoid.configuration.sideQuestionModel', logic)
-        self.assertEqual(logic.count("Sides.newerSides(result.sides, result.sidesV, pane.sidesV)"), 2)
+        self.assertEqual(logic.count("Sides.newerSides(result.sides, result.sidesV, pane.sidesV)"), 3)   # (asked, removed, folded)
+        # (a question's ›: folded or unfolded at once, kept by pane.py --fold, so every window shows it so)
+        fold = logic[logic.index("    function fold(id, on) {"):]
+        fold = fold[:fold.index("\n    }\n")]
+        self.assertIn('" --fold " + root.shellQuote(id) + (on ? "" : " --off")', fold)
+        self.assertIn("folds = next", fold)
+        panel = (ROOT / "ui/SidePanel.qml").read_text()
+        self.assertIn("onTapped: panel.logic.fold(entry.sid, !entry.folded)", panel)
+        self.assertIn("rotation: entry.folded ? 0 : 90", panel)
+        self.assertIn("Sides.foldedLine(entry.q)", panel)
+        self.assertIn("Sides.SIDE_UNFOLD_TIP : Sides.SIDE_FOLD_TIP", panel)
+        self.assertEqual(panel.count("visible: !entry.folded"), 3)   # (its whole question, its answer, its line)
         # (Ask again: the failed one goes, its question again on the model picked now)
         again = logic[logic.index("    function askAgain(s) {"):]
         self.assertIn("remove(String(s.id))\n        ask(s.q, s.since || \"\")", again[:again.index("\n    }\n")])   # (the same part)

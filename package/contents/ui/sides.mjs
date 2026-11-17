@@ -23,6 +23,14 @@ export const SIDE_QUOTE = "Quote in reply";   // (an answer, quoted in the chat'
 export const SIDE_AGAIN = "Ask again";        // (one with no answer: the same question again)
 export const SIDE_CLEAR_ASK = "Remove all side questions of this chat?";
 export const SIDE_CLOSE = "Close";
+// Folded (a click on a question's ›): just its question, on one line; kept with it (every window, VS Code's too)
+export const SIDE_FOLD_TIP = "Fold: just the question";
+export const SIDE_UNFOLD_TIP = "Unfold: the answer too";
+
+// A folded one's line: its question on one line (a quote's > marks left out: Explain this' quote reads on)
+export function foldedLine(q) {
+    return String(q || "").replace(/^\s*>\s?/gm, "").replace(/\s+/g, " ").trim();
+}
 export const SIDE_PICK_TIP = "The model your next side question goes to: the chat's own, or a smaller one (less of your usage limit)";
 // An answer's actions on hover, in this order in both front ends
 export const SIDE_ACTIONS = ["copy", "quote", "whole", "remove"];   // ("whole": Ask with the whole chat, on one asked about a part)

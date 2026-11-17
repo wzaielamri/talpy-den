@@ -1086,6 +1086,17 @@ class Pane implements vscode.Disposable {
         this.post(sideAnswerOf("ask", m.id, chatId, r));
         break;
       }
+      case "sideFold": {
+        // folded to its question, or unfolded (a click on its ›): kept here with it, a host's chat's too, so
+        // every window shows it so (pane.py --side-question --fold)
+        if (typeof m.id !== "number" || typeof m.side !== "string" || !(m.side === "all" || /^[0-9a-f]{12}$/.test(m.side))
+            || typeof m.on !== "boolean" || this.fresh) break;
+        const chatId = this.chatId;
+        const r = await backend.pane(["--side-question", chatId, "--fold", m.side, ...(m.on ? [] : ["--off"]), ...where], this.host ? 30000 : 15000)
+          .catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as Record<string, unknown>);
+        this.post(sideAnswerOf("fold", m.id, chatId, r));
+        break;
+      }
       case "sideRemove": {
         // one of the chat's side questions removed, or all of them (kept here, a host's chat's too)
         if (typeof m.id !== "number" || typeof m.side !== "string" || !(m.side === "all" || /^[0-9a-f]{12}$/.test(m.side)) || this.fresh) break;

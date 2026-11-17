@@ -14,7 +14,7 @@
 // costs, with × back to the whole chat.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { SIDE_ACTIONS, SIDE_AGAIN, SIDE_FROM_SHOW, SIDE_ASK_WHOLE, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS,
+import { foldedLine, SIDE_ACTIONS, SIDE_AGAIN, SIDE_FOLD_TIP, SIDE_FROM_SHOW, SIDE_UNFOLD_TIP, SIDE_ASK_WHOLE, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS,
          SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TITLE, SIDE_WHOLE, SIDE_WHOLE_TIP, sideModelLabel, sidePickLabel, sideSaw, sideState, timeText,
          type ShownSide, type SidePick } from "../../src/shared/pane";
 import { I, Icon, T } from "../util/icons";
@@ -23,7 +23,7 @@ import { IconButton } from "./IconButton";
 import { TalpyIcon } from "./TalpyIcon";
 
 export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pick, pickOpen, setPickOpen, line, part, note, style,
-                            onAsk, onPick, onRemove, onRemoveAll, onAgain, onAskWhole, onCopy, onQuote, onCopyCode, onWhole, onShowPart, onClose }: {
+                            onAsk, onPick, onRemove, onRemoveAll, onAgain, onAskWhole, onCopy, onQuote, onCopyCode, onWhole, onShowPart, onFold, onClose }: {
   items: readonly ShownSide[];
   wide: boolean; // beside the chat, else over it under its tabs (anchor)
   anchor: { current: HTMLElement | null };
@@ -48,7 +48,8 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
   onQuote: (s: ShownSide) => void;
   onCopyCode: (code: string) => void;
   onWhole: () => void;
-  onShowPart: () => void;   // (the part line clicked: to where it starts in the chat)
+  onShowPart: () => void;
+  onFold: (s: ShownSide, on: boolean) => void;   // (a click on a question's ›: just its question, or all of it again)   // (the part line clicked: to where it starts in the chat)
   onClose: () => void;
 }) {
   const card = useRef<HTMLDivElement>(null);
@@ -60,8 +61,8 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
   const [copied, setCopied] = useState("");
   // (the rows are made again only when they change, not with each key typed in the chat: their clicks call
   // this render's handlers, which see the pick and the reply box as they are now)
-  const on = useRef({ onRemove, onAgain, onAskWhole, onCopy, onQuote });
-  on.current = { onRemove, onAgain, onAskWhole, onCopy, onQuote };
+  const on = useRef({ onRemove, onAgain, onAskWhole, onCopy, onQuote, onFold });
+  on.current = { onRemove, onAgain, onAskWhole, onCopy, onQuote, onFold };
   useEffect(() => {
     if (!copied) return undefined;
     const t = setTimeout(() => setCopied(""), 1500);
@@ -148,10 +149,14 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
             </div>
           </div>
           <div class="pane-item pane-you first">
-            <span class="pane-gutter" aria-hidden="true">›</span>
-            <div class="pane-body"><Markdown text={s.q} onCopy={onCopyCode} /></div>
+            {/* (its ›: a click folds it to its question, or unfolds it; pointing down while it's open) */}
+            <button type="button" class="pane-gutter pane-side-fold" aria-expanded={!s.folded} title={s.folded ? SIDE_UNFOLD_TIP : SIDE_FOLD_TIP}
+              onClick={() => on.current.onFold(s, !s.folded)}>›</button>
+            {s.folded
+              ? <div class="pane-body pane-side-folded">{foldedLine(s.q)}</div>
+              : <div class="pane-body"><Markdown text={s.q} onCopy={onCopyCode} /></div>}
           </div>
-          {state === "answered" ? (
+          {s.folded ? null : state === "answered" ? (
             <div class={`pane-item pane-claude close${s.synthetic ? " pane-side-synthetic" : ""}`}>
               <span class="pane-gutter" aria-hidden="true"><span class="pane-dot" /></span>
               <div class="pane-body"><Markdown text={s.a ?? ""} onCopy={onCopyCode} /></div>
@@ -168,7 +173,7 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
               <button type="button" class="btn secondary small" onClick={() => on.current.onAgain(s)}><Icon name={I.refresh} />{SIDE_AGAIN}</button>
             </div>
           )}
-          <div class="pane-side-meta">{timeText(s.at, now)}{model ? ` · ${model}` : ""}{saw ? ` · ${saw}` : ""}</div>
+          {s.folded ? null : <div class="pane-side-meta">{timeText(s.at, now)}{model ? ` · ${model}` : ""}{saw ? ` · ${saw}` : ""}</div>}
         </div>
       );
     });

@@ -137,7 +137,8 @@ Rectangle {
                  err: phase === "error" ? String(s.error || "") : "", at: Number(s.at) || 0,
                  mname: Sides.sideModelLabel(s), synthetic: s.synthetic === true, phase: phase,
                  saw: Sides.sideSaw(s), parted: phase === "answered" && !!s.from,   // (what it saw; asked about a part)
-                 since: String(s.since || "") }   // (the message it was asked from: Ask again asks from it again)
+                 since: String(s.since || ""),   // (the message it was asked from: Ask again asks from it again)
+                 folded: s.folded === true }   // (just its question, on one line: a click on its ›)
     }
     function rowOf(sid) {
         for (let i = 0; i < rows.count; i++)
@@ -179,7 +180,8 @@ Rectangle {
                 const old = rows.get(i)
                 if (old.q !== flat.q || old.a !== flat.a || old.err !== flat.err || old.at !== flat.at
                         || old.mname !== flat.mname || old.synthetic !== flat.synthetic || old.phase !== flat.phase
-                        || old.saw !== flat.saw || old.parted !== flat.parted || old.since !== flat.since)
+                        || old.saw !== flat.saw || old.parted !== flat.parted || old.since !== flat.since
+                        || old.folded !== flat.folded)
                     rows.set(i, flat)
             } else if (i < rows.count)
                 rows.insert(i, flat)
@@ -379,6 +381,7 @@ Rectangle {
                 required property string saw
                 required property bool parted
                 required property string since
+                required property bool folded
                 readonly property bool listed: index >= 0   // (Qt's ListView can leave a removed row drawn: none of it)
 
                 width: entries.width - (entriesBar.visible ? entriesBar.width : 0)
@@ -397,7 +400,7 @@ Rectangle {
                     // Yours, as your messages: › in a band in your accent (Markdown: an Explain this' quote as a quote)
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: question.implicitHeight + Kirigami.Units.smallSpacing * 2
+                        implicitHeight: (entry.folded ? foldedQ.implicitHeight : question.implicitHeight) + Kirigami.Units.smallSpacing * 2
                         radius: Kirigami.Units.cornerRadius
                         color: pane.youGround
 
@@ -407,18 +410,45 @@ Rectangle {
                             radius: 1.5
                             color: pane.youColor
                         }
+                        // (its ›: a click folds it to its question, or unfolds it; pointing down while it's open)
                         Text {
                             y: Kirigami.Units.smallSpacing
                             width: panel.gutter
                             horizontalAlignment: Text.AlignHCenter
                             textFormat: Text.PlainText
                             text: "›"
+                            rotation: entry.folded ? 0 : 90
                             color: pane.youColor
                             font.pointSize: panel.pt
                             font.weight: Font.Bold
+                            HoverHandler {
+                                id: foldHover
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            TapHandler {
+                                onTapped: panel.logic.fold(entry.sid, !entry.folded)
+                            }
+                            PlasmaComponents3.ToolTip.text: entry.folded ? Sides.SIDE_UNFOLD_TIP : Sides.SIDE_FOLD_TIP
+                            PlasmaComponents3.ToolTip.visible: foldHover.hovered
+                            PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        }
+                        Text {   // (folded: its question on one line)
+                            id: foldedQ
+                            visible: entry.folded
+                            x: panel.gutter
+                            y: Kirigami.Units.smallSpacing
+                            width: parent.width - x - Kirigami.Units.smallSpacing
+                            textFormat: Text.PlainText
+                            text: entry.folded ? Sides.foldedLine(entry.q) : ""
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            color: pane.textColor
+                            font.family: pane.chatFamily
+                            font.pointSize: panel.pt
                         }
                         TextEdit {
                             id: question
+                            visible: !entry.folded
                             x: panel.gutter
                             y: Kirigami.Units.smallSpacing
                             width: parent.width - x - Kirigami.Units.smallSpacing
@@ -439,8 +469,9 @@ Rectangle {
                         }
                     }
                     // Its answer, as Claude's replies: ● and its Markdown; on its way, Talpy thinking and
-                    // Answering…; none came: why, and Ask again
+                    // Answering…; none came: why, and Ask again (folded: none of it)
                     RowLayout {
+                        visible: !entry.folded
                         Layout.fillWidth: true
                         spacing: 0
 
@@ -492,6 +523,7 @@ Rectangle {
                     }
                     // When it was asked, on which model, and what of the chat it saw (from “…”, whole chat)
                     Text {
+                        visible: !entry.folded
                         Layout.fillWidth: true
                         Layout.leftMargin: panel.gutter
                         textFormat: Text.PlainText
