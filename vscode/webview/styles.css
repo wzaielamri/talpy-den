@@ -4811,6 +4811,51 @@ body.vscode-high-contrast-light .pane-side {
   gap: 4px;
 }
 
+/* What it runs in the background, under its working line (chat.tsx ShellLines): muted, a line each */
+.pane-shells {
+  color: var(--cs-muted);
+  font-size: 0.92em;
+}
+
+.pane-shell-head {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.pane-shell-head .grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-shell-command {
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.pane-shell-since {
+  flex: none;
+  margin-left: 8px;
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+
+/* (the Steps tab: its whole command, wrapped, in the code font) */
+.pane-shell-full {
+  margin: 0 0 2px var(--pane-gutter);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--cs-fg);
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.pane-shell-fold,
+.pane-shell-more {
+  margin-left: var(--pane-gutter);
+}
+
 /* Claude's Markdown */
 .md {
   line-height: 1.6;

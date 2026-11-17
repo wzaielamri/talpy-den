@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### New
+
+- **Talpy Chat says what runs in the background.** Under its working line,
+  a muted line for each shell a chat runs in the background: the
+  command's first line and since when. The Steps tab has the whole
+  command, a long one folded with **Show more**. When Claude's turn is
+  over and only those run, the line says *Waiting on a background
+  shell…*. Nothing shows while none runs.
+
 ### Fixed
 
 - **A new chat with a picture starts again, on Claude Code 2.1.326.** A

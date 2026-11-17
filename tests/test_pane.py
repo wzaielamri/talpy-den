@@ -431,7 +431,8 @@ class ConversationTests(PaneFixture):
         self.assertEqual(answer, {"ok": True, "items": []})
         # (with its word tables for Claude's questions: --suggest reads them there)
         asked.assert_called_once_with("gpu", ["--conversation", SID, "--profile", ".claude-work", "--limit", "40"],
-                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"),
+                                      name="pane.py", also=("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py",
+                                            "shells.py"),
                                       timeout=60)
 
 
@@ -3972,6 +3973,82 @@ class NoSideScrollTests(unittest.TestCase):
             self.assertIn(f"id: {view}\n", qml, name)
             self.assertIn("NoSideScroll {", qml, name)
             self.assertIn(f"view: {view}\n", qml, name)
+
+
+def bg_start(tid, shell, ts, command, description="Run it"):
+    """A Bash call run in the background, as Claude Code 2.1.326 writes it: the call, and its result at once."""
+    return [tool_use(tid, "Bash", {"command": command, "description": description, "run_in_background": True}, ts, msg=f"m-{tid}"),
+            dict(tool_result(tid, ts, text=f"Command running in background with ID: {shell}. Output is being written to: /tmp/t/{shell}.output"),
+                 toolUseResult={"stdout": "", "stderr": "", "interrupted": False, "backgroundTaskId": shell})]
+
+
+def task_note(shell, ts, status="completed"):
+    """The note Claude queues as a background task ends (written at once, mid-turn too)."""
+    return {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(ts),
+            "content": f"<task-notification>\n<task-id>{shell}</task-id>\n<status>{status}</status>\n"
+                       f"<summary>Background command \"Run it\" {status}</summary>\n</task-notification>"}
+
+
+def task_stop(tid, shell, ts):
+    """A TaskStop of a background shell: its result, and no note."""
+    said = {"message": f"Successfully stopped task: {shell} (sleep 60)", "task_id": shell, "task_type": "local_bash"}
+    return [tool_use(tid, "TaskStop", {"task_id": shell}, ts, msg=f"m-{tid}"),
+            dict(tool_result(tid, ts, text=json.dumps(said)), toolUseResult=said)]
+
+
+class BackgroundShellTests(PaneFixture):
+    """What a chat runs in the background now, for its working line (pane.py --conversation "shells":
+    shells.py): its own background shells that haven't ended, from the transcript, read once."""
+
+    def kept(self):
+        return self.cache / "shells" / f"{SID}.json"
+
+    def test_the_shells_still_running_with_their_whole_command(self):
+        t = self.now - 600
+        self.chat(prompt("watch the job", t, cwd=str(self.folder)),
+                  *bg_start("u1", "bwatch01", t + 1, "while squeue -h -j 124694 | grep -q .; do\n  sleep 30\ndone", "Wait for the job"),
+                  *bg_start("u2", "bstop002", t + 2, "sleep 60"),
+                  *bg_start("u3", "bdone003", t + 3, "make test"),
+                  # (the words in what a command printed are not Claude's: they end nothing, start nothing)
+                  tool_use("u4", "Bash", {"command": "grep -r task-id"}, t + 4, msg="m-u4"),
+                  tool_result("u4", t + 4, text='<task-id>bwatch01</task-id> "backgroundTaskId":"bfake004"'),
+                  *task_stop("u5", "bstop002", t + 5),
+                  task_note("bdone003", t + 6),
+                  text_reply("Waiting on the job.", t + 7, "m9", stop="end_turn"))
+        # (a chat in a terminal: its process, started before them, runs them)
+        write(self.home / ".claude-work/sessions/30.json", session(SID, cwd=str(self.folder), status="shell", startedAt=(t - 60) * 1000))
+        answer = self.cli("--conversation", SID)
+        self.assertEqual(answer["shells"], [{"id": "bwatch01", "command": "while squeue -h -j 124694 | grep -q .; do\n  sleep 30\ndone",
+                                             "description": "Wait for the job", "started": int((t + 1) * 1000)}])
+        # read once: then only what's written after it (the kept place is the file's end, whole lines)
+        kept = json.loads(self.kept().read_text())
+        self.assertEqual((kept["at"], list(kept["open"])), (self.transcript.stat().st_size, ["bwatch01"]))
+        with self.transcript.open("a") as f:
+            f.write(lines(task_note("bwatch01", t + 9)) + '{"type":"user","half wri')   # (the last line half written)
+        self.assertEqual(self.cli("--conversation", SID)["shells"], [])
+        self.assertLess(json.loads(self.kept().read_text())["at"], self.transcript.stat().st_size)
+
+    def test_one_from_before_its_process_started_or_with_none_isnt_running(self):
+        t = self.now - 600
+        self.chat(prompt("go", t, cwd=str(self.folder)), *bg_start("u1", "bold0001", t + 1, "sleep 600"))
+        self.assertEqual(self.cli("--conversation", SID)["shells"], [])   # (no process: it died with it)
+        write(self.home / ".claude-work/sessions/30.json", session(SID, cwd=str(self.folder), startedAt=(t + 100) * 1000))
+        self.assertEqual(self.cli("--conversation", SID)["shells"], [])   # (a process started after it: resumed since)
+
+    def test_a_background_session_lists_what_claude_says_runs(self):
+        t = self.now - 600
+        self.chat(prompt("go", t, cwd=str(self.folder)), *bg_start("u1", "bkeep001", t + 1, "npm run watch"),
+                  *bg_start("u2", "bgone002", t + 2, "sleep 5"))
+        # its job's own list: one of them ended (gone from it), a command running long in the foreground and a
+        # subagent's shell (neither in the transcript as a background start: not listed)
+        write(self.home / f".claude-work/jobs/{SID[:8]}/state.json", {"sessionId": SID, "state": "working", "fan": [
+            {"id": "bkeep001", "kind": "shell", "label": "npm run watch", "startedAt": (t + 1) * 1000},
+            {"id": "bfore003", "kind": "shell", "label": "pytest -x", "startedAt": (t + 3) * 1000},
+            {"id": "agent1", "kind": "agent", "label": "Explore"}]})
+        self.assertEqual([s["id"] for s in self.cli("--conversation", SID)["shells"]], ["bkeep001"])
+
+    def test_the_host_gets_the_module(self):
+        self.assertIn("shells.py", pane.ACTION_MODULES["--conversation"])
 
 
 @unittest.skipUnless(shutil.which("node"), "node isn't installed")

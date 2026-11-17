@@ -943,7 +943,8 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     """--conversation. "options": the model and effort it uses now
     (chatpick.options_now). "context": how full its context is (turns.context_left),
     "turn": Claude's turn so far, while it's going on (turns.TurnSoFar.now:
-    the start of a long one kept in the cache folder's turns/). suggest (Suggest
+    the start of a long one kept in the cache folder's turns/). "shells": the
+    shells it runs in the background now (shells.running). suggest (Suggest
     replies on): how its last turn ended, "ended" and "over"
     (replies.TurnEnd.result), the question it ends with as chips, "asks"
     (replies.asks_of), and Claude's own predicted reply to it, "predicted"
@@ -991,6 +992,8 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
               "turn": turn.now(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")}
     record = chatpick.job_record(profile, chat_id)   # (what /model and /effort's lists mark as what it uses now)
     result["options"] = chatpick.options_now(home, profile, chat_id, bool(peek.get("ultracode")), record)
+    import shells   # (what it runs in the background now: its working line says so)
+    result["shells"] = shells.running(home, profile, chat_id, path, record)
     if reach:   # (the front end takes the limit before the stamp: an answer read for another limit isn't taken)
         result.update(limit=limit, reach=reach, reached=so_far.get("reached"))
     if gone is not None:
@@ -2658,7 +2661,7 @@ def side_question(home, extra_dirs, cache_root, chat_id, host, profile_key, ques
 # The modules each action imports, sent along with this file to an SSH host
 # (each is ~10-40 ms more to send and compile there); any other action gets them all
 ACTION_MODULES = {
-    "--conversation": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"),
+    "--conversation": ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py", "shells.py"),
     "--made": ("made.py",), "--bookmark": (), "--side-question": ("side.py",),
     "--complete": ("commands.py",), "--replies": ("reply_words.py", "replies.py"),
     "--reply-text": ("reply_words.py", "replies.py"), "--hide-reply": ("reply_words.py", "replies.py"),
@@ -2676,7 +2679,7 @@ MAY_HAVE_STARTED = "{where} didn't answer in time: the chat may have started the
 def forward(host, args, action=None):
     """Run this file on an SSH host (or in a container) with args: its answer."""
     import remote
-    also = ACTION_MODULES.get(action, ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py"))
+    also = ACTION_MODULES.get(action, ("reply_words.py", "replies.py", "commands.py", "turns.py", "chatpick.py", "made.py", "shells.py"))
     long = action in ("--start", "--send")
     answer = remote.host_answer(host, args, name="pane.py", also=also,
                                 timeout=HOST_START_TIMEOUT if long else HOST_SIDE_TIMEOUT

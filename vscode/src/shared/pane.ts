@@ -138,6 +138,7 @@ export interface Conversation {
   predicted?: string | null; // Claude's own guess at your reply to its question (a background chat's: its first chip)
   context?: ContextLeft | null; // how full its context is (null: not known)
   turn?: TurnSoFar | null; // Claude's turn so far, while it's going on
+  shells?: BackgroundShell[]; // the shells it runs in the background now
   options?: ChatOptions; // the model and effort it uses now (/model and /effort's lists mark them)
   // its bookmarks (pane.py: a chat that has had one) and their version, which only grows (adoptable)
   bookmarks?: Bookmark[];
@@ -1084,6 +1085,33 @@ export function handoffDraft(name: string, note: string): string {
 export interface TurnSoFar {
   startedAt: number; // ms
   steps: number;
+}
+// A shell a chat runs in the background now (pane.py --conversation "shells": shells.py), under
+// Talpy Chat's working line while it works, so you see what it waits on and not only Working…: on
+// the Chat tab a line for each (the first SHELL_LINES), its command's first line cut to fit, on the
+// Steps tab the whole command, folded past SHELL_FOLD lines. Plasma ShellLines.qml: the same.
+export interface BackgroundShell {
+  id: string;
+  command: string;
+  description: string;
+  started: number; // ms
+}
+export const SHELL_LINES = 3;
+export const SHELL_FOLD = 6;
+export function shellLine(s: BackgroundShell): string {
+  return (s.command.split("\n").find((l) => l.trim() !== "") ?? "").trim() || s.description || "A background shell";
+}
+// (a long command on the Steps tab: its first SHELL_FOLD lines, and how many more; null: shown whole)
+export function shellFold(command: string): { shown: string; more: number } | null {
+  const lines = command.replace(/\s+$/, "").split("\n");
+  return lines.length > SHELL_FOLD + 2 ? { shown: lines.slice(0, SHELL_FOLD).join("\n"), more: lines.length - SHELL_FOLD } : null;
+}
+// (its turn is over and a shell it ran goes on: Claude takes it up as it ends)
+export function shellsWaiting(n: number): string {
+  return n === 1 ? "Waiting on a background shell" : `Waiting on ${n} background shells`;
+}
+export function shellsMore(n: number): string {
+  return `and ${n} more in the background (the Steps tab lists them)`;
 }
 export function turnTime(ms: number): string {
   const s = Math.floor(Math.max(0, ms) / 1000);

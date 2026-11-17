@@ -730,6 +730,7 @@ Window {
         predicted = ""
         contextLeft = null
         turnNow = null
+        shells = []
         usesNow = null
         picking = null
         usual = null
@@ -1121,6 +1122,9 @@ Window {
         contextLeft = result.context || null
         claudeRecap = result.recap || null
         turnNow = result.turn || null
+        const running = Array.isArray(result.shells) ? result.shells : []
+        if (JSON.stringify(running) !== JSON.stringify(shells))
+            shells = running   // (only when they change: each read is a new list)
         if (result.options)
             usesNow = result.options
         if (turnEnded !== "" && usual === null)
@@ -1436,6 +1440,10 @@ Window {
             keepEnd()   // (the working line comes or goes)
         checkHandoff()   // (Continue in a new chat: its turn over, the note may be in)
     }
+    onShellsChanged: {
+        if (loaded && nearEnd())
+            keepEnd()   // (a shell's line comes or goes under the working line)
+    }
 
     // ---------------------------------------------------------------- what the box offers
     //
@@ -1732,6 +1740,9 @@ Window {
     // turn so far while it's going on (talpy_den.TurnSoFar: {startedAt, steps}), its working line's end
     property var contextLeft: null
     property var turnNow: null
+    // The shells it runs in the background now (pane.py: shells.running; [{id, command, description,
+    // started}]), under its working line while it works: ShellLines.qml
+    property var shells: []
     property string turnEnded: ""      // how its last turn ended ("": mid-turn, a message queued, or not asked)
     property bool turnOver: false      // (the transcript says so; else the chat's state does)
     property var asks: null            // the question it ended with, as chips
@@ -3683,13 +3694,13 @@ Window {
                     // it's doing, in the working color
                     footer: Item {
                         width: list.width
-                        implicitHeight: pane.chatState === "working" || pane.starting ? workingLine.implicitHeight + Kirigami.Units.gridUnit : 0
+                        implicitHeight: pane.chatState === "working" || pane.starting ? workingLine.implicitHeight + shellLines.height + Kirigami.Units.gridUnit : 0
                         visible: pane.chatState === "working" || pane.starting
 
                         RowLayout {
                             id: workingLine
                             anchors.left: parent.left
-                            anchors.bottom: parent.bottom
+                            anchors.bottom: shellLines.top
                             width: list.width   // (the list's, as its rows': the footer can be wider, under the scroll bar)
                             spacing: 0
 
@@ -3708,6 +3719,9 @@ Window {
                                 readonly property bool toolAbove: pane.listTab === "steps" && items.count > 0 && items.get(items.count - 1).status === "open"
                                 readonly property string activity: pane.row ? root.doingText(pane.row, pane.host).replace(/[….\s]+$/, "") : ""
                                 text: pane.starting && pane.chatState !== "working" ? i18n("Starting…")
+                                      // (its turn is over, a shell it ran goes on: Claude takes it up as it ends)
+                                      : !pane.atWork && pane.shells.length > 0
+                                      ? i18np("Waiting on a background shell…", "Waiting on %1 background shells…", pane.shells.length)
                                       : (activity && !toolAbove ? activity : i18n("Working")) + "…"
                                 elide: Text.ElideRight
                                 color: root.stateColor("working")
@@ -3739,6 +3753,17 @@ Window {
                                 Layout.leftMargin: active ? Kirigami.Units.smallSpacing : 0
                                 source: active ? "StopButton.qml" : ""
                             }
+                        }
+                        // What it runs in the background, under it (ShellLines.qml: read and made only while
+                        // it works and runs one): a command's first line here, the whole of it on the Steps tab
+                        Loader {
+                            id: shellLines
+                            anchors.left: parent.left
+                            anchors.bottom: parent.bottom
+                            width: list.width
+                            height: item ? item.implicitHeight + Kirigami.Units.smallSpacing : 0
+                            active: pane.chatState === "working" && pane.shells.length > 0
+                            source: active ? "ShellLines.qml" : ""
                         }
                     }
 

@@ -11,6 +11,7 @@ import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../src/shared/demo";
 import { chatRefOf, clockText } from "../src/shared/model";
 import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
+import { type BackgroundShell, SHELL_FOLD, shellFold, shellLine, shellsMore, shellsWaiting } from "../src/shared/pane";
 import { costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side } from "../src/shared/pane";
 import type { ViewState } from "../src/shared/types";
 import { ViewHost } from "../src/view";
@@ -2189,4 +2190,19 @@ test("the side questions panel's pick and whether it's open are kept for every T
   const read = next.sent.find((m) => (m as { type: string }).type === "conversation") as { answer: Record<string, unknown> };
   assert.deepEqual([read.answer.sides, read.answer.sidesV], [[{ id: "0123456789ab", q: "Q", at: 5, pick: "", model: "", pending: true }], 7]);
   p.dispose();
+});
+
+test("what a chat runs in the background, under its working line: a line each, the whole command folded on the Steps tab", () => {
+  const shell = (command: string, description = ""): BackgroundShell => ({ id: "b1", command, description, started: 1 });
+  // (the Chat tab: the command's first line that says something; a nameless one by what Claude called it)
+  assert.equal(shellLine(shell("\n  while squeue -h -j 124694 | grep -q .; do\n  sleep 30\ndone")), "while squeue -h -j 124694 | grep -q .; do");
+  assert.equal(shellLine(shell("", "Wait for the job")), "Wait for the job");
+  assert.equal(shellLine(shell("")), "A background shell");
+  // (the Steps tab: whole, unless it's longer than SHELL_FOLD lines and a bit)
+  assert.equal(shellFold(Array(SHELL_FOLD + 2).fill("x").join("\n") + "\n\n"), null);
+  assert.deepEqual(shellFold(Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n")),
+    { shown: Array.from({ length: SHELL_FOLD }, (_, i) => `line ${i}`).join("\n"), more: 20 - SHELL_FOLD });
+  assert.equal(shellsWaiting(1), "Waiting on a background shell");
+  assert.equal(shellsWaiting(3), "Waiting on 3 background shells");
+  assert.equal(shellsMore(2), "and 2 more in the background (the Steps tab lists them)");
 });

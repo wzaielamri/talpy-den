@@ -7,7 +7,7 @@
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, SIDE_BUTTON, SIDE_TIP, SIDE_WIDE, sidePickOf, sidesShown, sideWarm, type AskedSide, type ShownSide, type Side, type SidePick } from "../src/shared/pane";
-import { awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
+import { awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type BackgroundShell, SHELL_LINES, shellFold, shellLine, shellsMore, shellsWaiting, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
@@ -214,6 +214,41 @@ function FoldMore({ id, fold, whole, onToggle }: { id: string; fold: Fold; whole
       <Icon name={I.folded} class={whole ? "open" : ""} />
       {whole ? "Show less" : `Show more · ${fold.more === 1 ? "1 more line" : `${fold.more} more lines`}`}
     </button>
+  );
+}
+
+// What a chat runs in the background now, under its working line (shared/pane.ts BackgroundShell):
+// on the Chat tab a line for each (the first SHELL_LINES), its command's first line cut to fit, and
+// since when; on the Steps tab what Claude called it and its whole command, a long one folded (Show
+// more · N more lines, as a long reply's). Plasma ShellLines.qml: the same
+function ShellLines({ shells, steps }: { shells: BackgroundShell[]; steps: boolean }) {
+  const [whole, setWhole] = useState<Record<string, boolean>>({});
+  return (
+    <div class="pane-shells">
+      {(steps ? shells : shells.slice(0, SHELL_LINES)).map((s) => {
+        const fold = steps ? shellFold(s.command) : null;
+        const open = !fold || !!whole[s.id];
+        return (
+          <div class="pane-shell" key={s.id}>
+            <div class="pane-shell-head">
+              <span class="pane-gutter"><Icon name={I.terminal} /></span>
+              <span class={steps ? "grow" : "grow pane-shell-command"} title={steps ? undefined : s.command}>
+                {steps ? s.description || "Background shell" : shellLine(s)}
+              </span>
+              {s.started > 0 ? <span class="pane-shell-since">{steps ? "background shell, " : ""}since {timeText(s.started, Date.now())}</span> : null}
+            </div>
+            {steps && s.command ? <pre class="pane-shell-full">{open ? s.command.replace(/\s+$/, "") : fold?.shown}</pre> : null}
+            {fold ? (
+              <button type="button" class="pane-fold-more pane-shell-fold" aria-expanded={open} onClick={() => setWhole({ ...whole, [s.id]: !open })}>
+                <Icon name={I.folded} class={open ? "open" : ""} />
+                {open ? "Show less" : `Show more · ${fold.more === 1 ? "1 more line" : `${fold.more} more lines`}`}
+              </button>
+            ) : null}
+          </div>
+        );
+      })}
+      {!steps && shells.length > SHELL_LINES ? <div class="pane-shell-more">{shellsMore(shells.length - SHELL_LINES)}</div> : null}
+    </div>
   );
 }
 
@@ -870,7 +905,7 @@ function ChatApp() {
   const [suggest, setSuggest] = useState(config.suggest !== false);
   const [turn, setTurn] = useState<{ ended: TurnEnded | null; over: boolean; asks: Asks | null; predicted?: string | null }>({ ended: null, over: false, asks: null });
   // How full its context is (the header's tag), Claude's turn so far (the working line's end)
-  const [soFar, setSoFar] = useState<{ context: ContextLeft | null; turn: TurnSoFar | null }>({ context: null, turn: null });
+  const [soFar, setSoFar] = useState<{ context: ContextLeft | null; turn: TurnSoFar | null; shells: BackgroundShell[] }>({ context: null, turn: null, shells: [] });
   const [usual, setUsual] = useState<UsualReplies | null>(null);
   const usualAt = useRef(0);
   const askUsual = () => {   // (pane.py --replies: once a tab, again after a send a minute later)
@@ -1103,7 +1138,7 @@ function ChatApp() {
           if (el) follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; // (on another tab: as when you left)
           setLoadError("");
           setTurn({ ended: a.ended ?? null, over: !!a.over, asks: a.asks ?? null, predicted: a.predicted ?? null });
-          setSoFar({ context: a.context ?? null, turn: a.turn ?? null });
+          setSoFar({ context: a.context ?? null, turn: a.turn ?? null, shells: Array.isArray(a.shells) ? a.shells : [] });
           setClaudeRecap(a.recap ?? null);
           if (a.options) setChatOptions(a.options);
           setItems(a.items ?? []);
@@ -2471,7 +2506,9 @@ function ChatApp() {
                 <span class="pane-gutter">
                   <TalpyIcon state="thinking" moving={shown} />
                 </span>
-                <span class="grow" title={stop.elsewhere || undefined}>{starting && chat?.state !== "working" ? "Starting" : activity && !(tab === "steps" && last?.kind === "tool" && last.status === "open") ? activity : "Working"}…</span>
+                <span class="grow" title={stop.elsewhere || undefined}>{starting && chat?.state !== "working" ? "Starting"
+                  : !chat?.atWork && soFar.shells.length ? shellsWaiting(soFar.shells.length)
+                  : activity && !(tab === "steps" && last?.kind === "tool" && last.status === "open") ? activity : "Working"}…</span>
                 {soFar.turn && chat?.state === "working" ? <TurnMeta turn={soFar.turn} shown={shown} /> : null}
                 {stop.can ? (
                   <button type="button" class="btn secondary small pane-stop" title={`${stop.title} (Esc, in an empty box)`} disabled={stopping}
@@ -2481,6 +2518,7 @@ function ChatApp() {
                 ) : null}
               </div>
             ) : null}
+            {chat?.state === "working" && soFar.shells.length ? <ShellLines shells={soFar.shells} steps={tab === "steps"} /> : null}
             <HoverBar list={list} itemOf={(key) => shownNow.current.find((it) => it.key === key)} copied={copiedKey} onCopy={(it) => copyItem(it, true)}
               marked={(key) => !!markedKeys[key]} onMark={toggleMark} hovered={hoverKey} />
             {/* (at the list's bottom, over it: it moves nothing; gone at the end) */}

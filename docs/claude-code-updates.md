@@ -2687,6 +2687,23 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
     test_tasks.py test_a_chat_whose_task_names_a_picture_can_open_it, test_a_message_naming_a_picture_can_open_it;
     test_remote.py (put_image, the host's task). They check the words Talpy Den passes, not what Claude does with
     them.
+- [ ] **Background shells.** Talpy Chat's working line lists the shells a chat runs in the background. A
+  start is a tool result whose `toolUseResult` has `backgroundTaskId` (for `run_in_background`, and for a
+  command moved to the background after its timeout, with `timedOutAfterMs`); its Bash call (by
+  `tool_use_id`) gives `command` and `description`. An end is the note Claude queues at once as it ends, a
+  `queue-operation` enqueue whose `content` starts with `<task-notification>` and has `<task-id>ID</task-id>`
+  (the same text comes again as a `queued_command` attachment), or a TaskStop result (`toolUseResult`:
+  `message` "Successfully stopped task: …", `task_id`), which gets no note. A background session's job
+  (`state.json` `fan`) lists `{"id", "kind": "shell", "label", "startedAt"}` while one runs; it also lists a
+  command that runs long in the foreground, and a subagent's shells. Checked on 2.1.326.
+  - Used in: shells.py (START, NOTE, STOPS, started, ended, running); pane.py chat_conversation "shells";
+    ShellLines.qml, ChatPane.qml; vscode/src/shared/pane.ts BackgroundShell, vscode/webview/chat.tsx
+    ShellLines.
+  - Check: in a throwaway chat, have Claude run `sleep 120` in the background; then
+    `grep -c backgroundTaskId $C/projects/*/<chat id>.jsonl`, and the job's `jq .fan $C/jobs/<id8>/state.json`
+    while it runs. When it ends, `grep -c '<task-id>' …` grows by one.
+  - Breaks: the working line says *Working…* with no shells under it, or lists one that ended.
+  - Test: test_pane.py BackgroundShellTests (fixtures written here: they can't tell you Claude changed).
 - [ ] **File mentions.** `@path`, or `@"path with spaces"` quoted, attaches a file. Dropped and completed
   files are put in that way.
   - Used in: vscode/src/shared/pane.ts fileMention, suggestFor; vscode/webview/chat.tsx;
