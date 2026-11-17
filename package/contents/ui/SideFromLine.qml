@@ -5,7 +5,8 @@ import "sides.mjs" as Sides
 
 // ── Side questions see from here ──: a line in Talpy Chat's conversation above the message the side
 // questions' part starts at (Ask from here, Explain this: Sides.qml part), drawn as the day lines are
-// (DayLine.qml). SidePanel.qml makes one for the window, only while it's open with a part. It sits in the
+// (DayLine.qml). ChatPane makes one for the window whenever there's a part (the panel open or not: over a
+// narrow window's chat, the open panel hid it). It sits in the
 // room the list already leaves above that message (a new turn's gap: ChatPane's row gap), so no row
 // changes its height and nothing you read moves. Above the list's first row (no gap there) it goes in the
 // list's head, which grows upward: the rows stay where they are (at the top, the top stays in view). Only
@@ -16,7 +17,7 @@ Item {
     id: from
     visible: false   // (a holder: its line is put in the conversation)
 
-    readonly property string key: panel.part ? String(panel.part.key) : ""
+    readonly property string key: pane.sidePart ? String(pane.sidePart.key) : ""
     property Item row: null       // (the message's row, once it's made)
     property bool missing: false  // (listed, its row not made yet)
     readonly property bool first: row !== null && row.gap <= 0

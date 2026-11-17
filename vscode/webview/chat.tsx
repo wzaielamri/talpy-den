@@ -71,8 +71,7 @@ function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
 // conversation, Copy (what's selected), Copy message (as its Copy button) and Select all (every
 // message); on the reply box, Undo, Redo, Cut, Copy, Paste (VS Code's own, as Ctrl+V: a picture
 // too) and Select all. Elsewhere in the tab, VS Code's own menu (Cut, Copy, Paste)
-// (on the list, from: the key of the message the selection starts in, for Explain this: selectionKey)
-type EditAt = { where: "list" | "box"; x: number; y: number; it: PaneItem | null; chosen: string; from?: string };
+type EditAt = { where: "list" | "box"; x: number; y: number; it: PaneItem | null; chosen: string };
 type EditDo = "copy" | "quote" | "explain" | "askFrom" | "copyMessage" | "bookmark" | "selectAll" | "undo" | "redo" | "cut" | "paste";
 const EDIT_KEYS: Record<string, string> = { copy: "Ctrl+C", bookmark: "Ctrl+D", selectAll: "Ctrl+A", undo: "Ctrl+Z", redo: MAC ? "Ctrl+Shift+Z" : "Ctrl+Y", cut: "Ctrl+X", paste: "Ctrl+V" };
 // (explain: the chat can have side questions, Explain this after Quote in reply, then Ask from here on a
@@ -291,21 +290,6 @@ const marking = typeof CSS !== "undefined" && "highlights" in CSS && typeof High
 function rowsOf(list: HTMLElement, key: string): HTMLElement[] {
   const k = CSS.escape(key);
   return [...list.querySelectorAll<HTMLElement>(`:scope > [data-key="${k}"], :scope > [data-of="${k}"]`)];
-}
-// The conversation item the selection starts in (Explain this asks from its turn on): its row's key, a
-// command's output's its command's; a line between rows (a day's, the side questions'), the row after it;
-// "" when it isn't in the list
-function selectionKey(list: HTMLElement | null): string {
-  const sel = window.getSelection();
-  if (!list || !sel || !sel.rangeCount) return "";
-  const r = sel.getRangeAt(0);
-  let n: Node | null = r.startContainer === list ? list.childNodes[r.startOffset] ?? null : r.startContainer;
-  while (n && n.parentNode !== list) n = n.parentNode;
-  for (let row = n instanceof Element ? n : (n as CharacterData | null)?.nextElementSibling ?? null; row; row = row.nextElementSibling) {
-    const d = (row as HTMLElement).dataset;
-    if (d?.key || d?.of) return d.key || d.of || "";
-  }
-  return "";
 }
 // Each key's first row in the list (one pass over its rows: a bookmark's, to go to it)
 // "Context 31% used" in the header: how far the chat's context has come toward where Claude compacts it
@@ -749,9 +733,9 @@ function ChatApp() {
   const [pickOpen, setPickOpen] = useState(false);
   const [sideNote, setSideNote] = useState<{ text: string; ok: boolean } | null>(null);
   const sideDraft = useRef("");
-  // Ask from here (a message's right-click menu; Explain this, from the message selected): side questions
-  // see the chat from that message's turn on (pane.py --part says where that starts and what it costs:
-  // the panel's line, and a line in the chat above that message while the panel is open). The panel's for
+  // Ask from here (a message's right-click menu): side questions, Explain this too, see the chat from that
+  // message's turn on (pane.py --part says where that starts and what it costs: the panel's line, and a
+  // line in the chat above that message while a part is picked). The panel's for
   // this chat while the page shows it; another chat, or × on its line, goes back to all of it. partAsk:
   // the latest --part asked (an earlier answer that comes after it is dropped)
   const [sidePart, setSidePart] = useState<SidePart | null>(null);
@@ -1957,8 +1941,9 @@ function ChatApp() {
   findKeyNow.current = (back) => (find.open && conversation ? stepFind(back) : openFind());
   useEffect(() => unmark, []);
 
-  // (Ask from here: while the panel is open, a line above the message side questions see the chat from)
-  const fromLine = sideShows && sidePart ? sidePart.key : "";
+  // (Ask from here: a line above the message side questions see the chat from, whenever a part is picked,
+  // the panel open or not: over a narrow view's chat, the open panel hid it)
+  const fromLine = sidePart ? sidePart.key : "";
   const steps = useMemo(() => {
     const out: ComponentChildren[] = [];
     shownItems.forEach((it, i) => {
@@ -2133,7 +2118,7 @@ function ChatApp() {
   // Quote in reply: what you selected in the conversation, as a Markdown quote at the top of the box, the
   // cursor under it (quote.mjs withQuote); offered by a "Reply to this" button by the selection (it goes
   // with the selection, a scroll or a click elsewhere) and the right-click menu
-  const [quoteAt, setQuoteAt] = useState<{ x: number; y: number; text: string; from: string } | null>(null);
+  const [quoteAt, setQuoteAt] = useState<{ x: number; y: number; text: string } | null>(null);
   const quoteIn = (selected: string) => {
     const q = withQuote(text, selected);
     setQuoteAt(null);
@@ -2147,18 +2132,25 @@ function ChatApp() {
     }, 0);
   };
   // Explain this (beside Reply to this, and the right-click menu's): what you selected, asked as a side
-  // question at once (the panel opens), on the panel's pick; nothing is added to the chat. It sees the chat
-  // from the turn of the message the selection starts in (from), which the panel's line and the chat's
-  // show at once (pane.py --part)
-  const explain = (selected: string, from: string) => {
+  // question at once (the panel opens), on the panel's pick; nothing is added to the chat. It sees what side
+  // questions see now: the whole chat, or the part you picked with Ask from here (an explanation needs what
+  // came before: it's never cut on its own)
+  const explain = (selected: string) => {
     const q = explainQuestion(selected);
     setQuoteAt(null);
     window.getSelection()?.removeAllRanges();
     if (!q || !sideCan) return;
     openSide();
-    if (!fromKeyOk(from)) return askSide(q);
-    partFor(from);
-    askSide(q, sidePick, from);
+    askSide(q);
+  };
+  // The panel's part line clicked: to the chat's line where the part starts (over the chat, the panel makes
+  // way first); one further back than what's shown is read first, as a bookmark's
+  const showPart = () => {
+    if (!sidePart) return;
+    const key = sidePart.key;
+    if (!sideWide) closeSide(false);
+    if (shownNow.current.some((i) => String(i.key) === key)) goToMark(key);
+    else reachMark(key);
   };
   // An answer quoted in your reply (as Quote in reply quotes a selection); over the chat, the panel makes way
   const quoteSide = (s: ShownSide) => {
@@ -2174,8 +2166,7 @@ function ChatApp() {
     const r = sel.getRangeAt(sel.rangeCount - 1).getBoundingClientRect();
     // (Reply to this, and Explain this after it where the chat has side questions: as wide as both)
     const wide = sideCan ? 250 : 130;
-    setQuoteAt({ x: Math.max(4, Math.min(r.right - 40, window.innerWidth - wide)), y: Math.min(r.bottom + 6, window.innerHeight - 40), text: said,
-                 from: sideCan ? selectionKey(el) : "" });
+    setQuoteAt({ x: Math.max(4, Math.min(r.right - 40, window.innerWidth - wide)), y: Math.min(r.bottom + 6, window.innerHeight - 40), text: said });
   };
   useEffect(() => {
     if (!quoteAt) return undefined;
@@ -2201,7 +2192,7 @@ function ChatApp() {
         post({ type: "copy", text: at.chosen });
         setInfo({ ok: true, message: "Copied" });
       } else if (what === "quote" && at.chosen.trim()) quoteIn(at.chosen);
-      else if (what === "explain" && at.chosen.trim()) explain(at.chosen, at.from ?? "");
+      else if (what === "explain" && at.chosen.trim()) explain(at.chosen);
       else if (what === "askFrom" && at.it) askFrom(at.it);
       else if (what === "copyMessage" && at.it) copyItem(at.it, true);
       else if (what === "bookmark" && at.it) toggleMark(at.it);
@@ -2560,7 +2551,7 @@ function ChatApp() {
               const it = row ? shownNow.current.find((i) => String(i.key) === row.dataset.key) ?? null : null;
               setChipMenu(null);
               const chosen = window.getSelection()?.toString() ?? "";
-              setEditMenu({ where: "list", x: e.clientX, y: e.clientY, it, chosen, from: chosen.trim() && sideCan ? selectionKey(list.current) : "" });
+              setEditMenu({ where: "list", x: e.clientX, y: e.clientY, it, chosen });
             }}
           >
             {find.open ? (
@@ -2694,7 +2685,7 @@ function ChatApp() {
                 <Icon name={I.quote} />{QUOTE_BUTTON}
               </button>
               {sideCan ? (
-                <button type="button" class="pane-quote-btn" title={EXPLAIN_TIP} onClick={() => explain(quoteAt.text, quoteAt.from)}>
+                <button type="button" class="pane-quote-btn" title={EXPLAIN_TIP} onClick={() => explain(quoteAt.text)}>
                   <Icon name={I.explain} />{EXPLAIN_BUTTON}
                 </button>
               ) : null}
@@ -3043,7 +3034,7 @@ function ChatApp() {
         pick={sidePick} pickOpen={pickOpen} setPickOpen={setPickOpen} note={sideNote} style={textStyle}
         line={sideLine(sidePart, sides.list, sidePick, Date.now(), soFar.context?.used ?? 0)} part={!!sidePart}
         onAsk={(q) => askSide(q)} onPick={pickSide} onRemove={removeSide} onRemoveAll={removeAllSides} onAgain={againSide} onAskWhole={askWholeSide}
-        onCopy={(s) => { if (s.a) post({ type: "copy", text: s.a }); }} onQuote={quoteSide} onCopyCode={copyCode} onWhole={wholeChat} onClose={() => closeSide()} />
+        onCopy={(s) => { if (s.a) post({ type: "copy", text: s.a }); }} onQuote={quoteSide} onCopyCode={copyCode} onWhole={wholeChat} onShowPart={showPart} onClose={() => closeSide()} />
     ) : null}
     </>
   );

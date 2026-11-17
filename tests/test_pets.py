@@ -2553,10 +2553,12 @@ class NewChatTests(unittest.TestCase):
         here = here[:here.index("\n    }\n")]
         self.assertIn("pane.showSides(true, true, key)", here)
         self.assertIn("lookPart(key)", here)
+        # (Explain this sees what side questions see now: the whole chat, or the part picked with Ask from
+        # here; never a part of its own, which would cut what an explanation needs)
         explain = logic[logic.index("    function explain(selected, key) {"):]
         explain = explain[:explain.index("\n    }\n")]
-        self.assertIn("lookPart(key)", explain)
-        self.assertIn("ask(q, key || undefined)", explain)
+        self.assertNotIn("lookPart", explain)
+        self.assertIn("ask(q)\n", explain + "\n")
         ask = logic[logic.index("    function ask(text, since) {"):]
         ask = ask[:ask.index("\n    }\n")]
         self.assertIn('const from = since !== undefined ? String(since || "") : part ? String(part.key) : partAsked', ask)
@@ -2584,9 +2586,19 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('(entry.saw !== "" ? " · " + entry.saw : "")', panel)
         self.assertIn("Sides.SIDE_ASK_WHOLE", panel)
         self.assertIn("logic.askWhole({ q: entry.q })", panel)
-        # the line: the panel's (made only while it has a part), never ChatPane's; in a row's gap or the head
-        self.assertIn('active: panel.part !== null\n        source: active ? "SideFromLine.qml" : ""', panel)
-        self.assertNotIn("SideFromLine.qml\"", pane)
+        # the line: the chat's (made whenever there's a part, the panel open or not: over a narrow window's
+        # chat, the open panel hid it), never the panel's; in a row's gap or the head
+        self.assertIn('active: pane.sidePart !== null\n            source: active ? "SideFromLine.qml" : ""', pane)
+        self.assertNotIn("SideFromLine.qml\"", panel)
+        self.assertIn('readonly property string key: pane.sidePart ? String(pane.sidePart.key) : ""', line)
+        # the panel's part line: a click goes to where it starts (the panel making way over the chat)
+        self.assertIn("onTapped: pane.showSidePart()", panel)
+        self.assertIn("Sides.SIDE_FROM_SHOW", panel)
+        show = pane[pane.index("    function showSidePart() {"):]
+        show = show[:show.index("\n    }\n")]
+        self.assertIn("if (!sideBeside)\n            showSides(false)", show)
+        self.assertIn("logic.jump(key, false)", show)
+        self.assertIn("logic.reach(key, false)", show)
         self.assertIn("Sides.SIDE_FROM_LINE", line)
         self.assertIn('objectName: "listHead"', pane)
         self.assertIn("parent: from.row && !from.first ? from.row : from", line)

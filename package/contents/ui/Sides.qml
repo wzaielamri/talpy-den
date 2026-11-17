@@ -97,16 +97,15 @@ Item {
                    { kind: "side", chat: pane.chatId, host: pane.host, local: id, q: q, pick: pick, at: at, since: from })
         return true
     }
-    // Explain this: what you selected, quoted, asked in the panel (opened if it's closed), from the turn of
-    // the message it's in (key; the first one's when it spans several): that part is the panel's too
+    // Explain this: what you selected, quoted, asked in the panel (opened if it's closed) about what side
+    // questions see now: the whole chat, or the part you picked with Ask from here (an explanation needs what
+    // came before: it's never cut on its own). key: the message it's in, kept in place as the chat narrows
     function explain(selected, key) {
         const q = Sides.explainQuestion(selected)
         if (q === "")
             return
         pane.showSides(true, true, key)   // (beside the chat: that message stays where it is as the chat narrows)
-        if (key)
-            lookPart(key)
-        ask(q, key || undefined)
+        ask(q)
     }
     // Ask from here: the panel (opened if it's closed) sees the chat from that message's turn on
     function fromHere(key) {

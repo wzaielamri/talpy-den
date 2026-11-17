@@ -14,7 +14,7 @@
 // costs, with × back to the whole chat.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { SIDE_ACTIONS, SIDE_AGAIN, SIDE_ASK_WHOLE, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS,
+import { SIDE_ACTIONS, SIDE_AGAIN, SIDE_FROM_SHOW, SIDE_ASK_WHOLE, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS,
          SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TITLE, SIDE_WHOLE, SIDE_WHOLE_TIP, sideModelLabel, sidePickLabel, sideSaw, sideState, timeText,
          type ShownSide, type SidePick } from "../../src/shared/pane";
 import { I, Icon, T } from "../util/icons";
@@ -23,7 +23,7 @@ import { IconButton } from "./IconButton";
 import { TalpyIcon } from "./TalpyIcon";
 
 export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pick, pickOpen, setPickOpen, line, part, note, style,
-                            onAsk, onPick, onRemove, onRemoveAll, onAgain, onAskWhole, onCopy, onQuote, onCopyCode, onWhole, onClose }: {
+                            onAsk, onPick, onRemove, onRemoveAll, onAgain, onAskWhole, onCopy, onQuote, onCopyCode, onWhole, onShowPart, onClose }: {
   items: readonly ShownSide[];
   wide: boolean; // beside the chat, else over it under its tabs (anchor)
   anchor: { current: HTMLElement | null };
@@ -48,6 +48,7 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
   onQuote: (s: ShownSide) => void;
   onCopyCode: (code: string) => void;
   onWhole: () => void;
+  onShowPart: () => void;   // (the part line clicked: to where it starts in the chat)
   onClose: () => void;
 }) {
   const card = useRef<HTMLDivElement>(null);
@@ -234,7 +235,9 @@ export function SidePanel({ items, wide, anchor, shown, loaded, asked, draft, pi
           ) : null}
         </span>
         <span class="grow" />
-        {line.text ? <span class="pane-side-cost" title={line.tip}>{line.text}</span> : null}
+        {line.text && part ? (
+          <button type="button" class="pane-side-cost pane-side-from" title={`${line.tip}\n${SIDE_FROM_SHOW}`} onClick={onShowPart}>{line.text}</button>
+        ) : line.text ? <span class="pane-side-cost" title={line.tip}>{line.text}</span> : null}
         {part ? <IconButton class="pane-side-whole" icon={I.cancel} tone={T.cancel} label={SIDE_WHOLE} title={SIDE_WHOLE_TIP} onClick={onWhole} /> : null}
       </div>
     </div>

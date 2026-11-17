@@ -18,9 +18,9 @@ import "icons.mjs" as Icons
 // whole chat). On hover, over its top right: Copy (Copied a moment, as a message's Copy), Quote in reply,
 // Ask with the whole chat (one asked about a part), Remove (×). At its foot, the box (Enter asks,
 // Shift+Enter: a new line; Esc anywhere in the panel closes it), the model a question goes to (every
-// window's) and what the next one costs, or, with a part (Ask from here, Explain this), where it starts and
-// its cost, with × back to the whole chat; the chat shows where with a line (SideFromLine.qml, made only
-// then). What asks and takes the answers: Sides.qml. VS Code components/SidePanel.tsx: the same parts,
+// window's) and what the next one costs, or, with a part (Ask from here), where it starts and
+// its cost (a click: to where it starts), with × back to the whole chat; the chat shows where with a line
+// (SideFromLine.qml, ChatPane's: whenever there's a part, the panel open or not). What asks and takes the answers: Sides.qml. VS Code components/SidePanel.tsx: the same parts,
 // words and clicks.
 Rectangle {
     id: panel
@@ -774,8 +774,13 @@ Rectangle {
                 font.pointSize: pane.pt * 0.8
                 HoverHandler {
                     id: costHover
+                    cursorShape: panel.part ? Qt.PointingHandCursor : Qt.ArrowCursor
                 }
-                PlasmaComponents3.ToolTip.text: panel.part ? Sides.SIDE_FROM_TIP : Sides.SIDE_COST_TIP
+                TapHandler {   // (with a part: to where it starts in the chat)
+                    enabled: panel.part !== null
+                    onTapped: pane.showSidePart()
+                }
+                PlasmaComponents3.ToolTip.text: panel.part ? Sides.SIDE_FROM_TIP + "\n" + Sides.SIDE_FROM_SHOW : Sides.SIDE_COST_TIP
                 PlasmaComponents3.ToolTip.visible: costHover.hovered
                 PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
@@ -788,12 +793,6 @@ Rectangle {
                 onClicked: panel.logic.wholeChat()
             }
         }
-    }
-
-    // The line in the chat above where the part starts (SideFromLine.qml: made only while there's one)
-    Loader {
-        active: panel.part !== null
-        source: active ? "SideFromLine.qml" : ""
     }
 
     // The model's menu: the three, the one picked marked (made as it opens, gone once it's closed)

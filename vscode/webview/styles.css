@@ -4702,6 +4702,17 @@ body.vscode-high-contrast-light .pane-side {
   text-align: right;
   cursor: help;
 }
+/* (with a part: a link to where it starts in the chat) */
+button.pane-side-from {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+button.pane-side-from:hover {
+  text-decoration: underline;
+}
 
 /* (a part of the chat picked: its × back to all of it, small, right after the line) */
 .pane-side-foot .pane-side-whole {

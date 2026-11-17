@@ -99,12 +99,13 @@ export const SIDE_COST_TIP = "A side question goes to a copy of this chat that C
     + "The first one in an hour sends the whole chat to Claude again; the ones after it, on the same model, "
     + "reuse it from the prompt cache. Sonnet or Haiku use less of your usage limit than the chat's own model.";
 
-// Ask from here (a message's right-click menu, Explain this): side questions see the chat from the start
+// Ask from here (a message's right-click menu; Explain this then too): side questions see the chat from the start
 // of that message's turn on, not all of it (pane.py --side-question --from KEY; --part KEY says where it
 // starts and what it costs). The chat shows where with a line; the panel says it under the box.
 export const SIDE_FROM_MENU = "Ask from here";
 export const SIDE_FROM_TIP = "Side questions see the chat from this message's turn on: less to send than all of it";
 export const SIDE_FROM_LINE = "Side questions see from here";
+export const SIDE_FROM_SHOW = "Click: see where it starts in the chat";   // (the panel's part line, a link to the chat's line)
 export const SIDE_WHOLE = "Whole chat";   // (the x on the panel's from line: back to all of it)
 export const SIDE_WHOLE_TIP = "Ask about the whole chat again";
 export const SIDE_ASK_WHOLE = "Ask with the whole chat";

@@ -475,7 +475,7 @@ Window {
     // every chat you open). "Explain this" by a selection (ExplainButton.qml) and in the right-click menu
     // asks about what you selected, from its message's turn on; "Ask from here" in a message's right-click
     // menu makes the panel's questions see only the chat from that message's turn on (a part: less to
-    // send), shown by a line in the chat while the panel is open (SideFromLine.qml). What asks and takes
+    // send), shown by a line in the chat whenever one is picked (SideFromLine.qml). What asks and takes
     // the answers (Sides.qml, with sides.mjs) is read and made only once you ask or the panel shows; the
     // toggle and the panel after the window's first frame. VS Code chat.tsx: the same rules (shared/pane.ts
     // SIDE_WIDE)
@@ -503,6 +503,21 @@ Window {
         return sideLogic.item
     }
     readonly property int sideCount: sideLogic.item ? sideLogic.item.shown.length : sides.length
+    readonly property var sidePart: sideLogic.item ? sideLogic.item.part : null   // (Ask from here's; null: all of it)
+    // The panel's part line clicked: to the chat's line where the part starts (over a narrow window's chat, the
+    // panel makes way first); one further back than what's shown is read first, as a bookmark's
+    function showSidePart() {
+        if (!sidePart)
+            return
+        const key = String(sidePart.key)
+        if (!sideBeside)
+            showSides(false)
+        const logic = bookmarksNow()
+        if (shownList.some(it => String(it.key) === key))
+            logic.jump(key, false)
+        else
+            logic.reach(key, false)
+    }
     // Opened or closed with its toggle, its ×, Esc in it: kept (focus: its box takes it). Beside the chat,
     // its column narrows or widens: what you read stays (holdPlace; key: the message to keep where it is,
     // Ask from here's or Explain this')
@@ -2851,7 +2866,8 @@ Window {
             .map(i => boxAt(i)).filter(b => b && b.selectedText !== "")
             .map(b => Md.copiedText(b.selectedText)).join("\n\n")
     }
-    // (the message what's selected starts in, when it's in the chat: Explain this asks from its turn on. Only
+    // (the message what's selected starts in, when it's in the chat: Explain this keeps it in place as the
+    // chat narrows for the panel. Only
     // messages' text boxes select, never a day line or the side questions' line: the message after it)
     function selectionKey() {
         const at = Object.keys(selOthers).map(k => selIndex(k, selOthers[k])).concat([selIndex(selFrom, selFromAt)])
@@ -4878,6 +4894,13 @@ Window {
             active: pane.sideShows
             asynchronous: true
             source: active ? "SidePanel.qml" : ""
+        }
+
+        // The line in the chat above where the side questions' part starts (SideFromLine.qml): whenever one is
+        // picked (Ask from here), the panel open or not, so the chat says what side questions see
+        Loader {
+            active: pane.sidePart !== null
+            source: active ? "SideFromLine.qml" : ""
         }
 
         // Talpy Chat's keys (? in an empty box): KeysHelp.qml, read and made only while it shows

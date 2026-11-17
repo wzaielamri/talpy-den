@@ -44,6 +44,7 @@ export interface SidePart { key: string; text: string; at: number; tokens: numbe
 export declare const SIDE_FROM_MENU: string;
 export declare const SIDE_FROM_TIP: string;
 export declare const SIDE_FROM_LINE: string;
+export declare const SIDE_FROM_SHOW: string;
 export declare const SIDE_WHOLE: string;
 export declare const SIDE_WHOLE_TIP: string;
 export declare const SIDE_ASK_WHOLE: string;

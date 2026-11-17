@@ -8,9 +8,11 @@
   here*: side questions then see the chat from that message's turn on, not
   all of it, so a long chat's side question sends that part. The line under
   the box says where it starts and how many tokens that is, a line in the
-  chat marks the spot, and × goes back to the whole chat. Explain this asks
-  from the selected message on by itself; an answer about a part says so and
-  offers *Ask with the whole chat*.
+  chat marks the spot (while a part is picked, the panel open or not; a
+  click on the panel's line goes there), and × goes back to the whole chat.
+  Explain this asks about what side questions see: the whole chat unless you
+  picked a part. An answer about a part says so and offers *Ask with the
+  whole chat*.
 
 - **Trust a folder from Talpy Chat, and the message goes.** A message to
   a chat that isn't running didn't go when Claude doesn't trust the folder

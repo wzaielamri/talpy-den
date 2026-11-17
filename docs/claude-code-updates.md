@@ -1038,7 +1038,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   a chat in the middle of a tool call answered too. A resumed chat keeps the context it started with (its
   `session_context` entry), so copies start alike and later questions read the cache; a background chat's
   system prompt names its own job, so its copy doesn't share the chat's cache.
-  - Parts (Ask from here, Explain this: `--from KEY`): Claude Code reads a chat from its newest
+  - Parts (Ask from here: `--from KEY`): Claude Code reads a chat from its newest
     `compact_boundary` (a system entry, `parentUuid` null) and the `isCompactSummary` user entry under it, so a
     part is a transcript of its own: such a boundary, a note that the start is left out, and the chat's entries
     from your message that starts the turn on (the first one's `parentUuid` the note's). `claude --resume ID`

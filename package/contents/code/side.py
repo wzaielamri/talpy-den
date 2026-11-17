@@ -369,7 +369,7 @@ def ask(home, extra_dirs, profile_key, chat_id, question, pick="", history=(), c
     "synthetic"} or {"ok": False, "message"}. pick: "" (the chat's own
     model, cs.chat_model) or one of cs.SIDE_PICKS. A chat Claude moved to
     the background goes on under its new id (cs.continuation): asked there.
-    since: the key of a message (Ask from here, Explain this): the copy gets
+    since: the key of a message (Ask from here): the copy gets
     the chat from the start of that message's turn on (write_part), and the
     answer says which part, "from" (part_of's); None there when it got all
     of it (the message isn't in the chat any more, or the chat was compacted

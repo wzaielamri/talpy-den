@@ -43,8 +43,8 @@ its permission prompt and its review.
         a side question about the chat (Claude's /btw): answered by a copy
         of it Claude doesn't keep, with no tools, nothing added to the chat
         (side.ask), on the chat's own model or the one named; it goes with
-        the chat's earlier answers (follow-ups). --from KEY (Ask from here,
-        Explain this): the copy gets the chat from the start of that
+        the chat's earlier answers (follow-ups). --from KEY (Ask from
+        here; Explain this too, while one is picked): the copy gets the chat from the start of that
         message's turn on, not all of it (side.write_part); the answer's
         "from" says which part. Kept on this computer, a host's chat's too
         (asked there): talpy_den.ask_side, finish_side. {"ok", "message",
