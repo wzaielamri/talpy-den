@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Better
+
+- **The chats a Recap tip names line up.** Their numbers stand in one column
+  with the tips' shares and their **Stop** or **Keep going** with the
+  commands, whatever their tip has on the right; every row is as tall, and
+  the hours read *24h* as the tab's other durations do. In a narrow side bar
+  the button goes under its row, so the names keep their room.
+
 ## 1.22.0
 
 ### New

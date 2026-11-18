@@ -424,8 +424,8 @@ const DEMO_CHATS: WeekChat[] = [
 ];
 
 // A chat a Recap tip names (this computer's or build-server's, as the demo's chat list has it)
-function tipChat(chatId: string, name: string, cwd: string, note: string, host = ""): WeekTipChat {
-  return { name, chatId, host, profileDir: ".claude", folder: host ? cwd : cwd.replace("/home/alice", "~"), cwd, note };
+function tipChat(chatId: string, name: string, cwd: string, count: number, host = ""): WeekTipChat {
+  return { name, chatId, host, profileDir: ".claude", folder: host ? cwd : cwd.replace("/home/alice", "~"), cwd, count };
 }
 
 // The Recap tab's recap of made-up days: mornings and afternoons of work, a
@@ -656,20 +656,20 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     tips: [
       { key: "long_context", pct: 41, before: back >= 3 ? null : 52, title: "Start fresh when you switch tasks",
         detail: "1,812 requests carried over 150k tokens of context", command: "/clear",
-        chats: [tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "1,311 requests"),
-                tipChat("demo-4", "Train the ranking model", "/home/alice/experiments/ranking", "204 requests", "build-server")], more: 3 },
+        chats: [tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", 1311),
+                tipChat("demo-4", "Train the ranking model", "/home/alice/experiments/ranking", 204, "build-server")], more: 3 },
       { key: "max_effort", pct: 22, before: back >= 3 ? null : 39, title: "Save max effort for hard tasks", detail: "", command: "/effort xhigh" },
       { key: "long_running", pct: 18, before: back >= 3 ? null : 11, title: "Stop chats you no longer need", detail: "2 ran for 8 hours or more", command: "",
-        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", "11 hours", "build-server"),
-                tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "9 hours")], more: 0 },
+        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", 11, "build-server"),
+                tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", 9)], more: 0 },
       { key: "cold", pct: 11, before: back >= 3 ? null : 6, title: "Come back within the hour, or start fresh",
         detail: "you came back to chats after their cache had expired 5 times", command: "",
-        chats: [tipChat("demo-2", "Release notes for 2.0", "/home/alice/projects/webapp", "3 times")], more: 1 },
+        chats: [tipChat("demo-2", "Release notes for 2.0", "/home/alice/projects/webapp", 3)], more: 1 },
       { key: "waits", pct: null, before: null, title: "Let Claude go on without asking", detail: "it waited 3h 18m for your answers, 9 times · auto mode, or allow what you always allow", command: "/permissions" },
       { key: "limits", pct: null, before: null, title: "Let chats go on after a usage limit", detail: "your plan ran out 2 times (5 chats stopped)", command: "",
-        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", "stopped 2 times", "build-server"),
-                tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "stopped once"),
-                tipChat("demo-stopped-2", "Port the importer", "/home/alice/projects/webapp", "stopped once")], more: 2 },
+        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", 2, "build-server"),
+                tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", 1),
+                tipChat("demo-stopped-2", "Port the importer", "/home/alice/projects/webapp", 1)], more: 2 },
     ],
     prices: { asOf: "2026-11-18", guessed: ["Fable 5.3"], guessedCost: cost * 0.05 },
     sources: [{ host: "", ok: true, error: "" }, { host: "build-server", ok: true, error: "" }],

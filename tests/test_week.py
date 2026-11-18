@@ -476,9 +476,8 @@ class RecapTests(Home):
                    if t["key"] == "limits")  # (3 prompts: too little to show)
         self.assertEqual(tip["detail"], "your plan ran out 3 times (5 chats stopped)")
         # (the chats it stopped, the one stopped last first: Keep going for each, in the tab)
-        self.assertEqual([(c["chatId"], c["note"], c["profileDir"]) for c in tip["chats"]],
-                         [("chat-b", "stopped 2 times", ".claude-work"), ("chat-a", "stopped 3 times", ".claude-work"),
-                          ("chat-c", "stopped once", ".claude-personal")])
+        self.assertEqual([(c["chatId"], c["count"], c["profileDir"]) for c in tip["chats"]],
+                         [("chat-b", 2, ".claude-work"), ("chat-a", 3, ".claude-work"), ("chat-c", 1, ".claude-personal")])
         # Claude Code's own note of the reset comes before the message's time
         self.assertEqual(week.limit_reset({"quotaLimits": {"resetsAt": first // 1000}}, "… · resets 7pm", t0), first)
 
@@ -757,7 +756,7 @@ class TipTests(Home):
         self.assertEqual([t["key"] for t in tips], ["long_running"])
         # (it names the chats that ran that long, to stop the ones you no longer need)
         self.assertEqual(tips[0]["chats"], [{"name": "the parser", "chatId": "c1", "host": "", "profileDir": ".claude-work",
-                                              "folder": "/w/app", "cwd": "/w/app", "note": "8 hours"}])
+                                              "folder": "/w/app", "cwd": "/w/app", "count": 8}])
         self.assertEqual(tips[0]["more"], 0)
 
     def test_subagents(self):
@@ -824,7 +823,7 @@ class TipTests(Home):
         tips = week.tips([], self.t0 - week.DAY_MS, self.now, {"cost": 100.0}, [], cold)
         self.assertEqual([(t["key"], t["pct"], t["detail"]) for t in tips],
                          [("cold", 12, "you came back to chats after their cache had expired 3 times")])
-        self.assertEqual([(c["name"], c["note"]) for c in tips[0]["chats"]], [("parser", "2 times"), ("notes", "once")])
+        self.assertEqual([(c["name"], c["count"]) for c in tips[0]["chats"]], [("parser", 2), ("notes", 1)])
         self.assertEqual(week.tips([], self.t0 - week.DAY_MS, self.now, {"cost": 130.0}, [], cold), [])  # (9%)
 
 
@@ -867,7 +866,7 @@ class UsageMixTests(Home):
         # The tips' shares are the same weighing, with theirs the period before
         tip = next(t for t in r["tips"] if t["key"] == "long_context")
         self.assertEqual((tip["pct"], tip["before"]), (round(100 * w["b"] / total), 0))
-        self.assertEqual([(c["chatId"], c["note"]) for c in tip["chats"]], [("chat-a", "1 request")])
+        self.assertEqual([(c["chatId"], c["count"]) for c in tip["chats"]], [("chat-a", 1)])
         # Overall has nothing before it; a period the Recap doesn't have whole isn't compared
         self.assertTrue(all(p["before"] is None for p in self.recap(span="all")["usageMix"]))
         uncompared = self.recap()

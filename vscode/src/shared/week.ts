@@ -400,6 +400,25 @@ export function tipsShown(tips: WeekTip[], status: Pick<Status, "keep"> | null |
   return tips.filter((t) => !(t.key === "limits" && t.chats?.length && !t.more && t.chats.every((c) => keptChat(status, c.chatId, c.host || undefined))));
 }
 
+// What a tip says of a chat it names, by its count: the hours it ran ("24h",
+// as the tab's other durations), its requests over 150k of context, the times
+// you came back after its cache expired, the times a usage limit stopped it
+export function tipChatFigure(key: string, c: Pick<WeekTipChat, "count">): string {
+  const n = c.count || 0;
+  return key === "long_running" ? `${n}h`
+    : key === "long_context" ? (n === 1 ? "1 request" : `${count(n)} requests`)
+      : key === "cold" ? (n === 1 ? "once" : `${count(n)} times`)
+        : key === "limits" ? (n === 1 ? "stopped once" : `stopped ${count(n)} times`)
+          : count(n);
+}
+
+// A chat line's tooltip: what a click does, or why it does nothing (an SSH
+// host's chat: its row under its host opens it)
+export function chatOpenTitle(c: Pick<WeekTipChat, "name" | "chatId" | "host">): string {
+  return c.host ? `${c.name}\nOn ${hostLabel(c.host)}: its row under ${hostLabel(c.host)} opens it`
+    : c.chatId ? `Open “${c.name}”` : `${c.name}\nNot found: there's nothing to open`;
+}
+
 // What a tip offers one of the chats it names, as the chat list would now:
 // "stop" for an idle chat with a process of its own (the tip about chats that
 // ran long: one at work is stopped from its row); "keep" (Keep going) for one

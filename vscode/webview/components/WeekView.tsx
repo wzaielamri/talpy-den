@@ -41,6 +41,8 @@ import {
   modelRowText,
   modelTip,
   tipChatAct,
+  tipChatFigure,
+  chatOpenTitle,
   tipsShown,
   tipWas,
   weekTiles,
@@ -321,7 +323,7 @@ function opens(shown: boolean, toggle: () => void) {
 function ChatLine({ c, cur, where, sub, bare, tip }: { c: WeekChat; cur: Currency; where?: string; sub?: boolean; bare?: boolean; tip?: string }) {
   const line = (
     <button type="button" class={"week-chat" + (sub ? " sub" : "")} disabled={!!c.host || !c.chatId}
-      title={(c.host ? `${c.name} on ${hostLabel(c.host)}: its row under ${hostLabel(c.host)} opens it` : `Open “${c.name}”`) + (tip ? `\n${tip}` : "")}
+      title={chatOpenTitle(c) + (tip ? `\n${tip}` : "")}
       onClick={() => post({ type: "openWeekChat", chatId: c.chatId, profileDir: c.profileDir, name: c.name, cwd: c.cwd })}>
       <span class="week-chat-name">{c.name}</span>
       <span class="week-chat-folder small muted">{where ?? (c.host ? hostLabel(c.host) + ": " : "") + c.folder}</span>
@@ -877,13 +879,17 @@ function Usage({ recap }: { recap: WeekRecap }) {
 function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onCopy: (text: string) => void }) {
   const view = useView();
   const tips = tipsShown(recap.tips, view.status);
+  // (what each chat named is offered now; the column of commands and buttons
+  // is there only when a row of the section has one)
+  const acts = tips.map((t) => (t.chats ?? []).map((c) => tipChatAct(t.key, c, view.status, view.hosts)));
+  const acting = tips.some((t, i) => !!t.command || acts[i].some(({ act, ref }) => act === "kept" || (!!act && !!ref)));
   return (
     <section class="week-section">
       <h2>What could use less of your plan</h2>
       {recap.tooLittle ? <div class="muted">{TIPS_TOO_LITTLE}</div>
         : !tips.length ? <div class="muted">Nothing stands out: no habit takes a tenth of the usage shown.</div> : null}
-      <ul class="week-tips">
-        {tips.map((t) => (
+      <ul class={"week-tips" + (acting ? " acting" : "")}>
+        {tips.map((t, i) => (
           <li key={t.key} class="week-tip">
             <span class="week-tip-icon" title={tipSource(t.key)}><Icon name={I[tipMeaning(t.key)]} /></span>
             <span class="week-tip-text">
@@ -907,16 +913,8 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
                 {copied === t.command ? "Copied" : t.command}
               </button>
             ) : null}
-            {t.chats?.length || t.more ? (
-              <span class="week-tip-named">
-                {t.chats?.length ? (
-                  <ul class="week-tip-chats">
-                    {t.chats.map((c) => <TipChat key={c.host + c.chatId} tip={t} c={c} />)}
-                  </ul>
-                ) : null}
-                {t.more ? <span class="small muted">and {t.more} more {t.more === 1 ? "chat" : "chats"}</span> : null}
-              </span>
-            ) : null}
+            {(t.chats ?? []).map((c, k) => <TipChat key={c.host + c.chatId} tip={t} c={c} offer={acts[i][k]} />)}
+            {t.more ? <span class="week-tip-more small muted">and {t.more} more {t.more === 1 ? "chat" : "chats"}</span> : null}
           </li>
         ))}
       </ul>
@@ -924,19 +922,18 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
   );
 }
 
-// A chat a tip names: its name brings it up (this computer's), what the tip
-// says of it, and Stop or Keep going where the chat list offers it now (the
+// A chat a tip names, under it on the section's grid: its name brings it up
+// (this computer's), what the tip says of it in the shares' column, and Stop
+// or Keep going where the chat list offers it now in the commands' (the
 // extension asks before it stops one, and finds the chat itself)
-function TipChat({ tip, c }: { tip: WeekTip; c: WeekTipChat }) {
-  const view = useView();
-  const { act, ref } = tipChatAct(tip.key, c, view.status, view.hosts);
+function TipChat({ tip, c, offer }: { tip: WeekTip; c: WeekTipChat; offer: ReturnType<typeof tipChatAct> }) {
+  const { act, ref } = offer; // (not a prop of its own: preact keeps ref)
   return (
-    <li class="week-tip-chat">
-      <button type="button" class="week-chat" disabled={!!c.host || !c.chatId}
-        title={c.host ? `${c.name} on ${hostLabel(c.host)}: its row under ${hostLabel(c.host)} opens it` : `Open “${c.name}”`}
+    <div class="week-tip-chat">
+      <button type="button" class="week-chat" disabled={!!c.host || !c.chatId} title={chatOpenTitle(c)}
         onClick={() => post({ type: "openWeekChat", chatId: c.chatId, profileDir: c.profileDir, name: c.name, cwd: c.cwd })}>
         <span class="week-chat-name">{c.name}</span>
-        <span class="week-chat-value small muted">{c.note}</span>
+        <span class="week-chat-value small muted">{tipChatFigure(tip.key, c)}</span>
       </button>
       {act === "stop" && ref ? (
         <button type="button" class="chip" title={"Stop this chat\nAsks first. It's idle: Claude quits, and the chat is kept."}
@@ -952,6 +949,6 @@ function TipChat({ tip, c }: { tip: WeekTip; c: WeekTipChat }) {
           <Icon name={I.keepGoing} /> Keep going
         </button>
       ) : act === "kept" ? <span class="small muted">Keeps going</span> : null}
-    </li>
+    </div>
   );
 }

@@ -16,7 +16,7 @@ import {
   limitNoChangeText, limitShareText, limitShareTip, limitShown, limitSizeTip, limitTokensText, limitTokensTip, limitWeekLabel, limitWeekNote,
   limitWeekPct, limitStart, limitValueText, doneText, doneTip, commitsShown, workBeforeText, listedChatRef,
   planUseText, planUseTip, planWeeksShown, weekShareShort, weekShareTip,
-  daysBack, laneHoverText, laneTicks, mixLabel, mixTip, mixValue, modelRowText, tipChatAct, tipsShown, tipShareShown, tipWas,
+  daysBack, laneHoverText, laneTicks, mixLabel, mixTip, mixValue, modelRowText, tipChatAct, tipChatFigure, tipsShown, tipShareShown, tipWas,
 } from "../src/shared/week";
 import { ViewHost } from "../src/view";
 
@@ -106,10 +106,13 @@ test("a tip acts on the chats it names as the chat list would: Stop, Keep going,
   assert.equal(act("long_context", listing([row({ state: "idle" })])), "");
   assert.equal(tipChatAct("long_running", c, listing([row({ state: "idle" })]), []).ref?.key, g.sessions[0].key);
   // the limits tip, once every chat it names keeps going, isn't shown
-  const limits = { key: "limits", pct: null, title: "", detail: "", command: "", chats: [{ ...c, name: "", profileDir: "", folder: "", cwd: "", note: "" }], more: 0 };
+  const limits = { key: "limits", pct: null, title: "", detail: "", command: "", chats: [{ ...c, name: "", profileDir: "", folder: "", cwd: "", count: 1 }], more: 0 };
   assert.equal(tipsShown([limits], listing([], kept)).length, 0);
   assert.equal(tipsShown([limits], listing([])).length, 1);
   assert.equal(tipsShown([{ ...limits, more: 2 }], listing([], kept)).length, 1); // (chats it doesn't name may not)
+  // what a tip says of each chat, written as the tab writes its hours and counts
+  assert.deepEqual(([["long_running", 24], ["long_context", 3416], ["long_context", 1], ["cold", 1], ["limits", 2]] as const)
+    .map(([key, count]) => tipChatFigure(key, { count })), ["24h", "3,416 requests", "1 request", "once", "stopped 2 times"]);
 });
 
 test("the Day, chat by chat: its hours on the axis, and what went on where the mouse points", () => {

@@ -2427,14 +2427,23 @@ body.vscode-high-contrast .top.scrolled {
 }
 
 /* icon | the tip | its share | its command: one grid, so the shares and
-   commands stand in columns (an empty cell where a tip has none) */
+   commands stand in columns (an empty cell where a tip has none). The chats
+   a tip names are rows of it too, from under its text to the right edge:
+   their figures right-aligned in the shares' column, their Stop or Keep
+   going in the commands', so every figure ends on one line whatever its tip
+   has on the right; that last column only when a row has something in it
+   (acting) */
 .week-tips {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 6px 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.week-tips.acting {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
 }
 
 .week-tip {
@@ -2444,23 +2453,16 @@ body.vscode-high-contrast .top.scrolled {
   align-items: start;
 }
 
+/* (its right edge where the chats' figures end, inside their 4px) */
 .week-tip-pct {
   grid-column: 3;
+  padding: 1px 4px 0 0;
   text-align: right;
 }
 
 .week-tip > .chip {
   grid-column: 4;
   white-space: nowrap;
-}
-
-/* (the chats it names, under the tip and its share: the whole width) */
-.week-tip-named {
-  display: flex;
-  flex-direction: column;
-  grid-column: 2 / -1;
-  min-width: 0;
-  margin-top: -4px;
 }
 
 .week-tip-icon {
@@ -2473,15 +2475,6 @@ body.vscode-high-contrast .top.scrolled {
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-.week-tip-pct {
-  flex: none;
-  padding-top: 1px;
-}
-
-.week-tip .chip {
-  flex: none;
 }
 
 /* (a tip's share, and how it moved under it) */
@@ -2502,34 +2495,77 @@ body.vscode-high-contrast .top.scrolled {
   height: 14px;
 }
 
-/* The chats a tip names: name | what the tip says of it, then Stop or Keep going */
-.week-tip-chats {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1px 6px;
-  margin: 2px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
+/* A chat a tip names: name | what the tip says of it | Stop or Keep going,
+   every row as tall, a button or not */
 .week-tip-chat {
   display: grid;
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
   grid-template-columns: subgrid;
+  grid-auto-rows: 20px;
   align-items: center;
 }
 
+.week-tip > .week-tip-chat:first-of-type {
+  margin-top: 2px;
+}
+
 .week-tip-chat > .week-chat {
-  grid-column: 1;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  column-gap: 8px;
-  padding: 1px 4px;
+  grid-column: 1 / 3;
+  height: 100%;
+  padding: 0 4px;
+  align-items: center;
   font-size: 0.92em;
+}
+
+/* (as small as the shares above it) */
+.week-tip-chat > .week-chat > .week-chat-value {
+  font-size: calc(0.85em / 0.92);
 }
 
 .week-tip-chat > .chip,
 .week-tip-chat > span {
-  grid-column: 2;
+  grid-column: 3;
+}
+
+.week-tip-chat > .chip {
+  box-sizing: border-box;
+  height: 18px;
+  padding-block: 0;
+  font-size: 0.92em;
+  line-height: 16px;
+}
+
+.week-tip-chat > span {
+  text-align: center;
+}
+
+/* and N more chats: under the names */
+.week-tip-more {
+  grid-column: 2 / -1;
+  padding-left: 4px;
+}
+
+/* In a side bar the names would have little room left of the two columns:
+   a chat's line takes the commands' column too (its figure at the right
+   edge, every figure still on one line), its Stop or Keep going under it */
+@container (max-width: 440px) {
+  .week-tip-chat > .week-chat {
+    grid-column: 1 / -1;
+  }
+
+  .week-tip-chat > .week-chat > .week-chat-name {
+    grid-column: 1 / -2;
+  }
+
+  .week-tip-chat > .week-chat > .week-chat-value {
+    grid-column: -2;
+  }
+
+  .week-tip-chat > .chip,
+  .week-tip-chat > span {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
 }
 
 /* Where the usage went: then as your plan's limits count it */

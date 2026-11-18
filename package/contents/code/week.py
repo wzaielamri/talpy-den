@@ -4011,18 +4011,22 @@ def usage_before(t, before, then):
     return then.get(t["key"], 0)
 
 
-def tip_chat(c, home, note):
+def tip_chat(c, home, count):
     """A chat a tip names, as the tab's lists have it (chat_row: its name,
-    where it is, what opens it), with what the tip says of it (note)."""
+    where it is, what opens it), with the number the tip says of it (count:
+    the hours it ran, its requests over 150k of context, the times you came
+    back after its cache expired, the times a usage limit stopped it; the
+    front ends write it, as the tab's other numbers)."""
     folder, host = c.get("folder") or "", c.get("host") or ""
     return {"name": c.get("name") or (os.path.basename(folder.rstrip("/")) if folder else "") or (c.get("id") or "")[:8],
             "chatId": c.get("id") or "", "host": host, "profileDir": (c.get("profiles") or [""])[0],
-            "folder": folder if host else td.short_path(folder, home), "cwd": folder, "note": note}
+            "folder": folder if host else td.short_path(folder, home), "cwd": folder, "count": count}
 
 
-def tip_chats(rows, note):
-    """The chats a tip names (TIP_CHATS of them, the first first), and how many more."""
-    return [tip_chat(*r[:2], note(*r[2:])) for r in rows[:TIP_CHATS]], max(0, len(rows) - TIP_CHATS)
+def tip_chats(rows):
+    """The chats a tip names (TIP_CHATS of them, the first first: (chat, home,
+    count)), and how many more."""
+    return [tip_chat(*r) for r in rows[:TIP_CHATS]], max(0, len(rows) - TIP_CHATS)
 
 
 def tips(chats, w0, w1, total, waits, cold=None, home=None, weighed=None, before=None):
@@ -4047,12 +4051,11 @@ def tips(chats, w0, w1, total, waits, cold=None, home=None, weighed=None, before
         del t["shown"], t["attr"]
         if t["key"] == "long_running":
             rows = sorted(m["running"], key=lambda r: (-r[1], r[0]["key"]))
-            t["chats"], t["more"] = tip_chats([(c, home, n) for c, n in rows], lambda n: "{} hours".format(n))
+            t["chats"], t["more"] = tip_chats([(c, home, n) for c, n in rows])
         elif t["key"] == "long_context":
             # (most such requests first, as each says; of as many, the most usage)
             rows = sorted(m["context"], key=lambda r: (-r[2], -r[1], r[0]["key"]))
-            t["chats"], t["more"] = tip_chats([(c, home, n) for c, _w, n in rows],
-                                              lambda n: "1 request" if n == 1 else "{:,} requests".format(n))
+            t["chats"], t["more"] = tip_chats([(c, home, n) for c, _w, n in rows])
     # Coming back to chats after their cache expired: what writing their
     # context again cost more than reading it, from a tenth of the amount
     cost = total.get("cost") or 0
@@ -4062,8 +4065,7 @@ def tips(chats, w0, w1, total, waits, cold=None, home=None, weighed=None, before
                     "detail": "you came back to a chat after its cache had expired once" if once else
                               "you came back to chats after their cache had expired {} times".format(cold["count"]),
                     "command": "", "before": before["cold"] if before else None,
-                    "chats": [dict(c, note="once" if c["resumes"] == 1 else "{} times".format(c["resumes"]))
-                              for c in cold["chats"]],
+                    "chats": [dict(c, count=c["resumes"]) for c in cold["chats"]],
                     "more": max(0, cold.get("chatCount", len(cold["chats"])) - len(cold["chats"]))})
     waited = covered(clipped(waits, w0, w1))
     if waited >= WAIT_TIP_MS:
@@ -4076,7 +4078,7 @@ def tips(chats, w0, w1, total, waits, cold=None, home=None, weighed=None, before
         stopped = sorted(((c, home, sum(1 for t in c["limits"] if w0 <= t < w1)) for c in chats
                           if any(w0 <= t < w1 for t in c["limits"])),
                          key=lambda r: (-max(t for t in r[0]["limits"] if w0 <= t < w1), r[0]["key"]))
-        chats_named, more = tip_chats(stopped, lambda n: "stopped once" if n == 1 else "stopped {} times".format(n))
+        chats_named, more = tip_chats(stopped)
         out.append({"key": "limits", "pct": None, "title": "Let chats go on after a usage limit",
                     "detail": "your plan ran out {} times ({} stopped)"
                               .format(total["limits"], "1 chat" if stops == 1 else "{} chats".format(stops)),

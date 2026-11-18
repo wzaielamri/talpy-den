@@ -7,10 +7,11 @@ import org.kde.kirigami as Kirigami
 // A chat in the Recap tab's lists (WeekView.qml): its name, where (or when;
 // in What got done: what it got done), and its numbers, the last two
 // right-aligned in columns as wide as the list's widest (whereWidth,
-// numbersWidth; -1: its own). Click it to bring the chat up. In What got
-// done, a chat whose changes you haven't reviewed says so, with its tests
-// after its last edit, as its row in the chat list does (main.qml
-// reviewPending, TestsBadge.qml).
+// numbersWidth; -1: its own). Click it to bring the chat up; one a click
+// can't open (an SSH host's) is as bright as the others, only no link: its
+// name's tooltip says why. In What got done, a chat whose changes you haven't
+// reviewed says so, with its tests after its last edit, as its row in the
+// chat list does (main.qml reviewPending, TestsBadge.qml).
 PlasmaComponents3.ItemDelegate {
     id: line
 
@@ -30,12 +31,20 @@ PlasmaComponents3.ItemDelegate {
         return root.reviewPending({ review: review, chatId: chat.chatId, state: live ? live.state : "" }, chat.host || "", true)
     }
 
+    // (an SSH host's chat: its row in the Chats tab opens it)
+    readonly property bool canOpen: !chat.host && !!chat.chatId
+
     Layout.fillWidth: true
     leftPadding: Kirigami.Units.smallSpacing + indent
     topPadding: Math.round(Kirigami.Units.smallSpacing / 2)
     bottomPadding: Math.round(Kirigami.Units.smallSpacing / 2)
-    enabled: !chat.host && !!chat.chatId   // (an SSH host's chat: its row in the Chats tab opens it)
-    onClicked: root.openChatById(chat.chatId, chat.profileDir, chat.cwd || "", "", "", "")
+    hoverEnabled: canOpen
+    down: canOpen && pressed
+    focusPolicy: canOpen ? Qt.StrongFocus : Qt.NoFocus
+    onClicked: {
+        if (canOpen)
+            root.openChatById(chat.chatId, chat.profileDir, chat.cwd || "", "", "", "")
+    }
 
     contentItem: RowLayout {
         spacing: Kirigami.Units.smallSpacing
@@ -46,6 +55,17 @@ PlasmaComponents3.ItemDelegate {
             text: line.chat.name
             elide: Text.ElideRight
             font: line.indent > 0 ? Kirigami.Theme.smallFont : Kirigami.Theme.defaultFont
+
+            Loader {   // (why a click does nothing; made only then)
+                anchors.fill: parent
+                active: !line.canOpen
+                sourceComponent: PlasmaCore.ToolTipArea {
+                    textFormat: Text.PlainText
+                    mainText: line.chat.name
+                    subText: line.chat.host ? i18n("On %1: its row under %1 opens it", root.hostLabel(line.chat.host))
+                                            : i18n("Not found: there's nothing to open")
+                }
+            }
         }
         Loader {   // (made only when it shows)
             active: line.toReview

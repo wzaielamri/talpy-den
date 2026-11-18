@@ -799,7 +799,8 @@ export interface WeekMix {
 }
 
 // A chat a tip names (what acts on it: its name opens it; Stop, Keep going
-// where the chat list offers it): note says what the tip says of it
+// where the chat list offers it): count, the number the tip says of it
+// (week.ts tipChatFigure writes it)
 export interface WeekTipChat {
   name: string;
   chatId: string;
@@ -807,7 +808,7 @@ export interface WeekTipChat {
   profileDir: string;
   folder: string;
   cwd: string;
-  note: string;
+  count: number;
 }
 
 // What would use less of your plan: Claude Code's /usage rules (pct: the

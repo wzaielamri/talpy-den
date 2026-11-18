@@ -829,6 +829,19 @@ PlasmaComponents3.ScrollView {
     readonly property var tipsShown: tips.filter(t => !(t.key === "limits" && t.chats && t.chats.length && !t.more
                                                         && t.chats.every(c => !!root.keptChat(c.chatId, c.host || ""))))
 
+    // What a tip says of a chat it names, by its count (as VS Code's week.ts
+    // tipChatFigure): the hours it ran ("24h", as the tab's other durations),
+    // its requests over 150k of context, the times you came back after its
+    // cache expired, the times a usage limit stopped it
+    function tipChatFigure(key, c) {
+        const n = c.count || 0
+        return key === "long_running" ? i18nc("a duration in whole hours", "%1h", n)
+             : key === "long_context" ? (n === 1 ? i18n("1 request") : i18n("%1 requests", count(n)))
+             : key === "cold" ? (n === 1 ? i18n("once") : i18n("%1 times", count(n)))
+             : key === "limits" ? (n === 1 ? i18n("stopped once") : i18n("stopped %1 times", count(n)))
+             : count(n)
+    }
+
     // ---------------------------------------------------------------- what a tip offers a chat
     // (the same rules as VS Code's src/shared/week.ts tipChatAct): the chat
     // as the chat list has it now ({row, group}: a row, else a recent chat),
@@ -929,6 +942,30 @@ PlasmaComponents3.ScrollView {
         return modelNumbers(m) + (m.before === null || m.before === undefined ? "" : " · " + i18nc("a share in the period before", "was %1", shareText(m.before)))
     }
     readonly property real usageNumbersWidth: widest(models.map(modelRowText).concat(usageMix.map(mixNumbers)))
+
+    // Stop or Keep going for a chat a tip names (act: "stop", "keep" or
+    // "keepAtReset"), made to fit its row rather than the row to fit it
+    component TipChatButton: PlasmaComponents3.ToolButton {
+        property string act: ""
+        topPadding: 0
+        bottomPadding: 0
+        icon.name: act === "stop" ? Icons.plasma.stop : Icons.plasma.keepGoing
+        icon.width: Kirigami.Units.iconSizes.small
+        icon.height: Kirigami.Units.iconSizes.small
+        text: act === "stop" ? i18n("Stop") : i18n("Keep going")
+        font: Kirigami.Theme.smallFont
+
+        PlasmaCore.ToolTipArea {
+            textFormat: Text.PlainText
+            anchors.fill: parent
+            mainText: parent.act === "stop" ? i18n("Stop this chat") : i18n("Keep going until it's done")
+            subText: parent.act === "stop"
+                ? i18n("Asks first. It's idle: Claude quits, and the chat is kept.")
+                : parent.act === "keepAtReset"
+                ? i18n("It goes on by itself a minute after the limit resets, in the background, and again after each later limit, until a turn of it ends by itself.")
+                : i18n("When a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, and again after each later one, until a turn of it ends by itself.")
+        }
+    }
 
     FontMetrics {
         id: smallMetrics
@@ -2332,19 +2369,52 @@ PlasmaComponents3.ScrollView {
             Layout.fillWidth: true
             visible: view.hasData
             spacing: Kirigami.Units.smallSpacing
-            // (the commands in one column as wide as the widest, "Copied"
-            // too: the shares before them line up; monospace, so the longest)
-            readonly property real commandWidth: view.tipsShown.some(t => t.command) ? commandProbe.implicitWidth : 0
+            // One grid for the whole section, as VS Code's: the shares and the
+            // chats' figures right-aligned on one line; the commands,
+            // Permissions, Stop and Keep going in one column at the right edge
+            // as wide as the widest of them (there only when a row has one), so
+            // a button never moves a figure; every chat row as tall
+            readonly property var acts: view.tipsShown.reduce((a, t) => a.concat((t.chats || []).map(c => view.tipChatAct(t.key, c))), [])
+            readonly property real actWidth: Math.max(
+                view.tipsShown.some(t => t.command && t.key !== "waits") ? commandProbe.implicitWidth : 0,
+                view.tipsShown.some(t => t.key === "waits") ? permissionsProbe.implicitWidth : 0,
+                acts.some(a => a === "keep" || a === "keepAtReset") ? keepProbe.implicitWidth : 0,
+                acts.indexOf("stop") >= 0 ? stopProbe.implicitWidth : 0,
+                acts.indexOf("kept") >= 0 ? Math.ceil(smallMetrics.advanceWidth(keptText)) + Kirigami.Units.smallSpacing * 2 : 0)
+            readonly property real figureWidth: view.widest(view.tipsShown.reduce(
+                (a, t) => a.concat((t.chats || []).map(c => view.tipChatFigure(t.key, c))), []))
+            readonly property real chatHeight: Math.max(Math.ceil(smallMetrics.height), Kirigami.Units.iconSizes.small) + Kirigami.Units.smallSpacing
+            // (a chat's line ends this far right of its figure, its hover's room: the shares stand as far in)
+            readonly property real chatPad: Kirigami.Units.smallSpacing
+            // (a chat's line starts under the tip's title, its name a little further in)
+            readonly property real chatIndent: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+            readonly property string keptText: i18nc("a chat that goes on by itself after usage limits", "Keeps going")
 
+            // (the widest of each kind, for that column: the commands in monospace, "Copied" too)
             PlasmaComponents3.ToolButton {
                 id: commandProbe
                 visible: false
                 font.family: "monospace"
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
-                // (the Permissions tab's button has its icon)
-                icon.name: view.tipsShown.some(t => t.key === "waits") ? Icons.plasma.permissions : ""
-                text: view.tipsShown.map(t => t.key === "waits" ? i18n("Permissions") : t.command || "").concat([i18n("Copied")])
+                text: view.tipsShown.map(t => t.key === "waits" ? "" : t.command || "").concat([i18n("Copied")])
                           .reduce((a, b) => b.length > a.length ? b : a, "")
+            }
+            PlasmaComponents3.ToolButton {
+                id: permissionsProbe
+                visible: false
+                icon.name: Icons.plasma.permissions
+                text: i18n("Permissions")
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+            }
+            TipChatButton {
+                id: keepProbe
+                visible: false
+                act: "keep"
+            }
+            TipChatButton {
+                id: stopProbe
+                visible: false
+                act: "stop"
             }
             SectionTitle {
                 text: i18n("What could use less of your plan")
@@ -2360,202 +2430,214 @@ PlasmaComponents3.ScrollView {
             }
             Repeater {
                 model: view.tipsShown.length
-                delegate: RowLayout {
+                delegate: ColumnLayout {
                     id: tipRow
                     required property int index
                     readonly property var tip: view.tipsShown[index] || view.emptyTip
                     readonly property var chats: tip.chats || []
                     Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
+                    spacing: 0
 
-                    Kirigami.Icon {
-                        Layout.alignment: Qt.AlignTop
-                        Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                        Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                        source: view.tipIcon(tipRow.tip.key)
-                        opacity: 0.8
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Kirigami.Units.smallSpacing
 
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: view.tipSource(tipRow.tip.key)
+                        Kirigami.Icon {
+                            Layout.alignment: Qt.AlignTop
+                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                            Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                            source: view.tipIcon(tipRow.tip.key)
+                            opacity: 0.8
+
+                            PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: view.tipSource(tipRow.tip.key)
+                            }
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.fillWidth: true
+                                wrapMode: Text.Wrap
+                                text: tipRow.tip.title
+                            }
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.fillWidth: true
+                                visible: text !== ""
+                                wrapMode: Text.Wrap
+                                text: tipRow.tip.detail
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.7
+                            }
+                        }
+                        ColumnLayout {
+                            Layout.alignment: Qt.AlignTop
+                            Layout.rightMargin: tipsBox.chatPad
+                            visible: view.tipShareShown(tipRow.tip)
+                            spacing: 0
+
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.alignment: Qt.AlignRight
+                                text: view.tipShareText(tipRow.tip)
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.8
+
+                                PlasmaCore.ToolTipArea {
+                                    textFormat: Text.PlainText
+                                    anchors.fill: parent
+                                    mainText: view.tipShareMain(tipRow.tip)
+                                    subText: view.tipShareTip(tipRow.tip)
+                                }
+                            }
+                            PlasmaComponents3.Label {   // (how it moved)
+                                textFormat: Text.PlainText
+                                Layout.alignment: Qt.AlignRight
+                                visible: text !== ""
+                                text: view.tipWas(tipRow.tip)
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.6
+                            }
+                        }
+                        Item {   // (no command: its room, so the share stands where the others do)
+                            visible: tipRow.tip.command === "" && tipsBox.actWidth > 0
+                            Layout.preferredWidth: tipsBox.actWidth
+                        }
+                        PlasmaComponents3.ToolButton {   // (Claude waited for your answers: the Permissions tab)
+                            Layout.alignment: Qt.AlignTop
+                            Layout.preferredWidth: tipsBox.actWidth
+                            visible: tipRow.tip.key === "waits"
+                            icon.name: Icons.plasma.permissions
+                            text: i18n("Permissions")
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            onClicked: root.openPermissions()
+
+                            PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: i18n("Open the Permissions tab")
+                                subText: i18n("The permission prompts you answered, and the rules that would let the same go without asking.")
+                            }
+                        }
+                        PlasmaComponents3.ToolButton {
+                            Layout.alignment: Qt.AlignTop
+                            Layout.preferredWidth: tipsBox.actWidth
+                            visible: tipRow.tip.command !== "" && tipRow.tip.key !== "waits"
+                            text: view.copied === tipRow.tip.command && tipRow.tip.command ? i18n("Copied") : tipRow.tip.command
+                            font.family: "monospace"
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            onClicked: {
+                                clipboard.put(tipRow.tip.command)
+                                view.copied = tipRow.tip.command
+                                copiedTimer.restart()
+                            }
+
+                            PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: i18n("Copy %1", tipRow.tip.command)
+                                subText: i18n("Type it in a chat of yours.")
+                            }
                         }
                     }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
+                    // the chats it names, from under its title to the right
+                    // edge: a name opens its chat; its figure in the shares'
+                    // column; Stop or Keep going, where the chat list offers it
+                    // now, in the commands'
+                    Repeater {
+                        model: tipRow.chats.length
+                        delegate: ColumnLayout {
+                            id: tipChat
+                            required property int index
+                            readonly property var chat: tipRow.chats[index] || view.emptyChat
+                            readonly property string key: (chat.host || "") + "|" + chat.chatId
+                            readonly property string act: view.tipChatAct(tipRow.tip.key, chat)
+                            Layout.fillWidth: true
+                            Layout.leftMargin: tipsBox.chatIndent
+                            spacing: 0
 
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            wrapMode: Text.Wrap
-                            text: tipRow.tip.title
-                        }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            visible: text !== ""
-                            wrapMode: Text.Wrap
-                            text: tipRow.tip.detail
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.7
-                        }
-                        // the chats it names: a name opens its chat; Stop or
-                        // Keep going where the chat list offers it now
-                        Repeater {
-                            model: tipRow.chats.length
-                            delegate: ColumnLayout {
-                                id: tipChat
-                                required property int index
-                                readonly property var chat: tipRow.chats[index] || view.emptyChat
-                                readonly property string key: (chat.host || "") + "|" + chat.chatId
-                                readonly property string act: view.tipChatAct(tipRow.tip.key, chat)
+                            RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 0
+                                spacing: Kirigami.Units.smallSpacing
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Kirigami.Units.smallSpacing
+                                WeekChatLine {
+                                    Layout.preferredHeight: tipsBox.chatHeight
+                                    topPadding: 0
+                                    bottomPadding: 0
+                                    rightPadding: tipsBox.chatPad
+                                    chat: tipChat.chat
+                                    where: ""
+                                    numbers: view.tipChatFigure(tipRow.tip.key, tipChat.chat)
+                                    numbersWidth: tipsBox.figureWidth
+                                    indent: Kirigami.Units.smallSpacing   // (under the tip, in the small font)
+                                }
+                                Item {
+                                    visible: tipsBox.actWidth > 0
+                                    Layout.preferredWidth: tipsBox.actWidth
+                                    Layout.preferredHeight: tipsBox.chatHeight
 
-                                    WeekChatLine {
-                                        chat: tipChat.chat
-                                        where: ""
-                                        numbers: tipChat.chat.note || ""
-                                        indent: Kirigami.Units.smallSpacing   // (under the tip, in the small font)
-                                    }
-                                    PlasmaComponents3.ToolButton {
-                                        visible: tipChat.act === "stop" || tipChat.act === "keep" || tipChat.act === "keepAtReset"
-                                        icon.name: tipChat.act === "stop" ? Icons.plasma.stop : Icons.plasma.keepGoing
-                                        text: tipChat.act === "stop" ? i18n("Stop") : i18n("Keep going")
-                                        font: Kirigami.Theme.smallFont
+                                    TipChatButton {
+                                        anchors.fill: parent
+                                        visible: act !== ""
+                                        act: tipChat.act === "stop" || tipChat.act === "keep" || tipChat.act === "keepAtReset" ? tipChat.act : ""
                                         onClicked: {
                                             if (tipChat.act === "stop")
                                                 view.stopAsked = view.stopAsked === tipChat.key ? "" : tipChat.key
                                             else
                                                 view.tipChatDo(tipRow.tip.key, tipChat.chat)
                                         }
-
-                                        PlasmaCore.ToolTipArea {
-                                            textFormat: Text.PlainText
-                                            anchors.fill: parent
-                                            mainText: tipChat.act === "stop" ? i18n("Stop this chat") : i18n("Keep going until it's done")
-                                            subText: tipChat.act === "stop"
-                                                ? i18n("Asks first. It's idle: Claude quits, and the chat is kept.")
-                                                : tipChat.act === "keepAtReset"
-                                                ? i18n("It goes on by itself a minute after the limit resets, in the background, and again after each later limit, until a turn of it ends by itself.")
-                                                : i18n("When a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, and again after each later one, until a turn of it ends by itself.")
-                                        }
                                     }
                                     PlasmaComponents3.Label {
                                         textFormat: Text.PlainText
+                                        anchors.fill: parent
                                         visible: tipChat.act === "kept"
-                                        text: i18nc("a chat that goes on by itself after usage limits", "Keeps going")
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: tipsBox.keptText
                                         font: Kirigami.Theme.smallFont
                                         opacity: 0.6
                                     }
                                 }
-                                // Stop it? (made only while it's asked)
-                                Loader {
-                                    active: view.stopAsked === tipChat.key && tipChat.act === "stop"
-                                    visible: active
-                                    Layout.fillWidth: true
-                                    sourceComponent: Kirigami.InlineMessage {
-                                        visible: true   // (an InlineMessage is hidden till told: the Loader shows it only while it's wanted)
-                                        type: Kirigami.MessageType.Warning
-                                        text: "<span>" + root.escapeHtml(view.stopAskText(tipChat.chat)) + "</span>"
-                                        actions: [
-                                            Kirigami.Action {
-                                                text: i18n("Stop")
-                                                icon.name: Icons.plasma.stop
-                                                onTriggered: {
-                                                    view.stopAsked = ""
-                                                    view.tipChatDo(tipRow.tip.key, tipChat.chat)
-                                                }
-                                            },
-                                            Kirigami.Action {
-                                                text: i18n("Cancel")
-                                                onTriggered: view.stopAsked = ""
+                            }
+                            // Stop it? (made only while it's asked)
+                            Loader {
+                                active: view.stopAsked === tipChat.key && tipChat.act === "stop"
+                                visible: active
+                                Layout.fillWidth: true
+                                sourceComponent: Kirigami.InlineMessage {
+                                    visible: true   // (an InlineMessage is hidden till told: the Loader shows it only while it's wanted)
+                                    type: Kirigami.MessageType.Warning
+                                    text: "<span>" + root.escapeHtml(view.stopAskText(tipChat.chat)) + "</span>"
+                                    actions: [
+                                        Kirigami.Action {
+                                            text: i18n("Stop")
+                                            icon.name: Icons.plasma.stop
+                                            onTriggered: {
+                                                view.stopAsked = ""
+                                                view.tipChatDo(tipRow.tip.key, tipChat.chat)
                                             }
-                                        ]
-                                    }
+                                        },
+                                        Kirigami.Action {
+                                            text: i18n("Cancel")
+                                            onTriggered: view.stopAsked = ""
+                                        }
+                                    ]
                                 }
                             }
                         }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            visible: (tipRow.tip.more || 0) > 0
-                            text: i18np("and %1 more chat", "and %1 more chats", tipRow.tip.more || 0)
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.6
-                        }
                     }
-                    ColumnLayout {
-                        Layout.alignment: Qt.AlignTop
-                        visible: view.tipShareShown(tipRow.tip)
-                        spacing: 0
-
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.alignment: Qt.AlignRight
-                            text: view.tipShareText(tipRow.tip)
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.8
-
-                            PlasmaCore.ToolTipArea {
-                                textFormat: Text.PlainText
-                                anchors.fill: parent
-                                mainText: view.tipShareMain(tipRow.tip)
-                                subText: view.tipShareTip(tipRow.tip)
-                            }
-                        }
-                        PlasmaComponents3.Label {   // (how it moved)
-                            textFormat: Text.PlainText
-                            Layout.alignment: Qt.AlignRight
-                            visible: text !== ""
-                            text: view.tipWas(tipRow.tip)
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.6
-                        }
-                    }
-                    Item {   // (no command: its room, so the share stands where the others do)
-                        visible: tipRow.tip.command === "" && tipsBox.commandWidth > 0
-                        Layout.preferredWidth: tipsBox.commandWidth
-                    }
-                    PlasmaComponents3.ToolButton {   // (Claude waited for your answers: the Permissions tab)
-                        Layout.alignment: Qt.AlignTop
-                        Layout.preferredWidth: tipsBox.commandWidth
-                        visible: tipRow.tip.key === "waits"
-                        icon.name: Icons.plasma.permissions
-                        text: i18n("Permissions")
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        onClicked: root.openPermissions()
-
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: i18n("Open the Permissions tab")
-                            subText: i18n("The permission prompts you answered, and the rules that would let the same go without asking.")
-                        }
-                    }
-                    PlasmaComponents3.ToolButton {
-                        Layout.alignment: Qt.AlignTop
-                        Layout.preferredWidth: tipsBox.commandWidth
-                        visible: tipRow.tip.command !== "" && tipRow.tip.key !== "waits"
-                        text: view.copied === tipRow.tip.command && tipRow.tip.command ? i18n("Copied") : tipRow.tip.command
-                        font.family: "monospace"
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        onClicked: {
-                            clipboard.put(tipRow.tip.command)
-                            view.copied = tipRow.tip.command
-                            copiedTimer.restart()
-                        }
-
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: i18n("Copy %1", tipRow.tip.command)
-                            subText: i18n("Type it in a chat of yours.")
-                        }
+                    PlasmaComponents3.Label {   // (under the names)
+                        textFormat: Text.PlainText
+                        Layout.leftMargin: tipsBox.chatIndent + Kirigami.Units.smallSpacing * 2
+                        visible: (tipRow.tip.more || 0) > 0
+                        text: i18np("and %1 more chat", "and %1 more chats", tipRow.tip.more || 0)
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.6
                     }
                 }
             }
