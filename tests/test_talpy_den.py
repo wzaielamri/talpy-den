@@ -2449,11 +2449,11 @@ class JobsFileTests(unittest.TestCase):
         self.assertTrue(self.here(5000))
         self.assertEqual(json.loads(self.path.read_text()), {"version": 1, "updatedAt": 5000, "jobs": [
             {"id": ".claude-work/s1/live", "name": "Fix the parser", "state": "waiting", "since": 1000,
-             "account": "work", "folder": "~/app", "host": "", "where": "local"},
+             "startedAt": None, "account": "work", "folder": "~/app", "host": "", "where": "local"},
             {"id": ".claude-work/s2/job", "name": "", "state": "idle", "since": 2000,
-             "account": "work", "folder": "~/docs", "host": "", "where": "local"},
+             "startedAt": None, "account": "work", "folder": "~/docs", "host": "", "where": "local"},
             {"id": ".claude-personal/s3/live", "name": "Release notes", "state": "done", "since": 3000,
-             "account": "personal", "folder": "~/site", "host": "", "where": "local"}], "accounts": [
+             "startedAt": None, "account": "personal", "folder": "~/site", "host": "", "where": "local"}], "accounts": [
             {"id": "a1", "name": "work", "plan": "Team", "host": "", "where": "local", "windows": [
                 {"key": "five_hour", "label": "5h", "pct": 40.0, "resetsAt": 9000},
                 {"key": "seven_day", "label": "7d", "pct": 0.0, "resetsAt": None}]},   # (past its reset: 0%)
@@ -2461,6 +2461,15 @@ class JobsFileTests(unittest.TestCase):
         self.assertNotIn("secret", self.path.read_text())   # (no prompts, nor what a chat asks)
         self.assertEqual(oct(self.path.stat().st_mode & 0o777), "0o600")
         self.assertEqual(oct(self.path.parent.stat().st_mode & 0o777), "0o700")
+
+    def test_jobs_carry_when_the_chat_started(self):
+        # (a desk display shows the newest started first: Talpy Den Display)
+        groups = [{"name": "work", "sessions": [
+            {"key": ".claude/s1/live", "name": "a", "state": "working", "since": 2000, "startedAt": 1000},
+            {"key": ".claude/s2/live", "name": "b", "state": "working", "since": 2000}]}]
+        here, lab = cs.place_jobs(groups), cs.place_jobs(groups, "lab", "ssh", offset_ms=500)
+        self.assertEqual([j["startedAt"] for j in here], [1000, None])
+        self.assertEqual([j["startedAt"] for j in lab], [1500, None])
 
     def test_written_again_only_when_a_chat_changes(self):
         self.here(5000)

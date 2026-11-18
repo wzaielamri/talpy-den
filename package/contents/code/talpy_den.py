@@ -9219,9 +9219,10 @@ def place_jobs(groups, host="", where="local", offset_ms=0):
         for s in g.get("sessions") or [] if isinstance(g, dict) else []:
             if not isinstance(s, dict) or s.get("state") not in STATE_ORDER:
                 continue
-            since = number(s.get("since"))
+            since, started = number(s.get("since")), number(s.get("startedAt"))
             jobs.append({"id": (host + ":" if host else "") + str(s.get("key") or ""), "name": s.get("name") or "",
                          "state": s["state"], "since": int(since + offset_ms) if since is not None else None,
+                         "startedAt": int(started + offset_ms) if started is not None else None,
                          "account": g.get("name") or "", "folder": s.get("cwdShort") or "",
                          "host": host, "where": where})
     return jobs
