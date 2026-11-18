@@ -762,6 +762,12 @@ test("the week's days, tiles and facts", () => {
     eq(tiles.map(t => [t.label, t.value, t.delta]), [['You were at it', '18h 0m', '+4h 44m'], ['Claude worked', '32h 6m', '+17h 6m'],
         ['Prompts', '219', '+16'], ['At API prices', '$906', '+$509']]);
     eq(L.weekTiles({...r, previous: {youMs: 0, workedMs: 0, prompts: 0, cost: 0}})[0].delta, '');
+    // a model priced by a guess: marked, and the amount says how much rests on it
+    const fable = {model: 'Fable 5.3', cost: 90.64, share: 0.1, requests: 9, guessed: true, pricedAs: 'Fable 5.2'};
+    eq([L.weekModelValue(fable), L.weekModelValue({...fable, guessed: false})], ['≈ $90.64 · 10%', '$90.64 · 10%']);
+    eq(L.weekGuessedModelTip(fable), "Fable 5.3 has no list price yet: it's priced as Fable 5.2, the newest model of its family, so its amount is a guess.");
+    const guessed = L.weekTiles({...r, prices: {asOf: '2026-11-18', guessed: ['Fable 5.3'], guessedCost: 90.64}});
+    eq(guessed[guessed.length - 1].tip.includes('\n$90.64 of it (10%) is priced by a guess: Fable 5.3 has no list price yet'), true);
     // the 7 days before begin before the first chat kept: no change, and the tip says why
     const unkept = L.weekTiles({...r, previous: null, beforeKept: false, first: '2026-10-14'})[2];
     eq([unkept.delta, unkept.tip.includes("\nThe 7 days before can't be compared: the Recap has your chats only since 14 Oct.")], ['', true]);

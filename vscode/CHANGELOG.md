@@ -24,6 +24,12 @@
 
 ### Fixed
 
+- **The Recap's API prices are today's, and a guessed one shows.** The
+  prices are the API pricing page's of 18 Nov 2026, with Fable 5.2 and
+  Mythos 5.2 (priced as Fable 5.1 before). A model newer than the list is
+  priced as the newest of its family: its row says *≈*, with a tooltip, and
+  the cost tile's tooltip says how much of the amount rests on that guess.
+
 - **The Recap compares only with days it has whole.** A period before that
   began before the first chat the Recap has was compared as if it were
   whole (a month could say *+640 prompts* against 30 days of which it had

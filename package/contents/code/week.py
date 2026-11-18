@@ -138,8 +138,9 @@ LIMIT_EPISODE_MS = 60 * 60_000  # hits of a usage limit this close (on one accou
 # API list prices (https://platform.claude.com/docs/en/about-claude/pricing),
 # in $ per million tokens: input, 5-minute cache write, 1-hour cache write,
 # cache read, output. Claude Code prices its own /usage cost the same way.
-PRICES_AS_OF = "2026-10-24"
+PRICES_AS_OF = "2026-11-18"
 PRICES = {
+    "fable-5-2": (8, 10, 16, 0.2, 40), "mythos-5-2": (8, 10, 16, 0.2, 40),
     "fable-5-1": (10, 12.5, 20, 0.25, 50), "mythos-5-1": (10, 12.5, 20, 0.25, 50),
     "fable-5": (10, 12.5, 20, 1, 50), "mythos-5": (10, 12.5, 20, 1, 50),
     "opus-5-5": (4, 5, 8, 0.2, 20), "opus-5": (5, 6.25, 10, 0.5, 25), "opus-4-8": (5, 6.25, 10, 0.5, 25),
@@ -151,11 +152,12 @@ PRICES = {
 }
 LONG_PROMPT = 100_000  # a prompt over this many tokens costs more on these models:
 LONG_PRICES = {"haiku-5-5": (0.5, 0.625, 1, 0.05, 2.5)}
-FAST_PRICES = {"opus-5-5": (8, 40), "opus-5": (10, 50), "opus-4-8": (10, 50)}  # fast mode: input, output
+FAST_PRICES = {"fable-5-2": (16, 80), "mythos-5-2": (16, 80), "opus-5-5": (8, 40), "opus-5": (10, 50),
+               "opus-4-8": (10, 50)}  # fast mode: input, output
 US_ONLY = 1.1  # inference_geo "us"
 WEB_SEARCH = 0.01  # $ per web search
 # A model the list doesn't know yet: priced as the newest of its family (marked as a guess)
-FAMILY_NOW = (("fable", "fable-5-1"), ("mythos", "mythos-5-1"), ("opus", "opus-5-5"), ("sonnet", "sonnet-5-5"),
+FAMILY_NOW = (("fable", "fable-5-2"), ("mythos", "mythos-5-2"), ("opus", "opus-5-5"), ("sonnet", "sonnet-5-5"),
               ("haiku", "haiku-5-5"))
 
 # An hour's usage of a chat ("w"): its weight (how much it counts toward the
@@ -1481,12 +1483,14 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
                     saved += cache_saving(key, t)
                     model = key.partition("|")[0]
                     label = (cs.model_label(model) or model) + (" (fast)" if "f" in key.partition("|")[2] else "")
-                    m = models.setdefault(label, {"model": label, "cost": 0.0, "tokens": 0, "requests": 0})
+                    m = models.setdefault(label, {"model": label, "cost": 0.0, "tokens": 0, "requests": 0, "guessed": False})
                     m["cost"] += request_cost(key, t)
                     m["tokens"] += sum(t[:5])
                     m["requests"] += t[6]
-                    if prices_of(key)[1]:
+                    if prices_of(key)[1]:  # (no list price: its family's newest model's, or none)
                         guessed.add(label)
+                        as_model = price_model(model)[0]
+                        m.update(guessed=True, pricedAs=cs.model_label("claude-" + as_model) or as_model if as_model else None)
         work = parts["worked"].get(c["key"], 0)
         prompts = sum(1 for p in c["prompts"] if w0 <= p < w1)
         if work < 60_000 and cost < 0.01:
@@ -1545,7 +1549,9 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "plan": plan_windows_of(usage or [], account) if back == 0 and span == "day" else [],
         "prompts": permission_prompts(chats, w0, w1, home, added),
         "tips": tips(chats, w0, w1, total, parts["waits"]),
-        "prices": {"asOf": PRICES_AS_OF, "guessed": sorted(guessed)},
+        # (guessedCost: how much of the amount is at a guessed price)
+        "prices": {"asOf": PRICES_AS_OF, "guessed": sorted(guessed),
+                   "guessedCost": round(sum(m["cost"] for m in models.values() if m["guessed"]), 4)},
         "lanes": lanes,
         "sources": [{"host": s.get("host") or "", "ok": s.get("ok", True), "error": s.get("error") or ""}
                     for s in sources],

@@ -3,8 +3,8 @@
 
 import { clockText, dayLabel, hostLabel, plural } from "./model";
 import type {
-  LimitAccount, LimitChange, LimitEvent, LimitHistory, LimitPeriod, LimitTokens, WeekDay, WeekGrant, WeekNumbers, WeekPlanWindow, WeekRecap, WeekRule,
-  WeekSpan, WeekSum,
+  LimitAccount, LimitChange, LimitEvent, LimitHistory, LimitPeriod, LimitTokens, WeekDay, WeekGrant, WeekModel, WeekNumbers, WeekPlanWindow, WeekRecap,
+  WeekRule, WeekSpan, WeekSum,
 } from "./types";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -247,7 +247,8 @@ export function weekTiles(recap: WeekRecap): WeekTile[] {
       delta: deltaText(s.cost, p ? p.cost : null, "money", cur),
       tip:
         `What the same tokens would cost on Claude's API, at its list prices of ${dateText(recap.prices.asOf)}. ` +
-        "Your plan isn't billed this way: this is the value of what you used." + before(p ? p.cost : 0, "money") + weeks("cost", "money"),
+        "Your plan isn't billed this way: this is the value of what you used." + guessedCostText(recap) + before(p ? p.cost : 0, "money") +
+        weeks("cost", "money"),
       trend: trendOf(recap, "cost"),
     },
   ];
@@ -325,6 +326,26 @@ function count(n: number): string {
 // another's "<1%"), as sharePercent
 export function shareText(share: number): string {
   return share <= 0 ? "0%" : share < 0.01 ? "<1%" : share > 0.99 && share < 1 ? ">99%" : `${Math.round(share * 100)}%`;
+}
+
+// A model's amount and share, "≈" before a guessed price's
+export function modelValue(m: WeekModel, cur: Currency = USD): string {
+  return `${m.guessed ? "≈ " : ""}${moneyText(m.cost, cur)} · ${shareText(m.share)}`;
+}
+
+// A model with no list price yet: priced as the newest of its family
+export function guessedModelTip(m: WeekModel): string {
+  return m.pricedAs
+    ? `${m.model} has no list price yet: it's priced as ${m.pricedAs}, the newest model of its family, so its amount is a guess.`
+    : `${m.model} has no list price: it isn't in the amounts.`;
+}
+
+// How much of the amount rests on a guessed price (the cost tile's tooltip)
+export function guessedCostText(recap: Pick<WeekRecap, "prices" | "sum" | "currency">): string {
+  const p = recap.prices;
+  if (!p.guessedCost || !recap.sum.cost) return "";
+  return `\n${moneyText(p.guessedCost, currencyOf(recap))} of it (${shareText(p.guessedCost / recap.sum.cost)}) is priced by a guess: ` +
+    `${p.guessed.join(", ")} has no list price yet, so it's at the price of the newest model of its family.`;
 }
 
 // A tip's icon (icons.mjs meanings, as Plasma's): the time chats waited for

@@ -10,7 +10,7 @@ import type { WeekDay } from "../src/shared/types";
 import {
   coldText, currencyOf, dayTip, deltaText, factsText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
-  shareText, tipMeaning, tipSource,
+  shareText, tipMeaning, tipSource, guessedCostText, guessedModelTip, modelValue,
   dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
   limitStart, limitWeekBars,
@@ -73,6 +73,16 @@ test("the tokens used: a tile with its change and trend, and a row's tokens", ()
   assert.match(day[3].tip, /\nThe day before: .*\nDay by day, this day last: /);
   const all = demoWeek(NOW, 0, "", "all");
   assert.equal(all.sum.tokenTotal, all.days[0].tokenTotal + all.days[1].tokenTotal);
+});
+
+test("a model priced by a guess is marked, and the amount says how much rests on it", () => {
+  const recap = demoWeek(NOW);
+  const fable = recap.models.find((m) => m.guessed)!;
+  assert.match(modelValue(fable), /^≈ \$\d/);
+  assert.match(modelValue(recap.models[0]), /^\$\d/);
+  assert.equal(guessedModelTip(fable), "Fable 5.3 has no list price yet: it's priced as Fable 5.2, the newest model of its family, so its amount is a guess.");
+  assert.match(weekTiles(recap)[4].tip, /\n\$\d+(\.\d\d)? of it \(5%\) is priced by a guess: Fable 5\.3 has no list price yet/);
+  assert.equal(guessedCostText({ ...recap, prices: { asOf: "2026-11-18", guessed: [] } }), "");
 });
 
 test("pointing at a day says what went on then", () => {

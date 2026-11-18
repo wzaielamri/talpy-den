@@ -136,8 +136,9 @@ export function buildWeekView(ctx) {
         view.add_child(chats);
     }
     const models = buildBars(ctx, 'At API prices', recap.models.map(m => ({
-        name: m.model, share: m.share, value: `${L.moneyText(m.cost, cur)} · ${L.weekShareText(m.share)}`, color: 'none',
-        tip: `${m.model}: ${L.moneyText(m.cost, cur)} · ${L.plural(m.requests, '%1 request', '%1 requests')}`,
+        name: m.model, share: m.share, value: L.weekModelValue(m, cur), color: 'none',
+        tip: `${m.model}: ${L.moneyText(m.cost, cur)} · ${L.plural(m.requests, '%1 request', '%1 requests')}` +
+            (m.guessed ? `\n${L.weekGuessedModelTip(m)}` : ''),
     })));
     const cache = L.weekCacheText(recap);
     if (cache)

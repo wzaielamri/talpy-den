@@ -152,7 +152,20 @@ PlasmaComponents3.ScrollView {
         return hours(row.workedMs) + " · " + money(row.cost)
     }
     function modelNumbers(m) {
-        return money(m.cost) + " · " + shareText(m.share)
+        return (m.guessed ? "≈ " : "") + money(m.cost) + " · " + shareText(m.share)
+    }
+    // A model with no list price yet: priced as the newest of its family
+    function guessedModelTip(m) {
+        return m.pricedAs ? i18n("%1 has no list price yet: it's priced as %2, the newest model of its family, so its amount is a guess.", m.model, m.pricedAs)
+                          : i18n("%1 has no list price: it isn't in the amounts.", m.model)
+    }
+    // How much of the amount rests on a guessed price, for the cost tile's tooltip
+    function guessedCostText() {
+        const p = recap && recap.prices ? recap.prices : null
+        if (!p || !p.guessedCost || !sum || !sum.cost)
+            return ""
+        return "\n" + i18n("%1 of it (%2) is priced by a guess: %3 has no list price yet, so it's at the price of the newest model of its family.",
+                           money(p.guessedCost), shareText(p.guessedCost / sum.cost), p.guessed.join(", "))
     }
     function whereOf(chat) {
         return (chat.host ? root.hostLabel(chat.host) + ": " : "") + (chat.folder || "")
@@ -400,7 +413,7 @@ PlasmaComponents3.ScrollView {
           delta: deltaText(sum.cost, previous ? previous.cost : 0, "money"),
           tip: i18n("What the same tokens would cost on Claude's API, at its list prices of %1. Your plan isn't billed this way: this is the value of what you used.",
                     recap.prices ? Qt.locale().toString(date(recap.prices.asOf), "d MMMM yyyy") : "")
-               + beforeText(previous ? previous.cost : 0, "money") + trendText("cost", "money") }
+               + guessedCostText() + beforeText(previous ? previous.cost : 0, "money") + trendText("cost", "money") }
     ]
 
     // What the tokens were: all that Claude read and wrote, by kind
@@ -2176,6 +2189,17 @@ PlasmaComponents3.ScrollView {
                         text: view.modelNumbers(modelRow.entry)
                         font: Kirigami.Theme.smallFont
                         opacity: 0.8
+
+                        // (only a guessed price's row says so: made only for it)
+                        Loader {
+                            anchors.fill: parent
+                            active: !!modelRow.entry.guessed
+                            sourceComponent: PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                mainText: modelRow.entry.model
+                                subText: view.guessedModelTip(modelRow.entry)
+                            }
+                        }
                     }
                 }
             }

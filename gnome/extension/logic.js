@@ -1726,7 +1726,8 @@ export function weekTiles(recap) {
         {label: 'At API prices', value: moneyText(s.cost, cur), delta: weekDeltaText(s.cost, p ? p.cost : null, 'money', cur),
             trend: weekTrend(recap, 'cost'),
             tip: `What the same tokens would cost on Claude's API, at its list prices of ${dateText(recap.prices.asOf)}. ` +
-                "Your plan isn't billed this way: this is the value of what you used." + before(p ? p.cost : 0, 'money') + weeks('cost', 'money')},
+                "Your plan isn't billed this way: this is the value of what you used." + weekGuessedCostText(recap) +
+                before(p ? p.cost : 0, 'money') + weeks('cost', 'money')},
     ];
 }
 
@@ -1790,6 +1791,27 @@ export function weekCacheText(recap) {
 // another's "<1%"), as statsModelsText
 export function weekShareText(share) {
     return share <= 0 ? '0%' : share < 0.01 ? '<1%' : share > 0.99 && share < 1 ? '>99%' : `${Math.round(share * 100)}%`;
+}
+
+// A model's amount and share, "≈" before a guessed price's
+export function weekModelValue(m, cur = USD) {
+    return `${m.guessed ? '≈ ' : ''}${moneyText(m.cost, cur)} · ${weekShareText(m.share)}`;
+}
+
+// A model with no list price yet: priced as the newest of its family
+export function weekGuessedModelTip(m) {
+    return m.pricedAs
+        ? `${m.model} has no list price yet: it's priced as ${m.pricedAs}, the newest model of its family, so its amount is a guess.`
+        : `${m.model} has no list price: it isn't in the amounts.`;
+}
+
+// How much of the amount rests on a guessed price (the cost tile's tooltip)
+export function weekGuessedCostText(recap) {
+    const p = recap.prices || {};
+    if (!p.guessedCost || !recap.sum.cost)
+        return '';
+    return `\n${moneyText(p.guessedCost, weekCurrency(recap))} of it (${weekShareText(p.guessedCost / recap.sum.cost)}) is priced by a guess: ` +
+        `${(p.guessed || []).join(', ')} has no list price yet, so it's at the price of the newest model of its family.`;
 }
 
 // A tip's icon (icons.mjs meanings, as Plasma's): the time chats waited for

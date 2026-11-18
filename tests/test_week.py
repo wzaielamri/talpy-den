@@ -165,8 +165,22 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(week.price_model("claude-sonnet-4-5-20250929"), ("sonnet-4-5", False))
         self.assertEqual(week.price_model("claude-opus-5-5[1m]"), ("opus-5-5", False))
         self.assertEqual(week.price_model("claude-opus-9-9"), ("opus-5-5", True))  # the newest of its family
+        self.assertEqual(week.price_model("claude-fable-5-2"), ("fable-5-2", False))
         self.assertEqual(week.price_model("gpt-9"), (None, True))
         self.assertEqual(week.request_cost("gpt-9", [1, 1, 1, 1, 1, 1, 1]), 0)
+
+
+class GuessedPriceTests(Home):
+    def test_a_guessed_price_is_marked_and_its_share_known(self):
+        t0 = self.t0
+        self.write(Transcript().prompt(t0).reply(t0 + 1000, "a", output=1_000_000, read=0, inp=0)
+                   .reply(t0 + 2000, "b", output=1_000_000, read=0, inp=0, model="claude-opus-9-9")
+                   .duration(t0 + 60_000, 60_000))
+        r = self.recap()
+        models = {m["model"]: m for m in r["models"]}
+        self.assertEqual((models["Opus 5.5"]["guessed"], models["Opus 9.9"]["guessed"], models["Opus 9.9"]["pricedAs"]),
+                         (False, True, "Opus 5.5"))
+        self.assertEqual((r["prices"]["guessed"], r["prices"]["guessedCost"], r["sum"]["cost"]), (["Opus 9.9"], 20, 40))
 
     def test_weights_as_claude_codes_usage(self):
         self.assertEqual(week.usage_weight("claude-opus-5-5", 1, 1, 1, 1), (1 + 10 + 12.5 + 50) * 5)

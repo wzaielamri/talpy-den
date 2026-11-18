@@ -22,12 +22,13 @@ import {
   RECAP_SECTIONS,
   type RecapSection,
   rowDay,
-  shareText,
   tipMeaning,
   tipSource,
   toolsText,
   dayLanes,
   laneNumbers,
+  guessedModelTip,
+  modelValue,
   weekTiles,
   workText,
   type Currency,
@@ -705,10 +706,11 @@ function Models({ recap }: { recap: WeekRecap }) {
       <h2>At API prices</h2>
       <ul class="week-bars">
         {recap.models.map((m) => (
-          <li key={m.model} title={`${m.model}: ${moneyText(m.cost, cur)} · ${plural(m.requests, "%1 request", "%1 requests")}`}>
+          <li key={m.model} title={`${m.model}: ${moneyText(m.cost, cur)} · ${plural(m.requests, "%1 request", "%1 requests")}` +
+            (m.guessed ? `\n${guessedModelTip(m)}` : "")}>
             <span class="week-bar-name">{m.model}</span>
             <span class="week-bar-meter"><span style={{ width: `${100 * m.share}%` }} /></span>
-            <span class="week-bar-value small muted">{moneyText(m.cost, cur)} · {shareText(m.share)}</span>
+            <span class="week-bar-value small muted">{modelValue(m, cur)}</span>
           </li>
         ))}
       </ul>

@@ -757,6 +757,8 @@ export interface WeekModel {
   tokens: number;
   requests: number;
   share: number; // of the cost, 0-1
+  guessed?: boolean; // no list price yet: priced as pricedAs (the newest of its family), or not at all
+  pricedAs?: string | null;
 }
 
 // What would use less of your plan: Claude Code's /usage rules (pct: the
@@ -925,7 +927,7 @@ export interface WeekRecap {
   plan: { account: string; name: string; windows: WeekPlanWindow[] }[]; // (this computer's accounts, these 7 days only)
   prompts: { answered: number; refused: number; waitMs: number; byTool: [string, number][]; rules: WeekRule[] };
   tips: WeekTip[];
-  prices: { asOf: string; guessed: string[] };
+  prices: { asOf: string; guessed: string[]; guessedCost?: number }; // (guessedCost: how much of the amount is at a guessed price)
   currency?: { code: string; rate: number; date: string; error: string }; // rate: per US dollar
   sources: { host: string; ok: boolean; error: string }[];
 }

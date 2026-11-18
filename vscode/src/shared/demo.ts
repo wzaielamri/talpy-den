@@ -451,7 +451,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       busiestDay: days.reduce((b, d) => (d.workedMs > b.workedMs ? d : b), days[0]).day };
     const start = days[0].start;
     return { ...week, span, back, backMax: 2, first: days[0].day, from: days[0].day, to: days[days.length - 1].day, days: rows, sum,
-      previous: numbers(0.86),
+      previous: numbers(0.86), prices: { ...week.prices, guessedCost: sum.cost * 0.05 },
       trend: [0.7, 0.78, 0.81, 0.86].map((k, i) => ({ ...numbers(k), start: start - (4 - i) * 30 * 86400000 })).concat([{ ...numbers(1), start }]) };
   }
   if (span !== "week") {
@@ -545,8 +545,10 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     ],
     chats: DEMO_CHATS,
     models: [
-      { model: "Opus 5.5", cost: cost * 0.93, tokens: 590_000_000, requests: 2900, share: 0.93 },
+      { model: "Opus 5.5", cost: cost * 0.88, tokens: 560_000_000, requests: 2750, share: 0.88 },
       { model: "Sonnet 5.5", cost: cost * 0.07, tokens: 35_000_000, requests: 410, share: 0.07 },
+      // (a model newer than the price list: priced as its family's newest, marked)
+      { model: "Fable 5.3", cost: cost * 0.05, tokens: 30_000_000, requests: 150, share: 0.05, guessed: true, pricedAs: "Fable 5.2" },
     ],
     cacheSaved: 2290,
     trend: back >= 3 ? [null, null, week(0.5), week(0.75), week(1)] : [week(0.4), week(0.55), week(0.6), week(0.75), week(1)],
@@ -582,7 +584,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       { key: "cache_miss", pct: 12, title: "Compact before you step away", detail: "37 requests sent over 100k tokens the cache had let go", command: "/compact" },
       { key: "waits", pct: null, title: "Let Claude go on without asking", detail: "it waited 3h 18m for your answers, 9 times · auto mode, or allow what you always allow", command: "/permissions" },
     ],
-    prices: { asOf: "2026-10-24", guessed: [] },
+    prices: { asOf: "2026-11-18", guessed: ["Fable 5.3"], guessedCost: cost * 0.05 },
     sources: [{ host: "", ok: true, error: "" }, { host: "build-server", ok: true, error: "" }],
   };
 }
