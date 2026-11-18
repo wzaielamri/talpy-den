@@ -1385,7 +1385,7 @@ def context_size(recent):
     """An agent's context now, as Claude's agent list counts it: what the
     request of its newest reply sent and got back (tokens), or None."""
     for e in recent:
-        usage = (e.get("message") or {}).get("usage") if e["type"] == "assistant" else None
+        usage = blocks_of(e)[0].get("usage") if e["type"] == "assistant" else None
         if isinstance(usage, dict):
             n = sum(usage.get(k) for k in CONTEXT_KEYS if isinstance(usage.get(k), int))
             return n or None

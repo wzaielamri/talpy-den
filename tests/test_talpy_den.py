@@ -917,6 +917,12 @@ class AgentTests(Fixture):
         self.assertEqual(p1["running"], [{"line": "Bash: make test", "since": td.to_ms(bash["timestamp"])}])
         self.assertEqual(p1["context"], 222_703)
 
+    def test_context_of_odd_entries(self):
+        # a line whose message isn't an object, a stand-in reply with no tokens: no context, no error
+        self.assertIsNone(td.context_size([{"type": "assistant", "message": "x"}]))
+        self.assertIsNone(td.context_size([{"type": "assistant", "message": {"usage": {"input_tokens": 0}}}]))
+        self.assertEqual(td.running_calls([{"type": "assistant", "message": "x"}]), ([], None))
+
     def test_no_running_calls_or_context_without_them(self):
         a, _ = self.agents_of_busy()
         tree = {t["id"]: t for t in a["tree"]}
