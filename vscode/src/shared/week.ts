@@ -198,7 +198,7 @@ export function weekTiles(recap: WeekRecap): WeekTile[] {
   // (today isn't over: the days before are counted up to this time of day)
   const by = recap.sameTime ? ", by this time" : "";
   const trendSaid = recap.sameTime ? trendText.replace(/^([^,]+),/, "$1, each by this time,") : trendText;
-  const before = (v: number, kind: Kind) => (p ? `\n${beforeText}${by}: ${shown(v, kind)}` : "");
+  const before = (v: number, kind: Kind) => (p ? `\n${beforeText}${by}: ${shown(v, kind)}` : uncomparedText(recap));
   const weeks = (key: NumberKey, kind: Kind) => {
     const values = trendOf(recap, key);
     return values.length > 1
@@ -251,6 +251,14 @@ export function weekTiles(recap: WeekRecap): WeekTile[] {
       trend: trendOf(recap, "cost"),
     },
   ];
+}
+
+// The period before begins before the first chat the Recap has: not known
+// whole, so not compared (week.py: beforeKept)
+export function uncomparedText(recap: Pick<WeekRecap, "span" | "beforeKept" | "first">): string {
+  if (recap.beforeKept !== false || !recap.first || recap.span === "all") return "";
+  const what = recap.span === "day" ? "The day before" : recap.span === "month" ? "The 30 days before" : "The 7 days before";
+  return `\n${what} can't be compared: the Recap has your chats only since ${shortDay(recap.first)}.`;
 }
 
 // What the tokens were: all that Claude read and wrote, by kind

@@ -762,6 +762,9 @@ test("the week's days, tiles and facts", () => {
     eq(tiles.map(t => [t.label, t.value, t.delta]), [['You were at it', '18h 0m', '+4h 44m'], ['Claude worked', '32h 6m', '+17h 6m'],
         ['Prompts', '219', '+16'], ['At API prices', '$906', '+$509']]);
     eq(L.weekTiles({...r, previous: {youMs: 0, workedMs: 0, prompts: 0, cost: 0}})[0].delta, '');
+    // the 7 days before begin before the first chat kept: no change, and the tip says why
+    const unkept = L.weekTiles({...r, previous: null, beforeKept: false, first: '2026-10-14'})[2];
+    eq([unkept.delta, unkept.tip.includes("\nThe 7 days before can't be compared: the Recap has your chats only since 14 Oct.")], ['', true]);
     // today isn't over: the days before are counted up to this time of day, and say so
     const two = [{youMs: 60000, workedMs: 0, prompts: 0, cost: 0}, {youMs: 120000, workedMs: 0, prompts: 0, cost: 0}];
     const soFar = L.weekTiles({...r, sameTime: true, trend: two})[0].tip;

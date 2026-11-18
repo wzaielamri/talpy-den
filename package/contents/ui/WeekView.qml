@@ -343,7 +343,7 @@ PlasmaComponents3.ScrollView {
 
     function beforeText(before, kind) {
         if (!previous)
-            return ""
+            return uncomparedText()
         const value = shown(before, kind)
         if (sameTime)
             return "\n" + (span === "day" ? i18n("The day before, by this time: %1", value)
@@ -353,8 +353,19 @@ PlasmaComponents3.ScrollView {
                                                                             : i18n("The 7 days before: %1", value))
     }
 
+    // The period before begins before the first chat the Recap has: not
+    // known whole, so not compared (week.py: beforeKept)
+    function uncomparedText() {
+        if (!recap || recap.beforeKept !== false || !recap.first || recap.span === "all")
+            return ""
+        const since = Qt.locale().toString(date(recap.first), "d MMM")
+        return "\n" + (recap.span === "day" ? i18n("The day before can't be compared: the Recap has your chats only since %1.", since)
+                      : recap.span === "month" ? i18n("The 30 days before can't be compared: the Recap has your chats only since %1.", since)
+                      : i18n("The 7 days before can't be compared: the Recap has your chats only since %1.", since))
+    }
+
     // The same number over the 5 weeks up to these days (a week older than
-    // the widget keeps: unknown)
+    // the widget keeps, even partly: unknown)
     function trendText(key, kind) {
         if (trend.length < 2)
             return ""

@@ -6,6 +6,7 @@
 
 - **Remote Control from Talpy Den:** a chat claude.ai/code and the Claude app show has a **Remote Control** tag (a click opens it there), and a background chat's phone button turns Remote Control on or off (Plasma and VS Code).
 - **Enter again sends a queued message now** (Plasma and VS Code).
+- **Honest numbers in the Recap:** it no longer compares with days it doesn't have whole (Plasma, VS Code and GNOME).
 
 ### Every change
 
@@ -15,6 +16,7 @@
 - **Opening a chat puts the cursor in its reply box:** a chat opened in Talpy Chat (a click on its row, a notification, Talpy Den Display's tap) or its window brought up again takes your typing at once, without a click in the box first; its Review tab keeps its own, and Deny's note or a question's own words still get the cursor when that's what you asked for. While the chat asks you something (a permission, a question), the cursor stays out of the box, so typing and Enter can't answer it by mistake: you click the box or an answer (Plasma and VS Code).
 - **A chat brought up from another program opens as a click on its row does:** `jump.py --job` (Talpy Den Display's tap) raised a chat's Talpy Chat window only when it was open, else opened a terminal on it. Now Talpy Den's own front end does what a click on that chat's row does (its Talpy Chat window, or its terminal, as your settings say): `--job` leaves a request (the chat's id and the time, a file of its own in your private runtime folder), the widget takes it at once if it lists that chat (`live.py --opens` offers it, `--take-open` takes it), VS Code's leading window after 0.8 s when no widget did, also only for a chat it lists. Taken once, only while fresh; nothing in it is run. When nobody takes it, `--job` takes its own back and opens a terminal as before; with neither running it doesn't wait (Plasma and VS Code).
 - **Another program can bring a chat to the front:** `jump.py --job <id>`, with a chat's id from the jobs file, does what a click on its row does (Talpy Den Display's tap on a chat): its Talpy Chat window if it's open, else its terminal or VS Code. The id is only compared with what Talpy Den lists, never run or used as a path; anything that isn't a jobs file id is refused before anything runs, and a question Talpy Den asks first (VS Code connected to a host) is never answered for you. See *Bring a chat to the front from another program* in how it works.
+- **The Recap compares only with days it has whole.** The Recap has your chats from its first chat's day on, so a period that began before that day was compared as if it were whole: a month could say *+640 prompts* against 30 days of which the Recap had 5. Now a period before (the day, 7 or 30 days before, and each of the trend's) that begins before that day isn't compared: no change on the tiles, the tooltip says *The 30 days before can't be compared: the Recap has your chats only since 3 Oct.*, and the trend shows it as a dot, as one it has nothing of (week.py: `beforeKept`, `previous` null). Day, Week and Month alike.
 
 ## 1.21.0 (2026-11-17)
 

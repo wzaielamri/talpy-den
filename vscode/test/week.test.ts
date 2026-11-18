@@ -44,6 +44,10 @@ test("the days shown, and the week's facts", () => {
   assert.deepEqual(tiles.map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens", "At API prices"]);
   assert.match(tiles[1].tip, /On the clock it worked .*, and it waited 3h 18m for your answers\.\nThe 7 days before: /);
   assert.equal(weekTiles({ ...recap, previous: { youMs: 0, workedMs: 0, busyMs: 0, waitMs: 0, prompts: 0, cost: 0, tokenTotal: 0 } })[0].delta, "");
+  // the 30 days before begin before the first chat kept: no change, and the tip says why
+  const month = { ...demoWeek(NOW, 0, "", "month"), previous: null, beforeKept: false, first: "2026-10-03" };
+  assert.equal(weekTiles(month)[2].delta, "");
+  assert.match(weekTiles(month)[2].tip, /\nThe 30 days before can't be compared: the Recap has your chats only since 3 Oct\.\n/);
 });
 
 test("the Recap reads as a story: the tiles, what Claude did, when, where, then the money", () => {

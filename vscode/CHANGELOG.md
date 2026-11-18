@@ -22,6 +22,14 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
+### Fixed
+
+- **The Recap compares only with days it has whole.** A period before that
+  began before the first chat the Recap has was compared as if it were
+  whole (a month could say *+640 prompts* against 30 days of which it had
+  5). Now there's no change on its tiles, the tooltip says since when the
+  Recap has your chats, and the trend shows that period as a dot.
+
 ## 1.21.0
 
 ### New

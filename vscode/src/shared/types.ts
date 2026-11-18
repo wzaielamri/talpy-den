@@ -896,9 +896,10 @@ export interface WeekRecap {
   to: string;
   days: WeekDay[];
   sum: WeekSum;
-  previous: WeekNumbers | null; // the day or 7 days before (none for everything)
+  previous: WeekNumbers | null; // the day or 7 days before (none for everything, nor when beforeKept is false)
+  beforeKept?: boolean; // false: the period before begins before the first chat kept, so it isn't compared
   sameTime?: boolean; // (today isn't over: previous and the trend's are up to this time of day)
-  trend: ((WeekNumbers & { start: number }) | null)[]; // the 5 weeks up to these days (null: older than what's kept)
+  trend: ((WeekNumbers & { start: number }) | null)[]; // the 5 weeks up to these days (null: older than what's kept, even partly)
   projects: WeekProject[];
   chats: WeekChat[];
   // The Day view: a lane per chat, its stretches [from, to, w (worked) | y (waited for you) | p (paused)]

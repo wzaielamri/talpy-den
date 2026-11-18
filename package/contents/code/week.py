@@ -1336,6 +1336,13 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         hi = midnight(first_day - timedelta(days=step * (k - 1)))
         return min(hi, same_time(today - timedelta(days=step * k), w1)) if going_on else hi
 
+    # What the Recap has goes back to the first chat's day: a period that
+    # begins before it (even by a day) isn't known whole, so it isn't compared
+    kept_from = midnight(date.fromtimestamp(first_ms / 1000)) if first_ms else None
+
+    def kept(lo):
+        return kept_from is not None and lo >= kept_from
+
     chats, accounts = [], {}
     for src in sources:
         host = src.get("host") or ""
@@ -1404,17 +1411,18 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         return out, {"stretches": stretches, "waits": waits, "yours": yours, "worked": worked}
 
     total, parts = period(w0, w1, True)
-    previous = period(p0, until(1), False) if span != "all" else None   # (everything has nothing before it)
+    # (everything has nothing before it; one the Recap doesn't have whole: none)
+    previous = period(p0, until(1), False) if span != "all" and kept(p0) else None
     running = at_once([s[:3] for s in clipped(parts["stretches"], w0, w1)])
     total["peakAtOnce"] = max((n for _, _, n in running), default=0)
 
     # The days or weeks before, for the trend lines (oldest first, these
-    # last); one before the first chat kept is unknown (null)
+    # last); one that begins before the first chat's day is unknown (null)
     trend = []
     if span != "all":
         for k in range(TREND_WEEKS - 1, 0, -1):
             lo, hi = midnight(first_day - timedelta(days=step * k)), until(k)
-            trend.append(dict(period(lo, hi, False), start=lo) if first_ms is not None and hi > first_ms else None)
+            trend.append(dict(period(lo, hi, False), start=lo) if kept(lo) else None)
         trend.append({key: total[key] for key in ("youMs", "workedMs", "busyMs", "waitMs", "prompts", "cost", "tokenTotal")})
         trend[-1]["start"] = w0
 
@@ -1524,6 +1532,8 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "days": day_rows,
         "sum": total,
         "previous": previous,
+        # (false: the period before begins before the Recap's first chat's day, so previous is null)
+        "beforeKept": span != "all" and kept(p0),
         "sameTime": going_on,  # (previous and the trend's are up to this time of day)
         "trend": trend,
         "projects": sorted(folders.values(), key=lambda f: (-f["workedMs"], -f["cost"]))[:TOP_PROJECTS],

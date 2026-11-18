@@ -134,12 +134,14 @@ class Home(unittest.TestCase):
         cache = self.scan(cache)
         return week.chats_between(cache, self.profiles(), self.now - days * week.DAY_MS, self.now + week.DAY_MS, self.home)
 
-    def recap(self, account="", back=0, extra=(), days=14, usage=None, added=(), span="week"):
+    def recap(self, account="", back=0, extra=(), days=14, usage=None, added=(), span="week", kept_since=None):
+        """kept_since: when the Recap's first chat began, if earlier than the ones written (ms)."""
         cache = self.scan()
         chats = week.chats_between(cache, self.profiles(), self.now - days * week.DAY_MS, self.now + week.DAY_MS, self.home)
         _, accounts = week.account_ids(self.profiles())
+        first = week.first_activity(cache)
         return week.recap([{"host": "", "chats": chats, "accounts": accounts}, *extra], back, account, self.now,
-                          self.home, usage, added, span, week.first_activity(cache))
+                          self.home, usage, added, span, min(first, kept_since) if first and kept_since else first)
 
 
 class PriceTests(unittest.TestCase):
@@ -369,8 +371,26 @@ class RecapTests(Home):
     def test_the_week_before(self):
         before = self.t0 - 7 * week.DAY_MS
         self.write(Transcript().prompt(before).reply(before + 1000, "a").duration(before + 30_000, 30_000))
-        r = self.recap()
-        self.assertEqual((r["sum"]["workedMs"], r["previous"]["workedMs"]), (0, 30_000))
+        r = self.recap(kept_since=self.t0 - 30 * week.DAY_MS)
+        self.assertEqual((r["sum"]["workedMs"], r["previous"]["workedMs"], r["beforeKept"]), (0, 30_000, True))
+
+    def test_days_before_the_first_chats_day_arent_compared(self):
+        # the Recap has nothing from before its first chat's day: a period
+        # that begins before it, even by a day, isn't known whole
+        t0 = self.t0
+        self.write(Transcript().prompt(t0).reply(t0 + 1000, "a").duration(t0 + 60_000, 60_000), "chat-a")
+        first = t0 - 9 * week.DAY_MS  # (the week before ends 6 days back: this is 3 days into it)
+        self.write(Transcript().prompt(first).reply(first + 1000, "b").duration(first + 30_000, 30_000), "chat-b")
+        r = self.recap(days=40)
+        self.assertEqual((r["previous"], r["beforeKept"], r["first"]), (None, False, "2026-10-15"))
+        self.assertEqual([t and t["workedMs"] for t in r["trend"]], [None, None, None, None, 60_000])
+        # from its first day on it is: the day before, and a week a step back
+        day = self.recap(span="day", back=8, days=40)
+        self.assertEqual((day["previous"]["workedMs"], day["beforeKept"]), (30_000, True))
+        self.assertEqual([t and t["workedMs"] for t in day["trend"]], [None, None, None, 30_000, 0])
+        whole = self.recap(days=40, kept_since=first - 4 * week.DAY_MS)  # (the 11th: the week before begins then)
+        self.assertEqual((whole["previous"]["workedMs"], whole["beforeKept"]), (30_000, True))
+        self.assertFalse(self.recap(span="all", days=40)["beforeKept"])
 
     def test_chats_at_once(self):
         t0 = self.t0
@@ -426,11 +446,12 @@ class RecapTests(Home):
         self.write(Transcript().prompt(t0).reply(t0 + 1000, "a").duration(t0 + 60_000, 60_000), "chat-a")
         old = t0 - 21 * week.DAY_MS
         self.write(Transcript().prompt(old).reply(old + 1000, "b").duration(old + 30_000, 30_000), "chat-b")
-        r = self.recap(days=40)
+        kept = old - 7 * week.DAY_MS  # (the first chat kept: a week before that one)
+        r = self.recap(days=40, kept_since=kept)
         self.assertEqual([w and w["workedMs"] for w in r["trend"]], [None, 30_000, 0, 0, 60_000])  # (None: before the first chat)
         self.assertEqual(r["trend"][-1]["start"], r["days"][0]["start"])
         self.assertEqual(r["trend"][3]["workedMs"], r["previous"]["workedMs"])
-        self.assertEqual(self.recap(back=4, days=40)["trend"][:4], [None] * 4)  # (before the first chat kept)
+        self.assertEqual(self.recap(back=4, days=40, kept_since=kept)["trend"][:4], [None] * 4)  # (before the first chat kept)
 
     def test_today_is_compared_up_to_this_time(self):
         # 18:00: what yesterday (and the days before) did after 18:00 isn't
@@ -450,7 +471,7 @@ class RecapTests(Home):
         self.assertFalse(yesterday["sameTime"])
         self.assertEqual((yesterday["sum"]["workedMs"], yesterday["previous"]["workedMs"]), (70_000, 70_000))
         # the 7 days ending today: the 7 before up to this time of their last day
-        self.assertEqual(self.recap(days=40)["previous"]["workedMs"], 0)
+        self.assertEqual(self.recap(days=40, kept_since=t0 - 30 * week.DAY_MS)["previous"]["workedMs"], 0)
         self.assertFalse(self.recap(span="all", days=40)["sameTime"])
 
     def test_a_day_and_everything(self):
@@ -495,11 +516,13 @@ class RecapTests(Home):
         self.assertEqual([(r["day"], r["to"], r["workedMs"]) for r in month["days"]],
                          [("2026-10-18", "2026-10-24", 60_000), ("2026-10-11", "2026-10-17", 0), ("2026-10-04", "2026-10-10", 0),
                           ("2026-09-27", "2026-10-03", 20_000), ("2026-09-25", "2026-09-26", 0)])
-        self.assertEqual((month["sum"]["workedMs"], month["previous"]["workedMs"]), (80_000, 30_000))
+        self.assertEqual((month["sum"]["workedMs"], month["previous"]), (80_000, None))  # (the 30 before: 5 of them kept)
         self.assertEqual(sum(r["workedMs"] for r in month["days"]), month["sum"]["workedMs"])
         self.assertEqual(month["sum"]["busiestDay"], "2026-10-24")  # (a day, not a row)
-        self.assertEqual([t and t["workedMs"] for t in month["trend"]][-2:], [30_000, 80_000])
         self.assertEqual(month["backMax"], 1)  # (35 days back: one step)
+        month = self.recap(span="month", days=80, kept_since=t0 - 70 * week.DAY_MS)
+        self.assertEqual(month["previous"]["workedMs"], 30_000)
+        self.assertEqual([t and t["workedMs"] for t in month["trend"]][-3:], [None, 30_000, 80_000])
         self.assertEqual(self.recap(span="month", back=1, days=80)["sum"]["workedMs"], 30_000)
         self.assertEqual(week.span_days("month", 0, self.now)[0][0], "2026-09-25")
 
@@ -512,7 +535,7 @@ class RecapTests(Home):
         self.write(Transcript().prompt(yesterday).reply(yesterday + 1000, "b").duration(yesterday + 30_000, 30_000), "chat-b")
         old = t0 - 9 * week.DAY_MS
         self.write(Transcript().prompt(old).reply(old + 1000, "c", output=900).duration(old + 20_000, 20_000), "chat-c")
-        r = self.recap(days=40)
+        r = self.recap(days=40, kept_since=t0 - 30 * week.DAY_MS)
         self.assertEqual(r["sum"]["tokenTotal"], 2 * once + 40 + once)  # (cache writes count, searches don't)
         self.assertEqual(r["sum"]["tokenTotal"], sum(r["sum"]["tokens"][k] for k in list(week.USAGE_KEYS)[:5]))
         self.assertEqual([d["tokenTotal"] for d in r["days"]], [0, 0, 0, 0, 0, once, 2 * once + 40])
@@ -731,7 +754,7 @@ class LocalHourTests(Home):
             t = int(datetime(2026, 10, 24, 0, 15).timestamp() * 1000)
             self.write(Transcript().prompt(t - MIN).reply(t, "a").duration(t + MIN, 2 * MIN))
             once = 5 + 100 + 1000
-            day = self.recap(span="day")
+            day = self.recap(span="day", kept_since=t - 7 * week.DAY_MS)
             self.assertEqual((day["from"], day["sum"]["tokenTotal"], day["previous"]["tokenTotal"]), ("2026-10-24", once, 0))
             self.assertGreater(day["sum"]["cost"], 0)
             self.assertEqual([c["cost"] > 0 for c in day["days"][0]["chats"]], [True])

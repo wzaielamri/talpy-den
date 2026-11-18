@@ -1678,7 +1678,16 @@ export function weekDeltaText(now, before, kind, cur = USD) {
     return (d > 0 ? '+' : '−') + (kind === 'time' ? hoursText(abs) : kind === 'money' ? moneyText(abs, cur) : grouped(abs));
 }
 
-// One number over the 5 weeks up to these days, these last (null: older than what's kept)
+// The period before begins before the first chat the Recap has: not known
+// whole, so not compared (week.py: beforeKept)
+export function weekUncomparedText(recap) {
+    if (recap.beforeKept !== false || !recap.first || recap.span === 'all')
+        return '';
+    const what = recap.span === 'day' ? 'The day before' : recap.span === 'month' ? 'The 30 days before' : 'The 7 days before';
+    return `\n${what} can't be compared: the Recap has your chats only since ${shortDay(recap.first)}.`;
+}
+
+// One number over the 5 weeks up to these days, these last (null: older than what's kept, even partly)
 export function weekTrend(recap, key) {
     return (recap.trend || []).map(w => (w ? w[key] || 0 : null));
 }
@@ -1694,7 +1703,7 @@ export function weekTiles(recap) {
     // (today isn't over: the days before are counted up to this time of day)
     const by = recap.sameTime ? ', by this time' : '';
     const trendSaid = recap.sameTime ? trendText.replace(/^([^,]+),/, '$1, each by this time,') : trendText;
-    const before = (v, kind) => (p ? `\n${beforeText}${by}: ${shown(v, kind)}` : '');
+    const before = (v, kind) => (p ? `\n${beforeText}${by}: ${shown(v, kind)}` : weekUncomparedText(recap));
     const weeks = (key, kind) => {
         const values = weekTrend(recap, key);
         return values.length > 1 ? `\n${trendSaid}: ` +
