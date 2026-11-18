@@ -19,6 +19,17 @@
   reply) read as typed text. Only text drawn plainly counts now, as Claude
   draws what you type; hints are dim.
 
+- **Agents' and chats' lines, put right.** An agent's **Running now** left
+  out a long command when a quicker call of the same reply came back first,
+  and its line then said *(thinking about the result)* while the command
+  still ran; now it stays listed until it's back. An agent that failed on an
+  API error (a usage limit) showed no context; now it shows its last real
+  reply's, as Claude counts it. In live mode, a call you allowed after
+  Claude asked went back to the exact call and an edit you allowed lost its
+  *+12 −3*; now both keep their words and counts. A working background
+  chat's line could say your own message for a few seconds (*▸ continue*);
+  now it says what Claude is on.
+
 ## 1.22.1
 
 ### Better
