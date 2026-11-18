@@ -22,6 +22,27 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
+- **Where the usage went, and tips that act.** *By model* is now *Where
+  the usage went*: the models' rows, with what each was the period before,
+  then, as your plan's limits count it (weighed as Claude Code's `/usage`
+  weighs it), how much went to subagents, to requests over 150k of context
+  and to each effort level, each with its share the period before
+  (*Subagents · 31% of usage · was 24%*). Each tip says what its share was
+  then, and offers what acts on it: the chats that ran 8 hours or more,
+  with **Stop** for one that's idle (it asks first); the chats that carried
+  most over 150k of context, or that you came back to cold; the chats a
+  usage limit stopped, with **Keep going** where the chat list offers it
+  (that tip goes once they all keep going); **Permissions** for the time
+  Claude waited for your answers; a name opens its chat. A command to copy
+  stays where it's what you'd do.
+
+- **The Day, chat by chat, has its hours.** Its axis has its whole hours,
+  faint through the lanes, and pointing at it draws a line across every
+  chat and says which worked, waited for you or were paused then.
+
+- **A day's name in the Week opens that day**, alone, as a Day; clicking
+  its row still unfolds its chats there.
+
 - **Your plan, in the Recap.** After *What got done*, a line per account
   says what the days shown meant for its plan: how much of its week they
   used (from the readings of it Talpy Den keeps, so use on claude.ai

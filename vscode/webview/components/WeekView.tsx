@@ -2,7 +2,7 @@ import { drawCard } from "../util/card";
 import { Fragment, type JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { hostLabel, plural } from "../../src/shared/model";
-import type { LimitAccount, LimitHistory, WeekChat, WeekDay, WeekPlanWindow, WeekRecap, WeekSpan } from "../../src/shared/types";
+import type { LimitAccount, LimitHistory, WeekChat, WeekDay, WeekPlanWindow, WeekRecap, WeekSpan, WeekTip, WeekTipChat } from "../../src/shared/types";
 import {
   currencyOf,
   dayTip,
@@ -30,8 +30,18 @@ import {
   TIPS_TOO_LITTLE,
   dayLanes,
   laneNumbers,
-  guessedModelTip,
-  modelValue,
+  daysBack,
+  laneHoverText,
+  laneTicks,
+  LANES_HINT,
+  mixLabel,
+  mixTip,
+  mixValue,
+  modelRowText,
+  modelTip,
+  tipChatAct,
+  tipsShown,
+  tipWas,
   weekTiles,
   workText,
   workBeforeText,
@@ -69,7 +79,7 @@ import { Tag, TestsTag } from "./Tag";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
 import { limitsAnswer, limitsAsked, limitsRound, useReadAgain, weekAnswer } from "../util/stores";
-import { showProject } from "../util/ui";
+import { setTab, showProject } from "../util/ui";
 import { Reading } from "./Reading";
 
 const REFRESH_MS = 10 * 60000; // while the tab is in sight
@@ -79,8 +89,9 @@ const REFRESH_MS = 10 * 60000; // while the tab is in sight
 // tokens, the API prices), when (a day per row on a timeline, chat by
 // chat), what got done (by project, its chats with their commits and
 // Claude's recaps, what Claude did in all), what it meant for your plan,
-// then the money: what the same work would cost at API prices and what would
-// use less of your plan (the rules of Claude Code's own /usage); in Overall,
+// where the usage went (by model at API prices, then as your plan's limits
+// count it) and what would use less of your plan (the rules of Claude Code's
+// own /usage, each with what acts on it); in Overall,
 // last, your plan's limits over time. The extension runs the
 // widget's week.py for it (only while this tab is open): read from the chats'
 // transcripts, no tokens used.
@@ -135,11 +146,14 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
   // (in the order of RECAP_SECTIONS: when, what got done, your plan, then
   // the money; in Overall, your plan's limits over time last)
   const sections: Record<RecapSection, () => JSX.Element | null> = {
-    days: () => (dayLanes(recap!) ? null : <Timeline recap={recap!} />),
+    days: () => (dayLanes(recap!) ? null : <Timeline recap={recap!} onDay={(day) => {
+      setSpan("day");
+      setBack(Math.max(0, daysBack(day, Date.now())));
+    }} />),
     lanes: () => <Lanes recap={recap!} />,
     projects: () => <Done recap={recap!} />,
     plan: () => <Plan recap={recap!} />,
-    models: () => <Models recap={recap!} />,
+    usage: () => <Usage recap={recap!} />,
     tips: () => <Tips recap={recap!} copied={copied} onCopy={copy} />,
     limits: () => (recap!.span === "all" ? <Limits recap={recap!} account={account} /> : null),
   };
@@ -306,7 +320,7 @@ function ChatLine({ c, cur, where, sub, bare, tip }: { c: WeekChat; cur: Currenc
 // A day per row: when you were at it, when Claude worked (darker where
 // several chats worked at once), when it waited for your answer, where a
 // usage limit stopped a chat. Click a day for its chats.
-function Timeline({ recap }: { recap: WeekRecap }) {
+function Timeline({ recap, onDay }: { recap: WeekRecap; onDay: (day: string) => void }) {
   const [hover, setHover] = useState<{ row: number; x: number; ms: number; px: number } | null>(null);
   const [open, setOpen] = useState("");
   const cur = currencyOf(recap);
@@ -317,6 +331,7 @@ function Timeline({ recap }: { recap: WeekRecap }) {
   const pct = (d: WeekDay, ms: number) => `${100 * dayPlace(d, ms)}%`;
   const width = (d: WeekDay, a: number, b: number) => `max(1px, ${Math.max(0, 100 * (dayPlace(d, b) - dayPlace(d, a)))}%)`;
   const limits = recap.days.some((d) => d.limits?.length);
+  const opensDay = recap.span === "week"; // (a day's name: that day alone, a Day; its row unfolds its chats)
   return (
     <section class={"week-section" + (weeks ? " week-weeks" : "")}>
       <div class="week-heading">
@@ -344,7 +359,16 @@ function Timeline({ recap }: { recap: WeekRecap }) {
           <div key={d.day}>
             <div class={"week-row" + (i === last && recap.back === 0 ? " today" : "") + (d.chats?.length ? " opens" : "") + (shown ? " open" : "")}
               title={dayTip(d, cur, recap)} {...(d.chats?.length ? opens(shown, () => setOpen(shown ? "" : d.day)) : { onClick: () => setOpen("") })}>
-              <span class="week-day small">{rowDay(d.day, weeks, d.to)}</span>
+              {opensDay ? (
+                <button type="button" class="week-day small week-day-open" title={`${rowDay(d.day)}\nThis day alone`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDay(d.day);
+                  }}
+                  onKeyDown={(e) => e.stopPropagation()}>
+                  {rowDay(d.day, weeks, d.to)}
+                </button>
+              ) : <span class="week-day small">{rowDay(d.day, weeks, d.to)}</span>}
               {weeks ? (
                 <span class="week-track">
                   {d.youMs > 0 ? <span class="week-you" style={{ left: 0, width: `max(1px, ${(100 * d.youMs) / most}%)` }} /> : null}
@@ -384,7 +408,9 @@ function Timeline({ recap }: { recap: WeekRecap }) {
       })}
       <div class={"week-readout small" + (hover ? "" : " muted")}>
         {weeks ? "Click a week for its chats."
-          : hover ? hoverText(recap.days[hover.row], hover.ms, recap.generatedAt, hover.px) : "Point at a day to see what went on then; click it for its chats."}
+          : hover ? hoverText(recap.days[hover.row], hover.ms, recap.generatedAt, hover.px)
+            : opensDay ? "Point at a day to see what went on then; click it for its chats, or its name for that day alone."
+              : "Point at a day to see what went on then; click it for its chats."}
       </div>
     </section>
   );
@@ -718,6 +744,7 @@ function DoneChat({ c, cur, recap }: { c: WeekChat; cur: Currency; recap: WeekRe
 // row (when you were at it, when Claude worked, waited, a usage limit), on
 // the same hours; at each lane's end its chat's time and cost.
 function Lanes({ recap }: { recap: WeekRecap }) {
+  const [hover, setHover] = useState<{ x: number; ms: number; px: number } | null>(null);
   const lanes = recap.lanes ?? [];
   if (!lanes.length) return null;
   const cur = currencyOf(recap);
@@ -727,6 +754,22 @@ function Lanes({ recap }: { recap: WeekRecap }) {
   const t1 = Math.max(...lanes.map((l) => l.parts[l.parts.length - 1][1]), ...dayParts.map((p) => p[1]));
   const span = Math.max(60000, t1 - t0);
   const at = (ms: number) => `${((ms - t0) / span) * 100}%`;
+  const ticks = laneTicks(t0, t1);
+  // (the mouse over a lane, the day's row too: its moment, a line across them all)
+  const point = {
+    onMouseMove: (e: MouseEvent) => {
+      const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const x = Math.max(0, Math.min(box.width, e.clientX - box.left));
+      setHover({ x: x / Math.max(1, box.width), ms: t0 + (x / Math.max(1, box.width)) * span, px: span / Math.max(1, box.width) });
+    },
+    onMouseLeave: () => setHover(null),
+  };
+  const marks = (
+    <>
+      {ticks.map((t) => <i key={"h" + t} class="lane-hour" style={{ left: at(t) }} />)}
+      {hover ? <i class="lane-cross" style={{ left: `${hover.x * 100}%` }} /> : null}
+    </>
+  );
   const along = (a: number, b: number) => `max(1.5px, ${((b - a) / span) * 100}%)`;
   const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const paused = lanes.some((l) => l.parts.some((p) => p[2] === "p"));
@@ -748,7 +791,8 @@ function Lanes({ recap }: { recap: WeekRecap }) {
         {day && dayParts.length ? (
           <li key="day">
             <span class="week-lane-name small strong">All chats</span>
-            <span class="week-lane week-lane-day" title={`All chats\n${dayTip(day, cur)}`}>
+            <span class="week-lane week-lane-day" title={`All chats\n${dayTip(day, cur)}`} {...point}>
+              {marks}
               {day.wait.map(([a, b]) => <i key={"y" + a} class="lane-y" style={{ left: at(a), width: along(a, b) }} />)}
               {day.work.map(([a, b, n]) => <i key={"w" + a} class={"lane-w" + (n >= 3 ? " many" : n === 2 ? " two" : "")} style={{ left: at(a), width: along(a, b) }} />)}
               {day.you.map(([a, b]) => <i key={"u" + a} class="lane-u" style={{ left: at(a), width: along(a, b) }} />)}
@@ -764,7 +808,8 @@ function Lanes({ recap }: { recap: WeekRecap }) {
               onClick={() => post({ type: "openWeekChat", chatId: l.id, profileDir: l.profileDir ?? "", name: l.name, cwd: "" })}>
               {(l.host ? hostLabel(l.host) + ": " : "") + l.name}
             </button>
-            <span class="week-lane" title={`${l.name}\nClaude worked ${hoursText(l.workedMs)}, waited for you ${hoursText(l.waitedMs)}${l.project ? `\n${l.project}` : ""}`}>
+            <span class="week-lane" title={`${l.name}\nClaude worked ${hoursText(l.workedMs)}, waited for you ${hoursText(l.waitedMs)}${l.project ? `\n${l.project}` : ""}`} {...point}>
+              {marks}
               {l.parts.map(([a, b, k], i) => <i key={i} class={`lane-${k}`} style={{ left: at(a), width: along(a, b) }} />)}
             </span>
             <span class="week-lane-num small muted">{laneNumbers(l, cur)}</span>
@@ -772,31 +817,52 @@ function Lanes({ recap }: { recap: WeekRecap }) {
         ))}
         <li class="week-lanes-times small muted" aria-hidden="true">
           <span />
-          <span><span>{time(t0)}</span><span>{time(t1)}</span></span>
+          {/* (its whole hours; none in between: its first and last times) */}
+          {ticks.length ? (
+            <span class="week-lanes-hours">{ticks.map((t) => <span key={t} style={{ left: at(t) }}>{time(t)}</span>)}</span>
+          ) : <span><span>{time(t0)}</span><span>{time(t1)}</span></span>}
           <span />
         </li>
       </ul>
+      <div class={"week-readout small" + (hover ? "" : " muted")}>{hover ? laneHoverText(lanes, day, hover.ms, hover.px) : LANES_HINT}</div>
     </section>
   );
 }
 
-// What it'd cost on the API, by model
-function Models({ recap }: { recap: WeekRecap }) {
-  if (!recap.models.length) return null;
+// Where the usage went: by model (its amount at API prices), then weighed as
+// Claude Code's /usage weighs it toward your plan's limits (subagents, over
+// 150k of context, effort levels: week.py usage_mix), each with its share
+// the period before
+function Usage({ recap }: { recap: WeekRecap }) {
+  const mix = recap.usageMix ?? [];
+  if (!recap.models.length && !mix.length) return null;
   const cur = currencyOf(recap);
   return (
     <section class="week-section">
-      <h2>By model</h2>
-      <ul class="week-bars">
+      <h2>Where the usage went</h2>
+      <ul class="week-bars week-usage">
         {recap.models.map((m) => (
-          <li key={m.model} title={`${m.model}: ${moneyText(m.cost, cur)} · ${plural(m.requests, "%1 request", "%1 requests")}` +
-            (m.guessed ? `\n${guessedModelTip(m)}` : "")}>
+          <li key={m.model} title={`${m.model}\n${modelTip(m, recap)}`}>
             <span class="week-bar-name">{m.model}</span>
             <span class="week-bar-meter"><span style={{ width: `${100 * m.share}%` }} /></span>
-            <span class="week-bar-value small muted">{modelValue(m, cur)}</span>
+            <span class="week-bar-value small muted">{modelRowText(m, cur)}</span>
           </li>
         ))}
       </ul>
+      {mix.length ? (
+        <>
+          <div class="small muted week-usage-how">As your plan's limits count it (Claude Code's /usage):</div>
+          <ul class="week-bars week-usage">
+            {mix.map((p) => (
+              <li key={p.key} title={`${mixLabel(p.key)}\n${mixTip(p, recap)}`}>
+                <span class="week-bar-name">{mixLabel(p.key)}</span>
+                <span class="week-bar-meter"><span style={{ width: `${Math.min(100, p.pct)}%` }} /></span>
+                <span class="week-bar-value small muted">{mixValue(p)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -805,23 +871,40 @@ function Models({ recap }: { recap: WeekRecap }) {
 // to chats after their cache expired, waits, limits); too little in the
 // period: a dim line instead
 function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onCopy: (text: string) => void }) {
+  const view = useView();
+  const tips = tipsShown(recap.tips, view.status);
   return (
     <section class="week-section">
       <h2>What could use less of your plan</h2>
       {recap.tooLittle ? <div class="muted">{TIPS_TOO_LITTLE}</div>
-        : !recap.tips.length ? <div class="muted">Nothing stands out: no habit takes a tenth of the usage shown.</div> : null}
+        : !tips.length ? <div class="muted">Nothing stands out: no habit takes a tenth of the usage shown.</div> : null}
       <ul class="week-tips">
-        {recap.tips.map((t) => (
+        {tips.map((t) => (
           <li key={t.key} class="week-tip">
             <span class="week-tip-icon" title={tipSource(t.key)}><Icon name={I[tipMeaning(t.key)]} /></span>
             <span class="week-tip-text">
               <span class="week-tip-title">{t.title}</span>
               {t.detail ? <span class="small muted">{t.detail}</span> : null}
+              {t.chats?.length ? (
+                <ul class="week-tip-chats">
+                  {t.chats.map((c) => <TipChat key={c.host + c.chatId} tip={t} c={c} />)}
+                </ul>
+              ) : null}
+              {t.more ? <span class="small muted">and {t.more} more {t.more === 1 ? "chat" : "chats"}</span> : null}
             </span>
             {t.pct !== null ? (
-              <span class="week-tip-pct small" title={tipShareTip(t, recap)}>{tipShareText(t)}</span>
+              <span class="week-tip-pct small" title={tipShareTip(t, recap)}>
+                {tipShareText(t)}
+                {tipWas(t) ? <span class="muted">{tipWas(t)}</span> : null}
+              </span>
             ) : null}
-            {t.command ? (
+            {t.key === "waits" ? (
+              // (Claude waited for your answers: the Permissions tab)
+              <button type="button" class="chip" title={"Open the Permissions tab\nThe permission prompts you answered, and the rules that would let the same go without asking."}
+                onClick={() => setTab("perms")}>
+                <Icon name={I.permissions} /> Permissions
+              </button>
+            ) : t.command ? (
               <button type="button" class="chip code" title={`Copy ${t.command}, to type it in a chat of yours`} onClick={() => onCopy(t.command)}>
                 {copied === t.command ? "Copied" : t.command}
               </button>
@@ -830,5 +913,37 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
         ))}
       </ul>
     </section>
+  );
+}
+
+// A chat a tip names: its name brings it up (this computer's), what the tip
+// says of it, and Stop or Keep going where the chat list offers it now (the
+// extension asks before it stops one, and finds the chat itself)
+function TipChat({ tip, c }: { tip: WeekTip; c: WeekTipChat }) {
+  const view = useView();
+  const { act, ref } = tipChatAct(tip.key, c, view.status, view.hosts);
+  return (
+    <li class="week-tip-chat">
+      <button type="button" class="week-chat" disabled={!!c.host || !c.chatId}
+        title={c.host ? `${c.name} on ${hostLabel(c.host)}: its row under ${hostLabel(c.host)} opens it` : `Open “${c.name}”`}
+        onClick={() => post({ type: "openWeekChat", chatId: c.chatId, profileDir: c.profileDir, name: c.name, cwd: c.cwd })}>
+        <span class="week-chat-name">{c.name}</span>
+        <span class="week-chat-value small muted">{c.note}</span>
+      </button>
+      {act === "stop" && ref ? (
+        <button type="button" class="chip" title={"Stop this chat\nAsks first. It's idle: Claude quits, and the chat is kept."}
+          onClick={() => post({ type: "stop", chat: ref })}>
+          <Icon name={I.stop} /> Stop
+        </button>
+      ) : (act === "keep" || act === "keepAtReset") && ref ? (
+        <button type="button" class="chip"
+          title={act === "keepAtReset"
+            ? "Keep going until it's done\nIt goes on by itself a minute after the limit resets, in the background, and again after each later limit, until a turn of it ends by itself."
+            : "Keep going until it's done\nWhen a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, and again after each later one, until a turn of it ends by itself."}
+          onClick={() => post(act === "keepAtReset" ? { type: "queueContinue", chat: ref, keep: true } : { type: "keepGoing", chat: ref, on: true })}>
+          <Icon name={I.keepGoing} /> Keep going
+        </button>
+      ) : act === "kept" ? <span class="small muted">Keeps going</span> : null}
+    </li>
   );
 }

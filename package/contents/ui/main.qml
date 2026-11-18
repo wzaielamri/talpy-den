@@ -5097,6 +5097,11 @@ PlasmoidItem {
         weekSpan = span
         weekBack = 0
     }
+    // (a day of the Week's: that day alone, back days before today's)
+    function showRecapDay(back) {
+        weekSpan = "day"
+        weekBack = Math.max(0, back)
+    }
 
     Timer {
         interval: 600000   // 10 minutes

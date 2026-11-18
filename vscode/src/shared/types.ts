@@ -785,6 +785,29 @@ export interface WeekModel {
   share: number; // of the cost, 0-1
   guessed?: boolean; // no list price yet: priced as pricedAs (the newest of its family), or not at all
   pricedAs?: string | null;
+  before?: number | null; // its share the period before, 0-1 (null: not compared; an older week.py sends none)
+}
+
+// Where the usage went, weighed as Claude Code's /usage weighs it (week.py
+// usage_mix): "subagents", "long_context" (requests over 150k of context),
+// "effort:xhigh" (each level; "effort:" what has no level noted); pct and
+// before in points of the period's usage (before null: not compared)
+export interface WeekMix {
+  key: string;
+  pct: number;
+  before: number | null;
+}
+
+// A chat a tip names (what acts on it: its name opens it; Stop, Keep going
+// where the chat list offers it): note says what the tip says of it
+export interface WeekTipChat {
+  name: string;
+  chatId: string;
+  host: string;
+  profileDir: string;
+  folder: string;
+  cwd: string;
+  note: string;
 }
 
 // What would use less of your plan: Claude Code's /usage rules (pct: the
@@ -797,6 +820,9 @@ export interface WeekTip {
   title: string;
   detail: string;
   command: string; // e.g. "/compact", or ""
+  before?: number | null; // its share the period before (null: not compared, or no share)
+  chats?: WeekTipChat[]; // the chats it acts on: ran 8 hours or more, over 150k of context, come back to cold, stopped by a limit
+  more?: number; // and how many more
 }
 
 // A plan window now, and how it filled up (the widget's usage history)
@@ -956,6 +982,7 @@ export interface WeekRecap {
   // The Day view: a lane per chat, its stretches [from, to, w (worked) | y (waited for you) | p (paused)]
   lanes?: WeekLane[];
   models: WeekModel[];
+  usageMix?: WeekMix[]; // (Where the usage went: an older week.py sends none)
   spend: {
     cold: { count: number; cost: number; chats: WeekChat[] }; // coming back after a chat's cache expired
   };

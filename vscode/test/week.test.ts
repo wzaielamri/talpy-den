@@ -6,7 +6,7 @@ import { test } from "node:test";
 import * as vscode from "vscode";
 import { demoLimits, demoPerms, demoState, demoWeek } from "../src/shared/demo";
 import { clockText } from "../src/shared/model";
-import type { WeekDay } from "../src/shared/types";
+import type { Session, Status, Stop, WeekDay, WeekLane } from "../src/shared/types";
 import {
   tipShareText, tipShareTip, currencyOf, dayTip, deltaText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
@@ -15,6 +15,7 @@ import {
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
   limitStart, limitWeekBars, limitValueText, doneText, doneTip, commitsShown, workBeforeText, listedChatRef,
   planUseText, planUseTip, weekShareShort, weekShareTip,
+  daysBack, laneHoverText, laneTicks, mixLabel, mixTip, mixValue, modelRowText, tipChatAct, tipsShown, tipWas,
 } from "../src/shared/week";
 import { ViewHost } from "../src/view";
 
@@ -54,7 +55,75 @@ test("the Recap reads as a story: the tiles, when, what got done, then the money
   assert.deepEqual(weekTiles(demoWeek(NOW)).map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens · 98% cache", "At API prices"]);
   // (what Claude did is What got done's last line; its projects' chats are the list of chats)
   // (your plan after what got done; its limits over time last, in Overall)
-  assert.deepEqual([...RECAP_SECTIONS], ["days", "lanes", "projects", "plan", "models", "tips", "limits"]);
+  // (where the usage went, before what could use less of it)
+  assert.deepEqual([...RECAP_SECTIONS], ["days", "lanes", "projects", "plan", "usage", "tips", "limits"]);
+});
+
+test("where the usage went: each part's share, how it moved, and the tips' as theirs", () => {
+  const recap = demoWeek(NOW);
+  const mix = recap.usageMix!;
+  assert.deepEqual(mix.map((p) => `${mixLabel(p.key)}: ${mixValue(p)}`), [
+    "Subagents: 31% of usage · was 24%", "Context over 150k: 41% of usage · was 52%", "Effort xhigh: 71% of usage · was 58%",
+    "Effort max: 22% of usage · was 39%", "Effort medium: 7% of usage · was 3%",
+  ]);
+  assert.equal(mixValue({ key: "effort:", pct: 0.3, before: null }), "<1% of usage"); // (not compared: no "was")
+  assert.equal(mixLabel("effort:"), "Effort not noted");
+  assert.match(mixTip(mix[0], recap), /^Subagents' requests took 31% of the usage of these days, the main chats' 69%\.\nWeighed as .*\nThe 7 days before: 24%$/);
+  assert.match(mixTip({ ...mix[0], before: null }, { ...recap, beforeKept: false, first: "2026-10-20" }), /\nThe 7 days before can't be compared: /);
+  assert.equal(modelRowText(recap.models[0]), "$" + Math.round(recap.models[0].cost) + " · 88% · was 91%");
+  assert.equal(modelRowText({ ...recap.models[0], before: null }).includes("was"), false);
+  // a tip's share, and under it what it was
+  assert.equal(tipWas(recap.tips[0]), "was 52%");
+  assert.equal(tipWas({ pct: 41, before: null }), "");
+  assert.equal(tipWas({ pct: null, before: null }), "");
+});
+
+test("a tip acts on the chats it names as the chat list would: Stop, Keep going, or only their name", () => {
+  const status = demoState(NOW).status!;
+  const g = status.groups[0];
+  const row = (over: Partial<Session>): Session => ({ ...g.sessions[0], chatId: "c1", sessionId: "c1", kind: "interactive", pid: 7, entrypoint: "cli", stopped: null, ...over });
+  const listing = (sessions: Session[], keep: Status["keep"] = []): Status => ({ ...status, groups: [{ ...g, sessions, recent: [], starred: [] }], keep });
+  const c = { chatId: "c1", host: "" };
+  const act = (key: string, st: Status) => tipChatAct(key, c, st, []).act;
+  // a chat that ran long: Stop while it's idle with a process of its own (one at work: from its row)
+  assert.equal(act("long_running", listing([row({ state: "idle" })])), "stop");
+  assert.equal(act("long_running", listing([row({ state: "working" })])), "");
+  assert.equal(act("long_running", listing([row({ state: "idle", pid: null })])), "");
+  // a chat a limit stopped: Keep going from the reset; at work: Keep going; one that keeps going says so
+  const stopped: Stop = { kind: "limit", window: "five_hour", text: "", at: NOW - MIN, resetsAt: NOW + HOUR, over: false };
+  assert.equal(act("limits", listing([row({ state: "idle", stopped })])), "keepAtReset");
+  assert.equal(act("limits", listing([row({ state: "working" })])), "keep");
+  assert.equal(act("limits", listing([row({ state: "working", entrypoint: "claude-vscode" })])), "");
+  const kept = [{ chat: "c1", profile: ".claude", name: "c1", since: NOW, wentOnAt: null, tries: 0, note: "", error: "" }];
+  assert.equal(act("limits", listing([], kept)), "kept");
+  // not listed (an older chat): its name only; the context tip: its name only
+  assert.equal(act("limits", listing([])), "");
+  assert.equal(act("long_context", listing([row({ state: "idle" })])), "");
+  assert.equal(tipChatAct("long_running", c, listing([row({ state: "idle" })]), []).ref?.key, g.sessions[0].key);
+  // the limits tip, once every chat it names keeps going, isn't shown
+  const limits = { key: "limits", pct: null, title: "", detail: "", command: "", chats: [{ ...c, name: "", profileDir: "", folder: "", cwd: "", note: "" }], more: 0 };
+  assert.equal(tipsShown([limits], listing([], kept)).length, 0);
+  assert.equal(tipsShown([limits], listing([])).length, 1);
+  assert.equal(tipsShown([{ ...limits, more: 2 }], listing([], kept)).length, 1); // (chats it doesn't name may not)
+});
+
+test("the Day, chat by chat: its hours on the axis, and what went on where the mouse points", () => {
+  const at = (h: number, m = 0) => new Date(2026, 9, 24, h, m).getTime();
+  assert.deepEqual(laneTicks(at(9, 56), at(12, 55)), [at(10), at(11), at(12)]);
+  assert.deepEqual(laneTicks(at(7, 10), at(22, 40)), [at(9), at(12), at(15), at(18), at(21)]); // (every 3 hours: at most 6)
+  assert.deepEqual(laneTicks(at(10, 5), at(10, 50)), []); // (no whole hour in between: its first and last times)
+  const lanes: WeekLane[] = [
+    { key: "|a", id: "a", host: "", name: "Fix the parser", project: "app", parts: [[at(10), at(11), "w"], [at(11), at(11, 30), "y"]], workedMs: 0, waitedMs: 0 },
+    { key: "|b", id: "b", host: "", name: "Release notes", project: "app", parts: [[at(10, 30), at(12), "w"]], workedMs: 0, waitedMs: 0 },
+  ];
+  const day = { you: [[at(10, 40), at(10, 50)]] as [number, number][], limits: [at(11, 45)] };
+  assert.equal(laneHoverText(lanes, day, at(10, 45), 60000), `${clockText(at(10, 45))}: Claude worked in Fix the parser, Release notes · you were at it`);
+  assert.equal(laneHoverText(lanes, day, at(11, 15), 60000), `${clockText(at(11, 15))}: Claude worked in Release notes · waited for you in Fix the parser`);
+  assert.match(laneHoverText(lanes, day, at(11, 46), 60000), /: a usage limit stopped a chat at .* · Claude worked in Release notes$/);
+  assert.equal(laneHoverText(lanes, day, at(12, 30), 60000), `${clockText(at(12, 30))}: nothing went on`);
+  // a day of the Week's, opened alone: how many days back it is
+  assert.equal(daysBack("2026-10-24", NOW), 0);
+  assert.equal(daysBack("2026-10-18", NOW), 6);
 });
 
 test("your plan: what these days meant for each account's plan, and the shares of its week", () => {

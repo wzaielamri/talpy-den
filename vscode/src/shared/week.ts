@@ -1,10 +1,10 @@
 // The Recap tab's words and numbers (webview/components/WeekView.tsx), from
 // the recap of the widget's week.py; here, so the tests can read them.
 
-import { chatRefOf, clockText, dayLabel, hostLabel, plural, recentRef } from "./model";
+import { canEndChat, chatRefOf, clockText, dayLabel, goOnAt, hostLabel, keptChat, plural, recentRef } from "./model";
 import type {
-  ChatRef, HostState, LimitAccount, LimitChange, LimitEvent, LimitHistory, LimitPeriod, LimitTokens, Status, WeekDay, WeekGrant, WeekModel, WeekNumbers,
-  WeekPlanUse, WeekPlanWindow, WeekRecap, WeekRule, WeekShare, WeekSpan, WeekSum, WeekTip,
+  ChatRef, HostState, LimitAccount, LimitChange, LimitEvent, LimitHistory, LimitPeriod, LimitTokens, RecentChat, Session, Status, WeekDay, WeekGrant,
+  WeekLane, WeekMix, WeekModel, WeekNumbers, WeekPlanUse, WeekPlanWindow, WeekRecap, WeekRule, WeekShare, WeekSpan, WeekSum, WeekTip, WeekTipChat,
 } from "./types";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -165,9 +165,10 @@ function amountText(v: number, kind: Kind, cur: Currency): string {
 // front end): when (the day-by-day graph, chat by chat); what got done (by
 // project, its chats with their commits and Claude's recaps, what Claude
 // did in all under it); what it meant for your plan (and today, its windows
-// now); then the money (by model at API prices, what could use less of
-// your plan). Last, in Overall only: your plan's limits over time.
-export const RECAP_SECTIONS = ["days", "lanes", "projects", "plan", "models", "tips", "limits"] as const;
+// now); then where the usage went (by model at API prices, then as your
+// plan's limits count it) and what could use less of your plan. Last, in
+// Overall only: your plan's limits over time.
+export const RECAP_SECTIONS = ["days", "lanes", "projects", "plan", "usage", "tips", "limits"] as const;
 
 // Spans whose timeline has a row per 7 days, not per day
 export function weekRows(span: WeekSpan | undefined): boolean {
@@ -253,6 +254,14 @@ export function weekTiles(recap: WeekRecap): WeekTile[] {
       trend: trendOf(recap, "cost"),
     },
   ];
+}
+
+// A tooltip's line with a share the period before ("\nThe 7 days before, by
+// this time: 64%"), or why it isn't compared
+function beforeLine(recap: Pick<WeekRecap, "span" | "sameTime" | "beforeKept" | "first">, value: string | null): string {
+  if (value === null) return uncomparedText(recap);
+  const what = recap.span === "day" ? "The day before" : recap.span === "month" ? "The 30 days before" : "The 7 days before";
+  return `\n${what}${recap.sameTime ? ", by this time" : ""}: ${value}`;
 }
 
 // The period before begins before the first chat the Recap has: not known
@@ -360,12 +369,88 @@ export function tipShareText(t: Pick<WeekTip, "key" | "pct">): string {
   return t.pct === null ? "" : t.key === "cold" ? `${t.pct}% of the amount` : `${t.pct}% of usage`;
 }
 
-export function tipShareTip(t: Pick<WeekTip, "key" | "pct">, recap: Pick<WeekRecap, "spend" | "currency">): string {
+export function tipShareTip(t: Pick<WeekTip, "key" | "pct" | "before">,
+                            recap: Pick<WeekRecap, "spend" | "currency" | "span" | "sameTime" | "beforeKept" | "first">): string {
+  const before = beforeLine(recap, t.before === null || t.before === undefined ? null : `${t.before}%`);
   if (t.key !== "cold")
     return `${t.pct}% of the usage shown: of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. ` +
-      "A request can count for several of these.";
+      "A request can count for several of these." + before;
   return `${t.pct}% of the amount at API prices: writing the chats' context again cost ${moneyText(recap.spend?.cold?.cost ?? 0, currencyOf(recap))} ` +
-    "more than reading it from the cache. The cache keeps a chat's context an hour after its last reply.";
+    "more than reading it from the cache. The cache keeps a chat's context an hour after its last reply." + before;
+}
+
+// Under a tip's share, how it moved: "was 64%" (none: not compared)
+export function tipWas(t: Pick<WeekTip, "pct" | "before">): string {
+  return t.pct === null || t.before === null || t.before === undefined ? "" : `was ${t.before}%`;
+}
+
+// The tips shown: the limits tip, once every chat it names keeps going, has
+// nothing left to offer
+export function tipsShown(tips: WeekTip[], status: Pick<Status, "keep"> | null | undefined): WeekTip[] {
+  return tips.filter((t) => !(t.key === "limits" && t.chats?.length && !t.more && t.chats.every((c) => keptChat(status, c.chatId, c.host || undefined))));
+}
+
+// What a tip offers one of the chats it names, as the chat list would now:
+// "stop" for an idle chat with a process of its own (the tip about chats that
+// ran long: one at work is stopped from its row); "keep" (Keep going) for one
+// at work, "keepAtReset" for one a usage limit stopped that goes on once it
+// resets, "kept" for one that keeps going already (the tip about limits);
+// else "" (its name opens it). ref: the chat as the extension finds it.
+export type TipAct = "stop" | "keep" | "keepAtReset" | "kept" | "";
+export function tipChatAct(key: string, c: Pick<WeekTipChat, "chatId" | "host">, status: Status | null | undefined, hosts: HostState[]):
+  { act: TipAct; ref: ChatRef | null } {
+  const host = c.host || undefined;
+  if (key === "limits" && keptChat(status, c.chatId, host)) return { act: "kept", ref: null };
+  const where = host ? hosts.find((h) => h.name === host)?.result : status;
+  let session: Session | undefined;
+  let recent: RecentChat | undefined;
+  for (const g of where?.groups ?? []) {
+    session = (g.sessions ?? []).find((x) => x.chatId === c.chatId || x.sessionId === c.chatId);
+    if (session) break;
+    recent = recent ?? [...(g.recent ?? []), ...(g.starred ?? [])].find((x) => x.sessionId === c.chatId);
+  }
+  const ref = session ? chatRefOf(session, host) : recent ? recentRef(recent, host) : null;
+  const item = session ?? recent;
+  if (!item || !c.chatId) return { act: "", ref: null };
+  if (key === "long_running" && session)
+    // (as the chat list's canStop)
+    return { act: session.state === "idle" && (canEndChat(session) || !!session.stopCommand || (!host && !!session.jobId && session.pid != null)) ? "stop" : "", ref };
+  if (key === "limits")
+    return { act: goOnAt(item) > 0 ? "keepAtReset" : session && session.state === "working" && session.entrypoint !== "claude-vscode" ? "keep" : "", ref };
+  return { act: "", ref };
+}
+
+// ---------------------------------------------------------------- where the usage went
+// By model (at API prices), then weighed as Claude Code's /usage weighs it
+// toward your plan's limits (week.py usage_mix); the same words as Plasma's
+// WeekView.qml
+
+export function mixLabel(key: string): string {
+  return key === "subagents" ? "Subagents" : key === "long_context" ? "Context over 150k" : key === "effort:" ? "Effort not noted" : `Effort ${key.slice(7)}`;
+}
+
+// "71% of usage · was 64%"
+export function mixValue(p: WeekMix): string {
+  return `${pointsText(p.pct)} of usage${p.before === null ? "" : ` · was ${pointsText(p.before)}`}`;
+}
+
+export function mixTip(p: WeekMix, recap: Pick<WeekRecap, "span" | "sameTime" | "beforeKept" | "first">): string {
+  const what = p.key === "subagents" ? `Subagents' requests took ${pointsText(p.pct)} of the usage of these days, the main chats' ${pointsText(100 - p.pct)}.`
+    : p.key === "long_context" ? `Requests that carried over 150k tokens of context took ${pointsText(p.pct)} of the usage: a long chat sends all of its context with each request.`
+      : p.key === "effort:" ? `${pointsText(p.pct)} of the usage has no effort level noted: chats deleted before Talpy Den kept their levels (only max effort is known of them), and models with no effort setting.`
+        : `Requests at ${p.key.slice(7)} effort took ${pointsText(p.pct)} of the usage.`;
+  return `${what}\nWeighed as Claude Code's /usage weighs it toward your plan's limits: a request's tokens by kind, times its model's weight.` +
+    beforeLine(recap, p.before === null ? null : pointsText(p.before));
+}
+
+// A model's row: its amount and share, and its share the period before
+export function modelRowText(m: WeekModel, cur: Currency = USD): string {
+  return modelValue(m, cur) + (m.before === null || m.before === undefined ? "" : ` · was ${shareText(m.before)}`);
+}
+
+export function modelTip(m: WeekModel, recap: Pick<WeekRecap, "span" | "sameTime" | "beforeKept" | "first" | "currency">): string {
+  return `${moneyText(m.cost, currencyOf(recap))} at API prices, ${shareText(m.share)} of the amount of these days · ${plural(m.requests, "%1 request", "%1 requests")}` +
+    (m.guessed ? `\n${guessedModelTip(m)}` : "") + beforeLine(recap, m.before === null || m.before === undefined ? null : pointsText(100 * m.before));
 }
 
 // Too little in the period for tips (week.py: tooLittle)
@@ -556,6 +641,42 @@ export function laneNumbers(l: { claudeMs?: number; cost?: number }, cur: Curren
   const cost = l.cost ?? 0;
   if (ms < 60000 && cost < 0.01) return "–";
   return `${ms < 60000 ? "<1m" : hoursText(ms)} · ${moneyText(cost, cur)}`;
+}
+
+// The Day's lanes, their whole hours on the axis: every 1, 2, 3, 4, 6 or 12
+// hours, at most 6 of them (by the local clock)
+export function laneTicks(t0: number, t1: number): number[] {
+  const hour = 3600000;
+  if (!(t1 > t0 && t0 > 0) || t1 - t0 > 2 * 86400000) return []; // (not a day's: none)
+  const step = [1, 2, 3, 4, 6, 12].find((s) => (t1 - t0) / hour / s <= 6) ?? 24;
+  const first = new Date(t0);
+  first.setMinutes(0, 0, 0);
+  const out: number[] = [];
+  for (let t = first.getTime() + hour; t < t1; t += hour) if (new Date(t).getHours() % step === 0) out.push(t);
+  return out;
+}
+
+// What went on at ms, chat by chat (the Day's lanes, the day's own row). px:
+// a pixel's ms, so a mark a pixel or two wide can be hit
+export function laneHoverText(lanes: WeekLane[], day: Pick<WeekDay, "you" | "limits"> | undefined, ms: number, px: number): string {
+  const near = (a: number, b: number) => (a <= ms && ms < b) || (b - a < 3 * px && a - 2 * px <= ms && ms < b + 2 * px);
+  const of = (kind: string) => lanes.filter((l) => l.parts.some((p) => p[2] === kind && near(p[0], p[1]))).map((l) => (l.host ? hostLabel(l.host) + ": " : "") + l.name);
+  const parts: string[] = [];
+  const limit = (day?.limits ?? []).find((t) => Math.abs(t - ms) <= 3 * px);
+  if (limit !== undefined) parts.push(`a usage limit stopped a chat at ${clockText(limit)}`);
+  const worked = of("w"), waited = of("y"), paused = of("p");
+  if (worked.length) parts.push(`Claude worked in ${worked.join(", ")}`);
+  if (waited.length) parts.push(`waited for you in ${waited.join(", ")}`);
+  if (paused.length) parts.push(`paused in ${paused.join(", ")}`);
+  if ((day?.you ?? []).some(([a, b]) => near(a, b))) parts.push("you were at it");
+  return `${clockText(ms)}: ${parts.length ? parts.join(" · ") : "nothing went on"}`;
+}
+export const LANES_HINT = "Point at the chats to see what went on then; click a name to open its chat.";
+
+// How many days before today's a day is (the Day's step back to it, from a day of the Week)
+export function daysBack(day: string, now: number): number {
+  const t = new Date(now);
+  return Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime() - localDate(day).getTime()) / 86400000);
 }
 
 export function resetText(ms: number | null, now: number): string {

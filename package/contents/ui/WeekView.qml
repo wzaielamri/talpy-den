@@ -15,10 +15,11 @@ import "limits.mjs" as Limits
 // worked, your prompts, its tokens, the API prices), when (a day per row on
 // a timeline, the day chat by chat), what got done (by project, its chats
 // with their commits and Claude's recaps, and what Claude did in all), what
-// it meant for your plan, then the money (by model at API prices, and what
-// would make it use less of your plan: the rules of Claude Code's own
-// /usage); in Overall, last, your plan's limits over time. All of it read
-// from the chat transcripts: no tokens, nothing sent.
+// it meant for your plan, where the usage went (by model at API prices,
+// then as your plan's limits count it) and what would make it use less of
+// your plan (the rules of Claude Code's own /usage, each with what acts on
+// it); in Overall, last, your plan's limits over time. All of it read from
+// the chat transcripts: no tokens, nothing sent.
 PlasmaComponents3.ScrollView {
     id: view
 
@@ -175,7 +176,6 @@ PlasmaComponents3.ScrollView {
     }
     readonly property real projectNumbersWidth: widest(projects.map(projectNumbers))
     readonly property real projectDoneWidth: Math.min(gu * 7, widest(projects.map(doneText)))   // (1 when none got any)
-    readonly property real modelNumbersWidth: widest(models.map(modelNumbers))
 
     // 412.3M, 8.1k
     function tokens(n) {
@@ -184,7 +184,8 @@ PlasmaComponents3.ScrollView {
 
     // A number of the tiles, in its own unit
     function shown(value, kind) {
-        return kind === "time" ? hours(value) : kind === "money" ? money(value) : kind === "tokens" ? tokens(value) : count(value)
+        return kind === "time" ? hours(value) : kind === "money" ? money(value) : kind === "tokens" ? tokens(value)
+             : kind === "points" ? pointsText(value) : count(value)
     }
 
     // ---------------------------------------------------------------- your plan's limits over time
@@ -358,6 +359,11 @@ PlasmaComponents3.ScrollView {
         const p = String(day).split("-").map(Number)
         return new Date(p[0], p[1] - 1, p[2])
     }
+    // How many days before today's a day is (the Day's step back to it)
+    function daysBack(day) {
+        const t = new Date(root.now)
+        return Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()) - date(day)) / 86400000)
+    }
 
     function periodText() {
         if (!recap || recap.span !== span)
@@ -493,7 +499,8 @@ PlasmaComponents3.ScrollView {
         if (weeks)
             return i18n("Click a week for its chats.")
         if (!hover || !days[hover.row])
-            return i18n("Point at a day to see what went on then; click it for its chats.")
+            return recap && recap.span === "week" ? i18n("Point at a day to see what went on then; click it for its chats, or its name for that day alone.")
+                                                  : i18n("Point at a day to see what went on then; click it for its chats.")
         const d = days[hover.row]
         const when = Qt.locale().toString(date(d.day), "ddd d MMM") + ", " + root.clockText(hover.ms) + ": "
         if (hover.ms > root.now)
@@ -706,11 +713,121 @@ PlasmaComponents3.ScrollView {
         return t.key === "cold" ? i18n("%1% of the amount at API prices", t.pct || 0) : i18n("%1% of the usage shown", t.pct || 0)
     }
     function tipShareTip(t) {
-        return t.key === "cold"
+        return (t.key === "cold"
              ? i18n("Writing the chats' context again cost %1 more than reading it from the cache. The cache keeps a chat's context an hour after its last reply.",
                     money(spend && spend.cold ? spend.cold.cost : 0))
-             : i18n("Of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. A request can count for several of these.")
+             : i18n("Of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. A request can count for several of these."))
+             + (t.before === null || t.before === undefined ? uncomparedText() : beforeText(t.before, "points"))
     }
+    // Under a tip's share, how it moved: "was 64%" (none: not compared)
+    function tipWas(t) {
+        return t.pct === null || t.pct === undefined || t.before === null || t.before === undefined ? ""
+             : i18nc("a share in the period before", "was %1", t.before + "%")
+    }
+    // The limits tip, once every chat it names keeps going, has nothing left to offer
+    readonly property var tipsShown: tips.filter(t => !(t.key === "limits" && t.chats && t.chats.length && !t.more
+                                                        && t.chats.every(c => !!root.keptChat(c.chatId, c.host || ""))))
+
+    // ---------------------------------------------------------------- what a tip offers a chat
+    // (the same rules as VS Code's src/shared/week.ts tipChatAct): the chat
+    // as the chat list has it now ({row, group}: a row, else a recent chat),
+    // or null
+    function listedOf(c) {
+        if (!c.chatId)
+            return null
+        let recent = null
+        for (const g of root.hostGroups(c.host || "")) {
+            const s = g.sessions.find(x => x.chatId === c.chatId || x.sessionId === c.chatId)
+            if (s)
+                return { row: s, group: g }
+            const r = (g.recent || []).concat(g.starred || []).find(x => x.sessionId === c.chatId)
+            if (r && !recent)
+                recent = { row: r, group: g }
+        }
+        return recent
+    }
+    // Stop, for an idle chat with a process of its own (the tip about chats
+    // that ran long: one at work is stopped from its row); Keep going, for one
+    // at work or one a usage limit stopped that goes on once it resets (the
+    // tip about limits; "kept": it keeps going already); else "" (its name
+    // opens it). Watched with the status: root.status, root.keptChats.
+    function tipChatAct(key, c) {
+        const host = c.host || ""
+        if (key === "limits" && root.keptChat(c.chatId, host))
+            return "kept"
+        const found = listedOf(c)
+        const s = found ? found.row : null
+        if (!s)
+            return ""
+        if (key === "long_running")
+            return s.state === "idle" && s.pid !== undefined && s.pid !== null
+                   && (s.kind === "interactive" || (s.kind === "bg" && (!host || !!s.stopCommand))) ? "stop" : ""
+        if (key === "limits")
+            return root.goOnAt(s) > 0 ? "keepAtReset" : root.canKeepGoing(s, host) ? "keep" : ""
+        return ""
+    }
+    function tipChatDo(key, c) {
+        const host = c.host || ""
+        const found = listedOf(c)
+        if (!found)
+            return
+        const act = tipChatAct(key, c)
+        if (act === "keepAtReset")
+            root.queueContinue(found.row, host, found.group.title, true)
+        else if (act === "keep")
+            root.keepGoing(found.row, true, host)
+        else if (act === "stop")   // (as its row's Stop, for an idle chat: one that got busy since is left alone)
+            stopIdle(found.row, host)
+    }
+    function stopIdle(s, host) {
+        if (host && s.kind === "interactive")
+            root.remoteEnd(host, s.sessionId, s.profileDir, false, "")
+        else if (host)
+            root.remoteStop(host, s.stopCommand)
+        else
+            root.stopSession(s.sessionId, s.profileDir, false, "")
+    }
+    // The question before Stop, in its row's words (SessionRow.qml)
+    function stopAskText(c) {
+        const found = listedOf(c)
+        const s = found ? found.row : {}
+        return s.kind === "interactive" && s.entrypoint === "claude-vscode"
+             ? i18n("Stop “%1”? It's idle, so nothing is interrupted: its Claude process in VS Code quits. Its tab keeps the chat and goes on with your next message.", c.name)
+             : s.kind === "interactive"
+             ? i18n("Stop “%1”? It's idle, so nothing is interrupted: Claude quits and its terminal stays open. The chat is kept; reopen it from Recent chats.", c.name)
+             : i18n("Stop “%1”? It's finished, so this only shuts down its idle process. The conversation is kept.", c.name)
+    }
+    property string stopAsked: ""   // the chat (host|id) whose Stop is asked under a tip
+
+    // ---------------------------------------------------------------- where the usage went
+    // (week.py usage_mix: by subagents, over 150k of context, by effort
+    // level, weighed as /usage weighs it; the same words as VS Code's
+    // src/shared/week.ts)
+    readonly property var usageMix: recap && recap.usageMix ? recap.usageMix : []
+    function mixLabel(key) {
+        return key === "subagents" ? i18n("Subagents") : key === "long_context" ? i18n("Context over 150k")
+             : key === "effort:" ? i18n("Effort not noted") : i18nc("a reasoning effort level, as Claude Code names it: Effort xhigh", "Effort %1", key.slice(7))
+    }
+    function mixNumbers(p) {
+        return i18nc("a share of the usage", "%1 of usage", pointsText(p.pct))
+             + (p.before === null || p.before === undefined ? "" : " · " + i18nc("a share in the period before", "was %1", pointsText(p.before)))
+    }
+    function mixTip(p) {
+        const what = p.key === "subagents"
+            ? i18n("Subagents' requests took %1 of the usage of these days, the main chats' %2.", pointsText(p.pct), pointsText(100 - p.pct))
+            : p.key === "long_context"
+            ? i18n("Requests that carried over 150k tokens of context took %1 of the usage: a long chat sends all of its context with each request.", pointsText(p.pct))
+            : p.key === "effort:"
+            ? i18n("%1 of the usage has no effort level noted: chats deleted before Talpy Den kept their levels (only max effort is known of them), and models with no effort setting.", pointsText(p.pct))
+            : i18n("Requests at %1 effort took %2 of the usage.", p.key.slice(7), pointsText(p.pct))
+        return what + "\n" + i18n("Weighed as Claude Code's /usage weighs it toward your plan's limits: a request's tokens by kind, times its model's weight.")
+             + (p.before === null || p.before === undefined ? uncomparedText() : beforeText(p.before, "points"))
+    }
+    // A model's row: its amount and share, and its share the period before
+    function modelRowText(m) {
+        return modelNumbers(m) + (m.before === null || m.before === undefined ? "" : " · " + i18nc("a share in the period before", "was %1", shareText(m.before)))
+    }
+    readonly property real usageNumbersWidth: widest(models.map(modelRowText).concat(usageMix.map(mixNumbers)))
 
     FontMetrics {
         id: smallMetrics
@@ -1092,12 +1209,17 @@ PlasmaComponents3.ScrollView {
                             elide: Text.ElideRight
                             font.pointSize: Kirigami.Theme.smallFont.pointSize
                             font.bold: dayRow.today || dayRow.open
+                            font.underline: dayLabel.opensDay && dayLabel.containsMouse
                             opacity: dayRow.today || dayRow.open ? 0.9 : 0.7
 
                             MouseArea {
+                                id: dayLabel
+                                // (Week: its name opens that day alone, a Day; its row unfolds its chats)
+                                readonly property bool opensDay: !!view.recap && view.recap.span === "week"
                                 anchors.fill: parent
-                                cursorShape: dayRow.day.chats.length ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: dayRow.toggle()
+                                hoverEnabled: opensDay
+                                cursorShape: opensDay || dayRow.day.chats.length ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: opensDay ? root.showRecapDay(view.daysBack(dayRow.day.day)) : dayRow.toggle()
                             }
                         }
                         // (Overall: the 7 days' time, yours and Claude's, against the busiest 7 days)
@@ -1326,6 +1448,45 @@ PlasmaComponents3.ScrollView {
             function place(ms, width) {
                 return (ms - t0) / span * width
             }
+            // The whole hours on its axis: every 1, 2, 3, 4, 6 or 12 hours, at most 6 of them
+            // (t0 and t1 can be a step apart while the lanes change: none then, not a tick per hour since 1970)
+            readonly property var ticks: {
+                const hour = 3600000
+                if (!(t1 > t0 && t0 > 0) || t1 - t0 > 2 * 86400000)
+                    return []
+                const step = [1, 2, 3, 4, 6, 12].find(s => span / hour / s <= 6) || 24
+                const out = []
+                const first = new Date(t0)
+                first.setMinutes(0, 0, 0)
+                for (let t = first.getTime() + hour; t < t1; t += hour)
+                    if (new Date(t).getHours() % step === 0)
+                        out.push(t)
+                return out
+            }
+            // What went on at the moment the mouse points at, chat by chat (lanesRows)
+            function hoverText() {
+                if (!lanesRows.pointing)
+                    return i18n("Point at the chats to see what went on then; click a name to open its chat.")
+                const ms = lanesRows.hoverMs
+                const px = span / lanesRows.trackWidth   // (a mark a pixel or two wide is hard to hit)
+                const near = p => (p[0] <= ms && ms < p[1]) || (p[1] - p[0] < 3 * px && p[0] - 2 * px <= ms && ms < p[1] + 2 * px)
+                const of = kind => view.lanes.filter(l => l.parts.some(p => p[2] === kind && near(p)))
+                                             .map(l => (l.host ? root.hostLabel(l.host) + ": " : "") + l.name)
+                const worked = of("w"), waited = of("y"), paused = of("p")
+                const parts = []
+                const limit = (day.limits || []).find(t => Math.abs(t - ms) <= 3 * px)
+                if (limit !== undefined)
+                    parts.push(i18n("a usage limit stopped a chat at %1", root.clockText(limit)))
+                if (worked.length)
+                    parts.push(i18n("Claude worked in %1", worked.join(", ")))
+                if (waited.length)
+                    parts.push(i18n("waited for you in %1", waited.join(", ")))
+                if (paused.length)
+                    parts.push(i18n("paused in %1", paused.join(", ")))
+                if ((day.you || []).some(near))
+                    parts.push(i18n("you were at it"))
+                return root.clockText(ms) + ": " + (parts.length ? parts.join(" · ") : i18n("nothing went on"))
+            }
             function color(kind) {
                 return kind === "w" ? Kirigami.Theme.focusColor : kind === "y" ? Kirigami.Theme.neutralTextColor
                                                                               : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
@@ -1360,6 +1521,22 @@ PlasmaComponents3.ScrollView {
                     }
                 }
             }
+            // The day's own row and the chats', on the same hours: the mouse's
+            // moment (lanesRows.hoverMs: a line across them, the readout under them)
+            ColumnLayout {
+                id: lanesRows
+                Layout.fillWidth: true
+                spacing: lanesBox.spacing
+                readonly property real trackX: lanesBox.nameWidth + Kirigami.Units.smallSpacing
+                readonly property real trackWidth: Math.max(1, width - lanesBox.nameWidth - lanesBox.numbersWidth - 2 * Kirigami.Units.smallSpacing)
+                readonly property real hoverX: lanesHover.hovered ? lanesHover.point.position.x - trackX : -1
+                readonly property bool pointing: hoverX >= 0 && hoverX <= trackWidth
+                readonly property real hoverMs: pointing ? lanesBox.t0 + hoverX / trackWidth * lanesBox.span : 0
+
+                HoverHandler {
+                    id: lanesHover
+                }
+
             // The day's own row: when you were at it (the thin bar on top), when
             // Claude worked (darker where several chats did), when it waited
             // for you, and where a usage limit stopped a chat
@@ -1385,6 +1562,16 @@ PlasmaComponents3.ScrollView {
                         anchors.fill: parent
                         radius: 3
                         color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
+                    }
+                    Repeater {   // (the hours on the axis)
+                        model: lanesBox.ticks.length
+                        delegate: Rectangle {
+                            required property int index
+                            x: Math.round(lanesBox.place(lanesBox.ticks[index] || 0, dayTrack.width))
+                            width: 1
+                            height: dayTrack.height
+                            color: view.grid
+                        }
                     }
                     Repeater {
                         model: (lanesBox.day.wait || []).length
@@ -1435,6 +1622,14 @@ PlasmaComponents3.ScrollView {
                             color: view.limitColor
                         }
                     }
+                    Rectangle {   // where the mouse points
+                        visible: lanesRows.pointing
+                        x: Math.round(lanesRows.hoverX)
+                        width: 1
+                        height: dayTrack.height
+                        color: view.ink
+                        opacity: 0.5
+                    }
                     PlasmaCore.ToolTipArea {
                         textFormat: Text.PlainText
                         anchors.fill: parent
@@ -1481,6 +1676,16 @@ PlasmaComponents3.ScrollView {
                             radius: 3
                             color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
                         }
+                        Repeater {   // (the hours on the axis)
+                            model: lanesBox.ticks.length
+                            delegate: Rectangle {
+                                required property int index
+                                x: Math.round(lanesBox.place(lanesBox.ticks[index] || 0, laneTrack.width))
+                                width: 1
+                                height: laneTrack.height
+                                color: view.grid
+                            }
+                        }
                         Repeater {
                             model: laneRow.lane.parts.length
                             delegate: Rectangle {
@@ -1492,6 +1697,14 @@ PlasmaComponents3.ScrollView {
                                 radius: 2
                                 color: lanesBox.color(part[2])
                             }
+                        }
+                        Rectangle {   // where the mouse points
+                            visible: lanesRows.pointing
+                            x: Math.round(lanesRows.hoverX)
+                            width: 1
+                            height: laneTrack.height
+                            color: view.ink
+                            opacity: 0.5
                         }
                         PlasmaCore.ToolTipArea {
                             textFormat: Text.PlainText
@@ -1512,24 +1725,50 @@ PlasmaComponents3.ScrollView {
                     }
                 }
             }
-            RowLayout {
+            }
+            // The axis: its whole hours (none in between: its first and last times)
+            Item {
+                id: laneAxis
+                Layout.fillWidth: true
                 Layout.leftMargin: lanesBox.nameWidth + Kirigami.Units.smallSpacing
                 Layout.rightMargin: lanesBox.numbersWidth + Kirigami.Units.smallSpacing
-                PlasmaComponents3.Label {
-                    textFormat: Text.PlainText
-                    text: root.clockText(lanesBox.t0)
-                    font: Kirigami.Theme.smallFont
-                    opacity: 0.6
+                Layout.preferredHeight: smallMetrics.height + 4
+                readonly property var marks: lanesBox.ticks.length ? lanesBox.ticks : [lanesBox.t0, lanesBox.t1]
+
+                Repeater {
+                    model: laneAxis.marks.length
+                    delegate: Item {
+                        required property int index
+                        readonly property real at: lanesBox.ticks.length ? lanesBox.place(laneAxis.marks[index] || 0, laneAxis.width)
+                                                                         : index * laneAxis.width
+                        Rectangle {
+                            visible: lanesBox.ticks.length > 0
+                            x: Math.round(parent.at)
+                            width: 1
+                            height: 3
+                            color: view.ink
+                            opacity: 0.4
+                        }
+                        Text {
+                            textFormat: Text.PlainText
+                            y: 4
+                            x: Math.max(0, Math.min(laneAxis.width - implicitWidth, parent.at - implicitWidth / 2))
+                            text: root.clockText(laneAxis.marks[index] || 0)
+                            font: Kirigami.Theme.smallFont
+                            color: view.ink
+                            opacity: 0.6
+                        }
+                    }
                 }
-                Item {
-                    Layout.fillWidth: true
-                }
-                PlasmaComponents3.Label {
-                    textFormat: Text.PlainText
-                    text: root.clockText(lanesBox.t1)
-                    font: Kirigami.Theme.smallFont
-                    opacity: 0.6
-                }
+            }
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                Layout.leftMargin: lanesBox.nameWidth + Kirigami.Units.smallSpacing
+                elide: Text.ElideRight
+                font: Kirigami.Theme.smallFont
+                opacity: lanesRows.pointing ? 0.9 : 0.5
+                text: lanesBox.hoverText()
             }
         }
 
@@ -1850,14 +2089,17 @@ PlasmaComponents3.ScrollView {
             }
         }
 
-        // What it'd cost on the API, by model
+        // Where the usage went: by model (its amount at API prices), then
+        // weighed as Claude Code's /usage weighs it toward your plan's limits
+        // (subagents, over 150k of context, effort levels: week.py
+        // usage_mix), each with its share the period before
         ColumnLayout {
             Layout.fillWidth: true
-            visible: view.hasData && view.models.length > 0
+            visible: view.hasData && (view.models.length > 0 || view.usageMix.length > 0)
             spacing: Math.round(view.gu * 0.2)
 
             SectionTitle {
-                text: i18n("By model")
+                text: i18n("Where the usage went")
             }
             Repeater {
                 model: view.models.length
@@ -1889,21 +2131,77 @@ PlasmaComponents3.ScrollView {
                     }
                     PlasmaComponents3.Label {
                         textFormat: Text.PlainText
-                        Layout.preferredWidth: view.modelNumbersWidth
+                        Layout.preferredWidth: view.usageNumbersWidth
                         horizontalAlignment: Text.AlignRight
-                        text: view.modelNumbers(modelRow.entry)
+                        text: view.modelRowText(modelRow.entry)
                         font: Kirigami.Theme.smallFont
                         opacity: 0.8
 
-                        // (only a guessed price's row says so: made only for it)
-                        Loader {
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
                             anchors.fill: parent
-                            active: !!modelRow.entry.guessed
-                            sourceComponent: PlasmaCore.ToolTipArea {
-                                textFormat: Text.PlainText
-                                mainText: modelRow.entry.model
-                                subText: view.guessedModelTip(modelRow.entry)
-                            }
+                            mainText: modelRow.entry.model
+                            subText: i18n("%1 at API prices, %2 of the amount of these days · %3", view.money(modelRow.entry.cost), view.shareText(modelRow.entry.share),
+                                          i18np("%1 request", "%1 requests", modelRow.entry.requests))
+                                     + (modelRow.entry.guessed ? "\n" + view.guessedModelTip(modelRow.entry) : "")
+                                     + (modelRow.entry.before === null || modelRow.entry.before === undefined ? view.uncomparedText()
+                                        : view.beforeText(100 * modelRow.entry.before, "points"))
+                        }
+                    }
+                }
+            }
+            // (then weighed as your plan's limits count it: a request's tokens by kind, times its model's weight)
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                Layout.topMargin: Math.round(view.gu * 0.3)
+                visible: view.usageMix.length > 0
+                text: i18n("As your plan's limits count it (Claude Code's /usage):")
+                elide: Text.ElideRight
+                font: Kirigami.Theme.smallFont
+                opacity: 0.6
+            }
+            Repeater {
+                model: view.usageMix.length
+                delegate: RowLayout {
+                    id: mixRow
+                    required property int index
+                    readonly property var part: view.usageMix[index] || ({ key: "", pct: 0, before: null })
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.preferredWidth: view.gu * 7
+                        text: view.mixLabel(mixRow.part.key)
+                        elide: Text.ElideRight
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.round(view.gu * 0.4)
+                        radius: height / 2
+                        color: view.track
+
+                        Rectangle {
+                            width: Math.max(mixRow.part.pct > 0 ? 2 : 0, parent.width * Math.min(1, mixRow.part.pct / 100))
+                            height: parent.height
+                            radius: height / 2
+                            color: view.youColor
+                        }
+                    }
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.preferredWidth: view.usageNumbersWidth
+                        horizontalAlignment: Text.AlignRight
+                        text: view.mixNumbers(mixRow.part)
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.8
+
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: view.mixLabel(mixRow.part.key)
+                            subText: view.mixTip(mixRow.part)
                         }
                     }
                 }
@@ -1911,8 +2209,11 @@ PlasmaComponents3.ScrollView {
         }
 
         // What would use less of your plan (Claude Code's /usage rules, coming
-        // back to chats whose cache had expired, waits, limits); too little
-        // in these days: a dim line instead (week.py: tooLittle)
+        // back to chats whose cache had expired, waits, limits), each with
+        // what acts on it: a command to copy, the chats it names (a name
+        // opens its chat; Stop, Keep going where the chat list has them), the
+        // Permissions tab; too little in these days: a dim line instead
+        // (week.py: tooLittle)
         ColumnLayout {
             id: tipsBox
             Layout.fillWidth: true
@@ -1920,14 +2221,17 @@ PlasmaComponents3.ScrollView {
             spacing: Kirigami.Units.smallSpacing
             // (the commands in one column as wide as the widest, "Copied"
             // too: the shares before them line up; monospace, so the longest)
-            readonly property real commandWidth: view.tips.some(t => t.command) ? commandProbe.implicitWidth : 0
+            readonly property real commandWidth: view.tipsShown.some(t => t.command) ? commandProbe.implicitWidth : 0
 
             PlasmaComponents3.ToolButton {
                 id: commandProbe
                 visible: false
                 font.family: "monospace"
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
-                text: view.tips.map(t => t.command || "").concat([i18n("Copied")]).reduce((a, b) => b.length > a.length ? b : a, "")
+                // (the Permissions tab's button has its icon)
+                icon.name: view.tipsShown.some(t => t.key === "waits") ? Icons.plasma.permissions : ""
+                text: view.tipsShown.map(t => t.key === "waits" ? i18n("Permissions") : t.command || "").concat([i18n("Copied")])
+                          .reduce((a, b) => b.length > a.length ? b : a, "")
             }
             SectionTitle {
                 text: i18n("What could use less of your plan")
@@ -1935,18 +2239,19 @@ PlasmaComponents3.ScrollView {
             PlasmaComponents3.Label {
                 textFormat: Text.PlainText
                 Layout.fillWidth: true
-                visible: view.tips.length === 0
+                visible: view.tipsShown.length === 0
                 wrapMode: Text.Wrap
                 opacity: 0.7
                 text: view.recap && view.recap.tooLittle ? i18n("Too little here to go on: tips need 20 prompts or an hour of Claude's work.")
                                                          : i18n("Nothing stands out: no habit takes a tenth of the usage shown.")
             }
             Repeater {
-                model: view.tips.length
+                model: view.tipsShown.length
                 delegate: RowLayout {
                     id: tipRow
                     required property int index
-                    readonly property var tip: view.tips[index] || view.emptyTip
+                    readonly property var tip: view.tipsShown[index] || view.emptyTip
+                    readonly property var chats: tip.chats || []
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.smallSpacing
 
@@ -1982,30 +2287,147 @@ PlasmaComponents3.ScrollView {
                             font: Kirigami.Theme.smallFont
                             opacity: 0.7
                         }
+                        // the chats it names: a name opens its chat; Stop or
+                        // Keep going where the chat list offers it now
+                        Repeater {
+                            model: tipRow.chats.length
+                            delegate: ColumnLayout {
+                                id: tipChat
+                                required property int index
+                                readonly property var chat: tipRow.chats[index] || view.emptyChat
+                                readonly property string key: (chat.host || "") + "|" + chat.chatId
+                                readonly property string act: view.tipChatAct(tipRow.tip.key, chat)
+                                Layout.fillWidth: true
+                                spacing: 0
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Kirigami.Units.smallSpacing
+
+                                    WeekChatLine {
+                                        chat: tipChat.chat
+                                        where: ""
+                                        numbers: tipChat.chat.note || ""
+                                        indent: Kirigami.Units.smallSpacing   // (under the tip, in the small font)
+                                    }
+                                    PlasmaComponents3.ToolButton {
+                                        visible: tipChat.act === "stop" || tipChat.act === "keep" || tipChat.act === "keepAtReset"
+                                        icon.name: tipChat.act === "stop" ? Icons.plasma.stop : Icons.plasma.keepGoing
+                                        text: tipChat.act === "stop" ? i18n("Stop") : i18n("Keep going")
+                                        font: Kirigami.Theme.smallFont
+                                        onClicked: {
+                                            if (tipChat.act === "stop")
+                                                view.stopAsked = view.stopAsked === tipChat.key ? "" : tipChat.key
+                                            else
+                                                view.tipChatDo(tipRow.tip.key, tipChat.chat)
+                                        }
+
+                                        PlasmaCore.ToolTipArea {
+                                            textFormat: Text.PlainText
+                                            anchors.fill: parent
+                                            mainText: tipChat.act === "stop" ? i18n("Stop this chat") : i18n("Keep going until it's done")
+                                            subText: tipChat.act === "stop"
+                                                ? i18n("Asks first. It's idle: Claude quits, and the chat is kept.")
+                                                : tipChat.act === "keepAtReset"
+                                                ? i18n("It goes on by itself a minute after the limit resets, in the background, and again after each later limit, until a turn of it ends by itself.")
+                                                : i18n("When a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, and again after each later one, until a turn of it ends by itself.")
+                                        }
+                                    }
+                                    PlasmaComponents3.Label {
+                                        textFormat: Text.PlainText
+                                        visible: tipChat.act === "kept"
+                                        text: i18nc("a chat that goes on by itself after usage limits", "Keeps going")
+                                        font: Kirigami.Theme.smallFont
+                                        opacity: 0.6
+                                    }
+                                }
+                                // Stop it? (made only while it's asked)
+                                Loader {
+                                    active: view.stopAsked === tipChat.key && tipChat.act === "stop"
+                                    visible: active
+                                    Layout.fillWidth: true
+                                    sourceComponent: Kirigami.InlineMessage {
+                                        visible: true   // (an InlineMessage is hidden till told: the Loader shows it only while it's wanted)
+                                        type: Kirigami.MessageType.Warning
+                                        text: "<span>" + root.escapeHtml(view.stopAskText(tipChat.chat)) + "</span>"
+                                        actions: [
+                                            Kirigami.Action {
+                                                text: i18n("Stop")
+                                                icon.name: Icons.plasma.stop
+                                                onTriggered: {
+                                                    view.stopAsked = ""
+                                                    view.tipChatDo(tipRow.tip.key, tipChat.chat)
+                                                }
+                                            },
+                                            Kirigami.Action {
+                                                text: i18n("Cancel")
+                                                onTriggered: view.stopAsked = ""
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            visible: (tipRow.tip.more || 0) > 0
+                            text: i18np("and %1 more chat", "and %1 more chats", tipRow.tip.more || 0)
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.6
+                        }
                     }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
+                    ColumnLayout {
                         Layout.alignment: Qt.AlignTop
                         visible: tipRow.tip.pct !== null && tipRow.tip.pct !== undefined
-                        text: view.tipShareText(tipRow.tip)
-                        font: Kirigami.Theme.smallFont
-                        opacity: 0.8
+                        spacing: 0
 
-                        PlasmaCore.ToolTipArea {
+                        PlasmaComponents3.Label {
                             textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: view.tipShareMain(tipRow.tip)
-                            subText: view.tipShareTip(tipRow.tip)
+                            Layout.alignment: Qt.AlignRight
+                            text: view.tipShareText(tipRow.tip)
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.8
+
+                            PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: view.tipShareMain(tipRow.tip)
+                                subText: view.tipShareTip(tipRow.tip)
+                            }
+                        }
+                        PlasmaComponents3.Label {   // (how it moved)
+                            textFormat: Text.PlainText
+                            Layout.alignment: Qt.AlignRight
+                            visible: text !== ""
+                            text: view.tipWas(tipRow.tip)
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.6
                         }
                     }
                     Item {   // (no command: its room, so the share stands where the others do)
                         visible: tipRow.tip.command === "" && tipsBox.commandWidth > 0
                         Layout.preferredWidth: tipsBox.commandWidth
                     }
+                    PlasmaComponents3.ToolButton {   // (Claude waited for your answers: the Permissions tab)
+                        Layout.alignment: Qt.AlignTop
+                        Layout.preferredWidth: tipsBox.commandWidth
+                        visible: tipRow.tip.key === "waits"
+                        icon.name: Icons.plasma.permissions
+                        text: i18n("Permissions")
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        onClicked: root.openPermissions()
+
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: i18n("Open the Permissions tab")
+                            subText: i18n("The permission prompts you answered, and the rules that would let the same go without asking.")
+                        }
+                    }
                     PlasmaComponents3.ToolButton {
                         Layout.alignment: Qt.AlignTop
                         Layout.preferredWidth: tipsBox.commandWidth
-                        visible: tipRow.tip.command !== ""
+                        visible: tipRow.tip.command !== "" && tipRow.tip.key !== "waits"
                         text: view.copied === tipRow.tip.command && tipRow.tip.command ? i18n("Copied") : tipRow.tip.command
                         font.family: "monospace"
                         font.pointSize: Kirigami.Theme.smallFont.pointSize

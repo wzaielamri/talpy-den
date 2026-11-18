@@ -2457,6 +2457,65 @@ body.vscode-high-contrast .top.scrolled {
   flex: none;
 }
 
+/* (a tip's share, and how it moved under it) */
+.week-tip-pct > span {
+  display: block;
+}
+
+.week-tip .chip .icon {
+  vertical-align: -2px;
+}
+
+/* The chats a tip names: name | what the tip says of it, then Stop or Keep going */
+.week-tip-chats {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 6px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.week-tip-chat {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.week-tip-chat > .week-chat {
+  grid-column: 1;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  column-gap: 8px;
+  padding: 1px 4px;
+  font-size: 0.92em;
+}
+
+.week-tip-chat > .chip,
+.week-tip-chat > span {
+  grid-column: 2;
+}
+
+/* Where the usage went: then as your plan's limits count it */
+.week-usage-how {
+  margin: 6px 0 2px;
+}
+
+/* A day's name in the Week: that day alone */
+.week-day-open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.week-day-open:hover {
+  text-decoration: underline;
+}
+
 .week-foot {
   white-space: pre-line;
 }
@@ -5737,6 +5796,40 @@ button.pane-side-from:hover {
 .week-lanes-times > span:nth-child(2) {
   display: flex;
   justify-content: space-between;
+}
+
+/* (its whole hours, faint through the lanes; the mouse's moment, across them all) */
+.week-lane i.lane-hour,
+.week-lane i.lane-cross {
+  width: 1px;
+  border-radius: 0;
+  pointer-events: none;
+}
+
+.week-lane i.lane-hour {
+  background: color-mix(in srgb, var(--cs-fg) 12%, transparent);
+}
+
+.week-lane i.lane-cross {
+  z-index: 1;
+  background: var(--cs-fg);
+  opacity: 0.55;
+}
+
+.week-lanes-times > span.week-lanes-hours {
+  position: relative;
+  display: block;
+  height: 1.4em;
+}
+
+.week-lanes-hours > span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.week-lanes + .week-readout {
+  padding-left: calc(12em + 6px);
 }
 
 /* The Recap's card to share (WeekView.tsx ShareCard) */

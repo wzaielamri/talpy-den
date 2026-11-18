@@ -2,7 +2,7 @@
 // Claude Code) and for the webview's dev harness. Nothing here is real: the
 // accounts, folders, hosts and chats are invented, times are relative to now.
 
-import type { HostProjects, LimitAccount, LimitHistory, LimitPeriod, ProjectsData, WeekLane, WeekNumbers, Agent, ChatStats, Group, HostState, PermsData, Session, Status, UsageStats, ViewState, WeekChat, WeekDay, WeekRecap, WeekSpan } from "./types";
+import type { HostProjects, LimitAccount, LimitHistory, LimitPeriod, ProjectsData, WeekLane, WeekNumbers, Agent, ChatStats, Group, HostState, PermsData, Session, Status, UsageStats, ViewState, WeekChat, WeekDay, WeekRecap, WeekSpan, WeekTipChat } from "./types";
 
 const MIN = 60000;
 const HOUR = 60 * MIN;
@@ -423,6 +423,11 @@ const DEMO_CHATS: WeekChat[] = [
     review: { editedAt: Date.now() - 30 * MIN, tests: null }, weekShare: [{ account: "ba9876543210", pct: 7 }] },
 ];
 
+// A chat a Recap tip names (this computer's, the demo's chat list has it)
+function tipChat(chatId: string, name: string, cwd: string, note: string): WeekTipChat {
+  return { name, chatId, host: "", profileDir: ".claude", folder: cwd.replace("/home/alice", "~"), cwd, note };
+}
+
 // The Recap tab's recap of made-up days: mornings and afternoons of work, a
 // second chat at once now and then, one long wait for your answer, two
 // usage limits, the rules the permission prompts you answered ask for
@@ -566,10 +571,19 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
         accounts: ["0123456789ab"], weekShare: [{ account: "0123456789ab", pct: 4 }] },
     ],
     models: [
-      { model: "Opus 5.5", cost: cost * 0.88, tokens: 560_000_000, requests: 2750, share: 0.88 },
-      { model: "Sonnet 5.5", cost: cost * 0.07, tokens: 35_000_000, requests: 410, share: 0.07 },
+      { model: "Opus 5.5", cost: cost * 0.88, tokens: 560_000_000, requests: 2750, share: 0.88, before: back >= 3 ? null : 0.91 },
+      { model: "Sonnet 5.5", cost: cost * 0.07, tokens: 35_000_000, requests: 410, share: 0.07, before: back >= 3 ? null : 0.09 },
       // (a model newer than the price list: priced as its family's newest, marked)
-      { model: "Fable 5.3", cost: cost * 0.05, tokens: 30_000_000, requests: 150, share: 0.05, guessed: true, pricedAs: "Fable 5.2" },
+      { model: "Fable 5.3", cost: cost * 0.05, tokens: 30_000_000, requests: 150, share: 0.05, guessed: true, pricedAs: "Fable 5.2",
+        before: back >= 3 ? null : 0 },
+    ],
+    // (Where the usage went, weighed as /usage weighs it: each with its share the week before)
+    usageMix: [
+      { key: "subagents", pct: 31, before: back >= 3 ? null : 24 },
+      { key: "long_context", pct: 41, before: back >= 3 ? null : 52 },
+      { key: "effort:xhigh", pct: 71, before: back >= 3 ? null : 58 },
+      { key: "effort:max", pct: 22, before: back >= 3 ? null : 39 },
+      { key: "effort:medium", pct: 7, before: back >= 3 ? null : 3 },
     ],
     trend: back >= 3 ? [null, null, week(0.5), week(0.75), week(1)] : [week(0.4), week(0.55), week(0.6), week(0.75), week(1)],
     spend: {
@@ -608,13 +622,22 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
           change: "adds Bash(git status *) to permissions.allow in ~/projects/date-parser/.claude/settings.local.json" },
       ],
     },
+    // (the chats the tips act on: the demo's chat list has them, at work, idle or stopped by a limit)
     tips: [
-      { key: "long_context", pct: 41, title: "Start fresh when you switch tasks", detail: "812 requests carried over 150k tokens of context", command: "/clear" },
-      { key: "max_effort", pct: 22, title: "Save max effort for hard tasks", detail: "22% of your usage ran at max effort", command: "/effort xhigh" },
-      { key: "cache_miss", pct: 12, title: "Compact before you step away", detail: "37 requests sent over 100k tokens the cache had let go", command: "/compact" },
-      { key: "cold", pct: 11, title: "Come back within the hour, or start fresh",
-        detail: "you came back to chats after their cache had expired 5 times · most in Release notes for 2.0 (3×)", command: "" },
-      { key: "waits", pct: null, title: "Let Claude go on without asking", detail: "it waited 3h 18m for your answers, 9 times · auto mode, or allow what you always allow", command: "/permissions" },
+      { key: "long_context", pct: 41, before: back >= 3 ? null : 52, title: "Start fresh when you switch tasks",
+        detail: "812 requests carried over 150k tokens of context", command: "/clear",
+        chats: [tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "311 requests"),
+                tipChat("demo-4", "Train the ranking model", "/home/alice/experiments/ranking", "204 requests")], more: 3 },
+      { key: "max_effort", pct: 22, before: back >= 3 ? null : 39, title: "Save max effort for hard tasks", detail: "22% of your usage ran at max effort", command: "/effort xhigh" },
+      { key: "long_running", pct: 18, before: back >= 3 ? null : 11, title: "Stop chats you no longer need", detail: "2 ran for 8 hours or more", command: "",
+        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", "11 hours"),
+                tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "9 hours")], more: 0 },
+      { key: "cold", pct: 11, before: back >= 3 ? null : 6, title: "Come back within the hour, or start fresh",
+        detail: "you came back to chats after their cache had expired 5 times", command: "",
+        chats: [tipChat("demo-2", "Release notes for 2.0", "/home/alice/projects/webapp", "3 times")], more: 1 },
+      { key: "waits", pct: null, before: null, title: "Let Claude go on without asking", detail: "it waited 3h 18m for your answers, 9 times · auto mode, or allow what you always allow", command: "/permissions" },
+      { key: "limits", pct: null, before: null, title: "Let chats go on after a usage limit", detail: "your plan ran out 2 times (5 chats stopped)", command: "",
+        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", "stopped once")], more: 4 },
     ],
     prices: { asOf: "2026-11-18", guessed: ["Fable 5.3"], guessedCost: cost * 0.05 },
     sources: [{ host: "", ok: true, error: "" }, { host: "build-server", ok: true, error: "" }],
