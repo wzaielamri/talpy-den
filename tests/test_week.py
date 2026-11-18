@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import sys
+import statistics
 import tempfile
 import time
 import unittest
@@ -1592,14 +1593,19 @@ class LimitHistoryTests(Home):
         self.assertEqual(now["tokens"]["output"], 1_600_000)
         # what filled a window by API price, each kind at its own price (the bar)
         self.assertEqual(now["costs"], {"fresh": 0, "output": 32, "cacheRead": 0})
-        self.assertEqual(work["now"]["costs"], now["costs"])
+        # what a window holds now: the upper end of every window in these
+        # limits (the week before's $40: this week's $32 is no change of a
+        # third or more), its bar and tokens in the same measure
+        self.assertEqual(work["now"]["fiveHour"], {"cost": 40, "n": 6, "lo": 40, "hi": 40})
+        self.assertEqual(work["now"]["costs"], {"fresh": 0, "output": 40, "cacheRead": 0})
+        self.assertEqual(work["now"]["tokens"]["output"], 2_000_000)
         # (a million cache reads cost ten times what a thousand output tokens do on Opus 5.5)
         self.assertEqual([round(v, 4) for v in week.part_costs("claude-opus-5-5", [10, 1000, 1_000_000, 0, 0, 0, 1])],
                          [0.0, 0.02, 0.2])
         self.assertEqual(work["changes"]["fiveHour"], {"kind": "change", "pct": -20, "against": before["from"]})
         self.assertEqual(work["changes"]["seven_day"]["kind"], "new")  # (the account had no weekly limit the week before)
         self.assertEqual(work["equivalents"]["model"], "Opus 5.5")
-        self.assertEqual(work["equivalents"]["fiveHour"]["output"], 1_600_000)
+        self.assertEqual(work["equivalents"]["fiveHour"]["output"], 2_000_000)
         self.assertEqual(work["equivalents"]["week"]["cacheRead"], int(240 / 0.2 * 1e6))
         self.assertEqual(self.history(self.gid("personal"))["accounts"], [])
 
@@ -1633,10 +1639,11 @@ class LimitHistoryTests(Home):
         self.assertEqual((event["from"], event["to"]), ("Pro", "Max 5×"))
         change = work["changes"]["fiveHour"]
         self.assertEqual((change["kind"], change["factor"], change["at"]), ("limits", 5, s + 160 * MIN))
-        # (no window measured in the new limits yet: the week's before, times 5)
+        # (no window measured in the new limits yet: what one held before, times 5)
         before = work["periods"][-1]
         self.assertEqual(before["era"], 0)
-        self.assertEqual((work["now"]["fiveHour"]["cost"], work["now"]["fiveHour"]["scaled"]), (32 * 5, 5))
+        self.assertEqual((work["now"]["fiveHour"]["cost"], work["now"]["fiveHour"]["scaled"]), (40 * 5, 5))
+        self.assertEqual([e["fiveHour"] and e["fiveHour"]["cost"] for e in work["eras"]], [40, None])  # (the chart's scales)
         self.assertEqual(work["now"]["weeks"]["seven_day"]["cost"], round(before["weeks"]["seven_day"]["cost"] * 5, 2))
 
     def test_too_few_windows_to_compare(self):
@@ -1723,11 +1730,78 @@ class LimitHistoryTests(Home):
         weekly["points"].append([weekly["points"][-1][0] + 3600_000, 40])  # (the week's readings: $240 and $120)
         cs.write_json_atomic(self.cache_root / "usage.json", usage)
         work = self.of(self.history(), "work")
-        self.assertEqual(work["now"]["fiveHour"], {"cost": 32, "n": 3, "lo": 16, "hi": 32, "rough": True})
+        self.assertEqual(work["periods"][1]["fiveHour"], {"cost": 32, "n": 3, "lo": 16, "hi": 32, "rough": True})
         self.assertEqual(work["changes"]["fiveHour"]["kind"], "rough")  # (no ▼ 20% from it)
         self.assertEqual(work["periods"][0]["fiveHour"].get("rough"), None)
-        self.assertEqual(work["now"]["weeks"]["seven_day"], {"cost": 180, "pct": 40, "rough": True, "lo": 120, "hi": 240})
-        self.assertTrue(work["now"]["share"]["rough"])
+        # (what a window holds now rests on the upper end of all six: the $40s)
+        self.assertEqual(work["now"]["fiveHour"], {"cost": 40, "n": 6, "lo": 40, "hi": 40})
+        self.assertEqual(work["now"]["weeks"]["seven_day"], {"cost": 180, "n": 1, "rough": True, "lo": 120, "hi": 240,
+                                                             "how": "readings"})
+        self.assertEqual((work["now"]["share"]["how"], work["now"]["share"]["rough"]), ("sizes", True))
+        # the upper end of many: rough when even its top third lies far apart
+        self.assertEqual(week.upper_size([100, 90, 50, 40, 30, 20]),
+                         {"cost": 90, "n": 6, "lo": 50, "hi": 90, "rough": True})
+        self.assertEqual(week.upper_size([60, 30]), {"cost": 45, "n": 2, "lo": 30, "hi": 60, "rough": True})  # (too few)
+
+    def test_the_size_is_the_upper_end_of_its_windows(self):
+        # Two weeks of 5-hour windows on a plan whose window truly holds $200
+        # (the week $1,000: a full window moves it 20%). Six windows read
+        # about 55% after $110 used here (the plan weighs your mix a little
+        # differently: a few % either way); seven read 65% to 95% after $100,
+        # the plan also counting use this computer didn't see (claude.ai,
+        # another computer); one read 50% after $200 here (a wild one). The middle of what they say is far too low; the
+        # upper end isn't, and one wild window doesn't move it.
+        self.account("work", organizationType="claude_team", seatTier="team_standard")
+        gid = self.gid("work")
+        r2 = self.now + 2 * week.DAY_MS
+        r1 = r2 - week.WEEK_MS
+        clean, unseen = iter([53, 57, 55, 52, 58, 54]), iter([70, 80, 90, 65, 75, 95, 85])
+        plan = ["c", "u", "c", "u", "c", "u", "wild", "c", "u", "c", "u", "c", "u", "u"]
+        starts = [r1 - week.WEEK_MS + 6 * 3600_000 + i * 20 * 3600_000 for i in range(7)] + \
+                 [r1 + 6 * 3600_000 + i * 15 * 3600_000 for i in range(7)]
+        t, past, weekly = Transcript(), [], {r1: [[r1 - week.WEEK_MS + 3600_000, 0]], r2: [[r1 + 3600_000, 0]]}
+        used = {r1: 0.0, r2: 0.0}
+        for kind, s in zip(plan, starts):
+            n, pct = (20, 50) if kind == "wild" else (11, next(clean)) if kind == "c" else (10, next(unseen))
+            read_at = self.window(t, s, n, usd=10.0) + 5 * MIN  # ($10 a reply)
+            past.append({"group": gid, "key": "five_hour", "plan": "Team", "resetsAt": s + 5 * 3600_000,
+                         "points": [[s, 0], [read_at, pct]]})
+            reset = r1 if s < r1 else r2  # (the week's reading moves 20% of the 5-hour window's)
+            weekly[reset] += [[s - MIN, used[reset]], [read_at, used[reset] + 0.2 * pct]]
+            used[reset] += 0.2 * pct
+        # a weekly limit stopped a chat late in the second week (it resets with the week)
+        stop = r1 + 4 * week.DAY_MS + 12 * 3600_000
+        t.prompt(stop - MIN).limit(stop, resets=r2)
+        self.write(t)
+        past.append({"group": gid, "key": "seven_day", "plan": "Team", "resetsAt": r1, "points": weekly[r1]})
+        self.past(*past)
+        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {gid: {
+            "seven_day": {"resetsAt": r2, "points": weekly[r2]}}}})
+        work = self.of(self.history(), "work")
+        sizes = [w["full"] for w in work["windows"]]
+        self.assertEqual(len(sizes), 14)
+        self.assertLess(statistics.median(sizes), 0.9 * 200)   # (the middle: too low)
+        five = work["now"]["fiveHour"]
+        self.assertAlmostEqual(five["cost"] / 200, 1, delta=0.05)
+        self.assertNotIn("rough", five)   # (steady: said as one number)
+        self.assertEqual(five["n"], 14)
+        # the share of the week from the readings themselves, and the week from it
+        share = work["now"]["share"]
+        self.assertEqual((share["how"], share["pct"], share["n"]), ("readings", 20.0, 14))
+        seven = work["now"]["weeks"]["seven_day"]
+        self.assertEqual(seven["how"], "share")
+        self.assertAlmostEqual(seven["cost"], five["cost"] / 0.2, delta=0.01)
+        self.assertAlmostEqual(seven["cost"] / 1000, 1, delta=0.05)
+        # what fills a window, in tokens and by API price: of the same estimate
+        self.assertAlmostEqual(work["now"]["tokens"]["output"] / (five["cost"] / 20 * 1e6), 1, delta=0.001)
+        self.assertAlmostEqual(sum(work["now"]["costs"].values()), five["cost"], delta=0.01)
+        self.assertEqual(work["equivalents"]["week"]["output"], int(seven["cost"] / 20 * 1e6))
+        # how full each week got: the second ran out (a weekly limit's stop), and their 5-hour windows
+        self.assertEqual([(w["from"], w["until"], w["pct"], w["ranOutAt"], w["fiveFull"], w["fiveUsed"], w["now"])
+                          for w in work["weeks"]],
+                         [(r1 - week.WEEK_MS, r1, round(0.2 * 455, 1), None, 0, 7, False), (r1, r2, 100.0, stop, 0, 7, True)])
+        self.assertEqual(work["since"], r1 - week.WEEK_MS + 3600_000)
+        self.assertEqual([e["fiveHour"] for e in work["eras"]], [five])
 
     def test_a_max_plans_model_weeks_count_their_own_model(self):
         self.account("personal", organizationType="claude_max", organizationRateLimitTier="default_claude_max_20x")

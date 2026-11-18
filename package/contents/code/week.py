@@ -3115,6 +3115,81 @@ def window_measure(u, key, w, now_ms, weekly=None, span=(0, float("inf"))):
             "from": lo, "partial": lo - start > DAY_MS, "lo": min(sizes), "hi": max(sizes)}
 
 
+def upper_size(sizes, steady_from=LIMIT_CHANGE_WINDOWS):
+    """A window's size from its measurements (what this computer's usage
+    says each window held, $), or None. Use the plan saw but this computer
+    didn't (claude.ai, your phone, other computers, SSH hosts) only ever
+    makes a measurement smaller, so the middle of them is too low; the size
+    is the middle of the largest third of them, of at least three (one wild
+    measurement alone doesn't make it): {"cost", "n" (measurements), "lo",
+    "hi" (the range it rests on, the largest left out from three on), and
+    "rough" from fewer than steady_from of them, or when that range is
+    over LIMIT_ROUGH_SPREAD: then it's said as that range}."""
+    s = sorted(sizes, reverse=True)
+    if not s:
+        return None
+    top = s[:max(3, -(-len(s) // 3))]
+    hi = top[1] if len(top) >= 3 else top[0]
+    out = {"cost": round(statistics.median(top), 2), "n": len(s), "lo": round(top[-1], 2), "hi": round(hi, 2)}
+    if len(s) < steady_from or hi > top[-1] * LIMIT_ROUGH_SPREAD:
+        out["rough"] = True
+    return out
+
+
+def week_size(weeks):
+    """A weekly window's size from the weeks that measured it (each: the
+    middle of its readings' sizes, window_measure), or None: one week's as
+    it is (its range when its readings were too far apart), several: their
+    upper end (upper_size: use not seen here only makes a week smaller)."""
+    if not weeks:
+        return None
+    if len(weeks) == 1:
+        w = weeks[0]
+        out = {"cost": w["cost"], "n": 1}
+        if w.get("rough"):
+            out.update(rough=True, lo=w["lo"], hi=w["hi"])
+        return out
+    return upper_size([w["cost"] for w in weeks], steady_from=1)
+
+
+def change_from(periods, get, enough, rough):
+    """When the newest steady change from one week to the next begins, in an
+    era's weeks (oldest first), or None: a size is measured from then. A
+    week's upper end moves a tenth or more from one week to the next with
+    no change (unseen use, your mix), so only one of LIMIT_ROUGH_SPREAD or
+    more counts here, both weeks enough and not rough (a change the
+    readings saw makes an era of its own: limit_events)."""
+    have = [p for p in periods if get(p)]
+    for prev, last in reversed(list(zip(have, have[1:]))):
+        a, b = get(prev), get(last)
+        if enough(prev) and enough(last) and not (rough(prev) or rough(last)) and max(a, b) >= min(a, b) * LIMIT_ROUGH_SPREAD:
+            return last["from"]
+    return None
+
+
+def plan_weeks(keys, hits, now_ms):
+    """How full each of an account's weeks (its main weekly window) got, from
+    its kept readings: [{"from", "until" (its reset), "pct" (week_fill; 100
+    when it ran out), "ranOutAt" (when its readings reached 100%, or a usage
+    limit stopped a chat until the week's reset: a weekly limit; else None),
+    "fiveFull", "fiveUsed" (full_windows: the 5-hour windows begun in it),
+    "now" (going on)}], oldest first. hits: the account's chats' usage
+    limits [(ms, reset or None)]."""
+    out = []
+    for w in sorted((keys.get("seven_day") or {}).values(), key=lambda w: w["resetsAt"]):
+        if not w["points"]:
+            continue
+        start = w["resetsAt"] - WEEK_MS
+        pct, ran_out = week_fill(w)
+        if ran_out is None:  # (a 5-hour limit resets within 5 hours: one that holds longer, as the week ends, is the week's)
+            ran_out = next((t for t, r in sorted(hits, key=lambda h: h[0]) if start <= t <= w["resetsAt"] and r and r - t > 5 * HOUR_MS
+                            and abs(r - w["resetsAt"]) <= FULL_RESET_MS), None)
+        five_full, five_used = full_windows(keys, start, w["resetsAt"], hits)
+        out.append({"from": start, "until": w["resetsAt"], "pct": 100.0 if ran_out is not None else round(pct, 1),
+                    "ranOutAt": ran_out, "fiveFull": five_full, "fiveUsed": five_used, "now": w["resetsAt"] > now_ms})
+    return out
+
+
 def steady_readings(pts, used=None):
     """A window's readings [(ms, pct)] without the ones out of line with those
     around them: a run that drops under the reading before it (or jumps over
@@ -3330,7 +3405,7 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
     out["since"] = min(firsts) if firsts else None
     for a in wanted:
         aid, u, keys = a["id"], usage[a["id"]], readings[a["id"]]
-        weekly_windows = sorted(keys.get("seven_day", {}).values(), key=lambda w: w["resetsAt"])
+        week_windows = sorted(keys.get("seven_day", {}).values(), key=lambda w: w["resetsAt"])
         # (a window's plan is the one it was on when last seen: an ended one's
         # when it ended, one going on now's today's, also a week begun before)
         labels = sorted((max(w["points"]) if w["points"] else w["resetsAt"], w["plan"])
@@ -3339,7 +3414,7 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
         eras = limit_eras(events, labels, now_ms, plans.get(aid))
         periods = []
         for k, era in enumerate(eras):  # (a week the limits changed in is two: before and after)
-            for f, t in week_periods([w["resetsAt"] for w in weekly_windows], now_ms, cutoff):
+            for f, t in week_periods([w["resetsAt"] for w in week_windows], now_ms, cutoff):
                 if max(f, era["from"]) < min(t, era["until"]):
                     periods.append({"from": max(f, era["from"]), "until": min(t, era["until"]), "era": k,
                                     "plan": era["plan"], "fiveHour": None, "weeks": {}, "share": None, "fill": None,
@@ -3349,7 +3424,7 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
             return next((p for p in periods if p["era"] == k and p["from"] <= ms < p["until"]), None)
 
         def weekly_at(ms):
-            return next((w for w in weekly_windows if w["resetsAt"] - WEEK_MS <= ms < w["resetsAt"]), None)
+            return next((w for w in week_windows if w["resetsAt"] - WEEK_MS <= ms < w["resetsAt"]), None)
         windows = []
         for k, era in enumerate(eras):
             span = (era["from"], era["until"])
@@ -3372,14 +3447,12 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
                             p["weeks"][key].update(partial=True, countedFrom=m["from"])
                         if m["hi"] > m["lo"] * LIMIT_ROUGH_SPREAD:  # (its readings tell sizes too far apart)
                             p["weeks"][key].update(rough=True, lo=round(m["lo"], 2), hi=round(m["hi"], 2))
+        by_era = {}  # (era: [(its week's start, a 5-hour window's measure)])
         for p in periods:
             fives = p.pop("fives")
+            by_era.setdefault(p["era"], []).extend((p["from"], m) for m in fives)
             if fives:
-                fulls = sorted(m["full"] for m in fives)
-                p["fiveHour"] = {"cost": round(statistics.median(fulls), 2), "n": len(fulls),
-                                 "lo": round(fulls[0], 2), "hi": round(fulls[-1], 2)}
-                if len(fulls) < LIMIT_CHANGE_WINDOWS or fulls[-1] > fulls[0] * LIMIT_ROUGH_SPREAD:
-                    p["fiveHour"]["rough"] = True  # (too few windows, or too far apart, for one number)
+                p["fiveHour"] = upper_size([m["full"] for m in fives])
                 p["fill"] = {"wallMs": int(statistics.median(m["wallMs"] for m in fives)),
                              "workMs": int(statistics.median(m["workMs"] for m in fives))}
                 p["tokens"] = {k: int(statistics.median(m["tokens"][i] for m in fives))
@@ -3409,31 +3482,84 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
                    # (a share of two sizes: as sure as the less sure of them)
                    "share": limit_change(periods, lambda p: p["share"] and p["share"]["pct"], lambda p: True, eras,
                                          share_factor(f5, f7), lambda p: (p["fiveHour"] or {}).get("rough") or rough_week(p))}
-        for key in sorted({k for p in periods for k in p["weeks"]}, key=lambda k: (cs.WINDOW_ORDER + [k]).index(k)):
+        week_keys = sorted({k for p in periods for k in p["weeks"]}, key=lambda k: (cs.WINDOW_ORDER + [k]).index(k))
+        for key in week_keys:
             # (a partial week, one the limit began in, isn't one to compare with)
             changes[key] = limit_change(periods, lambda p, k=key: p["weeks"].get(k) and not p["weeks"][k].get("partial")
                                         and p["weeks"][k]["cost"], lambda p: True, eras, factors.get(key),
                                         lambda p, k=key: rough_week(p, k))
 
-        def newest(get, factor=None, scale=None):
-            """The newest value in the newest limits; none yet there: the one
-            before times the change (marked "scaled"), when the change's
-            readings tell by how much."""
-            v = next((get(p) for p in reversed(periods) if p["era"] == len(eras) - 1 and get(p)), None)
-            if v is not None or len(eras) == 1:
-                return v
-            v = next((get(p) for p in reversed(periods) if get(p)), None)
-            return scale(v, factor) if v is not None and factor and scale else None
+        def holds(k):
+            """What a window held in the era k, from every measurement of it
+            (since the newest steady change from one week to the next, when
+            one is told): the 5-hour window's upper end (upper_size); the
+            share of the week a full one takes from the readings themselves
+            (how far the week's reading moved while it filled: no prices),
+            with LIMIT_CHANGE_WINDOWS of them, else from the two sizes; the
+            week from the 5-hour window and that share, else from its own
+            weeks; and what fills a 5-hour window, in tokens and by API
+            price, in the mix of its measurements: one estimate, so all of
+            them agree."""
+            mine = [p for p in periods if p["era"] == k]
+            since = change_from(mine, lambda p: p["fiveHour"] and p["fiveHour"]["cost"],
+                                lambda p: p["fiveHour"]["n"] >= LIMIT_CHANGE_WINDOWS, lambda p: p["fiveHour"].get("rough"))
+            fives = [m for f, m in by_era.get(k, ()) if since is None or f >= since]
+            five = upper_size([m["full"] for m in fives])
+            measured = [m["share"] for _, m in by_era.get(k, ()) if "share" in m]
+            weeks = {}
+            for key in week_keys:
+                begun = change_from(mine, lambda p, key=key: p["weeks"].get(key) and not p["weeks"][key].get("partial")
+                                    and p["weeks"][key]["cost"], lambda p: True, lambda p, key=key: rough_week(p, key))
+                size = week_size([p["weeks"][key] for p in mine if key in p["weeks"] and (begun is None or p["from"] >= begun)])
+                if size:
+                    weeks[key] = dict(size, how="readings")
+            share = None
+            if len(measured) >= LIMIT_CHANGE_WINDOWS:
+                share = {"pct": round(statistics.median(measured), 1), "how": "readings", "n": len(measured)}
+                if five:  # (the week: that many full 5-hour windows)
+                    times = 100 / share["pct"]
+                    weeks["seven_day"] = {"cost": round(five["cost"] * times, 2), "n": five["n"], "lo": round(five["lo"] * times, 2),
+                                          "hi": round(five["hi"] * times, 2), "how": "share"}
+                    if five.get("rough"):
+                        weeks["seven_day"]["rough"] = True
+            elif five and weeks.get("seven_day"):
+                share = {"pct": round(five["cost"] / weeks["seven_day"]["cost"] * 100, 1), "how": "sizes"}
+                if five.get("rough") or weeks["seven_day"].get("rough"):
+                    share["rough"] = True
+            out = {"fiveHour": five, "share": share, "weeks": weeks, "fill": None, "tokens": None, "costs": None}
+            if five:
+                full = sum(m["full"] for m in fives) or 1.0
+                out["fill"] = {"wallMs": int(statistics.median(m["wallMs"] for m in fives)),
+                               "workMs": int(statistics.median(m["workMs"] for m in fives))}
+                out["tokens"] = {kind: int(five["cost"] * sum(m["tokens"][i] for m in fives) / full)
+                                 for i, kind in enumerate(("fresh", "output", "cacheRead"))}
+                out["costs"] = {kind: round(five["cost"] * sum(m["costs"][i] for m in fives) / full, 4)
+                                for i, kind in enumerate(("fresh", "output", "cacheRead"))}
+            return out
+        held = [holds(k) for k in range(len(eras))]
 
         def scaled(fields):
             return lambda v, f: dict(v, scaled=f, **{k: round(v[k] * f, 2) for k in fields if v.get(k) is not None})
-        now = {"fiveHour": newest(lambda p: p["fiveHour"], f5, scaled(("cost", "lo", "hi"))),
-               "share": newest(lambda p: p["share"], share_factor(f5, f7), scaled(("pct",))),
-               "fill": newest(lambda p: p["fill"]),
-               "tokens": newest(lambda p: p["tokens"], f5, scaled(("fresh", "output", "cacheRead"))),
-               "costs": newest(lambda p: p["costs"], f5, scaled(("fresh", "output", "cacheRead"))),
-               "weeks": {k: newest(lambda p, k=k: p["weeks"].get(k), factors.get(k), scaled(("cost", "lo", "hi")))
-                         for k in changes if k not in ("fiveHour", "share")}}
+
+        def newest(get, factor=None, scale=None):
+            """The newest limits' value; none measured in them yet: the one
+            before times the change (marked "scaled"), when the change's
+            readings tell by how much."""
+            v = get(held[-1])
+            if v is not None or len(eras) == 1:
+                return v
+            v = next((get(h) for h in reversed(held[:-1]) if get(h)), None)
+            return scale(v, factor) if v is not None and factor and scale else None
+        now = {"fiveHour": newest(lambda h: h["fiveHour"], f5, scaled(("cost", "lo", "hi"))),
+               "share": newest(lambda h: h["share"], share_factor(f5, f7), scaled(("pct",))),
+               "fill": held[-1]["fill"],
+               "tokens": newest(lambda h: h["tokens"], f5, scaled(("fresh", "output", "cacheRead"))),
+               "costs": newest(lambda h: h["costs"], f5, scaled(("fresh", "output", "cacheRead"))),
+               "weeks": {}}
+        for key in week_keys:
+            v = newest(lambda h, k=key: h["weeks"].get(k), factors.get(key), scaled(("cost", "lo", "hi")))
+            if v:
+                now["weeks"][key] = v
         model = max(u.models, key=u.models.get) if u.models else None
         prices = PRICES.get(model) if model else None
         equivalents = None
@@ -3444,10 +3570,18 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
             equivalents = {"model": cs.model_label("claude-" + model) or model,
                            "fiveHour": tokens_for(now["fiveHour"]["cost"] if now["fiveHour"] else 0),
                            "week": tokens_for(now["weeks"]["seven_day"]["cost"] if now["weeks"].get("seven_day") else 0)}
+        hits = [(t, (c.get("limitResets") or {}).get(str(t))) for c in chats.values() if aid in c["accounts"] for t in c["limits"]]
+        mine_first = min(t for slots in keys.values() for w in slots.values() for t in w["points"])
         out["accounts"].append({"id": aid, "name": a["name"], "plan": plans.get(aid) or a["plan"], "periods": periods,
                                 "windows": windows, "changes": changes, "now": now, "equivalents": equivalents,
                                 "events": [{"at": e["from"], "factors": e["factors"], "from": eras[i - 1]["plan"],
-                                            "to": e["plan"]} for i, e in enumerate(eras) if i]})
+                                            "to": e["plan"]} for i, e in enumerate(eras) if i],
+                                # (each stretch of the same limits with what a 5-hour window held in it: the chart's scales)
+                                "eras": [{"from": e["from"] if i else mine_first, "until": min(e["until"], now_ms), "plan": e["plan"],
+                                          "fiveHour": held[i]["fiveHour"]} for i, e in enumerate(eras)],
+                                # (how full each week got: does the plan fit you?)
+                                "weeks": plan_weeks(keys, hits, now_ms),
+                                "since": mine_first})
     return out
 
 
@@ -3668,7 +3802,7 @@ def full_windows(keys, lo, hi, hits=()):
             used += 1
         at = next((t for t, p in pts if p >= 100), None)
         if at is None:
-            at = next((t for t, r in sorted(hits) if start <= t <= w["resetsAt"] and r
+            at = next((t for t, r in sorted(hits, key=lambda h: h[0]) if start <= t <= w["resetsAt"] and r
                        and abs(r - w["resetsAt"]) <= FULL_RESET_MS), None)
         if at is not None and lo <= at < hi:
             full += 1
