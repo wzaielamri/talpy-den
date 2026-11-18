@@ -8,7 +8,9 @@
   with the tips' shares and their **Stop** or **Keep going** with the
   commands, whatever their tip has on the right; every row is as tall, and
   the hours read *24h* as the tab's other durations do. In a narrow side bar
-  the button goes under its row, so the names keep their room.
+  the commands' column goes: the shares and the numbers end at the right
+  edge, and a tip's command or a chat's button gets a line of its own, so
+  the tips' words and the names keep their room.
 
 ## 1.22.0
 

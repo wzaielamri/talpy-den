@@ -892,7 +892,8 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
         {tips.map((t, i) => (
           <li key={t.key} class="week-tip">
             <span class="week-tip-icon" title={tipSource(t.key)}><Icon name={I[tipMeaning(t.key)]} /></span>
-            <span class="week-tip-text">
+            {/* (no share: its words take the shares' column too, as Plasma's) */}
+            <span class={"week-tip-text" + (tipShareShown(t, recap.usageMix) ? "" : " wide")}>
               <span class="week-tip-title">{t.title}</span>
               {t.detail ? <span class="small muted">{t.detail}</span> : null}
             </span>

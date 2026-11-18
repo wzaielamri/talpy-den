@@ -49,12 +49,26 @@ PlasmaComponents3.ItemDelegate {
     contentItem: RowLayout {
         spacing: Kirigami.Units.smallSpacing
 
+        // (its name and where in lines of their font's height, whatever their
+        // characters: one a fallback font draws, with taller metrics, made the
+        // line taller, or set its text higher than its numbers)
+        FontMetrics {
+            id: nameMetrics
+            font: line.indent > 0 ? Kirigami.Theme.smallFont : Kirigami.Theme.defaultFont
+        }
+        FontMetrics {
+            id: smallLine
+            font: Kirigami.Theme.smallFont
+        }
+
         PlasmaComponents3.Label {
             textFormat: Text.PlainText
             Layout.fillWidth: true
             text: line.chat.name
             elide: Text.ElideRight
-            font: line.indent > 0 ? Kirigami.Theme.smallFont : Kirigami.Theme.defaultFont
+            font: nameMetrics.font
+            lineHeightMode: Text.FixedHeight
+            lineHeight: Math.ceil(nameMetrics.height)
 
             Loader {   // (why a click does nothing; made only then)
                 anchors.fill: parent
@@ -96,7 +110,9 @@ PlasmaComponents3.ItemDelegate {
             horizontalAlignment: Text.AlignRight
             text: line.where
             elide: Text.ElideMiddle
-            font: Kirigami.Theme.smallFont
+            font: smallLine.font
+            lineHeightMode: Text.FixedHeight
+            lineHeight: Math.ceil(smallLine.height)
             opacity: 0.6
         }
         PlasmaComponents3.Label {

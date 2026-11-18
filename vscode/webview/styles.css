@@ -2477,6 +2477,11 @@ body.vscode-high-contrast .top.scrolled {
   min-width: 0;
 }
 
+/* (a tip with no share: its words take the shares' column too) */
+.week-tip-text.wide {
+  grid-column: 2 / 4;
+}
+
 /* (a tip's share, and how it moved under it) */
 .week-tip-pct > span {
   display: block;
@@ -2545,20 +2550,19 @@ body.vscode-high-contrast .top.scrolled {
   padding-left: 4px;
 }
 
-/* In a side bar the names would have little room left of the two columns:
-   a chat's line takes the commands' column too (its figure at the right
-   edge, every figure still on one line), its Stop or Keep going under it */
+/* In a side bar two right-hand columns would leave the tips' words and the
+   chats' names little room: the commands' column goes, so the shares and the
+   chats' figures end on one line at the right edge, and a tip's command or
+   button, or a chat's Stop or Keep going, gets a line of its own under it */
 @container (max-width: 440px) {
-  .week-tip-chat > .week-chat {
-    grid-column: 1 / -1;
+  .week-tips.acting {
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
-  .week-tip-chat > .week-chat > .week-chat-name {
-    grid-column: 1 / -2;
-  }
-
-  .week-tip-chat > .week-chat > .week-chat-value {
-    grid-column: -2;
+  .week-tip > .chip {
+    grid-column: 2 / -1;
+    justify-self: start;
+    margin-top: 3px;
   }
 
   .week-tip-chat > .chip,
