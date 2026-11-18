@@ -74,7 +74,7 @@ class LiveHookTests(HookFixture):
         v = self.hook(event("UserPromptSubmit", prompt="fix the parser"))
         self.assertEqual((v["state"], v["doing"]), ("working", "thinking…"))
         v = self.hook(event("PreToolUse", **bash("toolu_b", "sleep 4; echo hi")))
-        self.assertEqual((v["state"], v["doing"]), ("working", "Bash: sleep 4; echo hi"))
+        self.assertEqual((v["state"], v["doing"]), ("working", "Running it"))  # (its description: "run it")
         self.assertEqual([(s["id"], s["end"], s["ok"]) for s in v["steps"]], [("toolu_b", None, None)])
         v = self.hook(event("PostToolUse", tool_response={"stdout": "hi"}, duration_ms=5519, **bash("toolu_b", "sleep 4; echo hi")))
         self.assertTrue(v["steps"][0]["ok"])
@@ -95,6 +95,22 @@ class LiveHookTests(HookFixture):
         self.assertEqual((v["state"], v["doing"], v["said"]), ("idle", "", "Done. parse in"))
         v = self.hook(event("SessionEnd", reason="prompt_input_exit"))
         self.assertEqual((v["state"], v["pid"]), ("ended", os.getpid()))  # (Claude is gone by then: its pid stays)
+
+    def test_doing_says_the_call_in_words(self):
+        # the chat's line in Claude's words (as an agent's), the step the exact call
+        npm = {"tool_name": "Bash", "tool_use_id": "toolu_n", "tool_input": {"command": "npm test", "description": "Run the tests"}}
+        v = self.hook(event("UserPromptSubmit", prompt="test it"), event("PreToolUse", **npm))
+        self.assertEqual(v["doing"], "Running the tests")
+        self.assertEqual((v["steps"][-1]["text"], v["steps"][-1]["intent"]), ("Bash: npm test", "Running the tests"))
+        read = {"tool_name": "Read", "tool_use_id": "toolu_r", "tool_input": {"file_path": CWD + "/week.py"}}
+        self.assertEqual(self.hook(event("PreToolUse", **read))["doing"], "Reading week.py")
+
+    def test_its_words_are_talpy_dens(self):
+        # the hook is a copy of its own (it imports nothing of Talpy Den's): the same words
+        import live_hook
+        from test_talpy_den import INTENT_CASES
+        for name, inp, said in INTENT_CASES:
+            self.assertEqual(live_hook.intent(name, inp), said, (name, inp))
 
     def test_a_quick_tools_end_can_come_first(self):
         read = {"tool_name": "Read", "tool_use_id": "toolu_r", "tool_input": {"file_path": CWD + "/a.txt"}}

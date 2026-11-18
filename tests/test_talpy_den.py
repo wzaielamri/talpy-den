@@ -36,6 +36,30 @@ def iso(ts):
     return datetime.fromtimestamp(ts, timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+# (tool, input, what tool_intent says): live_hook.intent says the same (test_live)
+INTENT_CASES = [
+    ("Bash", {"command": "sed -n 1,25p CHANGELOG.md", "description": "Read the top of both CHANGELOG.md files"},
+     "Reading the top of both CHANGELOG.md files"),
+    ("Bash", {"command": "npm test", "description": "Run the tests"}, "Running the tests"),
+    ("Bash", {"command": "git status", "description": "Git status"}, "Git status"),
+    ("Bash", {"command": "x", "description": "Running tests"}, "Running tests"),
+    ("Bash", {"command": "pytest -x tests/\necho"}, "Running pytest -x tests/ echo"),
+    ("Bash", {"command": "x", "description": "Run " + "y" * 200}, "Running " + "y" * 81 + "…"),
+    ("Read", {"file_path": "/a/b/week.py"}, "Reading week.py"),
+    ("Edit", {"file_path": "/a/CHANGELOG.md"}, "Editing CHANGELOG.md"),
+    ("Write", {"file_path": "/a/new.ts"}, "Writing new.ts"),
+    ("NotebookEdit", {"notebook_path": "/a/n.ipynb"}, "Editing notebook n.ipynb"),
+    ("Glob", {"pattern": "**/*.qml"}, "Finding **/*.qml"),
+    ("Grep", {"pattern": "tipChatAct"}, "Searching for tipChatAct"),
+    ("WebFetch", {"url": "https://x.org/a"}, "Fetching https://x.org/a"),
+    ("WebSearch", {"query": "qt listview"}, "Searching the web for qt listview"),
+    ("Agent", {"description": "Explore the auth code"}, "Exploring the auth code"),
+    ("Monitor", {"description": "Wait for the build"}, "Waiting for the build"),
+    ("mcp__github__create_issue", {}, "github: create_issue"),
+    ("TodoWrite", {"todos": []}, "TodoWrite"),
+]
+
+
 def session(sid, **kw):
     return {"pid": PID, "procStart": PROC_START, "sessionId": sid, "cwd": "/tmp/proj-" + sid,
             "kind": "interactive", "status": "idle", "statusUpdatedAt": 1000, **kw}
@@ -176,6 +200,23 @@ class SessionTests(Fixture):
         self.assertNotIn("acct-pro", text)
         self.assertNotIn("acct-team", text)
         self.assertEqual(len({g["id"] for g in r["groups"]}), 2)
+
+    def test_what_a_working_background_chat_is_on_in_claudes_words(self):
+        # Claude updates its job's detail while it works ("Checking which parts of the release run
+        # finished"); a record that isn't "working" (still "blocked" with your last message) or
+        # that hasn't changed for minutes says nothing about now
+        w = self.home / ".claude-work"
+        job = lambda state, ago: {"state": state, "tempo": "active", "detail": "tracing how  talpy\nshows agents",
+                                  "updatedAt": iso(self.now - ago)}
+        write(w / "jobs/job3/state.json", job("working", 30))
+        write(w / "jobs/job4/state.json", job("blocked", 30))
+        write(w / "sessions/21.json", session("bgquiet", kind="bg", status="busy", jobId="job6"))
+        write(w / "jobs/job6/state.json", job("working", 4 * 60))
+        rows = {s["sessionId"]: s for s in self.group(self.collect(with_tokens=False), "work")["sessions"]}
+        self.assertEqual(rows["bgworking"]["workingOn"], "tracing how talpy shows agents")
+        self.assertEqual((rows["bgstale"]["workingOn"], rows["bgquiet"]["workingOn"]), ("", ""))
+        self.assertEqual((rows["busy"]["workingOn"], rows["bgdone"]["workingOn"]), ("", ""))
+        self.assertEqual(rows["bgworking"]["detail"], "")  # (detail stays what it needs or its result)
 
     def test_cache_dir_is_private(self):
         self.cache.mkdir(mode=0o755)
@@ -1015,25 +1056,8 @@ class AgentTests(Fixture):
 
     def test_tool_intent(self):
         # an agent's line in Claude's words for its tools; a call's own description in the -ing form
-        t = lambda name, **inp: td.tool_intent({"name": name, "input": inp})
-        self.assertEqual(t("Bash", command="sed -n 1,25p CHANGELOG.md", description="Read the top of both CHANGELOG.md files"),
-                         "Reading the top of both CHANGELOG.md files")
-        self.assertEqual(t("Bash", command="npm test", description="Run the tests"), "Running the tests")
-        self.assertEqual(t("Bash", command="git status", description="Git status"), "Git status")
-        self.assertEqual(t("Bash", command="x", description="Running tests"), "Running tests")
-        self.assertEqual(t("Bash", command="pytest -x tests/\necho"), "Running pytest -x tests/ echo")
-        self.assertEqual(t("Read", file_path="/a/b/week.py"), "Reading week.py")
-        self.assertEqual(t("Edit", file_path="/a/CHANGELOG.md"), "Editing CHANGELOG.md")
-        self.assertEqual(t("Write", file_path="/a/new.ts"), "Writing new.ts")
-        self.assertEqual(t("NotebookEdit", notebook_path="/a/n.ipynb"), "Editing notebook n.ipynb")
-        self.assertEqual(t("Glob", pattern="**/*.qml"), "Finding **/*.qml")
-        self.assertEqual(t("Grep", pattern="tipChatAct"), "Searching for tipChatAct")
-        self.assertEqual(t("WebFetch", url="https://x.org/a"), "Fetching https://x.org/a")
-        self.assertEqual(t("WebSearch", query="qt listview"), "Searching the web for qt listview")
-        self.assertEqual(t("Agent", description="Explore the auth code"), "Exploring the auth code")
-        self.assertEqual(t("Monitor", description="Wait for the build"), "Waiting for the build")
-        self.assertEqual(t("mcp__github__create_issue"), "github: create_issue")
-        self.assertEqual(t("TodoWrite", todos=[]), "TodoWrite")
+        for name, inp, said in INTENT_CASES:
+            self.assertEqual(td.tool_intent({"name": name, "input": inp}), said, (name, inp))
         self.assertEqual(td.ing_form("Stop the server"), "Stopping the server")
         self.assertEqual(td.ing_form("Make a copy"), "Making a copy")
         self.assertEqual(td.ing_form("Use the cache"), "Using the cache")

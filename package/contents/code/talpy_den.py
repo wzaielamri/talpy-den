@@ -910,7 +910,26 @@ def make_session(profile, home, *, sid, pid, name, cwd, kind, entrypoint, state,
         "review": None,  # a chat that changed files: {"editedAt", "tests"} (TestsCache.review)
         "permission": None,  # what it asks while it waits for a permission (note_permissions)
         "live": None,  # what it does now, step by step, from the live hook (note_live)
+        "workingOn": "",  # a working background chat: what it's on, in Claude's own words (working_on)
     }
+
+
+WORKING_ON_FRESH_MS = 3 * 60_000  # a job's detail older than this says nothing about now
+
+
+def working_on(job, now_ms):
+    """What a working background chat is on, in Claude's words: its job's
+    detail, which Claude updates during the turn ("Checking which parts of
+    the release run finished", "fixing narrow VS Code layout before
+    1.22.1"); "" unless the job says it works and its record changed in the
+    last WORKING_ON_FRESH_MS (one still "blocked" keeps your last message
+    as its detail, and a long command writes nothing new)."""
+    if not isinstance(job, dict) or job.get("state") != "working":
+        return ""
+    at = to_ms(job.get("updatedAt"))
+    if at is None or now_ms - at > WORKING_ON_FRESH_MS:
+        return ""
+    return clean_text(job.get("detail"), 120)
 
 
 def process_config_dir(pid):
@@ -1024,6 +1043,7 @@ def live_row(entry, profile, holder, home, ctx):
         since=number(entry.get("statusUpdatedAt")) or number(entry.get("startedAt")),
         started_at=number(entry.get("startedAt")))
     row["tmux"] = isinstance(entry.get("tmux"), str) and bool(entry["tmux"])
+    row["workingOn"] = working_on(job, time.time() * 1000) if state == "working" else ""
     row["bgStop"] = row["kind"] == "bg" and job_id is not None and bg_stop_known(entry.get("version"))
     row["remoteControl"] = remote_control_link(entry)
     row["remoteSwitch"] = row["bgStop"] and bool(sid)
