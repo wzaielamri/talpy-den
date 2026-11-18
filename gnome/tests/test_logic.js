@@ -906,6 +906,12 @@ test('advanced analyses: how a plan\'s limits changed, in words (as VS Code)', (
     eq(L.limitEventText({at: day, factors: {five_hour: 5, seven_day: 4.71}, from: 'Pro', to: 'Max 5×'}),
         '4 Nov 18:52 · your limits grew about 4.7× · Pro → Max 5×');
     eq(L.limitShareText(17.2), '17% of the week · about 6 full windows a week');
+    // an estimate from too few windows, or ones far apart: its range and count, and no change told from it
+    eq([L.limitChangeText({kind: 'rough'}), L.limitChangeBad({kind: 'rough'}), L.limitShareText(22.1, true)],
+        ['readings too far apart to compare yet', false, '≈ 22% of the week · about 5 full windows a week']);
+    eq([L.limitValueText('five_hour', {cost: 120, n: 5, lo: 31, hi: 190, rough: true}), L.limitValueText('seven_day', {cost: 700, lo: 520, hi: 990, rough: true}),
+        L.limitValueText('five_hour', {cost: 42, n: 4, lo: 40, hi: 45, scaled: 5})],
+    [{text: '$31–$190 · 5 windows', rough: true}, {text: '$520–$990', rough: true}, {text: '≈ $42', rough: false}]);
     eq(L.limitMoney(47.6), '$48');
     eq(L.limitMoney(1180.4), '$1,180');
     eq(L.limitMoney(47.6, {code: 'EUR', rate: 0.9}), '€43');

@@ -232,7 +232,27 @@ PlasmaComponents3.ScrollView {
             return c.factor ? i18nc("how a window changed since a day", "%1 since %2", factorText(c.factor), day)
                             : i18n("your plan changed on %1", day)
         }
+        if (c.kind === "rough")
+            return i18n("readings too far apart to compare yet")
         return i18n("too few readings to compare yet")
+    }
+    // A window's size as the section shows it: one number ("$164", "≈ $820"
+    // before one measured since the limits changed), or, from too few windows
+    // or ones too far apart (rough), their range and how many ("$37–$215 · 5
+    // windows"; a week's: its readings' range), not bold
+    function limitValueText(key, v) {
+        if (!v)
+            return limitMoney(0)
+        if (!v.rough || v.lo === undefined || v.hi === undefined)
+            return (v.scaled ? "≈ " : "") + limitMoney(v.cost)
+        const range = v.hi > v.lo ? i18nc("a size from … to …", "%1–%2", limitMoney(v.lo), limitMoney(v.hi)) : limitMoney(v.cost)
+        return (v.scaled ? "≈ " : "") + range + (key === "five_hour" && v.n ? " · " + i18np("%1 window", "%1 windows", v.n) : "")
+    }
+    // Why a size is shown as a range
+    function limitRoughTip(key) {
+        return key === "five_hour"
+             ? i18n("Too few windows, or ones too far apart, for one number: use not seen here (claude.ai, your phone, other computers, SSH hosts) fills some windows more than others. No change is told from it.")
+             : i18n("Its readings tell sizes too far apart for one number: use not seen here (claude.ai, your phone, other computers, SSH hosts) counts in some of them. No change is told from it.")
     }
     // "4 Nov 18:52 · your limits grew about 5× · Pro → Max 5×"
     function limitEventText(e) {
@@ -252,8 +272,8 @@ PlasmaComponents3.ScrollView {
                            + "\n" + i18n("From your readings at that moment: the same usage read as a different share of the window.")
                          : i18n("Your windows' plan changed between two of them: what they held before and after tells by how much.")
     }
-    function limitShareText(pct) {
-        return pct > 0 ? i18n("%1% of the week · about %2 full windows a week", Math.round(pct), Math.max(1, Math.round(100 / pct))) : ""
+    function limitShareText(pct, rough) {
+        return pct > 0 ? (rough ? "≈ " : "") + i18n("%1% of the week · about %2 full windows a week", Math.round(pct), Math.max(1, Math.round(100 / pct))) : ""
     }
     function limitFillText(fill) {
         if (!fill)
@@ -300,7 +320,8 @@ PlasmaComponents3.ScrollView {
     }
     function limitSizeTip(key, a) {
         const v = key === "five_hour" ? a.now.fiveHour : a.now.weeks[key]
-        const since = v && v.scaled ? "\n" + i18n("None measured since your limits changed yet: what it held before, times %1.", Number(v.scaled.toFixed(2))) : ""
+        const since = (v && v.scaled ? "\n" + i18n("None measured since your limits changed yet: what it held before, times %1.", Number(v.scaled.toFixed(2))) : "")
+                      + (v && v.rough ? "\n" + limitRoughTip(key) : "")
         if (key === "five_hour") {
             const f = a.now.fiveHour
             return f ? i18n("What a full 5-hour window held: the API price of what your chats used by a reading, over the share of the window it said was used.")
@@ -1395,8 +1416,8 @@ PlasmaComponents3.ScrollView {
                         horizontalAlignment: column ? Text.AlignRight : Text.AlignLeft
                         elide: Text.ElideRight
                         text: column === 0 ? account.name + " · " + (account.plan || "?")
-                            : column === 1 ? (account.now.fiveHour ? view.limitMoney(account.now.fiveHour.cost) : "–")
-                            : column === 2 ? (account.now.weeks.seven_day ? view.limitMoney(account.now.weeks.seven_day.cost) : "–")
+                            : column === 1 ? (account.now.fiveHour ? view.limitValueText("", account.now.fiveHour) : "–")
+                            : column === 2 ? (account.now.weeks.seven_day ? view.limitValueText("", account.now.weeks.seven_day) : "–")
                             : (account.now.share ? Math.round(account.now.share.pct) + "%" : "–")
                     }
                 }
@@ -1412,6 +1433,9 @@ PlasmaComponents3.ScrollView {
                     readonly property var bars: Limits.weekBars(account, view.limitsNow, view.limitsStart)
                     readonly property real weekTop: Math.max(0, ...bars.map(b => b.cost))
                     readonly property var mix: Limits.mix(account.now.tokens)
+                    // (the sizes' column: as wide as the widest, a range with its count too)
+                    readonly property real valueWidth: Math.max(view.gu * 4.5, Math.ceil(Math.max(0, ...Limits.keys(account).map(k =>
+                        textMetrics.advanceWidth(view.limitValueText(k, Limits.now(account, k).value))))) * 1.08 + 1)
                     Layout.fillWidth: true
                     Layout.topMargin: Math.round(view.gu * 0.4)
                     spacing: Math.round(view.gu * 0.2)
@@ -1487,11 +1511,10 @@ PlasmaComponents3.ScrollView {
                                 }
                                 PlasmaComponents3.Label {
                                     textFormat: Text.PlainText
-                                    Layout.preferredWidth: view.gu * 4.5
+                                    Layout.preferredWidth: limitsOf.valueWidth
                                     horizontalAlignment: Text.AlignRight
-                                    text: (sizeLine.size.value && sizeLine.size.value.scaled ? "≈ " : "")
-                                          + view.limitMoney(sizeLine.size.value ? sizeLine.size.value.cost : 0)
-                                    font.bold: true
+                                    text: view.limitValueText(sizeLine.modelData, sizeLine.size.value)
+                                    font.bold: !(sizeLine.size.value && sizeLine.size.value.rough)
                                 }
                                 PlasmaComponents3.Label {
                                     textFormat: Text.PlainText
@@ -1645,7 +1668,7 @@ PlasmaComponents3.ScrollView {
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
                         visible: !!limitsOf.account.now.share
-                        text: limitsOf.account.now.share ? view.limitShareText(limitsOf.account.now.share.pct) : ""
+                        text: limitsOf.account.now.share ? view.limitShareText(limitsOf.account.now.share.pct, limitsOf.account.now.share.rough) : ""
                         wrapMode: Text.Wrap
                     }
                     RowLayout {

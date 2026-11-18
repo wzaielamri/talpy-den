@@ -46,6 +46,7 @@ import {
   limitLabel,
   limitMix,
   limitMoney,
+  limitValueText,
   limitStart,
   limitShareText,
   limitSizeTip,
@@ -430,8 +431,8 @@ function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
                 {shown.map((a) => (
                   <tr key={a.id}>
                     <td>{a.name} · {a.plan ?? "?"}</td>
-                    <td>{a.now.fiveHour ? limitMoney(a.now.fiveHour.cost, cur) : "–"}</td>
-                    <td>{a.now.weeks.seven_day ? limitMoney(a.now.weeks.seven_day.cost, cur) : "–"}</td>
+                    <td>{a.now.fiveHour ? limitValueText("", a.now.fiveHour, cur).text : "–"}</td>
+                    <td>{a.now.weeks.seven_day ? limitValueText("", a.now.weeks.seven_day, cur).text : "–"}</td>
                     <td>{a.now.share ? `${Math.round(a.now.share.pct)}%` : "–"}</td>
                   </tr>
                 ))}
@@ -463,12 +464,12 @@ function LimitsOf({ a, many, cur, now, start }: { a: LimitAccount; many: boolean
       <h3>How your limits changed</h3>
       <ul class="week-bars limits-sizes">
         {limitKeys(a).map((k) => {
-          const cost = k === "five_hour" ? a.now.fiveHour?.cost : a.now.weeks[k]?.cost;
+          const value = limitValueText(k, k === "five_hour" ? a.now.fiveHour : a.now.weeks[k], cur);
           const change = a.changes[k === "five_hour" ? "fiveHour" : k];
           return (
             <li key={k} title={limitSizeTip(k, a, cur)}>
               <span class="week-bar-name">{limitLabel(k)}</span>
-              <span class="limits-value">{(k === "five_hour" ? a.now.fiveHour?.scaled : a.now.weeks[k]?.scaled) ? "≈ " : ""}{limitMoney(cost ?? 0, cur)}</span>
+              <span class={"limits-value" + (value.rough ? " rough" : "")}>{value.text}</span>
               <span class={"week-bar-value small" + ((change?.kind === "change" && (change.pct ?? 0) < 0) || (change?.kind === "limits" && (change.factor ?? 1) < 0.9) ? " over" : " muted")}>
                 {limitChangeText(change)}
               </span>
@@ -513,7 +514,7 @@ function LimitsOf({ a, many, cur, now, start }: { a: LimitAccount; many: boolean
         <>
           <h3>A 5-hour window in the week</h3>
           <div class="limits-line">
-            <span>{limitShareText(a.now.share.pct)}</span>
+            <span>{limitShareText(a.now.share.pct, a.now.share.rough)}</span>
             <span class="small muted">{limitChangeText(a.changes.share)}</span>
             <Trend values={shares} />
           </div>

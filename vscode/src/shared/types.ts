@@ -936,7 +936,7 @@ export interface WeekRecap {
 // The Recap's How your limits changed (week.py --limits): how much a full
 // window of each account's plan held, at API prices, week by week
 export interface LimitChange {
-  kind: "change" | "same" | "new" | "few" | "limits";
+  kind: "change" | "same" | "new" | "few" | "rough" | "limits"; // (few, rough: one of the two weeks too unsure to compare)
   pct?: number; // (change, same) the newest week against the one before, in %
   against?: number | null; // when that week began
   // (limits: the first week since the plan's limits changed) how many times
@@ -968,9 +968,11 @@ export interface LimitPeriod {
   plan: string | null; // with its tier: "Max 20×", "Team · standard seat"
   // the median of its 5-hour windows (scaled: none measured since the limits
   // changed, the one before times the change)
-  fiveHour: { cost: number; n: number; lo: number; hi: number; scaled?: number } | null;
-  weeks: Record<string, { cost: number; pct: number; partial?: boolean; countedFrom?: number; scaled?: number }>; // seven_day, seven_day_opus, …
-  share: { pct: number; how: "sizes" | "measured"; measured: number | null } | null; // a full 5-hour window, in % of the week
+  // (rough: from fewer than 3 windows, or ones too far apart, for one number: shown as lo–hi)
+  fiveHour: { cost: number; n: number; lo: number; hi: number; scaled?: number; rough?: boolean } | null;
+  // seven_day, seven_day_opus, … (rough: its readings tell sizes from lo to hi, too far apart)
+  weeks: Record<string, { cost: number; pct: number; partial?: boolean; countedFrom?: number; scaled?: number; rough?: boolean; lo?: number; hi?: number }>;
+  share: { pct: number; how: "sizes" | "measured"; measured: number | null; rough?: boolean } | null; // a full 5-hour window, in % of the week
   fill: { wallMs: number; workMs: number } | null; // a full 5-hour window at your pace: your time, Claude's work
   tokens: { fresh: number; output: number; cacheRead: number } | null; // what filled one
 }
@@ -988,7 +990,7 @@ export interface LimitAccount {
     share: LimitPeriod["share"];
     fill: LimitPeriod["fill"];
     tokens: LimitPeriod["tokens"];
-    weeks: Record<string, { cost: number; pct: number; scaled?: number } | null>;
+    weeks: Record<string, { cost: number; pct: number; scaled?: number; rough?: boolean; lo?: number; hi?: number } | null>;
   };
   equivalents: { model: string; fiveHour: LimitTokens | null; week: LimitTokens | null } | null;
 }

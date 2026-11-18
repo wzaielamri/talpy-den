@@ -2348,7 +2348,10 @@ LIMIT_RISE_POINTS = 5
 LIMIT_RISE_SHARE = 1.25
 LIMIT_RISE_GAP_MS = 30 * 60_000
 LIMIT_RISE_EXPLAINED = 0.25  # usage between that would explain at most this part of the rise
-LIMIT_SAME_FACTOR = 0.25  # factors of two windows this close (relative) are the same change
+# A size from windows (or one week's readings) this far apart, the largest over
+# the smallest, or from fewer than LIMIT_CHANGE_WINDOWS 5-hour windows, is
+# rough: shown as its range, and no change is told from it
+LIMIT_ROUGH_SPREAD = 1.5
 FAMILIES = ("fable", "mythos", "opus", "sonnet", "haiku")
 WEEK_MS = 7 * DAY_MS
 UNKNOWN = "?"
@@ -2661,7 +2664,42 @@ def window_measure(u, key, w, now_ms, weekly=None, span=(0, float("inf"))):
     if not sizes:
         return None
     return {"start": start, "cost": statistics.median(sizes), "pct": max(p for _, p in points), "plan": w["plan"],
-            "from": lo, "partial": lo - start > DAY_MS}
+            "from": lo, "partial": lo - start > DAY_MS, "lo": min(sizes), "hi": max(sizes)}
+
+
+def steady_readings(pts, used=None):
+    """A window's readings [(ms, pct)] without the ones out of line with those
+    around them: a run that drops under the reading before it (or jumps over
+    it) by a change's size and comes back to about it within
+    LIMIT_EVENT_JOIN_MS is no change of the limits but a stale reading (a
+    chat's status line written again with the numbers it had when it last
+    replied), so it's left out. Within a window the readings only go up,
+    but for a few points between sources, so a drop of LIMIT_DROP_POINTS is
+    out of line; a jump only when the usage between doesn't explain it
+    (used(t0, a, t, p): whether it does; not known: a jump stays)."""
+    out, i = [], 0
+    while i < len(pts):
+        t, p = pts[i]
+        if out:
+            t0, a = out[-1]
+            dip = p <= a - LIMIT_DROP_POINTS
+            jump = p >= a + LIMIT_RISE_POINTS and used is not None and not used(t0, a, t, p)
+            back = None
+            for j in range(i + 1, len(pts) if dip or jump else i + 1):
+                if pts[j][0] - t > LIMIT_EVENT_JOIN_MS:
+                    break
+                if pts[j][1] >= a - LIMIT_DROP_POINTS and (dip or pts[j][1] <= a + LIMIT_RISE_POINTS):
+                    # (and stays back: the one after isn't where the run went again, else that was the stale one)
+                    after = pts[j + 1][1] if j + 1 < len(pts) else None
+                    if after is None or (after >= a - LIMIT_DROP_POINTS if dip else after <= p - LIMIT_RISE_POINTS):
+                        back = j
+                    break
+            if back is not None:
+                i = back
+                continue
+        out.append((t, p))
+        i += 1
+    return out
 
 
 def limit_events(keys, u=None):
@@ -2669,46 +2707,66 @@ def limit_events(keys, u=None):
     window's reading went down without a reset (bigger limits), or up by
     more than this computer's usage between explains (smaller ones, u: the
     account's usage): [{"at", "factors": {window key: how many times what it
-    held before it holds now}}], oldest first. A drop counts when the
-    reading after it is as low, or another window dropped then too (one low
-    reading alone can be a status line written with old numbers); a rise
-    when the windows rose by the same factor together, or a week's rose and
-    stayed up (usage elsewhere raises readings too)."""
-    found = []  # (ms, key, factor, held: the reading after as far off)
+    held before it holds now}}], oldest first. Reading noise makes none: a
+    reading that comes back to where the readings were is left out
+    (steady_readings); changes of one window close together count as their
+    net change, from the reading before them to the last, and a net of about
+    1 (what wouldn't count as a change) is none; and a change has to hold: the
+    reading after it must still be nearer its new level than the old one
+    (none after it: it can't be told from a stale reading). A rise counts
+    only when a week's window rose too (usage elsewhere raises a 5-hour
+    window's readings as well)."""
+    found = []  # (ms, key, factor)
     for key, slots in keys.items():
+        family = family_of(key) if key != "five_hour" else None
         for w in slots.values():
-            pts = sorted(w["points"].items())
             start = w["resetsAt"] - cs.window_hours(key) * HOUR_MS
-            lo = counted_from(pts, start)
-            for i in range(1, len(pts)):
-                (t0, a), (t, b) = pts[i - 1], pts[i]
-                after = pts[i + 1][1] if i + 1 < len(pts) else None
-                if a >= LIMIT_DROP_FROM and 0 < b <= a - LIMIT_DROP_POINTS and b <= a * LIMIT_DROP_SHARE:
-                    found.append((t, key, a / b, after is not None and after <= a * LIMIT_DROP_SHARE))
-                elif u is not None and a > 0 and b >= a + LIMIT_RISE_POINTS and b >= a * LIMIT_RISE_SHARE \
-                        and t - t0 <= LIMIT_RISE_GAP_MS and t0 > lo:
-                    before, _ = u.used(lo, t0, family_of(key) if key != "five_hour" else None)
-                    between, _ = u.used(t0, t, family_of(key) if key != "five_hour" else None)
-                    # (what the usage between would add, at the size the reading before tells)
-                    if before > 0 and between / before * a <= LIMIT_RISE_EXPLAINED * (b - a):
-                        held = after is not None and after >= a + (b - a) / 2
-                        found.append((t, key, a / b, held and key != "five_hour"))
-    events = []
-    for t, key, f, held in sorted(found):
-        if events and t - events[-1]["at"] <= LIMIT_EVENT_JOIN_MS and (f > 1) == (events[-1]["up"]):
-            e = events[-1]
-            if key not in e["factors"]:
-                e["factors"][key] = round(f, 2)
-                e["held"] = e["held"] or held
-        else:
-            events.append({"at": t, "factors": {key: round(f, 2)}, "held": held, "up": f > 1})
+            raw = sorted(w["points"].items())
+            lo = counted_from(raw, start)
 
-    def together(e):
-        fs = list(e["factors"].values())
-        return len(fs) > 1 and max(fs) / min(fs) - 1 <= LIMIT_SAME_FACTOR
-    def kept(e):
-        return e["held"] or (len(e["factors"]) > 1 if e["up"] else together(e))
-    return [{"at": e["at"], "factors": e["factors"]} for e in events if kept(e)]
+            def unexplained(t0, a, t, b):
+                """A rise from a (at t0) to b (at t) that this computer's usage between doesn't explain."""
+                before, _ = u.used(lo, t0, family)
+                between, _ = u.used(t0, t, family)
+                # (what the usage between would add, at the size the reading before tells)
+                return before > 0 and between / before * a <= LIMIT_RISE_EXPLAINED * (b - a)
+            pts = steady_readings(raw, None if u is None else lambda t0, a, t, b: t0 <= lo or not unexplained(t0, a, t, b))
+
+            def change(i):
+                (t0, a), (t, b) = pts[i - 1], pts[i]
+                if a >= LIMIT_DROP_FROM and 0 < b <= a - LIMIT_DROP_POINTS and b <= a * LIMIT_DROP_SHARE:
+                    return True
+                return u is not None and a > 0 and b >= a + LIMIT_RISE_POINTS and b >= a * LIMIT_RISE_SHARE \
+                    and t - t0 <= LIMIT_RISE_GAP_MS and t0 > lo and unexplained(t0, a, t, b)
+            runs = []  # (the changes close together: their readings' indexes)
+            for i in range(1, len(pts)):
+                if change(i):
+                    if runs and pts[i][0] - pts[runs[-1][-1]][0] <= LIMIT_EVENT_JOIN_MS:
+                        runs[-1].append(i)
+                    else:
+                        runs.append([i])
+            for run in runs:
+                (ta, a), (tb, b) = pts[run[0] - 1], pts[run[-1]]
+                if a <= 0 or b <= 0:
+                    continue
+                f = a / b  # (the same usage read as a different share: a drop is seen with nothing used between)
+                if 1 / LIMIT_RISE_SHARE < f < 1 / LIMIT_DROP_SHARE:
+                    continue  # (about 1: no change)
+                mid = (a + b) / 2
+                after = pts[run[-1] + 1][1] if run[-1] + 1 < len(pts) else None
+                if after is None or ((after >= mid) if b < a else (after <= mid)):
+                    continue  # (it didn't hold)
+                # (when: the first reading of them at the new level)
+                at = next((t for t, p in pts[run[0]:run[-1] + 1] if ((p < mid) if b < a else (p > mid))), tb)
+                found.append((at, key, f))
+    events = []
+    for t, key, f in sorted(found):
+        if events and t - events[-1]["at"] <= LIMIT_EVENT_JOIN_MS and (f > 1) == (events[-1]["up"]):
+            events[-1]["factors"].setdefault(key, round(f, 2))
+        else:
+            events.append({"at": t, "factors": {key: round(f, 2)}, "up": f > 1})
+    return [{"at": e["at"], "factors": e["factors"]} for e in events
+            if e["up"] or any(k != "five_hour" for k in e["factors"])]
 
 
 def limit_eras(events, labels, now_ms, current_plan):
@@ -2750,11 +2808,13 @@ def same_plan(a, b):
     return not a or not b or a == b or a.startswith(b + " ") or b.startswith(a + " ")
 
 
-def limit_change(periods, get, enough, eras, factor=None):
+def limit_change(periods, get, enough, eras, factor=None, rough=None):
     """How the newest week with a value (get) differs from the one before with
-    one: {"kind": "change"|"same"|"new"|"few", "pct", "against" (that week's
-    start)}; "new": no week before had it, though the account was in use (a
-    limit that began). In the first week after the limits changed (eras):
+    one: {"kind": "change"|"same"|"new"|"few"|"rough", "pct", "against" (that
+    week's start)}; "new": no week before had it, though the account was in
+    use (a limit that began); "few": one of them rests on too few readings
+    (enough), "rough": on readings too far apart (rough), to compare. In
+    the first week after the limits changed (eras):
     {"kind": "limits", "factor" (factor: of the change's readings, else of
     the sizes before and after), "at", "from", "to" (the plans)}."""
     have = [p for p in periods if get(p)]
@@ -2779,6 +2839,8 @@ def limit_change(periods, get, enough, eras, factor=None):
     prev = have[-2]
     if not (enough(prev) and enough(last)):
         return {"kind": "few", "against": prev["from"]}
+    if rough is not None and (rough(prev) or rough(last)):
+        return {"kind": "rough", "against": prev["from"]}
     diff = get(last) / get(prev) - 1 if get(prev) else 0.0
     return {"kind": "change" if abs(diff) * 100 >= LIMIT_CHANGE_PCT else "same", "pct": round(diff * 100),
             "against": prev["from"]}
@@ -2860,12 +2922,16 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
                         p["weeks"][key] = {"cost": round(m["cost"], 2), "pct": m["pct"]}
                         if m["partial"]:  # (a weekly limit that began during this window: counted from then)
                             p["weeks"][key].update(partial=True, countedFrom=m["from"])
+                        if m["hi"] > m["lo"] * LIMIT_ROUGH_SPREAD:  # (its readings tell sizes too far apart)
+                            p["weeks"][key].update(rough=True, lo=round(m["lo"], 2), hi=round(m["hi"], 2))
         for p in periods:
             fives = p.pop("fives")
             if fives:
                 fulls = sorted(m["full"] for m in fives)
                 p["fiveHour"] = {"cost": round(statistics.median(fulls), 2), "n": len(fulls),
                                  "lo": round(fulls[0], 2), "hi": round(fulls[-1], 2)}
+                if len(fulls) < LIMIT_CHANGE_WINDOWS or fulls[-1] > fulls[0] * LIMIT_ROUGH_SPREAD:
+                    p["fiveHour"]["rough"] = True  # (too few windows, or too far apart, for one number)
                 p["fill"] = {"wallMs": int(statistics.median(m["wallMs"] for m in fives)),
                              "workMs": int(statistics.median(m["workMs"] for m in fives))}
                 p["tokens"] = {k: int(statistics.median(m["tokens"][i] for m in fives))
@@ -2877,19 +2943,26 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
                 if week:
                     p["share"] = {"pct": round(p["fiveHour"]["cost"] / week["cost"] * 100, 1), "how": "sizes",
                                   "measured": round(statistics.median(measured), 1) if measured else None}
+                    if p["fiveHour"].get("rough") or week.get("rough"):
+                        p["share"]["rough"] = True
                 elif len(measured) >= 2:
                     p["share"] = {"pct": round(statistics.median(measured), 1), "how": "measured", "measured": None}
         periods = [p for p in periods if p["fiveHour"] or p["weeks"]]
         factors = eras[-1]["factors"]  # (of the change the newest limits began with)
         f5, f7 = factors.get("five_hour"), factors.get("seven_day")
+        def rough_week(p, k="seven_day"):
+            return bool(p["weeks"].get(k) and p["weeks"][k].get("rough"))
         changes = {"fiveHour": limit_change(periods, lambda p: p["fiveHour"] and p["fiveHour"]["cost"],
-                                            lambda p: p["fiveHour"]["n"] >= LIMIT_CHANGE_WINDOWS, eras, f5),
+                                            lambda p: p["fiveHour"]["n"] >= LIMIT_CHANGE_WINDOWS, eras, f5,
+                                            lambda p: p["fiveHour"].get("rough")),
+                   # (a share of two sizes: as sure as the less sure of them)
                    "share": limit_change(periods, lambda p: p["share"] and p["share"]["pct"], lambda p: True, eras,
-                                         share_factor(f5, f7))}
+                                         share_factor(f5, f7), lambda p: (p["fiveHour"] or {}).get("rough") or rough_week(p))}
         for key in sorted({k for p in periods for k in p["weeks"]}, key=lambda k: (cs.WINDOW_ORDER + [k]).index(k)):
             # (a partial week, one the limit began in, isn't one to compare with)
             changes[key] = limit_change(periods, lambda p, k=key: p["weeks"].get(k) and not p["weeks"][k].get("partial")
-                                        and p["weeks"][k]["cost"], lambda p: True, eras, factors.get(key))
+                                        and p["weeks"][k]["cost"], lambda p: True, eras, factors.get(key),
+                                        lambda p, k=key: rough_week(p, k))
 
         def newest(get, factor=None, scale=None):
             """The newest value in the newest limits; none yet there: the one
@@ -2907,7 +2980,7 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
                "share": newest(lambda p: p["share"], share_factor(f5, f7), scaled(("pct",))),
                "fill": newest(lambda p: p["fill"]),
                "tokens": newest(lambda p: p["tokens"], f5, scaled(("fresh", "output", "cacheRead"))),
-               "weeks": {k: newest(lambda p, k=k: p["weeks"].get(k), factors.get(k), scaled(("cost",)))
+               "weeks": {k: newest(lambda p, k=k: p["weeks"].get(k), factors.get(k), scaled(("cost", "lo", "hi")))
                          for k in changes if k not in ("fiveHour", "share")}}
         model = max(u.models, key=u.models.get) if u.models else None
         prices = PRICES.get(model) if model else None

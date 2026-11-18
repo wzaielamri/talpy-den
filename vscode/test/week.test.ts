@@ -13,7 +13,7 @@ import {
   shareText, tipMeaning, tipSource, guessedCostText, guessedModelTip, modelValue, tokensLabel, ranOutText,
   dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
-  limitStart, limitWeekBars,
+  limitStart, limitWeekBars, limitValueText,
 } from "../src/shared/week";
 import { ViewHost } from "../src/view";
 
@@ -442,6 +442,13 @@ test("advanced analyses: how a plan's limits changed, in words", () => {
   assert.equal(limitChangeText({ kind: "change", pct: 8 }), "▲ 8% vs the week before");
   assert.equal(limitChangeText({ kind: "same", pct: 3 }), "about the same as the week before");
   assert.equal(limitChangeText({ kind: "new" }), "new this week");
+  // an estimate from too few windows, or ones far apart: its range and count, and no change told from it
+  assert.equal(limitChangeText({ kind: "rough" }), "readings too far apart to compare yet");
+  assert.deepEqual(limitValueText("five_hour", { cost: 120, n: 5, lo: 31, hi: 190, rough: true }), { text: "$31–$190 · 5 windows", rough: true });
+  assert.deepEqual(limitValueText("five_hour", { cost: 66, n: 1, lo: 66, hi: 66, rough: true }), { text: "$66 · 1 window", rough: true });
+  assert.deepEqual(limitValueText("seven_day", { cost: 700, lo: 520, hi: 990, rough: true }), { text: "$520–$990", rough: true });
+  assert.deepEqual(limitValueText("five_hour", { cost: 42, n: 4, lo: 40, hi: 45, scaled: 5 }), { text: "≈ $42", rough: false });
+  assert.equal(limitShareText(22.1, true), "≈ 22% of the week · about 5 full windows a week");
   const day = new Date(2026, 10, 4, 18, 52).getTime();
   assert.equal(limitChangeText({ kind: "limits", factor: 5, at: day }), "about 5× since 4 Nov");
   assert.equal(limitChangeText({ kind: "limits", factor: 4.71, at: day }), "about 4.7× since 4 Nov");
@@ -476,6 +483,8 @@ test("advanced analyses: the demo's accounts, their charts and tokens", () => {
   assert.deepEqual(limitKeys(max), ["five_hour", "seven_day", "seven_day_opus"]);
   assert.deepEqual(limitKeys(team), ["five_hour", "seven_day"]);
   assert.equal(team.changes.seven_day?.kind, "same");
+  // (its newest week's 5-hour windows far apart: their range, no change told from them)
+  assert.deepEqual([limitValueText("five_hour", team.now.fiveHour).text, team.changes.fiveHour?.kind], ["$22–$78 · 6 windows", "rough"]);
   const dots = limitDots(max, NOW);
   assert.ok(dots.dots.length > 10 && dots.dots.every((d) => d.x >= 0 && d.x <= 1 && d.y > 0 && d.y < 1));
   assert.ok(dots.lo > 0 && dots.top > dots.lo);

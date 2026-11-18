@@ -2000,7 +2000,31 @@ export function limitChangeText(c) {
         const day = c.at ? limitDay(c.at) : '';
         return c.factor ? `${factorText(c.factor)} since ${day}` : `your plan changed on ${day}`;
     }
+    if (c.kind === 'rough')
+        return 'readings too far apart to compare yet';
     return 'too few readings to compare yet';
+}
+
+// A window's size as the section shows it: one number ("$164", "≈ $820"
+// before one measured since the limits changed), or, from too few windows
+// or ones too far apart (rough), their range and how many ("$37–$215 · 5
+// windows"; a week's: its readings' range), not bold
+export function limitValueText(key, v, cur = USD) {
+    if (!v)
+        return {text: limitMoney(0, cur), rough: false};
+    if (!v.rough || v.lo === undefined || v.hi === undefined)
+        return {text: `${v.scaled ? '≈ ' : ''}${limitMoney(v.cost, cur)}`, rough: false};
+    const range = v.hi > v.lo ? `${limitMoney(v.lo, cur)}–${limitMoney(v.hi, cur)}` : limitMoney(v.cost, cur);
+    return {text: `${v.scaled ? '≈ ' : ''}${range}${key === 'five_hour' && v.n ? ` · ${plural(v.n, '%1 window', '%1 windows')}` : ''}`, rough: true};
+}
+
+// Why a size is shown as a range
+export function limitRoughTip(key) {
+    return key === 'five_hour'
+        ? 'Too few windows, or ones too far apart, for one number: use not seen here (claude.ai, your phone, other computers, ' +
+          'SSH hosts) fills some windows more than others. No change is told from it.'
+        : 'Its readings tell sizes too far apart for one number: use not seen here (claude.ai, your phone, other computers, ' +
+          'SSH hosts) counts in some of them. No change is told from it.';
 }
 
 // Is a change one to show as bad (the window holds less)?
@@ -2029,8 +2053,8 @@ export function limitEventTip(e) {
 }
 
 // "17% of the week · about 6 full windows a week"
-export function limitShareText(pct) {
-    return pct > 0 ? `${Math.round(pct)}% of the week · about ${Math.max(1, Math.round(100 / pct))} full windows a week` : '';
+export function limitShareText(pct, rough = false) {
+    return pct > 0 ? `${rough ? '≈ ' : ''}${Math.round(pct)}% of the week · about ${Math.max(1, Math.round(100 / pct))} full windows a week` : '';
 }
 
 // How long a full 5-hour window lasted at your pace
@@ -2140,7 +2164,8 @@ export const LIMIT_EMPTY = 'Not enough readings yet: a few 5-hour windows used p
 // A size's tooltip: how it's worked out
 export function limitSizeTip(key, a, cur) {
     const v = key === 'five_hour' ? a.now.fiveHour : a.now.weeks[key];
-    const since = v && v.scaled ? `\nNone measured since your limits changed yet: what it held before, times ${Number(v.scaled.toFixed(2))}.` : '';
+    const since = (v && v.scaled ? `\nNone measured since your limits changed yet: what it held before, times ${Number(v.scaled.toFixed(2))}.` : '') +
+        (v && v.rough ? `\n${limitRoughTip(key)}` : '');
     if (key === 'five_hour') {
         const f = a.now.fiveHour;
         return f ? 'What a full 5-hour window held: the API price of what your chats used by a reading, over the share of the window ' +

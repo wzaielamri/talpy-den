@@ -1276,6 +1276,36 @@ class LimitHistoryTests(Home):
         # one low reading at the end (a status line written with old numbers)
         self.assertEqual(self.today([(0, 0), (95, 60), (100, 30)], [(95, 12)])[1]["events"], [])
 
+    def test_stale_readings_make_no_change(self):
+        # a chat's status line written again with the numbers it had a while
+        # before: both windows low at once, then back where they were, twice
+        five = [(0, 0), (40, 40), (60, 60), (65, 15), (70, 62), (80, 20), (90, 70), (95, 70)]
+        weekly = [(40, 8), (60, 12), (65, 3), (70, 12), (80, 4), (90, 14), (95, 14)]
+        self.assertEqual(self.today(five, weekly)[1]["events"], [])
+        # a real change, with a stale reading of the numbers from before it right after
+        s, work = self.today([(0, 0), (95, 100), (160, 20), (165, 100), (170, 22)], [(95, 35), (160, 7), (165, 35), (170, 7)])
+        (event,) = work["events"]
+        self.assertEqual((event["at"], event["factors"]), (s + 160 * MIN, {"five_hour": 5, "seven_day": 5}))
+
+    def test_an_estimate_from_windows_far_apart_says_so(self):
+        # this week's third 5-hour window read 50% after $8 where the others
+        # did after $16: $32, $32 and $16 hold no one size to compare
+        self.two_weeks()
+        data = json.loads((self.cache_root / cs.USAGE_PAST_FILE).read_text())
+        points = data["windows"][-1]["points"]
+        points[-1][0] = points[0][0] + 35 * MIN  # (4 replies of $2 by then)
+        self.past(*data["windows"])
+        usage = json.loads((self.cache_root / "usage.json").read_text())
+        weekly = usage["groups"][self.gid("work")]["seven_day"]
+        weekly["points"].append([weekly["points"][-1][0] + 3600_000, 40])  # (the week's readings: $240 and $120)
+        cs.write_json_atomic(self.cache_root / "usage.json", usage)
+        work = self.of(self.history(), "work")
+        self.assertEqual(work["now"]["fiveHour"], {"cost": 32, "n": 3, "lo": 16, "hi": 32, "rough": True})
+        self.assertEqual(work["changes"]["fiveHour"]["kind"], "rough")  # (no ▼ 20% from it)
+        self.assertEqual(work["periods"][0]["fiveHour"].get("rough"), None)
+        self.assertEqual(work["now"]["weeks"]["seven_day"], {"cost": 180, "pct": 40, "rough": True, "lo": 120, "hi": 240})
+        self.assertTrue(work["now"]["share"]["rough"])
+
     def test_a_max_plans_model_weeks_count_their_own_model(self):
         self.account("personal", organizationType="claude_max", organizationRateLimitTier="default_claude_max_20x")
         reset = self.now + 2 * week.DAY_MS

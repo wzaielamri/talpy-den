@@ -28,6 +28,15 @@
 
 ### Fixed
 
+- **Your plan's limits over time: no changes from stale readings, and a
+  rough estimate says so.** A status line written again with older numbers
+  made changes of your limits that never were (three in half an hour). Now
+  such a reading is left out, a change has to hold in the reading after it,
+  and changes close together count as their net. A size from fewer than 3
+  windows, or ones far apart, shows its range and how many windows
+  (*$40–$190 · 5 windows*) instead of one bold number, and no red ▼ is told
+  from it (*readings too far apart to compare yet*).
+
 - **How often your plan ran out, not every chat it stopped.** The Recap
   counted stops within an hour of each other as one, so one full window
   stopping chats for hours counted several times. Now it counts how often

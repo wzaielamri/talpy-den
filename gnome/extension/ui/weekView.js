@@ -421,8 +421,8 @@ function buildLimits(ctx, recap) {
         section.add_child(row([['Plan', 'claude-strong claude-dim'], ['5-hour', 'claude-strong claude-dim'], ['Week', 'claude-strong claude-dim'],
             ['5-hour share', 'claude-strong claude-dim']]));
         for (const a of shown) {
-            section.add_child(row([[`${a.name} · ${a.plan || '?'}`], [a.now.fiveHour ? L.limitMoney(a.now.fiveHour.cost, cur) : '–'],
-                [a.now.weeks.seven_day ? L.limitMoney(a.now.weeks.seven_day.cost, cur) : '–'], [a.now.share ? `${Math.round(a.now.share.pct)}%` : '–']]));
+            section.add_child(row([[`${a.name} · ${a.plan || '?'}`], [a.now.fiveHour ? L.limitValueText('', a.now.fiveHour, cur).text : '–'],
+                [a.now.weeks.seven_day ? L.limitValueText('', a.now.weeks.seven_day, cur).text : '–'], [a.now.share ? `${Math.round(a.now.share.pct)}%` : '–']]));
         }
     }
     // (every account's chart on one time line: a week is at the same place in each)
@@ -449,7 +449,8 @@ function limitsOf(ctx, a, many, cur, now, start) {
         const {value, change} = L.limitNow(a, k);
         const line = box('claude-stats-project', {x_expand: true});
         line.add_child(label(L.limitLabel(k), 'claude-small claude-week-name'));
-        line.add_child(label(`${value.scaled ? '≈ ' : ''}${L.limitMoney(value.cost, cur)}`, 'claude-strong claude-limits-num'));
+        const size = L.limitValueText(k, value, cur);   // (a rough one: its range, not bold)
+        line.add_child(label(size.text, size.rough ? 'claude-limits-num' : 'claude-strong claude-limits-num'));
         line.add_child(label(L.limitChangeText(change), `claude-small ${L.limitChangeBad(change) ? 'claude-fg-bad' : 'claude-dim'}`,
             {x_expand: true}));
         ctx.tips.add(line, [L.limitLabel(k), L.limitSizeTip(k, a, cur)]);
@@ -485,7 +486,7 @@ function limitsOf(ctx, a, many, cur, now, start) {
     }
     if (a.now.share) {
         col.add_child(subtitle('A 5-hour window in the week'));
-        col.add_child(paragraph(L.limitShareText(a.now.share.pct), ''));
+        col.add_child(paragraph(L.limitShareText(a.now.share.pct, a.now.share.rough), ''));
         const line = box('claude-stats-project', {x_expand: true});
         line.add_child(label(L.limitChangeText(a.changes.share), 'claude-small claude-dim', {y_align: Clutter.ActorAlign.CENTER}));
         line.add_child(trendBars(a.periods.map(p => (p.share ? p.share.pct : null))));

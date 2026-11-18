@@ -681,9 +681,10 @@ export function demoHostProjects(now: number): HostProjects[] {
 export function demoLimits(now: number, account = ""): LimitHistory {
   const day = 86400000;
   const reset = now + 2 * day;
-  // (changed: the week its limits changed in, from the plan before, which had a fifth of them)
+  // (changed: the week its limits changed in, from the plan before, which had a fifth of them;
+  // rough: its newest week's 5-hour windows too far apart for one number)
   const make = (id: string, name: string, plan: string, five: number[], week: (number | null)[], opus: boolean,
-    changed = -1, before = ""): LimitAccount => {
+    changed = -1, before = "", rough = false): LimitAccount => {
     const periods: (LimitPeriod & { era: number })[] = five.map((size, i) => {
       const from = reset - (five.length - i) * 7 * day;
       const old = i < changed;
@@ -705,13 +706,17 @@ export function demoLimits(now: number, account = ""): LimitHistory {
     })).filter((w) => w.at < now);
     const last = periods[periods.length - 1];
     const prev = periods[periods.length - 2];
+    if (rough) {
+      last.fiveHour = { ...last.fiveHour!, lo: Math.round(last.fiveHour!.cost * 0.45), hi: Math.round(last.fiveHour!.cost * 1.6), rough: true };
+      if (last.share) last.share = { ...last.share, rough: true };
+    }
     const pct = Math.round((last.fiveHour!.cost / prev.fiveHour!.cost - 1) * 100);
     return {
       id, name, plan, periods, windows,
       events: changed >= 0 ? [{ at: periods[changed].from + 9 * 3600000, factors: { five_hour: 5.1, seven_day: 4.9 }, from: before, to: plan }] : [],
       changes: {
-        fiveHour: { kind: Math.abs(pct) >= 10 ? "change" : "same", pct, against: prev.from },
-        share: { kind: "same", pct: -2, against: prev.from },
+        fiveHour: rough ? { kind: "rough", against: prev.from } : { kind: Math.abs(pct) >= 10 ? "change" : "same", pct, against: prev.from },
+        share: rough ? { kind: "rough", against: prev.from } : { kind: "same", pct: -2, against: prev.from },
         seven_day: week.filter(Boolean).length > 1 ? { kind: "same", pct: -3, against: prev.from } : { kind: "new", against: prev.from },
         ...(opus ? { seven_day_opus: { kind: "same", pct: 1, against: prev.from } } : {}),
       },
@@ -723,7 +728,7 @@ export function demoLimits(now: number, account = ""): LimitHistory {
   };
   const accounts = [
     make("0123456789ab", "personal", "Max 5×", [176, 181, 178, 183, 179, 158], [1250, 1240, 1262, 1255, 1248, 1236], true, 2, "Pro"),
-    make("ba9876543210", "work", "Team · standard seat", [51, 50, 52, 49, 50, 49], [null, null, null, 297, 291, 288], false),
+    make("ba9876543210", "work", "Team · standard seat", [51, 50, 52, 49, 50, 49], [null, null, null, 297, 291, 288], false, -1, "", true),
   ];
   return { ok: true, generatedAt: now, since: reset - 6 * 7 * day, accounts: accounts.filter((a) => !account || a.id === account) };
 }

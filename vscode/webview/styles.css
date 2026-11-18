@@ -2659,6 +2659,11 @@ body.vscode-high-contrast .top.scrolled {
   font-variant-numeric: tabular-nums;
 }
 
+/* (from too few windows, or ones too far apart: their range, not one bold number) */
+.limits-value.rough {
+  font-weight: normal;
+}
+
 /* one chart per account, full width: each 5-hour window as a dot (each week's
    middle as a line), the weeks as bars under them on the same days, every
    account on the same time line; a change of the limits a line across both */
