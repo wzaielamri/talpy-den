@@ -1212,7 +1212,7 @@ def finish_row(row, job, job_id, profile, ctx, alive):
 AGENT_TAIL_BYTES = 65536
 AGENT_TAIL_ENTRIES = 40  # conversation entries read from the end (its status needs the last few, its steps more)
 AGENT_TAIL_MIN = 8  # read further back (up to PEEK_TAIL_MAX) until this many are found
-AGENT_CACHE_VERSION = 4  # bump when agent_progress() reads transcripts differently (3: the model; 4: running calls, context)
+AGENT_CACHE_VERSION = 5  # bump when agent_progress() reads transcripts differently (3: the model; 4: running calls, context; 5: a failed agent's context)
 AGENT_TREE_LIMIT = 30
 AGENT_STEPS = 6  # its last tool calls a row shows
 AGENT_TASK_CHARS = 600
@@ -1383,12 +1383,16 @@ def running_calls(recent):
 
 def context_size(recent):
     """An agent's context now, as Claude's agent list counts it: what the
-    request of its newest reply sent and got back (tokens), or None."""
+    request of its newest reply sent and got back (tokens), or None.
+    Claude's stand-ins (an API error's <synthetic> reply, with no tokens)
+    are passed over, as Claude's own count does."""
     for e in recent:
-        usage = blocks_of(e)[0].get("usage") if e["type"] == "assistant" else None
-        if isinstance(usage, dict):
+        msg = blocks_of(e)[0] if e["type"] == "assistant" else {}
+        usage = msg.get("usage")
+        if isinstance(usage, dict) and msg.get("model") != "<synthetic>" and e.get("isUnmetered") is not True:
             n = sum(usage.get(k) for k in CONTEXT_KEYS if isinstance(usage.get(k), int))
-            return n or None
+            if n:
+                return n
     return None
 
 

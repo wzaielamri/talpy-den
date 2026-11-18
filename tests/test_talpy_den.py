@@ -943,6 +943,22 @@ class AgentTests(Fixture):
         self.assertIsNone(td.context_size([{"type": "assistant", "message": {"usage": {"input_tokens": 0}}}]))
         self.assertEqual(td.running_calls([{"type": "assistant", "message": "x"}]), ([], None))
 
+    def test_a_failed_agent_keeps_its_context(self):
+        # an API error ends it with Claude's stand-in reply (no tokens), which Claude's own count
+        # passes over: its context is its last real reply's
+        tool = {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/w/a.py"}}
+        read = self.line("assistant", [tool], "tool_use")
+        read["message"].update(model="claude-opus-5-5", usage={"input_tokens": 5, "cache_read_input_tokens": 40_000,
+                                                               "cache_creation_input_tokens": 1_000, "output_tokens": 95})
+        error = self.line("assistant", [{"type": "text", "text": "You've hit your session limit · resets 2:40pm"}], "stop_sequence")
+        error["isApiErrorMessage"] = True
+        error["message"].update(model="<synthetic>", usage={"input_tokens": 0, "output_tokens": 0,
+                                                            "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0})
+        result = self.line("user", [{"type": "tool_result", "tool_use_id": "t1", "content": "..."}])
+        self.agent("busy", "f1", [self.line("user", "look"), read, result, error], description="Died", finished=True)
+        f1 = next(t for t in self.agents_of_busy()[0]["tree"] if t["id"] == "f1")
+        self.assertEqual((f1["status"], f1["model"], f1["context"]), ("failed", "Opus 5.5", 41_100))
+
     def test_no_running_calls_or_context_without_them(self):
         a, _ = self.agents_of_busy()
         tree = {t["id"]: t for t in a["tree"]}
