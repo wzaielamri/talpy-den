@@ -26,7 +26,7 @@ import time
 VERSION = 1  # (of the live files it writes)
 # This file's version: a status check brings an older copy of it in
 # ~/.local/share/talpy-den up to date (talpy_den.refresh_hooks)
-HOOK_REVISION = 4  # (4: the chat's line in words, a step's intent)
+HOOK_REVISION = 5  # (4: the chat's line in words, a step's intent; 5: in words while it asks too)
 STEPS = 8  # the last steps a live file keeps
 AGENTS = 20
 TEXT = 70  # characters of a step's words
@@ -238,8 +238,10 @@ def fold(view, event, now):
     elif kind == "PermissionRequest":
         if agent:
             return None  # (a subagent's: Claude's own dialog and the session file say it)
-        step_of(True)
-        view.update(state="waiting", doing=describe(tool, inp), asks=ASKS.get(tool, "permission"))
+        # (in words, as at its PreToolUse: nothing sets it again once you allow it, and the
+        # line's +/- counts are an edit's whose intent it is)
+        s = step_of(True)
+        view.update(state="waiting", doing=s.get("intent") or s["text"], asks=ASKS.get(tool, "permission"))
     elif kind == "Notification":
         what = event.get("notification_type")
         if what == "permission_prompt" or what == "elicitation_dialog":

@@ -83,7 +83,7 @@ class LiveHookTests(HookFixture):
         # (a permission request names no tool call, as Claude Code 2.1.310 sends it)
         asked = {k: val for k, val in EDIT.items() if k != "tool_use_id"}
         v = self.hook(event("PreToolUse", **EDIT), event("PermissionRequest", permission_suggestions=[], **asked))
-        self.assertEqual((v["state"], v["asks"], v["doing"]), ("waiting", "permission", "Edit: parser.py"))
+        self.assertEqual((v["state"], v["asks"], v["doing"]), ("waiting", "permission", "Editing parser.py"))
         self.assertEqual([s["id"] for s in v["steps"]], ["toolu_b", "toolu_e"])  # (the request is the same step)
         v = self.hook(event("Notification", message="Claude needs your permission", notification_type="permission_prompt"))
         self.assertEqual((v["state"], v["asks"]), ("waiting", "permission"))
@@ -104,6 +104,18 @@ class LiveHookTests(HookFixture):
         self.assertEqual((v["steps"][-1]["text"], v["steps"][-1]["intent"]), ("Bash: npm test", "Running the tests"))
         read = {"tool_name": "Read", "tool_use_id": "toolu_r", "tool_input": {"file_path": CWD + "/week.py"}}
         self.assertEqual(self.hook(event("PreToolUse", **read))["doing"], "Reading week.py")
+
+    def test_a_call_you_allowed_keeps_its_words_and_counts(self):
+        # it asks (default mode), you allow it, it runs: the line stays in words, and an edit's
+        # step is the one the line says (its +/- counts: doingText matches the step's intent)
+        asked = {k: val for k, val in EDIT.items() if k != "tool_use_id"}
+        v = self.hook(event("UserPromptSubmit", prompt="fix it"), event("PreToolUse", **EDIT),
+                      event("PermissionRequest", permission_suggestions=[], **asked))
+        self.assertEqual((v["state"], v["doing"]), ("waiting", "Editing parser.py"))
+        v = self.hook(event("PostToolUse", tool_response=EDITED, **EDIT))
+        last = v["steps"][-1]
+        self.assertEqual((v["state"], v["doing"], last["intent"], last["add"], last["del"]),
+                         ("working", "Editing parser.py", "Editing parser.py", 2, 1))
 
     def test_its_words_are_talpy_dens(self):
         # the hook is a copy of its own (it imports nothing of Talpy Den's): the same words
