@@ -8,7 +8,7 @@ import type { JSX } from "preact";
 import { TONES, memoryMeaning, vscode, type Meaning, type Tone } from "../../vendor/icons.mjs";
 import talpyChatSvg from "../../media/talpy-chat.svg";   // (a data: URL: esbuild's dataurl loader)
 
-export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "bookmarkFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit" | "export" | "import" | "talpyChat" | "image" | "code" | "compress" | "quote" | "question";
+export type IconName = "refresh" | "stop" | "close" | "share" | "chevron" | "server" | "box" | "eye" | "external" | "play" | "back" | "search" | "logout" | "edit" | "send" | "repeat" | "star" | "chat" | "move" | "filter" | "chart" | "shield" | "folder" | "mic" | "attach" | "camera" | "newChat" | "gear" | "sliders" | "task" | "user" | "bookmark" | "note" | "trash" | "more" | "eyeClosed" | "clock" | "starFull" | "bookmarkFull" | "warning" | "error" | "window" | "zoomIn" | "zoomOut" | "check" | "checkAll" | "deny" | "globe" | "terminal" | "folderLock" | "plug" | "gauge" | "lightbulb" | "columns" | "rows" | "undo" | "commit" | "export" | "import" | "talpyChat" | "image" | "code" | "compress" | "quote" | "question" | "phone";
 
 const shapes: Record<IconName, JSX.Element> = {
   repeat: (
@@ -26,6 +26,13 @@ const shapes: Record<IconName, JSX.Element> = {
     </>
   ),
   stop: <rect x="3.75" y="3.75" width="8.5" height="8.5" rx="1.5" fill="currentColor" />,
+  // a phone (Remote Control: a chat claude.ai/code and the Claude app show), as Claude's own panel draws it
+  phone: (
+    <>
+      <rect x="4.75" y="1.75" width="6.5" height="12.5" rx="1.5" />
+      <path d="M7.25 11.75h1.5" />
+    </>
+  ),
   close: <path d="M4 4l8 8M12 4l-8 8" />,
   // a change side by side (before | after), or one after the other
   columns: (

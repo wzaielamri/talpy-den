@@ -467,6 +467,21 @@ RowLayout {
                                                                          : i18n("Shown in a terminal too: claude attach.")
                                 }
                             }
+                            // Remote Control on: claude.ai/code and the Claude app show it (a click opens its page there)
+                            Loader {
+                                active: root.remoteControlPage(row.session.remoteControl) !== ""
+                                visible: active
+                                sourceComponent: Tag {
+                                    colors: row.colors
+                                    icon: Icons.plasma.remoteControl
+                                    text: i18n("Remote Control")
+                                    active: true
+                                    clickable: true
+                                    onClicked: root.openRemoteControl(row.session.remoteControl)
+                                    tooltipTitle: i18n("Remote Control is on")
+                                    tooltip: root.remoteControlTip(row.session)
+                                }
+                            }
                             Loader {
                                 active: !!row.session.shared
                                 visible: active
@@ -774,6 +789,23 @@ RowLayout {
                             anchors.fill: parent
                             mainText: i18n("Hide this chat")
                             subText: root.hideHint("chats", row.remoteHost)
+                        }
+                    }
+                    HoverButton {
+                        // Remote Control on or off in a background chat (pressed while it's on)
+                        visible: !!row.session.remoteSwitch && row.session.pid !== null
+                        usable: !root.rcBusy[row.rowKey] && root.rcCan(row.session)
+                        checked: !!row.session.remoteControl
+                        icon.name: Icons.plasma.remoteControl
+                        text: row.session.remoteControl ? i18n("Turn off Remote Control") : i18n("Turn on Remote Control")
+                        Layout.alignment: Qt.AlignTop
+                        onClicked: root.setRemoteControl(row.session, row.remoteHost, !row.session.remoteControl)
+
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: parent.text
+                            subText: root.rcBusy[row.rowKey] ? i18n("Asked: a moment…") : root.remoteSwitchTip(row.session)
                         }
                     }
                     HoverButton {

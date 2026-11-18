@@ -31,7 +31,7 @@ import {
   tasksTitle,
   usageLevel,
 } from "../../src/shared/model";
-import { attachedTag, chatWhere, reviewPending, shownAsk, testsText, whereTag } from "../../src/shared/pane";
+import { attachedTag, chatWhere, remoteControlPage, remoteSwitchCan, remoteSwitchTitle, REMOTE_CONTROL_TAG, REMOTE_CONTROL_TIP, reviewPending, shownAsk, testsText, whereTag } from "../../src/shared/pane";
 import type { Group, Session } from "../../src/shared/types";
 import { post } from "../env";
 import { pets } from "../pets";
@@ -166,6 +166,11 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           <Tag text={where.tag} title={movedText(s) + where.title} />
           {isBackground(s) && attachedTag(s.attached) ? (
             <Tag text={attachedTag(s.attached)!.tag} title={attachedTag(s.attached)!.title} />
+          ) : null}
+          {/* Remote Control on: claude.ai/code and the Claude app show it (a click opens its page there) */}
+          {remoteControlPage(s.remoteControl) ? (
+            <Tag icon={I.remoteControl} text={REMOTE_CONTROL_TAG} active title={REMOTE_CONTROL_TIP}
+              onClick={() => post({ type: "openRemoteControl", chat })} />
           ) : null}
           {s.shared ? <Tag icon={I.share} text={s.shared.forkOf ? "Shared copy" : "Shared"} title={sharedTagTitle(s)} /> : null}
           {agents ? (
@@ -427,6 +432,17 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
           {canHide(s) ? (
             <IconButton icon={I.hide} label="Hide this chat" title={`Hide this chat\n${hideHint("chats", host)}`}
               onClick={() => post({ type: "dismiss", chat })} />
+          ) : null}
+          {s.remoteSwitch && s.pid != null ? (
+            // Remote Control on or off in a background chat (pressed while it's on)
+            <IconButton
+              icon={I.remoteControl}
+              label={s.remoteControl ? "Turn off Remote Control" : "Turn on Remote Control"}
+              title={remoteSwitchTitle(!!s.remoteControl, remoteSwitchCan(s.state))}
+              pressed={!!s.remoteControl}
+              disabled={!remoteSwitchCan(s.state)}
+              onClick={() => post({ type: "remoteControl", chat, on: !s.remoteControl })}
+            />
           ) : null}
           {stop ? (
             canEndChat(s) ? (

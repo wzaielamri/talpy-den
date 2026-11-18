@@ -268,6 +268,8 @@ export interface PaneChat {
   busy: boolean; // working or waiting
   atWork: boolean; // working, its turn not over (only a background command after it isn't): a message waits a moment
   bgStop: boolean; // a background chat Stop can interrupt (its row's: the Claude Code versions that was checked on)
+  remoteControl?: string; // its claude.ai/code page while Remote Control is on, else "" (its row's)
+  remoteSwitch?: boolean; // Talpy Den can turn its Remote Control on and off (its row's)
   watchTrouble?: string; // an SSH host's chat: why its host's watcher can't watch it now ("check": it couldn't be reached)
   activity: string; // what it does now
   permission: PermissionAsk | null;
@@ -331,6 +333,26 @@ export function attachedTag(attached: Session["attached"]): { tag: string; title
 }
 
 // Its tag, and what the tag says on hover (terminalApp: the terminal's name; account: a new chat's)
+// Remote Control: claude.ai/code and the Claude app show a chat that has it on and take your
+// messages for it; its row's remoteControl is its page there (talpy_den.remote_control_link), and
+// a background chat's is turned on and off from here (its row's remoteSwitch). Plasma main.qml:
+// the same words. (only a claude.ai/code session's page is opened: a host's row says what it says)
+export function remoteControlPage(link: unknown): string {
+  return typeof link === "string" && /^https:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]{1,100}$/.test(link) ? link : "";
+}
+export const REMOTE_CONTROL_TAG = "Remote Control";
+export const REMOTE_CONTROL_TIP = "Remote Control is on\nclaude.ai/code and the Claude app show this chat and take your messages for it; it still runs here. Click to open it on claude.ai/code.";
+// (only while Claude neither works nor waits for you: its session sits idle, the row idle or done)
+export function remoteSwitchCan(state: string | undefined): boolean {
+  return state !== "working" && state !== "waiting";
+}
+export function remoteSwitchTitle(on: boolean, idle: boolean): string {
+  return (on
+    ? "Turn off Remote Control\nDisconnects it from claude.ai/code and the Claude app, as Disconnect in Claude's /remote-control. The chat goes on here."
+    : "Turn on Remote Control\nShows this chat on claude.ai/code and in the Claude app, to read and answer it from your phone or a browser; Claude still runs here (Claude's /remote-control). Keep this computer awake.")
+    + (idle ? "" : "\n\nOnce Claude has finished this turn.");
+}
+
 export function whereTag(where: ChatWhere, terminalApp = "", account = ""): { tag: string; title: string } {
   switch (where) {
     case "new":
@@ -414,6 +436,8 @@ export type PaneMessage =
   | { type: "openWindow" }
   | { type: "handoff"; text: string } // Continue in a new chat: a new chat in its folder, the handoff note in its box
   | { type: "stop" } // Stop on its working line: what Claude does now (stopOf)
+  | { type: "remoteControl"; on: boolean } // Remote Control on or off (a background chat's)
+  | { type: "openRemoteControl" } // its page on claude.ai/code
   | { type: "chatOptions"; model: string; effort: string; mode: string } // a new chat's ⚙ line (kept for the next new chat)
   | { type: "openPlan" } // the plan it made
   | { type: "openAgentRun"; agentId: string } // a subagent's whole run, in the Markdown preview (its strip)

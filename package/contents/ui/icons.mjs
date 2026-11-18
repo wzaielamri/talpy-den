@@ -125,6 +125,7 @@ const TABLE = {
     home:            ['user-home',                     'folder',     'user-home-symbolic'],
     terminal:        ['utilities-terminal',            'terminal',   'utilities-terminal-symbolic'],
     phone:           ['smartphone',                    null,         'phone-symbolic'],
+    remoteControl:   ['smartphone',                    'phone',      'phone-symbolic'],                   // Remote Control: a chat claude.ai/code and the Claude app show (a phone, as Claude's VS Code panel draws it)
     recap:           ['view-statistics',               'chart',      'x-office-presentation-symbolic'],   // (GNOME: a board with a chart; Settings' usage icon isn't in Adwaita or Yaru)
     tipWaits:        ['clock',                         'clock',      'alarm-symbolic'],                   // the Recap's tip about the time chats waited for you
     tipLimits:       ['speedometer',                   'gauge',      'power-profile-performance-symbolic'], // the Recap's tip about usage limits

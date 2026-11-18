@@ -143,6 +143,21 @@ Window {
         interval: 15000
         onTriggered: pane.stopping = false
     }
+    // Remote Control on or off (main.qml setRemoteControl): its answer said here
+    property bool rcAsking: false
+    function switchRemoteControl(on) {
+        if (rcAsking || !row || !row.remoteSwitch)
+            return
+        const asked = chatId
+        rcAsking = root.setRemoteControl(row, host, on, result => {
+            pane.rcAsking = false
+            if (pane.chatId !== asked)
+                return
+            pane.info = result.ok ? (result.message || "") : i18n("Remote Control: %1", result.message || i18n("That didn't work"))
+            pane.infoBad = !result.ok
+            infoTimer.restart()
+        })
+    }
 
     title: i18nc("window title: a chat's name", "%1 — Talpy Chat", chatName || chatId.slice(0, 8))
     readonly property int wantedWidth: Kirigami.Units.gridUnit * 38   // (beside the popup, if there's room: main.qml)
@@ -3343,6 +3358,25 @@ Window {
                     PlasmaComponents3.ToolTip.text: i18n("Larger text (Ctrl+=, Ctrl+wheel; Ctrl+0: as it was)")
                     PlasmaComponents3.ToolTip.visible: hovered
                 }
+                // Remote Control on or off in a background chat (pressed while it's on)
+                PlasmaComponents3.ToolButton {
+                    readonly property bool on: !!pane.row && !!pane.row.remoteControl
+                    visible: !pane.fresh && !!pane.row && !!pane.row.remoteSwitch && !!pane.row.pid
+                    enabled: !pane.rcAsking && root.rcCan(pane.row)
+                    // (drawn on as the popup's Focus and Find toggles; not checkable: it's on once the chat says so)
+                    checked: on
+                    icon.name: Icons.plasma.remoteControl
+                    display: PlasmaComponents3.AbstractButton.IconOnly
+                    text: on ? i18n("Turn off Remote Control") : i18n("Turn on Remote Control")
+                    onClicked: pane.switchRemoteControl(!on)
+
+                    TipArea {
+                        textFormat: Text.PlainText
+                        anchors.fill: parent
+                        mainText: parent.text
+                        subText: root.remoteSwitchTip(pane.row)
+                    }
+                }
                 PlasmaComponents3.ToolButton {
                     // (a background chat's: a terminal on it, claude attach, also where its window is this one)
                     readonly property bool attaches: pane.where === "background" && !!pane.row && !!pane.row.pid
@@ -3392,6 +3426,17 @@ Window {
                           : shownIn.in === "vscode" ? i18nc("where a chat runs", "VS Code terminal") : i18nc("where a chat runs", "Terminal")
                     tooltip: !shownIn ? "" : shownIn.app ? i18n("Shown in a terminal too (%1): claude attach.", shownIn.app)
                                                          : i18n("Shown in a terminal too: claude attach.")
+                }
+                // Remote Control on: claude.ai/code and the Claude app show it (a click opens its page there)
+                Tag {
+                    visible: !!pane.row && root.remoteControlPage(pane.row.remoteControl) !== ""
+                    icon: Icons.plasma.remoteControl
+                    text: i18n("Remote Control")
+                    active: true
+                    clickable: true
+                    onClicked: root.openRemoteControl(pane.row.remoteControl)
+                    tooltipTitle: i18n("Remote Control is on")
+                    tooltip: root.remoteControlTip(pane.row)
                 }
                 // what its row in the list says of it too: shared, its permission
                 // mode, its plan, its subagents (SessionRow.qml's tags)

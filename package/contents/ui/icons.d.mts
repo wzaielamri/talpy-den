@@ -100,6 +100,7 @@ export type Meaning =
   | "home"
   | "terminal"
   | "phone"
+  | "remoteControl"
   | "recap"
   | "tipWaits"
   | "tipLimits"

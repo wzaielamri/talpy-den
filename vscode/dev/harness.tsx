@@ -63,6 +63,10 @@ function sendState(): void {
       { ...task, id: "q-unseen-2", host: "docker:web@gpu-lab", startAt: Date.now() - 60_000, chat: "demo-unseen-2", name: "Fix the parser",
         error: "Can't reach gpu-lab: Connection timed out. It starts once web on gpu-lab answers again" }];
   }
+  // ?rc=1: the background chat running, its turn over, with Remote Control on (its tag, its switch on hover)
+  const bg = groups.flatMap((g) => g.sessions).find((s) => s.kind === "bg");
+  if (params.get("rc") === "1" && bg)
+    Object.assign(bg, { pid: 4242, bgStop: true, remoteSwitch: true, remoteControl: "https://claude.ai/code/session_01DemoRemoteControl" });
   // ?stars=1: a chat at work, a recent chat and a plan starred, and an old chat and plan under Starred
   const first = groups[0];
   if (params.get("stars") === "1" && first) {

@@ -38,6 +38,9 @@ const chat: PaneChat = {
   busy: true,
   atWork: !ask,
   bgStop: params.get("bgStop") !== "0", // ?where=background&bgStop=0: a Claude Code version Stop doesn't know
+  // ?rc=1|0: Remote Control on (its tag, its switch pressed) or off (the switch), for a background chat
+  remoteControl: params.get("rc") === "1" ? "https://claude.ai/code/session_01DemoRemoteControl" : "",
+  remoteSwitch: params.get("rc") === "1" || params.get("rc") === "0",
   activity: "Bash: npm test -- parser",
   permission: ask === "question"
     ? { tool: "AskUserQuestion", line: questions[0].question, command: "", file: "", diff: [], always: "", questions,

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### New
+
+- **Remote Control: see it, open it, turn it on or off.** A chat that has
+  Claude Code's Remote Control on (claude.ai/code and the Claude app show it)
+  has a **Remote Control** tag with a phone, on its row and in Talpy Chat's
+  header, as Claude's own panel shows it; a click opens the chat on
+  claude.ai/code. A background chat's phone button (pressed while it's on)
+  turns it on or off, as `/remote-control` does in its terminal: Talpy Den
+  types the command in, and to turn it off picks *Disconnect this session* in
+  Claude's dialog once it sees the mark there. Only once Claude has finished
+  its turn. Here, on SSH hosts and in containers.
+
 ### Better
 
 - **Enter again sends a queued message now.** A message sent while Claude

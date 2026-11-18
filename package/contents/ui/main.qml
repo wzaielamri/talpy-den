@@ -1165,6 +1165,34 @@ PlasmoidItem {
         }
     }
 
+    // pane.py --remote-control: Remote Control turned on or off in a background chat
+    // (setRemoteControl); its answer is said where it was asked (done), else here
+    Exec {
+        id: remoteControlRunner
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            const result = root.helperResult(data)
+            const asked = root.rcRuns[source] || {}
+            delete root.rcRuns[source]
+            const busy = Object.assign({}, root.rcBusy)
+            delete busy[asked.key]
+            root.rcBusy = busy
+            if (asked.done)
+                asked.done(result)
+            else if (result.ok) {
+                root.actionError = ""
+                root.actionInfo = result.message
+                actionInfoTimer.restart()
+            } else {
+                root.actionError = i18n("Remote Control: %1", result.message || i18n("That didn't work"))
+                actionErrorTimer.restart()
+            }
+            root.refresh()
+            if (asked.host)
+                root.pollHost(asked.host)
+        }
+    }
+
     // A host taken off the list: what pane.py --relay forget did there; said only when its permission hook
     // stays (a chat Talpy Chat started there still runs, or it's on for every chat there)
     Exec {
@@ -3823,6 +3851,57 @@ PlasmoidItem {
     function interruptSession(sessionId, profileDir) {
         stopper.connectSource("python3 -I " + shellQuote(codeDir + "jump.py") + " --interrupt " + shellQuote(sessionId)
                               + profileArg(profileDir) + configDirArgs + " # " + Date.now())
+    }
+
+    // ---------------------------------------------------------------- Remote Control
+    // claude.ai/code and the Claude app show a chat that has Remote Control on and take
+    // your messages for it: its row's remoteControl is its page there (talpy_den.py
+    // remote_control_link), the Remote Control tag on its row and in Talpy Chat opens it.
+    // A background chat's is turned on and off here (its row's remoteSwitch), with
+    // pane.py --remote-control: on this computer, an SSH host or in a container.
+    // (only a claude.ai/code session's page is opened: a host's row says what it says)
+    function remoteControlPage(link) {
+        return typeof link === "string" && /^https:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]{1,100}$/.test(link) ? link : ""
+    }
+    function openRemoteControl(link) {
+        const page = remoteControlPage(link)
+        if (page)
+            Qt.openUrlExternally(page)
+    }
+    property var rcBusy: ({})   // (row key -> true: asked, its answer still to come: its button waits)
+    property var rcRuns: ({})   // (the command -> {key, host, done})
+    // on: on or off; done(result): the answer, to say where it was asked (Talpy Chat), else said here.
+    // false: not asked (it can't be, or it's asked already: its answer is on its way)
+    function setRemoteControl(session, host, on, done) {
+        if (!session || !session.remoteSwitch)
+            return false
+        const key = rowKeyOf(session, host || "")
+        if (rcBusy[key])
+            return false
+        const chatId = session.chatId || session.sessionId
+        const cmd = "python3 -I " + shellQuote(codeDir + "pane.py") + " --remote-control " + shellQuote(chatId)
+                    + (session.sessionId && session.sessionId !== chatId ? " --session " + shellQuote(session.sessionId) : "")
+                    + (on ? "" : " --off") + profileArg(session.profileDir)
+                    + (host ? " --host " + shellQuote(host) : configDirArgs) + " # " + Date.now()
+        rcBusy = Object.assign({}, rcBusy, { [key]: true })
+        rcRuns[cmd] = { key: key, host: host || "", done: done || null }
+        remoteControlRunner.connectSource(cmd)
+        return true
+    }
+    function remoteControlTip(session) {
+        return session && session.remoteControl
+            ? i18n("claude.ai/code and the Claude app show this chat and take your messages for it; it still runs here. Click to open it on claude.ai/code.")
+            : ""
+    }
+    function remoteSwitchTip(session) {
+        return !session ? ""
+            : (session.remoteControl ? i18n("Disconnects it from claude.ai/code and the Claude app, as Disconnect in Claude's /remote-control. The chat goes on here.")
+               : i18n("Shows this chat on claude.ai/code and in the Claude app, to read and answer it from your phone or a browser; Claude still runs here (Claude's /remote-control). Keep this computer awake."))
+              + (!rcCan(session) ? "\n\n" + i18n("Once Claude has finished this turn.") : "")
+    }
+    // (only while Claude neither works nor waits for you: its session sits idle, the row idle or done)
+    function rcCan(session) {
+        return !!session && session.state !== "working" && session.state !== "waiting"
     }
 
     // A background chat no terminal shows (here, on an SSH host, in a

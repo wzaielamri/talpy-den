@@ -262,6 +262,10 @@ def completions(profile, cwd):
 # without its !. /compact writes a plain "/compact" prompt first, then the
 # compaction, then its command entry. A command it doesn't know: a system
 # "informational" entry, "Unknown command: /x" (and what it may have meant).
+# Remote Control connected: a system "bridge_status" entry, "/remote-control
+# is active · Continue here, on your phone, or at <its claude.ai/code page>"
+# (Claude 2.1.327), after /remote-control's own entries (it printed nothing),
+# or with none (a chat that started with it on).
 
 COMMAND_PART = re.compile(r"<(command-name|command-args|command-message)>(.*?)</\1>", re.S)
 OUTPUT_PART = re.compile(r"<(local-command-stdout|local-command-stderr|bash-stdout|bash-stderr)>(.*?)</\1>", re.S)
@@ -272,6 +276,7 @@ OUTPUT_LINES = 80    # of a command's output, in the chat
 OUTPUT_CHARS = 8000
 ANSI_TAIL = re.compile(r"\x1b(?:\[[0-9;?]*)?$")   # (an escape cut in two at the end)
 SAID_ELSEWHERE = ("/compact",)   # (their note says it: "The conversation was compacted")
+BRIDGE_ON = re.compile(r"^/remote-control is ")
 
 
 def same_text(a, b):
@@ -332,6 +337,17 @@ class Commands:
             item = {"kind": "you", "key": uid, "text": name, "at": at}
             self.items.append(item)
         item["command"] = {"output": clip_output(text.strip()), "error": True}
+
+    def bridge(self, text, uid, at):
+        """Claude Code's "/remote-control is active · … at <its page>": what the
+        /remote-control just before printed (it printed nothing of its own),
+        else a note of its own (a chat that started with Remote Control on)."""
+        last = next((it for it in reversed(self.items) if it["kind"] != "note"), None)
+        if last is not None and last["kind"] == "you" and isinstance(last.get("command"), dict) \
+                and last["text"].split()[:1] in (["/remote-control"], ["/rc"]) and "output" not in last["command"]:
+            last["command"]["output"] = clip_output(text)
+            return
+        self.items.append({"kind": "note", "key": uid, "at": at, "text": BRIDGE_ON.sub("Remote Control is ", text, count=1)})
 
     def take(self, matches):
         """Your message this command is, as it was sent (its key kept): in

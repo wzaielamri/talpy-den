@@ -249,8 +249,8 @@ class KeyedRowsTests(unittest.TestCase):
         # its tags: each made only when it shows, with the row's colors
         tags = row[row.index("id: tagLine"):row.index("// Its state, at the line's end")]
         self.assertEqual(len(re.findall(r"\n\s+(Tag|TestsBadge) \{", tags)), 0)
-        self.assertEqual(tags.count("sourceComponent: Tag {") + tags.count("sourceComponent: TestsBadge {"), 13)
-        self.assertEqual(tags.count("colors: row.colors"), 13)
+        self.assertEqual(tags.count("sourceComponent: Tag {") + tags.count("sourceComponent: TestsBadge {"), 14)
+        self.assertEqual(tags.count("colors: row.colors"), 14)
         # its texts: plain Text with the row's colors, not a Label each
         self.assertNotIn("PlasmaComponents3.Label", row)
         self.assertNotIn("TextMetrics", row)

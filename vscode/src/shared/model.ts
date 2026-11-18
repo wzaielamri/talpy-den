@@ -34,6 +34,8 @@ export function chatRefOf(s: Session, host?: string): ChatRef {
     tmux: !!s.tmux,
     jobId: s.jobId,
     bgStop: !!s.bgStop,
+    remoteControl: s.remoteControl ?? null,
+    remoteSwitch: !!s.remoteSwitch,
     openCommand: s.openCommand ?? null,
     stopCommand: s.stopCommand ?? null,
     terminalCommand: s.terminalCommand ?? null,

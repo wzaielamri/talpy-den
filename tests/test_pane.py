@@ -2831,6 +2831,27 @@ class CommandsInChatTests(PaneFixture):
         # (what it printed on its own, with no command before it, isn't shown)
         self.assertEqual(self.items(printed("stray", t)), [])
 
+    def test_remote_control_says_where_the_chat_is(self):
+        # (Claude 2.1.327: /remote-control prints nothing, then a bridge_status entry says it's on and where)
+        t = self.now - 100
+        on = "/remote-control is active · Continue here, on your phone, or at https://claude.ai/code/session_01AbC"
+
+        def bridge(ts):
+            return {"type": "system", "subtype": "bridge_status", "timestamp": iso(ts), "content": on,
+                    "url": "https://claude.ai/code/session_01AbC", "isMeta": False}
+        items = self.items(prompt("hello", t, cwd=str(self.folder)), text_reply("Hi.", t + 1, "m1", "end_turn"),
+                           ran("remote-control", "", t + 2, system=True), printed("", t + 2, system=True), bridge(t + 3),
+                           ran("remote-control", "", t + 4, system=True), printed("Remote Control disconnected.", t + 4, system=True))
+        self.assertEqual([(i["kind"], i["text"], i.get("command")) for i in items], [
+            ("you", "hello", None), ("claude", "Hi.", None),
+            ("you", "/remote-control", {"output": on}),
+            ("you", "/remote-control", {"output": "Remote Control disconnected."})])
+        # (a chat that started with it on: a note of its own)
+        items = self.items(bridge(t), prompt("hello", t + 1, cwd=str(self.folder)))
+        self.assertEqual([(i["kind"], i["text"]) for i in items], [
+            ("note", "Remote Control is active · Continue here, on your phone, or at https://claude.ai/code/session_01AbC"),
+            ("you", "hello")])
+
     def test_compact_keeps_its_note(self):
         t = self.now - 100
         summary = {"type": "user", "timestamp": iso(t + 2), "isCompactSummary": True,

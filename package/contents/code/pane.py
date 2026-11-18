@@ -702,6 +702,9 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None,
             elif sub == "local_command" and isinstance(content, str):
                 ran = ran or commands_of(items, due, end)
                 ran.entry(content, uid, at)
+            elif sub == "bridge_status" and isinstance(content, str) and content.strip():
+                ran = ran or commands_of(items, due, end)   # (Remote Control connected: commands.Commands.bridge)
+                ran.bridge(content.strip(), uid, at)
             elif sub == "informational" and isinstance(content, str) and content.startswith(UNKNOWN_COMMAND):
                 ran = ran or commands_of(items, due, end)
                 ran.unknown(content, uid, at)

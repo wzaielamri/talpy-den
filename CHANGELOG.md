@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+### Highlights
+
+- **Remote Control from Talpy Den:** a chat claude.ai/code and the Claude app show has a **Remote Control** tag (a click opens it there), and a background chat's phone button turns Remote Control on or off (Plasma and VS Code).
+- **Enter again sends a queued message now** (Plasma and VS Code).
+
 ### Every change
 
+- **Remote Control: see it, open it, turn it on or off.** Claude Code's Remote Control shows a chat that runs here on claude.ai/code and in the Claude app, to read and answer it from your phone or a browser; Talpy Den didn't say which chats had it on, and turning it on meant opening the chat in a terminal and typing `/remote-control` there. Now a chat with it on has a **Remote Control** tag with a phone, on its row and in Talpy Chat's header, as Claude's own VS Code panel shows it; a click opens the chat on claude.ai/code. A background chat's phone button (on its row, and at the top of Talpy Chat, pressed while it's on) turns it on or off, as `/remote-control` does in its terminal: Talpy Den types the command into the chat, and to turn it off picks *Disconnect this session* in Claude's dialog, only once it sees the mark there (else it closes the dialog and picks nothing). Only once Claude has finished its turn: typed while it works, the command would wait in Claude's queue, and a second click meanwhile would open the dialog with nobody to answer it. Talpy Chat shows Claude's own line under the command (*… or at https://claude.ai/code/session_…*), and a note for a chat that started with Remote Control on. Here, on SSH hosts and in containers; checked on Claude Code 2.1.327 (Plasma and VS Code).
 - **Enter again sends a queued message now.** A message sent while Claude works waits 5 s (*Queued · goes to Claude in 5 s*), to be taken back; to send it at once took **Send now** or Ctrl+Enter, and Enter in the empty box did nothing, so it waited the 5 s. Now Enter again in the empty box sends it at once, as **Send now** does (Plasma and VS Code).
 
 ## 1.21.0 (2026-11-17)

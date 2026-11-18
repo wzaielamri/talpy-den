@@ -52,6 +52,7 @@ import {
   talpyPlace,
 } from "./shared/model";
 import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "./shared/types";
+import { remoteControlPage } from "./shared/pane";
 import { asPaste, attachClients, localAncestors, type Place, type Terminals } from "./terminals";
 import type { PlanReview } from "./planReview";
 import type { ChatPanes } from "./chatPane";
@@ -1346,6 +1347,38 @@ export class Actions {
     );
     if (!mode) return;
     await setChatOptions(model.value, effort.value, mode.value);
+  }
+
+  // Remote Control on or off in a background chat (its row's remoteSwitch): pane.py
+  // --remote-control types Claude's /remote-control into it (here, on an SSH host or in a
+  // container), only while it's idle. One at a time a chat: a second click while the first
+  // is on its way does nothing (twice, the second would open Claude's dialog in it). say:
+  // what came of it is said here (a row's button), else only returned (Talpy Chat says it)
+  private rcAsked = new Set<string>();
+  async remoteControl(chat: ChatRef, on: boolean, say = true): Promise<{ ok: boolean; message: string }> {
+    if (this.demoOnly()) return { ok: false, message: "Demo mode: these chats are made up" };
+    if (!chat.remoteSwitch) return { ok: false, message: "Talpy Den turns Remote Control on and off in a running background chat" };
+    const id = chat.chatId || chat.sessionId;
+    const key = `${chat.host ?? ""}|${chat.profileDir}|${id}`;
+    if (this.rcAsked.has(key)) return { ok: false, message: "Talpy Den is at it already" };
+    this.rcAsked.add(key);
+    try {
+      const r = await this.backend.pane(["--remote-control", id, ...(chat.sessionId && chat.sessionId !== id ? ["--session", chat.sessionId] : []),
+        ...(on ? [] : ["--off"]), ...(chat.profileDir ? ["--profile", chat.profileDir] : []), ...(chat.host ? ["--host", chat.host] : configDirArgs())],
+        chat.host ? 60000 : 20000);
+      const answer = { ok: !!r.ok, message: String(r.message ?? "") };
+      if (say && this.report({ ok: answer.ok, message: answer.message }, "Remote Control")) this.dash.setActionInfo(answer.message);
+      return answer;
+    } finally {
+      this.rcAsked.delete(key);
+      this.refresh(chat.host);
+    }
+  }
+
+  // Its page on claude.ai/code (only a claude.ai/code session's: remoteControlPage)
+  async openRemoteControl(chat: ChatRef): Promise<void> {
+    const page = remoteControlPage(chat.remoteControl);
+    if (page) await vscode.env.openExternal(vscode.Uri.parse(page));
   }
 
   // A chat keeps going until it's done (after each usage limit, on by itself

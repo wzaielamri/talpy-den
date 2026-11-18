@@ -8765,16 +8765,18 @@ def esc_through_attach(path, key, job_id, size):
 # turns it on or off for a live background session as its terminal would,
 # with /remote-control typed in through the service's reply:
 # - on: that's all (it connects, nothing to answer once you have used
-#   Remote Control before; asked while Claude works, it's queued and runs
-#   as the turn ends);
+#   Remote Control before);
 # - off: with it on, the same command opens Claude's dialog instead (the
 #   session waits on it): "Disconnect this session", "Show QR code",
 #   "Continue", the mark on Continue. Talpy Den then attaches for a moment,
 #   as Stop does, and presses ↑ till the mark is on "Disconnect this
 #   session" (read from what the session shows), then Enter; Esc if it
 #   never gets there, so nothing else is picked.
-# Undocumented, as Stop: only on the Claude Code versions it was checked on
-# (bg_stop_known: a row's "remoteSwitch").
+# Only while the session is idle: asked while Claude works, the command is
+# queued and runs as the turn ends, so a second click meanwhile would run it
+# twice (on, then the dialog, with nobody to answer it). One at a time a
+# chat (stop_turn, as Stop). Undocumented, as Stop: only on the Claude Code
+# versions it was checked on (bg_stop_known: a row's "remoteSwitch").
 
 REMOTE_CONTROL_URL = "https://claude.ai/code/"
 RC_COMMAND = "/remote-control"
@@ -8884,21 +8886,18 @@ def remote_control_live(home, extra_dirs, entry, runs_on, on, profile_key=None, 
     status = entry.get("status")
     if status == "waiting":
         return False, "It's waiting for you: answer it first", link
-    if not on and status != "idle":
-        return False, "It's at work: turn Remote Control off once its turn is over", link
+    if status != "idle":
+        return False, f"It's at work: turn Remote Control {'on' if on else 'off'} once its turn is over", link
     if not on and tty_size(entry.get("pid")) is None:
         return False, ("Talpy Den can't read the size of its terminal (a terminal that shows it would be resized): "
                        "open it in a terminal and type /remote-control there"), link
-    if not on and not stop_turn(job_id):   # (one key-press at a time a chat, as Stop)
+    if not stop_turn(job_id):   # (one key-press at a time a chat, as Stop)
         return False, "Talpy Den is at it already", link
     ok, said = reply_to_background(runs_on, job_id, RC_COMMAND)
     if not ok:
-        if not on:
-            stop_turn(job_id, forget=True)
+        stop_turn(job_id, forget=True)
         return False, said, link
     if on:
-        if status != "idle":   # (queued: it runs as the turn ends)
-            return True, "Remote Control goes on as Claude finishes this turn", None
         now = rc_watch(home, extra_dirs, sid, profile_key, lambda e: remote_control_link(e) is not None, wait)
         page = remote_control_link(now) if now else None
         return True, ("Remote Control is on" if page else "Remote Control is turning on"), page

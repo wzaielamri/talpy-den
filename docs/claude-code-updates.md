@@ -116,6 +116,20 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
     say "That chat isn't running any more".
   - Test: SessionTests.test_session_states_and_filtering (test_talpy_den.py), LiveAttributionTests
     (test_chats.py).
+- [ ] **Remote Control in the session file.** A session with Remote Control on names its claude.ai session in
+  `bridgeSessionId` (`session_…`; `null` once it's off), and the chat's page is
+  `https://claude.ai/code/<that id>`, the link its terminal prints. Its job keeps `--remote-control` in
+  `respawnFlags`, and the job's state.json has its own `bridgeSessionId` (`cse_…`, not read). Checked live on
+  2.1.327.
+  - Used in: talpy_den.py remote_control_link, REMOTE_CONTROL_URL, live_row ("remoteControl"); main.qml
+    remoteControlPage; vscode/src/shared/pane.ts remoteControlPage.
+  - Check: `has bridgeSessionId`. Start a throwaway background chat with `--remote-control` as its first
+    option (`claude --bg --remote-control --model haiku 'say hi'`: a word right after it is taken as its
+    name), then `jq .bridgeSessionId $C/sessions/*.json`. It should be `session_…`, and `claude logs <short>`
+    should print the same id after `claude.ai/code/`.
+  - Breaks: the Remote Control tag never shows (or opens the wrong page), and the switch always says *Turn on*.
+  - Test: RemoteControlTests.test_rows_carry_its_page_and_whether_talpy_den_can_switch_it,
+    test_only_a_claude_ai_session_makes_a_link (test_talpy_den.py; fixtures written here).
 - [ ] **procStart guards against PID reuse.** `procStart` equals field 22 (starttime, in clock ticks) of
   `/proc/<pid>/stat`, compared as a string. The same guard reads `supervisorProcStart` and each worker's
   `procStart` in `daemon.status.json`.
@@ -606,6 +620,24 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   - Test: BackgroundStopTests (test_talpy_den.py), e.g. test_esc_goes_in_at_the_size_its_terminal_has_now,
     test_nothing_is_typed_unless_it_works_on_a_version_it_knows,
     test_interrupt_by_id_types_esc_into_a_background_chat_and_ctrl_c_into_tmux.
+- [ ] **Remote Control on and off through the service.** `/remote-control` typed into an idle background session
+  (the service's `reply`) turns Remote Control on with nothing to answer, once the account has used it before
+  (`remoteDialogSeen` in its `.claude.json`). With it on, the same command opens Claude's dialog instead,
+  and the session waits on it (`status` `waiting`): the choices *Disconnect this session*, *Show QR code*
+  (not always there) and *Continue*, the mark `❯` on *Continue*, ↑/↓ to move, Enter to pick, Esc to close.
+  Talpy Den attaches as Stop does, presses ↑ till the last `❯` of what the session shows is on *Disconnect*,
+  then Enter; Esc if it never gets there. Typed while Claude works, the command is queued and runs as the turn
+  ends, so Talpy Den does it only while the session is idle. Checked live on 2.1.327.
+  - Used in: talpy_den.py remote_control_live, disconnect_through_attach, rc_marked, rc_read, attach_session,
+    RC_COMMAND, RC_MARK, RC_DISCONNECT; pane.py remote_control (--remote-control).
+  - Check: `has 'Disconnect this session' 'Show QR code' 'bridge-disconnect-dialog'`. In a throwaway background
+    chat that's idle, `python3 -I $TD/pane.py --remote-control $ID` should answer `ok` with a `link`, and
+    `python3 -I $TD/pane.py --remote-control $ID --off` should answer `ok` with no link; `jq .bridgeSessionId`
+    goes from `session_…` back to `null`, and `claude logs <short>` shows no dialog left open.
+  - Breaks: Turn on does nothing or opens a dialog nobody sees; Turn off says the dialog "didn't look as Talpy
+    Den knows it" (nothing is picked then), or leaves it on.
+  - Test: RemoteControlTests (test_talpy_den.py: a stand-in dialog that answers ↑, Enter and Esc as checked
+    live), RemoteControlTests (test_pane.py).
 - [ ] **A background worker's terminal size.** A worker's stdin (`/proc/<pid>/fd/0`) is a pty whose window
   size is the session's terminal size. Stop attaches at that size.
   - Used in: talpy_den.py tty_size, interrupt_background.
@@ -2718,6 +2750,17 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
     while it runs. When it ends, `grep -c '<task-id>' …` grows by one.
   - Breaks: the working line says *Working…* with no shells under it, or lists one that ended.
   - Test: test_pane.py BackgroundShellTests (fixtures written here: they can't tell you Claude changed).
+- [ ] **Remote Control's line in the transcript.** When Remote Control connects, Claude writes a system entry,
+  `subtype` `bridge_status`, `content` "/remote-control is active · Continue here, on your phone, or at
+  <its page>" (and `url`). `/remote-control` itself prints nothing (an empty `local-command-stdout`); turned
+  off, it prints "Remote Control disconnected.". Checked live on 2.1.327.
+  - Used in: pane.py conversation_items; commands.py Commands.bridge, BRIDGE_ON.
+  - Check: `has bridge_status`. After turning it on in a throwaway chat,
+    `grep -c '"bridge_status"' "$T"` grows by one.
+  - Breaks: Talpy Chat shows `/remote-control` with nothing under it, or no note for a chat that started with
+    it on.
+  - Test: CommandsInChatTests.test_remote_control_says_where_the_chat_is (test_pane.py; fixtures written
+    here).
 - [ ] **File mentions.** `@path`, or `@"path with spaces"` quoted, attaches a file. Dropped and completed
   files are put in that way.
   - Used in: vscode/src/shared/pane.ts fileMention, suggestFor; vscode/webview/chat.tsx;

@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, SIDE_BUTTON, SIDE_TIP, SIDE_WIDE, sidePickOf, sidesShown, sideWarm, type AskedSide, type ShownSide, type Side, type SidePick, awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type BackgroundShell, SHELL_LINES, shellFold, shellLine, shellsMore, shellsWaiting, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer, fromKeyOk, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, SIDE_FROM_LINE, SIDE_FROM_MENU, SIDE_FROM_TIP, sideLine, type SidePart } from "../src/shared/pane";
+import { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, SIDE_BUTTON, SIDE_TIP, SIDE_WIDE, sidePickOf, sidesShown, sideWarm, type AskedSide, type ShownSide, type Side, type SidePick, awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type BackgroundShell, SHELL_LINES, shellFold, shellLine, shellsMore, shellsWaiting, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer, fromKeyOk, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, SIDE_FROM_LINE, SIDE_FROM_MENU, SIDE_FROM_TIP, sideLine, type SidePart, REMOTE_CONTROL_TAG, REMOTE_CONTROL_TIP, remoteSwitchCan, remoteSwitchTitle } from "../src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
@@ -641,6 +641,7 @@ function ChatApp() {
   const [info, setInfo] = useState<{ ok: boolean; message: string } | null>(null);
   const [answering, setAnswering] = useState(0);
   const [stopping, setStopping] = useState(false); // (Stop clicked: "Stopping…" till its turn ends, it says why not, or 15 s)
+  const [rcAsking, setRcAsking] = useState(false); // (Remote Control on or off asked: its button waits for the answer)
   // A message on its way (until its result): no second one meanwhile, so a
   // second Enter doesn't send it twice (the ref: two keys before a redraw)
   const [sending, setSending] = useState(false);
@@ -1234,6 +1235,12 @@ function ChatApp() {
         if (m.kind === "draft") {
           setText(m.message);
           setAskHow(true);
+          return;
+        }
+        if (m.kind === "remoteControl") {
+          // (on or off: its row says so at the next look; why not, under the box)
+          setRcAsking(false);
+          setInfo({ ok: !!m.ok, message: m.ok ? m.message || "" : `Remote Control: ${m.message || "that didn't work"}` });
           return;
         }
         if (m.kind === "stop") {
@@ -2456,6 +2463,17 @@ function ChatApp() {
             onClick={() => post({ type: "moveToClaudeCode" })}
           />
         ) : null}
+        {chat && !chat.fresh && chat.remoteSwitch ? (
+          // Remote Control on or off in a background chat (pressed while it's on)
+          <IconButton
+            icon={I.remoteControl}
+            label={chat.remoteControl ? "Turn off Remote Control" : "Turn on Remote Control"}
+            title={remoteSwitchTitle(!!chat.remoteControl, remoteSwitchCan(chat.state))}
+            pressed={!!chat.remoteControl}
+            disabled={rcAsking || !remoteSwitchCan(chat.state)}
+            onClick={() => { setRcAsking(true); post({ type: "remoteControl", on: !chat.remoteControl }); }}
+          />
+        ) : null}
         {chat && !chat.fresh && !chat.starting ? (
           chat.where === "background" ? (
             <IconButton
@@ -2478,6 +2496,11 @@ function ChatApp() {
         {chat ? <Tag {...(({ tag, title }) => ({ text: tag, title }))(whereTag(starting ? "background" : chat.where, chat.terminalApp, chat.fresh?.account))} /> : null}
         {chat && chat.where === "background" && attachedTag(chat.attached) ? (
           <Tag {...(({ tag, title }) => ({ text: tag, title }))(attachedTag(chat.attached)!)} />
+        ) : null}
+        {/* Remote Control on: claude.ai/code and the Claude app show it (a click opens its page there) */}
+        {chat?.remoteControl ? (
+          <Tag icon={I.remoteControl} text={REMOTE_CONTROL_TAG} active title={REMOTE_CONTROL_TIP}
+            onClick={() => post({ type: "openRemoteControl" })} />
         ) : null}
         {/* what its row in the list says of it too: shared, its permission mode, its plan, its subagents */}
         {chat?.shared ? (

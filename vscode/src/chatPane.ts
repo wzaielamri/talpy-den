@@ -22,7 +22,7 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, defaultGroup, doingText, hostLabel, liveOf, machineStatus, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, reviewPending, reviewSeen, sameAsk, shownUpTo, sideAnswerOf, sideKeyOk, sidePartAnswerOf, sidePickOf, sidesOf, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult, type SidePick } from "./shared/pane";
+import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, remoteControlPage, reviewPending, reviewSeen, sameAsk, shownUpTo, sideAnswerOf, sideKeyOk, sidePartAnswerOf, sidePickOf, sidesOf, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult, type SidePick } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -739,6 +739,8 @@ class Pane implements vscode.Disposable {
       busy: session?.state === "working" || session?.state === "waiting",
       atWork: session?.state === "working" && session.reason !== "background shell",
       bgStop: !!session?.bgStop,
+      remoteControl: remoteControlPage(session?.remoteControl),
+      remoteSwitch: !!session?.remoteSwitch && !!session.pid,
       // (its host's watcher fails: what it asks shows at the host's next check)
       watchTrouble: this.host ? (this.owner.ext.dash.hostWatchTrouble?.(this.host) ?? "") : "",
       activity: session ? doingText(session, this.host ? null : liveOf(session, state.live)) : "",
@@ -1202,6 +1204,17 @@ class Pane implements vscode.Disposable {
       case "stop":
         if (!this.fresh) this.result("stop", await this.owner.interrupt(this.chat));
         break;
+      case "remoteControl": {
+        // (its row now: on or off, and whether Talpy Den can switch it)
+        const { session } = findPaneRow(this.owner.ext.dash.state(), this.host, this.chatId);
+        if (!this.fresh && session) this.result("remoteControl", await actions.remoteControl(chatRefOf(session, this.host || undefined), m.on === true, false));
+        break;
+      }
+      case "openRemoteControl": {
+        const { session } = findPaneRow(this.owner.ext.dash.state(), this.host, this.chatId);
+        if (session) await actions.openRemoteControl(chatRefOf(session, this.host || undefined));
+        break;
+      }
       case "moveToClaudeCode":
         await actions.moveToClaudeCode(this.chat);
         break;

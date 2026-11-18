@@ -2166,10 +2166,13 @@ class RemoteControlTests(Fixture):
                              (True, "Remote Control is on", self.LINK))
         self.assertEqual(self.typed, [("work", "job7", "/remote-control")])
 
-    def test_on_while_claude_works_goes_on_as_the_turn_ends(self):
-        busy = dict(self.entry, status="busy")
-        self.assertEqual(cs.remote_control_live(self.home, [], busy, self.profile, True),
-                         (True, "Remote Control goes on as Claude finishes this turn", None))
+    def test_one_at_a_time_a_chat(self):
+        # (a second click while the first is on its way types nothing: twice, the second would open the dialog)
+        with self.looks(self.entry):
+            self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True, wait=0.05),
+                             (True, "Remote Control is turning on", None))
+            self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
+                             (False, "Talpy Den is at it already", None))
         self.assertEqual(self.typed, [("work", "job7", "/remote-control")])
 
     def test_on_or_off_already_types_nothing(self):
@@ -2229,6 +2232,8 @@ class RemoteControlTests(Fixture):
                                 (dict(self.entry, version="2.1.300"), True, "Claude Code 2.1.300"),
                                 (dict(self.entry, version="2.2.0"), True, "Claude Code 2.2.0"),
                                 (dict(self.entry, status="waiting", waitingFor="permission prompt"), True, "answer it first"),
+                                (dict(self.entry, status="busy"), True, "turn Remote Control on once its turn is over"),
+                                (dict(self.entry, status="shell"), True, "at work"),
                                 (dict(self.on, status="busy"), False, "at work"),
                                 (dict(self.on, status="shell"), False, "at work"),
                                 (dict(self.on, pid=os.getppid()), False, "size of its terminal")):

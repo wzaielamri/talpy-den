@@ -465,6 +465,12 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       case "keepGoing":
         if (chat) void this.actions.keepGoing(chat, m.on === true); // (an SSH host's too: kept here)
         break;
+      case "remoteControl":
+        if (chat) void this.actions.remoteControl(chat, m.on === true);
+        break;
+      case "openRemoteControl":
+        if (chat) void this.actions.openRemoteControl(chat);
+        break;
       case "queueContinue": {
         // (found in the extension's own state: the row or recent chat, when it can go on, and its account;
         // or one of the recent chats a bigger check listed, Show N more)

@@ -241,6 +241,8 @@ export interface Session {
   jobSessionId: string | null;
   tmux?: boolean; // runs in a tmux pane: a working one can be interrupted (Ctrl+C)
   bgStop?: boolean; // a live background session Talpy Chat's Stop can interrupt (Esc through Claude's background service)
+  remoteControl?: string | null; // the claude.ai/code page of a live chat with Remote Control on (talpy_den.remote_control_link)
+  remoteSwitch?: boolean; // a live background session Talpy Den can turn Remote Control on and off in
   hooked?: boolean; // a background chat whose prompts Talpy Den's permission hook answers (Talpy Chat's, or the one for every chat)
   peek?: Peek | null;
   changes?: ChangeSummary | null;
@@ -1010,6 +1012,8 @@ export interface ChatRef {
   tmux?: boolean;
   jobId?: string | null;
   bgStop?: boolean; // a background chat at work Stop's Esc can interrupt (its row's)
+  remoteControl?: string | null; // its claude.ai/code page while Remote Control is on (its row's)
+  remoteSwitch?: boolean; // Talpy Den can turn its Remote Control on and off (its row's)
   openCommand?: string | null;
   stopCommand?: string | null;
   terminalCommand?: string | null;
@@ -1090,6 +1094,8 @@ export type WebviewMessage =
   | { type: "unqueue"; id: string }
   | { type: "queueContinue"; chat: ChatRef; keep?: boolean } // go on by itself once the limit resets (keep: and after later limits)
   | { type: "keepGoing"; chat: ChatRef; on: boolean } // keep going after each usage limit (or not any more)
+  | { type: "remoteControl"; chat: ChatRef; on: boolean } // Remote Control on or off in a background chat
+  | { type: "openRemoteControl"; chat: ChatRef } // its page on claude.ai/code
   | { type: "star"; chat?: ChatRef; groupId?: string; host?: string; plan?: string; on: boolean } // a chat or an account's plan: starred, or not any more
   | { type: "loginHost"; host: string }
   | { type: "startContainer"; host: string }
