@@ -401,10 +401,23 @@ export function demoState(now: number, phase = 0): ViewState {
   };
 }
 
+// (in What got done: what each got done, Claude's recap of it, its review now)
 const DEMO_CHATS: WeekChat[] = [
-  { name: "Port the date parser", chatId: "demo-1", host: "", profileDir: ".claude", folder: "~/projects/date-parser", cwd: "/home/alice/projects/date-parser", workedMs: 3.2 * HOUR, cost: 41.2, prompts: 14 },
-  { name: "Release notes for 2.0", chatId: "demo-2", host: "", profileDir: ".claude", folder: "~/projects/webapp", cwd: "/home/alice/projects/webapp", workedMs: 2.4 * HOUR, cost: 29.9, prompts: 11 },
-  { name: "Nightly dependency check", chatId: "demo-3", host: "build-server", profileDir: ".claude", folder: "/srv/pipeline", workedMs: 1.6 * HOUR, cost: 17.3, prompts: 6 },
+  { name: "Port the date parser", chatId: "demo-1", host: "", profileDir: ".claude", folder: "~/projects/date-parser", cwd: "/home/alice/projects/date-parser", workedMs: 3.2 * HOUR, cost: 41.2, prompts: 14,
+    commits: [["4e1c9a2", "Parse ISO week 53 in the right year"], ["9b07d3f", "Tests for weeks 52, 53 and 1"], ["", "Port the parser's helpers"]],
+    commitCount: 5, files: 9, linesAdded: 640, linesRemoved: 210,
+    recap: { text: "You asked to port the date parser; it's ported, with tests for week 53. Next step: decide whether the old parser can go.", at: 0 },
+    review: { editedAt: Date.now() - 2 * HOUR, tests: { command: "npm test -- date", ok: true, at: Date.now() - HOUR } } },
+  { name: "Release notes for 2.0", chatId: "demo-2", host: "", profileDir: ".claude", folder: "~/projects/webapp", cwd: "/home/alice/projects/webapp", workedMs: 2.4 * HOUR, cost: 29.9, prompts: 11,
+    commits: [["c51f0be", "Release notes for 2.0"], ["77a2e19", "Changelog: the new sign-in page"]], commitCount: 2, files: 4, linesAdded: 310, linesRemoved: 40,
+    recap: { text: "You asked for the 2.0 release notes; they're written and committed. Next step: read them over before the release.", at: 0 }, review: null },
+  { name: "Nightly dependency check", chatId: "demo-3", host: "build-server", profileDir: ".claude", folder: "/srv/pipeline", workedMs: 1.6 * HOUR, cost: 17.3, prompts: 6,
+    commits: [["e0d4b61", "Bump the image's base to the new LTS"]], commitCount: 1, files: 3, linesAdded: 40, linesRemoved: 12, recap: null, review: null },
+  { name: "Sign-in page", chatId: "demo-4", host: "", profileDir: ".claude", folder: "~/projects/webapp", cwd: "/home/alice/projects/webapp", workedMs: 1.9 * HOUR, cost: 22.4, prompts: 9,
+    commits: [["2f8a6c1", "Sign-in page: remember the last account"], ["b93e07d", "Sign-in page: keyboard focus on the first field"], ["5d1e2aa", "Sign-in page"]],
+    commitCount: 12, files: 208, linesAdded: 4500, linesRemoved: 1150,
+    recap: { text: "You asked for a new sign-in page; it's done and remembers the last account. Next step: try it on a phone.", at: 0 },
+    review: { editedAt: Date.now() - 30 * MIN, tests: null } },
 ];
 
 // The Recap tab's recap of made-up days: mornings and afternoons of work, a
@@ -441,7 +454,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     const rows: WeekDay[] = weeks.map((w) => ({
       ...w.days[0], to: w.to, you: [], work: [], wait: [], limits: [], end: w.days[w.days.length - 1].end,
       youMs: w.sum.youMs, workedMs: w.sum.workedMs, busyMs: w.sum.busyMs, waitMs: w.sum.waitMs, prompts: w.sum.prompts, cost: w.sum.cost,
-      tokenTotal: w.sum.tokenTotal, chats: w.chats.slice(0, 3),
+      tokenTotal: w.sum.tokenTotal, chats: DEMO_CHATS.slice(0, 3),
     })).reverse();
     const add = (key: keyof WeekNumbers) => days.reduce((t, d) => t + (d[key] || 0), 0);
     const numbers = (k: number): WeekNumbers => ({ youMs: add("youMs") * k, workedMs: add("workedMs") * k, busyMs: add("busyMs") * k,
@@ -467,12 +480,12 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       ...w.days[0], to: w.to, you: [], work: [], wait: [], limits: [], end: w.days[w.days.length - 1].end,
       youMs: w.sum.youMs, workedMs: w.sum.workedMs, busyMs: w.sum.busyMs, waitMs: w.sum.waitMs, prompts: w.sum.prompts, cost: w.sum.cost,
       tokenTotal: w.sum.tokenTotal,
-      chats: w.chats.slice(0, 3),
+      chats: DEMO_CHATS.slice(0, 3),
     });
     const sum = { ...week.sum, youMs: week.sum.youMs + before.sum.youMs, workedMs: week.sum.workedMs + before.sum.workedMs,
       prompts: week.sum.prompts + before.sum.prompts, cost: week.sum.cost + before.sum.cost,
       tokenTotal: week.sum.tokenTotal + before.sum.tokenTotal };
-    return { ...week, span, back: 0, backMax: 0, first: before.from, from: before.from, previous: null, trend: [],
+    return { ...week, span, back: 0, backMax: 0, first: before.from, from: before.from, previous: null, workBefore: null, trend: [],
       days: [row(week), row(before)], sum };
   }
   const today = new Date(now);
@@ -535,13 +548,16 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     },
     previous: { youMs: total("youMs") * 0.8, workedMs: total("workedMs") * 0.7, busyMs: 0, waitMs: 0, prompts: total("prompts") - 18, cost: cost * 0.75,
       tokenTotal: total("tokenTotal") * 0.75 },
+    // (What got done: each with its chats, what each got done)
     projects: [
-      { name: "webapp", path: "~/projects/webapp", folder: "/home/alice/projects/webapp", host: "", workedMs: total("workedMs") * 0.55, cost: cost * 0.55, prompts: 92, chats: [DEMO_CHATS[1]], chatCount: 11 },
-      { name: "date-parser", path: "~/projects/date-parser", folder: "/home/alice/projects/date-parser", host: "", workedMs: total("workedMs") * 0.25, cost: cost * 0.27, prompts: 41, chats: [DEMO_CHATS[0]], chatCount: 6 },
-      { name: "pipeline", path: "/srv/pipeline", folder: "/srv/pipeline", host: "build-server", workedMs: total("workedMs") * 0.15, cost: cost * 0.14, prompts: 17, chats: [DEMO_CHATS[2]], chatCount: 4 },
-      { name: "~", path: "~", folder: "/home/alice", host: "", workedMs: total("workedMs") * 0.05, cost: cost * 0.04, prompts: 9, chats: [], chatCount: 2 },
+      { name: "webapp", path: "~/projects/webapp", folder: "/home/alice/projects/webapp", host: "", workedMs: total("workedMs") * 0.55, cost: cost * 0.55, prompts: 92, chats: [DEMO_CHATS[1], DEMO_CHATS[3]], chatCount: 11,
+        commitCount: 14, files: 212, linesAdded: 4810, linesRemoved: 1190 },
+      { name: "date-parser", path: "~/projects/date-parser", folder: "/home/alice/projects/date-parser", host: "", workedMs: total("workedMs") * 0.25, cost: cost * 0.27, prompts: 41, chats: [DEMO_CHATS[0]], chatCount: 6,
+        commitCount: 5, files: 9, linesAdded: 640, linesRemoved: 210 },
+      { name: "pipeline", path: "/srv/pipeline", folder: "/srv/pipeline", host: "build-server", workedMs: total("workedMs") * 0.15, cost: cost * 0.14, prompts: 17, chats: [DEMO_CHATS[2]], chatCount: 4,
+        commitCount: 1, files: 3, linesAdded: 40, linesRemoved: 12 },
+      { name: "~", path: "~", folder: "/home/alice", host: "", workedMs: total("workedMs") * 0.05, cost: cost * 0.04, prompts: 9, chats: [], chatCount: 2, commitCount: 0, files: 0 },
     ],
-    chats: DEMO_CHATS,
     models: [
       { model: "Opus 5.5", cost: cost * 0.88, tokens: 560_000_000, requests: 2750, share: 0.88 },
       { model: "Sonnet 5.5", cost: cost * 0.07, tokens: 35_000_000, requests: 410, share: 0.07 },
@@ -555,6 +571,9 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     },
     work: {
       toolCalls: 3184, commands: 1410, edits: 699, files: 143, linesAdded: 9412, linesRemoved: 2210, subagents: 21, compactions: 3, webSearches: 6, webFetches: 9,
+    },
+    workBefore: back >= 3 ? null : {
+      toolCalls: 2410, commands: 1102, edits: 512, files: 98, linesAdded: 6120, linesRemoved: 1630, subagents: 12, compactions: 2, webSearches: 4, webFetches: 3,
     },
     plan: back ? [] : [
       { account: "0123456789ab", name: "personal", windows: [

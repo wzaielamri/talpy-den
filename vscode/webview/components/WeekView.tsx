@@ -30,6 +30,11 @@ import {
   modelValue,
   weekTiles,
   workText,
+  workBeforeText,
+  doneText,
+  doneTip,
+  commitsShown,
+  listedChatRef,
   type Currency,
   dayMoment,
   dayPlace,
@@ -52,8 +57,11 @@ import {
   limitTokensText,
   limitWeekBars,
 } from "../../src/shared/week";
+import { reviewPending, testsText } from "../../src/shared/pane";
 import { post } from "../env";
 import { I, Icon } from "../util/icons";
+import { useView } from "./context";
+import { Tag, TestsTag } from "./Tag";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
 import { limitsAnswer, limitsOpen, useReadAgain, weekAnswer } from "../util/stores";
@@ -64,8 +72,9 @@ const REFRESH_MS = 10 * 60000; // while the tab is in sight
 
 // The Recap tab: your last 7 days with Claude, as a story. The big picture
 // (how long you were at it, how long Claude worked, your prompts, its
-// tokens, the API prices), what Claude did, when (a day per row on a
-// timeline, your plan's limits, chat by chat), where (by project, by chat),
+// tokens, the API prices), when (a day per row on a timeline, your plan's
+// limits, chat by chat), what got done (by project, its chats with their
+// commits and Claude's recaps, what Claude did in all),
 // then the money: what the same work would cost at API prices and what would
 // use less of your plan (the rules of Claude Code's own /usage). The extension runs the
 // widget's week.py for it (only while this tab is open): read from the chats'
@@ -108,15 +117,13 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
   const s = recap?.sum;
   const hasData = !!s && (s.workedMs > 0 || s.prompts > 0 || s.cost > 0);
 
-  // (in the order of RECAP_SECTIONS: what Claude did, when, where, then the money)
+  // (in the order of RECAP_SECTIONS: when, what got done, then the money)
   const sections: Record<RecapSection, () => JSX.Element | null> = {
-    work: () => <Work recap={recap!} />,
     days: () => (dayLanes(recap!) ? null : <Timeline recap={recap!} />),
     plan: () => <Plan recap={recap!} />,
     limits: () => <Limits recap={recap!} account={account} />,
     lanes: () => <Lanes recap={recap!} />,
-    projects: () => <Projects recap={recap!} />,
-    chats: () => (dayLanes(recap!) ? null : <Chats recap={recap!} />),
+    projects: () => <Done recap={recap!} />,
     models: () => <Models recap={recap!} />,
     tips: () => <Tips recap={recap!} copied={copied} onCopy={copy} />,
   };
@@ -266,18 +273,18 @@ function opens(shown: boolean, toggle: () => void) {
 }
 
 // A chat in the tab's lists: click one of this computer's to bring it up
-function ChatLine({ c, cur, where, sub }: { c: WeekChat; cur: Currency; where?: string; sub?: boolean }) {
-  return (
-    <li>
-      <button type="button" class={"week-chat" + (sub ? " sub" : "")} disabled={!!c.host || !c.chatId}
-        title={c.host ? `${c.name} on ${hostLabel(c.host)}: its row under ${hostLabel(c.host)} opens it` : `Open “${c.name}”`}
-        onClick={() => post({ type: "openWeekChat", chatId: c.chatId, profileDir: c.profileDir, name: c.name, cwd: c.cwd })}>
-        <span class="week-chat-name">{c.name}</span>
-        <span class="week-chat-folder small muted">{where ?? (c.host ? hostLabel(c.host) + ": " : "") + c.folder}</span>
-        <span class="week-chat-value small muted">{hoursText(c.workedMs)} · {moneyText(c.cost, cur)}</span>
-      </button>
-    </li>
+// (bare: its button alone, in a line of What got done's)
+function ChatLine({ c, cur, where, sub, bare }: { c: WeekChat; cur: Currency; where?: string; sub?: boolean; bare?: boolean }) {
+  const line = (
+    <button type="button" class={"week-chat" + (sub ? " sub" : "")} disabled={!!c.host || !c.chatId}
+      title={c.host ? `${c.name} on ${hostLabel(c.host)}: its row under ${hostLabel(c.host)} opens it` : `Open “${c.name}”`}
+      onClick={() => post({ type: "openWeekChat", chatId: c.chatId, profileDir: c.profileDir, name: c.name, cwd: c.cwd })}>
+      <span class="week-chat-name">{c.name}</span>
+      <span class="week-chat-folder small muted">{where ?? (c.host ? hostLabel(c.host) + ": " : "") + c.folder}</span>
+      <span class="week-chat-value small muted">{hoursText(c.workedMs)} · {moneyText(c.cost, cur)}</span>
+    </button>
   );
+  return bare ? line : <li>{line}</li>;
 }
 
 // A day per row: when you were at it, when Claude worked (darker where
@@ -556,38 +563,57 @@ function FillChart({ w, now }: { w: WeekPlanWindow; now: number }) {
   );
 }
 
-// The project folders Claude worked in most (a chat started in a subfolder
-// of a repository counts for the repository): click one of this computer's
-// to open it in the Projects tab, an SSH host's for its chats
-function Projects({ recap }: { recap: WeekRecap }) {
+// What got done, by project (a chat started in a subfolder of a repository
+// counts for the repository): its commits and the files Claude's edits
+// changed, its time and amount. A click unfolds its chats in place (here and
+// on an SSH host alike), each with Claude's recap of it and its commits; the
+// button at the row's end opens one of this computer's in the Projects tab.
+// Under the list, what Claude did in all, dim.
+function Done({ recap }: { recap: WeekRecap }) {
   const [open, setOpen] = useState("");
-  if (!recap.projects.length) return null;
+  const work = workText(recap.work);
+  if (!recap.projects.length && !work) return null;
   const cur = currencyOf(recap);
   const most = Math.max(1, ...recap.projects.map((p) => p.workedMs));
   return (
     <section class="week-section">
-      <h2>Where Claude worked</h2>
-      <ul class="week-bars week-projects">
+      <h2>What got done</h2>
+      <ul class="week-bars week-projects week-done">
         {recap.projects.map((p) => {
           const key = p.host + "|" + p.path;
           const shown = open === key;
           const chats = Array.isArray(p.chats) ? p.chats : [];
+          const done = doneText(p);
+          const tip = doneTip(p);
           return [
-            <li key={key} class={"opens" + (shown ? " open" : "")} {...opens(shown, () => (p.host ? setOpen(shown ? "" : key) : showProject(p.folder || p.path)))}
+            <li key={key} class={"opens" + (shown ? " open" : "")} {...opens(shown, () => setOpen(shown ? "" : key))}
               title={`${p.host ? hostLabel(p.host) + ": " : ""}${p.path}\nClaude worked ${hoursText(p.workedMs)} · ${moneyText(p.cost, cur)} at API prices\n` +
-                `${plural(p.prompts, "%1 prompt", "%1 prompts")} · ${plural(p.chatCount ?? chats.length, "%1 chat", "%1 chats")}\n` +
-                (p.host ? "Click for its chats." : "Click to open it in the Projects tab: its chats, plans and memories.")}>
+                `${plural(p.prompts, "%1 prompt", "%1 prompts")} · ${plural(p.chatCount ?? chats.length, "%1 chat", "%1 chats")}` +
+                (tip ? `\n${tip}` : "") + `\n\n${shown ? "Click to fold its chats." : "Click for its chats: what each got done."}`}>
               <span class="week-bar-name">
                 <Icon name={I.folded} class={shown ? "turn" : ""} />
                 {(p.host ? hostLabel(p.host) + ": " : "") + p.name}
               </span>
+              <span class="week-done-text small muted">{done}</span>
               <span class="week-bar-meter work"><span style={{ width: `${(100 * p.workedMs) / most}%` }} /></span>
               <span class="week-bar-value small muted">{hoursText(p.workedMs)} · {moneyText(p.cost, cur)}</span>
+              {/* (this computer's: to the Projects tab; an SSH host's keeps its room, so the numbers line up) */}
+              {p.host ? <span class="week-done-go" aria-hidden="true" /> : (
+                <button type="button" class="icon-btn week-done-go" title={"Open in the Projects tab\nAll its chats, plans and memories."}
+                  aria-label="Open in the Projects tab"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    showProject(p.folder || p.path);
+                  }}
+                  onKeyDown={(e) => e.stopPropagation()}>
+                  <Icon name={I.project} />
+                </button>
+              )}
             </li>,
             shown ? (
               <li key={key + "/chats"} class="week-sub">
-                <ul class="week-chats">
-                  {chats.map((c) => <ChatLine key={c.host + c.chatId} c={c} cur={cur} where="" sub />)}
+                <ul class="week-chats week-done-chats">
+                  {chats.map((c) => <DoneChat key={c.host + c.chatId} c={c} cur={cur} />)}
                 </ul>
                 {(p.chatCount ?? 0) > chats.length ? (
                   <span class="small muted week-more">and {(p.chatCount ?? 0) - chats.length} more {(p.chatCount ?? 0) - chats.length === 1 ? "chat" : "chats"}</span>
@@ -597,7 +623,45 @@ function Projects({ recap }: { recap: WeekRecap }) {
           ];
         })}
       </ul>
+      {work ? <div class="week-done-work small muted" title={["What Claude did", workBeforeText(recap)].filter(Boolean).join("\n")}>{work}</div> : null}
     </section>
+  );
+}
+
+// A chat in What got done, under its project: its line (its name, what it
+// got done, its time and amount; a click brings it up), a chat whose changes
+// you haven't reviewed says so with its tests (as its row in the chat
+// list), then Claude's recap of what it did then (one line, the whole in
+// its tooltip) and its commits' subjects, the newest three and how many more
+function DoneChat({ c, cur }: { c: WeekChat; cur: Currency }) {
+  const view = useView();
+  const listed = c.review ? listedChatRef(view.status, view.hosts, c.chatId, c.host) : null;
+  const toReview = !!c.review && reviewPending({ review: c.review, chatId: c.chatId, sessionId: c.chatId, state: listed?.state ?? "done" },
+    view.status, c.host || undefined);
+  const tests = toReview ? testsText(c.review) : null;
+  const { shown, more } = commitsShown(c);
+  return (
+    <li class="week-done-chat">
+      <div class="week-done-line">
+        <ChatLine c={c} cur={cur} where={doneText(c)} sub bare />
+        <span class="week-done-tags">
+          {toReview ? (
+            <Tag text="To review" active
+              title="It changed files. Click to see what it changed, against how the files were before the chat: undo it, commit only its files, or mark it reviewed."
+              onClick={listed ? () => post({ type: "openPane", chat: listed, tab: "review" }) : undefined} />
+          ) : null}
+          {tests ? <TestsTag tests={tests} /> : null}
+        </span>
+      </div>
+      {c.recap?.text ? <div class="week-done-recap small muted" title={`Claude's recap\n${c.recap.text}`}>{c.recap.text}</div> : null}
+      {shown.map(([hash, subject], i) => (
+        <div key={hash + i} class="week-done-commit small" title={hash ? `${subject}\nCommit ${hash}` : subject}>
+          <Icon name={I.commit} />
+          <span class="week-done-subject">{subject}</span>
+          {i === shown.length - 1 && more ? <span class="muted nowrap">and {more} more</span> : null}
+        </div>
+      ))}
+    </li>
   );
 }
 
@@ -665,32 +729,6 @@ function Lanes({ recap }: { recap: WeekRecap }) {
           <span />
         </li>
       </ul>
-    </section>
-  );
-}
-
-// The chats Claude worked on most
-function Chats({ recap }: { recap: WeekRecap }) {
-  if (!recap.chats.length) return null;
-  const cur = currencyOf(recap);
-  return (
-    <section class="week-section">
-      <h2>Chats it worked on most</h2>
-      <ul class="week-chats">
-        {recap.chats.map((c) => <ChatLine key={c.host + c.chatId} c={c} cur={cur} />)}
-      </ul>
-    </section>
-  );
-}
-
-// What Claude did: its tool calls, commands, edits, subagents
-function Work({ recap }: { recap: WeekRecap }) {
-  const text = workText(recap.work);
-  if (!text) return null;
-  return (
-    <section class="week-section">
-      <h2>What Claude did</h2>
-      <div>{text}</div>
     </section>
   );
 }

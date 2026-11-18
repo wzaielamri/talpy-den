@@ -730,8 +730,13 @@ export interface WeekProject {
   workedMs: number;
   cost: number;
   prompts: number;
-  chats: WeekChat[]; // its chats Claude worked on most
+  chats: WeekChat[]; // its chats Claude worked on most, each with what it got done
   chatCount: number; // all of them
+  // What got done (an older week.py sends none): its commits, the files Claude's edits changed and their lines
+  commitCount?: number;
+  files?: number;
+  linesAdded?: number;
+  linesRemoved?: number;
 }
 
 export interface WeekChat {
@@ -747,6 +752,17 @@ export interface WeekChat {
   startedAt?: number; // (a turn: when it started and ended)
   endedAt?: number;
   resumes?: number; // (a chat come back to after its cache expired: how often)
+  // What it got done (a project's chats in What got done): its commits, the
+  // newest first ([hash, or "" when git printed none; subject], a few of
+  // commitCount), the files its edits changed and their lines, Claude's
+  // recap of that work, its review now (on this computer's clock)
+  commits?: [string, string][];
+  commitCount?: number;
+  files?: number;
+  linesAdded?: number;
+  linesRemoved?: number;
+  recap?: { text: string; at: number } | null;
+  review?: Review | null;
 }
 
 export interface WeekModel {
@@ -902,8 +918,7 @@ export interface WeekRecap {
   beforeKept?: boolean; // false: the period before begins before the first chat kept, so it isn't compared
   sameTime?: boolean; // (today isn't over: previous and the trend's are up to this time of day)
   trend: ((WeekNumbers & { start: number }) | null)[]; // the 5 weeks up to these days (null: older than what's kept, even partly)
-  projects: WeekProject[];
-  chats: WeekChat[];
+  projects: WeekProject[]; // (What got done)
   // The Day view: a lane per chat, its stretches [from, to, w (worked) | y (waited for you) | p (paused)]
   lanes?: WeekLane[];
   models: WeekModel[];
@@ -922,6 +937,7 @@ export interface WeekRecap {
     webSearches: number;
     webFetches: number;
   };
+  workBefore?: WeekRecap["work"] | null; // the period before's (none when it isn't compared: beforeKept)
   plan: { account: string; name: string; windows: WeekPlanWindow[] }[]; // (this computer's accounts, these 7 days only)
   prompts: { answered: number; refused: number; waitMs: number; byTool: [string, number][]; rules: WeekRule[] };
   tips: WeekTip[];

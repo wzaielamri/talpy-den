@@ -4657,14 +4657,15 @@ PlasmoidItem {
     // Finished, changed files, and not marked reviewed since (pane.py
     // --reviewed; 0: marked not reviewed). What chats changed before the
     // widget first looked (reviewedSince) isn't to review.
-    function reviewPending(s, host) {
+    // (local: its times are on this computer's clock already, as the Recap's)
+    function reviewPending(s, host, local) {
         if (!s || !s.review || !s.review.editedAt || s.state === "working" || s.state === "waiting")
             return false
-        return !reviewSeen(s, host)
+        return !reviewSeen(s, host, local)
     }
     // Its changes since its last edit marked reviewed (or older than what's to
     // review at all), whether it works now or not (the pane's Reviewed button)
-    function reviewSeen(s, host) {
+    function reviewSeen(s, host, local) {
         if (!s || !s.review || !s.review.editedAt)
             return true
         const marks = reviewMarks
@@ -4674,7 +4675,7 @@ PlasmoidItem {
         // (the marks and reviewedSince are this computer's, also an SSH host's
         // chat's: pane.py marks it here. Its last edit is on the host's clock,
         // which toLocalClock leaves its review on: moved to ours here)
-        const offset = host && facts[host] ? facts[host].clockOffset || 0 : 0
+        const offset = host && !local && facts[host] ? facts[host].clockOffset || 0 : 0
         return seen >= s.review.editedAt + offset
     }
 

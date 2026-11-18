@@ -13,7 +13,7 @@ import {
   shareText, tipMeaning, tipSource, guessedCostText, guessedModelTip, modelValue, tokensLabel,
   dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
-  limitStart, limitWeekBars, limitValueText,
+  limitStart, limitWeekBars, limitValueText, doneText, doneTip, commitsShown, workBeforeText, listedChatRef,
 } from "../src/shared/week";
 import { ViewHost } from "../src/view";
 
@@ -49,10 +49,38 @@ test("the days shown, and the week's tiles", () => {
   assert.match(weekTiles(month)[2].tip, /\nThe 30 days before can't be compared: the Recap has your chats only since 3 Oct\.\n/);
 });
 
-test("the Recap reads as a story: the tiles, what Claude did, when, where, then the money", () => {
+test("the Recap reads as a story: the tiles, when, what got done, then the money", () => {
   assert.deepEqual(weekTiles(demoWeek(NOW)).map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens · 98% cache", "At API prices"]);
-  // (Turns that cost the most is gone: Chats it worked on most says it; the cold-cache note is with the tips)
-  assert.deepEqual([...RECAP_SECTIONS], ["work", "days", "plan", "limits", "lanes", "projects", "chats", "models", "tips"]);
+  // (what Claude did is What got done's last line; its projects' chats are the list of chats)
+  assert.deepEqual([...RECAP_SECTIONS], ["days", "plan", "limits", "lanes", "projects", "models", "tips"]);
+});
+
+test("what got done: a project's and a chat's commits and files, what Claude did the period before", () => {
+  const recap = demoWeek(NOW);
+  const [webapp] = recap.projects;
+  assert.equal(doneText(webapp), "14 commits · 212 files");
+  assert.equal(doneText({ commitCount: 1, files: 1 }), "1 commit · 1 file");
+  assert.equal(doneText({ files: 1204 }), "1,204 files");
+  assert.equal(doneText({}), ""); // (none, or an older week.py's)
+  assert.equal(doneTip(webapp), "14 commits · Claude's edits changed 212 files (+4,810 −1,190)");
+  const signIn = webapp.chats[1];
+  assert.deepEqual(commitsShown(signIn), { shown: signIn.commits!.slice(0, 3), more: 9 });
+  assert.deepEqual(commitsShown({ commits: [["", "One"]], commitCount: 1 }), { shown: [["", "One"]], more: 0 });
+  assert.equal(workBeforeText(recap), "The 7 days before: 2,410 tool calls · 1,102 commands run · 512 edits in 98 files (+6,120 −1,630) · 12 subagents started · 4 web searches · 3 pages fetched · 2 compactions");
+  assert.match(workBeforeText({ ...recap, sameTime: true }), /^The 7 days before, by this time: 2,410 tool calls/);
+  assert.equal(workBeforeText({ ...recap, workBefore: null, beforeKept: false, first: "2026-10-20" }),
+    "The 7 days before can't be compared: the Recap has your chats only since 20 Oct.");
+  assert.equal(workBeforeText({ ...recap, span: "all", workBefore: null }), "");
+});
+
+test("a Recap chat opens its tab as the chat list has it: its row, or a recent one", () => {
+  const state = demoState(NOW);
+  const g = state.status!.groups[0];
+  const recent = g.recent[0];
+  assert.equal(listedChatRef(state.status, state.hosts, recent.sessionId)?.key, recent.key);
+  const row = g.sessions[0];
+  assert.equal(listedChatRef(state.status, state.hosts, row.chatId || row.sessionId)?.state, row.state);
+  assert.equal(listedChatRef(state.status, state.hosts, "no-such-chat"), null);
 });
 
 test("the tokens used: a tile with its change and trend, and a row's tokens", () => {

@@ -1,10 +1,10 @@
 // The Recap tab's words and numbers (webview/components/WeekView.tsx), from
 // the recap of the widget's week.py; here, so the tests can read them.
 
-import { clockText, dayLabel, hostLabel, plural } from "./model";
+import { chatRefOf, clockText, dayLabel, hostLabel, plural, recentRef } from "./model";
 import type {
-  LimitAccount, LimitChange, LimitEvent, LimitHistory, LimitPeriod, LimitTokens, WeekDay, WeekGrant, WeekModel, WeekNumbers, WeekPlanWindow, WeekRecap,
-  WeekRule, WeekSpan, WeekSum, WeekTip,
+  ChatRef, HostState, LimitAccount, LimitChange, LimitEvent, LimitHistory, LimitPeriod, LimitTokens, Status, WeekDay, WeekGrant, WeekModel, WeekNumbers,
+  WeekPlanWindow, WeekRecap, WeekRule, WeekSpan, WeekSum, WeekTip,
 } from "./types";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -162,11 +162,12 @@ function amountText(v: number, kind: Kind, cur: Currency): string {
 }
 
 // The Recap's sections under its tiles, top to bottom (the same in every
-// front end): what Claude did; when (the day-by-day graph, your plan's
-// limits now, chat by chat); where (by project, the chats it worked on
-// most); then the money (by model at API prices, what could use less of your plan).
-// Right after the limits now, folded: your plan's limits over time.
-export const RECAP_SECTIONS = ["work", "days", "plan", "limits", "lanes", "projects", "chats", "models", "tips"] as const;
+// front end): when (the day-by-day graph, your plan's limits now, chat by
+// chat); what got done (by project, its chats with their commits and
+// Claude's recaps, what Claude did in all under it); then the money (by
+// model at API prices, what could use less of your plan). Right after the
+// limits now, folded: your plan's limits over time.
+export const RECAP_SECTIONS = ["days", "plan", "limits", "lanes", "projects", "models", "tips"] as const;
 
 // Spans whose timeline has a row per 7 days, not per day
 export function weekRows(span: WeekSpan | undefined): boolean {
@@ -368,10 +369,61 @@ export function tipShareTip(t: Pick<WeekTip, "key" | "pct">, recap: Pick<WeekRec
 // Too little in the period for tips (week.py: tooLittle)
 export const TIPS_TOO_LITTLE = "Too little here to go on: tips need 20 prompts or an hour of Claude's work.";
 
+// A count in words: "1 commit", "1,204 files"
+function counted(v: number, one: string, many: string): string {
+  return (v === 1 ? one : many).replace("%1", count(v));
+}
+
+// What a project or chat got done: "14 commits · 212 files" (the files
+// Claude's edits changed); "" for none (or an older week.py's)
+export function doneText(x: { commitCount?: number; files?: number }): string {
+  const parts: string[] = [];
+  if (x.commitCount) parts.push(counted(x.commitCount, "%1 commit", "%1 commits"));
+  if (x.files) parts.push(counted(x.files, "%1 file", "%1 files"));
+  return parts.join(" · ");
+}
+
+// Its tooltip's line: the commits, the files with their lines
+export function doneTip(x: { commitCount?: number; files?: number; linesAdded?: number; linesRemoved?: number }): string {
+  const parts: string[] = [];
+  if (x.commitCount) parts.push(counted(x.commitCount, "%1 commit", "%1 commits"));
+  if (x.files)
+    parts.push(`${counted(x.files, "Claude's edits changed %1 file", "Claude's edits changed %1 files")} (+${count(x.linesAdded ?? 0)} −${count(x.linesRemoved ?? 0)})`);
+  return parts.join(" · ");
+}
+
+// A Recap chat as the chat list has it (its row now, or a recent one), for
+// what opens its tab: null when it isn't listed (an older one)
+export function listedChatRef(status: Status | null | undefined, hosts: HostState[], chatId: string, host = ""): ChatRef | null {
+  const where = host ? hosts.find((h) => h.name === host)?.result : status;
+  const h = host || undefined;
+  for (const g of where?.groups ?? []) {
+    const s = (g.sessions ?? []).find((x) => x.chatId === chatId || x.sessionId === chatId);
+    if (s) return chatRefOf(s, h);
+    const c = [...(g.recent ?? []), ...(g.starred ?? [])].find((x) => x.sessionId === chatId);
+    if (c) return recentRef(c, h);
+  }
+  return null;
+}
+
+// A chat's commits shown under it: the newest three, and how many more
+export function commitsShown(c: { commits?: [string, string][]; commitCount?: number }): { shown: [string, string][]; more: number } {
+  const shown = (c.commits ?? []).slice(0, 3);
+  return { shown, more: Math.max(0, (c.commitCount ?? shown.length) - shown.length) };
+}
+
+// What Claude did in the period before, for that line's tooltip (when the
+// Recap doesn't have that period whole: why it isn't there)
+export function workBeforeText(recap: Pick<WeekRecap, "span" | "beforeKept" | "first" | "sameTime" | "workBefore">): string {
+  if (!recap.workBefore) return uncomparedText(recap).trim();
+  const what = recap.span === "day" ? "The day before" : recap.span === "month" ? "The 30 days before" : "The 7 days before";
+  return `${what}${recap.sameTime ? ", by this time" : ""}: ${workText(recap.workBefore) || "nothing"}`;
+}
+
 // What Claude did, in a line: its tool calls, commands, edits, subagents
-export function workText(w: WeekRecap["work"] | undefined): string {
+export function workText(w: WeekRecap["work"] | null | undefined): string {
   if (!w || !w.toolCalls) return "";
-  const n = (v: number, one: string, many: string) => (v === 1 ? one : many).replace("%1", count(v));
+  const n = counted;
   const parts = [n(w.toolCalls, "%1 tool call", "%1 tool calls")];
   if (w.commands) parts.push(n(w.commands, "%1 command run", "%1 commands run"));
   if (w.edits)

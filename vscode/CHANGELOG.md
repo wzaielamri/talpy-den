@@ -22,6 +22,16 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
+- **What got done, in one list.** The Recap's *Where Claude worked* and
+  *Chats it worked on most* are one section, *What got done*: a row per
+  project with its commits and the files Claude's edits changed (*14
+  commits · 212 files*), its time and amount. A click unfolds its chats,
+  here and on an SSH host alike, each with Claude's recap of that work,
+  its commits' subjects and, while you haven't reviewed its changes, *To
+  review* with its tests; the folder button at a row's end opens the
+  project on the Projects tab. What Claude did in all is the list's last
+  line, with the period before's in its tooltip.
+
 - **What fills a 5-hour window, by API price.** In *Your plan's limits
   over time*, the bar of what fills a window split its tokens by count, one
   colour of cache reads (over 99% of them). It now splits their API price:

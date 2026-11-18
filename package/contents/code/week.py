@@ -54,8 +54,11 @@ off: then it keeps only what the transcripts still have.
 What it reads, per turn of a chat: your prompt, Claude's own count of its
 work (the turn_duration record Claude Code writes when a turn ends, which
 leaves out the time it waited for you), the tool calls you had to allow or
-answer (permissionDecision), and each reply's token usage. A chat forked from
-another starts with a copy of its entries: those count once.
+answer (permissionDecision), and each reply's token usage. For What got
+done, also the commits its git commit commands made (commits_made), Claude's
+recaps of it (away_summary records) and its last edit with the tests after
+it, as the Review tab reads them (talpy_den.py fold_tests). A chat forked
+from another starts with a copy of its entries: those count once.
 """
 
 import bisect
@@ -109,7 +112,9 @@ FILES_KEPT = 100  # edited files a chat's hour remembers (to count them)
 EDIT_DIFF_LINES = 4000  # an edit bigger than this counts its lines without a diff
 COLD_MS = 60 * 60_000  # a reply this long after the chat's last one finds its cache gone (an hour on a plan)
 COLD_TOKENS = 20_000  # ...and writing this much of its context again is a cold resume
-TOP_PROJECTS, TOP_CHATS, TOP_DAY_CHATS = 6, 5, 8
+TOP_PROJECTS, TOP_DAY_CHATS = 6, 8
+COMMITS_KEPT = 10  # a chat's commits What got done lists (the newest first; commitCount counts them all)
+RECAP_CHARS = 1000  # Claude's recap of a chat, as the cache keeps it (they're a few lines)
 TREND_WEEKS = 5  # the trend lines: these 7 days and the four weeks before (what the cache keeps)
 
 # What Claude Code's /usage lists as "contributing to your limits usage" (a
@@ -295,9 +300,12 @@ def new_record(kind, st):
                       "ctx": {"last": None, "ctx": 0, "carried": 0, "first": 0, "start": None, "pending": 0,
                               "large": 0}},
             # (limitResets: {str(a limit hit's ms): when that limit reset, ms}, for the hits that say it,
-            # of the transcript up to limitResetsTo: backfill_limit_resets)
+            # of the transcript up to limitResetsTo: backfill_limit_resets; recaps: Claude's recaps of
+            # the chat, [ms, text]; tests: its last edit and the tests after it (talpy_den.py
+            # new_tests); both and the hours' commits of the transcript up to workTo: backfill_work)
             "data": {"turns": [], "prompts": [], "limits": [], "limitResets": {}, "limitResetsTo": 0, "hours": {},
-                     "names": {}, "folder": "", "prompt": "", "startTokens": None}}
+                     "names": {}, "folder": "", "prompt": "", "startTokens": None, "recaps": [],
+                     "tests": cs.new_tests(), "workTo": 0}}
 
 
 def reply_id(mid):
@@ -369,9 +377,11 @@ def scan(profiles, cache, now_ms, keep=True):
         # copy of this file since: their limits' resets, once)
         if rec["data"].get("limitResetsTo", 0) < rec["offset"]:
             backfill_limit_resets(key, rec)
+        if rec["data"].get("workTo", 0) < rec["offset"]:  # (the same for recaps, commits and tests)
+            backfill_work(key, rec, counted)
         if rec["offset"] < found[key]["st"].st_size:
             read_transcript(Path(key), rec, counted)
-            rec["data"]["limitResetsTo"] = rec["offset"]
+            rec["data"]["limitResetsTo"] = rec["data"]["workTo"] = rec["offset"]
     cache["files"] = files
     cache["scannedAt"] = now_ms
     return cache
@@ -426,6 +436,89 @@ def backfill_limit_resets(path, rec):
     data["limitResetsTo"] = rec.get("offset", 0)
 
 
+RECAP_LINE = b'"subtype":"away_summary"'
+RESULT_LINE = b'"tool_result"'
+WORK_TOOL_LINES = tuple(('"name":"%s"' % n).encode() for n in EDIT_TOOLS + ("Bash",))  # (edits, commits, test runs)
+
+
+def backfill_work(path, rec, counted):
+    """What a record read before the cache kept it doesn't have: Claude's
+    recaps of the chat, the commits it made and its last edit with the
+    tests after it, of the lines read before (from workTo up to what was
+    read: also lines an older copy of this file read since). Only the lines
+    that can have them are parsed (as talpy_den.py scan_tests picks them),
+    once. A deleted transcript's record ("gone") can't have them: it keeps
+    its numbers, with no commits or recap."""
+    data, state = rec["data"], rec.get("state") or {}
+    hi = rec.get("offset", 0)
+    recaps, tests = data.setdefault("recaps", []), data.setdefault("tests", cs.new_tests())
+    calls = {}  # (the git commits those lines ran: {tool id: [ms, their messages]})
+    ids = [i.encode() for i in tests["pending"]]  # (the tool calls whose results are wanted)
+    try:
+        with open(path, "rb") as f:
+            at = data.get("workTo", 0)
+            f.seek(at)
+            for line in f:
+                at += len(line)
+                if at > hi or not line.endswith(b"\n"):
+                    break
+                if RECAP_LINE in line:
+                    if not rec["sub"]:
+                        e = loaded(line)
+                        if e and e.get("subtype") == "away_summary":
+                            take_recap(e, recaps)
+                    continue
+                if b'"type":"assistant"' in line and any(n in line for n in WORK_TOOL_LINES):
+                    e = loaded(line)
+                    if not e or e.get("type") != "assistant":
+                        continue
+                    ts = cs.to_ms(e.get("timestamp"))
+                    for c in cs.blocks_of(e)[1]:
+                        said = commit_call(c)
+                        if said is not None and ts is not None:
+                            calls[c["id"]] = [ts, said]
+                elif ids and RESULT_LINE in line and any(i in line for i in ids):
+                    e = loaded(line)
+                    if not e or e.get("type") != "user":
+                        continue
+                    ts = cs.to_ms(e.get("timestamp"))
+                    for r in cs.blocks_of(e)[1]:
+                        call = calls.pop(r.get("tool_use_id"), None) if r.get("type") == "tool_result" else None
+                        if call and ts is not None:
+                            take_commits(data, counted, ts, r, call[1])
+                else:
+                    continue
+                if not e.get("isSidechain"):
+                    cs.fold_tests(tests, e)
+                ids = [i.encode() for i in list(calls) + list(tests["pending"])]
+    except OSError:
+        return  # (tried again next time)
+    # (a commit whose result comes in the lines still to read: as the reading on has it)
+    tools = state.get("tools") if isinstance(state.get("tools"), dict) else {}
+    for tid, (_ts, said) in calls.items():
+        if isinstance(tools.get(tid), list) and len(tools[tid]) == 3:
+            tools[tid].append(said)
+    data["workTo"] = hi
+
+
+def loaded(line):
+    try:
+        e = json.loads(line)
+    except (ValueError, RecursionError):
+        return None
+    return e if isinstance(e, dict) else None
+
+
+def take_recap(e, recaps):
+    """Claude's recap of the chat (a `system` record, away_summary: what it
+    writes when you come back to a chat), as the Projects tab reads it
+    (talpy_den.py recap_of): [ms, text]."""
+    ts = cs.to_ms(e.get("timestamp"))
+    text = cs.RECAP_NOTE.sub("", e["content"]).strip() if isinstance(e.get("content"), str) else ""
+    if text and ts is not None:
+        recaps.append([ts, cs.tidy_text(text, RECAP_CHARS)])
+
+
 def read_transcript(path, rec, counted):
     try:
         with open(path, "rb") as f:
@@ -454,7 +547,8 @@ def take_line(line, rec, counted):
         kind = "assistant"
     elif b'"type":"user"' in line:
         kind = "user"
-    elif b'"subtype":"turn_duration"' in line or b'"subtype":"compact_boundary"' in line:
+    elif (b'"subtype":"turn_duration"' in line or b'"subtype":"compact_boundary"' in line
+          or (not rec["sub"] and RECAP_LINE in line)):
         kind = "system"
     elif not rec["sub"] and any(t in line for t in TITLE_LINES):
         kind = "title"
@@ -476,10 +570,15 @@ def take_line(line, rec, counted):
     ts = cs.to_ms(e.get("timestamp"))
     if ts is None or e.get("type") not in ("assistant", "user", "system"):
         return
+    if e["type"] != "system" and not e.get("isSidechain"):
+        # (its last edit and the tests after it, as the Review tab reads them)
+        cs.fold_tests(data.setdefault("tests", cs.new_tests()), e)
     if e["type"] == "assistant":
         take_reply(e, ts, rec, counted)
     elif e["type"] == "user":
         take_user(e, ts, rec, line, counted)
+    elif e.get("subtype") == "away_summary":
+        take_recap(e, data.setdefault("recaps", []))
     elif e.get("subtype") == "compact_boundary":
         if first_seen(counted, data, ts, "k", e.get("uuid")):
             hour_agg(data, ts)[1]["k"] += 1
@@ -594,6 +693,103 @@ def edit_lines(name, inp):
     return added, removed
 
 
+# The commits a chat made, from its Bash commands that run git commit and
+# what they printed: git's own line for each ("[main 1a2b3c4] Its subject"),
+# else (git commit -q, then git log --oneline) the log's line of the message
+# the command gave, else (nothing printed) that message, when the command
+# didn't fail. An amend makes none (it replaces one), nor a commit whose
+# message isn't in the command (a merge's --no-edit) unless git printed its line.
+GIT_COMMIT = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[A-Za-z][\w-]*(?:=\S+)?)*\s+commit\b(?!-)")
+MESSAGE_ARG = re.compile(r"""(?<![\w-])-[a-zA-Z]*m\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)')"""
+                         r"""|--message=(?:"((?:[^"\\]|\\.)*)"|'([^']*)')""")
+HEREDOC = re.compile(r"<<-?[ \t]*['\"]?([A-Za-z_]\w*)['\"]?[^\n]*\n(.*?)\n[ \t]*\1[ \t]*(?=\n|$|\))", re.S)
+COMMIT_LINE = re.compile(r"^\[[^\]\n]{1,200}? ([0-9a-f]{7,40})\] (.+)$", re.M)
+HASH_LINE = re.compile(r"^([0-9a-f]{7,40})(?: \([^)\n]*\))? (.+)$", re.M)
+COMMIT_FAILED = re.compile(r"nothing to commit|nothing added to commit|no changes added to commit|^(?:fatal|error): ", re.M)
+SUBJECT_CHARS = 120
+
+
+def first_line(text):
+    return " ".join(text.strip().split("\n", 1)[0].split())
+
+
+def commit_messages(command):
+    """The subjects of the messages a Bash command gives the git commits it
+    runs (one each, in order; "" where the command doesn't have it), or None
+    when it runs none (or amends one)."""
+    if "commit" not in command:
+        return None
+    calls = [m.start() for m in GIT_COMMIT.finditer(command)]
+    if not calls or "--amend" in command:
+        return None
+    given = []  # (where, subject, read from a heredoc: cat <<EOF, git commit -F - <<EOF)
+    for m in MESSAGE_ARG.finditer(command):
+        text = next((g for g in m.groups() if g is not None), "")
+        if text.strip() and not text.startswith("$"):
+            given.append((m.start(), first_line(text.replace('\\"', '"')), False))
+    for m in HEREDOC.finditer(command):
+        head, body = command[command.rfind("\n", 0, m.start()) + 1:m.start()], m.group(2)  # (head: its line before <<)
+        if body.strip() and ("cat" in head or GIT_COMMIT.search(head)):
+            given.append((m.start(2), first_line(body), True))
+    given.sort()
+    out = []
+    for at in calls:  # (its message: the next given after it, else a heredoc read before it: msg=$(cat <<EOF …))
+        after = [s for p, s, _ in given if p > at]
+        before = [s for p, s, doc in given if p < at and doc]
+        out.append(after[0] if after else before[-1] if before else "")
+    return out
+
+
+def commit_call(c):
+    """The messages of a tool call's git commits (commit_messages), or None."""
+    inp = c.get("input") if c.get("type") == "tool_use" and c.get("name") == "Bash" else None
+    if not isinstance(inp, dict) or not isinstance(inp.get("command"), str) or not isinstance(c.get("id"), str):
+        return None
+    return commit_messages(inp["command"])
+
+
+def same_subject(said, line):
+    """Does a log line's text (line) say a message's subject (said)? Up to a
+    shell expansion in it ($…), or as far as either goes (a line cut short);
+    or anywhere in it (git log --format="%h %an %s")."""
+    said = said.split("$", 1)[0].rstrip()
+    n = min(len(said), len(line), 60)
+    return (n >= 10 and said[:n] == line[:n]) or (len(said) >= 10 and said[:60] in line)
+
+
+def commits_made(said, result, failed):
+    """[[hash or "", subject]]: the commits a git commit command made, from
+    what it printed (result) and the subjects of the messages it gave (said)."""
+    made = [[h, cs.short_text(s, SUBJECT_CHARS)] for h, s in COMMIT_LINE.findall(result)]
+    if made:
+        return made
+    lines = [(h, " ".join(s.split())) for h, s in HASH_LINE.findall(result)]
+    wanted = [s for i, s in enumerate(said) if s and s not in said[:i]]
+    for s in wanted:
+        hit = next((x for x in lines if same_subject(s, x[1])), None)
+        if hit:  # (the message's subject, whole where the log cut it; the log's, with a $… in it expanded)
+            made.append([hit[0], cs.short_text(hit[1] if "$" in s and hit[1][:10] == s[:10] else s, SUBJECT_CHARS)])
+    if made or failed or lines or COMMIT_FAILED.search(result):
+        return made  # (a log that doesn't show the message: it didn't commit it)
+    return [["", cs.short_text(s, SUBJECT_CHARS)] for s in wanted]
+
+
+def result_text(r):
+    """A tool result's text."""
+    content = r.get("content")
+    if isinstance(content, list):
+        return "\n".join(c["text"] for c in content if isinstance(c, dict) and isinstance(c.get("text"), str))
+    return content if isinstance(content, str) else ""
+
+
+def take_commits(data, counted, ts, r, said):
+    """The commits a git commit's result r says it made, in their hour
+    ("gc": [ms, hash or "", subject]); a fork's copy of it counts once."""
+    made = commits_made(said, result_text(r), r.get("is_error") is True)
+    if made and first_seen(counted, data, ts, "g", r.get("tool_use_id")):
+        hour_agg(data, ts)[1].setdefault("gc", []).extend([ts] + m for m in made)
+
+
 def utc_offset_ms(ts):
     """The local clock's offset from UTC at ts (ms), in ms."""
     try:
@@ -650,7 +846,8 @@ def new_hour():
     name (u), lines added and removed by edits (x), edited files (fe),
     compactions (k), cold resumes (c: [ms, price key, 5-minute writes,
     1-hour writes]) and the permission prompts you answered (p: [ms, tool,
-    what, reason, waited ms, allowed])."""
+    what, reason, waited ms, allowed]); an hour with commits also has them
+    (gc: [ms, hash or "", subject], take_commits)."""
     return {"t": {}, "w": [0] * W_SIZE, "b": {}, "a": {}, "g": {}, "m": [], "u": {}, "x": [0, 0], "fe": [], "k": 0,
             "c": [], "p": []}
 
@@ -706,6 +903,9 @@ def take_reply(e, ts, rec, counted):
     uses = [c for c in blocks if c.get("type") == "tool_use" and isinstance(c.get("id"), str) and isinstance(c.get("name"), str)]
     for c in uses:
         tools[c["id"]] = [ts, c["name"], tool_detail(c["name"], c.get("input"))]
+        said = commit_call(c)
+        if said is not None:  # (a git commit: what it made comes with its result)
+            tools[c["id"]].append(said)
     if len(tools) > TOOLS_KEPT:
         for k in sorted(tools, key=lambda k: tools[k][0])[:len(tools) - TOOLS_KEPT]:
             del tools[k]
@@ -855,6 +1055,8 @@ def take_user(e, ts, rec, line, counted):
             tool = state["tools"].pop(r.get("tool_use_id"), None) if isinstance(r.get("tool_use_id"), str) else None
             if tool is None:
                 continue
+            if len(tool) > 3:
+                take_commits(data, counted, ts, r, tool[3])
             prompted = yours and tool[1] not in USER_TOOLS  # a permission prompt you answered
             once = (prompted or large) and first_seen(counted, data, ts, "r", r["tool_use_id"])
             if prompted and once:
@@ -1096,6 +1298,8 @@ def merge_hour(into, agg):
     into["k"] += agg.get("k", 0)
     into["c"] += agg.get("c", [])
     into["p"] += agg.get("p", [])
+    if agg.get("gc"):
+        into.setdefault("gc", []).extend(agg["gc"])
     for i, v in enumerate(agg.get("w", [])[:W_SIZE]):
         into["w"][i] += v
     for field in ("b", "a"):
@@ -1147,8 +1351,13 @@ def project_of(folder, home, roots):
 
 def chats_between(cache, profiles, since, until, home, skip=frozenset()):
     """{chat id: {"profiles", "accounts", "folder", "project", "name",
-    "turns", "prompts", "limits", "hours", "startTokens"}}: what the cache has
-    of the profiles' chats between since and until (ms), with the turns going on.
+    "turns", "prompts", "limits", "hours", "startTokens", "recaps", "nextPrompt",
+    "review"}}: what the cache has of the profiles' chats between since and
+    until (ms), with the turns going on. recaps: Claude's recaps of it then,
+    and the first one after ([ms, text]), with the first prompt after
+    (nextPrompt: which work that one is of, recap_line); review: its last
+    edit and the tests after it now, as the Review tab has them ({"editedAt",
+    "tests"}, talpy_den.py TestsCache.review), or None.
     skip: the profiles (keys) of the accounts you hid: what the cache has of their chats is left out."""
     by_profile, _ = account_ids(profiles)
     roots = {}
@@ -1162,15 +1371,23 @@ def chats_between(cache, profiles, since, until, home, skip=frozenset()):
         c = chats.get(rec["chat"])
         if c is None:
             c = chats[rec["chat"]] = {"profiles": [], "folder": "", "name": "", "turns": [], "prompts": [],
-                                      "limits": [], "limitResets": {}, "hours": {}, "startTokens": None}
+                                      "limits": [], "limitResets": {}, "hours": {}, "startTokens": None,
+                                      "recaps": [], "nextPrompt": None, "tests": []}
         for p in rec.get("profiles", []):
             if p not in c["profiles"]:
                 c["profiles"].append(p)
         for h, agg in data["hours"].items():
             if since - HOUR_MS < hour_ms(h) <= until:  # (an hour that overlaps [since, until])
                 merge_hour(c["hours"].setdefault(h, {k: v for k, v in new_hour().items() if k != "m"}), agg)
+        tests = data.get("tests")
+        if isinstance(tests, dict) and "editAt" in tests and "run" in tests:  # (the chat's and its subagents')
+            c["tests"].append(tests)
         if rec.get("sub"):
             continue
+        c["recaps"] += [r for r in data.get("recaps") or () if r[0] >= since]
+        later = min((p for p in data["prompts"] if p >= until), default=None)
+        if later is not None:
+            c["nextPrompt"] = later if c["nextPrompt"] is None else min(c["nextPrompt"], later)
         turns = list(data["turns"])
         live = live_turn(rec.get("state"))
         if live:
@@ -1192,6 +1409,13 @@ def chats_between(cache, profiles, since, until, home, skip=frozenset()):
         c["turns"] = one_of_each(c["turns"])
         c["prompts"] = sorted(set(c["prompts"]))
         c["limits"] = sorted(set(c["limits"]))
+        # (a chat in two transcripts, moved to another folder, has its recaps in both)
+        recaps = sorted({r[0]: r for r in c["recaps"]}.values())
+        c["recaps"] = [r for r in recaps if r[0] < until] + [r for r in recaps if r[0] >= until][:1]
+        tests = c.pop("tests")
+        merged = cs.merge_tests(tests) if tests else None
+        c["review"] = ({"editedAt": merged["editAt"], "tests": merged["run"]}
+                       if merged and merged["editAt"] is not None else None)
     return {k: c for k, c in chats.items() if c["turns"] or c["prompts"] or c["hours"]}
 
 
@@ -1533,7 +1757,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
             row.update(to=(date.fromtimestamp(row_end / 1000) - timedelta(days=1)).isoformat(), you=[], work=[], wait=[])
         day_rows.append(row)
 
-    # Where it went: folders (with their chats), chats, models
+    # What got done, by project (with their chats: what each got done), and by model
     folders, models, guessed = {}, {}, set()
     chat_rows = []
     for c in chats:
@@ -1559,15 +1783,21 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         folder = c.get("project") or c["folder"] or ""
         fkey = c["host"] + "|" + folder
         f = folders.setdefault(fkey, {"name": project_name(folder, home), "path": cs.short_path(folder, home) if not c["host"] else folder,
-                                      "folder": folder, "host": c["host"], "workedMs": 0, "cost": 0.0, "prompts": 0, "chats": []})
-        row = chat_row(c, home, work, cost, prompts)
+                                      "folder": folder, "host": c["host"], "workedMs": 0, "cost": 0.0, "prompts": 0, "chats": [],
+                                      "commitCount": set(), "files": set(), "linesAdded": 0, "linesRemoved": 0})
+        done, files, commits = chat_done(c, w0, w1)
+        row = dict(chat_row(c, home, work, cost, prompts), **done)
         f["workedMs"] += work
         f["cost"] += cost
         f["prompts"] += prompts
+        f["files"] |= files
+        f["commitCount"] |= commits
+        f["linesAdded"] += done["linesAdded"]
+        f["linesRemoved"] += done["linesRemoved"]
         f["chats"].append(row)
         chat_rows.append(row)
     # The Day's lanes, each with its chat's numbers at its end (what Claude
-    # worked on it, by its own count, and its cost), as Chats it worked on most had them
+    # worked on it, by its own count, and its cost), as What got done has them
     lanes = day_lanes(chats, w0, w1, home) if span == "day" else []
     if lanes:
         rows = {(r["host"], r["chatId"]): r for r in chat_rows}
@@ -1577,6 +1807,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
     for f in folders.values():
         f["workedMs"] = int(f["workedMs"])
         f["cost"] = round(f["cost"], 4)
+        f["commitCount"], f["files"] = len(f["commitCount"]), len(f["files"])
         f["chatCount"] = len(f["chats"])
         f["chats"] = sorted(f["chats"], key=lambda r: (-r["workedMs"], -r["cost"]))[:TOP_DAY_CHATS]
     for m in models.values():
@@ -1605,11 +1836,12 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "beforeKept": span != "all" and kept(p0),
         "sameTime": going_on,  # (previous and the trend's are up to this time of day)
         "trend": trend,
+        # (What got done: each with its chats, what each got done: chat_done)
         "projects": sorted(folders.values(), key=lambda f: (-f["workedMs"], -f["cost"]))[:TOP_PROJECTS],
-        "chats": sorted(chat_rows, key=lambda r: (-r["workedMs"], -r["cost"]))[:TOP_CHATS],
         "models": sorted(models.values(), key=lambda m: -m["cost"]),
         "spend": spend,
         "work": claude_did(chats, w0, w1),
+        "workBefore": claude_did(chats, p0, until(1)) if previous is not None else None,  # (the period before's)
         "plan": plan_windows_of(usage or [], account) if back == 0 and span == "day" else [],
         "prompts": permission_prompts(chats, w0, w1, home, added),
         "tips": [] if too_little else tips(chats, w0, w1, total, parts["waits"], spend["cold"]),
@@ -1646,6 +1878,51 @@ def chats_of(chats, stretches, lo, hi, home):
         if work.get(c["key"], 0) >= 60_000 or cost >= 0.01 or prompts:
             rows.append(chat_row(c, home, work.get(c["key"], 0), cost, prompts))
     return sorted(rows, key=lambda r: (-r["workedMs"], -r["cost"]))[:TOP_DAY_CHATS]
+
+
+def chat_done(c, lo, hi):
+    """What a chat got done in [lo, hi): ({"commitCount", "commits" (the
+    newest first, COMMITS_KEPT of them: [hash or "", subject]), "files" (how
+    many its edits changed), "linesAdded", "linesRemoved", "recap" (Claude's
+    recap of that work: recap_line), "review" (now: chats_between)}, the
+    files, the commits' keys), the last two for its project's numbers."""
+    made, files, added, removed = [], set(), 0, 0
+    for h, agg in c["hours"].items():
+        if lo <= hour_ms(h) < hi:
+            made += agg.get("gc", [])
+            files.update(agg.get("fe", []))
+            x = agg.get("x") or [0, 0]
+            added, removed = added + x[0], removed + x[1]
+    commits, keys = [], set()
+    for ts, sha, subject in sorted(made, key=lambda m: -m[0]):
+        key = sha[:7] if sha else "%s|%s" % (ts, subject)  # (git's short hash or the log's: one commit)
+        if key not in keys:
+            keys.add(key)
+            commits.append([sha, subject])
+    done = {"commitCount": len(commits), "commits": commits[:COMMITS_KEPT], "files": len(files),
+            "linesAdded": added, "linesRemoved": removed, "recap": recap_line(c, lo, hi), "review": c.get("review")}
+    return done, files, {c["host"] + "|" + k for k in keys}
+
+
+def recap_line(c, lo, hi):
+    """Claude's recap of what a chat did in [lo, hi) ({"text", "at"}, or
+    None): Claude writes one when you come back to a chat, so the first
+    after its work then, unless you prompted it again before that one came
+    (then it's of the work since); else the newest written after its first
+    work in those days (of its work up to then)."""
+    recaps = c.get("recaps") or []
+    if not recaps:
+        return None
+    turns = [t for t in c["turns"] if t[0] < hi and t[1] >= lo]
+    prompts = [p for p in c["prompts"] if lo <= p < hi]
+    first = min(prompts + [max(t[0], lo) for t in turns], default=lo)
+    last = max(prompts + [min(t[1], hi) for t in turns], default=lo)
+    after = next((r for r in recaps if r[0] >= last), None)
+    prompted = [p for p in c["prompts"] if p > last] + ([c["nextPrompt"]] if c.get("nextPrompt") else [])
+    if after is not None and (not prompted or after[0] <= min(prompted)):
+        return {"text": after[1], "at": after[0]}
+    within = [r for r in recaps if first <= r[0] < min(hi, last)]
+    return {"text": within[-1][1], "at": within[-1][0]} if within else None
 
 
 def spending(chats, lo, hi, home):
@@ -3278,11 +3555,19 @@ def host_chats(host, back, span="week", since=None, until=None):
             c["limits"] = [p + shift for p in c.get("limits", [])]
             c["limitResets"] = {str(int(k) + shift): v + shift for k, v in (c.get("limitResets") or {}).items()
                                 if str(k).isdigit() and isinstance(v, (int, float))}
-            # (its hours too, with the cold resumes and permission prompts in
-            # them: their tokens, costs and tools count when its turns do)
+            # (its hours too, with the cold resumes, permission prompts and
+            # commits in them: their tokens, costs and tools count when its turns do)
             c["hours"] = {hour_key(hour_ms(h) + shift): dict(agg, **{k: [[e[0] + shift] + list(e[1:]) for e in agg.get(k, [])]
-                                                                     for k in ("c", "p")})
+                                                                     for k in ("c", "p", "gc")})
                           for h, agg in (c.get("hours") or {}).items()}
+            c["recaps"] = [[r[0] + shift] + list(r[1:]) for r in c.get("recaps") or []]
+            if c.get("nextPrompt"):
+                c["nextPrompt"] += shift
+            review = c.get("review")
+            if isinstance(review, dict):  # (its last edit as this computer's clock had it, as the Review tab's)
+                c["review"] = dict(review, editedAt=(review.get("editedAt") or 0) + shift)
+                if isinstance(review.get("tests"), dict) and review["tests"].get("at"):
+                    c["review"]["tests"] = dict(review["tests"], at=review["tests"]["at"] + shift)
     return {"host": host, "ok": True, "chats": chats, "accounts": answer.get("accounts") or []}
 
 

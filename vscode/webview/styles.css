@@ -2553,6 +2553,83 @@ body.vscode-high-contrast .top.scrolled {
   padding-left: 22px;
 }
 
+/* What got done: name | what it got done | bar | hours · cost | to the
+   Projects tab (an SSH host's: an empty cell), in columns */
+.week-bars.week-done {
+  grid-template-columns: fit-content(min(13em, 40%)) fit-content(12em) minmax(2em, 1fr) auto auto;
+}
+
+.week-done-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-done-go {
+  width: 20px;
+  height: 20px;
+}
+
+/* its chats: name | what it got done | hours · cost | its review's tags,
+   then Claude's recap and its commits under the name */
+.week-chats.week-done-chats {
+  grid-template-columns: minmax(0, 1fr) fit-content(12em) max-content auto;
+}
+
+.week-chats > li.week-done-chat {
+  row-gap: 1px;
+  padding-bottom: 3px;
+}
+
+.week-done-line {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.week-done-line > .week-chat {
+  grid-column: 1 / 4;
+}
+
+.week-done-tags {
+  display: flex;
+  gap: 4px;
+}
+
+.week-done-recap,
+.week-done-commit {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-left: 26px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-done-commit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.week-done-commit .icon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  opacity: 0.6;
+}
+
+.week-done-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.week-done-work {
+  margin-top: 6px;
+}
+
 /* a plan window filling up, from its start to its reset */
 .week-fill {
   width: 100%;

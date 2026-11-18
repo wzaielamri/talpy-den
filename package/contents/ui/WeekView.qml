@@ -12,12 +12,13 @@ import "limits.mjs" as Limits
 
 // The Recap tab (main.qml: loadWeek, week.py): your last 7 days with Claude,
 // as a story: the big picture (how long you were at it, how long Claude
-// worked, your prompts, its tokens, the API prices), what Claude did, when
-// (a day per row on a timeline, your plan's limits over the same days, the
-// day chat by chat), where (by project, the chats it worked on most), then
-// the money (by model at API prices, and what would make it use less of your plan:
-// the rules of Claude Code's own /usage). All of it read from the chat
-// transcripts: no tokens, nothing sent.
+// worked, your prompts, its tokens, the API prices), when (a day per row on
+// a timeline, your plan's limits over the same days, the day chat by chat),
+// what got done (by project, its chats with their commits and Claude's
+// recaps, and what Claude did in all), then the money (by model at API
+// prices, and what would make it use less of your plan: the rules of Claude
+// Code's own /usage). All of it read from the chat transcripts: no tokens,
+// nothing sent.
 PlasmaComponents3.ScrollView {
     id: view
 
@@ -31,11 +32,10 @@ PlasmaComponents3.ScrollView {
     readonly property var accounts: recap ? recap.accounts : []
     readonly property var projects: recap ? recap.projects : []
     readonly property var models: recap ? recap.models : []
-    readonly property var chats: recap ? recap.chats : []
     readonly property var lanes: recap && recap.lanes ? recap.lanes : []   // (the Day view: chat by chat)
     // The Day with chats: one timeline (the lanes, with the day's own on top)
     // and the chats' numbers at their lanes' ends, rather than the day's row
-    // and Chats it worked on most saying it again
+    // saying it again
     readonly property bool dayLanes: !!recap && recap.span === "day" && lanes.length > 0
     readonly property var tips: recap ? recap.tips : []
     readonly property var trend: recap && recap.trend ? recap.trend : []
@@ -174,6 +174,7 @@ PlasmaComponents3.ScrollView {
         return Math.ceil(Math.max(0, ...texts.map(t => smallMetrics.advanceWidth(t)))) + 1
     }
     readonly property real projectNumbersWidth: widest(projects.map(numbersOf))
+    readonly property real projectDoneWidth: Math.min(gu * 7, widest(projects.map(doneText)))   // (1 when none got any)
     readonly property real modelNumbersWidth: widest(models.map(modelNumbers))
 
     // 412.3M, 8.1k
@@ -503,7 +504,9 @@ PlasmaComponents3.ScrollView {
     }
 
     // What Claude did, in a line: its tool calls, commands, edits, subagents
-    function workText() {
+    // (of these days, or w: the period before's)
+    function workText(w) {
+        const work = w === undefined ? view.work : w
         if (!work || !work.toolCalls)
             return ""
         const parts = [i18np("%1 tool call", "%1 tool calls", work.toolCalls)]
@@ -522,6 +525,39 @@ PlasmaComponents3.ScrollView {
         if (work.compactions)
             parts.push(i18np("%1 compaction", "%1 compactions", work.compactions))
         return parts.join(" · ")
+    }
+    // What Claude did in the period before, for that line's tooltip (none
+    // when the Recap doesn't have that period whole: why)
+    function workBeforeText() {
+        const before = recap && recap.workBefore ? recap.workBefore : null
+        if (!before)
+            return uncomparedText().trim()
+        const text = workText(before) || i18nc("what Claude did in a period: nothing", "nothing")
+        if (sameTime)
+            return span === "day" ? i18n("The day before, by this time: %1", text)
+                 : span === "month" ? i18n("The 30 days before, by this time: %1", text) : i18n("The 7 days before, by this time: %1", text)
+        return span === "day" ? i18n("The day before: %1", text) : span === "month" ? i18n("The 30 days before: %1", text)
+                                                                    : i18n("The 7 days before: %1", text)
+    }
+
+    // What a project or chat got done: "14 commits · 212 files" (the files
+    // Claude's edits changed), and its tooltip's line with their lines
+    function doneText(x) {
+        const parts = []
+        if (x.commitCount)
+            parts.push(i18np("%1 commit", "%1 commits", x.commitCount))
+        if (x.files)
+            parts.push(i18np("%1 file", "%1 files", x.files))
+        return parts.join(" · ")
+    }
+    function doneTip(x) {
+        const parts = []
+        if (x.commitCount)
+            parts.push(i18np("%1 commit", "%1 commits", x.commitCount))
+        if (x.files)
+            parts.push(i18np("Claude's edits changed %1 file", "Claude's edits changed %1 files", x.files)
+                       + " (+" + count(x.linesAdded) + " −" + count(x.linesRemoved) + ")")
+        return parts.length ? "\n" + parts.join(" · ") : ""
     }
 
     // A plan window's color: as its bar in the Chats tab
@@ -835,23 +871,6 @@ PlasmaComponents3.ScrollView {
                         subText: tile.info.tip
                     }
                 }
-            }
-        }
-
-        // What Claude did: its tool calls, commands, edits, subagents
-        ColumnLayout {
-            Layout.fillWidth: true
-            visible: view.hasData && !!view.work && view.work.toolCalls > 0
-            spacing: Math.round(view.gu * 0.2)
-
-            SectionTitle {
-                text: i18n("What Claude did")
-            }
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                text: view.workText()
             }
         }
 
@@ -2018,16 +2037,20 @@ PlasmaComponents3.ScrollView {
             }
         }
 
-        // The project folders Claude worked in most (a chat started in a
-        // subfolder of a repository counts for the repository): click one
-        // to open it in the Projects tab (an SSH host's: for its chats here)
+        // What got done, by project (a chat started in a subfolder of a
+        // repository counts for the repository): its commits and the files
+        // Claude's edits changed, its time and amount. A click unfolds its
+        // chats in place, each with Claude's recap of it and its commits (here
+        // and on an SSH host alike); the button at a row's end opens one of
+        // this computer's in the Projects tab. Under the list, what Claude did
+        // in all, dim.
         ColumnLayout {
             Layout.fillWidth: true
-            visible: view.hasData && view.projects.length > 0
+            visible: view.hasData && (view.projects.length > 0 || view.workText() !== "")
             spacing: Math.round(view.gu * 0.2)
 
             SectionTitle {
-                text: i18n("Where Claude worked")
+                text: i18n("What got done")
             }
             Repeater {
                 model: view.projects.length
@@ -2044,6 +2067,23 @@ PlasmaComponents3.ScrollView {
                         Layout.fillWidth: true
                         implicitHeight: projectLine.implicitHeight
 
+                        MouseArea {   // (under the row's button: a click on it is the button's)
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: view.openProject = projectRow.open ? "" : projectRow.key
+
+                            PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: (projectRow.project.host ? root.hostLabel(projectRow.project.host) + ": " : "") + projectRow.project.path
+                                subText: i18n("Claude worked %1 · %2 at API prices", view.hours(projectRow.project.workedMs),
+                                              view.money(projectRow.project.cost))
+                                         + "\n" + i18np("%1 prompt", "%1 prompts", projectRow.project.prompts)
+                                         + " · " + i18np("%1 chat", "%1 chats", projectRow.project.chatCount)
+                                         + view.doneTip(projectRow.project)
+                                         + "\n\n" + (projectRow.open ? i18n("Click to fold its chats.") : i18n("Click for its chats: what each got done."))
+                            }
+                        }
                         RowLayout {
                             id: projectLine
                             anchors.left: parent.left
@@ -2053,8 +2093,7 @@ PlasmaComponents3.ScrollView {
                             Kirigami.Icon {
                                 Layout.preferredWidth: Kirigami.Units.iconSizes.small
                                 Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                                source: !projectRow.project.host ? Icons.plasma.goTo   // (to the Projects tab)
-                                        : projectRow.open ? Icons.plasma.unfolded : Icons.plasma.folded
+                                source: projectRow.open ? Icons.plasma.unfolded : Icons.plasma.folded
                                 opacity: 0.6
                             }
                             PlasmaComponents3.Label {
@@ -2063,6 +2102,15 @@ PlasmaComponents3.ScrollView {
                                 text: (projectRow.project.host ? root.hostLabel(projectRow.project.host) + ": " : "") + projectRow.project.name
                                 elide: Text.ElideMiddle
                                 font.bold: projectRow.open
+                            }
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.preferredWidth: view.projectDoneWidth
+                                visible: view.projectDoneWidth > 1
+                                text: view.doneText(projectRow.project)
+                                elide: Text.ElideRight
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.6
                             }
                             Rectangle {   // (its track: where all of it would end)
                                 Layout.fillWidth: true
@@ -2086,41 +2134,38 @@ PlasmaComponents3.ScrollView {
                                 font: Kirigami.Theme.smallFont
                                 opacity: 0.8
                             }
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (projectRow.project.host)
-                                    view.openProject = projectRow.open ? "" : projectRow.key
-                                else
-                                    root.showProject(projectRow.project.folder || projectRow.project.path)
-                            }
+                            // (this computer's: to the Projects tab; an SSH host's has its room, so the numbers line up)
+                            HoverButton {
+                                id: toProjects
+                                usable: !projectRow.project.host
+                                opacity: usable ? 1 : 0
+                                icon.name: Icons.plasma.project
+                                text: i18n("Open in the Projects tab")
+                                onClicked: root.showProject(projectRow.project.folder || projectRow.project.path)
 
-                            PlasmaCore.ToolTipArea {
-                                textFormat: Text.PlainText
-                                anchors.fill: parent
-                                mainText: (projectRow.project.host ? root.hostLabel(projectRow.project.host) + ": " : "") + projectRow.project.path
-                                subText: i18n("Claude worked %1 · %2 at API prices", view.hours(projectRow.project.workedMs),
-                                              view.money(projectRow.project.cost))
-                                         + "\n" + i18np("%1 prompt", "%1 prompts", projectRow.project.prompts)
-                                         + " · " + i18np("%1 chat", "%1 chats", projectRow.project.chatCount)
-                                         + "\n\n" + (projectRow.project.host ? i18n("Click for its chats.")
-                                                                         : i18n("Click to open it in the Projects tab: its chats, plans and memories."))
+                                PlasmaCore.ToolTipArea {
+                                    textFormat: Text.PlainText
+                                    anchors.fill: parent
+                                    active: toProjects.usable
+                                    mainText: i18n("Open in the Projects tab")
+                                    subText: i18n("All its chats, plans and memories.")
+                                }
                             }
                         }
                     }
-                    Repeater {
+                    Repeater {   // (made while it's unfolded)
                         id: projectChats
                         readonly property var list: projectRow.open ? projectRow.project.chats : []
+                        readonly property real doneWidth: Math.min(view.gu * 7, view.widest(list.map(view.doneText)))
                         readonly property real numbersWidth: view.widest(list.map(view.numbersOf))
                         model: list.length
-                        delegate: WeekChatLine {
+                        delegate: WeekDoneChat {
                             required property int index
                             chat: projectChats.list[index] || view.emptyChat
-                            where: ""
+                            where: view.doneText(chat)
                             indent: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
                             numbers: view.numbersOf(chat)
+                            whereWidth: projectChats.doneWidth
                             numbersWidth: projectChats.numbersWidth
                         }
                     }
@@ -2136,29 +2181,22 @@ PlasmaComponents3.ScrollView {
                     }
                 }
             }
-        }
+            // What Claude did in all: its tool calls, commands, edits, subagents
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                Layout.topMargin: Math.round(view.gu * 0.2)
+                visible: text !== ""
+                wrapMode: Text.Wrap
+                text: view.workText()
+                font: Kirigami.Theme.smallFont
+                opacity: 0.6
 
-        // The chats Claude worked on most: click one to bring it up
-        ColumnLayout {
-            id: topChats
-            Layout.fillWidth: true
-            visible: view.hasData && view.chats.length > 0 && !view.dayLanes
-            spacing: 0
-            readonly property real whereWidth: Math.min(view.gu * 7, view.widest(view.chats.map(view.whereOf)))
-            readonly property real numbersWidth: view.widest(view.chats.map(view.numbersOf))
-
-            SectionTitle {
-                text: i18n("Chats it worked on most")
-                Layout.bottomMargin: Math.round(view.gu * 0.2)
-            }
-            Repeater {
-                model: view.chats.length
-                delegate: WeekChatLine {
-                    required property int index
-                    chat: view.chats[index] || view.emptyChat
-                    numbers: view.numbersOf(chat)
-                    whereWidth: topChats.whereWidth
-                    numbersWidth: topChats.numbersWidth
+                PlasmaCore.ToolTipArea {
+                    textFormat: Text.PlainText
+                    anchors.fill: parent
+                    mainText: i18n("What Claude did")
+                    subText: view.workBeforeText()
                 }
             }
         }

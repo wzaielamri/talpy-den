@@ -65,14 +65,20 @@ class Transcript:
         e.update(extra)
         return self.add(e)
 
-    def result(self, ms, tool_id, source="config", text="done", reason=None, decision="accept"):
+    def result(self, ms, tool_id, source="config", text="done", reason=None, decision="accept", error=False):
         pd = {"decision": decision, "source": source}
         if reason:
             pd["reasonCode"] = reason
-        return self.add({"type": "user", "timestamp": iso(ms),
-                         "message": {"role": "user", "content": [{"tool_use_id": tool_id, "type": "tool_result",
-                                                                  "content": text}]},
+        block = {"tool_use_id": tool_id, "type": "tool_result", "content": text}
+        if error:
+            block["is_error"] = True
+        return self.add({"type": "user", "timestamp": iso(ms), "message": {"role": "user", "content": [block]},
                          "toolUseResult": {"stdout": text}, "permissionDecision": pd})
+
+    def recap(self, ms, text):
+        """Claude's recap of the chat, written when you come back to it."""
+        return self.add({"type": "system", "subtype": "away_summary", "timestamp": iso(ms),
+                         "content": text + " (disable recaps in /config)"})
 
     def compacted(self, ms):
         return self.add({"type": "system", "subtype": "compact_boundary", "timestamp": iso(ms)})
@@ -361,7 +367,9 @@ class RecapTests(Home):
         self.assertEqual(today["you"], [[t0 - week.PROMPT_LEAD_MS, t0 + 120_000]])
         self.assertEqual((r["sum"]["workedMs"], r["sum"]["youMs"], r["sum"]["prompts"]), (120_000, 180_000, 1))
         self.assertEqual(r["projects"][0]["name"], "app")
-        self.assertEqual((r["chats"][0]["chatId"], r["chats"][0]["cwd"]), ("chat-a", "/w/app"))
+        chat = r["projects"][0]["chats"][0]
+        self.assertEqual((chat["chatId"], chat["cwd"]), ("chat-a", "/w/app"))
+        self.assertNotIn("chats", r)  # (one list: What got done, by project)
         self.assertEqual(r["models"][0]["model"], "Opus 5.5")
         self.assertEqual(self.recap(back=1)["sum"]["workedMs"], 0)
         self.assertEqual(self.recap(back=1)["to"], "2026-10-17")
@@ -569,9 +577,9 @@ class RecapTests(Home):
         self.assertEqual((day["sum"]["workedMs"], day["previous"]["workedMs"]), (60_000, 30_000))  # (the day before)
         self.assertEqual([t and t["workedMs"] for t in day["trend"]], [0, 0, 0, 30_000, 60_000])
         self.assertEqual(day["backMax"], 16)  # (back to the first chat's day)
-        # each lane ends with its chat's numbers, as Chats it worked on most has them
+        # each lane ends with its chat's numbers, as What got done has them
         (lane,) = day["lanes"]
-        (chat,) = [c for c in day["chats"] if c["chatId"] == lane["id"]]
+        (chat,) = [c for p in day["projects"] for c in p["chats"] if c["chatId"] == lane["id"]]
         self.assertEqual((lane["claudeMs"], lane["cost"]), (chat["workedMs"], chat["cost"]))
         self.assertGreater(lane["cost"], 0)
         self.assertEqual(self.recap(span="day", back=1, days=40)["sum"]["workedMs"], 30_000)
@@ -1064,6 +1072,167 @@ class WorkTests(Home):
         self.assertEqual((w["linesAdded"], w["linesRemoved"]), (2 + 2 + 2, 1 + 0 + 0))
         self.assertEqual(week.edit_lines("Write", {"content": "1\n2\n3"}), (3, 0))
         self.assertEqual(week.edit_lines("MultiEdit", {"edits": [edit, edit]}), (4, 2))
+
+    def test_the_period_befores_counts_when_its_comparable(self):
+        t0 = self.t0
+        self.write(Transcript().prompt(t0).reply(t0 + 1000, "a", tools=[("B", "Bash", {"command": "ls"})])
+                   .duration(t0 + 60_000, 60_000))
+        before = t0 - 7 * week.DAY_MS
+        self.write(Transcript().prompt(before).reply(before + 1000, "b", tools=[("B2", "Bash", {"command": "ls"}),
+                                                                                ("B3", "Bash", {"command": "ls"})])
+                   .duration(before + 60_000, 60_000), "chat-b")
+        r = self.recap(kept_since=t0 - 30 * week.DAY_MS)
+        self.assertEqual((r["work"]["commands"], r["workBefore"]["commands"]), (1, 2))
+        self.assertIsNone(self.recap()["workBefore"])  # (the Recap doesn't have that week whole)
+        self.assertIsNone(self.recap(span="all", days=40)["workBefore"])
+
+
+def commit_call(tid, command):
+    return (tid, "Bash", {"command": command})
+
+
+class DoneTests(Home):
+    """What got done: each chat's commits, files, Claude's recap of it and its review."""
+
+    def chat_of(self, r, chat_id):
+        return next(c for p in r["projects"] for c in p["chats"] if c["chatId"] == chat_id)
+
+    def test_what_a_chat_got_done(self):
+        t0 = self.t0
+        tr = Transcript().prompt(t0)
+        tr.reply(t0 + 1000, "a", tools=[("E", "Edit", {"file_path": "/w/app/a.py", "old_string": "a", "new_string": "b\nc"}),
+                                        commit_call("C1", 'git add -A && git commit -m "Add the parser"')])
+        tr.result(t0 + 2000, "E").result(t0 + 3000, "C1", text="[main 1a2b3c4] Add the parser\n 1 file changed, 2 insertions(+)")
+        msg = "msg=$(cat <<'EOF'\nRead the files once\n\nThe reader kept them.\nEOF\n)\n"
+        tr.reply(t0 + 4000, "b", tools=[commit_call("C2", msg + 'git commit -q -m "$msg" && git log --oneline -3'),
+                                        ("T", "Bash", {"command": "python3 -m pytest -q"})])
+        tr.result(t0 + 5000, "C2", text="2b3c4d5 (HEAD -> main) Read the files once\n1a2b3c4 Add the parser\n")
+        tr.result(t0 + 6000, "T", text="3 passed")
+        tr.reply(t0 + 7000, "c", tools=[commit_call("C3", "git commit -qam 'Tidy the notes'"),
+                                        commit_call("C4", 'git commit -m "Nothing more"'),
+                                        commit_call("C5", 'git commit --amend -m "Add the parser, again"'),
+                                        commit_call("C6", "git commit -q --no-edit && git log --oneline -1")])
+        tr.result(t0 + 8000, "C3", text="").result(t0 + 8100, "C4", text="nothing to commit, working tree clean", error=True)
+        tr.result(t0 + 8200, "C5", text="[main 9f8e7d6] Add the parser, again").result(t0 + 8300, "C6", text="5e6f7a8 Merge x")
+        tr.duration(t0 + 90_000, 90_000).recap(t0 + 3600_000, "You asked for a parser; it reads the files once.")
+        self.write(tr)
+        self.write(Transcript().prompt(t0).reply(t0 + 1000, "f", tools=[commit_call(
+            "C1", 'git add -A && git commit -m "Add the parser"')]).result(t0 + 3000, "C1", text="[main 1a2b3c4] Add the parser")
+            .duration(t0 + 70_000, 70_000), "chat-fork")  # (a fork's copy of the chat: its commit counts once)
+        r = self.recap()
+        chat = self.chat_of(r, "chat-a")
+        self.assertEqual(chat["commits"], [["", "Tidy the notes"], ["2b3c4d5", "Read the files once"],
+                                           ["1a2b3c4", "Add the parser"]])  # (the newest first)
+        self.assertEqual((chat["commitCount"], chat["files"], chat["linesAdded"], chat["linesRemoved"]), (3, 1, 2, 1))
+        self.assertEqual(chat["recap"], {"text": "You asked for a parser; it reads the files once.", "at": t0 + 3600_000})
+        self.assertEqual(chat["review"], {"editedAt": t0 + 1000, "tests": {"command": "python3 -m pytest -q", "ok": True,
+                                                                           "at": t0 + 6000}})
+        self.assertEqual((self.chat_of(r, "chat-fork")["commitCount"], self.chat_of(r, "chat-fork")["review"]), (0, None))
+        (project,) = r["projects"]
+        self.assertEqual((project["commitCount"], project["files"]), (3, 1))
+
+    def test_what_git_printed_says_which_commits_were_made(self):
+        said = week.commit_messages("git -C ../app commit -qm 'Fix the reader'; git log --format='%h %an %s' -2")
+        self.assertEqual(said, ["Fix the reader"])
+        self.assertEqual(week.commits_made(said, "abc1234 Ann Fix the reader\nbcd2345 Ann Older one\n", False),
+                         [["abc1234", "Fix the reader"]])
+        self.assertEqual(week.commits_made(said, "bcd2345 Older one\n", False), [])  # (the log shows another: none)
+        cut = week.commit_messages('git commit -qm "Show what got done in the Recap" && git log --oneline -1 | cut -c1-30')
+        self.assertEqual(week.commits_made(cut, "ab12cd3 Show what got done in t\n", False),
+                         [["ab12cd3", "Show what got done in the Recap"]])  # (the log's line cut: the message's whole)
+        self.assertEqual(week.commits_made(said, "", True), [])  # (it failed)
+        doc = "git commit -q -F - <<'EOF'\nShow the commits\n\nWhy.\nEOF\ngit log --oneline -1"
+        self.assertEqual(week.commits_made(week.commit_messages(doc), "cde3456 Show the commits", False),
+                         [["cde3456", "Show the commits"]])
+        self.assertIsNone(week.commit_messages("git commit --amend --no-edit"))
+        self.assertIsNone(week.commit_messages("git show HEAD; git log --grep commit"))
+        said = week.commit_messages('git commit -qm "Name the nightly run $(date +%a)" -m "Why." && git log --oneline -1')
+        self.assertEqual(said, ["Name the nightly run $(date +%a)"])
+        self.assertEqual(week.commits_made(said, "def4567 Name the nightly run Mon", False),
+                         [["def4567", "Name the nightly run Mon"]])
+
+    def test_the_recap_of_a_periods_work(self):
+        # Claude writes a recap when you come back to a chat: the next
+        # morning's is of the day before's work, unless you prompted it again first
+        t0, day, hour = self.t0, week.DAY_MS, 3600_000
+        a = Transcript().prompt(t0 - day).reply(t0 - day + 1000, "a").duration(t0 - day + 60_000, 60_000)
+        a.recap(t0 - 2 * hour, "You asked for the reader and the docs.")  # (this morning, before today's prompt)
+        a.prompt(t0).reply(t0 + 1000, "a2").duration(t0 + 60_000, 60_000)
+        b = Transcript().prompt(t0 - day + 5 * MIN).reply(t0 - day + 6 * MIN, "b").duration(t0 - day + 7 * MIN, 2 * MIN)
+        b.recap(t0 - day + 30 * MIN, "You asked for the writer.").prompt(t0 - 3 * hour)
+        b.reply(t0 - 3 * hour + 1000, "b2").duration(t0 - 3 * hour + 60_000, 60_000)
+        b.recap(t0 - hour, "You asked for the writer and its tests.").prompt(t0 - 30 * MIN)
+        b.reply(t0 - 30 * MIN + 1000, "b3").duration(t0 - 30 * MIN + 60_000, 60_000)
+        self.write(a, "chat-a")
+        self.write(b, "chat-b")
+        yesterday = self.recap(span="day", back=1, days=40)
+        self.assertEqual(self.chat_of(yesterday, "chat-a")["recap"]["text"], "You asked for the reader and the docs.")
+        self.assertEqual(self.chat_of(yesterday, "chat-b")["recap"]["text"], "You asked for the writer.")
+        today = self.recap(span="day", days=40)
+        # (none came after b's last work: the newest of today's, of its work up to then)
+        self.assertEqual(self.chat_of(today, "chat-b")["recap"]["text"], "You asked for the writer and its tests.")
+        self.assertIsNone(self.chat_of(today, "chat-a")["recap"])  # (this morning's is of yesterday's work)
+
+    def test_a_cache_from_before_gets_what_got_done_once(self):
+        # A cache an older copy wrote has none of it: what the transcripts
+        # still have is read again for it once; a deleted chat keeps its numbers
+        t0 = self.t0
+        tr = Transcript().prompt(t0).reply(t0 + 1000, "a", tools=[
+            ("E", "Edit", {"file_path": "/w/app/a.py", "old_string": "a", "new_string": "b"}),
+            commit_call("C1", 'git commit -qm "Add the parser"')])
+        tr.result(t0 + 2000, "E").result(t0 + 3000, "C1", text="").duration(t0 + 60_000, 60_000)
+        tr.recap(t0 + 3600_000, "You asked for a parser.")
+        path = self.write(tr, "chat-a")
+        gone = self.write(Transcript().prompt(t0).reply(t0 + 1000, "b", tools=[commit_call("C9", 'git commit -qm "Gone"')])
+                          .result(t0 + 2000, "C9", text="").duration(t0 + 90_000, 90_000), "chat-b")
+        cache = self.scan()
+        for rec in cache["files"].values():  # (as an older copy of this file wrote it)
+            for key in ("recaps", "tests", "workTo"):
+                rec["data"].pop(key)
+            for agg in rec["data"]["hours"].values():
+                agg.pop("gc", None)
+                agg["m"] = [m for m in agg["m"] if not m.startswith("g:")]
+        before = json.loads(json.dumps(cache))
+        numbers = self.recap_of(cache)
+        gone.unlink()
+        cache = self.scan(cache)
+        recs = {r["chat"]: r for r in cache["files"].values()}
+        self.assertTrue(recs["chat-b"]["gone"])
+        self.assertEqual(recs["chat-b"]["data"], next(r for r in before["files"].values() if r["chat"] == "chat-b")["data"])
+        self.assertEqual(recs["chat-a"]["data"]["recaps"], [[t0 + 3600_000, "You asked for a parser."]])
+        self.assertEqual(recs["chat-a"]["data"]["tests"]["editAt"], t0 + 1000)
+        old = next(r for r in before["files"].values() if r["chat"] == "chat-a")["data"]
+        for key in ("turns", "prompts", "limits", "names", "folder", "startTokens"):  # (the rest as it was)
+            self.assertEqual(recs["chat-a"]["data"][key], old[key])
+        for h, agg in recs["chat-a"]["data"]["hours"].items():
+            self.assertEqual({k: v for k, v in agg.items() if k not in ("gc", "m")},
+                             {k: v for k, v in old["hours"][h].items() if k != "m"})
+        r = self.recap_of(cache)
+        for key in ("workedMs", "youMs", "prompts", "cost", "tokenTotal"):  # (nothing of the history lost)
+            self.assertEqual(r["sum"][key], numbers["sum"][key])
+        a, b = self.chat_of(r, "chat-a"), self.chat_of(r, "chat-b")
+        self.assertEqual((a["commits"], a["recap"]["text"], a["review"]["editedAt"]),
+                         ([["", "Add the parser"]], "You asked for a parser.", t0 + 1000))
+        self.assertEqual((b["commitCount"], b["recap"], b["review"]), (0, None, None))
+        # lines an older copy read on (none of it kept): read for it next time, once
+        tr.reply(t0 + 2 * 3600_000, "c", tools=[commit_call("C2", 'git commit -qm "Read once"')])
+        tr.result(t0 + 2 * 3600_000 + 1000, "C2", text="")
+        path.write_text(tr.text())
+        rec = recs["chat-a"]
+        was = rec["offset"]
+        week.read_transcript(path, rec, set())
+        rec["data"]["workTo"] = was
+        for agg in rec["data"]["hours"].values():
+            agg["gc"] = [g for g in agg.get("gc", []) if g[2] != "Read once"]
+            agg["m"] = [m for m in agg["m"] if m != "g:C2"]
+        r = self.recap_of(self.scan(cache))
+        self.assertEqual([s for _, s in self.chat_of(r, "chat-a")["commits"]], ["Read once", "Add the parser"])
+        self.assertEqual(self.chat_of(self.recap_of(self.scan(cache)), "chat-a")["commitCount"], 2)
+
+    def recap_of(self, cache):
+        chats = week.chats_between(cache, self.profiles(), self.now - 14 * week.DAY_MS, self.now + week.DAY_MS, self.home)
+        _, accounts = week.account_ids(self.profiles())
+        return week.recap([{"host": "", "chats": chats, "accounts": accounts}], 0, "", self.now, self.home)
 
 
 class PlanTests(Home):
@@ -1849,16 +2018,22 @@ class HostTests(FakeSSH):
         import remote
         now = int(time.time() * 1000)
         h = now // week.HOUR_MS * week.HOUR_MS - 5 * week.HOUR_MS  # (by the host's clock, 2 hours behind)
-        hour = dict(week.new_hour(), p=[[h + 700_000, "Bash", "make", "", 0, True]])
+        hour = dict(week.new_hour(), p=[[h + 700_000, "Bash", "make", "", 0, True]],
+                    gc=[[h + 800_000, "1a2b3c4", "Add the parser"]])
         chat = {"turns": [[h + 600_000, h + 1200_000, 600_000, []]], "prompts": [h + 600_000], "limits": [],
-                "hours": {week.hour_key(h): hour}}
+                "hours": {week.hour_key(h): hour}, "recaps": [[h + 1300_000, "You asked for a parser."]],
+                "nextPrompt": None, "review": {"editedAt": h + 900_000, "tests": {"command": "pytest", "ok": True,
+                                                                                    "at": h + 1000_000}}}
         answer = {"ok": True, "now": now - 2 * week.HOUR_MS, "chats": {"c": chat}, "accounts": []}
         with mock.patch.object(remote, "host_answer", return_value=answer):
             c = week.host_chats("lab", 0)["chats"]["c"]
         shift = c["turns"][0][0] - (h + 600_000)
         self.assertGreaterEqual(shift, 2 * week.HOUR_MS)
         ((key, agg),) = c["hours"].items()
-        self.assertEqual((week.hour_ms(key), agg["p"][0][0]), (h + shift, h + 700_000 + shift))
+        self.assertEqual((week.hour_ms(key), agg["p"][0][0], agg["gc"][0][0]),
+                         (h + shift, h + 700_000 + shift, h + 800_000 + shift))
+        self.assertEqual((c["recaps"][0][0], c["review"]["editedAt"], c["review"]["tests"]["at"]),
+                         (h + 1300_000 + shift, h + 900_000 + shift, h + 1000_000 + shift))
 
     def test_a_host_that_turns_you_away(self):
         self.mode("denied")
