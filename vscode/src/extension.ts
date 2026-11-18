@@ -246,13 +246,17 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("talpyDen.showHiddenProjects", () => a.showHidden("projects")),
     vscode.commands.registerCommand("talpyDen.setupUsageBars", () => setUpUsageBars(context.extensionUri)),
     vscode.commands.registerCommand("talpyDen.removeUsageBars", () => setUpUsageBars(context.extensionUri, true)),
-    // a game with the big Talpy, by name (the view's … menu: one entry a game)
-    ...(["peekaboo", "run"] as const).map((game) =>
-      vscode.commands.registerCommand(game === "run" ? "talpyDen.runWithTalpy" : "talpyDen.playPeekaboo", async () => {
-        view.showTab("chats");
-        await vscode.commands.executeCommand("talpyDen.view.focus");
-        view.playWithTalpy(game);
-      })),
+    // a game with the big Talpy, by name (the view's … menu: one entry a game);
+    // the old id (before there were two) still starts either, so a keybinding
+    // to it goes on working (not in the menus)
+    ...([["talpyDen.runWithTalpy", "run"], ["talpyDen.playPeekaboo", "peekaboo"], ["talpyDen.playWithTalpy", undefined]] as const).map(
+      ([id, game]) =>
+        vscode.commands.registerCommand(id, async () => {
+          view.showTab("chats");
+          await vscode.commands.executeCommand("talpyDen.view.focus");
+          view.playWithTalpy(game);
+        }),
+    ),
     // Playful Talpy on or off (the view's … menu shows the one that changes it)
     vscode.commands.registerCommand("talpyDen.playfulOn", () =>
       vscode.workspace.getConfiguration("talpyDen").update("playfulTalpy", true, vscode.ConfigurationTarget.Global)),

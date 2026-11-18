@@ -414,7 +414,7 @@ export class Pet {
     if (this.play?.on && mood === "needs") {
       this.stopGame(); // a chat needs you: it's over, and he says so
       this.talpy.react("sign");
-    } else if (this.lastMood === "done" && mood !== "done" && !this.leaving) this.talpy.react("yawn"); // woken up by work
+    } else if (this.lastMood === "done" && mood !== "done" && !this.leaving && !this.play?.on) this.talpy.react("yawn"); // woken up by work (not over a game)
     this.lastMood = mood;
     this.changed();
   }

@@ -240,6 +240,8 @@ const RUN_READY_MS = 2000;     // the hint, and nothing on his way yet
 const RUN_END_MS = 10000;      // the end waits that long for a press
 const RUN_AGAIN_MS = 450;      // ...and takes none so soon after the bump (a jump pressed too late)
 const JUMP_MS = 620;           // up and down again, whatever the speed
+const JUMP_KEEP_MS = 150;      // a press this close to his landing is kept for it (not a double-click's)
+const FALL = 8;                // bumped in the air, he comes down at that many of his body's height a second
 const JUMP_HIGH = 1.6;         // that many of his body's height
 const DIG_MS = 1000;           // up again by himself after that
 const SPEED0 = 110;            // box units a second at the start
@@ -355,8 +357,10 @@ export class Run {
                 this.digAt = this.now;
             } else
                 this.digPending = true;   // (in the air: he digs in as he lands, while it's held)
-        } else if (this.jumpAt >= 0)
-            this.queued = true;    // (kept for the moment he lands)
+        } else if (this.jumpAt >= 0) {
+            if (this.now - this.jumpAt >= JUMP_MS - JUMP_KEEP_MS)
+                this.queued = true;    // (just before he lands: kept for that moment)
+        }
         else {
             this.digging = false;
             this.jumpAt = this.now;
@@ -380,6 +384,10 @@ export class Run {
         if (this.state === 'over') {
             if (now - this.since > RUN_END_MS)
                 this.end();
+            else if (this.lift > 0) {   // (bumped in the air: he comes down)
+                this.lift = Math.max(0, this.lift - FALL * this.s.bodyHeight * dt);
+                this.host.changed();
+            }
             return;
         }
         if (this.state === 'ready' && now - this.since >= RUN_READY_MS) {
@@ -481,7 +489,8 @@ export class Run {
     }
 
     add(kind) {
-        const s = this.s, B = s.bodyHeight, k = KINDS[kind];
+        // (the stage read again as a thing comes: the view may have been widened meanwhile)
+        const s = this.s = this.host.stage(), B = s.bodyHeight, k = KINDS[kind];
         // (up: its top above the floor, so it stays on the floor as the stage grows)
         const th = { kind: kind, x: s.width + B * 0.2, y: 0, w: k[0] * B, h: k[1] * B, frame: 0, up: (k[2] + k[1]) * B };
         th.y = s.ground - th.up;
@@ -493,8 +502,7 @@ export class Run {
         this.state = 'over';
         this.since = this.now;
         this.hitBy = kind;
-        this.lift = 0;
-        this.jumpAt = -1;
+        this.jumpAt = -1;   // (in the air, he comes down from where he was hit: tick)
         this.digging = false;
         this.hint = '';
         this.setPose('bump');

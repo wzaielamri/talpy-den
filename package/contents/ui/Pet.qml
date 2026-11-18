@@ -228,7 +228,7 @@ Item {
         if (gameOn && mood === "needs") {
             stopGame()        // a chat needs you: it's over, and he says so
             react("sign")
-        } else if (lastMood === "done" && mood !== "done" && !leaving)
+        } else if (lastMood === "done" && mood !== "done" && !leaving && !gameOn)   // (not over a game: a run's pose)
             react("yawn")     // woken up by work
         lastMood = mood
     }

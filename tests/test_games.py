@@ -163,7 +163,8 @@ function player(g, px, noDig) {
 }
 function play(o) {
     Math.random = seeded(o.seed || 1);
-    const width = o.width || 400, best = o.best === undefined ? 120 : o.best;
+    let width = o.width || 400;
+    const best = o.best === undefined ? 120 : o.best;
     const t = new Talpy({});
     let now = 1000, px = 200;
     t.tick(now);
@@ -229,11 +230,28 @@ function play(o) {
             r.diggingInAir = g.digging;
         }
         if (o.airDig && r.airDigAt !== undefined && now - r.airDigAt === 704) r.diggingAfterLanding = g.digging;
+        // (the view widened mid-run: what comes next comes from beyond its new right edge)
+        if (o.widen && now - 1000 === o.widen) width = 800;
+        if (o.widen && now - 1000 > o.widen) {
+            r.seen = r.seen || new Set(g.things);
+            for (const th of g.things)
+                if (!r.seen.has(th)) { r.seen.add(th); r.newX = Math.min(r.newX === undefined ? 1e9 : r.newX, th.x); }
+        } else if (o.widen) r.seen = new Set(g.things);
+        // (a second press: one long before landing, a double-click, isn't kept; one just before is)
+        if (o.secondPress && g.state === 'run' && r.jumpAt === undefined && g.lift === 0) { g.press('jump'); r.jumpAt = now; }
+        if (o.secondPress && r.jumpAt !== undefined && now - r.jumpAt === o.secondPress) g.press('jump');
+        if (o.secondPress && r.jumpAt !== undefined && now - r.jumpAt === 704) r.liftAfterLanding = g.lift;
+        // (a bump in the air: he comes down, not snapped to the floor)
+        if (o.airBump && g.state === 'run' && r.bumpJumpAt === undefined) { g.press('jump'); r.bumpJumpAt = now; }
+        if (o.airBump && r.bumpJumpAt !== undefined && now - r.bumpJumpAt === 48)
+            g.things.push({ kind: 'crow', x: px - 20, y: 0, w: 36, h: 21, frame: 0, up: 63 });   // (at head height, where he is)
+        if (o.airBump && g.state === 'over' && r.liftAtBump === undefined) { r.liftAtBump = g.lift; r.bumpOverAt = now; }
+        if (o.airBump && r.bumpOverAt !== undefined && now - r.bumpOverAt === 608) r.liftLater = g.lift;
     }
     r.endMs = g.on ? null : now - 1000;
     r.bottoms = g.things.map(th => Math.round(th.y + th.h));   // (ground things and tufts: on the floor)
     r.kinds = g.things.map(th => th.kind);
-    r.meters = g.meters; r.said = said; r.saved = saved; r.grows = grows; r.things = null;
+    r.meters = g.meters; r.said = said; r.saved = saved; r.grows = grows; r.things = null; r.seen = null;
     return r;
 }
 const pick = () => { const t = new Talpy({}); return (name, ok) => pickGame(t, { stage: () => ({}), px: () => 0, moveTo() {}, say() {},
@@ -248,6 +266,9 @@ console.log(JSON.stringify({
     again: play({ again: true }), digging: play({ alwaysDig: true }), stopped: play({ stopAt: 5000, best: 0, auto: true }),
     growing: play({ growing: true, until: 2600 }),
     airDig: play({ airDig: true, until: 3200 }),
+    widen: play({ seed: 6, auto: true, widen: 6000, until: 14000 }),
+    early: play({ secondPress: 96, until: 3400 }), late: play({ secondPress: 512, until: 3400 }),
+    airBump: play({ airBump: true, until: 3600 }),
     noDig: play({ seed: 2, auto: true, noDig: true }),
 }));
 """ % json.dumps(str(TALPY / "games.mjs"))
@@ -272,6 +293,21 @@ class RunTests(unittest.TestCase):
         a = self.r["airDig"]
         self.assertFalse(a["diggingInAir"])
         self.assertTrue(a["diggingAfterLanding"])
+
+    def test_widened_mid_run_what_comes_comes_from_its_new_edge(self):
+        w = self.r["widen"]
+        self.assertIsNone(w["overMs"])
+        self.assertGreater(w["newX"], 790)              # (beyond 800 px, less a frame's step)
+
+    def test_a_double_click_is_one_jump(self):
+        self.assertEqual(self.r["early"]["liftAfterLanding"], 0)   # (a second press long before landing: dropped)
+        self.assertGreater(self.r["late"]["liftAfterLanding"], 0)  # (one just before landing: he jumps again)
+
+    def test_a_bump_in_the_air_comes_down(self):
+        b = self.r["airBump"]
+        self.assertEqual(b["hitBy"], "crow")
+        self.assertGreater(b["liftAtBump"], 0)          # (where he was hit, not on the floor at once)
+        self.assertEqual(b["liftLater"], 0)             # (down a moment later)
 
     def test_it_grows_the_stage_and_waits_2_s_before_the_first_obstacle(self):
         idle = self.r["idle"]
@@ -517,6 +553,11 @@ class PlasmaRunTests(unittest.TestCase):
             self.assertIn(key, keys)
         self.assertIn("event.isAutoRepeat", keys)
         self.assertIn("forceActiveFocus()", self.strip)
+        # (the focus it took is given back as the run ends: the search field, say)
+        self.assertIn("focusBefore = Window.activeFocusItem", self.strip)
+        self.assertIn("f.forceActiveFocus()", self.strip)
+        # (no wake-up yawn over his run: it would take his running pose)
+        self.assertIn('lastMood === "done" && mood !== "done" && !leaving && !gameOn', self.pet)
 
     def test_it_draws_the_run(self):
         self.assertIn("T.drawThing(ctx, th, strip.darkTheme)", self.pet)
@@ -588,6 +629,9 @@ class VsCodeRunTests(unittest.TestCase):
 
     def test_not_with_reduced_motion(self):
         self.assertIn("runOk: () => !reducedMotion()", self.ts)
+        self.assertIn('this.lastMood === "done" && mood !== "done" && !this.leaving && !this.play?.on', self.ts)
+        # (the old command id still starts a game, either: keybindings to it go on working)
+        self.assertIn('["talpyDen.playWithTalpy", undefined]', (ROOT / "vscode/src/extension.ts").read_text())
         self.assertIn('if (name === "run" && reducedMotion())', self.ts)
         self.assertIn("No running with reduced motion on", self.ts)
 

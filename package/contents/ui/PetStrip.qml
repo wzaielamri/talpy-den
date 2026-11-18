@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents3
 import org.kde.plasma.core as PlasmaCore
@@ -135,7 +136,20 @@ Item {
     clip: true
     // the hero runs (Talpy's Run, games.mjs): set by his game (Pet.qml's host grow)
     property bool running: false
-    onRunningChanged: if (running) runKeys.forceActiveFocus()
+    // (the stage takes the keys for the run, and gives them back after: the
+    // search field you were typing in, say)
+    property Item focusBefore: null
+    onRunningChanged: {
+        if (running) {
+            focusBefore = Window.activeFocusItem
+            runKeys.forceActiveFocus()
+        } else if (focusBefore) {
+            const f = focusBefore
+            focusBefore = null
+            if (f.visible)
+                f.forceActiveFocus()
+        }
+    }
 
     ListModel {
         id: petModel  // {petKey, colorIndex, leaving, label, host}; petKey "" is the hero
