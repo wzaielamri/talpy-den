@@ -1779,8 +1779,32 @@ class JobIdTests(unittest.TestCase):
         path.write_text(json.dumps({"at": 1, "offset": 0, "answer": {"ok": True, "host": host, "result": {
             "groups": [{"name": "lab", "sessions": list(sessions)}]}}}))
 
+    def listed(self, *ids):
+        """The jobs file, listing these ids."""
+        path = cs.jobs_file_path(self.home, cs.cache_dir(self.home))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"version": 1, "updatedAt": 1, "jobs": [{"id": i, "name": "x"} for i in ids]}))
+
     def job(self, job_id):
         return jump.jump_job_id(self.home, [], job_id)
+
+    def test_job_refuses_glob_ids_even_listed(self):
+        # (a session part like * would be a pattern for the transcript's path: some chat would be resumed)
+        globs = [".claude-work/*/live", ".claude-work/?/live", ".claude-work/[ab]/live", "lab*:.claude/a/live",
+                 ".claude-work/a{b,c}/live", ".claude-work/~x/live", ".claude-work/x%2f/live"]
+        self.listed(*globs)
+        for job_id in globs:
+            with self.subTest(job_id=job_id):
+                self.assertEqual(self.job(job_id), (False, "Not a chat id"))
+        self.assertEqual(self.calls, [])
+
+    def test_job_must_be_in_the_jobs_file(self):
+        local, host = f".claude-work/{self.UUID}/live", f"lab:.claude/{self.UUID}/live"
+        self.host_answer("lab", {"key": f".claude/{self.UUID}/live", "name": "Train", "sessionId": self.UUID})
+        self.listed("something/else/live")
+        self.assertEqual(self.job(local), (False, self.NOT_LISTED))
+        self.assertEqual(self.job(host), (False, self.NOT_LISTED))
+        self.assertEqual(self.calls, [])
 
     def test_job_refuses_bad_ids(self):
         bad = ["a;b/c/live", f".claude-work/$(id)/live", ".claude-work/`id`/live", ".claude-work/a b/live",
@@ -1795,41 +1819,51 @@ class JobIdTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_job_local_does_what_a_click_does(self):
+        self.listed(f".claude-work/{self.UUID}/live")
         self.assertEqual(self.job(f".claude-work/{self.UUID}/live"), (True, "done"))
         self.assertEqual(self.calls, [("jump", (self.home, [], self.UUID, ".claude-work"))])
 
     def test_job_local_unknown_profile_or_kind(self):
-        for job_id in (f".claude-other/{self.UUID}/live", f".claude-work/{self.UUID}/plan", f"~/{self.UUID}/live"):
+        ids = (f".claude-other/{self.UUID}/live", f".claude-work/{self.UUID}/plan", f"~/{self.UUID}/live")
+        self.listed(*ids)
+        for job_id in ids:  # (an unknown profile isn't listed; the other two haven't even the shape)
             with self.subTest(job_id=job_id):
-                self.assertEqual(self.job(job_id), (False, self.NOT_LISTED))
+                ok, message = self.job(job_id)
+                self.assertFalse(ok)
+                self.assertIn(message, (self.NOT_LISTED, "Not a chat id"))
         self.assertEqual(self.calls, [])
 
     def test_job_host_open_command(self):
         self.host_answer("lab", {"key": f".claude/{self.UUID}/job", "name": "Train", "sessionId": self.UUID,
                                  "openCommand": "cd ~/x && claude attach abc", "entrypoint": "cli"})
+        self.listed(f"lab:.claude/{self.UUID}/job")
         self.assertEqual(self.job(f"lab:.claude/{self.UUID}/job"), (True, "done"))
         self.assertEqual(self.calls, [("open_remote", ("lab", "cd ~/x && claude attach abc"))])
 
     def test_job_host_terminal(self):
         self.host_answer("lab", {"key": f".claude/{self.UUID}/live", "name": "Train", "sessionId": self.UUID,
                                  "entrypoint": "cli", "vscodeTerminal": 4242, "cwd": "/home/u/train"})
+        self.listed(f"lab:.claude/{self.UUID}/live")
         self.assertEqual(self.job(f"lab:.claude/{self.UUID}/live"), (True, "done"))
         self.assertEqual(self.calls, [("jump_remote_terminal", ("lab", "Train", 4242, "/home/u/train"))])
 
     def test_job_container_by_its_whole_name(self):
         self.host_answer("podman:web", {"key": f".claude/{self.UUID}/live", "name": "Site", "sessionId": self.UUID,
                                         "entrypoint": "cli"})
+        self.listed(f"podman:web:.claude/{self.UUID}/live")
         self.assertEqual(self.job(f"podman:web:.claude/{self.UUID}/live"), (True, "done"))
         self.assertEqual(self.calls, [("jump_remote_terminal", ("podman:web", "Site", None, ""))])
 
     def test_job_host_vscode_not_allowed(self):
         self.host_answer("lab", {"key": f".claude/{self.UUID}/live", "name": "Train", "sessionId": self.UUID,
                                  "entrypoint": "claude-vscode", "cwd": "/home/u/train"})
+        self.listed(f"lab:.claude/{self.UUID}/live")
         with mock.patch.object(jump, "jump_remote_vscode", lambda *a, **k: (None, "Open VS Code connected to lab?")):
             self.assertEqual(self.job(f"lab:.claude/{self.UUID}/live"),
                              (False, "Open it from Talpy Den first: it asks before connecting VS Code"))
 
     def test_job_unknown_host_id(self):
+        self.listed(f"nohost:.claude/{self.UUID}/live", f"lab:.claude/{self.UUID}/job")
         self.assertEqual(self.job(f"nohost:.claude/{self.UUID}/live"), (False, self.NOT_LISTED))
         self.host_answer("lab", {"key": f".claude/{self.UUID}/live", "name": "Train", "sessionId": self.UUID})
         self.assertEqual(self.job(f"lab:.claude/{self.UUID}/job"), (False, self.NOT_LISTED))  # (another chat)

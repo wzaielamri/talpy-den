@@ -1205,23 +1205,31 @@ def jump(home, extra_dirs, session_id, profile_dir=None):
 #
 # jump.py --job ID: another program (Talpy Den Display, a desk screen) brings up a chat it read in the jobs file
 # (place_jobs: "[<host>:]<profile>/<id>/<kind>[/<more>]"), doing what a click on its row in the widget does. The id
-# comes from outside, so nothing of it becomes a command, an option or a path: it's checked first (JOB_ID_BAD), then
-# only compared with what Talpy Den lists (a profile's name, a host's last answer). What runs is what a click runs,
-# and a question Talpy Den asks first (VS Code on a host) is never answered for you.
+# comes from outside, so nothing of it becomes a command, an option or a path: it must have the shape place_jobs
+# writes, in the few characters that can be in it (JOB_ID: no blank, quote, shell or glob character), and be one of
+# the jobs file's; then it's only compared with what Talpy Den lists (a profile's name, a host's last answer). What
+# runs is what a click runs, and a question Talpy Den asks first (VS Code on a host) is never answered for you.
 
 JOB_ID_MAX = 300
-JOB_ID_BAD = re.compile(r"""[\s"'\\;|&$`<>]""")
+JOB_ID = re.compile(r"(?:[A-Za-z0-9_.@][A-Za-z0-9_.@:-]*:)?[A-Za-z0-9_.+-]+/[A-Za-z0-9_.-]+/(?:live|job|chat)(?:/shared)?")
 JOB_KINDS = ("live", "job", "chat")
 JOB_NOT_LISTED = "That chat isn't listed any more"
 JOB_VSCODE_ASKS = "Open it from Talpy Den first: it asks before connecting VS Code"
 
 
 def job_id_ok(job_id):
-    """Whether job_id can be a jobs file's id: printable ASCII, at most JOB_ID_MAX, no blank, quote, backslash or
-    shell character, no "..", not starting with "-", and at least <profile>/<id>/<kind>."""
-    return (isinstance(job_id, str) and 0 < len(job_id) <= JOB_ID_MAX and job_id.isascii() and job_id.isprintable()
-            and not JOB_ID_BAD.search(job_id) and ".." not in job_id and not job_id.startswith("-")
-            and len(job_id.split("/")) >= 3)
+    """Whether job_id has a jobs file id's shape, [<host>:]<profile>/<id>/<kind>[/shared], in letters, digits and
+    _ . @ : + - only (no blank, quote, backslash, shell or glob character), at most JOB_ID_MAX, without ".." and not
+    starting with "-"."""
+    return (isinstance(job_id, str) and len(job_id) <= JOB_ID_MAX and JOB_ID.fullmatch(job_id) is not None
+            and ".." not in job_id and not job_id.startswith("-"))
+
+
+def listed_job_ids(home):
+    """The ids of the jobs file (place_jobs, publish_jobs): what --job may bring up."""
+    data = cs.read_json(cs.jobs_file_path(home, cs.cache_dir(home)))
+    jobs = data.get("jobs") if isinstance(data, dict) else None
+    return {j["id"] for j in jobs if isinstance(j, dict) and isinstance(j.get("id"), str)} if isinstance(jobs, list) else set()
 
 
 def shared_extra_dirs(home):
@@ -1279,6 +1287,8 @@ def jump_job_id(home, extra_dirs, job_id):
     """jump.py --job: bring up the chat whose jobs file id is job_id, as a click on its row does; (ok, message)."""
     if not job_id_ok(job_id):
         return False, "Not a chat id"
+    if job_id not in listed_job_ids(home):
+        return False, JOB_NOT_LISTED
     found = listed_host_session(job_id)
     if found:
         return show_host_session(*found)
