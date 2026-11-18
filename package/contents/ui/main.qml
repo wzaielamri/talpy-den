@@ -372,14 +372,26 @@ PlasmoidItem {
     property bool playWanted: false
     property bool gameStopWanted: false
     property Item gameStage: null
-    function playWithTalpy() {
+    // name: "peekaboo", "run", "" (any: as four quick clicks)
+    function playWithTalpy(name) {
         if (!Plasmoid.configuration.showPet)
             return
         popupTab = "chats"
         if (!expanded && !onDesktop)
             expanded = true
+        playName = name || ""
         playWanted = false
         playWanted = true
+    }
+    property string playName: ""
+    // Talpy's Run is offered only where it plays well: not on the desktop (the
+    // pets there redraw the whole desktop each frame) and not with less motion
+    // (it's nothing but scrolling)
+    readonly property bool runOk: !onDesktop && !lessMotion
+    // its best (metres): every widget's (sharedKeys), never lower
+    readonly property int runBest: Plasmoid.configuration.runBest
+    function saveRunBest(meters) {
+        Plasmoid.configuration.runBest = Math.max(Plasmoid.configuration.runBest || 0, Math.floor(meters))
     }
     readonly property bool onDesktop: Plasmoid.formFactor === PlasmaCore.Types.Planar && !inTray
     // The dashboard is on screen: the popup is open, or it's shown in place
@@ -542,7 +554,7 @@ PlasmoidItem {
         "openChatsIn", "newChatInVscode", "iconBlink", "awayDigest", "awayMinutes", "phoneWhileAway", "phoneFinished", "phoneDevice",
         "markdownApp", "newChatModel", "newChatEffort", "newChatMode", "usageCap", "usageRefreshMinutes", "recapRules", "clickOpensPane",
         "mondayRecap", "recapCurrency", "diffSideBySide", "paneTextPercent", "paneFont", "paneTerminalFont", "dictateLanguage",
-        "sideQuestionModel", "sideQuestionsOpen", "suggestReplies"]
+        "sideQuestionModel", "sideQuestionsOpen", "suggestReplies", "runBest"]
     property real settingsSeenAt: 0     // the newest shared settings this copy has seen
     property string settingsSeen: ""    // its own settings as of the last check (to see changes)
 
@@ -996,12 +1008,19 @@ PlasmoidItem {
             visible: root.chatsNeedingYou().length > 0
             onTriggered: root.goToNextChat(root.chatsNeedingYou())
         },
-        // a game with the big Talpy (as four quick clicks on him: for the keyboard and touch)
+        // a game with the big Talpy (as four quick clicks on him: for the keyboard
+        // and touch), one entry a game (no submenus here)
         PlasmaCore.Action {
-            text: i18n("Play with Talpy")
+            text: i18n("Play Peekaboo with Talpy")
             icon.name: Icons.plasma.play
             visible: Plasmoid.configuration.showPet && root.playful
-            onTriggered: root.playWithTalpy()
+            onTriggered: root.playWithTalpy("peekaboo")
+        },
+        PlasmaCore.Action {
+            text: i18n("Run with Talpy")
+            icon.name: Icons.plasma.play
+            visible: Plasmoid.configuration.showPet && root.playful && root.runOk
+            onTriggered: root.playWithTalpy("run")
         },
         // Talpy plays (tricks, props, jokes, cookies, games), or only shows what the chats do
         PlasmaCore.Action {

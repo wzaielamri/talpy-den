@@ -358,7 +358,7 @@ class HostTests(unittest.TestCase):
             self.assertRegex(wants, r'mood === "needs"\)? ?\{?\s*\n?\s*(this\.talpy\.)?react\("sign"\)')   # he points at the chat
             self.assertRegex(wants, r'!(root|world)\.playful')                                         # Playful off: only the tickle
             self.assertNotIn('mood === "done" &&', wants)                                              # asleep too (clicks or the menu),
-            self.assertRegex(wants, r'startGame\((this\.)?mood === "done"\)')                         # woken up: he yawns first
+            self.assertRegex(wants, r'startGame\((this\.)?mood === "done"(, name)?\)')                         # woken up: he yawns first
             self.assertIn("Okay, okay… let's play!", wants)
         # asleep, clicks 1 and 2 "let me sleep", the 3rd "I said let me SLEEP!", the 4th a game
         for text in (self.pet, self.ts):
@@ -400,14 +400,76 @@ class HostTests(unittest.TestCase):
         self.assertIn("if (this.play?.on) this.play.tick(now);", self.ts)
 
     def test_play_with_talpy_in_the_menus(self):
+        # one entry a game (Plasma's menu has no submenus); the run only where it's offered
         main = (UI / "main.qml").read_text()
-        action = main[main.index('text: i18n("Play with Talpy")') - 100:][:500]
-        self.assertIn("root.playWithTalpy()", action)
-        self.assertIn("visible: Plasmoid.configuration.showPet && root.playful", action)
+        peekaboo = main[main.index('text: i18n("Play Peekaboo with Talpy")') - 100:][:500]
+        self.assertIn('root.playWithTalpy("peekaboo")', peekaboo)
+        self.assertIn("visible: Plasmoid.configuration.showPet && root.playful", peekaboo)
+        run = main[main.index('text: i18n("Run with Talpy")') - 100:][:500]
+        self.assertIn('root.playWithTalpy("run")', run)
+        self.assertIn("visible: Plasmoid.configuration.showPet && root.playful && root.runOk", run)
+        self.assertIn("readonly property bool runOk: !onDesktop && !lessMotion", main)
+        self.assertNotIn('text: i18n("Play with Talpy")', main)
         pkg = json.loads((ROOT / "vscode/package.json").read_text())
         menus = {m["command"]: m["when"] for m in pkg["contributes"]["menus"]["view/title"]}
         self.assertIn("config.talpyDen.playfulTalpy", menus["talpyDen.playWithTalpy"])
         self.assertIn('case "playWithTalpy":', (ROOT / "vscode/webview/main.tsx").read_text())
+
+
+class PlasmaRunTests(unittest.TestCase):
+    """Talpy's Run in the Plasma widget: Pet.qml hosts it, PetStrip.qml grows for it."""
+    pet = (UI / "Pet.qml").read_text()
+    strip = (UI / "PetStrip.qml").read_text()
+    main = (UI / "main.qml").read_text()
+
+    def test_the_best_is_shared_and_only_grows(self):
+        self.assertIn('<entry name="runBest" type="Int">', (UI.parent / "config/main.xml").read_text())
+        shared = self.main[self.main.index("readonly property var sharedKeys"):][:900]
+        self.assertIn('"runBest"', shared)
+        save = self.main[self.main.index("function saveRunBest("):][:300]
+        self.assertIn("Math.max(", save)
+        self.assertIn("saveBest: m => root.saveRunBest(m)", self.pet)
+        self.assertIn("best: () => root.runBest", self.pet)
+
+    def test_the_stage_grows_and_its_status_fades_while_running(self):
+        self.assertIn("implicitHeight: (hero ? gu * 6 : gu * 4.5) + (running ? gu * 5 : 0)", self.strip)
+        self.assertRegex(self.strip, r"Behavior on implicitHeight \{")
+        status = self.strip[self.strip.index("// The hero's headline"):][:700]
+        self.assertIn("opacity: strip.running ? 0 : 1", status)
+        self.assertIn("enabled: !strip.running", status)          # (its clicks: the game's meanwhile)
+        self.assertIn("grow: on => { strip.running = on }", self.pet)
+        self.assertIn("height: strip.height", self.pet)          # (the grown stage, for the run)
+
+    def test_presses_and_keys_are_the_games_only_while_running(self):
+        overlay = self.strip[self.strip.index("// Talpy's Run: every press on the stage"):][:2200]
+        self.assertIn("enabled: strip.running", overlay)
+        self.assertIn("acceptedButtons: Qt.LeftButton | Qt.RightButton", overlay)
+        self.assertIn('runPress(mouse.button === Qt.RightButton ? "dig" : "jump")', overlay)
+        self.assertIn('runRelease("dig")', overlay)
+        self.assertIn("swiped", overlay)                          # (touch: a swipe down digs)
+        keys = self.strip[self.strip.index("// Talpy's Run: its keys"):][:1600]
+        self.assertIn("focus: strip.running", keys)
+        for key in ("Qt.Key_Space", "Qt.Key_Up", "Qt.Key_Down"):
+            self.assertIn(key, keys)
+        self.assertIn("event.isAutoRepeat", keys)
+        self.assertIn("forceActiveFocus()", self.strip)
+
+    def test_it_draws_the_run(self):
+        self.assertIn("T.drawThing(ctx, th)", self.pet)
+        self.assertIn("visible: pet.runOn", self.pet)
+        self.assertIn("- pet.runLift - floorY", self.pet)        # (up in his jump)
+        for words in ('i18nc("metres run", "%1 m"', 'i18n("Click to jump · ↓ or right-click to dig")',
+                      'i18n("↓ or right-click: dig")', 'i18n("New best! %1 m"', 'i18n("%1 m · best %2 m"',
+                      'i18n("Click to run again")'):
+            self.assertIn(words, self.pet)
+
+    def test_it_starts_by_name_and_ends_when_a_chat_needs_you(self):
+        self.assertIn("G.pickGame(talpy, {", self.pet)
+        self.assertIn("}, name || \"\")", self.pet)
+        self.assertIn("runOk: () => root.runOk", self.pet)
+        self.assertIn("pet.wantsToPlay(root.playName)", self.pet)
+        self.assertIn('runOn = gameOn && playGame.name === "run"', self.pet)
+        self.assertRegex(self.pet, r'if \(gameOn && mood === "needs"\) \{\s+stopGame\(\)')
 
 
 if __name__ == "__main__":

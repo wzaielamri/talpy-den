@@ -380,7 +380,8 @@ export class Run {
         if (this.state === 'ready' && now - this.since >= RUN_READY_MS) {
             this.state = 'run';
             this.hint = '';
-        }
+        } else if (this.state === 'ready')
+            this.s = this.host.stage();   // (it grows meanwhile: his floor goes down with it)
         const B = this.s.bodyHeight;
         // he: up and down, or in and out
         if (this.jumpAt >= 0) {

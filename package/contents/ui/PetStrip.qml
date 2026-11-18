@@ -128,9 +128,14 @@ Item {
     }
 
     // Room for what the pets hold over their heads (signs, bubbles: up to
-    // half the image above the floor)
-    implicitHeight: hero ? gu * 6 : gu * 4.5
+    // half the image above the floor); taller while the big Talpy runs (Talpy's
+    // Run: room for his jump and the crows over it), the list below moving down
+    implicitHeight: (hero ? gu * 6 : gu * 4.5) + (running ? gu * 5 : 0)
+    Behavior on implicitHeight { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
     clip: true
+    // the hero runs (Talpy's Run, games.mjs): set by his game (Pet.qml's host grow)
+    property bool running: false
+    onRunningChanged: if (running) runKeys.forceActiveFocus()
 
     ListModel {
         id: petModel  // {petKey, colorIndex, leaving, label, host}; petKey "" is the hero
@@ -387,9 +392,14 @@ Item {
     }
 
     // The hero's headline (what needs you, what works) and the session counts,
-    // left of where he stands
+    // left of where he stands; faded out while he runs (Talpy's Run: he runs
+    // there, and every press on the stage is the game's; a chat that needs
+    // you ends the run and they're back)
     ColumnLayout {
-        visible: strip.hero
+        visible: strip.hero && opacity > 0
+        opacity: strip.running ? 0 : 1
+        enabled: !strip.running
+        Behavior on opacity { NumberAnimation { duration: Kirigami.Units.shortDuration } }
         x: strip.gu * 0.8
         y: strip.gu * 0.55
         width: Math.max(strip.gu * 8, strip.slotX("") - strip.bodyWidth / 2 - strip.gu - x)
@@ -517,6 +527,68 @@ Item {
             isMain: pets.parent.hero
             z: pets.parent.hero ? 2 : 0   // the hero walks in front of the headline
             onGone: pets.parent.removePet(model.petKey)
+        }
+    }
+
+    // Talpy's Run: every press on the stage is the game's while he runs (over
+    // him and everything else): the left button (or a touch) jumps at once,
+    // the right one digs while held, as does a touch swiped down; the
+    // widget's own menu doesn't open meanwhile. Off otherwise: nothing changes
+    MouseArea {
+        id: runPresses
+        anchors.fill: parent
+        z: 5
+        enabled: strip.running
+        visible: enabled
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        property real pressY: 0
+        property bool swiped: false
+        onPressed: mouse => {
+            pressY = mouse.y
+            swiped = false
+            const hero = strip.petFor("")
+            if (hero)
+                hero.runPress(mouse.button === Qt.RightButton ? "dig" : "jump")
+        }
+        onPositionChanged: mouse => {
+            // (a touch can't press the right button: swiped down, it digs)
+            if (!swiped && (mouse.buttons & Qt.LeftButton) && mouse.y - pressY > strip.gu * 1.2) {
+                swiped = true
+                const hero = strip.petFor("")
+                if (hero)
+                    hero.runPress("dig")
+            }
+        }
+        onReleased: mouse => {
+            const hero = strip.petFor("")
+            if (hero && (mouse.button === Qt.RightButton || swiped))
+                hero.runRelease("dig")
+            swiped = false
+        }
+    }
+    // Talpy's Run: its keys, while he runs (the stage takes the focus as the
+    // run starts): Space or ↑ jump, ↓ digs while held; Esc ends it (Pet.qml)
+    Item {
+        id: runKeys
+        focus: strip.running
+        Keys.onPressed: event => {
+            const hero = strip.petFor("")
+            if (!strip.running || !hero || event.isAutoRepeat)
+                return
+            if (event.key === Qt.Key_Space || event.key === Qt.Key_Up)
+                hero.runPress("jump")
+            else if (event.key === Qt.Key_Down)
+                hero.runPress("dig")
+            else
+                return
+            event.accepted = true
+        }
+        Keys.onReleased: event => {
+            const hero = strip.petFor("")
+            if (!strip.running || !hero || event.isAutoRepeat || event.key !== Qt.Key_Down)
+                return
+            hero.runRelease("dig")
+            event.accepted = true
         }
     }
 

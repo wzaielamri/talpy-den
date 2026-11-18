@@ -105,6 +105,16 @@ Item {
     property var playGame: null
     property bool gameOn: false
     property var gameHoles: []          // [{x, open}]: a copy of the game's, for the holes drawn
+    // Talpy's Run (the game named "run"): what of it shows, copied at each move
+    // (its things are drawn from the game itself, runFrame says when)
+    property bool runOn: false
+    property real runLift: 0            // px he's up in his jump
+    property int runFrame: 0
+    property int runMeters: 0
+    property int runBestNow: 0
+    property bool runNewBest: false
+    property string runState: ""        // ready, run, over
+    property string runHint: ""         // start, dig, ""
     property real pop: 1                // popping out into your hand: 0 in its burrow, 1 where you hold it
     property bool landing: false        // picked up, until it has landed and dug in: drawn live
     property bool arriving: false
@@ -262,7 +272,7 @@ Item {
             stopGame()
         else if (lone && root.playWanted) {
             root.playWanted = false
-            wantsToPlay()
+            wantsToPlay(root.playName)
         }
         if (playing && !lone)
             homing.restart()   // (a dig cut short while it couldn't be seen: on to its spot)
@@ -357,7 +367,8 @@ Item {
     // held…), the clicks only tickle. While a chat needs you he points at it
     // instead; asleep, he wakes up for it (yawns: after the clicks, once he's
     // grumbled, see petIt)
-    function wantsToPlay() {
+    // name: the game ("peekaboo", "run"), "" any (four quick clicks)
+    function wantsToPlay(name) {
         if (!lone || !root.playful || !talpy || gameOn || cookieOn || held || tugging || pushing || leaving)
             return false
         if (mood === "needs") {
@@ -367,24 +378,34 @@ Item {
         }
         // (on at once, his laugh its first move: the clicks after this one are the game's)
         say(mood === "done" ? i18n("Okay, okay… let's play!") : i18n("Let's play!"))
-        startGame(mood === "done")
+        startGame(mood === "done", name)
         return true
     }
 
-    function startGame(wake) {
+    function startGame(wake, name) {
         if (gameOn || !playing || mood === "needs" || !root.playful || cookieOn || held || tugging || pushing)
             return
         stride.stop()
         travelTo = -1
+        const said = {
+            got: () => [i18n("You got me!"), i18n("Hehe, found me!"), i18n("Again!")][Math.floor(Math.random() * 3)],
+            fun: () => i18n("That was fun!"),
+            bump: () => [i18n("Oof!"), i18n("Ouch, a bump!"), i18n("Whoops!")][Math.floor(Math.random() * 3)],
+            best: () => i18n("New best!")
+        }
         playGame = G.pickGame(talpy, {
-            stage: () => ({ width: strip.width, ground: pet.ground, unit: pet.unit, bodyWidth: pet.bodyWidth,
+            stage: () => ({ width: strip.width, height: strip.height, ground: pet.ground, unit: pet.unit, bodyWidth: pet.bodyWidth,
                             bodyHeight: pet.bodyHeight, minX: pet.minX, maxX: pet.maxX }),
             px: () => pet.px,
             moveTo: x => { pet.px = x },
-            say: what => pet.say(what === "got" ? [i18n("You got me!"), i18n("Hehe, found me!"), i18n("Again!")][Math.floor(Math.random() * 3)]
-                                                : i18n("That was fun!")),
-            changed: () => pet.gameMoved()
-        })
+            say: what => pet.say((said[what] || said.fun)()),
+            changed: () => pet.gameMoved(),
+            // Talpy's Run's: its best (every widget's), the stage taller (the status faded) or back
+            best: () => root.runBest,
+            saveBest: m => root.saveRunBest(m),
+            grow: on => { strip.running = on },
+            runOk: () => root.runOk
+        }, name || "")
         playGame.start(talpy.now, !!wake)
     }
 
@@ -396,8 +417,30 @@ Item {
 
     function gameMoved() {
         gameOn = playGame.on
-        gameHoles = playGame.holes.map(h => ({ x: h.x, open: h.open }))
+        runOn = gameOn && playGame.name === "run"
         root.gameStage = gameOn ? strip : null
+        if (playGame.name !== "run") {
+            gameHoles = playGame.holes.map(h => ({ x: h.x, open: h.open }))
+            return
+        }
+        // (every frame of a run: only numbers copied, its things drawn from the game itself)
+        runLift = runOn ? playGame.lift : 0
+        runMeters = playGame.meters
+        runBestNow = playGame.best
+        runNewBest = playGame.newBest
+        runState = playGame.state
+        runHint = playGame.hint
+        runFrame = (runFrame + 1) % 1000000
+    }
+
+    // Talpy's Run: a press on his stage (PetStrip.qml), "jump" or "dig", or a dig let go
+    function runPress(what) {
+        if (runOn)
+            playGame.press(what)
+    }
+    function runRelease(what) {
+        if (runOn)
+            playGame.release(what)
     }
 
     Connections {
@@ -414,7 +457,7 @@ Item {
         function onPlayWantedChanged() {
             if (root.playWanted && pet.playing) {
                 root.playWanted = false
-                pet.wantsToPlay()
+                pet.wantsToPlay(root.playName)
             }
         }
         function onGameStopWantedChanged() {
@@ -950,12 +993,83 @@ Item {
         color: Qt.rgba(0.08, 0.1, 0.18, 0.2 * (1 - 0.6 * over))
     }
 
+    // Talpy's Run: what's on his way (T.drawThing), under him; painted only
+    // while the run is on, and again only when it moved (runFrame)
+    Canvas {
+        id: runCanvas
+        visible: pet.runOn
+        width: strip.width
+        height: strip.height
+        renderStrategy: Canvas.Cooperative
+        onPaint: {
+            const ctx = getContext("2d")
+            ctx.reset()
+            const things = pet.runOn && pet.playGame ? pet.playGame.things : []
+            for (let i = 0; i < things.length; i++) {
+                const th = things[i]
+                ctx.save()
+                ctx.translate(th.x, th.y)
+                T.drawThing(ctx, th)
+                ctx.restore()
+            }
+        }
+        Connections {
+            target: pet
+            enabled: pet.runOn
+            function onRunFrameChanged() { runCanvas.requestPaint() }
+        }
+        onVisibleChanged: if (!visible) requestPaint()   // (cleared for the next run)
+    }
+    // its words: how far (the top right, one figure), how to play, how it ended
+    PlasmaComponents3.Label {
+        visible: pet.runOn && pet.runState !== "over"
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: Kirigami.Units.smallSpacing
+        textFormat: Text.PlainText
+        horizontalAlignment: Text.AlignRight
+        text: i18nc("metres run", "%1 m", pet.runMeters)
+        opacity: 0.75
+        font.pointSize: Kirigami.Theme.smallFont.pointSize
+    }
+    PlasmaComponents3.Label {
+        visible: pet.runOn && pet.runHint !== ""
+        x: Math.max(Kirigami.Units.smallSpacing, pet.px - width / 2)
+        y: Kirigami.Units.smallSpacing
+        textFormat: Text.PlainText
+        text: pet.runHint === "dig" ? i18n("↓ or right-click: dig") : i18n("Click to jump · ↓ or right-click to dig")
+        font.pointSize: Kirigami.Theme.smallFont.pointSize
+    }
+    Column {
+        visible: pet.runOn && pet.runState === "over"
+        width: strip.width - Kirigami.Units.largeSpacing * 2
+        x: Kirigami.Units.largeSpacing
+        y: Kirigami.Units.smallSpacing
+        PlasmaComponents3.Label {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            text: pet.runNewBest ? i18n("New best! %1 m", pet.runBestNow) : i18n("%1 m · best %2 m", pet.runMeters, pet.runBestNow)
+            font.weight: Font.DemiBold
+        }
+        PlasmaComponents3.Label {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            text: i18n("Click to run again")
+            opacity: 0.7
+            font.pointSize: Kirigami.Theme.smallFont.pointSize
+        }
+    }
+
     TalpyView {
         id: view
         visible: !pet.departed   // (dug away: not even back up for the moment before it's removed)
         box: pet.box
         x: pet.shownX - boxX - pet.box / 2
-        y: pet.ground - pet.lift * pet.pop - floorY
+        y: pet.ground - pet.lift * pet.pop - pet.runLift - floorY
         transform: Rotation {
             origin.x: view.boxX + pet.box / 2
             origin.y: view.boxY + pet.box * 30 / 64   // (where you hold it)
@@ -1048,7 +1162,7 @@ Item {
         property point lastAt           // where your hand is (pull, popOut)
         property bool dragging: false
         x: pet.px - width / 2
-        y: pet.ground - pet.lift * pet.pop - height
+        y: pet.ground - pet.lift * pet.pop - pet.runLift - height
         width: pet.bodyWidth + Kirigami.Units.largeSpacing
         height: pet.bodyHeight + Kirigami.Units.largeSpacing
         visible: !pet.departed

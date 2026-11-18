@@ -237,5 +237,10 @@
       <min>0</min>
       <max>60</max>
     </entry>
+    <entry name="runBest" type="Int">
+      <label>The big Talpy's best run in Talpy's Run, in metres (the game's only number kept)</label>
+      <default>0</default>
+      <min>0</min>
+    </entry>
   </group>
 </kcfg>

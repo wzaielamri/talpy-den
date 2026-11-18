@@ -209,4 +209,6 @@ KCM.SimpleKCM {
     property var cfg_usageCapDefault
     property var cfg_usageRefreshMinutes
     property var cfg_usageRefreshMinutesDefault
+    property var cfg_runBest
+    property var cfg_runBestDefault
 }
