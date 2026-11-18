@@ -135,6 +135,7 @@ USAGE_PARALLEL = 4
 USAGE_LONG_HOURS = 8
 USAGE_TIP_PCT = 10
 TIPS_SHOWN = 5
+TIP_CHATS = 5  # the chats a tip that acts on them names (the others: "and 3 more")
 TIPS_MIN_PROMPTS = 20  # a period with fewer prompts than this and less of Claude's work than
 TIPS_MIN_WORK_MS = 60 * 60_000  # this is too little for tips
 WAIT_TIP_MS = 15 * 60_000  # Claude waited this long for your answers in a week: a tip
@@ -302,10 +303,11 @@ def new_record(kind, st):
             # (limitResets: {str(a limit hit's ms): when that limit reset, ms}, for the hits that say it,
             # of the transcript up to limitResetsTo: backfill_limit_resets; recaps: Claude's recaps of
             # the chat, [ms, text]; tests: its last edit and the tests after it (talpy_den.py
-            # new_tests); both and the hours' commits of the transcript up to workTo: backfill_work)
+            # new_tests); both and the hours' commits of the transcript up to workTo, the hours'
+            # usage by effort level up to effortTo: backfill_work)
             "data": {"turns": [], "prompts": [], "limits": [], "limitResets": {}, "limitResetsTo": 0, "hours": {},
                      "names": {}, "folder": "", "prompt": "", "startTokens": None, "recaps": [],
-                     "tests": cs.new_tests(), "workTo": 0}}
+                     "tests": cs.new_tests(), "workTo": 0, "effortTo": 0}}
 
 
 def reply_id(mid):
@@ -377,11 +379,12 @@ def scan(profiles, cache, now_ms, keep=True):
         # copy of this file since: their limits' resets, once)
         if rec["data"].get("limitResetsTo", 0) < rec["offset"]:
             backfill_limit_resets(key, rec)
-        if rec["data"].get("workTo", 0) < rec["offset"]:  # (the same for recaps, commits and tests)
+        # (the same for recaps, commits and tests, and the usage by effort level)
+        if min(rec["data"].get("workTo", 0), rec["data"].get("effortTo", 0)) < rec["offset"]:
             backfill_work(key, rec, counted)
         if rec["offset"] < found[key]["st"].st_size:
             read_transcript(Path(key), rec, counted)
-            rec["data"]["limitResetsTo"] = rec["data"]["workTo"] = rec["offset"]
+            rec["data"]["limitResetsTo"] = rec["data"]["workTo"] = rec["data"]["effortTo"] = rec["offset"]
     cache["files"] = files
     cache["scannedAt"] = now_ms
     return cache
@@ -444,53 +447,68 @@ WORK_TOOL_LINES = tuple(('"name":"%s"' % n).encode() for n in EDIT_TOOLS + ("Bas
 def backfill_work(path, rec, counted):
     """What a record read before the cache kept it doesn't have: Claude's
     recaps of the chat, the commits it made and its last edit with the
-    tests after it, of the lines read before (from workTo up to what was
-    read: also lines an older copy of this file read since). Only the lines
-    that can have them are parsed (as talpy_den.py scan_tests picks them),
-    once. A deleted transcript's record ("gone") can't have them: it keeps
-    its numbers, with no commits or recap."""
+    tests after it (of the lines from workTo), and its hours' usage by
+    effort level (from effortTo), of the lines read before, up to what was
+    read (also lines an older copy of this file read since); one read for
+    both. Only the lines that can have them are parsed (as talpy_den.py
+    scan_tests picks them), once. A deleted transcript's record ("gone")
+    can't have them: it keeps its numbers, with no commits or recap, its
+    usage with no effort level noted."""
     data, state = rec["data"], rec.get("state") or {}
     hi = rec.get("offset", 0)
+    work_from, effort_from = data.get("workTo", 0), data.get("effortTo", 0)
     recaps, tests = data.setdefault("recaps", []), data.setdefault("tests", cs.new_tests())
     calls = {}  # (the git commits those lines ran: {tool id: [ms, their messages]})
     ids = [i.encode() for i in tests["pending"]]  # (the tool calls whose results are wanted)
+    # (each reply this record counted, by its id: the hour it counts in; and those lines' efforts)
+    replies = ({m: h for h, agg in data["hours"].items() for m in agg.get("m", ()) if ":" not in m}
+               if effort_from < hi else {})
+    efforts = {}
+
+    def work_line(line):
+        nonlocal ids
+        if RECAP_LINE in line:
+            if not rec["sub"]:
+                e = loaded(line)
+                if e and e.get("subtype") == "away_summary":
+                    take_recap(e, recaps)
+            return
+        if b'"type":"assistant"' in line and any(n in line for n in WORK_TOOL_LINES):
+            e = loaded(line)
+            if not e or e.get("type") != "assistant":
+                return
+            ts = cs.to_ms(e.get("timestamp"))
+            for c in cs.blocks_of(e)[1]:
+                said = commit_call(c)
+                if said is not None and ts is not None:
+                    calls[c["id"]] = [ts, said]
+        elif ids and RESULT_LINE in line and any(i in line for i in ids):
+            e = loaded(line)
+            if not e or e.get("type") != "user":
+                return
+            ts = cs.to_ms(e.get("timestamp"))
+            for r in cs.blocks_of(e)[1]:
+                call = calls.pop(r.get("tool_use_id"), None) if r.get("type") == "tool_result" else None
+                if call and ts is not None:
+                    take_commits(data, counted, ts, r, call[1])
+        else:
+            return
+        if not e.get("isSidechain"):
+            cs.fold_tests(tests, e)
+        ids = [i.encode() for i in list(calls) + list(tests["pending"])]
+
     try:
         with open(path, "rb") as f:
-            at = data.get("workTo", 0)
+            at = min(work_from, effort_from)
             f.seek(at)
             for line in f:
-                at += len(line)
+                start, at = at, at + len(line)
                 if at > hi or not line.endswith(b"\n"):
                     break
-                if RECAP_LINE in line:
-                    if not rec["sub"]:
-                        e = loaded(line)
-                        if e and e.get("subtype") == "away_summary":
-                            take_recap(e, recaps)
-                    continue
-                if b'"type":"assistant"' in line and any(n in line for n in WORK_TOOL_LINES):
-                    e = loaded(line)
-                    if not e or e.get("type") != "assistant":
-                        continue
-                    ts = cs.to_ms(e.get("timestamp"))
-                    for c in cs.blocks_of(e)[1]:
-                        said = commit_call(c)
-                        if said is not None and ts is not None:
-                            calls[c["id"]] = [ts, said]
-                elif ids and RESULT_LINE in line and any(i in line for i in ids):
-                    e = loaded(line)
-                    if not e or e.get("type") != "user":
-                        continue
-                    ts = cs.to_ms(e.get("timestamp"))
-                    for r in cs.blocks_of(e)[1]:
-                        call = calls.pop(r.get("tool_use_id"), None) if r.get("type") == "tool_result" else None
-                        if call and ts is not None:
-                            take_commits(data, counted, ts, r, call[1])
-                else:
-                    continue
-                if not e.get("isSidechain"):
-                    cs.fold_tests(tests, e)
-                ids = [i.encode() for i in list(calls) + list(tests["pending"])]
+                if start >= effort_from and replies and EFFORT_LINE in line and b'"type":"assistant"' in line:
+                    take_effort(line, replies, efforts)
+                if start >= work_from:
+                    work_line(line)
     except OSError:
         return  # (tried again next time)
     # (a commit whose result comes in the lines still to read: as the reading on has it)
@@ -498,7 +516,77 @@ def backfill_work(path, rec, counted):
     for tid, (_ts, said) in calls.items():
         if isinstance(tools.get(tid), list) and len(tools[tid]) == 3:
             tools[tid].append(said)
-    data["workTo"] = hi
+    for h, model, level, vals in efforts.values():
+        e = data["hours"][h].setdefault("e", {})
+        e[level] = e.get(level, 0) + usage_weight(model, vals[0], vals[1], vals[2], vals[3] + vals[4])
+    # (a reply whose next blocks are in the lines still to read: they count at its level too)
+    last = state.get("msg")
+    if isinstance(last, list) and len(last) == 6 and isinstance(last[0], str) and reply_id(last[0]) in efforts:
+        last.append(efforts[reply_id(last[0])][2])
+    data["workTo"] = data["effortTo"] = hi
+
+
+EFFORT_LINE = b'"effort":"'
+
+
+def effort_of(e):
+    """The reasoning effort a reply ran at ("xhigh", "max"…), as Claude Code notes it, or ""."""
+    v = e.get("effort")
+    return v if isinstance(v, str) and 0 < len(v) <= 16 else ""
+
+
+REPLY_ID = re.compile(rb'"id":"(msg_[^"\\]{1,200})"')
+REPLY_MODEL = re.compile(rb'"model":"([^"\\]{1,100})"')
+USAGE_KEY = b'"usage":{'
+JSON = json.JSONDecoder()
+
+
+def effort_line(line):
+    """(id, model, effort, usage) of a reply's line, read without parsing it
+    whole (most of it is what Claude wrote): the message's id and model come
+    before its content, its usage after it, the effort after the message;
+    None when the line isn't so (it's parsed whole then)."""
+    at = line.find(b'"message":{')
+    content = line.find(b'"content":', at) if at >= 0 else -1
+    if content < 0:
+        return None
+    mid, model = REPLY_ID.search(line, at, content), REPLY_MODEL.search(line, at, content)
+    usage_at, effort_at = line.rfind(USAGE_KEY), line.rfind(EFFORT_LINE)
+    if not mid or not model or usage_at < content or effort_at < usage_at:
+        return None
+    end = line.find(b'"', effort_at + len(EFFORT_LINE))
+    try:
+        usage = JSON.raw_decode(line[usage_at + len(USAGE_KEY) - 1:].decode("utf-8"))[0]
+        level = line[effort_at + len(EFFORT_LINE):end].decode("utf-8")
+    except (ValueError, RecursionError):  # (UnicodeDecodeError is a ValueError)
+        return None
+    return mid.group(1).decode("utf-8"), model.group(1).decode("utf-8"), level, usage
+
+
+def take_effort(line, replies, efforts):
+    """A reply's line read again for its effort (backfill_work): {reply id:
+    [the hour it counts in, its model, its level, its usage as far as its
+    blocks go]}, for the replies this record counted (replies: their hours)."""
+    got = effort_line(line)
+    if got is None:
+        e = loaded(line)
+        if not e or e.get("type") != "assistant":
+            return
+        msg = e.get("message") if isinstance(e.get("message"), dict) else {}
+        got = (msg.get("id") or e.get("requestId") or e.get("uuid"), msg.get("model"), effort_of(e), msg.get("usage"))
+    mid, model, level, usage = got
+    if (not isinstance(mid, str) or not isinstance(level, str) or not 0 < len(level) <= 16
+            or not isinstance(usage, dict) or not isinstance(model, str)):
+        return
+    rid = reply_id(mid)
+    if rid not in replies:
+        return  # (counted in another transcript, or not at all)
+    vals = usage_values(usage)
+    had = efforts.get(rid)
+    if had is None:
+        efforts[rid] = [replies[rid], model, level, vals]
+    else:  # (another block of it: its usage again, maybe grown)
+        had[3] = [max(a, b) for a, b in zip(had[3], vals)]
 
 
 def loaded(line):
@@ -845,11 +933,13 @@ def new_hour():
     (b), attributions (a), large results (g), reply ids (m), tool calls by
     name (u), lines added and removed by edits (x), edited files (fe),
     compactions (k), cold resumes (c: [ms, price key, 5-minute writes,
-    1-hour writes]) and the permission prompts you answered (p: [ms, tool,
-    what, reason, waited ms, allowed]); an hour with commits also has them
-    (gc: [ms, hash or "", subject], take_commits)."""
+    1-hour writes]), the permission prompts you answered (p: [ms, tool,
+    what, reason, waited ms, allowed]) and its weight by effort level (e:
+    {"xhigh": weight}; what has no level noted isn't in it: an hour read
+    before the cache kept them may have none); an hour with commits also
+    has them (gc: [ms, hash or "", subject], take_commits)."""
     return {"t": {}, "w": [0] * W_SIZE, "b": {}, "a": {}, "g": {}, "m": [], "u": {}, "x": [0, 0], "fe": [], "k": 0,
-            "c": [], "p": []}
+            "c": [], "p": [], "e": {}}
 
 
 def usage_values(u):
@@ -940,6 +1030,9 @@ def take_reply(e, ts, rec, counted):
                     if flags & flag:
                         agg["w"][i] += w
                 agg["b"][last[5]] = agg["b"].get(last[5], 0) + w
+                if len(last) > 6 and last[6]:  # (its effort level; one read before the cache kept it: none)
+                    levels = agg.setdefault("e", {})
+                    levels[last[6]] = levels.get(last[6], 0) + w
             last[3] = [max(a, b) for a, b in zip(vals, last[3])]
         return
     on, large = track_context(state["ctx"], mid, inp, out, read, write, sub)
@@ -985,6 +1078,10 @@ def take_reply(e, ts, rec, counted):
         a[W_BIG] += input_w * min(1.0, large / prompt)
     bucket = str((ts - hour_ms(h)) // BUCKET_MS)  # (its 5 minutes in the hour)
     agg["b"][bucket] = agg["b"].get(bucket, 0) + w
+    level = effort_of(e)
+    if level:
+        levels = agg.setdefault("e", {})  # (an hour read before the cache kept them has none)
+        levels[level] = levels.get(level, 0) + w
     count_tools(data, h, uses)
     if not rec["sub"]:
         turn_tokens(state, key, vals)
@@ -1001,7 +1098,7 @@ def take_reply(e, ts, rec, counted):
     if isinstance(name, str) and 0 < len(name) <= 64:
         k = ("agent:" if isinstance(agent, str) and agent else "skill:") + name
         agg["a"][k] = agg["a"].get(k, 0) + w
-    state["msg"] = [mid, h, key, vals, flags, bucket]
+    state["msg"] = [mid, h, key, vals, flags, bucket, level]
 
 
 def count_tools(data, h, uses):
@@ -1302,7 +1399,7 @@ def merge_hour(into, agg):
         into.setdefault("gc", []).extend(agg["gc"])
     for i, v in enumerate(agg.get("w", [])[:W_SIZE]):
         into["w"][i] += v
-    for field in ("b", "a"):
+    for field in ("b", "a", "e"):
         for k, v in agg.get(field, {}).items():
             into[field][k] = into[field].get(k, 0) + v
     for k, (n, size) in agg.get("g", {}).items():
@@ -1783,7 +1880,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
                 for key, t in agg["t"].items():
                     cost += request_cost(key, t)
                     model = key.partition("|")[0]
-                    label = (cs.model_label(model) or model) + (" (fast)" if "f" in key.partition("|")[2] else "")
+                    label = model_label(key)
                     m = models.setdefault(label, {"model": label, "cost": 0.0, "tokens": 0, "requests": 0, "guessed": False})
                     m["cost"] += request_cost(key, t)
                     m["tokens"] += sum(t[:5])
@@ -1838,10 +1935,20 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         f["accounts"] = sorted(f["accounts"])
         f["chatCount"] = len(f["chats"])
         f["chats"] = sorted(f["chats"], key=lambda r: (-r["workedMs"], -r["cost"]))[:TOP_DAY_CHATS]
+    # Where the usage went: by model (at API prices), then weighed as /usage
+    # weighs it (subagents, over 150k of context, effort levels), each with
+    # its share in the period before when that's compared
+    b0, b1 = p0, until(1)
+    models_then = model_costs(chats, b0, b1) if previous is not None else None
     for m in models.values():
         m["cost"] = round(m["cost"], 4)
         m["share"] = round(m["cost"] / total["cost"], 4) if total["cost"] else 0
+        m["before"] = (round(models_then.get(m["model"], 0) / previous["cost"], 4) if previous["cost"] else 0) \
+            if models_then is not None else None
+    weighed = weigh(chats, w0, w1)
+    weighed_then = weigh(chats, b0, b1) if previous is not None else None
     spend = spending(chats, w0, w1, home)
+    cold_then = spending(chats, b0, b1, home)["cold"] if previous is not None else None
     # Your plan: a line per account with something in these days (or its
     # windows now, today), this computer's with what its readings say
     plan_now = plan_windows_of(usage or [], account) if back == 0 and span == "day" else []
@@ -1882,7 +1989,12 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "plan": plan_now,
         "planUse": plan_lines,  # (Your plan: plan_use, an account each)
         "prompts": permission_prompts(chats, w0, w1, home, added),
-        "tips": [] if too_little else tips(chats, w0, w1, total, parts["waits"], spend["cold"]),
+        # (where the usage went, weighed as /usage weighs it: usage_mix)
+        "usageMix": usage_mix(weighed, weighed_then),
+        "tips": [] if too_little else tips(
+            chats, w0, w1, total, parts["waits"], spend["cold"], home, weighed,
+            {"weighed": weighed_then, "cold": round(100 * cold_then["cost"] / previous["cost"]) if previous["cost"] else 0}
+            if previous is not None else None),
         "tooLittle": too_little,  # (too little in these days for tips: the tab says so instead)
         # (guessedCost: how much of the amount is at a guessed price)
         "prices": {"asOf": PRICES_AS_OF, "guessed": sorted(guessed),
@@ -1891,6 +2003,24 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "sources": [{"host": s.get("host") or "", "ok": s.get("ok", True), "error": s.get("error") or ""}
                     for s in sources],
     }
+
+
+def model_label(key):
+    """A price key's model as the tab names it: "Opus 5.5", "Opus 5.5 (fast)"."""
+    model, _, flags = key.partition("|")
+    return (cs.model_label(model) or model) + (" (fast)" if "f" in flags else "")
+
+
+def model_costs(chats, lo, hi):
+    """{model label: its amount at API prices} of [lo, hi)."""
+    out = {}
+    for c in chats:
+        for h, agg in c["hours"].items():
+            if lo <= hour_ms(h) < hi:
+                for key, t in agg["t"].items():
+                    label = model_label(key)
+                    out[label] = out.get(label, 0.0) + request_cost(key, t)
+    return out
 
 
 def project_name(folder, home):
@@ -1986,7 +2116,7 @@ def spending(chats, lo, hi, home):
         b["cost"] = round(b["cost"], 4)
     return {
         "cold": {"count": cold, "cost": round(cold_cost, 4),
-                 "chats": sorted(by_chat.values(), key=lambda b: -b["cost"])[:3]},
+                 "chats": sorted(by_chat.values(), key=lambda b: -b["cost"])[:3], "chatCount": len(by_chat)},
     }
 
 
@@ -3561,17 +3691,18 @@ def join_running(work):
 # ---------------------------------------------------------------- tips
 
 
-def tips(chats, w0, w1, total, waits, cold=None):
-    """What would use less of your plan, from the week's usage: Claude Code's
-    /usage behaviors (each with its share of the usage, from USAGE_TIP_PCT),
-    then coming back to chats whose cache had expired (cold: spending()'s,
-    its share of the amount, from USAGE_TIP_PCT too), how long Claude waited
-    for you and the usage limits you hit."""
+def weigh(chats, w0, w1):
+    """The usage of [w0, w1) as Claude Code's /usage weighs it, for the tips
+    and where the usage went (usage_mix): its weight, the weights of each
+    behavior (sums, W_*), the chats that ran long (running: [chat, hours
+    active]) or carried over 150k of context (context: [chat, weight,
+    requests]), the weight by effort level (efforts) and what the rules
+    look at (5-minute buckets, attributions, large results, first contexts)."""
     weight, sums = 0.0, [0.0] * W_SIZE
     heavy = long_running = 0.0
     heavy_n = long_n = 0
-    buckets, attrs, big = {}, {}, {}
-    starts = []
+    buckets, attrs, big, efforts = {}, {}, {}, {}
+    starts, running, context = [], [], []
     for c in chats:
         mine, hours = [0.0] * W_SIZE, set()
         for h, agg in c["hours"].items():
@@ -3590,6 +3721,8 @@ def tips(chats, w0, w1, total, waits, cold=None):
                 g = big.setdefault(k, [0, 0])
                 g[0] += n
                 g[1] = max(g[1], size)
+            for k, v in (agg.get("e") or {}).items():
+                efforts[k] = efforts.get(k, 0) + v
         if not mine[W_ALL]:
             continue
         weight += mine[W_ALL]
@@ -3600,87 +3733,199 @@ def tips(chats, w0, w1, total, waits, cold=None):
         if len(hours) >= USAGE_LONG_HOURS:
             long_running += mine[W_ALL]
             long_n += 1
+            running.append((c, len(hours)))
+        if mine[W_LONG]:
+            context.append((c, mine[W_LONG], int(mine[N_LONG])))
         if c.get("startTokens"):
             starts.append(c["startTokens"])
-    out = []
-    if weight > 0:
-        parallel, peak = 0.0, 0
-        for chats_then in buckets.values():
-            peak = max(peak, len(chats_then))
-            if len(chats_then) >= USAGE_PARALLEL:
-                parallel += sum(chats_then.values())
+    return {"weight": weight, "sums": sums, "heavy": heavy, "heavyN": heavy_n, "longRunning": long_running,
+            "longN": long_n, "buckets": buckets, "attrs": attrs, "big": big, "efforts": efforts, "starts": starts,
+            "running": running, "context": context}
 
-        def tip(key, w, title, detail, command=""):
-            pct = 100 * w / weight
-            if pct >= USAGE_TIP_PCT:
-                out.append({"key": key, "pct": round(pct), "title": title, "detail": detail, "command": command})
-                return True
-            return False
 
-        tip("max_effort", sums[W_MAX], "Save max effort for hard tasks",
-            "{}% of your usage ran at max effort".format(round(100 * sums[W_MAX] / weight)), "/effort xhigh")
-        tip("workflow", sums[W_FLOW], "Save workflows for big tasks",
-            "{}% of your usage was workflow agents".format(round(100 * sums[W_FLOW] / weight)))
-        biggest_start = max(starts) if starts else 0
-        tip("always_on_context", sums[W_ON], "See what fills your context",
-            "chats start with up to {} tokens before your first prompt".format(short_count(biggest_start))
-            if biggest_start else "", "/context")
-        tip("large_tool_results", sums[W_BIG], *big_result_tip(big))
-        tip("cache_miss", sums[W_MISS], "Compact before you step away",
-            "{} requests sent over 100k tokens the cache had let go".format(int(sums[N_MISS])), "/compact")
-        tip("long_context", sums[W_LONG], "Start fresh when you switch tasks",
-            "{} requests carried over 150k tokens of context".format(int(sums[N_LONG])), "/clear")
-        tip("subagent_heavy", heavy, "Give simple subagents a cheaper model",
-            "subagents did most of the work in {} chats".format(heavy_n))
-        tip("high_parallel", parallel, "Run fewer chats at once", "up to {} at once".format(peak))
-        tip("long_running", long_running, "Stop chats you no longer need",
-            "{} ran for 8 hours or more".format(long_n))
-        told = []  # (the skill and the subagents a tip names, with their usage: a plugin's tip leaves theirs out)
-        if not any(t["key"] == "subagent_heavy" for t in out):
-            agent = top_attribution(attrs, "agent:")
-            if agent and tip("agent", agent[1], 'Give "{}" subagents a cheaper model'.format(agent[0]),
-                             "{}% of your usage".format(round(100 * agent[1] / weight))):
-                told.append(('"{}" subagents'.format(agent[0]),) + agent)
-        skill = top_attribution(attrs, "skill:")
-        if skill and tip("skill", skill[1], "Run /{} on a cheaper model".format(skill[0]),
-                         "{}% of your usage".format(round(100 * skill[1] / weight))):
-            told.append(("/" + skill[0],) + skill)
-        plugin = top_attribution(attrs, "plugin:")
-        if plugin:
-            # One tip per cause: a plugin's skill ("plugin:skill") or subagents
-            # count in the plugin too, on the same requests; the plugin's tip
-            # is about the rest of its usage, if that is still a tenth
-            mine = [(what, w) for what, name, w in told if name.startswith(plugin[0] + ":")]
-            rest = plugin[1] - sum(w for _, w in mine)
-            tip("plugin", rest, 'Review the "{}" plugin'.format(plugin[0]), "{}% of your usage{}".format(
-                round(100 * rest / weight), " besides " + " and ".join(what for what, _ in mine) if mine else ""))
-        mcp = top_attribution(attrs, "mcp:")
-        if mcp:
-            tip("mcp_server", mcp[1], "Turn off {} when you don't need it".format(mcp[0]),
-                "{}% of your usage".format(round(100 * mcp[1] / weight)))
-        out.sort(key=lambda t: -t["pct"])
-        del out[TIPS_SHOWN:]
+def usage_tips(m):
+    """Claude Code's /usage behaviors of weighed usage m (weigh), each a tip
+    with its share of the usage ("pct", rounded; "shown": from
+    USAGE_TIP_PCT), in its order; "attr": the attributions a tip of a
+    subagent type, a skill, a plugin or an MCP server is about ([its own,
+    those left out]: another period's share of the same, usage_before)."""
+    weight, sums, out = m["weight"], m["sums"], []
+    if weight <= 0:
+        return out
+    parallel, peak = 0.0, 0
+    for chats_then in m["buckets"].values():
+        peak = max(peak, len(chats_then))
+        if len(chats_then) >= USAGE_PARALLEL:
+            parallel += sum(chats_then.values())
+
+    def tip(key, w, title, detail, command="", attr=None):
+        pct = 100 * w / weight
+        out.append({"key": key, "pct": round(pct), "title": title, "detail": detail, "command": command,
+                    "shown": pct >= USAGE_TIP_PCT, "attr": attr})
+        return pct >= USAGE_TIP_PCT
+
+    tip("max_effort", sums[W_MAX], "Save max effort for hard tasks",
+        "{}% of your usage ran at max effort".format(round(100 * sums[W_MAX] / weight)), "/effort xhigh")
+    tip("workflow", sums[W_FLOW], "Save workflows for big tasks",
+        "{}% of your usage was workflow agents".format(round(100 * sums[W_FLOW] / weight)))
+    biggest_start = max(m["starts"]) if m["starts"] else 0
+    tip("always_on_context", sums[W_ON], "See what fills your context",
+        "chats start with up to {} tokens before your first prompt".format(short_count(biggest_start))
+        if biggest_start else "", "/context")
+    tip("large_tool_results", sums[W_BIG], *big_result_tip(m["big"]))
+    tip("cache_miss", sums[W_MISS], "Compact before you step away",
+        "{} requests sent over 100k tokens the cache had let go".format(int(sums[N_MISS])), "/compact")
+    tip("long_context", sums[W_LONG], "Start fresh when you switch tasks",
+        "{} requests carried over 150k tokens of context".format(int(sums[N_LONG])), "/clear")
+    tip("subagent_heavy", m["heavy"], "Give simple subagents a cheaper model",
+        "subagents did most of the work in {} chats".format(m["heavyN"]))
+    tip("high_parallel", parallel, "Run fewer chats at once", "up to {} at once".format(peak))
+    tip("long_running", m["longRunning"], "Stop chats you no longer need",
+        "{} ran for 8 hours or more".format(m["longN"]))
+    attrs = m["attrs"]
+    told = []  # (the skill and the subagents a tip names, with their usage: a plugin's tip leaves theirs out)
+    if not any(t["key"] == "subagent_heavy" and t["shown"] for t in out):
+        agent = top_attribution(attrs, "agent:")
+        if agent and tip("agent", agent[1], 'Give "{}" subagents a cheaper model'.format(agent[0]),
+                         "{}% of your usage".format(round(100 * agent[1] / weight)), attr=["agent:" + agent[0], []]):
+            told.append(('"{}" subagents'.format(agent[0]), "agent:") + agent)
+    skill = top_attribution(attrs, "skill:")
+    if skill and tip("skill", skill[1], "Run /{} on a cheaper model".format(skill[0]),
+                     "{}% of your usage".format(round(100 * skill[1] / weight)), attr=["skill:" + skill[0], []]):
+        told.append(("/" + skill[0], "skill:") + skill)
+    plugin = top_attribution(attrs, "plugin:")
+    if plugin:
+        # One tip per cause: a plugin's skill ("plugin:skill") or subagents
+        # count in the plugin too, on the same requests; the plugin's tip
+        # is about the rest of its usage, if that is still a tenth
+        mine = [(what, prefix + name, w) for what, prefix, name, w in told if name.startswith(plugin[0] + ":")]
+        rest = plugin[1] - sum(w for _, _, w in mine)
+        tip("plugin", rest, 'Review the "{}" plugin'.format(plugin[0]), "{}% of your usage{}".format(
+            round(100 * rest / weight), " besides " + " and ".join(what for what, _, _ in mine) if mine else ""),
+            attr=["plugin:" + plugin[0], [k for _, k, _ in mine]])
+    mcp = top_attribution(attrs, "mcp:")
+    if mcp:
+        tip("mcp_server", mcp[1], "Turn off {} when you don't need it".format(mcp[0]),
+            "{}% of your usage".format(round(100 * mcp[1] / weight)), attr=["mcp:" + mcp[0], []])
+    return out
+
+
+def usage_before(t, before, then):
+    """A /usage tip's share in the period before (before: its weigh; then:
+    its tips' shares by key), of the same cause: a subagent type's, skill's,
+    plugin's or MCP server's own (a plugin's without what this period's tip
+    leaves out)."""
+    if not before["weight"]:
+        return 0
+    if t["attr"]:
+        own, less = t["attr"]
+        a = before["attrs"]
+        return round(100 * max(0.0, a.get(own, 0) - sum(a.get(k, 0) for k in less)) / before["weight"])
+    return then.get(t["key"], 0)
+
+
+def tip_chat(c, home, note):
+    """A chat a tip names, as the tab's lists have it (chat_row: its name,
+    where it is, what opens it), with what the tip says of it (note)."""
+    folder, host = c.get("folder") or "", c.get("host") or ""
+    return {"name": c.get("name") or (os.path.basename(folder.rstrip("/")) if folder else "") or (c.get("id") or "")[:8],
+            "chatId": c.get("id") or "", "host": host, "profileDir": (c.get("profiles") or [""])[0],
+            "folder": folder if host else cs.short_path(folder, home), "cwd": folder, "note": note}
+
+
+def tip_chats(rows, note):
+    """The chats a tip names (TIP_CHATS of them, the first first), and how many more."""
+    return [tip_chat(*r[:2], note(*r[2:])) for r in rows[:TIP_CHATS]], max(0, len(rows) - TIP_CHATS)
+
+
+def tips(chats, w0, w1, total, waits, cold=None, home=None, weighed=None, before=None):
+    """What would use less of your plan, from the period's usage: Claude
+    Code's /usage behaviors (each with its share of the usage, from
+    USAGE_TIP_PCT), then coming back to chats whose cache had expired (cold:
+    spending()'s, its share of the amount, from USAGE_TIP_PCT too), how long
+    Claude waited for you and the usage limits you hit. A tip that acts on
+    chats names them ("chats": the chats that ran 8 hours or more, those
+    that carried most over 150k of context, those it came back to after
+    their cache expired, those a usage limit stopped; "more": how many it
+    doesn't name). weighed: the period's weigh (else worked out); before:
+    the period before's {"weighed", "cold": its cold resumes' share of its
+    amount}, for each tip's share then ("before"; none: not compared)."""
+    m = weighed if weighed is not None else weigh(chats, w0, w1)
+    out = [t for t in usage_tips(m) if t["shown"]]
+    out.sort(key=lambda t: -t["pct"])
+    del out[TIPS_SHOWN:]
+    then = {t["key"]: t["pct"] for t in usage_tips(before["weighed"])} if before and out else {}
+    for t in out:
+        t["before"] = usage_before(t, before["weighed"], then) if before else None
+        del t["shown"], t["attr"]
+        if t["key"] == "long_running":
+            rows = sorted(m["running"], key=lambda r: (-r[1], r[0]["key"]))
+            t["chats"], t["more"] = tip_chats([(c, home, n) for c, n in rows], lambda n: "{} hours".format(n))
+        elif t["key"] == "long_context":
+            rows = sorted(m["context"], key=lambda r: (-r[1], r[0]["key"]))
+            t["chats"], t["more"] = tip_chats([(c, home, n) for c, _w, n in rows],
+                                              lambda n: "1 request" if n == 1 else "{} requests".format(n))
     # Coming back to chats after their cache expired: what writing their
     # context again cost more than reading it, from a tenth of the amount
     cost = total.get("cost") or 0
     if cold and cold["count"] and cost > 0 and 100 * cold["cost"] / cost >= USAGE_TIP_PCT:
         once = cold["count"] == 1
-        where = ", ".join(c["name"] if once else "{} ({}×)".format(c["name"], c["resumes"]) for c in cold["chats"])
         out.append({"key": "cold", "pct": round(100 * cold["cost"] / cost), "title": "Come back within the hour, or start fresh",
-                    "detail": ("you came back to a chat after its cache had expired once" if once else
-                               "you came back to chats after their cache had expired {} times".format(cold["count"]))
-                              + ((" · in " if once else " · most in ") + where if where else ""), "command": ""})
+                    "detail": "you came back to a chat after its cache had expired once" if once else
+                              "you came back to chats after their cache had expired {} times".format(cold["count"]),
+                    "command": "", "before": before["cold"] if before else None,
+                    "chats": [dict(c, note="once" if c["resumes"] == 1 else "{} times".format(c["resumes"]))
+                              for c in cold["chats"]],
+                    "more": max(0, cold.get("chatCount", len(cold["chats"])) - len(cold["chats"]))})
     waited = covered(clipped(waits, w0, w1))
     if waited >= WAIT_TIP_MS:
         n = sum(1 for f, t in waits if w0 <= f < w1)
         out.append({"key": "waits", "pct": None, "title": "Let Claude go on without asking",
                     "detail": "it waited {} for your answers, {} times · auto mode, or allow what you always allow"
-                              .format(cs.spoken_duration(waited), n), "command": "/permissions"})
+                              .format(cs.spoken_duration(waited), n), "command": "/permissions", "before": None})
     if total.get("limits", 0) >= LIMIT_TIP:
         stops = total.get("limitStops") or 0
+        stopped = sorted(((c, home, sum(1 for t in c["limits"] if w0 <= t < w1)) for c in chats
+                          if any(w0 <= t < w1 for t in c["limits"])),
+                         key=lambda r: (-max(t for t in r[0]["limits"] if w0 <= t < w1), r[0]["key"]))
+        chats_named, more = tip_chats(stopped, lambda n: "stopped once" if n == 1 else "stopped {} times".format(n))
         out.append({"key": "limits", "pct": None, "title": "Let chats go on after a usage limit",
-                    "detail": "your plan ran out {} times ({} stopped) · Keep going after usage limits, or Go on at…"
-                              .format(total["limits"], "1 chat" if stops == 1 else "{} chats".format(stops)), "command": ""})
+                    "detail": "your plan ran out {} times ({} stopped)"
+                              .format(total["limits"], "1 chat" if stops == 1 else "{} chats".format(stops)),
+                    "command": "", "before": None, "chats": chats_named, "more": more})
+    return out
+
+
+def usage_mix(m, before=None):
+    """Where the usage of a period went (m: its weigh), weighed as /usage
+    weighs it: [{"key", "pct", "before"}] for subagents ("subagents"),
+    requests over 150k of context ("long_context") and each effort level
+    ("effort:xhigh"; "effort:" what has no level noted: a chat read before
+    Talpy Den kept them and deleted since, below max, or a model with no
+    effort), the largest level first, each with its share in the period before (before:
+    its weigh; None: not compared). What neither period has (under half a
+    point) isn't listed."""
+    def pct(w, of):
+        return round(100 * w / of, 1) if of > 0 else 0.0
+
+    def efforts(x):
+        # (max effort is known of every request, also of a chat deleted before the levels were kept: W_MAX)
+        e = {k: v for k, v in x["efforts"].items() if k != "max"}
+        if x["sums"][W_MAX] > 0:
+            e["max"] = x["sums"][W_MAX]
+        e[""] = max(0.0, x["weight"] - sum(e.values()))
+        return e
+
+    now, then = efforts(m), efforts(before) if before else {}
+    parts = [("subagents", m["sums"][W_SUB], before["sums"][W_SUB] if before else 0),
+             ("long_context", m["sums"][W_LONG], before["sums"][W_LONG] if before else 0)]
+    levels = sorted(set(now) | set(then), key=lambda k: (k == "", -now.get(k, 0), -then.get(k, 0), k))
+    parts += [("effort:" + k, now.get(k, 0), then.get(k, 0)) for k in levels]
+    out = []
+    for key, w, wb in parts:
+        p, b = pct(w, m["weight"]), pct(wb, before["weight"]) if before else None
+        if p >= 0.5 or (b or 0) >= 0.5:
+            out.append({"key": key, "pct": p, "before": b})
     return out
 
 

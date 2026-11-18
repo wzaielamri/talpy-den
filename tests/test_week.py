@@ -470,8 +470,14 @@ class RecapTests(Home):
         # work: out at 08:00 (a, b) and at 12:00 (a, b); personal at 08:10 (c)
         self.assertEqual((r["sum"]["limits"], r["sum"]["limitStops"]), (3, 5))
         self.assertEqual(len(r["days"][-1]["limits"]), 6)  # (the timeline marks each chat's)
-        tip = next(t for t in week.tips([], t0, t0 + week.DAY_MS, r["sum"], []) if t["key"] == "limits")  # (3 prompts: too little to show)
-        self.assertEqual(tip["detail"], "your plan ran out 3 times (5 chats stopped) · Keep going after usage limits, or Go on at…")
+        chats = [dict(c, id=cid, host="", key="|" + cid) for cid, c in sorted(self.chats().items())]
+        tip = next(t for t in week.tips(chats, t0, t0 + week.DAY_MS, r["sum"], [], home=self.home)
+                   if t["key"] == "limits")  # (3 prompts: too little to show)
+        self.assertEqual(tip["detail"], "your plan ran out 3 times (5 chats stopped)")
+        # (the chats it stopped, the one stopped last first: Keep going for each, in the tab)
+        self.assertEqual([(c["chatId"], c["note"], c["profileDir"]) for c in tip["chats"]],
+                         [("chat-b", "stopped 2 times", ".claude-work"), ("chat-a", "stopped 3 times", ".claude-work"),
+                          ("chat-c", "stopped once", ".claude-personal")])
         # Claude Code's own note of the reset comes before the message's time
         self.assertEqual(week.limit_reset({"quotaLimits": {"resetsAt": first // 1000}}, "… · resets 7pm", t0), first)
 
@@ -743,8 +749,15 @@ class TipTests(Home):
 
     def test_a_chat_running_for_hours(self):
         hours = {str(self.t0 // week.HOUR_MS - i): self.hour(W_ALL=10, N_ALL=1) for i in range(8)}
-        tips = week.tips([self.chat(hours)], self.t0 - week.DAY_MS, self.now, {}, [])
+        short = {str(self.t0 // week.HOUR_MS): self.hour(W_ALL=10, N_ALL=1)}
+        chats = [self.chat(hours, key="|c1", id="c1", name="the parser", folder="/w/app", profiles=[".claude-work"]),
+                 self.chat(short, key="|c2", id="c2", name="a question")]
+        tips = week.tips(chats, self.t0 - week.DAY_MS, self.now, {}, [], home=self.home)
         self.assertEqual([t["key"] for t in tips], ["long_running"])
+        # (it names the chats that ran that long, to stop the ones you no longer need)
+        self.assertEqual(tips[0]["chats"], [{"name": "the parser", "chatId": "c1", "host": "", "profileDir": ".claude-work",
+                                              "folder": "/w/app", "cwd": "/w/app", "note": "8 hours"}])
+        self.assertEqual(tips[0]["more"], 0)
 
     def test_subagents(self):
         h = str(self.t0 // week.HOUR_MS)
@@ -808,8 +821,106 @@ class TipTests(Home):
         cold = {"count": 3, "cost": 12.0, "chats": [{"name": "parser", "resumes": 2}, {"name": "notes", "resumes": 1}]}
         tips = week.tips([], self.t0 - week.DAY_MS, self.now, {"cost": 100.0}, [], cold)
         self.assertEqual([(t["key"], t["pct"], t["detail"]) for t in tips],
-                         [("cold", 12, "you came back to chats after their cache had expired 3 times · most in parser (2×), notes (1×)")])
+                         [("cold", 12, "you came back to chats after their cache had expired 3 times")])
+        self.assertEqual([(c["name"], c["note"]) for c in tips[0]["chats"]], [("parser", "2 times"), ("notes", "once")])
         self.assertEqual(week.tips([], self.t0 - week.DAY_MS, self.now, {"cost": 130.0}, [], cold), [])  # (9%)
+
+
+class UsageMixTests(Home):
+    """Where the usage went, weighed as Claude Code's /usage weighs it, and how it moved."""
+
+    def weights(self, **replies):
+        # (a reply's weight, as /usage weighs it: Opus, its read, input and output)
+        return {k: week.usage_weight("claude-opus-5-5", inp, out, read, 0) for k, (inp, out, read) in replies.items()}
+
+    def test_where_the_usage_went_and_how_it_moved(self):
+        t0, before = self.t0, self.t0 - 7 * week.DAY_MS
+        w = self.weights(a=(5, 100, 1000), b=(0, 0, 200_000), s=(5, 100, 1000), n=(5, 100, 1000))
+        # These days: the main chat at xhigh (one request carried over 150k
+        # of context), its subagent at max, a reply with no effort noted
+        tr = Transcript().prompt(t0).reply(t0 + 1000, "a", effort="xhigh").reply(t0 + 2000, "b", inp=0, output=0,
+                                                                                  read=200_000, effort="xhigh")
+        tr.reply(t0 + 3000, "n").duration(t0 + 3600_000, 3600_000)
+        self.write(tr, "chat-a")
+        self.write(Transcript().reply(t0 + 1500, "s", effort="max", isSidechain=True), "chat-a", sub="agent-1")
+        # The week before: Sonnet, its main chat at xhigh and its subagent at medium, as much each
+        self.write(Transcript().prompt(before).reply(before + 1000, "p", model="claude-sonnet-5-5", effort="xhigh")
+                   .duration(before + 60_000, 60_000), "chat-p")
+        self.write(Transcript().reply(before + 1500, "q", model="claude-sonnet-5-5", effort="medium", isSidechain=True),
+                   "chat-p", sub="agent-1")
+        r = self.recap(kept_since=self.t0 - 30 * week.DAY_MS)
+        total = sum(w.values())
+
+        def pct(x):
+            return round(100 * x / total, 1)
+        self.assertEqual(r["usageMix"], [
+            {"key": "subagents", "pct": pct(w["s"]), "before": 50.0},
+            {"key": "long_context", "pct": pct(w["b"]), "before": 0.0},
+            {"key": "effort:xhigh", "pct": pct(w["a"] + w["b"]), "before": 50.0},
+            {"key": "effort:max", "pct": pct(w["s"]), "before": 0.0},
+            {"key": "effort:medium", "pct": 0.0, "before": 50.0},  # (none now: shown, it was half)
+            {"key": "effort:", "pct": pct(w["n"]), "before": 0.0},  # (what has no level noted, last)
+        ])
+        self.assertEqual([(m["model"], m["share"], m["before"]) for m in r["models"]], [("Opus 5.5", 1, 0)])
+        # The tips' shares are the same weighing, with theirs the period before
+        tip = next(t for t in r["tips"] if t["key"] == "long_context")
+        self.assertEqual((tip["pct"], tip["before"]), (round(100 * w["b"] / total), 0))
+        self.assertEqual([(c["chatId"], c["note"]) for c in tip["chats"]], [("chat-a", "1 request")])
+        # Overall has nothing before it; a period the Recap doesn't have whole isn't compared
+        self.assertTrue(all(p["before"] is None for p in self.recap(span="all")["usageMix"]))
+        uncompared = self.recap()
+        self.assertTrue(all(p["before"] is None for p in uncompared["usageMix"]))
+        self.assertEqual(uncompared["models"][0]["before"], None)
+
+    def test_a_cache_from_before_gets_its_effort_levels_once(self):
+        # An older copy kept no effort levels: what the transcripts still
+        # have is read again for them once; a deleted chat's usage keeps its
+        # weight, with no level noted
+        t0 = self.t0
+        w = self.weights(a=(5, 100, 1000), m=(5, 300, 1000), b=(5, 100, 5000), c=(5, 100, 1000))
+        tr = Transcript().prompt(t0).reply(t0 + 1000, "a", effort="xhigh").reply(t0 + 2000, "m", output=300, effort="max")
+        tr.duration(t0 + 60_000, 60_000)
+        path = self.write(tr, "chat-a")
+        gone = self.write(Transcript().prompt(t0).reply(t0 + 1000, "b", read=5000, effort="xhigh")
+                          .duration(t0 + 90_000, 90_000), "chat-b")
+        cache = self.scan()
+        for rec in cache["files"].values():  # (as an older copy of this file wrote it)
+            rec["data"].pop("effortTo")
+            for agg in rec["data"]["hours"].values():
+                agg.pop("e")
+            rec["state"]["msg"] = rec["state"]["msg"][:6]
+        before = json.loads(json.dumps(cache))
+        gone.unlink()
+        cache = self.scan(cache)
+        recs = {r["chat"]: r for r in cache["files"].values()}
+        self.assertEqual(recs["chat-b"]["data"], next(r for r in before["files"].values() if r["chat"] == "chat-b")["data"])
+        hours = recs["chat-a"]["data"]["hours"]
+        self.assertEqual([agg["e"] for agg in hours.values()], [{"xhigh": w["a"], "max": w["m"]}])
+        old = next(r for r in before["files"].values() if r["chat"] == "chat-a")["data"]
+        for h, agg in hours.items():  # (the rest as it was)
+            self.assertEqual({k: v for k, v in agg.items() if k != "e"}, old["hours"][h])
+        r = self.recap_of(cache)
+        total = w["a"] + w["m"] + w["b"]
+        self.assertEqual({p["key"]: p["pct"] for p in r["usageMix"] if p["key"].startswith("effort:")},
+                         {"effort:xhigh": round(100 * w["a"] / total, 1), "effort:max": round(100 * w["m"] / total, 1),
+                          "effort:": round(100 * w["b"] / total, 1)})
+        # lines an older copy read on (no level kept): read for it next time, once
+        tr.reply(t0 + 2 * 3600_000, "c", effort="medium")
+        path.write_text(tr.text())
+        rec = recs["chat-a"]
+        was = rec["offset"]
+        week.read_transcript(path, rec, set())
+        rec["data"]["effortTo"] = was
+        for agg in rec["data"]["hours"].values():
+            agg["e"].pop("medium", None)
+        self.scan(cache)
+        self.scan(cache)
+        self.assertEqual(sum(agg["e"].get("medium", 0) for agg in rec["data"]["hours"].values()), w["c"])
+
+    def recap_of(self, cache):
+        chats = week.chats_between(cache, self.profiles(), self.now - 14 * week.DAY_MS, self.now + week.DAY_MS, self.home)
+        _, accounts = week.account_ids(self.profiles())
+        return week.recap([{"host": "", "chats": chats, "accounts": accounts}], 0, "", self.now, self.home)
 
 
 class time_zone:
