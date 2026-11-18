@@ -889,12 +889,6 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
             <span class="week-tip-text">
               <span class="week-tip-title">{t.title}</span>
               {t.detail ? <span class="small muted">{t.detail}</span> : null}
-              {t.chats?.length ? (
-                <ul class="week-tip-chats">
-                  {t.chats.map((c) => <TipChat key={c.host + c.chatId} tip={t} c={c} />)}
-                </ul>
-              ) : null}
-              {t.more ? <span class="small muted">and {t.more} more {t.more === 1 ? "chat" : "chats"}</span> : null}
             </span>
             {tipShareShown(t, recap.usageMix) ? (
               <span class="week-tip-pct small" title={tipShareTip(t, recap)}>
@@ -912,6 +906,16 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
               <button type="button" class="chip code" title={`Copy ${t.command}, to type it in a chat of yours`} onClick={() => onCopy(t.command)}>
                 {copied === t.command ? "Copied" : t.command}
               </button>
+            ) : null}
+            {t.chats?.length || t.more ? (
+              <span class="week-tip-named">
+                {t.chats?.length ? (
+                  <ul class="week-tip-chats">
+                    {t.chats.map((c) => <TipChat key={c.host + c.chatId} tip={t} c={c} />)}
+                  </ul>
+                ) : null}
+                {t.more ? <span class="small muted">and {t.more} more {t.more === 1 ? "chat" : "chats"}</span> : null}
+              </span>
             ) : null}
           </li>
         ))}

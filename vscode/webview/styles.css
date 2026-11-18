@@ -2299,6 +2299,18 @@ body.vscode-high-contrast .top.scrolled {
   text-overflow: ellipsis;
 }
 
+/* (a side bar's width: the hint in two lines, their room kept while you
+   point, so nothing under it moves) */
+@media (max-width: 640px) {
+  .week-section:not(.week-weeks) > .week-readout {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    min-height: 2.8em;
+    white-space: normal;
+  }
+}
+
 /* One grid for a list's rows: their bars start and end at the same place,
    however long each one's value */
 .week-bars {
@@ -2308,6 +2320,11 @@ body.vscode-high-contrast .top.scrolled {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* (Where the usage went: room for "Context over 150k", the same in both lists) */
+.week-bars.week-usage {
+  grid-template-columns: minmax(0, 9.5em) minmax(2em, 1fr) auto;
 }
 
 /* (the projects' names: as wide as the longest, up to 13em or 45%; the bars get the rest) */
@@ -2434,6 +2451,16 @@ body.vscode-high-contrast .top.scrolled {
 
 .week-tip > .chip {
   grid-column: 4;
+  white-space: nowrap;
+}
+
+/* (the chats it names, under the tip and its share: the whole width) */
+.week-tip-named {
+  display: flex;
+  flex-direction: column;
+  grid-column: 2 / -1;
+  min-width: 0;
+  margin-top: -4px;
 }
 
 .week-tip-icon {
@@ -2462,8 +2489,17 @@ body.vscode-high-contrast .top.scrolled {
   display: block;
 }
 
+/* (an icon and its word on one line: Permissions, Stop, Keep going) */
+.week-tip .chip:has(.icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
 .week-tip .chip .icon {
-  vertical-align: -2px;
+  width: 14px;
+  height: 14px;
 }
 
 /* The chats a tip names: name | what the tip says of it, then Stop or Keep going */
@@ -2791,7 +2827,7 @@ body.vscode-high-contrast .top.scrolled {
 /* how full each week got: its days, its bar, its percent; under the bar
    when it ran out and its 5-hour windows */
 .limits-weeks {
-  grid-template-columns: minmax(0, 6.5em) minmax(2em, 1fr) auto;
+  grid-template-columns: fit-content(9em) minmax(2em, 1fr) auto;
 }
 
 .limits-weeks li.now .week-bar-name {
@@ -5842,6 +5878,22 @@ button.pane-side-from:hover {
 
 .week-lanes + .week-readout {
   padding-left: calc(12em + 6px);
+}
+
+/* (a side bar's width: narrower names, so the lanes keep room, and every
+   other hour named, so the hours don't run into each other) */
+@media (max-width: 480px) {
+  .week-lanes {
+    grid-template-columns: 8em minmax(0, 1fr) auto;
+  }
+
+  .week-lanes + .week-readout {
+    padding-left: calc(8em + 6px);
+  }
+
+  .week-lanes-hours > span:nth-child(even) {
+    visibility: hidden;
+  }
 }
 
 /* The Recap's card to share (WeekView.tsx ShareCard) */

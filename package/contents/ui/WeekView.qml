@@ -560,12 +560,12 @@ PlasmaComponents3.ScrollView {
     }
 
     // What went on at the moment the mouse points at, on its day's row
+    readonly property string dayHint: weeks ? i18n("Click a week for its chats.")
+        : recap && recap.span === "week" ? i18n("Point at a day to see what went on then; click it for its chats, or its name for that day alone.")
+        : i18n("Point at a day to see what went on then; click it for its chats.")
     function hoverText() {
-        if (weeks)
-            return i18n("Click a week for its chats.")
-        if (!hover || !days[hover.row])
-            return recap && recap.span === "week" ? i18n("Point at a day to see what went on then; click it for its chats, or its name for that day alone.")
-                                                  : i18n("Point at a day to see what went on then; click it for its chats.")
+        if (weeks || !hover || !days[hover.row])
+            return dayHint
         const d = days[hover.row]
         const when = Qt.locale().toString(date(d.day), "ddd d MMM") + ", " + root.clockText(hover.ms) + ": "
         if (hover.ms > root.now)
@@ -1504,9 +1504,15 @@ PlasmaComponents3.ScrollView {
             }
 
             PlasmaComponents3.Label {
+                // (a hint one line doesn't hold, at a narrow width: two lines,
+                // their room kept while you point, so nothing under it moves)
+                readonly property bool twoLines: width > 0 && smallMetrics.advanceWidth(view.dayHint) > width
                 textFormat: Text.PlainText
                 Layout.fillWidth: true
                 Layout.leftMargin: view.dayWidth + Kirigami.Units.smallSpacing
+                Layout.minimumHeight: twoLines ? Math.ceil(smallMetrics.lineSpacing * 2) : 0
+                wrapMode: twoLines ? Text.Wrap : Text.NoWrap
+                maximumLineCount: twoLines ? 2 : 1
                 elide: Text.ElideRight
                 font: Kirigami.Theme.smallFont
                 opacity: view.hover ? 0.9 : 0.5
@@ -1557,9 +1563,10 @@ PlasmaComponents3.ScrollView {
                 return out
             }
             // What went on at the moment the mouse points at, chat by chat (lanesRows)
+            readonly property string hint: i18n("Point at the chats to see what went on then; click a name to open its chat.")
             function hoverText() {
                 if (!lanesRows.pointing)
-                    return i18n("Point at the chats to see what went on then; click a name to open its chat.")
+                    return hint
                 const ms = lanesRows.hoverMs
                 const px = span / lanesRows.trackWidth   // (a mark a pixel or two wide is hard to hit)
                 const near = p => (p[0] <= ms && ms < p[1]) || (p[1] - p[0] < 3 * px && p[0] - 2 * px <= ms && ms < p[1] + 2 * px)
@@ -1855,9 +1862,14 @@ PlasmaComponents3.ScrollView {
                 }
             }
             PlasmaComponents3.Label {
+                // (as the Day by day's: a hint one line doesn't hold, two lines and their room kept)
+                readonly property bool twoLines: width > 0 && smallMetrics.advanceWidth(lanesBox.hint) > width
                 textFormat: Text.PlainText
                 Layout.fillWidth: true
                 Layout.leftMargin: lanesBox.nameWidth + Kirigami.Units.smallSpacing
+                Layout.minimumHeight: twoLines ? Math.ceil(smallMetrics.lineSpacing * 2) : 0
+                wrapMode: twoLines ? Text.Wrap : Text.NoWrap
+                maximumLineCount: twoLines ? 2 : 1
                 elide: Text.ElideRight
                 font: Kirigami.Theme.smallFont
                 opacity: lanesRows.pointing ? 0.9 : 0.5
