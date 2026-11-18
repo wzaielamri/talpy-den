@@ -2136,8 +2136,9 @@ export function limitSizeTip(key, a, cur) {
     if (key === 'five_hour') {
         const f = a.now.fiveHour;
         return f ? 'What a full 5-hour window held: the API price of what your chats used by a reading, over the share of the window ' +
-            `it said was used. The middle of ${plural(f.n, '%1 window', '%1 windows')} in the newest week` +
-            `${f.n > 1 ? ` (${moneyText(f.lo, cur)} to ${moneyText(f.hi, cur)})` : ''}.${since}` : '';
+            `it said was used. The middle of the largest third of ${plural(f.n, '%1 window', '%1 windows')} measured since your ` +
+            `limits last changed${f.n > 1 ? ` (${moneyText(f.lo, cur)} to ${moneyText(f.hi, cur)})` : ''}: use not seen here only ` +
+            `makes a window look smaller.${since}` : '';
     }
     return `What a full ${limitLabel(key).toLowerCase()} held: the API price of what your chats used by its readings, over the ` +
         `share of it they said was used${key === 'seven_day' ? '.' : ' (only that model\'s usage counts).'}${since}`;
