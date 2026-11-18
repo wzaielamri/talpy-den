@@ -20,7 +20,12 @@
 #                    new, and Qt compiles them again)
 # Colors and fonts are your KDE theme's (QT_QPA_PLATFORMTHEME=kde).
 # QML warnings go to OUT.log. The widget runs under a test id with its own
-# config, data, state and cache folders, so nothing of your desktop is touched.
+# config, data, state, cache and runtime folders, so nothing of your desktop is
+# touched. The runtime folder too: with your real one, its checks wrote your
+# jobs file (Talpy Den Display's feed) from a cache with no SSH host's answer
+# in it, which dropped every host's chats from it while a render ran; its
+# watcher could take a chat another program asked to open (opens/); and its
+# SSH connections were your widget's.
 set -euo pipefail
 umask 077  # the PNG and log show your real chats: keep them private
 out=$(realpath -m "$1"); secs=${2:-7}
@@ -104,7 +109,14 @@ fi
   printf '[Applets][1][Configuration]\ngeometry=0,0,%s,%s\n' "${WIN_W:-520}" "${WIN_H:-560}"
   [ -n "${SSH_HOSTS:-}" ] && printf '\n[Applets][1][Configuration][General]\nsshHosts=%s\nremotePollSeconds=10\n' "$SSH_HOSTS"
 } > "$work/config/plasmawindowedrc"
-export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" XDG_DATA_HOME="$data" XDG_CACHE_HOME="$cache"
+# (its runtime folder always in $work, never RENDER_KEEP's: private as the real one is, and short, for ssh's
+# sockets in it, remote.py's SOCKET_DIR_MAX; the session bus stays yours, named whole as before)
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]; then
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+fi
+mkdir -m 700 "$work/run"
+export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" XDG_DATA_HOME="$data" XDG_CACHE_HOME="$cache" \
+  XDG_RUNTIME_DIR="$work/run"
 installed="$data/plasma/plasmoids/org.wzaielamri.talpyden.rendertest"
 if [ -n "${RENDER_KEEP:-}" ] && [ -d "$installed" ] && diff -rq "$work/pkg" "$installed" >/dev/null; then
   :  # (the same package, installed by the render before: its files and their compiled QML kept)
