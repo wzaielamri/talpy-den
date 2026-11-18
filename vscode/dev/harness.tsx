@@ -3,7 +3,7 @@
 
 import "../webview/main";
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../src/shared/demo";
-import { limitsOpen } from "../webview/util/stores";
+import { limitsAsked } from "../webview/util/stores";
 import type { HostMessage } from "../src/shared/types";
 import { projectKey, setFocus, setTab, toggleProject, toggleRecent, toggleStarred, uiState } from "../webview/util/ui";
 import { askMove } from "../webview/components/MoveAsk";
@@ -146,9 +146,9 @@ setTimeout(() => {
   if (params.get("week") === "1" && span !== "week")
     setTimeout(() => [...document.querySelectorAll<HTMLButtonElement>(".week-spans .chip")]
       .find((b) => b.textContent === ({ day: "Day", month: "Month", all: "Overall" } as const)[span])?.click(), 300);
-  // &limits=1: How your limits changed unfolded (its answer at once: a screenshot doesn't wait)
+  // &limits=1: Your plan's limits over time read at once (Overall's last section: a screenshot doesn't wait to scroll there)
   if (params.get("limits") === "1") {
-    limitsOpen.set(true);
+    limitsAsked.set("|0");
     send({ type: "limits", account: "", data: demoLimits(Date.now()), error: "" });
   }
   if (params.get("perms") === "1") send({ type: "perms", data: demoPerms(Date.now()), error: "" });

@@ -14,6 +14,7 @@ import {
   dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
   limitStart, limitWeekBars, limitValueText, doneText, doneTip, commitsShown, workBeforeText, listedChatRef,
+  planUseText, planUseTip, weekShareShort, weekShareTip,
 } from "../src/shared/week";
 import { ViewHost } from "../src/view";
 
@@ -52,7 +53,39 @@ test("the days shown, and the week's tiles", () => {
 test("the Recap reads as a story: the tiles, when, what got done, then the money", () => {
   assert.deepEqual(weekTiles(demoWeek(NOW)).map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens · 98% cache", "At API prices"]);
   // (what Claude did is What got done's last line; its projects' chats are the list of chats)
-  assert.deepEqual([...RECAP_SECTIONS], ["days", "plan", "limits", "lanes", "projects", "models", "tips"]);
+  // (your plan after what got done; its limits over time last, in Overall)
+  assert.deepEqual([...RECAP_SECTIONS], ["days", "lanes", "projects", "plan", "models", "tips", "limits"]);
+});
+
+test("your plan: what these days meant for each account's plan, and the shares of its week", () => {
+  const recap = demoWeek(NOW);
+  const [personal, work] = recap.planUse!;
+  assert.equal(planUseText(work, recap),
+    "66% of the week used in these days · 23% of the Opus week · 3 full 5-hour windows · ran out 2 times, chats held 4h 10m");
+  assert.equal(planUseText(personal, recap), "41% of the week used in these days · no full 5-hour window · didn't run out");
+  assert.equal(planUseText({ ...work, ranOut: 1, heldMs: 0, fiveFull: 1 }, { span: "day", back: 0 }),
+    "66% of the week used today · 23% of the Opus week · 1 full 5-hour window · ran out once");
+  // the readings kept begin after these days began: from then; an account with none here (an SSH host's)
+  assert.match(planUseText({ ...work, covered: false, since: new Date(2026, 10, 3, 10).getTime() }, recap), /^66% of the week used since 3 Nov · /);
+  const host = { ...work, name: "lab", readings: false, since: null, weeks: {}, fiveFull: 0, fiveUsed: 0 };
+  assert.equal(planUseText(host, recap), "Ran out 2 times, chats held 4h 10m · no readings of its plan here");
+  assert.match(planUseTip(host), /lab's has none here/);
+  assert.match(planUseTip(work), /^How much of your plan's week these days used: .*\n3 of the 12 5-hour windows .*\nYour plan ran out 2 times \(5 chats stopped\)\./);
+  // a project's share on its row, and in its tooltip how it's worked out (two accounts with readings: whose week)
+  const [webapp] = recap.projects;
+  assert.equal(weekShareShort(webapp), "≈ 44%");
+  assert.equal(weekShareShort({ weekShare: [{ account: "a", pct: 0.3 }] }), "<1%");
+  assert.equal(weekShareShort({}), "");
+  assert.match(weekShareTip(webapp, recap), /^≈ 44% of work's week\nAn estimate: its part of these days' amount at API prices/);
+  assert.match(weekShareTip(recap.days[1], recap, true), /^11% of work's week\n6% of personal's week\nAs the readings of your plan's week rose then\.$/);
+  // one account with readings: your week; one of its accounts with none, or whose readings begin later: why it's missing
+  const one = { ...recap, planUse: [work, { ...personal, readings: false }] };
+  assert.equal(weekShareTip({ weekShare: [{ account: work.account, pct: 12 }], accounts: [work.account, personal.account] }, one),
+    "≈ 12% of your week\nAn estimate: its part of these days' amount at API prices, times how much of the week these days used (Your plan).\n" +
+    "Its share of personal's week isn't known: no readings of that plan on this computer.");
+  assert.match(weekShareTip({ weekShare: [], accounts: [work.account] }, { ...recap, planUse: [{ ...work, covered: false, since: new Date(2026, 10, 3).getTime() }] }),
+    /^Its share of work's week isn't known: the readings of it kept begin on 3 Nov\.$/);
+  assert.match(dayTip(recap.days[1], currencyOf(recap), recap), /\n11% of work's week\n/);
 });
 
 test("what got done: a project's and a chat's commits and files, what Claude did the period before", () => {

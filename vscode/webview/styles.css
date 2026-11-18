@@ -2668,32 +2668,34 @@ body.vscode-high-contrast .top.scrolled {
   color: var(--cs-usage-high);
 }
 
-/* Your plan's limits over time (how your limits changed among them): one folded title under the limits now; open, per
-   account its window sizes with how they changed, two small charts (each 5-hour
-   window as a dot with its week's middle as a line; the weeks as bars), then a
-   line each for the 5-hour window's share of the week, how long one lasts, and
-   tokens (what filled one, as a thin bar) */
-/* (one line of text: short of room its hint goes under it, not beside it) */
-.limits-title {
-  cursor: pointer;
+/* Your plan: per account its name (two or more), its line, and today its
+   windows now (their fill charts) */
+.week-plan-account {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.limits-title:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder, #0078d4);
-  outline-offset: 2px;
+.week-plan-account + .week-plan-account {
+  margin-top: 4px;
 }
 
-.limits-title .icon {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  margin: 0 2px 0 -4px;
-  vertical-align: -2px;
+.week-plan-name {
+  font-weight: 600;
+}
+
+/* Your plan's limits over time, Overall's last section: per account its
+   window sizes with how they changed, two small charts (each 5-hour window
+   as a dot with its week's middle as a line; the weeks as bars), then a
+   line each for the 5-hour window's share of the week, how long one lasts,
+   and tokens (what filled one, as a thin bar). Read once it's in sight:
+   till then a dim line, with room kept so what's under it doesn't jump */
+.week-limits.busy {
   opacity: 0.6;
 }
 
-.limits-title .icon.turn {
-  transform: rotate(90deg);
+.limits-waiting {
+  min-height: 8em;
 }
 
 .limits-estimate {

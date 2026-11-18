@@ -702,6 +702,13 @@ export interface WeekDay {
   cost: number;
   tokenTotal: number; // all tokens: input, output, cache reads and writes
   chats: WeekChat[]; // the day's chats, what Claude worked on most first
+  weekShare?: WeekShare[]; // how much of each account's week it used, as the readings of its plan rose then
+}
+
+// A share of an account's week (Your plan): its points ("28": 28% of the week)
+export interface WeekShare {
+  account: string;
+  pct: number;
 }
 
 export interface WeekNumbers {
@@ -737,6 +744,10 @@ export interface WeekProject {
   files?: number;
   linesAdded?: number;
   linesRemoved?: number;
+  // Its share of each account's week, an estimate (its part of the account's amount at API prices,
+  // times the week these days used: none where the readings don't cover them), and whose chats it has
+  weekShare?: WeekShare[];
+  accounts?: string[];
 }
 
 export interface WeekChat {
@@ -763,6 +774,7 @@ export interface WeekChat {
   linesRemoved?: number;
   recap?: { text: string; at: number } | null;
   review?: Review | null;
+  weekShare?: WeekShare[]; // (What got done's chats: as its project's)
 }
 
 export interface WeekModel {
@@ -795,6 +807,28 @@ export interface WeekPlanWindow {
   reset?: boolean; // past its reset: at 0%, nothing filled yet
   pct: number;
   points: [number, number][]; // [ms, percent used]
+}
+
+// Your plan (week.py plan_use): what the days shown meant for an account's
+// plan. readings: this computer keeps readings of its windows (an SSH host's
+// account: none here); since: when its readings of the week begin; covered:
+// they cover these days whole (else weeks counts from since); weeks: the
+// points of each weekly window used ("seven_day": 66 is 66% of the week);
+// fiveFull of fiveUsed 5-hour windows ran full; ranOut: the times the plan
+// ran out, stopping chats; heldMs: how long that held chats (on the clock)
+export interface WeekPlanUse {
+  account: string;
+  name: string;
+  plan?: string | null;
+  readings: boolean;
+  since: number | null;
+  covered: boolean;
+  weeks: Record<string, number>;
+  fiveFull: number;
+  fiveUsed: number;
+  ranOut: number;
+  stopped: number;
+  heldMs: number;
 }
 
 // A rule that would have let permission prompts you answered go without
@@ -938,7 +972,8 @@ export interface WeekRecap {
     webFetches: number;
   };
   workBefore?: WeekRecap["work"] | null; // the period before's (none when it isn't compared: beforeKept)
-  plan: { account: string; name: string; windows: WeekPlanWindow[] }[]; // (this computer's accounts, these 7 days only)
+  plan: { account: string; name: string; windows: WeekPlanWindow[] }[]; // (this computer's accounts' windows now: today's Day only)
+  planUse?: WeekPlanUse[]; // (Your plan: an account each; an older week.py sends none)
   prompts: { answered: number; refused: number; waitMs: number; byTool: [string, number][]; rules: WeekRule[] };
   tips: WeekTip[];
   tooLittle?: boolean; // too little in these days for tips (an older week.py sends none)

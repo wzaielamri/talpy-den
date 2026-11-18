@@ -22,9 +22,13 @@ export const petColorsVersion = createStore(0);
 // The Recap tab's last answer (the extension runs week.py when the tab asks)
 export const weekAnswer = createStore<Extract<HostMessage, { type: "week" }> | null>(null);
 
-// The Recap's How your limits changed, as last read (week.py --limits)
+// The Recap's Your plan's limits over time, as last read (week.py --limits):
+// asked for once it's in sight, for an account and a round of reading
+// (limitsRound: bumped by the Refresh and the tab's 10-minute read) at a
+// time, the one asked last (limitsAsked: "account|round")
 export const limitsAnswer = createStore<Extract<HostMessage, { type: "limits" }> | null>(null);
-export const limitsOpen = createStore(false); // (folded until you open it; kept while the view lives)
+export const limitsRound = createStore(0);
+export const limitsAsked = createStore("");
 
 // What allowing (or taking back) a rule of the Recap tab's did
 export const weekRuleAnswer = createStore<Extract<HostMessage, { type: "weekRule" }> | null>(null);

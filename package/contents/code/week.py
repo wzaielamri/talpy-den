@@ -1609,11 +1609,13 @@ def day_of(starts, ms):
     return None
 
 
-def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week", first_ms=None):
+def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week", first_ms=None, readings=None):
     """The Recap tab: sources = [{"host", "chats" (chats_between), "accounts"}];
     usage: this computer's plan windows now (plan_windows); added: the rules
     this tab added (to undo them); span: day, week, month or all (span_days), with
-    first_ms when the first chat began (how far back it goes)."""
+    first_ms when the first chat began (how far back it goes); readings: the
+    readings of this computer's accounts' plan windows kept (limit_readings
+    without the snapshots), for Your plan and the shares of the week."""
     days = span_days(span, back, now_ms, first_ms)
     starts = [d[1] for d in days] + [days[-1][2]]
     w0, w1 = starts[0], min(starts[-1], now_ms)
@@ -1718,6 +1720,16 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         trend.append({key: total[key] for key in ("youMs", "workedMs", "busyMs", "waitMs", "prompts", "cost", "tokenTotal")})
         trend[-1]["start"] = w0
 
+    # Your plan: the readings kept of this computer's accounts' windows say
+    # how much of each one's week these days used (only where they cover
+    # them whole: week_used), so a day's share of it (from the readings), a
+    # project's or a chat's (its part of the amount: week_shares)
+    readings = readings or {}
+    shown = [a for a in accounts.values() if not account or a["id"] == account]
+    rises = {a["id"]: account_rises(readings[a["id"]]) for a in shown if a["id"] in readings}
+    week_used = {aid: risen(r["seven_day"][1], w0, w1) for aid, r in rises.items()
+                 if "seven_day" in r and r["seven_day"][0] <= w0}
+
     # The timeline, a day per row, with each day's chats (to unfold) and the
     # moments a usage limit stopped one; for a month and everything, a row
     # per 7 days (newest first, ending today; the oldest only from the span's
@@ -1753,13 +1765,17 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         row["cost"] = round(sum(request_cost(k, t) for k, t in used), 4)
         row["tokenTotal"] = sum(sum(t[:TOKEN_KINDS]) for _, t in used)
         row["chats"] = chats_of(chats, parts["stretches"], ds, de, home)
+        # (how much of each account's week it used, as its readings rose then)
+        row["weekShare"] = [{"account": aid, "pct": pct} for aid, r in sorted(rises.items())
+                            if "seven_day" in r and r["seven_day"][0] <= ds
+                            for pct in [round(risen(r["seven_day"][1], ds, de), 1)] if pct > 0]
         if by_week:  # (a row's numbers and chats: no 24 hours to draw)
             row.update(to=(date.fromtimestamp(row_end / 1000) - timedelta(days=1)).isoformat(), you=[], work=[], wait=[])
         day_rows.append(row)
 
     # What got done, by project (with their chats: what each got done), and by model
     folders, models, guessed = {}, {}, set()
-    chat_rows = []
+    chat_rows, acct_cost, shares_of = [], {}, []
     for c in chats:
         cost = 0.0
         for h, agg in c["hours"].items():
@@ -1778,15 +1794,22 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
                         m.update(guessed=True, pricedAs=cs.model_label("claude-" + as_model) or as_model if as_model else None)
         work = parts["worked"].get(c["key"], 0)
         prompts = sum(1 for p in c["prompts"] if w0 <= p < w1)
+        for a in c["accounts"]:  # (each account's amount: a chat on two counts on each, as the account picked does)
+            acct_cost[a] = acct_cost.get(a, 0.0) + cost
         if work < 60_000 and cost < 0.01:
             continue  # (nothing worth a line)
         folder = c.get("project") or c["folder"] or ""
         fkey = c["host"] + "|" + folder
         f = folders.setdefault(fkey, {"name": project_name(folder, home), "path": cs.short_path(folder, home) if not c["host"] else folder,
                                       "folder": folder, "host": c["host"], "workedMs": 0, "cost": 0.0, "prompts": 0, "chats": [],
-                                      "commitCount": set(), "files": set(), "linesAdded": 0, "linesRemoved": 0})
+                                      "commitCount": set(), "files": set(), "linesAdded": 0, "linesRemoved": 0,
+                                      "accounts": set(), "acost": {}})
         done, files, commits = chat_done(c, w0, w1)
         row = dict(chat_row(c, home, work, cost, prompts), **done)
+        shares_of.append((row, c["accounts"], cost))
+        f["accounts"].update(c["accounts"])
+        for a in c["accounts"]:
+            f["acost"][a] = f["acost"].get(a, 0.0) + cost
         f["workedMs"] += work
         f["cost"] += cost
         f["prompts"] += prompts
@@ -1804,16 +1827,30 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         for lane in lanes:
             row = rows.get((lane["host"], lane["id"]))
             lane["claudeMs"], lane["cost"] = (row["workedMs"], row["cost"]) if row else (0, 0.0)
+    for row, accts, cost in shares_of:
+        row["weekShare"] = week_shares({a: cost for a in accts}, acct_cost, week_used)
     for f in folders.values():
         f["workedMs"] = int(f["workedMs"])
         f["cost"] = round(f["cost"], 4)
         f["commitCount"], f["files"] = len(f["commitCount"]), len(f["files"])
+        # (its share of each account's week; accounts: whose they are, for the ones with no share said why)
+        f["weekShare"] = week_shares(f.pop("acost"), acct_cost, week_used)
+        f["accounts"] = sorted(f["accounts"])
         f["chatCount"] = len(f["chats"])
         f["chats"] = sorted(f["chats"], key=lambda r: (-r["workedMs"], -r["cost"]))[:TOP_DAY_CHATS]
     for m in models.values():
         m["cost"] = round(m["cost"], 4)
         m["share"] = round(m["cost"] / total["cost"], 4) if total["cost"] else 0
     spend = spending(chats, w0, w1, home)
+    # Your plan: a line per account with something in these days (or its
+    # windows now, today), this computer's with what its readings say
+    plan_now = plan_windows_of(usage or [], account) if back == 0 and span == "day" else []
+    by_key = {c["key"]: c for c in chats}
+    plan_lines = []
+    for a in sorted(shown, key=lambda a: a["name"]):
+        u = plan_use(a, by_key, rises.get(a["id"]), readings.get(a["id"]) or {}, w0, w1, now_ms)
+        if acct_cost.get(a["id"]) or u["ranOut"] or any(u["weeks"].values()) or any(p["account"] == a["id"] for p in plan_now):
+            plan_lines.append(u)
     # Tips need something to stand on: under TIPS_MIN_PROMPTS prompts and
     # TIPS_MIN_WORK_MS of Claude's work, a share of the usage says little
     too_little = total["prompts"] < TIPS_MIN_PROMPTS and total["workedMs"] < TIPS_MIN_WORK_MS
@@ -1842,7 +1879,8 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "spend": spend,
         "work": claude_did(chats, w0, w1),
         "workBefore": claude_did(chats, p0, until(1)) if previous is not None else None,  # (the period before's)
-        "plan": plan_windows_of(usage or [], account) if back == 0 and span == "day" else [],
+        "plan": plan_now,
+        "planUse": plan_lines,  # (Your plan: plan_use, an account each)
         "prompts": permission_prompts(chats, w0, w1, home, added),
         "tips": [] if too_little else tips(chats, w0, w1, total, parts["waits"], spend["cold"]),
         "tooLittle": too_little,  # (too little in these days for tips: the tab says so instead)
@@ -2638,13 +2676,15 @@ def family_of(name):
     return next((f for f in FAMILIES if f in name), None)
 
 
-def limit_readings(cache_root, profiles, now_ms, plans):
+def limit_readings(cache_root, profiles, now_ms, plans, snapshots=True):
     """{account id: {window key: {2-minute slot of its reset: {"resetsAt",
     "plan", "points": {ms: pct}}}}}: every reading kept of the accounts'
     plan windows of the last LIMITS_DAYS, and the ended windows only the
     snapshots have (to keep in usage-past.json). A snapshot's reading is of
     when it was written: Claude Code writes the status line again with newer
-    plan usage also when the chat itself didn't reply."""
+    plan usage also when the chat itself didn't reply. snapshots=False: only
+    the two files Talpy Den keeps (usage-past.json, usage.json), as the
+    Recap's Your plan reads them (cheap)."""
     cutoff = now_ms - LIMITS_DAYS * DAY_MS
     groups = {cs.short_id(gid): members for gid, members in cs.group_profiles(profiles)}
     out, archived = {}, set()
@@ -2675,7 +2715,7 @@ def limit_readings(cache_root, profiles, now_ms, plans):
         for key, rec in (keys.items() if isinstance(keys, dict) else ()):
             if isinstance(rec, dict):
                 add(aid, key, rec.get("resetsAt"), plans.get(aid), rec.get("points") or [])
-    for aid, members in groups.items():
+    for aid, members in groups.items() if snapshots else ():
         reals = [p.real for p in members]
         for mtime, path in cs.snapshot_files(cache_root / "statusline", members):
             snap = cs.read_json(path)
@@ -3347,25 +3387,163 @@ def currency_of(code, cache_root, now_s, fetch=None):
     return {"code": code, "rate": rates["rates"][code] / rates["rates"]["USD"], "date": rates["date"], "error": ""}
 
 
-def plan_run_outs(hits):
-    """How often the plan ran out, and how many chats that stopped, from the
-    usage limits chats hit [(account, ms, when that limit resets or None,
-    chat)]: an account's plan is out from a hit until that limit resets (the
-    latest reset of the hits since, if one is later: a weekly limit hit while
-    a 5-hour one is out), so every hit on it until then, by any chat, again
-    and again, is the same time; one with no reset known holds it out for
-    LIMIT_EPISODE_MS. A chat stopped counts once each time. (times, chats stopped)"""
-    times, stops, out = 0, 0, {}  # (out: account -> [until when, the chats it stopped])
+def run_outs(hits):
+    """The times the plan ran out, from the usage limits chats hit [(account,
+    ms, when that limit resets or None, chat)]: an account's plan is out from
+    a hit until that limit resets (the latest reset of the hits since, if one
+    is later: a weekly limit hit while a 5-hour one is out), so every hit on
+    it until then, by any chat, again and again, is the same time; one with
+    no reset known holds it out for LIMIT_EPISODE_MS. [{"account", "from",
+    "until", "chats": {chat: when it first stopped then}}], in time order."""
+    runs, out = [], {}  # (out: account -> its run now)
     for account, t, resets, chat in sorted(hits, key=lambda h: h[1]):
         run = out.get(account)
-        if run is None or t >= run[0]:
-            run = out[account] = [t, set()]
-            times += 1
-        run[0] = max(run[0], resets if resets and resets > t else t + LIMIT_EPISODE_MS)
-        if chat not in run[1]:
-            run[1].add(chat)
-            stops += 1
-    return times, stops
+        if run is None or t >= run["until"]:
+            run = out[account] = {"account": account, "from": t, "until": t, "chats": {}}
+            runs.append(run)
+        run["until"] = max(run["until"], resets if resets and resets > t else t + LIMIT_EPISODE_MS)
+        run["chats"].setdefault(chat, t)
+    return runs
+
+
+def plan_run_outs(hits):
+    """(How often the plan ran out, how many chats that stopped: run_outs;
+    a chat stopped counts once each time)."""
+    runs = run_outs(hits)
+    return len(runs), sum(len(r["chats"]) for r in runs)
+
+
+def next_work(c, t):
+    """When a chat worked again after a usage limit stopped it at t: the start
+    of its next turn that no limit stopped (a try again that hit the limit
+    is no work), or None."""
+    stops = c["limits"]
+    for turn in c["turns"]:
+        s, e = turn[0], turn[1]
+        if s > t and not any(s <= x <= e + 1000 for x in stops):
+            return s
+    return None
+
+
+def held_ms(run, chats, lo, hi):
+    """How long a time the plan ran out held chats in [lo, hi): each chat it
+    stopped from its stop until the limit reset, or until that chat worked
+    again if earlier (you went on another way), the chats joined (on the
+    clock). chats: {chat key: chat}."""
+    spans = []
+    for key, t in run["chats"].items():
+        c = chats.get(key)
+        again = next_work(c, t) if c else None
+        spans.append([t, min(run["until"], again) if again is not None else run["until"]])
+    return int(covered(clipped(spans, lo, hi)))
+
+
+# ---------------------------------------------------------------- your plan
+# The Recap's Your plan: what these days meant for each account's plan, from
+# the readings of its windows Talpy Den keeps (this computer's accounts:
+# usage-past.json and usage.json, limit_readings without the snapshots) and
+# the usage limits its chats hit.
+
+
+def window_rises(w, baseline=False):
+    """What a window's readings say was used in it: [(ms, points)], each rise
+    of its steady readings (steady_readings: a stale one that comes back is
+    left out) over the highest before it, from 0% at its start (a first
+    reading with some used already: used since its start, before that
+    reading). baseline: the first reading of this window the account has
+    at all: when what it says was used isn't known, so it isn't counted. A
+    drop that holds is a change of the limits: the use after it rises from there."""
+    high, out = 0.0, []
+    for i, (t, p) in enumerate(steady_readings(sorted(w["points"].items()))):
+        if i == 0 and baseline:
+            high = p
+        elif p > high:
+            out.append((t, p - high))
+            high = p
+        elif p <= high - LIMIT_DROP_POINTS:
+            high = p
+    return out
+
+
+def account_rises(keys):
+    """{window key: (when its readings begin, [(ms, points)] in time order)}:
+    what an account's kept readings (limit_readings: {key: {slot: window}})
+    say was used of each of its windows, and when (window_rises)."""
+    out = {}
+    for key, slots in keys.items():
+        windows = [w for w in slots.values() if w["points"]]
+        if not windows:
+            continue
+        first = min(min(w["points"]) for w in windows)
+        out[key] = (first, sorted(r for w in windows for r in window_rises(w, min(w["points"]) == first)))
+    return out
+
+
+def risen(rises, lo, hi):
+    """The points of a window used in [lo, hi) (account_rises' list)."""
+    return sum(r for t, r in rises if lo <= t < hi)
+
+
+FULL_RESET_MS = 30 * 60_000  # a limit's reset this near a 5-hour window's end is that window's (a message rounds it)
+
+
+def full_windows(keys, lo, hi, hits=()):
+    """(The 5-hour windows that ran full in [lo, hi), the 5-hour windows begun
+    then with some used) of an account's kept readings: full, its steady
+    readings reached 100% then, or a usage limit stopped one of its chats
+    then that resets as the window ends (hits: [(ms, reset or None)]; the
+    last reading before a stop is often a little short of 100%)."""
+    full = used = 0
+    for w in (keys.get("five_hour") or {}).values():
+        pts = steady_readings(sorted(w["points"].items()))
+        start = w["resetsAt"] - cs.window_hours("five_hour") * HOUR_MS
+        if lo <= start < hi and any(p > 0 for _, p in pts):
+            used += 1
+        at = next((t for t, p in pts if p >= 100), None)
+        if at is None:
+            at = next((t for t, r in sorted(hits) if start <= t <= w["resetsAt"] and r
+                       and abs(r - w["resetsAt"]) <= FULL_RESET_MS), None)
+        if at is not None and lo <= at < hi:
+            full += 1
+    return full, used
+
+
+def plan_use(account, chats, rises, keys, lo, hi, now_ms):
+    """What [lo, hi) meant for an account's plan (account: {"id", "name",
+    "plan", "hosts"}; chats: the Recap's, keyed; rises: account_rises of its
+    kept readings, or None (an SSH host's account: none here); keys: those
+    readings): {"account", "name", "plan", "readings" (this computer keeps
+    readings of its windows), "since" (when its readings of the week begin),
+    "covered" (they cover these days whole), "weeks" ({weekly window: the
+    points of it used, from since if later}), "fiveFull", "fiveUsed"
+    (full_windows), "ranOut", "stopped" (run_outs), "heldMs" (held_ms)}."""
+    aid = account["id"]
+    mine = [c for c in chats.values() if aid in c["accounts"]]
+    hits = [(aid, t, (c.get("limitResets") or {}).get(str(t)), c["key"]) for c in mine for t in c["limits"] if lo <= t < hi]
+    runs = run_outs(hits)
+    until = min(hi, now_ms)
+    out = {"account": aid, "name": account["name"], "plan": account.get("plan"), "readings": rises is not None,
+           "since": None, "covered": False, "weeks": {}, "fiveFull": 0, "fiveUsed": 0, "ranOut": len(runs),
+           "stopped": sum(len(r["chats"]) for r in runs), "heldMs": sum(held_ms(r, chats, lo, until) for r in runs)}
+    if rises is None:
+        return out
+    since = rises["seven_day"][0] if "seven_day" in rises else None
+    out.update(since=since, covered=since is not None and since <= lo)
+    out["weeks"] = {key: round(risen(r, max(lo, first), hi), 1) for key, (first, r) in rises.items()
+                    if key.startswith("seven_day") and first < hi}
+    out["fiveFull"], out["fiveUsed"] = full_windows(keys, lo, hi, [(t, r) for _, t, r, _ in hits])
+    return out
+
+
+def week_shares(costs, totals, used):
+    """A project's or chat's share of each account's week in these days:
+    its part of the account's amount at API prices (costs: {account: $},
+    totals: the account's) times the points of its week these days used
+    (used: {account: points}, only where the readings cover them):
+    [{"account", "pct"}], the largest first. An estimate."""
+    out = [{"account": a, "pct": round(cost / totals[a] * used[a], 1)} for a, cost in costs.items()
+           if a in used and totals.get(a, 0) > 0 and cost > 0]
+    return sorted(out, key=lambda s: -s["pct"])
 
 
 def join_running(work):
@@ -3983,7 +4161,9 @@ def main(argv=None):
                           for x in [t[0] for t in c.get("turns", [])[:1]] + c.get("prompts", [])[:1]]
                 first_ms = min([first_ms] * (first_ms is not None) + starts) if starts else first_ms
             usage = plan_windows(cache_root, profiles, now_ms) if span == "day" and back == 0 else None  # (today's only)
-            result = recap(sources, back, account, now_ms, home, usage, load_added(cache_root), span, first_ms)
+            # (Your plan: the readings kept, cheap: the two files, not the snapshots --limits reads too)
+            readings, _ = limit_readings(cache_root, profiles, now_ms, {}, snapshots=False)
+            result = recap(sources, back, account, now_ms, home, usage, load_added(cache_root), span, first_ms, readings)
             result["currency"] = currency_of(currency, cache_root, now_ms / 1000)
     except Exception as exc:  # the widget must always get parseable output
         result = {"ok": False, "error": "{}: {}".format(type(exc).__name__, exc), "generatedAt": now_ms}

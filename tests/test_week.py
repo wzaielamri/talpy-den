@@ -143,14 +143,15 @@ class Home(unittest.TestCase):
         cache = self.scan(cache)
         return week.chats_between(cache, self.profiles(), self.now - days * week.DAY_MS, self.now + week.DAY_MS, self.home)
 
-    def recap(self, account="", back=0, extra=(), days=14, usage=None, added=(), span="week", kept_since=None):
-        """kept_since: when the Recap's first chat began, if earlier than the ones written (ms)."""
+    def recap(self, account="", back=0, extra=(), days=14, usage=None, added=(), span="week", kept_since=None, readings=None):
+        """kept_since: when the Recap's first chat began, if earlier than the ones written (ms);
+        readings: the plan windows' readings kept (limit_readings)."""
         cache = self.scan()
         chats = week.chats_between(cache, self.profiles(), self.now - days * week.DAY_MS, self.now + week.DAY_MS, self.home)
         _, accounts = week.account_ids(self.profiles())
         first = week.first_activity(cache)
         return week.recap([{"host": "", "chats": chats, "accounts": accounts}, *extra], back, account, self.now,
-                          self.home, usage, added, span, min(first, kept_since) if first and kept_since else first)
+                          self.home, usage, added, span, min(first, kept_since) if first and kept_since else first, readings)
 
 
 class PriceTests(unittest.TestCase):
@@ -985,9 +986,11 @@ class OneRefreshTests(unittest.TestCase):
         ui = ROOT / "package/contents/ui"
         refresh = self.body(r'text: i18n\("Refresh"\)\s+onClicked: \{(.*?)\n                \}',
                             (ui / "FullRepresentation.qml").read_text())
-        for read in ("root.loadWeek()", "root.loadPerms()", 'if (root.popupTab === "projects")\n                        root.loadProjects()'):
+        for read in ("root.rereadWeek()", "root.loadPerms()", 'if (root.popupTab === "projects")\n                        root.loadProjects()'):
             self.assertIn(read, refresh)
         main = (ui / "main.qml").read_text()
+        # (the Recap's days, and its limits over time once they're in view)
+        self.assertIn("loadWeek()", self.body(r"\n    function rereadWeek\(\) \{(.*?)\n    \}", main))
         self.assertIn('if (popupTab !== "week")\n            return', self.body(r"\n    function loadWeek\(\) \{(.*?)\n    \}", main))
         # (and the Recap once more, when the plan usage Refresh fetched came in)
         self.assertIn("usageAskedAt = Date.now()", self.body(r"\n    function fetchUsage\(\) \{(.*?)\n    \}", main))
@@ -1029,7 +1032,8 @@ class OneRefreshTests(unittest.TestCase):
         self.assertIn("this.onUsageCameInEmitter.fire();", self.body(r"\n  private usageWait\(\): void \{(.*?)\n  \}", dash))
         self.assertIn('dash.onUsageCameIn(() => this.broadcast({ type: "readAgain", recap: true }))', (vs / "src/view.ts").read_text())
         components = vs / "webview/components"
-        for name, read in (("WeekView.tsx", "useReadAgain(visible, ask, true);"), ("PermsView.tsx", "useReadAgain(visible, ask);"),
+        self.assertIn("ask();", self.body(r"\n  const again = \(\) => \{(.*?)\n  \};", (components / "WeekView.tsx").read_text()))
+        for name, read in (("WeekView.tsx", "useReadAgain(visible, again, true);"), ("PermsView.tsx", "useReadAgain(visible, ask);"),
                            ("ProjectsView.tsx", 'useReadAgain(visible, () => post({ type: "projects" }));')):
             with self.subTest(name=name):
                 source = (components / name).read_text()
@@ -1307,6 +1311,87 @@ class PlanTests(Home):
         plans = {p["name"]: p["windows"] for p in week.plan_windows(self.cache_root, profiles, t0 + 60_000)}
         self.assertEqual([(w["key"], w["pct"], w["resetsAt"], w["reset"], len(w["points"])) for w in plans["personal"]],
                          [("five_hour", 0, None, False, 0), ("seven_day", 96, resets, False, 2)])
+
+
+def at(day, hour, minute=0):
+    """A moment of October 2026, on this computer's clock (ms)."""
+    return int(datetime(2026, 10, day, hour, minute).timestamp() * 1000)
+
+
+class YourPlanTests(Home):
+    """The Recap's Your plan: what the days shown meant for each account's
+    plan, from the readings of its windows Talpy Den keeps, and the shares
+    of its week (now: Sat 24 Oct 18:00; the week shown: 18 to 24 Oct)."""
+
+    def setUp(self):
+        super().setUp()
+        profiles = self.profiles()
+        self.gid = {m.label: cs.short_id(g) for g, members in cs.group_profiles(profiles) for m in members}
+        work = self.gid["work"]
+        five = lambda resets, *points: {"group": work, "key": "five_hour", "plan": "Team", "resetsAt": resets,
+                                        "points": [list(p) for p in points]}
+        # work's weeks: one up to Tue 20 10:00 (its readings begin on the 13th:
+        # 40% by the 17th, then 10 a day), the next one since, with a stale
+        # reading on the 22nd (12%, back to 25% half an hour later) and a
+        # reading a point lower from another source: 10 + 15 + 5 used then,
+        # and 10 more today (usage.json, the window going on)
+        cs.write_json_atomic(self.cache_root / cs.USAGE_PAST_FILE, {"version": 1, "windows": [
+            {"group": work, "key": "seven_day", "plan": "Team", "resetsAt": at(20, 10),
+             "points": [[at(13, 10, 1), 0], [at(17, 12), 40], [at(18, 12), 50], [at(19, 12), 60]]},
+            five(at(22, 15), (at(22, 10, 5), 5), (at(22, 12), 100)),   # (ran full)
+            five(at(23, 17), (at(23, 12, 5), 10), (at(23, 13), 97)),   # (stopped at 97%: a chat's limit says it ran full)
+            five(at(24, 15), (at(24, 10, 30), 20), (at(24, 11), 60)),
+            five(at(10, 15), (at(10, 12), 100)),   # (before these days)
+        ]})
+        cs.write_json_atomic(self.cache_root / "usage.json", {"groups": {work: {"seven_day": {"resetsAt": at(27, 10), "points": [
+            [at(20, 11), 0], [at(21, 12), 10], [at(22, 12), 25], [at(22, 12, 30), 12], [at(22, 13), 25], [at(22, 14), 24],
+            [at(23, 12), 30], [at(24, 12), 40]]}}}})
+        # Thu 23 at 13:10 the 5-hour window ran out (it resets at 17:00): it
+        # stopped chat-a, which waited for the reset, and chat-b, which went
+        # on an hour later (you switched accounts); chat-a cost three times chat-b
+        self.write(Transcript("/w/app").prompt(at(23, 12, 50)).reply(at(23, 13), "a1", output=300_000, read=0, inp=0)
+                   .limit(at(23, 13, 10), resets=at(23, 17)), "chat-a")
+        self.write(Transcript("/w/lib").prompt(at(23, 12, 55)).limit(at(23, 13, 20), resets=at(23, 17))
+                   .prompt(at(23, 14, 20)).reply(at(23, 14, 21), "b1", output=100_000, read=0, inp=0), "chat-b")
+        # personal: a chat, and no readings of its plan kept
+        self.write(Transcript("/w/notes").prompt(at(24, 9)).reply(at(24, 9, 1), "c1", output=50_000), "chat-c", "personal")
+
+    def readings(self):
+        return week.limit_readings(self.cache_root, self.profiles(), self.now, {}, snapshots=False)[0]
+
+    def test_what_these_days_meant_for_your_plan(self):
+        r = self.recap(readings=self.readings())
+        work, personal = (next(u for u in r["planUse"] if u["name"] == n) for n in ("work", "personal"))
+        self.assertEqual((work["readings"], work["covered"], work["since"]), (True, True, at(13, 10, 1)))
+        self.assertEqual(work["weeks"], {"seven_day": 60.0})   # (20 of the first week, 40 of the next)
+        self.assertEqual((work["fiveFull"], work["fiveUsed"]), (2, 3))
+        # one time the plan ran out, two chats stopped, held from 13:10 to the reset at 17:00
+        self.assertEqual((work["ranOut"], work["stopped"], work["heldMs"]), (1, 2, 230 * MIN))
+        self.assertEqual((personal["readings"], personal["weeks"], personal["ranOut"]), (False, {}, 0))
+        # a day's share of the week: what its readings rose then
+        self.assertEqual([[s["pct"] for s in d["weekShare"]] for d in r["days"]],
+                         [[10.0], [10.0], [], [10.0], [15.0], [5.0], [10.0]])
+        # a project's and a chat's: its part of the account's amount, times the week these days used
+        projects = {p["name"]: p for p in r["projects"]}
+        self.assertEqual(projects["app"]["weekShare"], [{"account": self.gid["work"], "pct": 45.0}])
+        self.assertEqual(projects["lib"]["chats"][0]["weekShare"], [{"account": self.gid["work"], "pct": 15.0}])
+        self.assertEqual((projects["notes"]["weekShare"], projects["notes"]["accounts"]), ([], [self.gid["personal"]]))
+        # one account picked: its line only
+        self.assertEqual([u["name"] for u in self.recap(account=self.gid["personal"], readings=self.readings())["planUse"]],
+                         ["personal"])
+
+    def test_days_the_readings_dont_cover_have_no_shares(self):
+        # the 30 days began before the first reading kept (the 13th): what
+        # the readings say is from then, and no project has a share of a week
+        r = self.recap(readings=self.readings(), span="month", days=40)
+        work = next(u for u in r["planUse"] if u["name"] == "work")
+        self.assertEqual((work["covered"], work["weeks"]), (False, {"seven_day": 100.0}))
+        self.assertTrue(all(p["weekShare"] == [] for p in r["projects"]))
+        # with none kept at all (the history off, an SSH host's account): no readings, the rest still said
+        r = self.recap()
+        work = next(u for u in r["planUse"] if u["name"] == "work")
+        self.assertEqual((work["readings"], work["ranOut"], work["heldMs"]), (False, 1, 230 * MIN))
+        self.assertTrue(all(d["weekShare"] == [] for d in r["days"]))
 
 
 class LimitHistoryTests(Home):

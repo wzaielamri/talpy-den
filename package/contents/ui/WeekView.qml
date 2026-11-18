@@ -13,12 +13,12 @@ import "limits.mjs" as Limits
 // The Recap tab (main.qml: loadWeek, week.py): your last 7 days with Claude,
 // as a story: the big picture (how long you were at it, how long Claude
 // worked, your prompts, its tokens, the API prices), when (a day per row on
-// a timeline, your plan's limits over the same days, the day chat by chat),
-// what got done (by project, its chats with their commits and Claude's
-// recaps, and what Claude did in all), then the money (by model at API
-// prices, and what would make it use less of your plan: the rules of Claude
-// Code's own /usage). All of it read from the chat transcripts: no tokens,
-// nothing sent.
+// a timeline, the day chat by chat), what got done (by project, its chats
+// with their commits and Claude's recaps, and what Claude did in all), what
+// it meant for your plan, then the money (by model at API prices, and what
+// would make it use less of your plan: the rules of Claude Code's own
+// /usage); in Overall, last, your plan's limits over time. All of it read
+// from the chat transcripts: no tokens, nothing sent.
 PlasmaComponents3.ScrollView {
     id: view
 
@@ -173,7 +173,7 @@ PlasmaComponents3.ScrollView {
     function widest(texts) {
         return Math.ceil(Math.max(0, ...texts.map(t => smallMetrics.advanceWidth(t)))) + 1
     }
-    readonly property real projectNumbersWidth: widest(projects.map(numbersOf))
+    readonly property real projectNumbersWidth: widest(projects.map(projectNumbers))
     readonly property real projectDoneWidth: Math.min(gu * 7, widest(projects.map(doneText)))   // (1 when none got any)
     readonly property real modelNumbersWidth: widest(models.map(modelNumbers))
 
@@ -187,11 +187,25 @@ PlasmaComponents3.ScrollView {
         return kind === "time" ? hours(value) : kind === "money" ? money(value) : kind === "tokens" ? tokens(value) : count(value)
     }
 
-    // ---------------------------------------------------------------- advanced analyses
-    // How your limits changed (week.py --limits, main.qml: loadLimits): the
+    // ---------------------------------------------------------------- your plan's limits over time
+    // Overall's last section (week.py --limits, main.qml: loadLimits): the
     // same words as VS Code's src/shared/week.ts and GNOME's logic.js; the
-    // charts' places from limits.mjs
-    readonly property var limitsData: root.limitsAccount === root.weekAccount ? root.limitsData : null
+    // charts' places from limits.mjs. Its numbers are asked for only once it
+    // scrolls into view (the view's place against the section's: no timer),
+    // again for another account and after a Refresh or the tab's 10-minute
+    // read (root.limitsRound), never when the tab opens or the span changes
+    // (y 0: not placed by the page's layout yet, its height its own: it never comes first)
+    readonly property bool limitsInView: limitsSection.visible && limitsSection.y > 0
+        && contentItem.contentY + height > page.y + limitsSection.y
+        && contentItem.contentY < page.y + limitsSection.y + limitsSection.height
+    readonly property string limitsWant: limitsInView ? root.weekAccount + "|" + root.limitsRound : ""
+    onLimitsWantChanged: {
+        if (limitsWant !== "" && limitsWant !== root.limitsAskedFor)
+            root.loadLimits()
+    }
+    // (the last answer: while another is on its way, or it's another account's, dimmed)
+    readonly property var limitsData: root.limitsData
+    readonly property bool limitsDim: !!root.limitsData && (root.limitsBusy || root.limitsAccount !== root.weekAccount)
     readonly property var limitsShown: limitsData ? limitsData.accounts.filter(a => a.periods.length) : []
     readonly property bool limitsCompared: limitsShown.length > 1 && new Set(limitsShown.map(a => a.plan)).size > 1
     readonly property real limitsNow: limitsData ? limitsData.generatedAt : 0
@@ -563,6 +577,102 @@ PlasmaComponents3.ScrollView {
     // A plan window's color: as its bar in the Chats tab
     function planColor(pct) {
         return pct >= 90 ? Kirigami.Theme.negativeTextColor : pct >= 70 ? Kirigami.Theme.neutralTextColor : workColor
+    }
+
+    // ---------------------------------------------------------------- your plan
+    // What the days shown meant for each account's plan (week.py plan_use),
+    // and a project's, chat's or day's share of its week: the same words as
+    // VS Code's src/shared/week.ts
+    readonly property var planUse: recap && recap.planUse ? recap.planUse : []
+    // (its accounts: those with a line, then any with windows now and none)
+    readonly property var planIds: planUse.map(u => u.account)
+        .concat(plan.map(p => p.account).filter(id => !planUse.some(u => u.account === id)))
+
+    // "28%", "<1%": points of a week
+    function pointsText(v) {
+        return v > 0 && v < 0.5 ? "<1%" : Math.round(v) + "%"
+    }
+    // An account's line: "66% of the week used in these days · 3 full 5-hour
+    // windows · ran out 3 times, chats held 4h 10m"
+    function planUseText(u) {
+        const parts = []
+        const week = u.weeks ? u.weeks.seven_day : undefined
+        if (u.readings && week !== undefined)
+            parts.push(!u.covered && u.since ? i18n("%1 of the week used since %2", pointsText(week), limitDay(u.since))
+                       : recap.span !== "day" ? i18n("%1 of the week used in these days", pointsText(week))
+                       : recap.back === 0 ? i18n("%1 of the week used today", pointsText(week))
+                       : i18n("%1 of the week used on this day", pointsText(week)))
+        for (const key in (u.weeks || {})) {
+            const f = Limits.family(key) || key
+            if (key !== "seven_day" && u.weeks[key] > 0)
+                parts.push(i18nc("a share of a plan's weekly window of one model", "%1 of the %2 week", pointsText(u.weeks[key]),
+                                 f.charAt(0).toUpperCase() + f.slice(1)))
+        }
+        if (u.fiveFull)
+            parts.push(i18np("%1 full 5-hour window", "%1 full 5-hour windows", u.fiveFull))
+        else if (u.fiveUsed)
+            parts.push(i18n("no full 5-hour window"))
+        parts.push(!u.ranOut ? i18n("didn't run out")
+                   : (u.ranOut === 1 ? i18n("ran out once") : i18n("ran out %1 times", count(u.ranOut)))
+                     + (u.heldMs >= 60000 ? i18n(", chats held %1", hours(u.heldMs)) : ""))
+        if (!u.readings)
+            parts.push(i18n("no readings of its plan here"))
+        const text = parts.join(" · ")
+        return text.charAt(0).toUpperCase() + text.slice(1)
+    }
+    // Its tooltip: how each part is worked out
+    function planUseTip(u) {
+        const lines = []
+        if (u.readings && u.weeks && u.weeks.seven_day !== undefined)
+            lines.push(i18n("How much of your plan's week these days used: how far Talpy Den's readings of it rose (kept on this computer). Use on claude.ai, other computers and SSH hosts counts too.")
+                       + (!u.covered && u.since ? " " + i18n("The readings kept begin on %1: before that isn't known.", limitDay(u.since)) : ""))
+        if (u.fiveUsed)
+            lines.push(i18n("%1 of the %2 5-hour windows begun in these days ran full: their readings reached 100%, or a usage limit stopped a chat as one ended.",
+                            u.fiveFull, u.fiveUsed))
+        if (u.ranOut)
+            lines.push(i18n("Your plan ran out %1 (%2). From each stop until the limit reset, or until the chat went on another way, chats were held %3 in all, on the clock.",
+                            u.ranOut === 1 ? i18n("once") : i18n("%1 times", count(u.ranOut)),
+                            i18np("%1 chat stopped", "%1 chats stopped", u.stopped), hours(u.heldMs)))
+        if (!u.readings)
+            lines.push(i18n("Talpy Den keeps readings of the plans of this computer's accounts only: %1's has none here, so what these days used of its week isn't known.", u.name))
+        return lines.join("\n")
+    }
+    // A project's share of the week on its row: "≈ 28%" (its largest; "" for none)
+    function weekShareShort(x) {
+        const s = x.weekShare && x.weekShare.length ? x.weekShare[0] : null
+        return !s ? "" : s.pct < 0.5 ? "<1%" : "≈ " + Math.round(s.pct) + "%"
+    }
+    // A project's, chat's or day's share of each account's week, for its
+    // tooltip: how it's worked out (day: from the readings themselves), and
+    // why one of its accounts' is missing
+    function weekShareTip(x, day) {
+        const name = id => {
+            const u = planUse.find(v => v.account === id)
+            const a = accounts.find(v => v.id === id)
+            return u ? u.name : a ? a.name : id
+        }
+        const named = planUse.filter(u => u.readings).length > 1
+        const shares = x.weekShare || []
+        const lines = shares.map(s => (day ? "" : "≈ ") + (named ? i18n("%1 of %2's week", pointsText(s.pct), name(s.account))
+                                                                 : i18n("%1 of your week", pointsText(s.pct))))
+        if (lines.length)
+            lines.push(day ? i18n("As the readings of your plan's week rose then.")
+                           : i18n("An estimate: its part of these days' amount at API prices, times how much of the week these days used (Your plan)."))
+        for (const id of (x.accounts || [])) {
+            const u = planUse.find(v => v.account === id)
+            if (shares.some(s => s.account === id))
+                continue
+            if (!u || !u.readings)
+                lines.push(i18n("Its share of %1's week isn't known: no readings of that plan on this computer.", name(id)))
+            else if (!u.covered && u.since)
+                lines.push(i18n("Its share of %1's week isn't known: the readings of it kept begin on %2.", name(id), limitDay(u.since)))
+        }
+        return lines.join("\n")
+    }
+    // What a project's row says at its end: its time, amount and share of the week
+    function projectNumbers(p) {
+        const share = weekShareShort(p)
+        return numbersOf(p) + (share ? " · " + share : "")
     }
 
     readonly property var windowMs: ({ five_hour: 5 * 3600000, seven_day: 7 * 86400000, seven_day_opus: 7 * 86400000,
@@ -1154,6 +1264,7 @@ PlasmaComponents3.ScrollView {
                                          + "\n" + i18np("%1 prompt", "%1 prompts", dayRow.day.prompts)
                                          + " · " + i18n("%1 tokens", view.tokens(dayRow.day.tokenTotal))
                                          + " · " + i18n("%1 at API prices", view.money(dayRow.day.cost))
+                                         + (dayRow.day.weekShare && dayRow.day.weekShare.length ? "\n" + view.weekShareTip(dayRow.day, true) : "")
                             }
                         }
                     }
@@ -1188,13 +1299,416 @@ PlasmaComponents3.ScrollView {
             }
         }
 
-        // How full your plan's windows are now, and how they filled up
-        // (the widget's usage history); a limit that stopped a chat is a
-        // red mark on the days above
+        // The day, chat by chat (week.py: day_lanes): when each chat worked,
+        // waited for you (a permission, a question) or was paused (asleep, a
+        // limit); between its turns it was your turn. A name opens its chat.
+        ColumnLayout {
+            id: lanesBox
+            Layout.fillWidth: true
+            visible: view.hasData && view.lanes.length > 0
+            spacing: Math.round(view.gu * 0.2)
+            // the day's own row (you, Claude working, waiting, the limits), drawn on top
+            readonly property var day: view.dayLanes && view.days.length ? view.days[0] : view.emptyDay
+            readonly property var dayParts: (day.you || []).concat(day.work || [], day.wait || [])
+            readonly property real t0: !view.lanes.length ? 0
+                : Math.min.apply(null, view.lanes.map(l => l.parts[0][0]).concat(dayParts.map(p => p[0])))
+            readonly property real t1: !view.lanes.length ? 1
+                : Math.max.apply(null, view.lanes.map(l => l.parts[l.parts.length - 1][1]).concat(dayParts.map(p => p[1])))
+            readonly property real span: Math.max(60000, t1 - t0)
+            readonly property real nameWidth: Math.round(view.gu * 9)
+            readonly property real numbersWidth: view.widest(view.lanes.map(laneNumbers))
+            readonly property bool paused: view.lanes.some(l => l.parts.some(p => p[2] === "p"))
+            function laneNumbers(l) {
+                const ms = l.claudeMs || 0
+                return ms < 60000 && (l.cost || 0) < 0.01 ? "–"
+                    : (ms < 60000 ? i18nc("under a minute", "<1m") : view.hours(ms)) + " · " + view.money(l.cost || 0)
+            }
+            function place(ms, width) {
+                return (ms - t0) / span * width
+            }
+            function color(kind) {
+                return kind === "w" ? Kirigami.Theme.focusColor : kind === "y" ? Kirigami.Theme.neutralTextColor
+                                                                              : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
+            }
+
+            SectionTitle {
+                text: i18n("Chat by chat")
+            }
+            RowLayout {
+                spacing: Kirigami.Units.largeSpacing
+                Repeater {
+                    // (only what's drawn: you and the limits on the day's row, a pause on a chat's)
+                    model: (lanesBox.dayParts.length ? [["u", i18n("You")]] : [])
+                        .concat([["w", i18n("Claude worked")], ["y", i18n("Waited for you")]],
+                                lanesBox.paused ? [["p", i18n("Paused (asleep, a limit)")]] : [],
+                                (lanesBox.day.limits || []).length ? [["l", i18n("A usage limit stopped a chat")]] : [])
+                    delegate: RowLayout {
+                        required property var modelData
+                        spacing: Kirigami.Units.smallSpacing
+                        Rectangle {
+                            width: modelData[0] === "l" ? 2 : view.gu * 0.6
+                            height: view.gu * 0.6
+                            radius: modelData[0] === "l" ? 1 : 2
+                            color: modelData[0] === "u" ? view.youColor : modelData[0] === "l" ? view.limitColor : lanesBox.color(modelData[0])
+                        }
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            text: modelData[1]
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.8
+                        }
+                    }
+                }
+            }
+            // The day's own row: when you were at it (the thin bar on top), when
+            // Claude worked (darker where several chats did), when it waited
+            // for you, and where a usage limit stopped a chat
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+                visible: lanesBox.dayParts.length > 0
+
+                PlasmaComponents3.Label {
+                    textFormat: Text.PlainText
+                    Layout.preferredWidth: lanesBox.nameWidth
+                    text: i18n("All chats")
+                    elide: Text.ElideRight
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    font.bold: true
+                }
+                Item {
+                    id: dayTrack
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.round(view.gu * 0.75)
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 3
+                        color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
+                    }
+                    Repeater {
+                        model: (lanesBox.day.wait || []).length
+                        delegate: Rectangle {
+                            required property int index
+                            readonly property var part: lanesBox.day.wait[index] || [0, 0]
+                            x: lanesBox.place(part[0], dayTrack.width)
+                            y: dayTrack.height * 0.35
+                            width: Math.max(1.5, lanesBox.place(part[1], dayTrack.width) - x)
+                            height: dayTrack.height * 0.65
+                            radius: 2
+                            color: view.waitColor
+                        }
+                    }
+                    Repeater {
+                        model: (lanesBox.day.work || []).length
+                        delegate: Rectangle {
+                            required property int index
+                            readonly property var part: lanesBox.day.work[index] || [0, 0, 1]
+                            x: lanesBox.place(part[0], dayTrack.width)
+                            y: dayTrack.height * 0.35
+                            width: Math.max(1.5, lanesBox.place(part[1], dayTrack.width) - x)
+                            height: dayTrack.height * 0.65
+                            radius: 2
+                            color: view.workColor
+                            opacity: part[2] >= 3 ? 1 : part[2] === 2 ? 0.8 : 0.6
+                        }
+                    }
+                    Repeater {
+                        model: (lanesBox.day.you || []).length
+                        delegate: Rectangle {
+                            required property int index
+                            readonly property var part: lanesBox.day.you[index] || [0, 0]
+                            x: lanesBox.place(part[0], dayTrack.width)
+                            width: Math.max(1.5, lanesBox.place(part[1], dayTrack.width) - x)
+                            height: dayTrack.height * 0.25
+                            radius: 1
+                            color: view.youColor
+                        }
+                    }
+                    Repeater {
+                        model: (lanesBox.day.limits || []).length
+                        delegate: Rectangle {
+                            required property int index
+                            x: lanesBox.place(lanesBox.day.limits[index] || 0, dayTrack.width) - 1
+                            width: 2
+                            height: dayTrack.height
+                            color: view.limitColor
+                        }
+                    }
+                    PlasmaCore.ToolTipArea {
+                        textFormat: Text.PlainText
+                        anchors.fill: parent
+                        mainText: i18n("All chats")
+                        subText: i18n("You: %1 · Claude worked %2 (on the clock %3) · it waited %4 for you",
+                                      view.hours(lanesBox.day.youMs || 0), view.hours(lanesBox.day.workedMs || 0),
+                                      view.hours(lanesBox.day.busyMs || 0), view.hours(lanesBox.day.waitMs || 0))
+                    }
+                }
+                Item {
+                    Layout.preferredWidth: lanesBox.numbersWidth
+                }
+            }
+            Repeater {
+                model: view.lanes.length
+                delegate: RowLayout {
+                    id: laneRow
+                    required property int index
+                    readonly property var lane: view.lanes[index] || ({ name: "", parts: [], workedMs: 0, waitedMs: 0, id: "", host: "" })
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.preferredWidth: lanesBox.nameWidth
+                        text: (laneRow.lane.host ? root.hostLabel(laneRow.lane.host) + ": " : "") + laneRow.lane.name
+                        elide: Text.ElideRight
+                        font: Kirigami.Theme.smallFont
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !laneRow.lane.host && !!laneRow.lane.id   // (an SSH host's chat: its row in the Chats tab opens it)
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: root.openChatById(laneRow.lane.id, laneRow.lane.profileDir || "", "", "", "", "")
+                        }
+                    }
+                    Item {
+                        id: laneTrack
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.round(view.gu * 0.75)
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 3
+                            color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
+                        }
+                        Repeater {
+                            model: laneRow.lane.parts.length
+                            delegate: Rectangle {
+                                required property int index
+                                readonly property var part: laneRow.lane.parts[index] || [0, 0, "w"]
+                                x: (part[0] - lanesBox.t0) / lanesBox.span * laneTrack.width
+                                width: Math.max(1.5, (part[1] - part[0]) / lanesBox.span * laneTrack.width)
+                                height: laneTrack.height
+                                radius: 2
+                                color: lanesBox.color(part[2])
+                            }
+                        }
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: laneRow.lane.name
+                            subText: i18n("Claude worked %1, waited for you %2", view.hours(laneRow.lane.workedMs), view.hours(laneRow.lane.waitedMs))
+                                     + (laneRow.lane.project ? "\n" + laneRow.lane.project : "")
+                        }
+                    }
+                    // (what Claude worked on it today, by its own count, and its cost)
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.preferredWidth: lanesBox.numbersWidth
+                        horizontalAlignment: Text.AlignRight
+                        text: lanesBox.laneNumbers(laneRow.lane)
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.8
+                    }
+                }
+            }
+            RowLayout {
+                Layout.leftMargin: lanesBox.nameWidth + Kirigami.Units.smallSpacing
+                Layout.rightMargin: lanesBox.numbersWidth + Kirigami.Units.smallSpacing
+                PlasmaComponents3.Label {
+                    textFormat: Text.PlainText
+                    text: root.clockText(lanesBox.t0)
+                    font: Kirigami.Theme.smallFont
+                    opacity: 0.6
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+                PlasmaComponents3.Label {
+                    textFormat: Text.PlainText
+                    text: root.clockText(lanesBox.t1)
+                    font: Kirigami.Theme.smallFont
+                    opacity: 0.6
+                }
+            }
+        }
+
+        // What got done, by project (a chat started in a subfolder of a
+        // repository counts for the repository): its commits and the files
+        // Claude's edits changed, its time and amount. A click unfolds its
+        // chats in place, each with Claude's recap of it and its commits (here
+        // and on an SSH host alike); the button at a row's end opens one of
+        // this computer's in the Projects tab. Under the list, what Claude did
+        // in all, dim.
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: view.hasData && (view.projects.length > 0 || view.workText() !== "")
+            spacing: Math.round(view.gu * 0.2)
+
+            SectionTitle {
+                text: i18n("What got done")
+            }
+            Repeater {
+                model: view.projects.length
+                delegate: ColumnLayout {
+                    id: projectRow
+                    required property int index
+                    readonly property var project: view.projects[index] || view.emptyProject
+                    readonly property string key: project.host + "|" + project.path
+                    readonly property bool open: view.openProject === key
+                    readonly property string shareTip: view.weekShareTip(project, false)   // (its share of your week)
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    Item {
+                        Layout.fillWidth: true
+                        implicitHeight: projectLine.implicitHeight
+
+                        MouseArea {   // (under the row's button: a click on it is the button's)
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: view.openProject = projectRow.open ? "" : projectRow.key
+
+                            PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                anchors.fill: parent
+                                mainText: (projectRow.project.host ? root.hostLabel(projectRow.project.host) + ": " : "") + projectRow.project.path
+                                subText: i18n("Claude worked %1 · %2 at API prices", view.hours(projectRow.project.workedMs),
+                                              view.money(projectRow.project.cost))
+                                         + "\n" + i18np("%1 prompt", "%1 prompts", projectRow.project.prompts)
+                                         + " · " + i18np("%1 chat", "%1 chats", projectRow.project.chatCount)
+                                         + view.doneTip(projectRow.project)
+                                         + (projectRow.shareTip ? "\n" + projectRow.shareTip : "")
+                                         + "\n\n" + (projectRow.open ? i18n("Click to fold its chats.") : i18n("Click for its chats: what each got done."))
+                            }
+                        }
+                        RowLayout {
+                            id: projectLine
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            spacing: Kirigami.Units.smallSpacing
+
+                            Kirigami.Icon {
+                                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                                source: projectRow.open ? Icons.plasma.unfolded : Icons.plasma.folded
+                                opacity: 0.6
+                            }
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.preferredWidth: view.projectNameWidth
+                                text: (projectRow.project.host ? root.hostLabel(projectRow.project.host) + ": " : "") + projectRow.project.name
+                                elide: Text.ElideMiddle
+                                font.bold: projectRow.open
+                            }
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.preferredWidth: view.projectDoneWidth
+                                visible: view.projectDoneWidth > 1
+                                text: view.doneText(projectRow.project)
+                                elide: Text.ElideRight
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.6
+                            }
+                            Rectangle {   // (its track: where all of it would end)
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.round(view.gu * 0.4)
+                                radius: height / 2
+                                color: view.track
+
+                                Rectangle {
+                                    width: Math.max(2, parent.width * projectRow.project.workedMs / view.maxProject)
+                                    height: parent.height
+                                    radius: height / 2
+                                    color: view.workColor
+                                    opacity: 0.8
+                                }
+                            }
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.preferredWidth: view.projectNumbersWidth
+                                horizontalAlignment: Text.AlignRight
+                                text: view.projectNumbers(projectRow.project)
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.8
+                            }
+                            // (this computer's: to the Projects tab; an SSH host's has its room, so the numbers line up)
+                            HoverButton {
+                                id: toProjects
+                                usable: !projectRow.project.host
+                                opacity: usable ? 1 : 0
+                                icon.name: Icons.plasma.project
+                                text: i18n("Open in the Projects tab")
+                                onClicked: root.showProject(projectRow.project.folder || projectRow.project.path)
+
+                                PlasmaCore.ToolTipArea {
+                                    textFormat: Text.PlainText
+                                    anchors.fill: parent
+                                    active: toProjects.usable
+                                    mainText: i18n("Open in the Projects tab")
+                                    subText: i18n("All its chats, plans and memories.")
+                                }
+                            }
+                        }
+                    }
+                    Repeater {   // (made while it's unfolded)
+                        id: projectChats
+                        readonly property var list: projectRow.open ? projectRow.project.chats : []
+                        readonly property real doneWidth: Math.min(view.gu * 7, view.widest(list.map(view.doneText)))
+                        readonly property real numbersWidth: view.widest(list.map(view.numbersOf))
+                        model: list.length
+                        delegate: WeekDoneChat {
+                            required property int index
+                            chat: projectChats.list[index] || view.emptyChat
+                            where: view.doneText(chat)
+                            indent: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
+                            numbers: view.numbersOf(chat)
+                            tip: view.weekShareTip(chat, false)
+                            whereWidth: projectChats.doneWidth
+                            numbersWidth: projectChats.numbersWidth
+                        }
+                    }
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing * 2
+                        visible: projectRow.open && projectRow.project.chatCount > projectRow.project.chats.length
+                        text: i18np("and %1 more chat", "and %1 more chats",
+                                    projectRow.project.chatCount - projectRow.project.chats.length)
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.6
+                    }
+                }
+            }
+            // What Claude did in all: its tool calls, commands, edits, subagents
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                Layout.topMargin: Math.round(view.gu * 0.2)
+                visible: text !== ""
+                wrapMode: Text.Wrap
+                text: view.workText()
+                font: Kirigami.Theme.smallFont
+                opacity: 0.6
+
+                PlasmaCore.ToolTipArea {
+                    textFormat: Text.PlainText
+                    anchors.fill: parent
+                    mainText: i18n("What Claude did")
+                    subText: view.workBeforeText()
+                }
+            }
+        }
+
+        // Your plan: what these days meant for each account's plan (week.py
+        // plan_use: how much of its week they used, its full 5-hour windows,
+        // how often it ran out and how long that held chats), its line's
+        // tooltip how each is worked out; on today's Day its windows now
+        // under it, how they filled up (the widget's usage history)
         ColumnLayout {
             id: planSection
             Layout.fillWidth: true
-            visible: view.hasData && view.plan.length > 0
+            visible: view.hasData && view.planIds.length > 0
             spacing: Math.round(view.gu * 0.2)
             // (the widest text beside the bars, for all of them: the bars get one length)
             readonly property real textWidth: {
@@ -1210,17 +1724,45 @@ PlasmaComponents3.ScrollView {
                 font: Kirigami.Theme.smallFont
             }
             SectionTitle {
-                text: i18n("Your plan's limits now")
+                text: i18n("Your plan")
             }
             Repeater {
-                model: view.plan.length
+                model: view.planIds.length
                 delegate: ColumnLayout {
                     id: planAccount
                     required property int index
-                    readonly property var account: view.plan[index] || ({ name: "", windows: [] })
+                    readonly property string id: view.planIds[index] || ""
+                    readonly property var use: view.planUse.find(u => u.account === id) || null
+                    readonly property var account: view.plan.find(p => p.account === id) || ({ name: "", windows: [] })
+                    readonly property var known: view.accounts.find(a => a.id === id) || null
+                    readonly property string plan: use && use.plan ? use.plan : known && known.plan ? known.plan : ""
                     Layout.fillWidth: true
+                    Layout.topMargin: index > 0 ? Math.round(view.gu * 0.3) : 0
                     spacing: Math.round(view.gu * 0.2)
 
+                    PlasmaComponents3.Label {   // (two accounts or more: whose)
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        visible: view.planIds.length > 1
+                        text: (planAccount.use ? planAccount.use.name : planAccount.account.name)
+                              + (planAccount.plan ? " · " + planAccount.plan : "")
+                        font.bold: true
+                        elide: Text.ElideRight
+                    }
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        visible: !!planAccount.use
+                        text: planAccount.use ? view.planUseText(planAccount.use) : ""
+                        wrapMode: Text.Wrap
+
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: i18n("Your plan")
+                            subText: planAccount.use ? view.planUseTip(planAccount.use) : ""
+                        }
+                    }
                     Repeater {
                         model: planAccount.account.windows.length
                         delegate: RowLayout {
@@ -1235,8 +1777,8 @@ PlasmaComponents3.ScrollView {
 
                             PlasmaComponents3.Label {
                                 textFormat: Text.PlainText
-                                Layout.preferredWidth: view.gu * 7
-                                text: (view.plan.length > 1 ? planAccount.account.name + " · " : "") + planRow.win.label
+                                Layout.preferredWidth: view.gu * 4
+                                text: planRow.win.label
                                 elide: Text.ElideRight
                             }
                             // how the window filled up, from its start to its reset
@@ -1308,13 +1850,193 @@ PlasmaComponents3.ScrollView {
             }
         }
 
-        // Your plan's limits over time (folded until you open it), right after
-        // the limits now: how much a full window of each account's plan held,
-        // week by week, and how that changed
+        // What it'd cost on the API, by model
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: view.hasData && view.models.length > 0
+            spacing: Math.round(view.gu * 0.2)
+
+            SectionTitle {
+                text: i18n("By model")
+            }
+            Repeater {
+                model: view.models.length
+                delegate: RowLayout {
+                    id: modelRow
+                    required property int index
+                    readonly property var entry: view.models[index] || view.emptyModel
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.preferredWidth: view.gu * 7
+                        text: modelRow.entry.model
+                        elide: Text.ElideRight
+                    }
+                    Rectangle {   // (its track: where all of it would end)
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.round(view.gu * 0.4)
+                        radius: height / 2
+                        color: view.track
+
+                        Rectangle {
+                            width: Math.max(2, parent.width * modelRow.entry.share)
+                            height: parent.height
+                            radius: height / 2
+                            color: view.youColor
+                        }
+                    }
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.preferredWidth: view.modelNumbersWidth
+                        horizontalAlignment: Text.AlignRight
+                        text: view.modelNumbers(modelRow.entry)
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.8
+
+                        // (only a guessed price's row says so: made only for it)
+                        Loader {
+                            anchors.fill: parent
+                            active: !!modelRow.entry.guessed
+                            sourceComponent: PlasmaCore.ToolTipArea {
+                                textFormat: Text.PlainText
+                                mainText: modelRow.entry.model
+                                subText: view.guessedModelTip(modelRow.entry)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // What would use less of your plan (Claude Code's /usage rules, coming
+        // back to chats whose cache had expired, waits, limits); too little
+        // in these days: a dim line instead (week.py: tooLittle)
+        ColumnLayout {
+            id: tipsBox
+            Layout.fillWidth: true
+            visible: view.hasData
+            spacing: Kirigami.Units.smallSpacing
+            // (the commands in one column as wide as the widest, "Copied"
+            // too: the shares before them line up; monospace, so the longest)
+            readonly property real commandWidth: view.tips.some(t => t.command) ? commandProbe.implicitWidth : 0
+
+            PlasmaComponents3.ToolButton {
+                id: commandProbe
+                visible: false
+                font.family: "monospace"
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                text: view.tips.map(t => t.command || "").concat([i18n("Copied")]).reduce((a, b) => b.length > a.length ? b : a, "")
+            }
+            SectionTitle {
+                text: i18n("What could use less of your plan")
+            }
+            PlasmaComponents3.Label {
+                textFormat: Text.PlainText
+                Layout.fillWidth: true
+                visible: view.tips.length === 0
+                wrapMode: Text.Wrap
+                opacity: 0.7
+                text: view.recap && view.recap.tooLittle ? i18n("Too little here to go on: tips need 20 prompts or an hour of Claude's work.")
+                                                         : i18n("Nothing stands out: no habit takes a tenth of the usage shown.")
+            }
+            Repeater {
+                model: view.tips.length
+                delegate: RowLayout {
+                    id: tipRow
+                    required property int index
+                    readonly property var tip: view.tips[index] || view.emptyTip
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Kirigami.Icon {
+                        Layout.alignment: Qt.AlignTop
+                        Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                        Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                        source: view.tipIcon(tipRow.tip.key)
+                        opacity: 0.8
+
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: view.tipSource(tipRow.tip.key)
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                            text: tipRow.tip.title
+                        }
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            Layout.fillWidth: true
+                            visible: text !== ""
+                            wrapMode: Text.Wrap
+                            text: tipRow.tip.detail
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.7
+                        }
+                    }
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.alignment: Qt.AlignTop
+                        visible: tipRow.tip.pct !== null && tipRow.tip.pct !== undefined
+                        text: view.tipShareText(tipRow.tip)
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.8
+
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: view.tipShareMain(tipRow.tip)
+                            subText: view.tipShareTip(tipRow.tip)
+                        }
+                    }
+                    Item {   // (no command: its room, so the share stands where the others do)
+                        visible: tipRow.tip.command === "" && tipsBox.commandWidth > 0
+                        Layout.preferredWidth: tipsBox.commandWidth
+                    }
+                    PlasmaComponents3.ToolButton {
+                        Layout.alignment: Qt.AlignTop
+                        Layout.preferredWidth: tipsBox.commandWidth
+                        visible: tipRow.tip.command !== ""
+                        text: view.copied === tipRow.tip.command && tipRow.tip.command ? i18n("Copied") : tipRow.tip.command
+                        font.family: "monospace"
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        onClicked: {
+                            clipboard.put(tipRow.tip.command)
+                            view.copied = tipRow.tip.command
+                            copiedTimer.restart()
+                        }
+
+                        PlasmaCore.ToolTipArea {
+                            textFormat: Text.PlainText
+                            anchors.fill: parent
+                            mainText: i18n("Copy %1", tipRow.tip.command)
+                            subText: i18n("Type it in a chat of yours.")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Your plan's limits over time, Overall's last section (it's the same
+        // whatever the span; the other spans' Your plan says what the plan
+        // meant for their days): how much a full window of each account's
+        // plan held, week by week, and how that changed. Read only once it
+        // scrolls into view (limitsWant); while its numbers come, a dim line
+        // with room kept (what was read before stays, dimmed)
         ColumnLayout {
             id: limitsSection
             Layout.fillWidth: true
-            visible: view.hasData && view.recap.back === 0
+            visible: view.hasData && view.recap.span === "all"
+            opacity: view.limitsDim ? 0.6 : 1
             spacing: Math.round(view.gu * 0.2)
 
             ColumnLayout {
@@ -1325,48 +2047,32 @@ PlasmaComponents3.ScrollView {
                 Kirigami.Separator {
                     Layout.fillWidth: true
                 }
-                Item {
+                RowLayout {
                     Layout.fillWidth: true
-                    implicitHeight: limitsHead.implicitHeight
+                    spacing: Kirigami.Units.smallSpacing
 
-                    RowLayout {
-                        id: limitsHead
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        spacing: Kirigami.Units.smallSpacing
-
-                        Kirigami.Icon {
-                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                            Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                            source: root.limitsOpen ? Icons.plasma.unfolded : Icons.plasma.folded
-                            opacity: 0.6
-                        }
-                        Kirigami.Heading {
-                            textFormat: Text.PlainText
-                            level: 2
-                            font.weight: Font.Bold
-                            text: i18n("Your plan's limits over time")
-                        }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            text: "· " + i18n("estimates")
-                            elide: Text.ElideRight
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.6
-                        }
+                    Kirigami.Heading {
+                        textFormat: Text.PlainText
+                        level: 2
+                        font.weight: Font.Bold
+                        text: i18n("Your plan's limits over time")
                     }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.toggleLimits()
+                    PlasmaComponents3.Label {
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        text: "· " + i18n("estimates")
+                        elide: Text.ElideRight
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.6
                     }
                 }
             }
             PlasmaComponents3.Label {
                 textFormat: Text.PlainText
                 Layout.fillWidth: true
-                visible: root.limitsOpen && !view.limitsData
+                Layout.preferredHeight: view.limitsData ? implicitHeight : view.gu * 8
+                visible: !view.limitsData || root.limitsError !== ""
+                verticalAlignment: Text.AlignTop
                 text: root.limitsError ? i18n("Couldn't work it out: %1", root.limitsError)
                                        : i18n("Working out how much your plan's windows held, from your chats and the limit readings kept.")
                 color: root.limitsError ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
@@ -1376,7 +2082,7 @@ PlasmaComponents3.ScrollView {
             PlasmaComponents3.Label {
                 textFormat: Text.PlainText
                 Layout.fillWidth: true
-                visible: root.limitsOpen && !!view.limitsData && view.limitsShown.length === 0
+                visible: !!view.limitsData && view.limitsShown.length === 0
                 text: i18n("Not enough readings yet: a few 5-hour windows used past half tell how much one holds.")
                 opacity: 0.6
                 wrapMode: Text.Wrap
@@ -1384,7 +2090,7 @@ PlasmaComponents3.ScrollView {
             // (two plans or more: side by side)
             GridLayout {
                 Layout.fillWidth: true
-                visible: root.limitsOpen && view.limitsCompared
+                visible: view.limitsCompared
                 columns: 4
                 columnSpacing: Kirigami.Units.largeSpacing
                 rowSpacing: 0
@@ -1420,7 +2126,7 @@ PlasmaComponents3.ScrollView {
                 }
             }
             Repeater {
-                model: root.limitsOpen ? view.limitsShown.length : 0
+                model: view.limitsShown.length
                 delegate: ColumnLayout {
                     id: limitsOf
                     required property int index
@@ -1795,585 +2501,11 @@ PlasmaComponents3.ScrollView {
                 textFormat: Text.PlainText
                 Layout.fillWidth: true
                 Layout.topMargin: Math.round(view.gu * 0.3)
-                visible: root.limitsOpen && view.limitsShown.length > 0
+                visible: view.limitsShown.length > 0
                 text: view.limitsData ? view.limitFootText(view.limitsData) : ""
                 font: Kirigami.Theme.smallFont
                 opacity: 0.6
                 wrapMode: Text.Wrap
-            }
-        }
-
-        // The day, chat by chat (week.py: day_lanes): when each chat worked,
-        // waited for you (a permission, a question) or was paused (asleep, a
-        // limit); between its turns it was your turn. A name opens its chat.
-        ColumnLayout {
-            id: lanesBox
-            Layout.fillWidth: true
-            visible: view.hasData && view.lanes.length > 0
-            spacing: Math.round(view.gu * 0.2)
-            // the day's own row (you, Claude working, waiting, the limits), drawn on top
-            readonly property var day: view.dayLanes && view.days.length ? view.days[0] : view.emptyDay
-            readonly property var dayParts: (day.you || []).concat(day.work || [], day.wait || [])
-            readonly property real t0: !view.lanes.length ? 0
-                : Math.min.apply(null, view.lanes.map(l => l.parts[0][0]).concat(dayParts.map(p => p[0])))
-            readonly property real t1: !view.lanes.length ? 1
-                : Math.max.apply(null, view.lanes.map(l => l.parts[l.parts.length - 1][1]).concat(dayParts.map(p => p[1])))
-            readonly property real span: Math.max(60000, t1 - t0)
-            readonly property real nameWidth: Math.round(view.gu * 9)
-            readonly property real numbersWidth: view.widest(view.lanes.map(laneNumbers))
-            readonly property bool paused: view.lanes.some(l => l.parts.some(p => p[2] === "p"))
-            function laneNumbers(l) {
-                const ms = l.claudeMs || 0
-                return ms < 60000 && (l.cost || 0) < 0.01 ? "–"
-                    : (ms < 60000 ? i18nc("under a minute", "<1m") : view.hours(ms)) + " · " + view.money(l.cost || 0)
-            }
-            function place(ms, width) {
-                return (ms - t0) / span * width
-            }
-            function color(kind) {
-                return kind === "w" ? Kirigami.Theme.focusColor : kind === "y" ? Kirigami.Theme.neutralTextColor
-                                                                              : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
-            }
-
-            SectionTitle {
-                text: i18n("Chat by chat")
-            }
-            RowLayout {
-                spacing: Kirigami.Units.largeSpacing
-                Repeater {
-                    // (only what's drawn: you and the limits on the day's row, a pause on a chat's)
-                    model: (lanesBox.dayParts.length ? [["u", i18n("You")]] : [])
-                        .concat([["w", i18n("Claude worked")], ["y", i18n("Waited for you")]],
-                                lanesBox.paused ? [["p", i18n("Paused (asleep, a limit)")]] : [],
-                                (lanesBox.day.limits || []).length ? [["l", i18n("A usage limit stopped a chat")]] : [])
-                    delegate: RowLayout {
-                        required property var modelData
-                        spacing: Kirigami.Units.smallSpacing
-                        Rectangle {
-                            width: modelData[0] === "l" ? 2 : view.gu * 0.6
-                            height: view.gu * 0.6
-                            radius: modelData[0] === "l" ? 1 : 2
-                            color: modelData[0] === "u" ? view.youColor : modelData[0] === "l" ? view.limitColor : lanesBox.color(modelData[0])
-                        }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            text: modelData[1]
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.8
-                        }
-                    }
-                }
-            }
-            // The day's own row: when you were at it (the thin bar on top), when
-            // Claude worked (darker where several chats did), when it waited
-            // for you, and where a usage limit stopped a chat
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Kirigami.Units.smallSpacing
-                visible: lanesBox.dayParts.length > 0
-
-                PlasmaComponents3.Label {
-                    textFormat: Text.PlainText
-                    Layout.preferredWidth: lanesBox.nameWidth
-                    text: i18n("All chats")
-                    elide: Text.ElideRight
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
-                    font.bold: true
-                }
-                Item {
-                    id: dayTrack
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: Math.round(view.gu * 0.75)
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 3
-                        color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
-                    }
-                    Repeater {
-                        model: (lanesBox.day.wait || []).length
-                        delegate: Rectangle {
-                            required property int index
-                            readonly property var part: lanesBox.day.wait[index] || [0, 0]
-                            x: lanesBox.place(part[0], dayTrack.width)
-                            y: dayTrack.height * 0.35
-                            width: Math.max(1.5, lanesBox.place(part[1], dayTrack.width) - x)
-                            height: dayTrack.height * 0.65
-                            radius: 2
-                            color: view.waitColor
-                        }
-                    }
-                    Repeater {
-                        model: (lanesBox.day.work || []).length
-                        delegate: Rectangle {
-                            required property int index
-                            readonly property var part: lanesBox.day.work[index] || [0, 0, 1]
-                            x: lanesBox.place(part[0], dayTrack.width)
-                            y: dayTrack.height * 0.35
-                            width: Math.max(1.5, lanesBox.place(part[1], dayTrack.width) - x)
-                            height: dayTrack.height * 0.65
-                            radius: 2
-                            color: view.workColor
-                            opacity: part[2] >= 3 ? 1 : part[2] === 2 ? 0.8 : 0.6
-                        }
-                    }
-                    Repeater {
-                        model: (lanesBox.day.you || []).length
-                        delegate: Rectangle {
-                            required property int index
-                            readonly property var part: lanesBox.day.you[index] || [0, 0]
-                            x: lanesBox.place(part[0], dayTrack.width)
-                            width: Math.max(1.5, lanesBox.place(part[1], dayTrack.width) - x)
-                            height: dayTrack.height * 0.25
-                            radius: 1
-                            color: view.youColor
-                        }
-                    }
-                    Repeater {
-                        model: (lanesBox.day.limits || []).length
-                        delegate: Rectangle {
-                            required property int index
-                            x: lanesBox.place(lanesBox.day.limits[index] || 0, dayTrack.width) - 1
-                            width: 2
-                            height: dayTrack.height
-                            color: view.limitColor
-                        }
-                    }
-                    PlasmaCore.ToolTipArea {
-                        textFormat: Text.PlainText
-                        anchors.fill: parent
-                        mainText: i18n("All chats")
-                        subText: i18n("You: %1 · Claude worked %2 (on the clock %3) · it waited %4 for you",
-                                      view.hours(lanesBox.day.youMs || 0), view.hours(lanesBox.day.workedMs || 0),
-                                      view.hours(lanesBox.day.busyMs || 0), view.hours(lanesBox.day.waitMs || 0))
-                    }
-                }
-                Item {
-                    Layout.preferredWidth: lanesBox.numbersWidth
-                }
-            }
-            Repeater {
-                model: view.lanes.length
-                delegate: RowLayout {
-                    id: laneRow
-                    required property int index
-                    readonly property var lane: view.lanes[index] || ({ name: "", parts: [], workedMs: 0, waitedMs: 0, id: "", host: "" })
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.preferredWidth: lanesBox.nameWidth
-                        text: (laneRow.lane.host ? root.hostLabel(laneRow.lane.host) + ": " : "") + laneRow.lane.name
-                        elide: Text.ElideRight
-                        font: Kirigami.Theme.smallFont
-
-                        MouseArea {
-                            anchors.fill: parent
-                            enabled: !laneRow.lane.host && !!laneRow.lane.id   // (an SSH host's chat: its row in the Chats tab opens it)
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: root.openChatById(laneRow.lane.id, laneRow.lane.profileDir || "", "", "", "", "")
-                        }
-                    }
-                    Item {
-                        id: laneTrack
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: Math.round(view.gu * 0.75)
-
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 3
-                            color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
-                        }
-                        Repeater {
-                            model: laneRow.lane.parts.length
-                            delegate: Rectangle {
-                                required property int index
-                                readonly property var part: laneRow.lane.parts[index] || [0, 0, "w"]
-                                x: (part[0] - lanesBox.t0) / lanesBox.span * laneTrack.width
-                                width: Math.max(1.5, (part[1] - part[0]) / lanesBox.span * laneTrack.width)
-                                height: laneTrack.height
-                                radius: 2
-                                color: lanesBox.color(part[2])
-                            }
-                        }
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: laneRow.lane.name
-                            subText: i18n("Claude worked %1, waited for you %2", view.hours(laneRow.lane.workedMs), view.hours(laneRow.lane.waitedMs))
-                                     + (laneRow.lane.project ? "\n" + laneRow.lane.project : "")
-                        }
-                    }
-                    // (what Claude worked on it today, by its own count, and its cost)
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.preferredWidth: lanesBox.numbersWidth
-                        horizontalAlignment: Text.AlignRight
-                        text: lanesBox.laneNumbers(laneRow.lane)
-                        font: Kirigami.Theme.smallFont
-                        opacity: 0.8
-                    }
-                }
-            }
-            RowLayout {
-                Layout.leftMargin: lanesBox.nameWidth + Kirigami.Units.smallSpacing
-                Layout.rightMargin: lanesBox.numbersWidth + Kirigami.Units.smallSpacing
-                PlasmaComponents3.Label {
-                    textFormat: Text.PlainText
-                    text: root.clockText(lanesBox.t0)
-                    font: Kirigami.Theme.smallFont
-                    opacity: 0.6
-                }
-                Item {
-                    Layout.fillWidth: true
-                }
-                PlasmaComponents3.Label {
-                    textFormat: Text.PlainText
-                    text: root.clockText(lanesBox.t1)
-                    font: Kirigami.Theme.smallFont
-                    opacity: 0.6
-                }
-            }
-        }
-
-        // What got done, by project (a chat started in a subfolder of a
-        // repository counts for the repository): its commits and the files
-        // Claude's edits changed, its time and amount. A click unfolds its
-        // chats in place, each with Claude's recap of it and its commits (here
-        // and on an SSH host alike); the button at a row's end opens one of
-        // this computer's in the Projects tab. Under the list, what Claude did
-        // in all, dim.
-        ColumnLayout {
-            Layout.fillWidth: true
-            visible: view.hasData && (view.projects.length > 0 || view.workText() !== "")
-            spacing: Math.round(view.gu * 0.2)
-
-            SectionTitle {
-                text: i18n("What got done")
-            }
-            Repeater {
-                model: view.projects.length
-                delegate: ColumnLayout {
-                    id: projectRow
-                    required property int index
-                    readonly property var project: view.projects[index] || view.emptyProject
-                    readonly property string key: project.host + "|" + project.path
-                    readonly property bool open: view.openProject === key
-                    Layout.fillWidth: true
-                    spacing: 0
-
-                    Item {
-                        Layout.fillWidth: true
-                        implicitHeight: projectLine.implicitHeight
-
-                        MouseArea {   // (under the row's button: a click on it is the button's)
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: view.openProject = projectRow.open ? "" : projectRow.key
-
-                            PlasmaCore.ToolTipArea {
-                                textFormat: Text.PlainText
-                                anchors.fill: parent
-                                mainText: (projectRow.project.host ? root.hostLabel(projectRow.project.host) + ": " : "") + projectRow.project.path
-                                subText: i18n("Claude worked %1 · %2 at API prices", view.hours(projectRow.project.workedMs),
-                                              view.money(projectRow.project.cost))
-                                         + "\n" + i18np("%1 prompt", "%1 prompts", projectRow.project.prompts)
-                                         + " · " + i18np("%1 chat", "%1 chats", projectRow.project.chatCount)
-                                         + view.doneTip(projectRow.project)
-                                         + "\n\n" + (projectRow.open ? i18n("Click to fold its chats.") : i18n("Click for its chats: what each got done."))
-                            }
-                        }
-                        RowLayout {
-                            id: projectLine
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            spacing: Kirigami.Units.smallSpacing
-
-                            Kirigami.Icon {
-                                Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                                Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                                source: projectRow.open ? Icons.plasma.unfolded : Icons.plasma.folded
-                                opacity: 0.6
-                            }
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.preferredWidth: view.projectNameWidth
-                                text: (projectRow.project.host ? root.hostLabel(projectRow.project.host) + ": " : "") + projectRow.project.name
-                                elide: Text.ElideMiddle
-                                font.bold: projectRow.open
-                            }
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.preferredWidth: view.projectDoneWidth
-                                visible: view.projectDoneWidth > 1
-                                text: view.doneText(projectRow.project)
-                                elide: Text.ElideRight
-                                font: Kirigami.Theme.smallFont
-                                opacity: 0.6
-                            }
-                            Rectangle {   // (its track: where all of it would end)
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: Math.round(view.gu * 0.4)
-                                radius: height / 2
-                                color: view.track
-
-                                Rectangle {
-                                    width: Math.max(2, parent.width * projectRow.project.workedMs / view.maxProject)
-                                    height: parent.height
-                                    radius: height / 2
-                                    color: view.workColor
-                                    opacity: 0.8
-                                }
-                            }
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.preferredWidth: view.projectNumbersWidth
-                                horizontalAlignment: Text.AlignRight
-                                text: view.numbersOf(projectRow.project)
-                                font: Kirigami.Theme.smallFont
-                                opacity: 0.8
-                            }
-                            // (this computer's: to the Projects tab; an SSH host's has its room, so the numbers line up)
-                            HoverButton {
-                                id: toProjects
-                                usable: !projectRow.project.host
-                                opacity: usable ? 1 : 0
-                                icon.name: Icons.plasma.project
-                                text: i18n("Open in the Projects tab")
-                                onClicked: root.showProject(projectRow.project.folder || projectRow.project.path)
-
-                                PlasmaCore.ToolTipArea {
-                                    textFormat: Text.PlainText
-                                    anchors.fill: parent
-                                    active: toProjects.usable
-                                    mainText: i18n("Open in the Projects tab")
-                                    subText: i18n("All its chats, plans and memories.")
-                                }
-                            }
-                        }
-                    }
-                    Repeater {   // (made while it's unfolded)
-                        id: projectChats
-                        readonly property var list: projectRow.open ? projectRow.project.chats : []
-                        readonly property real doneWidth: Math.min(view.gu * 7, view.widest(list.map(view.doneText)))
-                        readonly property real numbersWidth: view.widest(list.map(view.numbersOf))
-                        model: list.length
-                        delegate: WeekDoneChat {
-                            required property int index
-                            chat: projectChats.list[index] || view.emptyChat
-                            where: view.doneText(chat)
-                            indent: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing
-                            numbers: view.numbersOf(chat)
-                            whereWidth: projectChats.doneWidth
-                            numbersWidth: projectChats.numbersWidth
-                        }
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        Layout.leftMargin: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing * 2
-                        visible: projectRow.open && projectRow.project.chatCount > projectRow.project.chats.length
-                        text: i18np("and %1 more chat", "and %1 more chats",
-                                    projectRow.project.chatCount - projectRow.project.chats.length)
-                        font: Kirigami.Theme.smallFont
-                        opacity: 0.6
-                    }
-                }
-            }
-            // What Claude did in all: its tool calls, commands, edits, subagents
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                Layout.topMargin: Math.round(view.gu * 0.2)
-                visible: text !== ""
-                wrapMode: Text.Wrap
-                text: view.workText()
-                font: Kirigami.Theme.smallFont
-                opacity: 0.6
-
-                PlasmaCore.ToolTipArea {
-                    textFormat: Text.PlainText
-                    anchors.fill: parent
-                    mainText: i18n("What Claude did")
-                    subText: view.workBeforeText()
-                }
-            }
-        }
-
-        // What it'd cost on the API, by model
-        ColumnLayout {
-            Layout.fillWidth: true
-            visible: view.hasData && view.models.length > 0
-            spacing: Math.round(view.gu * 0.2)
-
-            SectionTitle {
-                text: i18n("By model")
-            }
-            Repeater {
-                model: view.models.length
-                delegate: RowLayout {
-                    id: modelRow
-                    required property int index
-                    readonly property var entry: view.models[index] || view.emptyModel
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.preferredWidth: view.gu * 7
-                        text: modelRow.entry.model
-                        elide: Text.ElideRight
-                    }
-                    Rectangle {   // (its track: where all of it would end)
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: Math.round(view.gu * 0.4)
-                        radius: height / 2
-                        color: view.track
-
-                        Rectangle {
-                            width: Math.max(2, parent.width * modelRow.entry.share)
-                            height: parent.height
-                            radius: height / 2
-                            color: view.youColor
-                        }
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.preferredWidth: view.modelNumbersWidth
-                        horizontalAlignment: Text.AlignRight
-                        text: view.modelNumbers(modelRow.entry)
-                        font: Kirigami.Theme.smallFont
-                        opacity: 0.8
-
-                        // (only a guessed price's row says so: made only for it)
-                        Loader {
-                            anchors.fill: parent
-                            active: !!modelRow.entry.guessed
-                            sourceComponent: PlasmaCore.ToolTipArea {
-                                textFormat: Text.PlainText
-                                mainText: modelRow.entry.model
-                                subText: view.guessedModelTip(modelRow.entry)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // What would use less of your plan (Claude Code's /usage rules, coming
-        // back to chats whose cache had expired, waits, limits); too little
-        // in these days: a dim line instead (week.py: tooLittle)
-        ColumnLayout {
-            id: tipsBox
-            Layout.fillWidth: true
-            visible: view.hasData
-            spacing: Kirigami.Units.smallSpacing
-            // (the commands in one column as wide as the widest, "Copied"
-            // too: the shares before them line up; monospace, so the longest)
-            readonly property real commandWidth: view.tips.some(t => t.command) ? commandProbe.implicitWidth : 0
-
-            PlasmaComponents3.ToolButton {
-                id: commandProbe
-                visible: false
-                font.family: "monospace"
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                text: view.tips.map(t => t.command || "").concat([i18n("Copied")]).reduce((a, b) => b.length > a.length ? b : a, "")
-            }
-            SectionTitle {
-                text: i18n("What could use less of your plan")
-            }
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                visible: view.tips.length === 0
-                wrapMode: Text.Wrap
-                opacity: 0.7
-                text: view.recap && view.recap.tooLittle ? i18n("Too little here to go on: tips need 20 prompts or an hour of Claude's work.")
-                                                         : i18n("Nothing stands out: no habit takes a tenth of the usage shown.")
-            }
-            Repeater {
-                model: view.tips.length
-                delegate: RowLayout {
-                    id: tipRow
-                    required property int index
-                    readonly property var tip: view.tips[index] || view.emptyTip
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    Kirigami.Icon {
-                        Layout.alignment: Qt.AlignTop
-                        Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                        Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                        source: view.tipIcon(tipRow.tip.key)
-                        opacity: 0.8
-
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: view.tipSource(tipRow.tip.key)
-                        }
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            wrapMode: Text.Wrap
-                            text: tipRow.tip.title
-                        }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            visible: text !== ""
-                            wrapMode: Text.Wrap
-                            text: tipRow.tip.detail
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.7
-                        }
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.alignment: Qt.AlignTop
-                        visible: tipRow.tip.pct !== null && tipRow.tip.pct !== undefined
-                        text: view.tipShareText(tipRow.tip)
-                        font: Kirigami.Theme.smallFont
-                        opacity: 0.8
-
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: view.tipShareMain(tipRow.tip)
-                            subText: view.tipShareTip(tipRow.tip)
-                        }
-                    }
-                    Item {   // (no command: its room, so the share stands where the others do)
-                        visible: tipRow.tip.command === "" && tipsBox.commandWidth > 0
-                        Layout.preferredWidth: tipsBox.commandWidth
-                    }
-                    PlasmaComponents3.ToolButton {
-                        Layout.alignment: Qt.AlignTop
-                        Layout.preferredWidth: tipsBox.commandWidth
-                        visible: tipRow.tip.command !== ""
-                        text: view.copied === tipRow.tip.command && tipRow.tip.command ? i18n("Copied") : tipRow.tip.command
-                        font.family: "monospace"
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        onClicked: {
-                            clipboard.put(tipRow.tip.command)
-                            view.copied = tipRow.tip.command
-                            copiedTimer.restart()
-                        }
-
-                        PlasmaCore.ToolTipArea {
-                            textFormat: Text.PlainText
-                            anchors.fill: parent
-                            mainText: i18n("Copy %1", tipRow.tip.command)
-                            subText: i18n("Type it in a chat of yours.")
-                        }
-                    }
-                }
             }
         }
 

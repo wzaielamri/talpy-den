@@ -22,6 +22,23 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
+- **Your plan, in the Recap.** After *What got done*, a line per account
+  says what the days shown meant for its plan: how much of its week they
+  used (from the readings of it Talpy Den keeps, so use on claude.ai
+  counts too), how many 5-hour windows ran full, how often it ran out and
+  how long that held chats (*66% of the week used in these days · 3 full
+  5-hour windows · ran out 3 times, chats held 4h 10m*); its tooltip says
+  how each is worked out. On today's Day the windows now are under it.
+  Each project's row says its share of your week (*≈ 28%*, an estimate;
+  a chat's and a day's in their tooltips), where the readings cover the
+  days shown; an account with none here (an SSH host's) says so.
+
+- **Your plan's limits over time, last in Overall, open.** No more fold
+  in the middle of the tab: it's Overall's last section, worked out only
+  once you scroll to it (not when the tab opens, nor again for another
+  span; again for another account, at Refresh and every 10 minutes once
+  you've been there), a dim line in its place while it comes.
+
 - **What got done, in one list.** The Recap's *Where Claude worked* and
   *Chats it worked on most* are one section, *What got done*: a row per
   project with its commits and the files Claude's edits changed (*14

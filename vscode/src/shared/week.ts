@@ -4,7 +4,7 @@
 import { chatRefOf, clockText, dayLabel, hostLabel, plural, recentRef } from "./model";
 import type {
   ChatRef, HostState, LimitAccount, LimitChange, LimitEvent, LimitHistory, LimitPeriod, LimitTokens, Status, WeekDay, WeekGrant, WeekModel, WeekNumbers,
-  WeekPlanWindow, WeekRecap, WeekRule, WeekSpan, WeekSum, WeekTip,
+  WeekPlanUse, WeekPlanWindow, WeekRecap, WeekRule, WeekShare, WeekSpan, WeekSum, WeekTip,
 } from "./types";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -162,12 +162,12 @@ function amountText(v: number, kind: Kind, cur: Currency): string {
 }
 
 // The Recap's sections under its tiles, top to bottom (the same in every
-// front end): when (the day-by-day graph, your plan's limits now, chat by
-// chat); what got done (by project, its chats with their commits and
-// Claude's recaps, what Claude did in all under it); then the money (by
-// model at API prices, what could use less of your plan). Right after the
-// limits now, folded: your plan's limits over time.
-export const RECAP_SECTIONS = ["days", "plan", "limits", "lanes", "projects", "models", "tips"] as const;
+// front end): when (the day-by-day graph, chat by chat); what got done (by
+// project, its chats with their commits and Claude's recaps, what Claude
+// did in all under it); what it meant for your plan (and today, its windows
+// now); then the money (by model at API prices, what could use less of
+// your plan). Last, in Overall only: your plan's limits over time.
+export const RECAP_SECTIONS = ["days", "lanes", "projects", "plan", "models", "tips", "limits"] as const;
 
 // Spans whose timeline has a row per 7 days, not per day
 export function weekRows(span: WeekSpan | undefined): boolean {
@@ -295,11 +295,13 @@ export function hoverText(d: WeekDay, ms: number, now: number, px: number): stri
   return when + (parts.length ? parts.join(" · ") : "nothing went on");
 }
 
-export function dayTip(d: WeekDay, cur: Currency = USD): string {
+// (recap: with its share of your week, Your plan)
+export function dayTip(d: WeekDay, cur: Currency = USD, recap?: Pick<WeekRecap, "planUse" | "accounts">): string {
+  const share = recap ? weekShareTip(d, recap, true) : "";
   return (
     `${d.to ? `${monthDay(d.day)} – ${monthDay(d.to)}` : longDay(d.day)}\nYou: ${hoursText(d.youMs)} · Claude worked ${hoursText(d.workedMs)} (on the clock ${hoursText(d.busyMs)}) · ` +
     `it waited ${hoursText(d.waitMs)} for you\n${plural(d.prompts, "%1 prompt", "%1 prompts")} · ${shortCount(d.tokenTotal)} tokens · ${moneyText(d.cost, cur)} at API prices` +
-    (d.chats?.length ? "\nClick for its chats" : "")
+    (share ? `\n${share}` : "") + (d.chats?.length ? "\nClick for its chats" : "")
   );
 }
 
@@ -433,6 +435,87 @@ export function workText(w: WeekRecap["work"] | null | undefined): string {
   if (w.webFetches) parts.push(n(w.webFetches, "%1 page fetched", "%1 pages fetched"));
   if (w.compactions) parts.push(n(w.compactions, "%1 compaction", "%1 compactions"));
   return parts.join(" · ");
+}
+
+// ---------------------------------------------------------------- your plan
+// What the days shown meant for each account's plan (week.py plan_use), and
+// a project's, chat's or day's share of its week; the same words as Plasma's
+// WeekView.qml
+
+// "28%", "<1%": points of a week
+function pointsText(v: number): string {
+  return v > 0 && v < 0.5 ? "<1%" : `${Math.round(v)}%`;
+}
+
+function familyOf(key: string): string {
+  const f = FAMILIES.find((x) => key.includes(x)) ?? key;
+  return f.charAt(0).toUpperCase() + f.slice(1);
+}
+
+// An account's line in Your plan: "66% of the week used in these days · 3
+// full 5-hour windows · ran out 3 times, chats held 4h 10m"
+export function planUseText(u: WeekPlanUse, recap: Pick<WeekRecap, "span" | "back">): string {
+  const parts: string[] = [];
+  const week = u.weeks?.seven_day;
+  if (u.readings && week !== undefined) {
+    const when = !u.covered && u.since ? `since ${limitDay(u.since)}`
+      : recap.span === "day" ? (recap.back === 0 ? "today" : "on this day") : "in these days";
+    parts.push(`${pointsText(week)} of the week used ${when}`);
+  }
+  for (const [key, v] of Object.entries(u.weeks ?? {}))
+    if (key !== "seven_day" && v > 0) parts.push(`${pointsText(v)} of the ${familyOf(key)} week`);
+  if (u.fiveFull) parts.push(counted(u.fiveFull, "%1 full 5-hour window", "%1 full 5-hour windows"));
+  else if (u.fiveUsed) parts.push("no full 5-hour window");
+  parts.push(!u.ranOut ? "didn't run out"
+    : (u.ranOut === 1 ? "ran out once" : `ran out ${count(u.ranOut)} times`) + (u.heldMs >= 60000 ? `, chats held ${hoursText(u.heldMs)}` : ""));
+  if (!u.readings) parts.push("no readings of its plan here");
+  const text = parts.join(" · ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+// Its tooltip: how each part is worked out
+export function planUseTip(u: WeekPlanUse): string {
+  const lines: string[] = [];
+  if (u.readings && u.weeks?.seven_day !== undefined)
+    lines.push("How much of your plan's week these days used: how far Talpy Den's readings of it rose (kept on this computer). " +
+      "Use on claude.ai, other computers and SSH hosts counts too." +
+      (!u.covered && u.since ? ` The readings kept begin on ${limitDay(u.since)}: before that isn't known.` : ""));
+  if (u.fiveUsed)
+    lines.push(`${u.fiveFull} of the ${u.fiveUsed} 5-hour windows begun in these days ran full: their readings reached 100%, ` +
+      "or a usage limit stopped a chat as one ended.");
+  if (u.ranOut)
+    lines.push(`Your plan ran out ${u.ranOut === 1 ? "once" : `${count(u.ranOut)} times`} (${counted(u.stopped, "%1 chat stopped", "%1 chats stopped")}). ` +
+      `From each stop until the limit reset, or until the chat went on another way, chats were held ${hoursText(u.heldMs)} in all, on the clock.`);
+  if (!u.readings)
+    lines.push(`Talpy Den keeps readings of the plans of this computer's accounts only: ${u.name}'s has none here, so what these days used of its week isn't known.`);
+  return lines.join("\n");
+}
+
+// A project's share of the week on its row: "≈ 28%" (its largest; "" for none)
+export function weekShareShort(x: { weekShare?: WeekShare[] }): string {
+  const s = x.weekShare?.[0];
+  return !s ? "" : s.pct < 0.5 ? "<1%" : `≈ ${Math.round(s.pct)}%`;
+}
+
+// A project's, chat's or day's share of each account's week, for its
+// tooltip: how it's worked out (day: from the readings themselves), and why
+// one of its accounts' is missing
+export function weekShareTip(x: { weekShare?: WeekShare[]; accounts?: string[] }, recap: Pick<WeekRecap, "planUse" | "accounts">, day = false): string {
+  const uses = recap.planUse ?? [];
+  const name = (id: string) => uses.find((u) => u.account === id)?.name ?? recap.accounts.find((a) => a.id === id)?.name ?? id;
+  const named = uses.filter((u) => u.readings).length > 1;
+  const shares = x.weekShare ?? [];
+  const lines = shares.map((s) => `${day ? "" : "≈ "}${pointsText(s.pct)} of ${named ? `${name(s.account)}'s week` : "your week"}`);
+  if (lines.length)
+    lines.push(day ? "As the readings of your plan's week rose then."
+      : "An estimate: its part of these days' amount at API prices, times how much of the week these days used (Your plan).");
+  for (const id of x.accounts ?? []) {
+    const u = uses.find((v) => v.account === id);
+    if (shares.some((s) => s.account === id)) continue;
+    if (!u || !u.readings) lines.push(`Its share of ${name(id)}'s week isn't known: no readings of that plan on this computer.`);
+    else if (!u.covered && u.since) lines.push(`Its share of ${name(id)}'s week isn't known: the readings of it kept begin on ${limitDay(u.since)}.`);
+  }
+  return lines.join("\n");
 }
 
 // A plan window, from its start (its reset less its length) to its reset

@@ -17,6 +17,7 @@ ColumnLayout {
                           commitCount: 0, recap: null })
     property string where: ""
     property string numbers: ""
+    property string tip: ""   // (its share of your week, for its line's tooltip)
     property real indent: 0
     property real whereWidth: -1
     property real numbersWidth: -1
@@ -33,6 +34,7 @@ ColumnLayout {
         where: done.where
         indent: done.indent
         numbers: done.numbers
+        tip: done.tip
         whereWidth: done.whereWidth
         numbersWidth: done.numbersWidth
     }

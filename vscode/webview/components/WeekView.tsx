@@ -16,6 +16,10 @@ import {
   stepText,
   weekRows,
   planText,
+  planUseText,
+  planUseTip,
+  weekShareShort,
+  weekShareTip,
   RECAP_SECTIONS,
   type RecapSection,
   rowDay,
@@ -64,7 +68,7 @@ import { useView } from "./context";
 import { Tag, TestsTag } from "./Tag";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";
-import { limitsAnswer, limitsOpen, useReadAgain, weekAnswer } from "../util/stores";
+import { limitsAnswer, limitsAsked, limitsRound, useReadAgain, weekAnswer } from "../util/stores";
 import { showProject } from "../util/ui";
 import { Reading } from "./Reading";
 
@@ -72,11 +76,12 @@ const REFRESH_MS = 10 * 60000; // while the tab is in sight
 
 // The Recap tab: your last 7 days with Claude, as a story. The big picture
 // (how long you were at it, how long Claude worked, your prompts, its
-// tokens, the API prices), when (a day per row on a timeline, your plan's
-// limits, chat by chat), what got done (by project, its chats with their
-// commits and Claude's recaps, what Claude did in all),
+// tokens, the API prices), when (a day per row on a timeline, chat by
+// chat), what got done (by project, its chats with their commits and
+// Claude's recaps, what Claude did in all), what it meant for your plan,
 // then the money: what the same work would cost at API prices and what would
-// use less of your plan (the rules of Claude Code's own /usage). The extension runs the
+// use less of your plan (the rules of Claude Code's own /usage); in Overall,
+// last, your plan's limits over time. The extension runs the
 // widget's week.py for it (only while this tab is open): read from the chats'
 // transcripts, no tokens used.
 export function WeekView({ hosts, currency }: { hosts: string[]; currency: string }) {
@@ -96,14 +101,24 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
   }
 
   // Ask for these days when the tab is in sight, again every 10 minutes and
-  // at the view's Refresh
+  // at the view's Refresh; those two read your plan's limits over time
+  // again too, once it's in sight (limitsRound), as does opening the tab
+  // when they were read over 10 minutes ago
+  const again = () => {
+    ask();
+    limitsRound.set(limitsRound.get() + 1);
+  };
   useEffect(() => {
     if (!visible) return;
     ask();
-    const timer = setInterval(ask, REFRESH_MS);
+    const timer = setInterval(again, REFRESH_MS);
     return () => clearInterval(timer);
   }, [visible, span, back, account, hostsKey, currency]);
-  useReadAgain(visible, ask, true);
+  useEffect(() => {
+    const read = limitsAnswer.get()?.data?.generatedAt;
+    if (visible && read && Date.now() - read > REFRESH_MS) limitsRound.set(limitsRound.get() + 1);
+  }, [visible]);
+  useReadAgain(visible, again, true);
 
   const mine = answer && answer.span === span && answer.back === back && answer.account === account ? answer : null;
   useEffect(() => {
@@ -117,15 +132,16 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
   const s = recap?.sum;
   const hasData = !!s && (s.workedMs > 0 || s.prompts > 0 || s.cost > 0);
 
-  // (in the order of RECAP_SECTIONS: when, what got done, then the money)
+  // (in the order of RECAP_SECTIONS: when, what got done, your plan, then
+  // the money; in Overall, your plan's limits over time last)
   const sections: Record<RecapSection, () => JSX.Element | null> = {
     days: () => (dayLanes(recap!) ? null : <Timeline recap={recap!} />),
-    plan: () => <Plan recap={recap!} />,
-    limits: () => <Limits recap={recap!} account={account} />,
     lanes: () => <Lanes recap={recap!} />,
     projects: () => <Done recap={recap!} />,
+    plan: () => <Plan recap={recap!} />,
     models: () => <Models recap={recap!} />,
     tips: () => <Tips recap={recap!} copied={copied} onCopy={copy} />,
+    limits: () => (recap!.span === "all" ? <Limits recap={recap!} account={account} /> : null),
   };
 
   function copy(text: string) {
@@ -273,11 +289,11 @@ function opens(shown: boolean, toggle: () => void) {
 }
 
 // A chat in the tab's lists: click one of this computer's to bring it up
-// (bare: its button alone, in a line of What got done's)
-function ChatLine({ c, cur, where, sub, bare }: { c: WeekChat; cur: Currency; where?: string; sub?: boolean; bare?: boolean }) {
+// (bare: its button alone, in a line of What got done's; tip: more for its tooltip)
+function ChatLine({ c, cur, where, sub, bare, tip }: { c: WeekChat; cur: Currency; where?: string; sub?: boolean; bare?: boolean; tip?: string }) {
   const line = (
     <button type="button" class={"week-chat" + (sub ? " sub" : "")} disabled={!!c.host || !c.chatId}
-      title={c.host ? `${c.name} on ${hostLabel(c.host)}: its row under ${hostLabel(c.host)} opens it` : `Open “${c.name}”`}
+      title={(c.host ? `${c.name} on ${hostLabel(c.host)}: its row under ${hostLabel(c.host)} opens it` : `Open “${c.name}”`) + (tip ? `\n${tip}` : "")}
       onClick={() => post({ type: "openWeekChat", chatId: c.chatId, profileDir: c.profileDir, name: c.name, cwd: c.cwd })}>
       <span class="week-chat-name">{c.name}</span>
       <span class="week-chat-folder small muted">{where ?? (c.host ? hostLabel(c.host) + ": " : "") + c.folder}</span>
@@ -327,7 +343,7 @@ function Timeline({ recap }: { recap: WeekRecap }) {
         return (
           <div key={d.day}>
             <div class={"week-row" + (i === last && recap.back === 0 ? " today" : "") + (d.chats?.length ? " opens" : "") + (shown ? " open" : "")}
-              title={dayTip(d, cur)} {...(d.chats?.length ? opens(shown, () => setOpen(shown ? "" : d.day)) : { onClick: () => setOpen("") })}>
+              title={dayTip(d, cur, recap)} {...(d.chats?.length ? opens(shown, () => setOpen(shown ? "" : d.day)) : { onClick: () => setOpen("") })}>
               <span class="week-day small">{rowDay(d.day, weeks, d.to)}</span>
               {weeks ? (
                 <span class="week-track">
@@ -374,57 +390,84 @@ function Timeline({ recap }: { recap: WeekRecap }) {
   );
 }
 
-// How full your plan's windows are now, and how they filled up (this
-// computer's accounts, from the widget's usage history)
+// Your plan: what these days meant for each account's plan (week.py
+// plan_use: how much of its week they used, its full 5-hour windows, how
+// often it ran out and how long that held chats), its line's tooltip how
+// each is worked out; on today's Day its windows now under it, how they
+// filled up (this computer's accounts, from the widget's usage history)
 function Plan({ recap }: { recap: WeekRecap }) {
-  const plans = recap.plan ?? [];
-  if (!plans.length) return null;
+  const uses = recap.planUse ?? [];
+  const now = recap.plan ?? [];
+  const ids = [...uses.map((u) => u.account), ...now.map((p) => p.account).filter((id) => !uses.some((u) => u.account === id))];
+  if (!ids.length) return null;
   return (
     <section class="week-section">
-      <h2>Your plan's limits now</h2>
-      <ul class="week-bars week-plan">
-        {plans.flatMap((p) =>
-          p.windows.map((w) => (
-            <li key={p.account + w.key} title={`${w.label}: ${Math.round(w.pct)}% used\nHow this window of your plan filled up, from its start (on the left) to when it resets (on the right), as Talpy Den saw it.`}>
-              <span class="week-bar-name">{(plans.length > 1 ? p.name + " · " : "") + w.label}</span>
-              <FillChart w={w} now={recap.generatedAt} />
-              <span class={"week-bar-value small" + (w.pct >= 90 ? " over" : " muted")}>
-                {planText(w, recap.generatedAt)}
-              </span>
-            </li>
-          )),
-        )}
-      </ul>
+      <h2>Your plan</h2>
+      {ids.map((id) => {
+        const u = uses.find((x) => x.account === id);
+        const p = now.find((x) => x.account === id);
+        const plan = u?.plan ?? recap.accounts.find((a) => a.id === id)?.plan;
+        return (
+          <div key={id} class="week-plan-account">
+            {ids.length > 1 ? <div class="week-plan-name">{(u?.name ?? p?.name ?? "") + (plan ? ` · ${plan}` : "")}</div> : null}
+            {u ? <div class="week-plan-line" title={planUseTip(u)}>{planUseText(u, recap)}</div> : null}
+            {p?.windows.length ? (
+              <ul class="week-bars week-plan">
+                {p.windows.map((w) => (
+                  <li key={w.key} title={`${w.label}: ${Math.round(w.pct)}% used\nHow this window of your plan filled up, from its start (on the left) to when it resets (on the right), as Talpy Den saw it.`}>
+                    <span class="week-bar-name">{w.label}</span>
+                    <FillChart w={w} now={recap.generatedAt} />
+                    <span class={"week-bar-value small" + (w.pct >= 90 ? " over" : " muted")}>
+                      {planText(w, recap.generatedAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        );
+      })}
     </section>
   );
 }
 
-// Your plan's limits over time, how your limits changed among them (week.py --limits):
-// folded until you open it (it
-// stays open while the view lives), read then, and again with each read of
-// the Recap while open; with today's days only, as the limits now
+// Your plan's limits over time (week.py --limits), Overall's last section:
+// asked for only once it scrolls into view, not when the tab opens nor
+// again on a change of span; again on a change of account, at the view's
+// Refresh and the tab's 10-minute read (limitsRound). While its numbers
+// come, a dim line in its place (what was read before stays, dimmed).
 function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
-  const open = useStore(limitsOpen);
   const answer = useStore(limitsAnswer);
+  const round = useStore(limitsRound);
+  const box = useRef<HTMLElement>(null);
+  const [inView, setInView] = useState(false);
   useEffect(() => {
-    if (open && recap.back === 0) post({ type: "limits", account });
-  }, [open, account, recap.generatedAt, recap.back]);
-  if (recap.back !== 0) return null;
+    const el = box.current;
+    if (!el || typeof IntersectionObserver === "undefined") return undefined;
+    const seen = new IntersectionObserver((entries) => setInView(entries.some((e) => e.isIntersecting)));
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, []);
+  const want = `${account}|${round}`;
+  useEffect(() => {
+    if (!inView || limitsAsked.get() === want) return;
+    limitsAsked.set(want);
+    post({ type: "limits", account });
+  }, [inView, want]);
   const mine = answer && answer.account === account ? answer : null;
-  const data: LimitHistory | null = mine?.data ?? null;
+  const data: LimitHistory | null = answer?.data ?? null;
   const cur = currencyOf(data ?? recap);
   const shown = (data?.accounts ?? []).filter((a) => a.periods.length);
   const plans = new Set(shown.map((a) => a.plan));
   return (
-    <section class="week-section week-limits">
-      <h2 class="limits-title" {...opens(open, () => limitsOpen.set(!open))}>
-        <Icon name={I.folded} class={open ? "turn" : ""} />
+    <section ref={box} class={"week-section week-limits" + (data && !mine ? " busy" : "")}>
+      <h2>
         Your plan's limits over time <span class="limits-estimate muted">· estimates</span>
       </h2>
-      {!open ? null : !mine ? (
-        <Reading text="Working out how much your plan's windows held, from your chats and the limit readings kept." />
-      ) : mine.error ? (
+      {mine?.error ? (
         <div class="msg error" role="alert">Couldn't work it out: {mine.error}</div>
+      ) : !data ? (
+        <div class="limits-waiting"><Reading text="Working out how much your plan's windows held, from your chats and the limit readings kept." /></div>
       ) : !shown.length ? (
         <div class="muted">{LIMIT_EMPTY}</div>
       ) : (
@@ -444,9 +487,9 @@ function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
               </tbody>
             </table>
           ) : null}
-          {shown.map((a) => <LimitsOf key={a.id} a={a} many={shown.length > 1} cur={cur} now={data!.generatedAt}
-            start={limitStart(shown, data!.generatedAt)} />)}
-          <div class="small muted">{limitFootText(data!)}</div>
+          {shown.map((a) => <LimitsOf key={a.id} a={a} many={shown.length > 1} cur={cur} now={data.generatedAt}
+            start={limitStart(shown, data.generatedAt)} />)}
+          <div class="small muted">{limitFootText(data)}</div>
         </>
       )}
     </section>
@@ -585,18 +628,21 @@ function Done({ recap }: { recap: WeekRecap }) {
           const chats = Array.isArray(p.chats) ? p.chats : [];
           const done = doneText(p);
           const tip = doneTip(p);
+          const share = weekShareShort(p);
+          const shareTip = weekShareTip(p, recap);
           return [
             <li key={key} class={"opens" + (shown ? " open" : "")} {...opens(shown, () => setOpen(shown ? "" : key))}
               title={`${p.host ? hostLabel(p.host) + ": " : ""}${p.path}\nClaude worked ${hoursText(p.workedMs)} · ${moneyText(p.cost, cur)} at API prices\n` +
                 `${plural(p.prompts, "%1 prompt", "%1 prompts")} · ${plural(p.chatCount ?? chats.length, "%1 chat", "%1 chats")}` +
-                (tip ? `\n${tip}` : "") + `\n\n${shown ? "Click to fold its chats." : "Click for its chats: what each got done."}`}>
+                (tip ? `\n${tip}` : "") + (shareTip ? `\n${shareTip}` : "") +
+                `\n\n${shown ? "Click to fold its chats." : "Click for its chats: what each got done."}`}>
               <span class="week-bar-name">
                 <Icon name={I.folded} class={shown ? "turn" : ""} />
                 {(p.host ? hostLabel(p.host) + ": " : "") + p.name}
               </span>
               <span class="week-done-text small muted">{done}</span>
               <span class="week-bar-meter work"><span style={{ width: `${(100 * p.workedMs) / most}%` }} /></span>
-              <span class="week-bar-value small muted">{hoursText(p.workedMs)} · {moneyText(p.cost, cur)}</span>
+              <span class="week-bar-value small muted">{hoursText(p.workedMs)} · {moneyText(p.cost, cur)}{share ? ` · ${share}` : ""}</span>
               {/* (this computer's: to the Projects tab; an SSH host's keeps its room, so the numbers line up) */}
               {p.host ? <span class="week-done-go" aria-hidden="true" /> : (
                 <button type="button" class="icon-btn week-done-go" title={"Open in the Projects tab\nAll its chats, plans and memories."}
@@ -613,7 +659,7 @@ function Done({ recap }: { recap: WeekRecap }) {
             shown ? (
               <li key={key + "/chats"} class="week-sub">
                 <ul class="week-chats week-done-chats">
-                  {chats.map((c) => <DoneChat key={c.host + c.chatId} c={c} cur={cur} />)}
+                  {chats.map((c) => <DoneChat key={c.host + c.chatId} c={c} cur={cur} recap={recap} />)}
                 </ul>
                 {(p.chatCount ?? 0) > chats.length ? (
                   <span class="small muted week-more">and {(p.chatCount ?? 0) - chats.length} more {(p.chatCount ?? 0) - chats.length === 1 ? "chat" : "chats"}</span>
@@ -633,7 +679,8 @@ function Done({ recap }: { recap: WeekRecap }) {
 // you haven't reviewed says so with its tests (as its row in the chat
 // list), then Claude's recap of what it did then (one line, the whole in
 // its tooltip) and its commits' subjects, the newest three and how many more
-function DoneChat({ c, cur }: { c: WeekChat; cur: Currency }) {
+// (with its share of your week in its tooltip)
+function DoneChat({ c, cur, recap }: { c: WeekChat; cur: Currency; recap: WeekRecap }) {
   const view = useView();
   const listed = c.review ? listedChatRef(view.status, view.hosts, c.chatId, c.host) : null;
   const toReview = !!c.review && reviewPending({ review: c.review, chatId: c.chatId, sessionId: c.chatId, state: listed?.state ?? "done" },
@@ -643,7 +690,7 @@ function DoneChat({ c, cur }: { c: WeekChat; cur: Currency }) {
   return (
     <li class="week-done-chat">
       <div class="week-done-line">
-        <ChatLine c={c} cur={cur} where={doneText(c)} sub bare />
+        <ChatLine c={c} cur={cur} where={doneText(c)} sub bare tip={weekShareTip(c, recap)} />
         <span class="week-done-tags">
           {toReview ? (
             <Tag text="To review" active

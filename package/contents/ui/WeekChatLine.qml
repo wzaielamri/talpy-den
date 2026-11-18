@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.components as PlasmaComponents3
+import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 
 // A chat in the Recap tab's lists (WeekView.qml): its name, where (or when;
@@ -16,6 +17,7 @@ PlasmaComponents3.ItemDelegate {
     property var chat: ({ name: "", chatId: "", host: "", profileDir: "", folder: "", cwd: "" })
     property string where: (chat.host ? root.hostLabel(chat.host) + ": " : "") + (chat.folder || "")
     property string numbers: ""
+    property string tip: ""   // (What got done: its share of your week; its tooltip is made only with one)
     property real indent: 0
     property real whereWidth: -1
     property real numbersWidth: -1
@@ -84,6 +86,16 @@ PlasmaComponents3.ItemDelegate {
             text: line.numbers
             font: Kirigami.Theme.smallFont
             opacity: 0.8
+
+            Loader {
+                anchors.fill: parent
+                active: line.tip !== ""
+                sourceComponent: PlasmaCore.ToolTipArea {
+                    textFormat: Text.PlainText
+                    mainText: line.chat.name
+                    subText: line.tip
+                }
+            }
         }
     }
 }

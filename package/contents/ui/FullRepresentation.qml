@@ -161,7 +161,7 @@ PlasmaExtras.Representation {
                     root.fetchUsage()   // (the plan usage too, when it's over a minute old)
                     for (const host of root.shownHosts)
                         root.pollHost(host)
-                    root.loadWeek()   // (on the Recap tab)
+                    root.rereadWeek()   // (on the Recap tab; its limits over time too, once in view)
                     root.loadPerms()  // (on the Permissions tab)
                     if (root.popupTab === "projects")
                         root.loadProjects()

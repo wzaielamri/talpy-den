@@ -407,17 +407,20 @@ const DEMO_CHATS: WeekChat[] = [
     commits: [["4e1c9a2", "Parse ISO week 53 in the right year"], ["9b07d3f", "Tests for weeks 52, 53 and 1"], ["", "Port the parser's helpers"]],
     commitCount: 5, files: 9, linesAdded: 640, linesRemoved: 210,
     recap: { text: "You asked to port the date parser; it's ported, with tests for week 53. Next step: decide whether the old parser can go.", at: 0 },
-    review: { editedAt: Date.now() - 2 * HOUR, tests: { command: "npm test -- date", ok: true, at: Date.now() - HOUR } } },
+    review: { editedAt: Date.now() - 2 * HOUR, tests: { command: "npm test -- date", ok: true, at: Date.now() - HOUR } },
+    weekShare: [{ account: "0123456789ab", pct: 18 }] },
   { name: "Release notes for 2.0", chatId: "demo-2", host: "", profileDir: ".claude", folder: "~/projects/webapp", cwd: "/home/alice/projects/webapp", workedMs: 2.4 * HOUR, cost: 29.9, prompts: 11,
     commits: [["c51f0be", "Release notes for 2.0"], ["77a2e19", "Changelog: the new sign-in page"]], commitCount: 2, files: 4, linesAdded: 310, linesRemoved: 40,
-    recap: { text: "You asked for the 2.0 release notes; they're written and committed. Next step: read them over before the release.", at: 0 }, review: null },
+    recap: { text: "You asked for the 2.0 release notes; they're written and committed. Next step: read them over before the release.", at: 0 }, review: null,
+    weekShare: [{ account: "ba9876543210", pct: 9 }] },
   { name: "Nightly dependency check", chatId: "demo-3", host: "build-server", profileDir: ".claude", folder: "/srv/pipeline", workedMs: 1.6 * HOUR, cost: 17.3, prompts: 6,
-    commits: [["e0d4b61", "Bump the image's base to the new LTS"]], commitCount: 1, files: 3, linesAdded: 40, linesRemoved: 12, recap: null, review: null },
+    commits: [["e0d4b61", "Bump the image's base to the new LTS"]], commitCount: 1, files: 3, linesAdded: 40, linesRemoved: 12, recap: null, review: null,
+    weekShare: [{ account: "ba9876543210", pct: 6 }] },
   { name: "Sign-in page", chatId: "demo-4", host: "", profileDir: ".claude", folder: "~/projects/webapp", cwd: "/home/alice/projects/webapp", workedMs: 1.9 * HOUR, cost: 22.4, prompts: 9,
     commits: [["2f8a6c1", "Sign-in page: remember the last account"], ["b93e07d", "Sign-in page: keyboard focus on the first field"], ["5d1e2aa", "Sign-in page"]],
     commitCount: 12, files: 208, linesAdded: 4500, linesRemoved: 1150,
     recap: { text: "You asked for a new sign-in page; it's done and remembers the last account. Next step: try it on a phone.", at: 0 },
-    review: { editedAt: Date.now() - 30 * MIN, tests: null } },
+    review: { editedAt: Date.now() - 30 * MIN, tests: null }, weekShare: [{ account: "ba9876543210", pct: 7 }] },
 ];
 
 // The Recap tab's recap of made-up days: mornings and afternoons of work, a
@@ -473,7 +476,8 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     if (span === "day") {
       const d = week.days[Math.max(0, week.days.length - 1 - (back % 7))];
       return { ...week, span, back, backMax: 13, first: week.days[0].day, from: d.day, to: d.day, days: [d], trend: week.trend.slice(-5),
-               lanes: demoLanes(d.start) };
+               lanes: demoLanes(d.start), planUse: (week.planUse ?? []).map((u) => ({ ...u, weeks: { seven_day: Math.round((u.weeks.seven_day ?? 0) / 6) },
+                 fiveFull: Math.min(1, u.fiveFull), fiveUsed: 2, ranOut: Math.min(1, u.ranOut), stopped: Math.min(2, u.stopped), heldMs: u.heldMs / 2 })) };
     }
     const before = demoWeek(now, 1, account);
     const row = (w: WeekRecap): WeekDay => ({
@@ -486,7 +490,8 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       prompts: week.sum.prompts + before.sum.prompts, cost: week.sum.cost + before.sum.cost,
       tokenTotal: week.sum.tokenTotal + before.sum.tokenTotal };
     return { ...week, span, back: 0, backMax: 0, first: before.from, from: before.from, previous: null, workBefore: null, trend: [],
-      days: [row(week), row(before)], sum };
+      days: [row(week), row(before)], sum, projects: week.projects.map((p) => ({ ...p, weekShare: [] })),
+      planUse: (week.planUse ?? []).map((u) => ({ ...u, since: now - 9 * 86400000, covered: false, weeks: { seven_day: 118 }, fiveFull: 5, fiveUsed: 21 })) };
   }
   const today = new Date(now);
   const midnight = (offset: number) =>
@@ -518,6 +523,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       prompts: weekend ? 4 : Math.round(31 * scale), cost: Math.round((weekend ? 9 : 64) * scale * 100) / 100,
       tokenTotal: Math.round((weekend ? 9 : 64) * scale * TOKENS_PER_DOLLAR),
       chats: work.length ? DEMO_CHATS.slice(0, weekend ? 1 : 3).map((c, k) => ({ ...c, workedMs: workedMs / (k + 2), cost: c.cost / 5 })) : [],
+      weekShare: weekend ? [{ account: "0123456789ab", pct: 2 }] : [{ account: "ba9876543210", pct: 11 }, { account: "0123456789ab", pct: 6 }],
     });
   }
   const total = (key: "youMs" | "workedMs" | "busyMs" | "waitMs" | "prompts" | "cost" | "tokenTotal") => days.reduce((sum, d) => sum + d[key], 0);
@@ -551,12 +557,13 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     // (What got done: each with its chats, what each got done)
     projects: [
       { name: "webapp", path: "~/projects/webapp", folder: "/home/alice/projects/webapp", host: "", workedMs: total("workedMs") * 0.55, cost: cost * 0.55, prompts: 92, chats: [DEMO_CHATS[1], DEMO_CHATS[3]], chatCount: 11,
-        commitCount: 14, files: 212, linesAdded: 4810, linesRemoved: 1190 },
+        commitCount: 14, files: 212, linesAdded: 4810, linesRemoved: 1190, accounts: ["ba9876543210"], weekShare: [{ account: "ba9876543210", pct: 44 }] },
       { name: "date-parser", path: "~/projects/date-parser", folder: "/home/alice/projects/date-parser", host: "", workedMs: total("workedMs") * 0.25, cost: cost * 0.27, prompts: 41, chats: [DEMO_CHATS[0]], chatCount: 6,
-        commitCount: 5, files: 9, linesAdded: 640, linesRemoved: 210 },
+        commitCount: 5, files: 9, linesAdded: 640, linesRemoved: 210, accounts: ["0123456789ab"], weekShare: [{ account: "0123456789ab", pct: 31 }] },
       { name: "pipeline", path: "/srv/pipeline", folder: "/srv/pipeline", host: "build-server", workedMs: total("workedMs") * 0.15, cost: cost * 0.14, prompts: 17, chats: [DEMO_CHATS[2]], chatCount: 4,
-        commitCount: 1, files: 3, linesAdded: 40, linesRemoved: 12 },
-      { name: "~", path: "~", folder: "/home/alice", host: "", workedMs: total("workedMs") * 0.05, cost: cost * 0.04, prompts: 9, chats: [], chatCount: 2, commitCount: 0, files: 0 },
+        commitCount: 1, files: 3, linesAdded: 40, linesRemoved: 12, accounts: ["ba9876543210"], weekShare: [{ account: "ba9876543210", pct: 11 }] },
+      { name: "~", path: "~", folder: "/home/alice", host: "", workedMs: total("workedMs") * 0.05, cost: cost * 0.04, prompts: 9, chats: [], chatCount: 2, commitCount: 0, files: 0,
+        accounts: ["0123456789ab"], weekShare: [{ account: "0123456789ab", pct: 4 }] },
     ],
     models: [
       { model: "Opus 5.5", cost: cost * 0.88, tokens: 560_000_000, requests: 2750, share: 0.88 },
@@ -575,6 +582,13 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     workBefore: back >= 3 ? null : {
       toolCalls: 2410, commands: 1102, edits: 512, files: 98, linesAdded: 6120, linesRemoved: 1630, subagents: 12, compactions: 2, webSearches: 4, webFetches: 3,
     },
+    // (Your plan: each account's week these days, its full 5-hour windows, its run-outs and how long they held chats)
+    planUse: [
+      { account: "0123456789ab", name: "personal", plan: "Max", readings: true, since: now - 60 * 86400000, covered: true,
+        weeks: { seven_day: 41 }, fiveFull: 0, fiveUsed: 9, ranOut: 0, stopped: 0, heldMs: 0 },
+      { account: "ba9876543210", name: "work", plan: "Team", readings: true, since: now - 60 * 86400000, covered: true,
+        weeks: { seven_day: 66, seven_day_opus: 23 }, fiveFull: 3, fiveUsed: 12, ranOut: 2, stopped: 5, heldMs: 4 * HOUR + 10 * MIN },
+    ],
     plan: back ? [] : [
       { account: "0123456789ab", name: "personal", windows: [
         { key: "seven_day", label: "7d", resetsAt: now + 2.5 * 86400000, pct: 58, points: fill(now - 4.5 * 86400000, now + 2.5 * 86400000, 58) },
