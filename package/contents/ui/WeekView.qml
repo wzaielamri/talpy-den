@@ -175,7 +175,8 @@ PlasmaComponents3.ScrollView {
         return Math.ceil(Math.max(0, ...texts.map(t => smallMetrics.advanceWidth(t)))) + 1
     }
     readonly property real projectNumbersWidth: widest(projects.map(projectNumbers))
-    readonly property real projectDoneWidth: Math.min(gu * 7, widest(projects.map(doneText)))   // (1 when none got any)
+    // (1 when none got any; up to 7 units, or a quarter of a wide popup: "654 commits · 1,567 files" whole at 560 px)
+    readonly property real projectDoneWidth: Math.min(Math.max(gu * 7, width * 0.26), widest(projects.map(doneText)))
 
     // 412.3M, 8.1k
     function tokens(n) {
