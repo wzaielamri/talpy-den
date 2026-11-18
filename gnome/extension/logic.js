@@ -1673,9 +1673,10 @@ export function weekDeltaText(now, before, kind, cur = USD) {
         return '';
     const d = now - before;
     const abs = Math.abs(d);
-    if (kind === 'time' ? abs < 60000 : kind === 'money' ? abs < 0.01 : d === 0)
+    if (kind === 'time' ? abs < 60000 : kind === 'money' ? abs < 0.01 : kind === 'tokens' ? abs < 50 : d === 0)
         return 'same as before';
-    return (d > 0 ? '+' : '−') + (kind === 'time' ? hoursText(abs) : kind === 'money' ? moneyText(abs, cur) : grouped(abs));
+    return (d > 0 ? '+' : '−') + (kind === 'time' ? hoursText(abs) : kind === 'money' ? moneyText(abs, cur)
+        : kind === 'tokens' ? formatTokens(abs) : grouped(abs));
 }
 
 // The period before begins before the first chat the Recap has: not known
@@ -1696,7 +1697,8 @@ export function weekTiles(recap) {
     const s = recap.sum;
     const p = previousOf(recap);
     const cur = weekCurrency(recap);
-    const shown = (v, kind) => (kind === 'time' ? hoursText(v) : kind === 'money' ? moneyText(v, cur) : grouped(v));
+    const shown = (v, kind) => (kind === 'time' ? hoursText(v) : kind === 'money' ? moneyText(v, cur)
+        : kind === 'tokens' ? formatTokens(v || 0) : grouped(v));
     const [beforeText, trendText] = recap.span === 'day' ? ['The day before', 'Day by day, this day last']
         : recap.span === 'month' ? ['The 30 days before', '30 days at a time, these 30 days last']
             : ['The 7 days before', 'Week by week, these 7 days last'];
@@ -1723,12 +1725,29 @@ export function weekTiles(recap) {
             trend: weekTrend(recap, 'prompts'),
             tip: `${plural(s.chats, 'In %1 chat', 'In %1 chats')} · ${plural(s.turns, "%1 turn of Claude's", "%1 turns of Claude's")}` +
                 before(p ? p.prompts : 0, 'count') + weeks('prompts', 'count')},
+        {label: weekTokensLabel(s), value: formatTokens(s.tokenTotal || 0), delta: weekDeltaText(s.tokenTotal || 0, p ? p.tokenTotal || 0 : null, 'tokens'),
+            trend: weekTrend(recap, 'tokenTotal'),
+            tip: weekTokensText(s) + before(p ? p.tokenTotal || 0 : 0, 'tokens') + weeks('tokenTotal', 'tokens')},
         {label: 'At API prices', value: moneyText(s.cost, cur), delta: weekDeltaText(s.cost, p ? p.cost : null, 'money', cur),
             trend: weekTrend(recap, 'cost'),
             tip: `What the same tokens would cost on Claude's API, at its list prices of ${dateText(recap.prices.asOf)}. ` +
                 "Your plan isn't billed this way: this is the value of what you used." + weekGuessedCostText(recap) +
                 before(p ? p.cost : 0, 'money') + weeks('cost', 'money')},
     ];
+}
+
+// The Tokens tile's label: how much of them were cache reads, on the tile
+// itself ("Tokens · 98% cache"), the whole split in its tooltip
+export function weekTokensLabel(s) {
+    const t = s.tokens;
+    return t && t.cacheRead > 0 && s.tokenTotal > 0 ? `Tokens · ${weekShareText(t.cacheRead / s.tokenTotal)} cache` : 'Tokens';
+}
+
+// What the tokens were: all that Claude read and wrote, by kind
+function weekTokensText(s) {
+    const t = s.tokens;
+    return t ? `Everything Claude read and wrote: ${formatTokens(t.input)} of new input, ${formatTokens(t.cacheRead)} read from the cache, ` +
+        `${formatTokens(t.cacheWrite5m + t.cacheWrite1h)} written to the cache and ${formatTokens(t.output)} that Claude wrote.` : '';
 }
 
 export function weekFactsText(s) {

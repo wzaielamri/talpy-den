@@ -729,8 +729,9 @@ const weekRecap = (extra = {}) => ({
     back: 0, backMax: 4, from: '2026-10-18', to: '2026-10-24', prices: {asOf: '2026-10-24', guessed: []},
     sum: {youMs: 18 * HOUR, workedMs: 32 * HOUR + 6 * MIN, busyMs: 27 * HOUR, waitMs: 3 * HOUR + 18 * MIN, prompts: 219, cost: 906.4,
         turns: 253, chats: 67, limits: 2, peakAtOnce: 3, busiestDay: '2026-10-20',
-        longestTurn: {workedMs: 73 * MIN, name: 'startup hang'}, tokens: {input: 10, output: 9e6, cacheRead: 2.4e9, cacheWrite5m: 1e7, cacheWrite1h: 3e7}},
-    previous: {youMs: 13 * HOUR + 16 * MIN, workedMs: 15 * HOUR, prompts: 203, cost: 397},
+        longestTurn: {workedMs: 73 * MIN, name: 'startup hang'}, tokens: {input: 10, output: 9e6, cacheRead: 2.4e9, cacheWrite5m: 1e7, cacheWrite1h: 3e7},
+        tokenTotal: 2449000010},
+    previous: {youMs: 13 * HOUR + 16 * MIN, workedMs: 15 * HOUR, prompts: 203, cost: 397, tokenTotal: 1.9e9},
     cacheSaved: 9010, sources: [{host: '', ok: true, error: ''}, {host: 'lab', ok: false, error: 'no answer'}], ...extra,
 });
 
@@ -760,7 +761,9 @@ test("the week's days, tiles and facts", () => {
         ['23–29 Oct', '30 Oct – 5 Nov', '7–8 Oct']);
     const tiles = L.weekTiles(r);
     eq(tiles.map(t => [t.label, t.value, t.delta]), [['You were at it', '18h 0m', '+4h 44m'], ['Claude worked', '32h 6m', '+17h 6m'],
-        ['Prompts', '219', '+16'], ['At API prices', '$906', '+$509']]);
+        ['Prompts', '219', '+16'], ['Tokens · 98% cache', '2.4B', '+549.0M'], ['At API prices', '$906', '+$509']]);
+    eq(tiles[3].tip.startsWith('Everything Claude read and wrote: 10 of new input, 2.4B read from the cache, 40.0M written to the cache'), true);
+    eq(L.weekTokensLabel({tokenTotal: 0, tokens: {cacheRead: 0}}), 'Tokens');
     eq(L.weekTiles({...r, previous: {youMs: 0, workedMs: 0, prompts: 0, cost: 0}})[0].delta, '');
     // a model priced by a guess: marked, and the amount says how much rests on it
     const fable = {model: 'Fable 5.3', cost: 90.64, share: 0.1, requests: 9, guessed: true, pricedAs: 'Fable 5.2'};
@@ -800,7 +803,7 @@ test('amounts in another currency, at the rate week.py sends', () => {
     eq([L.moneyText(941, eur), L.moneyText(23.8, eur), L.moneyText(0.004, eur), L.moneyText(12, {code: 'JPY', rate: 152.3}),
         L.moneyText(12, {code: 'CHF', rate: 0.8})], ['€841', '€21.26', '<€0.01', '¥1,828', '9.60 CHF']);
     const r = weekRecap({currency: {code: 'EUR', rate: 0.9, date: '2026-10-23', error: ''}});
-    eq(L.weekTiles(r)[3].value, '€816');
+    eq(L.weekTiles(r)[4].value, '€816');
     eq(L.weekFootText(r).split('\n')[1], "Amounts in EUR at the European Central Bank's rate of 23 Oct 2026: 1 USD = 0.9000 EUR.");
     const failed = weekRecap({currency: {code: 'USD', rate: 1, date: '', error: 'no EUR rate from the European Central Bank yet'}});
     eq(L.weekCurrency(failed).code, 'USD');

@@ -10,7 +10,7 @@ import type { WeekDay } from "../src/shared/types";
 import {
   coldText, currencyOf, dayTip, deltaText, factsText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
-  shareText, tipMeaning, tipSource, guessedCostText, guessedModelTip, modelValue,
+  shareText, tipMeaning, tipSource, guessedCostText, guessedModelTip, modelValue, tokensLabel,
   dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
   limitStart, limitWeekBars,
@@ -41,7 +41,7 @@ test("the days shown, and the week's facts", () => {
   assert.equal(periodText(demoWeek(NOW, 1)), "11 Oct – 17 Oct");
   assert.match(factsText(recap.sum), /^longest turn 48m \(Port the date parser\) · up to 2 chats at once · busiest day \w+day · usage limits stopped you 2 times$/);
   const tiles = weekTiles(recap);
-  assert.deepEqual(tiles.map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens", "At API prices"]);
+  assert.deepEqual(tiles.map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens · 98% cache", "At API prices"]);
   assert.match(tiles[1].tip, /On the clock it worked .*, and it waited 3h 18m for your answers\.\nThe 7 days before: /);
   assert.equal(weekTiles({ ...recap, previous: { youMs: 0, workedMs: 0, busyMs: 0, waitMs: 0, prompts: 0, cost: 0, tokenTotal: 0 } })[0].delta, "");
   // the 30 days before begin before the first chat kept: no change, and the tip says why
@@ -51,7 +51,7 @@ test("the days shown, and the week's facts", () => {
 });
 
 test("the Recap reads as a story: the tiles, what Claude did, when, where, then the money", () => {
-  assert.deepEqual(weekTiles(demoWeek(NOW)).map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens", "At API prices"]);
+  assert.deepEqual(weekTiles(demoWeek(NOW)).map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens · 98% cache", "At API prices"]);
   // (Turns that cost the most is gone: Chats it worked on most says it; the cold-cache note is with the tips)
   assert.deepEqual([...RECAP_SECTIONS], ["work", "days", "plan", "limits", "lanes", "projects", "chats", "models", "tips"]);
 });
@@ -62,7 +62,9 @@ test("the tokens used: a tile with its change and trend, and a row's tokens", ()
   assert.equal(deltaText(1_000_020, 1_000_000, "tokens"), "same as before");
   const recap = demoWeek(NOW);
   const tile = weekTiles(recap)[3];
-  assert.equal(tile.label, "Tokens");
+  assert.equal(tile.label, "Tokens · 98% cache"); // (612.0M of 626.3M: cache reads)
+  assert.equal(tokensLabel({ tokenTotal: 1000, tokens: { ...recap.sum.tokens, cacheRead: 0 } }), "Tokens");
+  assert.equal(tokensLabel({ tokenTotal: 1000, tokens: { ...recap.sum.tokens, cacheRead: 999 } }), "Tokens · >99% cache");
   assert.equal(tile.value, "626.3M");
   assert.equal(tile.delta, "+156.6M");
   assert.match(tile.tip, /^Everything Claude read and wrote: 41\.2k of new input, 612\.0M read from the cache, 11\.9M written to the cache and 2\.3M that Claude wrote\.\nThe 7 days before: 469\.7M\nWeek by week, these 7 days last: .* · 626\.3M$/);

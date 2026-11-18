@@ -406,7 +406,7 @@ PlasmaComponents3.ScrollView {
           delta: deltaText(sum.prompts, previous ? previous.prompts : 0, "count"),
           tip: i18np("In %1 chat", "In %1 chats", sum.chats) + " · " + i18np("%1 turn of Claude's", "%1 turns of Claude's", sum.turns)
                + beforeText(previous ? previous.prompts : 0, "count") + trendText("prompts", "count") },
-        { label: i18n("Tokens"), key: "tokenTotal", value: tokens(sum.tokenTotal),
+        { label: tokensLabel(), key: "tokenTotal", value: tokens(sum.tokenTotal),
           delta: deltaText(sum.tokenTotal, previous ? previous.tokenTotal : 0, "tokens"),
           tip: tokenText() + beforeText(previous ? previous.tokenTotal : 0, "tokens") + trendText("tokenTotal", "tokens") },
         { label: i18n("At API prices"), key: "cost", value: money(sum.cost),
@@ -415,6 +415,16 @@ PlasmaComponents3.ScrollView {
                     recap.prices ? Qt.locale().toString(date(recap.prices.asOf), "d MMMM yyyy") : "")
                + guessedCostText() + beforeText(previous ? previous.cost : 0, "money") + trendText("cost", "money") }
     ]
+
+    // The Tokens tile's label: how much of them were cache reads, on the tile
+    // itself ("Tokens · 98% cache"), the whole split in its tooltip
+    function tokensLabel() {
+        const t = sum ? sum.tokens : null
+        return t && t.cacheRead > 0 && sum.tokenTotal > 0
+             ? i18nc("the Tokens tile's label: the share of them read from the cache", "Tokens · %1 cache",
+                     shareText(t.cacheRead / sum.tokenTotal))
+             : i18n("Tokens")
+    }
 
     // What the tokens were: all that Claude read and wrote, by kind
     function tokenText() {

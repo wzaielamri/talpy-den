@@ -235,7 +235,7 @@ export function weekTiles(recap: WeekRecap): WeekTile[] {
       trend: trendOf(recap, "prompts"),
     },
     {
-      label: "Tokens",
+      label: tokensLabel(s),
       value: shortCount(s.tokenTotal),
       delta: deltaText(s.tokenTotal, p ? p.tokenTotal : null, "tokens"),
       tip: tokensText(s.tokens) + before(p ? p.tokenTotal : 0, "tokens") + weeks("tokenTotal", "tokens"),
@@ -260,6 +260,12 @@ export function uncomparedText(recap: Pick<WeekRecap, "span" | "beforeKept" | "f
   if (recap.beforeKept !== false || !recap.first || recap.span === "all") return "";
   const what = recap.span === "day" ? "The day before" : recap.span === "month" ? "The 30 days before" : "The 7 days before";
   return `\n${what} can't be compared: the Recap has your chats only since ${shortDay(recap.first)}.`;
+}
+
+// The Tokens tile's label: how much of them were cache reads, on the tile
+// itself ("Tokens · 98% cache"), the whole split in its tooltip
+export function tokensLabel(s: Pick<WeekSum, "tokens" | "tokenTotal">): string {
+  return s.tokens.cacheRead > 0 && s.tokenTotal > 0 ? `Tokens · ${shareText(s.tokens.cacheRead / s.tokenTotal)} cache` : "Tokens";
 }
 
 // What the tokens were: all that Claude read and wrote, by kind

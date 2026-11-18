@@ -22,6 +22,10 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
+- **The Tokens tile says how much came from the cache.** Its label now
+  says the cache reads' share of the total (*Tokens · 98% cache*); the
+  tooltip keeps the whole split.
+
 ### Fixed
 
 - **The Recap's API prices are today's, and a guessed one shows.** The
