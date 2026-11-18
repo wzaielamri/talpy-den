@@ -29,7 +29,7 @@ function play(hitEvery, stopAt) {
         stage: () => ({ width: 400, ground: 90, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: 370 }),
         px: () => px, moveTo: x => { px = x; xs.add(Math.round(x)); }, say: w => said.push(w), changed: () => changed++,
     };
-    const g = pickGame(t, host);
+    const g = pickGame(t, host, 'peekaboo');
     g.start(now);
     const brainDuring = t.brainOn;
     let ups = 0, last = '', downHits = 0, maxOpen = 0, holes = 0, downRise = 0, deepest = 0;
@@ -112,7 +112,7 @@ const t = new Talpy({});
 let now = 1000;
 t.tick(now);
 const g = pickGame(t, { stage: () => ({ width: 400, ground: 90, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: 370 }),
-                        px: () => 200, moveTo() {}, say() {}, changed() {} });
+                        px: () => 200, moveTo() {}, say() {}, changed() {} }, 'peekaboo');
 g.start(now);
 const first = { on: g.on, body: t.st.body, eyes: t.st.eyes };
 now += 200; t.tick(now); g.tick(now);
@@ -121,7 +121,7 @@ for (let i = 0; i < 300; i++) { now += 16; t.tick(now); g.tick(now); }
 const t2 = new Talpy({});
 t2.tick(1000);
 const g2 = pickGame(t2, { stage: () => ({ width: 400, ground: 90, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: 370 }),
-                          px: () => 200, moveTo() {}, say() {}, changed() {} });
+                          px: () => 200, moveTo() {}, say() {}, changed() {} }, 'peekaboo');
 g2.start(1000, true);
 console.log(JSON.stringify({ first, hit, after: g.state, on: g.on, woken: t2.st.mouth }));""" % json.dumps(str(TALPY / "games.mjs")))
         self.assertEqual(out["first"], {"on": True, "body": "shake", "eyes": "squint"})   # (laughing)
@@ -133,13 +133,177 @@ console.log(JSON.stringify({ first, hit, after: g.state, on: g.on, woken: t2.st.
     def test_he_gets_quicker_each_round(self):
         out = run_node("""
 import { pickGame } from %s;
-const g = pickGame(new Talpy({}), { stage: () => ({}), px: () => 0, moveTo() {}, say() {}, changed() {} });
+const g = pickGame(new Talpy({}), { stage: () => ({}), px: () => 0, moveTo() {}, say() {}, changed() {} }, 'peekaboo');
 const ms = [];
 for (let r = 0; r < 8; r++) { g.round = r; ms.push(Math.round(g.upMs())); }
 console.log(JSON.stringify(ms));""" % json.dumps(str(TALPY / "games.mjs")))
         self.assertEqual(out, sorted(out, reverse=True))
         self.assertLess(out[-1], out[0])
         self.assertGreaterEqual(out[-1], 520)
+
+
+RUN = """
+import { pickGame, GAMES } from %s;
+function seeded(seed) {   // (mulberry32: the same run each time)
+    return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+                   t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+const GROUND_KINDS = ['pebble', 'stone', 'pot', 'pebbles'];
+// A player who looks ahead: jumps a ground thing so he's at his highest over it, digs under a crow
+function player(g, px, noDig) {
+    let next = null;
+    for (const th of g.things)
+        if (th.kind !== 'tuft' && th.x + th.w > px - 20 && (!next || th.x < next.x)) next = th;
+    if (!next || next.kind === 'crowHigh') { if (g.digging) g.release('dig'); return; }
+    const ahead = next.x - (px + 16);
+    if (GROUND_KINDS.indexOf(next.kind) >= 0) {
+        if (g.digging) g.release('dig');
+        if (g.lift === 0 && ahead <= g.speed * 0.31 - (next.w + 33) / 2) g.press('jump');
+    } else if (!noDig && ahead < g.speed * 0.15 + 12 && !g.digging) g.press('dig');
+}
+function play(o) {
+    Math.random = seeded(o.seed || 1);
+    const width = o.width || 400, best = o.best === undefined ? 120 : o.best;
+    const t = new Talpy({});
+    let now = 1000, px = 200;
+    t.tick(now);
+    const said = [], saved = [], grows = [];
+    const host = {
+        stage: () => ({ width: width, height: 176, ground: 160, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: width - 30 }),
+        px: () => px, moveTo: x => { px = x; }, say: w => said.push(w), changed: () => {},
+        best: () => best, saveBest: m => saved.push(m), grow: on => grows.push(on),
+    };
+    const g = pickGame(t, host, 'run');
+    g.start(now);
+    const r = { name: g.name, hintAtStart: g.hint, growAtStart: grows.slice(), things: g.things, sameArray: true, maxThings: 0,
+                firstThingMs: null, firstCrowM: null, digHint: false, crowsPassed: 0, maxSpeedUp: 0, speedUpAt600: null,
+                overMs: null, overMeters: null, onAtOver: null, hitBy: null, newBest: null, endMs: null, restarted: null };
+    let crowNear = false;
+    while (g.on && now < 1000 + (o.until || 180000)) {
+        now += 16;
+        t.tick(now);
+        g.tick(now);
+        if (g.things !== r.things) r.sameArray = false;
+        r.maxThings = Math.max(r.maxThings, g.things.length);
+        const hitting = g.things.filter(th => th.kind !== 'tuft');
+        if (r.firstThingMs === null && hitting.length) r.firstThingMs = now - 1000;
+        const crow = hitting.find(th => th.kind === 'crow');
+        if (crow && r.firstCrowM === null) { r.firstCrowM = g.meters; r.digHint = g.hint === 'dig'; }
+        if (crowNear && !crow) r.crowsPassed++;
+        crowNear = !!crow;
+        r.maxSpeedUp = Math.max(r.maxSpeedUp, g.speedUp);
+        if (r.speedUpAt600 === null && g.meters >= 600) r.speedUpAt600 = g.speedUp;
+        const auto = o.auto && (!o.autoUntil || g.meters < o.autoUntil);
+        if (auto && g.state !== 'over') player(g, px, o.noDig);
+        if (g.digging) r.dug = true;
+        if (o.alwaysDig && g.state !== 'over' && !g.digging) g.press('dig');
+        if (o.stopAt && now - 1000 >= o.stopAt) {
+            r.metersAtStop = g.meters;
+            g.stop();
+            r.onAfterStop = g.on;
+        }
+        if (g.state === 'over' && r.overMs === null) {
+            r.overMs = now - 1000; r.overMeters = g.meters; r.onAtOver = g.on; r.hitBy = g.hitBy; r.newBest = g.newBest;
+            r.savedAtOver = saved.slice(); r.saidAtOver = said.slice();
+        }
+        if (o.again && g.state === 'over' && now - 1000 - r.overMs > 500 && r.restarted === null) {
+            g.press('jump');
+            r.restarted = { state: g.state, meters: g.meters, on: g.on, hint: g.hint };
+        }
+    }
+    r.endMs = g.on ? null : now - 1000;
+    r.meters = g.meters; r.said = said; r.saved = saved; r.grows = grows; r.things = null;
+    return r;
+}
+const pick = () => { const t = new Talpy({}); return (name, ok) => pickGame(t, { stage: () => ({}), px: () => 0, moveTo() {}, say() {},
+    changed() {}, best: () => 0, saveBest() {}, grow() {}, runOk: () => ok }, name).name; };
+const p = pick();
+const random = []; for (let i = 0; i < 200; i++) random.push(p('', false));
+console.log(JSON.stringify({
+    games: GAMES, byName: [p('run', true), p('peekaboo', true)], randomNoRun: random,
+    idle: play({}), far: [1, 2, 3].map(seed => play({ seed: seed, auto: true, until: 150000 })),
+    wide: play({ seed: 4, width: 900, auto: true, until: 150000 }),
+    best: play({ seed: 5, auto: true, autoUntil: 150, best: 120 }),
+    again: play({ again: true }), digging: play({ alwaysDig: true }), stopped: play({ stopAt: 5000, best: 0, auto: true }),
+    noDig: play({ seed: 2, auto: true, noDig: true }),
+}));
+""" % json.dumps(str(TALPY / "games.mjs"))
+
+
+class RunTests(unittest.TestCase):
+    """Talpy's Run (games.mjs Run): an endless run, jump over what's on the ground, dig under crows."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.r = run_node(RUN)
+
+    def test_games_by_name_and_at_random(self):
+        self.assertEqual(self.r["games"], ["peekaboo", "run"])
+        self.assertEqual(self.r["byName"], ["run", "peekaboo"])
+        self.assertEqual(set(self.r["randomNoRun"]), {"peekaboo"})   # (not where it isn't offered)
+
+    def test_it_grows_the_stage_and_waits_2_s_before_the_first_obstacle(self):
+        idle = self.r["idle"]
+        self.assertEqual(idle["name"], "run")
+        self.assertEqual(idle["growAtStart"], [True])
+        self.assertEqual(idle["hintAtStart"], "start")
+        self.assertGreaterEqual(idle["firstThingMs"], 2000)
+
+    def test_with_no_input_the_first_obstacle_ends_it(self):
+        idle = self.r["idle"]
+        self.assertGreater(idle["overMeters"], 0)
+        self.assertTrue(idle["onAtOver"])                 # (the end screen: the game's still on)
+        self.assertIn(idle["hitBy"], ["pebble", "stone", "pot"])
+        self.assertIn("bump", idle["saidAtOver"])
+        self.assertEqual(idle["savedAtOver"], [])         # (short of the best of 120 m)
+
+    def test_a_player_who_jumps_and_digs_runs_far_and_faster(self):
+        for r in self.r["far"] + [self.r["wide"]]:
+            with self.subTest(seed=r):
+                self.assertIsNone(r["overMs"], f"bumped into {r['hitBy']} at {r['overMeters']} m")
+                self.assertGreaterEqual(r["meters"], 1000)
+                self.assertGreaterEqual(r["firstCrowM"], 200)
+                self.assertTrue(r["digHint"])             # (the first crow comes with the dig hint)
+                self.assertGreater(r["crowsPassed"], 0)   # (dug under: a crow doesn't end it)
+                self.assertGreaterEqual(r["speedUpAt600"], 1.5)
+                self.assertLessEqual(r["maxSpeedUp"], 2.05)
+
+    def test_dig_passes_under_crows_not_ground_things(self):
+        digging = self.r["digging"]
+        self.assertTrue(digging["dug"])
+        self.assertIsNotNone(digging["overMs"])
+        self.assertIn(digging["hitBy"], ["pebble", "stone", "pot"])   # (in up to his eyes, a pot still hits him)
+        # a crow at head height can't be run under or jumped: only dug under
+        no_dig = self.r["noDig"]
+        self.assertFalse(no_dig.get("dug"))
+        self.assertEqual(no_dig["hitBy"], "crow")
+
+    def test_a_new_best(self):
+        b = self.r["best"]
+        self.assertGreater(b["overMeters"], 120)
+        self.assertTrue(b["newBest"])
+        self.assertEqual(b["savedAtOver"], [b["overMeters"]])
+        self.assertIn("best", b["saidAtOver"])
+
+    def test_the_end_screen_runs_again_or_ends(self):
+        again = self.r["again"]["restarted"]
+        self.assertEqual((again["state"], again["meters"], again["on"], again["hint"]), ("ready", 0, True, "start"))
+        idle = self.r["idle"]
+        self.assertGreaterEqual(idle["endMs"] - idle["overMs"], 9000)
+        self.assertLessEqual(idle["endMs"] - idle["overMs"], 11000)
+        self.assertEqual(idle["grows"][-1], False)        # (the stage back to its size)
+
+    def test_stopped_its_over_at_once_and_counts(self):
+        s = self.r["stopped"]
+        self.assertIsNone(s["overMs"])                     # (still running when stopped: no bump saved it)
+        self.assertFalse(s["onAfterStop"])
+        self.assertEqual(s["grows"], [True, False])
+        self.assertEqual(s["saved"], [s["metersAtStop"]])   # (it beat a best of 0: it counts)
+
+    def test_its_light(self):
+        for r in self.r["far"] + [self.r["wide"]]:
+            self.assertTrue(r["sameArray"])                # (one array all run)
+            self.assertLessEqual(r["maxThings"], 10)
 
 
 class HostTests(unittest.TestCase):
