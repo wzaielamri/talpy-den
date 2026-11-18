@@ -599,13 +599,27 @@ PlasmaComponents3.ScrollView {
     function pointsText(v) {
         return v > 0 && v < 0.5 ? "<1%" : Math.round(v) + "%"
     }
+    // How long chats stood stopped by a limit, in all: days when it's long ("10 days")
+    function stoodText(ms) {
+        return ms >= 2 * 86400000 ? i18np("%1 day", "%1 days", Math.round(ms / 86400000)) : hours(ms)
+    }
+    // Each week on its own (Month and Overall, or a sum over a whole week):
+    // the points of each weekly window these days used, never added up
+    function planWeeksShown(u) {
+        return !!u.weekly && u.weekly.length > 0
+               && (recap.span === "month" || recap.span === "all" || (u.weeks && u.weeks.seven_day || 0) > 100)
+    }
     // An account's line: "66% of the week used in these days · 3 full 5-hour
-    // windows · ran out 3 times, chats held 4h 10m"
+    // windows · ran out 3 times, chats stood stopped 4h 10m in all"; several
+    // weeks: "Weeks: 72% · 100% · 41% so far · …"
     function planUseText(u) {
         const parts = []
         const week = u.weeks ? u.weeks.seven_day : undefined
+        const weeks = planWeeksShown(u) ? u.weekly.map(w => w.now ? i18nc("a week's use going on", "%1 so far", pointsText(w.pct))
+                                                                  : pointsText(w.pct)).join(" · ") : ""
         if (u.readings && week !== undefined)
-            parts.push(!u.covered && u.since ? i18n("%1 of the week used since %2", pointsText(week), limitDay(u.since))
+            parts.push(weeks ? (!u.covered && u.since ? i18n("Weeks since %1: %2", limitDay(u.since), weeks) : i18n("Weeks: %1", weeks))
+                       : !u.covered && u.since ? i18n("%1 of the week used since %2", pointsText(week), limitDay(u.since))
                        : recap.span !== "day" ? i18n("%1 of the week used in these days", pointsText(week))
                        : recap.back === 0 ? i18n("%1 of the week used today", pointsText(week))
                        : i18n("%1 of the week used on this day", pointsText(week)))
@@ -621,7 +635,7 @@ PlasmaComponents3.ScrollView {
             parts.push(i18n("no full 5-hour window"))
         parts.push(!u.ranOut ? i18n("didn't run out")
                    : (u.ranOut === 1 ? i18n("ran out once") : i18n("ran out %1 times", count(u.ranOut)))
-                     + (u.heldMs >= 60000 ? i18n(", chats held %1", hours(u.heldMs)) : ""))
+                     + (u.heldMs >= 60000 ? i18n(", chats stood stopped %1 in all", stoodText(u.heldMs)) : ""))
         if (!u.readings)
             parts.push(i18n("no readings of its plan here"))
         const text = parts.join(" · ")
@@ -631,15 +645,20 @@ PlasmaComponents3.ScrollView {
     function planUseTip(u) {
         const lines = []
         if (u.readings && u.weeks && u.weeks.seven_day !== undefined)
-            lines.push(i18n("How much of your plan's week these days used: how far Talpy Den's readings of it rose (kept on this computer). Use on claude.ai, other computers and SSH hosts counts too.")
+            lines.push((planWeeksShown(u)
+                        ? i18n("How much of each of your plan's weeks these days used, the newest last: how far Talpy Den's readings of it rose (kept on this computer), each week in its own limits.")
+                          + " " + u.weekly.map(w => i18nc("a week, from … to …: the share of it used", "%1 to %2: %3", limitDay(w.from), limitDay(w.until),
+                                                          w.now ? i18nc("a week's use going on", "%1 so far", pointsText(w.pct)) : pointsText(w.pct))).join(", ") + "."
+                        : i18n("How much of your plan's week these days used: how far Talpy Den's readings of it rose (kept on this computer)."))
+                       + " " + i18n("Use on claude.ai, other computers and SSH hosts counts too.")
                        + (!u.covered && u.since ? " " + i18n("The readings kept begin on %1: before that isn't known.", limitDay(u.since)) : ""))
         if (u.fiveUsed)
             lines.push(i18n("%1 of the %2 5-hour windows begun in these days ran full: their readings reached 100%, or a usage limit stopped a chat as one ended.",
                             u.fiveFull, u.fiveUsed))
         if (u.ranOut)
-            lines.push(i18n("Your plan ran out %1 (%2). From each stop until the limit reset, or until the chat went on another way, chats were held %3 in all, on the clock.",
+            lines.push(i18n("Your plan ran out %1 (%2). Chats stood stopped %3 in all: each from its stop until the limit reset, or until it went on another way (chats stopped at the same time count once).",
                             u.ranOut === 1 ? i18n("once") : i18n("%1 times", count(u.ranOut)),
-                            i18np("%1 chat stopped", "%1 chats stopped", u.stopped), hours(u.heldMs)))
+                            i18np("%1 chat stopped", "%1 chats stopped", u.stopped), stoodText(u.heldMs)))
         if (!u.readings)
             lines.push(i18n("Talpy Den keeps readings of the plans of this computer's accounts only: %1's has none here, so what these days used of its week isn't known.", u.name))
         return lines.join("\n")
@@ -723,6 +742,12 @@ PlasmaComponents3.ScrollView {
     function tipWas(t) {
         return t.pct === null || t.pct === undefined || t.before === null || t.before === undefined ? ""
              : i18nc("a share in the period before", "was %1", t.before + "%")
+    }
+    // A row of where the usage went that says a tip's share already (with how
+    // it moved): its share isn't said again on the tip
+    readonly property var mixOfTip: ({ long_context: "long_context", max_effort: "effort:max" })
+    function tipShareShown(t) {
+        return t.pct !== null && t.pct !== undefined && !(mixOfTip[t.key] && usageMix.some(p => p.key === mixOfTip[t.key]))
     }
     // The limits tip, once every chat it names keeps going, has nothing left to offer
     readonly property var tipsShown: tips.filter(t => !(t.key === "limits" && t.chats && t.chats.length && !t.more
@@ -2378,7 +2403,7 @@ PlasmaComponents3.ScrollView {
                     }
                     ColumnLayout {
                         Layout.alignment: Qt.AlignTop
-                        visible: tipRow.tip.pct !== null && tipRow.tip.pct !== undefined
+                        visible: view.tipShareShown(tipRow.tip)
                         spacing: 0
 
                         PlasmaComponents3.Label {

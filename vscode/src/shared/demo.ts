@@ -470,7 +470,12 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     const week = weeks[weeks.length - 1];
     const sum = { ...week.sum, ...numbers(1), turns: week.sum.turns * 4, chats: week.sum.chats * 3 };
     const start = days[0].start;
+    // (Your plan: each weekly window on its own, the first only partly in these days)
+    const weekly = (pcts: number[]) => pcts.map((pct, i) => ({ from: now - (33 - 7 * i) * 86400000, until: now - (26 - 7 * i) * 86400000, pct,
+      full: pct, now: i === pcts.length - 1 }));
     return { ...week, span, back, backMax: 2, first: days[0].day, from: days[0].day, to: days[days.length - 1].day, days: rows, sum,
+      planUse: (week.planUse ?? []).map((u) => ({ ...u, weeks: { seven_day: u.name === "work" ? 340 : 220 }, fiveFull: u.fiveFull * 4, fiveUsed: u.fiveUsed * 4,
+        weekly: weekly(u.name === "work" ? [22, 100, 64, 100, 30] : [9, 52, 61, 70, 28]) })),
       previous: numbers(0.86), prices: { ...week.prices, guessedCost: sum.cost * 0.05 },
       trend: [0.7, 0.78, 0.81, 0.86].map((k, i) => ({ ...numbers(k), start: start - (4 - i) * 30 * 86400000 })).concat([{ ...numbers(1), start }]) };
   }
@@ -496,7 +501,10 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       tokenTotal: week.sum.tokenTotal + before.sum.tokenTotal };
     return { ...week, span, back: 0, backMax: 0, first: before.from, from: before.from, previous: null, workBefore: null, trend: [],
       days: [row(week), row(before)], sum, projects: week.projects.map((p) => ({ ...p, weekShare: [] })),
-      planUse: (week.planUse ?? []).map((u) => ({ ...u, since: now - 9 * 86400000, covered: false, weeks: { seven_day: 118 }, fiveFull: 5, fiveUsed: 21 })) };
+      planUse: (week.planUse ?? []).map((u) => ({ ...u, since: now - 9 * 86400000, covered: false, weeks: { seven_day: 118 }, fiveFull: 5, fiveUsed: 21,
+        // (each week on its own: the one the readings began in, a whole one, this one so far)
+        weekly: [{ from: now - 12 * 86400000, until: now - 5 * 86400000, pct: 22, full: 64, now: false },
+                 { from: now - 5 * 86400000, until: now + 2 * 86400000, pct: u.name === "work" ? 96 : 58, full: u.name === "work" ? 96 : 58, now: true }] })) };
   }
   const today = new Date(now);
   const midnight = (offset: number) =>
@@ -628,7 +636,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
         detail: "812 requests carried over 150k tokens of context", command: "/clear",
         chats: [tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "311 requests"),
                 tipChat("demo-4", "Train the ranking model", "/home/alice/experiments/ranking", "204 requests")], more: 3 },
-      { key: "max_effort", pct: 22, before: back >= 3 ? null : 39, title: "Save max effort for hard tasks", detail: "22% of your usage ran at max effort", command: "/effort xhigh" },
+      { key: "max_effort", pct: 22, before: back >= 3 ? null : 39, title: "Save max effort for hard tasks", detail: "", command: "/effort xhigh" },
       { key: "long_running", pct: 18, before: back >= 3 ? null : 11, title: "Stop chats you no longer need", detail: "2 ran for 8 hours or more", command: "",
         chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", "11 hours"),
                 tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "9 hours")], more: 0 },

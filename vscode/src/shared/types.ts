@@ -849,7 +849,10 @@ export interface WeekPlanUse {
   readings: boolean;
   since: number | null;
   covered: boolean;
-  weeks: Record<string, number>;
+  weeks: Record<string, number>; // (several weekly windows: added up)
+  // each weekly window these days touch, oldest first: the points of it they
+  // used, how full it got by their end, whether it's going on (an older week.py sends none)
+  weekly?: { from: number; until: number; pct: number; full: number; now: boolean }[];
   fiveFull: number;
   fiveUsed: number;
   ranOut: number;

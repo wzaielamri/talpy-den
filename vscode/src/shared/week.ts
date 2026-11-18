@@ -384,6 +384,13 @@ export function tipWas(t: Pick<WeekTip, "pct" | "before">): string {
   return t.pct === null || t.before === null || t.before === undefined ? "" : `was ${t.before}%`;
 }
 
+// The row of where the usage went that says a tip's share already (with how
+// it moved): its share isn't said again on the tip
+const MIX_OF_TIP: Record<string, string> = { long_context: "long_context", max_effort: "effort:max" };
+export function tipShareShown(t: Pick<WeekTip, "key" | "pct">, mix: WeekMix[] | undefined): boolean {
+  return t.pct !== null && !(MIX_OF_TIP[t.key] && (mix ?? []).some((p) => p.key === MIX_OF_TIP[t.key]));
+}
+
 // The tips shown: the limits tip, once every chat it names keeps going, has
 // nothing left to offer
 export function tipsShown(tips: WeekTip[], status: Pick<Status, "keep"> | null | undefined): WeekTip[] {
@@ -537,32 +544,52 @@ function familyOf(key: string): string {
   return f.charAt(0).toUpperCase() + f.slice(1);
 }
 
+// How long chats stood stopped by a limit, in all: days when it's long ("10 days")
+export function stoodText(ms: number): string {
+  return ms >= 2 * 86400000 ? `${Math.round(ms / 86400000)} days` : hoursText(ms);
+}
+
+// Each week on its own (Month and Overall, or a sum over a whole week): the
+// points of each weekly window these days used, never added up
+export function planWeeksShown(u: Pick<WeekPlanUse, "weeks" | "weekly">, recap: Pick<WeekRecap, "span">): boolean {
+  return !!u.weekly?.length && (recap.span === "month" || recap.span === "all" || (u.weeks?.seven_day ?? 0) > 100);
+}
+
 // An account's line in Your plan: "66% of the week used in these days · 3
-// full 5-hour windows · ran out 3 times, chats held 4h 10m"
+// full 5-hour windows · ran out 3 times, chats stood stopped 4h 10m in all";
+// several weeks: "Weeks: 72% · 100% · 41% so far · …"
 export function planUseText(u: WeekPlanUse, recap: Pick<WeekRecap, "span" | "back">): string {
   const parts: string[] = [];
   const week = u.weeks?.seven_day;
   if (u.readings && week !== undefined) {
     const when = !u.covered && u.since ? `since ${limitDay(u.since)}`
       : recap.span === "day" ? (recap.back === 0 ? "today" : "on this day") : "in these days";
-    parts.push(`${pointsText(week)} of the week used ${when}`);
+    parts.push(planWeeksShown(u, recap)
+      ? `Weeks${!u.covered && u.since ? ` since ${limitDay(u.since)}` : ""}: ` +
+        u.weekly!.map((w) => pointsText(w.pct) + (w.now ? " so far" : "")).join(" · ")
+      : `${pointsText(week)} of the week used ${when}`);
   }
   for (const [key, v] of Object.entries(u.weeks ?? {}))
     if (key !== "seven_day" && v > 0) parts.push(`${pointsText(v)} of the ${familyOf(key)} week`);
   if (u.fiveFull) parts.push(counted(u.fiveFull, "%1 full 5-hour window", "%1 full 5-hour windows"));
   else if (u.fiveUsed) parts.push("no full 5-hour window");
   parts.push(!u.ranOut ? "didn't run out"
-    : (u.ranOut === 1 ? "ran out once" : `ran out ${count(u.ranOut)} times`) + (u.heldMs >= 60000 ? `, chats held ${hoursText(u.heldMs)}` : ""));
+    : (u.ranOut === 1 ? "ran out once" : `ran out ${count(u.ranOut)} times`) +
+      (u.heldMs >= 60000 ? `, chats stood stopped ${stoodText(u.heldMs)} in all` : ""));
   if (!u.readings) parts.push("no readings of its plan here");
   const text = parts.join(" · ");
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 // Its tooltip: how each part is worked out
-export function planUseTip(u: WeekPlanUse): string {
+export function planUseTip(u: WeekPlanUse, recap?: Pick<WeekRecap, "span">): string {
   const lines: string[] = [];
   if (u.readings && u.weeks?.seven_day !== undefined)
-    lines.push("How much of your plan's week these days used: how far Talpy Den's readings of it rose (kept on this computer). " +
+    lines.push((recap && planWeeksShown(u, recap)
+      ? "How much of each of your plan's weeks these days used, the newest last: how far Talpy Den's readings of it rose " +
+        "(kept on this computer), each week in its own limits. " +
+        u.weekly!.map((w) => `${limitDay(w.from)} to ${limitDay(w.until)}: ${pointsText(w.pct)}${w.now ? " so far" : ""}`).join(", ") + ". "
+      : "How much of your plan's week these days used: how far Talpy Den's readings of it rose (kept on this computer). ") +
       "Use on claude.ai, other computers and SSH hosts counts too." +
       (!u.covered && u.since ? ` The readings kept begin on ${limitDay(u.since)}: before that isn't known.` : ""));
   if (u.fiveUsed)
@@ -570,7 +597,8 @@ export function planUseTip(u: WeekPlanUse): string {
       "or a usage limit stopped a chat as one ended.");
   if (u.ranOut)
     lines.push(`Your plan ran out ${u.ranOut === 1 ? "once" : `${count(u.ranOut)} times`} (${counted(u.stopped, "%1 chat stopped", "%1 chats stopped")}). ` +
-      `From each stop until the limit reset, or until the chat went on another way, chats were held ${hoursText(u.heldMs)} in all, on the clock.`);
+      `Chats stood stopped ${stoodText(u.heldMs)} in all: each from its stop until the limit reset, or until it went on another way ` +
+      "(chats stopped at the same time count once).");
   if (!u.readings)
     lines.push(`Talpy Den keeps readings of the plans of this computer's accounts only: ${u.name}'s has none here, so what these days used of its week isn't known.`);
   return lines.join("\n");

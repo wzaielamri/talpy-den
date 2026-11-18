@@ -14,8 +14,8 @@ import {
   dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
   limitStart, limitWeekBars, limitValueText, doneText, doneTip, commitsShown, workBeforeText, listedChatRef,
-  planUseText, planUseTip, weekShareShort, weekShareTip,
-  daysBack, laneHoverText, laneTicks, mixLabel, mixTip, mixValue, modelRowText, tipChatAct, tipsShown, tipWas,
+  planUseText, planUseTip, planWeeksShown, weekShareShort, weekShareTip,
+  daysBack, laneHoverText, laneTicks, mixLabel, mixTip, mixValue, modelRowText, tipChatAct, tipsShown, tipShareShown, tipWas,
 } from "../src/shared/week";
 import { ViewHost } from "../src/view";
 
@@ -76,6 +76,10 @@ test("where the usage went: each part's share, how it moved, and the tips' as th
   assert.equal(tipWas(recap.tips[0]), "was 52%");
   assert.equal(tipWas({ pct: 41, before: null }), "");
   assert.equal(tipWas({ pct: null, before: null }), "");
+  // a tip whose share a row above says (context over 150k, effort max) doesn't say it again; the others do
+  const shown = recap.tips.filter((t) => tipShareShown(t, mix)).map((t) => t.key);
+  assert.deepEqual(shown, ["long_running", "cold"]);
+  assert.equal(tipShareShown(recap.tips[0], []), true);
 });
 
 test("a tip acts on the chats it names as the chat list would: Stop, Keep going, or only their name", () => {
@@ -130,14 +134,25 @@ test("your plan: what these days meant for each account's plan, and the shares o
   const recap = demoWeek(NOW);
   const [personal, work] = recap.planUse!;
   assert.equal(planUseText(work, recap),
-    "66% of the week used in these days · 23% of the Opus week · 3 full 5-hour windows · ran out 2 times, chats held 4h 10m");
+    "66% of the week used in these days · 23% of the Opus week · 3 full 5-hour windows · ran out 2 times, chats stood stopped 4h 10m in all");
   assert.equal(planUseText(personal, recap), "41% of the week used in these days · no full 5-hour window · didn't run out");
   assert.equal(planUseText({ ...work, ranOut: 1, heldMs: 0, fiveFull: 1 }, { span: "day", back: 0 }),
     "66% of the week used today · 23% of the Opus week · 1 full 5-hour window · ran out once");
   // the readings kept begin after these days began: from then; an account with none here (an SSH host's)
   assert.match(planUseText({ ...work, covered: false, since: new Date(2026, 10, 3, 10).getTime() }, recap), /^66% of the week used since 3 Nov · /);
   const host = { ...work, name: "lab", readings: false, since: null, weeks: {}, fiveFull: 0, fiveUsed: 0 };
-  assert.equal(planUseText(host, recap), "Ran out 2 times, chats held 4h 10m · no readings of its plan here");
+  assert.equal(planUseText(host, recap), "Ran out 2 times, chats stood stopped 4h 10m in all · no readings of its plan here");
+  // a limit that held a chat for days says days
+  assert.match(planUseText({ ...host, heldMs: 10.2 * 86400000 }, recap), /chats stood stopped 10 days in all/);
+  // several weeks (Month, Overall): each week on its own, never added up
+  const month = demoWeek(NOW, 0, "", "month");
+  const [, workMonth] = month.planUse!;
+  assert.equal(planWeeksShown(workMonth, month), true);
+  assert.match(planUseText(workMonth, month), /^Weeks: 22% · 100% · 64% · 100% · 30% so far · 12 full 5-hour windows · /);
+  assert.match(planUseTip(workMonth, month), /^How much of each of your plan's weeks these days used, .*: 22%, .*: 100%, .*: 30% so far\. /);
+  // a week's days that add up to over a week (two windows): each on its own too
+  assert.equal(planWeeksShown({ weeks: { seven_day: 130 }, weekly: [{ from: 0, until: 1, pct: 60, full: 60, now: false }, { from: 1, until: 2, pct: 70, full: 70, now: true }] }, recap), true);
+  assert.equal(planWeeksShown(work, recap), false);
   assert.match(planUseTip(host), /lab's has none here/);
   assert.match(planUseTip(work), /^How much of your plan's week these days used: .*\n3 of the 12 5-hour windows .*\nYour plan ran out 2 times \(5 chats stopped\)\./);
   // a project's share on its row, and in its tooltip how it's worked out (two accounts with readings: whose week)

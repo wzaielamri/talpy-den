@@ -25,6 +25,7 @@ import {
   rowDay,
   tipMeaning,
   tipSource,
+  tipShareShown,
   tipShareText,
   tipShareTip,
   TIPS_TOO_LITTLE,
@@ -436,7 +437,7 @@ function Plan({ recap }: { recap: WeekRecap }) {
         return (
           <div key={id} class="week-plan-account">
             {ids.length > 1 ? <div class="week-plan-name">{(u?.name ?? p?.name ?? "") + (plan ? ` · ${plan}` : "")}</div> : null}
-            {u ? <div class="week-plan-line" title={planUseTip(u)}>{planUseText(u, recap)}</div> : null}
+            {u ? <div class="week-plan-line" title={planUseTip(u, recap)}>{planUseText(u, recap)}</div> : null}
             {p?.windows.length ? (
               <ul class="week-bars week-plan">
                 {p.windows.map((w) => (
@@ -892,7 +893,7 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
               ) : null}
               {t.more ? <span class="small muted">and {t.more} more {t.more === 1 ? "chat" : "chats"}</span> : null}
             </span>
-            {t.pct !== null ? (
+            {tipShareShown(t, recap.usageMix) ? (
               <span class="week-tip-pct small" title={tipShareTip(t, recap)}>
                 {tipShareText(t)}
                 {tipWas(t) ? <span class="muted">{tipWas(t)}</span> : null}

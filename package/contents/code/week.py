@@ -3579,10 +3579,12 @@ def window_rises(w, baseline=False):
     """What a window's readings say was used in it: [(ms, points)], each rise
     of its steady readings (steady_readings: a stale one that comes back is
     left out) over the highest before it, from 0% at its start (a first
-    reading with some used already: used since its start, before that
     reading). baseline: the first reading of this window the account has
     at all: when what it says was used isn't known, so it isn't counted. A
-    drop that holds is a change of the limits: the use after it rises from there."""
+    drop that holds is a change of the limits: the use after it rises from
+    there, and the use before it is said in the new limits too (the same
+    use, a smaller share of the window: what the drop says), so a window's
+    rises never add up to more than it holds."""
     high, out = 0.0, []
     for i, (t, p) in enumerate(steady_readings(sorted(w["points"].items()))):
         if i == 0 and baseline:
@@ -3591,6 +3593,7 @@ def window_rises(w, baseline=False):
             out.append((t, p - high))
             high = p
         elif p <= high - LIMIT_DROP_POINTS:
+            out = [(x, r * p / high) for x, r in out]
             high = p
     return out
 
@@ -3612,6 +3615,40 @@ def account_rises(keys):
 def risen(rises, lo, hi):
     """The points of a window used in [lo, hi) (account_rises' list)."""
     return sum(r for t, r in rises if lo <= t < hi)
+
+
+def week_fill(w, until=None):
+    """How full a weekly window got by until (ms; None: by its last reading):
+    its steady readings' highest since the last change of the limits in it
+    (a drop that holds: window_rises), and when it reached 100% (or None)."""
+    high, full = 0.0, None
+    for t, p in steady_readings(sorted(w["points"].items())):
+        if until is not None and t >= until:
+            break
+        if p > high:
+            high = p
+        elif p <= high - LIMIT_DROP_POINTS:
+            high, full = p, None
+        if full is None and high >= 100:
+            full = t
+    return high, full
+
+
+def weekly_windows(keys, lo, hi, now_ms, first=None):
+    """The account's weekly windows (its main week, "seven_day") that [lo, hi)
+    touches, oldest first: [{"from" (its start), "until" (its reset), "pct"
+    (the points of it used in [lo, hi): window_rises), "full" (how full it
+    got by hi: week_fill), "now" (going on)}]. first: when the account's
+    readings of its week begin (that window's first reading is a baseline)."""
+    out = []
+    for w in sorted((keys.get("seven_day") or {}).values(), key=lambda w: w["resetsAt"]):
+        start = w["resetsAt"] - WEEK_MS
+        if not w["points"] or start >= hi or w["resetsAt"] <= lo:
+            continue
+        rises = window_rises(w, first is not None and min(w["points"]) == first)
+        out.append({"from": start, "until": w["resetsAt"], "pct": round(risen(rises, lo, hi), 1),
+                    "full": round(week_fill(w, hi)[0], 1), "now": w["resetsAt"] > now_ms})
+    return out
 
 
 FULL_RESET_MS = 30 * 60_000  # a limit's reset this near a 5-hour window's end is that window's (a message rounds it)
@@ -3645,7 +3682,8 @@ def plan_use(account, chats, rises, keys, lo, hi, now_ms):
     readings): {"account", "name", "plan", "readings" (this computer keeps
     readings of its windows), "since" (when its readings of the week begin),
     "covered" (they cover these days whole), "weeks" ({weekly window: the
-    points of it used, from since if later}), "fiveFull", "fiveUsed"
+    points of it used, from since if later; several weeks: added up}),
+    "weekly" (each week's own: weekly_windows), "fiveFull", "fiveUsed"
     (full_windows), "ranOut", "stopped" (run_outs), "heldMs" (held_ms)}."""
     aid = account["id"]
     mine = [c for c in chats.values() if aid in c["accounts"]]
@@ -3653,7 +3691,7 @@ def plan_use(account, chats, rises, keys, lo, hi, now_ms):
     runs = run_outs(hits)
     until = min(hi, now_ms)
     out = {"account": aid, "name": account["name"], "plan": account.get("plan"), "readings": rises is not None,
-           "since": None, "covered": False, "weeks": {}, "fiveFull": 0, "fiveUsed": 0, "ranOut": len(runs),
+           "since": None, "covered": False, "weeks": {}, "weekly": [], "fiveFull": 0, "fiveUsed": 0, "ranOut": len(runs),
            "stopped": sum(len(r["chats"]) for r in runs), "heldMs": sum(held_ms(r, chats, lo, until) for r in runs)}
     if rises is None:
         return out
@@ -3661,6 +3699,7 @@ def plan_use(account, chats, rises, keys, lo, hi, now_ms):
     out.update(since=since, covered=since is not None and since <= lo)
     out["weeks"] = {key: round(risen(r, max(lo, first), hi), 1) for key, (first, r) in rises.items()
                     if key.startswith("seven_day") and first < hi}
+    out["weekly"] = weekly_windows(keys, lo, hi, now_ms, since)
     out["fiveFull"], out["fiveUsed"] = full_windows(keys, lo, hi, [(t, r) for _, t, r, _ in hits])
     return out
 
@@ -3764,8 +3803,8 @@ def usage_tips(m):
                     "shown": pct >= USAGE_TIP_PCT, "attr": attr})
         return pct >= USAGE_TIP_PCT
 
-    tip("max_effort", sums[W_MAX], "Save max effort for hard tasks",
-        "{}% of your usage ran at max effort".format(round(100 * sums[W_MAX] / weight)), "/effort xhigh")
+    # (its share is the Effort max row's in where the usage went: not said again in its detail)
+    tip("max_effort", sums[W_MAX], "Save max effort for hard tasks", "", "/effort xhigh")
     tip("workflow", sums[W_FLOW], "Save workflows for big tasks",
         "{}% of your usage was workflow agents".format(round(100 * sums[W_FLOW] / weight)))
     biggest_start = max(m["starts"]) if m["starts"] else 0

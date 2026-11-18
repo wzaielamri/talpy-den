@@ -1491,6 +1491,25 @@ class YourPlanTests(Home):
         self.assertEqual([u["name"] for u in self.recap(account=self.gid["personal"], readings=self.readings())["planUse"]],
                          ["personal"])
 
+    def test_each_week_on_its_own(self):
+        # 40 days: two weekly windows, each said on its own (60% and 40% so
+        # far), never added up as one; a week's fill is its own readings'
+        r = self.recap(readings=self.readings(), span="month", days=40)
+        work = next(u for u in r["planUse"] if u["name"] == "work")
+        self.assertEqual([(w["from"], w["until"], w["pct"], w["full"], w["now"]) for w in work["weekly"]],
+                         [(at(13, 10), at(20, 10), 60.0, 60.0, False),
+                          (at(27, 10) - week.WEEK_MS, at(27, 10), 40.0, 40.0, True)])   # (a week, across the clock change)
+        # the 7 days shown: what each window's readings rose in them (20 of the first)
+        work = next(u for u in self.recap(readings=self.readings())["planUse"] if u["name"] == "work")
+        self.assertEqual([w["pct"] for w in work["weekly"]], [20.0, 40.0])
+        # bigger limits in the middle of a week (40% read as 10%, and it held):
+        # the use before is said in the new limits, so the week adds up to its 30%
+        keys = {"seven_day": {1: {"resetsAt": at(27, 10), "points": {at(20, 11): 0, at(21, 12): 40, at(22, 12): 10,
+                                                                     at(22, 13): 10, at(23, 12): 30}}}}
+        (w,) = week.weekly_windows(keys, at(20, 10), at(27, 10), self.now)
+        self.assertEqual((w["pct"], w["full"]), (30.0, 30.0))
+        self.assertEqual(week.week_fill(keys["seven_day"][1], at(22, 0)), (40.0, None))
+
     def test_days_the_readings_dont_cover_have_no_shares(self):
         # the 30 days began before the first reading kept (the 13th): what
         # the readings say is from then, and no project has a share of a week

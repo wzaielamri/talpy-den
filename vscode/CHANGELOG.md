@@ -22,6 +22,13 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
+- **Your plan says each week on its own.** Over a month or everything,
+  *Your plan* says each weekly window's use (*Weeks: 72% · 100% · 41% so
+  far*) instead of adding them up past 100%, and how long chats stood
+  stopped by a limit, in all, in days when it's long (*10 days*). A tip
+  whose share a row of *Where the usage went* already says (context over
+  150k, max effort) doesn't say it again.
+
 - **Where the usage went, and tips that act.** *By model* is now *Where
   the usage went*: the models' rows, with what each was the period before,
   then, as your plan's limits count it (weighed as Claude Code's `/usage`
