@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Better
+
+- **What an agent is on stands apart from its task.** The chat tab's strip
+  says a running subagent's task, then, apart from it and in the working
+  color, the call it's on (*▸ Searching for weeksInYear*); under each
+  running agent's task its call reads *▸ Reading week.py* in that color too,
+  as a chat's own *▸ what it's doing* does. A finished agent's line stays
+  dim.
+
 ### Fixed
 
 - **Remote Control turns on with a hint in the prompt.** The phone button

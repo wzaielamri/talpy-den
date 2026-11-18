@@ -464,8 +464,9 @@ function TaskStrip({ tasks, agents, open, setOpen, host }: {
   const next = tasks?.items.find((t) => t.status !== "completed")?.subject ?? "";
   const done = tasks ? tasks.done : agents?.done ?? 0;
   const total = tasks ? tasks.total : agents?.total ?? 0;
+  const now = !tasks && agents ? agentsNow(agents) : null;
   const line = tasks ? `${tasks.done}/${tasks.total} · ${tasks.current || (tasks.done >= tasks.total ? "all done" : `next: ${next}`)}`
-    : agents ? `Agents ${agents.done}/${agents.total} · ${agentsNow(agents)}` : "";
+    : agents && now ? `Agents ${agents.done}/${agents.total} · ${now.what}` : "";
   return (
     <div class="pane-tasks">
       <button type="button" class="pane-tasks-line" aria-expanded={unfolded}
@@ -476,6 +477,7 @@ function TaskStrip({ tasks, agents, open, setOpen, host }: {
           <span style={{ width: `${Math.round((done / Math.max(1, total)) * 100)}%` }} />
         </span>
         <span class="pane-tasks-now">{line}</span>
+        {now?.doing ? <span class="pane-tasks-doing">▸ {now.doing}</span> : null}
       </button>
       {unfolded ? (
         <div class="pane-tasks-list">

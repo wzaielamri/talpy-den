@@ -92,7 +92,9 @@ export function AgentTree({ tree, now, rowKey, host, opened, onToggle, onOpenRun
                 </span>
                 {a.activity || context ? (
                   <span class="agent-line2">
-                    <span class="agent-activity">{a.activity}</span>
+                    <span class={"agent-activity" + (a.status === "running" && a.activity ? " doing" : "")}>
+                      {a.status === "running" && a.activity ? `▸ ${a.activity}` : a.activity}
+                    </span>
                     {context ? (
                       <span class="agent-context" title="Its context now: what its last request sent and got back, as Claude's agent list counts it">
                         {context}

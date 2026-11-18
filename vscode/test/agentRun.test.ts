@@ -178,11 +178,13 @@ test("a chat tab's strip lists the running subagents first, each with the ones i
 
 test("without a task list, the strip's line says what the subagents do", () => {
   const one = [agent("a", "done"), agent("b", "running", 0, { activity: "Reading src/view.ts" })];
-  assert.equal(agentsNow({ done: 1, total: 2, tree: one }), "agent b: Reading src/view.ts");
-  assert.equal(agentsNow({ done: 1, total: 2, tree: [agent("a", "done"), agent("b", "running", 0, { description: "" })] }), "Explore");
-  assert.equal(agentsNow({ done: 0, total: 2, tree: [agent("a", "running"), agent("b", "running")] }), "2 running");
-  assert.equal(agentsNow({ done: 2, total: 2, tree: [agent("a", "done"), agent("b", "done")] }), "all done");
-  assert.equal(agentsNow({ done: 1, total: 2, tree: [agent("a", "done"), agent("b", "stopped")] }), "none running");
+  // (its task, and apart from it, in the working color, the call it's on)
+  assert.deepEqual(agentsNow({ done: 1, total: 2, tree: one }), { what: "agent b", doing: "Reading src/view.ts" });
+  assert.deepEqual(agentsNow({ done: 1, total: 2, tree: [agent("a", "done"), agent("b", "running", 0, { description: "" })] }),
+    { what: "Explore", doing: "" });
+  assert.deepEqual(agentsNow({ done: 0, total: 2, tree: [agent("a", "running"), agent("b", "running")] }), { what: "2 running", doing: "" });
+  assert.deepEqual(agentsNow({ done: 2, total: 2, tree: [agent("a", "done"), agent("b", "done")] }), { what: "all done", doing: "" });
+  assert.deepEqual(agentsNow({ done: 1, total: 2, tree: [agent("a", "done"), agent("b", "stopped")] }), { what: "none running", doing: "" });
 });
 
 test("a subagent's run is asked for only by an id the backend could have given", () => {

@@ -71,14 +71,14 @@ const chat: PaneChat = {
   shared: params.get("shared") === "1" ? { profiles: ["work", "personal"], forkOf: null } as unknown as PaneChat["shared"] : null,
   mode: "auto",
   plan: { title: "Fix the week numbers" },
-  // (?agents=0: none)
+  // (?agents=0: none; ?agents=one: one of them runs)
   agents: params.get("agents") === "0" ? null : {
     running: 2, done: 2, stopped: 0, total: 4,
     tree: [
       { id: "a1", parent: null, depth: 0, type: "Explore", description: "Find where weeks are computed", status: "done", activity: "", started: now - 380_000, updated: now - 330_000 },
-      { id: "a2", parent: null, depth: 0, type: "general-purpose", description: "Check the other date helpers", status: "running", activity: "Grep: weeksInYear", started: now - 200_000, updated: now - 5_000,
+      { id: "a2", parent: null, depth: 0, type: "general-purpose", description: "Check the other date helpers", status: "running", activity: "Searching for weeksInYear", started: now - 200_000, updated: now - 5_000,
         model: "Sonnet 5.5", task: "Check whether the other date helpers in src/dates.ts cap weeks at 52 too.", steps: ["Read: dates.ts", "Grep: weeksInYear"], toolCalls: 6, tokens: 41_200 },
-      { id: "a4", parent: "a2", depth: 1, type: "Explore", description: "Read the calendar module", status: "running", activity: "Read: calendar.ts", started: now - 60_000, updated: now - 3_000 },
+      { id: "a4", parent: "a2", depth: 1, type: "Explore", description: "Read the calendar module", status: "running", activity: "Reading calendar.ts", started: now - 60_000, updated: now - 3_000 },
       { id: "a3", parent: null, depth: 0, type: "Explore", description: "Look for week tests", status: "done", activity: "", started: now - 380_000, updated: now - 300_000 },
     ],
   },
@@ -93,6 +93,11 @@ const chat: PaneChat = {
     ],
   },
 };
+// ?agents=one: one subagent runs (with ?tasks=0 the strip's line says its task, then the call it's on)
+if (params.get("agents") === "one" && chat.agents) {
+  const tree = chat.agents.tree.filter((a) => a.id !== "a4");
+  chat.agents = { ...chat.agents, tree, running: 1, total: tree.length };
+}
 
 const items: PaneItem[] = [
   { kind: "you", key: "u1", text: "Week 53 dates come out as week 1. Find out why and fix it, with a test.", at: now - 400_000 },

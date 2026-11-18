@@ -107,13 +107,18 @@ ColumnLayout {
                         // What it does, in words, and its context now at the end, under its state
                         RowLayout {
                             Layout.fillWidth: true
+                            Layout.topMargin: 1
                             visible: activityLabel.text !== "" || contextLabel.text !== ""
                             PlasmaComponents3.Label {
                                 id: activityLabel
+                                // a running one's call apart from its task: in the working
+                                // color, as a chat's "▸ what it's doing"
+                                readonly property bool doing: agentRow.modelData.status === "running" && agentRow.modelData.activity !== ""
                                 textFormat: Text.PlainText
                                 Layout.fillWidth: true
-                                text: agentRow.modelData.activity
-                                opacity: 0.6
+                                text: doing ? "▸ " + agentRow.modelData.activity : agentRow.modelData.activity
+                                color: doing ? root.stateColor("working") : Kirigami.Theme.textColor
+                                opacity: doing ? 1 : 0.6
                                 elide: Text.ElideRight
                                 font.pointSize: tree.pointSize
                             }

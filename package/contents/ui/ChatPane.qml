@@ -92,16 +92,20 @@ Window {
         const busy = list => list.some(a => a.status === "running")
         return [].concat(...started.filter(busy), ...started.filter(list => !busy(list)))
     }
-    // without a task list, the strip's line says what its subagents do
-    readonly property string agentsNow: {
+    // without a task list, the strip's line says what its subagents do: what
+    // (the running one's task, else how many run, else how they ended) and,
+    // apart from it in the working color, doing (the call it's on, or "")
+    readonly property var agentsNow: {
         if (tasks || !agents)
-            return ""
+            return { what: "", doing: "" }
         const running = agents.tree.filter(a => a.status === "running")
         if (running.length === 1)
-            return (running[0].description || running[0].type) + (running[0].activity ? ": " + running[0].activity : "")
-        return running.length > 1 ? i18np("%1 running", "%1 running", running.length)
-             : agents.done >= agents.total ? i18n("all done") : i18n("none running")
+            return { what: running[0].description || running[0].type, doing: running[0].activity || "" }
+        return { what: running.length > 1 ? i18np("%1 running", "%1 running", running.length)
+                     : agents.done >= agents.total ? i18n("all done") : i18n("none running"), doing: "" }
     }
+    readonly property string agentsWhat: agentsNow.what
+    readonly property string agentsDoing: agentsNow.doing
 
     // the strip's line: all of it unfolds, or folds
     function toggleStrip() {
@@ -3575,12 +3579,28 @@ Window {
                         }
                         PlasmaComponents3.Label {
                             id: tasksText
-                            Layout.fillWidth: true
+                            // (with the call its subagent is on beside it, the task gives way first)
+                            Layout.fillWidth: !agentDoingText.visible
+                            Layout.maximumWidth: agentDoingText.visible ? Math.round(parent.width * 0.55) : Number.POSITIVE_INFINITY
                             textFormat: Text.PlainText
                             text: pane.tasks ? i18nc("tasks done/total · the one it's on", "%1/%2 · %3", pane.tasks.done, pane.tasks.total,
                                                      pane.tasks.current || (pane.tasks.done >= pane.tasks.total ? i18n("all done") : i18n("next: %1", pane.nextTask)))
-                                  : pane.agents ? i18nc("subagents finished/total · what they do", "Agents %1/%2 · %3", pane.agents.done, pane.agents.total, pane.agentsNow)
+                                  : pane.agents ? i18nc("subagents finished/total · what they do", "Agents %1/%2 · %3", pane.agents.done, pane.agents.total, pane.agentsWhat)
                                   : ""
+                            font.pointSize: pane.pt * 0.9
+                            font.underline: tasksFold.containsMouse || tasksFold.activeFocus
+                            elide: Text.ElideRight
+                        }
+                        // The call its one running subagent is on, apart from its task, in the
+                        // working color (as a chat's "▸ what it's doing")
+                        PlasmaComponents3.Label {
+                            id: agentDoingText
+                            visible: !pane.tasks && pane.agents !== null && pane.agentsDoing !== ""
+                            Layout.fillWidth: true
+                            Layout.leftMargin: Kirigami.Units.smallSpacing
+                            textFormat: Text.PlainText
+                            text: "▸ " + pane.agentsDoing
+                            color: root.stateColor("working")
                             font.pointSize: pane.pt * 0.9
                             font.underline: tasksFold.containsMouse || tasksFold.activeFocus
                             elide: Text.ElideRight

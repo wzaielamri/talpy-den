@@ -1558,11 +1558,12 @@ export function agentsRunningFirst(tree: Agent[]): Agent[] {
 }
 
 // What a chat's subagents do, for its strip's line when it has no task list:
-// the running one's description and what it does, else how many run, else how they ended
-export function agentsNow(agents: { done: number; total: number; tree: Agent[] }): string {
+// what (the running one's task, else how many run, else how they ended) and,
+// shown apart from it in the working color, doing (the call it's on, or "")
+export function agentsNow(agents: { done: number; total: number; tree: Agent[] }): { what: string; doing: string } {
   const running = agents.tree.filter((a) => a.status === "running");
-  if (running.length === 1) return (running[0].description || running[0].type) + (running[0].activity ? `: ${running[0].activity}` : "");
-  return running.length > 1 ? `${running.length} running` : agents.done >= agents.total ? "all done" : "none running";
+  if (running.length === 1) return { what: running[0].description || running[0].type, doing: running[0].activity || "" };
+  return { what: running.length > 1 ? `${running.length} running` : agents.done >= agents.total ? "all done" : "none running", doing: "" };
 }
 
 // The tooltip of "Open the whole run"

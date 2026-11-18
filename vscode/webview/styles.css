@@ -1099,6 +1099,23 @@ button.pane-ctx[aria-expanded="true"] {
   white-space: nowrap;
 }
 
+/* Its one running subagent's call, apart from its task and in the working
+   color (as a chat's "▸ what it's doing"); the task gives way first */
+.pane-tasks-now:has(+ .pane-tasks-doing) {
+  flex: 0 1 auto;
+  max-width: 55%;
+}
+
+.pane-tasks-doing {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: 0.6em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--td-working);
+}
+
 /* (a long list scrolls: the conversation keeps most of the tab) */
 .pane-tasks-list {
   max-height: 40vh;
@@ -1579,6 +1596,13 @@ button.pane-ctx[aria-expanded="true"] {
   display: flex;
   gap: 6px;
   min-width: 0;
+  margin-top: 1px;
+}
+
+/* A running agent's call, in the working color as a chat's "▸ what it's
+   doing", apart from its task above it */
+.agent-activity.doing {
+  color: var(--td-working);
 }
 
 .agent-context {

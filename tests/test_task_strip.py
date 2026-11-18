@@ -44,7 +44,7 @@ class PlasmaStripTests(unittest.TestCase):
         self.assertRegex(PANE, r"stripAgents: \{\s+if \(!agentsOpen \|\| !agents\)\s+return \[\]")
 
     def test_the_running_subagents_come_first_each_with_the_ones_it_started(self):
-        block = PANE[PANE.index("readonly property var stripAgents"):PANE.index("readonly property string agentsNow")]
+        block = PANE[PANE.index("readonly property var stripAgents"):PANE.index("readonly property var agentsNow")]
         self.assertIn("a.depth === 0", block)
         self.assertIn("started.filter(busy)", block)
 
@@ -52,7 +52,10 @@ class PlasmaStripTests(unittest.TestCase):
         strip = self.strip()
         self.assertIn('"%1/%2 · %3", pane.tasks.done, pane.tasks.total', strip)
         self.assertIn("pane.tasks.current", strip)
-        self.assertIn('"Agents %1/%2 · %3", pane.agents.done, pane.agents.total, pane.agentsNow', strip)
+        self.assertIn('"Agents %1/%2 · %3", pane.agents.done, pane.agents.total, pane.agentsWhat', strip)
+        # (apart from it, in the working color: the call its one running subagent is on)
+        self.assertIn('text: "▸ " + pane.agentsDoing', strip)
+        self.assertIn('color: root.stateColor("working")', strip)
         self.assertIn("Icons.plasma.unfolded : Icons.plasma.folded", strip)   # (the folds' arrows, A1)
         self.assertIn("activeFocusOnTab: true", strip)                        # (and the keyboard's)
         self.assertIn("onClicked: pane.toggleStrip()", strip)
@@ -100,6 +103,7 @@ class VsCodeStripTests(unittest.TestCase):
         self.assertIn("{open.agents && agents ? (", strip)
         self.assertIn("<AgentTree tree={agentsRunningFirst(agents.tree)}", strip)
         self.assertIn("agentsNow(agents)", strip)
+        self.assertIn('<span class="pane-tasks-doing">▸ {now.doing}</span>', strip)
         self.assertIn("I.folded", strip)
 
     def test_the_headers_agents_tag_unfolds_its_subagents(self):
