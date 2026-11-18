@@ -56,7 +56,7 @@
 
 | Key | What it does |
 |---|---|
-| Enter / Shift+Enter | Send / a new line |
+| Enter / Shift+Enter | Send / a new line; Enter again in the empty box: the message waiting goes now |
 | Ctrl+Enter | Send now: while Claude works, without the 5 s wait; in an empty box, the message waiting goes now |
 | Alt+Enter | Send when this turn ends |
 | Ctrl+Shift+Enter | Send, go on in the background (a terminal that takes no text) |

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Every change
+
+- **Enter again sends a queued message now.** A message sent while Claude works waits 5 s (*Queued · goes to Claude in 5 s*), to be taken back; to send it at once took **Send now** or Ctrl+Enter, and Enter in the empty box did nothing, so it waited the 5 s. Now Enter again in the empty box sends it at once, as **Send now** does (Plasma and VS Code).
+
 ## 1.21.0 (2026-11-17)
 
 ### Highlights

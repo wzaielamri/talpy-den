@@ -107,9 +107,7 @@ QtObject {
         case "sendNow": {   // (no 5 s wait; in an empty box, the message waiting goes now)
             if (text !== "")
                 return pane.send("enter", false, true)
-            const mine = pane.pendingSent.filter(p => p.state === "held" && p.chat === pane.chatId && p.host === (pane.host || ""))
-            if (mine.length)
-                pane.release("pending-" + mine[mine.length - 1].id)
+            pane.releaseLast()
             return
         }
         case "sendLater":

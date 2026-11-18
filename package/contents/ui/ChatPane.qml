@@ -2523,8 +2523,11 @@ Window {
 
     function send(how, afterTurn, now) {   // (now: Ctrl+Enter, no 5 s wait while Claude works)
         const text = replyBox.text.trim()
-        if (!text)
+        if (!text) {
+            if (how === "enter" && !afterTurn)
+                releaseLast()   // (Enter again in the empty box: the message waiting goes now)
             return
+        }
         trustAsk = null   // (asked again if it still can't go)
         // A command: as its kind says on this chat (commandRun). One typed before the / list's
         // offers were read waits for them (else /model would go as a message, and save your default)
@@ -2647,7 +2650,8 @@ Window {
                + (asked.kind === "later" ? " --after-turn --name " + root.shellQuote(chatName) : "") + (suggestOn ? " --suggest" : "") + paneArgs()
     }
     // Held (sent while Claude works): it goes to Claude when its moment is up
-    // (Claude takes it in at its next step), or at once with Send now; Edit
+    // (Claude takes it in at its next step), or at once with Send now (or Enter
+    // again in the empty box); Edit
     // (or ↑ in an empty box) takes it back into its box, Remove drops it
     readonly property int holdMs: 5000
     readonly property real queueButtonHeight: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing * 2
@@ -2687,6 +2691,12 @@ Window {
             showPending()
         replyBox.forceActiveFocus()
         return true
+    }
+    // Enter or Ctrl+Enter in an empty box: the newest one held for this chat goes now
+    function releaseLast() {
+        const mine = pendingSent.filter(p => p.state === "held" && p.chat === chatId && p.host === (host || ""))
+        if (mine.length)
+            release("pending-" + mine[mine.length - 1].id)
     }
     // ↑ in an empty box: the newest one held for this chat, back in it
     function takeBackLast() {

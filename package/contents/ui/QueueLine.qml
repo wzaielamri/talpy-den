@@ -5,9 +5,9 @@ import org.kde.kirigami as Kirigami
 import "icons.mjs" as Icons
 
 // Under your message in Talpy Chat while it waits (sent while Claude works): held a moment, "Queued
-// · goes to Claude in 5 s" with Edit, Send now and Cancel (↑ in the box takes it back too), then in
-// Claude's queue till it takes it in at its next step. ChatPane.qml's row: read and made only for a
-// message that waits, not for each of yours
+// · goes to Claude in 5 s" with Edit, Send now and Cancel (↑ in the box takes it back too, Enter
+// in the empty box sends it now), then in Claude's queue till it takes it in at its next step.
+// ChatPane.qml's row: read and made only for a message that waits, not for each of yours
 RowLayout {
     spacing: Kirigami.Units.smallSpacing
 
@@ -39,7 +39,7 @@ RowLayout {
         icon.name: Icons.plasma.send
         text: i18n("Send now")
         onClicked: pane.release(entry.key)
-        PlasmaComponents3.ToolTip.text: i18n("To Claude now: it takes it in at its next step (Ctrl+Enter, in an empty box)")
+        PlasmaComponents3.ToolTip.text: i18n("To Claude now: it takes it in at its next step (Enter or Ctrl+Enter, in an empty box)")
         PlasmaComponents3.ToolTip.visible: hovered
         PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
     }

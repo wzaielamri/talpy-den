@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Better
+
+- **Enter again sends a queued message now.** A message sent while Claude
+  works waits 5 s, to be taken back. Enter again in the empty box now sends
+  it at once, as **Send now** (or Ctrl+Enter) does.
+
 ## 1.21.0
 
 ### New

@@ -1411,7 +1411,10 @@ function ChatApp() {
   const send = (how: "auto" | "background" | "copy" | "enter", afterTurn: boolean, given?: string, now = false) => {
     const typed = given ?? text;
     const said = typed.trim();
-    if (!said) return;
+    if (!said) {
+      if (how === "enter" && !afterTurn && given === undefined) releaseLast();   // (Enter again in the empty box: the message waiting goes now)
+      return;
+    }
     if (chipsSeen.current.length) {   // (backing off: chips showed this turn, and you sent none of them)
       const next = chipsAfterSend(ignored.current, chipsSeen.current, said, Date.now());
       ignored.current = next.ignored;
@@ -1504,8 +1507,8 @@ function ChatApp() {
       send("auto", false);
     }
   }, [text, chat]);
-  // Held: it goes to Claude when its moment is up, or at once with Send now;
-  // Edit (or ↑ in an empty box) takes it back into the box, Cancel drops it
+  // Held: it goes to Claude when its moment is up, or at once with Send now (or
+  // Enter again in the empty box); Edit (or ↑ in an empty box) takes it back into the box, Cancel drops it
   const [now, setNow] = useState(0);
   // A picture of yours, big (its thumbnail clicked): over the tab, till a click, × or Esc
   const [big, setBig] = useState<{ path: string; src: string } | null>(null);
@@ -1515,6 +1518,11 @@ function ChatApp() {
     outgoingNow.current = outgoingNow.current.map((x) => (x === p ? { ...x, state: "sending" as const } : x));
     setOutgoing(outgoingNow.current);
     post({ type: "send", text: p.text, how: p.how ?? "auto", afterTurn: false, id });
+  };
+  // Enter or Ctrl+Enter in an empty box: the newest one held goes now
+  const releaseLast = () => {
+    const last = outgoingNow.current.filter((x) => x.state === "held").at(-1);
+    if (last) release(last.id);
   };
   const takeBack = (id: number, edit: boolean): boolean => {
     const p = outgoingNow.current.find((x) => x.id === id && x.state === "held");
@@ -2033,10 +2041,7 @@ function ChatApp() {
     switch (k) {
       case "sendNow": {   // (in an empty box: the message waiting goes now)
         if (text.trim()) send("enter", false, undefined, true);
-        else {
-          const last = outgoingNow.current.filter((x) => x.state === "held").at(-1);
-          if (last) release(last.id);
-        }
+        else releaseLast();
         return;
       }
       case "sendLater":
@@ -2358,7 +2363,7 @@ function ChatApp() {
                 <>
                   <button type="button" class="btn secondary small" title="Back in the box, to change it (↑ in an empty box too)"
                           onClick={() => takeBack(id, true)}><Icon name={I.edit} />Edit</button>
-                  <button type="button" class="btn secondary small" title={keyed("To Claude now: it takes it in at its next step", "sendNow").replace(")", ", in an empty box)")}
+                  <button type="button" class="btn secondary small" title={keyed("To Claude now: it takes it in at its next step", "sendNow").replace("(", "(Enter or ").replace(")", ", in an empty box)")}
                           onClick={() => release(id)}><Icon name={I.send} />Send now</button>
                   <button type="button" class="btn secondary small" title="Don't send it"
                           onClick={() => takeBack(id, false)}><Icon name={I.cancel} tone={T.cancel} />Cancel</button>

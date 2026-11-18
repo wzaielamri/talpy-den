@@ -12,7 +12,8 @@ export const KEY_GROUPS = ["Sending", "Answering", "Reading", "Moving around", "
 const VS = "talpyDen.chat.";
 
 export const KEYS = [
-    { id: "send", group: "Sending", plasma: "Enter", vscode: "Enter", what: "Send (Shift+Enter: a new line)" },
+    { id: "send", group: "Sending", plasma: "Enter", vscode: "Enter",
+      what: "Send (Shift+Enter: a new line; again in the empty box: the message waiting goes now)" },
     { id: "sendNow", group: "Sending", plasma: "Ctrl+Enter", vscode: "Ctrl+Enter", commands: [[VS + "sendNow", "ctrl+enter"]],
       what: "Send now: while Claude works, it goes without the 5 s wait (in an empty box: the message waiting)" },
     { id: "sendLater", group: "Sending", plasma: "Alt+Enter", vscode: "Alt+Enter", commands: [[VS + "sendWhenTurnEnds", "alt+enter"]],
