@@ -2359,3 +2359,23 @@ test("opening a chat puts the cursor in its reply box, also when its tab is brou
     panel.dispose(); // (closed whatever happens: an open tab keeps watching its chat)
   }
 });
+
+test("a chat that asks you something opens with the cursor out of its box: typing + Enter would answer it", async () => {
+  const state = waitingState("hook");
+  const row = state.status!.groups.flatMap((g) => g.sessions).find((x) => x.state === "waiting")!;
+  const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true } : { ok: true, items: [], more: false, stamp: "s1" }) };
+  const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  p.open(chatRefOf(row));
+  const panel = recorded.panels.at(-1)!;
+  panel.show(true);
+  try {
+    panel.receive({ type: "ready" });
+    await new Promise((r) => setTimeout(r, 10));
+    const focus = panel.sent.filter((m) => (m as { type: string }).type === "focusReply");
+    assert.deepEqual(focus, [{ type: "focusReply", asking: true }]);
+  } finally {
+    panel.dispose();
+  }
+});

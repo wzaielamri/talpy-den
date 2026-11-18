@@ -22,7 +22,10 @@ class ReplyFocusTests(unittest.TestCase):
         pane = (UI / "ChatPane.qml").read_text()
         focus = body_of(pane, "function focusReply()")
         self.assertIn("replyBox.forceActiveFocus()", focus)
-        self.assertIn('tab === "chat"', focus)   # (its Review tab keeps its own)
+        self.assertRegex(focus, r'tab [!=]== "chat"')   # (its Review tab keeps its own)
+        # it asks you something: the cursor stays out of the box (typing + Enter would answer it), on the window,
+        # where only Talpy Chat's own keys do anything (surface: keyAction)
+        self.assertRegex(focus, r"if \(pane\.permission\)\s*surface\.forceActiveFocus\(\)")
         # brought up again (a click, a notification, a request): the reply box
         self.assertIn("focusReply()", body_of(pane, "function forward(tab)"))
         # a new window: its reply box too, once it's made
@@ -43,9 +46,12 @@ class ReplyFocusTests(unittest.TestCase):
 
     def test_vscode_tab_puts_the_cursor_in_its_reply_box(self):
         page = (VSCODE / "webview/chat.tsx").read_text()
-        self.assertRegex(page, r'm\.type === "focusReply"\)\s*window\.setTimeout\(\(\) => reply\.current\?\.focus\(\), 0\)')
+        handler = page[page.index('m.type === "focusReply"'):][:300]
+        self.assertIn("m.asking", handler)   # (it asks you something: out of the box)
+        self.assertIn(".blur()", handler)
+        self.assertIn("reply.current?.focus()", handler)
         types = (VSCODE / "src/shared/pane.ts").read_text()
-        self.assertIn('| { type: "focusReply" }', types)
+        self.assertIn('| { type: "focusReply"; asking: boolean }', types)
 
 
 if __name__ == "__main__":

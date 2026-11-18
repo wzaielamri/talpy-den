@@ -381,7 +381,7 @@ export type PaneHostMessage =
   | { type: "conversation"; answer: Conversation }
   | { type: "away"; away: Away | null } // since you last looked: the answer of the read that asked (--away)
   | { type: "prefill"; text: string } // a new chat's box filled in, not sent (Continue in a new chat's note)
-  | { type: "focusReply" } // the cursor in its reply box: the chat opened, or its tab brought up again
+  | { type: "focusReply"; asking: boolean } // the chat opened, or its tab brought up again: the cursor in its reply box, or (asking: it asks you something) out of it
   | { type: "review"; answer: ReviewAnswer | null; error: string }
   // ask: its terminal takes no text: choose; id: the message it's for (send); went: it went into the chat
   // itself (typed in, or on in the background: not VS Code's input or the clipboard)

@@ -221,10 +221,16 @@ Window {
         focusReply()
     }
     // The cursor in its reply box: it's opened, or brought up again, to write in (a click on its row, a
-    // notification, another program's request); its Review tab keeps its own. What the opener asks for after
-    // (act: Deny's note, a question's own words) has the last word.
+    // notification, another program's request); its Review tab keeps its own. While it asks you something, out
+    // of the box (typing and Enter there would answer it: a No with your words, your words as the answer), on the
+    // window, where only Talpy Chat's own keys do anything: you click the box or an answer. What the opener asks
+    // for after (act: Deny's note, a question's own words) has the last word.
     function focusReply() {
-        if (pane.tab === "chat")
+        if (pane.tab !== "chat")
+            return
+        if (pane.permission)
+            surface.forceActiveFocus()
+        else
             replyBox.forceActiveFocus()
     }
     // What it does once it shows its chat (main.qml openPane's then): a reply

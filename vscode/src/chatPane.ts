@@ -685,7 +685,9 @@ class Pane implements vscode.Disposable {
   }
 
   // The cursor in its reply box: it's opened, or brought up again, to write in (a click on its row, a
-  // notification, another program's request); its Review tab keeps its own. Before its page is ready: once it is.
+  // notification, another program's request); its Review tab keeps its own. While it asks you something, out of
+  // the box (typing and Enter there would answer it: a No with your words, your words as the answer): you click
+  // the box or an answer. Before its page is ready: once it is.
   private wantsFocus = false;
   focusReply(): void {
     if (this.disposed) return;
@@ -693,7 +695,8 @@ class Pane implements vscode.Disposable {
       this.wantsFocus = true;
       return;
     }
-    this.post({ type: "focusReply" });
+    const { session } = findPaneRow(this.owner.ext.dash.state(), this.host, this.chatId);
+    this.post({ type: "focusReply", asking: session?.state === "waiting" && !!session.permission });
   }
 
   // In front, with the focus (its keys go to it)
@@ -1023,7 +1026,7 @@ class Pane implements vscode.Disposable {
         this.schedule();
         if (this.wantsFocus) {
           this.wantsFocus = false;
-          this.post({ type: "focusReply" });
+          this.focusReply();
         }
         if (this.pendingDraft) {
           this.draft(this.pendingDraft);
