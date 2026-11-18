@@ -42,7 +42,7 @@ const chat: PaneChat = {
   remoteControl: params.get("rc") === "1" ? "https://claude.ai/code/session_01DemoRemoteControl" : "",
   remoteSwitch: params.get("rc") === "1" || params.get("rc") === "0",
   remoteCan: !ask,   // (a prompt or question open: Claude's dialog takes the keys)
-  activity: "Bash: npm test -- parser",
+  activity: "Running the parser tests",
   permission: ask === "question"
     ? { tool: "AskUserQuestion", line: questions[0].question, command: "", file: "", diff: [], always: "", questions,
         request: "1-abcdef02", answer: "hook" }

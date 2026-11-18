@@ -1,30 +1,34 @@
-import { agentDetailKey, agentRunTitle, agentSummary, duration } from "../../src/shared/model";
+import { agentContextText, agentDetailKey, agentRunTitle, agentStatusText, agentSummary, ranFor } from "../../src/shared/model";
 import type { Agent } from "../../src/shared/types";
 import { I, Icon } from "../util/icons";
 
-function statusText(a: Agent, now: number): string {
-  switch (a.status) {
-    case "running":
-      return `running · ${duration(now - (a.started ?? now))}`;
-    case "done":
-      return "done";
-    case "failed":
-      return "failed";
-    default:
-      return "stopped";
-  }
-}
-
-// Unfolded under a subagent (click it): what it was asked, its numbers, its
-// last steps, its report, and its whole run to open in the Markdown preview
-function AgentDetail({ agent: a, host, onOpenRun }: { agent: Agent; host?: string; onOpenRun: (agentId: string) => void }) {
+// Unfolded under a subagent (click it): what it was asked, the calls it's on
+// now (exact, each with how long it has run), its numbers, its last steps,
+// its report, and its whole run to open in the Markdown preview
+function AgentDetail({ agent: a, now, host, onOpenRun }: { agent: Agent; now: number; host?: string; onOpenRun: (agentId: string) => void }) {
   const summary = agentSummary(a);
   const steps = a.steps ?? [];
+  const running = a.status === "running" ? (a.running ?? []) : [];
   return (
     <div class="agent-detail">
       {a.task ? (
         <div class="agent-task muted" title={a.task}>
           <span class="agent-label">Task:</span> {a.task}
+        </div>
+      ) : null}
+      {running.length ? (
+        <div>
+          <span class="agent-label">Running now:</span>
+          <ul class="agent-running" aria-label="Running now">
+            {running.map((r, i) => (
+              <li key={i}>
+                <span class="call" title={r.line}>
+                  ▸ {r.line}
+                </span>
+                {r.since ? <span class="ran muted">{ranFor(now - r.since)}</span> : null}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
       {summary ? <div class="muted">{summary}</div> : null}
@@ -65,6 +69,7 @@ export function AgentTree({ tree, now, rowKey, host, opened, onToggle, onOpenRun
         const title = a.description || a.type;
         const key = agentDetailKey(rowKey, a.id);
         const open = !!opened[key];
+        const context = agentContextText(a);
         return (
           <li key={a.id} class={`agent ag-${a.status}`} style={{ paddingLeft: `calc(var(--td-gu) * 0.9 * ${a.depth})` }}>
             <span class="agent-branch" aria-hidden="true">
@@ -76,18 +81,27 @@ export function AgentTree({ tree, now, rowKey, host, opened, onToggle, onOpenRun
                 type="button"
                 class="agent-head"
                 aria-expanded={open}
-                title={`${title}${a.activity ? "\n" + a.activity : ""}\n\nClick to ${open ? "fold it up again" : "see what it was asked, its last steps and its report"}.`}
+                title={`${title}${a.activity ? "\n" + a.activity : ""}\n\nClick to ${open ? "fold it up again" : "see what it was asked, what it runs now, its last steps and its report"}.`}
                 onClick={() => onToggle(key)}
               >
                 <span class="agent-line">
                   <span class="agent-desc">{title}</span>
                   {a.description && a.type ? <span class="agent-type">{a.model ? `${a.type} · ${a.model}` : a.type}</span> : null}
-                  <span class={"agent-status" + (a.status === "failed" ? " failed" : "")}>{statusText(a, now)}</span>
+                  <span class={"agent-status" + (a.status === "failed" ? " failed" : "")}>{agentStatusText(a, now)}</span>
                   <Icon name={I.folded} class={open ? "open" : ""} />
                 </span>
-                {a.activity ? <span class="agent-activity">{a.activity}</span> : null}
+                {a.activity || context ? (
+                  <span class="agent-line2">
+                    <span class="agent-activity">{a.activity}</span>
+                    {context ? (
+                      <span class="agent-context" title="Its context now: what its last request sent and got back, as Claude's agent list counts it">
+                        {context}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
               </button>
-              {open ? <AgentDetail agent={a} host={host} onOpenRun={onOpenRun} /> : null}
+              {open ? <AgentDetail agent={a} now={now} host={host} onOpenRun={onOpenRun} /> : null}
             </div>
           </li>
         );

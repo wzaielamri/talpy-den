@@ -5,7 +5,9 @@ import "../webview/main";
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../src/shared/demo";
 import { limitsAsked } from "../webview/util/stores";
 import type { HostMessage } from "../src/shared/types";
-import { projectKey, setFocus, setTab, toggleProject, toggleRecent, toggleStarred, uiState } from "../webview/util/ui";
+import { projectKey, setFocus, setTab, toggleAgentDetail, toggleAgents, toggleProject, toggleRecent, toggleStarred, uiState } from "../webview/util/ui";
+import { rowKeyOf } from "../webview/util/chat";
+import { agentDetailKey } from "../src/shared/model";
 import { askMove } from "../webview/components/MoveAsk";
 
 const params = new URLSearchParams(location.search);
@@ -101,6 +103,14 @@ function sendState(): void {
   }
   // (?open=1: Recent chats unfolded; with ?stars=1 the starred lists too)
   if (params.get("open") === "1" && first && !uiState.get().recent[first.id]) toggleRecent(first.id);
+  // ?agents=1: the subagents of this computer's chat that has some, its running agent unfolded (Running now)
+  const withAgents = params.get("agents") === "1" ? first?.sessions.find((s) => s.agents?.tree.length) : undefined;
+  if (withAgents) {
+    const key = rowKeyOf(withAgents);
+    if (!uiState.get().agents[key]) toggleAgents(key);
+    const busy = withAgents.agents!.tree.find((a) => a.running?.length);
+    if (busy && !uiState.get().agentDetail[agentDetailKey(key, busy.id)]) toggleAgentDetail(agentDetailKey(key, busy.id));
+  }
   if (params.get("stars") === "1" && params.get("open") === "1" && first)
     for (const fold of ["|chats", "|plans"]) if (!uiState.get().starred[first.id + fold]) toggleStarred(first.id + fold);
   // ?question=1: the chat that waits asks Claude's questions instead of a permission

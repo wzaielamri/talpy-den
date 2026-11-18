@@ -45,18 +45,19 @@ function agents(now: number): Session["agents"] {
       task: "Find where ISO week dates are parsed and why week 53 can land in the wrong year. Read only; list the files and functions involved.",
       steps: ["Grep: isoWeek", "Read: parse.ts", "Read: week.ts", "Grep: getFullYear"],
       report: "parseIsoWeek() in src/date/week.ts\n\n• It takes the year from the week's Monday, so week 53 of 2026 lands in 2027.\n• parse.ts calls it for every \"YYYY-Www\" string.\n• Tests: test/date.test.ts covers weeks 1–52 only.",
-      toolCalls: 7, tokens: 182_400,
+      toolCalls: 7, tokens: 182_400, context: 38_200,
     },
     {
       id: "a2", parent: null, depth: 0, type: "general-purpose", description: "Write tests for the parser", status: "running",
-      activity: "Bash: npm test -- date", started: now - 4 * MIN, updated: now - 10000, model: "Sonnet 4.5",
+      activity: "Running the date tests", started: now - 4 * MIN, updated: now - 10000, model: "Sonnet 4.5",
       task: "Add tests for ISO week 53 (2020, 2026) and the years around it to test/date.test.ts, then run them.",
       steps: ["Read: date.test.ts", "Agent: Look for existing fixtures", "Edit: date.test.ts", "Bash: npm test -- date"],
-      report: "", toolCalls: 5, tokens: 96_300,
+      report: "", toolCalls: 5, tokens: 96_300, context: 41_800,
+      running: [{ line: "Bash: npm test -- date", since: now - 70000 }],
     },
     {
       id: "a3", parent: "a2", depth: 1, type: "Explore", description: "Look for existing fixtures", status: "running",
-      activity: "Read: weeks.json", started: now - 2 * MIN, updated: now - 5000,
+      activity: "Reading weeks.json", started: now - 2 * MIN, updated: now - 5000,
       task: "Are there fixtures with ISO week dates under test/fixtures?", steps: ["Glob: test/fixtures/**", "Read: weeks.json"],
       report: "", toolCalls: 2, tokens: null,
     },
@@ -138,7 +139,7 @@ function personal(now: number, phase: number): Group {
         contextLeft: 36,
         peek:
           parserState === "working"
-            ? { activity: "Bash: npm test -- parser", prompt: "The date parser breaks on ISO weeks; fix it and add tests.", reply: "Found it: week 53 wraps to the next year. Fixing the year rollover now.", replyLine: "Found it: week 53 wraps to the next year. Fixing the year rollover now.", at: now - 20000, mode: "auto" }
+            ? { activity: "Running the parser tests", prompt: "The date parser breaks on ISO weeks; fix it and add tests.", reply: "Found it: week 53 wraps to the next year. Fixing the year rollover now.", replyLine: "Found it: week 53 wraps to the next year. Fixing the year rollover now.", at: now - 20000, mode: "auto" }
             : {
                 activity: "", prompt: "The date parser breaks on ISO weeks; fix it and add tests.", reply: "Fixed: ISO week 53 no longer rolls over into the next year.\n\n• parseIsoWeek() takes the year from the week's Thursday\n• 12 new tests in date.test.ts, all passing\n\nWant me to open a pull request?", replyLine: "Fixed: ISO week 53 no longer rolls over into the next year.", at: now - 60000, mode: "auto",
                 recap: { text: "You asked me to fix ISO week parsing; it's fixed, with 12 new tests that pass. Next step: tell me whether to open a pull request.", at: now - 30000 },
@@ -170,7 +171,7 @@ function personal(now: number, phase: number): Group {
         context: 18,
         contextLeft: 81,
         model: "Sonnet",
-        peek: { activity: "Bash: git tag v2.0.0", prompt: "Write the release notes for 2.0 and tag it.", reply: "The notes are in CHANGELOG.md. Tagging v2.0.0 next.", replyLine: "The notes are in CHANGELOG.md. Tagging v2.0.0 next.", at: now - 2 * MIN, mode: "acceptEdits" },
+        peek: { activity: "Running git tag v2.0.0", prompt: "Write the release notes for 2.0 and tag it.", reply: "The notes are in CHANGELOG.md. Tagging v2.0.0 next.", replyLine: "The notes are in CHANGELOG.md. Tagging v2.0.0 next.", at: now - 2 * MIN, mode: "acceptEdits" },
         plan: { slug: "brave-green-otter", title: "Release 2.0", path: "/home/alice/.claude/plans/brave-green-otter.md", updatedAt: now - 2 * HOUR, edited: true },
         changes: { count: 1, files: ["CHANGELOG.md"] },
         stats: chatStats(now, 2, 6, [["Bash", 7], ["Read", 4], ["Write", 1]], 2_100_000),
@@ -301,7 +302,7 @@ function buildServer(now: number, phase: number): Status {
             contextLeft: 10,
             model: "Opus",
             peek: {
-              activity: state === "working" ? "Bash: python train.py --epochs 20" : "",
+              activity: state === "working" ? "Running python train.py --epochs 20" : "",
               prompt: "Train the ranking model on the new click data.",
               reply: state === "working" ? "Epoch 7/20: validation NDCG 0.412." : "Done: NDCG 0.431 on validation, up from 0.398.",
               replyLine: state === "working" ? "Epoch 7/20: validation NDCG 0.412." : "Done: NDCG 0.431 on validation, up from 0.398.",

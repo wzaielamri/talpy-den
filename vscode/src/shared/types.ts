@@ -19,7 +19,11 @@ export interface Agent {
   steps?: string[]; // its last tool calls, oldest first, e.g. "Bash: npm test"
   report?: string; // what it handed back (plain text); "" until it's done
   toolCalls?: number | null; // tool calls so far
-  tokens?: number | null; // tokens so far
+  tokens?: number | null; // tokens processed so far, every request's
+  // its calls with no result yet, oldest first (only while it runs): the exact
+  // call ("Bash: npm test") and when it was made. Older backends leave it out.
+  running?: { line: string; since: number | null }[];
+  context?: number | null; // its context now (its newest reply's request, both ways), in tokens
 }
 
 export interface SharedInfo {
@@ -32,7 +36,7 @@ export interface SharedInfo {
 
 // What a chat is doing, from the end of its transcript
 export interface Peek {
-  activity: string; // its newest step, e.g. "Bash: npm test"; "" once its reply is finished
+  activity: string; // its newest step in words, e.g. "Running the tests"; "" once its reply is finished
   prompt: string; // your last prompt
   reply: string; // Claude's last reply (up to 1500 characters, several lines)
   replyLine: string; // its first line
@@ -51,6 +55,7 @@ export interface LiveStep {
   id: string | null; // the tool call's id
   tool: string;
   text: string; // e.g. "Edit: parser.py", "Bash: pytest"
+  intent?: string; // the same in words ("Editing parser.py"): the view's doing (older hooks leave it out)
   at: number;
   end: number | null; // when it ended (null: it runs)
   ok: boolean | null;
@@ -268,6 +273,7 @@ export interface Session {
   review?: Review | null; // it changed files: its last edit, and tests since
   permission?: PermissionAsk | null; // what it asks while it waits for a permission
   live?: LiveView | null; // what it does now, step by step (live mode)
+  workingOn?: string; // a working background chat: what it's on, in Claude's own words (older backends leave it out)
 }
 
 // "tmux": typed into its pane; "vscode": its Claude Code panel's input;

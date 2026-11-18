@@ -1569,7 +1569,25 @@ button.pane-ctx[aria-expanded="true"] {
 
 .agent-activity {
   display: block;
+  flex: 1 1 auto;
   color: var(--td-muted);
+}
+
+/* Its second line: what it does, and its context at the end, under its state
+   (the fold arrow's width and gap in from the edge) */
+.agent-line2 {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.agent-context {
+  flex: none;
+  margin-left: auto;
+  margin-right: 22px;
+  white-space: nowrap;
+  color: var(--td-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Unfolded: its task, numbers, last steps and report */
@@ -1622,6 +1640,37 @@ button.pane-ctx[aria-expanded="true"] {
 
 .agent-steps .current {
   font-weight: 600;
+}
+
+/* Running now: the calls an unfolded agent is on, each with how long it has
+   run in a right-aligned column */
+.agent-running {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-running li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-running .call {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.agent-running .ran {
+  flex: none;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Shared chats in use on another account: a line pointing there */

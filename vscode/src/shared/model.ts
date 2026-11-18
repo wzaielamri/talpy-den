@@ -808,15 +808,17 @@ export function withLive(views: Record<string, LiveView>, more: LiveView[]): Rec
   return next;
 }
 
-// What a working chat does now: its live step when that's newer than what
-// the last check read from its transcript (an edit with the lines it added
-// and removed: "Edit: parser.py +12 −3"), else that
-export function doingText(s: Pick<Session, "peek">, live: LiveView | null): string {
+// What a working chat does now: a background chat's own words for it
+// (workingOn: Claude's line in its job, while new), else its live step when
+// that's newer than what the last check read from its transcript (an edit
+// with the lines it added and removed: "Editing parser.py +12 −3"), else that
+export function doingText(s: Pick<Session, "peek"> & { workingOn?: string }, live: LiveView | null): string {
+  if (s.workingOn) return s.workingOn;
   const peek = s.peek;
   if (live && live.doing && (live.at || 0) >= (peek?.at || 0)) {
     const main = (live.steps || []).filter((st) => !st.agent);
     const last = main.length ? main[main.length - 1] : null;
-    const counts = last && last.text === live.doing && (last.add || last.del) ? ` +${last.add || 0} −${last.del || 0}` : "";
+    const counts = last && (last.intent || last.text) === live.doing && (last.add || last.del) ? ` +${last.add || 0} −${last.del || 0}` : "";
     return live.doing + counts;
   }
   return peek?.activity || "";
@@ -1517,12 +1519,30 @@ export function agentDetailKey(rowKey: string, agentId: string): string {
   return `${rowKey}|${agentId}`;
 }
 
-// "12 tool calls · 45.2k tokens", leaving out what isn't known
+// "12 tool calls · 45.2k tokens processed" (every request's: not its
+// context, which its row says), leaving out what isn't known
 export function agentSummary(a: Pick<Agent, "toolCalls" | "tokens">): string {
   const parts = [];
   if (typeof a.toolCalls === "number") parts.push(plural(a.toolCalls, "%1 tool call", "%1 tool calls"));
-  if (typeof a.tokens === "number" && a.tokens > 0) parts.push(`${formatTokens(a.tokens)} tokens`);
+  if (typeof a.tokens === "number" && a.tokens > 0) parts.push(`${formatTokens(a.tokens)} tokens processed`);
   return parts.join(" · ");
+}
+
+// An agent's state on its row: "running · 17m", "done"
+export function agentStatusText(a: Pick<Agent, "status" | "started">, now: number): string {
+  if (a.status === "running") return `running · ${duration(now - (a.started ?? now))}`;
+  return a.status === "done" || a.status === "failed" ? a.status : "stopped";
+}
+
+// Its context now, as Claude's agent list counts it: "222.7k tokens" (at the
+// end of its second line, under its state); "" when not known
+export function agentContextText(a: Pick<Agent, "context">): string {
+  return typeof a.context === "number" && a.context > 0 ? `${formatTokens(a.context)} tokens` : "";
+}
+
+// How long a call it's on has been running: "for 2m", "for <1m"
+export function ranFor(ms: number): string {
+  return `for ${ms < 60_000 ? "<1m" : duration(ms)}`;
 }
 
 // A chat's subagents in its chat tab's strip: the running ones first, each of

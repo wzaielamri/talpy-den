@@ -36,6 +36,16 @@ test("a working chat's line: its live step when that's newer than its transcript
   const agentStep = { id: "t2", tool: "Grep", text: "Grep: x", at: NOW, end: null, ok: null, agent: "Explore" };
   assert.equal(doingText(s, view({ doing: "Agent: look", at: NOW + 1, steps: [agentStep] })), "Agent: look");
   assert.equal(doingText(s, null), "Bash: npm test");
+  // the line in words (a newer hook): an edit's counts by its step's words
+  const said = view({ doing: "Editing parser.py", at: NOW + 500,
+    steps: [{ id: "t1", tool: "Edit", text: "Edit: parser.py", intent: "Editing parser.py", at: NOW + 400, end: NOW + 500, ok: true, add: 2, del: 1 }] });
+  assert.equal(doingText(s, said), "Editing parser.py +2 −1");
+});
+
+test("a working background chat's line: Claude's own words for what it's on, first", () => {
+  const s = chat({ sessionId: "s1", pid: 42, state: "working", peek, workingOn: "tracing how talpy shows agents" });
+  assert.equal(doingText(s, view({ doing: "Reading a.py", at: NOW + 1 })), "tracing how talpy shows agents");
+  assert.equal(doingText({ ...s, workingOn: "" }, null), "Bash: npm test");
 });
 
 test("a live view counts for its own process only, and not once it ended", () => {
