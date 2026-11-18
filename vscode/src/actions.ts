@@ -1351,8 +1351,8 @@ export class Actions {
 
   // Remote Control on or off in a background chat (its row's remoteSwitch): pane.py
   // --remote-control types Claude's /remote-control into it (here, on an SSH host or in a
-  // container), only while it's idle. One at a time a chat: a second click while the first
-  // is on its way does nothing (twice, the second would open Claude's dialog in it). say:
+  // container), also while Claude works, never while it waits for you. One at a time a chat: a
+  // second click while the first is on its way does nothing (it would open Claude's dialog). say:
   // what came of it is said here (a row's button), else only returned (Talpy Chat says it)
   private rcAsked = new Set<string>();
   async remoteControl(chat: ChatRef, on: boolean, say = true): Promise<{ ok: boolean; message: string }> {

@@ -3897,11 +3897,12 @@ PlasmoidItem {
         return !session ? ""
             : (session.remoteControl ? i18n("Disconnects it from claude.ai/code and the Claude app, as Disconnect in Claude's /remote-control. The chat goes on here.")
                : i18n("Shows this chat on claude.ai/code and in the Claude app, to read and answer it from your phone or a browser; Claude still runs here (Claude's /remote-control). Keep this computer awake."))
-              + (!rcCan(session) ? "\n\n" + i18n("Once Claude has finished this turn.") : "")
+              + (!rcCan(session) ? "\n\n" + i18n("Once you've answered what it asks.") : "")
     }
-    // (only while Claude neither works nor waits for you: its session sits idle, the row idle or done)
+    // (also while Claude works: typed, /remote-control runs at once; never while it waits for you, whose
+    // prompt or dialog would take the keys)
     function rcCan(session) {
-        return !!session && session.state !== "working" && session.state !== "waiting"
+        return !!session && session.state !== "waiting"
     }
 
     // A background chat no terminal shows (here, on an SSH host, in a

@@ -620,24 +620,32 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   - Test: BackgroundStopTests (test_talpy_den.py), e.g. test_esc_goes_in_at_the_size_its_terminal_has_now,
     test_nothing_is_typed_unless_it_works_on_a_version_it_knows,
     test_interrupt_by_id_types_esc_into_a_background_chat_and_ctrl_c_into_tmux.
-- [ ] **Remote Control on and off through the service.** `/remote-control` typed into an idle background session
-  (the service's `reply`) turns Remote Control on with nothing to answer, once the account has used it before
-  (`remoteDialogSeen` in its `.claude.json`). With it on, the same command opens Claude's dialog instead,
-  and the session waits on it (`status` `waiting`): the choices *Disconnect this session*, *Show QR code*
-  (not always there) and *Continue*, the mark `❯` on *Continue*, ↑/↓ to move, Enter to pick, Esc to close.
-  Talpy Den attaches as Stop does, presses ↑ till the last `❯` of what the session shows is on *Disconnect*,
-  then Enter; Esc if it never gets there. Typed while Claude works, the command is queued and runs as the turn
-  ends, so Talpy Den does it only while the session is idle. Checked live on 2.1.327.
-  - Used in: talpy_den.py remote_control_live, disconnect_through_attach, rc_marked, rc_read, attach_session,
-    RC_COMMAND, RC_MARK, RC_DISCONNECT; pane.py remote_control (--remote-control).
-  - Check: `has 'Disconnect this session' 'Show QR code' 'bridge-disconnect-dialog'`. In a throwaway background
-    chat that's idle, `python3 -I $TD/pane.py --remote-control $ID` should answer `ok` with a `link`, and
-    `python3 -I $TD/pane.py --remote-control $ID --off` should answer `ok` with no link; `jq .bridgeSessionId`
-    goes from `session_…` back to `null`, and `claude logs <short>` shows no dialog left open.
-  - Breaks: Turn on does nothing or opens a dialog nobody sees; Turn off says the dialog "didn't look as Talpy
-    Den knows it" (nothing is picked then), or leaves it on.
-  - Test: RemoteControlTests (test_talpy_den.py: a stand-in dialog that answers ↑, Enter and Esc as checked
-    live), RemoteControlTests (test_pane.py).
+- [ ] **Remote Control on and off, typed through an attach.** `/remote-control` is one of Claude's immediate
+  commands (`immediate:!0`): typed into its prompt and Entered, it runs at once, also while Claude works (the
+  turn goes on). The service's `reply` would paste it instead, and while Claude works a paste waits in Claude's
+  queue till the turn ends. So Talpy Den attaches as Stop does and types it key by key, then Enter. Off, it
+  turns Remote Control on with nothing to answer, once the account has used it before (`remoteDialogSeen` in
+  its `.claude.json`). On, it opens Claude's dialog: the choices *Disconnect this session*, *Show QR code*
+  (not always there) and *Continue*, the mark `❯` on *Continue*, ↑/↓ to move, Enter to pick, Esc to close;
+  Talpy Den presses ↑ till the last `❯` of what the session shows is on *Disconnect*, then Enter (Esc if it
+  never gets there). Before it types, it reads Claude's prompt in the whole screen the attach draws first
+  (`\x1b[2J`, then the prompt as `❯\xa0` followed by what's typed and the line under it, `─`): anything typed
+  there would go out with the command, so it types nothing then. Not while the session waits for you.
+  Checked live on 2.1.327: on and off mid-turn and idle, and a typed "hello" left as it was.
+  - Used in: talpy_den.py remote_control_live, remote_control_through_attach, rc_prompt_empty, rc_marked, rc_read,
+    attach_session, RC_COMMAND, RC_MARK, RC_DISCONNECT, RC_CONTINUE, RC_TYPE_GAP; pane.py remote_control
+    (--remote-control).
+  - Check: `has 'Disconnect this session' 'Show QR code' 'bridge-disconnect-dialog'`, and that the
+    remote-control command is still `immediate` (`LC_ALL=C grep -a -o 'name:"remote-control",aliases:\["rc"\],get description[^}]*}[^}]*},isEnabled:[a-z]*,get isHidden(){[^}]*},immediate:!0' "$B"`).
+    In a throwaway background chat asked for a long story, `python3 -I $TD/pane.py --remote-control $ID`
+    while it writes should answer `ok` with a `link` (and the session stay `busy`), and
+    `python3 -I $TD/pane.py --remote-control $ID --off` `ok` with no link; `jq .bridgeSessionId` goes from
+    `session_…` back to `null`, and `claude logs <short>` shows no dialog left open.
+  - Breaks: Turn on or off waits till the turn ends (no longer immediate), types into the wrong place, opens a
+    dialog nobody sees, or says the prompt can't be seen / the dialog "didn't look as Talpy Den knows it"
+    (nothing is picked then).
+  - Test: RemoteControlTests (test_talpy_den.py: a stand-in session whose prompt takes typed keys and whose
+    dialog answers ↑, Enter and Esc as checked live), RemoteControlTests (test_pane.py).
 - [ ] **A background worker's terminal size.** A worker's stdin (`/proc/<pid>/fd/0`) is a pty whose window
   size is the session's terminal size. Stop attaches at that size.
   - Used in: talpy_den.py tty_size, interrupt_background.

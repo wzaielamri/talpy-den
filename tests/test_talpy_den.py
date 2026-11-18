@@ -2042,24 +2042,54 @@ class BackgroundStopTests(Fixture):
 
 
 
-class FakeDialog(FakeAttach):
-    """Claude's Remote Control dialog in a background session, as its attach
-    shows it (Claude 2.1.327, as checked live): its choices drawn with the
-    mark (❯) on one, ↑ / ↓ move it (drawing the two lines that changed
-    again), Enter picks the marked one, Esc closes it. picked: what Enter or
-    Esc did."""
+class FakeSession(FakeAttach):
+    """A background session as Talpy Den's Remote Control switch sees it
+    through an attach (Claude 2.1.327, as checked live): its whole screen
+    first, Claude's prompt in it ("❯\\xa0" and what's typed, then the line
+    under it), keys typed into the prompt, Enter running /remote-control:
+    off, it connects ("connect" in picked); on, it opens Claude's dialog,
+    its choices drawn with the mark (❯) on one, ↑ / ↓ move it (drawing the
+    two lines that changed again), Enter picks the marked one, Esc closes it.
+    picked: what each Enter or Esc did."""
 
-    def __init__(self, test, profile, choices=("Disconnect this session", "Show QR code", "Continue"), at=None):
-        self.choices, self.at, self.picked = list(choices), len(choices) - 1 if at is None else at, []
+    def __init__(self, test, profile, on=False, draft="", whole=True,
+                 choices=("Disconnect this session", "Show QR code", "Continue"), at=None):
+        self.on, self.draft, self.whole, self.choices = on, draft, whole, list(choices)
+        self.at, self.picked, self.dialog = len(choices) - 1 if at is None else at, [], False
         super().__init__(test, profile, FakeAttach.takes_it, frame=self.screen())
 
     def screen(self):
-        rows = "".join(f"\x1b[{20 + i};3H{'❯ ' if i == self.at else '  '}\x1b[1m{c}\x1b[22m"
-                       for i, c in enumerate(self.choices))
-        # (the prompt's own ❯ and the line Claude printed are above it: the dialog's mark is the last)
-        return ("\x1b[?1049h\x1b[H\x1b[38;2;153;153;153m❯ /remote-control\x1b[39m\x1b[5;1HRemote Control\x1b[6;1H"
-                "This session is available at https://claude.ai/code/session_01X." + rows
-                + "\x1b[25;1H↑/↓ to navigate · Enter to select · Esc to close").encode()
+        prompt = f"\x1b[44;1H\x1b[38;2;136;136;136m{'─' * 40}\x1b[1B\r\x1b[39m❯\xa0{self.draft}\x1b[7m \x1b[27m\r\x1b[1B{'─' * 40}"
+        return (("\x1b[2J\x1b[H" if self.whole else "") + "\x1b[38;2;153;153;153m❯ earlier prompt\x1b[39m\x1b[5;1H✻ Working…"
+                + prompt + "\x1b[47;3H⏸ manual mode on · ← for agents").encode()
+
+    def menu(self):
+        return ("\x1b[38;1HRemote Control\x1b[39;1HThis session is available at https://claude.ai/code/session_01X."
+                + "".join(f"\x1b[{40 + i};3H{'❯ ' if i == self.at else '  '}\x1b[1m{c}\x1b[22m" for i, c in enumerate(self.choices))
+                + "\x1b[45;1H↑/↓ to navigate · Enter to select · Esc to close").encode()
+
+    def key(self, conn, key):
+        if not self.dialog:
+            if key == b"\r":
+                if self.draft == "/remote-control" and not self.on:
+                    self.on, self.draft = True, ""
+                    self.picked.append("connect")
+                elif self.draft == "/remote-control":
+                    self.dialog, self.draft = True, ""
+                    conn.sendall(self.menu())
+            elif key not in (b"\x1b", b"\x1b[A", b"\x1b[B"):
+                self.draft += key.decode()
+                conn.sendall(f"\x1b[45;3H{self.draft}".encode())
+            return
+        if key in (b"\x1b[A", b"\x1b[B"):
+            was, self.at = self.at, max(0, min(len(self.choices) - 1, self.at + (-1 if key == b"\x1b[A" else 1)))
+            conn.sendall(f"\x1b[{40 + was};3H  {self.choices[was]}\x1b[{40 + self.at};3H❯ \x1b[1m{self.choices[self.at]}\x1b[22m".encode())
+        else:
+            choice = self.choices[self.at] if key == b"\r" else "Esc"
+            self.picked.append(choice)
+            self.dialog = False
+            if choice.startswith("Disconnect"):
+                self.on = False
 
     def serve(self):
         while True:
@@ -2085,13 +2115,8 @@ class FakeDialog(FakeAttach):
                         if not chunk:
                             break
                         typed += chunk
-                        for key in __import__('re').findall(rb"\x1b\[[AB]|\r|\x1b", chunk):
-                            if key in (b"\x1b[A", b"\x1b[B"):
-                                was, self.at = self.at, max(0, min(len(self.choices) - 1, self.at + (-1 if key == b"\x1b[A" else 1)))
-                                # (only the two lines that changed, the old one first)
-                                conn.sendall(f"\x1b[{20 + was};3H  {self.choices[was]}\x1b[{20 + self.at};3H❯ {self.choices[self.at]}".encode())
-                            else:
-                                self.picked.append(self.choices[self.at] if key == b"\r" else "Esc")
+                        for key in __import__('re').findall(rb"\x1b\[[AB]|\r|\x1b|[^\x1b\r]", chunk):
+                            self.key(conn, key)
                 except OSError:
                     pass
                 finally:
@@ -2103,24 +2128,26 @@ class RemoteControlTests(Fixture):
     """Remote Control (claude.ai/code and the Claude app show a chat that
     runs here): a session that has it on names its claude.ai session in its
     session file (bridgeSessionId), and Talpy Den turns it on or off in a
-    live background session as its terminal would: /remote-control typed in
-    through the service's reply; off, Claude's dialog then shows, and Talpy
+    live background session as you would in its terminal: /remote-control
+    typed into its prompt through a moment's attach (one of Claude's
+    immediate commands: it runs at once, also while Claude works), never
+    over something typed there; off, Claude's dialog then shows, and Talpy
     Den marks Disconnect with ↑ (read from what the session shows) before it
     presses Enter, never anything else (Claude 2.1.327, checked live)."""
 
     LINK = "https://claude.ai/code/session_01GdtYtxBqv61sD4rBNn4YNK"
+    TYPED = b"/remote-control\r"
 
     def setUp(self):
         super().setUp()
         self.profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
         self.entry = session("bgrc", kind="bg", status="idle", jobId="job7", version="2.1.327")
         self.on = dict(self.entry, bridgeSessionId="session_01GdtYtxBqv61sD4rBNn4YNK")
-        self.typed = []
+        self.off = dict(self.entry, bridgeSessionId=None)
         for p in (mock.patch.object(cs, "tty_size", side_effect=lambda pid: (120, 40) if pid == PID else None),
                   mock.patch.object(cs, "cache_dir", return_value=self.cache),
                   mock.patch.object(cs, "RC_LOOK", 0.01),
-                  mock.patch.object(cs, "reply_to_background",
-                                    side_effect=lambda p, job, text: self.typed.append((p.label, job, text)) or (True, "Sent"))):
+                  mock.patch.object(cs, "RC_TYPE_GAP", 0)):
             p.start()
             self.addCleanup(p.stop)
 
@@ -2152,103 +2179,141 @@ class RemoteControlTests(Fixture):
             self.assertEqual(cs.remote_control_link({"bridgeSessionId": bridge}), link, bridge)
         self.assertIsNone(cs.remote_control_link(None))
 
-    def test_the_mark_on_disconnect_is_read_from_what_the_session_shows(self):
+    def test_the_mark_and_the_prompt_are_read_from_what_the_session_shows(self):
         self.assertTrue(cs.rc_marked("\x1b[20;3H❯ \x1b[1mDisconnect\x1b[22m this session".encode()))
         self.assertTrue(cs.rc_marked("❯ /remote-control\x1b[20;3H  Show\x1b[21;3H❯\x1b[5CDisconnect\x1b[1Cthis".encode()))
         self.assertFalse(cs.rc_marked("\x1b[20;3H  Disconnect this session\x1b[22;3H❯ Continue".encode()))
+        self.assertTrue(cs.rc_marked("\x1b[20;3H  Disconnect this session\x1b[22;3H❯ Continue".encode(), "Continue"))
         self.assertFalse(cs.rc_marked("❯ Disconnect this session\x1b[22;3H❯ Continue".encode()), "the last mark counts")
         self.assertFalse(cs.rc_marked(b""))
         self.assertFalse(cs.rc_marked("❯ ".encode() + b"\xff\xfe"))
+        # (Claude's prompt, as 2.1.327 draws its whole screen for an attach: "❯\xa0\r───" when it's empty)
+        self.assertTrue(cs.rc_prompt_empty("\x1b[2J\x1b[H❯ old\x1b[9;1H❯\xa0\x1b[7m \x1b[27m\r\x1b[1B────".encode()))
+        self.assertFalse(cs.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0hello\r────".encode()))
+        self.assertFalse(cs.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0two\rlines\r────".encode()))
+        self.assertIsNone(cs.rc_prompt_empty("\x1b[H❯\xa0\r────".encode()), "not its whole screen")
+        self.assertIsNone(cs.rc_prompt_empty("\x1b[2J\x1b[Hno prompt here".encode()))
+        self.assertIsNone(cs.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0".encode()))
 
     def test_on_types_the_command_and_answers_with_its_page(self):
-        with self.looks(self.entry, self.entry, self.on):
+        claude = FakeSession(self, self.profile)
+        with self.looks(self.on):
             self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
                              (True, "Remote Control is on", self.LINK))
-        self.assertEqual(self.typed, [("work", "job7", "/remote-control")])
+        self.assertTrue(claude.done.wait(5))
+        self.assertEqual(claude.typed, [self.TYPED], "typed, key by key, then Enter: nothing else")
+        self.assertEqual(claude.picked, ["connect"])
+        (request,) = claude.requests
+        self.assertEqual({k: request[k] for k in ("op", "short", "cols", "rows")},
+                         {"op": "attach", "short": "job7", "cols": 120, "rows": 40})
+
+    def test_while_claude_works_too(self):
+        # (an immediate command: typed, Claude runs it at once and its turn goes on)
+        for status in ("busy", "shell"):
+            with self.subTest(status=status):
+                claude = FakeSession(self, self.profile)
+                with self.looks(dict(self.on, status=status)):
+                    self.assertTrue(cs.remote_control_live(self.home, [], dict(self.entry, status=status, jobId="job-" + status),
+                                                           self.profile, True)[0])
+                self.assertTrue(claude.done.wait(5))
+                self.assertEqual(claude.picked, ["connect"])
 
     def test_one_at_a_time_a_chat(self):
-        # (a second click while the first is on its way types nothing: twice, the second would open the dialog)
+        # (a second click while the first is on its way types nothing)
+        claude = FakeSession(self, self.profile)
         with self.looks(self.entry):
             self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True, wait=0.05),
                              (True, "Remote Control is turning on", None))
             self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
                              (False, "Talpy Den is at it already", None))
-        self.assertEqual(self.typed, [("work", "job7", "/remote-control")])
+        self.assertEqual(len(claude.requests), 1)
 
     def test_on_or_off_already_types_nothing(self):
+        claude = FakeSession(self, self.profile)
         self.assertEqual(cs.remote_control_live(self.home, [], self.on, self.profile, True),
                          (True, "Remote Control is on", self.LINK))
         self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, False),
                          (True, "Remote Control is off", None))
-        self.assertEqual(self.typed, [])
+        self.assertEqual(claude.requests, [])
+
+    def test_on_when_it_was_on_after_all_picks_continue(self):
+        # (its dialog, the mark on Continue: Enter picks it, nothing changes)
+        claude = FakeSession(self, self.profile, on=True)
+        self.assertEqual(cs.remote_control_through_attach(claude.path, FakeAttach.KEY, "job7", (120, 40), True),
+                         (True, "Remote Control is on"))
+        self.assertTrue(claude.done.wait(5))
+        self.assertEqual(claude.picked, ["Continue"])
+        self.assertTrue(claude.on)
 
     def test_off_marks_disconnect_then_presses_enter(self):
-        dialog = FakeDialog(self, self.profile)
-        waiting = dict(self.on, status="waiting", waitingFor="dialog open")
-        with self.looks(self.on, waiting, waiting, dict(self.entry, bridgeSessionId=None)):
+        claude = FakeSession(self, self.profile, on=True)
+        with self.looks(self.off):
             self.assertEqual(cs.remote_control_live(self.home, [], self.on, self.profile, False),
                              (True, "Remote Control is off", None))
-        self.assertTrue(dialog.done.wait(5))
-        self.assertEqual(self.typed, [("work", "job7", "/remote-control")])
-        self.assertEqual(dialog.picked, ["Disconnect this session"])
-        self.assertEqual(dialog.typed, [b"\x1b[A\x1b[A\r"])
-        (request,) = dialog.requests
-        self.assertEqual({k: request[k] for k in ("op", "short", "cols", "rows")},
-                         {"op": "attach", "short": "job7", "cols": 120, "rows": 40})
+        self.assertTrue(claude.done.wait(5))
+        self.assertEqual(claude.picked, ["Disconnect this session"])
+        self.assertEqual(claude.typed, [self.TYPED + b"\x1b[A\x1b[A\r"])
 
     def test_off_with_two_choices_and_with_the_mark_on_disconnect_already(self):
         for choices, at, ups in ((("Disconnect this session", "Continue"), None, 1),
                                  (("Disconnect this session", "Show QR code", "Continue"), 0, 0)):
             with self.subTest(choices=choices, at=at):
-                dialog = FakeDialog(self, self.profile, choices, at)
-                self.assertEqual(cs.disconnect_through_attach(dialog.path, FakeAttach.KEY, "job7", (120, 40)),
+                claude = FakeSession(self, self.profile, on=True, choices=choices, at=at)
+                self.assertEqual(cs.remote_control_through_attach(claude.path, FakeAttach.KEY, "job7", (120, 40), False),
                                  (True, "Remote Control is off"))
-                self.assertTrue(dialog.done.wait(5))
-                self.assertEqual(dialog.picked, ["Disconnect this session"])
-                self.assertEqual(dialog.typed[-1], b"\x1b[A" * ups + b"\r")
+                self.assertTrue(claude.done.wait(5))
+                self.assertEqual(claude.picked, ["Disconnect this session"])
+                self.assertEqual(claude.typed[-1], self.TYPED + b"\x1b[A" * ups + b"\r")
 
     def test_never_enter_when_disconnect_never_gets_the_mark(self):
         # (a dialog Talpy Den doesn't know: it closes it with Esc, nothing picked)
-        dialog = FakeDialog(self, self.profile, ("Stop this session", "Show QR code", "Continue"))
-        ok, message = cs.disconnect_through_attach(dialog.path, FakeAttach.KEY, "job7", (120, 40))
+        claude = FakeSession(self, self.profile, on=True, choices=("Stop this session", "Show QR code", "Continue"))
+        ok, message = cs.remote_control_through_attach(claude.path, FakeAttach.KEY, "job7", (120, 40), False)
         self.assertFalse(ok)
         self.assertIn("didn't look as Talpy Den knows it", message)
-        self.assertTrue(dialog.done.wait(5))
-        self.assertEqual(dialog.picked, ["Esc"])
-        self.assertNotIn(b"\r", dialog.typed[-1])
-        self.assertEqual(dialog.typed[-1].count(b"\x1b[A"), cs.RC_UPS + 1)
+        self.assertTrue(claude.done.wait(5))
+        self.assertEqual(claude.picked, ["Esc"])
+        self.assertEqual(claude.typed[-1], self.TYPED + b"\x1b[A" * (cs.RC_UPS + 1) + b"\x1b")
 
-    def test_off_when_the_dialog_never_shows_presses_nothing(self):
-        dialog = FakeDialog(self, self.profile)
-        with self.looks(self.on), mock.patch.object(cs, "RC_WAIT", 0.05):
-            ok, message, link = cs.remote_control_live(self.home, [], self.on, self.profile, False, wait=0.05)
-        self.assertEqual((ok, link), (False, self.LINK))
-        self.assertIn("dialog didn't show", message)
-        self.assertEqual(dialog.requests, [], "never attached")
+    def test_nothing_is_typed_over_what_its_prompt_has(self):
+        # (it would go out with the command), nor where the prompt can't be seen
+        for kw, said in (({"draft": "hello"}, "Something is typed in its prompt"), ({"whole": False}, "can't see its prompt")):
+            with self.subTest(**kw):
+                claude = FakeSession(self, self.profile, **kw)
+                ok, message, _link = cs.remote_control_live(self.home, [], self.entry, self.profile, True)
+                self.assertFalse(ok)
+                self.assertIn(said, message)
+                self.assertTrue(claude.done.wait(5))
+                self.assertEqual(claude.typed, [b""], "nothing typed")
+                self.assertEqual(claude.draft, kw.get("draft", ""))
+                cs.stop_turn("job7", forget=True)
 
     def test_nothing_is_typed_where_it_can_not_be_done(self):
+        claude = FakeSession(self, self.profile)
         for entry, on, said in ((dict(self.entry, kind="interactive", jobId=None), True, "in its terminal, type /remote-control"),
                                 (dict(self.entry, jobId="../x"), True, "background chat"),
                                 (dict(self.entry, version="2.1.300"), True, "Claude Code 2.1.300"),
                                 (dict(self.entry, version="2.2.0"), True, "Claude Code 2.2.0"),
                                 (dict(self.entry, status="waiting", waitingFor="permission prompt"), True, "answer it first"),
-                                (dict(self.entry, status="busy"), True, "turn Remote Control on once its turn is over"),
-                                (dict(self.entry, status="shell"), True, "at work"),
-                                (dict(self.on, status="busy"), False, "at work"),
-                                (dict(self.on, status="shell"), False, "at work"),
-                                (dict(self.on, pid=os.getppid()), False, "size of its terminal")):
+                                (dict(self.on, status="waiting", waitingFor="dialog open"), False, "answer it first"),
+                                (dict(self.entry, pid=os.getppid()), True, "size of its terminal")):
             with self.subTest(entry=entry, on=on):
                 ok, message, _link = cs.remote_control_live(self.home, [], entry, self.profile, on)
                 self.assertFalse(ok)
                 self.assertIn(said, message)
-        self.assertEqual(self.typed, [])
+        self.assertEqual(claude.requests, [], "never attached")
 
-    def test_a_reply_the_service_refuses_says_why(self):
-        with mock.patch.object(cs, "reply_to_background", return_value=(False, "Claude's background service didn't answer")):
-            self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
-                             (False, "Claude's background service didn't answer", None))
-
-
+    def test_a_service_that_answers_otherwise_gets_nothing_typed(self):
+        claude = FakeSession(self, self.profile)
+        claude.answer = lambda r: dict(FakeAttach.takes_it(r), workerCliVersion="2.3.0")
+        ok, message, _link = cs.remote_control_live(self.home, [], self.entry, self.profile, True)
+        self.assertFalse(ok)
+        self.assertIn("Claude Code 2.3.0", message)
+        self.assertTrue(claude.done.wait(5))
+        self.assertEqual(claude.typed, [b""])
+        (self.profile.path / "daemon/control.key").unlink()
+        self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
+                         (False, "Claude's background service can't be asked", None))
 
 
 class TtySizeTests(unittest.TestCase):

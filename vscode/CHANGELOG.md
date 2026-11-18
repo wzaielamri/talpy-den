@@ -11,8 +11,9 @@
   claude.ai/code. A background chat's phone button (pressed while it's on)
   turns it on or off, as `/remote-control` does in its terminal: Talpy Den
   types the command in, and to turn it off picks *Disconnect this session* in
-  Claude's dialog once it sees the mark there. Only once Claude has finished
-  its turn. Here, on SSH hosts and in containers.
+  Claude's dialog once it sees the mark there. Also while Claude works (the
+  command runs at once and the turn goes on), not while it waits for you.
+  Here, on SSH hosts and in containers.
 
 ### Better
 

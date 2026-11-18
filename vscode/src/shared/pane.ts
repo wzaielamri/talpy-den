@@ -342,15 +342,16 @@ export function remoteControlPage(link: unknown): string {
 }
 export const REMOTE_CONTROL_TAG = "Remote Control";
 export const REMOTE_CONTROL_TIP = "Remote Control is on\nclaude.ai/code and the Claude app show this chat and take your messages for it; it still runs here. Click to open it on claude.ai/code.";
-// (only while Claude neither works nor waits for you: its session sits idle, the row idle or done)
+// (also while Claude works: typed, /remote-control runs at once; never while it waits for you, whose
+// prompt or dialog would take the keys)
 export function remoteSwitchCan(state: string | undefined): boolean {
-  return state !== "working" && state !== "waiting";
+  return state !== "waiting";
 }
-export function remoteSwitchTitle(on: boolean, idle: boolean): string {
+export function remoteSwitchTitle(on: boolean, can: boolean): string {
   return (on
     ? "Turn off Remote Control\nDisconnects it from claude.ai/code and the Claude app, as Disconnect in Claude's /remote-control. The chat goes on here."
     : "Turn on Remote Control\nShows this chat on claude.ai/code and in the Claude app, to read and answer it from your phone or a browser; Claude still runs here (Claude's /remote-control). Keep this computer awake.")
-    + (idle ? "" : "\n\nOnce Claude has finished this turn.");
+    + (can ? "" : "\n\nOnce you've answered what it asks.");
 }
 
 export function whereTag(where: ChatWhere, terminalApp = "", account = ""): { tag: string; title: string } {
