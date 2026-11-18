@@ -122,14 +122,7 @@ export function buildWeekView(ctx) {
     view.add_child(buildTimeline(ctx, recap, cur));
     view.add_child(buildPlan(ctx, recap));
     view.add_child(buildLimits(ctx, recap));   // (folded: your plan's limits over time, after the limits now)
-    view.add_child(buildProjects(ctx, recap, cur));
-    if (recap.chats.length) {
-        const chats = column('claude-week-section', {x_expand: true});
-        chats.add_child(heading('Chats it worked on most'));
-        for (const c of recap.chats)
-            chats.add_child(chatLine(ctx, c, cur));
-        view.add_child(chats);
-    }
+    view.add_child(buildProjects(ctx, recap, cur));   // (each project's chats unfold in it: week.py sends no list of its own)
     view.add_child(buildBars(ctx, 'By model', recap.models.map(m => ({
         name: m.model, share: m.share, value: L.weekModelValue(m, cur), color: 'none',
         tip: `${m.model}: ${L.moneyText(m.cost, cur)} · ${L.plural(m.requests, '%1 request', '%1 requests')}` +
@@ -660,9 +653,12 @@ function buildTips(ctx, recap) {
     const section = column('claude-week-section', {x_expand: true});
     section.add_child(heading('What could use less of your plan'));
     const cold = L.weekColdText(recap);
-    if (!recap.tips.length && !cold)
+    // (coming back after the cache expired: its paragraph says it; the backend's tip of it
+    // is in another measure, the amount, which these rows don't show)
+    const tips = recap.tips.filter(t => t.key !== 'cold');
+    if (!tips.length && !cold)
         section.add_child(paragraph('Nothing stands out: no habit takes a tenth of the usage shown.', 'claude-dim'));
-    for (const t of recap.tips) {
+    for (const t of tips) {
         const line = box('claude-week-tip', {x_expand: true});
         const icon = new St.Icon({icon_name: Icons.gnome[L.weekTipMeaning(t.key)], style_class: 'claude-button-icon claude-dim',
             y_align: Clutter.ActorAlign.START, reactive: true});
@@ -688,7 +684,7 @@ function buildTips(ctx, recap) {
             copy.y_align = Clutter.ActorAlign.START;
             ctx.tips.add(copy, [`Copy ${t.command}`, 'Type it in a chat of yours.']);
             line.add_child(copy);
-        } else if (recap.tips.some(o => o.command)) {
+        } else if (tips.some(o => o.command)) {
             line.add_child(new St.Widget({style_class: 'claude-week-tip-command'}));
         }
         section.add_child(line);
