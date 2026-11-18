@@ -58,7 +58,8 @@ PlasmoidItem {
     readonly property var emptyProject: ({ name: "", path: "", total: 0, output: 0, prompts: 0 })
     readonly property var emptyAgent: ({ id: "", parent: null, depth: 0, type: "", description: "",
                                          status: "done", activity: "", started: null, updated: null, model: null,
-                                         task: "", steps: [], report: "", toolCalls: null, tokens: null })
+                                         task: "", steps: [], report: "", toolCalls: null, tokens: null,
+                                         running: [], context: null })
     readonly property string waitingName: {
         for (const g of allGroups)
             for (const s of g.sessions)
@@ -1526,16 +1527,19 @@ PlasmoidItem {
         return v && (!v.pid || v.pid === s.pid) ? v : null
     }
 
-    // What a working chat does now: its live step when that's newer than
-    // what the last check read from its transcript (an edit with the lines
-    // it added and removed: "Edit: parser.py +12 −3")
+    // What a working chat does now: a background chat's own words for it
+    // (workingOn: Claude's line in its job, while new), else its live step
+    // when that's newer than what the last check read from its transcript
+    // (an edit with the lines it added and removed: "Editing parser.py +12 −3")
     function doingText(s, host) {
+        if (s.workingOn)
+            return s.workingOn
         const v = host ? null : liveOf(s)
         const peek = s.peek || null
         if (v && v.doing && (v.at || 0) >= ((peek && peek.at) || 0)) {
             const steps = (v.steps || []).filter(st => !st.agent)
             const last = steps.length ? steps[steps.length - 1] : null
-            const counts = last && last.text === v.doing && (last.add || last.del)
+            const counts = last && (last.intent || last.text) === v.doing && (last.add || last.del)
                          ? " +" + (last.add || 0) + " −" + (last.del || 0) : ""
             return v.doing + counts
         }
@@ -2012,14 +2016,20 @@ PlasmoidItem {
         expandedAgentRuns = Object.assign({}, expandedAgentRuns, { [key]: !expandedAgentRuns[key] })
     }
 
-    // "12 tool calls · 45.2k tokens" of a subagent, as far as it's known
+    // "12 tool calls · 45.2k tokens processed" of a subagent (every
+    // request's: not its context, which its row says), as far as it's known
     function agentNumbers(agent) {
         const parts = []
         if (agent.toolCalls !== null && agent.toolCalls !== undefined)
             parts.push(i18np("%1 tool call", "%1 tool calls", agent.toolCalls))
         if (agent.tokens)
-            parts.push(i18n("%1 tokens", formatTokens(agent.tokens)))
+            parts.push(i18n("%1 tokens processed", formatTokens(agent.tokens)))
         return parts.join(" · ")
+    }
+
+    // How long a call a subagent is on has been running: "for 2m", "for <1m"
+    function ranFor(ms) {
+        return i18nc("how long a tool call has been running", "for %1", ms < 60000 ? "<1m" : duration(ms))
     }
 
     // A subagent's whole run as a Markdown file, opened in your app for those

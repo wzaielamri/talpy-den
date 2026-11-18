@@ -68,6 +68,7 @@ ColumnLayout {
                         anchors.fill: parent
                         spacing: 0
                         RowLayout {
+                            id: headRow
                             Layout.fillWidth: true
                             PlasmaComponents3.Label {
                                 textFormat: Text.PlainText
@@ -78,7 +79,9 @@ ColumnLayout {
                             }
                             PlasmaComponents3.Label {
                                 textFormat: Text.PlainText
-                                // its kind, and the model it runs on
+                                // its kind, and the model it runs on (at most 40% of the line: its name first, as in VS Code)
+                                Layout.maximumWidth: Math.round(headRow.width * 0.4)
+                                elide: Text.ElideRight
                                 text: agentRow.modelData.type + (agentRow.modelData.model ? " · " + agentRow.modelData.model : "")
                                 opacity: 0.6
                                 font.pointSize: tree.pointSize
@@ -101,15 +104,29 @@ ColumnLayout {
                                 opacity: agentMouse.containsMouse ? 0.9 : 0.4
                             }
                         }
-                        PlasmaComponents3.Label {
-                            id: activityLabel
-                            textFormat: Text.PlainText
+                        // What it does, in words, and its context now at the end, under its state
+                        RowLayout {
                             Layout.fillWidth: true
-                            visible: text !== ""
-                            text: agentRow.modelData.activity
-                            opacity: 0.6
-                            elide: Text.ElideRight
-                            font.pointSize: tree.pointSize
+                            visible: activityLabel.text !== "" || contextLabel.text !== ""
+                            PlasmaComponents3.Label {
+                                id: activityLabel
+                                textFormat: Text.PlainText
+                                Layout.fillWidth: true
+                                text: agentRow.modelData.activity
+                                opacity: 0.6
+                                elide: Text.ElideRight
+                                font.pointSize: tree.pointSize
+                            }
+                            PlasmaComponents3.Label {
+                                id: contextLabel
+                                textFormat: Text.PlainText
+                                // (as Claude's agent list counts it: its last request, both ways)
+                                Layout.rightMargin: Kirigami.Units.iconSizes.small + headRow.spacing
+                                visible: text !== ""
+                                text: agentRow.modelData.context ? i18n("%1 tokens", root.formatTokens(agentRow.modelData.context)) : ""
+                                opacity: 0.6
+                                font.pointSize: tree.pointSize
+                            }
                         }
                     }
 
@@ -118,8 +135,9 @@ ColumnLayout {
                         anchors.fill: parent
                         mainText: agentRow.modelData.description || agentRow.modelData.type
                         subText: (activityLabel.truncated ? agentRow.modelData.activity + "\n\n" : "")
+                                 + (contextLabel.visible ? i18n("Its context now: %1 (what its last request sent and got back, as Claude's agent list counts it).", contextLabel.text) + "\n\n" : "")
                                  + (agentRow.open ? i18n("Click to fold it up again.")
-                                                  : i18n("Click for its task, its last steps and its report."))
+                                                  : i18n("Click for its task, what it runs now, its last steps and its report."))
 
                         MouseArea {
                             id: agentMouse
@@ -164,6 +182,51 @@ ColumnLayout {
                                 active: taskLabel.truncated
                                 mainText: i18n("Its task")
                                 subText: agentRow.modelData.task
+                            }
+                        }
+                        // Running now: the calls it's on, exact, each with how long it has run
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            visible: runningRepeater.count > 0
+                            text: i18nc("the tool calls a subagent is on", "Running now:")
+                            font.pointSize: tree.pointSize
+                            font.bold: true
+                            opacity: 0.8
+                        }
+                        Repeater {
+                            id: runningRepeater
+                            model: agentRow.modelData.status === "running" ? (agentRow.modelData.running || []).length : 0
+                            delegate: RowLayout {
+                                id: runningCall
+                                required property int index
+                                readonly property var call: (agentRow.modelData.running || [])[index] || { line: "", since: null }
+                                Layout.fillWidth: true
+                                PlasmaComponents3.Label {
+                                    id: callLabel
+                                    Layout.fillWidth: true
+                                    text: "▸ " + runningCall.call.line
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                    font.pointSize: tree.pointSize
+                                    font.bold: true
+                                    opacity: 0.9
+
+                                    TipArea {
+                                        textFormat: Text.PlainText
+                                        anchors.fill: parent
+                                        active: callLabel.truncated
+                                        mainText: i18n("Running now")
+                                        subText: runningCall.call.line
+                                    }
+                                }
+                                PlasmaComponents3.Label {
+                                    visible: !!runningCall.call.since
+                                    text: runningCall.call.since ? root.ranFor(root.now - runningCall.call.since) : ""
+                                    textFormat: Text.PlainText
+                                    horizontalAlignment: Text.AlignRight
+                                    opacity: 0.6
+                                    font.pointSize: tree.pointSize
+                                }
                             }
                         }
                         PlasmaComponents3.Label {
