@@ -915,6 +915,7 @@ def make_session(profile, home, *, sid, pid, name, cwd, kind, entrypoint, state,
 
 
 WORKING_ON_FRESH_MS = 3 * 60_000  # a job's detail older than this says nothing about now
+WORKING_ON_CHARS = 120
 
 
 def working_on(job, now_ms):
@@ -929,7 +930,7 @@ def working_on(job, now_ms):
     at = to_ms(job.get("updatedAt"))
     if at is None or now_ms - at > WORKING_ON_FRESH_MS:
         return ""
-    return clean_text(job.get("detail"), 120)
+    return clean_text(job.get("detail"), WORKING_ON_CHARS)
 
 
 def process_config_dir(pid):
@@ -1166,6 +1167,9 @@ def finish_row(row, job, job_id, profile, ctx, alive):
             if rec.get("ultra") and not row["peek"].get("ultracode"):
                 row["peek"] = dict(row["peek"], ultracode=True)
         peek = row["peek"] or {}
+        if row.get("workingOn") and row["workingOn"] == clean_text(peek.get("prompt"), WORKING_ON_CHARS):
+            # (a message you sent while it works is its job's detail at first: your words, not Claude's)
+            row["workingOn"] = ""
         if row["model"] is None:  # (no status line in this run: the model of its newest reply)
             row["model"] = peek.get("model")
         reply_context(row, ctx.snapshot_root, profile, [row["sessionId"], row["chatId"], row["jobSessionId"]])

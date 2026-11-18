@@ -2713,6 +2713,24 @@ class PeekTests(Fixture):
         self.assertEqual((p["activity"], p["prompt"], p["reply"]), ("Running pytest -x", "fix the parser", "Let me run the tests."))
         self.assertEqual(p["replyLine"], "Let me run the tests.")
 
+    def test_a_background_chats_line_isnt_your_own_message(self):
+        # a message you send while it works is its job's detail at first, the record still
+        # "working": the line keeps to what Claude says it's on, not your words
+        job = lambda detail: write(self.home / ".claude-work/jobs/job3/state.json",
+                                   {"state": "working", "detail": detail, "updatedAt": iso(self.now - 5)})
+        self.transcript("bgworking", [
+            chat_line("user", "fix the release"),
+            chat_line("assistant", [tool_use("Bash", {"command": "gh run list", "description": "List the runs"})], "m1"),
+            chat_line("user", [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "..."}]),
+            chat_line("user", "gh is  there"),
+        ])
+        job("gh is there")
+        row = lambda: next(s for s in self.group(self.collect(with_tokens=False), "work")["sessions"]
+                           if s["sessionId"] == "bgworking")
+        self.assertEqual(row()["workingOn"], "")
+        job("Checking gh is installed and logged in")
+        self.assertEqual(row()["workingOn"], "Checking gh is installed and logged in")
+
     def test_thinking_about_a_tool_result(self):
         self.transcript("busy", [
             chat_line("user", "fix the parser"),
