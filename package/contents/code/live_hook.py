@@ -26,7 +26,7 @@ import time
 VERSION = 1  # (of the live files it writes)
 # This file's version: a status check brings an older copy of it in
 # ~/.local/share/talpy-den up to date (talpy_den.refresh_hooks)
-HOOK_REVISION = 3
+HOOK_REVISION = 4  # (4: the chat's line in words, a step's intent)
 STEPS = 8  # the last steps a live file keeps
 AGENTS = 20
 TEXT = 70  # characters of a step's words
@@ -96,6 +96,58 @@ def describe(name, inp):
     return name
 
 
+# talpy_den.tool_intent's words (this file is a copy of its own and imports
+# nothing of Talpy Den's; test_live checks the two say the same)
+INTENT_CHARS = 90
+INTENT_VERBS = frozenset((
+    "add", "apply", "build", "capture", "check", "clean", "commit", "compare", "compile", "compute", "confirm",
+    "convert", "copy", "count", "create", "delete", "download", "explore", "export", "extract", "fetch", "find",
+    "fix", "generate", "get", "grab", "import", "inspect", "install", "kill", "launch", "list", "load", "look",
+    "make", "measure", "merge", "move", "open", "print", "publish", "pull", "push", "read", "rebase", "record",
+    "reload", "remove", "render", "replay", "restart", "review", "run", "save", "scan", "search", "see", "set",
+    "show", "start", "stop", "tag", "take", "test", "trace", "try", "update", "upload", "use", "verify", "wait",
+    "watch", "write"))
+INTENT_DOUBLE = frozenset(("commit", "get", "grab", "run", "scan", "set", "stop", "tag"))
+INTENT_FILE = {"Read": "Reading", "Edit": "Editing", "MultiEdit": "Editing", "Write": "Writing",
+               "NotebookEdit": "Editing notebook"}
+INTENT_SEARCH = {"Glob": ("pattern", "Finding"), "Grep": ("pattern", "Searching for"),
+                 "WebFetch": ("url", "Fetching"), "WebSearch": ("query", "Searching the web for")}
+INTENT_DESCRIBED = ("Bash", "Agent", "Task", "Monitor")
+
+
+def ing_form(text):
+    first, sep, rest = text.partition(" ")
+    word = first.lower()
+    if word not in INTENT_VERBS:
+        return text
+    if word in INTENT_DOUBLE:
+        ing = word + word[-1] + "ing"
+    elif word.endswith("e") and not word.endswith(("ee", "ye", "oe")):
+        ing = word[:-1] + "ing"
+    else:
+        ing = word + "ing"
+    return (ing.capitalize() if first[:1].isupper() else ing) + sep + rest
+
+
+def intent(name, inp):
+    """What a tool call does, in words: "Running the tests", "Reading
+    week.py" (the chat's line; its step keeps describe's exact words)."""
+    name = name or "tool"
+    inp = inp if isinstance(inp, dict) else {}
+    described = inp.get("description")
+    if name in INTENT_DESCRIBED and isinstance(described, str) and described.strip():
+        return short(ing_form(" ".join(described.split())), INTENT_CHARS)
+    if name == "Bash" and isinstance(inp.get("command"), str) and inp["command"].strip():
+        return "Running " + short(inp["command"], 60)
+    path = inp.get("file_path") or inp.get("notebook_path")
+    if name in INTENT_FILE and isinstance(path, str) and path:
+        return short("%s %s" % (INTENT_FILE[name], os.path.basename(path.rstrip("/")) or path), INTENT_CHARS)
+    key, verb = INTENT_SEARCH.get(name, (None, None))
+    if key and isinstance(inp.get(key), str) and inp[key].strip():
+        return short("%s %s" % (verb, inp[key]), INTENT_CHARS)
+    return describe(name, inp)
+
+
 def line_count(text):
     if not isinstance(text, str) or not text:
         return 0
@@ -152,7 +204,7 @@ def fold(view, event, now):
                     return s
         if not create:
             return None
-        s = {"id": tid, "tool": tool, "text": text, "at": now, "end": None, "ok": None}
+        s = {"id": tid, "tool": tool, "text": text, "intent": intent(tool, inp), "at": now, "end": None, "ok": None}
         if agent:
             s["agent"] = next((a.get("type") for a in agents if a.get("id") == agent), None) or "agent"
         steps.append(s)
@@ -170,8 +222,8 @@ def fold(view, event, now):
             for a in agents:
                 if a.get("id") == agent:
                     a["doing"] = s["text"]
-        else:
-            view.update(state="working", doing=s["text"], asks=None)
+        else:  # (a step an older copy made has no intent)
+            view.update(state="working", doing=s.get("intent") or s["text"], asks=None)
     elif kind in ("PostToolUse", "PostToolUseFailure"):
         s = step_of(True)
         s["end"] = now

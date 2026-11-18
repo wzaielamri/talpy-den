@@ -74,7 +74,7 @@ class LiveHookTests(HookFixture):
         v = self.hook(event("UserPromptSubmit", prompt="fix the parser"))
         self.assertEqual((v["state"], v["doing"]), ("working", "thinking…"))
         v = self.hook(event("PreToolUse", **bash("toolu_b", "sleep 4; echo hi")))
-        self.assertEqual((v["state"], v["doing"]), ("working", "Running it"))  # (its description: "run it")
+        self.assertEqual((v["state"], v["doing"]), ("working", "running it"))  # (its description: "run it")
         self.assertEqual([(s["id"], s["end"], s["ok"]) for s in v["steps"]], [("toolu_b", None, None)])
         v = self.hook(event("PostToolUse", tool_response={"stdout": "hi"}, duration_ms=5519, **bash("toolu_b", "sleep 4; echo hi")))
         self.assertTrue(v["steps"][0]["ok"])
