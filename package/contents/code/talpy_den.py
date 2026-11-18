@@ -1192,11 +1192,13 @@ def finish_row(row, job, job_id, profile, ctx, alive):
 AGENT_TAIL_BYTES = 65536
 AGENT_TAIL_ENTRIES = 40  # conversation entries read from the end (its status needs the last few, its steps more)
 AGENT_TAIL_MIN = 8  # read further back (up to PEEK_TAIL_MAX) until this many are found
-AGENT_CACHE_VERSION = 3  # bump when agent_progress() reads transcripts differently (3: the model)
+AGENT_CACHE_VERSION = 4  # bump when agent_progress() reads transcripts differently (3: the model; 4: running calls, context)
 AGENT_TREE_LIMIT = 30
 AGENT_STEPS = 6  # its last tool calls a row shows
 AGENT_TASK_CHARS = 600
 AGENT_REPORT_CHARS = 1500
+RUNNING_LINE_CHARS = 160  # how much of a running call's command an unfolded agent shows
+CONTEXT_KEYS = USAGE_READ + ("output_tokens",)  # an agent's context: its newest reply's request, both ways
 FORK_BOILERPLATE_END = "</fork-boilerplate>"  # a fork's first prompt: Claude's rules for forks, then its directive
 
 
@@ -1205,22 +1207,83 @@ def short_text(value, limit=70):
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def describe_tool(block):
-    """What a tool call is doing, in a few words: "Bash: npm test", "Edit: parser.py"."""
+def describe_tool(block, limit=60):
+    """What a tool call is doing, in a few words: "Bash: npm test", "Edit:
+    parser.py" (limit: how much of a command or description it keeps)."""
     name = block.get("name") or "tool"
     inp = block.get("input") if isinstance(block.get("input"), dict) else {}
     if name.startswith("mcp__"):
         parts = name.split("__")
         name = f"{parts[1]}: {parts[2]}" if len(parts) >= 3 else name
     if name == "Bash" and inp.get("command"):
-        return f"Bash: {short_text(inp['command'], 60)}"
+        return f"Bash: {short_text(inp['command'], limit)}"
     for key in ("file_path", "notebook_path", "path"):
         if inp.get(key):
             return f"{name}: {os.path.basename(str(inp[key]).rstrip('/')) or inp[key]}"
     for key in ("description", "pattern", "query", "url", "skill", "prompt"):
         if inp.get(key):
-            return f"{name}: {short_text(inp[key], 60)}"
+            return f"{name}: {short_text(inp[key], limit)}"
     return name
+
+
+# A tool call in words, as Claude's own lists say it ("Reading week.py",
+# "Running the tests"): the line under an agent and a chat's "what it's
+# doing". The exact call (describe_tool) stays in their steps. A call's own
+# description (Bash, Agent, Monitor) is Claude's order for it ("Run the
+# tests"): its first word goes in the -ing form when it's a plain verb of
+# INTENT_VERBS, else it's left as written ("Git status" isn't "Gitting").
+# live_hook.py keeps a copy (intent), for the live line.
+INTENT_CHARS = 90
+INTENT_VERBS = frozenset((
+    "add", "apply", "build", "capture", "check", "clean", "commit", "compare", "compile", "compute", "confirm",
+    "convert", "copy", "count", "create", "delete", "download", "explore", "export", "extract", "fetch", "find",
+    "fix", "generate", "get", "grab", "import", "inspect", "install", "kill", "launch", "list", "load", "look",
+    "make", "measure", "merge", "move", "open", "print", "publish", "pull", "push", "read", "rebase", "record",
+    "reload", "remove", "render", "replay", "restart", "review", "run", "save", "scan", "search", "see", "set",
+    "show", "start", "stop", "tag", "take", "test", "trace", "try", "update", "upload", "use", "verify", "wait",
+    "watch", "write"))
+INTENT_DOUBLE = frozenset(("commit", "get", "grab", "run", "scan", "set", "stop", "tag"))  # runs → running
+INTENT_FILE = {"Read": "Reading", "Edit": "Editing", "MultiEdit": "Editing", "Write": "Writing",
+               "NotebookEdit": "Editing notebook"}
+INTENT_SEARCH = {"Glob": ("pattern", "Finding"), "Grep": ("pattern", "Searching for"),
+                 "WebFetch": ("url", "Fetching"), "WebSearch": ("query", "Searching the web for")}
+INTENT_DESCRIBED = ("Bash", "Agent", "Task", "Monitor")
+
+
+def ing_form(text):
+    """An order in the -ing form: "Run the tests" → "Running the tests";
+    text that doesn't start with a verb of INTENT_VERBS as it is."""
+    first, sep, rest = text.partition(" ")
+    word = first.lower()
+    if word not in INTENT_VERBS:
+        return text
+    if word in INTENT_DOUBLE:
+        ing = word + word[-1] + "ing"
+    elif word.endswith("e") and not word.endswith(("ee", "ye", "oe")):
+        ing = word[:-1] + "ing"
+    else:
+        ing = word + "ing"
+    return (ing.capitalize() if first[:1].isupper() else ing) + sep + rest
+
+
+def tool_intent(block):
+    """What a tool call does, in words: "Running the tests", "Reading
+    week.py", "Searching for tipChatAct"; describe_tool's words for a tool
+    it has none for."""
+    name = block.get("name") or "tool"
+    inp = block.get("input") if isinstance(block.get("input"), dict) else {}
+    described = inp.get("description")
+    if name in INTENT_DESCRIBED and isinstance(described, str) and described.strip():
+        return short_text(ing_form(" ".join(described.split())), INTENT_CHARS)
+    if name == "Bash" and isinstance(inp.get("command"), str) and inp["command"].strip():
+        return "Running " + short_text(inp["command"], 60)
+    path = inp.get("file_path") or inp.get("notebook_path")
+    if name in INTENT_FILE and isinstance(path, str) and path:
+        return short_text(f"{INTENT_FILE[name]} {os.path.basename(path.rstrip('/')) or path}", INTENT_CHARS)
+    key, verb = INTENT_SEARCH.get(name, (None, None))
+    if key and isinstance(inp.get(key), str) and inp[key].strip():
+        return short_text(f"{verb} {inp[key]}", INTENT_CHARS)
+    return describe_tool(block)
 
 
 def report_line(text, limit=90):
@@ -1268,8 +1331,45 @@ def agent_progress(path, finished=False):
     plain text ("" until it's done).
     """
     status, activity, ts, recent, report = agent_status(path, finished)
-    detail = {"steps": agent_steps(recent), "report": tidy_text(plain_text(report), AGENT_REPORT_CHARS)}
+    detail = {"steps": agent_steps(recent), "report": tidy_text(plain_text(report), AGENT_REPORT_CHARS),
+              "running": running_calls(recent)[0] if status == "running" else [], "context": context_size(recent)}
     return status, activity, ts, transcript_model(recent), detail
+
+
+def running_calls(recent):
+    """The tool calls of an agent's newest reply with no result yet (each
+    block of a reply is an entry of its own, with the reply's message id;
+    one without an id is a reply of its own), from recent (newest first):
+    ([{"line": the call as describe_tool says it, "since": when it was
+    made (ms)}] oldest first, the newest call's block or None)."""
+    done, found, seen, reply = set(), [], False, None
+    for e in recent:
+        msg, blocks = blocks_of(e)
+        if e["type"] == "user":
+            if seen:
+                break
+            done.update(c.get("tool_use_id") for c in blocks if c.get("type") == "tool_result")
+            continue
+        mid = msg.get("id") if isinstance(msg.get("id"), str) and msg.get("id") else None
+        if seen and (mid is None or mid != reply):
+            break
+        seen, reply = True, mid
+        ts = to_ms(e.get("timestamp"))
+        found[:0] = [(c, ts) for c in blocks if c.get("type") == "tool_use"
+                     and c.get("name") != "SubagentHandback" and c.get("id") not in done]
+    return ([{"line": describe_tool(c, RUNNING_LINE_CHARS), "since": ts} for c, ts in found],
+            found[-1][0] if found else None)
+
+
+def context_size(recent):
+    """An agent's context now, as Claude's agent list counts it: what the
+    request of its newest reply sent and got back (tokens), or None."""
+    for e in recent:
+        usage = (e.get("message") or {}).get("usage") if e["type"] == "assistant" else None
+        if isinstance(usage, dict):
+            n = sum(usage.get(k) for k in CONTEXT_KEYS if isinstance(usage.get(k), int))
+            return n or None
+    return None
 
 
 def agent_status(path, finished=False):
@@ -1324,8 +1424,12 @@ def agent_end(path):
             report = report if isinstance(report, str) else ""
             return "done", report_line(report), ts, recent, report
         if uses:
-            label = describe_tool(uses[-1])
-            return "running", (label if e is recent[0] else f"{label} (thinking about the result)"), ts, recent, ""
+            label = tool_intent(uses[-1])
+            if e is not recent[0]:
+                # results came back: of all its calls (parallel ones), or one still runs
+                newest_call = running_calls(recent)[1]
+                label = tool_intent(newest_call) if newest_call is not None else f"{label} (thinking about the result)"
+            return "running", label, ts, recent, ""
         if msg.get("stop_reason") == "end_turn":
             report = final_answer(recent, e)
             return "done", report_line(report), ts, recent, report
@@ -1524,6 +1628,9 @@ class AgentCache:
                     "task": detail["task"],  # what it was asked to do
                     "steps": detail["steps"],  # its last tool calls, oldest first
                     "report": detail["report"] if status == "done" else "",  # what it handed back
+                    # its calls with no result yet: [{"line", "since"}] (running_calls), only while it runs
+                    "running": (detail.get("running") or []) if status == "running" else [],
+                    "context": detail.get("context"),  # its context now, in tokens (context_size)
                     "toolCalls": None,  # how many tool calls and tokens so far (finish_row)
                     "tokens": None,
                 })
@@ -1970,11 +2077,11 @@ def step_text(convo):
             prev = next((e for e in convo[1:] if e["type"] == "assistant"), None)
             uses = [c for c in blocks_of(prev)[1] if c.get("type") == "tool_use"] if prev else []
             if uses:
-                return f"{describe_tool(uses[-1])} (thinking about the result)"
+                return f"{tool_intent(uses[-1])} (thinking about the result)"
         return "thinking…"
     uses = [c for c in blocks if c.get("type") == "tool_use"]
     if uses:
-        return describe_tool(uses[-1])
+        return tool_intent(uses[-1])
     if isinstance(msg.get("stop_reason"), str):
         return ""
     return "writing…" if any(c.get("type") == "text" for c in blocks) else "thinking…"

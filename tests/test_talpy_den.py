@@ -790,8 +790,8 @@ class AgentTests(Fixture):
         rows = [(t["id"], t["depth"], t["status"], t["activity"]) for t in a["tree"]]
         self.assertEqual(rows, [
             ("a1", 0, "done", "Found it in parser.py"),
-            ("a2", 0, "running", "Bash: pytest -x tests/ echo"),
-            ("a3", 1, "running", "Read: test_io.py (thinking about the result)"),
+            ("a2", 0, "running", "Running pytest -x tests/ echo"),
+            ("a3", 1, "running", "Reading test_io.py (thinking about the result)"),
         ])
         self.assertIsNone(next(s for s in work["sessions"] if s["sessionId"] == "waiting")["agents"])
 
@@ -856,6 +856,33 @@ class AgentTests(Fixture):
         profile = next(p for p in td.discover_profiles(self.home) if p.label == "work")
         a = cache.session_agents(profile, "busy", alive=False)
         self.assertEqual((a["done"], a["running"], a["stopped"]), (1, 0, 2))
+        # a call it was on when its session ended isn't running any more
+        self.assertEqual([t["running"] for t in a["tree"]], [[], [], []])
+
+    def test_running_calls_and_context(self):
+        # two calls of one reply (an entry each): the Read came back, the Bash still runs
+        tool = lambda i, name, inp: {"type": "tool_use", "id": i, "name": name, "input": inp}
+        read = self.line("assistant", [tool("t1", "Read", {"file_path": "/w/a.py"})], "tool_use")
+        bash = self.line("assistant", [tool("t2", "Bash", {"command": "make test", "description": "Run the tests"})], "tool_use")
+        for e in (read, bash):
+            e["message"]["id"] = "msg_1"
+            e["message"]["usage"] = {"input_tokens": 3, "cache_read_input_tokens": 200_000,
+                                     "cache_creation_input_tokens": 22_000, "output_tokens": 700}
+        read["timestamp"] = bash["timestamp"] = iso(self.now - 130)
+        result = self.line("user", [{"type": "tool_result", "tool_use_id": "t1", "content": "..."}])
+        self.agent("busy", "p1", [self.line("user", "go"), read, bash, result], description="Parallel")
+        p1 = next(t for t in self.agents_of_busy()[0]["tree"] if t["id"] == "p1")
+        self.assertEqual(p1["activity"], "Running the tests")
+        self.assertEqual(p1["running"], [{"line": "Bash: make test", "since": td.to_ms(bash["timestamp"])}])
+        self.assertEqual(p1["context"], 222_703)
+
+    def test_no_running_calls_or_context_without_them(self):
+        a, _ = self.agents_of_busy()
+        tree = {t["id"]: t for t in a["tree"]}
+        self.assertEqual(tree["a1"]["running"], [])  # done
+        self.assertEqual(tree["a3"]["running"], [])  # its Read came back: it's thinking
+        self.assertEqual([r["line"] for r in tree["a2"]["running"]], ["Bash: pytest -x tests/ echo"])
+        self.assertIsNone(tree["a1"]["context"])  # (no usage in its replies)
 
     def test_agents_of_the_process_before_a_resume_are_stopped(self):
         # claude --resume keeps the chat's id: the agents that ran in its
@@ -951,7 +978,7 @@ class AgentTests(Fixture):
                                   self.line("user", [{"type": "tool_result", "tool_use_id": "toolu_b", "content": big}]),
                                   {"type": "attachment", "isSidechain": True, "attachment": {"blob": big}}])
         a8 = self.tree_of()["a8"]
-        self.assertEqual((a8["activity"], a8["steps"]), ("Bash: seq 60 (thinking about the result)", ["Bash: seq 60"]))
+        self.assertEqual((a8["activity"], a8["steps"]), ("Running seq 60 (thinking about the result)", ["Bash: seq 60"]))
 
     def test_details_have_a_cache_file_of_their_own(self):
         # Older copies of the script (a VS Code extension not updated yet)
@@ -985,6 +1012,33 @@ class AgentTests(Fixture):
         self.assertEqual(td.describe_tool({"name": "Edit", "input": {"file_path": "/a/b/parser.py"}}), "Edit: parser.py")
         self.assertEqual(td.describe_tool({"name": "mcp__github__create_issue", "input": {}}), "github: create_issue")
         self.assertEqual(td.describe_tool({"name": "TodoWrite", "input": {"todos": []}}), "TodoWrite")
+
+    def test_tool_intent(self):
+        # an agent's line in Claude's words for its tools; a call's own description in the -ing form
+        t = lambda name, **inp: td.tool_intent({"name": name, "input": inp})
+        self.assertEqual(t("Bash", command="sed -n 1,25p CHANGELOG.md", description="Read the top of both CHANGELOG.md files"),
+                         "Reading the top of both CHANGELOG.md files")
+        self.assertEqual(t("Bash", command="npm test", description="Run the tests"), "Running the tests")
+        self.assertEqual(t("Bash", command="git status", description="Git status"), "Git status")
+        self.assertEqual(t("Bash", command="x", description="Running tests"), "Running tests")
+        self.assertEqual(t("Bash", command="pytest -x tests/\necho"), "Running pytest -x tests/ echo")
+        self.assertEqual(t("Read", file_path="/a/b/week.py"), "Reading week.py")
+        self.assertEqual(t("Edit", file_path="/a/CHANGELOG.md"), "Editing CHANGELOG.md")
+        self.assertEqual(t("Write", file_path="/a/new.ts"), "Writing new.ts")
+        self.assertEqual(t("NotebookEdit", notebook_path="/a/n.ipynb"), "Editing notebook n.ipynb")
+        self.assertEqual(t("Glob", pattern="**/*.qml"), "Finding **/*.qml")
+        self.assertEqual(t("Grep", pattern="tipChatAct"), "Searching for tipChatAct")
+        self.assertEqual(t("WebFetch", url="https://x.org/a"), "Fetching https://x.org/a")
+        self.assertEqual(t("WebSearch", query="qt listview"), "Searching the web for qt listview")
+        self.assertEqual(t("Agent", description="Explore the auth code"), "Exploring the auth code")
+        self.assertEqual(t("Monitor", description="Wait for the build"), "Waiting for the build")
+        self.assertEqual(t("mcp__github__create_issue"), "github: create_issue")
+        self.assertEqual(t("TodoWrite", todos=[]), "TodoWrite")
+        self.assertEqual(td.ing_form("Stop the server"), "Stopping the server")
+        self.assertEqual(td.ing_form("Make a copy"), "Making a copy")
+        self.assertEqual(td.ing_form("Use the cache"), "Using the cache")
+        self.assertEqual(td.ing_form("see the diff"), "seeing the diff")
+        self.assertEqual(td.ing_form(""), "")
 
 
 class TokenCountTests(unittest.TestCase):
@@ -1053,7 +1107,7 @@ class AgentRunTests(Fixture):
                                     self.line("assistant", [{"type": "tool_use", "id": "t", "name": "Bash",
                                                              "input": {"command": "seq 9"}}], 1)])
         self.assertTrue(ok)
-        self.assertIn("· not finished · last step: Bash: seq 9 · 1 tool call", md)
+        self.assertIn("· not finished · last step: Running seq 9 · 1 tool call", md)
         self.assertIn("## Report\n\n*None yet: it hadn't finished at ", md)
 
     def test_a_fork(self):
@@ -2578,7 +2632,7 @@ class PeekTests(Fixture):
             chat_line("assistant", [tool_use("Bash", {"command": "pytest -x"})], "m1"),
         ])
         p = self.peek()
-        self.assertEqual((p["activity"], p["prompt"], p["reply"]), ("Bash: pytest -x", "fix the parser", "Let me run the tests."))
+        self.assertEqual((p["activity"], p["prompt"], p["reply"]), ("Running pytest -x", "fix the parser", "Let me run the tests."))
         self.assertEqual(p["replyLine"], "Let me run the tests.")
 
     def test_thinking_about_a_tool_result(self):
@@ -2588,7 +2642,7 @@ class PeekTests(Fixture):
             chat_line("user", [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "..."}]),
         ])
         p = self.peek()
-        self.assertEqual((p["activity"], p["prompt"], p["reply"]), ("Read: parser.py (thinking about the result)", "fix the parser", ""))
+        self.assertEqual((p["activity"], p["prompt"], p["reply"]), ("Reading parser.py (thinking about the result)", "fix the parser", ""))
 
     def test_finished_reply_in_several_blocks(self):
         self.transcript("busy", [
