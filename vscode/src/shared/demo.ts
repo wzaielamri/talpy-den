@@ -696,6 +696,7 @@ export function demoLimits(now: number, account = ""): LimitHistory {
         share: w ? { pct: (cost / w) * 100, how: "sizes", measured: null } : null,
         fill: { wallMs: (2.2 + (i % 2) * 0.4) * 3600000, workMs: (3.5 + (i % 3) * 0.3) * 3600000 },
         tokens: { fresh: cost * 52000, output: cost * 10500, cacheRead: cost * 2.6e6 },
+        costs: { fresh: cost * 0.29, output: cost * 0.21, cacheRead: cost * 0.5 }, // (those tokens at Opus 5.5's prices)
       };
     });
     const windows = periods.flatMap((p, i) => [0.5, 1.6, 2.7, 3.9, 5.2].slice(0, 3 + (i % 3)).map((d, k) => {
@@ -719,7 +720,7 @@ export function demoLimits(now: number, account = ""): LimitHistory {
         seven_day: week.filter(Boolean).length > 1 ? { kind: "same", pct: -3, against: prev.from } : { kind: "new", against: prev.from },
         ...(opus ? { seven_day_opus: { kind: "same", pct: 1, against: prev.from } } : {}),
       },
-      now: { fiveHour: last.fiveHour, share: last.share, fill: last.fill, tokens: last.tokens,
+      now: { fiveHour: last.fiveHour, share: last.share, fill: last.fill, tokens: last.tokens, costs: last.costs,
         weeks: { seven_day: last.weeks.seven_day ?? null, ...(opus ? { seven_day_opus: last.weeks.seven_day_opus ?? null } : {}) } },
       equivalents: { model: "Opus 5.5", fiveHour: { output: (last.fiveHour!.cost / 20) * 1e6, input: (last.fiveHour!.cost / 4) * 1e6, cacheRead: (last.fiveHour!.cost / 0.2) * 1e6 },
         week: last.weeks.seven_day ? { output: (last.weeks.seven_day.cost / 20) * 1e6, input: (last.weeks.seven_day.cost / 4) * 1e6, cacheRead: (last.weeks.seven_day.cost / 0.2) * 1e6 } : null },

@@ -973,6 +973,7 @@ export interface LimitPeriod {
   share: { pct: number; how: "sizes" | "measured"; measured: number | null; rough?: boolean } | null; // a full 5-hour window, in % of the week
   fill: { wallMs: number; workMs: number } | null; // a full 5-hour window at your pace: your time, Claude's work
   tokens: { fresh: number; output: number; cacheRead: number } | null; // what filled one
+  costs?: { fresh: number; output: number; cacheRead: number } | null; // and those tokens' API price, by kind (an older week.py: none)
 }
 
 export interface LimitAccount {
@@ -988,6 +989,7 @@ export interface LimitAccount {
     share: LimitPeriod["share"];
     fill: LimitPeriod["fill"];
     tokens: LimitPeriod["tokens"];
+    costs?: LimitPeriod["costs"];
     weeks: Record<string, { cost: number; pct: number; scaled?: number; rough?: boolean; lo?: number; hi?: number } | null>;
   };
   equivalents: { model: string; fiveHour: LimitTokens | null; week: LimitTokens | null } | null;

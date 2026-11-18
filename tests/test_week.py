@@ -1206,6 +1206,12 @@ class LimitHistoryTests(Home):
         self.assertEqual(now["share"]["pct"], round(32 / 240 * 100, 1))
         self.assertEqual(now["fill"]["wallMs"], 75 * MIN * 2)  # (its first reply to its reading at 50%)
         self.assertEqual(now["tokens"]["output"], 1_600_000)
+        # what filled a window by API price, each kind at its own price (the bar)
+        self.assertEqual(now["costs"], {"fresh": 0, "output": 32, "cacheRead": 0})
+        self.assertEqual(work["now"]["costs"], now["costs"])
+        # (a million cache reads cost ten times what a thousand output tokens do on Opus 5.5)
+        self.assertEqual([round(v, 4) for v in week.part_costs("claude-opus-5-5", [10, 1000, 1_000_000, 0, 0, 0, 1])],
+                         [0.0, 0.02, 0.2])
         self.assertEqual(work["changes"]["fiveHour"], {"kind": "change", "pct": -20, "against": before["from"]})
         self.assertEqual(work["changes"]["seven_day"]["kind"], "new")  # (the account had no weekly limit the week before)
         self.assertEqual(work["equivalents"]["model"], "Opus 5.5")

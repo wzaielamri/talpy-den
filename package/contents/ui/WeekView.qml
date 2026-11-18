@@ -292,14 +292,16 @@ PlasmaComponents3.ScrollView {
                     five ? i18n("a 5-hour window") : i18n("a week"))
                + (five && week ? "; " + i18n("%1 a week", tokens(week.output)) : "") + ", " + i18n("at API prices")
     }
-    // The legend under what filled a window: a part's words, and the total
+    // The legend under what filled a window: a part's words and its share of
+    // the API price, then what that is by count
     function limitPartText(part) {
         return part.kind === "cacheRead" ? i18n("cache reads %1", shareText(part.share))
              : part.kind === "fresh" ? i18n("new input and cache writes %1", shareText(part.share))
              : i18n("output %1", shareText(part.share))
     }
     function limitMixText(m) {
-        return m.parts.length ? i18n("%1 tokens fill a 5-hour window", tokens(Math.round(m.total))) : ""
+        return !m.parts.length ? "" : m.tokens > 0 ? i18n("by API price; %1 tokens fill a 5-hour window", tokens(Math.round(m.tokens)))
+                                                   : i18n("by API price")
     }
     function limitPartColor(kind) {
         return kind === "output" ? workColor : kind === "fresh" ? waitColor : youColor
@@ -1408,7 +1410,7 @@ PlasmaComponents3.ScrollView {
                     readonly property var chart: Limits.dots(account, view.limitsNow, view.limitsStart)
                     readonly property var bars: Limits.weekBars(account, view.limitsNow, view.limitsStart)
                     readonly property real weekTop: Math.max(0, ...bars.map(b => b.cost))
-                    readonly property var mix: Limits.mix(account.now.tokens)
+                    readonly property var mix: Limits.mix(account.now.costs, account.now.tokens)
                     // (the sizes' column: as wide as the widest, a range with its count too)
                     readonly property real valueWidth: Math.max(view.gu * 4.5, Math.ceil(Math.max(0, ...Limits.keys(account).map(k =>
                         textMetrics.advanceWidth(view.limitValueText(k, Limits.now(account, k).value))))) * 1.08 + 1)
@@ -1709,8 +1711,8 @@ PlasmaComponents3.ScrollView {
                         text: view.limitTokensText(limitsOf.account)
                         wrapMode: Text.Wrap
                     }
-                    // what filled a window: a bar the chart's width (each part at
-                    // least a few pixels, so a small one still shows), its legend under it
+                    // what filled a window, by API price: a bar the chart's width (each
+                    // part at least a few pixels, so a small one still shows), its legend under it
                     ColumnLayout {
                         Layout.fillWidth: true
                         visible: limitsOf.mix.parts.length > 0

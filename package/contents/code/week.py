@@ -170,6 +170,7 @@ W_SIZE = 12
 F_SUB, F_MISS, F_LONG, F_MAX, F_FLOW = 1, 2, 4, 8, 16
 USAGE_KEYS = ("input", "output", "cacheRead", "cacheWrite5m", "cacheWrite1h", "webSearches")
 TOKEN_KINDS = 5  # (the first of them are tokens: input, output, cache reads and writes)
+TOKEN_PARTS = 6  # (an account's usage over time: tokens fresh, output, cache reads, then the API cost of each)
 
 
 # ---------------------------------------------------------------- prices
@@ -220,6 +221,16 @@ def prices_of(key):
         k = fast_in / p[0]
         p = (fast_in, p[1] * k, p[2] * k, p[3] * k, fast_out)
     return p, guessed
+
+
+def part_costs(key, t):
+    """request_cost of t by kind of tokens: (new input and cache writes,
+    output, cache reads); web searches left out."""
+    p, _ = prices_of(key)
+    if p is None:
+        return 0.0, 0.0, 0.0
+    k = (US_ONLY if "u" in key.partition("|")[2] else 1) / 1e6
+    return (t[0] * p[0] + t[3] * p[1] + t[4] * p[2]) * k, t[1] * p[4] * k, t[2] * p[3] * k
 
 
 def request_cost(key, t):
@@ -2448,8 +2459,9 @@ def chat_signs(profiles, by_profile, chat_ids):
 class AccountUsage:
     """One account's usage over time, in 5-minute buckets: API cost (all and
     by model family), tokens (fresh input and cache writes, output, cache
-    reads), the cost of buckets that may be another account's (a shared chat
-    with no sign of who ran it then), and Claude's turns."""
+    reads) and the API cost of each of those kinds, the cost of buckets that
+    may be another account's (a shared chat with no sign of who ran it
+    then), and Claude's turns."""
 
     def __init__(self):
         self.entries, self.unknown, self.turns, self.models = [], [], [], {}
@@ -2457,13 +2469,13 @@ class AccountUsage:
     def done(self):
         self.entries.sort(key=lambda e: e[0])
         self.times = [e[0] for e in self.entries]
-        self.cum = [(0.0, {}, (0.0, 0.0, 0.0))]
+        self.cum = [(0.0, {}, (0.0,) * TOKEN_PARTS)]
         for _, usd, fams, tok in self.entries:
             c, f, k = self.cum[-1]
             f = dict(f)
             for fam, v in fams.items():
                 f[fam] = f.get(fam, 0.0) + v
-            self.cum.append((c + usd, f, (k[0] + tok[0], k[1] + tok[1], k[2] + tok[2])))
+            self.cum.append((c + usd, f, tuple(a + b for a, b in zip(k, tok))))
         self.unknown.sort()
         self.unknown_times = [u[0] for u in self.unknown]
         self.unknown_cum = [0.0]
@@ -2481,12 +2493,13 @@ class AccountUsage:
         for ms, usd, fams, t in self.entries[i:j]:
             share = (x - ms) / BUCKET_MS
             cost += share * (usd if family is None else fams.get(family, 0.0))
-            for n in range(3):
+            for n in range(TOKEN_PARTS):
                 tok[n] += share * t[n]
         return cost, tok
 
     def used(self, lo, hi, family=None):
-        """(API cost, tokens [fresh, output, cache reads]) between lo and hi."""
+        """(API cost, [tokens fresh, output, cache reads, then the API cost of
+        each of them]) between lo and hi."""
         a, b = self.upto(lo, family), self.upto(hi, family)
         return b[0] - a[0], [y - x for x, y in zip(a[1], b[1])]
 
@@ -2533,10 +2546,11 @@ def account_usage(chats, profiles, accounts):
             hm = hour_ms(h)
             costs = []
             for key, t in agg.get("t", {}).items():
-                usd = request_cost(key, t)
+                parts = part_costs(key, t)
+                usd = sum(parts) + t[5] * WEB_SEARCH  # (request_cost, from its parts)
                 if usd > 0:
                     model = key.partition("|")[0]
-                    costs.append((usd, family_of(model), (t[0] + t[3] + t[4], t[1], t[2]), price_model(model)[0]))
+                    costs.append((usd, family_of(model), (t[0] + t[3] + t[4], t[1], t[2]) + parts, price_model(model)[0]))
             if not costs:
                 continue
             buckets = [(int(k), v) for k, v in agg.get("b", {}).items() if cs.number(v) and v > 0]
@@ -2555,7 +2569,7 @@ def account_usage(chats, profiles, accounts):
                         fams[x[1]] = fams.get(x[1], 0.0) + x[0] * share
                     if x[3]:
                         usage[acct].models[x[3]] = usage[acct].models.get(x[3], 0.0) + x[0] * share
-                tok = tuple(sum(x[2][i] for x in costs) * share for i in range(3))
+                tok = tuple(sum(x[2][i] for x in costs) * share for i in range(TOKEN_PARTS))
                 usage[acct].entries.append((ms, usd, fams, tok))
         for t in c["turns"]:
             acct = who(t[0])
@@ -2633,7 +2647,7 @@ def window_measure(u, key, w, now_ms, weekly=None, span=(0, float("inf"))):
         first = u.first(lo, t) or lo
         m = {"start": start, "at": t, "pct": top, "cost": cost, "full": cost / top * 100,
              "wallMs": (t - first) / top * 100, "workMs": u.worked(first, t) / top * 100,
-             "tokens": [v / top * 100 for v in tok], "plan": w["plan"]}
+             "tokens": [v / top * 100 for v in tok[:3]], "costs": [v / top * 100 for v in tok[3:]], "plan": w["plan"]}
         if weekly and lo >= span[0]:  # the weekly % this window's usage took, read at the same moments
             wp = [(x, weekly["points"][x]) for x in sorted(weekly["points"]) if span[0] <= x < span[1]]
             before = [p for x, p in wp if x <= lo]
@@ -2882,7 +2896,7 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
                 if max(f, era["from"]) < min(t, era["until"]):
                     periods.append({"from": max(f, era["from"]), "until": min(t, era["until"]), "era": k,
                                     "plan": era["plan"], "fiveHour": None, "weeks": {}, "share": None, "fill": None,
-                                    "tokens": None, "fives": []})
+                                    "tokens": None, "costs": None, "fives": []})
 
         def period_at(ms, k):
             return next((p for p in periods if p["era"] == k and p["from"] <= ms < p["until"]), None)
@@ -2923,6 +2937,9 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
                              "workMs": int(statistics.median(m["workMs"] for m in fives))}
                 p["tokens"] = {k: int(statistics.median(m["tokens"][i] for m in fives))
                                for i, k in enumerate(("fresh", "output", "cacheRead"))}
+                # (what those tokens cost at API prices, by the same kinds: the bar of what fills a window)
+                p["costs"] = {k: round(statistics.median(m["costs"][i] for m in fives), 4)
+                              for i, k in enumerate(("fresh", "output", "cacheRead"))}
                 # (from the two sizes when both are known: the weekly steps
                 # a window takes are a few whole percents, too coarse alone)
                 measured = [m["share"] for m in fives if "share" in m]
@@ -2967,6 +2984,7 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
                "share": newest(lambda p: p["share"], share_factor(f5, f7), scaled(("pct",))),
                "fill": newest(lambda p: p["fill"]),
                "tokens": newest(lambda p: p["tokens"], f5, scaled(("fresh", "output", "cacheRead"))),
+               "costs": newest(lambda p: p["costs"], f5, scaled(("fresh", "output", "cacheRead"))),
                "weeks": {k: newest(lambda p, k=k: p["weeks"].get(k), factors.get(k), scaled(("cost", "lo", "hi")))
                          for k in changes if k not in ("fiveHour", "share")}}
         model = max(u.models, key=u.models.get) if u.models else None

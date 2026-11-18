@@ -64,12 +64,14 @@ export function now(a, key) {
     return { value: key === "five_hour" ? a.now.fiveHour : a.now.weeks[key], change: a.changes[key === "five_hour" ? "fiveHour" : key] }
 }
 
-// What filled a window: its parts, shares of all its tokens
-export function mix(t) {
-    const total = t ? t.cacheRead + t.fresh + t.output : 0
-    if (!t || total <= 0)
-        return { parts: [], total: 0 }
-    return { parts: ["cacheRead", "fresh", "output"].map(kind => ({ kind, share: t[kind] / total })), total }
+// What filled a window: its parts, shares of their API price (costs: week.py's
+// now.costs; by count, cache reads are nearly all of it), and how many tokens
+export function mix(costs, tokens) {
+    const total = costs ? costs.cacheRead + costs.fresh + costs.output : 0
+    if (!costs || total <= 0)
+        return { parts: [], total: 0, tokens: 0 }
+    return { parts: ["cacheRead", "fresh", "output"].map(kind => ({ kind, share: costs[kind] / total })), total,
+             tokens: tokens ? tokens.cacheRead + tokens.fresh + tokens.output : 0 }
 }
 
 // The middle of a change's factors (each window's), or null (a plan change no reading saw)

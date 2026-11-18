@@ -472,10 +472,12 @@ test("advanced analyses: how a plan's limits changed, in words", () => {
   assert.equal(limitMoney(47.6, { code: "EUR", rate: 0.9 }), "€43");
   assert.equal(limitFillText({ wallMs: 97 * MIN, workMs: 155 * MIN }), "Full after about 1h 37m at your pace · Claude worked 2h 35m in it, across chats");
   assert.match(limitFillText({ wallMs: 6 * HOUR, workMs: 0 }), /doesn't fill in its 5 hours$/);
-  const mix = limitMix({ fresh: 2e6, output: 0.4e6, cacheRead: 112e6 });
+  // what filled a window: shares of its API price (by count, cache reads would be 98% of it)
+  const mix = limitMix({ fresh: 13, output: 8, cacheRead: 22.4 }, { fresh: 2e6, output: 0.4e6, cacheRead: 112e6 });
   assert.deepEqual(mix.parts.map((p) => p.kind), ["cacheRead", "fresh", "output"]);
-  assert.deepEqual(mix.parts.map((p) => p.label), ["cache reads 98%", "new input and cache writes 2%", "output <1%"]);
-  assert.equal(mix.text, "114.4M tokens fill a 5-hour window");
+  assert.deepEqual(mix.parts.map((p) => p.label), ["cache reads 52%", "new input and cache writes 30%", "output 18%"]);
+  assert.equal(mix.text, "by API price; 114.4M tokens fill a 5-hour window");
+  assert.deepEqual(limitMix(null, { fresh: 2e6, output: 0.4e6, cacheRead: 112e6 }).parts, []); // (an older week.py: no bar)
   assert.match(limitFootText({ since: NOW }), /since 24 Oct\. Use on claude\.ai/);
 });
 

@@ -451,7 +451,7 @@ function LimitsOf({ a, many, cur, now, start }: { a: LimitAccount; many: boolean
   const dots = limitDots(a, now, start);
   const bars = limitWeekBars(a, now, start);
   const weekTop = Math.max(0, ...bars.map((b) => b.cost));
-  const mix = limitMix(a.now.tokens);
+  const mix = limitMix(a.now.costs, a.now.tokens);
   const shares = a.periods.map((p) => p.share?.pct ?? null);
   return (
     <div class="limits-account">

@@ -645,18 +645,20 @@ export function limitMoney(usd: number, cur: Currency = USD): string {
   return symbol ? symbol + text : `${text} ${cur.code}`;
 }
 
-// What filled a window: its parts (shares of all its tokens, each with its
-// legend's words) and the line under them
-export function limitMix(t: LimitPeriod["tokens"]): {
+// What filled a window: its parts (shares of their API price, each with its
+// legend's words; by count, cache reads are nearly all of it) and the line
+// under them, with how many tokens that is
+export function limitMix(c: LimitPeriod["costs"] | undefined, t?: LimitPeriod["tokens"]): {
   parts: { kind: "cacheRead" | "fresh" | "output"; share: number; label: string }[];
   text: string;
 } {
-  const total = t ? t.cacheRead + t.fresh + t.output : 0;
-  if (!t || total <= 0) return { parts: [], text: "" };
+  const total = c ? c.cacheRead + c.fresh + c.output : 0;
+  if (!c || total <= 0) return { parts: [], text: "" };
   const names = { cacheRead: "cache reads", fresh: "new input and cache writes", output: "output" };
-  const parts = (["cacheRead", "fresh", "output"] as const).map((kind) => ({ kind, share: t[kind] / total,
-    label: `${names[kind]} ${shareText(t[kind] / total)}` }));
-  return { parts, text: `${shortCount(total)} tokens fill a 5-hour window` };
+  const parts = (["cacheRead", "fresh", "output"] as const).map((kind) => ({ kind, share: c[kind] / total,
+    label: `${names[kind]} ${shareText(c[kind] / total)}` }));
+  const count = t ? t.cacheRead + t.fresh + t.output : 0;
+  return { parts, text: count > 0 ? `by API price; ${shortCount(count)} tokens fill a 5-hour window` : "by API price" };
 }
 
 // "24 Oct": when a week began
