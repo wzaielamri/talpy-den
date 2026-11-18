@@ -79,8 +79,10 @@ ColumnLayout {
                             }
                             PlasmaComponents3.Label {
                                 textFormat: Text.PlainText
-                                // its kind, and the model it runs on (at most 40% of the line: its name first, as in VS Code)
-                                Layout.maximumWidth: Math.round(headRow.width * 0.4)
+                                // its kind, and the model it runs on (at most 40% of the line: its name first, as in VS Code;
+                                // of agentLines' width, which its anchors set: a share of the row's own width makes the row
+                                // lay itself out again while it lays out, "Detected recursive rearrange")
+                                Layout.maximumWidth: Math.round(agentLines.width * 0.4)
                                 elide: Text.ElideRight
                                 text: agentRow.modelData.type + (agentRow.modelData.model ? " · " + agentRow.modelData.model : "")
                                 opacity: 0.6

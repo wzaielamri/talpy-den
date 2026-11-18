@@ -91,6 +91,72 @@ print(repr("made %d" % r.property("made")))
 """
 
 
+AGENTS_PAGE = """import QtQuick
+import "%s"
+Item {
+    id: root
+    width: 380; height: 400
+    property real now: 1795000000000
+    property var expandedAgentRuns: ({ "r|a1": true })
+    readonly property var emptyAgent: ({ id: "", parent: null, depth: 0, type: "", description: "", status: "done",
+                                         activity: "", started: null, updated: null, model: null, task: "", steps: [],
+                                         report: "", toolCalls: null, tokens: null, running: [], context: null })
+    function duration(ms) { return Math.round(ms / 60000) + "m" }
+    function formatTokens(n) { return (n / 1e3).toFixed(1) + "k" }
+    function agentNumbers(a) { return "5 tool calls" }
+    function ranFor(ms) { return "for " + duration(ms) }
+    function toggleAgentRun(key) {}
+    function openAgentRun() {}
+    function isContainer(host) { return false }
+    function hostLabel(host) { return host }
+    AgentTree {
+        width: 340
+        rowKey: "r"
+        agents: [
+            { id: "a1", parent: null, depth: 0, type: "general-purpose", description: "Write tests for the parser and run them",
+              status: "running", activity: "Reading the top of both CHANGELOG.md files", started: root.now - 600000,
+              model: "Opus 5.5", task: "Add tests", steps: ["Read: a.py"], report: "", toolCalls: 5, tokens: 96300,
+              context: 222703, running: [{ line: "Bash: npm test -- date", since: root.now - 70000 }] },
+            { id: "a2", parent: "a1", depth: 1, type: "Explore", description: "Look for fixtures", status: "done",
+              activity: "Found them", started: root.now - 300000, model: "Haiku 4.5", task: "", steps: [], report: "x",
+              toolCalls: null, tokens: null, context: 5400 }
+        ]
+    }
+}
+"""
+AGENTS_SCRIPT = """import sys
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQuick import QQuickView
+from PySide6.QtTest import QTest
+app = QGuiApplication(sys.argv)
+view = QQuickView()
+view.engine().evaluate("(function () { const fill = (s, a) => a.reduce((t, v, i) => t.split('%' + (i + 1)).join(v), s);"
+                       " globalThis.i18n = (s, ...a) => fill(s, a); globalThis.i18nc = (c, s, ...a) => fill(s, a);"
+                       " globalThis.i18np = (one, many, n, ...a) => fill(n === 1 ? one : many, [n, ...a]) })()")
+view.setSource(QUrl.fromLocalFile(sys.argv[1]))
+if view.status() != QQuickView.Ready:
+    sys.exit(str([e.toString() for e in view.errors()]))
+view.show(); QTest.qWaitForWindowExposed(view); QTest.qWait(100)
+view.grabWindow()   # (a frame: the layouts lay out before it)
+"""
+
+
+@NEEDS_PLASMA_QML
+class AgentTreeTests(unittest.TestCase):
+    def test_an_agent_tree_lays_out_without_warnings(self):
+        # Its kind and model take at most 40% of its line: a share of its own row's width made
+        # the row lay itself out again while it laid out ("Detected recursive rearrange", in
+        # plasmashell's journal for each agent shown)
+        with tempfile.TemporaryDirectory() as tmp:
+            qml = Path(tmp) / "agents.qml"
+            qml.write_text(AGENTS_PAGE % UI.as_uri())
+            out = subprocess.run(["python3", "-c", AGENTS_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
+                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_FORCE_STDERR_LOGGING="1"))
+        self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+        self.assertEqual([line for line in out.stderr.splitlines() if "AgentTree.qml" in line], [])
+
+
 @NEEDS_PLASMA_QML
 class RowButtonsTests(unittest.TestCase):
     def test_the_keyboard_and_a_finger_get_a_rows_buttons_too(self):
