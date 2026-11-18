@@ -1225,11 +1225,39 @@ def job_id_ok(job_id):
             and ".." not in job_id and not job_id.startswith("-"))
 
 
-def listed_job_ids(home):
-    """The ids of the jobs file (place_jobs, publish_jobs): what --job may bring up."""
+def listed_jobs(home):
+    """The jobs file's jobs by id (place_jobs, publish_jobs): what --job may bring up."""
     data = cs.read_json(cs.jobs_file_path(home, cs.cache_dir(home)))
     jobs = data.get("jobs") if isinstance(data, dict) else None
-    return {j["id"] for j in jobs if isinstance(j, dict) and isinstance(j.get("id"), str)} if isinstance(jobs, list) else set()
+    return {j["id"]: j for j in jobs if isinstance(j, dict) and isinstance(j.get("id"), str)} if isinstance(jobs, list) else {}
+
+
+# A chat's Talpy Chat window (ChatPane.qml's title; no translations are shipped), found by KWin's window search: its
+# krunner interface answers which windows have a text in their title, and activates the one asked for.
+TALPY_CHAT_TITLE = "{} \u2014 Talpy Chat"
+KWIN_WINDOWS = ["gdbus", "call", "--session", "--dest", "org.kde.KWin", "--object-path", "/WindowsRunner", "--method"]
+KWIN_MATCH = re.compile(r"""\('(\d+_\{[0-9A-Fa-f-]+\})', (?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")""")
+
+
+def window_matches(text):
+    """[(id, title)] of the windows whose title has text, as KWin's window search finds them; [] without KWin."""
+    code, out = run([*KWIN_WINDOWS, "org.kde.krunner1.Match", text])
+    if code != 0:
+        return []
+    return [(m.group(1), re.sub(r"\\(.)", r"\1", m.group(2) if m.group(2) is not None else m.group(3)))
+            for m in KWIN_MATCH.finditer(out)]
+
+
+def raise_talpy_chat(name):
+    """Bring the chat named name's Talpy Chat window to the front if it's open (its title exactly, or with the
+    " <2>" KWin adds to a title that's taken); False if none is (or no KWin to ask)."""
+    if not isinstance(name, str) or not name:
+        return False
+    want = TALPY_CHAT_TITLE.format(name)
+    for window, title in window_matches(want):
+        if title == want or re.fullmatch(re.escape(want) + r" <\d+>", title):
+            return run([*KWIN_WINDOWS, "org.kde.krunner1.Run", window, ""])[0] == 0
+    return False
 
 
 def shared_extra_dirs(home):
@@ -1287,8 +1315,12 @@ def jump_job_id(home, extra_dirs, job_id):
     """jump.py --job: bring up the chat whose jobs file id is job_id, as a click on its row does; (ok, message)."""
     if not job_id_ok(job_id):
         return False, "Not a chat id"
-    if job_id not in listed_job_ids(home):
+    listed = listed_jobs(home)
+    if job_id not in listed:
         return False, JOB_NOT_LISTED
+    # Open in its Talpy Chat window: that window, where you read it (not a new terminal on it).
+    if raise_talpy_chat(listed[job_id].get("name")):
+        return True, "Switched to its Talpy Chat window"
     found = listed_host_session(job_id)
     if found:
         return show_host_session(*found)

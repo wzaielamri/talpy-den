@@ -1772,6 +1772,63 @@ class JobIdTests(unittest.TestCase):
             mock.Mock(key=".claude-work", dirname=".claude-work")])
         profiles.start()
         self.addCleanup(profiles.stop)
+        self.kwin()  # (no KWin window search unless a test says so)
+
+    def kwin(self, *titles):
+        """KWin's window search (its krunner Match over D-Bus) finding windows of these titles; the ids it's asked to
+        activate (Run) go to self.ran. With none given, there's no KWin to ask."""
+        self.ran = []
+        found = ", ".join(f"('0_{{{i:08x}-0000-0000-0000-000000000000}}', {t!r}, '', 30, 0.7, {{}})"
+                          for i, t in enumerate(titles))
+
+        def fake(args, timeout=5):
+            if "org.kde.krunner1.Match" in args:
+                return (0, f"([{found}],)") if titles else (1, "")
+            if "org.kde.krunner1.Run" in args:
+                self.ran.append(args[-2])
+                return 0, "()"
+            return 1, ""
+        p = mock.patch.object(jump, "run", fake)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def named(self, jobs):
+        """The jobs file, listing these {id: name}."""
+        path = cs.jobs_file_path(self.home, cs.cache_dir(self.home))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"version": 1, "jobs": [{"id": i, "name": n} for i, n in jobs.items()]}))
+
+    def test_job_raises_its_open_talpy_chat_window(self):
+        job_id = f".claude-work/{self.UUID}/job"
+        self.named({job_id: "display chat list ordering"})
+        self.kwin("recap tab critique — Talpy Chat", "display chat list ordering — Talpy Chat")
+        self.assertEqual(self.job(job_id), (True, "Switched to its Talpy Chat window"))
+        self.assertEqual(self.ran, ["0_{00000001-0000-0000-0000-000000000000}"])
+        self.assertEqual(self.calls, [])  # (no terminal: the window you read it in)
+
+    def test_job_talpy_chat_title_must_match_whole(self):
+        job_id = f".claude-work/{self.UUID}/live"
+        self.named({job_id: "fix"})
+        self.kwin("prefix — Talpy Chat", "fix it — Talpy Chat", "fix — Talpy Chat in a browser")
+        self.assertEqual(self.job(job_id), (True, "done"))
+        self.assertEqual(self.ran, [])
+        self.assertEqual(self.calls, [("jump", (self.home, [], self.UUID, ".claude-work"))])
+
+    def test_job_talpy_chat_with_kwins_number_and_a_quote(self):
+        job_id = f".claude-work/{self.UUID}/live"
+        self.named({job_id: "it's done"})
+        self.kwin("it's done — Talpy Chat <2>")
+        self.assertEqual(self.job(job_id), (True, "Switched to its Talpy Chat window"))
+        self.assertEqual(len(self.ran), 1)
+
+    def test_job_host_chat_in_talpy_chat(self):
+        job_id = f"lab:.claude/{self.UUID}/live"
+        self.host_answer("lab", {"key": f".claude/{self.UUID}/live", "name": "Train", "sessionId": self.UUID,
+                                 "entrypoint": "cli"})
+        self.named({job_id: "Train"})
+        self.kwin("Train — Talpy Chat")
+        self.assertEqual(self.job(job_id), (True, "Switched to its Talpy Chat window"))
+        self.assertEqual(self.calls, [])
 
     def host_answer(self, host, *sessions):
         path = self.remote.answer_file(host)
