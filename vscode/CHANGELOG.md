@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **Talpy's Run, a game you can lose.** *Run with Talpy* in the view's **⋯**
+  menu (or four quick clicks on him, which may pick it beside Peekaboo):
+  his stage grows taller, its headline and counts fade out, and he runs
+  while pebbles, stones, flower pots and crows come at him. Click, tap,
+  Space or ↑ to jump; hold ↓ or the right mouse button (swipe down on a
+  touch screen) to dig in under a crow. It gets faster as he goes, and the
+  first bump ends the run with how far he got and your best (*New best!*);
+  a click runs again. Your best is kept by the extension, in every window.
+  Not offered with reduced motion. *Play with Talpy* is now *Play Peekaboo
+  with Talpy* and *Run with Talpy*.
+
 ## 1.22.2
 
 ### Better

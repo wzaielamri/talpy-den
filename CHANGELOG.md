@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Highlights
+
+- **Talpy's Run:** a second game with the big Talpy. He runs, you make him jump over pebbles, stones and flower pots and dig under crows, it gets faster, and one bump ends the run with how far he got and your best (Plasma and VS Code).
+
+### Every change
+
+- **Talpy's Run, a game you can lose.** *Run with Talpy* in the right-click menu (VS Code's **⋯** menu; four quick clicks on him may pick it too, beside *Play Peekaboo with Talpy*) starts it: his stage grows taller, its headline, counts and ticker fade out, and he runs while what's on his way comes from the right. A click, a tap, Space or ↑ and he jumps at once; hold ↓ or the right mouse button (swipe down on a touch screen) and he digs in up to his eyes, under a crow, not under a pot. It starts gently, gets faster every 100 m up to twice the start, brings crows from 200 m and more from 400 m, and a gap is always one you can clear. The first bump ends the run: *36 m · best 340 m*, or *New best!*, and a click runs again; Esc, a click outside his stage or a chat that needs you ends it at once (a run cut short still counts). Your best is the only number kept: shared by every widget, kept by VS Code for itself, never lowered. Nothing of it runs, draws or listens to keys while you don't play, and it isn't offered in a widget on the desktop or with less motion. *Play with Talpy* is now the two entries *Play Peekaboo with Talpy* and *Run with Talpy* (VS Code: the commands `talpyDen.playPeekaboo` and `talpyDen.runWithTalpy`).
+
 ## 1.22.2 (2026-11-18)
 
 ### Highlights
