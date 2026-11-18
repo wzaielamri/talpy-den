@@ -2278,6 +2278,18 @@ class RemoteControlTests(Fixture):
         self.assertIsNone(td.rc_prompt_empty("\x1b[H❯\xa0\r────".encode()), "not its whole screen")
         self.assertIsNone(td.rc_prompt_empty("\x1b[2J\x1b[Hno prompt here".encode()))
         self.assertIsNone(td.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0".encode()))
+        # An empty prompt's placeholder is drawn dim (a queued message's hint, a suggested reply, an
+        # example), its first letter maybe as the cursor: nothing typed. As 2.1.327 drew it, a message queued:
+        hint = ("\x1b[2J\x1b[H─ chat ─\r\x1b[1B\x1b[38;2;153;153;153m❯\xa0\x1b[39m\x1b[2m\x1b[48;2;38;79;120m"
+                "Press up to edit queued messages\x1b[22m          \r\x1b[1B\x1b[49m\x1b[38;2;136;136;136m────")
+        self.assertTrue(td.rc_prompt_empty(hint.encode()))
+        self.assertTrue(td.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0\x1b[7mc\x1b[27m\x1b[2mommit this\x1b[22m\r────".encode()),
+                        "the cursor on its first letter, the rest dim")
+        self.assertTrue(td.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0\x1b[2mrun the tests\x1b[0m\r────".encode()), "(dim till a reset)")
+        # what you typed is drawn plainly: with a dim completion after it, a cursor in it, or alone
+        self.assertFalse(td.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0/rem\x1b[2mote-control\x1b[22m\r────".encode()))
+        self.assertFalse(td.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0ab\x1b[7mc\x1b[27md\r────".encode()))
+        self.assertFalse(td.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0\x1b[7ma\x1b[27m\r────".encode()), "one letter, the cursor on it")
 
     def test_on_types_the_command_and_answers_with_its_page(self):
         claude = FakeSession(self, self.profile)

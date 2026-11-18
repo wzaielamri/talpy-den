@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Every change
+
+- **Remote Control turns on with a hint in the prompt.** The phone button refused with *Something is typed in its prompt* when nothing was: Claude shows a hint in an empty prompt (*Press up to edit queued messages* once a message waits, a suggested reply, an example), and Talpy Den read it as typed text. Claude draws such a hint dim, and what you type plainly, so now only plainly drawn text counts as typed; text you typed is still never sent with the command (Plasma and VS Code).
+
 ## 1.22.1 (2026-11-18)
 
 ### Highlights

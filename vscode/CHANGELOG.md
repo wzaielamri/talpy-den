@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Remote Control turns on with a hint in the prompt.** The phone button
+  refused with *Something is typed in its prompt* when nothing was: Claude's
+  hint in an empty prompt (*Press up to edit queued messages*, a suggested
+  reply) read as typed text. Only text drawn plainly counts now, as Claude
+  draws what you type; hints are dim.
+
 ## 1.22.1
 
 ### Better

@@ -8949,17 +8949,56 @@ def rc_marked(shown, word=RC_DISCONNECT):
 def rc_prompt_empty(shown):
     """Is Claude's prompt empty in what a session showed as it was attached
     to (bytes: its whole screen, drawn again)? None when that can't be told
-    (not the whole screen, no prompt): its last mark, then nothing but
-    spaces up to the line under the prompt (Claude 2.1.327: "❯\\xa0\\r───")."""
+    (not the whole screen, no prompt): its last mark, then nothing typed up
+    to the line under the prompt (Claude 2.1.327: "❯\\xa0\\r───").
+
+    An empty prompt can show a placeholder: a queued message's hint ("Press
+    up to edit queued messages"), a suggested reply, an example. Claude
+    draws it dim, its first letter maybe as the cursor, and only while
+    nothing is typed (2.1.327's gn: dim(text), or cursor(text[0]) +
+    dim(text[1:])); what you type is drawn plainly. So nothing typed = no
+    letter drawn plainly, but for a cursor letter that starts a dim one."""
     raw = shown.decode("utf-8", "replace")
     if "\x1b[2J" not in raw:
         return None
-    text = ANSI_CODES.sub("", raw)
-    at = text.rfind(RC_MARK)
-    end = text.find("─", at + 1) if at >= 0 else -1
+    at = raw.rfind(RC_MARK)
+    end = raw.find("─", at + 1) if at >= 0 else -1
     if at < 0 or end < 0:
         return None
-    return text[at + 1:end].replace("\xa0", " ").strip() == ""
+    letters = []  # (letter, dim, as the cursor) of what's drawn after the mark
+    dim = cursor = False
+    pos, part = 0, raw[at + 1:end]
+    for m in ANSI_CODES.finditer(part + "\x1b[m"):
+        letters += [(c, dim, cursor) for c in part[pos:m.start()] if not c.isspace()]
+        pos = m.end()
+        code = m.group()
+        if not (code.startswith("\x1b[") and code.endswith("m")):
+            continue
+        params = [int(p) if p.isdigit() else 0 for p in code[2:-1].split(";")]
+        i = 0
+        while i < len(params):
+            p = params[i]
+            if p in (38, 48, 58):  # a colour: 5;n or 2;r;g;b follow (a 2 there isn't dim)
+                if p == 48:
+                    cursor = True
+                i += 3 if i + 1 < len(params) and params[i + 1] == 5 else 5
+                continue
+            if p == 0:
+                dim = cursor = False
+            elif p == 2:
+                dim = True
+            elif p == 22:
+                dim = False
+            elif p == 7:
+                cursor = True
+            elif p in (27, 49):
+                cursor = False
+            i += 1
+    plain = [k for k, (_, faint, _) in enumerate(letters) if not faint]
+    if not plain:
+        return True
+    # a placeholder with the cursor on its first letter
+    return plain == [0] and letters[0][2] and len(letters) > 1
 
 
 def rc_read(s, quiet=RC_FRAME_QUIET, most=RC_FRAME_MAX):
