@@ -46,7 +46,7 @@ import sys
 import time
 from pathlib import Path
 
-import talpy_den as cs
+import talpy_den as td
 
 # Claude's projects/<project> folder: the project's path with every other character as "-"
 PROJECT_KEY = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -139,7 +139,7 @@ def copies(profiles, chat_id):
     the file most profiles link to first (then the newest)."""
     groups = []
     for p in profiles:
-        path = cs.transcript_path(p, chat_id)
+        path = td.transcript_path(p, chat_id)
         if path is None or path.is_symlink() or not path.is_file():
             continue
         for g in groups:
@@ -148,7 +148,7 @@ def copies(profiles, chat_id):
                 break
         else:
             groups.append([(p, path)])
-    groups.sort(key=lambda g: (-len(g), -(cs.mtime(g[0][1]) or 0)))
+    groups.sort(key=lambda g: (-len(g), -(td.mtime(g[0][1]) or 0)))
     return groups
 
 
@@ -394,7 +394,7 @@ def plan_copies(profiles, slug):
     """[(profile, path)] of the profiles that have the plan called slug."""
     out = []
     for p in profiles:
-        path = cs.plan_path(p, slug)
+        path = td.plan_path(p, slug)
         if path is not None and path.is_file() and not path.is_symlink():
             out.append((p, path))
     return out
@@ -404,11 +404,11 @@ def project_copy(profiles, slug, home, have, owner=None):
     """(path, project folder) of the plan called slug in a project's plans
     folder when it's the one that counts over the accounts' copies (have;
     owner's only, given one): there are none, or it's newer
-    (cs.project_wins: two files of one name are one plan, the one its line
+    (td.project_wins: two files of one name are one plan, the one its line
     shows); else (None, None)."""
-    path, folder = cs.find_project_plan(profiles, slug, home) if home is not None else (None, None)
+    path, folder = td.find_project_plan(profiles, slug, home) if home is not None else (None, None)
     mine = [c for p, c in have if owner is None or p.real == owner.real]
-    if path is not None and all(cs.project_wins(path, c) for c in mine):
+    if path is not None and all(td.project_wins(path, c) for c in mine):
         return path, folder
     return None, None
 
@@ -421,12 +421,12 @@ def share_plan(profiles, slug, into, source=None):
         return False, "That plan isn't there any more"
     src = next((path for p, path in have if source is not None and p.real == source.real), None)
     if src is None:
-        src = max(have, key=lambda c: cs.mtime(c[1]) or 0)[1]
+        src = max(have, key=lambda c: td.mtime(c[1]) or 0)[1]
     added, skipped, apart = [], [], []
     old_umask = os.umask(0o077)
     try:
         for q in into:
-            dest = cs.plan_path(q, slug)
+            dest = td.plan_path(q, slug)
             if present(dest):
                 if not same(dest, src):
                     skipped.append(q.label)  # a plan of its own with that name
@@ -441,7 +441,7 @@ def share_plan(profiles, slug, into, source=None):
         return False, f"Couldn't share the plan: {exc}"
     finally:
         os.umask(old_umask)
-    on = [p.label for p in profiles if same(cs.plan_path(p, slug), src)]
+    on = [p.label for p in profiles if same(td.plan_path(p, slug), src)]
     if not added and (skipped or apart):
         why = (f"{', '.join(skipped)} already {'has' if len(skipped) == 1 else 'have'} another plan of that name"
                if skipped else f"{', '.join(apart)} {'is' if len(apart) == 1 else 'are'} on another disk or partition")
@@ -478,9 +478,9 @@ def share_chat_plan(profiles, chat_id, into):
     """With a chat, its plan (best effort: a chat without one, or a plan
     that can't be linked, just stays as it is)."""
     for p in profiles:
-        path = cs.transcript_path(p, chat_id)
-        slug = cs.transcript_slug(path, path.stat().st_size) if path is not None and path.is_file() else None
-        if slug and cs.plan_path(p, slug).is_file():
+        path = td.transcript_path(p, chat_id)
+        slug = td.transcript_slug(path, path.stat().st_size) if path is not None and path.is_file() else None
+        if slug and td.plan_path(p, slug).is_file():
             try:
                 share_plan(profiles, slug, into, p)
             except OSError:
@@ -538,7 +538,7 @@ def add_plans_setting(path):
     The file itself: never what a link there points to (move_plan refuses one)."""
     data, there = {}, os.path.isfile(path)
     if there:
-        raw = cs.read_plain(path, cs.SETTINGS_MAX)  # (the repository's file: read as one, at most that much)
+        raw = td.read_plain(path, td.SETTINGS_MAX)  # (the repository's file: read as one, at most that much)
         try:
             text = raw.decode("utf-8") if raw is not None else None
             data = None if text is None else json.loads(text) if text.strip() else {}
@@ -546,9 +546,9 @@ def add_plans_setting(path):
             data = None
         if not isinstance(data, dict):
             raise ValueError(f"{os.path.basename(path)} isn't a JSON object: left it as it is")
-    data[cs.PLANS_SETTING] = cs.PROJECT_PLANS_DIR
+    data[td.PLANS_SETTING] = td.PROJECT_PLANS_DIR
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    cs.write_atomic(path, (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+    td.write_atomic(path, (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 def place(src, dest):
@@ -564,26 +564,26 @@ def place(src, dest):
     with open(str(src), "rb") as f:
         st = os.fstat(f.fileno())
         data = f.read()
-    cs.write_atomic(dest, data, st.st_mode & 0o7777, (st.st_atime_ns, st.st_mtime_ns), new=True)
+    td.write_atomic(dest, data, st.st_mode & 0o7777, (st.st_atime_ns, st.st_mtime_ns), new=True)
 
 
 def move_ctx(profiles, home):
-    root = cs.cache_dir(home)
-    return cs.Context(home=home, profiles=profiles, plan_dirs=cs.PlanDirs(root / "plan-dirs.json", save=False),
-                      plan_projects=cs.PlanProjects(root, save=False))
+    root = td.cache_dir(home)
+    return td.Context(home=home, profiles=profiles, plan_dirs=td.PlanDirs(root / "plan-dirs.json", save=False),
+                      plan_projects=td.PlanProjects(root, save=False))
 
 
 def plan_origin(profiles, ctx, slug):
     """{"project": the folder the chat that made a plan started in, "cwd",
-    "chat", "profile"} as noted (cs.PlanProjects), else from that chat
+    "chat", "profile"} as noted (td.PlanProjects), else from that chat
     (the newest with its slug); {} when there's none."""
     noted = ctx.plan_projects.get(slug)
     if noted:
         return dict(noted, project=noted.get("project") or noted.get("cwd") or "")
-    p, transcript = cs.plan_chat(profiles, slug)
+    p, transcript = td.plan_chat(profiles, slug)
     if transcript is None:
         return {}
-    start = cs.first_cwd(transcript)
+    start = td.first_cwd(transcript)
     return {"project": start, "cwd": start, "chat": transcript.stem, "profile": p.key}
 
 
@@ -604,7 +604,7 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
     out = {"ok": False, "message": "", "question": "", "title": "", "slug": slug, "back": back, "project": "",
            "projectShort": "", "target": "", "targetShort": "", "setting": "", "settingsFile": "", "git": None,
            "exists": False, "free": "", "account": "", "lost": False, "choices": [], "default": ""}
-    if not cs.PLAN_SLUG.match(slug or ""):
+    if not td.PLAN_SLUG.match(slug or ""):
         return dict(out, message=f"Not a plan name: {slug}")
     owner = named(profiles, name) if name else None
     if name and owner is None:
@@ -612,7 +612,7 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
     if if_exists is not None and if_exists not in IF_EXISTS:
         return dict(out, message=f"Keep both or replace, not {if_exists}")
     ctx = move_ctx(profiles, home)
-    short = lambda p: cs.short_folder(str(p), home)  # noqa: E731
+    short = lambda p: td.short_folder(str(p), home)  # noqa: E731
     accounts = set()
     for p in profiles:
         try:
@@ -622,20 +622,20 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
             pass
     in_project = None   # (moving one of a project's folder to another project: that project)
     if back:
-        src, project = cs.project_plan_of(ctx, slug)
+        src, project = td.project_plan_of(ctx, slug)
         if src is None:
             return dict(out, message="That plan isn't in a project's folder any more")
         if owner is None:
-            key = cs.project_plan_owner(ctx, slug, project)
+            key = td.project_plan_owner(ctx, slug, project)
             owner = next((p for p in profiles if p.key == key), profiles[0])
         dest_dir = str(owner.path / "plans")
-        where, value = cs.project_settings(ctx, project, owner)
-        out["lost"] = bool(value is not None and cs.plans_dir_in(project, value))
+        where, value = td.project_settings(ctx, project, owner)
+        out["lost"] = bool(value is not None and td.plans_dir_in(project, value))
         folder = project
     else:
         have = plan_copies(profiles, slug)
-        src, in_project = cs.project_plan_of(ctx, slug)  # (one in a project's folder, to another project)
-        if src is not None and not all(cs.project_wins(src, path) for p, path in have
+        src, in_project = td.project_plan_of(ctx, slug)  # (one in a project's folder, to another project)
+        if src is not None and not all(td.project_wins(src, path) for p, path in have
                                        if owner is None or p.real == owner.real):
             src, in_project = None, None   # (an account's newer one of that name is the plan)
         if src is None:
@@ -647,11 +647,11 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
             return dict(out, message=(f"{owner.label} doesn't have this plan" if owner is not None else
                                       "Several accounts have a different plan of that name: say which account's goes"))
         if owner is None:
-            key = cs.project_plan_owner(ctx, slug, in_project) if in_project else None
+            key = td.project_plan_owner(ctx, slug, in_project) if in_project else None
             owner = next((p for p in profiles if p.key == key), None) if key else \
                 next(p for p, path in have if same(path, src))
             owner = owner or profiles[0]
-        starts, at_home = cs.start_folders(ctx), os.path.normpath(str(home))
+        starts, at_home = td.start_folders(ctx), os.path.normpath(str(home))
         # (not the home folder: its .claude is ~/.claude, an account's own)
         choices = sorted((f for f in starts if os.path.isdir(f) and os.path.normpath(f) != at_home),
                          key=lambda f: -starts[f][0])[:MOVE_CHOICES]
@@ -663,7 +663,7 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
         out["choices"] = [{"path": f, "short": short(f)} for f in choices]
         out["default"] = default
         folder = folder or default
-        out["title"], out["account"] = cs.plan_title(src) or slug, owner.label
+        out["title"], out["account"] = td.plan_title(src) or slug, owner.label
         if not folder:
             return dict(out, ok=bool(describe), message="" if describe else "Pick the project it goes to",
                         question=f"Move “{out['title']}” to which project?")
@@ -671,12 +671,12 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
         if not os.path.isabs(folder) or not os.path.isdir(folder):
             return dict(out, message=f"{short(folder)} isn't a folder here")
         if folder == at_home:
-            return dict(out, message=f"{short(os.path.join(folder, cs.PROJECT_PLANS_DIR))} is an account's own plans folder")
-        where, value = cs.project_settings(ctx, folder, owner)
-        named_dir = cs.plans_dir_in(folder, value) if value is not None else None
-        dest_dir = named_dir or os.path.join(folder, cs.PROJECT_PLANS_DIR)
+            return dict(out, message=f"{short(os.path.join(folder, td.PROJECT_PLANS_DIR))} is an account's own plans folder")
+        where, value = td.project_settings(ctx, folder, owner)
+        named_dir = td.plans_dir_in(folder, value) if value is not None else None
+        dest_dir = named_dir or os.path.join(folder, td.PROJECT_PLANS_DIR)
         out["setting"] = where if named_dir else ""
-        out["settingsFile"] = short(cs.local_settings_file(ctx, folder))
+        out["settingsFile"] = short(td.local_settings_file(ctx, folder))
     dest = os.path.join(dest_dir, slug + ".md")
     try:
         st = os.stat(dest_dir)
@@ -685,14 +685,14 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
     except OSError:
         pass
     if not back:  # (a repo can ship them as links: to ~/.claude/rules, to an account's settings.json)
-        if cs.stat_inside(os.path.normpath(dest_dir), folder) is False:
+        if td.stat_inside(os.path.normpath(dest_dir), folder) is False:
             return dict(out, message=f"{short(dest_dir)} is a link to another folder: Talpy Den doesn't move a plan through a link")
-        settings = cs.local_settings_file(ctx, folder)
-        linked = cs.linked_settings(settings, os.path.dirname(os.path.dirname(settings)), home, "change a setting") \
+        settings = td.local_settings_file(ctx, folder)
+        linked = td.linked_settings(settings, os.path.dirname(os.path.dirname(settings)), home, "change a setting") \
             if not out["setting"] and setting else None
         if linked:
             return dict(out, message=linked)
-    out.update(title=cs.plan_title(src) or slug, account=owner.label, project=folder, projectShort=short(folder),
+    out.update(title=td.plan_title(src) or slug, account=owner.label, project=folder, projectShort=short(folder),
                target=dest, targetShort=short(dest))
     if same(dest, src):
         return dict(out, message="It's there already")
@@ -725,7 +725,7 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
     added = False
     try:
         if not back and not out["setting"] and setting:
-            add_plans_setting(cs.local_settings_file(ctx, folder))
+            add_plans_setting(td.local_settings_file(ctx, folder))
             added = True
         os.makedirs(dest_dir, exist_ok=True)
         if out["exists"] and if_exists == "replace":
@@ -752,14 +752,14 @@ def move_plan(profiles, home, slug, name, folder=None, back=False, setting=True,
 def note_move(ctx, home, slug, new_slug, folder, owner):
     """The moved plan keeps its project and its chat; a hidden one stays
     hidden under its new name."""
-    root = cs.cache_dir(home)
+    root = td.cache_dir(home)
     noted = plan_origin(ctx.profiles, ctx, slug)
     entry = {"cwd": noted.get("cwd") or folder, "project": folder, "chat": noted.get("chat") or "",
              "profile": noted.get("profile") or owner.key, "at": int(time.time() * 1000)}
     try:
-        cs.change_plan_projects(root, put={new_slug: entry})
-        if new_slug != slug and slug in cs.load_hidden(root)["plans"]:
-            cs.change_hidden(root, "plans", add=new_slug)
+        td.change_plan_projects(root, put={new_slug: entry})
+        if new_slug != slug and slug in td.load_hidden(root)["plans"]:
+            td.change_hidden(root, "plans", add=new_slug)
     except OSError:
         pass
 
@@ -769,15 +769,15 @@ def note_move(ctx, home, slug, new_slug, folder, owner):
 
 def open_in(profiles, chat_id):
     """Label of the profile where a running session has this chat open, or None."""
-    for entry, runs_on, _holder in cs.live_entries_all(profiles):
-        if entry.get("sessionId") == chat_id and entry.get("kind") in cs.SESSION_KINDS and not entry.get("spare"):
+    for entry, runs_on, _holder in td.live_entries_all(profiles):
+        if entry.get("sessionId") == chat_id and entry.get("kind") in td.SESSION_KINDS and not entry.get("spare"):
             return runs_on.label
-    return cs.shared_holder(chat_id, profiles)
+    return td.shared_holder(chat_id, profiles)
 
 
 def named(profiles, name):
     """The profile called name (a folder name like .claude-work, or a path), or None."""
-    return next((p for p in profiles if name and cs.matches_profile(p, name)), None)
+    return next((p for p in profiles if name and td.matches_profile(p, name)), None)
 
 
 def give_to(profiles, chat_id, name, root, end_first=False, home=None):
@@ -789,21 +789,21 @@ def give_to(profiles, chat_id, name, root, end_first=False, home=None):
     if target is None:
         return None, f"No Claude profile called {name}"
     if end_first:
-        ok, message = cs.end_for_handover(home or Path.home(), profiles, chat_id)
+        ok, message = td.end_for_handover(home or Path.home(), profiles, chat_id)
         if not ok:
             return None, message
     busy = open_in(profiles, chat_id)
     if busy:
         return None, f"It's open on {busy}. A chat can be open in one place at a time: exit it there first."
-    paths = [path for p in profiles for path in [cs.transcript_path(p, chat_id)] if path]
+    paths = [path for p in profiles for path in [td.transcript_path(p, chat_id)] if path]
     if not paths:
         return None, "That chat has no transcript on this computer"
-    there = cs.transcript_path(target, chat_id)
+    there = td.transcript_path(target, chat_id)
     if there is None:
         ok, message = share(profiles, chat_id, [target], root)
         if not ok:
             return None, message
-        there = cs.transcript_path(target, chat_id)
+        there = td.transcript_path(target, chat_id)
         if there is None:
             return None, f"It wasn't added to {target.label}: {message}"
     elif any(not os.path.samefile(there, other) for other in paths):
@@ -819,8 +819,8 @@ def continue_command(profiles, chat_id, name, root, home, claude, end_first=Fals
     target, there = give_to(profiles, chat_id, name, root, end_first, home)
     if target is None:
         return False, there, None
-    folder = cs.chat_folder(there)
-    command = cs.in_folder(folder, cs.resume_command(target, chat_id, home, folder, claude))
+    folder = td.chat_folder(there)
+    command = td.in_folder(folder, td.resume_command(target, chat_id, home, folder, claude))
     return True, f"Continuing it on {target.label}", command
 
 
@@ -851,7 +851,7 @@ def plan_sharing(profiles, slug, name, share_it, to=None, home=None):
     to) and --unshare-plan (keep it on name only): (ok, message). A plan in
     a project's folder (with home: looked for) isn't shared: every account
     reads it there."""
-    if not cs.PLAN_SLUG.match(slug or ""):
+    if not td.PLAN_SLUG.match(slug or ""):
         return False, f"Not a plan name: {slug}"
     if project_copy(profiles, slug, home, plan_copies(profiles, slug))[0] is not None:
         return False, "This plan is in its project's folder: every account has it there"
@@ -917,12 +917,12 @@ def chat_jobs(profiles, chat_id):
     (its resumeSessionId)."""
     found = []
     for p in profiles:
-        for d in cs.job_dirs(p):
-            job = cs.read_json(d / "state.json")
+        for d in td.job_dirs(p):
+            job = td.read_json(d / "state.json")
             if not isinstance(job, dict):
                 continue
             if chat_id in (job.get("sessionId"), job.get("resumeSessionId")) \
-                    or (d.name == chat_id[:8] and not cs.valid_id(job.get("sessionId"))):
+                    or (d.name == chat_id[:8] and not td.valid_id(job.get("sessionId"))):
                 found.append((p, d, job))
     return found
 
@@ -930,15 +930,15 @@ def chat_jobs(profiles, chat_id):
 def job_at_work(profiles, jobs):
     """The label of the profile where one of these jobs (chat_jobs) isn't
     finished, or has a process, or None."""
-    live = {e.get("jobId") for e, _, _ in cs.live_entries_all(profiles)}
-    return next((p.label for p, d, job in jobs if d.name in live or not cs.job_finished(job)), None)
+    live = {e.get("jobId") for e, _, _ in td.live_entries_all(profiles)}
+    return next((p.label for p, d, job in jobs if d.name in live or not td.job_finished(job)), None)
 
 
 def chat_to_delete(profiles, chat_id, name, root):
     """The copy of a chat that goes (the one the profile name has, else the
     only one), from every profile that shares it: (its accounts, the paths
     to move to the Trash, its transcript), or (None, why not, None)."""
-    if not cs.valid_id(chat_id):
+    if not td.valid_id(chat_id):
         return None, f"Not a chat: {chat_id}", None
     groups = copies(profiles, chat_id)
     if not groups:
@@ -978,7 +978,7 @@ def moved_before(profiles, src, name, root, home):
     accounts, its paths)] (chat_to_delete), each chat it moved from
     (LinkCache.moved_from), newest first; not one open or at work (that one
     is listed by itself)."""
-    links, found, seen = cs.LinkCache(cs.cache_dir(home) / "links.json"), [], {src.stem}
+    links, found, seen = td.LinkCache(td.cache_dir(home) / "links.json"), [], {src.stem}
     old = links.moved_from(src)
     while old and old not in seen:
         seen.add(old)
@@ -998,13 +998,13 @@ def plan_to_delete(profiles, slug, name, home=None):
     (project_copy): ([], [its path, the accounts' older ones], it); and an
     account's takes the projects' older ones along: two files of one name
     are one plan, and the older would show again."""
-    if not cs.PLAN_SLUG.match(slug or ""):
+    if not td.PLAN_SLUG.match(slug or ""):
         return None, f"Not a plan name: {slug}", None
     have = plan_copies(profiles, slug)
     owner = named(profiles, name) if name else None
     path, _folder = project_copy(profiles, slug, home, have, owner)
     if path is not None:
-        _labels, older = gather((p, c) for p, c in have if cs.project_wins(path, c))
+        _labels, older = gather((p, c) for p, c in have if td.project_wins(path, c))
         return [], [path] + older, path
     if not have:
         return None, "That plan isn't there any more", None
@@ -1020,7 +1020,7 @@ def plan_to_delete(profiles, slug, name, home=None):
         if not all(same(path, src) for _, path in have):
             return None, "Several accounts have a different plan of that name: say which account's goes", None
     labels, paths = gather((p, path) for p, path in have if same(path, src))
-    paths += [f for f, _folder in cs.find_project_plan(profiles, slug, home, every=True) if not cs.project_wins(f, src)]
+    paths += [f for f, _folder in td.find_project_plan(profiles, slug, home, every=True) if not td.project_wins(f, src)]
     return labels, paths, src
 
 
@@ -1079,7 +1079,7 @@ def recap_reads(home, profiles):
     except ImportError:
         return
     try:
-        cache_root = cs.cache_dir(home)
+        cache_root = td.cache_dir(home)
         if week.cache_path(cache_root).is_file():
             import time
             week.updated_cache(cache_root, profiles, int(time.time() * 1000))
@@ -1117,29 +1117,29 @@ def delete(profiles, kind, item, name, root, home, describe=False):
         p, path = memory_to_delete(profiles, item)
         if p is None:
             return {"ok": False, "message": path}
-        title = cs.memory_head(path).get("name") or path.stem
-        folder = cs.memory_folder(path.parent.parent)[0]
+        title = td.memory_head(path).get("name") or path.stem
+        folder = td.memory_folder(path.parent.parent)[0]
         question = (f"Delete the memory “{title}”? It goes to the Trash, and Claude stops reading it in new "
-                    f"chats in {cs.short_path(folder, home)}.")
+                    f"chats in {td.short_path(folder, home)}.")
         labels, paths, busy = [p.label], [path], None
     elif kind == "plan":
         labels, paths, src = plan_to_delete(profiles, item, name, home)
         if labels is None:
             return {"ok": False, "message": paths}
-        title, busy = cs.plan_title(src) or item, None
+        title, busy = td.plan_title(src) or item, None
         question = (f"Delete the plan “{title}” on {and_list(labels)}? It goes to the Trash." if labels else
-                    f"Delete the plan “{title}” from {cs.short_folder(str(src.parent), home)}? It goes to the Trash.")
+                    f"Delete the plan “{title}” from {td.short_folder(str(src.parent), home)}? It goes to the Trash.")
         older = [c for c in paths if not same(c, src)]  # (an older file of that name elsewhere: plan_to_delete)
         if older:
-            older = and_list(dict.fromkeys(cs.short_folder(str(c.parent), home) for c in older))
+            older = and_list(dict.fromkeys(td.short_folder(str(c.parent), home) for c in older))
             question += f" So does its older copy in {older}."
-        question += cs.plan_tasks_go(cs.queued_for_plan(cs.cache_dir(home), item))
+        question += td.plan_tasks_go(td.queued_for_plan(td.cache_dir(home), item))
     else:
         labels, paths, src = chat_to_delete(profiles, item, name, root)
         if labels is None:
             return {"ok": False, "message": paths}
         try:
-            title = cs.read_chat_info(src, src.stat().st_size)[0] or item[:8]
+            title = td.read_chat_info(src, src.stat().st_size)[0] or item[:8]
         except OSError:
             title = item[:8]
         busy = open_in(profiles, item)
@@ -1158,7 +1158,7 @@ def delete(profiles, kind, item, name, root, home, describe=False):
     if describe:
         # ("folder": a project's plans folder the plan is in, as the question names it)
         return {"ok": not why, "message": why or question, "question": question, "name": title, "accounts": labels,
-                "open": busy or "", "folder": cs.short_folder(str(src.parent), home) if kind == "plan" and not labels else ""}
+                "open": busy or "", "folder": td.short_folder(str(src.parent), home) if kind == "plan" and not labels else ""}
     if why:
         return {"ok": False, "message": why}
     if kind == "chat":
@@ -1172,7 +1172,7 @@ def delete(profiles, kind, item, name, root, home, describe=False):
     if ok:
         try:
             for i in [item] + [old for old, _, _ in before]:
-                cs.forget_deleted(cs.cache_dir(home), kind + "s" if kind != "memory" else "memories", i)
+                td.forget_deleted(td.cache_dir(home), kind + "s" if kind != "memory" else "memories", i)
         except OSError:
             pass
     return {"ok": ok, "message": message}
@@ -1228,7 +1228,7 @@ def main(argv=None):
         sys.exit(USAGE)
     home, command, more = Path.home(), None, {}
     try:
-        profiles, root = cs.discover_profiles(home, extra), store_root(home)
+        profiles, root = td.discover_profiles(home, extra), store_root(home)
         if action == "--share":
             ok, message = share_with_all(profiles, chat_id, root, name)
         elif action == "--unshare":
@@ -1244,12 +1244,12 @@ def main(argv=None):
         else:
             # A click: the login shell may be asked where claude is
             ok, message, command = continue_command(profiles, chat_id, name, root, home,
-                                                    cs.find_claude(home, ask_shell=True), end_first)
+                                                    td.find_claude(home, ask_shell=True), end_first)
     except Exception as exc:  # report, don't crash: the widget shows the message
         ok, message = False, f"{type(exc).__name__}: {exc}"
     if remote:
         # Login scripts on the host may print things first: the JSON follows a marker
-        sys.stdout.write("\n" + cs.REMOTE_MARK + " ")
+        sys.stdout.write("\n" + td.REMOTE_MARK + " ")
     # ASCII: a lone surrogate in a name can't break the answer
     json.dump({"ok": ok, "message": message, **more, **({"command": command} if command else {})}, sys.stdout)
     sys.stdout.write("\n")

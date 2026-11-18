@@ -22,7 +22,7 @@ import subprocess
 import time
 from pathlib import Path
 
-import talpy_den as cs
+import talpy_den as td
 
 INTERRUPTED = "[Request interrupted"   # (as pane.py's)
 
@@ -71,10 +71,10 @@ class TurnEnd:
     def assistant(self, e, msg, blocks):
         self.started = True
         if e.get("isApiErrorMessage"):
-            self.turn, self.last = "api:" + " ".join(cs.message_text(msg).split())[:200], "error"
+            self.turn, self.last = "api:" + " ".join(td.message_text(msg).split())[:200], "error"
             return
         if msg.get("model") == "<synthetic>":   # (Claude Code's "No response requested." for a chat it stopped)
-            self.reply, self.reply_id, self.tool = cs.message_text(msg).strip()[-REPLY_TAIL:], msg.get("id"), False
+            self.reply, self.reply_id, self.tool = td.message_text(msg).strip()[-REPLY_TAIL:], msg.get("id"), False
             self.turn, self.last = "stopped", "end"
             return
         mid = msg.get("id")
@@ -97,7 +97,7 @@ class TurnEnd:
         call that failed last) | stopped (Claude Code's stand-in reply, or no reply at all)"""
         turn = self.turn or ""
         if turn.startswith("api:"):
-            return "limit" if turn[4:].startswith(cs.LIMIT_STARTS + cs.OUT_OF_USAGE) else "failed"
+            return "limit" if turn[4:].startswith(td.LIMIT_STARTS + td.OUT_OF_USAGE) else "failed"
         if turn == "interrupted":
             return "interrupted"
         if turn == "stopped" or not self.reply:
@@ -338,7 +338,7 @@ def usual_reply(text, picture=False):
     with no picture, path or file, not a / or ! command, nor pasted text, nor
     what Talpy Den sends to keep a chat going."""
     return (len(text) <= REPLY_CHARS and "\n" not in text and not picture and not text.startswith(("/", "!"))
-            and "[Pasted text" not in text and "[Image" not in text and text not in (cs.CONTINUE_PROMPT, cs.RETRY_PROMPT)
+            and "[Pasted text" not in text and "[Image" not in text and text not in (td.CONTINUE_PROMPT, td.RETRY_PROMPT)
             and not REPLY_PATH.search(text))
 
 
@@ -424,7 +424,7 @@ def reply_records(path, start, kept):
             continue
         if not isinstance(e, dict) or e.get("isSidechain"):
             continue
-        msg, blocks = cs.blocks_of(e)
+        msg, blocks = td.blocks_of(e)
         if not user:
             end.assistant(e, msg, blocks)
             continue
@@ -433,14 +433,14 @@ def reply_records(path, start, kept):
         if any(c.get("type") == "tool_result" for c in blocks):
             end.tool_result(any(c.get("type") == "tool_result" and c.get("is_error") for c in blocks))
             continue
-        text = cs.human_prompt(e)
+        text = td.human_prompt(e)
         if text is None:
-            if cs.message_text(msg).strip().startswith(INTERRUPTED):
+            if td.message_text(msg).strip().startswith(INTERRUPTED):
                 end.interrupted()
             continue
         if end.started and usual_reply(text, any(c.get("type") == "image" for c in blocks)):
             cwd = e.get("cwd") if isinstance(e.get("cwd"), str) else ""
-            out.append([cs.to_ms(e.get("timestamp")), e.get("sessionId") if isinstance(e.get("sessionId"), str) else path.stem,
+            out.append([td.to_ms(e.get("timestamp")), e.get("sessionId") if isinstance(e.get("sessionId"), str) else path.stem,
                         end.state(), text, e.get("uuid") if isinstance(e.get("uuid"), str) else "", project_of(cwd)])
         end.prompt()
     return out, start + whole, end.kept()
@@ -468,8 +468,8 @@ def reply_history(cache_root, profile, now=None):
     it was left, one that changed otherwise is read again."""
     now = time.time() if now is None else now
     since = now - REPLY_DAYS * 86400
-    kept_path = Path(cache_root) / "replies" / ("%s.json" % cs.short_id(str(profile.path)))
-    kept = cs.read_json(kept_path)
+    kept_path = Path(cache_root) / "replies" / ("%s.json" % td.short_id(str(profile.path)))
+    kept = td.read_json(kept_path)
     files = kept.get("files") if isinstance(kept, dict) and kept.get("version") == REPLY_CACHE_VERSION else None
     files = files if isinstance(files, dict) else {}
     found = {}
@@ -480,7 +480,7 @@ def reply_history(cache_root, profile, now=None):
     for d in folders:
         try:
             for f in os.scandir(d.path):
-                if f.name.endswith(".jsonl") and f.is_file(follow_symlinks=False) and not cs.side_copy(f.name):
+                if f.name.endswith(".jsonl") and f.is_file(follow_symlinks=False) and not td.side_copy(f.name):
                     st = f.stat(follow_symlinks=False)
                     if st.st_mtime >= since:
                         found[f.path] = st
@@ -508,8 +508,8 @@ def reply_history(cache_root, profile, now=None):
                        "records": records + more}
     if changed:
         try:
-            cs.private_dir(kept_path.parent)
-            cs.write_json_atomic(kept_path, {"version": REPLY_CACHE_VERSION, "files": files}, private=True)
+            td.private_dir(kept_path.parent)
+            td.write_json_atomic(kept_path, {"version": REPLY_CACHE_VERSION, "files": files}, private=True)
         except OSError:
             pass
     seen, out = set(), []
@@ -569,11 +569,11 @@ def usual_replies(records, now_ms, project, hidden=()):
 
 
 def hidden_path(cache_root):
-    return cs.state_dir(cache_root) / "replies-hidden.json"
+    return td.state_dir(cache_root) / "replies-hidden.json"
 
 
 def hidden_replies(cache_root):
-    data = cs.read_json(hidden_path(cache_root), 1 << 20)
+    data = td.read_json(hidden_path(cache_root), 1 << 20)
     return {h for h in data.get("hidden", []) if isinstance(h, str)} if isinstance(data, dict) else set()
 
 
@@ -591,8 +591,8 @@ def hide_reply(cache_root, text, on=True):
     else:
         hidden.discard(key)
     path = hidden_path(cache_root)
-    cs.private_dir(path.parent)
-    cs.write_json_atomic(path, {"version": 1, "hidden": sorted(hidden)}, private=True)
+    td.private_dir(path.parent)
+    td.write_json_atomic(path, {"version": 1, "hidden": sorted(hidden)}, private=True)
     return True, ("It won't be suggested again" if on else "Suggested again")
 
 
@@ -621,9 +621,9 @@ def whole_text(path, key):
                     continue
                 if not isinstance(e, dict) or e.get("isSidechain"):
                     continue
-                msg, blocks = cs.blocks_of(e)
+                msg, blocks = td.blocks_of(e)
                 if e.get("type") == "user" and e.get("uuid") == key:
-                    prompt = cs.human_prompt(e)
+                    prompt = td.human_prompt(e)
                 elif e.get("type") == "assistant" and not e.get("isApiErrorMessage") \
                         and (msg.get("id") == key or e.get("uuid") == key):
                     updates = e.get("thinkingDisplay") == "updates"

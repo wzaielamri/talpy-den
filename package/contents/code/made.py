@@ -34,7 +34,7 @@ import os
 import re
 import stat
 
-import talpy_den as cs
+import talpy_den as td
 
 PICTURES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
             ".webp": "image/webp", ".svg": "image/svg+xml"}
@@ -88,7 +88,7 @@ def heading(text):
         if s.startswith("#"):
             title = s.lstrip("#").strip()
             if title:
-                return cs.short_text(title, 80)
+                return td.short_text(title, 80)
     return None
 
 
@@ -306,7 +306,7 @@ def not_made():
 
 def plain_size(path):
     """The size of a plain file (or a link to one), opened without waiting, nothing read; else
-    cs.NOT_PLAIN, or "" when it isn't there."""
+    td.NOT_PLAIN, or "" when it isn't there."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOCTTY", 0))
     except (OSError, ValueError):
@@ -317,7 +317,7 @@ def plain_size(path):
         return ""
     finally:
         os.close(fd)
-    return st.st_size if stat.S_ISREG(st.st_mode) else cs.NOT_PLAIN
+    return st.st_size if stat.S_ISREG(st.st_mode) else td.NOT_PLAIN
 
 
 def show(transcript, path, step=None, as_file=False):
@@ -355,11 +355,11 @@ def show(transcript, path, step=None, as_file=False):
             return {"ok": True, "type": what, "mime": PICTURES[ext], "file": path, "size": found}
         data, other = None, found
     elif what == "picture":
-        data, other = cs.bytes_to_compare(path, SVG_SHOW_MAX if ext == ".svg" else PICTURE_SHOW_MAX)
+        data, other = td.bytes_to_compare(path, SVG_SHOW_MAX if ext == ".svg" else PICTURE_SHOW_MAX)
     else:
-        data, other = cs.bytes_to_compare(path, TEXT_SHOW_BYTES, head=True)
+        data, other = td.bytes_to_compare(path, TEXT_SHOW_BYTES, head=True)
     if data is None:
-        if other == cs.NOT_PLAIN:
+        if other == td.NOT_PLAIN:
             return {"ok": False, "message": "It isn't a plain file"}
         if other:
             return {"ok": False, "big": True, "message": f"It's too big to show here ({other})"}
@@ -383,7 +383,7 @@ def show(transcript, path, step=None, as_file=False):
 def keep_copy(folder, key, answer):
     """A picture show() gave (an SSH host's, or one Claude saw) as a file here, for Plasma's
     Talpy Chat, named after key (the host, the chat, and the file or the step): in folder
-    (cs.images_dir: the pictures there go after IMAGES_KEEP_DAYS), yours alone; the answer
+    (td.images_dir: the pictures there go after IMAGES_KEEP_DAYS), yours alone; the answer
     with "file" (its path here) in place of "data"."""
     import hashlib
     ext = dict(PICTURE_MIMES, **{"image/svg+xml": ".svg"}).get(answer.get("mime"))

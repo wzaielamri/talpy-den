@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_remote import CODE, FakeSSH, remote, cs  # noqa: E402
+from test_remote import CODE, FakeSSH, remote, td  # noqa: E402
 
 # A stand-in for docker, podman or nerdctl (which one: its file name), here
 # or on the fake SSH host (whose commands run without this environment: its
@@ -201,31 +201,31 @@ class IdTests(unittest.TestCase):
                 remote.place(bad)
 
     def test_times(self):
-        self.assertEqual(cs.container_time(1700000000), 1700000000000)
-        self.assertEqual(cs.container_time("2023-11-14T22:13:20.123456789Z"), 1700000000123)
-        self.assertEqual(cs.container_time("2023-11-14T23:13:20+01:00"), 1700000000000)
+        self.assertEqual(td.container_time(1700000000), 1700000000000)
+        self.assertEqual(td.container_time("2023-11-14T22:13:20.123456789Z"), 1700000000123)
+        self.assertEqual(td.container_time("2023-11-14T23:13:20+01:00"), 1700000000000)
         for broken in (-62135596800, "0001-01-01T00:00:00Z", 0, None, "", "soon", time.time() + 7 * 86400, True):
-            self.assertIsNone(cs.container_time(broken), broken)
+            self.assertIsNone(td.container_time(broken), broken)
 
     def test_short_image_and_users(self):
-        self.assertEqual(cs.short_image("docker.io/library/node:20"), "node:20")
-        self.assertEqual(cs.short_image("docker.io/osrf/ros:humble"), "osrf/ros:humble")
-        self.assertEqual(cs.short_image("localhost/mine:latest"), "mine:latest")
-        self.assertEqual(cs.short_image("sha256:" + "ab" * 32), "ab" * 6)
-        self.assertEqual(cs.devcontainer_user(DEV_LABELS), "vscode")  # (the last one wins)
-        self.assertEqual(cs.devcontainer_user({"devcontainer.metadata": "not json"}), "")
-        self.assertEqual(cs.container_user(None), "")
+        self.assertEqual(td.short_image("docker.io/library/node:20"), "node:20")
+        self.assertEqual(td.short_image("docker.io/osrf/ros:humble"), "osrf/ros:humble")
+        self.assertEqual(td.short_image("localhost/mine:latest"), "mine:latest")
+        self.assertEqual(td.short_image("sha256:" + "ab" * 32), "ab" * 6)
+        self.assertEqual(td.devcontainer_user(DEV_LABELS), "vscode")  # (the last one wins)
+        self.assertEqual(td.devcontainer_user({"devcontainer.metadata": "not json"}), "")
+        self.assertEqual(td.container_user(None), "")
         import pwd
         me = pwd.getpwuid(os.getuid()).pw_name
-        self.assertEqual(cs.container_user({"manager": "distrobox"}), "" if me == "root" else me)
+        self.assertEqual(td.container_user({"manager": "distrobox"}), "" if me == "root" else me)
         # labels only drop root: a container's own user that isn't root stays; never root from a label
-        self.assertEqual([cs.container_user(DEV_LABELS, own) for own in ("", "root", "0:0", "root:wheel")], ["vscode"] * 4)
-        self.assertEqual(cs.container_user(DEV_LABELS, "1000"), "")
-        self.assertEqual(cs.container_user({"manager": "distrobox"}, "node", "me"), "")
-        self.assertEqual(cs.container_user({"manager": "distrobox"}, "root:root", "me"), "me")
+        self.assertEqual([td.container_user(DEV_LABELS, own) for own in ("", "root", "0:0", "root:wheel")], ["vscode"] * 4)
+        self.assertEqual(td.container_user(DEV_LABELS, "1000"), "")
+        self.assertEqual(td.container_user({"manager": "distrobox"}, "node", "me"), "")
+        self.assertEqual(td.container_user({"manager": "distrobox"}, "root:root", "me"), "me")
         for user in ("root", "0", "0:0", "root:root"):
-            self.assertEqual(cs.container_user({"devcontainer.metadata": json.dumps([{"remoteUser": user}])}), "", user)
-            self.assertEqual(cs.container_user({"com.github.containers.toolbox": "true"}, "", user), "", user)
+            self.assertEqual(td.container_user({"devcontainer.metadata": json.dumps([{"remoteUser": user}])}), "", user)
+            self.assertEqual(td.container_user({"com.github.containers.toolbox": "true"}, "", user), "", user)
 
 
 class ListTests(FakeEngines):
@@ -287,14 +287,14 @@ class ListTests(FakeEngines):
         remote.containers_file().unlink()
         umask = os.umask(0o022)
         try:
-            cs.container_engines(cs.cache_dir(Path.home()))
+            td.container_engines(td.cache_dir(Path.home()))
         finally:
             os.umask(umask)
         self.assertEqual(remote.containers_file().stat().st_mode & 0o777, 0o600)
         # a link named docker to podman too
         (self.engines / "docker").unlink()
         (self.engines / "docker").symlink_to(podman)
-        engines, docker_is = cs.container_engines(cs.cache_dir(Path.home()))
+        engines, docker_is = td.container_engines(td.cache_dir(Path.home()))
         self.assertEqual((sorted(engines), docker_is), (["nerdctl", "podman"], "podman"))
 
     def test_engine_trouble_is_a_note(self):
@@ -315,13 +315,13 @@ class ListTests(FakeEngines):
         hung.write_text("#!/bin/bash\nexec sleep 30\n")
         hung.chmod(0o755)
         self.put({"web": self.container("web")})
-        old = cs.CONTAINER_LIST_TIMEOUT
-        cs.CONTAINER_LIST_TIMEOUT = 1
+        old = td.CONTAINER_LIST_TIMEOUT
+        td.CONTAINER_LIST_TIMEOUT = 1
         try:
             started = time.time()
             out = remote.containers_here(30)
         finally:
-            cs.CONTAINER_LIST_TIMEOUT = old
+            td.CONTAINER_LIST_TIMEOUT = old
         self.assertLess(time.time() - started, 3)
         self.assertEqual([c["id"] for c in out["containers"]], ["podman:web"])
         self.assertEqual(out["notes"], [{"engine": "docker", "message": "Docker didn't answer within 1 s."}])
@@ -425,7 +425,7 @@ class ContainerStatusTests(FakeEngines):
             self.assertTrue(remote.status("podman:" + name, tokens=False)["ok"])
             self.assertEqual(self.engine_calls()[-1][:4], ["podman", "exec", "-i", name])  # (its own user)
         # nor a root kept by an older Talpy Den
-        cs.write_json_atomic(remote.containers_file(), {"users": {"podman:app": {"cid": self.container("app")["id"], "user": "root"}}})
+        td.write_json_atomic(remote.containers_file(), {"users": {"podman:app": {"cid": self.container("app")["id"], "user": "root"}}})
         self.assertTrue(remote.status("podman:app", tokens=False)["ok"])
         self.assertEqual([c[1] for c in self.engine_calls()[-2:]], ["container", "exec"])
         self.assertNotIn("-u", self.engine_calls()[-1])
@@ -522,7 +522,7 @@ class LastAnswerTests(FakeEngines):
         self.assertEqual(sorted(last), ["lab", "podman:box"])
         self.assertEqual(last["podman:box"]["answer"]["result"]["groups"][0]["sessions"][0]["name"], "work in the box")
         self.assertLess(abs(last["lab"]["offset"]), 5000)
-        path = cs.cache_dir(Path.home()) / "hosts/podman:box.json"
+        path = td.cache_dir(Path.home()) / "hosts/podman:box.json"
         self.assertEqual(oct(path.stat().st_mode & 0o777), "0o600")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -562,7 +562,7 @@ class AttachTests(FakeEngines):
         self.assertEqual(line[0], "ssh")
         self.assertEqual(line[-3:-1], ["-t", "lab"])
         self.assertNotIn("BatchMode=yes", line)  # (a terminal may ask for a password)
-        self.assertEqual(remote.cs.shlex.split(test_unwrap(line[-1])),
+        self.assertEqual(remote.td.shlex.split(test_unwrap(line[-1])),
                          ["docker", "exec", "-it", "-e", "TERM", "-e", "COLORTERM", "api", "sh", "-c", "claude"])
 
     def test_open_remote_opens_attach_in_a_terminal(self):
@@ -679,7 +679,7 @@ class FrontEndTests(unittest.TestCase):
             self.assertIn(f'<entry name="{key}"', xml)
             self.assertIn(f'"{key}"', main.split("readonly property var sharedKeys", 1)[1].split("]", 1)[0])
             self.assertIn(f"cfg_{key}", page)
-        self.assertEqual((cs.config_defaults()["showContainers"], cs.config_defaults()["containerDays"]), (True, 30))
+        self.assertEqual((td.config_defaults()["showContainers"], td.config_defaults()["containerDays"]), (True, 30))
         schema = (REPO / "gnome/extension/schemas/org.gnome.shell.extensions.talpy-den.gschema.xml").read_text()
         prefs = (REPO / "gnome/extension/prefs.js").read_text()
         for key in ("show-containers", "container-days"):

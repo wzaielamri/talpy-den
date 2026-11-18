@@ -329,10 +329,10 @@ class KeyedRowsTests(unittest.TestCase):
     def test_rows_revs_and_the_answers_stamp(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location("talpy_den_revs", UI.parent / "code/talpy_den.py")
-        cs = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cs)
+        td = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(td)
         def revs(result):
-            cs.add_revs(result)
+            td.add_revs(result)
             return [r["rev"] for g in result["groups"] for r in g["sessions"]]
         rows = lambda detail: {"groups": [{"sessions": [{"sessionId": "a", "detail": detail}, {"sessionId": "b", "detail": "x"}],
                                            "recent": [{"key": "c", 1: "mixed keys", "two": 2}]}]}
@@ -341,12 +341,12 @@ class KeyedRowsTests(unittest.TestCase):
         self.assertNotEqual(first[0], changed[0])   # (what it says changed: a new rev)
         self.assertEqual(first[1], changed[1])      # (the others keep theirs)
         result = rows("x")
-        cs.add_revs(result)
+        td.add_revs(result)
         self.assertEqual(revs(result), first)       # (its own rev isn't hashed)
         self.assertIn("rev", result["groups"][0]["recent"][0])   # (keys of mixed kinds: hashed as they are)
-        a = cs.stamped('{"ok": true, "generatedAt": 1, "forecast": {"x": 1}, "n": 1}')
-        b = cs.stamped('{"ok": true, "generatedAt": 2, "forecast": {"x": 2}, "n": 1}')
-        c = cs.stamped('{"ok": true, "generatedAt": 2, "forecast": {"x": 2}, "n": 2}')
+        a = td.stamped('{"ok": true, "generatedAt": 1, "forecast": {"x": 1}, "n": 1}')
+        b = td.stamped('{"ok": true, "generatedAt": 2, "forecast": {"x": 2}, "n": 1}')
+        c = td.stamped('{"ok": true, "generatedAt": 2, "forecast": {"x": 2}, "n": 2}')
         stamp = lambda text: re.match(r'\{"stamp": "(\w+)", ', text).group(1)
         self.assertEqual(stamp(a), stamp(b))      # (only its time and forecast: the same answer)
         self.assertNotEqual(stamp(b), stamp(c))

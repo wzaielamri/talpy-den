@@ -83,11 +83,11 @@ if os.path.isfile(globals().get("__file__") or ""):  # (on an SSH host it comes 
             sys.pycache_prefix = str(_compiled)
             sys.dont_write_bytecode = False
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the script dir off sys.path
-import talpy_den as cs  # noqa: E402
+import talpy_den as td  # noqa: E402
 
 CACHE_FILE = "week-3.json"  # (a new layout gets a new name: an older copy of this file keeps its own)
 OLD_CACHE_FILES = ("week-1.json", "week-2.json")
-HISTORY_FILE = cs.HISTORY_SETTING_FILE  # {"keep": false} once you turn the history off
+HISTORY_FILE = td.HISTORY_SETTING_FILE  # {"keep": false} once you turn the history off
 CACHE_LOCK = "week.lock"
 LOCK_WAIT_S = 30  # another run reading the transcripts: wait for it this long, then use the cache as it is
 SPANS = ("day", "week", "month", "all")
@@ -186,7 +186,7 @@ def price_model(model):
     """claude-opus-5-5 -> ("opus-5-5", False); a model the list doesn't know:
     the newest of its family and True (a guess); not a Claude model: (None, True)."""
     m = (model or "").lower().split("[")[0]
-    m = re.sub(r"-\d{8}$", "", cs.strip_prefix(m, "claude-"))
+    m = re.sub(r"-\d{8}$", "", td.strip_prefix(m, "claude-"))
     if m in PRICES:
         return m, False
     for family, key in FAMILY_NOW:
@@ -273,7 +273,7 @@ def found_transcripts(profiles):
     out, by_inode = {}, {}
     for p in profiles:
         root = p.real / "projects"
-        for path, _linked in cs.transcript_files(p):
+        for path, _linked in td.transcript_files(p):
             try:
                 kind = transcript_kind(path.relative_to(root).parts)
                 st = path.stat()
@@ -307,7 +307,7 @@ def new_record(kind, st):
             # usage by effort level up to effortTo: backfill_work)
             "data": {"turns": [], "prompts": [], "limits": [], "limitResets": {}, "limitResetsTo": 0, "hours": {},
                      "names": {}, "folder": "", "prompt": "", "startTokens": None, "recaps": [],
-                     "tests": cs.new_tests(), "workTo": 0, "effortTo": 0}}
+                     "tests": td.new_tests(), "workTo": 0, "effortTo": 0}}
 
 
 def reply_id(mid):
@@ -398,8 +398,8 @@ def limit_reset(e, text, ts):
     resets, in ms: as Claude Code noted it with the error (its quotaLimits),
     else the time its message names; or None."""
     quota = e.get("quotaLimits")
-    resets = cs.to_ms(quota.get("resetsAt")) if isinstance(quota, dict) else None
-    return resets if resets and resets > ts else cs.reset_from_text(text, ts)
+    resets = td.to_ms(quota.get("resetsAt")) if isinstance(quota, dict) else None
+    return resets if resets and resets > ts else td.reset_from_text(text, ts)
 
 
 def backfill_limit_resets(path, rec):
@@ -426,9 +426,9 @@ def backfill_limit_resets(path, rec):
                                 break
                             try:
                                 e = json.loads(m[start:end])
-                                ts = cs.to_ms(e.get("timestamp"))
+                                ts = td.to_ms(e.get("timestamp"))
                                 if ts in missing:
-                                    reset = limit_reset(e, " ".join(cs.message_text(e.get("message")).split()), ts)
+                                    reset = limit_reset(e, " ".join(td.message_text(e.get("message")).split()), ts)
                                     if reset:
                                         resets[str(ts)] = reset
                             except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
@@ -457,7 +457,7 @@ def backfill_work(path, rec, counted):
     data, state = rec["data"], rec.get("state") or {}
     hi = rec.get("offset", 0)
     work_from, effort_from = data.get("workTo", 0), data.get("effortTo", 0)
-    recaps, tests = data.setdefault("recaps", []), data.setdefault("tests", cs.new_tests())
+    recaps, tests = data.setdefault("recaps", []), data.setdefault("tests", td.new_tests())
     calls = {}  # (the git commits those lines ran: {tool id: [ms, their messages]})
     ids = [i.encode() for i in tests["pending"]]  # (the tool calls whose results are wanted)
     # (each reply this record counted, by its id: the hour it counts in; and those lines' efforts)
@@ -477,8 +477,8 @@ def backfill_work(path, rec, counted):
             e = loaded(line)
             if not e or e.get("type") != "assistant":
                 return
-            ts = cs.to_ms(e.get("timestamp"))
-            for c in cs.blocks_of(e)[1]:
+            ts = td.to_ms(e.get("timestamp"))
+            for c in td.blocks_of(e)[1]:
                 said = commit_call(c)
                 if said is not None and ts is not None:
                     calls[c["id"]] = [ts, said]
@@ -486,15 +486,15 @@ def backfill_work(path, rec, counted):
             e = loaded(line)
             if not e or e.get("type") != "user":
                 return
-            ts = cs.to_ms(e.get("timestamp"))
-            for r in cs.blocks_of(e)[1]:
+            ts = td.to_ms(e.get("timestamp"))
+            for r in td.blocks_of(e)[1]:
                 call = calls.pop(r.get("tool_use_id"), None) if r.get("type") == "tool_result" else None
                 if call and ts is not None:
                     take_commits(data, counted, ts, r, call[1])
         else:
             return
         if not e.get("isSidechain"):
-            cs.fold_tests(tests, e)
+            td.fold_tests(tests, e)
         ids = [i.encode() for i in list(calls) + list(tests["pending"])]
 
     try:
@@ -601,10 +601,10 @@ def take_recap(e, recaps):
     """Claude's recap of the chat (a `system` record, away_summary: what it
     writes when you come back to a chat), as the Projects tab reads it
     (talpy_den.py recap_of): [ms, text]."""
-    ts = cs.to_ms(e.get("timestamp"))
-    text = cs.RECAP_NOTE.sub("", e["content"]).strip() if isinstance(e.get("content"), str) else ""
+    ts = td.to_ms(e.get("timestamp"))
+    text = td.RECAP_NOTE.sub("", e["content"]).strip() if isinstance(e.get("content"), str) else ""
     if text and ts is not None:
-        recaps.append([ts, cs.tidy_text(text, RECAP_CHARS)])
+        recaps.append([ts, td.tidy_text(text, RECAP_CHARS)])
 
 
 def read_transcript(path, rec, counted):
@@ -623,7 +623,7 @@ def read_transcript(path, rec, counted):
         pass
 
 
-TITLE_FIELDS = dict(cs.TITLE_KINDS)
+TITLE_FIELDS = dict(td.TITLE_KINDS)
 TITLE_LINES = tuple(('"type":"%s"' % k).encode() for k in TITLE_FIELDS)
 
 
@@ -653,14 +653,14 @@ def take_line(line, rec, counted):
     if kind == "title":
         field = TITLE_FIELDS.get(e.get("type"))
         if field and isinstance(e.get(field), str) and e[field].strip():
-            rec["data"]["names"][e["type"]] = cs.clean_text(e[field], 80)
+            rec["data"]["names"][e["type"]] = td.clean_text(e[field], 80)
         return
-    ts = cs.to_ms(e.get("timestamp"))
+    ts = td.to_ms(e.get("timestamp"))
     if ts is None or e.get("type") not in ("assistant", "user", "system"):
         return
     if e["type"] != "system" and not e.get("isSidechain"):
         # (its last edit and the tests after it, as the Review tab reads them)
-        cs.fold_tests(data.setdefault("tests", cs.new_tests()), e)
+        td.fold_tests(data.setdefault("tests", td.new_tests()), e)
     if e["type"] == "assistant":
         take_reply(e, ts, rec, counted)
     elif e["type"] == "user":
@@ -671,7 +671,7 @@ def take_line(line, rec, counted):
         if first_seen(counted, data, ts, "k", e.get("uuid")):
             hour_agg(data, ts)[1]["k"] += 1
     elif e.get("subtype") == "turn_duration" and not rec["sub"]:
-        worked = cs.number(e.get("durationMs"))
+        worked = td.number(e.get("durationMs"))
         if worked is not None and worked >= 0:
             state["timed"] = True
             if state["turn"] is None:  # (its prompt came before what was read: a fork's copy, a bg session's start)
@@ -848,7 +848,7 @@ def same_subject(said, line):
 def commits_made(said, result, failed):
     """[[hash or "", subject]]: the commits a git commit command made, from
     what it printed (result) and the subjects of the messages it gave (said)."""
-    made = [[h, cs.short_text(s, SUBJECT_CHARS)] for h, s in COMMIT_LINE.findall(result)]
+    made = [[h, td.short_text(s, SUBJECT_CHARS)] for h, s in COMMIT_LINE.findall(result)]
     if made:
         return made
     lines = [(h, " ".join(s.split())) for h, s in HASH_LINE.findall(result)]
@@ -856,10 +856,10 @@ def commits_made(said, result, failed):
     for s in wanted:
         hit = next((x for x in lines if same_subject(s, x[1])), None)
         if hit:  # (the message's subject, whole where the log cut it; the log's, with a $… in it expanded)
-            made.append([hit[0], cs.short_text(hit[1] if "$" in s and hit[1][:10] == s[:10] else s, SUBJECT_CHARS)])
+            made.append([hit[0], td.short_text(hit[1] if "$" in s and hit[1][:10] == s[:10] else s, SUBJECT_CHARS)])
     if made or failed or lines or COMMIT_FAILED.search(result):
         return made  # (a log that doesn't show the message: it didn't commit it)
-    return [["", cs.short_text(s, SUBJECT_CHARS)] for s in wanted]
+    return [["", td.short_text(s, SUBJECT_CHARS)] for s in wanted]
 
 
 def result_text(r):
@@ -944,7 +944,7 @@ def new_hour():
 
 def usage_values(u):
     """[input, output, cache read, 5-minute write, 1-hour write, web searches] of a reply's usage."""
-    num = lambda v: int(cs.number(v) or 0)  # noqa: E731
+    num = lambda v: int(td.number(v) or 0)  # noqa: E731
     write = num(u.get("cache_creation_input_tokens"))
     split = u.get("cache_creation") if isinstance(u.get("cache_creation"), dict) else {}
     hour = min(write, num(split.get("ephemeral_1h_input_tokens")))
@@ -982,8 +982,8 @@ def take_reply(e, ts, rec, counted):
     blocks = [c for c in msg.get("content") or [] if isinstance(c, dict)] if isinstance(msg.get("content"), list) else []
     if not rec["sub"]:
         if e.get("isApiErrorMessage") is True:
-            text = " ".join(cs.message_text(msg).split())
-            if text.startswith(cs.LIMIT_STARTS) or text.startswith(cs.OUT_OF_USAGE):
+            text = " ".join(td.message_text(msg).split())
+            if text.startswith(td.LIMIT_STARTS) or text.startswith(td.OUT_OF_USAGE):
                 data["limits"].append(ts)
                 reset = limit_reset(e, text, ts)
                 if reset:
@@ -1180,10 +1180,10 @@ def take_user(e, ts, rec, line, counted):
         state["ctx"]["first"] += len(line)
     if not main:
         return
-    text = cs.human_prompt(e)
+    text = td.human_prompt(e)
     turn = state["turn"]
     if text is None:
-        if cs.message_text(msg).lstrip().startswith("[Request interrupted"):
+        if td.message_text(msg).lstrip().startswith("[Request interrupted"):
             if turn is not None:
                 turn["stopped"] = ts  # (a turn_duration may still come)
                 turn_activity(state, ts)
@@ -1192,7 +1192,7 @@ def take_user(e, ts, rec, line, counted):
         return
     data["prompts"].append(ts)
     if not data["prompt"]:
-        data["prompt"] = cs.clean_text(text, 80)
+        data["prompt"] = td.clean_text(text, 80)
     if turn is not None:
         # Sent while Claude works (it waits in Claude's queue), unless the
         # turn ended without a record of it (stopped, or a version that
@@ -1217,7 +1217,7 @@ def load_cache(cache_root):
             (cache_root / name).unlink()
         except OSError:
             pass
-    data = cs.read_json(cache_path(cache_root))
+    data = td.read_json(cache_path(cache_root))
     return data if isinstance(data, dict) and isinstance(data.get("files"), dict) else {"files": {}}
 
 
@@ -1231,7 +1231,7 @@ class cache_lock:
 
     def __enter__(self):
         import fcntl
-        cs.private_dir(self.cache_root)
+        td.private_dir(self.cache_root)
         self.fd = os.open(str(self.cache_root / CACHE_LOCK), os.O_CREAT | os.O_RDWR, 0o600)
         self.held, waited = False, 0.0
         while True:
@@ -1252,8 +1252,8 @@ class cache_lock:
 def shown_profiles(home, config_dirs, cache_root):
     """(the profiles but those of the accounts you hid, which aren't read
     (talpy_den.shown_profiles); the hidden ones' keys, for chats_between)."""
-    every = cs.discover_profiles(home, config_dirs)
-    profiles = cs.shown_profiles(every, cache_root)
+    every = td.discover_profiles(home, config_dirs)
+    profiles = td.shown_profiles(every, cache_root)
     return profiles, frozenset(p.key for p in every if p not in profiles)
 
 
@@ -1265,7 +1265,7 @@ def updated_cache(cache_root, profiles, now_ms):
         if lock.held:
             scan(profiles, cache, now_ms, keep_history(cache_root))
             try:
-                cs.write_json_atomic(cache_path(cache_root), cache)
+                td.write_json_atomic(cache_path(cache_root), cache)
             except OSError:
                 pass
         return cache
@@ -1279,12 +1279,12 @@ def updated_cache(cache_root, profiles, now_ms):
 
 
 def keep_history(cache_root):
-    return cs.history_kept(cache_root)
+    return td.history_kept(cache_root)
 
 
 def past_windows(cache_root):
     """How many of the plan's windows that ended talpy_den.py keeps (usage-past.json)."""
-    data = cs.read_json(cache_root / cs.USAGE_PAST_FILE)
+    data = td.read_json(cache_root / td.USAGE_PAST_FILE)
     windows = data.get("windows") if isinstance(data, dict) else None
     return len(windows) if isinstance(windows, list) else 0
 
@@ -1294,7 +1294,7 @@ def forget_past_windows(cache_root):
     the history: how many there were."""
     n = past_windows(cache_root)
     try:
-        (cache_root / cs.USAGE_PAST_FILE).unlink()
+        (cache_root / td.USAGE_PAST_FILE).unlink()
     except OSError:
         pass
     return n
@@ -1334,8 +1334,8 @@ def set_history(cache_root, keep):
     with cache_lock(cache_root) as lock:
         if not lock.held:
             return False, "The Recap is reading your chats: try again in a moment"
-        # (since: the SSH hosts' and containers' plan windows from before then go too, cs.follow_history)
-        cs.write_json_atomic(cs.history_file(cache_root), {"keep": bool(keep), "since": int(time.time() * 1000)})
+        # (since: the SSH hosts' and containers' plan windows from before then go too, td.follow_history)
+        td.write_json_atomic(td.history_file(cache_root), {"keep": bool(keep), "since": int(time.time() * 1000)})
         if keep:
             return True, "The Recap keeps its history"
         windows = forget_past_windows(cache_root)
@@ -1355,7 +1355,7 @@ def set_history(cache_root, keep):
         for k in drop:
             del files[k]
         if drop:
-            cs.write_json_atomic(cache_path(cache_root), cache)
+            td.write_json_atomic(cache_path(cache_root), cache)
         forgot = (["%d deleted %s" % (chats, "chat" if chats == 1 else "chats")] if chats else []) + (
             ["your plan's windows that ended"] if windows else [])
         return True, "The Recap keeps only what Claude still has" + (
@@ -1374,7 +1374,7 @@ def forget_history(cache_root):
             except OSError:
                 pass
         windows = forget_past_windows(cache_root)
-        cs.write_json_atomic(cs.history_file(cache_root), {"keep": keep_history(cache_root), "since": int(time.time() * 1000)})
+        td.write_json_atomic(td.history_file(cache_root), {"keep": keep_history(cache_root), "since": int(time.time() * 1000)})
         return True, ("The saved history and your plan's windows that ended are deleted" if windows else
                       "The saved history is deleted") + ": the Recap starts again from the chats Claude still has"
 
@@ -1422,9 +1422,9 @@ def live_turn(state):
 def account_ids(profiles):
     """{profile key: account id}, [{"id", "name"}] (talpy_den.py's groups)."""
     by_profile, accounts = {}, []
-    for gid, members in cs.group_profiles(profiles):
+    for gid, members in td.group_profiles(profiles):
         named = next((p for p in members if not p.is_default), members[0])
-        aid = cs.short_id(gid)
+        aid = td.short_id(gid)
         accounts.append({"id": aid, "name": named.label, "plan": next((p.plan for p in members if p.plan), None)})
         for p in members:
             by_profile[p.key] = aid
@@ -1438,8 +1438,8 @@ def project_of(folder, home, roots):
     the folder itself."""
     if folder not in roots:
         try:
-            root = cs.git_root(Path(folder)) if folder.startswith("/") else None
-            root = cs.main_repository(root) if root is not None else None
+            root = td.git_root(Path(folder)) if folder.startswith("/") else None
+            root = td.main_repository(root) if root is not None else None
         except OSError:
             root = None
         roots[folder] = str(root) if root is not None and root != home and root.parent != root else folder
@@ -1496,7 +1496,7 @@ def chats_between(cache, profiles, since, until, home, skip=frozenset()):
             if since <= int(k) < until:
                 c["limitResets"][k] = reset
         names = data.get("names") or {}
-        c["name"] = next((names[k] for k, _ in cs.TITLE_KINDS if names.get(k)), c["name"] or data.get("prompt") or "")
+        c["name"] = next((names[k] for k, _ in td.TITLE_KINDS if names.get(k)), c["name"] or data.get("prompt") or "")
         c["folder"] = c["folder"] or data.get("folder") or ""
         if data.get("startTokens") is not None:
             c["startTokens"] = data["startTokens"] if c["startTokens"] is None else min(c["startTokens"], data["startTokens"])
@@ -1510,7 +1510,7 @@ def chats_between(cache, profiles, since, until, home, skip=frozenset()):
         recaps = sorted({r[0]: r for r in c["recaps"]}.values())
         c["recaps"] = [r for r in recaps if r[0] < until] + [r for r in recaps if r[0] >= until][:1]
         tests = c.pop("tests")
-        merged = cs.merge_tests(tests) if tests else None
+        merged = td.merge_tests(tests) if tests else None
         c["review"] = ({"editedAt": merged["editAt"], "tests": merged["run"]}
                        if merged and merged["editAt"] is not None else None)
     return {k: c for k, c in chats.items() if c["turns"] or c["prompts"] or c["hours"]}
@@ -1888,7 +1888,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
                     if prices_of(key)[1]:  # (no list price: its family's newest model's, or none)
                         guessed.add(label)
                         as_model = price_model(model)[0]
-                        m.update(guessed=True, pricedAs=cs.model_label("claude-" + as_model) or as_model if as_model else None)
+                        m.update(guessed=True, pricedAs=td.model_label("claude-" + as_model) or as_model if as_model else None)
         work = parts["worked"].get(c["key"], 0)
         prompts = sum(1 for p in c["prompts"] if w0 <= p < w1)
         for a in c["accounts"]:  # (each account's amount: a chat on two counts on each, as the account picked does)
@@ -1897,7 +1897,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
             continue  # (nothing worth a line)
         folder = c.get("project") or c["folder"] or ""
         fkey = c["host"] + "|" + folder
-        f = folders.setdefault(fkey, {"name": project_name(folder, home), "path": cs.short_path(folder, home) if not c["host"] else folder,
+        f = folders.setdefault(fkey, {"name": project_name(folder, home), "path": td.short_path(folder, home) if not c["host"] else folder,
                                       "folder": folder, "host": c["host"], "workedMs": 0, "cost": 0.0, "prompts": 0, "chats": [],
                                       "commitCount": set(), "files": set(), "linesAdded": 0, "linesRemoved": 0,
                                       "accounts": set(), "acost": {}})
@@ -2008,7 +2008,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
 def model_label(key):
     """A price key's model as the tab names it: "Opus 5.5", "Opus 5.5 (fast)"."""
     model, _, flags = key.partition("|")
-    return (cs.model_label(model) or model) + (" (fast)" if "f" in flags else "")
+    return (td.model_label(model) or model) + (" (fast)" if "f" in flags else "")
 
 
 def model_costs(chats, lo, hi):
@@ -2024,12 +2024,12 @@ def model_costs(chats, lo, hi):
 
 
 def project_name(folder, home):
-    return ("~" if cs.short_path(folder, home) == "~" else os.path.basename(folder.rstrip("/"))) or folder or "?"
+    return ("~" if td.short_path(folder, home) == "~" else os.path.basename(folder.rstrip("/"))) or folder or "?"
 
 
 def chat_row(c, home, work, cost, prompts):
     return {"name": chat_label(c) or c["id"][:8], "chatId": c["id"], "host": c["host"],
-            "profileDir": c["profiles"][0] if c["profiles"] else "", "folder": cs.short_path(c["folder"], home) if not c["host"]
+            "profileDir": c["profiles"][0] if c["profiles"] else "", "folder": td.short_path(c["folder"], home) if not c["host"]
             else c["folder"], "cwd": c["folder"], "workedMs": int(work), "cost": round(cost, 4), "prompts": prompts}
 
 
@@ -2161,7 +2161,7 @@ def claude_did(chats, lo, hi):
 # flagged (safetyCheck), what you refused, nor anything under /tmp or a
 # Claude config folder.
 
-RULES_FILE = "rules.json"  # in the state folder (cs.state_dir): the rules this tab added, to undo them
+RULES_FILE = "rules.json"  # in the state folder (td.state_dir): the rules this tab added, to undo them
 TOP_RULES = 6
 # (a rule takes any options: not rg, tree, git branch/diff/log/show, whose
 # --pre, -o, -D and --output run programs, write files or delete branches)
@@ -2195,7 +2195,7 @@ def rule_for(tool, what, reason, folder, home):
     if tool in FILE_TOOLS and what.startswith("/") and not inside(what):
         path = Path(what)
         try:
-            root = cs.git_root(path if path.is_dir() else path.parent)
+            root = td.git_root(path if path.is_dir() else path.parent)
         except OSError:
             root = None
         if root is not None and not private_place(root, home) and not inside(str(root)):
@@ -2224,7 +2224,7 @@ def tilde(path, home):
 
 
 def rule_id(kind, value, project):
-    return cs.short_id("%s\0%s\0%s" % (kind, value, project))
+    return td.short_id("%s\0%s\0%s" % (kind, value, project))
 
 
 def settings_paths(project):
@@ -2252,10 +2252,10 @@ def rule_state(kind, value, project, home, added, accounts=None, profiles=None):
     rid = rule_id(kind, value, project)
     if any(a.get("id") == rid for a in added):
         return "added"
-    profiles = cs.discover_profiles(home) if profiles is None else profiles
+    profiles = td.discover_profiles(home) if profiles is None else profiles
     files = settings_paths(project) + [p.real / "settings.json" for p in profiles
                                        if accounts is None or p.key in accounts]
-    return "allowed" if any(in_settings(cs.read_json(f, cs.SETTINGS_MAX), kind, value) for f in files) else "new"
+    return "allowed" if any(in_settings(td.read_json(f, td.SETTINGS_MAX), kind, value) for f in files) else "new"
 
 
 def rule_title(kind, value, project, home):
@@ -2320,7 +2320,7 @@ def permission_prompts(chats, lo, hi, home, added=(), profiles=None):
 
 
 def load_added(cache_root):
-    data = cs.read_json(cs.state_dir(cache_root) / RULES_FILE)
+    data = td.read_json(td.state_dir(cache_root) / RULES_FILE)
     return [a for a in data.get("added", [])] if isinstance(data, dict) and isinstance(data.get("added"), list) else []
 
 
@@ -2334,7 +2334,7 @@ def write_settings(path, data):
     path = Path(os.path.realpath(str(path)))  # (a link stays a link: its file changes)
     path.parent.mkdir(parents=True, exist_ok=True)
     # (who may read it stays as it was; through a new file no link was put at: a project's folder is its repo's)
-    cs.write_atomic(path, (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+    td.write_atomic(path, (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 def take_out(perms, key, value):
@@ -2356,7 +2356,7 @@ def allow_rule(home, cache_root, kind, value, project):
         return False, "No chat of yours started in %s" % tilde(project, home), None
     if kind == "dir":
         ok = (isinstance(value, str) and value.startswith("/") and os.path.isdir(value) and not private_place(value, home)
-              and cs.git_root(Path(value)) == Path(value))
+              and td.git_root(Path(value)) == Path(value))
     elif kind == "edits":
         ok = value == project
     else:
@@ -2364,10 +2364,10 @@ def allow_rule(home, cache_root, kind, value, project):
     if not ok:
         return False, "Not a rule the Permissions tab offers", None
     path = settings_paths(project)[0]
-    linked = cs.linked_settings(path, project, home)
+    linked = td.linked_settings(path, project, home)
     if linked:
         return False, linked, None
-    data = cs.read_json(path, cs.SETTINGS_MAX) if path.exists() else {}
+    data = td.read_json(path, td.SETTINGS_MAX) if path.exists() else {}
     if not isinstance(data, dict):
         return False, "%s isn't JSON Talpy Den can change: leave it as it is" % tilde(path, home), None
     perms = data.get("permissions")
@@ -2388,7 +2388,7 @@ def allow_rule(home, cache_root, kind, value, project):
         perms.setdefault("allow", []).append(value)
     write_settings(path, data)
     added = [a for a in load_added(cache_root) if a.get("id") != note["id"]] + [note]
-    cs.write_json_atomic(cs.state_dir(cache_root) / RULES_FILE, {"added": added})
+    td.write_json_atomic(td.state_dir(cache_root) / RULES_FILE, {"added": added})
     return True, "%s: done (%s)" % (rule_title(kind, value, project, home), rule_change(kind, value, project, home)), note["id"]
 
 
@@ -2399,10 +2399,10 @@ def undo_rule(home, cache_root, rid):
     if note is None:
         return False, "That rule wasn't added here"
     path = Path(note["file"])
-    linked = cs.linked_settings(path, note.get("project") or "/", home)
+    linked = td.linked_settings(path, note.get("project") or "/", home)
     if linked:
         return False, linked
-    data = cs.read_json(path)
+    data = td.read_json(path)
     perms = data.get("permissions") if isinstance(data, dict) and isinstance(data.get("permissions"), dict) else None
     if perms is not None:
         if note["kind"] == "dir":
@@ -2420,7 +2420,7 @@ def undo_rule(home, cache_root, rid):
             path.unlink()  # (the file this tab made, empty again)
         else:
             write_settings(path, data)
-    cs.write_json_atomic(cs.state_dir(cache_root) / RULES_FILE, {"added": [a for a in added if a.get("id") != rid]})
+    td.write_json_atomic(td.state_dir(cache_root) / RULES_FILE, {"added": [a for a in added if a.get("id") != rid]})
     return True, "Taken back: %s" % rule_title(note["kind"], note["value"], note["project"], home)
 
 
@@ -2465,7 +2465,7 @@ def rule_folders(home, cache, profiles):
     them, and the Recap's chats started in them."""
     folders = set()
     for f in claude_jsons(home, profiles):
-        data = cs.read_json(f)
+        data = td.read_json(f)
         projects = data.get("projects") if isinstance(data, dict) else None
         if isinstance(projects, dict):
             folders.update(k for k in projects if isinstance(k, str))
@@ -2526,7 +2526,7 @@ def granted_rules(home, folders, profiles, added=()):
 
     def add(real, kind, value, place, shared, change, folder=""):
         where = tilde(real, home)
-        out.append({"id": cs.short_id("%s\0%s\0%s\0%s" % (real, folder, kind, value)), "kind": kind, "value": value,
+        out.append({"id": td.short_id("%s\0%s\0%s\0%s" % (real, folder, kind, value)), "kind": kind, "value": value,
                     "folder": folder, "title": granted_title(kind, value, home), "place": place, "file": real,
                     "where": where, "shared": shared, "managed": real.startswith(str(MANAGED_DIR) + "/"),
                     "added": added_note(added, real, kind, value) is not None,
@@ -2537,7 +2537,7 @@ def granted_rules(home, folders, profiles, added=()):
         if real in seen or not os.path.isfile(real):
             return
         seen.add(real)
-        data = cs.read_json(real, cs.SETTINGS_MAX)
+        data = td.read_json(real, td.SETTINGS_MAX)
         if not isinstance(data, dict):
             return
         perms = data.get("permissions") if isinstance(data.get("permissions"), dict) else {}
@@ -2568,7 +2568,7 @@ def granted_rules(home, folders, profiles, added=()):
         take(p.real / "settings.json", "every chat of %s" % ", ".join(accounts[os.path.realpath(str(p.real / "settings.json"))]), False)
     for folder in folders:
         # (a folder's settings.json goes with its repository: outside one, it's as its settings.local.json)
-        in_git = os.path.isfile(os.path.join(folder, ".claude", "settings.json")) and cs.git_root(Path(folder)) is not None
+        in_git = os.path.isfile(os.path.join(folder, ".claude", "settings.json")) and td.git_root(Path(folder)) is not None
         for name, shared in (("settings.local.json", False), ("settings.json", in_git)):
             take(Path(folder) / ".claude" / name,
                  "chats started in %s" % project_name(folder, home) + (" (shared through git)" if shared else ""), shared)
@@ -2582,7 +2582,7 @@ def granted_rules(home, folders, profiles, added=()):
     for f in claude_jsons(home, profiles):
         real = str(f)
         names = ", ".join(by_file.get(real) or ["plain claude"])
-        data = cs.read_json(real)
+        data = td.read_json(real)
         if not isinstance(data, dict):
             continue
         if data.get("bypassPermissionsModeAccepted") is True:
@@ -2658,7 +2658,7 @@ def revoke_rule(home, cache_root, profiles, rid):
     note = added_note(added, real, g["kind"], g["value"])
     if note is not None and not g["folder"]:
         return undo_rule(home, cache_root, note["id"])
-    data = cs.read_json(real)
+    data = td.read_json(real)
     if not isinstance(data, dict):
         return False, "%s isn't JSON Talpy Den can change: leave it as it is" % g["where"]
     kind, value = g["kind"], g["value"]
@@ -2712,40 +2712,40 @@ def plan_windows(cache_root, profiles, now_ms):
     are the newest reading's (plan_limits, as the Chats tab's), when it's
     newer than the history's last point: the checks note one only as they
     run, and a Refresh's fetch comes in between."""
-    data = cs.read_json(cache_root / "usage.json")
+    data = td.read_json(cache_root / "usage.json")
     groups = data.get("groups") if isinstance(data, dict) and isinstance(data.get("groups"), dict) else {}
-    logged_out = cs.logged_out_notes(cache_root)
+    logged_out = td.logged_out_notes(cache_root)
     out = []
-    for gid, members in cs.group_profiles(profiles):
+    for gid, members in td.group_profiles(profiles):
         named = next((p for p in members if not p.is_default), members[0])
         # (a logged-out account's last status lines are no one's plan usage now, as on the Chats tab)
-        now = None if all(cs.needs_login(p, logged_out) for p in members) else \
-            cs.plan_limits(cache_root / "statusline", members, now_ms)
+        now = None if all(td.needs_login(p, logged_out) for p in members) else \
+            td.plan_limits(cache_root / "statusline", members, now_ms)
         newest = {w["key"]: w for w in (now or {}).get("windows") or ()}
         windows = []
-        for key, rec in (groups.get(cs.short_id(gid)) or {}).items():
+        for key, rec in (groups.get(td.short_id(gid)) or {}).items():
             points = [p for p in rec.get("points") or [] if isinstance(p, list) and len(p) == 2] if isinstance(rec, dict) else []
-            if not points or key not in cs.WINDOW_ORDER:
+            if not points or key not in td.WINDOW_ORDER:
                 continue
             resets = rec.get("resetsAt")
             w = newest.get(key)
             if w is not None and now["updatedAt"] > points[-1][0]:
-                if w["reset"] or not cs.same_window(resets, w["resetsAt"]):
+                if w["reset"] or not td.same_window(resets, w["resetsAt"]):
                     continue  # (another window by now: as plan_limits has it, below)
                 points = points + [[now["updatedAt"], w["pct"]]]
             step = max(1, len(points) // 60)  # (60 points draw it)
             reset = isinstance(resets, (int, float)) and resets <= now_ms
-            windows.append({"key": key, "label": cs.WINDOW_LABELS.get(key, key), "resetsAt": None if reset else resets,
+            windows.append({"key": key, "label": td.WINDOW_LABELS.get(key, key), "resetsAt": None if reset else resets,
                             "pct": 0 if reset else points[-1][1], "reset": reset,
                             "points": [] if reset else points[::step] + ([points[-1]] if (len(points) - 1) % step else [])})
         have = {w["key"] for w in windows}
         for w in (now or {}).get("windows") or ():
-            if w["key"] in cs.WINDOW_ORDER and w["key"] not in have:
+            if w["key"] in td.WINDOW_ORDER and w["key"] not in have:
                 windows.append({"key": w["key"], "label": w["label"], "resetsAt": w["resetsAt"],
                                 "pct": w["pct"], "reset": w["reset"], "points": []})
-        windows.sort(key=lambda w: cs.WINDOW_ORDER.index(w["key"]))
+        windows.sort(key=lambda w: td.WINDOW_ORDER.index(w["key"]))
         if windows:
-            out.append({"account": cs.short_id(gid), "name": named.label, "windows": windows})
+            out.append({"account": td.short_id(gid), "name": named.label, "windows": windows})
     return out
 
 
@@ -2765,7 +2765,7 @@ def plan_windows_of(plans, account):
 # estimate: use elsewhere (claude.ai, other computers) counts toward the
 # limits but isn't here. Run only by --limits, when you unfold it.
 
-LIMITS_DAYS = cs.USAGE_PAST_DAYS
+LIMITS_DAYS = td.USAGE_PAST_DAYS
 LIMITS_LOCK_WAIT_S = 2
 LIMIT_FIVE_MIN_PCT = 50  # a 5-hour window read this full or more tells its size
 LIMIT_WEEK_MIN_PCT = 20  # (weekly readings are whole percents: one of 5% could be 4.5 or 5.5)
@@ -2816,30 +2816,30 @@ def limit_readings(cache_root, profiles, now_ms, plans, snapshots=True):
     the two files Talpy Den keeps (usage-past.json, usage.json), as the
     Recap's Your plan reads them (cheap)."""
     cutoff = now_ms - LIMITS_DAYS * DAY_MS
-    groups = {cs.short_id(gid): members for gid, members in cs.group_profiles(profiles)}
+    groups = {td.short_id(gid): members for gid, members in td.group_profiles(profiles)}
     out, archived = {}, set()
 
     def add(aid, key, resets, plan, points):
-        if aid not in groups or not cs.window_hours(key) or not isinstance(resets, (int, float)) or resets < cutoff:
+        if aid not in groups or not td.window_hours(key) or not isinstance(resets, (int, float)) or resets < cutoff:
             return None
         slot = round(resets / 120_000)
         w = out.setdefault(aid, {}).setdefault(key, {}).get(slot)
         if w is None:
             w = out[aid][key][slot] = {"resetsAt": int(resets), "plan": plan, "points": {}}
         w["plan"] = w["plan"] or plan
-        start = resets - cs.window_hours(key) * HOUR_MS - 60_000
+        start = resets - td.window_hours(key) * HOUR_MS - 60_000
         for p in points:  # (one from before the window began is no reading of it)
-            if isinstance(p, (list, tuple)) and len(p) == 2 and all(cs.number(v) is not None for v in p) and p[0] >= start:
+            if isinstance(p, (list, tuple)) and len(p) == 2 and all(td.number(v) is not None for v in p) and p[0] >= start:
                 w["points"][int(p[0])] = float(p[1])
         return slot
 
-    past = cs.read_json(cache_root / cs.USAGE_PAST_FILE)
+    past = td.read_json(cache_root / td.USAGE_PAST_FILE)
     for w in past.get("windows") or [] if isinstance(past, dict) and isinstance(past.get("windows"), list) else []:
         if isinstance(w, dict):
             slot = add(w.get("group"), w.get("key"), w.get("resetsAt"), w.get("plan"), w.get("points") or [])
             if slot is not None:
                 archived.add((w["group"], w["key"], slot))
-    current = cs.read_json(cache_root / "usage.json")
+    current = td.read_json(cache_root / "usage.json")
     current = current.get("groups") if isinstance(current, dict) and isinstance(current.get("groups"), dict) else {}
     for aid, keys in current.items():
         for key, rec in (keys.items() if isinstance(keys, dict) else ()):
@@ -2847,17 +2847,17 @@ def limit_readings(cache_root, profiles, now_ms, plans, snapshots=True):
                 add(aid, key, rec.get("resetsAt"), plans.get(aid), rec.get("points") or [])
     for aid, members in groups.items() if snapshots else ():
         reals = [p.real for p in members]
-        for mtime, path in cs.snapshot_files(cache_root / "statusline", members):
-            snap = cs.read_json(path)
+        for mtime, path in td.snapshot_files(cache_root / "statusline", members):
+            snap = td.read_json(path)
             limits = snap.get("rate_limits") if isinstance(snap, dict) else None
-            if not isinstance(limits, dict) or not cs.snapshot_of(snap, reals):
+            if not isinstance(limits, dict) or not td.snapshot_of(snap, reals):
                 continue
-            at = cs.limits_read_at(snap, int(mtime * 1000))  # (an idle chat's numbers come again later)
+            at = td.limits_read_at(snap, int(mtime * 1000))  # (an idle chat's numbers come again later)
             for key, w in limits.items():  # (a snapshot doesn't say the plan it was on)
-                if isinstance(w, dict) and cs.number(w.get("used_percentage")) is not None:
-                    add(aid, key, cs.to_ms(w.get("resets_at")), None, [[at, w["used_percentage"]]])
+                if isinstance(w, dict) and td.number(w.get("used_percentage")) is not None:
+                    add(aid, key, td.to_ms(w.get("resets_at")), None, [[at, w["used_percentage"]]])
     ended = [{"group": aid, "key": key, "plan": w["plan"], "resetsAt": w["resetsAt"],
-              "points": cs.past_points(key, [[t, w["points"][t]] for t in sorted(w["points"])])}
+              "points": td.past_points(key, [[t, w["points"][t]] for t in sorted(w["points"])])}
              for aid, keys in out.items() for key, slots in keys.items() for slot, w in slots.items()
              if w["resetsAt"] <= now_ms and (aid, key, slot) not in archived and w["points"]]
     return out, ended
@@ -2874,8 +2874,8 @@ def chat_signs(profiles, by_profile, chat_ids):
         aid = by_profile.get(p.key)
         if aid is None:
             continue
-        for e in cs.history_all(p):
-            ms = cs.number(e.get("timestamp"))
+        for e in td.history_all(p):
+            ms = td.number(e.get("timestamp"))
             if e.get("sessionId") in chat_ids and ms is not None:
                 signs.setdefault(e["sessionId"], []).append((int(ms), aid))
         try:
@@ -2883,7 +2883,7 @@ def chat_signs(profiles, by_profile, chat_ids):
         except OSError:
             jobs = []
         for job in jobs:
-            state = cs.read_json(job / "state.json")
+            state = td.read_json(job / "state.json")
             sid = state.get("sessionId") if isinstance(state, dict) else None
             if sid not in chat_ids:
                 continue
@@ -2891,7 +2891,7 @@ def chat_signs(profiles, by_profile, chat_ids):
                 with open(job / "timeline.jsonl", encoding="utf-8") as f:
                     for line in f:
                         try:
-                            ms = cs.to_ms(json.loads(line).get("at"))
+                            ms = td.to_ms(json.loads(line).get("at"))
                         except (ValueError, AttributeError):
                             continue
                         if ms:
@@ -3000,7 +3000,7 @@ def account_usage(chats, profiles, accounts):
                     costs.append((usd, family_of(model), (t[0] + t[3] + t[4], t[1], t[2]) + parts, price_model(model)[0]))
             if not costs:
                 continue
-            buckets = [(int(k), v) for k, v in agg.get("b", {}).items() if cs.number(v) and v > 0]
+            buckets = [(int(k), v) for k, v in agg.get("b", {}).items() if td.number(v) and v > 0]
             weight = sum(v for _, v in buckets)
             for k, v in (buckets if weight else [(0, 1.0)]):
                 ms, share = hm + k * BUCKET_MS, v / (weight or 1.0)
@@ -3072,7 +3072,7 @@ def window_measure(u, key, w, now_ms, weekly=None, span=(0, float("inf"))):
     era: the plan's limits the same all through it; a reading after a change
     gives the window's usage from its start in the new limits). weekly: the
     week's window, for the share of it this 5-hour window took (measured)."""
-    length = cs.window_hours(key) * HOUR_MS
+    length = td.window_hours(key) * HOUR_MS
     start = w["resetsAt"] - length
     every = [(t, w["points"][t]) for t in sorted(w["points"]) if start <= t <= min(w["resetsAt"], now_ms)]
     lo = counted_from(every, start)
@@ -3243,7 +3243,7 @@ def limit_events(keys, u=None):
     for key, slots in keys.items():
         family = family_of(key) if key != "five_hour" else None
         for w in slots.values():
-            start = w["resetsAt"] - cs.window_hours(key) * HOUR_MS
+            start = w["resetsAt"] - td.window_hours(key) * HOUR_MS
             raw = sorted(w["points"].items())
             lo = counted_from(raw, start)
 
@@ -3376,18 +3376,18 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
     cutoff = now_ms - LIMITS_DAYS * DAY_MS
     _, accounts = account_ids(profiles)
     plans = {}
-    for gid, members in cs.group_profiles(profiles):
-        plans[cs.short_id(gid)] = next((p.plan_detail for p in members if p.plan), None)
+    for gid, members in td.group_profiles(profiles):
+        plans[td.short_id(gid)] = next((p.plan_detail for p in members if p.plan), None)
     readings, ended = limit_readings(cache_root, profiles, now_ms, plans)
     if ended:  # (the snapshots' readings of ended windows, kept before Claude Code's cleanup takes them)
         # (the status checks hold the lock while they write usage-past.json
         # too, a moment every few seconds: waited for, up to LIMITS_LOCK_WAIT_S)
         deadline = time.time() + LIMITS_LOCK_WAIT_S
         while True:
-            with cs.ScanLock(cache_root / "tokens.lock") as lock:
+            with td.ScanLock(cache_root / "tokens.lock") as lock:
                 if lock.held:
                     try:
-                        cs.save_usage_past(cache_root, ended, now_ms)
+                        td.save_usage_past(cache_root, ended, now_ms)
                     except OSError:
                         pass
                     break
@@ -3482,7 +3482,7 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
                    # (a share of two sizes: as sure as the less sure of them)
                    "share": limit_change(periods, lambda p: p["share"] and p["share"]["pct"], lambda p: True, eras,
                                          share_factor(f5, f7), lambda p: (p["fiveHour"] or {}).get("rough") or rough_week(p))}
-        week_keys = sorted({k for p in periods for k in p["weeks"]}, key=lambda k: (cs.WINDOW_ORDER + [k]).index(k))
+        week_keys = sorted({k for p in periods for k in p["weeks"]}, key=lambda k: (td.WINDOW_ORDER + [k]).index(k))
         for key in week_keys:
             # (a partial week, one the limit began in, isn't one to compare with)
             changes[key] = limit_change(periods, lambda p, k=key: p["weeks"].get(k) and not p["weeks"][k].get("partial")
@@ -3567,7 +3567,7 @@ def limit_history(cache_root, profiles, now_ms, account="", home=None):
             def tokens_for(cost):
                 return {"output": int(cost / prices[4] * 1e6), "input": int(cost / prices[0] * 1e6),
                         "cacheRead": int(cost / prices[3] * 1e6)} if cost else None
-            equivalents = {"model": cs.model_label("claude-" + model) or model,
+            equivalents = {"model": td.model_label("claude-" + model) or model,
                            "fiveHour": tokens_for(now["fiveHour"]["cost"] if now["fiveHour"] else 0),
                            "week": tokens_for(now["weeks"]["seven_day"]["cost"] if now["weeks"].get("seven_day") else 0)}
         hits = [(t, (c.get("limitResets") or {}).get(str(t))) for c in chats.values() if aid in c["accounts"] for t in c["limits"]]
@@ -3613,11 +3613,11 @@ def exchange_rates(cache_root, now_s, fetch=None):
     """The newest rates: the saved ones, fetched again when older than
     RATES_EVERY_S (after a failed try, not again for RATES_RETRY_S: the tab
     mustn't wait on a network that's down every time it reads)."""
-    data = cs.read_json(cache_root / RATES_FILE)
+    data = td.read_json(cache_root / RATES_FILE)
     data = data if isinstance(data, dict) else {}
     saved = data if isinstance(data.get("rates"), dict) and "USD" in data["rates"] else None
-    if (saved and now_s - (cs.number(data.get("fetchedAt")) or 0) < RATES_EVERY_S
-            or "triedAt" in data and now_s - (cs.number(data["triedAt"]) or 0) < RATES_RETRY_S):
+    if (saved and now_s - (td.number(data.get("fetchedAt")) or 0) < RATES_EVERY_S
+            or "triedAt" in data and now_s - (td.number(data["triedAt"]) or 0) < RATES_RETRY_S):
         return saved
     try:
         if fetch is None:
@@ -3634,7 +3634,7 @@ def exchange_rates(cache_root, now_s, fetch=None):
     else:
         data = saved = dict(got, fetchedAt=now_s)
     try:
-        cs.write_json_atomic(cache_root / RATES_FILE, data)
+        td.write_json_atomic(cache_root / RATES_FILE, data)
     except OSError:
         pass
     return saved
@@ -3797,7 +3797,7 @@ def full_windows(keys, lo, hi, hits=()):
     full = used = 0
     for w in (keys.get("five_hour") or {}).values():
         pts = steady_readings(sorted(w["points"].items()))
-        start = w["resetsAt"] - cs.window_hours("five_hour") * HOUR_MS
+        start = w["resetsAt"] - td.window_hours("five_hour") * HOUR_MS
         if lo <= start < hi and any(p > 0 for _, p in pts):
             used += 1
         at = next((t for t, p in pts if p >= 100), None)
@@ -4001,7 +4001,7 @@ def tip_chat(c, home, note):
     folder, host = c.get("folder") or "", c.get("host") or ""
     return {"name": c.get("name") or (os.path.basename(folder.rstrip("/")) if folder else "") or (c.get("id") or "")[:8],
             "chatId": c.get("id") or "", "host": host, "profileDir": (c.get("profiles") or [""])[0],
-            "folder": folder if host else cs.short_path(folder, home), "cwd": folder, "note": note}
+            "folder": folder if host else td.short_path(folder, home), "cwd": folder, "note": note}
 
 
 def tip_chats(rows, note):
@@ -4054,7 +4054,7 @@ def tips(chats, w0, w1, total, waits, cold=None, home=None, weighed=None, before
         n = sum(1 for f, t in waits if w0 <= f < w1)
         out.append({"key": "waits", "pct": None, "title": "Let Claude go on without asking",
                     "detail": "it waited {} for your answers, {} times · auto mode, or allow what you always allow"
-                              .format(cs.spoken_duration(waited), n), "command": "/permissions", "before": None})
+                              .format(td.spoken_duration(waited), n), "command": "/permissions", "before": None})
     if total.get("limits", 0) >= LIMIT_TIP:
         stops = total.get("limitStops") or 0
         stopped = sorted(((c, home, sum(1 for t in c["limits"] if w0 <= t < w1)) for c in chats
@@ -4140,7 +4140,7 @@ def host_chats(host, back, span="week", since=None, until=None):
     if not answer.get("ok"):
         return {"host": host, "ok": False, "error": answer.get("message") or answer.get("error") or "no answer",
                 "chats": {}, "accounts": []}
-    shift = int(time.time() * 1000) - int(cs.number(answer.get("now")) or 0)
+    shift = int(time.time() * 1000) - int(td.number(answer.get("now")) or 0)
     chats = answer.get("chats") if isinstance(answer.get("chats"), dict) else {}
     if abs(shift) > 5000:  # its clock differs from this one's
         for c in chats.values():
@@ -4200,7 +4200,7 @@ def projects(chats, now_ms, home, plans=(), memories=(), accounts=None, starred=
         p = out.get(folder)
         if p is None:
             p = out[folder] = {"name": project_name(folder, home) if folder else "", "path": folder,
-                               "short": cs.short_path(folder, home) if folder else "",
+                               "short": td.short_path(folder, home) if folder else "",
                                "gone": bool(folder) and not os.path.isdir(folder), "lastAt": 0, "accounts": [],
                                "chats": [], "plans": [], "memories": []}
         return p
@@ -4214,7 +4214,7 @@ def projects(chats, now_ms, home, plans=(), memories=(), accounts=None, starred=
         folder = c.get("project") or c.get("folder") or ""
         if not folder or (there is not None and c["id"] not in there):
             continue
-        if c["id"] in moves and cs.moved_chat(c["id"], moves) in listed:
+        if c["id"] in moves and td.moved_chat(c["id"], moves) in listed:
             continue
         last = max([t[1] for t in c["turns"]] + c["prompts"] + [0])
         if not last:
@@ -4225,7 +4225,7 @@ def projects(chats, now_ms, home, plans=(), memories=(), accounts=None, starred=
         cwd = c.get("folder") or ""
         p["chats"].append({"key": "{}/{}/project".format(profile, c["id"]), "sessionId": c["id"],
                            "name": chat_label(c) or c["id"][:8], "cwd": cwd,
-                           "cwdShort": cs.short_path(cwd, home) if cwd else "", "lastActive": last,
+                           "cwdShort": td.short_path(cwd, home) if cwd else "", "lastActive": last,
                            "profileDir": profile, "profile": accounts.get(profile, ""),
                            "account": accounts.get(profile, ""), "shared": len(c["profiles"]) > 1,
                            "starred": c["id"] in starred})
@@ -4253,27 +4253,27 @@ def project_items(home, cache_root, profiles, now_ms):
     and the accounts' CLAUDE.md), "starred": the starred chat ids, "there":
     the ids of the chats whose transcript is here, "paths": {chat id: its
     transcript}}, with the context read (its caches: save them)."""
-    ctx = cs.Context(home=home, profiles=profiles, now_ms=now_ms, links=cs.LinkCache(cache_root / "links.json"),
-                     slugs=cs.SlugCache(cache_root / "plans.json"), chats=cs.ChatCache(cache_root / "chats.json"),
-                     plan_dirs=cs.PlanDirs(cache_root / "plan-dirs.json"), plan_projects=cs.PlanProjects(cache_root),
+    ctx = td.Context(home=home, profiles=profiles, now_ms=now_ms, links=td.LinkCache(cache_root / "links.json"),
+                     slugs=td.SlugCache(cache_root / "plans.json"), chats=td.ChatCache(cache_root / "chats.json"),
+                     plan_dirs=td.PlanDirs(cache_root / "plan-dirs.json"), plan_projects=td.PlanProjects(cache_root),
                      # (a plan file a chat wrote itself: the chat that wrote it)
-                     plan_writes=cs.PlanWrites(cache_root / "plan-writes.json", home))
-    starred = cs.starred_of(cs.load_stars(cache_root))
-    hidden = cs.load_hidden(cache_root)
+                     plan_writes=td.PlanWrites(cache_root / "plan-writes.json", home))
+    starred = td.starred_of(td.load_stars(cache_root))
+    hidden = td.load_hidden(cache_root)
     names, plans, memories, seen = {}, [], [], set()
-    for _gid, members in cs.group_profiles(profiles):
+    for _gid, members in td.group_profiles(profiles):
         named = next((p for p in members if not p.is_default), members[0])
         for p in members:
             names[p.key] = named.label
         group = {"profileKeys": [p.key for p in members]}
-        for item in cs.account_plans(group, ctx, 1 << 30, starred["plans"], hidden["plans"]) \
-                + [m for m in cs.account_memories(group, ctx, 1 << 30, hidden["memories"]) if m["type"] != "account"]:
+        for item in td.account_plans(group, ctx, 1 << 30, starred["plans"], hidden["plans"]) \
+                + [m for m in td.account_memories(group, ctx, 1 << 30, hidden["memories"]) if m["type"] != "account"]:
             real = os.path.realpath(item["path"])   # (one shared with another account: listed once)
             if real not in seen:
                 seen.add(real)
                 (plans if "slug" in item else memories).append(item)
     paths = {}
-    for _t, _p, f, _st in cs.all_transcripts(ctx):
+    for _t, _p, f, _st in td.all_transcripts(ctx):
         paths.setdefault(f.stem, f)
     return ctx, {"accounts": names, "plans": plans, "memories": memories, "starred": starred["chats"],
                  "there": set(paths), "paths": paths}
@@ -4299,23 +4299,23 @@ def project_commands(rows, home, profiles):
     (its chat reopens), and the project's "newChatCommand": a new chat in its
     folder, on the account the front ends start it on (that of its newest
     chat, else plan or memory: Plasma main.qml newChatInProject)."""
-    claude = cs.find_claude(home)
+    claude = td.find_claude(home)
     by_key, named = {p.key: p for p in profiles}, {}
-    for _gid, members in cs.group_profiles(profiles):
+    for _gid, members in td.group_profiles(profiles):
         first = next((p for p in members if not p.is_default), members[0])
         for p in members:
             named[p.key] = first
     for row in rows:
         for c in row["chats"]:
             p = by_key.get(c["profileDir"])
-            c["openCommand"] = cs.in_folder(c["cwd"], cs.resume_command(p, c["sessionId"], home, c["cwd"], claude)) if p else None
+            c["openCommand"] = td.in_folder(c["cwd"], td.resume_command(p, c["sessionId"], home, c["cwd"], claude)) if p else None
         for pl in row["plans"]:
             p = by_key.get(pl.get("chatProfileDir"))
-            pl["openCommand"] = (cs.in_folder(pl["cwd"], cs.resume_command(p, pl["chatId"], home, pl["cwd"], claude))
+            pl["openCommand"] = (td.in_folder(pl["cwd"], td.resume_command(p, pl["chatId"], home, pl["cwd"], claude))
                                  if p is not None and pl.get("chatId") else None)
         newest = (row["chats"] or row["plans"] or row["memories"] or [{}])[0]
         p = named.get(newest.get("profileDir"))
-        row["newChatCommand"] = cs.in_folder(row["path"], cs.new_chat_command(p, home, claude)) if p and row["path"] else None
+        row["newChatCommand"] = td.in_folder(row["path"], td.new_chat_command(p, home, claude)) if p and row["path"] else None
 
 
 def host_projects(host):
@@ -4331,17 +4331,17 @@ def host_projects(host):
         return {"host": host, "ok": False, "error": answer.get("message") or answer.get("error") or "no answer",
                 "projects": [], "hidden": 0, "hiddenPaths": []}
     rows = [p for p in answer["projects"] if isinstance(p, dict)]
-    starred = cs.starred_of(cs.load_stars(cs.cache_dir(Path.home())), host)
+    starred = td.starred_of(td.load_stars(td.cache_dir(Path.home())), host)
     for p in rows:
         for kind, field in (("chats", "sessionId"), ("plans", "slug")):
             for item in p.get(kind) or []:
                 if isinstance(item, dict):
                     item["starred"] = item.get(field) in starred[kind]
-    sent = int(cs.number(answer.get("now")) or 0)   # (its clock as it answered)
+    sent = int(td.number(answer.get("now")) or 0)   # (its clock as it answered)
     shift = int(time.time() * 1000) - sent if sent else 0
     if abs(shift) > 5000:
         def moved(item, field):
-            if isinstance(item, dict) and cs.number(item.get(field)):
+            if isinstance(item, dict) and td.number(item.get(field)):
                 item[field] = int(item[field]) + shift
         for p in rows:
             moved(p, "lastAt")
@@ -4350,7 +4350,7 @@ def host_projects(host):
                 moved(c, "lastActive")
             for item in (p.get("plans") or []) + (p.get("memories") or []):
                 moved(item, "updatedAt")
-    return {"host": host, "ok": True, "error": "", "projects": rows, "hidden": int(cs.number(answer.get("hidden")) or 0),
+    return {"host": host, "ok": True, "error": "", "projects": rows, "hidden": int(td.number(answer.get("hidden")) or 0),
             "hiddenPaths": answer.get("hiddenPaths") if isinstance(answer.get("hiddenPaths"), list) else []}
 
 
@@ -4373,15 +4373,15 @@ def monday_due(cache_root, now_s):
         return None
     year, week, _ = datetime.date(t.tm_year, t.tm_mon, t.tm_mday).isocalendar()
     name = "%d-W%02d" % (year, week)
-    cs.private_dir(cache_root)
+    td.private_dir(cache_root)
     import fcntl
     with open(cache_root / (MONDAY_FILE + ".lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        mark = cs.read_json(cache_root / MONDAY_FILE)
+        mark = td.read_json(cache_root / MONDAY_FILE)
         if isinstance(mark, dict) and mark.get("week") == name:
             return None
         first = not isinstance(mark, dict)
-        cs.write_json_atomic(cache_root / MONDAY_FILE, {"week": name, "at": int(now_s * 1000)})
+        td.write_json_atomic(cache_root / MONDAY_FILE, {"week": name, "at": int(now_s * 1000)})
     return None if first else name   # (the first time: from next week on, not the moment you install it)
 
 
@@ -4451,13 +4451,13 @@ def main(argv=None):
             sys.exit(__doc__)
     os.umask(0o077)  # cache files are private to the user
     home = Path.home()
-    cs.adopt_legacy_dirs(home)
+    td.adopt_legacy_dirs(home)
     now_ms = int(time.time() * 1000)
-    cache_root = cs.cache_dir(home)
+    cache_root = td.cache_dir(home)
 
     def emit(result):
         text = json.dumps(result, indent=2 if pretty and not remote else None)
-        sys.stdout.write(("\n" + cs.REMOTE_MARK + " " if remote else "") + text + "\n")
+        sys.stdout.write(("\n" + td.REMOTE_MARK + " " if remote else "") + text + "\n")
 
     if on and (allow or undo or revoke):  # (a button of an SSH host's permissions: this file runs there)
         import remote as remote_hosts
@@ -4478,7 +4478,7 @@ def main(argv=None):
                 ok, message = undo_rule(home, cache_root, undo)
                 result = {"ok": ok, "message": message}
             else:
-                ok, message = revoke_rule(home, cache_root, cs.discover_profiles(home, config_dirs), revoke)
+                ok, message = revoke_rule(home, cache_root, td.discover_profiles(home, config_dirs), revoke)
                 result = {"ok": ok, "message": message}
         except Exception as exc:
             result = {"ok": False, "message": "{}: {}".format(type(exc).__name__, exc)}
@@ -4504,8 +4504,8 @@ def main(argv=None):
                 c["id"] = cid
             ctx, items = project_items(home, cache_root, profiles, now_ms)
             rows = projects(list(chats.values()), now_ms, home, items["plans"], items["memories"], items["accounts"],
-                            items["starred"], items["there"], cs.chat_moves(ctx))
-            hidden = cs.load_hidden(cache_root)["projects"]  # (the ones you hid: jump.py --hide projects FOLDER)
+                            items["starred"], items["there"], td.chat_moves(ctx))
+            hidden = td.load_hidden(cache_root)["projects"]  # (the ones you hid: jump.py --hide projects FOLDER)
             hidden_paths = [p["path"] for p in rows if p["path"] in hidden]   # (an open chat there is theirs, not shown elsewhere)
             rows = [p for p in rows if p["path"] not in hidden]
             project_recaps(rows, ctx, items["paths"])
@@ -4543,7 +4543,7 @@ def main(argv=None):
     try:
         # (the Permissions tab: every account's, a hidden one's too, as it lets things through; the Recap: not those)
         if perms:
-            profiles, skip = cs.discover_profiles(home, config_dirs), frozenset()
+            profiles, skip = td.discover_profiles(home, config_dirs), frozenset()
         else:
             profiles, skip = shown_profiles(home, config_dirs, cache_root)
         cache = updated_cache(cache_root, profiles, now_ms)

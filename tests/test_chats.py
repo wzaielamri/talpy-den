@@ -24,11 +24,11 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("talpy_den_chats", ROOT / "package/contents/code/talpy_den.py")
-cs = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(cs)
+td = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(td)
 
 PID = os.getpid()
-PROC_START = cs.proc_start_time(PID)
+PROC_START = td.proc_start_time(PID)
 PROJECT = "-w-proj"
 
 
@@ -148,10 +148,10 @@ class World(unittest.TestCase):
         # Popen returns before exec has set up the new environment, and
         # /proc/<pid>/environ reads empty until it has
         for _ in range(500):
-            if cs.proc_start_time(child.pid) and cs.process_config_dir(child.pid):
+            if td.proc_start_time(child.pid) and td.process_config_dir(child.pid):
                 break
             time.sleep(0.01)
-        return child.pid, cs.proc_start_time(child.pid)
+        return child.pid, td.proc_start_time(child.pid)
 
     def snapshot(self, dirname, sid, age, **data):
         path = self.cache / "statusline" / dirname / f"{sid}.json"
@@ -173,7 +173,7 @@ class World(unittest.TestCase):
 
     def collect(self, **kw):
         kw.setdefault("with_tokens", False)
-        return cs.collect(self.home, self.cache, now=kw.pop("now", self.now), **kw)
+        return td.collect(self.home, self.cache, now=kw.pop("now", self.now), **kw)
 
     def listing(self, r=None):
         """{account: [(session id, kind, state, chat id, relation)]} + {account: [links]}."""
@@ -246,7 +246,7 @@ class ProfileLinkTests(World):
         self.assertEqual(by, {"personal": 1, "work": 1})
         # The user switches ~/.claude to personal: still one message each
         self.link_default("personal", age=0)
-        r = self.collect(with_tokens=True, now=self.now + cs.TOKEN_SCAN_INTERVAL + 1)
+        r = self.collect(with_tokens=True, now=self.now + td.TOKEN_SCAN_INTERVAL + 1)
         by = {g["name"]: g["tokens"]["today"]["messages"] for g in r["groups"]}
         self.assertEqual(by, {"personal": 1, "work": 1})
         names = sorted(p.name for p in self.cache.glob("tokens-*.json"))
@@ -338,7 +338,7 @@ class ReplyContextTests(World):
         path = self.transcript("work", "chat-r", [user("u1", self.now - 100, "chat-r"),
                                                   used("a1", self.now - 90, "chat-r", "claude-opus-5-5", 300000)])
         self.collect()
-        chats = cs.read_json(self.cache / "chats.json")
+        chats = td.read_json(self.cache / "chats.json")
         for kept in chats["peeks"].values():
             kept[2].pop("usage")   # (as an older copy of this script kept it)
         write(self.cache / "chats.json", chats)
@@ -457,7 +457,7 @@ class ChatLinkTests(World):
         self.assertEqual(s["shared"]["forkOf"], "T")
 
     def test_first_uuid_skips_entries_without_one(self):
-        cache = cs.LinkCache(self.cache / "links.json")
+        cache = td.LinkCache(self.cache / "links.json")
         path = self.transcript("personal", "X", [{"type": "file-history-snapshot"}, title("X", "t"),
                                                   user("X-first", self.now, "X"), user("X-second", self.now, "X")])
         self.assertEqual(cache.first_uuid(path), "X-first")
@@ -508,19 +508,19 @@ class ClearedJobTests(World):
 
     def test_one_waiting_for_you_with_nothing_running_stays_hidden_until_it_runs_again(self):
         self.job("work", "B", age=600, state="blocked", tempo="blocked", needs="Which file?")
-        cs.private_dir(self.cache)
-        cs.change_dismissed(self.cache, add="B")
+        td.private_dir(self.cache)
+        td.change_dismissed(self.cache, add="B")
         r = self.collect()
         self.assertEqual((self.ids(r), r["counts"]["waiting"], r["dismissed"]), ([], 0, 1))
         self.live("work", "70", "B", kind="bg", jobId="B", status="waiting", waitingFor="Bash")  # (woken, it asks again)
         self.assertEqual(self.ids(), ["B"])
-        self.assertNotIn("B", cs.load_dismissed(self.cache))
+        self.assertNotIn("B", td.load_dismissed(self.cache))
 
 
 class LinkCacheTests(World):
     def test_incremental_scan(self):
         path = self.transcript("personal", "T", [user("u1", self.now, "T"), reply("a1", self.now, "T")])
-        cache = cs.LinkCache(self.cache / "links.json")
+        cache = td.LinkCache(self.cache / "links.json")
         rec = cache.transcript(path)
         self.assertEqual((rec["conts"], rec["final"] > 0), ([], True))
         size = rec["size"]
@@ -528,18 +528,18 @@ class LinkCacheTests(World):
         # appended: a continued-in record and a half-written line
         with open(path, "a") as f:
             f.write(json.dumps(continued("T", "J"), separators=(",", ":")) + "\n" + '{"type":"assi')
-        cache2 = cs.LinkCache(self.cache / "links.json")
+        cache2 = td.LinkCache(self.cache / "links.json")
         reads = []
         real_open = open
 
         def spy(file, mode="r", *a, **kw):
             reads.append(file)
             return real_open(file, mode, *a, **kw)
-        cs.open = spy
+        td.open = spy
         try:
             rec2 = cache2.transcript(path)
         finally:
-            del cs.open
+            del td.open
         self.assertEqual([c[0] for c in rec2["conts"]], ["J"])
         self.assertEqual(rec2["conts"][0][1], size)          # offset of the new line
         self.assertLess(rec2["size"], path.stat().st_size)   # half-written line left for later
@@ -547,10 +547,10 @@ class LinkCacheTests(World):
 
     def test_finished_reply_rules(self):
         ok = reply("a", self.now, "T")
-        self.assertTrue(cs.finished_reply(ok))
-        self.assertFalse(cs.finished_reply({**ok, "isApiErrorMessage": True}))
-        self.assertFalse(cs.finished_reply(reply("b", self.now, "T", stop=None)))
-        self.assertFalse(cs.finished_reply(user("c", self.now, "T")))
+        self.assertTrue(td.finished_reply(ok))
+        self.assertFalse(td.finished_reply({**ok, "isApiErrorMessage": True}))
+        self.assertFalse(td.finished_reply(reply("b", self.now, "T", stop=None)))
+        self.assertFalse(td.finished_reply(user("c", self.now, "T")))
 
 
 class MovedOnTests(World):
@@ -687,8 +687,8 @@ class PlacementTests(World):
 
     def test_dismissed_chat_stays_hidden_after_moving(self):
         self.prompt("personal", "T", age=600)
-        cs.private_dir(self.cache)
-        cs.save_dismissed(self.cache, {"T": 1})
+        td.private_dir(self.cache)
+        td.save_dismissed(self.cache, {"T": 1})
         r = self.collect()
         self.assertEqual((self.listing(r)[0], r["dismissed"]), ({"personal": [], "work": []}, 1))
 
@@ -724,7 +724,7 @@ class SharedPointerTests(unittest.TestCase):
                     "shared": {"profiles": ["personal", "work", "team"]}}
         groups = [{"profiles": ["personal"], "sessions": [row("personal")]},
                   {"profiles": ["work"], "sessions": [row("work")]}, {"profiles": ["team"], "sessions": []}]
-        cs.link_shared_elsewhere(groups)
+        td.link_shared_elsewhere(groups)
         self.assertEqual([(h["sessionId"], h["profile"]) for h in groups[2]["sharedHere"]], [("X", "personal")])
         self.assertEqual((groups[0]["sharedHere"], groups[1]["sharedHere"]), ([], []))
 
@@ -768,7 +768,7 @@ class RecentChatTests(World):
         for i in range(6):
             self.chat("work", f"c{i}", 50 + i * 10)
         self.transcript("work", "empty", [{"type": "ai-title", "aiTitle": "nothing said"}], age=500)
-        with mock.patch.object(cs, "RECENT_CHECKED", 2):
+        with mock.patch.object(td, "RECENT_CHECKED", 2):
             work = next(g for g in self.collect(recent=2)["groups"] if g["name"] == "work")
         self.assertEqual(([c["sessionId"] for c in work["recent"]], work["recentCount"]), (["c0", "c1"], 7))
         work = next(g for g in self.collect(recent=2)["groups"] if g["name"] == "work")
@@ -779,27 +779,27 @@ class RecentChatTests(World):
             self.chat("work", f"c{i}", age)
         self.job("work", "c0", age=10)  # listed as a session: marked there, not repeated
         for sid in ("c5", "c4", "c0"):
-            cs.change_stars(self.cache, "chats", sid)
-        cs.change_stars(self.cache, "chats", "c1", host="lab")  # an SSH host's chat of that id: not this one
+            td.change_stars(self.cache, "chats", sid)
+        td.change_stars(self.cache, "chats", "c1", host="lab")  # an SSH host's chat of that id: not this one
         work = next(g for g in self.collect(recent=3)["groups"] if g["name"] == "work")
         self.assertEqual([(c["sessionId"], c["starred"]) for c in work["recent"]], [("c4", True), ("c3", False), ("c2", False)])
         self.assertEqual([(c["sessionId"], c["key"]) for c in work["starred"]],
                          [("c4", ".claude-work/c4/starred"), ("c5", ".claude-work/c5/starred")], "newest first")
         self.assertTrue(next(s for s in work["sessions"] if s["sessionId"] == "c0")["starred"])
         # also with no recent chats asked for; not any more once unstarred
-        cs.change_stars(self.cache, "chats", "c5", on=False)
+        td.change_stars(self.cache, "chats", "c5", on=False)
         work = next(g for g in self.collect(recent=0)["groups"] if g["name"] == "work")
         self.assertEqual(([c["sessionId"] for c in work["starred"]], work["recent"]), (["c4"], []))
         # a host's status run gets the host's (from the computer that asks), not the cache's
-        self.assertEqual(cs.starred_of(cs.load_stars(self.cache), "lab"), {"chats": {"c1"}, "plans": set()})
-        work = next(g for g in self.collect(recent=3, starred=cs.starred_of(cs.load_stars(self.cache), "lab"))["groups"]
+        self.assertEqual(td.starred_of(td.load_stars(self.cache), "lab"), {"chats": {"c1"}, "plans": set()})
+        work = next(g for g in self.collect(recent=3, starred=td.starred_of(td.load_stars(self.cache), "lab"))["groups"]
                     if g["name"] == "work")
         self.assertEqual([c["sessionId"] for c in work["starred"]], ["c1"])
 
     def test_a_starred_chat_stays_starred_when_a_newer_fork_hides_it_from_recent(self):
         self.chat("work", "X", 3600)
         self.chat("work", "Y", 60, [user("X-u", self.now - 3600, "X", text="about X"), reply("Y-a", self.now - 60, "Y")])
-        cs.change_stars(self.cache, "chats", "X")
+        td.change_stars(self.cache, "chats", "X")
         work = next(g for g in self.collect()["groups"] if g["name"] == "work")
         self.assertEqual(([c["sessionId"] for c in work["recent"]], work["recentCount"]), (["Y"], 1))
         self.assertEqual([c["sessionId"] for c in work["starred"]], ["X"])
@@ -846,8 +846,8 @@ class RecentChatTests(World):
         r = self.collect()
         self.assertEqual([s["sessionId"] for g in r["groups"] for s in g["sessions"]], ["job1"])
         self.assertEqual(self.recent(r)["work"], [("older", "about older")])
-        cs.private_dir(self.cache)
-        cs.save_dismissed(self.cache, {"job1": 1})
+        td.private_dir(self.cache)
+        td.save_dismissed(self.cache, {"job1": 1})
         r = self.collect()
         self.assertEqual([s["sessionId"] for g in r["groups"] for s in g["sessions"]], [])
         self.assertEqual(self.recent(r)["work"], [("job1", "about job1"), ("older", "about older")])
@@ -882,8 +882,8 @@ class RecentChatTests(World):
         path = self.chat("work", "c1", 10)
         self.collect()
         calls = []
-        real = cs.read_chat_info
-        cs.read_chat_info = lambda p, size: calls.append(p) or real(p, size)
+        real = td.read_chat_info
+        td.read_chat_info = lambda p, size: calls.append(p) or real(p, size)
         try:
             self.collect()
             self.assertEqual(calls, [])
@@ -892,7 +892,7 @@ class RecentChatTests(World):
             self.assertEqual(self.recent()["work"], [("c1", "new name")])
             self.assertEqual(len(calls), 1)
         finally:
-            cs.read_chat_info = real
+            td.read_chat_info = real
 
 
 class RemoteModeTests(World):
@@ -952,10 +952,10 @@ class RemoteModeTests(World):
         out = subprocess.run([sys.executable, "-I", "-", "--remote", "--dismiss", "abc"], env=env, input=script,
                              capture_output=True, text=True, check=True).stdout
         self.assertEqual(json.loads(out.split("@@talpy-den@@ ")[-1])["ok"], True)
-        self.assertIn("abc", cs.load_dismissed(self.cache / "talpy-den"))
+        self.assertIn("abc", td.load_dismissed(self.cache / "talpy-den"))
         subprocess.run([sys.executable, "-I", "-", "--undismiss-all"], env=env, input=script, check=True,
                        capture_output=True, text=True)
-        self.assertEqual(cs.load_dismissed(self.cache / "talpy-den"), {})
+        self.assertEqual(td.load_dismissed(self.cache / "talpy-den"), {})
 
 
 class RecurringTests(unittest.TestCase):
@@ -963,17 +963,17 @@ class RecurringTests(unittest.TestCase):
 
     def test_loop_jobs(self):
         job = {"state": "done", "tempo": "idle", "intent": "  /LOOP 5m check the deploy"}
-        self.assertTrue(cs.is_recurring(job))
-        self.assertEqual(cs.session_state({"status": "idle"}, job), "working")
-        self.assertTrue(cs.is_recurring({"initialPrompt": "/loop"}))
-        self.assertFalse(cs.is_recurring({"intent": "please /loop later"}))
+        self.assertTrue(td.is_recurring(job))
+        self.assertEqual(td.session_state({"status": "idle"}, job), "working")
+        self.assertTrue(td.is_recurring({"initialPrompt": "/loop"}))
+        self.assertFalse(td.is_recurring({"intent": "please /loop later"}))
 
     def test_parked_recurring_job_between_runs(self):
         now = 1_800_000_000_000
         job = {"state": "done", "tempo": "idle", "routine": {}, "updatedAt": iso((now - 9 * 86400_000) / 1000)}
-        self.assertEqual(cs.parked_job_state(job, False, now, 86400_000), ("working", ""))
-        self.assertEqual(cs.parked_job_state({**job, "tempo": "blocked"}, False, now, 86400_000), ("waiting", ""))
-        self.assertEqual(cs.parked_job_state({**job, "routine": None, "state": "failed"}, False, now, 86400_000), None)
+        self.assertEqual(td.parked_job_state(job, False, now, 86400_000), ("working", ""))
+        self.assertEqual(td.parked_job_state({**job, "tempo": "blocked"}, False, now, 86400_000), ("waiting", ""))
+        self.assertEqual(td.parked_job_state({**job, "routine": None, "state": "failed"}, False, now, 86400_000), None)
 
 
 class TranscriptFileTests(World):
@@ -985,8 +985,8 @@ class TranscriptFileTests(World):
         target.symlink_to(store)
         (store / "loop").symlink_to(store)  # a loop must not hang the scan
         self.transcript("work", "own", [reply("own-1", self.now - 5, "own")])
-        work = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
-        files = sorted((p.name, linked) for p, linked in cs.transcript_files(work))
+        work = next(p for p in td.discover_profiles(self.home) if p.label == "work")
+        files = sorted((p.name, linked) for p, linked in td.transcript_files(work))
         self.assertEqual(files, [("agent-a1.jsonl", True), ("own.jsonl", False)])
         tokens = next(g for g in self.collect(with_tokens=True)["groups"] if g["name"] == "work")["tokens"]
         self.assertEqual((tokens["today"]["messages"], tokens["today"]["shared"]), (2, 3))
@@ -1096,7 +1096,7 @@ class InvariantTests(World):
                     seen[p] = max(seen.get(p, 0), t)
                 best = max(seen.values())
                 newest_record = max(facts["records"].values())
-                if best - max(seen[p] for p in facts["records"]) >= cs.REHOME_SLACK_MS:
+                if best - max(seen[p] for p in facts["records"]) >= td.REHOME_SLACK_MS:
                     self.assertEqual(seen[where], best, chat)
                     self.assertEqual(got[0][1]["kind"], "chat", chat)
                 else:

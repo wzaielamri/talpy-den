@@ -32,7 +32,7 @@ import subprocess
 import time
 import uuid
 
-import talpy_den as cs
+import talpy_den as td
 
 REQUEST_ID = "talpy-side"
 NO_HOOKS = '{"disableAllHooks":true}'
@@ -62,8 +62,8 @@ def same_part(history, part):
 
 def environment(profile, home, claude):
     """claude's environment for the profile, as start_background's (no session of the caller's)."""
-    env = {k: v for k, v in os.environ.items() if k not in cs.SESSION_ENV and k != cs.NO_AGENT_VIEW}
-    value = cs.config_dir_value(profile, home)
+    env = {k: v for k, v in os.environ.items() if k not in td.SESSION_ENV and k != td.NO_AGENT_VIEW}
+    value = td.config_dir_value(profile, home)
     if value is None:
         env.pop("CLAUDE_CONFIG_DIR", None)
     else:
@@ -160,7 +160,7 @@ def last_line(text):
 # chat's entries from that message on, the first one under the note. It's
 # written beside the chat (claude --resume finds a chat only in the project
 # folder of the folder it runs in), under an id Talpy Den's readers skip
-# (cs.side_copy), and deleted once the copy has read it. Live-checked on
+# (td.side_copy), and deleted once the copy has read it. Live-checked on
 # Claude Code 2.1.325: a 537k-token chat's part from a message 30 entries
 # back answered from ~48k tokens, and knew it starts partway.
 
@@ -171,9 +171,9 @@ COPY_STALE_S = 600   # (one a copy that ended badly left: deleted at the next on
 
 
 def copy_id():
-    """An id for a part's transcript: a UUID that starts as cs.SIDE_COPY_PREFIX says."""
+    """An id for a part's transcript: a UUID that starts as td.SIDE_COPY_PREFIX says."""
     r = os.urandom(9).hex()
-    return f"{cs.SIDE_COPY_PREFIX}{r[:3]}-8{r[3:6]}-{r[6:18]}"
+    return f"{td.SIDE_COPY_PREFIX}{r[:3]}-8{r[3:6]}-{r[6:18]}"
 
 
 def entry_keys(e):
@@ -193,9 +193,9 @@ def turn_start(e):
     """Whether this entry is your message that starts one of Claude's turns (turns.turn_prompt_at's rule)."""
     if e.get("type") != "user" or e.get("isMeta") or e.get("isSidechain") or e.get("isCompactSummary"):
         return False
-    if cs.human_prompt(e) is not None:
+    if td.human_prompt(e) is not None:
         return True
-    return cs.message_text(cs.blocks_of(e)[0]).lstrip().startswith("<command-message>")
+    return td.message_text(td.blocks_of(e)[0]).lstrip().startswith("<command-message>")
 
 
 def read_entries(path):
@@ -214,7 +214,7 @@ def read_entries(path):
 
 def queued_text(content):
     """What a message you sent while Claude worked says (pane.py typed_text)."""
-    text = cs.typed_part(cs.message_text({"content": content})).strip()
+    text = td.typed_part(td.message_text({"content": content})).strip()
     return "" if text.startswith("<") else text
 
 
@@ -233,7 +233,7 @@ def queued_at(entries, ms):
     queued-<ms> is in the chat: your message that it became, or where Claude
     took it in during a turn (a queued_command), else its queueing (still
     waiting); None when there's no such queueing."""
-    q = next((i for i, e in enumerate(entries) if enqueued(e) and cs.to_ms(e.get("timestamp")) == ms), None)
+    q = next((i for i, e in enumerate(entries) if enqueued(e) and td.to_ms(e.get("timestamp")) == ms), None)
     if q is None:
         return None
     text = queued_text(entries[q].get("content"))
@@ -241,7 +241,7 @@ def queued_at(entries, ms):
         return q
     for i in range(q + 1, len(entries)):
         e = entries[i]
-        prompt = cs.human_prompt(e)
+        prompt = td.human_prompt(e)
         if prompt is not None and same_text(prompt, text):
             return i
         a = e.get("attachment") if e.get("type") == "attachment" else None
@@ -255,13 +255,13 @@ def item_key(entries, start):
     (pane.py): queued-<ms> when it went through Claude's queue (queued since
     the turn before), else its uuid."""
     e = entries[start]
-    text = cs.human_prompt(e)
+    text = td.human_prompt(e)
     if text:
         for i in range(start - 1, -1, -1):
             if turn_start(entries[i]):
                 break
             if enqueued(entries[i]) and same_text(queued_text(entries[i].get("content")), text):
-                return "queued-%d" % (cs.to_ms(entries[i].get("timestamp")) or 0)
+                return "queued-%d" % (td.to_ms(entries[i].get("timestamp")) or 0)
     return e.get("uuid") or ""
 
 
@@ -290,7 +290,7 @@ def read_size(e):
     """What Claude read for this reply and wrote (tokens): its context once it answered."""
     msg = e.get("message") if isinstance(e.get("message"), dict) else {}
     usage = msg.get("usage") if isinstance(msg.get("usage"), dict) else {}
-    nums = [usage.get(k) for k in cs.USAGE_READ + ("output_tokens",)]
+    nums = [usage.get(k) for k in td.USAGE_READ + ("output_tokens",)]
     return sum(n for n in nums if isinstance(n, int) and not isinstance(n, bool) and n > 0)
 
 
@@ -316,9 +316,9 @@ def part_of(path, key):
         return None
     tokens, whole = part_size(entries, start)
     e = entries[start]
-    text = cs.human_prompt(e) or cs.message_text(cs.blocks_of(e)[0])
-    return {"key": item_key(entries, start), "text": cs.short_text(" ".join(text.split()), 60),
-            "at": cs.to_ms(e.get("timestamp")) or 0, "tokens": tokens, "of": whole}
+    text = td.human_prompt(e) or td.message_text(td.blocks_of(e)[0])
+    return {"key": item_key(entries, start), "text": td.short_text(" ".join(text.split()), 60),
+            "at": td.to_ms(e.get("timestamp")) or 0, "tokens": tokens, "of": whole}
 
 
 def write_part(path, entries, start):
@@ -327,7 +327,7 @@ def write_part(path, entries, start):
     now = time.time()
     try:   # (one a copy that ended badly left behind)
         for name in os.listdir(folder):
-            if cs.side_copy(name) and now - os.stat(folder / name).st_mtime > COPY_STALE_S:
+            if td.side_copy(name) and now - os.stat(folder / name).st_mtime > COPY_STALE_S:
                 os.unlink(folder / name)
     except OSError:
         pass
@@ -367,8 +367,8 @@ def gone(path):
 def ask(home, extra_dirs, profile_key, chat_id, question, pick="", history=(), claude=None, wait=None, since=None):
     """Put a side question to a copy of the chat: {"ok", "answer", "model",
     "synthetic"} or {"ok": False, "message"}. pick: "" (the chat's own
-    model, cs.chat_model) or one of cs.SIDE_PICKS. A chat Claude moved to
-    the background goes on under its new id (cs.continuation): asked there.
+    model, td.chat_model) or one of td.SIDE_PICKS. A chat Claude moved to
+    the background goes on under its new id (td.continuation): asked there.
     since: the key of a message (Ask from here): the copy gets
     the chat from the start of that message's turn on (write_part), and the
     answer says which part, "from" (part_of's); None there when it got all
@@ -377,27 +377,27 @@ def ask(home, extra_dirs, profile_key, chat_id, question, pick="", history=(), c
     question = (question or "").strip()
     if not question:
         return {"ok": False, "message": "Write your question first"}
-    pick = cs.side_pick(pick)
+    pick = td.side_pick(pick)
     if pick is None:
         return {"ok": False, "message": "Not a model side questions can use"}
-    if not cs.valid_id(chat_id):
+    if not td.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
-    profiles = cs.discover_profiles(home, extra_dirs)
-    ordered = sorted(profiles, key=lambda p: not (profile_key and cs.matches_profile(p, profile_key)))
-    profile = next((p for p in ordered if cs.transcript_path(p, chat_id) is not None), None)
+    profiles = td.discover_profiles(home, extra_dirs)
+    ordered = sorted(profiles, key=lambda p: not (profile_key and td.matches_profile(p, profile_key)))
+    profile = next((p for p in ordered if td.transcript_path(p, chat_id) is not None), None)
     if profile is None:
         return {"ok": False, "missing": True, "message": "That chat isn't there any more"}
-    now_id = cs.continuation(home, extra_dirs, profile.key, chat_id)
+    now_id = td.continuation(home, extra_dirs, profile.key, chat_id)
     if now_id != chat_id:
-        moved = next((p for p in [profile] + profiles if cs.transcript_path(p, now_id) is not None), None)
+        moved = next((p for p in [profile] + profiles if td.transcript_path(p, now_id) is not None), None)
         if moved is not None:
             profile, chat_id = moved, now_id
-    path = cs.transcript_path(profile, chat_id)
-    model = pick or cs.chat_model(home, profile, chat_id, path)[0] or ""
-    folder = cs.chat_folder(path) or str(home)
+    path = td.transcript_path(profile, chat_id)
+    model = pick or td.chat_model(home, profile, chat_id, path)[0] or ""
+    folder = td.chat_folder(path) or str(home)
     if not os.path.isdir(folder):
         folder = str(home)
-    claude = claude or cs.find_claude(home, ask_shell=True)
+    claude = claude or td.find_claude(home, ask_shell=True)
     part, part_path, resume = None, None, chat_id
     if since:
         try:
@@ -407,9 +407,9 @@ def ask(home, extra_dirs, profile_key, chat_id, question, pick="", history=(), c
                 part_path, resume = write_part(path, entries, start)
                 tokens, whole = part_size(entries, start)
                 e = entries[start]
-                text = cs.human_prompt(e) or cs.message_text(cs.blocks_of(e)[0])
-                part = {"key": item_key(entries, start), "text": cs.short_text(" ".join(text.split()), 60),
-                        "at": cs.to_ms(e.get("timestamp")) or 0, "tokens": tokens, "of": whole}
+                text = td.human_prompt(e) or td.message_text(td.blocks_of(e)[0])
+                part = {"key": item_key(entries, start), "text": td.short_text(" ".join(text.split()), 60),
+                        "at": td.to_ms(e.get("timestamp")) or 0, "tokens": tokens, "of": whole}
         except OSError as exc:
             return {"ok": False, "message": f"Couldn't make the copy: {exc.strerror or exc}"}
     try:
@@ -426,7 +426,7 @@ def ask(home, extra_dirs, profile_key, chat_id, question, pick="", history=(), c
             proc.stdin.flush()
         except OSError:
             pass   # (it ended already: what it said is read below)
-        wait = cs.SIDE_WAIT_S if wait is None else wait
+        wait = td.SIDE_WAIT_S if wait is None else wait
         response, why, err = read_answer(proc, time.monotonic() + wait,
                                          loaded=(lambda: gone(part_path)) if part_path is not None else None)
     finally:

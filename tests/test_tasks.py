@@ -25,7 +25,7 @@ sys.path.insert(0, str(CODE))
 spec = importlib.util.spec_from_file_location("jump_tasks", CODE / "jump.py")
 jump = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jump)
-cs = jump.cs
+td = jump.td
 sharing = jump.sharing
 
 from test_talpy_den import Fixture, iso, session, vscode_link_params, write  # noqa: E402
@@ -59,7 +59,7 @@ class PeekTests(Fixture):
     def peek(self, *entries):
         path = self.home / ".claude-work/projects/-p/chat1.jsonl"
         write(path, lines(*entries))
-        return cs.chat_peek(path)
+        return td.chat_peek(path)
 
     def test_recap_while_nothing_was_said_after_it(self):
         t = self.now - 600
@@ -128,13 +128,13 @@ class PeekTests(Fixture):
         write(path, lines(prompt("hi", t), reply("Hello.", t + 1), recap("You said hi.", t + 100)))
         st = path.stat()
         old = {"activity": "", "prompt": "hi", "reply": "Hello.", "replyLine": "Hello.", "at": 1}
-        write(self.cache / "chats.json", {"version": cs.CHAT_CACHE_VERSION, "edits": {},
-                                          "peeks": {cs.file_key(st): [st.st_size, st.st_mtime_ns, old]}})
-        chats = cs.ChatCache(self.cache / "chats.json")
+        write(self.cache / "chats.json", {"version": td.CHAT_CACHE_VERSION, "edits": {},
+                                          "peeks": {td.file_key(st): [st.st_size, st.st_mtime_ns, old]}})
+        chats = td.ChatCache(self.cache / "chats.json")
         self.assertEqual(chats.peek(path)["recap"]["text"], "You said hi.")
         # (an older copy keeps the new keys it doesn't know: no reading again)
         chats.save()
-        self.assertEqual(cs.ChatCache(self.cache / "chats.json").peek(path)["recap"]["text"], "You said hi.")
+        self.assertEqual(td.ChatCache(self.cache / "chats.json").peek(path)["recap"]["text"], "You said hi.")
 
 
 class LimitStopTests(unittest.TestCase):
@@ -145,40 +145,40 @@ class LimitStopTests(unittest.TestCase):
 
     def test_resets_with_its_window(self):
         limits = {"windows": [{"key": "five_hour", "reset": False, "resetsAt": self.NOW + 3600_000}]}
-        s = cs.limit_stop(self.stop(self.NOW - 600_000), limits, self.NOW)
+        s = td.limit_stop(self.stop(self.NOW - 600_000), limits, self.NOW)
         self.assertEqual((s["resetsAt"], s["over"]), (self.NOW + 3600_000, False))
         # the window started (4 h ago) after the chat stopped: that limit is over
-        s = cs.limit_stop(self.stop(self.NOW - 5 * 3600_000), limits, self.NOW)
+        s = td.limit_stop(self.stop(self.NOW - 5 * 3600_000), limits, self.NOW)
         self.assertEqual((s["resetsAt"], s["over"]), (None, True))
 
     def test_a_window_past_its_reset(self):
         limits = {"windows": [{"key": "five_hour", "reset": True, "resetsAt": None, "endedAt": self.NOW - 60_000}]}
-        self.assertTrue(cs.limit_stop(self.stop(self.NOW - 600_000), limits, self.NOW)["over"])
+        self.assertTrue(td.limit_stop(self.stop(self.NOW - 600_000), limits, self.NOW)["over"])
         # numbers from before the chat stopped say nothing about it: the time in its message does
         text = "You've hit your session limit · resets 7:10pm (Europe/Berlin)"
         at = int(datetime(2026, 10, 20, 15, 0).timestamp() * 1000)
         limits = {"windows": [{"key": "five_hour", "reset": True, "resetsAt": None, "endedAt": at - 3600_000}]}
-        s = cs.limit_stop(self.stop(at, text=text), limits, at + 60_000)
+        s = td.limit_stop(self.stop(at, text=text), limits, at + 60_000)
         self.assertEqual((s["resetsAt"], s["over"]), (int(datetime(2026, 10, 20, 19, 10).timestamp() * 1000), False))
 
     def test_time_in_the_message(self):
         at = int(datetime(2026, 10, 20, 23, 0).timestamp() * 1000)
-        self.assertEqual(cs.reset_from_text("… · resets 5:10am (Europe/Berlin)", at),
+        self.assertEqual(td.reset_from_text("… · resets 5:10am (Europe/Berlin)", at),
                          int(datetime(2026, 10, 21, 5, 10).timestamp() * 1000))
-        self.assertEqual(cs.reset_from_text("resets 12am", at), int(datetime(2026, 10, 21, 0, 0).timestamp() * 1000))
-        self.assertIsNone(cs.reset_from_text("You've hit your monthly spend limit.", at))
+        self.assertEqual(td.reset_from_text("resets 12am", at), int(datetime(2026, 10, 21, 0, 0).timestamp() * 1000))
+        self.assertIsNone(td.reset_from_text("You've hit your monthly spend limit.", at))
         # more than a day out, Claude names the day (and the year, if it isn't this one)
-        self.assertEqual(cs.reset_from_text("You've hit your Sonnet limit · resets Oct 30, 7pm (Europe/Berlin)", at),
+        self.assertEqual(td.reset_from_text("You've hit your Sonnet limit · resets Oct 30, 7pm (Europe/Berlin)", at),
                          int(datetime(2026, 10, 30, 19, 0).timestamp() * 1000))
-        self.assertEqual(cs.reset_from_text("… · resets Jan 2, 2027, 9:30am", at),
+        self.assertEqual(td.reset_from_text("… · resets Jan 2, 2027, 9:30am", at),
                          int(datetime(2027, 1, 2, 9, 30).timestamp() * 1000))
-        self.assertIsNone(cs.reset_from_text("… · resets Feb 30, 9am", at))
-        s = cs.limit_stop(self.stop(at, window=None, text="resets 5:10am"), None,
+        self.assertIsNone(td.reset_from_text("… · resets Feb 30, 9am", at))
+        s = td.limit_stop(self.stop(at, window=None, text="resets 5:10am"), None,
                           int(datetime(2026, 10, 21, 6, 0).timestamp() * 1000))
         self.assertTrue(s["over"])
 
     def test_login_and_unknown_limits_dont_reset(self):
-        s = cs.limit_stop({"kind": "login", "window": None, "text": "Login expired", "at": 1}, None, self.NOW)
+        s = td.limit_stop({"kind": "login", "window": None, "text": "Login expired", "at": 1}, None, self.NOW)
         self.assertEqual((s["resetsAt"], s["over"]), (None, False))
 
     def group_at(self, pct, stops, updated=None):
@@ -190,12 +190,12 @@ class LimitStopTests(unittest.TestCase):
     def test_a_limit_hit_after_the_numbers_fills_the_window(self):
         # 74% as of 25 min ago, and a chat hit the session limit 12 min ago
         g = self.group_at(74.0, [self.stop(self.NOW - 720_000)])
-        cs.note_limit_hits(g)
+        td.note_limit_hits(g)
         w = g["limits"]["windows"][0]
         self.assertEqual((w["pct"], w["forecast"]["fullAt"], w["forecast"]["atReset"]), (100.0, None, 224.0))
         # a recent chat (closed since) counts too
         g = self.group_at(74.0, [None, self.stop(self.NOW - 720_000)])
-        cs.note_limit_hits(g)
+        td.note_limit_hits(g)
         self.assertEqual(g["limits"]["windows"][0]["pct"], 100.0)
 
     def test_a_limit_hit_that_says_nothing_of_the_numbers(self):
@@ -206,11 +206,11 @@ class LimitStopTests(unittest.TestCase):
                               (self.stop(self.NOW - 720_000, window=None), None),
                               ({"kind": "login", "window": None, "text": "Login expired", "at": self.NOW - 720_000}, None)):
             g = self.group_at(74.0, [stop], updated)
-            cs.note_limit_hits(g)
+            td.note_limit_hits(g)
             self.assertEqual(g["limits"]["windows"][0]["pct"], 74.0, stop)
             self.assertEqual(g["limits"]["windows"][0]["forecast"]["fullAt"], self.NOW + 1800_000)
         g = {"limits": None, "sessions": [{"stopped": self.stop(self.NOW)}]}
-        cs.note_limit_hits(g)  # (no numbers at all)
+        td.note_limit_hits(g)  # (no numbers at all)
         self.assertIsNone(g["limits"])
 
     def test_a_shared_chat_another_account_hit_the_limit_in(self):
@@ -219,17 +219,17 @@ class LimitStopTests(unittest.TestCase):
         for shared in ({"profiles": ["work", "personal"]}, {"profiles": ["work", "personal"], "forkOf": "c0"}):
             g = self.group_at(74.0, [self.stop(self.NOW - 720_000)])
             g["sessions"][0].update(shared=shared, startedAt=self.NOW - 60_000)
-            cs.note_limit_hits(g)
+            td.note_limit_hits(g)
             self.assertEqual(g["limits"]["windows"][0]["pct"], 74.0, shared)
         # one it hit while it ran here is this account's
         g = self.group_at(74.0, [self.stop(self.NOW - 720_000)])
         g["sessions"][0].update(shared={"profiles": ["work", "personal"]}, startedAt=self.NOW - 3600_000)
-        cs.note_limit_hits(g)
+        td.note_limit_hits(g)
         self.assertEqual(g["limits"]["windows"][0]["pct"], 100.0)
         # and a chat only this account has stopped here, whenever its session started
         g = self.group_at(74.0, [self.stop(self.NOW - 720_000)])
         g["sessions"][0].update(shared=None, startedAt=self.NOW - 60_000)
-        cs.note_limit_hits(g)
+        td.note_limit_hits(g)
         self.assertEqual(g["limits"]["windows"][0]["pct"], 100.0)
 
     def test_a_recent_shared_chat_another_account_hit_the_limit_in(self):
@@ -237,15 +237,15 @@ class LimitStopTests(unittest.TestCase):
         theirs = dict(self.stop(self.NOW - 720_000), resets=self.NOW + 5 * 3600_000)
         g = self.group_at(74.0, [None, theirs])
         g["recent"][0]["shared"] = True
-        cs.note_limit_hits(g)
+        td.note_limit_hits(g)
         self.assertEqual(g["limits"]["windows"][0]["pct"], 74.0)
         # and it resets when that account's window does
-        s = cs.limit_stop(theirs, g["limits"], self.NOW)
+        s = td.limit_stop(theirs, g["limits"], self.NOW)
         self.assertEqual((s["resetsAt"], s["over"]), (self.NOW + 5 * 3600_000, False))
         ours = dict(self.stop(self.NOW - 720_000), resets=self.NOW + 3 * 3600_000 + 2000)
         g = self.group_at(74.0, [None, ours])
         g["recent"][0]["shared"] = True
-        cs.note_limit_hits(g)
+        td.note_limit_hits(g)
         self.assertEqual(g["limits"]["windows"][0]["pct"], 100.0)
 
 
@@ -300,14 +300,14 @@ class RowTests(Fixture):
         # Claude names the background session after the message it went on with
         w = self.home / ".claude-work"
         sid = "e3de1242-7bc8-40a5-938f-aadb5f5aa9ee"
-        write(w / "sessions/32.json", session(sid, kind="bg", jobId="e3de1242", cwd="/tmp/x", name=cs.CONTINUE_PROMPT))
+        write(w / "sessions/32.json", session(sid, kind="bg", jobId="e3de1242", cwd="/tmp/x", name=td.CONTINUE_PROMPT))
         write(w / "jobs/e3de1242/state.json", {"state": "working", "tempo": "active", "sessionId": sid})
         write(w / f"projects/-tmp-x/{sid}.jsonl", lines(prompt("fix the thesis build", self.now - 60), {"type": "ai-title", "aiTitle": "Thesis build fix"},
-                                                     prompt(cs.CONTINUE_PROMPT, self.now - 10)))
+                                                     prompt(td.CONTINUE_PROMPT, self.now - 10)))
         row = next(s for s in self.group(self.collect(with_tokens=False), "work")["sessions"] if s["sessionId"] == sid)
         self.assertEqual(row["name"], "Thesis build fix")
         # (also when it went on after a turn that broke off)
-        write(w / "sessions/32.json", session(sid, kind="bg", jobId="e3de1242", cwd="/tmp/x", name=cs.RETRY_PROMPT))
+        write(w / "sessions/32.json", session(sid, kind="bg", jobId="e3de1242", cwd="/tmp/x", name=td.RETRY_PROMPT))
         row = next(s for s in self.group(self.collect(with_tokens=False), "work")["sessions"] if s["sessionId"] == sid)
         self.assertEqual(row["name"], "Thesis build fix")
 
@@ -322,7 +322,7 @@ class RowTests(Fixture):
         write(path, lines(prompt("go", self.now - 60), on, reply("On it.", self.now - 55), *[big] * 3,
                           reply("Done.", self.now - 40, msg_id="m2"), prompt("and now?", self.now - 30),
                           reply("Sure.", self.now - 20, msg_id="m3")))
-        self.assertFalse(cs.chat_peek(path)["ultracode"])
+        self.assertFalse(td.chat_peek(path)["ultracode"])
         row = lambda: next(s for s in self.group(self.collect(with_tokens=False), "work")["sessions"] if s["sessionId"] == "ultra")
         self.assertTrue(row()["peek"]["ultracode"])
         # turned off: off
@@ -356,13 +356,13 @@ class RowTests(Fixture):
         for i, slug in enumerate(["old-plan", "mid-plan", "new-plan"]):
             write(w / f"plans/{slug}.md", f"# {slug}\n")
             os.utime(w / f"plans/{slug}.md", (self.now - 1000 + i, self.now - 1000 + i))
-        cs.change_stars(self.cache, "plans", "old-plan")
-        cs.change_stars(self.cache, "plans", "mid-plan", host="lab")  # (an SSH host's)
+        td.change_stars(self.cache, "plans", "old-plan")
+        td.change_stars(self.cache, "plans", "mid-plan", host="lab")  # (an SSH host's)
         work = self.group(self.collect(with_tokens=False, plans=1), "work")
         self.assertEqual([(x["slug"], x["starred"]) for x in work["plans"]], [("new-plan", False)])
         self.assertEqual([(x["slug"], x["title"], x["key"]) for x in work["starredPlans"]],
                          [("old-plan", "old-plan", ".claude-work/old-plan/starred")])
-        cs.change_stars(self.cache, "plans", "new-plan")
+        td.change_stars(self.cache, "plans", "new-plan")
         work = self.group(self.collect(with_tokens=False), "work")
         self.assertEqual([(x["slug"], x["starred"]) for x in work["plans"]],
                          [("new-plan", True), ("mid-plan", False), ("old-plan", True)])
@@ -374,7 +374,7 @@ class RowTests(Fixture):
             self.assertEqual(jump.star(home, "chats", "e3de1242-7bc8-40a5-938f-aadb5f5aa9ee"), (True, ""))
             self.assertEqual(jump.star(home, "plans", "calm-red-owl", "lab"), (True, ""))
             self.assertFalse(jump.star(home, "plans", "../etc/passwd")[0])
-        stars = cs.load_stars(cs.cache_dir(home))
+        stars = td.load_stars(td.cache_dir(home))
         self.assertEqual(stars, {"chats": [{"id": "e3de1242-7bc8-40a5-938f-aadb5f5aa9ee", "host": ""}],
                                  "plans": [{"id": "calm-red-owl", "host": "lab"}]})
         # the host's status run gets them from here
@@ -385,16 +385,16 @@ class RowTests(Fixture):
         self.assertIn("--starred-plans calm-red-owl", ssh.call_args[0][1])
         self.assertNotIn("--starred-chats", ssh.call_args[0][1])
         jump.star(home, "plans", "calm-red-owl", "lab", on=False)
-        self.assertEqual(cs.load_stars(cs.cache_dir(home))["plans"], [])
+        self.assertEqual(td.load_stars(td.cache_dir(home))["plans"], [])
 
     def test_slugs_are_read_from_what_was_appended(self):
         path = self.home / ".claude-work/projects/-p/chat7.jsonl"
         write(path, lines(prompt("plan it", self.now - 60, slug="calm-red-owl")))
-        slugs = cs.SlugCache(self.cache / "plans.json")
+        slugs = td.SlugCache(self.cache / "plans.json")
         self.assertEqual(slugs.slug(path, path.stat()), "calm-red-owl")
         reads = []
-        real = cs.transcript_slug
-        with mock.patch.object(cs, "transcript_slug", lambda p, size, start=0: reads.append(start) or real(p, size, start)):
+        real = td.transcript_slug
+        with mock.patch.object(td, "transcript_slug", lambda p, size, start=0: reads.append(start) or real(p, size, start)):
             with open(path, "a") as f:
                 f.write(lines(reply("Planned.", self.now - 50)))   # no slug in what came: it keeps its own
             self.assertEqual(slugs.slug(path, path.stat()), "calm-red-owl")
@@ -402,7 +402,7 @@ class RowTests(Fixture):
             self.assertEqual(slugs.slug(path, path.stat()), "calm-red-owl")   # unchanged: nothing read
         self.assertEqual(reads, [size - len(lines(reply("Planned.", self.now - 50)))])
         slugs.save()
-        self.assertEqual(cs.SlugCache(self.cache / "plans.json").slug(path, path.stat()), "calm-red-owl")
+        self.assertEqual(td.SlugCache(self.cache / "plans.json").slug(path, path.stat()), "calm-red-owl")
 
     def test_recent_chats_carry_their_recap(self):
         w = self.home / ".claude-work"
@@ -424,17 +424,17 @@ class RowTests(Fixture):
         data["projects"] = {str(self.home / "repos"): {"hasTrustDialogAccepted": True},
                             str(self.home / "notes"): {"hasTrustDialogAccepted": True}}
         write(w / ".claude.json", data)
-        profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
+        profile = next(p for p in td.discover_profiles(self.home) if p.label == "work")
         # Claude looks up the folders above, but not past a git repository's root
-        self.assertTrue(cs.folder_trusted(profile, str(other), self.home))
-        self.assertFalse(cs.folder_trusted(profile, str(repo / "sub"), self.home))
+        self.assertTrue(td.folder_trusted(profile, str(other), self.home))
+        self.assertFalse(td.folder_trusted(profile, str(repo / "sub"), self.home))
         data["projects"][str(repo)] = {"hasTrustDialogAccepted": True}
         write(w / ".claude.json", data)
-        self.assertTrue(cs.folder_trusted(profile, str(repo / "sub"), self.home))
+        self.assertTrue(td.folder_trusted(profile, str(repo / "sub"), self.home))
         # Claude never keeps trusting the home folder (an old record of it doesn't count)
         data["projects"][str(self.home)] = {"hasTrustDialogAccepted": True}
         write(w / ".claude.json", data)
-        self.assertFalse(cs.folder_trusted(profile, str(self.home), self.home))
+        self.assertFalse(td.folder_trusted(profile, str(self.home), self.home))
 
     def test_a_worktree_is_trusted_when_its_repository_is(self):
         # Claude keeps a worktree's trust under the repository it belongs to
@@ -452,20 +452,20 @@ class RowTests(Fixture):
         data = json.loads((w / ".claude.json").read_text())
         data["projects"] = {str(self.home / "notes"): {"hasTrustDialogAccepted": True}}
         write(w / ".claude.json", data)
-        profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
-        self.assertFalse(cs.folder_trusted(profile, str(tree), self.home))
+        profile = next(p for p in td.discover_profiles(self.home) if p.label == "work")
+        self.assertFalse(td.folder_trusted(profile, str(tree), self.home))
         data["projects"][str(repo)] = {"hasTrustDialogAccepted": True}
         write(w / ".claude.json", data)
-        self.assertTrue(cs.folder_trusted(profile, str(tree), self.home))
-        self.assertTrue(cs.folder_trusted(profile, str(tree / "sub"), self.home))
-        self.assertEqual(cs.main_repository(repo), repo)              # (the repository itself)
+        self.assertTrue(td.folder_trusted(profile, str(tree), self.home))
+        self.assertTrue(td.folder_trusted(profile, str(tree / "sub"), self.home))
+        self.assertEqual(td.main_repository(repo), repo)              # (the repository itself)
         # not one that only says so: its git folder doesn't name it back
         (gitdir / "gitdir").write_text(f"{self.home / 'elsewhere/.git'}\n")
-        self.assertFalse(cs.folder_trusted(profile, str(tree), self.home))
+        self.assertFalse(td.folder_trusted(profile, str(tree), self.home))
         # a relative gitdir, as git writes with worktree.useRelativePaths
         (gitdir / "gitdir").write_text("../../../.claude/worktrees/round/.git\n")
         (tree / ".git").write_text("gitdir: ../../../.git/worktrees/round\n")
-        self.assertTrue(cs.folder_trusted(profile, str(tree), self.home))
+        self.assertTrue(td.folder_trusted(profile, str(tree), self.home))
 
 
 class FindTests(Fixture):
@@ -491,7 +491,7 @@ class FindTests(Fixture):
         os.utime(w / "projects/-c/ccc.jsonl", (t, t))
 
     def find(self, query, limit=30):
-        return cs.find_chats(self.home, self.cache, [], query, limit)
+        return td.find_chats(self.home, self.cache, [], query, limit)
 
     def test_every_word_in_name_folder_or_prompts(self):
         found = self.find("parser")
@@ -550,10 +550,10 @@ class FindTests(Fixture):
 
     def test_command_line(self):
         out = io.StringIO()
-        with contextlib.redirect_stdout(out), mock.patch.object(cs.Path, "home", return_value=self.home), \
-                mock.patch.object(cs, "cache_dir", return_value=self.cache):
-            cs.main(["--find", "docs", "--remote"])
-        answer = json.loads(out.getvalue().split(cs.REMOTE_MARK)[1])
+        with contextlib.redirect_stdout(out), mock.patch.object(td.Path, "home", return_value=self.home), \
+                mock.patch.object(td, "cache_dir", return_value=self.cache):
+            td.main(["--find", "docs", "--remote"])
+        answer = json.loads(out.getvalue().split(td.REMOTE_MARK)[1])
         self.assertEqual([c["sessionId"] for c in answer["results"]], ["bbb"])
         self.assertIn("--resume bbb", answer["results"][0]["openCommand"])
 
@@ -587,7 +587,7 @@ class TaskFixture(Fixture):
         data["projects"] = {str(self.folder): {"hasTrustDialogAccepted": True}}
         write(w / ".claude.json", data)
         write(w / "plans/calm-red-owl.md", "# Calm plan\n\n1. Do it\n")
-        self.profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
+        self.profile = next(p for p in td.discover_profiles(self.home) if p.label == "work")
 
     def calls(self):
         return [json.loads(l) for l in self.log.read_text().splitlines()] if self.log.exists() else []
@@ -595,10 +595,10 @@ class TaskFixture(Fixture):
 
 class TaskTests(TaskFixture):
     def test_prompt_with_a_plan(self):
-        text = cs.task_prompt("Do step 1 only.", self.home / ".claude-work/plans/calm-red-owl.md", self.home)
+        text = td.task_prompt("Do step 1 only.", self.home / ".claude-work/plans/calm-red-owl.md", self.home)
         self.assertEqual(text, "Do step 1 only.\n\nThe plan (saved as ~/.claude-work/plans/calm-red-owl.md):\n\n"
                                "# Calm plan\n\n1. Do it\n")
-        self.assertTrue(cs.task_prompt("", self.home / ".claude-work/plans/calm-red-owl.md", self.home)
+        self.assertTrue(td.task_prompt("", self.home / ".claude-work/plans/calm-red-owl.md", self.home)
                         .startswith("Implement this plan.\n"))
 
     def test_a_long_plan_fits_in_an_ssh_hosts_terminal(self):
@@ -607,18 +607,18 @@ class TaskTests(TaskFixture):
         import remote
         plan = self.home / ".claude-work/plans/long-plan.md"
         write(plan, "# Long plan\n\n" + "It's the user's step, don't skip it.\n" * 2400)  # 86 KB
-        prompt = cs.task_prompt("Go.", plan, self.home)
-        line = remote.posix(cs.task_command(self.profile, prompt, self.home))
+        prompt = td.task_prompt("Go.", plan, self.home)
+        line = remote.posix(td.task_command(self.profile, prompt, self.home))
         self.assertLess(len(shlex.quote(line).encode()), 128 * 1024)
         self.assertTrue(prompt.startswith("Go.\n\nThe plan (saved as ~/.claude-work/plans/long-plan.md):\n\n# Long plan\n"))
         self.assertTrue(prompt.endswith("don't skip it.\n\n(The plan goes on in that file.)\n"), prompt[-80:])
         # (a plan longer than TASK_PLAN_MAX is cut too, and says so)
-        write(plan, "x" * (cs.TASK_PLAN_MAX + 10))
-        self.assertTrue(cs.task_prompt("", plan, self.home).endswith("x\n\n(The plan goes on in that file.)\n"))
+        write(plan, "x" * (td.TASK_PLAN_MAX + 10))
+        self.assertTrue(td.task_prompt("", plan, self.home).endswith("x\n\n(The plan goes on in that file.)\n"))
 
     def test_background(self):
         with mock.patch.dict(os.environ, {"CLAUDECODE": "1", "CLAUDE_CODE_DISABLE_AGENT_VIEW": "1"}):
-            ok, message, job = cs.start_background(self.profile, str(self.folder), "--fix the tests",
+            ok, message, job = td.start_background(self.profile, str(self.folder), "--fix the tests",
                                                    self.home, str(self.bin / "claude"))
         self.assertEqual((ok, job), (True, "1a2b3c4d"), message)
         call, = self.calls()
@@ -631,31 +631,31 @@ class TaskTests(TaskFixture):
 
     def test_a_one_word_task_isnt_one_of_claudes_commands(self):
         # `claude update` would update Claude, not start a chat about it
-        self.assertEqual([cs.prompt_arg(p) for p in ("update", "doctor", "fix-it", "update the docs", "Fix it.")],
+        self.assertEqual([td.prompt_arg(p) for p in ("update", "doctor", "fix-it", "update the docs", "Fix it.")],
                          [" update", " doctor", " fix-it", "update the docs", "Fix it."])
-        self.assertTrue(cs.task_command(self.profile, "install", self.home).endswith(" ' install'"))
+        self.assertTrue(td.task_command(self.profile, "install", self.home).endswith(" ' install'"))
 
     def test_background_needs_a_trusted_folder(self):
         for folder in (str(self.home), str(self.home / "repos")):
-            ok, message, _ = cs.start_background(self.profile, folder, "go", self.home, str(self.bin / "claude"))
+            ok, message, _ = td.start_background(self.profile, folder, "go", self.home, str(self.bin / "claude"))
             self.assertFalse(ok)
             self.assertIn("doesn't trust", message)
         self.assertEqual(self.calls(), [])
 
     def test_background_reports_claudes_refusal(self):
         write(self.bin / "claude", f"#!{sys.executable}\nimport sys\nprint('Workspace not trusted.', file=sys.stderr)\nsys.exit(1)\n")
-        ok, message, _ = cs.start_background(self.profile, str(self.folder), "go", self.home, str(self.bin / "claude"))
+        ok, message, _ = td.start_background(self.profile, str(self.folder), "go", self.home, str(self.bin / "claude"))
         self.assertEqual((ok, message), (False, "Workspace not trusted."))
 
     def test_terminal_command(self):
-        answer = cs.run_task(self.home, [], False, str(self.folder), ".claude-work", "go on", "calm-red-owl",
+        answer = td.run_task(self.home, [], False, str(self.folder), ".claude-work", "go on", "calm-red-owl",
                              claude="claude")
         self.assertTrue(answer["ok"])
         words = shlex.split(answer["command"])
         self.assertEqual(words[:3], ["cd", str(self.folder), "2>/dev/null;"])
         self.assertIn("CLAUDE_CODE_DISABLE_AGENT_VIEW=1", words)
         self.assertTrue(words[-1].startswith("go on\n\nThe plan (saved as ~/.claude-work/plans/calm-red-owl.md)"))
-        gone = cs.run_task(self.home, [], False, str(self.folder), ".claude-work", "", "no-such-plan", claude="claude")
+        gone = td.run_task(self.home, [], False, str(self.folder), ".claude-work", "", "no-such-plan", claude="claude")
         self.assertEqual(gone, {"ok": False, "message": "That plan isn't there any more"})
 
     def test_jump_new_chat_with_a_task(self):
@@ -711,12 +711,12 @@ class TaskTests(TaskFixture):
         call, = self.calls()
         self.assertEqual(call["argv"], ["--bg", "--model", "sonnet", "--effort", "high", "--permission-mode", "plan", "go on"])
         # an SSH host's task, there: the same
-        answer = cs.run_task(self.home, [], False, str(self.folder), ".claude-work", "go on", model="opus",
+        answer = td.run_task(self.home, [], False, str(self.folder), ".claude-work", "go on", model="opus",
                              effort="xhigh", claude="claude", mode="auto")
         self.assertEqual(shlex.split(answer["command"])[-7:], ["--model", "opus", "--effort", "xhigh",
                                                                "--permission-mode", "auto", "go on"])
         # (Claude's own defaults when none was picked)
-        self.assertNotIn("--model", cs.run_task(self.home, [], False, str(self.folder), ".claude-work", "go",
+        self.assertNotIn("--model", td.run_task(self.home, [], False, str(self.folder), ".claude-work", "go",
                                                 claude="claude")["command"])
 
     def test_vscode_link_types_the_task_in(self):
@@ -759,7 +759,7 @@ class PlanSharingTests(Fixture):
         super().setUp()
         self.w, self.p = self.home / ".claude-work", self.home / ".claude-personal"
         write(self.w / "plans/calm-red-owl.md", "# Calm plan\n")
-        self.profiles = cs.discover_profiles(self.home)
+        self.profiles = td.discover_profiles(self.home)
         self.work = sharing.named(self.profiles, ".claude-work")
         self.personal = sharing.named(self.profiles, ".claude-personal")
 
@@ -807,11 +807,11 @@ class HandoverTests(Fixture):
     def test_vscode_and_busy_sessions_stay(self):
         w = self.home / ".claude-work"
         write(w / "sessions/40.json", session("in-vscode", entrypoint="claude-vscode"))
-        ok, message = cs.end_for_handover(self.home, cs.discover_profiles(self.home), "in-vscode")
+        ok, message = td.end_for_handover(self.home, td.discover_profiles(self.home), "in-vscode")
         self.assertEqual((ok, message), (False, "It's open in VS Code's Claude: close its tab there first"))
-        ok, message = cs.end_for_handover(self.home, cs.discover_profiles(self.home), "busy")
+        ok, message = td.end_for_handover(self.home, td.discover_profiles(self.home), "busy")
         self.assertEqual((ok, message), (False, "It's at work again, so it stays where it is"))
-        self.assertEqual(cs.end_for_handover(self.home, cs.discover_profiles(self.home), "nobody"),
+        self.assertEqual(td.end_for_handover(self.home, td.discover_profiles(self.home), "nobody"),
                          (True, "Nothing had it open"))
 
     def test_an_idle_chat_in_a_terminal_quits(self):
@@ -821,13 +821,13 @@ class HandoverTests(Fixture):
         self.addCleanup(lambda: (proc.kill(), proc.wait()) if proc.poll() is None else None)
         self.assertEqual(proc.stdout.readline().strip(), "ready")
         w = self.home / ".claude-work"
-        write(w / f"sessions/{proc.pid}.json", session("limited", pid=proc.pid, procStart=cs.proc_start_time(proc.pid)))
+        write(w / f"sessions/{proc.pid}.json", session("limited", pid=proc.pid, procStart=td.proc_start_time(proc.pid)))
         write(w / "projects/-p/limited.jsonl", lines(prompt("go", self.now - 60)))
         # (its parent here reaps it once it quits, as a terminal's shell does)
         reaper = threading.Thread(target=proc.wait)
         reaper.start()
         self.addCleanup(reaper.join, 10)
-        target, there = sharing.give_to(cs.discover_profiles(self.home), "limited", ".claude-personal",
+        target, there = sharing.give_to(td.discover_profiles(self.home), "limited", ".claude-personal",
                                         sharing.store_root(self.home), end_first=True, home=self.home)
         self.assertEqual(proc.wait(timeout=5), -15)
         self.assertIsNotNone(target, there)
@@ -855,12 +855,12 @@ class QueueTests(TaskFixture):
                             "--plan", "calm-red-owl", "--plan-profile", ".claude-work", "--account", "work · Team")
         self.assertTrue(answer["ok"], answer)
         self.assertRegex(answer["message"], r"^Queued: it starts (tomorrow )?at \d\d:\d\d, when the limit resets$")
-        (task,) = cs.queued_tasks(self.cache_root(), int(time.time() * 1000))
+        (task,) = td.queued_tasks(self.cache_root(), int(time.time() * 1000))
         self.assertEqual((task["prompt"], task["plan"], task["planTitle"], task["account"], task["due"]),
                          ("fix it", "calm-red-owl", "Calm plan", "work · Team", False))
-        self.assertTrue(cs.queued_tasks(self.cache_root(), at + 1)[0]["due"])
+        self.assertTrue(td.queued_tasks(self.cache_root(), at + 1)[0]["due"])
         # the status lists it
-        status = cs.collect(self.home, self.cache_root(), with_tokens=False, now=self.now)
+        status = td.collect(self.home, self.cache_root(), with_tokens=False, now=self.now)
         self.assertEqual([t["id"] for t in status["queue"]], [task["id"]])
         # starting it takes it out of the queue: a second copy starts nothing
         self.assertEqual(self.queue("--start-queued", task["id"]), {"ok": True, "message": "Started in the background on work (1a2b3c4d)"})
@@ -868,27 +868,27 @@ class QueueTests(TaskFixture):
         call, = self.calls()
         self.assertEqual(call["argv"][0], "--bg")
         self.assertTrue(call["argv"][1].startswith("fix it\n\nThe plan (saved as"))
-        self.assertEqual(cs.load_queue(self.cache_root()), [])
+        self.assertEqual(td.load_queue(self.cache_root()), [])
 
     def cache_root(self):
-        return cs.cache_dir(self.home)
+        return td.cache_dir(self.home)
 
     def test_a_task_that_fails_to_start_stays_with_the_error(self):
         at = int(time.time() * 1000)
         self.assertTrue(self.queue("--queue", ".claude-work", "--cwd", str(self.folder), "--at", str(at), "--prompt", "go")["ok"])
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         write(self.bin / "claude", f"#!{sys.executable}\nimport sys\nprint('Workspace not trusted.', file=sys.stderr)\nsys.exit(1)\n")
         self.assertEqual(self.queue("--start-queued", task["id"]), {"ok": False, "message": "Workspace not trusted."})
-        (back,) = cs.queued_tasks(self.cache_root(), at + 1)
+        (back,) = td.queued_tasks(self.cache_root(), at + 1)
         self.assertEqual((back["id"], back["error"], back["due"]), (task["id"], "Workspace not trusted.", False))
         self.assertEqual(self.queue("--unqueue", task["id"]), {"ok": True, "message": "Cancelled the queued task"})
-        self.assertEqual(cs.load_queue(self.cache_root()), [])
+        self.assertEqual(td.load_queue(self.cache_root()), [])
 
     def test_a_queued_task_starts_with_its_model_and_effort(self):
         at = str(int(time.time() * 1000))
         self.assertTrue(self.queue("--queue", ".claude-work", "--cwd", str(self.folder), "--at", at, "--prompt", "do it later",
                                    "--model", "opus", "--effort", "xhigh", "--permission-mode", "acceptEdits")["ok"])
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         self.assertEqual((task["model"], task["effort"], task["mode"]), ("opus", "xhigh", "acceptEdits"))
         self.queue("--start-queued", task["id"])
         self.assertEqual(self.calls()[0]["argv"], ["--bg", "--model", "opus", "--effort", "xhigh",
@@ -896,7 +896,7 @@ class QueueTests(TaskFixture):
         # an SSH host's: handed over to the host
         self.assertTrue(self.queue("--queue", ".claude", "--cwd", "/srv/app", "--at", at, "--prompt", "x", "--host", "lab",
                                    "--model", "sonnet", "--effort", "low", "--permission-mode", "plan")["ok"])
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         import remote
         with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": "Started"}) as ask:
             self.queue("--start-queued", task["id"])
@@ -908,12 +908,12 @@ class QueueTests(TaskFixture):
     def test_a_task_whose_account_is_at_its_limit_waits_on(self):
         at = int(time.time() * 1000)
         self.assertTrue(self.queue("--queue", ".claude-work", "--cwd", str(self.folder), "--at", str(at), "--prompt", "go")["ok"])
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         later = at + 3600_000
         answer = self.queue("--requeue", task["id"], "--at", str(later))
         self.assertTrue(answer["ok"])
         self.assertRegex(answer["message"], r"^It waits for the usage limit: it starts (tomorrow )?at \d\d:\d\d$")
-        (back,) = cs.queued_tasks(self.cache_root(), at + 1)
+        (back,) = td.queued_tasks(self.cache_root(), at + 1)
         self.assertEqual((back["id"], back["startAt"], back["due"]), (task["id"], later, False))
         self.assertEqual(self.queue("--requeue", "gone0000", "--at", str(later)), {"ok": True, "message": ""})
         # a weekly limit can reset days later: the day is said too
@@ -926,9 +926,9 @@ class QueueTests(TaskFixture):
                             "--scheduled")
         self.assertTrue(answer["ok"], answer)
         self.assertRegex(answer["message"], r"^Queued: it starts on \w{3} \d\d \w{3} at \d\d:\d\d$")
-        (task,) = cs.queued_tasks(self.cache_root(), int(time.time() * 1000))
+        (task,) = td.queued_tasks(self.cache_root(), int(time.time() * 1000))
         self.assertEqual((task["scheduled"], task["chat"], task["due"]), (True, None, False))
-        self.assertTrue(cs.queued_tasks(self.cache_root(), at)[0]["due"])  # it starts like the others then
+        self.assertTrue(td.queued_tasks(self.cache_root(), at)[0]["due"])  # it starts like the others then
         now = time.mktime(time.localtime()[:3] + (12, 0, 0, 0, 0, -1))  # (noon: an hour later is today)
         self.assertEqual(jump.start_time(int((now + 3600) * 1000), now), "at 13:00")
         self.assertTrue(jump.start_time(int((now + 86400) * 1000), now).startswith("tomorrow at "))
@@ -944,7 +944,7 @@ class QueueTests(TaskFixture):
             self.queue("--queue", ".claude-work", "--cwd", str(self.folder), "--prompt", "x")  # no time
         # an SSH host's task: checked there when it starts
         self.assertTrue(self.queue("--queue", ".claude", "--cwd", "/srv/app", "--at", at, "--prompt", "x", "--host", "lab")["ok"])
-        self.assertEqual(cs.load_queue(self.cache_root())[0]["host"], "lab")
+        self.assertEqual(td.load_queue(self.cache_root())[0]["host"], "lab")
 
 
 FAKE_CLIPBOARD = """#!{python}
@@ -988,7 +988,7 @@ class PictureTests(TaskFixture):
         self.clipboard("wl-paste", ["text/html", "image/bmp", "image/png"])
         first, second = self.paste(), self.paste()
         self.assertTrue(first["ok"], first)
-        folder = cs.images_dir(self.home)
+        folder = td.images_dir(self.home)
         self.assertEqual(Path(first["path"]).parent, folder)
         self.assertRegex(Path(first["path"]).name, r"^\d{8}-\d{6}\.png$")
         self.assertEqual(Path(first["path"]).read_bytes(), self.PNG)
@@ -1000,13 +1000,13 @@ class PictureTests(TaskFixture):
 
     def test_old_pictures_go(self):
         self.clipboard("wl-paste", ["image/jpeg"])
-        old = cs.images_dir(self.home) / "20260101-120000.png"
+        old = td.images_dir(self.home) / "20260101-120000.png"
         write(old, "old")
-        then = time.time() - (cs.IMAGES_KEEP_DAYS + 1) * 86400
+        then = time.time() - (td.IMAGES_KEEP_DAYS + 1) * 86400
         os.utime(old, (then, then))
         answer = self.paste()
         self.assertTrue(answer["path"].endswith(".jpg"), answer)
-        self.assertEqual(list(cs.images_dir(self.home).iterdir()), [Path(answer["path"])])
+        self.assertEqual(list(td.images_dir(self.home).iterdir()), [Path(answer["path"])])
 
     def test_on_x11_with_xclip(self):
         self.clipboard("xclip", ["TARGETS", "image/png"], wayland=False)
@@ -1021,7 +1021,7 @@ class PictureTests(TaskFixture):
         self.assertEqual(self.paste()["message"], "To paste pictures, install wl-clipboard (it has wl-paste)")
         self.clipboard(None, [], wayland=False)
         self.assertEqual(self.paste()["message"], "To paste pictures, install xclip")
-        self.assertFalse(cs.images_dir(self.home).exists())
+        self.assertFalse(td.images_dir(self.home).exists())
 
     def run_jump(self, args):
         out = io.StringIO()
@@ -1039,11 +1039,11 @@ class PictureTests(TaskFixture):
             os.environ.pop("XDG_CACHE_HOME", None)
             shot = self.run_jump(["--screenshot"])
             self.assertTrue(shot["ok"], shot)
-            self.assertEqual(Path(shot["path"]).parent, cs.images_dir(self.home))
+            self.assertEqual(Path(shot["path"]).parent, td.images_dir(self.home))
             self.assertEqual(Path(shot["path"]).read_bytes(), b"PNGDATA")
             with mock.patch.dict(os.environ, {"CANCEL": "1"}):
                 self.assertEqual(self.run_jump(["--screenshot"]), {"ok": False, "message": "No screenshot taken"})
-            self.assertEqual([p.name for p in cs.images_dir(self.home).iterdir()], [Path(shot["path"]).name])
+            self.assertEqual([p.name for p in td.images_dir(self.home).iterdir()], [Path(shot["path"]).name])
         with mock.patch.dict(os.environ, {"PATH": str(tools / "none")}):
             self.assertIn("install Spectacle", self.run_jump(["--screenshot"])["message"])
 
@@ -1055,7 +1055,7 @@ class PictureTests(TaskFixture):
         dropped = self.run_jump(["--attach", str(picture)])
         self.assertTrue(dropped["picture"], dropped)
         self.assertTrue(dropped["path"].endswith(".jpg"))
-        self.assertEqual(Path(dropped["path"]).parent, cs.images_dir(self.home))
+        self.assertEqual(Path(dropped["path"]).parent, td.images_dir(self.home))
         self.assertEqual(Path(dropped["path"]).read_text(), "jpeg data")
         self.assertEqual(self.run_jump(["--attach", str(notes)]), {"ok": True, "message": "", "path": str(notes.resolve()), "picture": False})
         self.assertFalse(self.run_jump(["--attach", str(self.home / "gone.png")])["ok"])
@@ -1089,12 +1089,12 @@ class PictureTests(TaskFixture):
         self.assertTrue(answer["ok"], answer)
         path = Path(answer["path"])
         self.assertEqual((path.parent, path.read_bytes(), stat.S_IMODE(path.stat().st_mode)),
-                         (cs.images_dir(self.home), self.PNG, 0o600))
+                         (td.images_dir(self.home), self.PNG, 0o600))
         self.assertRegex(path.name, r"^\d{8}-\d{6}\.png$")
         self.assertEqual(self.save("image/bmp", "AAAA")["message"], "Claude takes PNG, JPEG, WebP and GIF pictures")
         self.assertEqual(self.save("image/png", "not base64!")["message"], "That isn't a picture")
         self.assertEqual(self.save("image/png", "")["message"], "That isn't a picture")
-        self.assertEqual(len(list(cs.images_dir(self.home).iterdir())), 1)
+        self.assertEqual(len(list(td.images_dir(self.home).iterdir())), 1)
 
     def test_a_chat_whose_task_names_a_picture_can_open_it(self):
         # it's outside the chat's folder: Claude would ask first, so the chat may read that folder
@@ -1114,10 +1114,10 @@ class PictureTests(TaskFixture):
             jump.main(["--new-chat", ".claude-work", "--cwd", str(self.folder), "--prompt", "no picture", "--bg"])
             at = str(int(time.time() * 1000))
             jump.main(["--queue", ".claude-work", "--cwd", str(self.folder), "--at", at, "--prompt", task, "--scheduled"])
-            (queued,) = cs.load_queue(cs.cache_dir(self.home))
+            (queued,) = td.load_queue(td.cache_dir(self.home))
             jump.main(["--start-queued", queued["id"]])
         self.assertTrue(all(json.loads(l)["ok"] for l in out.getvalue().splitlines()), out.getvalue())
-        add_dir = f"--allowedTools=Read(/{cs.images_dir(self.home)}/**)"
+        add_dir = f"--allowedTools=Read(/{td.images_dir(self.home)}/**)"
         terminal, = opened
         self.assertEqual(shlex.split(terminal)[-4:], ["--model", "opus", add_dir, task])
         background, plain, later = (c["argv"] for c in self.calls())
@@ -1143,24 +1143,24 @@ class ContinueAfterResetTests(TaskFixture):
                             "--name", "Fix it", "--account", "work · Team")
         self.assertTrue(answer["ok"], answer)
         self.assertRegex(answer["message"], r"^Queued: it goes on (tomorrow )?at \d\d:\d\d, when the limit resets$")
-        self.assertEqual(cs.kept_chats(self.cache_root()), [], "once: it doesn't keep going")
+        self.assertEqual(td.kept_chats(self.cache_root()), [], "once: it doesn't keep going")
         answer = self.queue("--queue-continue", self.SID, "--profile", ".claude-work", "--at", str(at),
                             "--name", "Fix it", "--account", "work · Team", "--keep")  # (twice: queued once)
         self.assertRegex(answer["message"], r"^Queued: it goes on (tomorrow )?at \d\d:\d\d, when the limit resets, "
                                             r"and after later limits too until it's done$")
-        (task,) = cs.queued_tasks(self.cache_root(), int(time.time() * 1000))
+        (task,) = td.queued_tasks(self.cache_root(), int(time.time() * 1000))
         self.assertEqual((task["chat"], task["name"], task["folder"], task["prompt"], task["account"]),
                          (self.SID, "Fix it", str(self.folder), "", "work · Team"))
         # with --keep, it keeps going from then on (once, however often it was queued)
-        (kept,) = cs.kept_chats(self.cache_root())
+        (kept,) = td.kept_chats(self.cache_root())
         self.assertEqual((kept["chat"], kept["profile"], kept["name"], kept["wentOnAt"]), (self.SID, ".claude-work", "Fix it", None))
         self.assertEqual(self.queue("--start-queued", task["id"]),
                          {"ok": True, "message": "Went on in the background on work (1a2b3c4d)"})
         call, = self.calls()
-        self.assertEqual(call["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])
+        self.assertEqual(call["argv"], ["--bg", "--resume", self.SID, td.CONTINUE_PROMPT])
         self.assertEqual(call["cwd"], str(self.folder))
-        self.assertEqual(cs.load_queue(self.cache_root()), [])
-        self.assertIsNotNone(cs.kept_chats(self.cache_root())[0]["wentOnAt"])  # (when it went on: noted before it did)
+        self.assertEqual(td.load_queue(self.cache_root()), [])
+        self.assertIsNotNone(td.kept_chats(self.cache_root())[0]["wentOnAt"])  # (when it went on: noted before it did)
 
     def test_it_goes_on_in_its_own_permission_mode(self):
         t = self.now - 120
@@ -1168,45 +1168,45 @@ class ContinueAfterResetTests(TaskFixture):
               lines(prompt("fix it", t, cwd=str(self.folder), permissionMode="default"),
                     {"type": "permission-mode", "permissionMode": "auto", "sessionId": self.SID},
                     limit_error("You've hit your session limit", t + 1)))
-        go_on = lambda: cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
+        go_on = lambda: td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
         self.assertTrue(go_on()["ok"])
         self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, "--permission-mode", "auto",
-                                                    cs.CONTINUE_PROMPT])
+                                                    td.CONTINUE_PROMPT])
         # its background session saved that: woken, it keeps it (options would start a copy)
         write(self.home / f".claude-work/jobs/{self.SID[:8]}/state.json",
               {"sessionId": self.SID, "respawnFlags": ["--permission-mode", "auto"]})
         self.assertTrue(go_on()["ok"])
-        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, td.CONTINUE_PROMPT])
 
     def test_it_goes_on_with_its_own_model_and_effort(self):
         # as its status line last named them: its background session saves
         # them, and every later wake goes on with them
         self.stopped_chat()
-        write(cs.cache_dir(self.home) / "statusline/.claude-work" / f"{self.SID}.json",
+        write(td.cache_dir(self.home) / "statusline/.claude-work" / f"{self.SID}.json",
               {"session_id": self.SID, "model": {"id": "claude-opus-5-5", "display_name": "Opus 5.5"},
                "effort": {"level": "xhigh"}})
-        self.assertTrue(cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
+        self.assertTrue(td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
         self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, "--model", "claude-opus-5-5",
-                                                    "--effort", "xhigh", cs.CONTINUE_PROMPT])
-        self.assertEqual(cs.chat_model(self.home, self.profile, "e3de1242-0000-4000-8000-000000000000"), (None, None))
+                                                    "--effort", "xhigh", td.CONTINUE_PROMPT])
+        self.assertEqual(td.chat_model(self.home, self.profile, "e3de1242-0000-4000-8000-000000000000"), (None, None))
 
     def test_a_background_chat_of_it_wakes_with_its_own_options_and_what_they_lack(self):
         # (the options its job saved are Claude's own, rewritten on /model, /effort and a mode
         # change in it: they win; its transcript and status line only add what they lack)
         self.stopped_chat(dict(reply("On it.", self.now - 100), message=dict(reply("On it.", self.now - 100)["message"],
                                                                                  model="claude-opus-5-5")))
-        write(cs.cache_dir(self.home) / "statusline/.claude-work" / f"{self.SID}.json",
+        write(td.cache_dir(self.home) / "statusline/.claude-work" / f"{self.SID}.json",
               {"session_id": self.SID, "model": {"id": "claude-haiku-5-5"}, "effort": {"level": "xhigh"}})
         state = self.home / f".claude-work/jobs/{self.SID[:8]}/state.json"
         write(state, {"sessionId": self.SID, "name": "Fix it", "respawnFlags": ["--permission-mode", "auto", "--effort", "low"]})
-        answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), force=True)
+        answer = td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), force=True)
         self.assertEqual(answer["message"], "Went on in the background on work (Opus 5.5 · low)")
-        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])  # (no copy)
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, td.CONTINUE_PROMPT])  # (no copy)
         self.assertEqual(json.loads(state.read_text()), {"sessionId": self.SID, "name": "Fix it", "respawnFlags": [
             "--permission-mode", "auto", "--effort", "low", "--model", "claude-opus-5-5"]})
         # a record of another shape is left as it is, and the answer says so
         write(state, {"sessionId": self.SID, "respawnFlags": "--model opus"})
-        answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), force=True)
+        answer = td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), force=True)
         self.assertEqual(answer["message"], "Went on in the background on work (1a2b3c4d), "
                                             "with the model and effort Claude saved for it")
         self.assertEqual(json.loads(state.read_text())["respawnFlags"], "--model opus")
@@ -1221,7 +1221,7 @@ class ContinueAfterResetTests(TaskFixture):
                     {"type": "permission-mode", "permissionMode": "auto", "sessionId": self.SID},
                     dict(reply("On it.", t + 1), message=dict(reply("On it.", t + 1)["message"], model="claude-opus-5-5")),
                     limit_error("You've hit your session limit", t + 2)))
-        write(cs.cache_dir(self.home) / "statusline/.claude-work" / f"{self.SID}.json",
+        write(td.cache_dir(self.home) / "statusline/.claude-work" / f"{self.SID}.json",
               {"session_id": self.SID, "model": {"id": "claude-opus-5-5"}, "effort": {"level": "xhigh"}})
         return self.home / f".claude-work/jobs/{self.SID[:8]}/state.json"
 
@@ -1231,9 +1231,9 @@ class ContinueAfterResetTests(TaskFixture):
         # mode and effort; so the go-on adds them to what it saved, then wakes it)
         state = self.mode_and_effort_not_the_accounts()
         write(state, {"sessionId": self.SID, "template": "bg", "respawnFlags": ["--model", "opus"]})
-        answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
+        answer = td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
         self.assertEqual(answer["message"], "Went on in the background on work (Opus · xhigh)")
-        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])  # (woken, no copy)
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, td.CONTINUE_PROMPT])  # (woken, no copy)
         self.assertEqual(json.loads(state.read_text())["respawnFlags"],
                          ["--model", "opus", "--permission-mode", "auto", "--effort", "xhigh"])
 
@@ -1245,31 +1245,31 @@ class ContinueAfterResetTests(TaskFixture):
                       "respawnFlags": ["--permission-mode", "auto", "--model", "claude-opus-5-5", "--effort", "xhigh"]})
         entry = {"sessionId": self.SID, "kind": "bg", "jobId": self.SID[:8], "status": "idle"}
         stops = []
-        with mock.patch.object(cs, "stop_background", side_effect=lambda *a, **k: stops.append(a[1]) or (True, "stopped")), \
-                mock.patch.object(cs, "live_entries_all", side_effect=lambda *_: [] if stops else [(entry, self.profile, self.profile)]), \
-                mock.patch.object(cs, "daemon_holds", return_value=True):  # (still held after the wait)
-            answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), wait=0.3)
+        with mock.patch.object(td, "stop_background", side_effect=lambda *a, **k: stops.append(a[1]) or (True, "stopped")), \
+                mock.patch.object(td, "live_entries_all", side_effect=lambda *_: [] if stops else [(entry, self.profile, self.profile)]), \
+                mock.patch.object(td, "daemon_holds", return_value=True):  # (still held after the wait)
+            answer = td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), wait=0.3)
         self.assertTrue(answer["ok"], answer)
         self.assertEqual(stops, [self.SID[:8]])
         self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, "--permission-mode", "auto",
-                                                    "--model", "claude-opus-5-5", "--effort", "xhigh", cs.CONTINUE_PROMPT])
+                                                    "--model", "claude-opus-5-5", "--effort", "xhigh", td.CONTINUE_PROMPT])
         self.assertEqual(answer["message"], "Went on in the background on work (Opus 5.5 · xhigh)")
         # once it let go, the same job is woken with them (no options, which would start a copy)
         stops.clear()
-        with mock.patch.object(cs, "stop_background", side_effect=lambda *a, **k: stops.append(a[1]) or (True, "stopped")), \
-                mock.patch.object(cs, "live_entries_all", side_effect=lambda *_: [] if stops else [(entry, self.profile, self.profile)]), \
-                mock.patch.object(cs, "daemon_holds", return_value=False):
-            self.assertTrue(cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
-        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])
+        with mock.patch.object(td, "stop_background", side_effect=lambda *a, **k: stops.append(a[1]) or (True, "stopped")), \
+                mock.patch.object(td, "live_entries_all", side_effect=lambda *_: [] if stops else [(entry, self.profile, self.profile)]), \
+                mock.patch.object(td, "daemon_holds", return_value=False):
+            self.assertTrue(td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, td.CONTINUE_PROMPT])
 
     def test_another_chats_job_under_its_short_id_means_a_copy_with_its_options(self):
         # (Claude starts a copy then, whatever is given: it saves these)
         self.mode_and_effort_not_the_accounts()
         write(self.home / f".claude-work/jobs/{self.SID[:8]}/state.json",
               {"sessionId": self.SID[:8] + "-0000-4000-8000-000000000000", "respawnFlags": ["--model", "sonnet"]})
-        self.assertTrue(cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
+        self.assertTrue(td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
         self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, "--permission-mode", "auto",
-                                                    "--model", "claude-opus-5-5", "--effort", "xhigh", cs.CONTINUE_PROMPT])
+                                                    "--model", "claude-opus-5-5", "--effort", "xhigh", td.CONTINUE_PROMPT])
 
     def test_the_answer_says_when_claude_started_a_copy_after_all(self):
         state = self.mode_and_effort_not_the_accounts()
@@ -1278,7 +1278,7 @@ class ContinueAfterResetTests(TaskFixture):
         write(self.bin / "claude", FAKE_CLAUDE.format(python=sys.executable, log=str(self.log)) + (
             "sys.stderr.write('note: session e3de1242 is already running in the background, so this started a copy '\n"
             "                 'as 1a2b3c4d. `claude attach e3de1242` opens the original.\\n')\n"))
-        answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
+        answer = td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
         self.assertEqual(answer["message"], "Went on in the background on work (Opus 5.5 · xhigh), as a copy (1a2b3c4d)")
 
 
@@ -1291,17 +1291,17 @@ class ContinueAfterResetTests(TaskFixture):
               lines(prompt("fix it", t, cwd=str(self.folder), permissionMode="acceptEdits"), *[big] * 4,
                     reply("Fixed.", t + 4), prompt("and the tests", t + 5, cwd=str(self.folder)),
                     limit_error("You've hit your session limit", t + 6)))
-        self.assertIsNone(cs.chat_peek(self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl")["mode"])
-        self.assertTrue(cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
+        self.assertIsNone(td.chat_peek(self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl")["mode"])
+        self.assertTrue(td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
         self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, "--permission-mode", "acceptEdits",
-                                                    cs.CONTINUE_PROMPT])
+                                                    td.CONTINUE_PROMPT])
 
     def test_a_message_naming_a_picture_can_open_it(self):
         # (a reply from the chat pane with a pasted picture, going on in the background)
         self.stopped_chat()
-        picture = cs.images_dir(self.home) / "20261026-101500.png"
+        picture = td.images_dir(self.home) / "20261026-101500.png"
         text = f"And this? [Image: {picture}]"
-        go_on = lambda: cs.continue_chat(self.home, [], ".claude-work", self.SID, None, text, str(self.bin / "claude"), force=True)
+        go_on = lambda: td.continue_chat(self.home, [], ".claude-work", self.SID, None, text, str(self.bin / "claude"), force=True)
         self.assertTrue(go_on()["ok"])
         self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, f"--allowedTools=Read(/{picture.parent}/**)", text])
         # a background session of it wakes with the options it saved (any here would start a copy)
@@ -1314,27 +1314,27 @@ class ContinueAfterResetTests(TaskFixture):
         write(self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl",
               lines(prompt("fix it", t, cwd=str(self.folder), permissionMode="bypassPermissions"),
                     limit_error("You've hit your session limit", t + 1)))
-        self.assertTrue(cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
-        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])
+        self.assertTrue(td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))["ok"])
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, td.CONTINUE_PROMPT])
 
     def test_a_chat_that_went_on_already_is_left_alone(self):
         self.stopped_chat(reply("Done.", self.now - 10))
         at = int(time.time() * 1000)
         self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude-work", "--at", str(at),
                                    "--prompt", "go on with step 2")["ok"])
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         self.assertEqual(self.queue("--start-queued", task["id"]), {"ok": True, "message": ""})
-        self.assertEqual((self.calls(), cs.load_queue(self.cache_root())), ([], []))
+        self.assertEqual((self.calls(), td.load_queue(self.cache_root())), ([], []))
 
     def test_a_session_that_still_has_it_open_is_stopped_first(self):
         # (with no background service to take the go-on in: see BackgroundServiceTests)
         self.stopped_chat()
         stops = []
         entry = {"sessionId": self.SID, "kind": "bg", "jobId": "e3de1242", "status": "idle"}
-        with mock.patch.object(cs, "stop_background", side_effect=lambda *a, **k: stops.append(a[1]) or (True, "stopped")), \
-                mock.patch.object(cs, "live_entries_all",
+        with mock.patch.object(td, "stop_background", side_effect=lambda *a, **k: stops.append(a[1]) or (True, "stopped")), \
+                mock.patch.object(td, "live_entries_all",
                                   side_effect=lambda profiles: [] if stops else [(entry, self.profile, self.profile)]):
-            answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
+            answer = td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"))
         self.assertTrue(answer["ok"], answer)
         self.assertEqual(stops, ["e3de1242"])
         self.assertEqual(self.calls()[0]["argv"][:3], ["--bg", "--resume", self.SID])
@@ -1353,9 +1353,9 @@ class ContinueAfterResetTests(TaskFixture):
         # (kept here, with its host: KeepGoingOnHostsTests)
         self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude", "--at", at, "--cwd", "/srv/app",
                                    "--host", "lab", "--name", "Fix it", "--keep")["ok"])
-        self.assertEqual([(k["chat"], k["host"], k["profile"], k["wentOnAt"]) for k in cs.load_keep(self.cache_root())["chats"]],
+        self.assertEqual([(k["chat"], k["host"], k["profile"], k["wentOnAt"]) for k in td.load_keep(self.cache_root())["chats"]],
                          [(self.SID, "lab", ".claude", None)])
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         import remote
         with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": "Went on in the background on work (1a2b3c4d)"}) as ask:
             self.assertEqual(self.queue("--start-queued", task["id"])["message"], "Went on in the background on work (1a2b3c4d)")
@@ -1363,7 +1363,7 @@ class ContinueAfterResetTests(TaskFixture):
         self.assertEqual(args[:6], ["--continue-chat", self.SID, "--profile", ".claude", "--folder", "/srv/app"])
         self.assertEqual(args[6:7], ["--ends-at"])  # (its background commands are waited for until then: GoOnWaitsTests)
         self.assertNotIn("--force", args)  # (only a try again goes on whatever its newest turn)
-        (k,) = cs.load_keep(self.cache_root())["chats"]
+        (k,) = td.load_keep(self.cache_root())["chats"]
         self.assertIsNotNone(k["wentOnAt"])  # (noted before it went on, as this computer's)
 
     def test_queue_in_a_folder_picked_in_the_dialog(self):
@@ -1372,12 +1372,12 @@ class ContinueAfterResetTests(TaskFixture):
                 mock.patch.object(jump, "claude_in_terminal", return_value="claude"):
             answer = self.queue("--queue", ".claude-work", "--choose-folder", "--at", at, "--prompt", "fix it")
         self.assertTrue(answer["ok"], answer)
-        self.assertEqual(cs.load_queue(self.cache_root())[0]["folder"], str(self.folder))
+        self.assertEqual(td.load_queue(self.cache_root())[0]["folder"], str(self.folder))
         with mock.patch.object(jump, "choose_folder", return_value=(None, "")), \
                 mock.patch.object(jump, "claude_in_terminal", return_value="claude"):
             self.assertEqual(self.queue("--queue", ".claude-work", "--choose-folder", "--at", at, "--prompt", "x"),
                              {"ok": True, "message": ""})  # (cancelled)
-        self.assertEqual(len(cs.load_queue(self.cache_root())), 1)
+        self.assertEqual(len(td.load_queue(self.cache_root())), 1)
 
 
 def api_error(text, ts):
@@ -1418,13 +1418,13 @@ class MovedChatTests(TaskFixture):
         os.utime(self.project / f"{self.OLD}.jsonl", (t + 2, t + 2))
 
     def status(self):
-        return cs.collect(self.home, self.cache_root(), with_tokens=False, now=self.now)
+        return td.collect(self.home, self.cache_root(), with_tokens=False, now=self.now)
 
     def rows(self, status):
         return [s for g in status["groups"] for s in g["sessions"]]
 
     def test_a_moved_transcript_names_the_chat_it_continues_read_once(self):
-        links = cs.LinkCache(self.cache_root() / "links.json")
+        links = td.LinkCache(self.cache_root() / "links.json")
         new, old = self.project / f"{self.NEW}.jsonl", self.project / f"{self.OLD}.jsonl"
         self.assertEqual((links.moved_from(new), links.moved_from(old)), (self.OLD, ""))
         # its own entries after the copy: still the chat it moved from, and what's added isn't read
@@ -1432,7 +1432,7 @@ class MovedChatTests(TaskFixture):
             f.write(json.dumps({"type": "attachment", "sessionId": self.NEW, "session_id": self.NEW}) + "\n")
         self.assertEqual(links.moved_from(new), self.OLD)
         links.save()
-        again = cs.LinkCache(self.cache_root() / "links.json")
+        again = td.LinkCache(self.cache_root() / "links.json")
         with open(new, "a") as f:
             f.write(json.dumps({"type": "attachment", "sessionId": self.NEW, "session_id": self.OLD}) + "\n")
         with mock.patch("builtins.open", side_effect=AssertionError("read again")):
@@ -1468,19 +1468,19 @@ class MovedChatTests(TaskFixture):
             {"type": "attachment", "uuid": "g2", "sessionId": gone, "session_id": gone}))
         self.assertEqual(links.moved_from(self.project / f"{gone}.jsonl"), "0ff0ff00-0000-4000-8000-000000000005")
         cs_moves = {self.OLD: self.NEW, self.NEW: newer}
-        self.assertEqual(cs.moved_chat(self.OLD, cs_moves), newer)
-        self.assertEqual(cs.moved_chat(newer, {newer: self.OLD, self.OLD: newer}), self.OLD)  # (no loop)
+        self.assertEqual(td.moved_chat(self.OLD, cs_moves), newer)
+        self.assertEqual(td.moved_chat(newer, {newer: self.OLD, self.OLD: newer}), self.OLD)  # (no loop)
 
     def test_the_go_on_goes_on_with_the_new_id_never_the_old(self):
-        cs.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
+        td.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
         at = int(time.time() * 1000) - 1000
         self.assertTrue(self.queue("--queue-continue", self.OLD, "--profile", ".claude-work", "--at", str(at),
                                    "--name", "talpy-den-64")["ok"])
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         answer = self.queue("--start-queued", task["id"])
         self.assertEqual(answer, {"ok": True, "message": "Went on in the background on work (1a2b3c4d)"})
-        self.assertEqual(self.calls()[0]["argv"], ["--bg", "--resume", self.NEW, cs.CONTINUE_PROMPT])
-        (kept,) = cs.kept_chats(self.cache_root())
+        self.assertEqual(self.calls()[0]["argv"], ["--bg", "--resume", self.NEW, td.CONTINUE_PROMPT])
+        (kept,) = td.kept_chats(self.cache_root())
         self.assertEqual(kept["chat"], self.NEW)
         self.assertIsNotNone(kept["wentOnAt"])
 
@@ -1488,7 +1488,7 @@ class MovedChatTests(TaskFixture):
         write(self.home / ".claude-work/sessions/50.json", session(self.NEW, kind="bg", status="busy", cwd=str(self.folder)))
         write(self.project / f"{self.NEW}.jsonl", (self.project / f"{self.NEW}.jsonl").read_text()
               + lines(prompt("continue", self.now - 60, sessionId=self.NEW, uuid="u3")))
-        answer = cs.continue_chat(self.home, [], ".claude-work", self.OLD, None, "", str(self.bin / "claude"), force=True)
+        answer = td.continue_chat(self.home, [], ".claude-work", self.OLD, None, "", str(self.bin / "claude"), force=True)
         self.assertEqual(answer, {"ok": True, "message": ""})
         self.assertEqual(self.calls(), [])
 
@@ -1502,7 +1502,7 @@ class MovedChatTests(TaskFixture):
         write(new_job, {"sessionId": self.NEW, "respawnFlags": ["--permission-mode", "auto", "--model", "fable"]})
         write(self.home / ".claude-work/sessions/50.json",
               session(self.OLD, kind="bg", status="idle", jobId=self.OLD[:8], cwd=str(self.folder)))
-        with mock.patch.object(cs, "stop_background") as stopped:
+        with mock.patch.object(td, "stop_background") as stopped:
             answer = chatpick.set_options(self.home, [], ".claude-work", self.OLD, model="opus",
                                           claude=str(self.bin / "claude"), wait=1)
         self.assertEqual((answer["ok"], answer["how"]), (True, "next"), answer)
@@ -1518,7 +1518,7 @@ class MovedChatTests(TaskFixture):
               {"sessionId": self.OLD, "state": "done", "tempo": "idle", "updatedAt": iso(self.now - 600)})
         entry = self.home / ".claude-work/sessions/50.json"
         old_rows = lambda: [s["sessionId"] for s in self.rows(self.status()) if s["sessionId"] == self.OLD]
-        with mock.patch.object(cs, "attach_clients", return_value=[]):
+        with mock.patch.object(td, "attach_clients", return_value=[]):
             write(entry, session(self.OLD, kind="bg", status="idle", jobId=self.OLD[:8], cwd=str(self.folder)))
             self.assertEqual(old_rows(), [])
             self.assertIn(self.OLD, self.status()["moved"])   # (a window on it follows the move)
@@ -1526,13 +1526,13 @@ class MovedChatTests(TaskFixture):
             write(entry, session(self.OLD, kind="bg", status="busy", jobId=self.OLD[:8], cwd=str(self.folder)))
             self.assertEqual(old_rows(), [self.OLD])
             write(entry, session(self.OLD, kind="bg", status="idle", jobId=self.OLD[:8], cwd=str(self.folder)))
-            with mock.patch.object(cs, "attached_in", return_value={"in": "terminal", "app": "Konsole"}):
+            with mock.patch.object(td, "attached_in", return_value={"in": "terminal", "app": "Konsole"}):
                 self.assertEqual(old_rows(), [self.OLD])
 
     def test_its_row_star_bookmarks_keep_and_queued_go_on_follow_it(self):
-        cs.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
-        cs.change_stars(self.cache_root(), "chats", self.OLD)
-        cs.change_bookmark(self.cache_root(), self.OLD, "", "u1", True, "you", 1000, "fix it")  # (a key the copy keeps)
+        td.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
+        td.change_stars(self.cache_root(), "chats", self.OLD)
+        td.change_bookmark(self.cache_root(), self.OLD, "", "u1", True, "you", 1000, "fix it")  # (a key the copy keeps)
         at = int(time.time() * 1000) + 3600_000
         self.assertTrue(self.queue("--queue-continue", self.OLD, "--profile", ".claude-work", "--at", str(at),
                                    "--name", "talpy-den-64")["ok"])
@@ -1544,41 +1544,41 @@ class MovedChatTests(TaskFixture):
         self.assertEqual(row["stopped"]["kind"], "limit")
         self.assertTrue(row["starred"])
         self.assertNotIn(self.OLD, [r["sessionId"] for g in status["groups"] for r in g["recent"]])
-        self.assertEqual(cs.starred_of(cs.load_stars(self.cache_root()))["chats"], {self.NEW})
+        self.assertEqual(td.starred_of(td.load_stars(self.cache_root()))["chats"], {self.NEW})
         # its bookmarks, in the same check: a window that follows it to the new id finds them there
-        self.assertEqual([m["key"] for m in cs.load_bookmarks(self.cache_root(), self.NEW)[0]], ["u1"])
-        self.assertEqual(cs.load_bookmarks(self.cache_root(), self.OLD), ([], 0))
+        self.assertEqual([m["key"] for m in td.load_bookmarks(self.cache_root(), self.NEW)[0]], ["u1"])
+        self.assertEqual(td.load_bookmarks(self.cache_root(), self.OLD), ([], 0))
         # the keep engine moves keep.json and the queue over, named as it's called now
-        cs.look_after_kept(self.home, self.cache_root(), [], status["groups"], int(self.now * 1000), 0, status["moved"])
-        (kept,) = cs.kept_chats(self.cache_root())
+        td.look_after_kept(self.home, self.cache_root(), [], status["groups"], int(self.now * 1000), 0, status["moved"])
+        (kept,) = td.kept_chats(self.cache_root())
         self.assertEqual((kept["chat"], kept["name"]), (self.NEW, "shared creature code tug"))
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         self.assertEqual((task["chat"], task["name"]), (self.NEW, "shared creature code tug"))
 
     def test_its_row_says_it_moved_and_a_hide_follows_it(self):
         # (its background job's start is when it moved)
         write(self.home / f".claude-work/jobs/{self.NEW[:8]}/state.json",
               {"sessionId": self.NEW, "createdAt": "2026-11-01T15:01:12.738Z", "template": "bg"})
-        cs.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
+        td.keep_chat(self.cache_root(), ".claude-work", self.OLD, "talpy-den-64", str(self.folder))
         (row,) = [s for s in self.rows(self.status()) if s["chatId"] == self.NEW]
-        self.assertEqual(row["movedFrom"], {"id": self.OLD, "at": cs.to_ms("2026-11-01T15:01:12.738Z")})
+        self.assertEqual(row["movedFrom"], {"id": self.OLD, "at": td.to_ms("2026-11-01T15:01:12.738Z")})
         # the same on an SSH host or in a container (its status: talpy_den.py --remote there)
         out = io.StringIO()
-        with contextlib.redirect_stdout(out), mock.patch.object(cs.Path, "home", return_value=self.home), \
-                mock.patch.object(cs, "cache_dir", return_value=self.cache_root()):
-            cs.main(["--remote"])
-        there = json.loads(out.getvalue().split(cs.REMOTE_MARK)[1])
+        with contextlib.redirect_stdout(out), mock.patch.object(td.Path, "home", return_value=self.home), \
+                mock.patch.object(td, "cache_dir", return_value=self.cache_root()):
+            td.main(["--remote"])
+        there = json.loads(out.getvalue().split(td.REMOTE_MARK)[1])
         self.assertEqual([s["movedFrom"]["id"] for g in there["groups"] for s in g["sessions"] if s.get("movedFrom")], [self.OLD])
         # a chat you hid stays hidden under its new id (and the old one is forgotten)
         hid = int(self.now * 1000) - 60_000
-        cs.change_dismissed(self.cache_root(), add=self.OLD, now_ms=hid)
+        td.change_dismissed(self.cache_root(), add=self.OLD, now_ms=hid)
         status = self.status()
-        self.assertEqual(cs.load_dismissed(self.cache_root()), {self.NEW: hid})
+        self.assertEqual(td.load_dismissed(self.cache_root()), {self.NEW: hid})
         self.assertEqual([s for s in self.rows(status) if self.NEW in (s["sessionId"], s["chatId"])], [])
         self.assertEqual(status["dismissed"], 1)
 
     def test_search_finds_it_once_under_its_new_id(self):
-        found = cs.find_chats(self.home, self.cache_root(), [], "app")
+        found = td.find_chats(self.home, self.cache_root(), [], "app")
         self.assertEqual([c["sessionId"] for c in found["results"]], [self.NEW])
 
     def test_deleting_it_takes_what_it_was_before_along(self):
@@ -1601,10 +1601,10 @@ class KeptChatListedTests(TaskFixture):
 
     def test_listed_while_kept_with_its_limit(self):
         self.stopped_chat()
-        status = lambda: cs.collect(self.home, self.cache_root(), with_tokens=False, now=self.now)
+        status = lambda: td.collect(self.home, self.cache_root(), with_tokens=False, now=self.now)
         listed = lambda st: [s for g in st["groups"] for s in g["sessions"] if s["chatId"] == self.SID]
         self.assertEqual(listed(status()), [], "not kept: a closed chat is a recent one")
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
         (row,) = listed(status())
         self.assertEqual((row["key"], row["kind"], row["pid"], row["state"], row["cwd"]),
                          (f".claude-work/{self.SID}/chat", "chat", None, "done", str(self.folder)))
@@ -1616,7 +1616,7 @@ class KeptChatListedTests(TaskFixture):
         self.assertIsNotNone(row["pid"])
         # Keep going off: a recent chat again
         (self.home / ".claude-work/sessions/50.json").unlink()
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, on=False)
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, on=False)
         self.assertEqual(listed(status()), [])
 
 
@@ -1641,7 +1641,7 @@ class GoOnWaitsTests(TaskFixture):
                 {"id": "b0", "kind": "shell", "label": "ls", "startedAt": 1, "doneAt": 2},
                 {"id": "a1", "kind": "agent", "label": "Look around", "startedAt": 1}]})
         self.at = int(time.time() * 1000) - 1000
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
         self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude-work", "--at", str(self.at),
                                    "--name", "Fix it")["ok"])
 
@@ -1650,7 +1650,7 @@ class GoOnWaitsTests(TaskFixture):
         return path.read_text().splitlines() if path.exists() else []
 
     def test_it_waits_for_its_background_commands_then_ends_them(self):
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         answer = self.queue("--start-queued", task["id"])
         self.assertRegex(answer["waits"], r"^Waits for its background command “python3 -m http.server 8000” to finish "
                                           r"before it goes on; (tomorrow )?at \d\d:\d\d it ends it$")
@@ -1658,15 +1658,15 @@ class GoOnWaitsTests(TaskFixture):
         self.assertEqual(answer["message"], "“Fix it” w" + answer["waits"][1:])
         self.assertEqual(self.calls(), [], "it didn't go on")
         # back in the queue, tried again in a minute, with no error: from its own time, the deadline
-        (back,) = cs.queued_tasks(self.cache_root(), int(time.time() * 1000))
+        (back,) = td.queued_tasks(self.cache_root(), int(time.time() * 1000))
         self.assertEqual((back["id"], back["error"], back["waits"], back["dueAt"], back["due"]),
                          (task["id"], "", answer["waits"], self.at, False))
         self.assertAlmostEqual(back["startAt"], time.time() * 1000 + 60_000, delta=5000)
         # not a go-on that didn't take: the keep engine waits with it, and doesn't queue it twice
-        self.assertIsNone(cs.kept_chats(self.cache_root())[0]["wentOnAt"])
-        later = int(time.time() * 1000) + cs.KEEP_TAKE_MS + 60_000
-        cs.look_after_kept(self.home, self.cache_root(), [], [{"profileKeys": [".claude-work"], "sessions": []}], later)
-        self.assertEqual([t["id"] for t in cs.load_queue(self.cache_root())], [task["id"]])
+        self.assertIsNone(td.kept_chats(self.cache_root())[0]["wentOnAt"])
+        later = int(time.time() * 1000) + td.KEEP_TAKE_MS + 60_000
+        td.look_after_kept(self.home, self.cache_root(), [], [{"profileKeys": [".claude-work"], "sessions": []}], later)
+        self.assertEqual([t["id"] for t in td.load_queue(self.cache_root())], [task["id"]])
         # said and logged once
         (line,) = self.log_lines()
         self.assertRegex(line, r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d  “Fix it” waits for its background command “python3 -m "
@@ -1675,30 +1675,30 @@ class GoOnWaitsTests(TaskFixture):
         self.assertEqual((again["ok"], again["notify"], again["waits"]), (True, False, answer["waits"]))
         self.assertEqual(len(self.log_lines()), 1)
         # its time + GO_ON_WAIT_MS: it ends them and goes on, and says what it ended
-        (back,) = cs.load_queue(self.cache_root())
-        cs.change_queue(self.cache_root(), put_back=dict(back, dueAt=self.at - cs.GO_ON_WAIT_MS))
+        (back,) = td.load_queue(self.cache_root())
+        td.change_queue(self.cache_root(), put_back=dict(back, dueAt=self.at - td.GO_ON_WAIT_MS))
         ended = []
 
         def end(home, entry, profile, claude=None):
             ended.append((entry["jobId"], profile.key))
             self.session_file.unlink()  # (its session quit)
             return True, "Stopped"
-        with mock.patch.object(cs, "end_background_work", side_effect=end):
+        with mock.patch.object(td, "end_background_work", side_effect=end):
             answer = self.queue("--start-queued", task["id"])
         self.assertEqual(ended, [(self.SID[:8], ".claude-work")])
         self.assertEqual(answer, {"ok": True, "message": "“Fix it” ended its background command “python3 -m http.server 8000” "
                                                          "and went on in the background on work (1a2b3c4d)",
                                   "ended": ["python3 -m http.server 8000"], "notify": True})
-        self.assertEqual(self.calls()[0]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])
-        self.assertEqual(cs.load_queue(self.cache_root()), [])
-        self.assertIsNotNone(cs.kept_chats(self.cache_root())[0]["wentOnAt"])
+        self.assertEqual(self.calls()[0]["argv"], ["--bg", "--resume", self.SID, td.CONTINUE_PROMPT])
+        self.assertEqual(td.load_queue(self.cache_root()), [])
+        self.assertIsNotNone(td.kept_chats(self.cache_root())[0]["wentOnAt"])
         self.assertEqual(len(self.log_lines()), 2)
         self.assertTrue(self.log_lines()[1].endswith(answer["message"]))
 
     def test_start_it_now_ends_what_it_waits_for_at_once_and_says_so(self):
         # "yes end it and say that" (2026-11-01): Start it now on a go-on
         # that waits for its chat's background commands doesn't wait on
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         self.assertTrue(self.queue("--start-queued", task["id"])["waits"])
         ended = []
 
@@ -1706,19 +1706,19 @@ class GoOnWaitsTests(TaskFixture):
             ended.append(entry["jobId"])
             self.session_file.unlink()
             return True, "Stopped"
-        with mock.patch.object(cs, "end_background_work", side_effect=end):
+        with mock.patch.object(td, "end_background_work", side_effect=end):
             answer = self.queue("--start-queued", task["id"], "--now")
         self.assertEqual(ended, [self.SID[:8]])
         self.assertEqual(answer, {"ok": True, "message": "“Fix it” started now: it ended its background command "
                                                          "“python3 -m http.server 8000” and went on in the background on "
                                                          "work (1a2b3c4d)",
                                   "ended": ["python3 -m http.server 8000"], "notify": True})
-        self.assertEqual(cs.load_queue(self.cache_root()), [])
+        self.assertEqual(td.load_queue(self.cache_root()), [])
         self.assertTrue(self.log_lines()[-1].endswith(answer["message"]))
         # an SSH host's: it asks the host to end them at once (its clock may be behind)
         self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude", "--at", str(self.at), "--cwd",
                                    "/srv/app", "--host", "lab", "--name", "Lab chat")["ok"])
-        (lab,) = cs.load_queue(self.cache_root())
+        (lab,) = td.load_queue(self.cache_root())
         import remote
         with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": "Went on"}) as ask:
             self.queue("--start-queued", lab["id"], "--now")
@@ -1736,41 +1736,41 @@ class GoOnWaitsTests(TaskFixture):
 
     def test_a_go_on_with_nothing_in_the_background_is_as_ever(self):
         self.session_file.unlink()
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         self.assertEqual(self.queue("--start-queued", task["id"]),
                          {"ok": True, "message": "Went on in the background on work (1a2b3c4d)"})
         self.assertEqual(self.log_lines(), [])
         # one that went on by itself already isn't a go-on that didn't take either
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
         self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude-work", "--at", str(self.at))["ok"])
         self.stopped_chat(prompt("go on", self.now - 30), reply("Done.", self.now - 20, msg_id="m2"))
-        (task,) = cs.load_queue(self.cache_root())
-        went = cs.kept_chats(self.cache_root())[0]["wentOnAt"]
+        (task,) = td.load_queue(self.cache_root())
+        went = td.kept_chats(self.cache_root())[0]["wentOnAt"]
         self.assertEqual(self.queue("--start-queued", task["id"]), {"ok": True, "message": ""})
-        self.assertEqual(cs.kept_chats(self.cache_root())[0]["wentOnAt"], went)
+        self.assertEqual(td.kept_chats(self.cache_root())[0]["wentOnAt"], went)
 
     def test_a_chat_at_work_without_a_limit_stop_and_a_wait_for_the_limit(self):
         # (not stopped by a limit: at work, it stays where it is, as before)
         write(self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl",
               lines(prompt("fix it", self.now - 60, cwd=str(self.folder))))
-        answer = cs.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), force=True,
+        answer = td.continue_chat(self.home, [], ".claude-work", self.SID, None, "", str(self.bin / "claude"), force=True,
                                   ends_at=int(time.time() * 1000) + 60_000)
         self.assertEqual(answer, {"ok": False, "message": "It's at work again, so it stays where it is"})
         # a go-on that waited, then waits for the usage limit: it waits afresh from its new time
         self.stopped_chat()
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         self.assertTrue(self.queue("--start-queued", task["id"])["waits"])
         later = int(time.time() * 1000) + 3600_000
         self.assertTrue(self.queue("--requeue", task["id"], "--at", str(later))["ok"])
-        (back,) = cs.load_queue(self.cache_root())
+        (back,) = td.load_queue(self.cache_root())
         self.assertEqual((back["startAt"], "dueAt" in back, "waits" in back), (later, False, False))
 
     def test_an_ssh_hosts_go_on_waits_there(self):
         self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude", "--at", str(self.at), "--cwd",
                                    "/srv/app", "--host", "lab", "--name", "Lab chat")["ok"])
-        task = next(t for t in cs.load_queue(self.cache_root()) if t["host"] == "lab")
+        task = next(t for t in td.load_queue(self.cache_root()) if t["host"] == "lab")
         import remote
-        ends = self.at + cs.GO_ON_WAIT_MS
+        ends = self.at + td.GO_ON_WAIT_MS
         with mock.patch.object(remote, "host_answer", return_value={
                 "ok": False, "message": "", "waits": True, "commands": ["npm run dev", "tail -f log"], "endsAt": ends}) as ask:
             answer = self.queue("--start-queued", task["id"])
@@ -1780,15 +1780,15 @@ class GoOnWaitsTests(TaskFixture):
                                             r"to finish before it goes on; (tomorrow )?at \d\d:\d\d it ends them$")
         self.assertTrue(answer["notify"])
         self.assertTrue(self.log_lines()[0].endswith(" · lab"))
-        back = next(t for t in cs.load_queue(self.cache_root()) if t["host"] == "lab")
+        back = next(t for t in td.load_queue(self.cache_root()) if t["host"] == "lab")
         self.assertEqual((back["error"], back["dueAt"]), ("", self.at))
         # there: --ends-at reaches continue_chat
         mask = os.umask(0o022)
         os.umask(mask)
         self.addCleanup(os.umask, mask)
-        with mock.patch.object(cs, "continue_chat", return_value={"ok": True, "message": ""}) as go_on, \
-                mock.patch.object(cs.Path, "home", return_value=self.home), contextlib.redirect_stdout(io.StringIO()):
-            cs.main(["--continue-chat", self.SID, "--profile", ".claude", "--ends-at", "123"])
+        with mock.patch.object(td, "continue_chat", return_value={"ok": True, "message": ""}) as go_on, \
+                mock.patch.object(td.Path, "home", return_value=self.home), contextlib.redirect_stdout(io.StringIO()):
+            td.main(["--continue-chat", self.SID, "--profile", ".claude", "--ends-at", "123"])
         self.assertEqual(go_on.call_args[1]["ends_at"], 123)
 
     def test_its_commands_named_and_ended(self):
@@ -1804,27 +1804,27 @@ class GoOnWaitsTests(TaskFixture):
         reaper = threading.Thread(target=proc.wait)
         reaper.start()
         self.addCleanup(reaper.join, 10)
-        entry = session(self.SID, pid=proc.pid, procStart=cs.proc_start_time(proc.pid), kind="bg", status="busy",
+        entry = session(self.SID, pid=proc.pid, procStart=td.proc_start_time(proc.pid), kind="bg", status="busy",
                         jobId="nojob")
         deadline = time.time() + 5
-        while not cs.background_commands(entry, self.profile) and time.time() < deadline:
+        while not td.background_commands(entry, self.profile) and time.time() < deadline:
             time.sleep(0.05)
-        self.assertEqual(cs.background_commands(entry, self.profile), ["sleep 30 && echo 'done'"])
-        tree = cs.process_tree(proc.pid)
+        self.assertEqual(td.background_commands(entry, self.profile), ["sleep 30 && echo 'done'"])
+        tree = td.process_tree(proc.pid)
         self.assertTrue(tree)
 
         def stop(profile, job_id, job=None, home=None, claude=None):  # (claude stop: its process quits, not its shells)
             os.kill(proc.pid, 15)
             return True, "Stopped"
-        with mock.patch.object(cs, "stop_background", side_effect=stop):
-            self.assertEqual(cs.end_background_work(self.home, entry, self.profile), (True, "Stopped"))
-        self.assertTrue(all(cs.process_gone({"pid": p, "procStart": s}) for p, s in tree), "its leftovers ended")
-        self.assertIsNone(cs.claude_shell_command(["bash", "-c", "npm test"]))
+        with mock.patch.object(td, "stop_background", side_effect=stop):
+            self.assertEqual(td.end_background_work(self.home, entry, self.profile), (True, "Stopped"))
+        self.assertTrue(all(td.process_gone({"pid": p, "procStart": s}) for p, s in tree), "its leftovers ended")
+        self.assertIsNone(td.claude_shell_command(["bash", "-c", "npm test"]))
 
 
 class FakeService:
     """Claude's background service for a profile, as Talpy Den asks it: a
-    Unix socket at its place (cs.DAEMON_TMP, patched to a folder of the
+    Unix socket at its place (td.DAEMON_TMP, patched to a folder of the
     test's), one JSON line in, answer(request) as one JSON line out; the
     requests are kept. Its key is daemon/control.key in the profile."""
 
@@ -1836,12 +1836,12 @@ class FakeService:
         root = Path(tempfile.mkdtemp(prefix="td-", dir="/tmp"))  # (a socket's path: at most 107 bytes)
         test.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
         value = str(profile.path)
-        patches = [mock.patch.object(cs, "DAEMON_TMP", root), mock.patch.object(cs, "DAEMON_RETRY_GAP", 0),
-                   mock.patch.object(cs, "service_config_dir", side_effect=lambda p: value if p.path == profile.path else None)]
+        patches = [mock.patch.object(td, "DAEMON_TMP", root), mock.patch.object(td, "DAEMON_RETRY_GAP", 0),
+                   mock.patch.object(td, "service_config_dir", side_effect=lambda p: value if p.path == profile.path else None)]
         for p in patches:
             p.start()
             test.addCleanup(p.stop)
-        self.path = cs.daemon_socket(profile)
+        self.path = td.daemon_socket(profile)
         self.path.parent.mkdir(parents=True)
         write(profile.path / "daemon/control.key", self.KEY + "\n")
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -1902,22 +1902,22 @@ class BackgroundServiceTests(TaskFixture):
         return {"ok": True, "op": request["op"], "alive": True, "present": True, "ready": True}
 
     def go_on(self, **kw):
-        return cs.continue_chat(self.home, [], ".claude-work", self.SID, None, kw.pop("text", ""), str(self.bin / "claude"),
+        return td.continue_chat(self.home, [], ".claude-work", self.SID, None, kw.pop("text", ""), str(self.bin / "claude"),
                                 **kw)
 
     def test_its_session_takes_the_go_on_in_and_isnt_stopped(self):
         service = FakeService(self, self.profile, self.takes_it)
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
         self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude-work",
                                    "--at", str(int(time.time() * 1000) - 1000), "--name", "Fix it")["ok"])
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         self.assertEqual(self.queue("--start-queued", task["id"]),
                          {"ok": True, "message": "Went on in its background chat on work (e3de1242)"})
-        self.assertEqual(service.requests, [{"op": "reply", "short": "e3de1242", "text": cs.CONTINUE_PROMPT,
+        self.assertEqual(service.requests, [{"op": "reply", "short": "e3de1242", "text": td.CONTINUE_PROMPT,
                                              "auth": FakeService.KEY, "proto": 1}])
         self.assertEqual(self.calls(), [], "no claude stop, no claude --bg --resume")
-        self.assertEqual(cs.load_queue(self.cache_root()), [])
-        self.assertIsNotNone(cs.kept_chats(self.cache_root())[0]["wentOnAt"], "a go-on that didn't take is tried again")
+        self.assertEqual(td.load_queue(self.cache_root()), [])
+        self.assertIsNotNone(td.kept_chats(self.cache_root())[0]["wentOnAt"], "a go-on that didn't take is tried again")
 
     def test_one_at_work_on_the_background_commands_the_limit_left_takes_it_in_at_once(self):
         # (they run on: no wait for them, nothing ended)
@@ -1969,40 +1969,40 @@ class BackgroundServiceTests(TaskFixture):
             stops.append(job_id)
             self.session_file.unlink()  # (its process quit; the service lets go a moment later)
             return True, "Stopped"
-        start = cs.start_background
-        with mock.patch.object(cs, "stop_background", side_effect=stop), \
-                mock.patch.object(cs, "start_background", side_effect=lambda *a, **k: starts.append(held["n"]) or start(*a, **k)):
+        start = td.start_background
+        with mock.patch.object(td, "stop_background", side_effect=stop), \
+                mock.patch.object(td, "start_background", side_effect=lambda *a, **k: starts.append(held["n"]) or start(*a, **k)):
             answer = self.go_on()
         self.assertEqual(answer, {"ok": True, "message": "Went on in the background on work (1a2b3c4d)", "id": "1a2b3c4d"})
         self.assertEqual((stops, starts), (["e3de1242"], [0]))
         self.assertEqual([r["short"] for r in service.ops("has")], ["e3de1242"] * 3)
-        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, cs.CONTINUE_PROMPT])
+        self.assertEqual(self.calls()[-1]["argv"], ["--bg", "--resume", self.SID, td.CONTINUE_PROMPT])
 
     def test_no_service_no_key_or_no_answer_is_as_before(self):
-        self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
+        self.assertEqual(td.reply_to_background(self.profile, "e3de1242", "hi"),
                          (False, "Claude's background service can't be asked"))  # (no key)
         service = FakeService(self, self.profile, lambda r: {"ok": False, "error": "unknown op: reply", "code": "EUNKNOWN"})
-        self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
+        self.assertEqual(td.reply_to_background(self.profile, "e3de1242", "hi"),
                          (False, "Claude's background service didn't take it: unknown op: reply"))
-        self.assertEqual(cs.reply_to_background(self.profile, "../x", "hi"), (False, "Claude's background service can't be asked"))
-        with mock.patch.object(cs, "service_config_dir", return_value=None):
-            self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
+        self.assertEqual(td.reply_to_background(self.profile, "../x", "hi"), (False, "Claude's background service can't be asked"))
+        with mock.patch.object(td, "service_config_dir", return_value=None):
+            self.assertEqual(td.reply_to_background(self.profile, "e3de1242", "hi"),
                              (False, "Claude's background service didn't answer"))
-            self.assertFalse(cs.daemon_holds([self.profile], ["e3de1242"]))
+            self.assertFalse(td.daemon_holds([self.profile], ["e3de1242"]))
         # (a service of another user, who made that folder in /tmp first: never told your message or the key)
         asked = len(service.requests)
-        with mock.patch.object(cs, "peer_uid", return_value=os.getuid() + 1):
-            self.assertEqual(cs.reply_to_background(self.profile, "e3de1242", "hi"),
+        with mock.patch.object(td, "peer_uid", return_value=os.getuid() + 1):
+            self.assertEqual(td.reply_to_background(self.profile, "e3de1242", "hi"),
                              (False, "Claude's background service didn't answer"))
         self.assertEqual(len(service.requests), asked)
         import socket
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(str(service.path))
-            self.assertEqual(cs.peer_uid(s), os.getuid())
+            self.assertEqual(td.peer_uid(s), os.getuid())
         # (where Claude puts it: /tmp/cc-daemon-<uid>/<sha256 of the CLAUDE_CONFIG_DIR it runs with>[:8])
-        with mock.patch.object(cs, "service_config_dir", return_value="/home/u/.claude-work"), \
-                mock.patch.object(cs, "DAEMON_TMP", Path("/tmp")):
-            self.assertEqual(str(cs.daemon_socket(self.profile)), f"/tmp/cc-daemon-{os.getuid()}/9fa37e90/control.sock")
+        with mock.patch.object(td, "service_config_dir", return_value="/home/u/.claude-work"), \
+                mock.patch.object(td, "DAEMON_TMP", Path("/tmp")):
+            self.assertEqual(str(td.daemon_socket(self.profile)), f"/tmp/cc-daemon-{os.getuid()}/9fa37e90/control.sock")
 
 
 class KeepGoingTests(TaskFixture):
@@ -2029,12 +2029,12 @@ class KeepGoingTests(TaskFixture):
     def look(self, now_ms, rows=(), pct=100, cap=0):
         groups = [{"profileKeys": [".claude-work"], "sessions": list(rows),
                    "limits": {"windows": [{"key": "five_hour", "label": "5h", "pct": pct, "resetsAt": self.reset}]}}]
-        cs.note_caps(groups, cap, now_ms)
-        cs.look_after_kept(self.home, self.cache_root(), [], groups, now_ms, cap)
-        return cs.load_queue(self.cache_root())
+        td.note_caps(groups, cap, now_ms)
+        td.look_after_kept(self.home, self.cache_root(), [], groups, now_ms, cap)
+        return td.load_queue(self.cache_root())
 
     def kept(self):
-        return cs.kept_chats(self.cache_root())
+        return td.kept_chats(self.cache_root())
 
     def test_it_goes_on_after_each_limit_until_its_done(self):
         self.say(self.limit(self.now - 60))
@@ -2045,7 +2045,7 @@ class KeepGoingTests(TaskFixture):
                          (self.SID, "Fix it", self.reset + 60_000, "", ""))
         self.assertEqual(len(self.look(self.now_ms + 1000)), 1, "queued once")
         # the limit resets: it goes on (and while it starts, a status doesn't queue it again)
-        start, where = cs.continue_chat, cs.continuation
+        start, where = td.continue_chat, td.continuation
 
         def going_on(*a, **k):
             self.assertEqual(self.look(int(time.time() * 1000)), [])
@@ -2054,54 +2054,54 @@ class KeepGoingTests(TaskFixture):
         def looking_up(*a, **k):  # (taken out of the queue, not started yet: 2026-11-03)
             self.assertEqual(self.look(int(time.time() * 1000)), [])
             return where(*a, **k)
-        with mock.patch.object(cs, "continue_chat", side_effect=going_on), \
-                mock.patch.object(cs, "continuation", side_effect=looking_up):
+        with mock.patch.object(td, "continue_chat", side_effect=going_on), \
+                mock.patch.object(td, "continuation", side_effect=looking_up):
             self.assertEqual(self.queue("--start-queued", task["id"])["message"], "Went on in the background on work (1a2b3c4d)")
         self.assertIsNotNone(self.kept()[0]["wentOnAt"])
         # a limit stops it again in the next window: it goes on after that one too
         after = self.reset / 1000
-        self.say(prompt(cs.CONTINUE_PROMPT, after + 60), reply("On it.", after + 70, msg_id="m2"), self.limit(after + 600))
+        self.say(prompt(td.CONTINUE_PROMPT, after + 60), reply("On it.", after + 70, msg_id="m2"), self.limit(after + 600))
         self.reset += 5 * 3600_000
         (task,) = self.look(int((after + 660) * 1000))
         self.assertEqual(task["startAt"], self.reset + 60_000)
         self.queue("--start-queued", task["id"])
         # and once a turn of it ends by itself, it's done
         went = self.kept()[0]["wentOnAt"] / 1000
-        self.say(prompt(cs.CONTINUE_PROMPT, went + 5), reply("All done.", went + 10, msg_id="m3"))
+        self.say(prompt(td.CONTINUE_PROMPT, went + 5), reply("All done.", went + 10, msg_id="m3"))
         self.assertEqual(self.look(int((went + 20) * 1000)), [])
         self.assertEqual((self.kept(), len(self.calls())), ([], 2))
 
     def test_a_go_on_that_didnt_take_is_tried_again_then_given_up(self):
         self.say(self.limit(self.now - 60))
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 120_000)
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 120_000)
         t = self.now_ms
-        for pause in cs.KEEP_RETRY_MINUTES:
-            cs.note_went_on(self.cache_root(), self.SID, t)  # (nothing new in the chat since)
+        for pause in td.KEEP_RETRY_MINUTES:
+            td.note_went_on(self.cache_root(), self.SID, t)  # (nothing new in the chat since)
             self.assertEqual(self.look(t + 60_000), [], "it may still be starting")
-            t += cs.KEEP_TAKE_MS + 1000
+            t += td.KEEP_TAKE_MS + 1000
             (task,) = self.look(t)
             self.assertEqual((task["why"], task["startAt"]), ("retry", t + pause * 60_000))
-            cs.change_queue(self.cache_root(), take=task["id"])
-        cs.note_went_on(self.cache_root(), self.SID, t)
-        self.assertEqual(self.look(t + cs.KEEP_TAKE_MS + 1000), [])
+            td.change_queue(self.cache_root(), take=task["id"])
+        td.note_went_on(self.cache_root(), self.SID, t)
+        self.assertEqual(self.look(t + td.KEEP_TAKE_MS + 1000), [])
         self.assertEqual(self.kept()[0]["error"], "Gave up after 5 tries: it didn't go on")
-        self.assertEqual(self.look(t + 3 * cs.KEEP_TAKE_MS), [], "given up")
+        self.assertEqual(self.look(t + 3 * td.KEEP_TAKE_MS), [], "given up")
         # something new in the chat starts it over
-        self.say(self.limit((t + 3 * cs.KEEP_TAKE_MS) / 1000 + 10))
-        (task,) = self.look(t + 4 * cs.KEEP_TAKE_MS)
+        self.say(self.limit((t + 3 * td.KEEP_TAKE_MS) / 1000 + 10))
+        (task,) = self.look(t + 4 * td.KEEP_TAKE_MS)
         self.assertEqual((task["why"], self.kept()[0]["error"]), ("", ""))
 
     def test_a_turn_that_broke_off_on_an_api_error_goes_on_again(self):
         self.say(self.limit(self.now - 600))
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 500_000)
-        cs.note_went_on(self.cache_root(), self.SID, self.now_ms - 300_000)
-        self.say(prompt(cs.CONTINUE_PROMPT, self.now - 290),
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 500_000)
+        td.note_went_on(self.cache_root(), self.SID, self.now_ms - 300_000)
+        self.say(prompt(td.CONTINUE_PROMPT, self.now - 290),
                  api_error("API Error: Connection lost mid-response. The response above may be incomplete.", self.now - 280))
         (task,) = self.look(self.now_ms)
-        self.assertEqual((task["why"], task["prompt"], task["startAt"]), ("retry", cs.RETRY_PROMPT, self.now_ms + 2 * 60_000))
+        self.assertEqual((task["why"], task["prompt"], task["startAt"]), ("retry", td.RETRY_PROMPT, self.now_ms + 2 * 60_000))
         # (it goes on whatever its newest turn: that isn't a limit's)
         self.assertEqual(self.queue("--start-queued", task["id"])["message"], "Went on in the background on work (1a2b3c4d)")
-        self.assertEqual(self.calls()[0]["argv"], ["--bg", "--resume", self.SID, cs.RETRY_PROMPT])
+        self.assertEqual(self.calls()[0]["argv"], ["--bg", "--resume", self.SID, td.RETRY_PROMPT])
 
     def test_when_it_waits(self):
         at = self.now_ms - 60_000
@@ -2109,27 +2109,27 @@ class KeepGoingTests(TaskFixture):
         limit = {"kind": "limit", "window": "five_hour", "text": "You've hit your session limit", "at": at, "ended": True}
         limits = {"windows": [{"key": "five_hour", "pct": 100, "resetsAt": self.reset}]}
         row = {"sessionId": self.SID, "chatId": self.SID, "pid": 42, "state": "idle", "entrypoint": "cli"}
-        self.assertEqual(cs.kept_step(dict(k), limit, row, False, limits, self.now_ms), ("go on", self.reset + 60_000, "", ""))
-        self.assertIsNone(cs.kept_step(dict(k), limit, row, True, limits, self.now_ms), "its go-on is queued")
+        self.assertEqual(td.kept_step(dict(k), limit, row, False, limits, self.now_ms), ("go on", self.reset + 60_000, "", ""))
+        self.assertIsNone(td.kept_step(dict(k), limit, row, True, limits, self.now_ms), "its go-on is queued")
         for state in ("working", "waiting"):
-            self.assertIsNone(cs.kept_step(dict(k), limit, dict(row, state=state), False, limits, self.now_ms))
+            self.assertIsNone(td.kept_step(dict(k), limit, dict(row, state=state), False, limits, self.now_ms))
         tab = dict(k)
-        self.assertIsNone(cs.kept_step(tab, limit, dict(row, entrypoint="claude-vscode"), False, limits, self.now_ms))
+        self.assertIsNone(td.kept_step(tab, limit, dict(row, entrypoint="claude-vscode"), False, limits, self.now_ms))
         self.assertIn("open in a Claude Code panel", tab["note"])
         resumed = dict(k)
-        self.assertIsNone(cs.kept_step(resumed, limit, dict(row, sessionId="0a1b2c3d"), False, limits, self.now_ms))
+        self.assertIsNone(td.kept_step(resumed, limit, dict(row, sessionId="0a1b2c3d"), False, limits, self.now_ms))
         self.assertEqual(resumed["note"], "It's open in a chat it was resumed in: it can't go on by itself while that one is open")
         login = dict(k)
-        self.assertIsNone(cs.kept_step(login, dict(limit, kind="login"), None, False, limits, self.now_ms))
+        self.assertIsNone(td.kept_step(login, dict(limit, kind="login"), None, False, limits, self.now_ms))
         self.assertIn("log in again", login["note"])
         # kept while it works: done once that turn ends by itself, not before
         ended = {"kind": "reply", "at": at, "ended": True}
-        self.assertIsNone(cs.kept_step(dict(k, since=at + 1000), ended, row, False, limits, self.now_ms), "nothing new since")
-        self.assertEqual(cs.kept_step(dict(k), ended, row, False, limits, self.now_ms), "done")
+        self.assertIsNone(td.kept_step(dict(k, since=at + 1000), ended, row, False, limits, self.now_ms), "nothing new since")
+        self.assertEqual(td.kept_step(dict(k), ended, row, False, limits, self.now_ms), "done")
         # a turn with no process to finish it broke off: on again
-        open_turn = {"kind": "reply", "at": self.now_ms - cs.KEEP_TAKE_MS - 1000, "ended": False}
-        self.assertIsNone(cs.kept_step(dict(k), dict(open_turn, at=self.now_ms - 1000), None, False, limits, self.now_ms))
-        self.assertEqual(cs.kept_step(dict(k), open_turn, None, False, limits, self.now_ms)[2], "retry")
+        open_turn = {"kind": "reply", "at": self.now_ms - td.KEEP_TAKE_MS - 1000, "ended": False}
+        self.assertIsNone(td.kept_step(dict(k), dict(open_turn, at=self.now_ms - 1000), None, False, limits, self.now_ms))
+        self.assertEqual(td.kept_step(dict(k), open_turn, None, False, limits, self.now_ms)[2], "retry")
 
     def test_a_chat_you_interrupted_is_let_go(self):
         # (Esc while it works, then the chat closed: you took over)
@@ -2138,13 +2138,13 @@ class KeepGoingTests(TaskFixture):
         cut["message"]["content"][0]["content"] = note
         self.say(tool_use("b", "Bash", {"command": "make"}, self.now - 590), cut,
                  {"type": "user", "timestamp": iso(self.now - 589), "message": {"role": "user", "content": [{"type": "text", "text": note}]}})
-        self.assertEqual(cs.last_turn(self.path), {"kind": "interrupted", "at": int((self.now - 589) * 1000), "ended": True})
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 700_000)
-        self.assertEqual(self.look(self.now_ms + cs.KEEP_TAKE_MS + 60_000), [])
+        self.assertEqual(td.last_turn(self.path), {"kind": "interrupted", "at": int((self.now - 589) * 1000), "ended": True})
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 700_000)
+        self.assertEqual(self.look(self.now_ms + td.KEEP_TAKE_MS + 60_000), [])
         self.assertEqual(self.kept(), [])
         # a prompt after it: a turn of its own again
         self.say(prompt("go on", self.now - 500))
-        self.assertEqual(cs.last_turn(self.path)["kind"], "prompt")
+        self.assertEqual(td.last_turn(self.path)["kind"], "prompt")
 
     def test_a_limit_with_no_known_reset_waits_longer_each_time(self):
         at = self.now_ms - 60_000
@@ -2153,10 +2153,10 @@ class KeepGoingTests(TaskFixture):
         row = {"sessionId": self.SID, "chatId": self.SID, "pid": 42, "state": "idle", "entrypoint": "cli"}
         # out of usage credits: no window, no time in the message (not on again right away, each time it hits it)
         out = {"kind": "limit", "window": None, "text": "You're out of usage credits", "at": at, "ended": True}
-        for n, minutes in enumerate(cs.KEEP_RETRY_MINUTES):
-            self.assertEqual(cs.kept_step(k, dict(out, at=at + n), row, False, limits, self.now_ms),
+        for n, minutes in enumerate(td.KEEP_RETRY_MINUTES):
+            self.assertEqual(td.kept_step(k, dict(out, at=at + n), row, False, limits, self.now_ms),
                              ("go on", self.now_ms + minutes * 60_000, "", ""))
-        self.assertIsNone(cs.kept_step(k, dict(out, at=at + 9), row, False, limits, self.now_ms))
+        self.assertIsNone(td.kept_step(k, dict(out, at=at + 9), row, False, limits, self.now_ms))
         self.assertEqual(k["error"], "Gave up after 5 tries: You're out of usage credits")
         # a limit with no window on record whose message names the day it resets: on after that
         day = datetime.fromtimestamp(self.now + 3 * 86400)
@@ -2164,18 +2164,18 @@ class KeepGoingTests(TaskFixture):
                   "text": f"You've hit your Sonnet limit · resets {day:%b} {day.day}, {day.year}, 7pm (Europe/Berlin)"}
         k = {"chat": self.SID, "profile": ".claude-work", "since": at - 60_000, "wentOnAt": None, "tries": 3}
         reset = int(day.replace(hour=19, minute=0, second=0, microsecond=0).timestamp() * 1000)
-        self.assertEqual(cs.kept_step(k, sonnet, row, False, limits, self.now_ms), ("go on", reset + 60_000, "", ""))
+        self.assertEqual(td.kept_step(k, sonnet, row, False, limits, self.now_ms), ("go on", reset + 60_000, "", ""))
         self.assertEqual(k["tries"], 0)
 
     def test_the_usage_cap_stops_what_works_once_and_kept_chats_go_on_after(self):
         self.say(reply("On it.", self.now - 30, msg_id="m2"))
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 60_000)
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 60_000)
         rows = [{"sessionId": self.SID, "chatId": self.SID, "pid": 4242, "state": "working", "kind": "interactive"},
                 {"sessionId": "other", "chatId": "other", "pid": 4343, "state": "working", "kind": "bg", "jobId": "e3de1242"},
                 {"sessionId": "calm", "chatId": "calm", "pid": 4444, "state": "idle", "kind": "interactive"}]
         stopped = []
-        with mock.patch.object(cs, "in_background", side_effect=lambda task: task()), \
-                mock.patch.object(cs, "stop_all", side_effect=lambda home, extra, sessions: stopped.extend(s["sessionId"] for s in sessions)):
+        with mock.patch.object(td, "in_background", side_effect=lambda task: task()), \
+                mock.patch.object(td, "stop_all", side_effect=lambda home, extra, sessions: stopped.extend(s["sessionId"] for s in sessions)):
             self.assertEqual(self.look(self.now_ms, rows, pct=89, cap=90), [])
             self.assertEqual(stopped, [], "below the cap")
             self.assertEqual(self.look(self.now_ms, rows, pct=92, cap=90), [])
@@ -2188,9 +2188,9 @@ class KeepGoingTests(TaskFixture):
         self.assertEqual(self.queue("--start-queued", task["id"])["message"], "Went on in the background on work (1a2b3c4d)")
         # the account is marked while it's at the cap (queued tasks wait for that window)
         groups = [{"limits": {"windows": [{"key": "seven_day", "label": "7d", "pct": 91, "resetsAt": self.reset}]}}]
-        cs.note_caps(groups, 90, self.now_ms)
+        td.note_caps(groups, 90, self.now_ms)
         self.assertEqual(groups[0]["cap"], {"pct": 90, "label": "7d", "key": "seven_day", "resetsAt": self.reset})
-        cs.note_caps(groups, 0, self.now_ms)
+        td.note_caps(groups, 0, self.now_ms)
         self.assertIsNone(groups[0]["cap"])
 
     def test_turning_it_off_and_where_it_cant(self):
@@ -2200,13 +2200,13 @@ class KeepGoingTests(TaskFixture):
         self.assertEqual(len(self.kept()), 1)
         answer = self.queue("--keep-off", self.SID)
         self.assertRegex(answer["message"], r"^It goes on (tomorrow )?at \d\d:\d\d as queued, but not after later limits$")
-        self.assertEqual((self.kept(), len(cs.load_queue(self.cache_root()))), ([], 1), "its queued go-on stays")
-        (task,) = cs.load_queue(self.cache_root())
+        self.assertEqual((self.kept(), len(td.load_queue(self.cache_root()))), ([], 1), "its queued go-on stays")
+        (task,) = td.load_queue(self.cache_root())
         self.queue("--unqueue", task["id"])
         self.assertEqual(self.queue("--keep-off", self.SID), {"ok": True, "message": "It won't go on by itself any more"})
         # cancelling its go-on stops it keeping going (else it would be queued again at once)
         self.assertTrue(self.queue("--queue-continue", self.SID, "--profile", ".claude-work", "--at", at, "--keep")["ok"])
-        (task,) = cs.load_queue(self.cache_root())
+        (task,) = td.load_queue(self.cache_root())
         self.queue("--unqueue", task["id"])
         self.assertEqual((self.kept(), self.look(self.now_ms)), ([], []))
         # a chat whose folder Claude doesn't trust can't go on by itself
@@ -2262,11 +2262,11 @@ class KeepGoingOnHostsTests(TaskFixture):
         return {"kind": "limit", "window": "five_hour", "text": "You've hit your session limit", "at": at - offset, "ended": True}
 
     def look(self, now_ms, groups=()):
-        cs.look_after_kept(self.home, self.cache_root(), [], list(groups), now_ms)
-        return cs.load_queue(self.cache_root())
+        td.look_after_kept(self.home, self.cache_root(), [], list(groups), now_ms)
+        return td.load_queue(self.cache_root())
 
     def kept(self):
-        return cs.kept_chats(self.cache_root())
+        return td.kept_chats(self.cache_root())
 
     def keep(self, host=None):
         return self.queue("--keep-going", self.SID, "--profile", ".claude", "--cwd", "/srv/app", "--name", "Fix it",
@@ -2291,7 +2291,7 @@ class KeepGoingOnHostsTests(TaskFixture):
         self.assertIsNotNone(went)
         # an answer from before it went on says nothing about that go-on, however late it's read
         self.answer(self.limit(self.now_ms - 60_000), at=went - 1000)
-        self.assertEqual(self.look(went + cs.KEEP_TAKE_MS * 2), [])
+        self.assertEqual(self.look(went + td.KEEP_TAKE_MS * 2), [])
         self.assertEqual((self.kept()[0]["tries"], self.kept()[0]["error"]), (0, ""))
         # the next one: a turn of it ended by itself after the go-on: it's done
         self.answer({"kind": "reply", "at": went + 60_000, "ended": True}, at=went + 120_000)
@@ -2305,9 +2305,9 @@ class KeepGoingOnHostsTests(TaskFixture):
         (task,) = self.look(self.now_ms)
         self.assertEqual(task["startAt"], self.reset + 60_000)
         # and a turn there that ended after it was kept ended after it, though the host's clock says 2 hours before
-        cs.change_queue(self.cache_root(), take=task["id"])
-        cs.keep_chat(self.cache_root(), ".claude", self.SID, host="lab", on=False)
-        cs.keep_chat(self.cache_root(), ".claude", self.SID, "Fix it", "/srv/app", now_ms=self.now_ms, host="lab")
+        td.change_queue(self.cache_root(), take=task["id"])
+        td.keep_chat(self.cache_root(), ".claude", self.SID, host="lab", on=False)
+        td.keep_chat(self.cache_root(), ".claude", self.SID, "Fix it", "/srv/app", now_ms=self.now_ms, host="lab")
         self.answer({"kind": "reply", "at": self.now_ms + 60_000 - 7200_000, "ended": True}, at=self.now_ms + 120_000,
                     offset=7200_000)
         self.assertEqual((self.look(self.now_ms + 125_000), self.kept()), ([], []))
@@ -2316,37 +2316,37 @@ class KeepGoingOnHostsTests(TaskFixture):
         import remote
         self.keep()
         t = self.now_ms
-        cs.note_went_on(self.cache_root(), self.SID, t, host="lab")
+        td.note_went_on(self.cache_root(), self.SID, t, host="lab")
         self.answer(self.limit(t - 600_000), at=t + 60_000)
         self.assertEqual(self.look(t + 60_000), [], "it may still be starting")
-        self.answer(self.limit(t - 600_000), at=t + cs.KEEP_TAKE_MS + 1000)
-        (task,) = self.look(t + cs.KEEP_TAKE_MS + 2000)
-        self.assertEqual((task["why"], task["startAt"], task["host"]), ("retry", t + cs.KEEP_TAKE_MS + 1000 + 2 * 60_000, "lab"))
+        self.answer(self.limit(t - 600_000), at=t + td.KEEP_TAKE_MS + 1000)
+        (task,) = self.look(t + td.KEEP_TAKE_MS + 2000)
+        self.assertEqual((task["why"], task["startAt"], task["host"]), ("retry", t + td.KEEP_TAKE_MS + 1000 + 2 * 60_000, "lab"))
         with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": "Went on"}) as ask:
             self.queue("--start-queued", task["id"])
         self.assertIn("--force", ask.call_args[0][1])
         # a go-on that went on already (nothing to do there): it doesn't count as one that didn't take
-        cs.note_went_on(self.cache_root(), self.SID, t, host="lab")
-        (task,) = [cs.queue_entry(".claude", "/srv/app", "", t, host="lab", chat=self.SID)]
-        cs.change_queue(self.cache_root(), add=task)
+        td.note_went_on(self.cache_root(), self.SID, t, host="lab")
+        (task,) = [td.queue_entry(".claude", "/srv/app", "", t, host="lab", chat=self.SID)]
+        td.change_queue(self.cache_root(), add=task)
         with mock.patch.object(remote, "host_answer", return_value={"ok": True, "message": ""}):
             self.queue("--start-queued", task["id"])
         self.assertEqual(self.kept()[0]["wentOnAt"], t)
 
     def test_while_its_host_doesnt_answer_it_waits_and_says_so(self):
         self.keep()
-        self.answer(self.limit(self.now_ms - 60_000), at=self.now_ms - cs.KEEP_HOST_STALE_MS - 60_000)
+        self.answer(self.limit(self.now_ms - 60_000), at=self.now_ms - td.KEEP_HOST_STALE_MS - 60_000)
         self.assertEqual(self.look(self.now_ms), [])
         self.assertEqual(self.kept()[0]["note"], "Talpy Den hasn't heard from lab for a while: it can go on once that answers again")
         # (a container's name, and its host's)
-        self.assertEqual(cs.host_words("docker:web@lab"), "web on lab")
-        self.assertEqual(cs.host_words("podman:dev"), "dev")
+        self.assertEqual(td.host_words("docker:web@lab"), "web on lab")
+        self.assertEqual(td.host_words("podman:dev"), "dev")
         # its answer comes: on it goes, and the note goes
         self.answer(self.limit(self.now_ms - 60_000))
         self.assertEqual(len(self.look(self.now_ms)), 1)
         self.assertEqual(self.kept()[0]["note"], "")
         # (2026-11-03) also while its go-on waits for the reset
-        self.answer(self.limit(self.now_ms - 60_000), at=self.now_ms - cs.KEEP_HOST_STALE_MS - 60_000)
+        self.answer(self.limit(self.now_ms - 60_000), at=self.now_ms - td.KEEP_HOST_STALE_MS - 60_000)
         self.look(self.now_ms)
         self.answer(self.limit(self.now_ms - 60_000))
         self.assertEqual((len(self.look(self.now_ms)), self.kept()[0]["note"]), (1, ""))
@@ -2378,23 +2378,23 @@ class KeepGoingOnHostsTests(TaskFixture):
         # (one id on both: a copy made by hand, say; and one host's isn't another's)
         self.keep()
         self.keep("docker:web@lab")
-        cs.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
         self.assertEqual(sorted(k["host"] for k in self.kept()), ["", "docker:web@lab", "lab"])
         self.assertEqual(self.queue("--keep-off", self.SID, "--host", "lab")["message"], "It won't go on by itself any more")
         self.assertEqual(sorted(k["host"] for k in self.kept()), ["", "docker:web@lab"])
         # cancelling a host's queued go-on stops that one keeping going, not this computer's
-        task = cs.queue_entry(".claude", "", "", self.reset, host="docker:web@lab", chat=self.SID)
-        cs.change_queue(self.cache_root(), add=task)
+        task = td.queue_entry(".claude", "", "", self.reset, host="docker:web@lab", chat=self.SID)
+        td.change_queue(self.cache_root(), add=task)
         self.queue("--unqueue", task["id"])
         self.assertEqual([k["host"] for k in self.kept()], [""])
         # a chat deleted there: forgotten here too (its keep going is kept here)
         self.keep()
-        cs.forget_deleted(self.cache_root(), "chats", self.SID, "lab")
+        td.forget_deleted(self.cache_root(), "chats", self.SID, "lab")
         self.assertEqual([k["host"] for k in self.kept()], [""])
         # this computer's look doesn't read a host's transcript here; its own goes on as before
-        self.assertFalse(any(k["host"] for k in cs.load_keep(self.cache_root())["chats"] if k["chat"] != self.SID))
+        self.assertFalse(any(k["host"] for k in td.load_keep(self.cache_root())["chats"] if k["chat"] != self.SID))
         with self.assertRaises(ValueError):
-            cs.keep_chat(self.cache_root(), ".claude", self.SID, host="lab; rm -rf /")
+            td.keep_chat(self.cache_root(), ".claude", self.SID, host="lab; rm -rf /")
 
     def test_queued_with_keep_on_a_host(self):
         at = str(self.reset + 60_000)
@@ -2408,32 +2408,32 @@ class KeepGoingOnHostsTests(TaskFixture):
         # reached; then it does by itself. One the host refused waits for you, as before.
         import remote
         self.keep()
-        task = cs.queue_entry(".claude", "/srv/app", "", self.now_ms - 1000, host="lab", chat=self.SID)
-        cs.change_queue(self.cache_root(), add=task)
+        task = td.queue_entry(".claude", "/srv/app", "", self.now_ms - 1000, host="lab", chat=self.SID)
+        td.change_queue(self.cache_root(), add=task)
         unreached = {"ok": False, "reached": False, "message": "Can't reach lab: Connection timed out."}
         with mock.patch.object(remote, "host_answer", return_value=unreached):
             self.assertFalse(self.queue("--start-queued", task["id"])["ok"])
-        (back,) = cs.load_queue(self.cache_root())
+        (back,) = td.load_queue(self.cache_root())
         self.assertEqual(back["error"], "Can't reach lab: Connection timed out. It starts once lab answers again")
         self.assertIsNone(self.kept()[0]["wentOnAt"])  # (it didn't go on: no "didn't take" to try again later)
-        self.assertFalse(cs.queued_tasks(self.cache_root(), self.now_ms)[0]["due"])
+        self.assertFalse(td.queued_tasks(self.cache_root(), self.now_ms)[0]["due"])
         # an answer from before it failed changes nothing; one since makes it due again
         self.answer(self.limit(self.now_ms - 60_000), at=back["unreachable"] - 1000)
         self.look(back["unreachable"] + 1000)
-        self.assertTrue(cs.load_queue(self.cache_root())[0]["error"])
+        self.assertTrue(td.load_queue(self.cache_root())[0]["error"])
         self.answer(self.limit(self.now_ms - 60_000), at=back["unreachable"] + 60_000)
         self.look(back["unreachable"] + 61_000)
-        (again,) = cs.load_queue(self.cache_root())
+        (again,) = td.load_queue(self.cache_root())
         self.assertEqual((again["error"], "unreachable" in again, again["id"]), ("", False, task["id"]))
-        self.assertTrue(cs.queued_tasks(self.cache_root(), back["unreachable"] + 61_000)[0]["due"])
+        self.assertTrue(td.queued_tasks(self.cache_root(), back["unreachable"] + 61_000)[0]["due"])
         # a container that isn't running counts as not reached too; what the host said no to doesn't
         with mock.patch.object(remote, "host_answer", return_value={"ok": False, "message": "Claude doesn't trust /srv/app"}):
             self.queue("--start-queued", task["id"])
-        (refused,) = cs.load_queue(self.cache_root())
+        (refused,) = td.load_queue(self.cache_root())
         self.assertEqual((refused["error"], "unreachable" in refused), ("Claude doesn't trust /srv/app", False))
         self.answer(self.limit(self.now_ms - 60_000), at=self.now_ms + 3600_000)
         self.look(self.now_ms + 3600_000)
-        self.assertEqual(cs.load_queue(self.cache_root())[0]["error"], "Claude doesn't trust /srv/app")
+        self.assertEqual(td.load_queue(self.cache_root())[0]["error"], "Claude doesn't trust /srv/app")
 
     def test_plasma_offers_it_on_a_hosts_and_a_containers_rows(self):
         ui = Path(__file__).resolve().parent.parent / "package/contents/ui"
@@ -2482,10 +2482,10 @@ class KeepGoingOnHostsTests(TaskFixture):
         write(self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl",
               lines(prompt("fix it", t, cwd=str(self.folder)), limit_error("You've hit your session limit", t + 1)))
         out = io.StringIO()
-        with contextlib.redirect_stdout(out), mock.patch.object(cs.Path, "home", return_value=self.home), \
-                mock.patch.object(cs, "cache_dir", return_value=self.cache_root()):
-            cs.main(["--remote", "--no-tokens", "--kept-chats", f"{self.SID}/.claude-work,{self.NEW}/.claude-work"])
-        there = json.loads(out.getvalue().split(cs.REMOTE_MARK)[1])
+        with contextlib.redirect_stdout(out), mock.patch.object(td.Path, "home", return_value=self.home), \
+                mock.patch.object(td, "cache_dir", return_value=self.cache_root()):
+            td.main(["--remote", "--no-tokens", "--kept-chats", f"{self.SID}/.claude-work,{self.NEW}/.claude-work"])
+        there = json.loads(out.getvalue().split(td.REMOTE_MARK)[1])
         turn = there["keptTurns"][self.SID]["turn"]
         self.assertEqual((turn["kind"], turn["ended"]), ("limit", True))
         self.assertEqual(there["keptTurns"][self.NEW], {"gone": True})
@@ -2494,10 +2494,10 @@ class KeepGoingOnHostsTests(TaskFixture):
         self.assertEqual((row["kind"], row["state"]), ("chat", "done"))
         # without them, no word on them (and an answer for this computer has none)
         out = io.StringIO()
-        with contextlib.redirect_stdout(out), mock.patch.object(cs.Path, "home", return_value=self.home), \
-                mock.patch.object(cs, "cache_dir", return_value=self.cache_root()):
-            cs.main(["--remote", "--no-tokens"])
-        there = json.loads(out.getvalue().split(cs.REMOTE_MARK)[1])
+        with contextlib.redirect_stdout(out), mock.patch.object(td.Path, "home", return_value=self.home), \
+                mock.patch.object(td, "cache_dir", return_value=self.cache_root()):
+            td.main(["--remote", "--no-tokens"])
+        there = json.loads(out.getvalue().split(td.REMOTE_MARK)[1])
         self.assertNotIn("keptTurns", there)
         self.assertEqual([s for g in there["groups"] for s in g["sessions"] if s["chatId"] == self.SID], [])
 
@@ -2558,19 +2558,19 @@ class PlanFeedbackTests(TaskFixture):
 
     def test_claudes_version_is_rebuilt_from_its_transcript(self):
         transcript = self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl"
-        self.assertEqual(cs.claude_plan(transcript, "calm-red-owl"), "# Calm plan\n\n1. Do it\n2. Test it well\n")
-        self.assertIsNone(cs.claude_plan(transcript, "other-plan-here"))
+        self.assertEqual(td.claude_plan(transcript, "calm-red-owl"), "# Calm plan\n\n1. Do it\n2. Test it well\n")
+        self.assertIsNone(td.claude_plan(transcript, "other-plan-here"))
         # an edit that doesn't fit what it knows: it can't tell
-        self.assertIsNone(cs.apply_plan_tool("# A\n", "Edit", {"old_string": "B", "new_string": "C"}))
-        self.assertEqual(cs.apply_plan_tool("a a", "MultiEdit", {"edits": [{"old_string": "a", "new_string": "b", "replace_all": True}]}), "b b")
-        self.assertEqual(cs.apply_plan_tool(None, "ExitPlanMode", {"plan": "# P\n"}), "# P\n")
+        self.assertIsNone(td.apply_plan_tool("# A\n", "Edit", {"old_string": "B", "new_string": "C"}))
+        self.assertEqual(td.apply_plan_tool("a a", "MultiEdit", {"edits": [{"old_string": "a", "new_string": "b", "replace_all": True}]}), "b b")
+        self.assertEqual(td.apply_plan_tool(None, "ExitPlanMode", {"plan": "# P\n"}), "# P\n")
 
     def test_a_line_claude_took_out_goes_with_its_line_break(self):
         # (as Claude's Edit does: an empty new_string takes the end of the line along)
-        self.assertEqual(cs.apply_plan_tool("# P\n\n1. Do it\n2. Test it\n", "Edit",
+        self.assertEqual(td.apply_plan_tool("# P\n\n1. Do it\n2. Test it\n", "Edit",
                                             {"old_string": "1. Do it", "new_string": ""}), "# P\n\n2. Test it\n")
-        self.assertEqual(cs.apply_plan_tool("a\nb", "Edit", {"old_string": "b", "new_string": ""}), "a\n")
-        self.assertEqual(cs.apply_plan_tool("x\nyx\n", "MultiEdit", {"edits": [
+        self.assertEqual(td.apply_plan_tool("a\nb", "Edit", {"old_string": "b", "new_string": ""}), "a\n")
+        self.assertEqual(td.apply_plan_tool("x\nyx\n", "MultiEdit", {"edits": [
             {"old_string": "x", "new_string": "", "replace_all": True}]}), "y")
         # so a plan Claude took a line out of, unchanged since: nothing to say
         transcript = self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl"
@@ -2579,7 +2579,7 @@ class PlanFeedbackTests(TaskFixture):
             f.write(lines(tool_use("t5", "Edit", {"file_path": pf, "old_string": "2. Test it well", "new_string": ""},
                                    self.now - 500), tool_result("t5", self.now - 499)))
         write(self.plan, "# Calm plan\n\n1. Do it\n")
-        self.assertEqual(cs.plan_feedback(self.plan, cs.claude_plan(transcript, "calm-red-owl"), [], self.home), "")
+        self.assertEqual(td.plan_feedback(self.plan, td.claude_plan(transcript, "calm-red-owl"), [], self.home), "")
 
     def test_a_long_message_fits_in_one_argument(self):
         # (the command that reopens the chat has it in one argument, of 128 KB
@@ -2587,20 +2587,20 @@ class PlanFeedbackTests(TaskFixture):
         old = "".join(f"{chr(0x4e00 + i)}先把这个模块的接口整理好，然后再写测试，最后更新文档和说明。\n" for i in range(2000))
         write(self.plan, old.replace("模块", "组件"))
         why = "为什么要这样做？" * 250
-        text = cs.plan_feedback(self.plan, old, [{"from": 1, "to": 1, "quote": "", "text": why}], self.home)
+        text = td.plan_feedback(self.plan, old, [{"from": 1, "to": 1, "quote": "", "text": why}], self.home)
         self.assertLessEqual(len(shlex.quote(text).encode()), 120_000)
         self.assertIn("(more changes: read the file)", text)
         self.assertTrue(text.endswith(why))
 
     def test_the_message_has_your_changes_and_comments(self):
-        text = cs.plan_feedback(self.plan, "# Calm plan\n\n1. Do it\n2. Test it well\n",
+        text = td.plan_feedback(self.plan, "# Calm plan\n\n1. Do it\n2. Test it well\n",
                                 [{"from": 3, "to": 3, "quote": "1. Do it first", "text": "Why first?"}], self.home)
         self.assertTrue(text.startswith("Here is my feedback on your plan (~/.claude-work/plans/calm-red-owl.md)."))
         self.assertIn("stay in plan mode", text)
         self.assertIn("-1. Do it\n+1. Do it first", text)
         self.assertIn("Comment 1, on line 3:\n> 1. Do it first\nWhy first?", text)
-        self.assertEqual(cs.plan_feedback(self.plan, self.plan.read_text(), [], self.home), "")  # nothing to say
-        self.assertIn("read ~/.claude-work/plans/calm-red-owl.md again", cs.plan_feedback(self.plan, None, [], self.home))
+        self.assertEqual(td.plan_feedback(self.plan, self.plan.read_text(), [], self.home), "")  # nothing to say
+        self.assertIn("read ~/.claude-work/plans/calm-red-owl.md again", td.plan_feedback(self.plan, None, [], self.home))
 
     def test_a_chat_without_a_process_reopens_in_plan_mode_with_it(self):
         answer = self.send("--print-command")
@@ -2656,9 +2656,9 @@ class PlanFeedbackTests(TaskFixture):
 
     def test_the_chat_found_by_the_plans_name(self):
         transcript = self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl"
-        profile, found = cs.plan_chat(cs.discover_profiles(self.home), "calm-red-owl")
+        profile, found = td.plan_chat(td.discover_profiles(self.home), "calm-red-owl")
         self.assertEqual((profile.key, found), (".claude-work", transcript))
-        self.assertEqual(cs.plan_chat(cs.discover_profiles(self.home), "no-such-plan"), (None, None))
+        self.assertEqual(td.plan_chat(td.discover_profiles(self.home), "no-such-plan"), (None, None))
         self.assertEqual(self.send_to("-")["how"], "resumed")
 
     def send_to(self, chat):
@@ -2694,7 +2694,7 @@ class MemoryTests(Fixture):
         w = self.home / ".claude-work"
         folder = self.home / "repos/my_app.v2"
         folder.mkdir(parents=True)
-        mem = w / "projects" / cs.mangle(str(folder)) / "memory"
+        mem = w / "projects" / td.mangle(str(folder)) / "memory"
         write(mem / "MEMORY.md", "- [Batch releases](batch-releases.md) — one tag for many features\n")
         write(mem / "batch-releases.md", '---\nname: batch-releases\ndescription: "Tag \\"many\\" features at once"\n'
                                          "metadata:\n  node_type: memory\n  type: feedback\n---\n\nThe user said so.\n")
@@ -2713,12 +2713,12 @@ class MemoryTests(Fixture):
         self.assertIn("shared with other accounts", g["memories"][0]["description"])
         self.assertEqual(g["instructions"], g["memories"][:1])
         # (--memories 0, as Plasma asks: none listed but its CLAUDE.md, its own line, hidden or not)
-        cs.hide_item(self.cache, "memories", g["memories"][0]["key"])
+        td.hide_item(self.cache, "memories", g["memories"][0]["key"])
         lean = self.group(self.collect(with_tokens=False, memories=0), "work")
         self.assertEqual(([m["name"] for m in lean["instructions"]], lean["memories"]), (["CLAUDE.md"], []))
-        cs.show_hidden(self.cache, "memories")
-        self.assertEqual(cs.memory_file(cs.discover_profiles(self.home), str(w / "CLAUDE.md")), w / "CLAUDE.md")
-        self.assertIsNone(cs.memory_file(cs.discover_profiles(self.home), str(self.home / "shared/CLAUDE.md")))
+        td.show_hidden(self.cache, "memories")
+        self.assertEqual(td.memory_file(td.discover_profiles(self.home), str(w / "CLAUDE.md")), w / "CLAUDE.md")
+        self.assertIsNone(td.memory_file(td.discover_profiles(self.home), str(self.home / "shared/CLAUDE.md")))
         g["memories"].pop(0)
         first = g["memories"][0]
         self.assertEqual((first["description"], first["type"], first["folder"], first["profileDir"]),
@@ -2728,9 +2728,9 @@ class MemoryTests(Fixture):
         self.assertEqual({k: g["memories"][2][k] for k in ("folder", "folderShort", "folderGone")},
                          {"folder": "/gone/folder", "folderShort": "/gone/folder", "folderGone": True})
         # only memory files of a profile open
-        profiles = cs.discover_profiles(self.home)
-        self.assertEqual(cs.memory_file(profiles, str(mem / "plain.md")), (mem / "plain.md").resolve())
-        self.assertIsNone(cs.memory_file(profiles, str(self.home / "notes.md")))
+        profiles = td.discover_profiles(self.home)
+        self.assertEqual(td.memory_file(profiles, str(mem / "plain.md")), (mem / "plain.md").resolve())
+        self.assertIsNone(td.memory_file(profiles, str(self.home / "notes.md")))
         with mock.patch.object(jump, "open_markdown", return_value=(True, "")) as shown, \
                 mock.patch.object(jump, "edit_markdown", return_value=(True, "")) as edited:
             self.assertEqual(jump.open_memory(self.home, [], str(mem / "plain.md")), (True, ""))
@@ -2742,7 +2742,7 @@ class MemoryTests(Fixture):
         # (renamed or moved: the folder a chat filed there ran in, as its transcript says)
         w = self.home / ".claude-work"
         old = self.home / "repos/talpy-den.old"
-        project = w / "projects" / cs.mangle(str(old))
+        project = w / "projects" / td.mangle(str(old))
         write(project / "memory/notes.md", "---\nname: notes\ntype: project\n---\n")
         write(project / "0a1b2c3d.jsonl", lines({"type": "file-history-snapshot"},
                                                  prompt("hi", self.now - 60, cwd=str(old / "sub")),  # (after a cd)
@@ -2769,9 +2769,9 @@ class MemoryTests(Fixture):
             old, new = self.home / f"repos/old{n}", self.home / f"repos/new{n}"
             new.mkdir(parents=True)
             real, link = (new, old) if linked_to_new else (old, new)
-            write(w / "projects" / cs.mangle(str(real)) / f"memory/notes{n}.md", f"---\nname: notes{n}\ntype: project\n---\n")
-            (w / "projects" / cs.mangle(str(link))).mkdir(parents=True)
-            (w / "projects" / cs.mangle(str(link)) / "memory").symlink_to(w / "projects" / cs.mangle(str(real)) / "memory")
+            write(w / "projects" / td.mangle(str(real)) / f"memory/notes{n}.md", f"---\nname: notes{n}\ntype: project\n---\n")
+            (w / "projects" / td.mangle(str(link))).mkdir(parents=True)
+            (w / "projects" / td.mangle(str(link)) / "memory").symlink_to(w / "projects" / td.mangle(str(real)) / "memory")
             self.assertEqual(list(listed(f"notes{n}")), [[(str(new), False)]] * 2)
         # both folders there: the one it's really in
         (self.home / "repos/old1").mkdir()
@@ -2784,10 +2784,10 @@ class MemoryTests(Fixture):
         (w / "projects").symlink_to(self.home / "data/projects")
         write(w / "projects/-repos-app/memory/notes.md", "---\nname: notes\ntype: project\n---\n")
         listed = next(m for m in self.group(self.collect(with_tokens=False), "work")["memories"] if m["name"] == "notes")
-        profiles = cs.discover_profiles(self.home)
-        self.assertEqual(cs.memory_file(profiles, listed["path"]),
+        profiles = td.discover_profiles(self.home)
+        self.assertEqual(td.memory_file(profiles, listed["path"]),
                          (self.home / "data/projects/-repos-app/memory/notes.md").resolve())
-        self.assertIsNone(cs.memory_file(profiles, str(self.home / "data/notes.md")))
+        self.assertIsNone(td.memory_file(profiles, str(self.home / "data/notes.md")))
 
 
 class OverlapTests(Fixture):
@@ -2797,7 +2797,7 @@ class OverlapTests(Fixture):
         rows[3]["chatId"] = "a"   # the same chat listed twice
         changed = {"a": {"/srv/app/x.py", "/srv/app/y.py"}, "b": {"/srv/app/y.py", "/home/me/z.md"},
                    "c": {"/srv/app/x.py"}, "d": {"/srv/app/x.py"}}
-        cs.note_overlaps([{"sessions": rows}], changed, Path("/home/me"))
+        td.note_overlaps([{"sessions": rows}], changed, Path("/home/me"))
         a, b, c, d = rows
         self.assertEqual(a["overlaps"], [{"key": "b", "name": "B", "sessionId": "b", "chatId": "b", "profileDir": ".claude-work",
                                           "count": 1, "files": ["y.py"]}])
@@ -2808,7 +2808,7 @@ class OverlapTests(Fixture):
         rows = [{"key": k, "name": k.upper(), "sessionId": k, "chatId": chat, "profileDir": ".claude-work", "pid": pid,
                  "cwd": "/srv/app", "overlaps": None} for k, chat, pid in (("a", "a", 1), ("d", "a", 4), ("b", "b", 2))]
         changed = {"a": {"/srv/app/y.py"}, "d": {"/srv/app/y.py"}, "b": {"/srv/app/y.py"}}
-        cs.note_overlaps([{"sessions": rows}], changed, Path("/home/me"))
+        td.note_overlaps([{"sessions": rows}], changed, Path("/home/me"))
         a, d, b = rows
         self.assertEqual([o["key"] for o in b["overlaps"]], ["a"])
         self.assertEqual(([o["key"] for o in a["overlaps"]], [o["key"] for o in d["overlaps"]]), (["b"], ["b"]))
@@ -2829,14 +2829,14 @@ class MarkdownTests(Fixture):
     def open(self, app, which=("okular", "xdg-open", "code"), name="run.md", folder=None):
         started = []
         if app:
-            write(cs.state_dir(self.cache / "talpy-den") / "settings.json", {"at": 1, "by": "x", "values": {"markdownApp": app}})
+            write(td.state_dir(self.cache / "talpy-den") / "settings.json", {"at": 1, "by": "x", "values": {"markdownApp": app}})
         path = (folder or self.cache / "talpy-den/agent-runs") / name
         write(path, "# Run\n\nDone.\n")
         self.cache.mkdir(parents=True, exist_ok=True)
         with mock.patch.object(jump, "start_app", lambda args, cwd=None: started.append(args)), \
-                mock.patch.object(jump.cs, "cache_dir", return_value=self.cache / "talpy-den"), \
+                mock.patch.object(jump.td, "cache_dir", return_value=self.cache / "talpy-den"), \
                 mock.patch.object(jump.shutil, "which", lambda n: f"/usr/bin/{n}" if n in which else None), \
-                mock.patch.object(jump.cs, "vscode_app", return_value=("/usr/bin/code", "Code") if "code" in which else (None, None)), \
+                mock.patch.object(jump.td, "vscode_app", return_value=("/usr/bin/code", "Code") if "code" in which else (None, None)), \
                 mock.patch.object(jump, "status_extension_since", return_value=True), \
                 mock.patch.object(jump, "runs_folder", return_value=self.cache):
             return jump.open_markdown(path, self.home), started
@@ -2867,12 +2867,12 @@ class MarkdownTests(Fixture):
 
     def edit(self, app, defaults, which=("xdg-open", "gtk-launch", "code")):
         started = []
-        write(cs.state_dir(self.cache / "talpy-den") / "settings.json", {"at": 1, "by": "x", "values": {"markdownApp": app or "auto"}})
+        write(td.state_dir(self.cache / "talpy-den") / "settings.json", {"at": 1, "by": "x", "values": {"markdownApp": app or "auto"}})
         path = self.home / "plan.md"
         with mock.patch.object(jump, "start_app", lambda args, cwd=None: started.append(args)), \
-                mock.patch.object(jump.cs, "cache_dir", return_value=self.cache / "talpy-den"), \
+                mock.patch.object(jump.td, "cache_dir", return_value=self.cache / "talpy-den"), \
                 mock.patch.object(jump.shutil, "which", lambda n: f"/usr/bin/{n}" if n in which else None), \
-                mock.patch.object(jump.cs, "vscode_app", return_value=("/usr/bin/code", "Code") if "code" in which else (None, None)), \
+                mock.patch.object(jump.td, "vscode_app", return_value=("/usr/bin/code", "Code") if "code" in which else (None, None)), \
                 mock.patch.object(jump, "default_app", lambda mime: defaults.get(mime, "")):
             return jump.edit_markdown(path, self.home), started
 
@@ -2895,7 +2895,7 @@ class MarkdownTests(Fixture):
         self.assertEqual(jump.edit_plan(self.home, [], "gone-plan-here", None), (False, "That plan isn't there any more"))
         started = []
         with mock.patch.object(jump, "start_app", lambda args, cwd=None: started.append(args)), \
-                mock.patch.object(jump.cs, "vscode_app", return_value=("/usr/bin/code", "Code")):
+                mock.patch.object(jump.td, "vscode_app", return_value=("/usr/bin/code", "Code")):
             self.assertTrue(jump.edit_remote_file("lab", "/home/u/.claude/plans/a b.md")[0])
             with self.assertRaises(ValueError):
                 jump.edit_remote_file("-oProxyCommand=x", "/p.md")
@@ -2949,7 +2949,7 @@ class HideTests(Fixture):
         super().setUp()
         os.environ["XDG_CACHE_HOME"] = str(self.cache.parent)
         self.addCleanup(os.environ.pop, "XDG_CACHE_HOME", None)
-        self.cache = cs.cache_dir(self.home)
+        self.cache = td.cache_dir(self.home)
 
     def run_jump(self, *args):
         out = io.StringIO()
@@ -2989,7 +2989,7 @@ class HideTests(Fixture):
 
     def test_chats_hide_as_dismissed_ones_do(self):
         self.assertEqual(self.run_jump("--hide", "chats", "bgdone")["message"], "Hid this chat")
-        self.assertIn("bgdone", cs.load_dismissed(self.cache))
+        self.assertIn("bgdone", td.load_dismissed(self.cache))
         self.assertEqual(self.collect(with_tokens=False)["dismissed"], 1)
         self.assertEqual(self.run_jump("--dismiss", "dead")["message"], "Hid this chat")
         self.assertEqual(self.run_jump("--show-hidden", "chats")["message"], "Showing 2 hidden chats again")
@@ -3006,7 +3006,7 @@ class DeleteTests(Fixture):
         self.addCleanup(lambda: [os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
                                  for k, v in saved.items()])
         os.environ["XDG_CACHE_HOME"], os.environ["XDG_DATA_HOME"] = str(self.cache.parent), str(root / "data")
-        self.cache, self.trash = cs.cache_dir(self.home), root / "data/Trash"
+        self.cache, self.trash = td.cache_dir(self.home), root / "data/Trash"
         self.w, self.p = self.home / ".claude-work", self.home / ".claude-personal"
 
     def delete(self, kind, item, profile=None, describe=False):
@@ -3023,15 +3023,15 @@ class DeleteTests(Fixture):
         write(self.w / "projects/-p/chat9/subagents/agent-1.jsonl", "{}\n")
         write(self.w / "file-history/chat9/abc@v1", "old\n")
         write(self.w / "projects/-p/other.jsonl", lines(prompt("keep me", t)))
-        profiles = cs.discover_profiles(self.home)
+        profiles = td.discover_profiles(self.home)
         root = sharing.store_root(self.home)
         self.assertTrue(sharing.share(profiles, "chat9", [sharing.named(profiles, ".claude-personal")], root)[0])
         self.assertTrue((self.p / "projects/-p/chat9").is_symlink())
         # what the stars, Hide, Keep going and the queue had of it goes too
-        cs.change_stars(self.cache, "chats", "chat9")
-        cs.change_dismissed(self.cache, add="chat9")
-        cs.keep_chat(self.cache, ".claude-work", "chat9")
-        cs.change_queue(self.cache, add=cs.queue_entry(".claude-work", "/p", "", 1, chat="chat9"))
+        td.change_stars(self.cache, "chats", "chat9")
+        td.change_dismissed(self.cache, add="chat9")
+        td.keep_chat(self.cache, ".claude-work", "chat9")
+        td.change_queue(self.cache, add=td.queue_entry(".claude-work", "/p", "", 1, chat="chat9"))
         asked = self.delete("chat", "chat9", ".claude-personal", describe=True)
         self.assertTrue(asked["ok"], asked)
         self.assertEqual(sorted(asked["accounts"]), ["personal", "work"])
@@ -3051,8 +3051,8 @@ class DeleteTests(Fixture):
         self.assertIn("subagents", {f.name for d in (self.trash / "files").iterdir() if d.is_dir() and not d.is_symlink()
                                     for f in d.iterdir()})
         self.assertEqual(len(list((self.trash / "info").iterdir())), len(names))
-        self.assertEqual((cs.load_stars(self.cache)["chats"], cs.load_dismissed(self.cache), cs.load_keep(self.cache)["chats"],
-                          cs.load_queue(self.cache)), ([], {}, [], []))
+        self.assertEqual((td.load_stars(self.cache)["chats"], td.load_dismissed(self.cache), td.load_keep(self.cache)["chats"],
+                          td.load_queue(self.cache)), ([], {}, [], []))
         self.assertEqual(self.delete("chat", "chat9")["message"], "That chat isn't there any more")
 
     def test_a_finished_background_chat_goes_with_its_job_folder(self):
@@ -3097,8 +3097,8 @@ class DeleteTests(Fixture):
         (self.p / "plans").mkdir(parents=True)
         os.link(self.w / "plans/calm-red-owl.md", self.p / "plans/calm-red-owl.md")
         write(self.home / ".claude/plans/calm-red-owl.md", "# Another plan of that name\n")
-        cs.change_stars(self.cache, "plans", "calm-red-owl")
-        cs.hide_item(self.cache, "plans", "calm-red-owl")
+        td.change_stars(self.cache, "plans", "calm-red-owl")
+        td.hide_item(self.cache, "plans", "calm-red-owl")
         self.assertIn("say which account", self.delete("plan", "calm-red-owl")["message"])
         asked = self.delete("plan", "calm-red-owl", ".claude-work", describe=True)
         self.assertEqual(asked["question"], f"Delete the plan “Calm plan” on {' and '.join(asked['accounts'])}? It goes to the Trash.")
@@ -3107,12 +3107,12 @@ class DeleteTests(Fixture):
         self.assertFalse((self.w / "plans/calm-red-owl.md").exists() or (self.p / "plans/calm-red-owl.md").exists())
         self.assertEqual((self.home / ".claude/plans/calm-red-owl.md").read_text(), "# Another plan of that name\n")
         self.assertEqual(self.trashed(), ["calm-red-owl.md", "calm-red-owl.md.2"])
-        self.assertEqual((cs.load_stars(self.cache)["plans"], cs.load_hidden(self.cache)["plans"]), ([], {}))
+        self.assertEqual((td.load_stars(self.cache)["plans"], td.load_hidden(self.cache)["plans"]), ([], {}))
 
     def test_a_memory_and_only_its_line_in_memory_md(self):
         folder = self.home / "repos/app"
         folder.mkdir(parents=True)
-        mem = self.w / "projects" / cs.mangle(str(folder)) / "memory"
+        mem = self.w / "projects" / td.mangle(str(folder)) / "memory"
         index = (b"# Memories\r\n- [Batch releases](batch-releases.md) \xe2\x80\x94 tag at once\r\n"
                  b"- [Other](other.md) \xe2\x80\x94 stays\n- [Batch again](./batch-releases.md)\n  not a link: batch-releases.md")
         write(mem / "MEMORY.md", "")
@@ -3121,7 +3121,7 @@ class DeleteTests(Fixture):
         write(mem / "batch-releases.md", "---\nname: Batch releases\ntype: feedback\n---\nOne tag.\n")
         write(mem / "other.md", "---\nname: other\n---\n")
         key = f".claude-work/{mem.parent.name}/batch-releases/memory"
-        cs.hide_item(self.cache, "memories", key)
+        td.hide_item(self.cache, "memories", key)
         asked = self.delete("memory", key, describe=True)
         self.assertEqual(asked["question"], "Delete the memory “Batch releases”? It goes to the Trash, and Claude stops "
                                             "reading it in new chats in ~/repos/app.")
@@ -3131,7 +3131,7 @@ class DeleteTests(Fixture):
                          b"# Memories\r\n- [Other](other.md) \xe2\x80\x94 stays\n  not a link: batch-releases.md")
         self.assertEqual(stat.S_IMODE((mem / "MEMORY.md").stat().st_mode), 0o640)
         self.assertEqual(self.trashed(), ["batch-releases.md"])
-        self.assertEqual(cs.load_hidden(self.cache)["memories"], {})
+        self.assertEqual(td.load_hidden(self.cache)["memories"], {})
         # the account's CLAUDE.md isn't deleted this way
         write(self.w / "CLAUDE.md", "# Mine\n")
         self.assertFalse(self.delete("memory", ".claude-work/CLAUDE.md/memory")["ok"])
@@ -3147,21 +3147,21 @@ class StopKeepOffTests(Fixture):
         saved = os.environ.get("XDG_CACHE_HOME")
         os.environ["XDG_CACHE_HOME"] = str(cache.parent)
         self.addCleanup(lambda: os.environ.pop("XDG_CACHE_HOME") if saved is None else os.environ.__setitem__("XDG_CACHE_HOME", saved))
-        cs.keep_chat(cache, ".claude-work", "kept1")
+        td.keep_chat(cache, ".claude-work", "kept1")
         looked = []
 
         def stopped(home, extra, session_id, profile_dir=None, busy=False):
             # (meanwhile the copy that looks after kept chats can't take the lock: it skips)
-            looked.append(cs.change_keep(cache, lambda data: True, wait=False))
+            looked.append(td.change_keep(cache, lambda data: True, wait=False))
             return True, "Stopped"
         with mock.patch.object(jump, "stop", side_effect=stopped):
             self.assertEqual(jump.stop_keep_off(self.home, [], "sess1", "kept1"),
                              (True, "Stopped. It won't go on by itself any more"))
-        self.assertEqual((looked, cs.load_keep(cache)["chats"]), ([False], []))
+        self.assertEqual((looked, td.load_keep(cache)["chats"]), ([False], []))
         # not stopped: Keep going stays on
-        cs.keep_chat(cache, ".claude-work", "kept1")
+        td.keep_chat(cache, ".claude-work", "kept1")
         with mock.patch.object(jump, "stop", return_value=(False, "That chat isn't running any more")):
             self.assertEqual(jump.stop_keep_off(self.home, [], "sess1", "kept1"), (False, "That chat isn't running any more"))
-        self.assertEqual([k["chat"] for k in cs.load_keep(cache)["chats"]], ["kept1"])
+        self.assertEqual([k["chat"] for k in td.load_keep(cache)["chats"]], ["kept1"])
         with self.assertRaises(SystemExit):
             jump.main(["--keep-off", "kept1", "--and-keep-off", "kept1"])

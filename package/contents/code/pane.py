@@ -208,7 +208,7 @@ if os.path.isfile(globals().get("__file__") or ""):  # (on an SSH host it comes 
             sys.pycache_prefix = str(_compiled)
             sys.dont_write_bytecode = False
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the script dir off sys.path
-import talpy_den as cs  # noqa: E402
+import talpy_den as td  # noqa: E402
 
 # ---------------------------------------------------------------- the conversation
 
@@ -256,7 +256,7 @@ def tool_input_text(block):
         return "$ " + inp["command"]
     path = inp.get("file_path") or inp.get("notebook_path")
     if name in ("Edit", "MultiEdit", "Write", "NotebookEdit") and isinstance(path, str):
-        return "\n".join([path] + cs.edit_diff(name, inp, None)[:DETAIL_LINES])
+        return "\n".join([path] + td.edit_diff(name, inp, None)[:DETAIL_LINES])
     parts = []
     for key, value in inp.items():
         if isinstance(value, (str, int, float, bool)) and str(value).strip():
@@ -296,7 +296,7 @@ def edit_lines(name, inp, result, current=None):
                     lines.append(f"@@ -{h.get('oldStart', 0)},{h.get('oldLines', 0)} +{h.get('newStart', 0)},{h.get('newLines', 0)} @@")
                     lines += [l for l in h["lines"] if isinstance(l, str)]
     if lines is None:
-        lines = cs.edit_diff(name, inp, current, limit=None) if name != "Write" else []
+        lines = td.edit_diff(name, inp, current, limit=None) if name != "Write" else []
     return lines
 
 
@@ -325,14 +325,14 @@ def tool_summary(name, inp, output, error):
     under the call: the error, the lines it read or changed, else the first
     line of what came back and how many more there are."""
     rows = [r for r in TOOL_ERROR.sub("", output or "").strip().split("\n") if r.strip()]
-    first = cs.short_text(rows[0], 120) if rows else ""
+    first = td.short_text(rows[0], 120) if rows else ""
     if error:
         return first or "Failed"
     if name == "Read":
         read = sum(1 for r in rows if READ_LINE.match(r))
         return plural(read, "line") if read else first   # (an image, a PDF: no numbered lines)
     if name in EDITS:
-        return change_summary(name, cs.edit_diff(name, inp, None, limit=None), first)
+        return change_summary(name, td.edit_diff(name, inp, None, limit=None), first)
     if not rows:
         return "(no output)" if name == "Bash" else ""
     return first + (f" … +{plural(len(rows) - 1, 'line')}" if len(rows) > 1 else "")
@@ -342,7 +342,7 @@ def typed_text(content):
     """What a message you sent while Claude worked says (a string, or the
     text blocks of one with pictures), "" for one that isn't yours to read
     (a task notification, a subagent's report)."""
-    text = cs.typed_part(cs.message_text({"content": content})).strip()  # (the Claude Code panel's: after its editor's notes)
+    text = td.typed_part(td.message_text({"content": content})).strip()  # (the Claude Code panel's: after its editor's notes)
     return "" if text.startswith("<") else text
 
 
@@ -426,7 +426,7 @@ def plan_title(text):
     for line in text.splitlines():
         line = line.strip().lstrip("#").strip()
         if line:
-            return cs.short_text(line, 100)
+            return td.short_text(line, 100)
     return ""
 
 
@@ -435,8 +435,8 @@ def asked_of(name, inp):
     (the tool item's "asked"): {"questions": question_view's, each with
     "picked" (the labels you chose)} or {"plan" (Markdown), "title"}, with
     "state" (how you answered: "open" till then)."""
-    if name == cs.ASK_TOOL:
-        return {"questions": [dict(q, picked=[]) for q in cs.question_view(inp)], "state": "open"}
+    if name == td.ASK_TOOL:
+        return {"questions": [dict(q, picked=[]) for q in td.question_view(inp)], "state": "open"}
     text = inp.get("plan") if isinstance(inp.get("plan"), str) else ""
     return {"plan": clip(text, TEXT_CHARS, 10 ** 6), "title": plan_title(text), "state": "open"}
 
@@ -464,7 +464,7 @@ def your_answer(item, entry, output, error, result):
         elif isinstance(given, dict) and given:
             asked["state"] = "answered"
             notes = result.get("annotations") if isinstance(result.get("annotations"), dict) else {}
-            asked_now = [dict(q, picked=[]) for q in cs.question_view(result)] or asked["questions"]
+            asked_now = [dict(q, picked=[]) for q in td.question_view(result)] or asked["questions"]
             answers = []
             for q in asked_now:
                 answer = given.get(q["question"])
@@ -547,7 +547,7 @@ def prompt_pictures(text, blocks, uid, folder):
     """The pictures a prompt of yours has, for the pane's thumbnails: the
     files it names ([Image: /path], a picture pasted in the pane), then
     those pasted into it in Claude's terminal or panel (its image blocks),
-    each saved once in folder (cs.images_dir, kept as long as the pane's own,
+    each saved once in folder (td.images_dir, kept as long as the pane's own,
     IMAGES_KEEP_DAYS), named after its entry. folder None (an SSH host's
     chat): the files it names only (conversation keeps the regular files)."""
     out = []
@@ -658,7 +658,7 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None,
             continue
         if not isinstance(e, dict) or e.get("isSidechain"):
             continue
-        kind, at = e.get("type"), cs.to_ms(e.get("timestamp"))
+        kind, at = e.get("type"), td.to_ms(e.get("timestamp"))
         uid = e["uuid"] if isinstance(e.get("uuid"), str) else f"{kind}-{at}-{len(items)}"
         if away is not None and away.first is None:
             away.entry(at)
@@ -712,12 +712,12 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None,
                 # (a wake-up Claude scheduled itself, ScheduleWakeup or /loop: its prompt isn't yours)
                 said = e.get("prompt") if isinstance(e.get("prompt"), str) else ""
                 items.append({"kind": "note", "key": uid, "at": at,
-                              "text": "Claude woke itself up" + (": " + cs.short_text(" ".join(said.split()), 120) if said.strip() else "")})
+                              "text": "Claude woke itself up" + (": " + td.short_text(" ".join(said.split()), 120) if said.strip() else "")})
             continue
-        msg, blocks = cs.blocks_of(e)
+        msg, blocks = td.blocks_of(e)
         if kind == "user":
             if e.get("isMeta") and e.get("promptSource") == "system" and due \
-                    and same_text(due[0]["text"], cs.message_text(msg) if msg else ""):
+                    and same_text(due[0]["text"], td.message_text(msg) if msg else ""):
                 due.pop(0)   # (a wake-up's prompt, queued and taken in as Claude's own: not yours, not shown)
                 continue
             if e.get("isCompactSummary") or e.get("isMeta"):
@@ -747,7 +747,7 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None,
                     if said is not None:
                         said["at"] = at
                         items.append(said)
-            prompt = cs.human_prompt(e)
+            prompt = td.human_prompt(e)
             if prompt is not None:
                 end.prompt(at)
                 if away is not None:
@@ -760,7 +760,7 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None,
                     # (not what was sent: it was put together with others, this prompt shows them)
                 items.append(you(uid, prompt, at, blocks))
                 continue
-            text = cs.message_text(msg).strip()
+            text = td.message_text(msg).strip()
             if text.startswith(INTERRUPTED):
                 end.interrupted()
                 items.append({"kind": "note", "key": uid, "text": "Interrupted", "at": at})
@@ -772,9 +772,9 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None,
             continue
         end.assistant(e, msg, blocks)
         if e.get("isApiErrorMessage"):
-            text = " ".join(cs.message_text(msg).split())
+            text = " ".join(td.message_text(msg).split())
             if text:
-                items.append({"kind": "note", "key": uid, "text": cs.short_text(text, 300), "at": at, "error": True})
+                items.append({"kind": "note", "key": uid, "text": td.short_text(text, 300), "at": at, "error": True})
             continue
         mid = msg.get("id") if isinstance(msg.get("id"), str) else None
         # (thinking shown as updates: a thinking block's text is a line Claude
@@ -806,10 +806,10 @@ def conversation_items(lines, pictures=None, ends=None, so_far=None, found=None,
                 if away is not None:
                     away.step(at, c["id"])
                 inp = c.get("input") if isinstance(c.get("input"), dict) else {}
-                item = {"kind": "tool", "key": c["id"], "name": c.get("name") or "tool", "line": cs.describe_tool(c),
+                item = {"kind": "tool", "key": c["id"], "name": c.get("name") or "tool", "line": td.describe_tool(c),
                         "status": "open", "input": clip(tool_input_text(c)), "output": "", "summary": "", "at": at,
                         "diff": capped(edit_lines(c.get("name"), inp, None)) if c.get("name") in EDITS else []}
-                if c.get("name") in (cs.ASK_TOOL, cs.PLAN_TOOL):
+                if c.get("name") in (td.ASK_TOOL, td.PLAN_TOOL):
                     item["asked"] = asked_of(c["name"], inp)
                 tools[c["id"]] = (item, inp)
                 items.append(item)
@@ -955,10 +955,10 @@ def wait_for_change(path, stamp, seconds, clock=time.time, look=stamp_of):
 
 def find_transcript(home, extra_dirs, chat_id, profile_key=None):
     """(profile, transcript) of a chat: under the profile named first, else any that has it."""
-    profiles = cs.discover_profiles(home, extra_dirs)
-    ordered = sorted(profiles, key=lambda p: not (profile_key and cs.matches_profile(p, profile_key)))
+    profiles = td.discover_profiles(home, extra_dirs)
+    ordered = sorted(profiles, key=lambda p: not (profile_key and td.matches_profile(p, profile_key)))
     for p in ordered:
-        path = cs.transcript_path(p, chat_id)
+        path = td.transcript_path(p, chat_id)
         if path is not None:
             return p, path
     return None, None
@@ -983,7 +983,7 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     None: nothing to tell). marks(): what its side questions and bookmarks
     are here (talpy_den.marks_stamp), in its stamp: one changed in another
     window (VS Code's) is a change too, the chat as it was."""
-    if not cs.valid_id(chat_id):
+    if not td.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
     if path is None:
@@ -1009,16 +1009,16 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
     gone = turns.Away(away) if away is not None else None
     items, more = conversation(path, max(1, min(PANE_ITEMS_MAX, limit)), pictures, ends, so_far, reach or None, gone)
     limit = so_far.get("limit", limit)   # (grown to show what --reach goes to)
-    name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
-    peek = cs.chat_peek(path) or {}
+    name, cwd, _ = td.read_chat_info(path, path.stat().st_size)
+    peek = td.chat_peek(path) or {}
     turn = so_far["turn"]
-    result = {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or cs.chat_folder(path) or "",
+    result = {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd or td.chat_folder(path) or "",
               "items": items, "more": more, "stamp": f"{stamp}/{limit}", "mode": peek.get("mode"),
               "recap": peek.get("recap"),   # (Claude's own recap, written when you came back to it: Since you last looked shows it)
-              "permission": cs.pending_permission(path, cwd),
+              "permission": td.pending_permission(path, cwd),
               "context": turns.context_left(turn.usage, turn.model, lambda: turns.status_window(home, profile, chat_id, turn.model),
-                                            cs.compact_window(profile.path, turn.model)),
-              "turn": turn.now(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")}
+                                            td.compact_window(profile.path, turn.model)),
+              "turn": turn.now(path, so_far["start"], td.cache_dir(home) / "turns" / f"{chat_id}.json")}
     record = chatpick.job_record(profile, chat_id)   # (what /model and /effort's lists mark as what it uses now)
     result["options"] = chatpick.options_now(home, profile, chat_id, bool(peek.get("ultracode")), record)
     import shells   # (what it runs in the background now: its working line says so)
@@ -1027,7 +1027,7 @@ def chat_conversation(home, extra_dirs, chat_id, profile_key=None, limit=PANE_IT
         result.update(limit=limit, reach=reach, reached=so_far.get("reached"))
     if gone is not None:
         if not gone.prompt and so_far.get("start"):   # (your message further back than what was read: a long turn's)
-            before = turns.turn_before(path, so_far["start"], cs.cache_dir(home) / "turns" / f"{chat_id}.json")
+            before = turns.turn_before(path, so_far["start"], td.cache_dir(home) / "turns" / f"{chat_id}.json")
             if before:
                 gone.before(*before)
         # (what it waits for: a question its turn ended with; a prompt it waits on, the front ends know
@@ -1075,7 +1075,7 @@ def question_answers(inp, answers):
     """{question: answer text} for the AskUserQuestion call inp, from
     answers {question: [labels or text]}: the questions it asks only."""
     out = {}
-    for q in cs.question_view(inp):
+    for q in td.question_view(inp):
         given = answers.get(q["question"]) if isinstance(answers, dict) else None
         text = answer_text(given if isinstance(given, list) else [given], q["multiSelect"])
         if text:
@@ -1097,8 +1097,8 @@ def decision_of(decision, note, suggestions, inp=None, answers=None):
     out = {"behavior": "allow"}
     if question:
         out["updatedInput"] = dict(inp, answers=answers)
-    elif decision == "always" and cs.always_allow(suggestions)[0]:
-        out["updatedPermissions"] = cs.always_allow(suggestions)[0]  # (what its label says: no more)
+    elif decision == "always" and td.always_allow(suggestions)[0]:
+        out["updatedPermissions"] = td.always_allow(suggestions)[0]  # (what its label says: no more)
     return out
 
 
@@ -1124,12 +1124,12 @@ def answer_file(path, answer):
     """Write a request's answer, the first one only (two windows, Plasma's
     and VS Code's, answering one prompt a moment apart: the second gets
     False, not "Allowed" when it was denied). Linked into place in one go
-    (cs.write_atomic new: the hook never reads half an answer, which it
+    (td.write_atomic new: the hook never reads half an answer, which it
     would remove); where the folder takes no hard links (some FUSE or
     shared-folder homes), replaced as before."""
     data = json.dumps(answer, separators=(",", ":")).encode("utf-8")
     try:
-        cs.write_atomic(path, data, mode=0o600, new=True)
+        td.write_atomic(path, data, mode=0o600, new=True)
     except FileExistsError:
         return False
     except OSError as exc:
@@ -1138,7 +1138,7 @@ def answer_file(path, answer):
             raise
         if path.exists():
             return False
-        cs.write_atomic(path, data, mode=0o600)
+        td.write_atomic(path, data, mode=0o600)
     return True
 
 
@@ -1151,22 +1151,22 @@ def answer_request(cache_root, request_id, decision, note="", answers=None):
         return False, f"Not an answer: {decision}"
     if not re.fullmatch(r"[0-9]+-[0-9a-f]{8}", request_id or ""):
         return False, f"Not a request: {request_id}"
-    folder = next((d for d in cs.request_dirs(cache_root) if os.path.isfile(d / (request_id + ".json"))),
-                  cs.requests_dir(cache_root))  # (where its hook waits for the answer)
-    req = cs.read_json(folder / (request_id + ".json"))
-    if not isinstance(req, dict) or not cs.pid_alive(req.get("hookPid")):
+    folder = next((d for d in td.request_dirs(cache_root) if os.path.isfile(d / (request_id + ".json"))),
+                  td.requests_dir(cache_root))  # (where its hook waits for the answer)
+    req = td.read_json(folder / (request_id + ".json"))
+    if not isinstance(req, dict) or not td.pid_alive(req.get("hookPid")):
         return False, NOT_ASKING
-    now = cs.permission_requests(cache_root).get(req.get("sessionId"))
+    now = td.permission_requests(cache_root).get(req.get("sessionId"))
     if now is not None and now.get("id") != request_id:
         return False, ASKS_ELSE   # (it asked again since: that one was answered in the chat)
     inp, given = None, None
-    plan = req.get("tool") == cs.PLAN_TOOL
+    plan = req.get("tool") == td.PLAN_TOOL
     if plan != (decision in PLAN_DECISIONS) and not (plan and decision == "deny"):
         return False, "Approve the plan or keep planning" if plan else "It asks for a permission, not about a plan"
     if plan:
         inp = req.get("input") if isinstance(req.get("input"), dict) else {}
         answer = plan_decision("keep" if decision == "deny" else decision, note, inp)
-    elif req.get("tool") == cs.ASK_TOOL:
+    elif req.get("tool") == td.ASK_TOOL:
         inp = req.get("input") if isinstance(req.get("input"), dict) else {}
         if decision in ("allow", "always"):
             return False, "Choose your answers first"
@@ -1210,17 +1210,17 @@ def chat_place(home, extra_dirs, chat_id, profile_key=None, cwd=None):
     """(profile, folder) of a chat, or (None, its error answer). chat_id "-"
     with cwd: a new chat's, in that folder on the profile profile_key."""
     if chat_id == "-" and cwd:
-        profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
+        profile = next((p for p in td.discover_profiles(home, extra_dirs) if td.matches_profile(p, profile_key)), None)
         if profile is None:
             return None, {"ok": False, "message": f"No Claude profile called {profile_key}"}
         return profile, os.path.expanduser(cwd)
-    if not cs.valid_id(chat_id):
+    if not td.valid_id(chat_id):
         return None, {"ok": False, "message": f"Not a chat: {chat_id}"}
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
     if path is None:
         return None, {"ok": False, "message": NO_CHAT}
-    _, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
-    return profile, cwd or cs.chat_folder(path) or ""
+    _, cwd, _ = td.read_chat_info(path, path.stat().st_size)
+    return profile, cwd or td.chat_folder(path) or ""
 
 
 def completions(home, extra_dirs, chat_id, profile_key=None, cwd=None):
@@ -1269,8 +1269,8 @@ KGLOBALACCEL = ("--dest", "org.kde.kglobalaccel", "--object-path", "/kglobalacce
 def oldest_request(cache_root):
     """The oldest relayed request a key can answer (not a question: those
     take answers), and whether a question waits too."""
-    requests = list(cs.permission_requests(cache_root).values())
-    usable = [r for r in requests if r.get("tool") != cs.ASK_TOOL]
+    requests = list(td.permission_requests(cache_root).values())
+    usable = [r for r in requests if r.get("tool") != td.ASK_TOOL]
     oldest = min(usable, key=lambda r: r.get("at") or 0) if usable else None
     return oldest, len(usable) < len(requests)
 
@@ -1278,7 +1278,7 @@ def oldest_request(cache_root):
 def chat_name(req):
     path = req.get("transcript")
     try:
-        name, _, _ = cs.read_chat_info(Path(path), Path(path).stat().st_size) if isinstance(path, str) else ("", "", "")
+        name, _, _ = td.read_chat_info(Path(path), Path(path).stat().st_size) if isinstance(path, str) else ("", "", "")
     except (OSError, ValueError, TypeError):
         name = ""
     return name or "A chat"
@@ -1292,11 +1292,11 @@ def answer_oldest(cache_root, decision):
     req, question = oldest_request(cache_root)
     if req is None:
         return False, "A question waits: answer it in the panel" if question else "No chat waits for a permission"
-    plan = req.get("tool") == cs.PLAN_TOOL
+    plan = req.get("tool") == td.PLAN_TOOL
     ok, said = answer_request(cache_root, req["id"], ("approve" if decision == "allow" else "keep") if plan else decision)
     if not ok:
         return False, said
-    return True, f"{chat_name(req)}: {said} · {cs.request_view(req)['line']}"
+    return True, f"{chat_name(req)}: {said} · {td.request_view(req)['line']}"
 
 
 def show_note(text, ok):
@@ -1407,7 +1407,7 @@ def tmux_base(entry):
     pane = entry.get("tmux") if isinstance(entry, dict) else None
     if tmux is None or not isinstance(pane, str) or not pane:
         return None, None
-    socket = cs.tmux_socket(entry["pid"])
+    socket = td.tmux_socket(entry["pid"])
     target = pane.rsplit(".", 1)[-1] if "." in pane else pane  # its pane id, e.g. %3
     return [tmux, *(["-S", socket] if socket else [])], target
 
@@ -1535,7 +1535,7 @@ def host_vscode_link(answer, ids, text):
     would be opened on this computer. No link when no id is a chat's."""
     if answer.get("how") != "vscode":
         return answer
-    links = [vscode_prompt_link(i, (text or "").strip()) for i in ids if cs.valid_id(i or "")]
+    links = [vscode_prompt_link(i, (text or "").strip()) for i in ids if td.valid_id(i or "")]
     if links:
         answer["link"] = answer.get("link") if answer.get("link") in links else links[0]
     else:
@@ -1555,7 +1555,7 @@ def go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped
     if scoped:
         import jump
         prefix = jump.scope_prefix("claude")
-    answer = cs.continue_chat(home, extra_dirs, profile.key, chat_id, text=text, claude=claude, prefix=prefix,
+    answer = td.continue_chat(home, extra_dirs, profile.key, chat_id, text=text, claude=claude, prefix=prefix,
                               force=True, settings=hook)
     if answer.get("ok"):
         answer["message"] = "Sent: the chat goes on with it in the background" + (
@@ -1570,24 +1570,24 @@ def trust_ask(home, folder):
     """What Talpy Chat asks when a message couldn't go because Claude
     doesn't trust the folder its chat would go on (or start) in, where a
     background chat can't ask: {"folder", "short" (what trusting it trusts:
-    its repository's folder, cs.trust_place), "question" (jump.trust_question,
+    its repository's folder, td.trust_place), "question" (jump.trust_question,
     in the words of Claude's own question)}; yes: --trust-folder, then it's
     sent again. None: no folder, or one Claude never keeps trust for (your
     home folder: it asks there every time)."""
-    place = cs.trust_place(folder, home) if isinstance(folder, str) and folder else None
+    place = td.trust_place(folder, home) if isinstance(folder, str) and folder else None
     if place is None:
         return None
     try:
         import jump
     except ImportError:   # (on an SSH host or in a container: only what the action needs goes there, and a
         return None       # folder there isn't asked about from here: trusted in a terminal there)
-    return {"folder": folder, "short": cs.short_folder(str(place["key"]), home),
+    return {"folder": folder, "short": td.short_folder(str(place["key"]), home),
             "question": jump.trust_question(place, folder, home)}
 
 
 def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None, scoped=True,
          hooked=True, hook_source=None, predict=False):
-    """Send your message to a chat the way it takes one (cs.reply_route):
+    """Send your message to a chat the way it takes one (td.reply_route):
     {"ok", "message", "how": "typed"|"background"|"vscode"|"copy"|"ask",
     "link" (vscode), "copied" (copy); woken in the background: "hooked",
     "hookWhy" (chat_hook_of)}. how "ask": the chat runs in a terminal that
@@ -1601,9 +1601,9 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
         return {"ok": False, "message": "Write your message first"}
     if how not in HOWS:
         return {"ok": False, "message": f"Not a way to send: {how}"}
-    if not cs.valid_id(chat_id):
+    if not td.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
-    profiles = cs.discover_profiles(home, extra_dirs)
+    profiles = td.discover_profiles(home, extra_dirs)
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
     if path is None:
         return {"ok": False, "message": NO_CHAT}
@@ -1612,9 +1612,9 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
     # (one wake of a chat at a time: Talpy Chat's window and VS Code's tab sending to one stopped chat
     # within a second or two would make Claude start a copy; the second waits for the first's wake,
     # then finds its session and replies to it)
-    with cs.wake_lock(home, chat_id) as waited:
+    with td.wake_lock(home, chat_id) as waited:
         if waited:
-            cs.wake_settle(home, extra_dirs, chat_id)
+            td.wake_settle(home, extra_dirs, chat_id)
         return send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile,
                         hooked, hook_source, predict)
 
@@ -1624,14 +1624,14 @@ def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, clau
     """send's sending, under its lock."""
     entry = None
     for sid in (session_id, chat_id):
-        if cs.valid_id(sid or ""):
-            entry = cs.find_chat_entry(home, extra_dirs, sid)
+        if td.valid_id(sid or ""):
+            entry = td.find_chat_entry(home, extra_dirs, sid)
             if entry is not None:
                 break
     row = {"pid": entry.get("pid") if entry else None, "kind": entry.get("kind") if entry else None,
            "entrypoint": entry.get("entrypoint") if entry else "", "tmux": bool(entry and entry.get("tmux"))}
-    route = cs.reply_route(row)
-    state = cs.session_state(entry) if entry else "done"
+    route = td.reply_route(row)
+    state = td.session_state(entry) if entry else "done"
     if route == "tmux":
         if state == "waiting":
             return {"ok": False, "message": "It's asking you something: answer that first"}
@@ -1643,32 +1643,32 @@ def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, clau
     if route == "terminal" and how != "background":
         return {"ok": True, "how": "ask", "message": "Its terminal takes no text from outside: send it, and the chat "
                 "goes on in the background, or copy it and open its tab"}
-    claude = claude or cs.find_claude(home, ask_shell=True)
+    claude = claude or td.find_claude(home, ask_shell=True)
     if claude is None:
         return {"ok": False, "message": "No claude command found"}
     if entry is not None and entry.get("kind") == "bg":
         job_id = entry.get("jobId")
-        if not cs.valid_id(job_id or ""):
+        if not td.valid_id(job_id or ""):
             return {"ok": False, "message": "It runs in a background chat Talpy Den can't stop"}
         # (one that asks you something isn't stopped for it: typed in, it would land in its question,
         # so that's answered first; the pane's reply answers it, through its prompt's request)
         if state == "waiting":
             return {"ok": False, "message": "It's asking you something: answer that first"}
-        runs_on = next((p for p in profiles if cs.matches_profile(p, profile_key)), profile)
+        runs_on = next((p for p in profiles if td.matches_profile(p, profile_key)), profile)
         # (its session takes it in where it is, as `claude agents` answers one, queued while it works: no
         # stop, so a terminal that shows it stays on it)
-        if cs.reply_to_background(runs_on, job_id, text)[0]:
+        if td.reply_to_background(runs_on, job_id, text)[0]:
             return {"ok": True, "how": "typed", "message": "Sent (typed into the background chat)"}
-        ok, message = cs.stop_background(runs_on, job_id, cs.read_job([runs_on], job_id), home, claude)
+        ok, message = td.stop_background(runs_on, job_id, td.read_job([runs_on], job_id), home, claude)
         if not ok:
             return {"ok": False, "message": message}
     elif entry is not None:
         if state != "idle":
             return {"ok": False, "message": "It's at work: send it when this turn ends"}
-        ok, message = cs.stop_chat(entry)
+        ok, message = td.stop_chat(entry)
         if not ok:
             return {"ok": False, "message": message}
-    hook = chat_hook_of(home, next((p for p in profiles if cs.matches_profile(p, profile_key)), profile), hook_source,
+    hook = chat_hook_of(home, next((p for p in profiles if td.matches_profile(p, profile_key)), profile), hook_source,
                         predict, hooked)
     answer = go_on_in_background(home, extra_dirs, profile, chat_id, text, claude, scoped, hook["settings"])
     answer["how"] = "background"
@@ -1678,31 +1678,31 @@ def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, clau
 
 
 def interrupt(home, extra_dirs, profile_key, chat_id, session_id=None):
-    """Talpy Chat's Stop for a chat at work (cs.interrupt_chat_by_id: Ctrl+C
+    """Talpy Chat's Stop for a chat at work (td.interrupt_chat_by_id: Ctrl+C
     in its tmux pane, Esc into a background session), found by the session
     that has it open (session_id) or its chat id: (ok, message)."""
-    ids = [i for i in dict.fromkeys((session_id, chat_id)) if cs.valid_id(i or "")]
+    ids = [i for i in dict.fromkeys((session_id, chat_id)) if td.valid_id(i or "")]
     if not ids:
         return False, f"Not a chat: {chat_id}"
     for sid in ids:
-        found = cs.find_chat_live(home, extra_dirs, sid, profile_key)
+        found = td.find_chat_live(home, extra_dirs, sid, profile_key)
         if found is not None:
-            return cs.interrupt_live(*found)
+            return td.interrupt_live(*found)
     return False, "That chat isn't running any more"
 
 
 def remote_control(home, extra_dirs, profile_key, chat_id, session_id=None, on=True):
     """Remote Control on or off in a running background chat
-    (cs.remote_control_live), found by the session that has it open
+    (td.remote_control_live), found by the session that has it open
     (session_id) or its chat id: {"ok", "message", "link": its claude.ai/code
     page while it's on, else None}."""
-    ids = [i for i in dict.fromkeys((session_id, chat_id)) if cs.valid_id(i or "")]
+    ids = [i for i in dict.fromkeys((session_id, chat_id)) if td.valid_id(i or "")]
     if not ids:
         return {"ok": False, "message": f"Not a chat: {chat_id}", "link": None}
     for sid in ids:
-        found = cs.find_chat_live(home, extra_dirs, sid, profile_key)
+        found = td.find_chat_live(home, extra_dirs, sid, profile_key)
         if found is not None:
-            ok, said, link = cs.remote_control_live(home, extra_dirs, found[0], found[1], on, profile_key)
+            ok, said, link = td.remote_control_live(home, extra_dirs, found[0], found[1], on, profile_key)
             return {"ok": ok, "message": said, "link": link}
     return {"ok": False, "message": "That chat isn't running any more", "link": None}
 
@@ -1717,15 +1717,15 @@ def type_in(home, extra_dirs, profile_key, chat_id, text, session_id=None, copy=
     text = (text or "").strip()
     if not text:
         return {"ok": False, "message": "Write the command first"}
-    if not cs.valid_id(chat_id):
+    if not td.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
     entry = None
     for sid in (session_id, chat_id):
-        if cs.valid_id(sid or ""):
-            entry = cs.find_chat_entry(home, extra_dirs, sid, profile_key)
+        if td.valid_id(sid or ""):
+            entry = td.find_chat_entry(home, extra_dirs, sid, profile_key)
             if entry is not None:
                 break
-    asks = entry is not None and cs.session_state(entry) == "waiting"
+    asks = entry is not None and td.session_state(entry) == "waiting"
     if entry is not None and entry.get("kind") == "interactive" and entry.get("tmux") and not asks:
         ok, message = tmux_type(entry, text, enter=False)
         if ok:
@@ -1755,34 +1755,34 @@ def start_chat(home, extra_dirs, profile_key, folder, text, model=None, effort=N
     text = (text or "").strip()
     if not text and not plan:
         return {"ok": False, "message": "Write your message first"}
-    profiles = cs.discover_profiles(home, extra_dirs)
-    profile = next((p for p in profiles if cs.matches_profile(p, profile_key)), None)
+    profiles = td.discover_profiles(home, extra_dirs)
+    profile = next((p for p in profiles if td.matches_profile(p, profile_key)), None)
     if profile is None:
         return {"ok": False, "message": f"No Claude profile called {profile_key}"}
     try:
-        options = cs.chat_options(model, effort, mode)
+        options = td.chat_options(model, effort, mode)
     except ValueError as exc:
         return {"ok": False, "message": str(exc)}
     plan_path = None
     if plan:
-        plan_path = cs.find_plan(profiles, plan, plan_profile, home)
+        plan_path = td.find_plan(profiles, plan, plan_profile, home)
         if plan_path is None:
             return {"ok": False, "message": "That plan isn't there any more"}
-    claude = claude or cs.find_claude(home, ask_shell=True)
+    claude = claude or td.find_claude(home, ask_shell=True)
     if claude is None:
         return {"ok": False, "message": "No claude command found"}
     hook = chat_hook_of(home, profile, hook_source, predict)
-    options = (["--settings", hook["settings"]] if hook["settings"] else []) + options + cs.picture_options(home, text)
+    options = (["--settings", hook["settings"]] if hook["settings"] else []) + options + td.picture_options(home, text)
     prefix = []
     if scoped:
         import jump
         prefix = jump.scope_prefix("claude")
     folder = os.path.expanduser(folder) if isinstance(folder, str) and folder.strip() else str(home)
-    ok, message, job = cs.start_background(profile, folder, cs.task_prompt(text, plan_path, home), home, claude,
+    ok, message, job = td.start_background(profile, folder, td.task_prompt(text, plan_path, home), home, claude,
                                            prefix=prefix, options=options)
     if not ok:
-        ask = trust_ask(home, folder) if message.startswith(cs.UNTRUSTED) else None
-        return {"ok": False, "message": message, **({"untrusted": True} if message.startswith(cs.UNTRUSTED) else {}),
+        ask = trust_ask(home, folder) if message.startswith(td.UNTRUSTED) else None
+        return {"ok": False, "message": message, **({"untrusted": True} if message.startswith(td.UNTRUSTED) else {}),
                 **({"trustAsk": ask} if ask else {})}
     chat = job_chat(profile, job)
     if chat is None:
@@ -1799,13 +1799,13 @@ def job_chat(profile, job, wait=JOB_RECORD_WAIT_S):
     """The chat id of a background job claude --bg started (its record,
     jobs/<job>/state.json, names it; claude writes it before it answers, so
     a moment's wait at the most)."""
-    if not cs.valid_id(job or ""):
+    if not td.valid_id(job or ""):
         return None
     deadline = time.time() + wait
     while True:
-        record = cs.read_json(profile.path / "jobs" / job / "state.json")
+        record = td.read_json(profile.path / "jobs" / job / "state.json")
         chat = record.get("sessionId") if isinstance(record, dict) else None
-        if isinstance(chat, str) and cs.valid_id(chat) and chat.startswith(job):
+        if isinstance(chat, str) and td.valid_id(chat) and chat.startswith(job):
             return chat
         if time.time() >= deadline:
             return None
@@ -1819,13 +1819,13 @@ def send_later(home, extra_dirs, profile_key, chat_id, text, session_id=None, ho
         return False, "Write your message first"
     if how not in HOWS:
         return False, f"Not a way to send: {how}"
-    entry = cs.queue_entry(profile_key, "", text, int(time.time() * 1000), host, chat=chat_id, name=name)
-    entry.update(afterTurn=True, how=how, session=session_id if cs.valid_id(session_id or "") else None)
-    cache_root = cs.cache_dir(home)
-    for old in cs.load_queue(cache_root):  # (one message waits per chat: the new one replaces it)
+    entry = td.queue_entry(profile_key, "", text, int(time.time() * 1000), host, chat=chat_id, name=name)
+    entry.update(afterTurn=True, how=how, session=session_id if td.valid_id(session_id or "") else None)
+    cache_root = td.cache_dir(home)
+    for old in td.load_queue(cache_root):  # (one message waits per chat: the new one replaces it)
         if old.get("afterTurn") and old.get("chat") == chat_id and (old.get("host") or "") == (host or ""):
-            cs.change_queue(cache_root, take=old["id"])
-    cs.change_queue(cache_root, add=entry)
+            td.change_queue(cache_root, take=old["id"])
+    td.change_queue(cache_root, add=entry)
     return True, "It's sent when this turn ends"
 
 
@@ -1863,7 +1863,7 @@ def copy_to_clipboard(text):
 
 def read_bytes(path):
     """A plain file's content, else None (a pipe put there isn't waited for)."""
-    return cs.bytes_to_compare(path, None)[0]
+    return td.bytes_to_compare(path, None)[0]
 
 
 def git(folder, *args, data=None, timeout=20, literal=True):
@@ -1962,14 +1962,14 @@ def originals(profiles, path, cwd):
     folders), from Claude's backups, else what its Edit or Write calls gave
     back (a file outside the chat's folder has no backups), else git's last
     commit."""
-    rec = cs.chat_edits(path)
-    skip = cs.own_folders(profiles)
-    unbacked = {cs.absolute_path(key, cwd) for key, first in rec["files"].items() if first[0] is False}
-    told = tool_originals([path, *cs.subagent_transcripts(path)], unbacked) if unbacked else {}
+    rec = td.chat_edits(path)
+    skip = td.own_folders(profiles)
+    unbacked = {td.absolute_path(key, cwd) for key, first in rec["files"].items() if first[0] is False}
+    told = tool_originals([path, *td.subagent_transcripts(path)], unbacked) if unbacked else {}
     out = {}
     for key, first in rec["files"].items():
-        full = cs.absolute_path(key, cwd)
-        if not cs.project_file(full, skip) or full in out:
+        full = td.absolute_path(key, cwd)
+        if not td.project_file(full, skip) or full in out:
             continue
         backup = first[0]
         if backup is None:
@@ -1998,7 +1998,7 @@ def text_lines(data):
     lines = data.decode("utf-8", "replace").splitlines()
     shown, size = [], 0
     for l in lines:
-        if len(shown) >= cs.DIFF_LINES or size > cs.DIFF_CHARS:
+        if len(shown) >= td.DIFF_LINES or size > td.DIFF_CHARS:
             shown.append(f"… ({len(lines) - len(shown)} more lines)")
             break
         shown.append(l[:500])
@@ -2016,9 +2016,9 @@ def file_diff(original, current, label):
     # (difflib's time grows with the square of what it compares: in a long
     # file only the lines between those both start and end with are, with
     # the 3 around them it shows; a longer change shows its new lines, as
-    # cs.edit_diff)
+    # td.edit_diff)
     top, a, b = 0, old, new
-    if len(old) + len(new) > cs.DIFF_COMPARE_LINES:
+    if len(old) + len(new) > td.DIFF_COMPARE_LINES:
         head, most = 0, min(len(old), len(new))
         while head < most and old[head] == new[head]:
             head += 1
@@ -2027,7 +2027,7 @@ def file_diff(original, current, label):
             tail += 1
         top, cut = max(0, head - 3), max(0, tail - 3)
         a, b = old[top:len(old) - cut], new[top:len(new) - cut]
-    long = len(a) + len(b) > cs.DIFF_COMPARE_LINES
+    long = len(a) + len(b) > td.DIFF_COMPARE_LINES
     if long:
         def span(n):  # (as difflib writes it)
             return "%d" % (top + 1) if n == 1 else "%d,%d" % (top + (n > 0), n)
@@ -2041,13 +2041,13 @@ def file_diff(original, current, label):
     for l in diff:
         if l.startswith("@@"):
             if top and not long:  # (at the file's line numbers)
-                m = cs.HUNK_LINE.match(l)
+                m = td.HUNK_LINE.match(l)
                 l = "@@ -%d%s +%d%s @@" % (int(m.group(1)) + top, m.group(2) or "", int(m.group(3)) + top, m.group(4) or "")
         elif l.startswith("+"):
             added += 1
         elif l.startswith("-"):
             removed += 1
-        if len(shown) >= cs.DIFF_LINES or size > cs.DIFF_CHARS:
+        if len(shown) >= td.DIFF_LINES or size > td.DIFF_CHARS:
             more += 1
             continue
         shown.append(l[:500])
@@ -2061,11 +2061,11 @@ def file_diff(original, current, label):
 
 def commit_message(name, recap, reply):
     """A commit message from the chat's name and Claude's recap of it (else its last reply's first lines)."""
-    title = cs.short_text(name or "Changes from a Claude chat", 72)
+    title = td.short_text(name or "Changes from a Claude chat", 72)
     body = (recap or {}).get("text") if isinstance(recap, dict) else ""
     if not body and reply:
         body = "\n".join(reply.strip().split("\n\n")[:2])
-    body = cs.tidy_text(body or "", 1500)
+    body = td.tidy_text(body or "", 1500)
     return title + ("\n\n" + body if body else "")
 
 
@@ -2075,24 +2075,24 @@ def chat_review(home, extra_dirs, chat_id, profile_key=None, reviewed_at=None):
     version kept: its first lines as they are now)}], "tests", "editedAt",
     "message" (a commit message), "repos" (git roots of the files), "cwd",
     "name"} of what a chat changed, against the files before the chat."""
-    if not cs.valid_id(chat_id):
+    if not td.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
-    profiles = cs.discover_profiles(home, extra_dirs)
+    profiles = td.discover_profiles(home, extra_dirs)
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
     if path is None:
         return {"ok": False, "message": NO_CHAT}
-    name, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
-    cwd = cwd or cs.chat_folder(path) or ""
+    name, cwd, _ = td.read_chat_info(path, path.stat().st_size)
+    cwd = cwd or td.chat_folder(path) or ""
     files, repos = [], set()
     for full, original, created in originals(profiles, path, cwd):
-        current, other = cs.bytes_to_compare(full, cs.DIFF_FILE_MAX)
-        gone = current is None and other in ("", cs.NOT_PLAIN)
+        current, other = td.bytes_to_compare(full, td.DIFF_FILE_MAX)
+        gone = current is None and other in ("", td.NOT_PLAIN)
         big = "" if current is not None or gone else other  # ("a file of 18 MB": not read, nor compared)
-        if not big and original is not None and len(original) > cs.DIFF_FILE_MAX:
+        if not big and original is not None and len(original) > td.DIFF_FILE_MAX:
             big = "a file of %d MB before the chat" % max(1, round(len(original) / (1 << 20)))
         if not big and original is not None and (current == original or (gone and original == b"" and created)):
             continue  # unchanged (or made and removed again)
-        label = cs.file_label(full, cwd, home)
+        label = td.file_label(full, cwd, home)
         item = {"label": label, "path": full, "created": created, "deleted": gone,
                 "unknown": original is None, "binary": False, "added": None, "removed": None, "diff": []}
         if big:
@@ -2106,8 +2106,8 @@ def chat_review(home, extra_dirs, chat_id, profile_key=None, reviewed_at=None):
         root = git_root(os.path.dirname(full) if os.path.isdir(os.path.dirname(full)) else cwd)
         if root:
             repos.add(root)
-    tests = cs.chat_tests(path)
-    peek = cs.chat_peek(path) or {}
+    tests = td.chat_tests(path)
+    peek = td.chat_peek(path) or {}
     return {"ok": True, "chatId": chat_id, "profileDir": profile.key, "name": name, "cwd": cwd, "files": files,
             "tests": tests["run"], "editedAt": tests["editAt"], "repos": sorted(repos),
             "message": commit_message(name, peek.get("recap"), peek.get("reply")),
@@ -2125,15 +2125,15 @@ def undo(home, extra_dirs, chat_id, profile_key=None, wanted=()):
     """Put the files a chat changed (all, or those in wanted) back as they
     were before it: (ok, message). A file it made is removed, one it
     removed comes back; one whose earlier version isn't known stays."""
-    profiles = cs.discover_profiles(home, extra_dirs)
+    profiles = td.discover_profiles(home, extra_dirs)
     profile, path = find_transcript(home, extra_dirs, chat_id, profile_key)
     if path is None:
         return False, NO_CHAT
-    for entry, _, _ in cs.live_entries_all(profiles):
-        if entry.get("sessionId") == chat_id and cs.session_state(entry) == "working":
+    for entry, _, _ in td.live_entries_all(profiles):
+        if entry.get("sessionId") == chat_id and td.session_state(entry) == "working":
             return False, "It's at work: undo once its turn has ended"
-    _, cwd, _ = cs.read_chat_info(path, path.stat().st_size)
-    cwd = cwd or cs.chat_folder(path) or ""
+    _, cwd, _ = td.read_chat_info(path, path.stat().st_size)
+    cwd = cwd or td.chat_folder(path) or ""
     done, unknown, failed = 0, 0, []
     for full, original, created in originals(profiles, path, cwd):
         if wanted and full not in wanted:
@@ -2163,13 +2163,13 @@ def undo(home, extra_dirs, chat_id, profile_key=None, wanted=()):
                         mode = 0o666 & ~own
                         mode |= (mode & 0o444) >> 2
                     # (through a new file of a name no one could put a link at: the repo is the chat's)
-                    cs.write_atomic(real, original, mode)
+                    td.write_atomic(real, original, mode)
                 finally:
                     if mask is not None:
                         os.umask(mask)
                 done += 1
         except OSError as exc:
-            failed.append(f"{cs.file_label(full, cwd, home)}: {exc.strerror or exc}")
+            failed.append(f"{td.file_label(full, cwd, home)}: {exc.strerror or exc}")
     if failed:
         return False, "Couldn't put back " + "; ".join(failed[:3])
     message = f"Put back {done} file{'s' if done != 1 else ''} as before the chat" if done else "Nothing to put back"
@@ -2208,12 +2208,12 @@ def commit(home, extra_dirs, chat_id, message, profile_key=None, wanted=()):
             continue
         ok, _, err = git(root, "add", "-A", "--", *paths)
         if not ok:
-            return False, f"git add in {cs.short_path(root, home)}: {last_line(err)}"
+            return False, f"git add in {td.short_path(root, home)}: {last_line(err)}"
         ok, out, err = git(root, "commit", "-q", "-F", "-", "--only", "--", *paths, data=message.encode(), timeout=120)
         if not ok:
-            return False, f"git commit in {cs.short_path(root, home)}: {last_line(err or out)}"
+            return False, f"git commit in {td.short_path(root, home)}: {last_line(err or out)}"
         ok, head, _ = git(root, "rev-parse", "--short", "HEAD")
-        done.append(f"{cs.short_path(root, home)} ({head.strip()})" if ok else cs.short_path(root, home))
+        done.append(f"{td.short_path(root, home)} ({head.strip()})" if ok else td.short_path(root, home))
     if not done:
         return False, "Nothing to commit: git ignores " + ("its file" if ignored == 1 else f"all {ignored} of its files")
     n = sum(len(p) for p in by_repo.values())
@@ -2230,15 +2230,15 @@ def last_line(text):
 
 def mark_reviewed(cache_root, chat_id, host="", on=True, now_ms=None):
     """Mark a chat (of host) reviewed now, or not reviewed (0: also if it
-    changed its files before cs.reviewed_since)."""
+    changed its files before td.reviewed_since)."""
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
-    cs.private_dir(cache_root)
+    td.private_dir(cache_root)
     with open(cache_root / "reviewed.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        since = cs.reviewed_since(cache_root, now_ms)
-        chats = {k: v for k, v in cs.load_reviewed(cache_root).items() if v == 0 or now_ms - v < cs.REVIEWED_KEEP_MS}
-        chats[cs.review_key(chat_id, host)] = now_ms if on else 0
-        cs.write_json_atomic(cache_root / cs.REVIEWED, {"since": since, "chats": chats})
+        since = td.reviewed_since(cache_root, now_ms)
+        chats = {k: v for k, v in td.load_reviewed(cache_root).items() if v == 0 or now_ms - v < td.REVIEWED_KEEP_MS}
+        chats[td.review_key(chat_id, host)] = now_ms if on else 0
+        td.write_json_atomic(cache_root / td.REVIEWED, {"since": since, "chats": chats})
 
 
 # ---------------------------------------------------------------- the hooks in Claude's settings
@@ -2249,7 +2249,7 @@ def mark_reviewed(cache_root, chat_id, host="", on=True, now_ms=None):
 # each step of each chat as it happens). Each runs from a copy in
 # ~/.local/share/talpy-den, named in the hook list of each of its events.
 
-HOOK_FILE = cs.PERMISSION_HOOK_FILE
+HOOK_FILE = td.PERMISSION_HOOK_FILE
 HOOK_TIMEOUT_S = 86400
 # the events the live hook folds (live_hook.py); Claude doesn't wait for it (async)
 LIVE_EVENTS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure",
@@ -2259,7 +2259,7 @@ TOOL_EVENTS = ("PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionReq
 HOOKS = {
     "relay": {"file": HOOK_FILE, "source": "permission_hook.py", "events": ("PermissionRequest",),
               "python": "-I", "entry": {"timeout": HOOK_TIMEOUT_S}},
-    "live": {"file": cs.LIVE_HOOK_FILE, "source": "live_hook.py", "events": LIVE_EVENTS,
+    "live": {"file": td.LIVE_HOOK_FILE, "source": "live_hook.py", "events": LIVE_EVENTS,
              "python": "-I -S", "entry": {"async": True, "timeout": 10}},
 }
 
@@ -2275,13 +2275,13 @@ def hook_command(path, kind="relay"):
     PATH, no exec, no quotes, no check) is still the hook's (is_ours):
     upgrade_hooks, or turning it on again, replaces it."""
     path = shlex.quote(str(path))
-    return f"[ -f {path} {cs.HOOK_GUARD} exec python3 {HOOKS[kind]['python']} {path}"
+    return f"[ -f {path} {td.HOOK_GUARD} exec python3 {HOOKS[kind]['python']} {path}"
 
 
 def settings_files(home, extra_dirs):
     """Each Claude profile's settings.json, once per real file (also of a
-    ~/.claude that Claude has had no chat in yet): cs.claude_settings_files."""
-    return cs.claude_settings_files(home, cs.discover_profiles(home, extra_dirs))
+    ~/.claude that Claude has had no chat in yet): td.claude_settings_files."""
+    return td.claude_settings_files(home, td.discover_profiles(home, extra_dirs))
 
 
 def is_ours(hook, kind="relay"):
@@ -2329,7 +2329,7 @@ def hook_path(home, kind="relay"):
 def write_settings(path, data):
     """Write a settings.json (through a link, keeping its mode): one writer
     of Claude's settings for every helper (talpy_den.write_claude_settings)."""
-    cs.write_claude_settings(path, data)
+    td.write_claude_settings(path, data)
 
 
 def upgrade_hooks(home, extra_dirs=()):
@@ -2337,9 +2337,9 @@ def upgrade_hooks(home, extra_dirs=()):
     today's (hook_command) in each of its events, as turning it on again
     would do: how many files changed."""
     changed = 0
-    with cs.claude_settings_lock(home):  # (read to written: another helper's change isn't lost)
+    with td.claude_settings_lock(home):  # (read to written: another helper's change isn't lost)
         for path in settings_files(home, extra_dirs):
-            data = cs.read_json(path)
+            data = td.read_json(path)
             if not isinstance(data, dict):
                 continue
             hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
@@ -2367,15 +2367,15 @@ def install_hook(home, extra_dirs, on, kind, source=None, keep_copy=False):
         if placed is None:
             raise ValueError("Talpy Den couldn't put its hook in place: " + why)
     changed = 0
-    with cs.claude_settings_lock(home):  # (read to written: another helper's change isn't lost)
+    with td.claude_settings_lock(home):  # (read to written: another helper's change isn't lost)
         for path in settings_files(home, extra_dirs):
-            data = cs.read_json(path)
+            data = td.read_json(path)
             if data is None and not path.exists():
                 if not on:
                     continue
                 data = {}
             if not isinstance(data, dict):
-                raise ValueError(f"{cs.short_path(str(path), home)} isn't JSON Talpy Den can change")
+                raise ValueError(f"{td.short_path(str(path), home)} isn't JSON Talpy Den can change")
             before = json.dumps(data, sort_keys=True)
             set_hook(data, hook_command(target, kind), on, kind)
             if json.dumps(data, sort_keys=True) == before:
@@ -2412,14 +2412,14 @@ def hooked_chats(home, extra_dirs):
     hook of their own Talpy Chat gave them (their jobs' saved options name
     it: talpy_den.hook_settings), on each profile."""
     count = 0
-    for profile in cs.discover_profiles(home, extra_dirs):
+    for profile in td.discover_profiles(home, extra_dirs):
         try:
             jobs = list((profile.path / "jobs").iterdir())
         except OSError:
             continue
         for job in jobs:
-            record = cs.read_json(job / "state.json")
-            if isinstance(record, dict) and cs.hook_settings(record.get("respawnFlags")):
+            record = td.read_json(job / "state.json")
+            if isinstance(record, dict) and td.hook_settings(record.get("respawnFlags")):
                 count += 1
     return count
 
@@ -2433,17 +2433,17 @@ def forget_hook(home, extra_dirs):
     if relay_status(home, extra_dirs)["some"]:
         return {"ok": True, "kept": "every", "message": "Its permission hook stays: it's on for every chat there"}
     running = 0
-    for entry, runs_on, _holder in cs.live_entries_all(cs.discover_profiles(home, extra_dirs)):
-        if entry.get("kind") == "bg" and cs.valid_id(entry.get("jobId") or "") and not entry.get("spare"):
-            job = cs.read_job([runs_on], entry["jobId"])
-            running += bool(isinstance(job, dict) and cs.hook_settings(job.get("respawnFlags")))
+    for entry, runs_on, _holder in td.live_entries_all(td.discover_profiles(home, extra_dirs)):
+        if entry.get("kind") == "bg" and td.valid_id(entry.get("jobId") or "") and not entry.get("spare"):
+            job = td.read_job([runs_on], entry["jobId"])
+            running += bool(isinstance(job, dict) and td.hook_settings(job.get("respawnFlags")))
     if running:
         return {"ok": True, "kept": running, "message": plural(running, "chat") + " Talpy Chat started there still "
                 + ("runs" if running == 1 else "run") + ": its permission hook stays there for them"}
     # (a request waiting there is a hook still waiting: a chat that runs where this one can't see it, as in a
     # home shared over the network; nothing goes then, and the folder only once it's empty)
-    folder = cs.requests_dir(cs.cache_dir(home))
-    if any(n.endswith(".json") and not n.endswith(".answer.json") for n in cs.names_in(folder)):
+    folder = td.requests_dir(td.cache_dir(home))
+    if any(n.endswith(".json") and not n.endswith(".answer.json") for n in td.names_in(folder)):
         return {"ok": True, "kept": "asking", "message": "A chat there is asking something through its permission hook: it stays"}
     gone = []
     target = hook_path(home)
@@ -2454,7 +2454,7 @@ def forget_hook(home, extra_dirs):
         pass
     try:
         if folder.is_dir() and not folder.is_symlink():
-            for name in cs.names_in(folder):   # (answers nobody took)
+            for name in td.names_in(folder):   # (answers nobody took)
                 (folder / name).unlink()
             folder.rmdir()
             gone.append(folder.name)
@@ -2484,17 +2484,17 @@ def place_hook(home, kind="relay", source=None):
     (its HOOK_REVISION, as talpy_den.refresh_hooks has it: front ends of
     other versions never make it older). With none there, it's written from
     source, else from the hook next to this file: in one go, 0600, in a
-    folder only you may write in (cs.safe_folder: Claude runs it as you)."""
+    folder only you may write in (td.safe_folder: Claude runs it as you)."""
     target = hook_path(home, kind)
-    why = cs.safe_folder(target.parent)
+    why = td.safe_folder(target.parent)
     if why:
         return None, why
     try:   # (a copy that isn't a plain file of yours alone is no copy: it's written anew)
-        installed = target.read_bytes() if cs.own_file(target) else None
+        installed = target.read_bytes() if td.own_file(target) else None
     except OSError:
         installed = None
     new = source.encode("utf-8") if isinstance(source, str) else None
-    if installed is not None and (new is None or cs.hook_revision(new) <= cs.hook_revision(installed)):
+    if installed is not None and (new is None or td.hook_revision(new) <= td.hook_revision(installed)):
         return target, ""
     if new is None:
         try:
@@ -2502,9 +2502,9 @@ def place_hook(home, kind="relay", source=None):
         except (OSError, NameError):
             return None, "its code isn't here to copy"
     try:
-        cs.write_atomic(target, new, mode=0o600)
+        td.write_atomic(target, new, mode=0o600)
     except OSError as exc:
-        return None, f"couldn't write {cs.short_path(str(target), home)}: {exc.strerror or exc}"
+        return None, f"couldn't write {td.short_path(str(target), home)}: {exc.strerror or exc}"
     return target, ""
 
 
@@ -2538,9 +2538,9 @@ def chat_hook_of(home, profile, source=None, predict=False, hook=True):
     settings, hooked, why = {}, False, ""
     if not hook:
         pass
-    elif cs.managed_hooks_only():
+    elif td.managed_hooks_only():
         why = "managed settings let only their own hooks run"
-    elif has_hook(cs.read_json(profile.path / "settings.json") or {}):
+    elif has_hook(td.read_json(profile.path / "settings.json") or {}):
         hooked = True
     else:
         target, why = place_hook(home, source=source)
@@ -2562,7 +2562,7 @@ def relay_status(home, extra_dirs, kind="relay"):
     """{"ok", "on", "some", "settings"; the permission hook's: "hooked", how many
     chats Talpy Chat started answer their prompts with a hook of their own}."""
     files = settings_files(home, extra_dirs)
-    on = [has_hook(cs.read_json(p) or {}, kind) for p in files]
+    on = [has_hook(td.read_json(p) or {}, kind) for p in files]
     out = {"ok": True, "on": bool(on) and all(on), "some": any(on), "settings": [str(p) for p in files]}
     if kind == "relay":
         out["hooked"] = hooked_chats(home, extra_dirs)
@@ -2687,8 +2687,8 @@ def take_text(cache_root, name):
 
 def reply_text(home, extra_dirs, chat_id, profile_key, key):
     """--reply-text: the whole text of the reply (or prompt) with that key."""
-    if not cs.valid_id(chat_id) or not key:
-        return {"ok": False, "message": f"Not a chat: {chat_id}" if not cs.valid_id(chat_id) else "Which message?"}
+    if not td.valid_id(chat_id) or not key:
+        return {"ok": False, "message": f"Not a chat: {chat_id}" if not td.valid_id(chat_id) else "Which message?"}
     _, path = find_transcript(home, extra_dirs, chat_id, profile_key)
     if path is None:
         return {"ok": False, "missing": True, "message": NO_CHAT}
@@ -2699,9 +2699,9 @@ def reply_text(home, extra_dirs, chat_id, profile_key, key):
 
 def side_part(home, extra_dirs, chat_id, profile_key, key):
     """--side-question --part: where a part from that message starts, and its tokens (side.part_of)."""
-    if not cs.valid_id(chat_id):
+    if not td.valid_id(chat_id):
         return {"ok": False, "message": f"Not a chat: {chat_id}"}
-    if not cs.side_since_ok(key):
+    if not td.side_since_ok(key):
         return {"ok": False, "message": "Which message?"}
     _, path = find_transcript(home, extra_dirs, chat_id, profile_key)
     if path is None:
@@ -2720,10 +2720,10 @@ def side_question(home, extra_dirs, cache_root, chat_id, host, profile_key, ques
     (side.ask) or on host (rest: the arguments as it gets them, with the
     chat's earlier answers), its answer or why none came kept with it.
     ask: side.ask's stand-in (tests)."""
-    ok, said, item, items, v = cs.ask_side(cache_root, chat_id, host, question, pick, since=since)
+    ok, said, item, items, v = td.ask_side(cache_root, chat_id, host, question, pick, since=since)
     if not ok:
         return {"ok": False, "message": said, **({"sides": items, "sidesV": v} if v else {})}
-    history = cs.side_history(items, item["id"])
+    history = td.side_history(items, item["id"])
     if host:
         answer = forward(host, rest + ["--history", json.dumps(history)], "--side-question")
     else:
@@ -2735,7 +2735,7 @@ def side_question(home, extra_dirs, cache_root, chat_id, host, profile_key, ques
         except Exception as exc:   # (never left on its way)
             answer = {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
     got = answer.get("answer") if answer.get("ok") else None
-    items, v = cs.finish_side(cache_root, chat_id, host, item["id"], got,
+    items, v = td.finish_side(cache_root, chat_id, host, item["id"], got,
                               "" if got else (answer.get("message") or "Claude couldn't answer it"),
                               answer.get("model") if isinstance(answer.get("model"), str) else "",
                               answer.get("synthetic") is True, part=answer.get("from"))
@@ -2759,7 +2759,7 @@ ACTION_MODULES = {
 # A start or a wake there may wait for claude's background service (60 s),
 # after asking the login shell for claude: longer than other actions
 HOST_START_TIMEOUT = 110
-HOST_SIDE_TIMEOUT = cs.SIDE_WAIT_S + 60   # (a side question there: its wait, and claude found there)
+HOST_SIDE_TIMEOUT = td.SIDE_WAIT_S + 60   # (a side question there: its wait, and claude found there)
 MAY_HAVE_STARTED = "{where} didn't answer in time: the chat may have started there, so look for it in the list before you send it again"
 
 
@@ -2922,12 +2922,12 @@ def main(argv=None):
         sys.exit(__doc__)
     USER_UMASK[0] = os.umask(0o077)
     home = Path.home()
-    cs.adopt_legacy_dirs(home)
-    cache_root = cs.cache_dir(home)
+    td.adopt_legacy_dirs(home)
+    cache_root = td.cache_dir(home)
 
     def emit(result):
         out = json.dumps(result, indent=2 if pretty and not remote else None)
-        sys.stdout.write(("\n" + cs.REMOTE_MARK + " " if remote else "") + out + "\n")
+        sys.stdout.write(("\n" + td.REMOTE_MARK + " " if remote else "") + out + "\n")
 
     if text_file is not None:  # (a long message: VS Code's)
         text = take_text(cache_root, text_file)
@@ -2937,13 +2937,13 @@ def main(argv=None):
         rest[i:i + 2] = ["--text", text]  # (a host gets the text: remote.host_answer takes it there)
     try:
         if action == "--bookmark":  # (kept here, a host's chat's too, as stars are: never forwarded)
-            ok, said, marks, v = cs.change_bookmark(cache_root, target, host, key or "", not off, mark_kind, mark_at, text or "")
+            ok, said, marks, v = td.change_bookmark(cache_root, target, host, key or "", not off, mark_kind, mark_at, text or "")
             return emit({"ok": ok, "message": said, "bookmarks": marks, "bookmarksV": v})
         if action == "--side-question" and side_remove is not None:   # (kept here, a host's chat's too)
-            ok, said, items, v = cs.remove_side(cache_root, target, host, side_remove)
+            ok, said, items, v = td.remove_side(cache_root, target, host, side_remove)
             return emit({"ok": ok, "message": said, "sides": items, "sidesV": v})
         if action == "--side-question" and side_fold is not None:   # (kept here, a host's chat's too)
-            ok, said, items, v = cs.fold_side(cache_root, target, host, side_fold, not off)
+            ok, said, items, v = td.fold_side(cache_root, target, host, side_fold, not off)
             return emit({"ok": ok, "message": said, "sides": items, "sidesV": v})
         if action == "--side-question" and part_key is not None:   # (read where the chat is)
             return emit(forward(host, rest, action) if host and not remote
@@ -2974,10 +2974,10 @@ def main(argv=None):
                 path = Path(__file__).resolve().parent / HOOKS[hook_kind]["source"]
                 rest += ["--hook-source", base64.b64encode(path.read_bytes()).decode()]
             if action == "--conversation" and away and since is None:   # (how far a window here last showed it)
-                rest += ["--since", str(cs.seen_mark(cache_root, target, host))]
+                rest += ["--since", str(td.seen_mark(cache_root, target, host))]
             if action == "--conversation" and seen:   # (the host's times, kept here)
-                cs.mark_seen(cache_root, target, host, seen)
-            mine = cs.marks_stamp(cache_root, target, host) if action == "--conversation" else ""
+                td.mark_seen(cache_root, target, host, seen)
+            mine = td.marks_stamp(cache_root, target, host) if action == "--conversation" else ""
             if action == "--conversation" and "--if-changed" in rest:
                 # (the host's stamp, and what the chat's side questions and bookmarks are here, kept here: one
                 # changed here since, the whole answer, the host's chat as it was)
@@ -2992,15 +2992,15 @@ def main(argv=None):
                 head, sep, tail = answer["stamp"].partition("/")
                 answer["stamp"] = f"{head}~h{mine}{sep}{tail}"
             if action == "--review" and answer.get("ok"):
-                answer["reviewedAt"] = cs.load_reviewed(cache_root).get(cs.review_key(target, host))
+                answer["reviewedAt"] = td.load_reviewed(cache_root).get(td.review_key(target, host))
             if action == "--conversation" and answer.get("ok"):
                 pictures_here(answer.get("items"))
                 if not answer.get("unchanged"):   # (--reach went with the rest: the host reads that far)
-                    cs.bookmarks_answer(answer, cache_root, target, host)
-                    cs.sides_answer(answer, cache_root, target, host)
+                    td.bookmarks_answer(answer, cache_root, target, host)
+                    td.sides_answer(answer, cache_root, target, host)
             if action == "--made" and as_file:   # (its picture as a file here, for Plasma's Talpy Chat)
                 import made
-                answer = made.keep_copy(str(cs.images_dir(home)), f"{host}\0{target}\0{step or made_path}", answer)
+                answer = made.keep_copy(str(td.images_dir(home)), f"{host}\0{target}\0{step or made_path}", answer)
             if action in ("--send", "--type-in"):
                 answer = host_vscode_link(answer, (session, target), text)
             if action == "--send" and how == "enter" and answer.get("how") == "ask":
@@ -3009,16 +3009,16 @@ def main(argv=None):
         if action == "--conversation":
             # (pasted pictures saved for the thumbnails: not on an SSH host, where the pane doesn't look)
             if away and since is None and not remote:
-                since = cs.seen_mark(cache_root, target)
+                since = td.seen_mark(cache_root, target)
             if seen and not remote:   # (before the read: its wait can be long; a host's: kept by the computer asking)
-                cs.mark_seen(cache_root, target, "", seen)
+                td.mark_seen(cache_root, target, "", seen)
             result = chat_conversation(home, config_dirs, target, profile, limit, stamp, wait,
-                                       None if remote else cs.images_dir(home), suggest, reach,
+                                       None if remote else td.images_dir(home), suggest, reach,
                                        (since or 0) if away else None,
-                                       None if remote else (lambda: cs.marks_stamp(cache_root, target)))
+                                       None if remote else (lambda: td.marks_stamp(cache_root, target)))
             if not remote and result.get("ok") and not result.get("unchanged"):   # (a host's: kept here, above)
-                cs.bookmarks_answer(result, cache_root, target)
-                cs.sides_answer(result, cache_root, target)
+                td.bookmarks_answer(result, cache_root, target)
+                td.sides_answer(result, cache_root, target)
         elif action == "--side-question":   # (on a host, for the computer that keeps them: side_question)
             import side
             result = side.ask(home, config_dirs, profile, target, text, model or "", history, since=side_from)
@@ -3048,11 +3048,11 @@ def main(argv=None):
             result = chatpick.set_options(home, config_dirs, profile, target, model, effort, prefix=prefix)
         elif action == "--made":
             import made   # (a module of its own, as replies.py: compiled once and kept)
-            found = find_transcript(home, config_dirs, target, profile)[1] if cs.valid_id(target) else None
+            found = find_transcript(home, config_dirs, target, profile)[1] if td.valid_id(target) else None
             result = made.show(found, made_path, step, as_file and not remote) if found is not None \
                 else {"ok": False, "missing": True, "message": NO_CHAT}
             if as_file and not remote:   # (what Claude saw, as a file here, for Plasma's Talpy Chat)
-                result = made.keep_copy(str(cs.images_dir(home)), f"\0{target}\0{step or made_path}", result)
+                result = made.keep_copy(str(td.images_dir(home)), f"\0{target}\0{step or made_path}", result)
         elif action == "--type-in":
             result = type_in(home, config_dirs, profile, target, text, session, copy=not (remote or no_copy))
         elif action == "--answer":
@@ -3081,16 +3081,16 @@ def main(argv=None):
             ok, said = shortcuts(home, {"on": True, "off": False}.get(target))
             result = {"ok": ok, "message": said} if target != "status" else {"ok": ok, "on": said == "on"}
         elif action == "--keys":
-            entry = cs.find_chat_entry(home, config_dirs, target, profile)
+            entry = td.find_chat_entry(home, config_dirs, target, profile)
             # (--expect: the tool call the prompt you answered was about; it
             # may have been answered in the chat since, and another one asks)
-            still = (lambda: cs.chat_tool_use(home, config_dirs, target, profile) == expect) if expect else None
+            still = (lambda: td.chat_tool_use(home, config_dirs, target, profile) == expect) if expect else None
             ok, said = answer_with_keys(entry, decision, note, still) if entry \
                 else (False, "That chat isn't running any more")
             result = {"ok": ok, "message": said, **({"changed": True} if not ok and said == ASKS_ELSE else {})}
         elif action == "--review":
             result = chat_review(home, config_dirs, target, profile,
-                                 cs.load_reviewed(cache_root).get(cs.review_key(target)) if not remote else None)
+                                 td.load_reviewed(cache_root).get(td.review_key(target)) if not remote else None)
         elif action == "--undo":
             ok, said = undo(home, config_dirs, target, profile, set(files))
             result = {"ok": ok, "message": said}

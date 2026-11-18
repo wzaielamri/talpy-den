@@ -20,7 +20,7 @@ sys.path.insert(0, str(CODE))
 spec = importlib.util.spec_from_file_location("jump_vscode", CODE / "jump.py")
 jump = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jump)
-cs = jump.cs
+td = jump.td
 
 
 class Patch:
@@ -73,37 +73,37 @@ class Home(unittest.TestCase):
         path.write_text(text)
 
     def profiles(self):
-        return cs.discover_profiles(self.home)
+        return td.discover_profiles(self.home)
 
     def label(self, running=(False, None), installed=True):
         app = ("/usr/bin/code", "Code") if installed else (None, None)
-        with Patch((cs, "vscode_app", lambda: app), (cs, "vscode_running_config_dir", lambda: running)):
-            found, profile = cs.vscode_profile(self.home, self.profiles())
+        with Patch((td, "vscode_app", lambda: app), (td, "vscode_running_config_dir", lambda: running)):
+            found, profile = td.vscode_profile(self.home, self.profiles())
         return found, profile.label if profile else None
 
 
 class SettingsTests(Home):
     def test_settings_with_comments_and_trailing_commas(self):
-        self.assertEqual(cs.jsonc('{\n // a "comment"\n "a": "http://x/*y*/", /* more */ "b": [1, 2,],\n}'),
+        self.assertEqual(td.jsonc('{\n // a "comment"\n "a": "http://x/*y*/", /* more */ "b": [1, 2,],\n}'),
                          {"a": "http://x/*y*/", "b": [1, 2]})
-        self.assertEqual(cs.jsonc('{"q": "say \\"hi\\" // no comment"}'), {"q": 'say "hi" // no comment'})
+        self.assertEqual(td.jsonc('{"q": "say \\"hi\\" // no comment"}'), {"q": 'say "hi" // no comment'})
 
     def test_config_dir_from_the_extension_setting(self):
-        self.assertIsNone(cs.vscode_setting_config_dir(self.home, "Code"))   # no settings file
+        self.assertIsNone(td.vscode_setting_config_dir(self.home, "Code"))   # no settings file
         self.settings('{"claudeCode.environmentVariables": [{"name": "FOO", "value": "1"},'
                       ' {"name": "CLAUDE_CONFIG_DIR", "value": "/x/.claude-y"},], // mine\n}')
-        self.assertEqual(cs.vscode_setting_config_dir(self.home, "Code"), "/x/.claude-y")
+        self.assertEqual(td.vscode_setting_config_dir(self.home, "Code"), "/x/.claude-y")
         self.settings('{"claudeCode.environmentVariables": [{"name": "FOO", "value": "1"}]}')
-        self.assertIsNone(cs.vscode_setting_config_dir(self.home, "Code"))
+        self.assertIsNone(td.vscode_setting_config_dir(self.home, "Code"))
         self.settings('{"broken": ')
-        self.assertIsNone(cs.vscode_setting_config_dir(self.home, "Code"))
+        self.assertIsNone(td.vscode_setting_config_dir(self.home, "Code"))
 
     def test_a_comma_in_a_string_is_no_trailing_comma(self):
-        self.assertEqual(cs.jsonc('{"a": "x, }", "b": ["1, ]", /* c */ ], // d\n}'), {"a": "x, }", "b": ["1, ]"]})
+        self.assertEqual(td.jsonc('{"a": "x, }", "b": ["1, ]", /* c */ ], // d\n}'), {"a": "x, }", "b": ["1, ]"]})
         # nor does the switch change another variable that has one
         path = self.config / "Code/User/settings.json"
         self.settings('{"claudeCode.environmentVariables": [{"name": "OPTS", "value": "{\\"a\\": [1, ]}"}]}')
-        self.assertTrue(cs.set_config_dir_setting(path, "/h/.claude-y", self.home)[0])
+        self.assertTrue(td.set_config_dir_setting(path, "/h/.claude-y", self.home)[0])
         self.assertEqual(json.loads(path.read_text())["claudeCode.environmentVariables"], [
             {"name": "OPTS", "value": '{"a": [1, ]}'}, {"name": "CLAUDE_CONFIG_DIR", "value": "/h/.claude-y"}])
 
@@ -111,20 +111,20 @@ class SettingsTests(Home):
         # (VS Code reads a settings file that starts with one; it stays)
         path = self.config / "Code/User/settings.json"
         self.settings('\ufeff{"claudeCode.environmentVariables": [{"name": "CLAUDE_CONFIG_DIR", "value": "/x/.claude-y"}]}')
-        self.assertEqual(cs.vscode_setting_config_dir(self.home, "Code"), "/x/.claude-y")
-        self.assertTrue(cs.set_config_dir_setting(path, "/h/.claude-z", self.home)[0])
+        self.assertEqual(td.vscode_setting_config_dir(self.home, "Code"), "/x/.claude-y")
+        self.assertTrue(td.set_config_dir_setting(path, "/h/.claude-z", self.home)[0])
         self.assertTrue(path.read_text(encoding="utf-8").startswith("\ufeff{"))
-        self.assertEqual(cs.vscode_setting_config_dir(self.home, "Code"), "/h/.claude-z")
+        self.assertEqual(td.vscode_setting_config_dir(self.home, "Code"), "/h/.claude-z")
 
     def test_windows_line_ends_stay(self):
         path = self.config / "Code/User/settings.json"
         for text in ('{\r\n    "a": 1\r\n}\r\n', '{\r\n    "claudeCode.environmentVariables": [\r\n    ],\r\n}\r\n'):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(text.encode())
-            self.assertTrue(cs.set_config_dir_setting(path, "/h/.claude-y", self.home)[0])
+            self.assertTrue(td.set_config_dir_setting(path, "/h/.claude-y", self.home)[0])
             raw = path.read_bytes()
             self.assertNotIn(b"\n", raw.replace(b"\r\n", b""), raw)
-            self.assertEqual(cs.config_dir_in_settings(path), "/h/.claude-y")
+            self.assertEqual(td.config_dir_in_settings(path), "/h/.claude-y")
 
     def test_a_linked_settings_file_stays_a_link(self):
         # (your dotfiles: the switch changes the file the link points to)
@@ -134,9 +134,9 @@ class SettingsTests(Home):
         dotfile.write_text('{\n    "a": 1\n}\n')
         path.parent.mkdir(parents=True)
         path.symlink_to(dotfile)
-        self.assertTrue(cs.set_config_dir_setting(path, "/h/.claude-y", self.home)[0])
+        self.assertTrue(td.set_config_dir_setting(path, "/h/.claude-y", self.home)[0])
         self.assertTrue(path.is_symlink())
-        self.assertEqual(cs.config_dir_in_settings(dotfile), "/h/.claude-y")
+        self.assertEqual(td.config_dir_in_settings(dotfile), "/h/.claude-y")
         self.assertEqual(sorted(p.name for p in dotfile.parent.iterdir()), ["settings.json"])
 
 
@@ -147,9 +147,9 @@ class SettingsEditTests(unittest.TestCase):
 
     def check(self, text, value=None):
         value = value if value is not None else [{"name": "CLAUDE_CONFIG_DIR", "value": "/h/.claude"}]
-        new = cs.jsonc_set(text, self.KEY, value)
-        before = cs.jsonc(text) if text.strip() else {}
-        self.assertEqual(cs.jsonc(new), {**before, self.KEY: value})
+        new = td.jsonc_set(text, self.KEY, value)
+        before = td.jsonc(text) if text.strip() else {}
+        self.assertEqual(td.jsonc(new), {**before, self.KEY: value})
         return new
 
     def test_replaces_only_that_value(self):
@@ -174,7 +174,7 @@ class SettingsEditTests(unittest.TestCase):
     def test_refuses_what_isnt_an_object(self):
         for text in ("[1]", '{"a": 1', '{"a" 1}', "{1: 2}"):
             with self.assertRaises(ValueError, msg=text):
-                cs.jsonc_set(text, self.KEY, [])
+                td.jsonc_set(text, self.KEY, [])
 
 
 class ProfileTests(Home):
@@ -198,15 +198,15 @@ class ProfileTests(Home):
         self.assertEqual(self.label(running=(True, "/nowhere/.claude")), (True, None))
 
     def test_ssh_host_uses_its_own_claude_folder(self):
-        with Patch((cs, "vscode_app", lambda: (None, None))):
-            installed, profile = cs.vscode_profile(self.home, self.profiles(), remote=True)
+        with Patch((td, "vscode_app", lambda: (None, None))):
+            installed, profile = td.vscode_profile(self.home, self.profiles(), remote=True)
         self.assertEqual((installed, profile.label), (None, "work"))
 
     def test_groups_say_where_a_vscode_chat_goes(self):
         result = {"groups": [{"profileKeys": [p.key]} for p in self.profiles()]}
-        with Patch((cs, "vscode_app", lambda: ("/usr/bin/code", "Code")),
-                   (cs, "vscode_running_config_dir", lambda: (False, None))):
-            cs.add_vscode(result, self.home)
+        with Patch((td, "vscode_app", lambda: ("/usr/bin/code", "Code")),
+                   (td, "vscode_running_config_dir", lambda: (False, None))):
+            td.add_vscode(result, self.home)
         self.assertEqual(result["vscode"], {"installed": True, "on": "work"})
         here = {p.label: g["vscodeHere"] for p, g in zip(self.profiles(), result["groups"])}
         self.assertEqual(here, {"work": True, "personal": False})
@@ -219,45 +219,45 @@ class ProfileTests(Home):
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({"claudeCode.environmentVariables": [
             {"name": "CLAUDE_CONFIG_DIR", "value": str(self.home / ".claude-personal")}]}))
-        with Patch((cs, "vscode_app", lambda: (None, None))):
-            installed, profile = cs.vscode_profile(self.home, self.profiles(), remote=True)
+        with Patch((td, "vscode_app", lambda: (None, None))):
+            installed, profile = td.vscode_profile(self.home, self.profiles(), remote=True)
         self.assertEqual((installed, profile.label), (None, "personal"))
 
     def test_switching_an_ssh_hosts_vscode_to_another_account(self):
         settings = self.home / ".vscode-server/data/Machine/settings.json"
         personal = str(self.home / ".claude-personal")
-        self.assertEqual(cs.set_vscode_server_config_dir(self.home, personal),
+        self.assertEqual(td.set_vscode_server_config_dir(self.home, personal),
                          (True, "VS Code's Claude runs on personal here now"))
         self.assertEqual(json.loads(settings.read_text()),
                          {"claudeCode.environmentVariables": [{"name": "CLAUDE_CONFIG_DIR", "value": personal}]})
         # other settings and variables stay; back on ~/.claude (a link here) by its name
         settings.write_text(json.dumps({"editor.fontSize": 13, "claudeCode.environmentVariables": [
             {"name": "FOO", "value": "1"}, {"name": "CLAUDE_CONFIG_DIR", "value": personal}]}))
-        self.assertTrue(cs.set_vscode_server_config_dir(self.home, str(self.home / ".claude"))[0])
+        self.assertTrue(td.set_vscode_server_config_dir(self.home, str(self.home / ".claude"))[0])
         self.assertEqual(json.loads(settings.read_text()), {"editor.fontSize": 13, "claudeCode.environmentVariables": [
             {"name": "FOO", "value": "1"}, {"name": "CLAUDE_CONFIG_DIR", "value": str(self.home / ".claude")}]})
         # only this host's Claude folders; a file edited by hand keeps its comments
-        ok, message = cs.set_vscode_server_config_dir(self.home, "/etc")
+        ok, message = td.set_vscode_server_config_dir(self.home, "/etc")
         self.assertFalse(ok)
         self.assertIn("isn't a Claude folder", message)
         settings.write_text('{\n  // mine\n  "editor.fontSize": 14,\n}\n')
-        self.assertTrue(cs.set_vscode_server_config_dir(self.home, personal)[0])
+        self.assertTrue(td.set_vscode_server_config_dir(self.home, personal)[0])
         text = settings.read_text()
         self.assertIn("// mine", text)
-        self.assertEqual(cs.jsonc(text), {"editor.fontSize": 14, "claudeCode.environmentVariables": [
+        self.assertEqual(td.jsonc(text), {"editor.fontSize": 14, "claudeCode.environmentVariables": [
             {"name": "CLAUDE_CONFIG_DIR", "value": personal}]})
         settings.write_text("{broken")
-        ok, message = cs.set_vscode_server_config_dir(self.home, personal)
+        ok, message = td.set_vscode_server_config_dir(self.home, personal)
         self.assertFalse(ok)
         self.assertIn("couldn't be changed", message)
         self.assertEqual(settings.read_text(), "{broken")
-        self.assertFalse(cs.set_vscode_server_config_dir(self.home, personal, server="../../etc")[0])
+        self.assertFalse(td.set_vscode_server_config_dir(self.home, personal, server="../../etc")[0])
 
     def test_each_hosts_account_says_what_vscodes_claude_needs_for_it(self):
         # (~/.claude links to work here: named by the link, as terminals name it)
         result = {"groups": [{"chatProfile": p.key, "sessions": [], "projects": [], "recent": [], "sharedHere": []}
                              for p in self.profiles()]}
-        cs.add_remote_commands(result, self.home, claude="/usr/bin/claude")
+        td.add_remote_commands(result, self.home, claude="/usr/bin/claude")
         self.assertEqual({g["chatProfile"]: g["configDir"] for g in result["groups"]},
                          {".claude-work": str(self.home / ".claude"), ".claude-personal": str(self.home / ".claude-personal")})
         # a starred chat (and a starred plan's chat) opens like a recent one: its ★ Starred entry is a copy
@@ -265,7 +265,7 @@ class ProfileTests(Home):
         plan = {"chatProfileDir": ".claude-personal", "chatId": "0a1b2c3d", "cwd": "/srv/app"}
         result = {"groups": [{"chatProfile": None, "sessions": [], "recent": [], "starred": [chat],
                               "plans": [], "starredPlans": [plan]}]}
-        cs.add_remote_commands(result, self.home, claude="/usr/bin/claude")
+        td.add_remote_commands(result, self.home, claude="/usr/bin/claude")
         self.assertIn("--resume 0a1b2c3d", chat["openCommand"])
         self.assertEqual(plan["openCommand"], chat["openCommand"])
 
@@ -276,9 +276,9 @@ class ProfileTests(Home):
             {"name": "CLAUDE_CONFIG_DIR", "value": str(self.home / ".claude-personal")}]}))
         result = {"groups": [{"name": p.label, "profileKeys": [p.key]} for p in self.profiles()]}
         self.assertEqual([g["name"] for g in result["groups"]], ["work", "personal"])
-        with Patch((cs, "vscode_app", lambda: ("/usr/bin/code", "Code")),
-                   (cs, "vscode_running_config_dir", lambda: (False, None))):
-            cs.add_vscode(result, self.home)
+        with Patch((td, "vscode_app", lambda: ("/usr/bin/code", "Code")),
+                   (td, "vscode_running_config_dir", lambda: (False, None))):
+            td.add_vscode(result, self.home)
         self.assertEqual([(g["name"], g["vscodeHere"]) for g in result["groups"]], [("personal", True), ("work", False)])
 
 
@@ -296,8 +296,8 @@ class VscodeHome(Home):
                                     "DEVNULL": None, "PIPE": None})
         self.waits = []
         return [
-            (cs, "vscode_app", lambda: ("/usr/bin/code", "Code")),
-            (cs, "vscode_running_config_dir", lambda: (running, None)),
+            (td, "vscode_app", lambda: ("/usr/bin/code", "Code")),
+            (td, "vscode_running_config_dir", lambda: (running, None)),
             (jump, "vscode_main_pids", lambda: [100] if running else []),
             (jump, "start_app", lambda args, cwd=None: self.started.append(args)),
             (jump, "later", lambda task: task()),
@@ -344,7 +344,7 @@ class NewChatTests(VscodeHome):
         self.assertEqual(self.started, [["/usr/bin/code", str(self.folder)]])
 
     def test_ssh_host(self):
-        changes = [(cs, "vscode_app", lambda: ("/usr/bin/code", "Code")),
+        changes = [(td, "vscode_app", lambda: ("/usr/bin/code", "Code")),
                    (jump, "start_app", lambda args, cwd=None: self.started.append(args)),
                    (jump, "later", lambda task: task()),
                    (jump, "raise_window", lambda pids, caption="", require=False, prefer="":
@@ -398,7 +398,7 @@ class NewChatTests(VscodeHome):
         import remote
         runs = []
         with Patch((remote, "run_status_script", lambda host, args: runs.append((host, args)) or (True, "")),
-                   (cs, "vscode_app", lambda: ("/usr/bin/code-insiders", "Code - Insiders"))):
+                   (td, "vscode_app", lambda: ("/usr/bin/code-insiders", "Code - Insiders"))):
             remote.vscode_account("lab", "/home/me/.claude-personal")
             remote.vscode_account("lab", None)
         self.assertEqual(runs, [("lab", ["--vscode-account", "/home/me/.claude-personal", "--vscode-server", ".vscode-server-insiders"]),
@@ -432,7 +432,7 @@ class ResumeTests(VscodeHome):
         """A chat Claude Code filed under the folder it started in, whose
         last turns ran in another one (Claude's `cd`s)."""
         sid = "5e550000-0000-4000-8000-000000000002"
-        transcript = self.home / ".claude-work/projects" / cs.mangle(str(started)) / f"{sid}.jsonl"
+        transcript = self.home / ".claude-work/projects" / td.mangle(str(started)) / f"{sid}.jsonl"
         transcript.parent.mkdir(parents=True)
         transcript.write_text("".join(json.dumps({"type": "user", "cwd": str(c), "sessionId": sid}) + "\n" for c in (started, last)))
         return sid

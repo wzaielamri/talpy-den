@@ -81,7 +81,7 @@ if os.path.isfile(globals().get("__file__") or ""):
             sys.pycache_prefix = str(_compiled)
             sys.dont_write_bytecode = False
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import talpy_den as cs  # noqa: E402
+import talpy_den as td  # noqa: E402
 
 REMOTE = False  # on an SSH host (--remote): VS Code there is its VS Code server, and no terminal opens there
 NO_CLAUDE = ("Can't find the claude command: it isn't on PATH, in ~/.local/bin or npm's or nvm's folders, "
@@ -100,13 +100,13 @@ SERVICE_WAIT = 10  # seconds a stopped background service gets to go
 
 
 def short(path, home):
-    return cs.short_folder(str(path), home)
+    return td.short_folder(str(path), home)
 
 
 def claude_path(home, ask_shell=True):
     """The claude command's full path, or None (ask_shell: your login shell's
     PATH may be asked, which starts it: for a click, not for a quick look)."""
-    found = shutil.which("claude") or cs.find_claude(home, ask_shell=ask_shell)
+    found = shutil.which("claude") or td.find_claude(home, ask_shell=ask_shell)
     return found if found != "claude" else None
 
 
@@ -114,20 +114,20 @@ def vscode_chats(profiles):
     """How many chats in VS Code's Claude Code panel work or wait for you right now
     (switching VS Code's Claude to another account cuts them off once their
     window reloads)."""
-    return sum(1 for entry, _, _ in cs.live_entries_all(profiles)
-               if entry.get("entrypoint") == "claude-vscode" and cs.session_state(entry) in ("working", "waiting"))
+    return sum(1 for entry, _, _ in td.live_entries_all(profiles)
+               if entry.get("entrypoint") == "claude-vscode" and td.session_state(entry) in ("working", "waiting"))
 
 
 def find_profile(home, extra, key):
     """(the profile, every profile); (None, …) if there's none called key."""
-    profiles = cs.discover_profiles(home, extra)
-    return next((p for p in profiles if cs.matches_profile(p, key)), None), profiles
+    profiles = td.discover_profiles(home, extra)
+    return next((p for p in profiles if td.matches_profile(p, key)), None), profiles
 
 
 def claude_env(profile, home, claude):
     """The environment that runs claude on this profile."""
     env = dict(os.environ)
-    value = cs.config_dir_value(profile, home)
+    value = td.config_dir_value(profile, home)
     if value is None:
         env.pop("CLAUDE_CONFIG_DIR", None)
     else:
@@ -152,8 +152,8 @@ def run_claude(profile, home, claude, args, timeout=60):
 def running_chats(profile, profiles):
     """How many chats (in a terminal, VS Code or the background) run on this profile."""
     count = 0
-    for entry, runs_on, holder in cs.live_entries_all(profiles):
-        if entry.get("spare") or entry.get("parkedJobId") or entry.get("kind") not in cs.SESSION_KINDS:
+    for entry, runs_on, holder in td.live_entries_all(profiles):
+        if entry.get("spare") or entry.get("parkedJobId") or entry.get("kind") not in td.SESSION_KINDS:
             continue
         if profile.real in (runs_on.real, holder.real):
             count += 1
@@ -167,7 +167,7 @@ def chats_text(n):
 def note_logged_out(cache_root, profile, out):
     """Remember (out) or forget that this profile was logged out here."""
     path = cache_root / "accounts.json"
-    data = cs.read_json(path)
+    data = td.read_json(path)
     data = data if isinstance(data, dict) else {}
     notes = data.get("loggedOut") if isinstance(data.get("loggedOut"), dict) else {}
     if out:
@@ -175,8 +175,8 @@ def note_logged_out(cache_root, profile, out):
     elif notes.pop(str(profile.real), None) is None:
         return
     data["loggedOut"] = notes
-    cs.private_dir(cache_root)
-    cs.write_json_atomic(path, data)
+    td.private_dir(cache_root)
+    td.write_json_atomic(path, data)
 
 
 # ---------------------------------------------------------------- claude-NAME commands
@@ -209,7 +209,7 @@ def command_script(folder_name, label):
     # label on one line: .profile-name is other tools' too, and a second line
     # would run as a command)
     return f"""#!/bin/sh
-# Claude Code on {cs.clean_text(label)} (~/{folder_name}).
+# Claude Code on {td.clean_text(label)} (~/{folder_name}).
 # {COMMAND_MARK} (its Accounts settings remove it again).
 dir="$HOME/{folder_name}"
 if [ "$(readlink -f "$HOME/.claude" 2>/dev/null)" = "$(readlink -f "$dir" 2>/dev/null)" ]; then
@@ -235,7 +235,7 @@ def on_path(home):
     want = str(bin_dir(home))
     if want in os.environ.get("PATH", "").split(os.pathsep):
         return True
-    return want in cs.login_shell_path(home).split(os.pathsep)
+    return want in td.login_shell_path(home).split(os.pathsep)
 
 
 def add_command(profile, home):
@@ -285,7 +285,7 @@ def auth_status(profile, home, claude):
     method = data.get("authMethod")
     return {"loggedIn": data.get("loggedIn") is True,
             "method": method if isinstance(method, str) and method != "none" else None,
-            "email": cs.clean_text(data.get("email"), 80) or None}
+            "email": td.clean_text(data.get("email"), 80) or None}
 
 
 def within(path, real):
@@ -328,7 +328,7 @@ def links_into(profile, profiles, preferred=None):
             continue
         for e in entries:
             items = [e]
-            if e in SHARED_FOLDERS and not os.path.islink(str(p.path / e)) and cs.is_dir(p.path / e):
+            if e in SHARED_FOLDERS and not os.path.islink(str(p.path / e)) and td.is_dir(p.path / e):
                 try:  # (shared one by one)
                     items = [f"{e}/{c}" for c in sorted(os.listdir(str(p.path / e)))]
                 except OSError:
@@ -485,15 +485,15 @@ def not_removable(profile, profiles, home, vscode_on, chats):
 
 
 def list_accounts(home, extra, check=False):
-    profiles = cs.discover_profiles(home, extra)
-    cache_root = cs.cache_dir(home)
-    logged_out = cs.logged_out_notes(cache_root)
+    profiles = td.discover_profiles(home, extra)
+    cache_root = td.cache_dir(home)
+    logged_out = td.logged_out_notes(cache_root)
     try:
-        installed, vscode_on, _, chosen = cs.default_profile(home, profiles, REMOTE, cache_root)
+        installed, vscode_on, _, chosen = td.default_profile(home, profiles, REMOTE, cache_root)
     except Exception:  # VS Code's settings are only one of the reasons
-        installed, vscode_on, chosen = False, None, cs.plain_profile(home, profiles)
-    vscode_here = not REMOTE or any(cs.is_dir(home / s) for s in cs.VSCODE_SERVERS.values())
-    found = cs.cached_find_claude(home, cache_root, time.time())  # (a quick look: asks the shell at most hourly)
+        installed, vscode_on, chosen = False, None, td.plain_profile(home, profiles)
+    vscode_here = not REMOTE or any(td.is_dir(home / s) for s in td.VSCODE_SERVERS.values())
+    found = td.cached_find_claude(home, cache_root, time.time())  # (a quick look: asks the shell at most hourly)
     claude = found if check else None
     statuses = {}
     if claude:
@@ -506,7 +506,7 @@ def list_accounts(home, extra, check=False):
             linked = default.resolve()
         except (OSError, RuntimeError):
             pass
-    hidden = cs.load_hidden(cache_root)["accounts"]
+    hidden = td.load_hidden(cache_root)["accounts"]
     accounts = []
     for p in profiles:
         chats = running_chats(p, profiles)
@@ -521,8 +521,8 @@ def list_accounts(home, extra, check=False):
             "plan": p.plan,
             # Claude's own answer with --check (an API key counts), else
             # whether its .claude.json has an account
-            "loggedIn": status["loggedIn"] if status else not cs.needs_login(p, logged_out),
-            "quick": not cs.needs_login(p, logged_out),  # what the folder says (changes when you log in or out)
+            "loggedIn": status["loggedIn"] if status else not td.needs_login(p, logged_out),
+            "quick": not td.needs_login(p, logged_out),  # what the folder says (changes when you log in or out)
             "checked": status is not None,
             "method": status["method"] if status else None,
             "email": status["email"] if status else None,
@@ -558,7 +558,7 @@ def name_problem(name, home):
         return "A name is up to 32 letters, digits, - and _, starting with a letter"
     folder = home / f".claude-{name}"
     if os.path.lexists(str(folder)):
-        return (f"There's an account called {name} already" if cs.is_profile_dir(folder)
+        return (f"There's an account called {name} already" if td.is_profile_dir(folder)
                 else f"{short(folder, home)} is there already")
     return ""
 
@@ -573,7 +573,7 @@ def share_into(source, folder, home):
             shared.append(name)
     for name in SHARED_FOLDERS:
         item = source.path / name
-        if not cs.is_dir(item):
+        if not td.is_dir(item):
             continue
         if item.is_symlink():  # the source shares it whole: so does this one
             os.symlink(os.path.realpath(str(item)), str(folder / name))
@@ -612,7 +612,7 @@ def add_account(home, extra, name, share_from=None, with_command=False):
     folder.mkdir(mode=0o700)
     (folder / ".profile-name").write_text(name + "\n", encoding="utf-8")
     shared = share_into(source, folder, home) if source is not None else []
-    profile = cs.Profile(folder, home)
+    profile = td.Profile(folder, home)
     message = f"Added {name} ({short(folder, home)})"
     if shared:
         message += f", sharing {', '.join(shared)} with {source.label}"
@@ -632,12 +632,12 @@ def login(profile, home, print_only=False):
         claude = claude_path(home)
         if claude is None:
             return False, NO_CLAUDE, None
-        return True, "", cs.in_folder(str(home), cs.login_command(profile, home, claude))
+        return True, "", td.in_folder(str(home), td.login_command(profile, home, claude))
     import jump  # (the desktop's terminals)
     claude = jump.claude_in_terminal(home)
     if claude is None:
         return False, NO_CLAUDE, None
-    command = cs.login_command(profile, home, claude)
+    command = td.login_command(profile, home, claude)
     if not jump.open_terminal(str(home), command):
         return False, "No terminal found to log in in", None
     return True, f"Log in to {profile.label} in the terminal that opened", None
@@ -656,7 +656,7 @@ def logout(home, extra, key):
     code, said = run_claude(profile, home, claude, ["auth", "logout"])
     if code != 0:
         return False, f"Couldn't log out of {profile.label}: {said or f'claude exited with {code}'}"
-    note_logged_out(cs.cache_dir(home), profile, True)
+    note_logged_out(td.cache_dir(home), profile, True)
     return True, f"Logged out of {profile.label}"
 
 
@@ -746,7 +746,7 @@ def move_to_trash(path, home):
 def stop_service(profile, home, claude):
     """Stop the profile's background service, if one runs (it would write
     into the folder again): "" when it's gone, else why not."""
-    name = cs.service_config_dir(profile)
+    name = td.service_config_dir(profile)
     if name is None:
         return ""
     env = claude_env(profile, home, claude)
@@ -757,7 +757,7 @@ def stop_service(profile, home, claude):
     except (OSError, subprocess.TimeoutExpired):
         pass
     deadline = time.time() + SERVICE_WAIT
-    while cs.service_config_dir(profile) is not None:
+    while td.service_config_dir(profile) is not None:
         if time.time() > deadline:
             return "its background service is still running"
         time.sleep(0.3)
@@ -769,7 +769,7 @@ def remove_account(home, extra, key):
     if profile is None:
         return False, f"No Claude profile called {key}"
     try:
-        _, vscode_on = cs.vscode_profile(home, profiles, REMOTE, cs.cache_dir(home))
+        _, vscode_on = td.vscode_profile(home, profiles, REMOTE, td.cache_dir(home))
     except Exception as exc:  # unsure whether VS Code's Claude uses it: keep it
         return False, f"{profile.label} isn't removed: can't tell which account VS Code's Claude uses ({exc})"
     why = (not_removable(profile, profiles, home, vscode_on, running_chats(profile, profiles))
@@ -777,7 +777,7 @@ def remove_account(home, extra, key):
     if why:
         return False, f"{profile.label} isn't removed: {why}"
     # what the other accounts link to in it moves to them (the default account first)
-    handed, why = hand_over(profile, profiles, home, vscode_on or cs.plain_profile(home, profiles))
+    handed, why = hand_over(profile, profiles, home, vscode_on or td.plain_profile(home, profiles))
     if why:
         return False, f"{profile.label} isn't removed: {why}" + (f" ({hand_over_text(handed, True)})" if handed else "")
     claude = claude_path(home)
@@ -801,7 +801,7 @@ def remove_account(home, extra, key):
     if said:
         notes.append(said)
     name = move_to_trash(profile.path, home)
-    note_logged_out(cs.cache_dir(home), profile, False)
+    note_logged_out(td.cache_dir(home), profile, False)
     message = f"Removed {profile.label}: {short(profile.path, home)} is in the Trash ({name}), without its login"
     if handed:
         notes.insert(0, hand_over_text(handed, True))
@@ -840,14 +840,14 @@ def through_link(home, profiles):
     that use the name ~/.claude: pointed elsewhere, they'd go on there."""
     link = str(home / ".claude")
     pids = set()
-    for entry, _, _ in cs.live_entries_all(profiles):
+    for entry, _, _ in td.live_entries_all(profiles):
         env = process_env(entry["pid"], ("CLAUDE_CONFIG_DIR", "HOME"))
         # (without the variable: its home's ~/.claude)
         value = env.get("CLAUDE_CONFIG_DIR") or (env["HOME"] + "/.claude" if env.get("HOME") else "")
         if value and os.path.normpath(os.path.expanduser(value)) == link:
             pids.add(entry["pid"])
     for p in profiles:
-        if os.path.normpath(cs.service_config_dir(p) or "") == link:
+        if os.path.normpath(td.service_config_dir(p) or "") == link:
             pids.add(-1)  # its background service
     return len(pids)
 
@@ -873,24 +873,24 @@ def vscode_state(home, profiles):
     VS Code's own; on an SSH host, its VS Code server's (where VS Code ever
     connected to it)."""
     if REMOTE:
-        _, on = cs.vscode_profile(home, profiles, remote=True)
-        return any(cs.is_dir(home / s) for s in cs.VSCODE_SERVERS.values()), on
-    installed, on = cs.vscode_profile(home, profiles)
+        _, on = td.vscode_profile(home, profiles, remote=True)
+        return any(td.is_dir(home / s) for s in td.VSCODE_SERVERS.values()), on
+    installed, on = td.vscode_profile(home, profiles)
     return bool(installed), on
 
 
 def vscode_setting(home):
     """The CLAUDE_CONFIG_DIR VS Code's settings give its Claude (None: none)."""
-    return cs.vscode_server_config_dir(home) if REMOTE else cs.vscode_setting_config_dir(home, cs.vscode_app()[1])
+    return td.vscode_server_config_dir(home) if REMOTE else td.vscode_setting_config_dir(home, td.vscode_app()[1])
 
 
 def set_vscode(home, value, extra):
     """VS Code's Claude runs with value from now on: (ok, why not)."""
     if not REMOTE:
-        return cs.set_vscode_user_config_dir(home, value)
-    for server in cs.VSCODE_SERVERS.values():
-        if cs.is_dir(home / server):
-            ok, why = cs.set_vscode_server_config_dir(home, value, server, extra)
+        return td.set_vscode_user_config_dir(home, value)
+    for server in td.VSCODE_SERVERS.values():
+        if td.is_dir(home / server):
+            ok, why = td.set_vscode_server_config_dir(home, value, server, extra)
             if not ok:
                 return False, why
     return True, ""
@@ -917,7 +917,7 @@ def make_default(home, extra, key, vscode=True):
         old = next((p for p in profiles if p.real == current), None)
         if old is not None and old.path == link:
             return False, (f"{profile.label} isn't the default yet: ~/.claude links to "
-                           f"{cs.short_folder(str(current), home)}, which is found only through that link. Add that "
+                           f"{td.short_folder(str(current), home)}, which is found only through that link. Add that "
                            "folder to the extra config folders in the settings first, or it would drop out of every list")
         busy = through_link(home, profiles)
         if busy:
@@ -950,7 +950,7 @@ def make_default(home, extra, key, vscode=True):
         # follows ~/.claude from now on
         if moves_vscode or vscode_setting(home) != value:
             ok, why = set_vscode(home, value, extra)
-            now = vscode_state(home, cs.discover_profiles(home, extra))[1] if ok else None
+            now = vscode_state(home, td.discover_profiles(home, extra))[1] if ok else None
             if not ok:
                 failed.append(why)
             elif now is None or now.real != profile.real:
@@ -962,7 +962,7 @@ def make_default(home, extra, key, vscode=True):
                                                             else "" if failed else " already")
     if done or not failed:  # (the default is always shown: hidden, it shows again)
         try:
-            cs.change_hidden(cs.cache_dir(home), "accounts", forget=[profile.key])
+            td.change_hidden(td.cache_dir(home), "accounts", forget=[profile.key])
         except OSError:
             pass
     return not (failed and not done), "; ".join([message, *failed, *notes])
@@ -976,21 +976,21 @@ def hide_account(home, extra, key, hide):
     profile, profiles = find_profile(home, extra, key)
     if profile is None:
         return False, f"No Claude profile called {key}"
-    cache_root = cs.cache_dir(home)
+    cache_root = td.cache_dir(home)
     if not hide:
-        cs.change_hidden(cache_root, "accounts", forget=[profile.key])
+        td.change_hidden(cache_root, "accounts", forget=[profile.key])
         return True, f"{profile.label} shows again"
     try:
-        chosen = cs.default_profile(home, profiles, REMOTE, cache_root)[3]
+        chosen = td.default_profile(home, profiles, REMOTE, cache_root)[3]
     except Exception:  # VS Code's settings are only one of the reasons
-        chosen = cs.plain_profile(home, profiles)
+        chosen = td.plain_profile(home, profiles)
     if chosen is not None and chosen.real == profile.real:
         return False, (f"{profile.label} is the default account, which is always shown: "
                        "make another one the default first")
-    hidden = cs.load_hidden(cache_root)["accounts"]
+    hidden = td.load_hidden(cache_root)["accounts"]
     if all(p.real == profile.real or p.key in hidden for p in profiles):
         return False, f"{profile.label} is the only account shown: one always is"
-    cs.change_hidden(cache_root, "accounts", add=profile.key)
+    td.change_hidden(cache_root, "accounts", add=profile.key)
     return True, f"{profile.label} is hidden: Talpy Den doesn't read it any more, and it shows again while one of its chats runs"
 
 
@@ -1080,7 +1080,7 @@ def main(argv=None):
     except Exception as exc:  # report, don't crash: the widget shows the message
         ok, message = False, f"{type(exc).__name__}: {exc}"
     if REMOTE:  # login scripts on the host may print things first: the JSON follows a marker
-        sys.stdout.write("\n" + cs.REMOTE_MARK + " ")
+        sys.stdout.write("\n" + td.REMOTE_MARK + " ")
     print(json.dumps({"ok": ok, "message": message, **more, **({"command": command} if command else {})}))
 
 

@@ -14,7 +14,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_talpy_den import PID, ROOT, Fixture, cs, session, write  # noqa: E402
+from test_talpy_den import PID, ROOT, Fixture, td, session, write  # noqa: E402
 
 CODE = ROOT / "package/contents/code"
 sys.path.insert(0, str(CODE))
@@ -211,7 +211,7 @@ class ThroughAShellTests(HookFixture):
                 with self.subTest(shell=shell, command=command[:4]):
                     v = self.run_as(shell, command)
                     self.assertEqual((v["state"], v["pid"]), ("working", os.getpid()))
-                    self.assertEqual(cs.live_view(self.home / ".cache/talpy-den", SID, os.getpid())["state"], "working")
+                    self.assertEqual(td.live_view(self.home / ".cache/talpy-den", SID, os.getpid())["state"], "working")
 
 
 class HookRefreshTests(unittest.TestCase):
@@ -235,21 +235,21 @@ class HookRefreshTests(unittest.TestCase):
         live_copy = self.data / "live-hook.py"
         live_copy.write_text("# the live hook, as an older version had it\n")
         live_copy.chmod(0o640)
-        self.assertEqual(cs.refresh_hooks(self.home), ["live-hook.py"])
+        self.assertEqual(td.refresh_hooks(self.home), ["live-hook.py"])
         self.assertEqual(live_copy.read_bytes(), (CODE / "live_hook.py").read_bytes())
         self.assertEqual(live_copy.stat().st_mode & 0o777, 0o640)
         self.assertFalse((self.data / "permission-hook.py").exists())   # (off: not turned on)
         self.assertEqual(sorted(p.name for p in self.data.iterdir()), ["live-hook.py"])
-        self.assertEqual(cs.refresh_hooks(self.home), [])   # (up to date)
+        self.assertEqual(td.refresh_hooks(self.home), [])   # (up to date)
 
     def test_never_an_older_one(self):
-        newer = "HOOK_REVISION = %d\n# from a newer version\n" % (cs.hook_revision((CODE / "permission_hook.py").read_bytes()) + 1)
+        newer = "HOOK_REVISION = %d\n# from a newer version\n" % (td.hook_revision((CODE / "permission_hook.py").read_bytes()) + 1)
         (self.data / "permission-hook.py").write_text(newer)
-        self.assertEqual(cs.refresh_hooks(self.home), [])
+        self.assertEqual(td.refresh_hooks(self.home), [])
         self.assertEqual((self.data / "permission-hook.py").read_text(), newer)
-        self.assertEqual(cs.hook_revision(b"no line"), 1)
+        self.assertEqual(td.hook_revision(b"no line"), 1)
         for name in ("permission_hook.py", "live_hook.py"):
-            self.assertGreaterEqual(cs.hook_revision((CODE / name).read_bytes()), 2)
+            self.assertGreaterEqual(td.hook_revision((CODE / name).read_bytes()), 2)
 
     def test_at_a_status_check(self):
         (self.data / "permission-hook.py").write_text("# older\n")
@@ -262,7 +262,7 @@ class HookRefreshTests(unittest.TestCase):
         (self.data / "permission-hook.py").write_text("# older\n")
         out = subprocess.run([sys.executable, "-I", "-", "--remote", "--no-tokens"], env=env, capture_output=True,
                              text=True, timeout=60, input=(CODE / "talpy_den.py").read_text())
-        self.assertTrue(json.loads(out.stdout.split(cs.REMOTE_MARK)[1])["ok"])
+        self.assertTrue(json.loads(out.stdout.split(td.REMOTE_MARK)[1])["ok"])
         self.assertEqual((self.data / "permission-hook.py").read_text(), "# older\n")
 
 
@@ -631,8 +631,8 @@ class HostWatchTests(WaitTests):
         out = subprocess.run([sys.executable, "-I", "-", "--wait", "--requests", "--remote", "--as", "x", "--timeout", "1"],
                              input=(CODE / "live.py").read_text(), env=dict(os.environ, HOME=str(self.home)),
                              capture_output=True, text=True, timeout=20)
-        self.assertTrue(out.stdout.startswith("\n" + cs.REMOTE_MARK + " "), out.stdout)
-        self.assertTrue(json.loads(out.stdout.split(cs.REMOTE_MARK)[1])["ok"])
+        self.assertTrue(out.stdout.startswith("\n" + td.REMOTE_MARK + " "), out.stdout)
+        self.assertTrue(json.loads(out.stdout.split(td.REMOTE_MARK)[1])["ok"])
 
     def test_command_line(self):
         pass
@@ -645,7 +645,7 @@ class HostWatchTests(WaitTests):
         os.close(w)
         self.addCleanup(lambda: proc.poll() is None and proc.kill())
         first = os.read(r, 65536)   # (the first answer: everything is new to "x")
-        self.assertIn(cs.REMOTE_MARK.encode(), first)
+        self.assertIn(td.REMOTE_MARK.encode(), first)
         proc.wait(5)
         proc = subprocess.Popen([sys.executable, "-I", str(CODE / "live.py"), "--wait", "--requests", "--remote",
                                  "--as", "x", "--timeout", "30"], stdout=subprocess.PIPE, env=dict(os.environ, HOME=str(self.home)))
@@ -690,13 +690,13 @@ class LiveSwitchTests(Fixture):
         self.assertFalse(pane.relay_status(self.home, [], "live")["on"])
         pane.live(self.home, [], True)
         self.assertTrue(pane.relay_status(self.home, [], "live")["on"])
-        self.assertTrue(cs.live_hook_on(self.home))
+        self.assertTrue(td.live_hook_on(self.home))
         pane.live(self.home, [], False)
         hooks = json.loads(shared.read_text())["hooks"]
         self.assertEqual((hooks["SessionStart"], hooks["PreToolUse"]), ([guard], [dict(guard, matcher="*")]))
         self.assertEqual(sorted(hooks), ["PermissionRequest", "PreToolUse", "SessionStart"])
         self.assertFalse(hook.exists())
-        self.assertFalse(cs.live_hook_on(self.home))
+        self.assertFalse(td.live_hook_on(self.home))
         self.assertTrue(pane.relay_status(self.home, [], "relay")["on"])
 
     def test_an_entry_written_before_is_replaced(self):
@@ -717,7 +717,7 @@ class LiveSwitchTests(Fixture):
         import contextlib
         import io
         out = io.StringIO()
-        with contextlib.redirect_stdout(out), mock.patch.object(cs.Path, "home", return_value=self.home):
+        with contextlib.redirect_stdout(out), mock.patch.object(td.Path, "home", return_value=self.home):
             pane.main(["--live", "status"])
         self.assertEqual(json.loads(out.getvalue())["on"], False)
 
@@ -729,7 +729,7 @@ class LiveRowTests(Fixture):
                                        "doing": "Bash: pytest", "steps": [], "agents": [], "at": 5})
         write(live_dir / "waiting.json", {"v": 1, "sessionId": "waiting", "pid": PID + 1, "state": "working"})
         write(live_dir / "perso-idle.json", {"v": 1, "sessionId": "perso-idle", "pid": PID, "state": "ended"})
-        status = cs.collect(self.home, self.cache, with_tokens=False)
+        status = td.collect(self.home, self.cache, with_tokens=False)
         rows = {s["sessionId"]: s for g in status["groups"] for s in g["sessions"]}
         self.assertEqual((rows["busy"]["live"]["doing"], rows["busy"]["live"]["state"]), ("Bash: pytest", "working"))
         self.assertIsNone(rows["waiting"]["live"])  # (another process's)

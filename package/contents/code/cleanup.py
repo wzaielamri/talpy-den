@@ -56,7 +56,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 if os.path.isfile(globals().get("__file__") or ""):  # (on an SSH host it comes on stdin, after talpy_den.py)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the script dir off sys.path
-import talpy_den as cs  # noqa: E402
+import talpy_den as td  # noqa: E402
 
 MODES = ("claude", "talpy")
 DEFAULT_DAYS = 30  # (Claude Code's own)
@@ -92,20 +92,20 @@ USAGE = ("usage: cleanup.py --status [--days N] | --setting | --set claude | --s
 # ---------------------------------------------------------------- the setting
 
 def setting_path(cache_root):
-    return cs.state_dir(cache_root) / cs.CLEANUP_SETTING_FILE
+    return td.state_dir(cache_root) / td.CLEANUP_SETTING_FILE
 
 
 def load_setting(cache_root):
     """{"mode": "claude" | "talpy", "days", "pending" (Claude Code's own
     cleanup isn't back everywhere yet), "at"}: Claude Code's when it was
     never set."""
-    data = cs.read_json(setting_path(cache_root))
+    data = td.read_json(setting_path(cache_root))
     data = data if isinstance(data, dict) else {}
     days = data.get("days")
     ok_days = isinstance(days, int) and not isinstance(days, bool) and 1 <= days <= MAX_DAYS
     return {"mode": data.get("mode") if data.get("mode") in MODES else "claude",
             "days": days if ok_days else DEFAULT_DAYS, "pending": data.get("pending") is True,
-            "at": int(cs.number(data.get("at")) or 0)}
+            "at": int(td.number(data.get("at")) or 0)}
 
 
 def change_setting(cache_root, change, chosen=True):
@@ -113,45 +113,45 @@ def change_setting(cache_root, change, chosen=True):
     changes it in place, or returns False to leave it. The setting after;
     chosen: a choice of yours ("at" says when: a run going on runs again),
     not a run's own note ("pending" done)."""
-    state = cs.state_dir(cache_root)
-    cs.private_dir(state)
+    state = td.state_dir(cache_root)
+    td.private_dir(state)
     with open(str(state / "cleanup-setting.lock"), "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         s = load_setting(cache_root)
         if change(s) is not False:
             if chosen:
                 s["at"] = int(time.time() * 1000)
-            cs.write_json_atomic(setting_path(cache_root), s, private=True)
+            td.write_json_atomic(setting_path(cache_root), s, private=True)
         return s
 
 
 # ---------------------------------------------------------------- Claude Code's own cleanupPeriodDays
 
 def changed_path(cache_root):
-    return cs.state_dir(cache_root) / CHANGED_FILE
+    return td.state_dir(cache_root) / CHANGED_FILE
 
 
 def load_changed(cache_root):
     """{real settings.json path: {"had", "value", "made"}}: what each said before Talpy Den changed it."""
-    data = cs.read_json(changed_path(cache_root))
+    data = td.read_json(changed_path(cache_root))
     files = data.get("files") if isinstance(data, dict) else None
     return {k: v for k, v in files.items() if isinstance(k, str) and k.startswith("/") and isinstance(v, dict)} \
         if isinstance(files, dict) else {}
 
 
 def save_changed(cache_root, files):
-    cs.private_dir(cs.state_dir(cache_root))
-    cs.write_json_atomic(changed_path(cache_root), {"files": files}, private=True)
+    td.private_dir(td.state_dir(cache_root))
+    td.write_json_atomic(changed_path(cache_root), {"files": files}, private=True)
 
 
-settings_files = cs.claude_settings_files  # (each account's, once per real file: they often share one through links)
+settings_files = td.claude_settings_files  # (each account's, once per real file: they often share one through links)
 
 
 def read_settings(path):
     """(its JSON object, or None when it isn't one; whether the file is there)."""
     if not os.path.lexists(str(path)):
         return {}, False
-    raw = cs.read_plain(path, cs.SETTINGS_MAX)
+    raw = td.read_plain(path, td.SETTINGS_MAX)
     try:
         text = raw.decode("utf-8") if raw is not None else None
         data = None if text is None else json.loads(text) if text.strip() else {}
@@ -160,7 +160,7 @@ def read_settings(path):
     return (data if isinstance(data, dict) else None), True
 
 
-write_settings = cs.write_claude_settings  # (the one writer of Claude's settings: pane.py's hooks use it too)
+write_settings = td.write_claude_settings  # (the one writer of Claude's settings: pane.py's hooks use it too)
 
 
 def keep_claude_from_cleaning(home, cache_root, profiles):
@@ -168,11 +168,11 @@ def keep_claude_from_cleaning(home, cache_root, profiles):
     said before: the problems (one that isn't JSON is left as it is: Claude
     keeps cleaning there)."""
     changed, problems = load_changed(cache_root), []
-    with cs.claude_settings_lock(home):  # (read to written: a hook turned on meanwhile isn't lost)
+    with td.claude_settings_lock(home):  # (read to written: a hook turned on meanwhile isn't lost)
         for path in settings_files(home, profiles):
             data, there = read_settings(path)
             if data is None:
-                problems.append(f"{cs.short_path(str(path), str(home))} isn't a JSON object: Claude Code keeps cleaning up there")
+                problems.append(f"{td.short_path(str(path), str(home))} isn't a JSON object: Claude Code keeps cleaning up there")
                 continue
             if data.get(SETTING_KEY) == CLAUDE_KEEPS:
                 continue
@@ -184,7 +184,7 @@ def keep_claude_from_cleaning(home, cache_root, profiles):
             try:
                 write_settings(path, data)
             except OSError as exc:
-                problems.append(f"{cs.short_path(str(path), str(home))}: {exc.strerror or exc}")
+                problems.append(f"{td.short_path(str(path), str(home))}: {exc.strerror or exc}")
     return problems
 
 
@@ -192,7 +192,7 @@ def let_claude_clean(home, cache_root):
     """Put cleanupPeriodDays back where Talpy Den changed it (unless it was
     changed since): (problems, whether some are still left to put back)."""
     changed, left, problems = load_changed(cache_root), {}, []
-    with cs.claude_settings_lock(home):
+    with td.claude_settings_lock(home):
         for key, was in changed.items():
             put_back(home, key, was, left, problems)
     if left != changed:
@@ -208,7 +208,7 @@ def put_back(home, key, was, left, problems):
     if not there:
         return
     if data is None:
-        problems.append(f"{cs.short_path(key, str(home))} isn't a JSON object: put cleanupPeriodDays back yourself")
+        problems.append(f"{td.short_path(key, str(home))} isn't a JSON object: put cleanupPeriodDays back yourself")
         left[key] = was
         return
     if data.get(SETTING_KEY) != CLAUDE_KEEPS:
@@ -223,7 +223,7 @@ def put_back(home, key, was, left, problems):
         else:
             write_settings(path, data)
     except OSError as exc:
-        problems.append(f"{cs.short_path(key, str(home))}: {exc.strerror or exc}")
+        problems.append(f"{td.short_path(key, str(home))}: {exc.strerror or exc}")
         left[key] = was
 
 
@@ -252,7 +252,7 @@ def claude_overrides(home, profiles):
         data, _there = read_settings(Path(real))
         days = (data or {}).get(SETTING_KEY)
         if isinstance(days, (int, float)) and not isinstance(days, bool) and days < CLAUDE_KEEPS:
-            found.append({"path": cs.short_path(path, str(home)), "days": int(days)})
+            found.append({"path": td.short_path(path, str(home)), "days": int(days)})
     return found
 
 
@@ -294,15 +294,15 @@ class Tally:
 def kept_here(cache_root, host=""):
     """(chat ids, plan slugs) that stay on host ("": this computer), as kept
     on this computer: starred, keeping going, a queued go-on or plan."""
-    stars = cs.starred_of(cs.load_stars(cache_root), host)
+    stars = td.starred_of(td.load_stars(cache_root), host)
     chats, plans = set(stars["chats"]), set(stars["plans"])
-    chats |= {k["chat"] for k in cs.load_keep(cache_root)["chats"] if k["host"] == host}
-    for t in cs.load_queue(cache_root):
+    chats |= {k["chat"] for k in td.load_keep(cache_root)["chats"] if k["host"] == host}
+    for t in td.load_queue(cache_root):
         if (t.get("host") or "") != host:
             continue
-        if cs.valid_id(t.get("chat") or ""):
+        if td.valid_id(t.get("chat") or ""):
             chats.add(t["chat"])
-        if isinstance(t.get("plan"), str) and cs.PLAN_SLUG.match(t["plan"]):
+        if isinstance(t.get("plan"), str) and td.PLAN_SLUG.match(t["plan"]):
             plans.add(t["plan"])
     return chats, plans
 
@@ -312,16 +312,16 @@ def running(profiles):
     worker runs), from their processes (Claude's sessions/ and its service's
     roster.json)."""
     chats, jobs = set(), set()
-    for entry, _p, _h in cs.live_entries_all(profiles):
-        if cs.valid_id(entry.get("sessionId") or ""):
+    for entry, _p, _h in td.live_entries_all(profiles):
+        if td.valid_id(entry.get("sessionId") or ""):
             chats.add(entry["sessionId"])
         if isinstance(entry.get("jobId"), str):
             jobs.add(entry["jobId"])
     for p in profiles:
-        roster = cs.read_json(p.path / "daemon" / "roster.json")
+        roster = td.read_json(p.path / "daemon" / "roster.json")
         workers = roster.get("workers") if isinstance(roster, dict) else None
         for job, w in (workers.items() if isinstance(workers, dict) else ()):
-            if isinstance(w, dict) and isinstance(w.get("pid"), int) and cs.pid_alive(w["pid"]):
+            if isinstance(w, dict) and isinstance(w.get("pid"), int) and td.pid_alive(w["pid"]):
                 jobs.add(job)
     return chats, jobs
 
@@ -406,12 +406,12 @@ def sweep(home, cache_root, profiles, days, keep_chats, keep_plans, now, dry=Fal
     t = Tally()
     cutoff = now - days * 86400
     live_chats, live_jobs = running(profiles)  # (of every account: a chat shared with a hidden one stays too)
-    profiles = cs.shown_profiles(profiles, cache_root)
+    profiles = td.shown_profiles(profiles, cache_root)
     keep = set(keep_chats) | live_chats
     roots, seen = [], set()
     for p in profiles:
         real = str(p.real)
-        if real not in seen and cs.is_dir(Path(real)):
+        if real not in seen and td.is_dir(Path(real)):
             seen.add(real)
             roots.append(real)
     gone, stays = {}, set()  # chat id -> its project folder's name; the chats that stay
@@ -421,7 +421,7 @@ def sweep(home, cache_root, profiles, days, keep_chats, keep_plans, now, dry=Fal
     for root in roots:
         sweep_jobs(root, cutoff, keep | stays, live_jobs, t, dry)  # (a background chat's folder stays with its chat)
         sweep_aged(root, cutoff, keep | stays, gone, t, dry)
-    noted = cs.load_plan_projects(cache_root)  # (the chat that made each plan, as the status noted it)
+    noted = td.load_plan_projects(cache_root)  # (the chat that made each plan, as the status noted it)
     living = keep | stays  # (a plan stays while its chat does)
     plans = set(keep_plans) | {slug for slug, e in noted.items() if e.get("chat") in living}
     sweep_plans(home, roots, cutoff, plans, t, dry)
@@ -439,7 +439,7 @@ def sweep_chats(root, cutoff, keep, gone, stays, t, dry):
         names = {e.name for e in listed}
         went = False
         for e in listed:
-            if e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False) and not cs.side_copy(e.name):
+            if e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False) and not td.side_copy(e.name):
                 chat = e.name[:-6]
                 if not CHAT_ID.match(chat):
                     continue
@@ -491,7 +491,7 @@ def sweep_shared(home, cutoff, keep, gone, stays, t, dry):
         if not d.is_dir(follow_symlinks=False):
             continue
         for e in entries(d.path):
-            if not (e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False)) or cs.side_copy(e.name):
+            if not (e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False)) or td.side_copy(e.name):
                 continue
             chat = e.name[:-6]
             if not CHAT_ID.match(chat) or chat in keep or chat in stays:
@@ -528,9 +528,9 @@ def sweep_jobs(root, cutoff, keep, live_jobs, t, dry):
             continue
         if when >= cutoff:
             continue
-        job = cs.read_json(Path(state))
+        job = td.read_json(Path(state))
         # (a routine, a self-waking or /loop job is "done" between its runs: it's never deleted, as Claude's isn't)
-        if not isinstance(job, dict) or not cs.job_finished(job) or cs.is_recurring(job) or job.get("sessionId") in keep:
+        if not isinstance(job, dict) or not td.job_finished(job) or td.is_recurring(job) or job.get("sessionId") in keep:
             continue
         size = size_of(e.path)
         try:
@@ -599,7 +599,7 @@ def sweep_plans(home, roots, cutoff, keep, t, dry):
                     pass
                 continue
             slug = e.name[:-3] if e.name.endswith(".md") else ""
-            if not cs.PLAN_SLUG.match(slug):
+            if not td.PLAN_SLUG.match(slug):
                 continue
             if slug in keep:
                 t.kept_plans += 1  # (old: it stays because it's starred, queued or its chat stays)
@@ -645,7 +645,7 @@ def place(home, cache_root, profiles, mode, days, keep_chats, keep_plans, now, d
 # ---------------------------------------------------------------- the run: here, then the hosts
 
 def load_runs(cache_root):
-    data = cs.read_json(Path(cache_root) / RUNS_FILE)
+    data = td.read_json(Path(cache_root) / RUNS_FILE)
     return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, dict)} if isinstance(data, dict) else {}
 
 
@@ -653,14 +653,14 @@ def raised_hosts(cache_root):
     """The SSH hosts and containers where Talpy Den kept Claude's cleanup
     from cleaning (or may have: one is noted before it's asked), in the
     state folder: a cache cleared mustn't leave one so for good."""
-    data = cs.read_json(cs.state_dir(cache_root) / HOSTS_FILE)
+    data = td.read_json(td.state_dir(cache_root) / HOSTS_FILE)
     hosts = data.get("hosts") if isinstance(data, dict) else None
     return {h for h in hosts if isinstance(h, str) and h} if isinstance(hosts, list) else set()
 
 
 def save_raised_hosts(cache_root, hosts):
-    cs.private_dir(cs.state_dir(cache_root))
-    cs.write_json_atomic(cs.state_dir(cache_root) / HOSTS_FILE, {"hosts": sorted(hosts)}, private=True)
+    td.private_dir(td.state_dir(cache_root))
+    td.write_json_atomic(td.state_dir(cache_root) / HOSTS_FILE, {"hosts": sorted(hosts)}, private=True)
 
 
 def hosts_to_visit(cache_root, mode, now):
@@ -696,16 +696,16 @@ def on_host(host, cache_root, mode, days, dry=False):
 def forget_bookmarks(cache_root, chats, host=""):
     """The bookmarks of the chats a run deleted (here, or on host: kept here) go too, as a deleted chat's do,
     and when a Talpy Chat window last showed them (talpy_den.forget_seen)."""
-    chats = [c for c in chats if isinstance(c, str) and cs.valid_id(c)] if isinstance(chats, list) else []
+    chats = [c for c in chats if isinstance(c, str) and td.valid_id(c)] if isinstance(chats, list) else []
     for chat in chats:
-        cs.forget_bookmarks(cache_root, chat, host)
-    cs.forget_seen(cache_root, chats, host)
+        td.forget_bookmarks(cache_root, chat, host)
+    td.forget_seen(cache_root, chats, host)
 
 
 def run(home, cache_root, extra_dirs=(), now=None, wait=False):
     """The run (one at a time: another that's running says so, unless wait):
     this computer, then the hosts; again when the setting changed meanwhile."""
-    cs.private_dir(Path(cache_root))
+    td.private_dir(Path(cache_root))
     with open(str(Path(cache_root) / LOCK_FILE), "a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
@@ -715,7 +715,7 @@ def run(home, cache_root, extra_dirs=(), now=None, wait=False):
             setting = load_setting(cache_root)
             at = now if now is not None else time.time()
             runs = load_runs(cache_root)
-            profiles = cs.discover_profiles(home, extra_dirs)
+            profiles = td.discover_profiles(home, extra_dirs)
             chats, plans = kept_here(cache_root)
             try:
                 runs[""] = place(home, cache_root, profiles, setting["mode"], setting["days"], chats, plans, at)
@@ -738,7 +738,7 @@ def run(home, cache_root, extra_dirs=(), now=None, wait=False):
                     runs[host] = {k: v for k, v in answer.items() if k != "reached"}
                 else:  # (not reached, or it failed there: what it did before stays known)
                     runs[host] = dict(before, ok=False, at=int(at * 1000), message=answer.get("message") or "no answer")
-            cs.write_json_atomic(Path(cache_root) / RUNS_FILE, runs)
+            td.write_json_atomic(Path(cache_root) / RUNS_FILE, runs)
             if setting["mode"] == "claude" and setting["pending"] and not raised and not load_changed(cache_root):
                 change_setting(cache_root, lambda s: s.update(pending=False) if s["at"] == setting["at"] else False,
                                chosen=False)
@@ -761,10 +761,10 @@ def set_mode(home, cache_root, extra_dirs, mode, days=None, start=True):
             s["days"] = days
         s["pending"] = mode == "claude"
     s = change_setting(cache_root, change)
-    profiles = cs.discover_profiles(home, extra_dirs)
+    profiles = td.discover_profiles(home, extra_dirs)
     problems = keep_claude_from_cleaning(home, cache_root, profiles) if mode == "talpy" else let_claude_clean(home, cache_root)[0]
     if start:
-        cs.start_cleanup(cache_root, extra_dirs)
+        td.start_cleanup(cache_root, extra_dirs)
     if mode == "talpy":
         message = ("Talpy Den cleans up from now on: chats you haven't used for %d days, and old plans to the Trash; "
                    "the starred ones stay" % s["days"])
@@ -779,7 +779,7 @@ def status(home, cache_root, extra_dirs=(), now=None, days=None):
     "previewDays"; nothing is deleted)."""
     now = now if now is not None else time.time()
     setting = load_setting(cache_root)
-    profiles = cs.discover_profiles(home, extra_dirs)
+    profiles = td.discover_profiles(home, extra_dirs)
     chats, plans = kept_here(cache_root)
     days = days if days is not None else setting["days"]
     preview = sweep(home, cache_root, profiles, days, chats, plans, now, dry=True).out()
@@ -789,7 +789,7 @@ def status(home, cache_root, extra_dirs=(), now=None, days=None):
         at = preview if back == days else sweep(home, cache_root, profiles, back, chats, plans, now, dry=True).out()
         risk = {"days": back, "chats": at["keptChats"], "plans": at["keptPlans"]}
     try:
-        ran = os.stat(str(Path(cache_root) / cs.CLEANUP_STAMP)).st_mtime
+        ran = os.stat(str(Path(cache_root) / td.CLEANUP_STAMP)).st_mtime
     except OSError:
         ran = None
     return {"ok": True, "mode": setting["mode"], "days": setting["days"], "defaultDays": DEFAULT_DAYS,
@@ -830,9 +830,9 @@ def main(argv=None):
             if arg == "--set" and value == "talpy" and args and args[0].isdigit():
                 days = int(args.pop(0))
         elif arg == "--keep-chats" and args:
-            keep_chats = ids(args.pop(0), cs.valid_id)
+            keep_chats = ids(args.pop(0), td.valid_id)
         elif arg == "--keep-plans" and args:
-            keep_plans = ids(args.pop(0), lambda s: bool(cs.PLAN_SLUG.match(s)))
+            keep_plans = ids(args.pop(0), lambda s: bool(td.PLAN_SLUG.match(s)))
         elif arg == "--dry-run":
             dry = True
         elif arg == "--remote":
@@ -843,7 +843,7 @@ def main(argv=None):
         sys.exit(usage)
     os.umask(0o077)
     home = Path.home()
-    cache_root = cs.cache_dir(home)
+    cache_root = td.cache_dir(home)
     try:
         if action == "--status":
             result = status(home, cache_root, config_dirs, days=days)
@@ -869,13 +869,13 @@ def main(argv=None):
             if value != "claude" and not (value.isdigit() and 1 <= int(value) <= MAX_DAYS):
                 sys.exit(usage)
             mode, n = ("claude", DEFAULT_DAYS) if value == "claude" else ("talpy", int(value))
-            result = place(home, cache_root, cs.discover_profiles(home, config_dirs), mode, n, keep_chats, keep_plans,
+            result = place(home, cache_root, td.discover_profiles(home, config_dirs), mode, n, keep_chats, keep_plans,
                            time.time(), dry)
     except Exception as exc:  # (the front ends and the computer that asks must get an answer)
         result = {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
     text = json.dumps(result)
     if remote_run:
-        sys.stdout.write("\n" + cs.REMOTE_MARK + " ")
+        sys.stdout.write("\n" + td.REMOTE_MARK + " ")
     sys.stdout.write(text + "\n")
 
 

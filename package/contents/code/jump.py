@@ -106,7 +106,7 @@ if sys.version_info >= (3, 8):  # ...but talpy_den.py compiled in the data folde
         sys.pycache_prefix = str(_compiled)
         sys.dont_write_bytecode = False
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the script dir off sys.path
-import talpy_den as cs  # noqa: E402
+import talpy_den as td  # noqa: E402
 import sharing  # noqa: E402
 import live  # noqa: E402  (the open requests' folder and rules: the widget's live.py --opens takes them)
 
@@ -333,14 +333,14 @@ def find_session(home, extra_dirs, session_id, profile_dir=None):
 
     profile_dir (e.g. ".claude-work") limits the search to one profile: a chat
     shared across profiles has the same id in each."""
-    every = cs.discover_profiles(home, extra_dirs)
-    profiles = [p for p in every if not profile_dir or cs.matches_profile(p, profile_dir)]
+    every = td.discover_profiles(home, extra_dirs)
+    profiles = [p for p in every if not profile_dir or td.matches_profile(p, profile_dir)]
     # A live session is looked up in every profile: after ~/.claude was
     # switched, its file can still be in the profile it started on.
-    for entry, runs_on, holder in cs.live_entries_all(every):
-        if profile_dir and not (cs.matches_profile(runs_on, profile_dir) or cs.matches_profile(holder, profile_dir)):
+    for entry, runs_on, holder in td.live_entries_all(every):
+        if profile_dir and not (td.matches_profile(runs_on, profile_dir) or td.matches_profile(holder, profile_dir)):
             continue
-        if session_id in (entry.get("sessionId"), entry.get("jobId")) and entry.get("kind") in cs.SESSION_KINDS \
+        if session_id in (entry.get("sessionId"), entry.get("jobId")) and entry.get("kind") in td.SESSION_KINDS \
                 and not entry.get("spare") and not entry.get("parkedJobId"):
             job_id = entry.get("jobId") if isinstance(entry.get("jobId"), str) else None
             return runs_on, entry, read_job(runs_on, job_id) or read_job(holder, job_id), job_id
@@ -350,7 +350,7 @@ def find_session(home, extra_dirs, session_id, profile_dir=None):
         except OSError:
             continue
         for d in dirs:
-            job = cs.read_json(d / "state.json")
+            job = td.read_json(d / "state.json")
             if isinstance(job, dict) and session_id in (job.get("sessionId"), d.name):
                 return profile, None, job, d.name
     return None, None, None, None
@@ -359,10 +359,10 @@ def find_session(home, extra_dirs, session_id, profile_dir=None):
 def find_chat(home, extra_dirs, session_id, profile_dir=None):
     """(profile, transcript) of a chat with no session or job: the first
     profile (or the one named) that has its transcript."""
-    for profile in cs.discover_profiles(home, extra_dirs):
-        if profile_dir and not cs.matches_profile(profile, profile_dir):
+    for profile in td.discover_profiles(home, extra_dirs):
+        if profile_dir and not td.matches_profile(profile, profile_dir):
             continue
-        path = cs.transcript_path(profile, session_id)
+        path = td.transcript_path(profile, session_id)
         if path is not None:
             return profile, path
     return None, None
@@ -373,14 +373,14 @@ def live_entries(profile):
         files = sorted((profile.path / "sessions").glob("*.json"))
     except OSError:
         return []
-    entries = (cs.read_json(f) for f in files)
-    return [e for e in entries if isinstance(e, dict) and cs.is_alive(e)]
+    entries = (td.read_json(f) for f in files)
+    return [e for e in entries if isinstance(e, dict) and td.is_alive(e)]
 
 
 def read_job(profile, job_id):
     if not job_id or "/" in job_id:
         return None
-    job = cs.read_json(profile.path / "jobs" / job_id / "state.json")
+    job = td.read_json(profile.path / "jobs" / job_id / "state.json")
     return job if isinstance(job, dict) else None
 
 
@@ -473,7 +473,7 @@ def attach_clients(job_id, name, config_dir):
         if len(argv) >= 3 and argv[1] == "attach":
             what = argv[2]
         elif len(argv) >= 2 and argv[1] == "agents":
-            what = cs.process_environ_value(pid, "CLAUDE_AGENTS_SELECT")
+            what = td.process_environ_value(pid, "CLAUDE_AGENTS_SELECT")
         else:
             continue
         if what == job_id or (name and what == name and proc_config_dir(pid) == config_dir):
@@ -484,7 +484,7 @@ def attach_clients(job_id, name, config_dir):
 def tmux_pane_of(pid):
     """The tmux pane a process runs in, as Claude's session entries name it
     (session:@window.%pane), or "" outside tmux."""
-    socket = cs.tmux_socket(pid)
+    socket = td.tmux_socket(pid)
     try:
         env = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
     except OSError:
@@ -506,7 +506,7 @@ def proc_cmdline(pid):
 
 def proc_config_dir(pid):
     """Resolved Claude config dir a process runs with."""
-    return cs.process_config_dir(pid)
+    return td.process_config_dir(pid)
 
 
 def konsole_tab(konsole_pid, pids):
@@ -545,7 +545,7 @@ def jump_terminal(entry, what="session"):
         return False, f"This {what} has no running process to show"
     shown_by = [entry.get("pid")]  # the processes a terminal shows it in
     if isinstance(entry.get("tmux"), str) and entry["tmux"]:
-        shown_by = tmux_client_pids(entry["tmux"], cs.tmux_socket(entry.get("pid")))
+        shown_by = tmux_client_pids(entry["tmux"], td.tmux_socket(entry.get("pid")))
         if not shown_by:
             return False, f"This {what} runs in a tmux session no terminal shows right now: attach to it to see it"
         pids = [p for c in shown_by for p in ancestors(c)]
@@ -562,7 +562,7 @@ def jump_terminal(entry, what="session"):
             caption = os.path.basename(entry.get("cwd") or "")
     if not raise_window(pids, caption):
         return False, f"Couldn't raise the window of this {what} ({raise_hint()})"
-    terminal = next((t for t in map(cs.vscode_terminal, shown_by) if t), None) if vscode else None
+    terminal = next((t for t in map(td.vscode_terminal, shown_by) if t), None) if vscode else None
     if terminal and show_vscode_terminal(vscode, terminal):
         return True, f"Switched to the VS Code terminal running this {what}"
     return True, f"Switched to the terminal running this {what}"
@@ -838,7 +838,7 @@ def container_names(ident):
     import remote
     p = remote.place(ident)
     names = {p.name}
-    saved = cs.read_json(remote.containers_file())
+    saved = td.read_json(remote.containers_file())
     users = saved.get("users") if isinstance(saved, dict) and isinstance(saved.get("users"), dict) else {}
     known = users.get(ident)
     cid = known.get("cid") if isinstance(known, dict) else None
@@ -952,7 +952,7 @@ def open_vscode_link(home, extra_dirs, session_id, link):
     was used last. (ok, message)"""
     if not link.startswith(CLAUDE_CODE_LINK):
         return False, "Not a link of Claude Code's"
-    entry = cs.find_chat_entry(home, extra_dirs, session_id) if cs.valid_id(session_id or "") else None
+    entry = td.find_chat_entry(home, extra_dirs, session_id) if td.valid_id(session_id or "") else None
     return open_in_vscode(entry or {}, link)
 
 
@@ -976,14 +976,14 @@ def show_vscode_terminal(code, terminal, host=None):
 
 
 # Shell commands for a profile (they live in the backend, which remote hosts run too)
-service_config_dir = cs.service_config_dir
-job_config_dir = cs.job_config_dir
-config_dir_value = cs.config_dir_value
-folder_trusted = cs.folder_trusted
-claude_command = cs.claude_command
-attach_command = cs.attach_command
-resume_command = cs.resume_command
-short_folder = cs.short_folder
+service_config_dir = td.service_config_dir
+job_config_dir = td.job_config_dir
+config_dir_value = td.config_dir_value
+folder_trusted = td.folder_trusted
+claude_command = td.claude_command
+attach_command = td.attach_command
+resume_command = td.resume_command
+short_folder = td.short_folder
 
 
 def kde_terminal():
@@ -1141,7 +1141,7 @@ NO_CLAUDE = ("Can't find the claude command: it isn't on the desktop's PATH, in 
 
 def claude_path(home):
     """Full path of the claude command, or None."""
-    found = shutil.which("claude") or cs.find_claude(home, ask_shell=True)
+    found = shutil.which("claude") or td.find_claude(home, ask_shell=True)
     return found if found != "claude" else None
 
 
@@ -1179,7 +1179,7 @@ def resume_chat(profile, path, session_id, home):
     claude = claude_in_terminal(home)
     if claude is None:
         return False, NO_CLAUDE
-    folder = cs.chat_folder(path)
+    folder = td.chat_folder(path)
     if not open_terminal(folder, resume_command(profile, session_id, home, folder, claude)):
         return False, "No terminal found to reopen the chat in"
     return True, "Reopened the chat in a terminal"
@@ -1228,7 +1228,7 @@ def job_id_ok(job_id):
 
 def listed_jobs(home):
     """The jobs file's jobs by id (place_jobs, publish_jobs): what --job may bring up."""
-    data = cs.read_json(cs.jobs_file_path(home, cs.cache_dir(home)))
+    data = td.read_json(td.jobs_file_path(home, td.cache_dir(home)))
     jobs = data.get("jobs") if isinstance(data, dict) else None
     return {j["id"]: j for j in jobs if isinstance(j, dict) and isinstance(j.get("id"), str)} if isinstance(jobs, list) else {}
 
@@ -1264,7 +1264,7 @@ def raise_talpy_chat(name):
 def shared_extra_dirs(home):
     """The extra Claude folders the widgets were given (their shared settings' extraConfigDirs), as a click there
     passes them on with --config-dir."""
-    shared = cs.shared_settings(cs.cache_dir(home)) or {}
+    shared = td.shared_settings(td.cache_dir(home)) or {}
     dirs = (shared.get("values") or {}).get("extraConfigDirs")
     return [d.strip() for d in dirs.split(",") if d.strip()] if isinstance(dirs, str) else []
 
@@ -1274,7 +1274,7 @@ def listed_host_session(job_id):
     answers (only files whose name is a host name); None if none lists it."""
     import remote
     try:
-        names = [f.stem for f in (cs.cache_dir(Path.home()) / remote.ANSWERS_DIR).glob("*.json")]
+        names = [f.stem for f in (td.cache_dir(Path.home()) / remote.ANSWERS_DIR).glob("*.json")]
     except OSError:
         return None
     hosts = []
@@ -1302,7 +1302,7 @@ def show_host_session(host, session):
     if isinstance(session.get("openCommand"), str) and session["openCommand"]:
         return remote.open_remote(host, session["openCommand"])
     if session.get("entrypoint") == "claude-vscode":
-        if not cs.valid_id(session.get("sessionId")):
+        if not td.valid_id(session.get("sessionId")):
             return False, JOB_NOT_LISTED
         ok, message = jump_remote_vscode(host, session["sessionId"], folder)
         return (False, JOB_VSCODE_ASKS) if ok is None else (ok, message)
@@ -1326,13 +1326,13 @@ TAKER_FRESH_MS = 60_000   # a widget whose last check is older than this (or 3 o
 def taker_alive(home):
     """Whether a Talpy Den front end that takes open requests runs: a widget that checked lately (instances.json),
     or the VS Code window that speaks for all (its leader file names a running process)."""
-    cache, now = cs.cache_dir(home), time.time() * 1000
-    widgets = cs.read_json(cache / "instances.json")
+    cache, now = td.cache_dir(home), time.time() * 1000
+    widgets = td.read_json(cache / "instances.json")
     for w in widgets.values() if isinstance(widgets, dict) else []:
-        seen, every = (cs.number(w.get("seen")), cs.number(w.get("interval"))) if isinstance(w, dict) else (None, None)
+        seen, every = (td.number(w.get("seen")), td.number(w.get("interval"))) if isinstance(w, dict) else (None, None)
         if seen is not None and now - seen <= max(TAKER_FRESH_MS, 3 * (every or 0)):
             return True
-    leader = cs.read_json(cache / "vscode-notify.json")
+    leader = td.read_json(cache / "vscode-notify.json")
     pid = leader.get("pid") if isinstance(leader, dict) else None
     if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
         try:
@@ -1404,10 +1404,10 @@ def jump_job_id(home, extra_dirs, job_id):
     if found:
         return show_host_session(*found)
     profile, sid, kind, *more = job_id.split("/")
-    if ":" in profile or kind not in JOB_KINDS or more not in ([], ["shared"]) or not cs.valid_id(sid):
+    if ":" in profile or kind not in JOB_KINDS or more not in ([], ["shared"]) or not td.valid_id(sid):
         return False, JOB_NOT_LISTED  # (a host's that none lists, or not an id place_jobs writes)
     # The profile by its name only (never as a path), as Talpy Den found it.
-    if not any(profile in (p.key, p.dirname) for p in cs.discover_profiles(home, extra_dirs)):
+    if not any(profile in (p.key, p.dirname) for p in td.discover_profiles(home, extra_dirs)):
         return False, JOB_NOT_LISTED
     return jump(home, extra_dirs, sid, profile)
 
@@ -1421,12 +1421,12 @@ def stop(home, extra_dirs, session_id, profile_dir=None, busy=False):
         return False, "That chat isn't running any more"
     if not job_id:
         if entry is not None and entry.get("kind") == "interactive":
-            return cs.stop_chat(entry, busy_ok=busy)
+            return td.stop_chat(entry, busy_ok=busy)
         return False, "Only background chats and chats with a process can be stopped here"
     claude = claude_path(home)
     if not claude:
         return False, NO_CLAUDE
-    return cs.stop_background(profile, job_id, job, home, claude)
+    return td.stop_background(profile, job_id, job, home, claude)
 
 
 def stop_keep_off(home, extra_dirs, session_id, chat_id, profile_dir=None, busy=False):
@@ -1442,7 +1442,7 @@ def stop_keep_off(home, extra_dirs, session_id, chat_id, profile_dir=None, busy=
         if had:
             data["chats"] = [k for k in data["chats"] if not (k["chat"] == chat_id and not k["host"])]
         return had
-    cs.change_keep(cs.cache_dir(home), change)
+    td.change_keep(td.cache_dir(home), change)
     if not done["ok"]:
         return False, done["message"]
     _, off = keep_off(home, extra_dirs, chat_id)  # (off already: what's still queued for it, in words)
@@ -1451,14 +1451,14 @@ def stop_keep_off(home, extra_dirs, session_id, chat_id, profile_dir=None, busy=
 
 def interrupt(home, extra_dirs, session_id, profile_dir=None):
     """Interrupt a working chat in tmux (Ctrl+C in its pane), or a background
-    one (Esc through Claude's background service: cs.interrupt_background);
+    one (Esc through Claude's background service: td.interrupt_background);
     it stays open."""
     profile, entry, _job, job_id = find_session(home, extra_dirs, session_id, profile_dir)
     if profile is None or entry is None:
         return False, "That chat isn't running any more"
     if job_id:
-        return cs.interrupt_background(profile, entry)
-    return cs.interrupt_chat(entry)
+        return td.interrupt_background(profile, entry)
+    return td.interrupt_chat(entry)
 
 
 def save_settings(home, values_json, by, unless_default=False):
@@ -1469,7 +1469,7 @@ def save_settings(home, values_json, by, unless_default=False):
         return False, "The settings aren't JSON"
     if not isinstance(values, dict):
         return False, "The settings aren't a JSON object"
-    return cs.save_shared_settings(cs.cache_dir(home), by, values, int(time.time() * 1000), unless_default)
+    return td.save_shared_settings(td.cache_dir(home), by, values, int(time.time() * 1000), unless_default)
 
 
 class Task:
@@ -1487,17 +1487,17 @@ class Task:
     def options(self, home=None):
         """claude's options for its model, effort and permission mode; ValueError for a wrong one.
         A task naming a picture pasted into it (with home) gets the pictures' folder."""
-        return cs.chat_options(self.model, self.effort, self.mode) + (cs.picture_options(home, self.text) if home else [])
+        return td.chat_options(self.model, self.effort, self.mode) + (td.picture_options(home, self.text) if home else [])
 
     def prompt(self, home, profiles, fits=None):
         """Its first prompt (its plan cut until fits(prompt), see
         talpy_den.task_prompt); ValueError if its plan is gone."""
         path = None
         if self.plan:
-            path = cs.find_plan(profiles, self.plan, self.plan_profile, home)
+            path = td.find_plan(profiles, self.plan, self.plan_profile, home)
             if path is None:
                 raise ValueError("That plan isn't there any more")
-        return cs.task_prompt(self.text, path, home, fits)
+        return td.task_prompt(self.text, path, home, fits)
 
 
 NO_TASK = Task()
@@ -1506,8 +1506,8 @@ NO_TASK = Task()
 def new_chat(home, extra_dirs, dirname, folder=None, task=NO_TASK):
     """Open a terminal with a new interactive chat on one profile (e.g.
     .claude-work); with a task, that's its first prompt, sent at once."""
-    profiles = cs.discover_profiles(home, extra_dirs)
-    profile = next((p for p in profiles if cs.matches_profile(p, dirname)), None)
+    profiles = td.discover_profiles(home, extra_dirs)
+    profile = next((p for p in profiles if td.matches_profile(p, dirname)), None)
     if profile is None:
         return False, f"No Claude profile called {dirname}"
     claude = claude_in_terminal(home)
@@ -1516,17 +1516,17 @@ def new_chat(home, extra_dirs, dirname, folder=None, task=NO_TASK):
     folder = folder if folder and os.path.isdir(folder) else str(home)
     prompt = task.prompt(home, profiles) if task else ""
     options = task.options(home)
-    command = (cs.task_command(profile, prompt, home, claude, options) if prompt
-               else cs.new_chat_command(profile, home, claude, options))
+    command = (td.task_command(profile, prompt, home, claude, options) if prompt
+               else td.new_chat_command(profile, home, claude, options))
     if not open_terminal(folder, command):
         return False, "No terminal found to open the chat in"
-    return True, f"Opened a new {profile.label} chat in {cs.short_path(folder, home)}"
+    return True, f"Opened a new {profile.label} chat in {td.short_path(folder, home)}"
 
 
 def new_chat_background(home, extra_dirs, dirname, folder=None, task=NO_TASK):
     """Start a task as a background session on one profile, in folder."""
-    profiles = cs.discover_profiles(home, extra_dirs)
-    profile = next((p for p in profiles if cs.matches_profile(p, dirname)), None)
+    profiles = td.discover_profiles(home, extra_dirs)
+    profile = next((p for p in profiles if td.matches_profile(p, dirname)), None)
     if profile is None:
         return False, f"No Claude profile called {dirname}"
     claude = claude_path(home)
@@ -1537,7 +1537,7 @@ def new_chat_background(home, extra_dirs, dirname, folder=None, task=NO_TASK):
     folder = folder if folder and os.path.isdir(folder) else str(home)
     # in a systemd scope of its own: Claude's background service may start
     # with it, and must outlive a restart of the desktop shell (start_app)
-    ok, message, _job = cs.start_background(profile, folder, task.prompt(home, profiles), home, claude,
+    ok, message, _job = td.start_background(profile, folder, task.prompt(home, profiles), home, claude,
                                             prefix=scope_prefix("claude"), options=task.options(home))
     return ok, message
 
@@ -1584,14 +1584,14 @@ def pick_files(home, start):
 
 def trust_question(place, folder, home):
     """What to ask before a folder is trusted for Claude from here
-    (cs.trust_place's facts), in the words of Claude's own question."""
-    lines = [f"Claude doesn't trust {cs.short_folder(folder, home)} yet, and a chat in Talpy Chat runs in the background, "
+    (td.trust_place's facts), in the words of Claude's own question."""
+    lines = [f"Claude doesn't trust {td.short_folder(folder, home)} yet, and a chat in Talpy Chat runs in the background, "
              "where Claude can't ask you.",
              "Is this a project you created or one you trust? Trusting it lets Claude Code read, edit and run files there, "
              "and the folder's own Claude settings count from then on (hooks, MCP servers, permission rules: they can "
              "run programs)."]
     if place["repo"] and place["key"] != os.path.realpath(folder):
-        lines.append(f"It's part of the repository at {cs.short_folder(place['key'], home)}: trusting it trusts that whole "
+        lines.append(f"It's part of the repository at {td.short_folder(place['key'], home)}: trusting it trusts that whole "
                      "repository.")
     if place["settings"]:
         lines.append(f"It has Claude settings of its own ({', '.join(place['settings'])}): look at them first if the project "
@@ -1626,9 +1626,9 @@ def pick_folder(home, extra_dirs, profile_key, folder=None):
     (a background chat can't ask). One it doesn't trust yet, whose trust
     Claude can keep (not your home folder): picked in the desktop's dialog,
     you're asked here whether you trust it (trust_question: yes trusts it,
-    cs.trust_folder; cancelled: no path); for VS Code's, "trustQuestion" is
+    td.trust_folder; cancelled: no path); for VS Code's, "trustQuestion" is
     what to ask (then --trust-folder)."""
-    profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
+    profile = next((p for p in td.discover_profiles(home, extra_dirs) if td.matches_profile(p, profile_key)), None)
     if profile is None:
         return False, f"No Claude profile called {profile_key}", {}
     error, here = "", not folder
@@ -1637,9 +1637,9 @@ def pick_folder(home, extra_dirs, profile_key, folder=None):
     if folder is None:
         return not error, error, {}
     if not os.path.isdir(folder):
-        return False, f"The folder {cs.short_folder(folder, home)} isn't there", {}
-    out = {"path": folder, "short": cs.short_folder(folder, home), "trusted": cs.folder_trusted(profile, folder, home)}
-    place = None if out["trusted"] else cs.trust_place(folder, home)
+        return False, f"The folder {td.short_folder(folder, home)} isn't there", {}
+    out = {"path": folder, "short": td.short_folder(folder, home), "trusted": td.folder_trusted(profile, folder, home)}
+    place = None if out["trusted"] else td.trust_place(folder, home)
     if place is not None and not here:
         out["trustQuestion"] = trust_question(place, folder, home)
     elif place is not None:
@@ -1647,7 +1647,7 @@ def pick_folder(home, extra_dirs, profile_key, folder=None):
         if answer is None:
             return True, "", {}
         if answer == "trust":
-            ok, message = cs.trust_folder(profile, folder, home)
+            ok, message = td.trust_folder(profile, folder, home)
             if not ok:
                 return False, message, {}
             out["trusted"] = True
@@ -1656,16 +1656,16 @@ def pick_folder(home, extra_dirs, profile_key, folder=None):
 
 def trust_folder(home, extra_dirs, profile_key, folder):
     """--trust-folder: Claude's "do you trust this folder?" answered yes for
-    folder on that profile (cs.trust_folder), after the question
+    folder on that profile (td.trust_folder), after the question
     --pick-folder gave: (ok, message)."""
-    profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_key)), None)
+    profile = next((p for p in td.discover_profiles(home, extra_dirs) if td.matches_profile(p, profile_key)), None)
     if profile is None:
         return False, f"No Claude profile called {profile_key}"
     if not folder or not os.path.isdir(folder):
-        return False, f"The folder {cs.short_folder(folder or '', home)} isn't there"
-    if cs.folder_trusted(profile, folder, home):
+        return False, f"The folder {td.short_folder(folder or '', home)} isn't there"
+    if td.folder_trusted(profile, folder, home):
         return True, "Trusted already"
-    return cs.trust_folder(profile, folder, home)
+    return td.trust_folder(profile, folder, home)
 
 
 # ---------------------------------------------------------------- pictures in a task
@@ -1693,7 +1693,7 @@ def clipboard_tool():
 
 
 def paste_image(home):
-    """Save the picture on the clipboard in cs.images_dir: (ok, message,
+    """Save the picture on the clipboard in td.images_dir: (ok, message,
     {"path": its file}). Older pictures there are let go."""
     tool, missing = clipboard_tool()
     if tool is None:
@@ -1717,7 +1717,7 @@ def paste_image(home):
 
 def save_image(home, kind, data):
     """Save a picture handed over as base64 (data), of type kind, in
-    cs.images_dir: (ok, message, {"path": its file})."""
+    td.images_dir: (ok, message, {"path": its file})."""
     if kind not in IMAGE_TYPES:
         return False, "Claude takes PNG, JPEG, WebP and GIF pictures", {}
     try:
@@ -1732,12 +1732,12 @@ def save_image(home, kind, data):
 
 
 def save_picture(home, picture, kind):
-    """picture (bytes of type kind) as a new file in cs.images_dir, yours
+    """picture (bytes of type kind) as a new file in td.images_dir, yours
     alone: (ok, message, {"path"}). Older pictures there are let go."""
-    folder = cs.images_dir(home)
+    folder = td.images_dir(home)
     folder.mkdir(parents=True, exist_ok=True)
     folder.chmod(0o700)  # (screenshots can show anything)
-    cutoff = time.time() - cs.IMAGES_KEEP_DAYS * 86400
+    cutoff = time.time() - td.IMAGES_KEEP_DAYS * 86400
     for old in folder.iterdir():
         try:
             if old.stat().st_mtime < cutoff:
@@ -1773,9 +1773,9 @@ def screenshot_tool(path):
 
 
 def screenshot(home):
-    """A region of the screen you pick, as a picture in cs.images_dir: (ok,
+    """A region of the screen you pick, as a picture in td.images_dir: (ok,
     message, {"path"}); nothing if you cancel."""
-    folder = cs.images_dir(home)
+    folder = td.images_dir(home)
     folder.mkdir(parents=True, exist_ok=True)
     folder.chmod(0o700)
     target = folder / f".shot-{os.getpid()}.png"
@@ -1825,7 +1825,7 @@ PICTURE_FILES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg
 
 def attach_file(home, path):
     """A file dropped on a reply or a task: a picture is copied in (as a
-    pasted one: cs.images_dir, so a chat reads it without asking), any
+    pasted one: td.images_dir, so a chat reads it without asking), any
     other file is named where it is: (ok, message, {"path", "picture"})."""
     try:
         p = Path(path).expanduser().resolve()
@@ -1857,22 +1857,22 @@ def queue_task(home, extra_dirs, dirname, folder, task, start_at, host="", accou
         return False, "Write what Claude should do first"
     plan_title = ""
     if not host:
-        profiles = cs.discover_profiles(home, extra_dirs)
-        profile = next((p for p in profiles if cs.matches_profile(p, dirname)), None)
+        profiles = td.discover_profiles(home, extra_dirs)
+        profile = next((p for p in profiles if td.matches_profile(p, dirname)), None)
         if profile is None:
             return False, f"No Claude profile called {dirname}"
         folder = folder if folder and os.path.isdir(folder) else str(home)
-        if not cs.folder_trusted(profile, folder, home):
-            return False, (f"Claude doesn't trust {cs.short_folder(folder, home)} yet, and a background chat can't ask: "
+        if not td.folder_trusted(profile, folder, home):
+            return False, (f"Claude doesn't trust {td.short_folder(folder, home)} yet, and a background chat can't ask: "
                            "start a chat there in a terminal once, or pick a project folder")
         if task.plan:
-            path = cs.find_plan(profiles, task.plan, task.plan_profile, home)
+            path = td.find_plan(profiles, task.plan, task.plan_profile, home)
             if path is None:
                 return False, "That plan isn't there any more"
-            plan_title = cs.plan_title(path)
-    entry = cs.queue_entry(dirname, folder or "", task.text, start_at, host, account, task.plan, task.plan_profile,
+            plan_title = td.plan_title(path)
+    entry = td.queue_entry(dirname, folder or "", task.text, start_at, host, account, task.plan, task.plan_profile,
                            plan_title, scheduled=scheduled, model=task.model, effort=task.effort, mode=task.mode)
-    cs.change_queue(cs.cache_dir(home), add=entry)
+    td.change_queue(td.cache_dir(home), add=entry)
     if scheduled:
         return True, f"Queued: it starts {start_time(start_at)}"
     return True, f"Queued: it starts {start_time(start_at)}, when the limit resets"  # (a weekly one: days away)
@@ -1894,16 +1894,16 @@ def start_time(at_ms, now=None):
 def chat_goes_on_where(home, extra_dirs, chat_id, profile_dir, folder):
     """The folder a chat of this computer goes on in by itself, in the
     background: (folder, None), or (None, why it can't)."""
-    profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, profile_dir)), None)
+    profile = next((p for p in td.discover_profiles(home, extra_dirs) if td.matches_profile(p, profile_dir)), None)
     if profile is None:
         return None, f"No Claude profile called {profile_dir}"
-    path = cs.transcript_path(profile, chat_id)
+    path = td.transcript_path(profile, chat_id)
     if path is None:
         return None, "That chat isn't on this account any more"
     if not (folder and os.path.isdir(folder)):
-        folder = cs.chat_folder(path) or str(home)
-    if not cs.folder_trusted(profile, folder, home):
-        where = "your home folder" if Path(folder) == home else cs.short_folder(folder, home)
+        folder = td.chat_folder(path) or str(home)
+    if not td.folder_trusted(profile, folder, home):
+        where = "your home folder" if Path(folder) == home else td.short_folder(folder, home)
         return None, (f"Claude doesn't trust {where}, and a background chat can't ask: this chat can't go on "
                       "by itself there. Continue it in a terminal after the reset")
     return folder, None
@@ -1914,20 +1914,20 @@ def queue_continue(home, extra_dirs, chat_id, profile_dir, folder, text, start_a
     """Queue going on with a chat a usage limit stopped, on the profile
     profile_dir (an SSH host's or a container's with host), to start at
     start_at (ms): then it goes on in the background, in its folder
-    (cs.continue_chat). keep: it keeps going from then on, until it's done
+    (td.continue_chat). keep: it keeps going from then on, until it's done
     (keep_going)."""
     if not host:
         folder, why = chat_goes_on_where(home, extra_dirs, chat_id, profile_dir, folder)
         if folder is None:
             return False, why
-    entry = cs.queue_entry(profile_dir, folder or "", text, start_at, host, account, chat=chat_id, name=name)
-    cache_root = cs.cache_dir(home)
-    for old in cs.load_queue(cache_root):  # (queued twice: once is enough; not a reply waiting for its turn's end)
+    entry = td.queue_entry(profile_dir, folder or "", text, start_at, host, account, chat=chat_id, name=name)
+    cache_root = td.cache_dir(home)
+    for old in td.load_queue(cache_root):  # (queued twice: once is enough; not a reply waiting for its turn's end)
         if old.get("chat") == chat_id and (old.get("host") or "") == (host or "") and not old.get("afterTurn"):
-            cs.change_queue(cache_root, take=old["id"])
-    cs.change_queue(cache_root, add=entry)
+            td.change_queue(cache_root, take=old["id"])
+    td.change_queue(cache_root, add=entry)
     if keep:
-        cs.keep_chat(cache_root, profile_dir, chat_id, name, folder, host=host)
+        td.keep_chat(cache_root, profile_dir, chat_id, name, folder, host=host)
         return True, f"Queued: it goes on {start_time(start_at)}, when the limit resets, and after later limits too until it's done"
     return True, f"Queued: it goes on {start_time(start_at)}, when the limit resets"
 
@@ -1936,23 +1936,23 @@ def keep_going(home, extra_dirs, chat_id, profile_dir, folder, name="", host="")
     """Have a chat (of this computer, or of host: an SSH host or a
     container) keep going until it's done: after each usage limit that stops
     it, it goes on by itself when that resets. (Whether a host's folder is
-    one Claude trusts there is checked as it goes on, cs.continue_chat.)"""
-    if not cs.valid_id(chat_id):
+    one Claude trusts there is checked as it goes on, td.continue_chat.)"""
+    if not td.valid_id(chat_id):
         return False, f"Not a chat: {chat_id}"
     if not host:
         folder, why = chat_goes_on_where(home, extra_dirs, chat_id, profile_dir, folder)
         if folder is None:
             return False, why
-    cs.keep_chat(cs.cache_dir(home), profile_dir, chat_id, name, folder or "", host=host)
+    td.keep_chat(td.cache_dir(home), profile_dir, chat_id, name, folder or "", host=host)
     return True, "It keeps going: when a usage limit stops it, it goes on by itself after the reset, until it's done"
 
 
 def keep_off(home, extra_dirs, chat_id, host=""):
     """A chat (host's) doesn't keep going any more. Its go-on that's queued
     stays (it shows beside it): that one is cancelled on its own (unqueue)."""
-    cache_root = cs.cache_dir(home)
-    cs.keep_chat(cache_root, "", chat_id, on=False, host=host)
-    queued = next((t for t in cs.load_queue(cache_root)
+    cache_root = td.cache_dir(home)
+    td.keep_chat(cache_root, "", chat_id, on=False, host=host)
+    queued = next((t for t in td.load_queue(cache_root)
                    if t.get("chat") == chat_id and (t.get("host") or "") == (host or "") and not t.get("afterTurn")), None)
     if queued is not None:
         return True, f"It goes on {start_time(queued['startAt'])} as queued, but not after later limits"
@@ -1962,32 +1962,32 @@ def keep_off(home, extra_dirs, chat_id, host=""):
 def star(home, kind, item_id, host="", on=True):
     """Star a chat or a plan (kind "chats" or "plans") of this computer or
     of host, or (not on) not any more: its account lists it under Starred."""
-    if not (cs.valid_id(item_id) if kind == "chats" else cs.PLAN_SLUG.match(item_id or "")):
+    if not (td.valid_id(item_id) if kind == "chats" else td.PLAN_SLUG.match(item_id or "")):
         return False, f"Not a {'chat' if kind == 'chats' else 'plan'}: {item_id}"
-    cs.change_stars(cs.cache_dir(home), kind, item_id, host, on)
+    td.change_stars(td.cache_dir(home), kind, item_id, host, on)
     return True, ""
 
 
 def requeue(home, extra_dirs, task_id, start_at):
     """A queued task waits on, until start_at (its account is at its usage
     limit when its time came: it starts after that resets instead)."""
-    cache_root = cs.cache_dir(home)
-    entry = cs.change_queue(cache_root, take=task_id)
+    cache_root = td.cache_dir(home)
+    entry = td.change_queue(cache_root, take=task_id)
     if entry is None:
         return True, ""
     # (a go-on that waited for its chat's background commands waits for the limit now: from its new time on)
     entry = {k: v for k, v in entry.items() if k not in ("dueAt", "waits")}
-    cs.change_queue(cache_root, put_back=dict(entry, startAt=start_at, error=""))
+    td.change_queue(cache_root, put_back=dict(entry, startAt=start_at, error=""))
     return True, f"It waits for the usage limit: it starts {start_time(start_at)}"
 
 
 def unqueue(home, extra_dirs, task_id):
-    cache_root = cs.cache_dir(home)
-    taken = cs.change_queue(cache_root, take=task_id)
+    cache_root = td.cache_dir(home)
+    taken = td.change_queue(cache_root, take=task_id)
     if taken and taken.get("afterTurn"):  # (a reply for when its turn ends: keep going stays as it was)
         return True, "Cancelled your message"
     if taken and taken.get("chat"):
-        cs.keep_chat(cache_root, "", taken["chat"], on=False, host=taken.get("host") or "")  # (else it would be queued again at once)
+        td.keep_chat(cache_root, "", taken["chat"], on=False, host=taken.get("host") or "")  # (else it would be queued again at once)
     return True, "Cancelled the queued task" if taken else "It isn't queued any more"
 
 
@@ -2005,18 +2005,18 @@ def background_named(commands):
 
 
 def go_on_waits(cache_root, entry, answer, due, now_ms, out):
-    """A chat's go-on waits for its background commands (cs.continue_chat's
+    """A chat's go-on waits for its background commands (td.continue_chat's
     "waits" answer): back in the queue, tried again in a minute, saying so
     ("waits": the queue shows it, no error). The first time it's said
-    ("notify": a notification) and logged (cs.log_go_on)."""
+    ("notify": a notification) and logged (td.log_go_on)."""
     what, it = background_named(answer.get("commands") or [])
-    ends = answer.get("endsAt") or due + cs.GO_ON_WAIT_MS
+    ends = answer.get("endsAt") or due + td.GO_ON_WAIT_MS
     note = f"Waits for {what} to finish before it goes on; {start_time(ends)} it ends {it}"
     first = not entry.get("waits")
-    cs.change_queue(cache_root, put_back=dict(entry, startAt=now_ms + 60_000, dueAt=due, waits=note, error=""))
+    td.change_queue(cache_root, put_back=dict(entry, startAt=now_ms + 60_000, dueAt=due, waits=note, error=""))
     message = f"“{entry.get('name') or entry['chat'][:8]}” " + note[0].lower() + note[1:]
     if first:
-        cs.log_go_on(cache_root, message + (f" · {entry['host']}" if entry.get("host") else ""))
+        td.log_go_on(cache_root, message + (f" · {entry['host']}" if entry.get("host") else ""))
     out.update(waits=note, notify=first)
     return True, message
 
@@ -2032,15 +2032,15 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
     now (Start it now, --now): a chat's go-on doesn't wait for its
     background commands, it ends them at once (and says so)."""
     out = {} if out is None else out
-    cache_root = cs.cache_dir(home)
-    entry = cs.change_queue(cache_root, take=task_id)
+    cache_root = td.cache_dir(home)
+    entry = td.change_queue(cache_root, take=task_id)
     if entry is None:
         return True, ""
     now_ms = int(time.time() * 1000)
     # (its go-on's time, kept while it waits: it ends what keeps the chat busy this long after it)
     due = entry.get("dueAt") or min(entry.get("startAt") or now_ms, now_ms)
     # (started now by you: what keeps it busy ends at once; 1, not now: an SSH host's clock may be behind)
-    ends_at = 1 if now else due + cs.GO_ON_WAIT_MS
+    ends_at = 1 if now else due + td.GO_ON_WAIT_MS
     answer = {}
     task = Task(entry.get("prompt") or "", entry.get("plan"), entry.get("planProfile"), entry.get("model"),
                 entry.get("effort"), entry.get("mode"))
@@ -2064,26 +2064,26 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
         elif entry.get("chat") and entry.get("host"):
             import remote
             # (before it starts: a status meanwhile mustn't queue it again, see keep_going)
-            was = cs.note_went_on(cache_root, entry["chat"], now_ms, entry["host"])
+            was = td.note_went_on(cache_root, entry["chat"], now_ms, entry["host"])
             answer = remote.continue_chat(entry["host"], entry["profile"], entry["chat"], entry.get("folder") or "",
                                           task.text, ends_at=ends_at, force=entry.get("why") in ("retry", "cap"))
             ok, message = bool(answer.get("ok")), answer.get("message") or ""
             if answer.get("waits") or not ok or not message:  # (it didn't go on: see this computer's, below)
-                cs.went_on_undone(cache_root, entry["chat"], now_ms, was, entry["host"])
+                td.went_on_undone(cache_root, entry["chat"], now_ms, was, entry["host"])
                 if answer.get("waits"):
                     return go_on_waits(cache_root, entry, answer, due, now_ms, out)
         elif entry.get("chat"):
             # (at once, before it starts: a status meanwhile mustn't queue it again, see keep_going)
-            was = cs.note_went_on(cache_root, entry["chat"], now_ms)
+            was = td.note_went_on(cache_root, entry["chat"], now_ms)
             claude = claude_path(home)
             # (Claude moved the chat to the background under a new id: its go-on, and keeping going, follow it)
-            chat = cs.continuation(home, extra_dirs, entry["profile"], entry["chat"])
+            chat = td.continuation(home, extra_dirs, entry["profile"], entry["chat"])
             if chat != entry["chat"]:
-                cs.keep_moved(cache_root, entry["chat"], chat)  # (noted, it takes that along)
+                td.keep_moved(cache_root, entry["chat"], chat)  # (noted, it takes that along)
                 entry = dict(entry, chat=chat)
-                noted = cs.note_went_on(cache_root, chat, now_ms)  # (one kept under its new id already)
+                noted = td.note_went_on(cache_root, chat, now_ms)  # (one kept under its new id already)
                 was = was if noted == now_ms else noted
-            answer = (cs.continue_chat(home, extra_dirs, entry["profile"], entry["chat"], entry.get("folder"), task.text,
+            answer = (td.continue_chat(home, extra_dirs, entry["profile"], entry["chat"], entry.get("folder"), task.text,
                                        claude, prefix=scope_prefix("claude"), force=entry.get("why") in ("retry", "cap"),
                                        ends_at=ends_at)
                       if claude else {"ok": False, "message": NO_CLAUDE})
@@ -2092,7 +2092,7 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
                 # (it didn't go on: it waits, back in the queue, or went on by itself already; a
                 # go-on noted would count as one that didn't take, and be tried again)
                 waits = go_on_waits(cache_root, entry, answer, due, now_ms, out) if answer.get("waits") else None
-                cs.went_on_undone(cache_root, entry["chat"], now_ms, was)
+                td.went_on_undone(cache_root, entry["chat"], now_ms, was)
                 if waits:
                     return waits
         elif entry.get("host"):
@@ -2107,13 +2107,13 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
         ok, message = False, f"{type(exc).__name__}: {exc}"
     if not ok and entry.get("host") and answer.get("reached") is False:
         # (the host or the container couldn't be reached: it starts by itself once that answers again,
-        # cs.requeue_reached; anything else waits for you to start it again or cancel it)
+        # td.requeue_reached; anything else waits for you to start it again or cancel it)
         import remote
-        cs.change_queue(cache_root, put_back=dict(
+        td.change_queue(cache_root, put_back=dict(
             entry, unreachable=now_ms,
             error=f"{(message or 'It could not be reached').rstrip('.')}. It starts once {remote.label(entry['host'])} answers again"))
     elif not ok:
-        cs.change_queue(cache_root, put_back=dict(entry, error=message or "It didn't start"))
+        td.change_queue(cache_root, put_back=dict(entry, error=message or "It didn't start"))
     elif entry.get("chat") and not message:
         return True, ""  # it went on already: nothing to start
     elif entry.get("chat") and "ended" in answer:  # (it waited for its background commands, then ended them)
@@ -2121,7 +2121,7 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
         message = (f"“{entry.get('name') or entry['chat'][:8]}” "
                    + ("started now: it ended " if now else "ended ") + what + " and "
                    + (message[0].lower() + message[1:] if message.startswith("Went on") else "went on: " + message))
-        cs.log_go_on(cache_root, message + (f" · {entry['host']}" if entry.get("host") else ""))
+        td.log_go_on(cache_root, message + (f" · {entry['host']}" if entry.get("host") else ""))
         out.update(ended=answer.get("ended") or [], notify=True)
     return ok, message or "Started"
 
@@ -2131,7 +2131,7 @@ def new_chat_choosing_folder(home, extra_dirs, dirname, start=None, task=NO_TASK
     chat on the profile there with start (new_chat, new_chat_vscode or
     new_chat_background). Cancelling the dialog does nothing."""
     start = start or new_chat
-    profile = next((p for p in cs.discover_profiles(home, extra_dirs) if cs.matches_profile(p, dirname)), None)
+    profile = next((p for p in td.discover_profiles(home, extra_dirs) if td.matches_profile(p, dirname)), None)
     if profile is None:
         return False, f"No Claude profile called {dirname}"
     if start is not new_chat_vscode and claude_in_terminal(home) is None:
@@ -2228,16 +2228,16 @@ def vscode_for(home, extra_dirs, dirname):
     runs on that profile: VS Code's environment and settings decide which one
     (talpy_den.vscode_profile), so other profiles are refused. Else
     (None, why not)."""
-    profiles = cs.discover_profiles(home, extra_dirs)
-    profile = next((p for p in profiles if cs.matches_profile(p, dirname)), None)
+    profiles = td.discover_profiles(home, extra_dirs)
+    profile = next((p for p in profiles if td.matches_profile(p, dirname)), None)
     if profile is None:
         return None, f"No Claude profile called {dirname}"
-    code, _ = cs.vscode_app()
+    code, _ = td.vscode_app()
     if code is None:
         return None, "VS Code isn't installed"
     if not shutil.which("xdg-open"):
         return None, "xdg-open is missing; can't hand the chat to VS Code"
-    _, there = cs.vscode_profile(home, profiles)
+    _, there = td.vscode_profile(home, profiles)
     if there is None or there.real != profile.real:
         where = there.label if there is not None else "another Claude folder"
         return None, f"VS Code's Claude runs on {where}, not {profile.label}: switch its profile first"
@@ -2273,12 +2273,12 @@ def new_chat_vscode(home, extra_dirs, dirname, folder=None, task=NO_TASK):
     code, profile = vscode_for(home, extra_dirs, dirname)
     if code is None:
         return False, profile
-    prompt = task.prompt(home, cs.discover_profiles(home, extra_dirs), vscode_link_fits) if task else ""
+    prompt = task.prompt(home, td.discover_profiles(home, extra_dirs), vscode_link_fits) if task else ""
     if not vscode_link_fits(prompt):
         return False, TOO_LONG_FOR_VSCODE
     folder = folder if folder and os.path.isdir(folder) else str(home)
     start_vscode_chat(code, folder, vscode_task_link(prompt))
-    return True, f"Opening a new {profile.label} chat in VS Code ({cs.short_path(folder, home)})"
+    return True, f"Opening a new {profile.label} chat in VS Code ({td.short_path(folder, home)})"
 
 
 def resume_vscode(home, extra_dirs, session_id, profile_dir):
@@ -2289,25 +2289,25 @@ def resume_vscode(home, extra_dirs, session_id, profile_dir):
     code, profile = vscode_for(home, extra_dirs, profile_dir)
     if code is None:
         return False, profile
-    path = cs.transcript_path(profile, session_id)
+    path = td.transcript_path(profile, session_id)
     if path is None:
         return False, f"That chat isn't on {profile.label}"
-    folder = cs.chat_folder(path)
+    folder = td.chat_folder(path)
     # (Claude's `cd`s move the last one into subfolders, which would get a
     # window of their own; not all of your home folder, though)
-    started = cs.start_folder(path)
+    started = td.start_folder(path)
     if started and started != str(home) and os.path.isdir(started):
         folder = started
     if not folder or not os.path.isdir(folder):
         return False, f"The chat's folder {folder or '(unknown)'} isn't there any more; reopen it in a terminal"
     start_vscode_chat(code, folder, vscode_chat_link(session_id))
-    return True, f"Reopening the chat in VS Code ({cs.short_path(folder, home)})"
+    return True, f"Reopening the chat in VS Code ({td.short_path(folder, home)})"
 
 
 def remote_vscode(host, folder, link, what):
     """VS Code connected to an SSH host (Remote-SSH), in folder there or its
     home folder, then the link in its Claude extension once connected."""
-    code, _ = cs.vscode_app()
+    code, _ = td.vscode_app()
     if code is None:
         return False, f"VS Code isn't installed here, so it can't connect to {remote_label(host)}"
     if not shutil.which("xdg-open"):
@@ -2332,7 +2332,7 @@ def new_chat_remote_vscode(host, folder="", account=None, task=NO_TASK):
         answer = remote.plan_text(host, task.plan, task.plan_profile)
         if not answer.get("ok"):
             return False, answer.get("message") or f"Couldn't get the plan from {remote_label(host)}"
-        prompt = cs.fitting_plan_prompt(task.text, answer.get("markdown") or "", answer.get("where") or task.plan,
+        prompt = td.fitting_plan_prompt(task.text, answer.get("markdown") or "", answer.get("where") or task.plan,
                                         vscode_link_fits)
     if not vscode_link_fits(prompt):
         return False, TOO_LONG_FOR_VSCODE
@@ -2457,7 +2457,7 @@ def git_original(path, missing=b""):
 
 def read_bytes(path):
     """A plain file's content, else None (a pipe put there isn't waited for)."""
-    return cs.bytes_to_compare(path, None)[0]
+    return td.bytes_to_compare(path, None)[0]
 
 
 def backup_content(profiles, sessions, name):
@@ -2472,8 +2472,8 @@ def backup_content(profiles, sessions, name):
 
 def changes_folder(home):
     """A new, empty folder for one comparison's copies; older ones are removed."""
-    root = cs.cache_dir(home) / "changes"
-    cs.private_dir(root)
+    root = td.cache_dir(home) / "changes"
+    td.private_dir(root)
     now = time.time()
     for old in root.iterdir():
         try:
@@ -2489,18 +2489,18 @@ def chat_comparison(home, extra_dirs, session_id, profile_dir=None, turn=False):
     "items": [{"label", "path", "original", "created", "deleted"}]}, where
     original is a copy of the file before the chat (before its last turn),
     created means it didn't exist then and deleted that it's gone now."""
-    profiles = cs.discover_profiles(home, extra_dirs)
-    ordered = sorted(profiles, key=lambda p: not (profile_dir and cs.matches_profile(p, profile_dir)))
-    path = next((t for t in (cs.transcript_path(p, session_id) for p in ordered) if t is not None), None)
+    profiles = td.discover_profiles(home, extra_dirs)
+    ordered = sorted(profiles, key=lambda p: not (profile_dir and td.matches_profile(p, profile_dir)))
+    path = next((t for t in (td.transcript_path(p, session_id) for p in ordered) if t is not None), None)
     if path is None:
         return False, "Can't find that chat's transcript", None
-    rec = cs.chat_edits(path)
+    rec = td.chat_edits(path)
     try:
-        name, _, _ = cs.read_chat_info(path, path.stat().st_size)
+        name, _, _ = td.read_chat_info(path, path.stat().st_size)
     except OSError:
         name = ""
-    cwd = cs.chat_folder(path) or ""
-    skip = cs.own_folders(profiles)
+    cwd = td.chat_folder(path) or ""
+    skip = td.own_folders(profiles)
     if turn:
         if rec["snap"] is None:
             return False, "Claude kept no record of where the last turn started", None
@@ -2509,14 +2509,14 @@ def chat_comparison(home, extra_dirs, session_id, profile_dir=None, turn=False):
         names = {key: first[0] for key, first in rec["files"].items()}  # from before the chat first changed it
     wanted = {}
     for key, backup in names.items():
-        full = cs.absolute_path(key, cwd)
-        if cs.project_file(full, skip):
+        full = td.absolute_path(key, cwd)
+        if td.project_file(full, skip):
             wanted[full] = backup
     told = {}
     if not turn:  # (what the chat's first Edit or Write of a file gave back, as the pane's review takes it)
         import pane
         unbacked = {full for full, backup in wanted.items() if backup is False}
-        told = pane.tool_originals([path, *cs.subagent_transcripts(path)], unbacked) if unbacked else {}
+        told = pane.tool_originals([path, *td.subagent_transcripts(path)], unbacked) if unbacked else {}
     folder, items, unknown, skipped = None, [], 0, 0
     for full in sorted(wanted):
         backup = wanted[full]
@@ -2537,7 +2537,7 @@ def chat_comparison(home, extra_dirs, session_id, profile_dir=None, turn=False):
         if original is None:
             unknown += 1
             continue
-        current, other = cs.bytes_to_compare(full, CHANGES_FILE_MAX)
+        current, other = td.bytes_to_compare(full, CHANGES_FILE_MAX)
         if other:
             skipped += 1
             continue
@@ -2548,7 +2548,7 @@ def chat_comparison(home, extra_dirs, session_id, profile_dir=None, turn=False):
         copy = folder / str(len(items)) / os.path.basename(full)
         copy.parent.mkdir()
         copy.write_bytes(original)
-        items.append({"label": cs.file_label(full, cwd, home), "path": full, "original": str(copy),
+        items.append({"label": td.file_label(full, cwd, home), "path": full, "original": str(copy),
                       "created": created,  # (one git has empty was there, empty)
                       "deleted": current is None})
     what = "in its last turn" if turn else "since it started"
@@ -2575,7 +2575,7 @@ def status_extension_since(code, since):
     """Has VS Code (code: its command) the Talpy Den extension, version
     since or newer?"""
     folder = EXTENSION_FOLDERS.get(os.path.basename(code or ""), ".vscode")
-    installed = cs.read_json(Path.home() / folder / "extensions" / "extensions.json")
+    installed = td.read_json(Path.home() / folder / "extensions" / "extensions.json")
     for ext in installed if isinstance(installed, list) else []:
         ident = ext.get("identifier") if isinstance(ext, dict) else None
         if isinstance(ident, dict) and str(ident.get("id", "")).lower() == STATUS_EXTENSION:
@@ -2601,7 +2601,7 @@ def open_diffs(code, items):
 
 def show_changes(home, extra_dirs, session_id, profile_dir=None, turn=False):
     """Open what a chat changed in VS Code (see chat_comparison)."""
-    code, _ = cs.vscode_app()
+    code, _ = td.vscode_app()
     if code is None:
         return False, "VS Code isn't installed: it shows the changes side by side"
     ok, message, comparison = chat_comparison(home, extra_dirs, session_id, profile_dir, turn)
@@ -2610,7 +2610,7 @@ def show_changes(home, extra_dirs, session_id, profile_dir=None, turn=False):
     folder = comparison["folder"]
     if status_extension_opens_changes(code) and shutil.which("xdg-open"):
         manifest = Path(comparison["items"][0]["original"]).parent.parent / "changes.json"
-        cs.write_json_atomic(manifest, comparison)
+        td.write_json_atomic(manifest, comparison)
         link = CHANGES_LINK + "?" + link_query({"file": str(manifest)})
         if folder and os.path.isdir(folder):
             start_vscode_chat(code, folder, link)  # the folder's window, then the link there
@@ -2642,8 +2642,8 @@ RUNS_KEEP_S = 86400  # saved runs are removed after a day
 
 def runs_folder(home):
     """The folder for saved runs; files older than a day are removed."""
-    root = cs.cache_dir(home) / "agent-runs"
-    cs.private_dir(root)
+    root = td.cache_dir(home) / "agent-runs"
+    td.private_dir(root)
     now = time.time()
     for old in root.iterdir():
         try:
@@ -2687,7 +2687,7 @@ STATUS_EXTENSION_MARKDOWN = (1, 13)  # its first version that opens MARKDOWN_LIN
 
 def markdown_app(home):
     """What the widget's settings pick for Markdown files ("auto" when nothing)."""
-    shared = cs.shared_settings(cs.cache_dir(home)) or {}
+    shared = td.shared_settings(td.cache_dir(home)) or {}
     app = (shared.get("values") or {}).get("markdownApp")
     return app if app in MARKDOWN_APPS else "auto"
 
@@ -2712,11 +2712,11 @@ def open_markdown(path, home=None):
         start_app([okular, str(path)])
         return True, ""
     if app == "vscode":
-        code, _ = cs.vscode_app()
+        code, _ = td.vscode_app()
         opener = shutil.which("xdg-open")
         # (the extension's link shows plans and the runs saved here, nothing
         # else: a memory or a CLAUDE.md opens as a file)
-        shown = Path(path).parent.name == "plans" or Path(path).parent == cs.cache_dir(home) / "agent-runs"
+        shown = Path(path).parent.name == "plans" or Path(path).parent == td.cache_dir(home) / "agent-runs"
         if code and opener and shown and status_extension_since(code, STATUS_EXTENSION_MARKDOWN):
             start_app([opener, MARKDOWN_LINK + "?" + link_query({"path": str(path)})])
             return True, ""
@@ -2759,7 +2759,7 @@ def edit_markdown(path, home=None):
     your app for text files when that one only shows them (Okular)."""
     home = home or Path.home()
     if markdown_app(home) == "vscode":
-        code, _ = cs.vscode_app()
+        code, _ = td.vscode_app()
         if code:
             start_app([code, str(path)])
             return True, ""
@@ -2776,7 +2776,7 @@ def edit_markdown(path, home=None):
 
 def show_agent_run(home, extra_dirs, chat_id, agent_id, profile_dir=None, open_it=True):
     """Save a chat's subagent's run as Markdown and open it: (ok, message, file)."""
-    ok, message, title, markdown = cs.agent_run(home, extra_dirs, chat_id, agent_id, profile_dir)
+    ok, message, title, markdown = td.agent_run(home, extra_dirs, chat_id, agent_id, profile_dir)
     if not ok:
         return False, message, None
     path = save_run(home, title, agent_id, markdown)
@@ -2809,15 +2809,15 @@ def resume_command_of(home, extra_dirs, session_id, profile_dir=None):
     claude = claude_in_terminal(home)
     if claude is None:
         return False, NO_CLAUDE, None
-    folder = cs.chat_folder(path)
-    return True, "", cs.in_folder(folder, resume_command(profile, session_id, home, folder, claude))
+    folder = td.chat_folder(path)
+    return True, "", td.in_folder(folder, resume_command(profile, session_id, home, folder, claude))
 
 
 def continue_on(home, extra_dirs, session_id, profile_dir, end_first=False):
     """Continue a chat on another account: share it with that account if it
     doesn't have it yet, then reopen it there in a terminal. end_first: a
     session that has it open idle here (one a usage limit stopped) quits first."""
-    target, there = sharing.give_to(cs.discover_profiles(home, extra_dirs), session_id, profile_dir,
+    target, there = sharing.give_to(td.discover_profiles(home, extra_dirs), session_id, profile_dir,
                                     sharing.store_root(home), end_first, home)
     if target is None:
         return False, there
@@ -2831,7 +2831,7 @@ def continue_command(home, extra_dirs, session_id, profile_dir, end_first=False)
     claude = claude_in_terminal(home)
     if claude is None:
         return False, NO_CLAUDE, None
-    return sharing.continue_command(cs.discover_profiles(home, extra_dirs), session_id, profile_dir,
+    return sharing.continue_command(td.discover_profiles(home, extra_dirs), session_id, profile_dir,
                                     sharing.store_root(home), home, claude, end_first)
 
 
@@ -2841,28 +2841,28 @@ def continue_command(home, extra_dirs, session_id, profile_dir, end_first=False)
 def open_plan(home, extra_dirs, slug, profile_dir=None):
     """Open a plan file (open_markdown: rendered to read; with your own app
     for Markdown, a change you make there is the plan's)."""
-    path = cs.find_plan(cs.discover_profiles(home, extra_dirs), slug, profile_dir, home)
+    path = td.find_plan(td.discover_profiles(home, extra_dirs), slug, profile_dir, home)
     if path is None:
         return False, "That plan isn't there any more"
     ok, why = open_markdown(path, home)
     if not ok:
         return False, why
-    return True, f"Opened the plan {cs.plan_title(path) or slug}"
+    return True, f"Opened the plan {td.plan_title(path) or slug}"
 
 
 def edit_plan(home, extra_dirs, slug, profile_dir=None):
     """Open a plan's Markdown file itself, to change it (edit_markdown)."""
-    path = cs.find_plan(cs.discover_profiles(home, extra_dirs), slug, profile_dir, home)
+    path = td.find_plan(td.discover_profiles(home, extra_dirs), slug, profile_dir, home)
     if path is None:
         return False, "That plan isn't there any more"
     ok, why = edit_markdown(path, home)
-    return (True, f"Opened the plan's file {cs.short_folder(str(path), home)}") if ok else (False, why)
+    return (True, f"Opened the plan's file {td.short_folder(str(path), home)}") if ok else (False, why)
 
 
 def open_memory(home, extra_dirs, path, edit=False):
     """One of Claude's memories (a file of a profile's projects/*/memory):
     rendered to read, or (edit) itself, to change it."""
-    found = cs.memory_file(cs.discover_profiles(home, extra_dirs), path)
+    found = td.memory_file(td.discover_profiles(home, extra_dirs), path)
     if found is None:
         return False, "That isn't one of Claude's memories (any more)"
     ok, why = (edit_markdown if edit else open_markdown)(found, home)
@@ -2874,7 +2874,7 @@ def edit_remote_file(host, path):
     Containers) in VS Code, to change it."""
     import remote
     container = is_container(host)
-    code, _ = cs.vscode_app()
+    code, _ = td.vscode_app()
     if code is None:
         return False, ("Changing a file in a container needs VS Code (with Dev Containers)" if container
                        else "Changing a file of an SSH host needs VS Code (with Remote - SSH)")
@@ -2889,40 +2889,40 @@ def edit_remote_file(host, path):
 
 def send_plan_feedback(home, extra_dirs, slug, profile_dir, chat_id, comments=(), print_command=False):
     """Send your feedback on a plan (what you changed in its file, your
-    comments on its lines: cs.plan_feedback) to the chat that made it, which
+    comments on its lines: td.plan_feedback) to the chat that made it, which
     revises the plan in plan mode. A chat with no process reopens in a
     terminal in plan mode with it (print_command: the command that does, for
     VS Code's terminal); one idle in tmux gets it typed into its pane; else
     it goes to the clipboard and the chat comes up, to paste it there (with
     print_command, the caller does both). (ok, message, extra): extra's
     "how" is "resumed", "typed" or "clipboard", with "text" and "copied"."""
-    plan = cs.find_plan(cs.discover_profiles(home, extra_dirs), slug, profile_dir, home)
+    plan = td.find_plan(td.discover_profiles(home, extra_dirs), slug, profile_dir, home)
     if plan is None:
         return False, "That plan isn't there any more", {}
     chat_profile, transcript = (find_chat(home, extra_dirs, chat_id) if chat_id != "-"
-                                else cs.plan_chat(cs.discover_profiles(home, extra_dirs), slug))
+                                else td.plan_chat(td.discover_profiles(home, extra_dirs), slug))
     if transcript is None:
         return False, "The chat that made it isn't there any more: carry the plan out in a new chat instead", {}
     chat_id = transcript.stem
-    text = cs.plan_feedback(plan, cs.claude_plan(transcript, slug), comments, home)
+    text = td.plan_feedback(plan, td.claude_plan(transcript, slug), comments, home)
     if not text:
         return False, "Nothing to send: the plan is as Claude wrote it, and there are no comments", {}
-    entry = cs.find_chat_entry(home, extra_dirs, chat_id)
+    entry = td.find_chat_entry(home, extra_dirs, chat_id)
     if entry is None:
         claude = claude_in_terminal(home)
         if claude is None:
             return False, NO_CLAUDE, {}
-        folder = cs.chat_folder(transcript)
+        folder = td.chat_folder(transcript)
         # (a background session keeps its own options: flags would start a copy of it)
-        mode = [] if was_background(cs.discover_profiles(home, extra_dirs), chat_id) else ["--permission-mode", "plan"]
-        command = cs.claude_command(chat_profile, ["--resume", chat_id, *mode, cs.prompt_arg(text)], home, None, folder, claude)
+        mode = [] if was_background(td.discover_profiles(home, extra_dirs), chat_id) else ["--permission-mode", "plan"]
+        command = td.claude_command(chat_profile, ["--resume", chat_id, *mode, td.prompt_arg(text)], home, None, folder, claude)
         if print_command:
             return True, "Reopening the chat in plan mode with your feedback", {"how": "resumed",
-                                                                               "command": cs.in_folder(folder, command)}
+                                                                               "command": td.in_folder(folder, command)}
         if not open_terminal(folder, command):
             return False, "No terminal found to reopen the chat in", {}
         return True, "Reopened the chat in plan mode with your feedback", {"how": "resumed"}
-    state = cs.session_state(entry)
+    state = td.session_state(entry)
     if entry.get("kind") == "interactive" and entry.get("tmux") and state == "idle":
         ok, _ = tmux_paste(entry, text)
         if ok:
@@ -2943,7 +2943,7 @@ def send_plan_feedback(home, extra_dirs, slug, profile_dir, chat_id, comments=()
 def was_background(profiles, chat_id):
     """Did the chat run as a background session (a job record names it)?"""
     for p in profiles:
-        job = cs.read_json(p.path / "jobs" / chat_id[:8] / "state.json")
+        job = td.read_json(p.path / "jobs" / chat_id[:8] / "state.json")
         if isinstance(job, dict) and job.get("sessionId") == chat_id:
             return True
     return False
@@ -2975,33 +2975,33 @@ def copy_to_clipboard(text):
 
 def share_plan(home, extra_dirs, slug, profile_dir=None, to=None):
     """Share a plan (from profile_dir's copy) with every profile, or only with to."""
-    return sharing.plan_sharing(cs.discover_profiles(home, extra_dirs), slug, profile_dir, True, to, home)
+    return sharing.plan_sharing(td.discover_profiles(home, extra_dirs), slug, profile_dir, True, to, home)
 
 
 def unshare_plan(home, extra_dirs, slug, profile_dir):
     """Keep a shared plan on profile_dir only."""
-    return sharing.plan_sharing(cs.discover_profiles(home, extra_dirs), slug, profile_dir, False, home=home)
+    return sharing.plan_sharing(td.discover_profiles(home, extra_dirs), slug, profile_dir, False, home=home)
 
 
 def share(home, extra_dirs, session_id, profile_dir=None):
     """Share a chat with every profile (from profile_dir's copy, if given)."""
-    return sharing.share_with_all(cs.discover_profiles(home, extra_dirs), session_id, sharing.store_root(home),
+    return sharing.share_with_all(td.discover_profiles(home, extra_dirs), session_id, sharing.store_root(home),
                                   profile_dir)
 
 
 def unshare(home, extra_dirs, session_id, profile_dir):
     """Make a shared chat a normal chat of one profile again; the others lose it."""
-    return sharing.keep_only_on(cs.discover_profiles(home, extra_dirs), session_id, profile_dir,
+    return sharing.keep_only_on(td.discover_profiles(home, extra_dirs), session_id, profile_dir,
                                 sharing.store_root(home))
 
 
 def dismiss(home, extra_dirs, session_id):
     """Hide a finished chat from its list. Nothing of Claude's is touched."""
-    return cs.hide_item(cs.cache_dir(home), "chats", session_id)
+    return td.hide_item(td.cache_dir(home), "chats", session_id)
 
 
 def undismiss_all(home, extra_dirs, _session_id=None):
-    return cs.show_hidden(cs.cache_dir(home), "chats")
+    return td.show_hidden(td.cache_dir(home), "chats")
 
 
 def move_plan(home, extra_dirs, slug, profile_dir=None, into=None, back=False, setting=True, if_exists=None,
@@ -3010,10 +3010,10 @@ def move_plan(home, extra_dirs, slug, profile_dir=None, into=None, back=False, s
     (sharing.move_plan), or (describe) say what that would do; a starred one
     stays starred under the name it gets (keep both): (ok, message, the
     rest of its answer)."""
-    answer = sharing.move_plan(cs.discover_profiles(home, extra_dirs), home, slug, profile_dir, into, back, setting,
+    answer = sharing.move_plan(td.discover_profiles(home, extra_dirs), home, slug, profile_dir, into, back, setting,
                                if_exists, describe)
     if answer["ok"] and not describe:
-        follow_plan(cs.cache_dir(home), slug, answer.get("slug") or slug)
+        follow_plan(td.cache_dir(home), slug, answer.get("slug") or slug)
     return answer.pop("ok"), answer.pop("message"), answer
 
 
@@ -3023,22 +3023,22 @@ def follow_plan(cache_root, slug, new_slug, host=""):
     name (the queue is kept here, an SSH host's tasks too)."""
     if new_slug == slug:
         return
-    if slug in cs.starred_of(cs.load_stars(cache_root), host)["plans"]:
-        cs.change_stars(cache_root, "plans", new_slug, host, on=True)
+    if slug in td.starred_of(td.load_stars(cache_root), host)["plans"]:
+        td.change_stars(cache_root, "plans", new_slug, host, on=True)
 
     def rename(tasks):
         mine = [t for t in tasks if t.get("plan") == slug and (t.get("host") or "") == (host or "")]
         for t in mine:
             t["plan"] = new_slug
         return bool(mine)
-    cs.change_queue(cache_root, edit=rename)
+    td.change_queue(cache_root, edit=rename)
 
 
 def delete_item(home, extra_dirs, kind, item, profile_dir=None, describe=False):
     """Delete a chat, a plan or a memory (kind chat, plan, memory) to the
     Trash, or (describe) say what would go (sharing.delete): (ok, message,
     the rest of its answer)."""
-    answer = sharing.delete(cs.discover_profiles(home, extra_dirs), kind, item, profile_dir,
+    answer = sharing.delete(td.discover_profiles(home, extra_dirs), kind, item, profile_dir,
                             sharing.store_root(home), home, describe)
     return answer.pop("ok"), answer.pop("message"), answer
 
@@ -3283,7 +3283,7 @@ def main(argv=None):
         elif arg in ("--remote-vscode", "--remote-resume-vscode", "--remote-edit") and len(args) >= 2:
             # (the chat's id, or the file, is the word after HOST: a host's id that is a flag isn't taken for one)
             action, remote_host, session_id = arg, args.pop(0), args.pop(0)
-            if arg != "--remote-edit" and not cs.valid_id(session_id):
+            if arg != "--remote-edit" and not td.valid_id(session_id):
                 sys.exit(USAGE)
         elif arg in ("--remote-terminal", "--remote-new-vscode") and args:
             action, remote_host = arg, args.pop(0)
@@ -3384,9 +3384,9 @@ def main(argv=None):
             ok, message, extra_out = move_plan(Path.home(), extra, session_id, profile_dir, into, back, setting,
                                                if_exists, describe)
         elif action == "--hide":
-            ok, message = cs.hide_item(cs.cache_dir(Path.home()), hide_kind, session_id)
+            ok, message = td.hide_item(td.cache_dir(Path.home()), hide_kind, session_id)
         elif action == "--show-hidden":
-            ok, message = cs.show_hidden(cs.cache_dir(Path.home()), hide_kind)
+            ok, message = td.show_hidden(td.cache_dir(Path.home()), hide_kind)
         elif action == "--remote-edit":
             ok, message = edit_remote_file(remote_host, session_id)
         elif action in ("--open-memory", "--edit-memory"):

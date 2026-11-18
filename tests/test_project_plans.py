@@ -21,7 +21,7 @@ sys.path.insert(0, str(CODE))
 spec = importlib.util.spec_from_file_location("jump_project_plans", CODE / "jump.py")
 jump = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jump)
-cs = jump.cs
+td = jump.td
 sharing = jump.sharing
 spec = importlib.util.spec_from_file_location("week_project_plans", CODE / "week.py")
 week = importlib.util.module_from_spec(spec)
@@ -105,9 +105,9 @@ class PlansDirectoryTests(ProjectPlanFixture):
         write(tree / ".git", f"gitdir: {self.app}/.git/worktrees/fix\n")
         write(self.app / ".claude/settings.local.json", {"plansDirectory": "plans-here"})
         write(tree / ".claude/settings.local.json", {"plansDirectory": "not-read"})  # (Claude doesn't read it there)
-        self.assertEqual(cs.canonical_git_root(str(tree)), str(self.app))
-        self.assertEqual(cs.canonical_git_root(str(tree / "deep")), str(self.app))
-        self.assertEqual(cs.canonical_git_root(str(self.home)), "")
+        self.assertEqual(td.canonical_git_root(str(tree)), str(self.app))
+        self.assertEqual(td.canonical_git_root(str(tree / "deep")), str(self.app))
+        self.assertEqual(td.canonical_git_root(str(self.home)), "")
         self.chat(".claude-work", tree, CHAT_A)
         self.plan(tree / "plans-here/fix-plan.md", "Fix")
         self.plan(tree / "not-read/other-plan.md", "Other")
@@ -115,17 +115,17 @@ class PlansDirectoryTests(ProjectPlanFixture):
 
     def test_a_folder_out_of_the_project_counts_as_none(self):
         app = str(self.app)
-        self.assertEqual(cs.plans_dir_in(app, "docs/plans"), app + "/docs/plans")
-        self.assertEqual(cs.plans_dir_in(app, app + "/abs"), app + "/abs")
-        self.assertEqual(cs.plans_dir_in(app, "."), app)
+        self.assertEqual(td.plans_dir_in(app, "docs/plans"), app + "/docs/plans")
+        self.assertEqual(td.plans_dir_in(app, app + "/abs"), app + "/abs")
+        self.assertEqual(td.plans_dir_in(app, "."), app)
         for value in ("../elsewhere", "/etc", "", "a\\b", None, 3, "~/../../x"):
-            self.assertIsNone(cs.plans_dir_in(app, value), value)
+            self.assertIsNone(td.plans_dir_in(app, value), value)
         # (~ is a folder of that name in the project, as for Claude)
-        self.assertEqual(cs.plans_dir_in(app, "~/plans"), app + "/~/plans")
+        self.assertEqual(td.plans_dir_in(app, "~/plans"), app + "/~/plans")
         # a link inside the project that leads out of it
         (self.home / "outside").mkdir()
         os.symlink(self.home / "outside", self.app / "out")
-        self.assertIsNone(cs.plans_dir_in(app, "out/plans"))
+        self.assertIsNone(td.plans_dir_in(app, "out/plans"))
         write(self.app / ".claude/settings.json", {"plansDirectory": "out/plans"})
         self.chat(".claude-work", self.app, CHAT_A)
         self.plan(self.home / "outside/plans/away-plan.md", "Away")
@@ -152,9 +152,9 @@ class PlansDirectoryTests(ProjectPlanFixture):
         self.chat(".claude-work", self.app, CHAT_A)
         self.chat(".claude-work", web, CHAT_B, ago=900)
         self.assertEqual(self.listed("work"), [])
-        profiles = cs.discover_profiles(self.home)
+        profiles = td.discover_profiles(self.home)
         for slug in ("setup-steps", "CLAUDE"):
-            self.assertEqual(cs.find_project_plan(profiles, slug, self.home, self.cache), (None, None))
+            self.assertEqual(td.find_project_plan(profiles, slug, self.home, self.cache), (None, None))
             with self.assertRaises(ValueError):
                 jump.Task("Carry out this plan", plan=slug).prompt(self.home, profiles)
         asked = sharing.delete(profiles, "plan", "CLAUDE", None, sharing.store_root(self.home), self.home)
@@ -189,8 +189,8 @@ class ListedOnceTests(ProjectPlanFixture):
         (self.app / ".claude").mkdir()
         self.plan(self.app / ".claude/plans/star-plan.md", "Starred")
         self.plan(self.app / ".claude/plans/hid-plan.md", "Hidden", ago=5000)
-        cs.change_stars(self.cache, "plans", "star-plan")
-        cs.change_hidden(self.cache, "plans", add="hid-plan")
+        td.change_stars(self.cache, "plans", "star-plan")
+        td.change_hidden(self.cache, "plans", add="hid-plan")
         r = self.collect(with_tokens=False, plans=0)   # (as the front ends ask: only the starred ones)
         work = self.group(r, "work")
         self.assertEqual(work["plans"], [])
@@ -201,10 +201,10 @@ class ListedOnceTests(ProjectPlanFixture):
     def test_found_by_the_search_and_listed_in_its_project(self):
         self.chat(".claude-work", self.app, CHAT_A, "found-plan")
         self.plan(self.app / ".claude/plans/found-plan.md", "Rollout of the parser")
-        found = cs.find_chats(self.home, self.cache, [], "parser rollout")
+        found = td.find_chats(self.home, self.cache, [], "parser rollout")
         self.assertEqual([(p["slug"], p["inProject"], p["cwd"], p["profileDir"], p["key"]) for p in found["plans"]],
                          [("found-plan", True, str(self.app), ".claude-work", ".claude-work/found-plan/project/plan")])
-        _ctx, items = week.project_items(self.home, self.cache, cs.discover_profiles(self.home), int(self.now * 1000))
+        _ctx, items = week.project_items(self.home, self.cache, td.discover_profiles(self.home), int(self.now * 1000))
         self.assertEqual([(p["slug"], p["inProject"], p["cwd"]) for p in items["plans"]], [("found-plan", True, str(self.app))])
         rows = week.projects([], int(self.now * 1000), self.home, items["plans"], (), items["accounts"])
         self.assertEqual([(r["path"], [p["slug"] for p in r["plans"]]) for r in rows], [(str(self.app), ["found-plan"])])
@@ -222,15 +222,15 @@ class RememberedProjectTests(ProjectPlanFixture):
         self.assertEqual((plan["cwd"], plan["cwdShort"], plan["projectFolder"], plan["chatId"]),
                          (str(self.app / "sub"), "~/repos/app/sub", str(self.app), None))
         # deleting it forgets it
-        cs.forget_deleted(self.cache, "plans", "kept-plan")
-        self.assertNotIn("kept-plan", cs.load_plan_projects(self.cache))
+        td.forget_deleted(self.cache, "plans", "kept-plan")
+        self.assertNotIn("kept-plan", td.load_plan_projects(self.cache))
 
     def test_a_plan_whose_project_isnt_known(self):
         self.plan(self.home / ".claude-work/plans/lone-plan.md", "Lone")
         plan = self.plans("work")[0]
         self.assertEqual((plan["cwd"], plan["cwdShort"], plan["projectFolder"], plan["chatId"]), ("", "", "", None))
         # the Projects tab lists it last, in its card of plans whose chat is gone
-        _ctx, items = week.project_items(self.home, self.cache, cs.discover_profiles(self.home), int(self.now * 1000))
+        _ctx, items = week.project_items(self.home, self.cache, td.discover_profiles(self.home), int(self.now * 1000))
         rows = week.projects([], int(self.now * 1000), self.home, items["plans"], (), items["accounts"])
         self.assertEqual([(r["path"], [p["slug"] for p in r["plans"]]) for r in rows], [("", ["lone-plan"])])
 
@@ -242,21 +242,21 @@ class ActionTests(ProjectPlanFixture):
         self.path = self.plan(self.app / ".claude/plans/act-plan.md", "Act on it")
 
     def test_found_by_its_slug(self):
-        profiles = cs.discover_profiles(self.home)
-        self.assertEqual(cs.find_plan(profiles, "act-plan", ".claude-work", self.home), self.path)
-        self.assertIsNone(cs.find_plan(profiles, "act-plan", ".claude-work"))   # (without home: the accounts' only)
-        self.assertEqual(cs.find_project_plan(profiles, "act-plan", self.home, self.cache), (self.path, str(self.app)))
-        md = cs.plan_markdown(self.home, [], "act-plan", ".claude-work")
+        profiles = td.discover_profiles(self.home)
+        self.assertEqual(td.find_plan(profiles, "act-plan", ".claude-work", self.home), self.path)
+        self.assertIsNone(td.find_plan(profiles, "act-plan", ".claude-work"))   # (without home: the accounts' only)
+        self.assertEqual(td.find_project_plan(profiles, "act-plan", self.home, self.cache), (self.path, str(self.app)))
+        md = td.plan_markdown(self.home, [], "act-plan", ".claude-work")
         self.assertEqual((md["ok"], md["title"], md["path"]), (True, "Act on it", str(self.path)))
         self.assertIn("Act on it", jump.Task("go", "act-plan", ".claude-work").prompt(self.home, profiles))
         # a chat's own plan, where its project keeps them
-        ctx = cs.Context(home=self.home, profiles=profiles, plan_dirs=cs.PlanDirs(self.cache / "plan-dirs.json"))
-        plan = cs.plan_of(profiles[0], "act-plan", ctx)
+        ctx = td.Context(home=self.home, profiles=profiles, plan_dirs=td.PlanDirs(self.cache / "plan-dirs.json"))
+        plan = td.plan_of(profiles[0], "act-plan", ctx)
         self.assertEqual((plan["path"], plan["inProject"]), (str(self.path), True))
-        self.assertIsNone(cs.plan_of(profiles[0], "act-plan"))
+        self.assertIsNone(td.plan_of(profiles[0], "act-plan"))
 
     def test_deleted_to_the_trash_and_never_shared(self):
-        profiles = cs.discover_profiles(self.home)
+        profiles = td.discover_profiles(self.home)
         ok, message = sharing.plan_sharing(profiles, "act-plan", ".claude-work", True, home=self.home)
         self.assertFalse(ok)
         self.assertIn("every account has it", message)
@@ -272,15 +272,15 @@ class ActionTests(ProjectPlanFixture):
 
     def test_deleting_takes_the_tasks_queued_to_carry_it_out(self):
         # (else at its time a task fails with "That plan isn't there any more", and waits till you cancel it)
-        cache, at = cs.cache_dir(self.home), int(self.now * 1000) + 3600_000
+        cache, at = td.cache_dir(self.home), int(self.now * 1000) + 3600_000
         for host, plan in (("", "act-plan"), ("lab", "act-plan"), ("", "other-plan")):
-            cs.change_queue(cache, add=cs.queue_entry(".claude-work", str(self.app), "", at, host, plan=plan))
-        profiles, root = cs.discover_profiles(self.home), sharing.store_root(self.home)
+            td.change_queue(cache, add=td.queue_entry(".claude-work", str(self.app), "", at, host, plan=plan))
+        profiles, root = td.discover_profiles(self.home), sharing.store_root(self.home)
         asked = sharing.delete(profiles, "plan", "act-plan", ".claude-work", root, self.home, describe=True)
         self.assertEqual(asked["question"], "Delete the plan “Act on it” from ~/repos/app/.claude/plans? It goes to the "
                                             "Trash. So does the task queued to carry it out.")
         self.assertTrue(sharing.delete(profiles, "plan", "act-plan", ".claude-work", root, self.home)["ok"])
-        self.assertEqual([(t["host"], t["plan"]) for t in cs.load_queue(cache)], [("lab", "act-plan"), ("", "other-plan")])
+        self.assertEqual([(t["host"], t["plan"]) for t in td.load_queue(cache)], [("lab", "act-plan"), ("", "other-plan")])
 
 
 class SameNameTests(ProjectPlanFixture):
@@ -293,16 +293,16 @@ class SameNameTests(ProjectPlanFixture):
         self.chat(".claude-work", self.app, CHAT_A, "twice-plan")
         self.old = self.plan(self.home / ".claude-work/plans/twice-plan.md", "Old version", ago=9000)
         self.new = self.plan(self.app / ".claude/plans/twice-plan.md", "New version", ago=4000)
-        self.profiles = cs.discover_profiles(self.home)
+        self.profiles = td.discover_profiles(self.home)
         self.work = next(p for p in self.profiles if p.key == ".claude-work")
 
     def ctx(self):
-        return cs.Context(home=self.home, profiles=self.profiles, plan_dirs=cs.PlanDirs(self.cache / "plan-dirs.json"))
+        return td.Context(home=self.home, profiles=self.profiles, plan_dirs=td.PlanDirs(self.cache / "plan-dirs.json"))
 
     def test_listed_once_as_the_newer_file(self):
         self.assertEqual([(p["slug"], p["inProject"], p["title"]) for p in self.plans("work")],
                          [("twice-plan", True, "New version")])
-        found = cs.find_chats(self.home, self.cache, [], "version")
+        found = td.find_chats(self.home, self.cache, [], "version")
         self.assertEqual([(p["slug"], p["inProject"]) for p in found["plans"]], [("twice-plan", True)])
         _ctx, items = week.project_items(self.home, self.cache, self.profiles, int(self.now * 1000))
         self.assertEqual([(p["slug"], p["inProject"]) for p in items["plans"]], [("twice-plan", True)])
@@ -312,10 +312,10 @@ class SameNameTests(ProjectPlanFixture):
                          [("twice-plan", False, "Old version")])
 
     def test_every_action_takes_the_file_its_line_shows(self):
-        self.assertEqual(cs.find_plan(self.profiles, "twice-plan", ".claude-work", self.home), self.new)
-        self.assertEqual(cs.find_plan(self.profiles, "twice-plan", ".claude-work"), self.old)   # (without home)
-        self.assertEqual(cs.plan_of(self.work, "twice-plan", self.ctx())["path"], str(self.new))
-        self.assertEqual(cs.plan_markdown(self.home, [], "twice-plan", ".claude-work")["title"], "New version")
+        self.assertEqual(td.find_plan(self.profiles, "twice-plan", ".claude-work", self.home), self.new)
+        self.assertEqual(td.find_plan(self.profiles, "twice-plan", ".claude-work"), self.old)   # (without home)
+        self.assertEqual(td.plan_of(self.work, "twice-plan", self.ctx())["path"], str(self.new))
+        self.assertEqual(td.plan_markdown(self.home, [], "twice-plan", ".claude-work")["title"], "New version")
         self.assertIn("New version", jump.Task("go", "twice-plan", ".claude-work").prompt(self.home, self.profiles))
         self.assertIn("every account has it",
                       sharing.plan_sharing(self.profiles, "twice-plan", ".claude-work", True, home=self.home)[1])
@@ -330,8 +330,8 @@ class SameNameTests(ProjectPlanFixture):
         self.assertTrue(self.old.is_file())
         # the account's newer: it's the plan
         os.utime(self.old, (self.now - 10, self.now - 10))
-        self.assertEqual(cs.find_plan(self.profiles, "twice-plan", ".claude-work", self.home), self.old)
-        self.assertEqual(cs.plan_of(self.work, "twice-plan", self.ctx())["path"], str(self.old))
+        self.assertEqual(td.find_plan(self.profiles, "twice-plan", ".claude-work", self.home), self.old)
+        self.assertEqual(td.plan_of(self.work, "twice-plan", self.ctx())["path"], str(self.old))
 
     def test_deleting_takes_the_older_file_along(self):
         root = sharing.store_root(self.home)
@@ -364,7 +364,7 @@ class CacheTests(ProjectPlanFixture):
         self.assertEqual(self.listed("work"), [])   # (not yet)
         cache = json.loads((self.cache / "plan-dirs.json").read_text())
         self.assertEqual(stat.S_IMODE((self.cache / "plan-dirs.json").stat().st_mode) & 0o077, 0)
-        cache["projects"][str(self.app)][1] -= cs.PROJECT_RECHECK_S + 1
+        cache["projects"][str(self.app)][1] -= td.PROJECT_RECHECK_S + 1
         write(self.cache / "plan-dirs.json", cache)
         self.assertEqual(self.listed("work"), [("late-plan", True, str(self.app))])
 
@@ -377,7 +377,7 @@ class CacheTests(ProjectPlanFixture):
         self.chat(".claude-work", web, CHAT_B, ago=3 * 3600)
         self.assertEqual(len(self.listed("work")), 1)
         self.plan(web / ".claude/plans/moved-plan.md", "Moved")
-        cs.change_plan_projects(self.cache, put={"moved-plan": {"cwd": str(web), "project": str(web), "chat": "",
+        td.change_plan_projects(self.cache, put={"moved-plan": {"cwd": str(web), "project": str(web), "chat": "",
                                                                 "profile": ".claude-work", "at": int(time.time() * 1000)}})
         self.assertEqual([p[0] for p in self.listed("work")], ["new-plan", "moved-plan"])
 
@@ -389,7 +389,7 @@ class MoveTests(ProjectPlanFixture):
         super().setUp()
         self.chat(".claude-work", self.app, CHAT_A, "calm-red-owl")
         self.src = self.plan(self.home / ".claude-work/plans/calm-red-owl.md", "The plan")
-        self.cache_root = cs.cache_dir(self.home)   # (what the actions use)
+        self.cache_root = td.cache_dir(self.home)   # (what the actions use)
 
     def move(self, *args):
         with mock.patch.object(jump.Path, "home", return_value=self.home), \
@@ -425,7 +425,7 @@ class MoveTests(ProjectPlanFixture):
         plan = self.plans("work")[0]
         self.assertEqual((plan["slug"], plan["inProject"], plan["cwd"], plan["chatId"], plan["path"]),
                          ("calm-red-owl", True, str(self.app), CHAT_A, str(self.app / ".claude/plans/calm-red-owl.md")))
-        self.assertEqual(cs.load_plan_projects(self.cache_root)["calm-red-owl"]["project"], str(self.app))
+        self.assertEqual(td.load_plan_projects(self.cache_root)["calm-red-owl"]["project"], str(self.app))
 
     def test_without_the_setting_it_says_claude_wont_find_it(self):
         moved = self.move("--no-setting")
@@ -469,12 +469,12 @@ class MoveTests(ProjectPlanFixture):
 
     def test_never_over_another_plan_of_that_name(self):
         other = self.plan(self.app / ".claude/plans/calm-red-owl.md", "Another one")
-        cs.change_stars(self.cache_root, "plans", "calm-red-owl")
-        cs.change_hidden(self.cache_root, "plans", add="calm-red-owl")
-        task = lambda host: cs.queue_entry(".claude-work", str(self.app), "", 1, host=host, plan="calm-red-owl",
+        td.change_stars(self.cache_root, "plans", "calm-red-owl")
+        td.change_hidden(self.cache_root, "plans", add="calm-red-owl")
+        task = lambda host: td.queue_entry(".claude-work", str(self.app), "", 1, host=host, plan="calm-red-owl",
                                            plan_profile=".claude-work")
-        cs.change_queue(self.cache_root, add=task(""))
-        cs.change_queue(self.cache_root, add=task("lab"))  # (an SSH host's plan of that name: not this one)
+        td.change_queue(self.cache_root, add=task(""))
+        td.change_queue(self.cache_root, add=task("lab"))  # (an SSH host's plan of that name: not this one)
         asked = self.move("--describe")
         self.assertEqual((asked["exists"], asked["free"]), (True, "calm-red-owl-2"))
         self.assertIn("keep both (calm-red-owl-2), or replace it?", asked["question"])
@@ -487,12 +487,12 @@ class MoveTests(ProjectPlanFixture):
         self.assertEqual((kept["ok"], kept["slug"]), (True, "calm-red-owl-2"))
         self.assertEqual(other.read_text(), "# Another one\n\nSteps.\n")
         self.assertEqual((self.app / ".claude/plans/calm-red-owl-2.md").read_text(), "# The plan\n\nSteps.\n")
-        self.assertIn("calm-red-owl-2", cs.starred_of(cs.load_stars(self.cache_root))["plans"])
-        self.assertIn("calm-red-owl-2", cs.load_hidden(self.cache_root)["plans"])
+        self.assertIn("calm-red-owl-2", td.starred_of(td.load_stars(self.cache_root))["plans"])
+        self.assertIn("calm-red-owl-2", td.load_hidden(self.cache_root)["plans"])
         # a queued task that carries it out takes it by its new name
-        self.assertEqual([(t["host"], t["plan"]) for t in cs.load_queue(self.cache_root)],
+        self.assertEqual([(t["host"], t["plan"]) for t in td.load_queue(self.cache_root)],
                          [("", "calm-red-owl-2"), ("lab", "calm-red-owl")])
-        noted = cs.load_plan_projects(self.cache_root)["calm-red-owl-2"]
+        noted = td.load_plan_projects(self.cache_root)["calm-red-owl-2"]
         self.assertEqual((noted["project"], noted["chat"]), (str(self.app), CHAT_A))
 
     def test_replacing_puts_the_other_in_the_trash(self):
@@ -567,11 +567,11 @@ class MoveTests(ProjectPlanFixture):
         # (its .claude is ~/.claude, an account's own: the plan would leave its account)
         self.chat(".claude-work", self.home, CHAT_B, "home-plan", ago=60)
         home_plan = self.plan(self.home / ".claude-work/plans/home-plan.md", "Planned at home")
-        asked = sharing.move_plan(cs.discover_profiles(self.home), self.home, "home-plan", ".claude-work", describe=True)
+        asked = sharing.move_plan(td.discover_profiles(self.home), self.home, "home-plan", ".claude-work", describe=True)
         self.assertEqual((asked["ok"], asked["default"], [c["short"] for c in asked["choices"]]),
                          (True, "", ["~/repos/app"]))
         self.assertEqual(asked["question"], "Move “Planned at home” to which project?")
-        moved = sharing.move_plan(cs.discover_profiles(self.home), self.home, "home-plan", ".claude-work",
+        moved = sharing.move_plan(td.discover_profiles(self.home), self.home, "home-plan", ".claude-work",
                                   folder=str(self.home), setting=False)
         self.assertEqual((moved["ok"], moved["message"]), (False, "~/.claude/plans is an account's own plans folder"))
         self.assertTrue(home_plan.is_file())
@@ -608,7 +608,7 @@ class ClaudesProjectListTests(ProjectPlanFixture):
         self.known(self.home / ".claude-work/.claude.json", self.app, self.home / "repos/gone")
         self.assertEqual(self.listed("work"), [("still-here", True, str(self.app))])
         # the Projects tab has it in its project
-        _ctx, items = week.project_items(self.home, self.cache, cs.discover_profiles(self.home), int(self.now * 1000))
+        _ctx, items = week.project_items(self.home, self.cache, td.discover_profiles(self.home), int(self.now * 1000))
         rows = week.projects([], int(self.now * 1000), self.home, items["plans"], (), items["accounts"])
         self.assertEqual([(r["path"], [p["slug"] for p in r["plans"]]) for r in rows], [(str(self.app), ["still-here"])])
 
@@ -657,7 +657,7 @@ class WrittenPlanTests(ProjectPlanFixture):
         return path
 
     def projects_tab(self):
-        ctx, items = week.project_items(self.home, self.cache, cs.discover_profiles(self.home), int(self.now * 1000))
+        ctx, items = week.project_items(self.home, self.cache, td.discover_profiles(self.home), int(self.now * 1000))
         for saved in (ctx.links, ctx.slugs, ctx.chats, ctx.plan_dirs, ctx.plan_projects, ctx.plan_writes):
             saved.save()
         return {p["slug"]: p for p in items["plans"]}
@@ -724,7 +724,7 @@ class WrittenPlanTests(ProjectPlanFixture):
         line = compact({"type": "assistant", "message": {"content": [
             {"type": "tool_use", "name": "Write", "input": {"file_path": str(self.log), "content": "x"}}]}}) + "\n"
         cut = line.index("/plans/") + 3   # (Claude was writing it: the call cut in its file's name)
-        writes = cs.PlanWrites(self.cache / "plan-writes.json", self.home)
+        writes = td.PlanWrites(self.cache / "plan-writes.json", self.home)
         with open(str(transcript), "a") as f:
             f.write(line[:cut])
         self.assertEqual(writes.paths(transcript, transcript.stat()), [])
@@ -732,14 +732,14 @@ class WrittenPlanTests(ProjectPlanFixture):
             f.write(line[cut:])
         self.assertEqual(writes.paths(transcript, transcript.stat()), [str(self.log)])
         writes.save()
-        again = cs.PlanWrites(self.cache / "plan-writes.json", self.home)
-        with mock.patch.object(cs, "plan_writes", side_effect=AssertionError("read again")):
+        again = td.PlanWrites(self.cache / "plan-writes.json", self.home)
+        with mock.patch.object(td, "plan_writes", side_effect=AssertionError("read again")):
             self.assertEqual(again.paths(transcript, transcript.stat()), [str(self.log)])
 
     def test_a_long_history_is_read_a_part_at_a_time(self):
         self.calls(".claude-work", self.app, CHAT_A, ("Write", {"file_path": str(self.log), "content": "x" * 5000}, "ok"), ago=400)
         self.calls(".claude-work", self.web, CHAT_B, ("Read", {"file_path": "/etc/hosts"}, "y" * 5000), ago=100)
-        with mock.patch.object(cs, "PLAN_WRITES_BUDGET", 1000):
+        with mock.patch.object(td, "PLAN_WRITES_BUDGET", 1000):
             self.assertIsNone(self.projects_tab()["progress-log"]["chatId"])   # (the newest chat read, then no more)
             self.assertEqual(self.projects_tab()["progress-log"]["chatId"], CHAT_A)
 

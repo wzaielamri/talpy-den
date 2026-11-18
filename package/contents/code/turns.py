@@ -19,12 +19,12 @@ import os
 import re
 import time
 
-import talpy_den as cs
+import talpy_den as td
 
 # ---------------------------------------------------------------- context left
 # (talpy_den's: the popup's rows say it too, from their status lines, else from the newest reply)
-CONTEXT_1M, CONTEXT_WINDOWS, COMPACT_ROOM, COMPACT_CLOSE = cs.CONTEXT_1M, cs.CONTEXT_WINDOWS, cs.COMPACT_ROOM, cs.COMPACT_CLOSE
-model_key, context_window, context_left = cs.model_key, cs.context_window, cs.context_left
+CONTEXT_1M, CONTEXT_WINDOWS, COMPACT_ROOM, COMPACT_CLOSE = td.CONTEXT_1M, td.CONTEXT_WINDOWS, td.COMPACT_ROOM, td.COMPACT_CLOSE
+model_key, context_window, context_left = td.model_key, td.context_window, td.context_left
 
 
 def status_window(home, profile, chat_id, model):
@@ -32,7 +32,7 @@ def status_window(home, profile, chat_id, model):
     (context_window_size, or 1M for a model named with [1m]), when it's of
     the model of Claude's last message; else None (talpy_den.snapshot_window:
     the rows' rule too, where no status line of the run gave them one)."""
-    return cs.snapshot_window(cs.cache_dir(home) / "statusline", profile, [chat_id], model)
+    return td.snapshot_window(td.cache_dir(home) / "statusline", profile, [chat_id], model)
 
 
 # ---------------------------------------------------------------- the turn so far
@@ -165,8 +165,8 @@ class Away:
                 if isinstance(cwd, str) and cwd and path.startswith(cwd.rstrip("/") + "/"):
                     path = path[len(cwd.rstrip("/")) + 1:]
                 self.events.append((at or 0, "file", path))
-        elif name == "Bash" and cs.is_test_run(inp.get("command")):
-            command = cs.short_text(inp["command"].split("\n", 1)[0], 120)
+        elif name == "Bash" and td.is_test_run(inp.get("command")):
+            command = td.short_text(inp["command"].split("\n", 1)[0], 120)
             self.events.append((at or 0, "test", {"command": command, "ok": bool(ok)}))
 
     def result(self, now_ms, whole, asks=""):
@@ -222,7 +222,7 @@ def turn_prompt_at(line):
     """When the prompt of yours on this transcript line came (ms, 0 if it
     doesn't say), if it's one that starts Claude's turn (or a command that's
     a prompt: yours, a skill); else None."""
-    if not cs.USER_LINE.search(line) or b'"tool_use_id"' in line:
+    if not td.USER_LINE.search(line) or b'"tool_use_id"' in line:
         return None
     try:
         e = json.loads(line)
@@ -230,9 +230,9 @@ def turn_prompt_at(line):
         return None
     if not isinstance(e, dict) or e.get("type") != "user" or e.get("isMeta") or e.get("isSidechain"):
         return None
-    if cs.human_prompt(e) is None and not cs.message_text(cs.blocks_of(e)[0]).lstrip().startswith("<command-message>"):
+    if td.human_prompt(e) is None and not td.message_text(td.blocks_of(e)[0]).lstrip().startswith("<command-message>"):
         return None
-    return cs.to_ms(e.get("timestamp")) or 0
+    return td.to_ms(e.get("timestamp")) or 0
 
 
 def tool_calls(line):
@@ -245,7 +245,7 @@ def tool_calls(line):
         return 0
     if not isinstance(e, dict) or e.get("type") != "assistant" or e.get("isSidechain"):
         return 0
-    return sum(1 for c in cs.blocks_of(e)[1] if c.get("type") == "tool_use")
+    return sum(1 for c in td.blocks_of(e)[1] if c.get("type") == "tool_use")
 
 
 def turn_forward(f, start, end, found):
@@ -292,7 +292,7 @@ def turn_before(path, end, kept=None):
     try:
         with open(path, "rb") as f:
             ino = os.fstat(f.fileno()).st_ino
-            was = cs.read_json(kept, 4096) if kept is not None else None
+            was = td.read_json(kept, 4096) if kept is not None else None
             if not (isinstance(was, dict) and was.get("ino") == ino
                     and all(isinstance(was.get(k), int) and not isinstance(was.get(k), bool) for k in keys)
                     and was["offset"] < end and was["offset"] <= was["upto"]):
@@ -316,8 +316,8 @@ def turn_before(path, end, kept=None):
         try:
             if was is None:
                 prune_kept(kept.parent, KEPT_TURN_DAYS)
-            cs.private_dir(kept.parent)
-            cs.write_json_atomic(kept, {"ino": ino, "offset": offset, "at": at, "upto": end, "steps": steps}, private=True)
+            td.private_dir(kept.parent)
+            td.write_json_atomic(kept, {"ino": ino, "offset": offset, "at": at, "upto": end, "steps": steps}, private=True)
         except OSError:
             pass
     return at, steps

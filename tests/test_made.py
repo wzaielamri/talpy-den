@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "package/content
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import made  # noqa: E402
 import pane  # noqa: E402
-import talpy_den as cs  # noqa: E402
+import talpy_den as td  # noqa: E402
 
 from test_pane import SID, PaneFixture, text_reply, tool_result, tool_use  # noqa: E402
 from test_talpy_den import iso, write  # noqa: E402
@@ -322,7 +322,7 @@ class ShowMadeTests(MadeFixture):
         self.assertEqual(base64.b64decode(got["data"]), PNG)
         kept = self.show(self.png, "--step", "r1", "--as-file")   # (Plasma's: a copy here)
         self.assertEqual((Path(kept["file"]).read_bytes(), Path(kept["file"]).suffix, "data" in kept), (PNG, ".png", False))
-        self.assertEqual(Path(kept["file"]).parent, cs.images_dir(self.home))
+        self.assertEqual(Path(kept["file"]).parent, td.images_dir(self.home))
         for step in ("w0", "nope", "../x", "r1\"x"):   # (not a Read that got a picture)
             self.assertEqual(self.show(self.png, "--step", step)["ok"], False, step)
 
@@ -333,7 +333,7 @@ class ShowMadeTests(MadeFixture):
         self.assertEqual(asked.call_args[0][1], ["--made", SID, "--path", "/srv/app/shot.png", "--as-file"])
         self.assertIn("made.py", asked.call_args[1]["also"])
         self.assertNotIn("data", got)
-        self.assertEqual(Path(got["file"]).parent, cs.images_dir(self.home))
+        self.assertEqual(Path(got["file"]).parent, td.images_dir(self.home))
         self.assertEqual(Path(got["file"]).read_bytes(), PNG)
         self.assertEqual(Path(got["file"]).stat().st_mode & 0o777, 0o600)
         with mock.patch("remote.host_answer", return_value=dict(answer)):   # (VS Code's: the bytes)

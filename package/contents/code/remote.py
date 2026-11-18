@@ -93,7 +93,7 @@ if sys.version_info >= (3, 8):  # ...but talpy_den.py compiled in the data folde
         sys.pycache_prefix = str(_compiled)
         sys.dont_write_bytecode = False
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the script dir off sys.path
-import talpy_den as cs  # noqa: E402
+import talpy_den as td  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 HOST_NAME = re.compile(r"^[A-Za-z0-9_.@][A-Za-z0-9_.@:-]*$")
@@ -231,18 +231,18 @@ def ssh_options(batch=True):
     return opts
 
 
-posix = cs.posix  # command for the host's login shell (fish and csh too), run by sh
+posix = td.posix  # command for the host's login shell (fish and csh too), run by sh
 
 
 def answer_after_mark(stdout):
     """The JSON answer a script printed after the marker line, or None. The
     answer is one line, and the text inside it (a chat's prompt or reply) may
     mention the marker too: only a marker at the start of a line counts."""
-    mark = stdout.rfind("\n" + cs.REMOTE_MARK)
+    mark = stdout.rfind("\n" + td.REMOTE_MARK)
     if mark < 0:
         return None
     try:
-        answer = json.loads(stdout[mark + 1 + len(cs.REMOTE_MARK):])
+        answer = json.loads(stdout[mark + 1 + len(td.REMOTE_MARK):])
     except ValueError:
         return None
     return answer if isinstance(answer, dict) else None
@@ -259,7 +259,7 @@ PYTHON_CHECK = ("import sys\n"
                 "if sys.version_info < (3, 7):\n"
                 "    import json\n"
                 "    why = 'python3 there is %d.%d; Talpy Den needs 3.7 or newer' % sys.version_info[:2]\n"
-                "    sys.stdout.write('\\n" + cs.REMOTE_MARK + " ' + json.dumps({'ok': False, 'error': why, 'message': why}) + '\\n')\n"
+                "    sys.stdout.write('\\n" + td.REMOTE_MARK + " ' + json.dumps({'ok': False, 'error': why, 'message': why}) + '\\n')\n"
                 "    sys.exit(0)\n")
 
 
@@ -330,7 +330,7 @@ class Place:
 
     @property
     def engine_title(self):
-        return cs.ENGINE_TITLES.get(self.engine, self.engine)
+        return td.ENGINE_TITLES.get(self.engine, self.engine)
 
 
 def place(ident):
@@ -356,14 +356,14 @@ def label(ident):
 
 
 def containers_file():
-    return cs.state_dir(cs.cache_dir(Path.home())) / "containers.json"
+    return td.state_dir(td.cache_dir(Path.home())) / "containers.json"
 
 
 def change_containers_file(change):
     """change(saved) on containers.json (the users in containers, the hosts'
     container lists, which engine `docker` is), under a lock: two checks
     at once don't lose each other's (talpy_den.change_containers_file)."""
-    cs.change_containers_file(cs.cache_dir(Path.home()), change)
+    td.change_containers_file(td.cache_dir(Path.home()), change)
 
 
 def remember_users(found, inspected=False):
@@ -414,7 +414,7 @@ def vscode_allowed(ident, allow=False):
             except OSError:
                 pass
         return True
-    saved = cs.read_json(containers_file())
+    saved = td.read_json(containers_file())
     said = saved.get("vscode") if isinstance(saved, dict) and isinstance(saved.get("vscode"), dict) else {}
     return bool(cid) and said.get(ident) == cid
 
@@ -446,7 +446,7 @@ def inspect(p, timeout=CONTAINER_STATE_TIMEOUT):
     labels = info.get("labels") if isinstance(info.get("labels"), dict) else {}
     own = info.get("user") if isinstance(info.get("user"), str) else ""
     you = (lines[-1].strip() if len(lines) > 1 else "") if p.host is not None else None
-    found = {"id": p.id, "cid": info.get("id") or "", "user": cs.container_user(labels, own, you), "own": own,
+    found = {"id": p.id, "cid": info.get("id") or "", "user": td.container_user(labels, own, you), "own": own,
              "state": (info.get("state") or "").lower()}
     remember_users([found], inspected=True)
     return found, r
@@ -457,7 +457,7 @@ def exec_user(p, fresh=False):
     known already). Known: from its last inspect (one kept by an older Talpy
     Den, without its own user, isn't); else (or fresh) one inspect says."""
     if not fresh:
-        saved = cs.read_json(containers_file())
+        saved = td.read_json(containers_file())
         users = saved.get("users") if isinstance(saved, dict) and isinstance(saved.get("users"), dict) else {}
         known = users.get(p.id)
         if isinstance(known, dict) and isinstance(known.get("user"), str) and isinstance(known.get("own"), str):
@@ -632,7 +632,7 @@ def container_state(ident):
         return True, f"{p.engine_title} isn't installed here."
     if found is None:
         return True, explain(ident, r.returncode, r.stderr)
-    if found["state"] in cs.CONTAINER_RUNNING:
+    if found["state"] in td.CONTAINER_RUNNING:
         return (True, f"{p.label} is paused ({p.engine} unpause {p.name}).") if found["state"] == "paused" else (False, "")
     return True, f"{p.label} is stopped."
 
@@ -673,7 +673,7 @@ def attach(ident, command):
     if found is None:
         print(explain(ident, r.returncode, r.stderr))
         return 1
-    if found["state"] not in cs.CONTAINER_RUNNING:
+    if found["state"] not in td.CONTAINER_RUNNING:
         print(f"{p.label} is stopped. Start it with Start in Talpy Den, or: {p.engine} start {p.name}")
         return 1
     line = exec_line(p, command, found["user"], tty=True)
@@ -701,14 +701,14 @@ def picked_names(picked, host=None):
     return out
 
 
-def containers_here(days=cs.CONTAINER_DAYS, picked=()):
+def containers_here(days=td.CONTAINER_DAYS, picked=()):
     """This computer's containers (talpy_den.list_containers): {"containers", "notes"}."""
-    found = cs.list_containers(cs.cache_dir(Path.home()), Path.home(), days, picked_names(picked))
+    found = td.list_containers(td.cache_dir(Path.home()), Path.home(), days, picked_names(picked))
     remember_users(found["containers"])
     return found
 
 
-def host_containers(host, days=cs.CONTAINER_DAYS, picked=()):
+def host_containers(host, days=td.CONTAINER_DAYS, picked=()):
     """An SSH host's containers, listed there (talpy_den.py --list-containers):
     {"ok", "host", "containers", "notes", "at"} (their ids end in @host), kept
     for the next start (cached_host_containers), or {"ok": False, "error"}."""
@@ -751,7 +751,7 @@ def host_container(c, host):
 
 def cached_host_containers():
     """The SSH hosts' container lists as they were last fetched: {host: {"containers", "notes", "at"}}."""
-    saved = cs.read_json(containers_file())
+    saved = td.read_json(containers_file())
     hosts = saved.get("hosts") if isinstance(saved, dict) else None
     out = {}
     for h, v in hosts.items() if isinstance(hosts, dict) else ():
@@ -761,7 +761,7 @@ def cached_host_containers():
     return out
 
 
-def hosts_and_containers(days=cs.CONTAINER_DAYS, picked=(), containers=True):
+def hosts_and_containers(days=td.CONTAINER_DAYS, picked=(), containers=True):
     """--hosts: ~/.ssh/config's hosts, this computer's containers (unless
     not containers: then no engine is asked anything) and the hosts' last
     container lists."""
@@ -816,12 +816,12 @@ def publish_host_jobs(out):
         result = out.get("result") if out.get("ok") else None
         jobs = accounts = None
         if isinstance(result, dict):
-            offset = now - (cs.number(result.get("generatedAt")) or now)   # (as remember_answer has it)
+            offset = now - (td.number(result.get("generatedAt")) or now)   # (as remember_answer has it)
             where = p.engine if p.container else "ssh"
-            jobs = cs.place_jobs(result.get("groups"), p.id, where, offset)
-            accounts = cs.place_accounts(result.get("groups"), p.id, where, offset)
-        cache = cs.cache_dir(Path.home())
-        cs.publish_jobs(cs.jobs_file_path(Path.home(), cache), cache, p.id, jobs, now, accounts)
+            jobs = td.place_jobs(result.get("groups"), p.id, where, offset)
+            accounts = td.place_accounts(result.get("groups"), p.id, where, offset)
+        cache = td.cache_dir(Path.home())
+        td.publish_jobs(td.jobs_file_path(Path.home(), cache), cache, p.id, jobs, now, accounts)
     except (OSError, ValueError, TypeError, KeyError):
         pass
 
@@ -842,16 +842,16 @@ def host_status(host, done_hours=None, recent=None, tokens=True, usage_refresh=N
         args.append("--no-tokens")
     if usage_refresh is not None:  # (the host's accounts' plan usage, fetched there)
         args += ["--usage-refresh", str(usage_refresh)]
-    stars = cs.starred_of(cs.load_stars(cs.cache_dir(Path.home())), host)  # (the stars are kept here)
-    for kind in cs.STAR_KINDS:
+    stars = td.starred_of(td.load_stars(td.cache_dir(Path.home())), host)  # (the stars are kept here)
+    for kind in td.STAR_KINDS:
         if stars[kind]:
             args += [f"--starred-{kind}", ",".join(sorted(stars[kind]))]
     # (its chats that keep going are kept here too: listed there while they do, and how each stands)
-    kept = [k for k in cs.load_keep(cs.cache_dir(Path.home()))["chats"] if k["host"] == host and "/" not in k["profile"]]
+    kept = [k for k in td.load_keep(td.cache_dir(Path.home()))["chats"] if k["host"] == host and "/" not in k["profile"]]
     if kept:
         args += ["--kept-chats", ",".join(f"{k['chat']}/{k['profile']}" for k in kept)]
     # (and the Recap's history setting: the plan windows that ended kept there follow it, as here)
-    keep, since = cs.history_setting(cs.cache_dir(Path.home()))
+    keep, since = td.history_setting(td.cache_dir(Path.home()))
     if not keep:
         args.append("--no-history")
     elif since:
@@ -864,7 +864,7 @@ def host_status(host, done_hours=None, recent=None, tokens=True, usage_refresh=N
     except OSError as exc:
         return {"ok": False, "host": host, "error": cant_run(p, exc)}
     elapsed = int((time.time() - started) * 1000)
-    if "\n" + cs.REMOTE_MARK not in r.stdout:
+    if "\n" + td.REMOTE_MARK not in r.stdout:
         why, kind = paused_told(p, *container_problem(p, r.returncode, r.stderr), r.stderr) if p.container else (None, "")
         # (only ssh's own failure asks for a login: not the engine's "permission denied" on its socket there)
         login = p.host is not None and r.returncode == 255 and needs_login(r.stderr) and not why
@@ -882,19 +882,19 @@ def host_status(host, done_hours=None, recent=None, tokens=True, usage_refresh=N
            "loggedIn": p.host is not None and logged_in(p.host)}
     remember_answer(host, out)
     try:  # (its chats Claude moved to the background there under a new id: their stars, keeping going and go-ons follow)
-        cs.follow_host_moves(cs.cache_dir(Path.home()), host, result.get("moved"), stars, kept)
+        td.follow_host_moves(td.cache_dir(Path.home()), host, result.get("moved"), stars, kept)
     except (OSError, ValueError):
         pass
     return out
 
 
 def chats_with_ids(result):
-    """A host's answer without its chats whose id isn't a chat's (cs.valid_id;
+    """A host's answer without its chats whose id isn't a chat's (td.valid_id;
     none yet, a chat just starting, stays): the front ends pass a chat's
     sessionId and chatId on as words of command lines here, and a host's
     "--screenshot" was taken for that flag."""
     def plain(s):
-        return isinstance(s, dict) and all(s.get(k) in (None, "") or cs.valid_id(s[k]) for k in ("sessionId", "chatId"))
+        return isinstance(s, dict) and all(s.get(k) in (None, "") or td.valid_id(s[k]) for k in ("sessionId", "chatId"))
     for g in result.get("groups") if isinstance(result.get("groups"), list) else []:
         for key in ("sessions", "recent", "starred"):
             if isinstance(g, dict) and isinstance(g.get(key), list):
@@ -909,17 +909,17 @@ ANSWERS_DIR = "hosts"
 
 
 def answer_file(host):
-    return cs.cache_dir(Path.home()) / ANSWERS_DIR / (check_host(host) + ".json")
+    return td.cache_dir(Path.home()) / ANSWERS_DIR / (check_host(host) + ".json")
 
 
 def remember_answer(host, out):
     """Keep host's answer (and how far its clock is from this one's) for --last."""
     try:
         path = answer_file(host)
-        cs.private_dir(path.parent)
+        td.private_dir(path.parent)
         result = out.get("result") or {}
         offset = int(time.time() * 1000) - (result.get("generatedAt") or int(time.time() * 1000))
-        cs.write_json_atomic(path, {"at": int(time.time() * 1000), "offset": offset, "answer": out})
+        td.write_json_atomic(path, {"at": int(time.time() * 1000), "offset": offset, "answer": out})
         os.chmod(str(path), 0o600)
     except (OSError, ValueError, TypeError):
         pass
@@ -934,7 +934,7 @@ def last_answers(hosts):
             # (kept as JSON, an answer may take 3 times its size, \uXXXX; one bigger was kept before ANSWER_MAX)
             if answer_file(host).stat().st_size > 3 * ANSWER_MAX:
                 continue
-            saved = cs.read_json(answer_file(host))
+            saved = td.read_json(answer_file(host))
         except (OSError, ValueError):
             continue
         if isinstance(saved, dict) and isinstance(saved.get("answer"), dict) and saved["answer"].get("ok"):
@@ -1086,7 +1086,7 @@ def vscode_account(host, config_dir):
     """Have VS Code's Claude on host run on the account whose folder is
     config_dir there (None: a plain ~/.claude), in the settings of its VS Code
     server, which windows connected to the host read: (ok, message)."""
-    server = cs.VSCODE_SERVERS.get(cs.vscode_app()[1] or "", cs.VSCODE_SERVERS["Code"])
+    server = td.VSCODE_SERVERS.get(td.vscode_app()[1] or "", td.VSCODE_SERVERS["Code"])
     return run_status_script(host, ["--vscode-account", config_dir or "-", "--vscode-server", server])
 
 
@@ -1109,12 +1109,12 @@ def delete(host, kind, item, profile=None, describe=False):
     args = ["--delete-" + kind, item] + (["--profile", profile] if profile else []) + (["--describe"] if describe else [])
     answer = host_answer(host, args, "sharing.py", also=("accounts.py",))
     if describe and kind == "plan" and isinstance(answer.get("question"), str):
-        more = cs.plan_tasks_go(cs.queued_for_plan(cs.cache_dir(Path.home()), item, host))
+        more = td.plan_tasks_go(td.queued_for_plan(td.cache_dir(Path.home()), item, host))
         if more and answer.get("message") == answer["question"]:
             answer["message"] += more
         answer["question"] += more
     if answer["ok"] and not describe:
-        cs.forget_deleted(cs.cache_dir(Path.home()), {"chat": "chats", "plan": "plans"}.get(kind, "memories"), item, host)
+        td.forget_deleted(td.cache_dir(Path.home()), {"chat": "chats", "plan": "plans"}.get(kind, "memories"), item, host)
     return answer
 
 
@@ -1129,7 +1129,7 @@ def end_args(args):
     words, keep_off, rest = [], "", list(args)
     while rest:
         a = rest.pop(0)
-        if a == "--keep-off" and rest and cs.valid_id(rest[0]):
+        if a == "--keep-off" and rest and td.valid_id(rest[0]):
             keep_off = rest.pop(0)
         elif a != "--busy":
             words.append(a)
@@ -1154,7 +1154,7 @@ def agent_run(host, chat_id, agent_id, profile=None, open_it=True):
         return False, f"{p.label} didn't answer within {RUN_TIMEOUT} s", None
     except OSError as exc:
         return False, cant_run(p, exc), None
-    if "\n" + cs.REMOTE_MARK not in r.stdout:
+    if "\n" + td.REMOTE_MARK not in r.stdout:
         return False, explain(host, r.returncode, r.stderr), None
     answer = answer_after_mark(r.stdout)
     if answer is None:
@@ -1249,9 +1249,9 @@ def move_plan(host, slug, profile, into=None, back=False, setting=True, if_exist
         + (["--back"] if back else []) + ([] if setting else ["--no-setting"]) \
         + (["--if-exists", if_exists] if if_exists else []) + (["--describe"] if describe else [])
     answer = host_answer(host, args, "sharing.py", also=("accounts.py",))
-    if answer["ok"] and not describe and isinstance(answer.get("slug"), str) and cs.PLAN_SLUG.match(answer["slug"]):
+    if answer["ok"] and not describe and isinstance(answer.get("slug"), str) and td.PLAN_SLUG.match(answer["slug"]):
         import jump
-        jump.follow_plan(cs.cache_dir(Path.home()), slug, answer["slug"], host)
+        jump.follow_plan(td.cache_dir(Path.home()), slug, answer["slug"], host)
     return answer
 
 
@@ -1311,7 +1311,7 @@ while True:
 with os.fdopen(fd, "wb") as f:
     f.write(sys.stdin.buffer.read())
 sys.stdout.write("\\n%s " + json.dumps({"ok": True, "message": "", "path": str(path)}) + "\\n")
-""" % (cs.IMAGES_KEEP_DAYS, cs.REMOTE_MARK)
+""" % (td.IMAGES_KEEP_DAYS, td.REMOTE_MARK)
 PICTURE_NAME = re.compile(r"^[0-9]{8}-[0-9]{6}(-[0-9]+)?\.(png|jpg|webp|gif)$")
 
 
@@ -1319,7 +1319,7 @@ def put_image(host, path):
     """Copy a picture pasted here (jump.py --paste-image) to host, for a task
     there: {"ok", "message", "path": the copy there, "local": path}."""
     p, picture = place(host), Path(path)
-    if picture.parent != cs.images_dir(Path.home()) or not PICTURE_NAME.match(picture.name) or not picture.is_file():
+    if picture.parent != td.images_dir(Path.home()) or not PICTURE_NAME.match(picture.name) or not picture.is_file():
         return {"ok": False, "message": "That isn't a picture pasted into a task"}
     command = "python3 -I -c " + shlex.quote(PUT_IMAGE) + " " + shlex.quote(picture.name)
     try:
@@ -1508,7 +1508,7 @@ USAGE = __doc__.split("\n\n")[1]
 
 def list_options(args):
     """--hosts' and --containers' options: --container-days N, --picked IDS, --no-containers."""
-    kw, rest = {"days": cs.CONTAINER_DAYS, "picked": [], "containers": True}, list(args)
+    kw, rest = {"days": td.CONTAINER_DAYS, "picked": [], "containers": True}, list(args)
     while rest:
         arg = rest.pop(0)
         if arg == "--container-days" and rest and rest[0].isdigit():

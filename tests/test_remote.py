@@ -24,7 +24,7 @@ sys.path.insert(0, str(CODE))
 spec = importlib.util.spec_from_file_location("remote", CODE / "remote.py")
 remote = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(remote)
-cs = remote.cs
+td = remote.td
 
 FAKE_SSH = r'''#!/bin/bash
 # Stand-in for ssh: skip options, take the host, run the command here with bash
@@ -273,7 +273,7 @@ class LoginShellTests(FakeSSH):
         self.assertEqual(remote.posix("python3 -I - --remote"), "sh -c 'python3 -I - --remote'")  # (as it is, when it can)
 
     def test_a_picture_goes_to_a_tcsh_host(self):
-        here = cs.images_dir(Path.home()) / "20261026-101500.png"
+        here = td.images_dir(Path.home()) / "20261026-101500.png"
         here.parent.mkdir(parents=True)
         here.write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff a picture")
         self.mode("tcsh")
@@ -292,7 +292,7 @@ class LoginShellTests(FakeSSH):
                                         name="pane.py")
             self.assertTrue(answer["ok"], answer)
             self.assertEqual(self.calls()[-1][1], "python3 -I - --remote --send abc12345 --how auto --after-turn --profile .claude")
-            (queued,) = cs.load_queue(self.fake_home / ".cache/talpy-den")
+            (queued,) = td.load_queue(self.fake_home / ".cache/talpy-den")
             self.assertEqual(queued["prompt"], text)  # (queued there, for when its turn ends)
 
 
@@ -355,9 +355,9 @@ class StatusTests(FakeSSH):
             self.assertEqual(remote.last_answers(["lab"]), {})  # (one kept before the cap)
 
     def test_the_hosts_plan_windows_follow_the_history_setting_here(self):
-        there = self.fake_home / ".cache/talpy-den" / cs.USAGE_PAST_FILE
+        there = self.fake_home / ".cache/talpy-den" / td.USAGE_PAST_FILE
         there.parent.mkdir(parents=True, exist_ok=True)
-        here = cs.history_file(cs.cache_dir(Path.home()))
+        here = td.history_file(td.cache_dir(Path.home()))
         here.parent.mkdir(parents=True, exist_ok=True)
         # turned off here; deleted here (Delete Saved History…) while the setting is on
         for setting, flag in (({"keep": False}, "--no-history"),
@@ -417,11 +417,11 @@ class ActionTests(FakeSSH):
 
     def test_dismiss_on_the_host(self):
         self.assertEqual(remote.dismiss("lab", "abc12345"), (True, "Hid this chat"))
-        self.assertIn("abc12345", cs.load_dismissed(self.fake_home / ".cache/talpy-den"))
+        self.assertIn("abc12345", td.load_dismissed(self.fake_home / ".cache/talpy-den"))
         out = remote.status("lab", tokens=False)
         self.assertEqual(out["result"]["groups"][0]["sessions"], [])
         self.assertEqual(remote.dismiss("lab")[0], True)
-        self.assertEqual(cs.load_dismissed(self.fake_home / ".cache/talpy-den"), {})
+        self.assertEqual(td.load_dismissed(self.fake_home / ".cache/talpy-den"), {})
 
     def test_delete_on_the_host_to_its_trash(self):
         prof = self.fake_home / ".claude"
@@ -429,12 +429,12 @@ class ActionTests(FakeSSH):
         (prof / "projects/-p/chat9/subagents").mkdir(parents=True)
         (prof / "plans").mkdir()
         (prof / "plans/calm-red-owl.md").write_text("# Calm plan\n")
-        local = cs.cache_dir(Path.home())
-        cs.change_stars(local, "chats", "chat9", host="lab")  # (an SSH host's stars are kept here)
-        cs.change_bookmark(local, "chat9", "lab", "msg_1", True, "claude", 1000, "Old work done")  # (its bookmarks too)
-        cs.change_bookmark(local, "chat9", "", "msg_1", True, "claude", 1000, "this computer's chat9")
+        local = td.cache_dir(Path.home())
+        td.change_stars(local, "chats", "chat9", host="lab")  # (an SSH host's stars are kept here)
+        td.change_bookmark(local, "chat9", "lab", "msg_1", True, "claude", 1000, "Old work done")  # (its bookmarks too)
+        td.change_bookmark(local, "chat9", "", "msg_1", True, "claude", 1000, "this computer's chat9")
         asked = remote.delete("lab", "chat", "chat9", describe=True)
-        self.assertEqual(len(cs.load_bookmarks(local, "chat9", "lab")[0]), 1)  # (asked: nothing goes yet)
+        self.assertEqual(len(td.load_bookmarks(local, "chat9", "lab")[0]), 1)  # (asked: nothing goes yet)
         self.assertEqual((asked["ok"], asked["accounts"], asked["question"]),
                          (True, ["Remote Me"], "Delete “Old work” on Remote Me? It goes to the Trash with its subagents and "
                                           "checkpoints; the Recap keeps its numbers."))
@@ -442,9 +442,9 @@ class ActionTests(FakeSSH):
         trash = self.fake_home / ".local/share/Trash/files"
         self.assertEqual(sorted(f.name for f in trash.iterdir()), ["chat9", "chat9.jsonl"])
         self.assertFalse((prof / "projects/-p/chat9.jsonl").exists())
-        self.assertEqual(cs.load_stars(local)["chats"], [])
-        self.assertEqual(cs.load_bookmarks(local, "chat9", "lab"), ([], 0))
-        self.assertEqual(len(cs.load_bookmarks(local, "chat9")[0]), 1)  # (this computer's chat of that id keeps its own)
+        self.assertEqual(td.load_stars(local)["chats"], [])
+        self.assertEqual(td.load_bookmarks(local, "chat9", "lab"), ([], 0))
+        self.assertEqual(len(td.load_bookmarks(local, "chat9")[0]), 1)  # (this computer's chat of that id keeps its own)
         r = subprocess.run([sys.executable, "-I", str(CODE / "remote.py"), "--delete-plan", "lab", "calm-red-owl",
                             ".claude", "--describe"], capture_output=True, text=True, env=os.environ)
         self.assertEqual(json.loads(r.stdout)["question"], "Delete the plan “Calm plan” on Remote Me? It goes to the Trash.")
@@ -455,12 +455,12 @@ class ActionTests(FakeSSH):
         # (kept on the host: its status leaves them out there)
         self.assertEqual(remote.hide("lab", "plans", "calm-red-owl"), (True, "Hid this plan"))
         self.assertEqual(remote.hide("lab", "projects", "/srv/app"), (True, "Hid this project"))
-        self.assertEqual(list(cs.load_hidden(self.fake_home / ".cache/talpy-den")["plans"]), ["calm-red-owl"])
+        self.assertEqual(list(td.load_hidden(self.fake_home / ".cache/talpy-den")["plans"]), ["calm-red-owl"])
         self.assertEqual(remote.status("lab", tokens=False)["result"]["hiddenProjects"], 1)
         self.assertEqual(remote.hide("lab", "plans"), (True, "Showing 1 hidden plan again"))
         self.assertEqual(remote.hide("lab", "memories"), (True, "No memory was hidden"))
         self.assertEqual(remote.hide("lab", "chats", "abc12345"), (True, "Hid this chat"))
-        self.assertIn("abc12345", cs.load_dismissed(self.fake_home / ".cache/talpy-den"))
+        self.assertIn("abc12345", td.load_dismissed(self.fake_home / ".cache/talpy-den"))
 
     def test_stop_an_idle_chat_on_the_host(self):
         proc = subprocess.Popen([sys.executable, "-c", "print('ready', flush=True); import time; time.sleep(60)"],
@@ -469,7 +469,7 @@ class ActionTests(FakeSSH):
         self.addCleanup(lambda: (proc.kill(), proc.wait()) if proc.poll() is None else None)
         self.assertEqual(proc.stdout.readline().strip(), "ready")
         (self.fake_home / f".claude/sessions/{proc.pid}.json").write_text(json.dumps(
-            {"pid": proc.pid, "procStart": cs.proc_start_time(proc.pid), "sessionId": "idle-there",
+            {"pid": proc.pid, "procStart": td.proc_start_time(proc.pid), "sessionId": "idle-there",
              "cwd": "/srv/x", "kind": "interactive", "status": "idle"}))
         self.assertEqual(remote.end("lab", "idle-there", ".claude-work"), (False, "That chat isn't running any more"))
         self.assertIsNone(proc.poll())
@@ -484,7 +484,7 @@ class ActionTests(FakeSSH):
         self.addCleanup(lambda: (proc.kill(), proc.wait()) if proc.poll() is None else None)
         self.assertEqual(proc.stdout.readline().strip(), "ready")
         (self.fake_home / f".claude/sessions/{proc.pid}.json").write_text(json.dumps(
-            {"pid": proc.pid, "procStart": cs.proc_start_time(proc.pid), "sessionId": "busy-there",
+            {"pid": proc.pid, "procStart": td.proc_start_time(proc.pid), "sessionId": "busy-there",
              "cwd": "/srv/x", "kind": "interactive", "status": "busy"}))
         self.assertIn("doesn't run in tmux", remote.interrupt("lab", "busy-there")[1])
         self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --interrupt busy-there"])
@@ -529,7 +529,7 @@ class ActionTests(FakeSSH):
         d.mkdir(parents=True)
         (d / "agent-ag1.meta.json").write_text(json.dumps({"agentType": "Explore", "description": "Check the host"}))
         report = {"type": "tool_use", "id": "h", "name": "SubagentHandback",
-                  "input": {"message": "The widget's answer starts after \n" + cs.REMOTE_MARK + " {\"ok\": false}"}}
+                  "input": {"message": "The widget's answer starts after \n" + td.REMOTE_MARK + " {\"ok\": false}"}}
         (d / "agent-ag1.jsonl").write_text("".join(json.dumps(l) + "\n" for l in (
             {"type": "user", "isSidechain": True, "message": {"content": "Look around"}},
             {"type": "assistant", "isSidechain": True, "message": {"content": [report]}})))
@@ -547,7 +547,7 @@ class ActionTests(FakeSSH):
             jump.open_markdown = old
         self.assertEqual((ok, message), (True, "The run of “Check the host” on lab"))
         self.assertEqual(Path(path).parent, Path(self.env["XDG_CACHE_HOME"]) / "talpy-den/agent-runs")  # saved here
-        self.assertIn(cs.REMOTE_MARK + ' {"ok": false}', Path(path).read_text())  # the marker in the run is just text
+        self.assertIn(td.REMOTE_MARK + ' {"ok": false}', Path(path).read_text())  # the marker in the run is just text
         self.assertEqual(opened, [Path(path)])
         self.mode("unreachable")
         self.assertFalse(remote.agent_run("lab", "abc12345", "ag1")[0])
@@ -620,7 +620,7 @@ class SharingTests(TwoAccountHost):
         self.addCleanup(lambda: (proc.kill(), proc.wait()) if proc.poll() is None else None)
         self.assertEqual(proc.stdout.readline().strip(), "ready")
         (self.fake_home / f".claude/sessions/{proc.pid}.json").write_text(json.dumps(
-            {"pid": proc.pid, "procStart": cs.proc_start_time(proc.pid), "sessionId": self.CHAT,
+            {"pid": proc.pid, "procStart": td.proc_start_time(proc.pid), "sessionId": self.CHAT,
              "cwd": "/srv/x", "kind": "interactive", "status": "idle"}))
 
     def continue_there(self, *args, **kw):
@@ -706,11 +706,11 @@ class HostNoiseTests(FakeSSH):
     def test_a_chat_that_mentions_the_marker(self):
         state = self.fake_home / ".claude/jobs/abc12345/state.json"
         job = json.loads(state.read_text())
-        state.write_text(json.dumps({**job, "name": f"why {cs.REMOTE_MARK} breaks"}))
+        state.write_text(json.dumps({**job, "name": f"why {td.REMOTE_MARK} breaks"}))
         out = remote.status("lab")
         self.assertTrue(out["ok"], out)
         (row,) = out["result"]["groups"][0]["sessions"]
-        self.assertEqual(row["name"], f"why {cs.REMOTE_MARK} breaks")
+        self.assertEqual(row["name"], f"why {td.REMOTE_MARK} breaks")
 
     def test_a_greeting_that_isnt_utf8(self):
         self.mode("latin1")
@@ -838,7 +838,7 @@ class AccountTests(FakeSSH):
         self.assertEqual(os.readlink(main), str(self.fake_home / ".claude-work"))
         text = settings.read_text()
         self.assertIn("// the host's own", text)
-        self.assertEqual(cs.jsonc(text)["claudeCode.environmentVariables"],
+        self.assertEqual(td.jsonc(text)["claudeCode.environmentVariables"],
                          [{"name": "CLAUDE_CONFIG_DIR", "value": str(main)}])  # the link's name: it leads there now
         self.assertEqual(answer["configDir"], str(main))
         status = remote.status("lab", tokens=False)["result"]
@@ -903,7 +903,7 @@ class HostTaskTests(TwoAccountHost):
         self.assertTrue(json.loads(out.getvalue())["command"].endswith(" ' go'"))
 
     def test_a_picture_goes_there_for_a_task_that_opens_it(self):
-        here = cs.images_dir(Path.home()) / "20261026-101500.png"
+        here = td.images_dir(Path.home()) / "20261026-101500.png"
         here.parent.mkdir(parents=True)
         here.write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff a picture")
         answer = remote.put_image("lab", str(here))
@@ -957,10 +957,10 @@ class HostTaskTests(TwoAccountHost):
                                           "message": {"role": "user", "content": "plan it"}}) + "\n")
         os.utime(self.plan, (time.time() - 600, time.time() - 600))
         here = Path(os.environ["XDG_CACHE_HOME"]) / "talpy-den"
-        cs.change_stars(here, "plans", "calm-red-owl", "lab")   # (an SSH host's stars are kept here)
+        td.change_stars(here, "plans", "calm-red-owl", "lab")   # (an SSH host's stars are kept here)
         (self.folder / ".claude/plans").mkdir(parents=True)
         (self.folder / ".claude/plans/calm-red-owl.md").write_text("# Another plan\n")
-        # (older than the account's: else it's the plan, the account's an old copy: cs.project_wins)
+        # (older than the account's: else it's the plan, the account's an old copy: td.project_wins)
         os.utime(self.folder / ".claude/plans/calm-red-owl.md", (time.time() - 1200, time.time() - 1200))
         asked = remote.move_plan("lab", "calm-red-owl", ".claude", describe=True)
         self.assertTrue(asked["ok"], asked)
@@ -973,7 +973,7 @@ class HostTaskTests(TwoAccountHost):
         self.assertEqual((self.folder / ".claude/plans/calm-red-owl-2.md").read_text(), "# Calm plan\n\n1. Do it\n")
         self.assertEqual(json.loads((self.folder / ".claude/settings.local.json").read_text()),
                          {"plansDirectory": ".claude/plans"})
-        self.assertIn("calm-red-owl-2", cs.starred_of(cs.load_stars(here), "lab")["plans"])
+        self.assertIn("calm-red-owl-2", td.starred_of(td.load_stars(here), "lab")["plans"])
         self.assertEqual(self.calls()[-1][1].split(" --remote ")[1],
                          "--move-plan calm-red-owl --profile .claude --if-exists keep")
         # listed there in its project, and back again
@@ -1030,25 +1030,25 @@ class KeepGoingThereTests(TwoAccountHost):
             {"type": "assistant", "timestamp": stamp(t + 1), "isApiErrorMessage": True, "sessionId": self.CHAT,
              "message": {"id": "err", "role": "assistant", "stop_reason": "stop_sequence",
                          "content": [{"type": "text", "text": "You've hit your session limit"}]}}]))
-        cache = cs.cache_dir(Path.home())
-        cs.keep_chat(cache, ".claude", self.CHAT, "Fix it", str(self.folder), host="lab")
+        cache = td.cache_dir(Path.home())
+        td.keep_chat(cache, ".claude", self.CHAT, "Fix it", str(self.folder), host="lab")
         # its status there: asked how it stands, and the answer is kept here
         answer = remote.status("lab", tokens=False)
         self.assertTrue(answer["ok"], answer)
         self.assertIn(f"--kept-chats {self.CHAT}/.claude", self.calls()[-1][1])
         self.assertEqual(answer["result"]["keptTurns"][self.CHAT]["turn"]["kind"], "limit")
         # the engine here (the copy that notifies): its go-on, for lab, from that answer
-        cs.look_after_kept(Path.home(), cache, [], [], int(time.time() * 1000))
-        (task,) = cs.load_queue(cache)
+        td.look_after_kept(Path.home(), cache, [], [], int(time.time() * 1000))
+        (task,) = td.load_queue(cache)
         self.assertEqual((task["host"], task["chat"], task["profile"], task["folder"]), ("lab", self.CHAT, ".claude", str(self.folder)))
         # it goes on there, in the background, when its time comes
         ok, message = jump.start_queued(Path.home(), [], task["id"])
         self.assertTrue(ok, message)
         args = (self.fake_home / "claude-args").read_text().split("\n")
         self.assertEqual(args[:3], ["--bg", "--resume", self.CHAT])
-        (kept,) = cs.load_keep(cache)["chats"]
+        (kept,) = td.load_keep(cache)["chats"]
         self.assertIsNotNone(kept["wentOnAt"])
-        self.assertEqual(cs.load_queue(cache), [])
+        self.assertEqual(td.load_queue(cache), [])
 
     def test_a_hosts_chat_moved_to_the_background_takes_its_star_keep_going_and_go_on_along(self):
         # (2026-11-03) its go-on under the old id got a second one beside it, and its star couldn't be taken off
@@ -1059,18 +1059,18 @@ class KeepGoingThereTests(TwoAccountHost):
                                        "message": {"role": "user", "content": "fix it"}}, separators=(",", ":")) + "\n"
         self.chat.write_text(line(self.CHAT))
         self.chat.with_name(f"{new}.jsonl").write_text(line(new))  # (Claude's copy of it, under its new id)
-        cache = cs.cache_dir(Path.home())
+        cache = td.cache_dir(Path.home())
         now = int(time.time() * 1000)
-        cs.keep_chat(cache, ".claude", self.CHAT, "Fix it", str(self.folder), host="lab")
-        cs.change_stars(cache, "chats", self.CHAT, "lab")
-        cs.change_queue(cache, add=cs.queue_entry(".claude", str(self.folder), "", now + 3600_000, host="lab",
+        td.keep_chat(cache, ".claude", self.CHAT, "Fix it", str(self.folder), host="lab")
+        td.change_stars(cache, "chats", self.CHAT, "lab")
+        td.change_queue(cache, add=td.queue_entry(".claude", str(self.folder), "", now + 3600_000, host="lab",
                                                   chat=self.CHAT, name="Fix it"))
         answer = remote.status("lab", tokens=False)
         self.assertEqual(answer["result"]["moved"], {self.CHAT: new})
-        self.assertEqual(cs.starred_of(cs.load_stars(cache), "lab")["chats"], {new})
-        self.assertEqual([k["chat"] for k in cs.load_keep(cache)["chats"]], [new])
-        cs.look_after_kept(Path.home(), cache, [], [], now)
-        self.assertEqual([(t["host"], t["chat"]) for t in cs.load_queue(cache)], [("lab", new)])
+        self.assertEqual(td.starred_of(td.load_stars(cache), "lab")["chats"], {new})
+        self.assertEqual([k["chat"] for k in td.load_keep(cache)["chats"]], [new])
+        td.look_after_kept(Path.home(), cache, [], [], now)
+        self.assertEqual([(t["host"], t["chat"]) for t in td.load_queue(cache)], [("lab", new)])
 
 
     def test_a_hosts_chat_moved_to_the_background_takes_its_bookmarks_along(self):
@@ -1082,20 +1082,20 @@ class KeepGoingThereTests(TwoAccountHost):
                                        "message": {"role": "user", "content": "fix it"}}, separators=(",", ":")) + "\n"
         self.chat.write_text(line(self.CHAT))
         self.chat.with_name(f"{new}.jsonl").write_text(line(new))  # (Claude's copy of it, under its new id)
-        cache = cs.cache_dir(Path.home())
-        cs.change_bookmark(cache, self.CHAT, "lab", "u1", True, "you", 1000, "fix it", now_ms=5000)
-        cs.change_bookmark(cache, new, "lab", "msg_2", True, "claude", 2000, "Fixed.", now_ms=6000)  # (one under its new id)
-        cs.change_bookmark(cache, self.CHAT, "", "mine", True, "claude", 1000, "this computer's chat of that id")
+        cache = td.cache_dir(Path.home())
+        td.change_bookmark(cache, self.CHAT, "lab", "u1", True, "you", 1000, "fix it", now_ms=5000)
+        td.change_bookmark(cache, new, "lab", "msg_2", True, "claude", 2000, "Fixed.", now_ms=6000)  # (one under its new id)
+        td.change_bookmark(cache, self.CHAT, "", "mine", True, "claude", 1000, "this computer's chat of that id")
         answer = remote.status("lab", tokens=False)
         self.assertEqual(answer["result"]["moved"], {self.CHAT: new})
-        marks, v = cs.load_bookmarks(cache, new, "lab")
+        marks, v = td.load_bookmarks(cache, new, "lab")
         self.assertEqual(([m["key"] for m in marks], v > 6000), (["u1", "msg_2"], True))
-        self.assertEqual(cs.load_bookmarks(cache, self.CHAT, "lab"), ([], 0))
-        self.assertEqual([m["key"] for m in cs.load_bookmarks(cache, self.CHAT)[0]], ["mine"])
+        self.assertEqual(td.load_bookmarks(cache, self.CHAT, "lab"), ([], 0))
+        self.assertEqual([m["key"] for m in td.load_bookmarks(cache, self.CHAT)[0]], ["mine"])
         self.assertFalse((self.fake_home / ".cache/talpy-den/bookmarks").exists())  # (nothing of them goes there)
         # the next answer says it moved again: nothing left to move, the list stays as it is
         self.assertEqual(remote.status("lab", tokens=False)["result"]["moved"], {self.CHAT: new})
-        self.assertEqual(cs.load_bookmarks(cache, new, "lab"), (marks, v))
+        self.assertEqual(td.load_bookmarks(cache, new, "lab"), (marks, v))
 
 
 # The host's claude, for Talpy Chat there: claude --bg writes its job's record,
@@ -1155,7 +1155,7 @@ class TalpyChatThereTests(TwoAccountHost):
         self.claude.write_text(HOST_CLAUDE.format(python=sys.executable))
         here = Path(self.tmp.name) / "local-home"
         here.mkdir()
-        homed = mock.patch.object(cs.Path, "home", return_value=here)
+        homed = mock.patch.object(td.Path, "home", return_value=here)
         homed.start()
         self.addCleanup(homed.stop)
         self.saved.setdefault("XDG_DATA_HOME", os.environ.get("XDG_DATA_HOME"))   # (tearDown puts it back)
@@ -1262,7 +1262,7 @@ class HostWatchTests(FakeSSH):
         lines = []
         def capped(line, stdin=None, timeout=None, binary=False):
             lines.append(line)
-            return subprocess.CompletedProcess(line, 0, "\n" + cs.REMOTE_MARK + ' {"ok": true, "timeout": true}\n', "")
+            return subprocess.CompletedProcess(line, 0, "\n" + td.REMOTE_MARK + ' {"ok": true, "timeout": true}\n', "")
         with mock.patch.object(remote, "run_capped", side_effect=capped), \
                 mock.patch.object(remote, "exec_user", return_value=("vscode", True)):
             self.assertTrue(remote.watch("docker:web", "a1b2c3d4e5f6", 50)["ok"])

@@ -21,7 +21,7 @@ sys.path.insert(0, str(CODE))
 spec = importlib.util.spec_from_file_location("jump", CODE / "jump.py")
 jump = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jump)
-cs = jump.cs
+td = jump.td
 
 from test_talpy_den import Fixture, session, vscode_link_params, write  # noqa: E402
 
@@ -378,13 +378,13 @@ class ProcessNameTests(unittest.TestCase):
         self.assertEqual(jump.parent_pid(child.pid), os.getpid())
         jump.konsole_pids()
         jump.vscode_main_pids()
-        with mock.patch.object(cs, "VSCODE_APPS", (("code-that-isnt-there", "Nothing"),)):
-            self.assertEqual(cs.vscode_running_config_dir(), (False, None))
+        with mock.patch.object(td, "VSCODE_APPS", (("code-that-isnt-there", "Nothing"),)):
+            self.assertEqual(td.vscode_running_config_dir(), (False, None))
 
 
 class AttachCommandTests(unittest.TestCase):
     def profile(self, path, default):
-        p = cs.Profile.__new__(cs.Profile)
+        p = td.Profile.__new__(td.Profile)
         p.path, p.is_default = Path(path), default
         return p
 
@@ -409,11 +409,11 @@ class AttachCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             prof = Path(tmp) / ".claude-work"
             prof.mkdir()
-            cs.write_json_atomic(prof / "daemon.status.json", {
-                "supervisorPid": os.getpid(), "supervisorProcStart": cs.proc_start_time(os.getpid())})
+            td.write_json_atomic(prof / "daemon.status.json", {
+                "supervisorPid": os.getpid(), "supervisorProcStart": td.proc_start_time(os.getpid())})
             expected = os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")
             self.assertEqual(jump.service_config_dir(self.profile(prof, False)), expected)
-            cs.write_json_atomic(prof / "daemon.status.json", {"supervisorPid": 4194304 + 7})  # dead
+            td.write_json_atomic(prof / "daemon.status.json", {"supervisorPid": 4194304 + 7})  # dead
             self.assertIsNone(jump.service_config_dir(self.profile(prof, False)))
 
     def test_a_service_named_after_a_switched_link(self):
@@ -431,18 +431,18 @@ class AttachCommandTests(unittest.TestCase):
             self.addCleanup(service.wait)
             self.addCleanup(service.kill)
             for _ in range(500):
-                if cs.process_config_dir(service.pid):
+                if td.process_config_dir(service.pid):
                     break
                 time.sleep(0.01)
-            cs.write_json_atomic(personal / "daemon.status.json", {
-                "supervisorPid": service.pid, "supervisorProcStart": cs.proc_start_time(service.pid)})
+            td.write_json_atomic(personal / "daemon.status.json", {
+                "supervisorPid": service.pid, "supervisorProcStart": td.proc_start_time(service.pid)})
             prof = self.profile(personal, False)
             self.assertEqual(jump.resume_command(prof, "c1", home), f"CLAUDE_CONFIG_DIR={home / '.claude'} claude --resume c1")
             (home / ".claude").unlink()
             (home / ".claude").symlink_to(work)
             self.assertEqual(jump.attach_command(prof, "j1", home), f"env -u CLAUDE_CODE_DISABLE_AGENT_VIEW CLAUDE_CONFIG_DIR={home / '.claude'} claude attach j1")
             self.assertEqual(jump.resume_command(prof, "c1", home), f"CLAUDE_CONFIG_DIR={personal} claude --resume c1")
-            self.assertEqual(cs.new_chat_command(prof, home),
+            self.assertEqual(td.new_chat_command(prof, home),
                              f"CLAUDE_CODE_DISABLE_AGENT_VIEW=1 CLAUDE_CONFIG_DIR={personal} claude")
 
     def test_uses_the_name_the_job_was_started_with(self):
@@ -465,7 +465,7 @@ class AttachCommandTests(unittest.TestCase):
             home = Path(tmp)
             prof = home / ".claude-work"
             prof.mkdir()
-            cs.write_json_atomic(prof / ".claude.json", {"projects": {
+            td.write_json_atomic(prof / ".claude.json", {"projects": {
                 str(home): {"hasTrustDialogAccepted": False},
                 str(home / "proj"): {"hasTrustDialogAccepted": True}}})
             cmd = jump.attach_command(self.profile(prof, False), "j1", home, {"cwd": str(home)})
@@ -560,7 +560,7 @@ class ChatStopTests(Fixture):
         self.addCleanup(lambda: (proc.kill(), proc.wait()) if proc.poll() is None else None)
         self.assertEqual(proc.stdout.readline().strip(), "ready")
         write(self.home / f".claude-work/sessions/{proc.pid}.json",
-              session(sid, pid=proc.pid, procStart=cs.proc_start_time(proc.pid), **kw))
+              session(sid, pid=proc.pid, procStart=td.proc_start_time(proc.pid), **kw))
         return proc
 
     def test_idle_chat_quits_on_sigterm(self):
@@ -580,15 +580,15 @@ class ChatStopTests(Fixture):
         for sid, kw in (("working", {"status": "busy"}), ("shell", {"status": "shell"}),
                         ("asks", {"status": "waiting", "waitingFor": "permission prompt"})):
             proc = self.chat(sid, **kw)
-            ok, message = cs.stop_chat_by_id(self.home, [], sid, wait=0.5)
+            ok, message = td.stop_chat_by_id(self.home, [], sid, wait=0.5)
             self.assertFalse(ok, sid)
             self.assertIn("so it wasn't stopped", message)
             self.assertIsNone(proc.poll(), sid)   # still running
-            self.assertTrue(cs.stop_chat_by_id(self.home, [], sid, busy_ok=True)[0])
+            self.assertTrue(td.stop_chat_by_id(self.home, [], sid, busy_ok=True)[0])
             self.assertEqual(proc.wait(timeout=5), -15, sid)
         # its own /model dialog open counts as idle (as in Claude's terminal status)
         proc = self.chat("dialog-open", status="waiting", waitingFor="dialog open")
-        self.assertTrue(cs.stop_chat_by_id(self.home, [], "dialog-open")[0])
+        self.assertTrue(td.stop_chat_by_id(self.home, [], "dialog-open")[0])
         self.assertEqual(proc.wait(timeout=5), -15)
 
     def stop_background(self, sid, stderr):
@@ -624,7 +624,7 @@ class ChatStopTests(Fixture):
 
     def test_one_that_hangs_on_is_killed(self):
         proc = self.chat("stuck", "import signal; signal.signal(signal.SIGTERM, signal.SIG_IGN)")
-        ok, message = cs.stop_chat_by_id(self.home, [], "stuck", wait=0.5)
+        ok, message = td.stop_chat_by_id(self.home, [], "stuck", wait=0.5)
         self.assertEqual((ok, message), (True, "It hadn't quit after 0.5 s, so it was killed; the chat is kept"))
         self.assertEqual(proc.wait(timeout=5), -9)
 
@@ -636,19 +636,19 @@ class ChatStopTests(Fixture):
                                   "signal.signal(signal.SIGINT, lambda *a: os._exit(0))",
                          entrypoint="claude-vscode", status="busy")
         child = int(pids.read_text())
-        start = cs.proc_start_time(child)
-        ok, message = cs.stop_chat_by_id(self.home, [], "panel", busy_ok=True)
+        start = td.proc_start_time(child)
+        ok, message = td.stop_chat_by_id(self.home, [], "panel", busy_ok=True)
         self.assertEqual((ok, message), (True, "Stopped; the chat is kept (and 1 command it was running ended)"))
         self.assertEqual(proc.wait(timeout=5), 0)
-        self.assertTrue(cs.process_gone({"pid": child, "procStart": start}))
+        self.assertTrue(td.process_gone({"pid": child, "procStart": start}))
 
     def test_profile_and_pid_reuse(self):
         proc = self.chat("mine")
-        self.assertEqual(cs.stop_chat_by_id(self.home, [], "mine", ".claude-personal"),
+        self.assertEqual(td.stop_chat_by_id(self.home, [], "mine", ".claude-personal"),
                          (False, "That chat isn't running any more"))
         # its pid now belongs to another process: the file's start time doesn't match
         write(self.home / f".claude-work/sessions/{proc.pid}.json", session("mine", pid=proc.pid, procStart="1"))
-        self.assertEqual(cs.stop_chat_by_id(self.home, [], "mine"), (False, "That chat isn't running any more"))
+        self.assertEqual(td.stop_chat_by_id(self.home, [], "mine"), (False, "That chat isn't running any more"))
         self.assertIsNone(proc.poll())
 
     @unittest.skipUnless(shutil.which("tmux"), "needs tmux")
@@ -669,23 +669,23 @@ class ChatStopTests(Fixture):
         pane = subprocess.run(["tmux", "-S", str(sock), "display-message", "-p", "-t", "t",
                                "#{session_name}:#{window_id}.#{pane_id}"], capture_output=True, text=True).stdout.strip()
         write(self.home / f".claude-work/sessions/{pid}.json",
-              session("in-tmux", pid=pid, procStart=cs.proc_start_time(pid), status="busy", tmux=pane))
-        self.assertEqual(cs.interrupt_chat_by_id(self.home, [], "in-tmux"),
+              session("in-tmux", pid=pid, procStart=td.proc_start_time(pid), status="busy", tmux=pane))
+        self.assertEqual(td.interrupt_chat_by_id(self.home, [], "in-tmux"),
                          (True, "Interrupted (Ctrl+C in its tmux pane); the chat stays open there"))
         for _ in range(100):
             if keys.exists() and keys.read_bytes():
                 break
             time.sleep(0.05)
         self.assertEqual(keys.read_bytes(), b"\x03")   # Ctrl+C, as if pressed there (a key: its terminal is raw)
-        self.assertTrue(cs.is_alive({"pid": pid, "procStart": cs.proc_start_time(pid)}))   # the chat stays
+        self.assertTrue(td.is_alive({"pid": pid, "procStart": td.proc_start_time(pid)}))   # the chat stays
 
     def test_interrupt_only_in_tmux_and_while_working(self):
         self.chat("plain", status="busy")
-        self.assertIn("doesn't run in tmux", cs.interrupt_chat_by_id(self.home, [], "plain")[1])
+        self.assertIn("doesn't run in tmux", td.interrupt_chat_by_id(self.home, [], "plain")[1])
         self.chat("done-now", tmux="t:@1.%1")
-        self.assertIn("nothing to interrupt", cs.interrupt_chat_by_id(self.home, [], "done-now")[1])
+        self.assertIn("nothing to interrupt", td.interrupt_chat_by_id(self.home, [], "done-now")[1])
         self.chat("shell-left", tmux="t:@1.%2", status="shell")  # turn over, a background command runs
-        self.assertIn("would land at its prompt", cs.interrupt_chat_by_id(self.home, [], "shell-left")[1])
+        self.assertIn("would land at its prompt", td.interrupt_chat_by_id(self.home, [], "shell-left")[1])
 
     def test_command_line(self):
         proc = self.chat("cli-chat", status="busy")
@@ -885,7 +885,7 @@ class ChooseFolderTests(Fixture):
             self.assertEqual(jump.pick_folder(self.home, [], ".claude-work"),
                              (True, "", {"path": str(new), "short": "~/new project", "trusted": True}))
         after = json.loads(account.read_text())
-        self.assertEqual(after["projects"][str(new)], dict(cs.NEW_PROJECT, hasTrustDialogAccepted=True))   # (as Claude starts one)
+        self.assertEqual(after["projects"][str(new)], dict(td.NEW_PROJECT, hasTrustDialogAccepted=True))   # (as Claude starts one)
         self.assertEqual({k: v for k, v in after.items() if k != "projects"}, {k: v for k, v in before.items() if k != "projects"})
         with Patch(choose_folder=lambda title, start: (str(new), ""), ask_trust=lambda *a: self.fail("asked again")):
             self.assertTrue(jump.pick_folder(self.home, [], ".claude-work")[2]["trusted"])
@@ -896,8 +896,8 @@ class ChooseFolderTests(Fixture):
         self.assertIn("Claude settings of its own (.claude/settings.json)", said["trustQuestion"])
         self.assertEqual(jump.trust_folder(self.home, [], ".claude-work", str(repo / "src")), (True, "Trusted"))
         self.assertTrue(json.loads(account.read_text())["projects"][str(repo)]["hasTrustDialogAccepted"])
-        work = next(p for p in cs.discover_profiles(self.home, []) if cs.matches_profile(p, ".claude-work"))
-        self.assertTrue(cs.folder_trusted(work, str(repo / "src"), self.home))
+        work = next(p for p in td.discover_profiles(self.home, []) if td.matches_profile(p, ".claude-work"))
+        self.assertTrue(td.folder_trusted(work, str(repo / "src"), self.home))
         self.assertEqual(jump.trust_folder(self.home, [], ".claude-work", str(repo)), (True, "Trusted already"))
         # an entry Claude has for it already keeps what's in it; the home folder's trust is never kept
         data = json.loads(account.read_text())
@@ -957,17 +957,17 @@ class ResumeChatTests(Fixture):
         self.assertEqual((ok, msg, opened), (False, "That chat isn't running any more", []))
 
     def test_explains_trust_question(self):
-        cs.write_json_atomic(self.home / ".claude-personal/.claude.json", {"projects": {}})
-        prof = next(p for p in cs.discover_profiles(self.home) if p.label == "personal")
+        td.write_json_atomic(self.home / ".claude-personal/.claude.json", {"projects": {}})
+        prof = next(p for p in td.discover_profiles(self.home) if p.label == "personal")
         cmd = jump.resume_command(prof, "chatx", self.home, str(self.folder))
         self.assertIn("Claude will ask whether you trust ~/repos/w before", cmd)
         self.assertTrue(cmd.endswith("claude --resume chatx"))
 
     def test_profile_named_by_real_folder_or_path(self):
-        prof = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
-        self.assertTrue(cs.matches_profile(prof, ".claude-work"))
-        self.assertTrue(cs.matches_profile(prof, str(self.home / ".claude-work")))
-        self.assertFalse(cs.matches_profile(prof, ".claude-personal"))
+        prof = next(p for p in td.discover_profiles(self.home) if p.label == "work")
+        self.assertTrue(td.matches_profile(prof, ".claude-work"))
+        self.assertTrue(td.matches_profile(prof, str(self.home / ".claude-work")))
+        self.assertFalse(td.matches_profile(prof, ".claude-personal"))
 
 
 class SwitchedLinkTests(unittest.TestCase):
@@ -988,10 +988,10 @@ class SwitchedLinkTests(unittest.TestCase):
             try:
                 # Popen returns before exec has set up the new environment
                 for _ in range(500):
-                    if cs.proc_start_time(child.pid) and cs.process_config_dir(child.pid):
+                    if td.proc_start_time(child.pid) and td.process_config_dir(child.pid):
                         break
                     time.sleep(0.01)
-                start = cs.proc_start_time(child.pid)
+                start = td.proc_start_time(child.pid)
                 write(home / f".claude-work/sessions/{child.pid}.json",
                       {"pid": child.pid, "procStart": start, "sessionId": "s1", "kind": "interactive", "status": "busy"})
                 profile, entry, _, _ = jump.find_session(home, [], "s1", ".claude-personal")
@@ -1009,9 +1009,9 @@ class DismissHelperTests(unittest.TestCase):
             os.environ["XDG_CACHE_HOME"] = tmp
             try:
                 self.assertTrue(jump.dismiss(Path(tmp), [], "abc")[0])
-                self.assertIn("abc", cs.load_dismissed(cs.cache_dir(Path(tmp))))
+                self.assertIn("abc", td.load_dismissed(td.cache_dir(Path(tmp))))
                 self.assertEqual(jump.undismiss_all(Path(tmp), [])[1], "Showing 1 hidden chat again")
-                self.assertEqual(cs.load_dismissed(cs.cache_dir(Path(tmp))), {})
+                self.assertEqual(td.load_dismissed(td.cache_dir(Path(tmp))), {})
                 self.assertEqual(jump.undismiss_all(Path(tmp), [])[1], "No chat was hidden")
             finally:
                 if old is None:
@@ -1107,11 +1107,11 @@ class LinkedProfileTests(unittest.TestCase):
             (home / ".claude").symlink_to(home / ".claude-personal")
             write(cache / "statusline/.claude-personal/s1.json", {"context_window": {"used_percentage": 12},
                                                                   "rate_limits": {"five_hour": {"used_percentage": 7}}})
-            profiles = cs.discover_profiles(home)
+            profiles = td.discover_profiles(home)
             self.assertEqual([(p.label, sorted(p.snapshot_dirs)) for p in profiles],
                              [("personal", [".claude", ".claude-personal"])])
             self.assertEqual(profiles[0].path, home / ".claude-personal")  # named after itself, not the link
-            r = cs.collect(home, cache, with_tokens=False)
+            r = td.collect(home, cache, with_tokens=False)
             (group,) = r["groups"]
             self.assertEqual([s["sessionId"] for s in group["sessions"]], ["s1"])  # not listed twice
             self.assertEqual(group["sessions"][0]["context"], 12)
@@ -1142,19 +1142,19 @@ class FindClaudeTests(unittest.TestCase):
         return path
 
     def test_install_places_and_the_newest_nvm_node(self):
-        self.assertEqual(cs.find_claude(self.home), "claude")  # nowhere
+        self.assertEqual(td.find_claude(self.home), "claude")  # nowhere
         self.exe(self.home / ".nvm/versions/node/v9.11.2/bin/claude")
         newest = self.exe(self.home / ".nvm/versions/node/v20.3.0/bin/claude")
-        self.assertEqual(cs.find_claude(self.home), str(newest))
+        self.assertEqual(td.find_claude(self.home), str(newest))
         installer = self.exe(self.home / ".local/bin/claude")
-        self.assertEqual(cs.find_claude(self.home), str(installer))  # Claude's installer comes first
+        self.assertEqual(td.find_claude(self.home), str(installer))  # Claude's installer comes first
 
     def test_the_login_shells_path_only_when_asked(self):
         claude = self.exe(self.home / "tools/bin/claude")
         os.environ["SHELL"] = str(self.exe(self.home / "login-shell",
                                            f"#!/bin/sh\necho Welcome back\necho PATH={claude.parent}:/usr/bin\n"))
-        self.assertEqual(cs.find_claude(self.home), "claude")  # status checks never start a shell
-        self.assertEqual(cs.find_claude(self.home, ask_shell=True), str(claude))
+        self.assertEqual(td.find_claude(self.home), "claude")  # status checks never start a shell
+        self.assertEqual(td.find_claude(self.home, ask_shell=True), str(claude))
 
     def test_status_checks_ask_the_login_shell_once_an_hour(self):
         cache = self.home / "cache"
@@ -1163,23 +1163,23 @@ class FindClaudeTests(unittest.TestCase):
         os.environ["SHELL"] = str(self.exe(self.home / "login-shell",
                                            f"#!/bin/sh\necho x >> {asked}\necho PATH={claude.parent}\n"))
         now = 1000000.0
-        self.assertEqual(cs.cached_find_claude(self.home, cache, now), str(claude))
-        self.assertEqual(cs.cached_find_claude(self.home, cache, now + 60), str(claude))
+        self.assertEqual(td.cached_find_claude(self.home, cache, now), str(claude))
+        self.assertEqual(td.cached_find_claude(self.home, cache, now + 60), str(claude))
         self.assertEqual(asked.read_text().count("x"), 1)   # the second check used the first answer
         claude.unlink()   # uninstalled: noticed at once
-        self.assertIsNone(cs.cached_find_claude(self.home, cache, now + 120))
-        self.assertIsNone(cs.cached_find_claude(self.home, cache, now + 3700))   # an hour on: asked again
+        self.assertIsNone(td.cached_find_claude(self.home, cache, now + 120))
+        self.assertIsNone(td.cached_find_claude(self.home, cache, now + 3700))   # an hour on: asked again
         self.assertEqual(asked.read_text().count("x"), 2)
         found = self.exe(self.home / ".local/bin/claude")   # where it's usually installed: no shell needed
-        self.assertEqual(cs.cached_find_claude(self.home, cache, now + 3800), str(found))
+        self.assertEqual(td.cached_find_claude(self.home, cache, now + 3800), str(found))
         self.assertEqual(asked.read_text().count("x"), 2)
 
     def test_node_next_to_claude_goes_on_path(self):
         claude = self.exe(self.home / ".nvm/versions/node/v20.3.0/bin/claude")
-        self.assertEqual(cs.claude_words("claude"), "claude")
-        self.assertEqual(cs.claude_words(str(claude)), str(claude))
+        self.assertEqual(td.claude_words("claude"), "claude")
+        self.assertEqual(td.claude_words(str(claude)), str(claude))
         self.exe(claude.parent / "node")
-        self.assertEqual(cs.claude_words(str(claude)), f'PATH={claude.parent}:"$PATH" {claude}')
+        self.assertEqual(td.claude_words(str(claude)), f'PATH={claude.parent}:"$PATH" {claude}')
 
     def test_reopening_runs_it_by_its_full_path_or_says_what_to_do(self):
         folder = self.home / "proj"
@@ -1207,9 +1207,9 @@ class ClaudeGuardTests(unittest.TestCase):
 
     def test_a_test_with_no_fake_claude_finds_the_guards(self):
         with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}):
-            self.assertEqual(cs.find_claude(Path(home)), "claude")
-            self.assertEqual(cs.find_claude(Path(home), ask_shell=True), str(claude_guard.CLAUDE))
-        run = subprocess.run([cs.find_claude(Path("/nonexistent")), "--bg", "hi"], capture_output=True, text=True)
+            self.assertEqual(td.find_claude(Path(home)), "claude")
+            self.assertEqual(td.find_claude(Path(home), ask_shell=True), str(claude_guard.CLAUDE))
+        run = subprocess.run([td.find_claude(Path("/nonexistent")), "--bg", "hi"], capture_output=True, text=True)
         self.assertEqual(run.returncode, 97)
         self.assertEqual(claude_guard.ran()[-1:], ["--bg hi"])
         claude_guard.forget()   # (or this test would fail: it ran claude)
@@ -1300,7 +1300,7 @@ class SharedChatActionTests(unittest.TestCase):
 
     def test_shared_chat_shows_as_shared(self):
         self.run_action(jump.share)
-        r = cs.collect(self.home, self.home / "cache", with_tokens=False)
+        r = td.collect(self.home, self.home / "cache", with_tokens=False)
         self.assertTrue(r["canShare"])
         self.assertEqual(sorted(g["shareProfile"] for g in r["groups"]), [".claude", ".claude-work"])
         shared = [c for g in r["groups"] for c in g["recent"] if c["sessionId"] == self.CHAT]
@@ -1308,7 +1308,7 @@ class SharedChatActionTests(unittest.TestCase):
 
     def test_refuses_while_open_in_a_session(self):
         write(self.home / ".claude/sessions/50.json",
-              {"pid": os.getpid(), "procStart": cs.proc_start_time(os.getpid()), "sessionId": self.CHAT,
+              {"pid": os.getpid(), "procStart": td.proc_start_time(os.getpid()), "sessionId": self.CHAT,
                "kind": "interactive", "status": "idle"})
         for action, args in ((jump.continue_on, (".claude-work",)), (jump.share, ()), (jump.unshare, (".claude",))):
             (ok, msg), opened = self.run_action(action, *args)
@@ -1529,7 +1529,7 @@ class RemoteShowTests(unittest.TestCase):
         with Patch(raise_window=lambda *a, **k: raised.append(a) or True, ancestors=lambda pid: [pid, 400],
                    subprocess=fake, shutil=type("W", (), {"which": staticmethod(lambda n: "/usr/bin/" + n)}),
                    time=type("T", (), {"sleep": staticmethod(lambda s: None)})), \
-                mock.patch.object(cs, "find_chat_entry", return_value=entry):
+                mock.patch.object(td, "find_chat_entry", return_value=entry):
             link = "vscode://anthropic.claude-code/open?session=abc-123&prompt=hi"
             self.assertEqual(jump.open_vscode_link(Path("/home/me"), [], "abc-123", link), (True, ""))
             self.assertFalse(jump.open_vscode_link(Path("/home/me"), [], "abc-123", "file:///etc/passwd")[0])
@@ -1665,26 +1665,26 @@ class VscodeTerminalTests(unittest.TestCase):
                 break
             time.sleep(0.02)
         (command,) = map(int, command)
-        self.assertTrue(cs.is_vscode_terminal_host(host.pid))
-        self.assertEqual(cs.vscode_terminal(command), shell)  # the process VS Code started, not the host
-        self.assertEqual(cs.vscode_terminal(shell), shell)
-        self.assertIsNone(cs.vscode_terminal(1))
-        self.assertIsNone(cs.vscode_terminal(None))
+        self.assertTrue(td.is_vscode_terminal_host(host.pid))
+        self.assertEqual(td.vscode_terminal(command), shell)  # the process VS Code started, not the host
+        self.assertEqual(td.vscode_terminal(shell), shell)
+        self.assertIsNone(td.vscode_terminal(1))
+        self.assertIsNone(td.vscode_terminal(None))
         # the rows of an SSH host say so (only chats with a process, not VS Code's Claude tabs)
         rows = [{"key": f"x/{n}", "profileDir": "x", "pid": pid, "entrypoint": entrypoint, "kind": kind}
                 for n, (pid, entrypoint, kind) in enumerate([(command, "cli", "interactive"),
                                                              (command, "claude-vscode", "interactive"),
                                                              (None, "cli", "chat")])]
         result = {"groups": [{"chatProfile": None, "sessions": rows, "projects": [], "recent": [], "sharedHere": []}]}
-        cs.add_remote_commands(result, self.home, claude="/usr/bin/claude")
+        td.add_remote_commands(result, self.home, claude="/usr/bin/claude")
         self.assertEqual([s["vscodeTerminal"] for s in rows], [shell, None, None])
 
     def test_no_terminal_without_vscode(self):
         # (made up: these tests may well run in a VS Code terminal themselves)
-        real = cs.parent_pid
-        cs.parent_pid = {9000003: 9000002, 9000002: 9000001, 9000001: 1}.get  # past any pid_max
-        self.addCleanup(setattr, cs, "parent_pid", real)
-        self.assertIsNone(cs.vscode_terminal(9000003))
+        real = td.parent_pid
+        td.parent_pid = {9000003: 9000002, 9000002: 9000001, 9000001: 1}.get  # past any pid_max
+        self.addCleanup(setattr, td, "parent_pid", real)
+        self.assertIsNone(td.vscode_terminal(9000003))
 
     def test_a_chat_here_brings_its_terminal_up(self):
         # claude 500 ← sh 400 (the terminal) ← VS Code's terminal host 300 ← VS Code 200
@@ -1692,9 +1692,9 @@ class VscodeTerminalTests(unittest.TestCase):
         names = {300: "code", 200: "code"}
         entry = {"pid": 500, "cwd": "/home/me/app"}
         procs = dict(ancestors=lambda pid: chain.get(pid, []), proc_name=lambda pid: names.get(pid, "sh"))
-        real = cs.vscode_terminal
-        cs.vscode_terminal = lambda pid: {500: 400, 700: 650}.get(pid)
-        self.addCleanup(setattr, cs, "vscode_terminal", real)
+        real = td.vscode_terminal
+        td.vscode_terminal = lambda pid: {500: 400, 700: 650}.get(pid)
+        self.addCleanup(setattr, td, "vscode_terminal", real)
         self.extension("1.11.0")
         with Patch(**self.desktop, **procs), mock_home(self.home):
             ok, message = jump.jump_terminal(entry)
@@ -1770,7 +1770,7 @@ class JobIdTests(unittest.TestCase):
             p = mock.patch.object(target, name, record(name))
             p.start()
             self.addCleanup(p.stop)
-        profiles = mock.patch.object(cs, "discover_profiles", lambda home, extra=(): [
+        profiles = mock.patch.object(td, "discover_profiles", lambda home, extra=(): [
             mock.Mock(key=".claude-work", dirname=".claude-work")])
         profiles.start()
         self.addCleanup(profiles.stop)
@@ -1868,7 +1868,7 @@ class JobIdTests(unittest.TestCase):
 
     def test_taker_alive(self):
         jump.taker_alive = type(self).real_taker_alive
-        cache = cs.cache_dir(self.home)
+        cache = td.cache_dir(self.home)
         cache.mkdir(parents=True, exist_ok=True)
         now = int(time.time() * 1000)
         self.assertFalse(jump.taker_alive(self.home))
@@ -1927,7 +1927,7 @@ class JobIdTests(unittest.TestCase):
 
     def named(self, jobs):
         """The jobs file, listing these {id: name}."""
-        path = cs.jobs_file_path(self.home, cs.cache_dir(self.home))
+        path = td.jobs_file_path(self.home, td.cache_dir(self.home))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"version": 1, "jobs": [{"id": i, "name": n} for i, n in jobs.items()]}))
 
@@ -1971,7 +1971,7 @@ class JobIdTests(unittest.TestCase):
 
     def listed(self, *ids):
         """The jobs file, listing these ids."""
-        path = cs.jobs_file_path(self.home, cs.cache_dir(self.home))
+        path = td.jobs_file_path(self.home, td.cache_dir(self.home))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"version": 1, "updatedAt": 1, "jobs": [{"id": i, "name": "x"} for i in ids]}))
 
@@ -2068,10 +2068,10 @@ class JobIdTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_extra_config_dirs_from_the_shared_settings(self):
-        with mock.patch.object(cs, "shared_settings", lambda root: {"at": 1, "by": "plasma", "values": {
+        with mock.patch.object(td, "shared_settings", lambda root: {"at": 1, "by": "plasma", "values": {
                 "extraConfigDirs": " /data/claude-a, ,/data/claude-b"}}):
             self.assertEqual(jump.shared_extra_dirs(self.home), ["/data/claude-a", "/data/claude-b"])
-        with mock.patch.object(cs, "shared_settings", lambda root: None):
+        with mock.patch.object(td, "shared_settings", lambda root: None):
             self.assertEqual(jump.shared_extra_dirs(self.home), [])
 
     def test_main_job_takes_one_argument(self):
@@ -2275,14 +2275,14 @@ def mock_home(home):
 
 @contextlib.contextmanager
 def mock_vscode():
-    real = cs.vscode_app
-    cs.vscode_app = lambda: ("/usr/bin/code", "Code")
+    real = td.vscode_app
+    td.vscode_app = lambda: ("/usr/bin/code", "Code")
     try:
         with Patch(shutil=type("W", (), {"which": staticmethod(lambda n: "/usr/bin/" + n),
                                          "rmtree": staticmethod(shutil.rmtree)})):
             yield
     finally:
-        cs.vscode_app = real
+        td.vscode_app = real
 
 
 class PhoneTests(unittest.TestCase):

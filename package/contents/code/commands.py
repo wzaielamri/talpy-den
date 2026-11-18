@@ -22,7 +22,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import talpy_den as cs
+import talpy_den as td
 
 # ---------------------------------------------------------------- Claude's own commands
 #
@@ -160,12 +160,12 @@ def command_files(folder, scope):
     except OSError:
         return out
     for f in files:
-        head = cs.read_plain(f, 4000, head=True)  # (only its start: a plain file, a repository's link to a device isn't read)
+        head = td.read_plain(f, 4000, head=True)  # (only its start: a plain file, a repository's link to a device isn't read)
         if head is None:
             continue
         meta, first = front_matter(head.decode("utf-8", "replace"))
         name = ":".join(f.relative_to(folder).with_suffix("").parts)
-        out.append({"name": "/" + name, "about": cs.short_text(meta.get("description") or first, 100), "kind": scope,
+        out.append({"name": "/" + name, "about": td.short_text(meta.get("description") or first, 100), "kind": scope,
                     "run": "here"})
     return out
 
@@ -178,11 +178,11 @@ def skill_dirs(folder, scope):
     except OSError:
         return out
     for d in dirs:
-        head = cs.read_plain(d / "SKILL.md", 4000, head=True)
+        head = td.read_plain(d / "SKILL.md", 4000, head=True)
         if head is None:
             continue
         meta, first = front_matter(head.decode("utf-8", "replace"))
-        out.append({"name": "/" + (meta.get("name") or d.name), "about": cs.short_text(meta.get("description") or first, 100),
+        out.append({"name": "/" + (meta.get("name") or d.name), "about": td.short_text(meta.get("description") or first, 100),
                     "kind": scope + " skill", "run": "here"})
     return out
 
@@ -217,7 +217,7 @@ def past_prompts(profile, cwd):
     """Your prompts in that folder (or the one it's in: a chat that started
     there and went into it), newest first, each once (history.jsonl)."""
     out, seen = [], set()
-    for e in reversed(cs.history_tail(profile)):
+    for e in reversed(td.history_tail(profile)):
         text, project = e.get("display"), e.get("project")
         if not isinstance(text, str) or not text.strip() or text in seen:
             continue

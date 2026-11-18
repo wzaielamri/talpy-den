@@ -18,7 +18,7 @@ sys.path.insert(0, str(CODE))
 spec = importlib.util.spec_from_file_location("accounts", CODE / "accounts.py")
 accounts = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(accounts)
-cs = accounts.cs
+td = accounts.td
 import jump  # noqa: E402  (accounts.py opens its terminals through it)
 
 from test_talpy_den import session, write  # noqa: E402
@@ -90,8 +90,8 @@ class Home(unittest.TestCase):
         self.opened = []
         self.patches = [
             mock.patch.object(jump, "open_terminal", lambda cwd, cmd: self.opened.append((cwd, cmd)) or True),
-            mock.patch.object(cs, "vscode_profile", lambda *a, **k: (False, None)),
-            mock.patch.object(cs, "login_shell_path", lambda home: ""),
+            mock.patch.object(td, "vscode_profile", lambda *a, **k: (False, None)),
+            mock.patch.object(td, "login_shell_path", lambda home: ""),
         ]
         for p in self.patches:
             p.start()
@@ -126,7 +126,7 @@ class AddTests(Home):
         self.assertEqual(folder.stat().st_mode & 0o777, 0o700)
         self.assertEqual(profile.key, ".claude-side")
         # the status check lists it, as an account to log in
-        result = cs.collect(self.home, cs.cache_dir(self.home), with_tokens=False)
+        result = td.collect(self.home, td.cache_dir(self.home), with_tokens=False)
         group = next(g for g in result["groups"] if g["name"] == "side")
         self.assertTrue(group["loggedOut"])
         self.assertIsNone(group["limits"])
@@ -270,7 +270,7 @@ class LoginTests(Home):
         self.assertEqual(self.calls_made()[-1], {"args": ["auth", "logout"], "dir": str(self.home / ".claude-work")})
         # the popup says so, though the folder has chats (and no .profile-name)
         (self.home / ".claude-work/.profile-name").unlink()
-        result = cs.collect(self.home, cs.cache_dir(self.home), with_tokens=False)
+        result = td.collect(self.home, td.cache_dir(self.home), with_tokens=False)
         self.assertTrue(next(g for g in result["groups"] if g["name"] == "work")["loggedOut"])
         self.assertFalse(self.listed()[".claude-work"]["loggedIn"])
 
@@ -330,7 +330,7 @@ class RemoveTests(Home):
         write(self.home / ".claude-work/sessions/1.json", session("busy", status="busy"))
         self.assertIn("A chat runs on it", accounts.remove_account(self.home, [], ".claude-work")[1])
         (self.home / ".claude-work/sessions/1.json").unlink()
-        with mock.patch.object(cs, "vscode_profile", lambda home, profiles, *a, **k: (True, profiles[1])):
+        with mock.patch.object(td, "vscode_profile", lambda home, profiles, *a, **k: (True, profiles[1])):
             self.assertIn("VS Code's Claude runs on it", accounts.remove_account(self.home, [], ".claude-work")[1])
         extra = Path(self.tmp.name) / "elsewhere"
         write(extra / ".profile-name", "elsewhere")
@@ -383,7 +383,7 @@ class RemoveTests(Home):
         self.add("third", share_from=".claude-work")
         third = self.home / ".claude-third"
         default = lambda home, profiles, *a, **k: (True, next(p for p in profiles if p.label == "third"))  # noqa: E731
-        with mock.patch.object(cs, "vscode_profile", default):
+        with mock.patch.object(td, "vscode_profile", default):
             self.assertIn("CLAUDE.md to third (side keeps sharing it there)", self.listed()[".claude-work"]["handOver"])
             self.assertTrue(accounts.remove_account(self.home, [], ".claude-work")[0])
         self.assertEqual((third / "CLAUDE.md").read_text(), "work's rules")
@@ -400,7 +400,7 @@ class RemoveTests(Home):
         (third / "skills").mkdir()
         os.symlink(self.home / ".claude-work/skills/a", third / "skills/a")
         default = lambda home, profiles, *a, **k: (True, next(p for p in profiles if p.label == "side"))  # noqa: E731
-        with mock.patch.object(cs, "vscode_profile", default):
+        with mock.patch.object(td, "vscode_profile", default):
             self.assertIn("skills to side (third keeps sharing it there)", self.listed()[".claude-work"]["handOver"])
             self.assertTrue(accounts.remove_account(self.home, [], ".claude-work")[0])
         self.assertEqual(os.readlink(third / "skills/a"), os.path.realpath(side / "skills/a"))
@@ -494,8 +494,8 @@ class LinkedHome(Home):
         write(self.settings, '{\n    // my editor\n    "editor.fontSize": 14,\n    "claudeCode.environmentVariables": [\n'
                              '        {"name": "CLAUDE_CONFIG_DIR", "value": "%s"}\n    ],\n}\n' % (self.home / ".claude-personal"))
         self.children = []
-        self.patches.append(mock.patch.object(cs, "vscode_app", lambda: ("/usr/bin/code", "Code")))
-        self.patches.append(mock.patch.object(cs, "vscode_running_config_dir", lambda: (False, None)))
+        self.patches.append(mock.patch.object(td, "vscode_app", lambda: ("/usr/bin/code", "Code")))
+        self.patches.append(mock.patch.object(td, "vscode_running_config_dir", lambda: (False, None)))
         self.patches.pop(1).stop()  # the real vscode_profile: it reads the settings above
         for p in self.patches[-2:]:
             p.start()
@@ -512,15 +512,15 @@ class LinkedHome(Home):
         child = subprocess.Popen(["sleep", "120"], env=env)
         self.children.append(child)
         for _ in range(500):
-            if cs.proc_start_time(child.pid) and cs.process_config_dir(child.pid):
+            if td.proc_start_time(child.pid) and td.process_config_dir(child.pid):
                 break
             time.sleep(0.01)
         write(self.home / ".claude-work/sessions" / f"{child.pid}.json",
-              session("chat", pid=child.pid, procStart=cs.proc_start_time(child.pid)))
+              session("chat", pid=child.pid, procStart=td.proc_start_time(child.pid)))
 
     def first(self):
-        result = cs.collect(self.home, cs.cache_dir(self.home), with_tokens=False)
-        cs.add_vscode(result, self.home)
+        result = td.collect(self.home, td.cache_dir(self.home), with_tokens=False)
+        td.add_vscode(result, self.home)
         return [(g["name"], g["defaultHere"], g["vscodeHere"], g["plainHere"]) for g in result["groups"]]
 
 
@@ -532,7 +532,7 @@ class DefaultTests(LinkedHome):
         self.assertTrue(listed[".claude-work"]["main"])
 
     def test_without_vscode_plain_claudes(self):
-        with mock.patch.object(cs, "vscode_app", lambda: (None, None)):
+        with mock.patch.object(td, "vscode_app", lambda: (None, None)):
             self.assertEqual(self.first()[0], ("work", True, False, True))
 
     def test_make_default_points_both_there(self):
@@ -541,7 +541,7 @@ class DefaultTests(LinkedHome):
         self.assertEqual(os.readlink(self.home / ".claude"), str(self.home / ".claude-personal"))
         text = self.settings.read_text()
         self.assertIn("// my editor", text)  # the rest of the file as it was
-        self.assertEqual(cs.jsonc(text)["claudeCode.environmentVariables"],
+        self.assertEqual(td.jsonc(text)["claudeCode.environmentVariables"],
                          [{"name": "CLAUDE_CONFIG_DIR", "value": str(self.home / ".claude")}])  # follows the link now
         self.assertIn(": plain claude runs on it", message)
         # and back: VS Code follows the link, plain claude moves
@@ -597,11 +597,11 @@ class DefaultTests(LinkedHome):
         child = subprocess.Popen(["sleep", "120"])
         self.children.append(child)
         for _ in range(500):
-            if cs.proc_start_time(child.pid):
+            if td.proc_start_time(child.pid):
                 break
             time.sleep(0.01)
         write(self.home / ".claude-personal/sessions" / f"{child.pid}.json",
-              session("panel", pid=child.pid, procStart=cs.proc_start_time(child.pid), entrypoint="claude-vscode",
+              session("panel", pid=child.pid, procStart=td.proc_start_time(child.pid), entrypoint="claude-vscode",
                       status="busy"))
         ok, message = accounts.make_default(self.home, [], ".claude-work")
         self.assertFalse(ok)
@@ -609,7 +609,7 @@ class DefaultTests(LinkedHome):
         self.assertEqual(os.readlink(self.home / ".claude"), str(self.home / ".claude-work"))  # nothing changed
         # done working: it may switch
         write(self.home / ".claude-personal/sessions" / f"{child.pid}.json",
-              session("panel", pid=child.pid, procStart=cs.proc_start_time(child.pid), entrypoint="claude-vscode"))
+              session("panel", pid=child.pid, procStart=td.proc_start_time(child.pid), entrypoint="claude-vscode"))
         self.assertTrue(accounts.make_default(self.home, [], ".claude-work")[0])
 
     def test_a_chat_on_the_folders_own_name_doesnt_move(self):
@@ -626,7 +626,7 @@ class DefaultTests(LinkedHome):
         self.assertEqual(self.first()[0][0], "personal")
         # the main folder as the default: VS Code's Claude without the variable
         self.assertTrue(accounts.make_default(self.home, [], ".claude")[0])
-        self.assertEqual(cs.jsonc(self.settings.read_text())["claudeCode.environmentVariables"], [])
+        self.assertEqual(td.jsonc(self.settings.read_text())["claudeCode.environmentVariables"], [])
 
     def test_no_main_folder_gets_no_link(self):
         # only ~/.claude-NAME folders: a link made there would mix accounts
@@ -637,7 +637,7 @@ class DefaultTests(LinkedHome):
         self.assertFalse(os.path.lexists(self.home / ".claude"))
         self.assertIn("plain claude has no ~/.claude here: run claude-work", message)
         self.assertEqual(self.first()[0][0], "work")  # VS Code's Claude runs on it now
-        with mock.patch.object(cs, "vscode_app", lambda: (None, None)):
+        with mock.patch.object(td, "vscode_app", lambda: (None, None)):
             listed = accounts.list_accounts(self.home, [])[2]
         self.assertFalse(listed["canDefault"])  # nothing Make Default could change
         self.assertTrue(accounts.list_accounts(self.home, [])[2]["canDefault"])
@@ -655,16 +655,16 @@ class HideTests(LinkedHome):
     Claude runs on it; ~/.claude links to work)."""
 
     def status(self):
-        result = cs.collect(self.home, cs.cache_dir(self.home), with_tokens=False)
-        cs.add_vscode(result, self.home)
+        result = td.collect(self.home, td.cache_dir(self.home), with_tokens=False)
+        td.add_vscode(result, self.home)
         return [g["name"] for g in result["groups"]], [g["name"] for g in result["hiddenGroups"]], result
 
     def test_nothing_of_a_hidden_account_is_read(self):
         self.assertTrue(accounts.hide_account(self.home, [], ".claude-work", True)[0])
         read = []
-        history_tail, live_entries_all = cs.history_tail, cs.live_entries_all
-        with mock.patch.object(cs, "history_tail", lambda p: read.append(p.key) or history_tail(p)), \
-                mock.patch.object(cs, "live_entries_all", lambda ps: read.extend(p.key for p in ps) or live_entries_all(ps)):
+        history_tail, live_entries_all = td.history_tail, td.live_entries_all
+        with mock.patch.object(td, "history_tail", lambda p: read.append(p.key) or history_tail(p)), \
+                mock.patch.object(td, "live_entries_all", lambda ps: read.extend(p.key for p in ps) or live_entries_all(ps)):
             self.status()
         self.assertEqual(set(read), {".claude-personal"})
 
@@ -685,8 +685,8 @@ class HideTests(LinkedHome):
         ok, message = accounts.hide_account(self.home, [], ".claude-personal", True)
         self.assertFalse(ok)
         self.assertIn("personal is the default account", message)
-        self.assertEqual(cs.load_hidden(cs.cache_dir(self.home))["accounts"], {})
-        with mock.patch.object(cs, "default_profile", lambda *a, **k: (False, None, None, None)):
+        self.assertEqual(td.load_hidden(td.cache_dir(self.home))["accounts"], {})
+        with mock.patch.object(td, "default_profile", lambda *a, **k: (False, None, None, None)):
             self.assertTrue(accounts.hide_account(self.home, [], ".claude-work", True)[0])
             ok, message = accounts.hide_account(self.home, [], ".claude-personal", True)
         self.assertFalse(ok)
@@ -707,20 +707,20 @@ class HideTests(LinkedHome):
     def test_the_default_shows_again(self):
         self.assertTrue(accounts.hide_account(self.home, [], ".claude-work", True)[0])
         self.assertTrue(accounts.make_default(self.home, [], ".claude-work")[0])
-        self.assertEqual(cs.load_hidden(cs.cache_dir(self.home))["accounts"], {})
+        self.assertEqual(td.load_hidden(td.cache_dir(self.home))["accounts"], {})
         # made the default elsewhere (VS Code's own setting): the status forgets its hide
         self.assertTrue(accounts.hide_account(self.home, [], ".claude-personal", True)[0])
         write(self.settings, '{"claudeCode.environmentVariables": [{"name": "CLAUDE_CONFIG_DIR", "value": "%s"}]}'
               % (self.home / ".claude-personal"))
         self.assertEqual(self.status()[:2], (["personal", "work"], []))
-        self.assertEqual(cs.load_hidden(cs.cache_dir(self.home))["accounts"], {})
+        self.assertEqual(td.load_hidden(td.cache_dir(self.home))["accounts"], {})
 
     def test_from_the_command_line(self):
         out = io.StringIO()
         with mock.patch("sys.stdout", out):
             accounts.main(["--hide", ".claude-work"])
         self.assertTrue(json.loads(out.getvalue())["ok"])
-        self.assertIn(".claude-work", cs.load_hidden(cs.cache_dir(self.home))["accounts"])
+        self.assertIn(".claude-work", td.load_hidden(td.cache_dir(self.home))["accounts"])
 
 
 class CommandLineTests(unittest.TestCase):

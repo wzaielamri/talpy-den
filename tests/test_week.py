@@ -18,7 +18,7 @@ sys.path.insert(0, str(CODE))
 spec = importlib.util.spec_from_file_location("week", CODE / "week.py")
 week = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(week)
-cs = week.cs
+td = week.td
 
 MIN = 60_000
 
@@ -133,7 +133,7 @@ class Home(unittest.TestCase):
         return path
 
     def profiles(self):
-        return cs.discover_profiles(self.home)
+        return td.discover_profiles(self.home)
 
     def scan(self, cache=None):
         cache = cache if cache is not None else {"files": {}}
@@ -389,7 +389,7 @@ class RecapTests(Home):
         self.write(Transcript().prompt(t0).reply(t0 + 60_000, "b").duration(t0 + 60_000, 60_000), chat="chat-p",
                    profile="personal")
         cache = self.scan()  # (read before it was hidden: the cache has it)
-        cs.change_hidden(self.cache_root, "accounts", add=".claude-personal")
+        td.change_hidden(self.cache_root, "accounts", add=".claude-personal")
         profiles, skip = week.shown_profiles(self.home, (), self.cache_root)
         self.assertEqual(([p.key for p in profiles], skip), ([".claude-work"], {".claude-personal"}))
         chats = week.chats_between(cache, profiles, self.now - 14 * week.DAY_MS, self.now + week.DAY_MS, self.home, skip)
@@ -684,8 +684,8 @@ class HistoryTests(Home):
     def test_off_it_keeps_only_what_claude_has(self):
         self.deleted.unlink()
         self.worked()
-        past = self.cache_root / week.cs.USAGE_PAST_FILE  # (the plan windows that ended go too)
-        week.cs.write_json_atomic(past, {"version": 1, "windows": [{"key": "five_hour"}]})
+        past = self.cache_root / week.td.USAGE_PAST_FILE  # (the plan windows that ended go too)
+        week.td.write_json_atomic(past, {"version": 1, "windows": [{"key": "five_hour"}]})
         self.assertEqual(week.history_status(self.cache_root)["planWindows"], 1)  # (so the question asks)
         # (it says how many chats it forgot, as the question before counted them)
         self.assertEqual(week.set_history(self.cache_root, False),
@@ -717,8 +717,8 @@ class HistoryTests(Home):
     def test_forget_starts_again_from_the_transcripts(self):
         self.deleted.unlink()
         self.worked()
-        past = self.cache_root / week.cs.USAGE_PAST_FILE
-        week.cs.write_json_atomic(past, {"version": 1, "windows": []})
+        past = self.cache_root / week.td.USAGE_PAST_FILE
+        week.td.write_json_atomic(past, {"version": 1, "windows": []})
         self.assertTrue(week.forget_history(self.cache_root)[0])
         self.assertFalse((self.cache_root / week.CACHE_FILE).exists())
         self.assertFalse(past.exists())
@@ -1355,12 +1355,12 @@ class DoneTests(Home):
 class PlanTests(Home):
     def test_how_the_windows_filled(self):
         profiles = self.profiles()
-        gid = {m.label: cs.short_id(g) for g, members in cs.group_profiles(profiles) for m in members}
+        gid = {m.label: td.short_id(g) for g, members in td.group_profiles(profiles) for m in members}
         t0 = self.t0
         usage = {"groups": {gid["work"]: {"five_hour": {"resetsAt": t0 + 3600_000, "points": [[t0, 10], [t0 + 60_000, 25]]},
                                           "seven_day": {"resetsAt": t0 + 7 * week.DAY_MS, "points": [[t0, 40]]},
                                           "somewhere": {"points": [[t0, 1]]}}}}
-        cs.write_json_atomic(self.cache_root / "usage.json", usage)
+        td.write_json_atomic(self.cache_root / "usage.json", usage)
         plans = week.plan_windows(self.cache_root, profiles, t0 + 60_000)
         self.assertEqual([(p["name"], [(w["key"], w["label"], w["pct"]) for w in p["windows"]]) for p in plans],
                          [("work", [("five_hour", "5h", 25), ("seven_day", "7d", 40)])])
@@ -1382,13 +1382,13 @@ class PlanTests(Home):
             "fetchedAtMs": t0 + 120_000, "accountUuid": "acct-pro", "utilization": {
                 "five_hour": {"utilization": 100, "resets_at": resets}}}}))
         profiles = self.profiles()
-        gid = {m.label: cs.short_id(g) for g, members in cs.group_profiles(profiles) for m in members}
-        cs.write_json_atomic(self.cache_root / "usage.json", {"groups": {gid["personal"]: {
+        gid = {m.label: td.short_id(g) for g, members in td.group_profiles(profiles) for m in members}
+        td.write_json_atomic(self.cache_root / "usage.json", {"groups": {gid["personal"]: {
             "five_hour": {"resetsAt": resets, "points": [[t0, 90], [t0 + 60_000, 32]]}}}})
         (five,) = {p["name"]: p["windows"] for p in week.plan_windows(self.cache_root, profiles, t0 + 180_000)}["personal"]
         self.assertEqual((five["pct"], five["points"][-1]), (100, [t0 + 120_000, 100]))
         # one of another window by now (the one on record is over): that one's, nothing drawn yet
-        cs.write_json_atomic(self.cache_root / "usage.json", {"groups": {gid["personal"]: {
+        td.write_json_atomic(self.cache_root / "usage.json", {"groups": {gid["personal"]: {
             "five_hour": {"resetsAt": t0 - 3600_000, "points": [[t0 - 7200_000, 50]]}}}})
         (five,) = {p["name"]: p["windows"] for p in week.plan_windows(self.cache_root, profiles, t0 + 180_000)}["personal"]
         self.assertEqual((five["pct"], five["resetsAt"], five["points"]), (100, resets, []))
@@ -1397,11 +1397,11 @@ class PlanTests(Home):
         # as on the Chats tab: no reply since the 5-hour window reset at 11:00
         # (after a limit stop), and its 97% and "resets 11:00" were shown at 18:00
         profiles = self.profiles()
-        gid = {m.label: cs.short_id(g) for g, members in cs.group_profiles(profiles) for m in members}
+        gid = {m.label: td.short_id(g) for g, members in td.group_profiles(profiles) for m in members}
         t0 = self.t0
         usage = {"groups": {gid["work"]: {"five_hour": {"resetsAt": t0 + 3600_000, "points": [[t0, 10], [t0 + 60_000, 97]]},
                                           "seven_day": {"resetsAt": t0 + 7 * week.DAY_MS, "points": [[t0, 40]]}}}}
-        cs.write_json_atomic(self.cache_root / "usage.json", usage)
+        td.write_json_atomic(self.cache_root / "usage.json", usage)
         five, seven = week.plan_windows(self.cache_root, profiles, self.now)[0]["windows"]
         self.assertEqual((five["pct"], five["resetsAt"], five["reset"], five["points"]), (0, None, True, []))
         self.assertEqual((seven["pct"], seven["resetsAt"], seven["reset"]), (40, t0 + 7 * week.DAY_MS, False))
@@ -1417,9 +1417,9 @@ class PlanTests(Home):
                 "five_hour": {"utilization": 0, "resets_at": None},
                 "seven_day": {"utilization": 96, "resets_at": "2026-10-24T22:00:00+00:00"}}}}))
         profiles = self.profiles()
-        gid = {m.label: cs.short_id(g) for g, members in cs.group_profiles(profiles) for m in members}
-        resets = cs.to_ms("2026-10-24T22:00:00+00:00")
-        cs.write_json_atomic(self.cache_root / "usage.json",
+        gid = {m.label: td.short_id(g) for g, members in td.group_profiles(profiles) for m in members}
+        resets = td.to_ms("2026-10-24T22:00:00+00:00")
+        td.write_json_atomic(self.cache_root / "usage.json",
                              {"groups": {gid["personal"]: {"seven_day": {"resetsAt": resets, "points": [[t0 - 60_000, 95], [t0, 96]]}}}})
         plans = {p["name"]: p["windows"] for p in week.plan_windows(self.cache_root, profiles, t0 + 60_000)}
         self.assertEqual([(w["key"], w["pct"], w["resetsAt"], w["reset"], len(w["points"])) for w in plans["personal"]],
@@ -1439,7 +1439,7 @@ class YourPlanTests(Home):
     def setUp(self):
         super().setUp()
         profiles = self.profiles()
-        self.gid = {m.label: cs.short_id(g) for g, members in cs.group_profiles(profiles) for m in members}
+        self.gid = {m.label: td.short_id(g) for g, members in td.group_profiles(profiles) for m in members}
         work = self.gid["work"]
         five = lambda resets, *points: {"group": work, "key": "five_hour", "plan": "Team", "resetsAt": resets,
                                         "points": [list(p) for p in points]}
@@ -1448,7 +1448,7 @@ class YourPlanTests(Home):
         # reading on the 22nd (12%, back to 25% half an hour later) and a
         # reading a point lower from another source: 10 + 15 + 5 used then,
         # and 10 more today (usage.json, the window going on)
-        cs.write_json_atomic(self.cache_root / cs.USAGE_PAST_FILE, {"version": 1, "windows": [
+        td.write_json_atomic(self.cache_root / td.USAGE_PAST_FILE, {"version": 1, "windows": [
             {"group": work, "key": "seven_day", "plan": "Team", "resetsAt": at(20, 10),
              "points": [[at(13, 10, 1), 0], [at(17, 12), 40], [at(18, 12), 50], [at(19, 12), 60]]},
             five(at(22, 15), (at(22, 10, 5), 5), (at(22, 12), 100)),   # (ran full)
@@ -1456,7 +1456,7 @@ class YourPlanTests(Home):
             five(at(24, 15), (at(24, 10, 30), 20), (at(24, 11), 60)),
             five(at(10, 15), (at(10, 12), 100)),   # (before these days)
         ]})
-        cs.write_json_atomic(self.cache_root / "usage.json", {"groups": {work: {"seven_day": {"resetsAt": at(27, 10), "points": [
+        td.write_json_atomic(self.cache_root / "usage.json", {"groups": {work: {"seven_day": {"resetsAt": at(27, 10), "points": [
             [at(20, 11), 0], [at(21, 12), 10], [at(22, 12), 25], [at(22, 12, 30), 12], [at(22, 13), 25], [at(22, 14), 24],
             [at(23, 12), 30], [at(24, 12), 40]]}}}})
         # Thu 23 at 13:10 the 5-hour window ran out (it resets at 17:00): it
@@ -1538,7 +1538,7 @@ class LimitHistoryTests(Home):
         (d / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
 
     def gid(self, label):
-        return {m.label: cs.short_id(g) for g, members in cs.group_profiles(self.profiles()) for m in members}[label]
+        return {m.label: td.short_id(g) for g, members in td.group_profiles(self.profiles()) for m in members}[label]
 
     def window(self, t, start, n, usd=2.0, model="claude-opus-5-5", every=10 * MIN):
         price = {"claude-opus-5-5": 20, "claude-sonnet-5-5": 10}[model]
@@ -1548,7 +1548,7 @@ class LimitHistoryTests(Home):
         return start + (n - 1) * every
 
     def past(self, *windows):
-        cs.write_json_atomic(self.cache_root / cs.USAGE_PAST_FILE, {"version": 1, "windows": list(windows)})
+        td.write_json_atomic(self.cache_root / td.USAGE_PAST_FILE, {"version": 1, "windows": list(windows)})
 
     def history(self, account=""):
         return week.limit_history(self.cache_root, self.profiles(), self.now, account, self.home)
@@ -1575,7 +1575,7 @@ class LimitHistoryTests(Home):
         self.write(t)
         self.past(*past)
         weekly_at = reset - 4 * week.DAY_MS + 2 * 3600_000  # (after the three windows: $48)
-        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
+        td.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
             "seven_day": {"resetsAt": reset, "points": [[reset - week.WEEK_MS + 3600_000, 0], [weekly_at, 20]]}}}})
         return reset
 
@@ -1629,7 +1629,7 @@ class LimitHistoryTests(Home):
         reset = self.now + 2 * week.DAY_MS
         weekly = json.loads((self.cache_root / "usage.json").read_text())["groups"][gid]["seven_day"]
         weekly["points"] += [[s + 100 * MIN, 35], [s + 160 * MIN, 7], [s + 170 * MIN, 7]]
-        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {gid: {
+        td.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {gid: {
             "seven_day": weekly,
             "five_hour": {"resetsAt": s + 5 * 3600_000, "points": [[s, 0], [s + 95 * MIN, 100], [s + 160 * MIN, 20],
                                                                     [s + 170 * MIN, 20]]}}}})
@@ -1649,7 +1649,7 @@ class LimitHistoryTests(Home):
 
     def test_too_few_windows_to_compare(self):
         self.two_weeks()
-        data = json.loads((self.cache_root / cs.USAGE_PAST_FILE).read_text())
+        data = json.loads((self.cache_root / td.USAGE_PAST_FILE).read_text())
         self.past(*data["windows"][:-1])  # (two this week)
         self.assertEqual(self.of(self.history(), "work")["changes"]["fiveHour"]["kind"], "few")
 
@@ -1658,7 +1658,7 @@ class LimitHistoryTests(Home):
         # its first reading at 0%, not from its start a week before
         reset = self.two_weeks()
         began = reset - 5 * week.DAY_MS - 3600_000  # (after this week's first window: $32 since)
-        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
+        td.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
             "seven_day": {"resetsAt": reset, "points": [[began, 0], [reset - 4 * week.DAY_MS + 2 * 3600_000, 20]]}}}})
         weeks = self.of(self.history(), "work")["periods"][1]["weeks"]
         self.assertEqual(weeks["seven_day"]["cost"], 160)  # ($32 of two windows since it began)
@@ -1674,7 +1674,7 @@ class LimitHistoryTests(Home):
         self.window(t, s, 10)
         self.write(t, chat="today")
         reset = self.now + 2 * week.DAY_MS
-        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
+        td.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
             "five_hour": {"resetsAt": s + 5 * 3600_000, "points": [[s + m * MIN, p] for m, p in five]},
             "seven_day": {"resetsAt": reset, "points": [[reset - week.WEEK_MS + 3600_000, 0]] +
                           [[s + m * MIN, p] for m, p in week_points]}}}})
@@ -1722,14 +1722,14 @@ class LimitHistoryTests(Home):
         # this week's third 5-hour window read 50% after $8 where the others
         # did after $16: $32, $32 and $16 hold no one size to compare
         self.two_weeks()
-        data = json.loads((self.cache_root / cs.USAGE_PAST_FILE).read_text())
+        data = json.loads((self.cache_root / td.USAGE_PAST_FILE).read_text())
         points = data["windows"][-1]["points"]
         points[-1][0] = points[0][0] + 35 * MIN  # (4 replies of $2 by then)
         self.past(*data["windows"])
         usage = json.loads((self.cache_root / "usage.json").read_text())
         weekly = usage["groups"][self.gid("work")]["seven_day"]
         weekly["points"].append([weekly["points"][-1][0] + 3600_000, 40])  # (the week's readings: $240 and $120)
-        cs.write_json_atomic(self.cache_root / "usage.json", usage)
+        td.write_json_atomic(self.cache_root / "usage.json", usage)
         work = self.of(self.history(), "work")
         self.assertEqual(work["periods"][1]["fiveHour"], {"cost": 32, "n": 3, "lo": 16, "hi": 32, "rough": True})
         self.assertEqual(work["changes"]["fiveHour"]["kind"], "rough")  # (no ▼ 20% from it)
@@ -1776,7 +1776,7 @@ class LimitHistoryTests(Home):
         self.write(t)
         past.append({"group": gid, "key": "seven_day", "plan": "Team", "resetsAt": r1, "points": weekly[r1]})
         self.past(*past)
-        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {gid: {
+        td.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {gid: {
             "seven_day": {"resetsAt": r2, "points": weekly[r2]}}}})
         work = self.of(self.history(), "work")
         sizes = [w["full"] for w in work["windows"]]
@@ -1814,7 +1814,7 @@ class LimitHistoryTests(Home):
         self.write(t, profile="personal")
         at = s + 2 * 3600_000
         start = reset - week.WEEK_MS
-        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("personal"): {
+        td.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("personal"): {
             "seven_day": {"resetsAt": reset, "points": [[start, 0], [at, 30]]},
             "seven_day_opus": {"resetsAt": reset, "points": [[start, 0], [at, 20]]},
             "seven_day_sonnet": {"resetsAt": reset, "points": [[start, 0], [at, 25]]}}}})
@@ -1830,7 +1830,7 @@ class LimitHistoryTests(Home):
         path = self.write(t, chat="shared")
         other = self.home / ".claude-personal/projects/-w/shared.jsonl"
         os.link(str(path), str(other))  # (one file in both profiles: sharing.py)
-        cs.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("personal"): {
+        td.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("personal"): {
             "five_hour": {"resetsAt": s + 5 * 3600_000, "points": [[s, 0], [s + 95 * MIN, 50]]}}}})
         self.assertEqual(self.of(self.history(), "personal")["windows"], [])  # (no sign of who ran it: left out)
         (self.home / ".claude-personal/history.jsonl").write_text(
@@ -1843,27 +1843,27 @@ class LimitHistoryTests(Home):
         last = self.window(t, s, 10)
         self.write(t.duration(last + 1000, 60_000), chat="sess")
         snap = self.cache_root / "statusline/.claude-work/sess.json"
-        cs.write_json_atomic(snap, {"session_id": "sess", "rate_limits": {
+        td.write_json_atomic(snap, {"session_id": "sess", "rate_limits": {
             "five_hour": {"used_percentage": 50, "resets_at": (s + 5 * 3600_000) // 1000}}})
         os.utime(str(snap), ((last + 5 * MIN) / 1000, (last + 5 * MIN) / 1000))
         (work,) = [a for a in self.history()["accounts"] if a["name"] == "work"]
         self.assertEqual(work["windows"][0]["at"], last + 5 * MIN)  # (when it was written)
         self.assertEqual(work["windows"][0]["full"], 40)
-        kept = json.loads((self.cache_root / cs.USAGE_PAST_FILE).read_text())["windows"]
+        kept = json.loads((self.cache_root / td.USAGE_PAST_FILE).read_text())["windows"]
         self.assertEqual([(w["key"], w["group"]) for w in kept], [("five_hour", self.gid("work"))])
         # (kept also while a status check holds the lock a moment)
-        (self.cache_root / cs.USAGE_PAST_FILE).unlink()
+        (self.cache_root / td.USAGE_PAST_FILE).unlink()
         import fcntl
         import threading
         fd = os.open(str(self.cache_root / "tokens.lock"), os.O_CREAT | os.O_RDWR, 0o600)
         fcntl.flock(fd, fcntl.LOCK_EX)
         threading.Timer(0.3, lambda: os.close(fd)).start()
         self.history()
-        self.assertTrue((self.cache_root / cs.USAGE_PAST_FILE).exists())
-        (self.cache_root / cs.USAGE_PAST_FILE).unlink()
-        cs.write_json_atomic(cs.history_file(self.cache_root), {"keep": False})
+        self.assertTrue((self.cache_root / td.USAGE_PAST_FILE).exists())
+        (self.cache_root / td.USAGE_PAST_FILE).unlink()
+        td.write_json_atomic(td.history_file(self.cache_root), {"keep": False})
         self.history()
-        self.assertFalse((self.cache_root / cs.USAGE_PAST_FILE).exists())  # (the history off: none kept)
+        self.assertFalse((self.cache_root / td.USAGE_PAST_FILE).exists())  # (the history off: none kept)
 
     def test_main_answers_limits(self):
         import io
@@ -1963,11 +1963,11 @@ class PromptTests(Projects):
     def test_a_rule_your_settings_have_already(self):
         self.asked()
         # another account's settings don't count (Claude reads its own folder's), nor Don't ask mode (it refuses)
-        cs.write_json_atomic(self.home / ".claude-personal/settings.json", {"permissions": {"allow": ["Bash(git status *)"]}})
-        cs.write_json_atomic(self.settings, {"permissions": {"defaultMode": "dontAsk"}})
+        td.write_json_atomic(self.home / ".claude-personal/settings.json", {"permissions": {"allow": ["Bash(git status *)"]}})
+        td.write_json_atomic(self.settings, {"permissions": {"defaultMode": "dontAsk"}})
         states = {r["value"]: r["state"] for r in self.recap()["prompts"]["rules"]}
         self.assertEqual((states["Bash(git status *)"], states[str(self.app)]), ("new", "new"))
-        cs.write_json_atomic(self.home / ".claude-work/settings.json", {"permissions": {"allow": ["Bash(git status *)"]}})
+        td.write_json_atomic(self.home / ".claude-work/settings.json", {"permissions": {"allow": ["Bash(git status *)"]}})
         states = {r["value"]: r["state"] for r in self.recap()["prompts"]["rules"]}
         self.assertEqual(states["Bash(git status *)"], "allowed")
 
@@ -1975,13 +1975,13 @@ class PromptTests(Projects):
         # an account in a Claude folder of the settings (--config-dir): its own settings.json counts too
         extra = self.home / "other-claude"
         (extra / "projects").mkdir(parents=True)
-        cs.write_json_atomic(extra / "settings.json", {"permissions": {"allow": ["Bash(git status *)"]}})
+        td.write_json_atomic(extra / "settings.json", {"permissions": {"allow": ["Bash(git status *)"]}})
         t0, tr = self.t0, Transcript(str(self.app))
         tr.prompt(t0).reply(t0 + 1000, "a", tools=[("T1", "Bash", {"command": "git status"})])
         tr.result(t0 + 61_000, "T1", source="user_temporary")
         (extra / "projects/-w").mkdir()
         (extra / "projects/-w/chat-x.jsonl").write_text(tr.text())
-        profiles = cs.discover_profiles(self.home, [str(extra)])
+        profiles = td.discover_profiles(self.home, [str(extra)])
         cache = {"files": {}}
         week.scan(profiles, cache, self.now)
         p = week.permissions(cache, profiles, self.now, self.home)
@@ -2005,7 +2005,7 @@ class PromptTests(Projects):
         self.asked()
         week.updated_cache(self.cache_root, self.profiles(), self.now)
         account = self.home / ".claude/settings.json"
-        cs.write_json_atomic(account, {"env": {"A": "1"}})
+        td.write_json_atomic(account, {"env": {"A": "1"}})
         self.settings.parent.mkdir(parents=True, exist_ok=True)
         os.symlink(os.path.relpath(account, self.settings.parent), self.settings)
         ok, message, _ = week.allow_rule(self.home, self.cache_root, "edits", str(self.app), str(self.app))
@@ -2016,7 +2016,7 @@ class PromptTests(Projects):
         ok, _, rid = week.allow_rule(self.home, self.cache_root, "edits", str(self.app), str(self.app))
         self.assertTrue(ok)
         self.settings.unlink()  # (made a link after the rule went in: Undo leaves the account's file too)
-        cs.write_json_atomic(account, {"permissions": {"defaultMode": "acceptEdits"}})
+        td.write_json_atomic(account, {"permissions": {"defaultMode": "acceptEdits"}})
         os.symlink(account, self.settings)
         self.assertFalse(week.undo_rule(self.home, self.cache_root, rid)[0])
         self.assertEqual(json.loads(account.read_text()), {"permissions": {"defaultMode": "acceptEdits"}})
@@ -2037,7 +2037,7 @@ class PromptTests(Projects):
         self.asked()
         week.updated_cache(self.cache_root, self.profiles(), self.now)
         mine = {"env": {"A": "1"}, "permissions": {"allow": ["Bash(make *)"], "defaultMode": "plan"}}
-        cs.write_json_atomic(self.settings, mine)
+        td.write_json_atomic(self.settings, mine)
         ids = [week.allow_rule(self.home, self.cache_root, kind, value, str(self.app))[2]
                for kind, value in (("edits", str(self.app)), ("allow", "Bash(git status *)"))]
         self.assertEqual(json.loads(self.settings.read_text())["permissions"],
@@ -2070,7 +2070,7 @@ class PromptTests(Projects):
         self.assertEqual(week.rule_for("Bash", "git status --short", "", app, str(self.home)), ("allow", "Bash(git status *)"))
         self.assertFalse(self.settings.exists())
         self.assertFalse((self.lib / ".claude").exists())
-        cs.write_json_atomic(self.settings, ["not", "settings"])
+        td.write_json_atomic(self.settings, ["not", "settings"])
         self.assertFalse(week.allow_rule(self.home, self.cache_root, "allow", "Bash(ls *)", app)[0])
         self.assertEqual(json.loads(self.settings.read_text()), ["not", "settings"])
 
@@ -2085,16 +2085,16 @@ class GrantedTests(Projects):
         # the folders Claude ran in, as each account's .claude.json lists them
         self.user = self.home / ".claude-shared/settings.json"
         self.user.parent.mkdir()
-        cs.write_json_atomic(self.user, {"model": "opus", "permissions": {"allow": ["Bash(npm test *)"], "defaultMode": "default"}})
+        td.write_json_atomic(self.user, {"model": "opus", "permissions": {"allow": ["Bash(npm test *)"], "defaultMode": "default"}})
         for name in ("work", "personal"):
             (self.home / (".claude-" + name) / "settings.json").symlink_to(self.user)
         data = json.loads((self.home / ".claude-work/.claude.json").read_text())
         data["projects"] = {str(self.app): {}, str(self.lib): {}, "/gone": {}}
         (self.home / ".claude-work/.claude.json").write_text(json.dumps(data))
-        cs.write_json_atomic(self.settings, {"permissions": {"allow": ["Bash(git status *)", "WebFetch(domain:docs.example.org)"],
+        td.write_json_atomic(self.settings, {"permissions": {"allow": ["Bash(git status *)", "WebFetch(domain:docs.example.org)"],
                                                              "additionalDirectories": [str(self.lib)], "defaultMode": "acceptEdits"}})
         self.settings.chmod(0o644)
-        cs.write_json_atomic(self.app / ".claude/settings.json", {"permissions": {"allow": ["WebSearch"], "deny": ["Bash(rm *)"]}})
+        td.write_json_atomic(self.app / ".claude/settings.json", {"permissions": {"allow": ["WebSearch"], "deny": ["Bash(rm *)"]}})
 
     def granted(self):
         profiles = self.profiles()
@@ -2182,11 +2182,11 @@ class GrantedTests(Projects):
         self.assertFalse([g for g in self.granted() if g["where"].endswith(".claude.json")])
 
     def test_settings_that_loosen_a_check_and_the_administrators(self):
-        cs.write_json_atomic(self.user, {"skipDangerousModePermissionPrompt": True, "sandbox": {"autoAllowBashIfSandboxed": True},
+        td.write_json_atomic(self.user, {"skipDangerousModePermissionPrompt": True, "sandbox": {"autoAllowBashIfSandboxed": True},
                                          "enabledMcpjsonServers": ["github"], "skipAutoPermissionPrompt": False})
         managed = Path(self.tmp.name) / "etc-claude-code"
         managed.mkdir()
-        cs.write_json_atomic(managed / "managed-settings.json", {"permissions": {"allow": ["Bash(ls *)"]}})
+        td.write_json_atomic(managed / "managed-settings.json", {"permissions": {"allow": ["Bash(ls *)"]}})
         with mock.patch.object(week, "MANAGED_DIR", managed):
             granted = self.granted()
             self.assertEqual([(g["kind"], g["value"], g["shared"]) for g in granted[:4]], [
@@ -2204,7 +2204,7 @@ class GrantedTests(Projects):
     def test_revoking_a_rule_the_recap_allowed_puts_back_what_was_before(self):
         self.asked()
         week.updated_cache(self.cache_root, self.profiles(), self.now)
-        cs.write_json_atomic(self.settings, {"permissions": {"defaultMode": "plan"}})
+        td.write_json_atomic(self.settings, {"permissions": {"defaultMode": "plan"}})
         self.assertTrue(week.allow_rule(self.home, self.cache_root, "edits", str(self.app), str(self.app))[0])
         mode = next(g for g in self.granted() if g["kind"] == "mode")
         self.assertTrue(mode["added"])
@@ -2387,11 +2387,11 @@ class HostTests(FakeSSH):
                "chats": [{"sessionId": "c1", "starred": False}, {"sessionId": "c2", "starred": True}],
                "plans": [{"slug": "p1", "starred": False}, {"slug": "p2", "starred": True}], "memories": []}
         answer = {"ok": True, "projects": [row, "junk"], "hidden": 0, "hiddenPaths": []}
-        cache = cs.cache_dir(Path.home())   # (this computer's: the stand-in ssh's home is the host's)
-        cs.change_stars(cache, "chats", "c1", "lab")
-        cs.change_stars(cache, "plans", "p1", "lab")
-        cs.change_stars(cache, "chats", "c2", "")       # (this computer's, and another host's: not these)
-        cs.change_stars(cache, "plans", "p2", "other")
+        cache = td.cache_dir(Path.home())   # (this computer's: the stand-in ssh's home is the host's)
+        td.change_stars(cache, "chats", "c1", "lab")
+        td.change_stars(cache, "plans", "p1", "lab")
+        td.change_stars(cache, "chats", "c2", "")       # (this computer's, and another host's: not these)
+        td.change_stars(cache, "plans", "p2", "other")
         with mock.patch.object(remote, "host_answer", return_value=json.loads(json.dumps(answer))):
             (p,) = week.host_projects("lab")["projects"]
         self.assertEqual([c["starred"] for c in p["chats"]], [True, False])
@@ -2422,7 +2422,7 @@ class OutputTests(Home):
         with redirect_stdout(out):
             week.main(["--data", "--remote"])
         text = out.getvalue()
-        answer = json.loads(text[text.rfind("\n" + cs.REMOTE_MARK) + 1 + len(cs.REMOTE_MARK):])
+        answer = json.loads(text[text.rfind("\n" + td.REMOTE_MARK) + 1 + len(td.REMOTE_MARK):])
         self.assertEqual(list(answer["chats"]), ["chat-a"])
         # the times the computer asking wants (its days, by its calendar), as they are on this clock
         for since, until, now, chats in ((t0 + 7200_000, self.now, self.now, []), (t0 - 60_000, t0 + 60_000, self.now, ["chat-a"]),
@@ -2431,7 +2431,7 @@ class OutputTests(Home):
             with redirect_stdout(out):
                 week.main(["--data", "--remote", "--since", str(since), "--until", str(until), "--now", str(now)])
             text = out.getvalue()
-            answer = json.loads(text[text.rfind("\n" + cs.REMOTE_MARK) + 1 + len(cs.REMOTE_MARK):])
+            answer = json.loads(text[text.rfind("\n" + td.REMOTE_MARK) + 1 + len(td.REMOTE_MARK):])
             self.assertEqual(list(answer["chats"]), chats, (since, until, now))
 
     def test_the_monday_recap_counts_the_ssh_hosts_shown(self):
@@ -2447,7 +2447,7 @@ class OutputTests(Home):
         self.addCleanup(setattr, week.time, "time", real_time)
 
         def host(name, back, span, since, until):  # (the same chats, as a host's: remote.py would run week.py --data there)
-            cache = week.load_cache(cs.cache_dir(self.home))
+            cache = week.load_cache(td.cache_dir(self.home))
             return {"host": name, "chats": week.chats_between(cache, self.profiles(), since, until, self.home), "accounts": []}
 
         def monday(*args):
@@ -2478,7 +2478,7 @@ class OutputTests(Home):
         self.assertEqual(([c["sessionId"] for c in row["chats"]], row["accounts"], row["recap"], row["plans"]),
                          (["chat-a"], ["work"], None, []))
         hid = result["projects"][0]["path"]
-        cs.hide_item(cs.cache_dir(self.home), "projects", hid)
+        td.hide_item(td.cache_dir(self.home), "projects", hid)
         result = projects()
         # (a hidden project's folder is said, so its open chats show in no other project)
         self.assertEqual((result["projects"], result["hidden"], result["hiddenPaths"]), ([], 1, [hid]))

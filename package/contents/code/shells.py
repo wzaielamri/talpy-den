@@ -25,7 +25,7 @@ import json
 import mmap
 import os
 
-import talpy_den as cs
+import talpy_den as td
 
 START = b'"backgroundTaskId":"'
 NOTE = b"<task-id>"
@@ -65,7 +65,7 @@ def started(mm, pos):
                 command = b["input"].get("command") if isinstance(b["input"].get("command"), str) else ""
                 description = b["input"].get("description") if isinstance(b["input"].get("description"), str) else ""
     return shell, {"command": command[:COMMAND_MAX], "description": description[:300],
-                   "started": cs.to_ms(e.get("timestamp")) or 0}
+                   "started": td.to_ms(e.get("timestamp")) or 0}
 
 
 def ended(mm, pos, stop):
@@ -111,7 +111,7 @@ def open_shells(path, kept_path):
         st = os.stat(path)
     except OSError:
         return {}
-    kept = cs.read_json(kept_path)
+    kept = td.read_json(kept_path)
     if not isinstance(kept, dict) or kept.get("v") != KEPT_VERSION or kept.get("ino") != st.st_ino \
             or not isinstance(kept.get("at"), int) or kept["at"] > st.st_size or not isinstance(kept.get("open"), dict):
         kept = {"v": KEPT_VERSION, "ino": st.st_ino, "at": 0, "open": {}}   # (new, or another file now: from its start)
@@ -137,7 +137,7 @@ def open_shells(path, kept_path):
     except (OSError, ValueError):
         return shells
     try:
-        cs.write_json_atomic(kept_path, {"v": KEPT_VERSION, "ino": st.st_ino, "at": end, "open": shells}, private=True)
+        td.write_json_atomic(kept_path, {"v": KEPT_VERSION, "ino": st.st_ino, "at": end, "open": shells}, private=True)
     except OSError:
         pass
     return shells
@@ -145,14 +145,14 @@ def open_shells(path, kept_path):
 
 def live_entry(profile, chat_id):
     """The live session process of a chat on this profile, or None."""
-    return next((e for e, _, _ in cs.live_entries_all([profile]) if e.get("sessionId") == chat_id), None)
+    return next((e for e, _, _ in td.live_entries_all([profile]) if e.get("sessionId") == chat_id), None)
 
 
 def running(home, profile, chat_id, path, record):
     """[{"id", "command", "description", "started" (ms)}] of the shells a
     chat runs in the background now, oldest first. record: its job's record
     (chatpick.job_record), None if it has none."""
-    shells = open_shells(path, cs.cache_dir(home) / "shells" / f"{chat_id}.json")
+    shells = open_shells(path, td.cache_dir(home) / "shells" / f"{chat_id}.json")
     if not shells:
         return []
     fan = record.get("fan") if isinstance(record, dict) else None
@@ -163,7 +163,7 @@ def running(home, profile, chat_id, path, record):
                and isinstance(f.get("id"), str)}
         return sorted(({"id": k, **v} for k, v in shells.items() if k in now), key=lambda s: s["started"])
     entry = live_entry(profile, chat_id)
-    since = cs.to_ms(entry.get("startedAt")) or 0 if entry else None
+    since = td.to_ms(entry.get("startedAt")) or 0 if entry else None
     if since is None:
         return []   # (no process: none of them runs)
     return sorted(({"id": k, **v} for k, v in shells.items() if v.get("started", 0) >= since - 1000),

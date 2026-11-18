@@ -16,7 +16,7 @@ sys.path.insert(0, str(CODE))
 spec = importlib.util.spec_from_file_location("cleanup", CODE / "cleanup.py")
 cleanup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cleanup)
-cs = cleanup.cs
+td = cleanup.td
 
 DAY = 86400
 A, B, S, L, Q, K, D, X = ("aaaaaaaa-0000-4000-8000-00000000000%d" % i for i in range(8))
@@ -43,8 +43,8 @@ class Home(unittest.TestCase):
         os.environ.update(env)
         self.addCleanup(lambda: [os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
                                  for k, v in saved.items()])
-        self.cache = cs.cache_dir(self.home)
-        cs.private_dir(self.cache)
+        self.cache = td.cache_dir(self.home)
+        td.private_dir(self.cache)
         (self.home / ".claude-shared").mkdir(parents=True)
         self.shared_settings = self.home / ".claude-shared/settings.json"
         self.shared_settings.write_text(json.dumps({"theme": "dark"}))
@@ -89,7 +89,7 @@ class Home(unittest.TestCase):
 class ChatTests(Home):
     def test_a_hidden_accounts_chats_stay(self):
         mine, theirs = self.chat(A, 40), self.chat(B, 40, profile="personal")
-        cs.change_hidden(self.cache, "accounts", add=".claude-personal")
+        td.change_hidden(self.cache, "accounts", add=".claude-personal")
         self.talpy()
         self.run_here()
         self.assertFalse(os.path.lexists(str(mine)))
@@ -110,11 +110,11 @@ class ChatTests(Home):
         orphan_new = self.thing("session-env/" + X, 3, folder=True)
         snap_old, snap_new = self.thing("shell-snapshots/a.sh", 40), self.thing("shell-snapshots/b.sh", 1)
         (self.work / "debug/latest").symlink_to(self.work / "debug" / (A + ".txt"))
-        cs.change_stars(self.cache, "chats", S)
-        cs.change_stars(self.cache, "chats", A, "lab")  # (a host's star: not this computer's chat)
-        state = cs.state_dir(self.cache)
-        cs.write_json_atomic(state / "keep.json", {"chats": [{"chat": K, "profile": "work"}]})
-        cs.write_json_atomic(state / "queue.json", {"tasks": [{"id": "t1", "chat": Q, "host": "", "profile": "work"}]})
+        td.change_stars(self.cache, "chats", S)
+        td.change_stars(self.cache, "chats", A, "lab")  # (a host's star: not this computer's chat)
+        state = td.state_dir(self.cache)
+        td.write_json_atomic(state / "keep.json", {"chats": [{"chat": K, "profile": "work"}]})
+        td.write_json_atomic(state / "queue.json", {"tasks": [{"id": "t1", "chat": Q, "host": "", "profile": "work"}]})
         self.talpy()
         self.running.stop()
         with mock.patch.object(cleanup, "running", return_value=({L}, set())):
@@ -133,20 +133,20 @@ class ChatTests(Home):
         # (only a star keeps a chat; a deleted chat's bookmarks, with their first words, don't stay behind)
         marked, starred, young = self.chat(A, 40), self.chat(S, 40), self.chat(B, 3)
         for chat, host in ((A, ""), (S, ""), (B, ""), (A, "lab")):
-            cs.change_bookmark(self.cache, chat, host, "msg_1", True, "claude", 1000, "a reply")
-        cs.change_stars(self.cache, "chats", S)
+            td.change_bookmark(self.cache, chat, host, "msg_1", True, "claude", 1000, "a reply")
+        td.change_stars(self.cache, "chats", S)
         self.assertEqual(cleanup.kept_here(self.cache), ({S}, set()))
         self.talpy()
         cleanup.status(self.home, self.cache, now=self.now)   # (a look at what a run would do forgets nothing)
-        self.assertEqual(len(cs.load_bookmarks(self.cache, A)[0]), 1)
+        self.assertEqual(len(td.load_bookmarks(self.cache, A)[0]), 1)
         r = self.run_here()
         self.assertFalse(marked.exists())
         self.assertTrue(starred.exists() and young.exists())
         self.assertEqual((r["ok"], r["chats"], r["keptChats"]), (True, 1, 1))
         self.assertNotIn("goneChats", r)   # (not kept in the runs the settings show)
-        self.assertEqual(cs.load_bookmarks(self.cache, A), ([], 0))
-        self.assertEqual([len(cs.load_bookmarks(self.cache, c)[0]) for c in (S, B)], [1, 1])
-        self.assertEqual(len(cs.load_bookmarks(self.cache, A, "lab")[0]), 1)   # (a host's chat of that id: its own)
+        self.assertEqual(td.load_bookmarks(self.cache, A), ([], 0))
+        self.assertEqual([len(td.load_bookmarks(self.cache, c)[0]) for c in (S, B)], [1, 1])
+        self.assertEqual(len(td.load_bookmarks(self.cache, A, "lab")[0]), 1)   # (a host's chat of that id: its own)
 
     def test_claudes_memories_and_what_isnt_a_chat_stay_however_old(self):
         memory = self.thing("projects/-w/memory", 400, folder=True)
@@ -224,7 +224,7 @@ class ChatTests(Home):
         store.mkdir(parents=True)
         kept = self.chat(A, 40)
         os.link(str(kept), str(store / (A + ".jsonl")))
-        cs.change_stars(self.cache, "chats", A)
+        td.change_stars(self.cache, "chats", A)
         self.talpy()
         self.run_here()
         self.assertTrue((store / (A + ".jsonl")).exists())
@@ -238,7 +238,7 @@ class ChatTests(Home):
             return d
         done, working, live, starred, new = (job("j1", "done", 40), job("j2", "working", 40), job("j3", "done", 40),
                                              job("j4", "failed", 40, S), job("j5", "done", 2))
-        cs.change_stars(self.cache, "chats", S)
+        td.change_stars(self.cache, "chats", S)
         self.talpy()
         self.running.stop()
         with mock.patch.object(cleanup, "running", return_value=(set(), {"j3"})):
@@ -262,14 +262,14 @@ class ChatTests(Home):
     def test_the_status_says_what_claudes_cleanup_would_delete_of_what_stays(self):
         self.chat(S, 40)
         self.thing("plans/starred.md", 40)
-        cs.change_stars(self.cache, "chats", S)
-        cs.change_stars(self.cache, "plans", "starred")
+        td.change_stars(self.cache, "chats", S)
+        td.change_stars(self.cache, "plans", "starred")
         self.shared_settings.write_text(json.dumps({"cleanupPeriodDays": 45}))
         self.talpy(60)
         st = cleanup.status(self.home, self.cache, now=self.now)
         self.assertEqual(st["claudeRisk"], {"days": 45, "chats": 0, "plans": 0})  # (none older than its 45 days)
         self.shared_settings.write_text(json.dumps({"cleanupPeriodDays": 3650}))
-        cs.write_json_atomic(cleanup.changed_path(self.cache), {"files": {str(self.shared_settings): {"had": False}}})
+        td.write_json_atomic(cleanup.changed_path(self.cache), {"files": {str(self.shared_settings): {"had": False}}})
         st = cleanup.status(self.home, self.cache, now=self.now)
         self.assertEqual(st["claudeRisk"], {"days": 30, "chats": 1, "plans": 1})
         cleanup.set_mode(self.home, self.cache, (), "claude", start=False)
@@ -308,11 +308,11 @@ class PlanTests(Home):
         starred, queued, living = (self.thing("plans/%s.md" % s, 40) for s in ("starred", "queued", "living"))
         recent = self.thing("plans/recent.md", 2)
         half = self.thing("plans/x.md.tmp.123", 40)
-        cs.change_stars(self.cache, "plans", "starred")
-        cs.write_json_atomic(cs.state_dir(self.cache) / "queue.json",
+        td.change_stars(self.cache, "plans", "starred")
+        td.write_json_atomic(td.state_dir(self.cache) / "queue.json",
                              {"tasks": [{"id": "t1", "plan": "queued", "host": "", "profile": "work"}]})
         self.chat(B, 2)
-        cs.write_json_atomic(self.cache / "plan-projects.json", {"plans": {"living": {"cwd": "/w", "chat": B}}})
+        td.write_json_atomic(self.cache / "plan-projects.json", {"plans": {"living": {"cwd": "/w", "chat": B}}})
         self.talpy()
         r = self.run_here()
         self.assertFalse(one.exists() or other.exists())
@@ -396,35 +396,35 @@ class ClaudeSettingTests(Home):
 
 class DueTests(Home):
     def test_due_once_a_day_and_when_the_setting_changes(self):
-        stamp = self.cache / cs.CLEANUP_STAMP
-        self.assertFalse(cs.cleanup_due(self.cache, time.time()))  # (never set: Claude Code's own cleanup)
+        stamp = self.cache / td.CLEANUP_STAMP
+        self.assertFalse(td.cleanup_due(self.cache, time.time()))  # (never set: Claude Code's own cleanup)
         self.talpy()
         now = time.time()  # (as the status check asks: after the setting was written)
-        self.assertTrue(cs.cleanup_due(self.cache, now))
-        self.assertFalse(cs.cleanup_due(self.cache, now + 60))
-        self.assertTrue(cs.cleanup_due(self.cache, now + DAY + 1))
+        self.assertTrue(td.cleanup_due(self.cache, now))
+        self.assertFalse(td.cleanup_due(self.cache, now + 60))
+        self.assertTrue(td.cleanup_due(self.cache, now + DAY + 1))
         os.utime(str(stamp), (now - 10, now - 10))
         os.utime(str(cleanup.setting_path(self.cache)), (now, now))
-        self.assertTrue(cs.cleanup_due(self.cache, now))  # (the setting changed since)
+        self.assertTrue(td.cleanup_due(self.cache, now))  # (the setting changed since)
         cleanup.set_mode(self.home, self.cache, (), "claude", start=False)
         now = time.time()
-        self.assertTrue(cs.cleanup_due(self.cache, now))  # (pending: put back on the hosts too)
+        self.assertTrue(td.cleanup_due(self.cache, now))  # (pending: put back on the hosts too)
         cleanup.change_setting(self.cache, lambda s: s.update(pending=False))
         now = time.time()
-        self.assertFalse(cs.cleanup_due(self.cache, now))
-        self.assertFalse(cs.cleanup_due(self.cache, now + DAY + 1))
+        self.assertFalse(td.cleanup_due(self.cache, now))
+        self.assertFalse(td.cleanup_due(self.cache, now + DAY + 1))
 
     def test_one_copy_starts_it_without_waiting(self):
         self.talpy()
-        with mock.patch.object(cs, "start_cleanup") as start, mock.patch.object(cs, "collect", return_value={
-                "ok": True, "groups": [], "errors": []}), mock.patch.object(cs, "add_vscode"), \
-                mock.patch.object(cs, "refresh_hooks"), mock.patch.object(cs, "upgrade_hook_settings"), \
+        with mock.patch.object(td, "start_cleanup") as start, mock.patch.object(td, "collect", return_value={
+                "ok": True, "groups": [], "errors": []}), mock.patch.object(td, "add_vscode"), \
+                mock.patch.object(td, "refresh_hooks"), mock.patch.object(td, "upgrade_hook_settings"), \
                 mock.patch("sys.stdout"):
-            cs.main(["--recent", "0"])  # (a copy that doesn't notify: not this one)
+            td.main(["--recent", "0"])  # (a copy that doesn't notify: not this one)
             start.assert_not_called()
-            cs.main(["--cleanup-check"])
+            td.main(["--cleanup-check"])
             self.assertEqual(start.call_count, 1)
-            cs.main(["--cleanup-check"])  # (not due again until tomorrow)
+            td.main(["--cleanup-check"])  # (not due again until tomorrow)
             self.assertEqual(start.call_count, 1)
 
     def test_choosing_starts_one_run_and_the_next_check_none(self):
@@ -432,7 +432,7 @@ class DueTests(Home):
             cleanup.set_mode(self.home, self.cache, (), "talpy", 30)
         self.assertEqual(popen.call_count, 1)
         self.assertEqual(popen.call_args[0][0][-1:], ["--run"])
-        self.assertFalse(cs.cleanup_due(self.cache, time.time()))  # (the stamp went with the start)
+        self.assertFalse(td.cleanup_due(self.cache, time.time()))  # (the stamp went with the start)
 
     def test_the_run_is_one_at_a_time(self):
         self.talpy()
@@ -455,9 +455,9 @@ class HostsTests(Home):
 
     def test_a_hosts_stars_go_with_its_run(self):
         import remote
-        cs.change_stars(self.cache, "chats", A, "lab")
-        cs.change_stars(self.cache, "plans", "my-plan", "lab")
-        cs.change_stars(self.cache, "chats", B)  # (this computer's)
+        td.change_stars(self.cache, "chats", A, "lab")
+        td.change_stars(self.cache, "plans", "my-plan", "lab")
+        td.change_stars(self.cache, "chats", B)  # (this computer's)
         with mock.patch.object(remote, "host_answer", return_value={"ok": True}) as asked:
             cleanup.on_host("lab", self.cache, "talpy", 21)
         host, args = asked.call_args[0][:2]
@@ -467,16 +467,16 @@ class HostsTests(Home):
     def test_a_hosts_deleted_chats_take_their_bookmarks_kept_here_along(self):
         import remote
         self.talpy()
-        cs.change_stars(self.cache, "chats", A, "lab")
+        td.change_stars(self.cache, "chats", A, "lab")
         for chat, host in ((A, "lab"), (B, "lab"), (B, ""), (B, "docker:web")):
-            cs.change_bookmark(self.cache, chat, host, "msg_1", True, "you", 1000, "a message")
+            td.change_bookmark(self.cache, chat, host, "msg_1", True, "you", 1000, "a message")
         answer = {"ok": True, "chats": 1, "goneChats": [B, "../" + A, 7]}
         with mock.patch.object(cleanup, "hosts_to_visit", return_value=["lab"]), \
                 mock.patch.object(remote, "host_answer", return_value=answer) as asked:
             runs = cleanup.run(self.home, self.cache, now=self.now)["runs"]
         self.assertEqual(asked.call_args[0][:2], ("lab", ["--place", "30", "--keep-chats", A]))   # (a bookmark keeps nothing)
-        self.assertEqual(cs.load_bookmarks(self.cache, B, "lab"), ([], 0))
-        self.assertEqual([len(cs.load_bookmarks(self.cache, c, h)[0]) for c, h in ((A, "lab"), (B, ""), (B, "docker:web"))],
+        self.assertEqual(td.load_bookmarks(self.cache, B, "lab"), ([], 0))
+        self.assertEqual([len(td.load_bookmarks(self.cache, c, h)[0]) for c, h in ((A, "lab"), (B, ""), (B, "docker:web"))],
                          [1, 1, 1])
         self.assertNotIn("goneChats", runs["lab"])
 
@@ -484,7 +484,7 @@ class HostsTests(Home):
         import remote
         self.talpy()
         before = {"lab": {"ok": True, "at": 1, "chats": 3, "raised": True}}
-        cs.write_json_atomic(self.cache / cleanup.RUNS_FILE, before)
+        td.write_json_atomic(self.cache / cleanup.RUNS_FILE, before)
         with mock.patch.object(cleanup, "hosts_to_visit", return_value=["lab"]), \
                 mock.patch.object(remote, "host_answer", return_value={"ok": False, "reached": False, "message": "down"}):
             runs = cleanup.run(self.home, self.cache, now=self.now)["runs"]
@@ -516,9 +516,9 @@ class OverSSHTests(FakeSSH):
         plan.parent.mkdir()
         plan.write_text("# Old\n")
         aged(plan, 40, now)
-        here = cs.cache_dir(Path.home())
-        cs.change_stars(here, "chats", S, "lab")
-        cs.change_bookmark(here, B, "lab", "msg_1", True, "claude", 1000, "kept here, for the host's chat")
+        here = td.cache_dir(Path.home())
+        td.change_stars(here, "chats", S, "lab")
+        td.change_bookmark(here, B, "lab", "msg_1", True, "claude", 1000, "kept here, for the host's chat")
         r = cleanup.on_host("lab", here, "talpy", 30)
         self.assertTrue(r["ok"], r)
         self.assertEqual((r["chats"], r["plans"], r["keptChats"], r["raised"]), (2, 1, 1, True))

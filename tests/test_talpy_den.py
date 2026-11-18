@@ -19,11 +19,11 @@ from unittest import mock
 sys.dont_write_bytecode = True  # keep __pycache__ out of the plasmoid package
 ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("talpy_den", ROOT / "package/contents/code/talpy_den.py")
-cs = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(cs)
+td = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(td)
 
 PID = os.getpid()
-PROC_START = cs.proc_start_time(PID)
+PROC_START = td.proc_start_time(PID)
 DEAD_PID = 4194304 + 4242  # above the kernel's pid_max ceiling
 
 
@@ -106,7 +106,7 @@ class Fixture(unittest.TestCase):
         self.tmp.cleanup()
 
     def collect(self, **kw):
-        return cs.collect(self.home, self.cache, now=kw.pop("now", self.now), **kw)
+        return td.collect(self.home, self.cache, now=kw.pop("now", self.now), **kw)
 
     def group(self, result, name):
         return next(g for g in result["groups"] if g["name"] == name)
@@ -126,7 +126,7 @@ class SessionTests(Fixture):
         (h / ".claude-backup").mkdir()  # not a profile: no sessions/projects
 
         def title():
-            groups = cs.collect(h, self.cache, with_tokens=False, now=self.now)["groups"]
+            groups = td.collect(h, self.cache, with_tokens=False, now=self.now)["groups"]
             return [(g["title"], g["profiles"]) for g in groups]
         self.assertEqual(title(), [("Ada · Max", ["Ada"])])
         write(h / ".claude.json", {"oauthAccount": {"accountUuid": "a", "organizationType": "claude_max"}})
@@ -224,23 +224,23 @@ class SessionTests(Fixture):
         self.assertEqual(self.collect(with_tokens=False)["overall"], "working")
 
     def test_liveness(self):
-        self.assertTrue(cs.is_alive({"pid": PID, "procStart": PROC_START}))
-        self.assertTrue(cs.is_alive({"pid": PID}))
-        self.assertFalse(cs.is_alive({"pid": PID, "procStart": "1"}))
-        self.assertFalse(cs.is_alive({"pid": DEAD_PID}))
-        self.assertFalse(cs.is_alive({"pid": "12"}))
+        self.assertTrue(td.is_alive({"pid": PID, "procStart": PROC_START}))
+        self.assertTrue(td.is_alive({"pid": PID}))
+        self.assertFalse(td.is_alive({"pid": PID, "procStart": "1"}))
+        self.assertFalse(td.is_alive({"pid": DEAD_PID}))
+        self.assertFalse(td.is_alive({"pid": "12"}))
 
     def test_short_path(self):
-        self.assertEqual(cs.short_path("/h/u", "/h/u"), "~")
-        self.assertEqual(cs.short_path("/h/u/repos/x", "/h/u"), "~/repos/x")
-        self.assertEqual(cs.short_path("/h/u/a/b/c/d", "/h/u"), "…/c/d")
+        self.assertEqual(td.short_path("/h/u", "/h/u"), "~")
+        self.assertEqual(td.short_path("/h/u/repos/x", "/h/u"), "~/repos/x")
+        self.assertEqual(td.short_path("/h/u/a/b/c/d", "/h/u"), "…/c/d")
 
 
 class StateMappingTests(unittest.TestCase):
     """Cases seen on real sessions; expectations follow Claude Code 2.1."""
 
     def state(self, entry, job=None):
-        return cs.session_state(entry, job)
+        return td.session_state(entry, job)
 
     def test_interactive(self):
         self.assertEqual(self.state({"status": "busy"}), "working")
@@ -266,7 +266,7 @@ class StateMappingTests(unittest.TestCase):
 
     def test_background_job_not_started(self):
         # dispatched from the agent view without a prompt
-        job = {"state": "blocked", "tempo": "blocked", "needs": cs.NOT_STARTED}
+        job = {"state": "blocked", "tempo": "blocked", "needs": td.NOT_STARTED}
         self.assertEqual(self.state({"status": "idle"}, job), "idle")
 
     def test_background_job_finished(self):
@@ -304,7 +304,7 @@ class ParkedJobTests(unittest.TestCase):
     DAY = 24 * 3600_000
 
     def parked(self, job, present=False, keep=DAY):
-        return cs.parked_job_state(job, present, self.NOW, keep)
+        return td.parked_job_state(job, present, self.NOW, keep)
 
     def iso(self, ms_ago):
         return iso((self.NOW - ms_ago) / 1000)
@@ -343,7 +343,7 @@ class ParkedJobTests(unittest.TestCase):
         self.assertEqual(self.parked(job, present=True), ("working", ""))
 
     def test_not_started_hidden(self):
-        self.assertIsNone(self.parked({"state": "blocked", "tempo": "blocked", "needs": cs.NOT_STARTED}))
+        self.assertIsNone(self.parked({"state": "blocked", "tempo": "blocked", "needs": td.NOT_STARTED}))
 
 
 class LimitTests(Fixture):
@@ -354,7 +354,7 @@ class LimitTests(Fixture):
         self.assertEqual((len(g["profileKeys"]), g["usageFetchAt"]), (2, 1234))
 
     def test_unknown_values_name_no_front_end(self):
-        text = cs.unknown_values_text({("status", "napping"): "2.1.400"})
+        text = td.unknown_values_text({("status", "napping"): "2.1.400"})
         self.assertEqual(text, "Claude Code 2.1.400 writes something Talpy Den doesn't know yet (status \"napping\"): "
                                "some chats may show the wrong state until Talpy Den is updated.")
 
@@ -461,19 +461,19 @@ class LimitTests(Fixture):
                                             "rate_limits": {"five_hour": {"used_percentage": 97}}}, age=10)
         self.snapshot(".claude", "mine", {"talpyDenConfigDir": str(self.home / ".claude"),
                                           "rate_limits": {"five_hour": {"used_percentage": 12}}}, age=300)
-        r = cs.collect(self.home, self.cache, [str(other)], with_tokens=False, now=self.now)
+        r = td.collect(self.home, self.cache, [str(other)], with_tokens=False, now=self.now)
         self.assertEqual(self.group(r, "personal")["limits"]["windows"][0]["pct"], 12)
         self.assertEqual(self.group(r, "claude")["limits"]["windows"][0]["pct"], 97)
         # a folder named through a link is that folder
         (Path(self.tmp.name) / "data-link").symlink_to(other.parent)
         self.snapshot(".claude", "theirs", {"talpyDenConfigDir": str(Path(self.tmp.name) / "data-link/.claude"),
                                             "rate_limits": {"five_hour": {"used_percentage": 98}}}, age=5)
-        r = cs.collect(self.home, self.cache, [str(other)], with_tokens=False, now=self.now)
+        r = td.collect(self.home, self.cache, [str(other)], with_tokens=False, now=self.now)
         self.assertEqual(self.group(r, "personal")["limits"]["windows"][0]["pct"], 12)
         self.assertEqual(self.group(r, "claude")["limits"]["windows"][0]["pct"], 98)
         # an older snippet's (no folder named) counts for both, as it always did
         self.snapshot(".claude", "older", {"rate_limits": {"five_hour": {"used_percentage": 50}}}, age=1)
-        r = cs.collect(self.home, self.cache, [str(other)], with_tokens=False, now=self.now)
+        r = td.collect(self.home, self.cache, [str(other)], with_tokens=False, now=self.now)
         self.assertEqual([self.group(r, n)["limits"]["windows"][0]["pct"] for n in ("personal", "claude")], [50, 50])
 
     def test_a_sessions_context_from_its_own_folder(self):
@@ -482,11 +482,11 @@ class LimitTests(Fixture):
         write(self.home / ".claude/sessions/41.json", session("theirs2", status="busy"))
         self.snapshot(".claude", "theirs", {"talpyDenConfigDir": str(other), "context_window": {"used_percentage": 40}})
         self.snapshot(".claude", "theirs2", {"talpyDenConfigDir": str(other), "context_window": {"used_percentage": 60}})
-        r = cs.collect(self.home, self.cache, [str(other)], with_tokens=False, now=self.now)
+        r = td.collect(self.home, self.cache, [str(other)], with_tokens=False, now=self.now)
         rows = {s["sessionId"]: s for g in r["groups"] for s in g["sessions"]}
         self.assertEqual((rows["theirs"]["context"], rows["theirs2"]["context"]), (40, None))
-        self.assertTrue(cs.snapshot_of({"talpyDenConfigDir": "relative/.claude"}, [other]))   # (not a folder it can name)
-        self.assertTrue(cs.snapshot_of(None, [other]))
+        self.assertTrue(td.snapshot_of({"talpyDenConfigDir": "relative/.claude"}, [other]))   # (not a folder it can name)
+        self.assertTrue(td.snapshot_of(None, [other]))
 
     def test_newest_snapshot_across_group_profiles(self):
         self.snapshot(".claude", "a", {"rate_limits": {"five_hour": {"used_percentage": 10}}}, age=300)
@@ -521,11 +521,11 @@ class LimitTests(Fixture):
 
     def test_when_a_snapshots_numbers_were_read(self):
         t = 1_800_000_000_000
-        self.assertEqual(cs.limits_read_at({"prompt_cache": {"ttl": "1h", "expires_at": 1_800_000_000}}, t), t - 3600_000)
-        self.assertEqual(cs.limits_read_at({"prompt_cache": {"ttl": "5m", "expires_at": 1_800_000_000 + 600}}, t), t)  # (never later than written)
+        self.assertEqual(td.limits_read_at({"prompt_cache": {"ttl": "1h", "expires_at": 1_800_000_000}}, t), t - 3600_000)
+        self.assertEqual(td.limits_read_at({"prompt_cache": {"ttl": "5m", "expires_at": 1_800_000_000 + 600}}, t), t)  # (never later than written)
         for cache in (None, {}, {"ttl": "1h"}, {"ttl": "soon", "expires_at": 1_800_000_000}, {"ttl": "1h", "expires_at": True}):
-            self.assertEqual(cs.limits_read_at({"prompt_cache": cache}, t), t)
-        self.assertEqual([cs.cache_ttl_ms(v) for v in ("5m", "1h", "30s", "h", "1.5h", 3600)],
+            self.assertEqual(td.limits_read_at({"prompt_cache": cache}, t), t)
+        self.assertEqual([td.cache_ttl_ms(v) for v in ("5m", "1h", "30s", "h", "1.5h", 3600)],
                          [300_000, 3600_000, 30_000, None, None, None])
 
     def test_a_snapshot_that_goes_away_doesnt_take_the_others_along(self):
@@ -533,8 +533,8 @@ class LimitTests(Fixture):
         for i in range(10):
             self.snapshot(".claude-work", f"s{i}", {"rate_limits": {"five_hour": {"used_percentage": i}}}, age=i)
             (self.cache / "statusline/.claude-work" / f"gone{i}.json").symlink_to(self.cache / "nowhere")
-        work = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
-        self.assertEqual(len(cs.snapshot_files(self.cache / "statusline", [work])), 10)
+        work = next(p for p in td.discover_profiles(self.home) if p.label == "work")
+        self.assertEqual(len(td.snapshot_files(self.cache / "statusline", [work])), 10)
 
     def test_old_snapshots_pruned(self):
         self.snapshot(".claude-work", "old", {"rate_limits": {"five_hour": {"used_percentage": 99}}}, age=9 * 86400)
@@ -542,10 +542,10 @@ class LimitTests(Fixture):
         self.assertFalse((self.cache / "statusline/.claude-work/old.json").exists())
 
     def test_iso_resets_at(self):
-        self.assertEqual(cs.to_ms("2026-01-01T00:00:00Z"), 1767225600000)
-        self.assertEqual(cs.to_ms(1767225600), 1767225600000)
-        self.assertEqual(cs.to_ms(1767225600000), 1767225600000)
-        self.assertIsNone(cs.to_ms("soon"))
+        self.assertEqual(td.to_ms("2026-01-01T00:00:00Z"), 1767225600000)
+        self.assertEqual(td.to_ms(1767225600), 1767225600000)
+        self.assertEqual(td.to_ms(1767225600000), 1767225600000)
+        self.assertIsNone(td.to_ms("soon"))
 
 
 class TokenTests(Fixture):
@@ -587,13 +587,13 @@ class TokenTests(Fixture):
             f.write(partial[40:] + "\n")
         self.assertEqual(self.group(self.collect(now=now + 5), "work")["tokens"]["today"]["messages"], 1)
 
-        tokens = self.group(self.collect(now=now + cs.TOKEN_SCAN_INTERVAL + 1), "work")["tokens"]
+        tokens = self.group(self.collect(now=now + td.TOKEN_SCAN_INTERVAL + 1), "work")["tokens"]
         self.assertEqual((tokens["today"]["messages"], tokens["today"]["output"]), (2, 312))
         self.assertEqual(tokens["week"]["messages"], 2)
         self.assertEqual(tokens["models"][0]["model"], "claude-opus-5-5")
 
         # Another scan with nothing new must not double count
-        tokens = self.group(self.collect(now=now + 2 * cs.TOKEN_SCAN_INTERVAL + 2), "work")["tokens"]
+        tokens = self.group(self.collect(now=now + 2 * td.TOKEN_SCAN_INTERVAL + 2), "work")["tokens"]
         self.assertEqual(tokens["today"]["messages"], 2)
 
     def test_group_sums_profiles(self):
@@ -606,8 +606,8 @@ class TokenTests(Fixture):
         write(self.transcript(), assistant("a1", self.now - 5, 5) + "\n" + assistant("a2", self.now - 5, 6) + "\n")
         self.collect()
         write(self.transcript(), assistant("a3", self.now - 5, 7) + "\n")  # rewritten, shorter
-        work = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
-        path = cs.token_cache_path(self.cache, work)
+        work = next(p for p in td.discover_profiles(self.home) if p.label == "work")
+        path = td.token_cache_path(self.cache, work)
         cache = json.loads(path.read_text())
         cache["scannedAt"] = 0
         write(path, cache)
@@ -617,16 +617,16 @@ class TokenTests(Fixture):
     def test_a_chat_shared_later_counts_as_shared_from_its_first_message(self):
         mine = self.home / ".claude-personal/projects/p/chat.jsonl"
         write(mine, assistant("m1", self.now - 30, 5) + "\n")
-        personal = next(p for p in cs.discover_profiles(self.home) if p.label == "personal")
-        cache = cs.scan_transcripts(personal, cs.empty_token_cache(), self.now)
-        self.assertEqual(cs.token_totals([cache], self.now)["today"]["shared"], 0)
+        personal = next(p for p in td.discover_profiles(self.home) if p.label == "personal")
+        cache = td.scan_transcripts(personal, td.empty_token_cache(), self.now)
+        self.assertEqual(td.token_totals([cache], self.now)["today"]["shared"], 0)
         # hard-linked into another account's folder, and the chat goes on: that account counts all of it
         (self.home / ".claude-work/projects/p").mkdir(parents=True)
         os.link(mine, self.home / ".claude-work/projects/p/chat.jsonl")
         with open(mine, "a") as f:
             f.write(assistant("m2", self.now - 5, 6) + "\n")
-        cache = cs.scan_transcripts(personal, cache, self.now + 1)
-        today = cs.token_totals([cache], self.now + 1)["today"]
+        cache = td.scan_transcripts(personal, cache, self.now + 1)
+        today = td.token_totals([cache], self.now + 1)["today"]
         self.assertEqual((today["messages"], today["shared"]), (2, today["total"]))
 
 
@@ -649,7 +649,7 @@ class LegacyDirTests(unittest.TestCase):
         write(self.home / ".cache/claude-widget/keep.json", "{}")
         write(self.home / ".cache/claude-widget/statusline/p/s.json", "{}")
         write(self.home / ".local/share/claude-widget/live-hook.py", "hook")
-        cs.adopt_legacy_dirs(self.home)
+        td.adopt_legacy_dirs(self.home)
         self.assertEqual((self.home / ".cache/talpy-den/keep.json").read_text(), "{}")
         self.assertTrue((self.home / ".cache/talpy-den/statusline/p/s.json").is_file())
         self.assertEqual((self.home / ".local/share/talpy-den/live-hook.py").read_text(), "hook")
@@ -658,14 +658,14 @@ class LegacyDirTests(unittest.TestCase):
         write(self.home / ".cache/claude-widget/statusline/p/t.json", "{}")
         self.assertTrue((self.home / ".cache/talpy-den/statusline/p/t.json").is_file())
         self.assertEqual(stat.S_IMODE((self.home / ".cache/talpy-den").stat().st_mode), 0o700)
-        cs.adopt_legacy_dirs(self.home)  # (nothing more to do)
+        td.adopt_legacy_dirs(self.home)  # (nothing more to do)
         self.assertTrue((self.home / ".cache/talpy-den/keep.json").is_file())
 
     def test_what_the_new_folder_has_already_is_kept(self):
         write(self.home / ".cache/claude-widget/keep.json", '{"old": 1}')
         write(self.home / ".cache/claude-widget/stars.json", '{"old": 1}')
         write(self.home / ".cache/talpy-den/keep.json", '{"new": 1}')
-        cs.adopt_legacy_dirs(self.home)
+        td.adopt_legacy_dirs(self.home)
         self.assertEqual((self.home / ".cache/talpy-den/keep.json").read_text(), '{"new": 1}')
         self.assertEqual((self.home / ".cache/talpy-den/stars.json").read_text(), '{"old": 1}')
         # the old folder keeps what couldn't move: not replaced by a link
@@ -673,7 +673,7 @@ class LegacyDirTests(unittest.TestCase):
         self.assertFalse((self.home / ".cache/claude-widget").is_symlink())
 
     def test_nothing_to_move(self):
-        cs.adopt_legacy_dirs(self.home)
+        td.adopt_legacy_dirs(self.home)
         self.assertFalse((self.home / ".cache/claude-widget").exists())
         self.assertFalse((self.home / ".cache/talpy-den").exists())
 
@@ -806,7 +806,7 @@ class AgentTests(Fixture):
         a = next(s for s in self.group(self.collect(with_tokens=False), "work")["sessions"] if s["sessionId"] == "busy")["agents"]
         a4 = next(t for t in a["tree"] if t["id"] == "a4")
         self.assertEqual((a4["status"], a4["activity"]), ("done", "Summary"))
-        self.assertEqual(cs.report_line("| Lines | File |\n|--|"), "Lines | File |")
+        self.assertEqual(td.report_line("| Lines | File |\n|--|"), "Lines | File |")
 
     def agents_of_busy(self):
         a = next(s for s in self.group(self.collect(with_tokens=False), "work")["sessions"] if s["sessionId"] == "busy")["agents"]
@@ -846,14 +846,14 @@ class AgentTests(Fixture):
         self.collect(with_tokens=False)
         reads = []
         real = Path.read_bytes
-        with mock.patch.object(cs.Path, "read_bytes", lambda p: reads.append(p.name) or real(p)):
+        with mock.patch.object(td.Path, "read_bytes", lambda p: reads.append(p.name) or real(p)):
             self.collect(with_tokens=False)
         self.assertEqual(reads, [])
         self.assertIn("n1", json.loads((self.cache / "agents.json").read_text())["misses"])
 
     def test_agents_of_an_ended_session_are_stopped(self):
-        cache = cs.AgentCache(self.cache / "agents.json")
-        profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
+        cache = td.AgentCache(self.cache / "agents.json")
+        profile = next(p for p in td.discover_profiles(self.home) if p.label == "work")
         a = cache.session_agents(profile, "busy", alive=False)
         self.assertEqual((a["done"], a["running"], a["stopped"]), (1, 0, 2))
 
@@ -870,8 +870,8 @@ class AgentTests(Fixture):
     def test_unchanged_transcripts_are_not_read_again(self):
         self.collect(with_tokens=False)
         calls = []
-        real = cs.agent_progress
-        cs.agent_progress = lambda path, *more: calls.append(path) or real(path, *more)
+        real = td.agent_progress
+        td.agent_progress = lambda path, *more: calls.append(path) or real(path, *more)
         try:
             self.collect(with_tokens=False)
             self.assertEqual(calls, [])
@@ -879,7 +879,7 @@ class AgentTests(Fixture):
                 f.write(json.dumps(self.line("assistant", [{"type": "text", "text": "All 12 pass"}], "end_turn")) + "\n")
             work = self.group(self.collect(with_tokens=False), "work")
         finally:
-            cs.agent_progress = real
+            td.agent_progress = real
         self.assertEqual([p.name for p in calls], ["agent-a2.jsonl"])
         a = next(s for s in work["sessions"] if s["sessionId"] == "busy")["agents"]
         self.assertEqual((a["done"], a["running"]), (2, 1))
@@ -945,7 +945,7 @@ class AgentTests(Fixture):
 
     def test_big_results_at_the_end(self):
         # The end of a transcript can be one huge tool result: read further back
-        big = "x" * (cs.AGENT_TAIL_BYTES + 1000)
+        big = "x" * (td.AGENT_TAIL_BYTES + 1000)
         tool = {"type": "tool_use", "id": "toolu_b", "name": "Bash", "input": {"command": "seq 60"}}
         self.agent("busy", "a8", [self.line("user", "count"), self.line("assistant", [tool], "tool_use"),
                                   self.line("user", [{"type": "tool_result", "tool_use_id": "toolu_b", "content": big}]),
@@ -962,8 +962,8 @@ class AgentTests(Fixture):
         self.assertTrue(all(len(rec) == 7 for rec in agents["files"].values()))  # no details in there
         (self.cache / "agent-details.json").unlink()
         calls = []
-        real = cs.agent_progress
-        cs.agent_progress = lambda path, *more: calls.append(path.name) or real(path, *more)
+        real = td.agent_progress
+        td.agent_progress = lambda path, *more: calls.append(path.name) or real(path, *more)
         try:
             tree = self.tree_of()  # read again once
             self.assertEqual(sorted(calls), ["agent-a1.jsonl", "agent-a2.jsonl", "agent-a3.jsonl"])
@@ -972,24 +972,24 @@ class AgentTests(Fixture):
             self.assertEqual(self.tree_of()["a3"]["task"], "look at flaky test")
             self.assertEqual(calls, [])
         finally:
-            cs.agent_progress = real
+            td.agent_progress = real
 
 
     def test_model_label(self):
         for model, label in (("claude-opus-5-5", "Opus 5.5"), ("claude-opus-5-5[1m]", "Opus 5.5"),
                              ("claude-haiku-4-5-20251001", "Haiku 4.5"), ("claude-3-5-sonnet-20241022", "Sonnet 3.5"),
                              ("claude-fable-5-1", "Fable 5.1"), ("<synthetic>", None), (None, None)):
-            self.assertEqual(cs.model_label(model), label, model)
+            self.assertEqual(td.model_label(model), label, model)
 
     def test_describe_tool(self):
-        self.assertEqual(cs.describe_tool({"name": "Edit", "input": {"file_path": "/a/b/parser.py"}}), "Edit: parser.py")
-        self.assertEqual(cs.describe_tool({"name": "mcp__github__create_issue", "input": {}}), "github: create_issue")
-        self.assertEqual(cs.describe_tool({"name": "TodoWrite", "input": {"todos": []}}), "TodoWrite")
+        self.assertEqual(td.describe_tool({"name": "Edit", "input": {"file_path": "/a/b/parser.py"}}), "Edit: parser.py")
+        self.assertEqual(td.describe_tool({"name": "mcp__github__create_issue", "input": {}}), "github: create_issue")
+        self.assertEqual(td.describe_tool({"name": "TodoWrite", "input": {"todos": []}}), "TodoWrite")
 
 
 class TokenCountTests(unittest.TestCase):
     def test_the_unit_by_what_it_rounds_to(self):
-        self.assertEqual([cs.token_count(n) for n in (999, 1500, 999_949, 999_960, 2_500_000)],
+        self.assertEqual([td.token_count(n) for n in (999, 1500, 999_949, 999_960, 2_500_000)],
                          ["999", "1.5k", "999.9k", "1.0M", "2.5M"])
 
 
@@ -1010,7 +1010,7 @@ class AgentRunTests(Fixture):
 
     def run_of(self, lines, agent="ag1", chat="chat1"):
         write(self.dir / f"agent-{agent}.jsonl", "".join(json.dumps(l) + "\n" for l in lines))
-        return cs.agent_run(self.home, [], chat, agent, ".claude-work")
+        return td.agent_run(self.home, [], chat, agent, ".claude-work")
 
     def test_the_whole_run(self):
         tool = lambda i, name, inp: {"type": "tool_use", "id": i, "name": name, "input": inp}
@@ -1045,7 +1045,7 @@ class AgentRunTests(Fixture):
         self.assertIn("**▸ Edit** `/w/a.py`\n\n```diff\n- a\n+ b\n```\n\n*Error:*\n\n```\nFile not found\n```", md)
         # a long result is cut short, in a fence its own backticks can't close
         self.assertIn("````\n```\nline 0\n", md)
-        self.assertIn(f"line {cs.RUN_RESULT_LINES - 2}\n````\n*… {100 - cs.RUN_RESULT_LINES} more lines*", md)
+        self.assertIn(f"line {td.RUN_RESULT_LINES - 2}\n````\n*… {100 - td.RUN_RESULT_LINES} more lines*", md)
         self.assertTrue(md.split("## Report\n\n")[1].startswith("## Done\nIt's in `src/a.py`\n\n---\n*Transcript: `"))
 
     def test_still_running(self):
@@ -1065,26 +1065,26 @@ class AgentRunTests(Fixture):
         self.assertIn("· 0 tool calls", md)
 
     def test_markdown_stays_markdown(self):
-        self.assertEqual(cs.closed_fences("see:\n```py\nx = 1"), "see:\n```py\nx = 1\n```")
-        self.assertEqual(cs.closed_fences("```\na\n```\nok"), "```\na\n```\nok")
-        self.assertEqual(cs.closed_fences("````\n```\nstill code"), "````\n```\nstill code\n````")
-        self.assertEqual((cs.code_span("a`b"), cs.code_span("`x"), cs.code_span("p")), ("``a`b``", "`` `x ``", "`p`"))
+        self.assertEqual(td.closed_fences("see:\n```py\nx = 1"), "see:\n```py\nx = 1\n```")
+        self.assertEqual(td.closed_fences("```\na\n```\nok"), "```\na\n```\nok")
+        self.assertEqual(td.closed_fences("````\n```\nstill code"), "````\n```\nstill code\n````")
+        self.assertEqual((td.code_span("a`b"), td.code_span("`x"), td.code_span("p")), ("``a`b``", "`` `x ``", "`p`"))
 
     def test_unknown_or_unsafe_ids(self):
-        self.assertEqual(cs.agent_run(self.home, [], "chat1", "nope"), (False, "Can't find that subagent's transcript", None, None))
+        self.assertEqual(td.agent_run(self.home, [], "chat1", "nope"), (False, "Can't find that subagent's transcript", None, None))
         for chat, agent in (("chat1", "../x"), ("*", "ag1"), ("chat1", "a*")):
-            self.assertFalse(cs.agent_run(self.home, [], chat, agent)[0], (chat, agent))
+            self.assertFalse(td.agent_run(self.home, [], chat, agent)[0], (chat, agent))
 
     def test_command_line(self):
         self.run_of([self.line("user", "Count", 0)])
         out = io.StringIO()
-        with mock.patch.object(cs.Path, "home", return_value=self.home), contextlib.redirect_stdout(out):
-            cs.main(["--agent-run", "ag1", "--chat", "chat1", "--profile", ".claude-work"])
+        with mock.patch.object(td.Path, "home", return_value=self.home), contextlib.redirect_stdout(out):
+            td.main(["--agent-run", "ag1", "--chat", "chat1", "--profile", ".claude-work"])
         answer = json.loads(out.getvalue())
         self.assertEqual((answer["ok"], answer["title"]), (True, "Find parse"))
         self.assertTrue(answer["markdown"].startswith("# Find parse\n"))
         with self.assertRaises(SystemExit):
-            cs.main(["--agent-run", "ag1"])  # which chat's?
+            td.main(["--agent-run", "ag1"])  # which chat's?
 
 
 class SharedCacheFileTests(unittest.TestCase):
@@ -1104,29 +1104,29 @@ class SharedCacheFileTests(unittest.TestCase):
     def test_one_copy_keeps_the_others_entries(self):
         a, b = self.transcript("a", self.lines), self.transcript("b", self.lines)
         for path in (a, b):  # e.g. the panel lists a, the VS Code extension b
-            cache = cs.ChatCache(self.dir / "chats.json")
+            cache = td.ChatCache(self.dir / "chats.json")
             cache.edits(path)
             cache.save()
-        cache = cs.ChatCache(self.dir / "chats.json")
+        cache = td.ChatCache(self.dir / "chats.json")
         reads = []
-        real = cs.scan_edits
-        with mock.patch.object(cs, "scan_edits", lambda path, *rest: reads.append(path.name) or real(path, *rest)):
+        real = td.scan_edits
+        with mock.patch.object(td, "scan_edits", lambda path, *rest: reads.append(path.name) or real(path, *rest)):
             self.assertEqual(cache.edits(a)["stats"]["prompts"], 3)
         self.assertEqual(reads, [])
 
     def test_entries_no_copy_used_for_long_go(self):
         a = self.transcript("a", self.lines)
-        cache = cs.ChatCache(self.dir / "chats.json")
+        cache = td.ChatCache(self.dir / "chats.json")
         cache.edits(a)
-        with mock.patch.object(cs.time, "time", return_value=time.time() - cs.CACHE_KEEP_S - 60):
+        with mock.patch.object(td.time, "time", return_value=time.time() - td.CACHE_KEEP_S - 60):
             cache.save()
-        later = cs.ChatCache(self.dir / "chats.json")
+        later = td.ChatCache(self.dir / "chats.json")
         later.save()
         self.assertEqual(json.loads((self.dir / "chats.json").read_text())["edits"], {})
 
     def test_counts_what_an_older_copy_read_without_counting(self):
         path = self.transcript("a", self.lines[:1])
-        cache = cs.ChatCache(self.dir / "chats.json")
+        cache = td.ChatCache(self.dir / "chats.json")
         cache.edits(path)
         cache.save()
         # 1.8 read on to the end and kept "stats" as it was
@@ -1134,14 +1134,14 @@ class SharedCacheFileTests(unittest.TestCase):
         data = json.loads((self.dir / "chats.json").read_text())
         (entry,) = data["edits"].values()
         entry["size"] = path.stat().st_size
-        cs.write_json_atomic(self.dir / "chats.json", {**data, "edits": {cs.file_key(path.stat()): entry}})
-        self.assertEqual(cs.ChatCache(self.dir / "chats.json").edits(path)["stats"]["prompts"], 3)
+        td.write_json_atomic(self.dir / "chats.json", {**data, "edits": {td.file_key(path.stat()): entry}})
+        self.assertEqual(td.ChatCache(self.dir / "chats.json").edits(path)["stats"]["prompts"], 3)
 
     def test_a_failed_write_leaves_nothing_behind(self):
         # a full disk fails the write halfway; every check is a new process
-        cs.write_json_atomic(self.dir / "chats.json", {"version": 1})
+        td.write_json_atomic(self.dir / "chats.json", {"version": 1})
         with self.assertRaises(TypeError):
-            cs.write_json_atomic(self.dir / "chats.json", {"version": 1, "edits": {"a": [1, {2}]}})
+            td.write_json_atomic(self.dir / "chats.json", {"version": 1, "edits": {"a": [1, {2}]}})
         self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["chats.json"])
         self.assertEqual(json.loads((self.dir / "chats.json").read_text()), {"version": 1})
 
@@ -1156,7 +1156,7 @@ class OneAccountTwoProfilesTests(unittest.TestCase):
             write(chat, assistant("m1", now - 5, 1000) + "\n")
             (home / ".claude-b/projects/p").mkdir(parents=True)
             os.link(chat, home / ".claude-b/projects/p/chat.jsonl")  # what "Share with all accounts" does
-            (g,) = cs.collect(home, cache, now=now)["groups"]
+            (g,) = td.collect(home, cache, now=now)["groups"]
         self.assertEqual((g["tokens"]["today"]["output"], g["tokens"]["today"]["messages"]), (1000, 1))
         self.assertEqual(g["stats"]["days"][-1]["messages"], 1)
 
@@ -1171,7 +1171,7 @@ class OneAccountTwoProfilesTests(unittest.TestCase):
             write(home / ".claude-a/projects/p/own.jsonl", assistant("m3", now - 10 * 86400, 200) + "\n")
             (home / ".claude-b/projects/p").mkdir(parents=True)
             os.link(chat, home / ".claude-b/projects/p/chat.jsonl")
-            (g,) = cs.collect(home, cache, now=now)["groups"]
+            (g,) = td.collect(home, cache, now=now)["groups"]
         day = g["stats"]["days"][-11]
         self.assertEqual((day["output"], day["messages"], day["chats"]), (1200, 2, 2))
         self.assertEqual(g["stats"]["sum"]["output"], 1210)
@@ -1185,10 +1185,10 @@ class ProfileNameTests(unittest.TestCase):
             for name in (".claude-personal", ".claude-work"):
                 (home / name / "sessions").mkdir(parents=True)
             (home / ".claude").symlink_to(home / ".claude-personal")
-            labels = sorted(p.label for p in cs.discover_profiles(home))
+            labels = sorted(p.label for p in td.discover_profiles(home))
             (home / ".claude").unlink()
             (home / ".claude").symlink_to(home / ".claude-work")  # switched: the names stay
-            self.assertEqual(labels, sorted(p.label for p in cs.discover_profiles(home)))
+            self.assertEqual(labels, sorted(p.label for p in td.discover_profiles(home)))
             self.assertEqual(labels, ["personal", "work"])
 
     def test_two_folders_of_the_same_name(self):
@@ -1197,35 +1197,35 @@ class ProfileNameTests(unittest.TestCase):
             (home / ".claude/sessions").mkdir(parents=True)
             other = Path(tmp) / "data/.claude"
             (other / "sessions").mkdir(parents=True)
-            profiles = cs.discover_profiles(home, [str(other)])
+            profiles = td.discover_profiles(home, [str(other)])
             self.assertEqual(len({p.key for p in profiles}), 2)
-            self.assertIs(next(p for p in profiles if cs.matches_profile(p, str(other))).real, profiles[1].real)
+            self.assertIs(next(p for p in profiles if td.matches_profile(p, str(other))).real, profiles[1].real)
 
 
 class TokenCachePruneTests(Fixture):
     def test_another_copys_profiles_keep_their_caches(self):
-        profiles = cs.discover_profiles(self.home)
+        profiles = td.discover_profiles(self.home)
         self.cache.mkdir(parents=True, exist_ok=True)
-        mine = cs.token_cache_path(self.cache, profiles[0])
+        mine = td.token_cache_path(self.cache, profiles[0])
         theirs = self.cache / "tokens-.claude-extra-0123abcd.json"  # a profile only another copy knows
         gone = self.cache / "tokens-.claude-old-89abcdef.json"
         for f in (mine, theirs, gone):
             f.write_text("{}")
-        old = time.time() - cs.TOKEN_CACHE_KEEP_S - 60
+        old = time.time() - td.TOKEN_CACHE_KEEP_S - 60
         os.utime(gone, (old, old))
-        cs.prune_token_caches(self.cache, profiles)
+        td.prune_token_caches(self.cache, profiles)
         self.assertEqual(sorted(f.name for f in self.cache.glob("tokens-*.json")), sorted([mine.name, theirs.name]))
 
 
 class TokenScanTimeTests(Fixture):
     def test_a_scan_from_the_future_is_due(self):
-        profile = cs.discover_profiles(self.home)[0]
+        profile = td.discover_profiles(self.home)[0]
         self.cache.mkdir(parents=True, exist_ok=True)
-        cs.write_json_atomic(cs.token_cache_path(self.cache, profile),
-                             {**cs.empty_token_cache(), "scannedAt": self.now + 6 * 3600})  # the clock was set back
+        td.write_json_atomic(td.token_cache_path(self.cache, profile),
+                             {**td.empty_token_cache(), "scannedAt": self.now + 6 * 3600})  # the clock was set back
         scans = []
-        with mock.patch.object(cs, "scan_transcripts", lambda p, cache, now: scans.append(now) or cache):
-            cs.load_token_cache(self.cache, profile, self.now, True)
+        with mock.patch.object(td, "scan_transcripts", lambda p, cache, now: scans.append(now) or cache):
+            td.load_token_cache(self.cache, profile, self.now, True)
         self.assertEqual(scans, [self.now])
 
 
@@ -1267,24 +1267,24 @@ class ContentFileTests(Fixture):
         d.mkdir(parents=True)
         os.symlink("/dev/null", d / "settings.json")  # (/dev/zero in the proof: no test of that here, it would take the memory)
         os.mkfifo(d / "settings.local.json")
-        dirs = cs.PlanDirs(self.cache / "plan-dirs.json", save=False)
+        dirs = td.PlanDirs(self.cache / "plan-dirs.json", save=False)
         self.assertEqual([dirs.setting(str(d / n)) for n in ("settings.json", "settings.local.json")], [(False, None)] * 2)
 
     def test_a_git_file_that_is_a_pipe_isnt_read(self):
         proj, worktree = self.home / "Downloads/proj", self.home / "Downloads/wt"
         proj.mkdir(parents=True)
         os.mkfifo(proj / ".git")
-        self.assertEqual(cs.main_repository(proj), proj)
+        self.assertEqual(td.main_repository(proj), proj)
         (worktree / "gitdir").mkdir(parents=True)
         write(worktree / ".git", "gitdir: gitdir\n")
         os.mkfifo(worktree / "gitdir/commondir")
-        self.assertEqual(cs.canonical_git_root(str(worktree)), str(worktree))
-        self.assertEqual(cs.main_repository(worktree), worktree)
+        self.assertEqual(td.canonical_git_root(str(worktree)), str(worktree))
+        self.assertEqual(td.main_repository(worktree), worktree)
 
     def test_json_nested_deeper_than_python_reads_is_skipped(self):
         deep = '{"x": ' + "[" * 200000 + "]" * 200000 + "}"
         write(self.home / "repos/app/.claude/settings.local.json", deep)
-        self.assertIsNone(cs.read_json(self.home / "repos/app/.claude/settings.local.json"))
+        self.assertIsNone(td.read_json(self.home / "repos/app/.claude/settings.local.json"))
         title = '{"type":"ai-title","aiTitle":"Deep one"}\n'
         prompt = json.dumps({"type": "user", "cwd": "/tmp/x", "message": {"content": "go"}}) + "\n"
         reply = json.dumps({"type": "assistant", "cwd": "/tmp/x", "message": {"content": [{"type": "text", "text": "ok"}]}})
@@ -1299,18 +1299,18 @@ class StateTests(Fixture):
         # (a container given ~/.cache could queue a task there, or change the settings every copy takes)
         write(self.cache / "queue.json", {"tasks": [{"id": "task1", "prompt": "mine"}]})
         write(self.cache / "settings.json", {"at": 1, "by": "x", "values": {"usageCap": 80}})
-        self.assertEqual([t["id"] for t in cs.load_queue(self.cache)], ["task1"])  # (moved over, once)
-        self.assertEqual(cs.shared_settings(self.cache)["values"], {"usageCap": 80})
+        self.assertEqual([t["id"] for t in td.load_queue(self.cache)], ["task1"])  # (moved over, once)
+        self.assertEqual(td.shared_settings(self.cache)["values"], {"usageCap": 80})
         self.assertFalse((self.cache / "queue.json").exists() or (self.cache / "settings.json").exists())
         write(self.cache / "queue.json", {"tasks": [{"id": "task2", "prompt": "planted"}]})
-        cs._STATE.clear()  # (as a new check)
-        self.assertEqual([t["id"] for t in cs.load_queue(self.cache)], ["task1"])
-        self.assertEqual(oct(cs.state_dir(self.cache).stat().st_mode & 0o777), "0o700")
+        td._STATE.clear()  # (as a new check)
+        self.assertEqual([t["id"] for t in td.load_queue(self.cache)], ["task1"])
+        self.assertEqual(oct(td.state_dir(self.cache).stat().st_mode & 0o777), "0o700")
         fresh = Path(self.tmp.name) / "fresh/.cache/talpy-den"  # (nothing kept yet: one put there later isn't taken either)
-        cs.state_dir(fresh)
+        td.state_dir(fresh)
         write(fresh / "keep.json", {"chats": [{"chat": "planted"}]})
-        cs._STATE.clear()
-        self.assertEqual(cs.load_keep(fresh)["chats"], [])
+        td._STATE.clear()
+        self.assertEqual(td.load_keep(fresh)["chats"], [])
 
 
 class RecentProjectTests(Fixture):
@@ -1331,9 +1331,9 @@ class RecentProjectTests(Fixture):
 
 class DismissTests(Fixture):
     def test_hidden_while_done_back_when_active(self):
-        cs.private_dir(self.cache)
+        td.private_dir(self.cache)
         now = int(self.now * 1000)
-        cs.save_dismissed(self.cache, {"bgdone": now, "busy": now, "gone": now, "long-gone": now - cs.DISMISSED_KEEP_MS - 1})
+        td.save_dismissed(self.cache, {"bgdone": now, "busy": now, "gone": now, "long-gone": now - td.DISMISSED_KEEP_MS - 1})
         r = self.collect(with_tokens=False)
         shown = {s["sessionId"] for g in r["groups"] for s in g["sessions"]}
         self.assertNotIn("bgdone", shown)              # finished: hidden
@@ -1341,37 +1341,37 @@ class DismissTests(Fixture):
         self.assertEqual((r["dismissed"], r["counts"]["done"]), (1, 0))
         # one that's active again is forgotten; one not listed now may be by
         # another copy of the script (other settings): forgotten after a while
-        self.assertEqual(set(cs.load_dismissed(self.cache)), {"bgdone", "gone"})
+        self.assertEqual(set(td.load_dismissed(self.cache)), {"bgdone", "gone"})
 
     def test_a_chat_a_limit_stopped_with_no_process_can_be_hidden(self):
         # (a background chat a usage limit stopped, let go of by Claude's service: "Limit reset · go on",
         # Not open, idle. It had no Hide, and a hidden one came back: only finished rows stayed hidden)
         stop = {"kind": "limit", "over": True}
-        self.assertTrue(cs.row_over({"state": "done", "pid": 7, "stopped": None}))
-        self.assertTrue(cs.row_over({"state": "idle", "pid": None, "stopped": stop}))
-        self.assertFalse(cs.row_over({"state": "idle", "pid": 7, "stopped": stop}))      # (its Claude still runs: Stop first)
-        self.assertFalse(cs.row_over({"state": "idle", "pid": None, "stopped": None}))
+        self.assertTrue(td.row_over({"state": "done", "pid": 7, "stopped": None}))
+        self.assertTrue(td.row_over({"state": "idle", "pid": None, "stopped": stop}))
+        self.assertFalse(td.row_over({"state": "idle", "pid": 7, "stopped": stop}))      # (its Claude still runs: Stop first)
+        self.assertFalse(td.row_over({"state": "idle", "pid": None, "stopped": None}))
 
     def test_a_chat_waiting_for_you_with_nothing_running_can_be_hidden(self):
         # (a background chat Claude's service let go of while it waited for you: listed for good, with no
         # Stop, as nothing of it runs; one whose Claude runs and asks you something keeps no Hide)
-        self.assertTrue(cs.row_over({"state": "waiting", "pid": None, "stopped": None}))
-        self.assertFalse(cs.row_over({"state": "waiting", "pid": 7, "stopped": None}))
+        self.assertTrue(td.row_over({"state": "waiting", "pid": None, "stopped": None}))
+        self.assertFalse(td.row_over({"state": "waiting", "pid": 7, "stopped": None}))
 
     def test_removing_while_a_check_runs(self):
-        cs.private_dir(self.cache)
-        cs.save_dismissed(self.cache, {"busy": int(self.now * 1000)})
-        real, landed = cs.load_dismissed, []
+        td.private_dir(self.cache)
+        td.save_dismissed(self.cache, {"busy": int(self.now * 1000)})
+        real, landed = td.load_dismissed, []
         def load_then_remove(root):  # jump.py --dismiss lands right after the check read the file
             sessions = real(root)
             if not landed:
                 landed.append(True)
-                with mock.patch.object(cs, "load_dismissed", real):
-                    cs.change_dismissed(root, add="bgdone")
+                with mock.patch.object(td, "load_dismissed", real):
+                    td.change_dismissed(root, add="bgdone")
             return sessions
-        with mock.patch.object(cs, "load_dismissed", load_then_remove):
+        with mock.patch.object(td, "load_dismissed", load_then_remove):
             self.collect(with_tokens=False)
-        self.assertEqual(set(cs.load_dismissed(self.cache)), {"bgdone"})
+        self.assertEqual(set(td.load_dismissed(self.cache)), {"bgdone"})
 
 
 class BookmarkStoreTests(unittest.TestCase):
@@ -1387,7 +1387,7 @@ class BookmarkStoreTests(unittest.TestCase):
         self.addCleanup(os.umask, old)
 
     def mark(self, key, on=True, kind="claude", at=1000, text="a reply", now=5000, chat=CHAT, host=""):
-        return cs.change_bookmark(self.cache, chat, host, key, on, kind, at, text, now_ms=now)
+        return td.change_bookmark(self.cache, chat, host, key, on, kind, at, text, now_ms=now)
 
     def keys(self, marks):
         return [m["key"] for m in marks]
@@ -1400,7 +1400,7 @@ class BookmarkStoreTests(unittest.TestCase):
         self.mark("uuid-a", kind="you", at=1000, text="mine", now=7000)
         ok, _, marks, v = self.mark("msg_c", at=2000, now=4000)  # (written as msg_b, bookmarked before it)
         self.assertEqual((self.keys(marks), v), (["uuid-a", "msg_c", "msg_b"], 7001))
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), (marks, 7001))
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT), (marks, 7001))
         ok, said, marks, v = self.mark("msg_c", on=False, now=8000)
         self.assertEqual((ok, said, self.keys(marks), v), (True, "", ["uuid-a", "msg_b"], 8000))
         self.assertEqual(self.mark("msg_c", on=False, now=9000), (True, "", marks, 8000))
@@ -1414,7 +1414,7 @@ class BookmarkStoreTests(unittest.TestCase):
         self.assertEqual(text, "line one line two")
         text = self.mark("k2", text="x" * 500)[2][1]["text"]
         self.assertEqual(text, "x" * 139 + "…")
-        self.assertEqual(len(text), cs.BOOKMARK_TEXT)
+        self.assertEqual(len(text), td.BOOKMARK_TEXT)
         self.assertEqual(self.mark("k3", text="y" * 140)[2][2]["text"], "y" * 140)  # (not cut)
         self.assertEqual(self.mark("k4", text="word " * 100)[2][3]["text"][-6:], " word…")
         self.assertEqual(self.mark("k5", text="")[2][4]["text"], "")
@@ -1432,24 +1432,24 @@ class BookmarkStoreTests(unittest.TestCase):
         self.assertEqual(os.listdir(self.cache / "bookmarks"), [self.CHAT + ".json"])
 
     def test_a_chat_keeps_up_to_100(self):
-        for n in range(cs.BOOKMARKS_MAX):
+        for n in range(td.BOOKMARKS_MAX):
             self.mark(f"k{n}", at=n, now=5000 + n)
         ok, said, marks, v = self.mark("k100", at=100, now=9000)
         self.assertEqual((ok, said, len(marks), v), (False, "A chat keeps up to 100 bookmarks: remove one first",
                                                      100, 5099))
-        self.assertNotIn("k100", self.keys(cs.load_bookmarks(self.cache, self.CHAT)[0]))
+        self.assertNotIn("k100", self.keys(td.load_bookmarks(self.cache, self.CHAT)[0]))
         self.assertEqual(self.mark("k5", at=5, now=9000)[:2], (True, ""))  # (one it has: done)
         self.mark("k5", on=False, now=9001)
         ok, _, marks, v = self.mark("k100", at=100, now=9002)
         self.assertEqual((ok, len(marks), marks[-1]["key"], v), (True, 100, "k100", 9002))
 
     def test_the_files_are_private_and_written_in_one_go(self):
-        with mock.patch.object(cs, "write_json_atomic", wraps=cs.write_json_atomic) as write_json:
+        with mock.patch.object(td, "write_json_atomic", wraps=td.write_json_atomic) as write_json:
             self.mark("k1", host="build-box")
             self.mark("k1")
         self.assertEqual([c[1] for c in write_json.call_args_list], [{"private": True}] * 2)
         root = self.cache / "bookmarks"
-        host = root / ("host-" + cs.short_id("build-box"))
+        host = root / ("host-" + td.short_id("build-box"))
         self.assertEqual(sorted(os.listdir(root)), sorted([self.CHAT + ".json", host.name]))  # (nothing left over)
         self.assertEqual(os.listdir(host), [self.CHAT + ".json"])
         for folder in (root, host):
@@ -1460,7 +1460,7 @@ class BookmarkStoreTests(unittest.TestCase):
                              {"key": "k1", "kind": "claude", "at": 1000, "text": "a reply", "made": 5000}]})
         # a write that fails changes nothing and says why
         before = (root / (self.CHAT + ".json")).read_bytes()
-        with mock.patch.object(cs, "write_json_atomic", side_effect=OSError(28, "No space left on device")):
+        with mock.patch.object(td, "write_json_atomic", side_effect=OSError(28, "No space left on device")):
             ok, said, marks, v = self.mark("k2", now=6000)
         self.assertEqual((ok, said, self.keys(marks), v), (False, "No space left on device", ["k1"], 5000))
         self.assertEqual((root / (self.CHAT + ".json")).read_bytes(), before)
@@ -1471,25 +1471,25 @@ class BookmarkStoreTests(unittest.TestCase):
         self.assertEqual(self.mark("k1", on=False, now=5001)[3], 5002)
         self.assertEqual(self.mark("k2", on=False, now=9000)[3], 9000)
         self.assertTrue((self.cache / "bookmarks" / (self.CHAT + ".json")).exists())
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 9000))
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT), ([], 9000))
         self.assertEqual(self.mark("k3", now=9000)[3], 9001)
         # pane.py's answer carries the list once the chat has a file (an empty one too), else nothing
         self.mark("k3", on=False, now=9500)
-        self.assertEqual(cs.bookmarks_answer({"ok": True}, self.cache, self.CHAT),
+        self.assertEqual(td.bookmarks_answer({"ok": True}, self.cache, self.CHAT),
                          {"ok": True, "bookmarks": [], "bookmarksV": 9500})
-        self.assertEqual(cs.bookmarks_answer({"ok": True}, self.cache, "other-chat"), {"ok": True})
-        self.assertEqual(cs.load_bookmarks(self.cache, "other-chat"), ([], 0))
+        self.assertEqual(td.bookmarks_answer({"ok": True}, self.cache, "other-chat"), {"ok": True})
+        self.assertEqual(td.load_bookmarks(self.cache, "other-chat"), ([], 0))
 
     def test_a_hosts_file_is_under_a_hash_of_its_name(self):
         _, _, marks, _ = self.mark("k1", host="build-box")
-        path = self.cache / "bookmarks" / ("host-" + cs.short_id("build-box")) / (self.CHAT + ".json")
-        self.assertEqual(cs.bookmarks_path(self.cache, self.CHAT, "build-box"), path)
+        path = self.cache / "bookmarks" / ("host-" + td.short_id("build-box")) / (self.CHAT + ".json")
+        self.assertEqual(td.bookmarks_path(self.cache, self.CHAT, "build-box"), path)
         self.assertTrue(path.exists())
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT, "build-box"), (marks, 5000))
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 0))  # (this computer's chat of that id)
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT, "build-box"), (marks, 5000))
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT), ([], 0))  # (this computer's chat of that id)
         for host in ("..", "../..", "a/../../b"):
             self.mark("k1", host=host)
-            where = cs.bookmarks_path(self.cache, self.CHAT, host)
+            where = td.bookmarks_path(self.cache, self.CHAT, host)
             self.assertEqual(where.parent.parent, self.cache / "bookmarks", host)
             self.assertTrue(where.exists(), host)
             self.assertEqual(where.resolve().parent.parent, (self.cache / "bookmarks").resolve(), host)
@@ -1503,21 +1503,21 @@ class BookmarkStoreTests(unittest.TestCase):
             {"key": "k2", "kind": "claude", "at": 5, "text": "a\nb", "made": "soon"}, good, dict(good, text="twice"),
             {"key": "k3", "kind": "tool"}, {"key": "pending-1", "kind": "you"}, {"kind": "you"}, "k4", None,
             {"key": "k5", "kind": "claude", "at": True, "text": ["x"]}]})
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT), ([
             {"key": "k5", "kind": "claude", "at": 0, "text": "", "made": 0},
             {"key": "k2", "kind": "claude", "at": 5, "text": "a b", "made": 0}, good], 7))
         write(path, {"v": "x", "marks": {}})
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 1))
-        for broken in ("{", "[]", "x" * (cs.BOOKMARKS_READ + 1)):
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT), ([], 1))
+        for broken in ("{", "[]", "x" * (td.BOOKMARKS_READ + 1)):
             write(path, broken)
-            self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 0))
+            self.assertEqual(td.load_bookmarks(self.cache, self.CHAT), ([], 0))
 
     def test_a_full_list_of_the_longest_marks_is_read_back(self):
-        for n in range(cs.BOOKMARKS_MAX):
+        for n in range(td.BOOKMARKS_MAX):
             self.mark(f"{n:03d}" + "k" * 197, text="\U0001F600" * 500, now=5000 + n)
         path = self.cache / "bookmarks" / (self.CHAT + ".json")
-        self.assertLess(path.stat().st_size, cs.BOOKMARKS_READ)
-        marks, v = cs.load_bookmarks(self.cache, self.CHAT)
+        self.assertLess(path.stat().st_size, td.BOOKMARKS_READ)
+        marks, v = td.load_bookmarks(self.cache, self.CHAT)
         self.assertEqual((len(marks), v, marks[0]["text"]), (100, 5099, "\U0001F600" * 139 + "…"))
 
     def test_writes_at_once_all_land(self):
@@ -1527,7 +1527,7 @@ class BookmarkStoreTests(unittest.TestCase):
             t.start()
         for t in threads:
             t.join()
-        marks, v = cs.load_bookmarks(self.cache, self.CHAT)
+        marks, v = td.load_bookmarks(self.cache, self.CHAT)
         self.assertEqual((sorted(self.keys(marks)), v >= 5011), (sorted(f"k{n}" for n in range(12)), True))
         self.assertEqual(sorted(os.listdir(self.cache / "bookmarks")), [self.CHAT + ".json"])
 
@@ -1538,71 +1538,71 @@ class BookmarkStoreTests(unittest.TestCase):
         self.mark("k3", at=3, chat="new-1", now=6001)
         self.mark("h1", chat="old-1", host="build-box")
         before = int(time.time() * 1000)
-        cs.bookmarks_moved(self.cache, {"old-1": "mid-1", "mid-1": "new-1", "gone": "new-2"})
-        marks, v = cs.load_bookmarks(self.cache, "new-1")
+        td.bookmarks_moved(self.cache, {"old-1": "mid-1", "mid-1": "new-1", "gone": "new-2"})
+        marks, v = td.load_bookmarks(self.cache, "new-1")
         self.assertEqual([(m["key"], m["text"]) for m in marks], [("k1", "old one"), ("k2", "new two"), ("k3", "a reply")])
         self.assertGreaterEqual(v, before)
-        self.assertEqual(cs.load_bookmarks(self.cache, "old-1"), ([], 0))
+        self.assertEqual(td.load_bookmarks(self.cache, "old-1"), ([], 0))
         self.assertFalse((self.cache / "bookmarks" / "old-1.json").exists())
         self.assertFalse((self.cache / "bookmarks" / "new-2.json").exists())
-        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, "old-1", "build-box")[0]), ["h1"])  # (another computer's)
+        self.assertEqual(self.keys(td.load_bookmarks(self.cache, "old-1", "build-box")[0]), ["h1"])  # (another computer's)
         # a host's: in its own folder; to an id with no file yet
-        cs.bookmarks_moved(self.cache, {"old-1": "new-9"}, "build-box")
-        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, "new-9", "build-box")[0]), ["h1"])
-        self.assertEqual(cs.load_bookmarks(self.cache, "old-1", "build-box"), ([], 0))
-        self.assertEqual(cs.load_bookmarks(self.cache, "new-9"), ([], 0))
+        td.bookmarks_moved(self.cache, {"old-1": "new-9"}, "build-box")
+        self.assertEqual(self.keys(td.load_bookmarks(self.cache, "new-9", "build-box")[0]), ["h1"])
+        self.assertEqual(td.load_bookmarks(self.cache, "old-1", "build-box"), ([], 0))
+        self.assertEqual(td.load_bookmarks(self.cache, "new-9"), ([], 0))
 
     def test_moves_without_bookmarks_touch_nothing(self):
-        with mock.patch.object(cs, "bookmarks_lock") as lock:
-            cs.bookmarks_moved(self.cache, {"old-1": "new-1"})  # (no folder)
+        with mock.patch.object(td, "bookmarks_lock") as lock:
+            td.bookmarks_moved(self.cache, {"old-1": "new-1"})  # (no folder)
         self.assertFalse(self.cache.exists())
         self.mark("k1", chat="other")
-        with mock.patch.object(cs, "bookmarks_lock") as lock_too:
-            cs.bookmarks_moved(self.cache, {"old-1": "new-1", "a/b": "c", "other": "other"})
+        with mock.patch.object(td, "bookmarks_lock") as lock_too:
+            td.bookmarks_moved(self.cache, {"old-1": "new-1", "a/b": "c", "other": "other"})
         self.assertEqual((lock.call_count, lock_too.call_count), (0, 0))
         self.assertEqual(os.listdir(self.cache / "bookmarks"), ["other.json"])
 
     def test_forgetting_a_deleted_chats_bookmarks(self):
         self.mark("k1")
         self.mark("k1", host="build-box")
-        cs.forget_bookmarks(self.cache, self.CHAT)
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 0))
-        self.assertEqual(len(cs.load_bookmarks(self.cache, self.CHAT, "build-box")[0]), 1)
-        cs.forget_bookmarks(self.cache, self.CHAT, "build-box")
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT, "build-box"), ([], 0))
-        cs.forget_bookmarks(self.cache, self.CHAT)  # (none any more)
-        cs.forget_bookmarks(self.cache, "..")
+        td.forget_bookmarks(self.cache, self.CHAT)
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT), ([], 0))
+        self.assertEqual(len(td.load_bookmarks(self.cache, self.CHAT, "build-box")[0]), 1)
+        td.forget_bookmarks(self.cache, self.CHAT, "build-box")
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT, "build-box"), ([], 0))
+        td.forget_bookmarks(self.cache, self.CHAT)  # (none any more)
+        td.forget_bookmarks(self.cache, "..")
 
     def test_a_deleted_chat_takes_its_bookmarks_along_here_and_on_a_host(self):
         # (sharing.delete_chat here, remote.delete for a host's: forget_deleted)
         self.mark("k1")
         self.mark("k1", host="build-box")
         self.mark("k1", chat="other")
-        cs.forget_deleted(self.cache, "chats", self.CHAT, "build-box")
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT, "build-box"), ([], 0))
-        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, self.CHAT)[0]), ["k1"])  # (this computer's stays)
-        cs.forget_deleted(self.cache, "chats", self.CHAT)
-        self.assertEqual(cs.load_bookmarks(self.cache, self.CHAT), ([], 0))
+        td.forget_deleted(self.cache, "chats", self.CHAT, "build-box")
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT, "build-box"), ([], 0))
+        self.assertEqual(self.keys(td.load_bookmarks(self.cache, self.CHAT)[0]), ["k1"])  # (this computer's stays)
+        td.forget_deleted(self.cache, "chats", self.CHAT)
+        self.assertEqual(td.load_bookmarks(self.cache, self.CHAT), ([], 0))
         self.assertFalse((self.cache / "bookmarks" / (self.CHAT + ".json")).exists())
-        cs.forget_deleted(self.cache, "plans", "other")  # (a plan of that name isn't the chat)
-        cs.forget_deleted(self.cache, "memories", "other")
-        self.assertEqual(self.keys(cs.load_bookmarks(self.cache, "other")[0]), ["k1"])
+        td.forget_deleted(self.cache, "plans", "other")  # (a plan of that name isn't the chat)
+        td.forget_deleted(self.cache, "memories", "other")
+        self.assertEqual(self.keys(td.load_bookmarks(self.cache, "other")[0]), ["k1"])
 
     def test_a_check_takes_moved_chats_bookmarks_along_only_when_a_chat_moved(self):
         home = self.cache.parent / "home"
         home.mkdir()
-        with mock.patch.object(cs, "chat_moves", return_value={}), mock.patch.object(cs, "bookmarks_moved") as moved:
-            status = cs.collect(home, self.cache, with_tokens=False)
+        with mock.patch.object(td, "chat_moves", return_value={}), mock.patch.object(td, "bookmarks_moved") as moved:
+            status = td.collect(home, self.cache, with_tokens=False)
         self.assertEqual((status["ok"], moved.call_count), (True, 0))
-        with mock.patch.object(cs, "chat_moves", return_value={"old-1": "new-1"}), \
-                mock.patch.object(cs, "bookmarks_moved") as moved:
-            status = cs.collect(home, self.cache, with_tokens=False)
+        with mock.patch.object(td, "chat_moves", return_value={"old-1": "new-1"}), \
+                mock.patch.object(td, "bookmarks_moved") as moved:
+            status = td.collect(home, self.cache, with_tokens=False)
         moved.assert_called_once_with(self.cache, {"old-1": "new-1"})
         self.assertEqual([e for e in status["errors"] if "bookmark" in e], [])
         # (one that fails is said, and the check goes on)
-        with mock.patch.object(cs, "chat_moves", return_value={"old-1": "new-1"}), \
-                mock.patch.object(cs, "bookmarks_moved", side_effect=OSError("No space left on device")):
-            status = cs.collect(home, self.cache, with_tokens=False)
+        with mock.patch.object(td, "chat_moves", return_value={"old-1": "new-1"}), \
+                mock.patch.object(td, "bookmarks_moved", side_effect=OSError("No space left on device")):
+            status = td.collect(home, self.cache, with_tokens=False)
         self.assertTrue(status["ok"])
         self.assertIn("bookmarks of moved chats: No space left on device", status["errors"])
 
@@ -1628,7 +1628,7 @@ class SharedChatTests(Fixture):
 
     def test_shared_flag_and_holder(self):
         write(self.state / "claude-shared-chats" / "lock-busy",
-              f"{os.getpid()}-{cs.proc_start_time(os.getpid())} {self.home / '.claude-personal'}\n")
+              f"{os.getpid()}-{td.proc_start_time(os.getpid())} {self.home / '.claude-personal'}\n")
         by_id, _ = self.sessions()
         self.assertEqual(by_id["busy"]["shared"], {"profiles": ["work", "personal"], "openIn": "personal"})
         self.assertIsNone(by_id["waiting"]["shared"])
@@ -1802,37 +1802,37 @@ class StatusCheckCostTests(unittest.TestCase):
             return (date.fromtimestamp(now) - timedelta(days=n)).isoformat()
         messages = {"a": [day(0), "opus", 1, 2, 3, 4, 0], "b": [day(0), "opus", 5, 6, 7, 8, 1],
                     "c": [day(3), "sonnet", 10, 20, 0, 0, 0], "d": [day(9), "opus", 99, 99, 99, 99, 0]}
-        from_messages = cs.token_totals([{"messages": messages}], now)  # a cache saved before the sums
-        from_days = cs.token_totals([{"messages": {}, "days": cs.day_totals(messages), "scannedAt": 5, "daysAt": 5}],
+        from_messages = td.token_totals([{"messages": messages}], now)  # a cache saved before the sums
+        from_days = td.token_totals([{"messages": {}, "days": td.day_totals(messages), "scannedAt": 5, "daysAt": 5}],
                                     now)
         self.assertEqual(from_days, from_messages)
         # sums an older version didn't update when it rescanned: the messages count
-        stale = cs.token_totals([{"messages": messages, "days": {}, "scannedAt": 6, "daysAt": 5}], now)
+        stale = td.token_totals([{"messages": messages, "days": {}, "scannedAt": 6, "daysAt": 5}], now)
         self.assertEqual(stale, from_messages)
         self.assertEqual((from_days["today"]["messages"], from_days["today"]["shared"]), (2, 5 + 6 + 7 + 8))
         self.assertEqual(from_days["week"]["messages"], 3)  # day 9 is past the week
 
     def test_vscode_looked_up_at_most_every_30_seconds(self):
         calls = []
-        real = cs.vscode_lookup
-        cs.vscode_lookup = lambda home: calls.append(home) or (True, "/x/.claude-work")
-        self.addCleanup(setattr, cs, "vscode_lookup", real)
+        real = td.vscode_lookup
+        td.vscode_lookup = lambda home: calls.append(home) or (True, "/x/.claude-work")
+        self.addCleanup(setattr, td, "vscode_lookup", real)
         saved = os.environ.get("XDG_CONFIG_HOME")
         self.addCleanup(lambda: os.environ.__setitem__("XDG_CONFIG_HOME", saved) if saved is not None
                         else os.environ.pop("XDG_CONFIG_HOME", None))
         with tempfile.TemporaryDirectory() as tmp:
             home, cache = Path(tmp), Path(tmp) / "cache"
             os.environ["XDG_CONFIG_HOME"] = str(home / ".config")
-            self.assertEqual(cs.cached_vscode_lookup(home, cache, 1000), (True, "/x/.claude-work"))
-            self.assertEqual(cs.cached_vscode_lookup(home, cache, 1010), (True, "/x/.claude-work"))
+            self.assertEqual(td.cached_vscode_lookup(home, cache, 1000), (True, "/x/.claude-work"))
+            self.assertEqual(td.cached_vscode_lookup(home, cache, 1010), (True, "/x/.claude-work"))
             self.assertEqual(len(calls), 1)
             settings = home / ".config/Code/User/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text("{}")  # a setting changed: looked up again at once
-            cs.cached_vscode_lookup(home, cache, 1011)
-            cs.cached_vscode_lookup(home, cache, 1012)
+            td.cached_vscode_lookup(home, cache, 1011)
+            td.cached_vscode_lookup(home, cache, 1012)
             self.assertEqual(len(calls), 2)
-            cs.cached_vscode_lookup(home, cache, 1011 + cs.VSCODE_CHECK_INTERVAL)
+            td.cached_vscode_lookup(home, cache, 1011 + td.VSCODE_CHECK_INTERVAL)
             self.assertEqual(len(calls), 3)
             # VS Code just installed (a new file in a folder on PATH): looked up again at once
             saved_path = os.environ.get("PATH")
@@ -1840,12 +1840,12 @@ class StatusCheckCostTests(unittest.TestCase):
             bin_dir = home / "bin"
             bin_dir.mkdir()
             os.environ["PATH"] = str(bin_dir)
-            cs.cached_vscode_lookup(home, cache, 1050)
-            cs.cached_vscode_lookup(home, cache, 1051)
+            td.cached_vscode_lookup(home, cache, 1050)
+            td.cached_vscode_lookup(home, cache, 1051)
             looked = len(calls)
             time.sleep(0.05)
             (bin_dir / "code").write_text("")
-            cs.cached_vscode_lookup(home, cache, 1052)
+            td.cached_vscode_lookup(home, cache, 1052)
             self.assertEqual(len(calls), looked + 1)
 
 
@@ -1863,7 +1863,7 @@ class TmuxFlagTests(Fixture):
 
 class FakeAttach:
     """Claude's background service as Talpy Chat's Stop sees it: a Unix
-    socket at its place (cs.DAEMON_TMP, patched to a folder of the test's),
+    socket at its place (td.DAEMON_TMP, patched to a folder of the test's),
     its attach line in, answer(request) as one line out; once that's ok, a
     bit of what the session shows (frame), and every byte that comes in after
     the line is kept in typed (what the session got as typed) till the
@@ -1879,11 +1879,11 @@ class FakeAttach:
         root = Path(tempfile.mkdtemp(prefix="td-", dir="/tmp"))  # (a socket's path: at most 107 bytes)
         test.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         value = str(profile.path)
-        for p in (mock.patch.object(cs, "DAEMON_TMP", root),
-                  mock.patch.object(cs, "service_config_dir", side_effect=lambda q: value if q.path == profile.path else None)):
+        for p in (mock.patch.object(td, "DAEMON_TMP", root),
+                  mock.patch.object(td, "service_config_dir", side_effect=lambda q: value if q.path == profile.path else None)):
             p.start()
             test.addCleanup(p.stop)
-        self.path = cs.daemon_socket(profile)
+        self.path = td.daemon_socket(profile)
         self.path.parent.mkdir(parents=True)
         write(profile.path / "daemon/control.key", self.KEY + "\n")
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -1943,17 +1943,17 @@ class BackgroundStopTests(Fixture):
 
     def setUp(self):
         super().setUp()
-        self.profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
+        self.profile = next(p for p in td.discover_profiles(self.home) if p.label == "work")
         self.entry = session("bgworking", kind="bg", status="busy", jobId="job3", version="2.1.318")
-        for p in (mock.patch.object(cs, "tty_size", side_effect=lambda pid: (120, 40) if pid == PID else None),
-                  mock.patch.object(cs, "cache_dir", return_value=self.cache)):
+        for p in (mock.patch.object(td, "tty_size", side_effect=lambda pid: (120, 40) if pid == PID else None),
+                  mock.patch.object(td, "cache_dir", return_value=self.cache)):
             p.start()
             self.addCleanup(p.stop)
 
     def test_the_claude_code_versions_it_was_checked_on(self):
         for version, known in (("2.1.318", True), ("2.1.330", True), ("2.1.317", False), ("2.2.0", False),
                                ("3.0.1", False), ("2.1.318-beta.1", False), ("", False), (None, False), (2, False)):
-            self.assertEqual(cs.bg_stop_known(version), known, version)
+            self.assertEqual(td.bg_stop_known(version), known, version)
 
     def test_rows_say_whether_stop_can_interrupt_a_background_chat(self):
         w = self.home / ".claude-work"
@@ -1966,7 +1966,7 @@ class BackgroundStopTests(Fixture):
 
     def test_esc_goes_in_at_the_size_its_terminal_has_now(self):
         service = FakeAttach(self, self.profile, FakeAttach.takes_it)
-        ok, message = cs.interrupt_background(self.profile, self.entry)
+        ok, message = td.interrupt_background(self.profile, self.entry)
         self.assertTrue(ok, message)
         self.assertTrue(service.done.wait(5))
         (request,) = service.requests
@@ -1982,11 +1982,11 @@ class BackgroundStopTests(Fixture):
         # (two Esc in a row open Claude's rewind menu: a second Stop within 2 s, from another
         # front end say, types nothing)
         service = FakeAttach(self, self.profile, FakeAttach.takes_it)
-        self.assertTrue(cs.interrupt_background(self.profile, self.entry)[0])
-        self.assertEqual(cs.interrupt_background(self.profile, self.entry), (False, "It was stopped a moment ago"))
+        self.assertTrue(td.interrupt_background(self.profile, self.entry)[0])
+        self.assertEqual(td.interrupt_background(self.profile, self.entry), (False, "It was stopped a moment ago"))
         self.assertEqual(len(service.requests), 1)
-        self.assertTrue(cs.stop_turn("job3", time.time() + cs.BG_STOP_GAP + 0.1))
-        self.assertTrue(cs.stop_turn("other"))
+        self.assertTrue(td.stop_turn("job3", time.time() + td.BG_STOP_GAP + 0.1))
+        self.assertTrue(td.stop_turn("other"))
         self.assertEqual(stat.S_IMODE((self.cache / "stops.json").stat().st_mode), 0o600)
 
     def test_nothing_is_typed_unless_it_works_on_a_version_it_knows(self):
@@ -1998,7 +1998,7 @@ class BackgroundStopTests(Fixture):
                             (dict(self.entry, status="shell"), "Its turn is over"),
                             (dict(self.entry, pid=os.getppid()), "size of its terminal"),
                             (dict(self.entry, jobId="../x"), "can't stop")):
-            ok, message = cs.interrupt_background(self.profile, entry)
+            ok, message = td.interrupt_background(self.profile, entry)
             self.assertFalse(ok, entry)
             self.assertIn(said, message)
         self.assertEqual(service.requests, [], "never attached")
@@ -2010,22 +2010,22 @@ class BackgroundStopTests(Fixture):
                              (dict(FakeAttach.takes_it({}), booting=True), "starting")):
             with self.subTest(answer=answer):
                 service = FakeAttach(self, self.profile, lambda r, a=answer: a)
-                ok, message = cs.interrupt_background(self.profile, self.entry)
+                ok, message = td.interrupt_background(self.profile, self.entry)
                 self.assertFalse(ok)
                 self.assertIn(said, message)
                 self.assertTrue(service.done.wait(5))
                 self.assertEqual(service.typed, [b""])
 
     def test_no_service_no_key_or_another_users_socket(self):
-        with mock.patch.object(cs, "service_config_dir", return_value=None):
-            self.assertEqual(cs.interrupt_background(self.profile, self.entry),
+        with mock.patch.object(td, "service_config_dir", return_value=None):
+            self.assertEqual(td.interrupt_background(self.profile, self.entry),
                              (False, "Claude's background service can't be asked"))
         service = FakeAttach(self, self.profile, FakeAttach.takes_it)
-        with mock.patch.object(cs, "peer_uid", return_value=os.getuid() + 1):
-            self.assertEqual(cs.interrupt_background(self.profile, self.entry),
+        with mock.patch.object(td, "peer_uid", return_value=os.getuid() + 1):
+            self.assertEqual(td.interrupt_background(self.profile, self.entry),
                              (False, "Claude's background service didn't answer"))
         (self.profile.path / "daemon/control.key").unlink()
-        self.assertEqual(cs.interrupt_background(self.profile, self.entry),
+        self.assertEqual(td.interrupt_background(self.profile, self.entry),
                          (False, "Claude's background service can't be asked"))
         self.assertEqual(service.requests, [], "never told the key")
 
@@ -2033,11 +2033,11 @@ class BackgroundStopTests(Fixture):
         write(self.home / ".claude-work/sessions/17.json", self.entry)
         write(self.home / ".claude-work/sessions/30.json", session("in-tmux", status="busy", tmux="main:@1.%4"))
         calls = []
-        with mock.patch.object(cs, "interrupt_background", side_effect=lambda p, e: calls.append((p.label, e["jobId"])) or (True, "bg")), \
-                mock.patch.object(cs, "interrupt_chat", side_effect=lambda e: calls.append(("tmux", e["sessionId"])) or (True, "tmux")):
-            self.assertEqual(cs.interrupt_chat_by_id(self.home, [], "bgworking", ".claude-work"), (True, "bg"))
-            self.assertEqual(cs.interrupt_chat_by_id(self.home, [], "in-tmux"), (True, "tmux"))
-            self.assertEqual(cs.interrupt_chat_by_id(self.home, [], "gone"), (False, "That chat isn't running any more"))
+        with mock.patch.object(td, "interrupt_background", side_effect=lambda p, e: calls.append((p.label, e["jobId"])) or (True, "bg")), \
+                mock.patch.object(td, "interrupt_chat", side_effect=lambda e: calls.append(("tmux", e["sessionId"])) or (True, "tmux")):
+            self.assertEqual(td.interrupt_chat_by_id(self.home, [], "bgworking", ".claude-work"), (True, "bg"))
+            self.assertEqual(td.interrupt_chat_by_id(self.home, [], "in-tmux"), (True, "tmux"))
+            self.assertEqual(td.interrupt_chat_by_id(self.home, [], "gone"), (False, "That chat isn't running any more"))
         self.assertEqual(calls, [("work", "job3"), ("tmux", "in-tmux")])
 
 
@@ -2140,21 +2140,21 @@ class RemoteControlTests(Fixture):
 
     def setUp(self):
         super().setUp()
-        self.profile = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
+        self.profile = next(p for p in td.discover_profiles(self.home) if p.label == "work")
         self.entry = session("bgrc", kind="bg", status="idle", jobId="job7", version="2.1.327")
         self.on = dict(self.entry, bridgeSessionId="session_01GdtYtxBqv61sD4rBNn4YNK")
         self.off = dict(self.entry, bridgeSessionId=None)
-        for p in (mock.patch.object(cs, "tty_size", side_effect=lambda pid: (120, 40) if pid == PID else None),
-                  mock.patch.object(cs, "cache_dir", return_value=self.cache),
-                  mock.patch.object(cs, "RC_LOOK", 0.01),
-                  mock.patch.object(cs, "RC_TYPE_GAP", 0)):
+        for p in (mock.patch.object(td, "tty_size", side_effect=lambda pid: (120, 40) if pid == PID else None),
+                  mock.patch.object(td, "cache_dir", return_value=self.cache),
+                  mock.patch.object(td, "RC_LOOK", 0.01),
+                  mock.patch.object(td, "RC_TYPE_GAP", 0)):
             p.start()
             self.addCleanup(p.stop)
 
     def looks(self, *entries):
         """find_chat_live answers these, one a look (the last one again after)."""
         seen = list(entries)
-        return mock.patch.object(cs, "find_chat_live",
+        return mock.patch.object(td, "find_chat_live",
                                  side_effect=lambda *a, **k: (seen.pop(0) if len(seen) > 1 else seen[0], self.profile)
                                  if seen[0] is not None else None)
 
@@ -2176,29 +2176,29 @@ class RemoteControlTests(Fixture):
         for bridge, link in (("session_01AbC", "https://claude.ai/code/session_01AbC"), ("cse_01AbC", None),
                              ("session_", None), ("session_../x", None), ("session_a b", None), (None, None),
                              (42, None), ("session_" + "a" * 101, None)):
-            self.assertEqual(cs.remote_control_link({"bridgeSessionId": bridge}), link, bridge)
-        self.assertIsNone(cs.remote_control_link(None))
+            self.assertEqual(td.remote_control_link({"bridgeSessionId": bridge}), link, bridge)
+        self.assertIsNone(td.remote_control_link(None))
 
     def test_the_mark_and_the_prompt_are_read_from_what_the_session_shows(self):
-        self.assertTrue(cs.rc_marked("\x1b[20;3H❯ \x1b[1mDisconnect\x1b[22m this session".encode()))
-        self.assertTrue(cs.rc_marked("❯ /remote-control\x1b[20;3H  Show\x1b[21;3H❯\x1b[5CDisconnect\x1b[1Cthis".encode()))
-        self.assertFalse(cs.rc_marked("\x1b[20;3H  Disconnect this session\x1b[22;3H❯ Continue".encode()))
-        self.assertTrue(cs.rc_marked("\x1b[20;3H  Disconnect this session\x1b[22;3H❯ Continue".encode(), "Continue"))
-        self.assertFalse(cs.rc_marked("❯ Disconnect this session\x1b[22;3H❯ Continue".encode()), "the last mark counts")
-        self.assertFalse(cs.rc_marked(b""))
-        self.assertFalse(cs.rc_marked("❯ ".encode() + b"\xff\xfe"))
+        self.assertTrue(td.rc_marked("\x1b[20;3H❯ \x1b[1mDisconnect\x1b[22m this session".encode()))
+        self.assertTrue(td.rc_marked("❯ /remote-control\x1b[20;3H  Show\x1b[21;3H❯\x1b[5CDisconnect\x1b[1Cthis".encode()))
+        self.assertFalse(td.rc_marked("\x1b[20;3H  Disconnect this session\x1b[22;3H❯ Continue".encode()))
+        self.assertTrue(td.rc_marked("\x1b[20;3H  Disconnect this session\x1b[22;3H❯ Continue".encode(), "Continue"))
+        self.assertFalse(td.rc_marked("❯ Disconnect this session\x1b[22;3H❯ Continue".encode()), "the last mark counts")
+        self.assertFalse(td.rc_marked(b""))
+        self.assertFalse(td.rc_marked("❯ ".encode() + b"\xff\xfe"))
         # (Claude's prompt, as 2.1.327 draws its whole screen for an attach: "❯\xa0\r───" when it's empty)
-        self.assertTrue(cs.rc_prompt_empty("\x1b[2J\x1b[H❯ old\x1b[9;1H❯\xa0\x1b[7m \x1b[27m\r\x1b[1B────".encode()))
-        self.assertFalse(cs.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0hello\r────".encode()))
-        self.assertFalse(cs.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0two\rlines\r────".encode()))
-        self.assertIsNone(cs.rc_prompt_empty("\x1b[H❯\xa0\r────".encode()), "not its whole screen")
-        self.assertIsNone(cs.rc_prompt_empty("\x1b[2J\x1b[Hno prompt here".encode()))
-        self.assertIsNone(cs.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0".encode()))
+        self.assertTrue(td.rc_prompt_empty("\x1b[2J\x1b[H❯ old\x1b[9;1H❯\xa0\x1b[7m \x1b[27m\r\x1b[1B────".encode()))
+        self.assertFalse(td.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0hello\r────".encode()))
+        self.assertFalse(td.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0two\rlines\r────".encode()))
+        self.assertIsNone(td.rc_prompt_empty("\x1b[H❯\xa0\r────".encode()), "not its whole screen")
+        self.assertIsNone(td.rc_prompt_empty("\x1b[2J\x1b[Hno prompt here".encode()))
+        self.assertIsNone(td.rc_prompt_empty("\x1b[2J\x1b[H❯\xa0".encode()))
 
     def test_on_types_the_command_and_answers_with_its_page(self):
         claude = FakeSession(self, self.profile)
         with self.looks(self.on):
-            self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
+            self.assertEqual(td.remote_control_live(self.home, [], self.entry, self.profile, True),
                              (True, "Remote Control is on", self.LINK))
         self.assertTrue(claude.done.wait(5))
         self.assertEqual(claude.typed, [self.TYPED], "typed, key by key, then Enter: nothing else")
@@ -2213,7 +2213,7 @@ class RemoteControlTests(Fixture):
             with self.subTest(status=status):
                 claude = FakeSession(self, self.profile)
                 with self.looks(dict(self.on, status=status)):
-                    self.assertTrue(cs.remote_control_live(self.home, [], dict(self.entry, status=status, jobId="job-" + status),
+                    self.assertTrue(td.remote_control_live(self.home, [], dict(self.entry, status=status, jobId="job-" + status),
                                                            self.profile, True)[0])
                 self.assertTrue(claude.done.wait(5))
                 self.assertEqual(claude.picked, ["connect"])
@@ -2226,7 +2226,7 @@ class RemoteControlTests(Fixture):
         self.assertEqual((row["state"], row["waitingFor"], row["remoteSwitch"]), ("waiting", "", True))
         claude = FakeSession(self, self.profile)
         with self.looks(self.on):
-            self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
+            self.assertEqual(td.remote_control_live(self.home, [], self.entry, self.profile, True),
                              (True, "Remote Control is on", self.LINK))
         self.assertTrue(claude.done.wait(5))
         self.assertEqual(claude.picked, ["connect"])
@@ -2235,24 +2235,24 @@ class RemoteControlTests(Fixture):
         # (a second click while the first is on its way types nothing)
         claude = FakeSession(self, self.profile)
         with self.looks(self.entry):
-            self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True, wait=0.05),
+            self.assertEqual(td.remote_control_live(self.home, [], self.entry, self.profile, True, wait=0.05),
                              (True, "Remote Control is turning on", None))
-            self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
+            self.assertEqual(td.remote_control_live(self.home, [], self.entry, self.profile, True),
                              (False, "Talpy Den is at it already", None))
         self.assertEqual(len(claude.requests), 1)
 
     def test_on_or_off_already_types_nothing(self):
         claude = FakeSession(self, self.profile)
-        self.assertEqual(cs.remote_control_live(self.home, [], self.on, self.profile, True),
+        self.assertEqual(td.remote_control_live(self.home, [], self.on, self.profile, True),
                          (True, "Remote Control is on", self.LINK))
-        self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, False),
+        self.assertEqual(td.remote_control_live(self.home, [], self.entry, self.profile, False),
                          (True, "Remote Control is off", None))
         self.assertEqual(claude.requests, [])
 
     def test_on_when_it_was_on_after_all_picks_continue(self):
         # (its dialog, the mark on Continue: Enter picks it, nothing changes)
         claude = FakeSession(self, self.profile, on=True)
-        self.assertEqual(cs.remote_control_through_attach(claude.path, FakeAttach.KEY, "job7", (120, 40), True),
+        self.assertEqual(td.remote_control_through_attach(claude.path, FakeAttach.KEY, "job7", (120, 40), True),
                          (True, "Remote Control is on"))
         self.assertTrue(claude.done.wait(5))
         self.assertEqual(claude.picked, ["Continue"])
@@ -2261,7 +2261,7 @@ class RemoteControlTests(Fixture):
     def test_off_marks_disconnect_then_presses_enter(self):
         claude = FakeSession(self, self.profile, on=True)
         with self.looks(self.off):
-            self.assertEqual(cs.remote_control_live(self.home, [], self.on, self.profile, False),
+            self.assertEqual(td.remote_control_live(self.home, [], self.on, self.profile, False),
                              (True, "Remote Control is off", None))
         self.assertTrue(claude.done.wait(5))
         self.assertEqual(claude.picked, ["Disconnect this session"])
@@ -2272,7 +2272,7 @@ class RemoteControlTests(Fixture):
                                  (("Disconnect this session", "Show QR code", "Continue"), 0, 0)):
             with self.subTest(choices=choices, at=at):
                 claude = FakeSession(self, self.profile, on=True, choices=choices, at=at)
-                self.assertEqual(cs.remote_control_through_attach(claude.path, FakeAttach.KEY, "job7", (120, 40), False),
+                self.assertEqual(td.remote_control_through_attach(claude.path, FakeAttach.KEY, "job7", (120, 40), False),
                                  (True, "Remote Control is off"))
                 self.assertTrue(claude.done.wait(5))
                 self.assertEqual(claude.picked, ["Disconnect this session"])
@@ -2281,25 +2281,25 @@ class RemoteControlTests(Fixture):
     def test_never_enter_when_disconnect_never_gets_the_mark(self):
         # (a dialog Talpy Den doesn't know: it closes it with Esc, nothing picked)
         claude = FakeSession(self, self.profile, on=True, choices=("Stop this session", "Show QR code", "Continue"))
-        ok, message = cs.remote_control_through_attach(claude.path, FakeAttach.KEY, "job7", (120, 40), False)
+        ok, message = td.remote_control_through_attach(claude.path, FakeAttach.KEY, "job7", (120, 40), False)
         self.assertFalse(ok)
         self.assertIn("didn't look as Talpy Den knows it", message)
         self.assertTrue(claude.done.wait(5))
         self.assertEqual(claude.picked, ["Esc"])
-        self.assertEqual(claude.typed[-1], self.TYPED + b"\x1b[A" * (cs.RC_UPS + 1) + b"\x1b")
+        self.assertEqual(claude.typed[-1], self.TYPED + b"\x1b[A" * (td.RC_UPS + 1) + b"\x1b")
 
     def test_nothing_is_typed_over_what_its_prompt_has(self):
         # (it would go out with the command), nor where the prompt can't be seen
         for kw, said in (({"draft": "hello"}, "Something is typed in its prompt"), ({"whole": False}, "can't see its prompt")):
             with self.subTest(**kw):
                 claude = FakeSession(self, self.profile, **kw)
-                ok, message, _link = cs.remote_control_live(self.home, [], self.entry, self.profile, True)
+                ok, message, _link = td.remote_control_live(self.home, [], self.entry, self.profile, True)
                 self.assertFalse(ok)
                 self.assertIn(said, message)
                 self.assertTrue(claude.done.wait(5))
                 self.assertEqual(claude.typed, [b""], "nothing typed")
                 self.assertEqual(claude.draft, kw.get("draft", ""))
-                cs.stop_turn("job7", forget=True)
+                td.stop_turn("job7", forget=True)
 
     def test_nothing_is_typed_where_it_can_not_be_done(self):
         claude = FakeSession(self, self.profile)
@@ -2311,7 +2311,7 @@ class RemoteControlTests(Fixture):
                                 (dict(self.on, status="waiting", waitingFor="dialog open"), False, "close it first"),
                                 (dict(self.entry, pid=os.getppid()), True, "size of its terminal")):
             with self.subTest(entry=entry, on=on):
-                ok, message, _link = cs.remote_control_live(self.home, [], entry, self.profile, on)
+                ok, message, _link = td.remote_control_live(self.home, [], entry, self.profile, on)
                 self.assertFalse(ok)
                 self.assertIn(said, message)
         self.assertEqual(claude.requests, [], "never attached")
@@ -2319,13 +2319,13 @@ class RemoteControlTests(Fixture):
     def test_a_service_that_answers_otherwise_gets_nothing_typed(self):
         claude = FakeSession(self, self.profile)
         claude.answer = lambda r: dict(FakeAttach.takes_it(r), workerCliVersion="2.3.0")
-        ok, message, _link = cs.remote_control_live(self.home, [], self.entry, self.profile, True)
+        ok, message, _link = td.remote_control_live(self.home, [], self.entry, self.profile, True)
         self.assertFalse(ok)
         self.assertIn("Claude Code 2.3.0", message)
         self.assertTrue(claude.done.wait(5))
         self.assertEqual(claude.typed, [b""])
         (self.profile.path / "daemon/control.key").unlink()
-        self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
+        self.assertEqual(td.remote_control_live(self.home, [], self.entry, self.profile, True),
                          (False, "Claude's background service can't be asked", None))
 
 
@@ -2345,10 +2345,10 @@ class TtySizeTests(unittest.TestCase):
         plain = subprocess.Popen(["sleep", "30"], stdin=subprocess.DEVNULL)
         self.addCleanup(plain.wait)
         self.addCleanup(plain.kill)
-        self.assertEqual(cs.tty_size(proc.pid), (120, 40))
-        self.assertIsNone(cs.tty_size(plain.pid))   # (no terminal)
-        self.assertIsNone(cs.tty_size(DEAD_PID))
-        self.assertIsNone(cs.tty_size(None))
+        self.assertEqual(td.tty_size(proc.pid), (120, 40))
+        self.assertIsNone(td.tty_size(plain.pid))   # (no terminal)
+        self.assertIsNone(td.tty_size(DEAD_PID))
+        self.assertIsNone(td.tty_size(None))
 
 
 class SeveralWidgetsTests(unittest.TestCase):
@@ -2360,41 +2360,41 @@ class SeveralWidgetsTests(unittest.TestCase):
         self.root = Path(self.tmp.name) / "cache"
 
     def test_the_widget_running_longest_notifies(self):
-        self.assertTrue(cs.elect_notifier(self.root, "panel", 2000, 1000))
-        self.assertFalse(cs.elect_notifier(self.root, "tray", 2000, 1500))
-        self.assertTrue(cs.elect_notifier(self.root, "panel", 2000, 3000))
+        self.assertTrue(td.elect_notifier(self.root, "panel", 2000, 1000))
+        self.assertFalse(td.elect_notifier(self.root, "tray", 2000, 1500))
+        self.assertTrue(td.elect_notifier(self.root, "panel", 2000, 3000))
         # the panel's widget is gone: after 3 of its check intervals and some grace, the tray's takes over
-        self.assertFalse(cs.elect_notifier(self.root, "tray", 2000, 3000 + 3 * 2000 + cs.INSTANCE_GRACE_MS))
-        self.assertTrue(cs.elect_notifier(self.root, "tray", 2000, 3001 + 3 * 2000 + cs.INSTANCE_GRACE_MS))
+        self.assertFalse(td.elect_notifier(self.root, "tray", 2000, 3000 + 3 * 2000 + td.INSTANCE_GRACE_MS))
+        self.assertTrue(td.elect_notifier(self.root, "tray", 2000, 3001 + 3 * 2000 + td.INSTANCE_GRACE_MS))
         # one that checks rarely (nothing runs) isn't counted out early
-        self.assertFalse(cs.elect_notifier(self.root, "old", 60000, 0) and False)
+        self.assertFalse(td.elect_notifier(self.root, "old", 60000, 0) and False)
         root = Path(self.tmp.name) / "other"
-        cs.elect_notifier(root, "slow", 60000, 0)
-        self.assertFalse(cs.elect_notifier(root, "fast", 2000, 150000))   # 2.5 min later: slow still counts
+        td.elect_notifier(root, "slow", 60000, 0)
+        self.assertFalse(td.elect_notifier(root, "fast", 2000, 150000))   # 2.5 min later: slow still counts
 
     def test_a_copy_noted_before_the_clock_was_set_back_has_gone_too(self):
         hour = 3600_000
-        self.assertTrue(cs.elect_notifier(self.root, "panel", 2000, 100 * hour))
-        self.assertFalse(cs.elect_notifier(self.root, "tray", 2000, 100 * hour + 2000))
+        self.assertTrue(td.elect_notifier(self.root, "panel", 2000, 100 * hour))
+        self.assertFalse(td.elect_notifier(self.root, "tray", 2000, 100 * hour + 2000))
         # the clock goes back 6 hours and the panel's widget is closed: its note is "from the
         # future" and mustn't keep the tray's widget from notifying until the clock catches up
-        self.assertTrue(cs.elect_notifier(self.root, "tray", 2000, 94 * hour))
-        self.assertTrue(cs.elect_notifier(self.root, "tray", 2000, 94 * hour + 2000))
+        self.assertTrue(td.elect_notifier(self.root, "tray", 2000, 94 * hour))
+        self.assertTrue(td.elect_notifier(self.root, "tray", 2000, 94 * hour + 2000))
 
     def test_settings_are_shared(self):
-        defaults = cs.config_defaults()
+        defaults = td.config_defaults()
         self.assertEqual((defaults["pollInterval"], defaults["showPet"], defaults["sshHosts"]), (2000, True, ""))
-        self.assertIsNone(cs.shared_settings(self.root))
+        self.assertIsNone(td.shared_settings(self.root))
         # a widget nobody set up yet mustn't replace what the others use
-        self.assertEqual(cs.save_shared_settings(self.root, "tray", dict(defaults), 1000, unless_default=True),
+        self.assertEqual(td.save_shared_settings(self.root, "tray", dict(defaults), 1000, unless_default=True),
                          (False, "Nothing set up yet"))
-        self.assertIsNone(cs.shared_settings(self.root))
+        self.assertIsNone(td.shared_settings(self.root))
         values = dict(defaults, sshHosts="lab", bogus=1)
-        self.assertTrue(cs.save_shared_settings(self.root, "panel", values, 2000, unless_default=True)[0])
-        shared = cs.shared_settings(self.root)
+        self.assertTrue(td.save_shared_settings(self.root, "panel", values, 2000, unless_default=True)[0])
+        shared = td.shared_settings(self.root)
         self.assertEqual((shared["at"], shared["by"], shared["values"]["sshHosts"]), (2000, "panel", "lab"))
         self.assertNotIn("bogus", shared["values"])
-        self.assertEqual(oct((cs.state_dir(self.root) / "settings.json").stat().st_mode & 0o777), "0o600")
+        self.assertEqual(oct((td.state_dir(self.root) / "settings.json").stat().st_mode & 0o777), "0o600")
 
     def test_through_the_status_check(self):
         home = Path(self.tmp.name) / "home"
@@ -2439,8 +2439,8 @@ class JobsFileTests(unittest.TestCase):
                  "cwdShort": "~/site"}]}]
 
     def here(self, now):   # (this computer's check)
-        return cs.publish_jobs(self.path, self.cache, "", cs.place_jobs(self.groups), now,
-                               cs.place_accounts(self.groups))
+        return td.publish_jobs(self.path, self.cache, "", td.place_jobs(self.groups), now,
+                               td.place_accounts(self.groups))
 
     def jobs(self, key="jobs"):
         return json.loads(self.path.read_text())[key]
@@ -2467,7 +2467,7 @@ class JobsFileTests(unittest.TestCase):
         groups = [{"name": "work", "sessions": [
             {"key": ".claude/s1/live", "name": "a", "state": "working", "since": 2000, "startedAt": 1000},
             {"key": ".claude/s2/live", "name": "b", "state": "working", "since": 2000}]}]
-        here, lab = cs.place_jobs(groups), cs.place_jobs(groups, "lab", "ssh", offset_ms=500)
+        here, lab = td.place_jobs(groups), td.place_jobs(groups, "lab", "ssh", offset_ms=500)
         self.assertEqual([j["startedAt"] for j in here], [1000, None])
         self.assertEqual([j["startedAt"] for j in lab], [1500, None])
 
@@ -2503,10 +2503,10 @@ class JobsFileTests(unittest.TestCase):
             {"key": ".claude/s9/job", "name": "Train", "state": "working", "since": 2000, "cwdShort": "/srv"}],
             "limits": {"windows": [{"key": "five_hour", "label": "5h", "pct": 42.0, "resetsAt": 9000}]}}]
         answered("lab", now)
-        cs.publish_jobs(self.path, self.cache, "lab", cs.place_jobs(lab, "lab", "ssh", offset_ms=500), now,
-                        cs.place_accounts(lab, "lab", "ssh", offset_ms=500))
+        td.publish_jobs(self.path, self.cache, "lab", td.place_jobs(lab, "lab", "ssh", offset_ms=500), now,
+                        td.place_accounts(lab, "lab", "ssh", offset_ms=500))
         answered("podman:web", now)
-        cs.publish_jobs(self.path, self.cache, "podman:web", cs.place_jobs(lab, "podman:web", "podman"), now)
+        td.publish_jobs(self.path, self.cache, "podman:web", td.place_jobs(lab, "podman:web", "podman"), now)
         self.here(now)
         self.assertEqual([(j["host"], j["where"], j["name"]) for j in self.jobs()],
                          [("", "local", "Fix the parser"), ("", "local", ""), ("", "local", "Release notes"),
@@ -2520,12 +2520,12 @@ class JobsFileTests(unittest.TestCase):
         self.here(now + 1000)
         self.assertEqual([j["host"] for j in self.jobs()], ["", "", "lab", "podman:web"])
         # a check that couldn't reach a place takes its chats out: they can't be seen
-        self.assertTrue(cs.publish_jobs(self.path, self.cache, "lab", None, now + 2000))
+        self.assertTrue(td.publish_jobs(self.path, self.cache, "lab", None, now + 2000))
         self.assertEqual([j["host"] for j in self.jobs()], ["", "", "podman:web"])
         self.assertEqual([a["host"] for a in self.jobs("accounts")], [""])   # (its accounts too; "work" here stays)
         # a place nothing checks any more (no longer picked): its chats go once its last answer is 15 minutes old
-        self.assertFalse(self.here(now + cs.JOBS_HOST_FRESH_MS))
-        self.assertTrue(self.here(now + cs.JOBS_HOST_FRESH_MS + 1000))
+        self.assertFalse(self.here(now + td.JOBS_HOST_FRESH_MS))
+        self.assertTrue(self.here(now + td.JOBS_HOST_FRESH_MS + 1000))
         self.assertEqual([j["host"] for j in self.jobs()], ["", ""])
 
     def test_in_your_runtime_folder(self):
@@ -2534,14 +2534,14 @@ class JobsFileTests(unittest.TestCase):
         runtime.mkdir()
         own = Path(pwd.getpwuid(os.getuid()).pw_dir)
         with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(runtime)}):
-            self.assertEqual(cs.jobs_file_path(own, cache), runtime / "talpy-den/jobs.json")
+            self.assertEqual(td.jobs_file_path(own, cache), runtime / "talpy-den/jobs.json")
             # another home than your account's (a sandbox, the tests): in its own cache folder
-            self.assertEqual(cs.jobs_file_path(Path(self.tmp.name) / "home", cache), cache / "jobs.json")
+            self.assertEqual(td.jobs_file_path(Path(self.tmp.name) / "home", cache), cache / "jobs.json")
         with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(runtime / "gone")}):
-            self.assertEqual(cs.jobs_file_path(own, cache), cache / "jobs.json")
+            self.assertEqual(td.jobs_file_path(own, cache), cache / "jobs.json")
         with mock.patch.dict(os.environ):
             os.environ.pop("XDG_RUNTIME_DIR", None)
-            self.assertEqual(cs.jobs_file_path(own, cache), cache / "jobs.json")
+            self.assertEqual(td.jobs_file_path(own, cache), cache / "jobs.json")
 
 
 def chat_line(kind, content, msg_id=None, stop=None, ts=None, **kw):
@@ -2606,7 +2606,7 @@ class PeekTests(Fixture):
         self.assertEqual(p["replyLine"], "Fixed")
 
     def test_markdown_read_as_plain_text(self):
-        self.assertEqual(cs.plain_text("## Plan\n- run `make`\n  * then **ship** it\n```sh\nmake\n```\n3 * 4 = 12"),
+        self.assertEqual(td.plain_text("## Plan\n- run `make`\n  * then **ship** it\n```sh\nmake\n```\n3 * 4 = 12"),
                          "Plan\n• run make\n  • then ship it\nmake\n3 * 4 = 12")
 
     def test_no_old_reply_after_a_new_prompt(self):
@@ -2630,7 +2630,7 @@ class PeekTests(Fixture):
         self.assertEqual((p["prompt"], p["reply"]), ("the real question", "The answer."))
 
     def test_reads_further_back_past_big_lines(self):
-        big = "x" * (cs.PEEK_TAIL_BYTES + 1000)
+        big = "x" * (td.PEEK_TAIL_BYTES + 1000)
         self.transcript("busy", [
             chat_line("user", "summarize the log"),
             chat_line("assistant", [tool_use("Read", {"file_path": "/w/log.txt"})], "m1", "tool_use"),
@@ -2641,7 +2641,7 @@ class PeekTests(Fixture):
         self.assertEqual((p["prompt"], p["reply"]), ("summarize the log", "It's mostly x."))
 
     def test_last_prompt_record_saves_reading_everything(self):
-        big = "x" * (cs.PEEK_TAIL_MAX + 1000)
+        big = "x" * (td.PEEK_TAIL_MAX + 1000)
         self.transcript("busy", [
             chat_line("user", "summarize the log"),
             chat_line("user", [{"type": "tool_result", "tool_use_id": "toolu_1", "content": big}]),
@@ -2655,8 +2655,8 @@ class PeekTests(Fixture):
         path = self.transcript("busy", [chat_line("user", "hi"),
                                         chat_line("assistant", [{"type": "text", "text": "Hello."}], "m1", "end_turn")])
         calls = []
-        real = cs.chat_peek
-        cs.chat_peek = lambda p: calls.append(p) or real(p)
+        real = td.chat_peek
+        td.chat_peek = lambda p: calls.append(p) or real(p)
         try:
             self.assertEqual(self.peek()["reply"], "Hello.")
             self.assertEqual(self.peek()["reply"], "Hello.")
@@ -2666,7 +2666,7 @@ class PeekTests(Fixture):
             self.assertEqual(self.peek()["prompt"], "again")
             self.assertEqual(len(calls), 2)
         finally:
-            cs.chat_peek = real
+            td.chat_peek = real
 
     def test_no_transcript_no_peek(self):
         self.assertIsNone(self.peek("waiting"))
@@ -2716,7 +2716,7 @@ class ChangedFilesTests(Fixture):
     def test_appended_records_are_read_once(self):
         self.add(self.snapshot("p1", {}), self.delta("p1", "a.py", "a@v1"))
         self.assertEqual(self.changes()["count"], 1)
-        rec = cs.ChatCache(self.cache / "chats.json").edits(self.path)
+        rec = td.ChatCache(self.cache / "chats.json").edits(self.path)
         self.assertEqual(set(rec["files"]), {self.proj + "/a.py"})
         self.add(self.delta("p1", "b.py", "b@v1"))
         self.assertEqual(self.changes()["files"], ["a.py", "b.py"])
@@ -2731,7 +2731,7 @@ class ChangedFilesTests(Fixture):
             self.snapshot("p2", {"a.py": {"backupFileName": "a@v2", "version": 2, "realParentDir": self.proj}}),
             self.delta("p2", "b.py", None),
         )
-        rec = cs.chat_edits(self.path)
+        rec = td.chat_edits(self.path)
         self.assertEqual(rec["files"], {a: ["a@v1", 1], b: [None, 1]})
         self.assertEqual((rec["snap"], rec["snapFiles"], rec["turn"]), ("p2", {a: "a@v2"}, {b: None}))
         self.assertIn("busy", rec["sessions"])
@@ -2740,7 +2740,7 @@ class ChangedFilesTests(Fixture):
         a = self.proj + "/a.py"
         self.add(self.snapshot("p1", {}),
                  self.snapshot("p1", {"a.py": {"backupFileName": "a@v1", "version": 1, "realParentDir": self.proj}}, update=True))
-        rec = cs.chat_edits(self.path)
+        rec = td.chat_edits(self.path)
         self.assertEqual((rec["files"], rec["turn"]), ({a: ["a@v1", 1]}, {a: "a@v1"}))
 
     def test_no_edits_no_changes(self):
@@ -2759,7 +2759,7 @@ class ForecastTests(unittest.TestCase):
 
     def test_window_pace_without_history(self):
         w = self.window(40, 3)  # 2 h into the window, 20 %/h
-        f = cs.usage_forecast(w, [], self.now)
+        f = td.usage_forecast(w, [], self.now)
         self.assertEqual((f["basis"], f["rate"], f["evenPct"]), ("window", 20.0, 40.0))
         self.assertEqual(f["atReset"], 100.0)
         self.assertIsNone(f["fullAt"])  # exactly at the reset: not before it
@@ -2767,7 +2767,7 @@ class ForecastTests(unittest.TestCase):
     def test_last_hours_pace_runs_out_first(self):
         w = self.window(60, 2)
         points = [[self.now - 2 * self.H, 20], [self.now - self.H - 1, 30], [self.now - 600_000, 55]]
-        f = cs.usage_forecast(w, points, self.now)
+        f = td.usage_forecast(w, points, self.now)
         self.assertEqual((f["basis"], f["rate"]), ("hour", 30.0))
         self.assertAlmostEqual(f["fullAt"], self.now + int(40 / 30 * self.H), delta=10)
         self.assertEqual(f["atReset"], 120.0)
@@ -2775,26 +2775,26 @@ class ForecastTests(unittest.TestCase):
     def test_hour_pace_over_the_real_gap(self):
         # the newest point from an hour ago or more is 2.5 h old: 30 % since then is 12 %/h
         w = self.window(40, 2)
-        f = cs.usage_forecast(w, [[self.now - int(2.5 * self.H), 10]], self.now)
+        f = td.usage_forecast(w, [[self.now - int(2.5 * self.H), 10]], self.now)
         self.assertEqual((f["basis"], f["rate"]), ("hour", 12.0))
 
     def test_quiet_hour_means_no_more_use(self):
         w = self.window(50, 2)
-        f = cs.usage_forecast(w, [[self.now - 2 * self.H, 50]], self.now)
+        f = td.usage_forecast(w, [[self.now - 2 * self.H, 50]], self.now)
         self.assertEqual((f["rate"], f["atReset"], f["fullAt"]), (0.0, 50.0, None))
 
     def test_too_early_or_reset(self):
-        self.assertIsNone(cs.usage_forecast(self.window(5, 4.9), [], self.now))
-        self.assertIsNone(cs.usage_forecast(dict(self.window(5, 2), reset=True), [], self.now))
-        self.assertIsNone(cs.usage_forecast(self.window(5, 2, key="spend_limit"), [], self.now))
+        self.assertIsNone(td.usage_forecast(self.window(5, 4.9), [], self.now))
+        self.assertIsNone(td.usage_forecast(dict(self.window(5, 2), reset=True), [], self.now))
+        self.assertIsNone(td.usage_forecast(self.window(5, 2, key="spend_limit"), [], self.now))
 
     def test_weekly_window_even_pace(self):
         w = self.window(30, 84, key="seven_day")  # half the week gone
-        f = cs.usage_forecast(w, [[self.now - 10 * self.H, 1]], self.now)  # weekly: the window's pace
+        f = td.usage_forecast(w, [[self.now - 10 * self.H, 1]], self.now)  # weekly: the window's pace
         self.assertEqual((f["basis"], f["evenPct"], f["atReset"]), ("window", 50.0, 60.0))
 
     def test_full_already(self):
-        f = cs.usage_forecast(self.window(100, 1), [], self.now)
+        f = td.usage_forecast(self.window(100, 1), [], self.now)
         self.assertEqual((f["atReset"], f["fullAt"]), (100, None))
 
 
@@ -2842,7 +2842,7 @@ class UsageHistoryTests(Fixture):
         self.assertEqual(self.history(), [20])
 
     def past(self):
-        data = json.loads((self.cache / cs.USAGE_PAST_FILE).read_text())
+        data = json.loads((self.cache / td.USAGE_PAST_FILE).read_text())
         return [(w["key"], w["plan"], [p[1] for p in w["points"]]) for w in data["windows"]]
 
     def test_an_ended_window_is_kept_thinned_with_its_plan(self):
@@ -2862,7 +2862,7 @@ class UsageHistoryTests(Fixture):
         gid = self.group(self.collect(with_tokens=False), "work")["id"]
         now_ms = int(self.now * 1000)
         day = 86400_000
-        write(self.cache / cs.USAGE_PAST_FILE, {"version": 1, "windows": [
+        write(self.cache / td.USAGE_PAST_FILE, {"version": 1, "windows": [
             {"group": gid, "key": "seven_day", "plan": "Team", "resetsAt": now_ms - 91 * day, "points": [[1, 50]]},
             {"group": gid, "key": "seven_day", "plan": "Team", "resetsAt": now_ms - 89 * day, "points": [[1, 60]]}]})
         write(self.cache / "usage.json", {"version": 1, "groups": {gid: {"seven_day": {
@@ -2875,24 +2875,24 @@ class UsageHistoryTests(Fixture):
     def test_none_kept_with_the_history_off(self):
         gid = self.group(self.collect(with_tokens=False), "work")["id"]
         now_ms = int(self.now * 1000)
-        write(cs.history_file(self.cache), {"keep": False})
-        write(self.cache / cs.USAGE_PAST_FILE, {"version": 1, "windows": []})
+        write(td.history_file(self.cache), {"keep": False})
+        write(self.cache / td.USAGE_PAST_FILE, {"version": 1, "windows": []})
         write(self.cache / "usage.json", {"version": 1, "groups": {gid: {"five_hour": {
             "resetsAt": now_ms - 600_000, "points": [[now_ms - 3600_000, 40]]}}}})
         self.snapshot(1, 0, resets_in=5 * 3600)
         self.collect(with_tokens=False)
-        self.assertFalse((self.cache / cs.USAGE_PAST_FILE).exists())
+        self.assertFalse((self.cache / td.USAGE_PAST_FILE).exists())
         self.assertEqual(self.history(), [1])
 
     def test_the_history_setting_is_kept_in_the_state_folder(self):
         # an older version's history.json in the cache moves there once; one put in the cache later counts for nothing
-        write(self.cache / cs.HISTORY_SETTING_FILE, {"keep": False, "since": 5})
-        self.assertEqual(cs.history_setting(self.cache), (False, 5))
-        self.assertFalse((self.cache / cs.HISTORY_SETTING_FILE).exists())
-        self.assertEqual(cs.history_file(self.cache).parent, cs.state_dir(self.cache))
-        cs.write_json_atomic(cs.history_file(self.cache), {"keep": True})
-        write(self.cache / cs.HISTORY_SETTING_FILE, {"keep": False})
-        self.assertTrue(cs.history_kept(self.cache))
+        write(self.cache / td.HISTORY_SETTING_FILE, {"keep": False, "since": 5})
+        self.assertEqual(td.history_setting(self.cache), (False, 5))
+        self.assertFalse((self.cache / td.HISTORY_SETTING_FILE).exists())
+        self.assertEqual(td.history_file(self.cache).parent, td.state_dir(self.cache))
+        td.write_json_atomic(td.history_file(self.cache), {"keep": True})
+        write(self.cache / td.HISTORY_SETTING_FILE, {"keep": False})
+        self.assertTrue(td.history_kept(self.cache))
 
     def test_the_plan_with_its_tier(self):
         for plan, account, detail in (
@@ -2903,18 +2903,18 @@ class UsageHistoryTests(Fixture):
                 ("Team", {"seatTier": "team_premium"}, "Team · premium seat"),
                 ("Pro", {"organizationRateLimitTier": "default_claude_ai"}, "Pro"),
                 (None, {"seatTier": "team_premium"}, None)):
-            self.assertEqual(cs.plan_detail(plan, account), detail)
+            self.assertEqual(td.plan_detail(plan, account), detail)
 
     def test_a_long_window_drops_repeats_before_its_start(self):
         # a weekly window: its value noted again every 10 minutes while unchanged
         runs = [[i, i // 10] for i in range(400)]  # 40 runs of 10 points
-        kept = cs.trimmed_points(runs)
+        kept = td.trimmed_points(runs)
         self.assertEqual(len(kept), 80)  # (each run's first and last point)
         self.assertEqual(kept[:3], [[0, 0], [9, 0], [10, 1]])
         self.assertEqual(kept[-1], [399, 39])
         rising = [[i, i] for i in range(400)]  # (nothing to drop but the oldest)
-        self.assertEqual(cs.trimmed_points(rising), rising[-300:])
-        self.assertEqual(cs.trimmed_points(rising[:5]), rising[:5])
+        self.assertEqual(td.trimmed_points(rising), rising[-300:])
+        self.assertEqual(td.trimmed_points(rising[:5]), rising[:5])
 
 
 class TaskProgressTests(Fixture):
@@ -2978,7 +2978,7 @@ class StatsTests(Fixture):
     def test_days_folders_models(self):
         st = self.stats()
         days = st["days"]
-        self.assertEqual(len(days), cs.STATS_SHOWN_DAYS)
+        self.assertEqual(len(days), td.STATS_SHOWN_DAYS)
         self.assertEqual(days[-1]["day"], "2026-10-18")
         today, two_ago = days[-1], days[-3]
         self.assertEqual((today["output"], today["messages"], today["chats"], today["prompts"]), (25 + 3 + 5, 3, 2, 3))
@@ -2991,8 +2991,8 @@ class StatsTests(Fixture):
 
     def test_history_outlives_the_messages(self):
         self.stats()
-        work = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
-        cache = json.loads(cs.token_cache_path(self.cache, work).read_text())
+        work = next(p for p in td.discover_profiles(self.home) if p.label == "work")
+        cache = json.loads(td.token_cache_path(self.cache, work).read_text())
         self.assertIn((date.fromtimestamp(self.now) - timedelta(days=20)).isoformat(), cache["history"])  # read back 30 days once
         self.assertNotIn("o1", cache["messages"])  # messages: only TOKEN_DAYS
         later = self.now + 9 * self.DAY  # a2 and b1 are no longer in the messages kept
@@ -3043,15 +3043,15 @@ class OlderCopiesTests(Fixture):
     def test_token_cache_from_before_the_stats(self):
         path = self.home / ".claude-work/projects/-w/c.jsonl"
         write(path, json.dumps(usage_line("a1", self.now - 60, 5, "/w/app")) + "\n")
-        work = next(p for p in cs.discover_profiles(self.home) if p.label == "work")
-        cache_file = cs.token_cache_path(self.cache, work)
-        old = {"version": cs.CACHE_VERSION, "scannedAt": 0, "messages": {"a1": [cs.local_day(iso(self.now - 60)), "m", 1, 5, 100, 9, 0]},
+        work = next(p for p in td.discover_profiles(self.home) if p.label == "work")
+        cache_file = td.token_cache_path(self.cache, work)
+        old = {"version": td.CACHE_VERSION, "scannedAt": 0, "messages": {"a1": [td.local_day(iso(self.now - 60)), "m", 1, 5, 100, 9, 0]},
                "files": {str(path): {"offset": path.stat().st_size, "ino": path.stat().st_ino}}}
         write(cache_file, old)  # as 1.8 left it: the file read to its end
         st = self.group(self.collect(), "work")["stats"]
         self.assertEqual(st["projects"][0]["name"], "app")  # read again for the stats
         cache = json.loads(cache_file.read_text())
-        self.assertEqual(cache["version"], cs.CACHE_VERSION)
+        self.assertEqual(cache["version"], td.CACHE_VERSION)
         cache.pop("scannedAt")
         cache["scannedAt"] = 0  # an older copy rescans: it keeps the keys it doesn't know
         write(cache_file, cache)
@@ -3060,14 +3060,14 @@ class OlderCopiesTests(Fixture):
 
     def test_message_records_of_an_older_copy(self):
         msgs = {"x": ["2026-10-18", "claude-opus-5-5", 1, 2, 3, 4, 0]}  # 7 fields: no folder or chat
-        self.assertEqual(cs.day_history(msgs)["2026-10-18"]["projects"], {})
-        self.assertEqual(cs.day_totals(msgs)["2026-10-18"]["claude-opus-5-5"][:2], [1, 2])
+        self.assertEqual(td.day_history(msgs)["2026-10-18"]["projects"], {})
+        self.assertEqual(td.day_totals(msgs)["2026-10-18"]["claude-opus-5-5"][:2], [1, 2])
 
     def test_chat_records_without_stats_are_read_again(self):
         path = self.home / ".claude-work/projects/-w/busy.jsonl"
         write(path, json.dumps(chat_line("user", "go")) + "\n")
-        old = {"version": cs.CHAT_CACHE_VERSION, "peeks": {}, "edits": {
-            cs.file_key(path.stat()): {"size": path.stat().st_size, "rec": {"files": {}, "snap": None, "snapFiles": {}, "turn": {}, "sessions": []}}}}
+        old = {"version": td.CHAT_CACHE_VERSION, "peeks": {}, "edits": {
+            td.file_key(path.stat()): {"size": path.stat().st_size, "rec": {"files": {}, "snap": None, "snapFiles": {}, "turn": {}, "sessions": []}}}}
         write(self.cache / "chats.json", old)
         work = self.group(self.collect(with_tokens=False), "work")
         self.assertEqual(next(s for s in work["sessions"] if s["sessionId"] == "busy")["stats"]["prompts"], 1)
@@ -3114,8 +3114,8 @@ class UsageFetchFixture(Fixture):
     def setUp(self):
         super().setUp()
         self.spawned = []
-        for p in (mock.patch.object(cs, "find_claude", lambda home, ask_shell=False: self.CLAUDE),
-                  mock.patch.object(cs, "spawn_detached", lambda argv, cwd, env: self.spawned.append((argv, cwd, env)))):
+        for p in (mock.patch.object(td, "find_claude", lambda home, ask_shell=False: self.CLAUDE),
+                  mock.patch.object(td, "spawn_detached", lambda argv, cwd, env: self.spawned.append((argv, cwd, env)))):
             p.start()
             self.addCleanup(p.stop)
         self.work = self.home / ".claude-work"
@@ -3154,7 +3154,7 @@ class UsageRefreshTests(UsageFetchFixture):
         (argv, cwd, env), = self.spawned
         timeout = shutil.which("timeout")
         self.assertEqual(argv, [
-            "/bin/sh", "-c", cs.USAGE_CHECK_SCRIPT, "sh", str(self.work / "projects" / cs.mangle(str(folder))),
+            "/bin/sh", "-c", td.USAGE_CHECK_SCRIPT, "sh", str(self.work / "projects" / td.mangle(str(folder))),
             *([timeout, "-k", "10", "60"] if timeout else []),
             self.CLAUDE, "-p", "/usage", "--no-session-persistence", "--setting-sources", "user", "--strict-mcp-config",
             "--settings", '{"disableAllHooks":true}', "--output-format", "json"])
@@ -3175,7 +3175,7 @@ class UsageRefreshTests(UsageFetchFixture):
         with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": "/somewhere/else"}):
             self.assertEqual(self.check(), [None, str(self.work)])
         argv = self.spawned[0][0]
-        self.assertEqual(argv[4], str(self.home / ".claude/projects" / cs.mangle(str(self.cache / "usage-check"))))
+        self.assertEqual(argv[4], str(self.home / ".claude/projects" / td.mangle(str(self.cache / "usage-check"))))
 
     def test_at_most_once_in_five_minutes_whichever_copy_checks(self):
         self.assertEqual(len(self.check()), 1)
@@ -3229,7 +3229,7 @@ class UsageRefreshTests(UsageFetchFixture):
         self.assertTrue(self.group(self.result, "work")["loggedOut"])
 
     def test_not_without_claude(self):
-        with mock.patch.object(cs, "find_claude", lambda home, ask_shell=False: "claude"):
+        with mock.patch.object(td, "find_claude", lambda home, ask_shell=False: "claude"):
             self.assertEqual(self.check(), [])
         self.assertFalse((self.cache / "usage-check.json").exists())
 
@@ -3251,7 +3251,7 @@ class UsageRefreshTests(UsageFetchFixture):
             self.spawned.clear()
             env = {"HOME": str(self.home), "XDG_CACHE_HOME": str(xdg)}
             with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(io.StringIO()) as out:
-                cs.main(["--no-tokens", *args])
+                td.main(["--no-tokens", *args])
             self.assertTrue(json.loads(out.getvalue())["ok"])
             return [e.get("CLAUDE_CONFIG_DIR") for _, _, e in self.spawned]
         self.assertEqual(run("--usage-refresh", "0"), [])
@@ -3272,9 +3272,9 @@ class UsageRefreshTests(UsageFetchFixture):
         listed = [s["sessionId"] for g in self.result["groups"] for s in g["sessions"]]
         self.assertEqual([i for i in listed if i in ("mine", "other-copy")], [])
         self.assertNotIn("usage-check", json.dumps(self.result))  # (not in Recent chats, Projects, … either)
-        self.assertTrue(cs.is_usage_check("/a/talpy-den/usage-check"))
-        self.assertFalse(cs.is_usage_check("/a/usage-check"))
-        self.assertFalse(cs.is_usage_check(None))
+        self.assertTrue(td.is_usage_check("/a/talpy-den/usage-check"))
+        self.assertFalse(td.is_usage_check("/a/usage-check"))
+        self.assertFalse(td.is_usage_check(None))
 
 
 class FetchUsageTests(UsageFetchFixture):
@@ -3283,7 +3283,7 @@ class FetchUsageTests(UsageFetchFixture):
 
     def fetch(self, now=None):
         self.spawned.clear()
-        self.answer = cs.fetch_usage_now(self.home, self.cache, now=self.now if now is None else now)
+        self.answer = td.fetch_usage_now(self.home, self.cache, now=self.now if now is None else now)
         return [env.get("CLAUDE_CONFIG_DIR") for _, _, env in self.spawned]
 
     def test_old_usage_fetched_with_no_chat_at_work(self):
@@ -3308,19 +3308,19 @@ class ModeTests(unittest.TestCase):
                  "message": {"role": "user", "content": [{"type": "text", "text": "<ide_opened_file>The user opened a.tex</ide_opened_file>"},
                                                          {"type": "text", "text": "tidy the abstract"}]}}
         later = {"type": "user", "message": {"role": "user", "content": "and the intro"}}
-        self.assertEqual(cs.names_mode(first), "auto")
-        self.assertIsNone(cs.names_mode(later))
-        self.assertIsNone(cs.names_mode({**first, "isSidechain": True}))
-        self.assertEqual(cs.names_mode({"type": "permission-mode", "permissionMode": "plan"}), "plan")
+        self.assertEqual(td.names_mode(first), "auto")
+        self.assertIsNone(td.names_mode(later))
+        self.assertIsNone(td.names_mode({**first, "isSidechain": True}))
+        self.assertEqual(td.names_mode({"type": "permission-mode", "permissionMode": "plan"}), "plan")
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "chat.jsonl"
             path.write_text("".join(json.dumps(e) + "\n" for e in (first, later, later)))
-            self.assertEqual(cs.scan_mode(path, path.stat().st_size), "auto")
-            cache = cs.ChatCache(Path(d) / "chats.json")
+            self.assertEqual(td.scan_mode(path, path.stat().st_size), "auto")
+            cache = td.ChatCache(Path(d) / "chats.json")
             self.assertEqual(cache.edits(path)["mode"], "auto")
             with open(path, "a") as f:   # (changed later on: the newest one)
                 f.write(json.dumps({"type": "permission-mode", "permissionMode": "plan"}) + "\n")
-            self.assertEqual(cs.ChatCache(Path(d) / "chats.json").edits(path)["mode"], "plan")
+            self.assertEqual(td.ChatCache(Path(d) / "chats.json").edits(path)["mode"], "plan")
 
 
 class TerminalTests(unittest.TestCase):
@@ -3328,9 +3328,9 @@ class TerminalTests(unittest.TestCase):
 
     def tree(self, names):
         """pid -> its process name; each one's parent is the next pid up."""
-        return (mock.patch.object(cs, "process_name", lambda pid: names.get(pid, "")),
-                mock.patch.object(cs, "parent_pid", lambda pid: pid + 1 if pid + 1 in names else 1),
-                mock.patch.object(cs, "is_vscode_terminal_host", lambda pid: names.get(pid) == "code"))
+        return (mock.patch.object(td, "process_name", lambda pid: names.get(pid, "")),
+                mock.patch.object(td, "parent_pid", lambda pid: pid + 1 if pid + 1 in names else 1),
+                mock.patch.object(td, "is_vscode_terminal_host", lambda pid: names.get(pid) == "code"))
 
     def test_the_terminal_by_name(self):
         for names, want in (({10: "claude", 11: "bash", 12: "konsole"}, "Konsole"),
@@ -3340,7 +3340,7 @@ class TerminalTests(unittest.TestCase):
                             ({10: "claude", 11: "sshd-session"}, "")):
             patches = self.tree(names)
             with patches[0], patches[1], patches[2]:
-                self.assertEqual(cs.terminal_name(10), want, names)
+                self.assertEqual(td.terminal_name(10), want, names)
 
     def test_a_background_session_shown_in_a_terminal(self):
         row = lambda job, name, profile=".claude": {"jobId": job, "sessionId": job + "-s", "chatId": job + "-s", "name": name,  # noqa: E731
@@ -3351,8 +3351,8 @@ class TerminalTests(unittest.TestCase):
         reals = {".claude": Path("/home/me/.claude"), ".claude-work": Path("/home/me/.claude-work")}
 
         def shown(opened, title, here=Path("/home/me/.claude")):
-            with mock.patch.object(cs, "process_config_dir", lambda pid: here):
-                found = cs.shown_row(20, opened, title, rows, reals)
+            with mock.patch.object(td, "process_config_dir", lambda pid: here):
+                found = td.shown_row(20, opened, title, rows, reals)
             return found and found["jobId"]
         # opened by id (claude attach <id>, or the agent view's CLAUDE_AGENTS_SELECT), any terminal, no readable title
         self.assertEqual(shown("0a1b2c3d", ""), "0a1b2c3d")
@@ -3370,28 +3370,28 @@ class TerminalTests(unittest.TestCase):
         self.assertIsNone(shown("fix parser", "", Path("/home/me/.claude-work")))
         self.assertIsNone(shown("99999999", ""))
         clients = [(20, "0a1b2c3d", "talpy-den : claude"), (30, "", "notes"), (40, "eeeeeeee", "")]
-        with mock.patch.object(cs, "tmux_socket", lambda pid: "/tmp/tmux-1/default" if pid == 40 else None), \
-                mock.patch.object(cs, "terminal_name", lambda pid: "VS Code" if pid == 30 else "Konsole"):
-            self.assertEqual(cs.attached_in(a, rows, clients, reals), {"in": "terminal", "app": "Konsole"})
-            self.assertEqual(cs.attached_in(c, rows, clients, reals), {"in": "vscode", "app": ""})
-            self.assertEqual(cs.attached_in(b, rows, clients, reals), {"in": "tmux", "app": ""})
-            self.assertIsNone(cs.attached_in(twin1, rows, clients, reals))
+        with mock.patch.object(td, "tmux_socket", lambda pid: "/tmp/tmux-1/default" if pid == 40 else None), \
+                mock.patch.object(td, "terminal_name", lambda pid: "VS Code" if pid == 30 else "Konsole"):
+            self.assertEqual(td.attached_in(a, rows, clients, reals), {"in": "terminal", "app": "Konsole"})
+            self.assertEqual(td.attached_in(c, rows, clients, reals), {"in": "vscode", "app": ""})
+            self.assertEqual(td.attached_in(b, rows, clients, reals), {"in": "tmux", "app": ""})
+            self.assertIsNone(td.attached_in(twin1, rows, clients, reals))
 
     def test_the_row_of_a_session_attached_in_konsole_says_so(self):
         # (Konsole's default tab title: the tag comes from the id it was opened with)
         fx = Fixture()
         fx.setUp()
         self.addCleanup(fx.tearDown)
-        with mock.patch.object(cs, "attach_clients", lambda: [(20, "job3", "talpy-den : claude")]), \
-                mock.patch.object(cs, "tmux_socket", lambda pid: None), \
-                mock.patch.object(cs, "terminal_name", lambda pid: "Konsole"):
+        with mock.patch.object(td, "attach_clients", lambda: [(20, "job3", "talpy-den : claude")]), \
+                mock.patch.object(td, "tmux_socket", lambda pid: None), \
+                mock.patch.object(td, "terminal_name", lambda pid: "Konsole"):
             rows = {s["sessionId"]: s for g in fx.collect(with_tokens=False)["groups"] for s in g["sessions"]}
         self.assertEqual(rows["bgworking"]["attached"], {"in": "terminal", "app": "Konsole"})
         self.assertIsNone(rows["bgdone"]["attached"])
 
     def test_the_title_without_its_marks(self):
-        self.assertEqual(cs.TITLE_MARKS.sub("", "🏠 ◐ Minor version 1.16.2 tag").strip(), "Minor version 1.16.2 tag")
-        self.assertEqual(cs.TITLE_MARKS.sub("", "✳ (draft) notes").strip(), "(draft) notes")
+        self.assertEqual(td.TITLE_MARKS.sub("", "🏠 ◐ Minor version 1.16.2 tag").strip(), "Minor version 1.16.2 tag")
+        self.assertEqual(td.TITLE_MARKS.sub("", "✳ (draft) notes").strip(), "(draft) notes")
 
 
 class UsageRefreshCommandTests(unittest.TestCase):
@@ -3408,12 +3408,12 @@ class UsageRefreshCommandTests(unittest.TestCase):
             write(claude, '#!/bin/sh\nprintf "%s\\n" "$PWD" "$CLAUDE_CONFIG_DIR" "$@" > "$OUT"\n'
                           'mkdir -p "$CLAUDE_CONFIG_DIR/projects/$(pwd | sed "s/[^A-Za-z0-9]/-/g")/memory"\n')
             claude.chmod(0o755)
-            profile = next(p for p in cs.discover_profiles(home) if p.label == "work")
+            profile = next(p for p in td.discover_profiles(home) if p.label == "work")
             folder = cache / "usage-check"
             folder.mkdir(parents=True)
             with mock.patch.dict(os.environ, {"OUT": str(out)}):
-                argv, env = cs.usage_refresh_command(profile, home, str(claude), folder)
-            proc = cs.spawn_detached(argv, str(folder), env)
+                argv, env = td.usage_refresh_command(profile, home, str(claude), folder)
+            proc = td.spawn_detached(argv, str(folder), env)
             self.assertEqual(proc.wait(timeout=30), 0)
             self.assertEqual(out.read_text().splitlines(), [
                 str(folder), str(home / ".claude-work"), "-p", "/usage", "--no-session-persistence",
@@ -3422,7 +3422,7 @@ class UsageRefreshCommandTests(unittest.TestCase):
             self.assertEqual(os.listdir(home / ".claude-work/projects"), ["-keep"])
             # without timeout, it runs without a time limit
             with mock.patch("shutil.which", lambda name, *a, **kw: None):
-                argv, _ = cs.usage_refresh_command(profile, home, str(claude), folder)
+                argv, _ = td.usage_refresh_command(profile, home, str(claude), folder)
             self.assertEqual(argv[5:7], [str(claude), "-p"])
 
 
@@ -3438,32 +3438,32 @@ class SideStoreTests(unittest.TestCase):
         self.cache = Path(tmp.name) / "cache"
 
     def ask(self, q, now, chat=CHAT, host="", pick=""):
-        ok, said, item, items, v = cs.ask_side(self.cache, chat, host, q, pick, now_ms=now)
+        ok, said, item, items, v = td.ask_side(self.cache, chat, host, q, pick, now_ms=now)
         self.assertTrue(ok, said)
         return item
 
     def answer(self, item, text, now, chat=CHAT, host="", **kw):
-        return cs.finish_side(self.cache, chat, host, item["id"], text, now_ms=now, **kw)
+        return td.finish_side(self.cache, chat, host, item["id"], text, now_ms=now, **kw)
 
     def test_one_whose_helper_died_reads_as_failed(self):
         item = self.ask("still there?", 1000)
-        self.assertTrue(cs.load_sides(self.cache, self.CHAT, now_ms=2000)[0][0]["pending"])
-        late = cs.load_sides(self.cache, self.CHAT, now_ms=1000 + cs.SIDE_LOST_MS + 1)[0][0]
-        self.assertEqual((late.get("pending"), late["error"], late["done"]), (None, cs.SIDE_LOST, 1000 + cs.SIDE_LOST_MS))
+        self.assertTrue(td.load_sides(self.cache, self.CHAT, now_ms=2000)[0][0]["pending"])
+        late = td.load_sides(self.cache, self.CHAT, now_ms=1000 + td.SIDE_LOST_MS + 1)[0][0]
+        self.assertEqual((late.get("pending"), late["error"], late["done"]), (None, td.SIDE_LOST, 1000 + td.SIDE_LOST_MS))
         # its answer coming after all wins
-        items, _ = self.answer(item, "Yes.", 1000 + cs.SIDE_LOST_MS + 5)
+        items, _ = self.answer(item, "Yes.", 1000 + td.SIDE_LOST_MS + 5)
         self.assertEqual((items[0]["a"], items[0].get("error")), ("Yes.", None))
         # one removed while on its way stays removed
         other = self.ask("gone?", 3000)
-        cs.remove_side(self.cache, self.CHAT, "", other["id"])
+        td.remove_side(self.cache, self.CHAT, "", other["id"])
         self.assertEqual([s["q"] for s in self.answer(other, "late", 4000)[0]], ["still there?"])
 
     def test_the_oldest_answered_ones_go_past_the_cap(self):
         on_way = self.ask("q0", 1)
-        for n in range(1, cs.SIDES_MAX + 2):
+        for n in range(1, td.SIDES_MAX + 2):
             self.answer(self.ask(f"q{n}", 1 + n), "a", 1 + n)
-        items, _ = cs.load_sides(self.cache, self.CHAT, now_ms=100)
-        self.assertEqual(len(items), cs.SIDES_MAX)
+        items, _ = td.load_sides(self.cache, self.CHAT, now_ms=100)
+        self.assertEqual(len(items), td.SIDES_MAX)
         self.assertEqual([s["q"] for s in items[:2]], ["q0", "q3"])   # (the one on its way stays)
         self.assertTrue(items[0]["pending"])
         self.assertEqual(on_way["id"], items[0]["id"])
@@ -3473,57 +3473,57 @@ class SideStoreTests(unittest.TestCase):
         for n in range(9):
             item = self.ask(f"q{n}", 10 + n)
             if n == 4:
-                cs.finish_side(self.cache, self.CHAT, "", item["id"], None, "no answer", now_ms=10 + n)
+                td.finish_side(self.cache, self.CHAT, "", item["id"], None, "no answer", now_ms=10 + n)
             elif n == 5:
-                cs.finish_side(self.cache, self.CHAT, "", item["id"], "(a stand-in)", synthetic=True, now_ms=10 + n)
+                td.finish_side(self.cache, self.CHAT, "", item["id"], "(a stand-in)", synthetic=True, now_ms=10 + n)
             else:
                 self.answer(item, f"a{n}", 10 + n)
-        items, _ = cs.load_sides(self.cache, self.CHAT, now_ms=100)
-        self.assertEqual([h["question"] for h in cs.side_history(items, items[-1]["id"])],
+        items, _ = td.load_sides(self.cache, self.CHAT, now_ms=100)
+        self.assertEqual([h["question"] for h in td.side_history(items, items[-1]["id"])],
                          ["q0", "q1", "q2", "q3", "q6", "q7"])   # (before it, answered for real, the newest 6)
-        self.assertEqual(len(cs.side_history(items)), cs.SIDE_HISTORY)
+        self.assertEqual(len(td.side_history(items)), td.SIDE_HISTORY)
         big = self.ask("big?", 50)
-        self.answer(big, "x" * cs.SIDE_HISTORY_TEXT, 50)
-        items, _ = cs.load_sides(self.cache, self.CHAT, now_ms=100)
-        self.assertEqual(cs.side_history(items), [])   # (the newest alone is past the size: none)
+        self.answer(big, "x" * td.SIDE_HISTORY_TEXT, 50)
+        items, _ = td.load_sides(self.cache, self.CHAT, now_ms=100)
+        self.assertEqual(td.side_history(items), [])   # (the newest alone is past the size: none)
 
     def test_they_move_with_a_chat_and_go_with_it(self):
         mine = self.ask("mine?", 10)
         self.answer(mine, "yes", 11)
         there = self.ask("its?", 20, chat=self.NEW)
         self.answer(there, "also", 21, chat=self.NEW)
-        cs.bookmarks_moved(self.cache, {self.CHAT: self.NEW})
-        self.assertEqual(cs.load_sides(self.cache, self.CHAT), ([], 0))
-        self.assertEqual([s["q"] for s in cs.load_sides(self.cache, self.NEW)[0]], ["mine?", "its?"])
+        td.bookmarks_moved(self.cache, {self.CHAT: self.NEW})
+        self.assertEqual(td.load_sides(self.cache, self.CHAT), ([], 0))
+        self.assertEqual([s["q"] for s in td.load_sides(self.cache, self.NEW)[0]], ["mine?", "its?"])
         hosted = self.ask("on gpu?", 30, host="gpu")
-        cs.forget_bookmarks(self.cache, self.CHAT, "gpu")   # (a deleted chat: its bookmarks and side questions)
-        self.assertEqual(cs.load_sides(self.cache, self.CHAT, "gpu"), ([], 0))
+        td.forget_bookmarks(self.cache, self.CHAT, "gpu")   # (a deleted chat: its bookmarks and side questions)
+        self.assertEqual(td.load_sides(self.cache, self.CHAT, "gpu"), ([], 0))
         self.assertTrue(hosted)
-        cs.forget_bookmarks(self.cache, self.NEW)
-        self.assertFalse((self.cache / cs.SIDES_DIR / f"{self.NEW}.json").exists())
+        td.forget_bookmarks(self.cache, self.NEW)
+        self.assertFalse((self.cache / td.SIDES_DIR / f"{self.NEW}.json").exists())
 
     def test_what_isnt_kept(self):
         for q, pick, said in (("", "", "Write your question first"), ("q", "opus", "Not a model side questions can use"),
-                              ("q" * (cs.SIDE_TEXT + 1), "", "That's too long for a side question (up to %d characters)" % cs.SIDE_TEXT)):
-            self.assertEqual(cs.ask_side(self.cache, self.CHAT, "", q, pick)[:2], (False, said))
-        self.assertEqual(cs.ask_side(self.cache, "a/b", "", "q")[:2], (False, "Not a chat: a/b"))
-        write(self.cache / cs.SIDES_DIR / f"{self.CHAT}.json",
+                              ("q" * (td.SIDE_TEXT + 1), "", "That's too long for a side question (up to %d characters)" % td.SIDE_TEXT)):
+            self.assertEqual(td.ask_side(self.cache, self.CHAT, "", q, pick)[:2], (False, said))
+        self.assertEqual(td.ask_side(self.cache, "a/b", "", "q")[:2], (False, "Not a chat: a/b"))
+        write(self.cache / td.SIDES_DIR / f"{self.CHAT}.json",
               {"v": 7, "items": [{"id": "zz", "q": "bad id"}, {"id": "0123456789ab", "q": " "}, "x",
                                  {"id": "0123456789ab", "q": "ok", "at": 5, "done": 6, "a": "fine", "pick": "gpt"}]})
-        items, v = cs.load_sides(self.cache, self.CHAT)
+        items, v = td.load_sides(self.cache, self.CHAT)
         self.assertEqual((v, [(s["q"], s["pick"], s["a"]) for s in items]), (7, [("ok", "", "fine")]))
 
     def test_the_message_asked_from_and_the_part_that_answered_are_kept(self):
         item = self.ask("why?", 10)
         self.assertNotIn("since", item)
-        on = cs.ask_side(self.cache, self.CHAT, "", "from there?", "", now_ms=20, since="msg_01abc")[2]
+        on = td.ask_side(self.cache, self.CHAT, "", "from there?", "", now_ms=20, since="msg_01abc")[2]
         self.assertEqual(on["since"], "msg_01abc")
         part = {"key": "u2", "text": "second  task\nnow", "at": 5, "tokens": 300, "of": 900, "extra": 1}
-        items, _ = cs.finish_side(self.cache, self.CHAT, "", on["id"], "Because.", now_ms=30, part=part)
+        items, _ = td.finish_side(self.cache, self.CHAT, "", on["id"], "Because.", now_ms=30, part=part)
         self.assertEqual(items[1]["from"], {"key": "u2", "text": "second task now", "at": 5, "tokens": 300, "of": 900})
         self.assertEqual(items[1]["since"], "msg_01abc")
-        items, _ = cs.finish_side(self.cache, self.CHAT, "", item["id"], "All.", now_ms=40, part={"key": "-bad"})
+        items, _ = td.finish_side(self.cache, self.CHAT, "", item["id"], "All.", now_ms=40, part={"key": "-bad"})
         self.assertNotIn("from", items[0])   # (a part that isn't one: the whole chat)
-        self.assertEqual(cs.ask_side(self.cache, self.CHAT, "", "q", "", since="-x")[:2], (False, "Which message?"))
-        self.assertTrue(cs.side_copy(cs.SIDE_COPY_PREFIX + "123-8456-789012345678.jsonl"))
-        self.assertFalse(cs.side_copy(self.CHAT + ".jsonl"))
+        self.assertEqual(td.ask_side(self.cache, self.CHAT, "", "q", "", since="-x")[:2], (False, "Which message?"))
+        self.assertTrue(td.side_copy(td.SIDE_COPY_PREFIX + "123-8456-789012345678.jsonl"))
+        self.assertFalse(td.side_copy(self.CHAT + ".jsonl"))
