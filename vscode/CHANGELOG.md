@@ -22,62 +22,6 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
-- **Your plan's limits over time, right and to the point.** Overall's last
-  section starts with how full each of your weeks got (a bar per week, a
-  red mark where it ran out, how many of its 5-hour windows ran full),
-  then the changes of your limits (*No change seen since 12 Mar*), then
-  what a window holds as one estimate: the upper end of your windows,
-  since use not seen here only makes one look smaller (*5-hour window
-  ≈ $180*), its share of the week from the readings themselves where
-  there are enough, how long one lasts, one token figure in your mix,
-  and a chart with each stretch of the same limits on its own scale. The
-  sizes, the share, the tokens and the chart agree.
-
-- **Your plan says each week on its own.** Over a month or everything,
-  *Your plan* says each weekly window's use (*Weeks: 72% · 100% · 41% so
-  far*) instead of adding them up past 100%, and how long chats stood
-  stopped by a limit, in all, in days when it's long (*10 days*). A tip
-  whose share a row of *Where the usage went* already says (context over
-  150k, max effort) doesn't say it again.
-
-- **Where the usage went, and tips that act.** *By model* is now *Where
-  the usage went*: the models' rows, with what each was the period before,
-  then, as your plan's limits count it (weighed as Claude Code's `/usage`
-  weighs it), how much went to subagents, to requests over 150k of context
-  and to each effort level, each with its share the period before
-  (*Subagents · 31% of usage · was 24%*). Each tip says what its share was
-  then, and offers what acts on it: the chats that ran 8 hours or more,
-  with **Stop** for one that's idle (it asks first); the chats that carried
-  most over 150k of context, or that you came back to cold; the chats a
-  usage limit stopped, with **Keep going** where the chat list offers it
-  (that tip goes once they all keep going); **Permissions** for the time
-  Claude waited for your answers; a name opens its chat. A command to copy
-  stays where it's what you'd do.
-
-- **The Day, chat by chat, has its hours.** Its axis has its whole hours,
-  faint through the lanes, and pointing at it draws a line across every
-  chat and says which worked, waited for you or were paused then.
-
-- **A day's name in the Week opens that day**, alone, as a Day; clicking
-  its row still unfolds its chats there.
-
-- **Your plan, in the Recap.** After *What got done*, a line per account
-  says what the days shown meant for its plan: how much of its week they
-  used (from the readings of it Talpy Den keeps, so use on claude.ai
-  counts too), how many 5-hour windows ran full, how often it ran out and
-  how long that held chats (*66% of the week used in these days · 3 full
-  5-hour windows · ran out 3 times, chats held 4h 10m*); its tooltip says
-  how each is worked out. On today's Day the windows now are under it.
-  Each project's row says its share of your week (*≈ 28%*, an estimate;
-  a chat's and a day's in their tooltips), where the readings cover the
-  days shown; an account with none here (an SSH host's) says so.
-
-- **Your plan's limits over time, last in Overall, open.** No more fold
-  in the middle of the tab: it's Overall's last section, worked out only
-  once you scroll to it (not when the tab opens, nor again for another
-  span; again for another account, at Refresh and every 10 minutes once
-  you've been there), a dim line in its place while it comes.
-
 - **What got done, in one list.** The Recap's *Where Claude worked* and
   *Chats it worked on most* are one section, *What got done*: a row per
   project with its commits and the files Claude's edits changed (*14
@@ -88,39 +32,74 @@
   project on the Projects tab. What Claude did in all is the list's last
   line, with the period before's in its tooltip.
 
-- **What fills a 5-hour window, by API price.** In *Your plan's limits
-  over time*, the bar of what fills a window split its tokens by count, one
-  colour of cache reads (over 99% of them). It now splits their API price:
-  cache reads, new input and cache writes, and output.
+- **Your plan, in the Recap.** After *What got done*, a line per account
+  says what the days shown meant for its plan: how much of its week they
+  used (from the readings of it Talpy Den keeps, so use on claude.ai
+  counts too), how many 5-hour windows ran full, how often it ran out and
+  how long chats stood stopped by it (*66% of the week used in these days
+  · 3 full 5-hour windows · ran out 3 times, chats stood stopped 4h 10m in
+  all*); over a month or everything, each week on its own (*Weeks: 72% ·
+  100% · 41% so far*), never added up past 100%. On today's Day the
+  windows now are under it. Each project's row says its share of your
+  week (*≈ 28%*, an estimate; a chat's and a day's in their tooltips),
+  where the readings cover the days shown.
 
-- **The Recap's tips stand on something, one per cause.** Coming back to
-  chats after their cache had expired is now a tip like the others (*Come
-  back within the hour, or start fresh*), shown from a tenth of the amount
-  at API prices (*14% of the amount*), and nothing below that. A period
-  with under 20 prompts and under an hour of Claude's work says it's too
-  little to go on instead of tips. A plugin's skill is one tip, the
-  skill's: the plugin's tip only counts the rest of its usage.
+- **Where the usage went.** *At API prices*, by model, is now *Where the
+  usage went*: the models' rows, with what each was the period before,
+  then, as your plan's limits count it (weighed as Claude Code's `/usage`
+  weighs it), how much went to subagents, to requests over 150k of context
+  and to each effort level, each with its share the period before
+  (*Subagents · 31% of usage · was 24%*).
 
-- **The Recap says each thing once.** The line of facts under the tiles
-  (the timeline shows them), the *Other tools* line under *What Claude did*
-  and the sentence about the cache under the models (the Tokens tile says
-  it) are gone; the limits tip still says how often your plan ran out. The
-  section *At API prices* is now *By model* (the tile keeps its name).
+- **Tips that stand on something, and act.** Each tip says what its share
+  was the period before, and offers what acts on it: the chats that ran 8
+  hours or more, with **Stop** for one that's idle (it asks first); the
+  chats with the most requests over 150k of context, or that you came back
+  to cold; the chats a usage limit stopped, with **Keep going** where the
+  chat list offers it (that tip goes once they all keep going);
+  **Permissions** for the time Claude waited for your answers; a name opens
+  its chat. Coming back to chats after their cache expired is a tip like
+  the others, from a tenth of the amount; days with too little in them say
+  so instead of tips; a plugin's skill is one tip, not two; a tip's share
+  is said once.
 
-- **The Tokens tile says how much came from the cache.** Its label now
-  says the cache reads' share of the total (*Tokens · 98% cache*); the
-  tooltip keeps the whole split.
+- **Your plan's limits over time, last in Overall, and right.** No more
+  fold in the middle of the tab: it's Overall's last section, worked out
+  only once you scroll to it. It starts with how full each of your weeks
+  got (a bar per week, a red mark where it ran out, how many of its 5-hour
+  windows ran full), then the changes of your limits (*No change seen
+  since 12 Mar*), then what a window holds as one estimate: the upper end
+  of your windows, since use not seen here only makes one look smaller
+  (*5-hour window ≈ $180*), its share of the week from the readings
+  themselves where there are enough, how long one lasts, one token figure
+  in your mix with a bar of it by API price, and a chart with each stretch
+  of the same limits on its own scale. The sizes, the share, the tokens
+  and the chart agree.
+
+- **The Day has its hours, and a day's name opens it.** On a Day, the
+  chats' timeline has its whole hours, and pointing at it draws a line
+  across every chat and says which worked, waited for you or were paused
+  then. In the Week, a day's name opens that day alone; its row still
+  unfolds its chats.
+
+- **The Recap says each thing once.** The line of facts under the tiles,
+  the *Other tools* line and the sentence about the cache under the models
+  are gone (the timeline and the Tokens tile say them), and the Tokens
+  tile's label says the cache's share (*Tokens · 98% cache*).
 
 ### Fixed
 
-- **Your plan's limits over time: no changes from stale readings, and a
-  rough estimate says so.** A status line written again with older numbers
-  made changes of your limits that never were (three in half an hour). Now
-  such a reading is left out, a change has to hold in the reading after it,
-  and changes close together count as their net. A size from fewer than 3
-  windows, or ones far apart, shows its range and how many windows
-  (*$40–$190 · 5 windows*) instead of one bold number, and no red ▼ is told
-  from it (*readings too far apart to compare yet*).
+- **The Recap compares only with days it has whole.** A period before that
+  began before the first chat the Recap has was compared as if it were
+  whole (a month could say *+640 prompts* against 30 days of which it had
+  5). Now there's no change on its tiles, the tooltip says since when the
+  Recap has your chats, and the trend shows that period as a dot.
+
+- **The Recap's API prices are today's, and a guessed one shows.** The
+  prices are the API pricing page's of 18 Nov 2026, with Fable 5.2 and
+  Mythos 5.2 (priced as Fable 5.1 before). A model newer than the list is
+  priced as the newest of its family: its row says *≈*, with a tooltip, and
+  the cost tile's tooltip says how much of the amount rests on that guess.
 
 - **How often your plan ran out, not every chat it stopped.** The Recap
   counted stops within an hour of each other as one, so one full window
@@ -129,17 +108,11 @@
   same time) and keeps the chats: *your plan ran out 3 times (8 chats
   stopped)*. The timeline still marks each chat's stop.
 
-- **The Recap's API prices are today's, and a guessed one shows.** The
-  prices are the API pricing page's of 18 Nov 2026, with Fable 5.2 and
-  Mythos 5.2 (priced as Fable 5.1 before). A model newer than the list is
-  priced as the newest of its family: its row says *≈*, with a tooltip, and
-  the cost tile's tooltip says how much of the amount rests on that guess.
-
-- **The Recap compares only with days it has whole.** A period before that
-  began before the first chat the Recap has was compared as if it were
-  whole (a month could say *+640 prompts* against 30 days of which it had
-  5). Now there's no change on its tiles, the tooltip says since when the
-  Recap has your chats, and the trend shows that period as a dot.
+- **Your plan's limits over time: no changes from stale readings.** A
+  status line written again with older numbers made changes of your limits
+  that never were (three in half an hour). Now such a reading is left out,
+  a change has to hold in the reading after it, and changes close together
+  count as their net.
 
 ## 1.21.0
 
