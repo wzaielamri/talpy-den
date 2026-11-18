@@ -1814,6 +1814,17 @@ class JobIdTests(unittest.TestCase):
         self.assertEqual(took, [(True, job_id)])
         self.assertEqual(self.calls, [])  # (the widget does what a click on its row does: no terminal here)
 
+    def test_job_goes_to_talpy_den_first_even_with_its_window_open(self):
+        # (the widget brings its window up itself, with the cursor in its reply box: KWin only when it can't)
+        job_id = f".claude-work/{self.UUID}/job"
+        self.named({job_id: "display chat list ordering"})
+        self.kwin("display chat list ordering \u2014 Talpy Chat")
+        self.wait_for_taker(2.0)
+        took = self.taker()
+        self.assertEqual(self.job(job_id), (True, "Opened in Talpy Den"))
+        self.assertEqual(took, [(True, job_id)])
+        self.assertEqual(self.ran, [])
+
     def test_job_falls_back_when_nothing_takes_it(self):
         import live
         job_id = f".claude-work/{self.UUID}/live"

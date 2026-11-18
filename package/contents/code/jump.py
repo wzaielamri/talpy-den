@@ -1394,11 +1394,12 @@ def jump_job_id(home, extra_dirs, job_id):
     if job_id not in listed:
         return False, JOB_NOT_LISTED
     # Open in its Talpy Chat window: that window, where you read it (not a new terminal on it).
-    if raise_talpy_chat(listed[job_id].get("name")):
-        return True, "Switched to its Talpy Chat window"
-    # Else what a click on its row in Talpy Den does, done by Talpy Den itself while it runs.
+    # What a click on its row in Talpy Den does, done by Talpy Den itself while it runs (an open Talpy Chat window
+    # brought up with the cursor in its reply box); else its Talpy Chat window raised by KWin, if one is open.
     if offer_open(home, job_id):
         return True, "Opened in Talpy Den"
+    if raise_talpy_chat(listed[job_id].get("name")):
+        return True, "Switched to its Talpy Chat window"
     found = listed_host_session(job_id)
     if found:
         return show_host_session(*found)

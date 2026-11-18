@@ -139,6 +139,7 @@ export class ChatPanes implements vscode.Disposable {
     const pane = this.panes.get(key);
     if (pane) return pane.reveal(tab);
     const created = new Pane(this, chat, tab);
+    if (tab === "chat") created.focusReply(); // (once its page is ready)
     this.panes.set(key, created);
     created.onClosed(() => (this.panes.forEach((p, k) => p === created && this.panes.delete(k)), this.watchesChanged()));
     this.watchesChanged();
@@ -680,6 +681,19 @@ class Pane implements vscode.Disposable {
     this.panel.reveal();
     // (on tab:review the page shows its Review tab and asks for the review, once)
     this.post({ type: "result", kind: "tab:" + tab, ok: true, message: "" });
+    if (tab === "chat") this.focusReply();
+  }
+
+  // The cursor in its reply box: it's opened, or brought up again, to write in (a click on its row, a
+  // notification, another program's request); its Review tab keeps its own. Before its page is ready: once it is.
+  private wantsFocus = false;
+  focusReply(): void {
+    if (this.disposed) return;
+    if (!this.ready) {
+      this.wantsFocus = true;
+      return;
+    }
+    this.post({ type: "focusReply" });
   }
 
   // In front, with the focus (its keys go to it)
@@ -1007,6 +1021,10 @@ class Pane implements vscode.Disposable {
         await this.pushChat();
         await this.load();
         this.schedule();
+        if (this.wantsFocus) {
+          this.wantsFocus = false;
+          this.post({ type: "focusReply" });
+        }
         if (this.pendingDraft) {
           this.draft(this.pendingDraft);
           this.pendingDraft = "";

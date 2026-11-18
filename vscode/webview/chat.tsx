@@ -1112,6 +1112,7 @@ function ChatApp() {
         setText(m.text);
         window.setTimeout(() => reply.current?.focus(), 0);
       }
+      else if (m.type === "focusReply") window.setTimeout(() => reply.current?.focus(), 0);   // (opened: to write in)
       else if (m.type === "diffLayout") setSplit(m.split);
       else if (m.type === "picked") attachPaths(m.paths);
       else if (m.type === "picture") {

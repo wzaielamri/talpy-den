@@ -2334,3 +2334,28 @@ test("Remote Control: its page only from a claude.ai/code session, and the switc
   assert.match(remoteSwitchTitle(false, true), /^Turn on Remote Control\n/);
   assert.match(remoteSwitchTitle(true, false), /^Turn off Remote Control\n[\s\S]*Once its prompt is answered/);
 });
+
+test("opening a chat puts the cursor in its reply box, also when its tab is brought up again", async () => {
+  const row = demoState(NOW).status!.groups.flatMap((g) => g.sessions)[0];
+  const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true } : { ok: true, items: [], more: false, stamp: "s1" }) };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
+                          { find: async () => undefined } as never, {} as never);
+  const tick = () => new Promise((r) => setTimeout(r, 10));
+  p.open(chatRefOf(row));
+  const panel = recorded.panels.at(-1)!;
+  panel.show(true);
+  const focused = () => panel.sent.filter((m) => (m as { type: string }).type === "focusReply").length;
+  try {
+    assert.equal(focused(), 0, "not before its page is ready");
+    panel.receive({ type: "ready" });
+    await tick();
+    assert.equal(focused(), 1);
+    p.open(chatRefOf(row)); // (its tab brought up again: a click, a notification, a request)
+    assert.equal(focused(), 2);
+    p.open(chatRefOf(row), "review");
+    assert.equal(focused(), 2, "its Review tab keeps its own");
+  } finally {
+    panel.dispose(); // (closed whatever happens: an open tab keeps watching its chat)
+  }
+});

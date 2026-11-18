@@ -4410,6 +4410,13 @@ PlasmoidItem {
     function paneKeyOf(c) {
         return c && c.chatId ? (c.host || "") + "|" + c.chatId : ""
     }
+    // Whether a Talpy Chat window (this copy's or another's) shows the chat of row s (on host): openPane's key
+    function paneOpenFor(s, host) {
+        const moved = movedChat({ chatId: s.chatId || s.sessionId }, host ? (remote[host] || {}).result : status)
+        const key = (host || "") + "|" + (moved || s.chatId || s.sessionId)
+        return Hub.paneHolder(key, "") !== "" || !!paneWindowOf(key)
+    }
+
     function paneWindowOf(key) {   // (this copy's open window for that chat, or null)
         return key ? paneWindows.find(w => paneKeyOf(w.chat) === key) || null : null
     }
@@ -4843,7 +4850,8 @@ PlasmoidItem {
 
     // An open request offered (live.py --opens): taken (live.py --take-open, its file's name the only word, and
     // only of the shape jump.py names them) only if the chat is listed here, else left for VS Code or jump.py
-    // itself; once taken (and only if it was this chat's), what a click on its row does (clickChat)
+    // itself; once taken (and only if it was this chat's), its open Talpy Chat window brought up, else what a
+    // click on its row does (clickChat)
     property var openTakes: ({})   // the take's command -> {jobId, s, host}
     function openJob(jobId, request) {
         const found = jobRow(jobId)
@@ -4866,7 +4874,12 @@ PlasmoidItem {
                 taken = JSON.parse(data["stdout"])
             } catch (e) {
             }
-            if (want && taken && taken.ok === true && taken.id === want.jobId)
+            if (!want || !taken || taken.ok !== true || taken.id !== want.jobId)
+                return
+            // (its Talpy Chat window, if one is open: brought up, with the cursor in its reply box; else a click)
+            if (root.paneOpenFor(want.s, want.host))
+                root.openPane(want.s, want.host, "chat")
+            else
                 root.clickChat(want.s, want.host)
         }
     }

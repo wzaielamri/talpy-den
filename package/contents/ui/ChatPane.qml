@@ -218,6 +218,14 @@ Window {
             showNormal()
         raise()
         requestActivate()
+        focusReply()
+    }
+    // The cursor in its reply box: it's opened, or brought up again, to write in (a click on its row, a
+    // notification, another program's request); its Review tab keeps its own. What the opener asks for after
+    // (act: Deny's note, a question's own words) has the last word.
+    function focusReply() {
+        if (pane.tab === "chat")
+            replyBox.forceActiveFocus()
     }
     // What it does once it shows its chat (main.qml openPane's then): a reply
     // from a notification in its box, for a terminal that takes no text
@@ -229,6 +237,7 @@ Window {
         if (then.draft) {
             replyBox.text = then.draft
             replyBox.cursorPosition = replyBox.text.length
+            replyBox.forceActiveFocus()
             pane.askHow = true
         }
         if (then.denying)
@@ -926,6 +935,7 @@ Window {
         newDay()   // (when midnight is: two Dates)
         reset()
         run("font", "--terminal-font")   // (changed since it was last found: from now on)
+        focusReply()   // (a new window: the cursor in its reply box, as one brought up again)
     }
     // (a picture or file for this window's reply box: main.qml's target for it)
     readonly property string pasteTarget: "pane:" + host + "|" + chatId
