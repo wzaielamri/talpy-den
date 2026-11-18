@@ -3,6 +3,8 @@
 a new chat (used by the Talpy Den widget).
 
     python3 -I jump.py SESSION_ID [--config-dir DIR]...
+    python3 -I jump.py --job ID                  (the chat of a jobs file id, as a click on its row: for other
+                                                  programs, e.g. Talpy Den Display)
     python3 -I jump.py --stop SESSION_ID [--profile PROFILE] [--busy] [--and-keep-off CHAT_ID] [--config-dir DIR]...
     python3 -I jump.py --interrupt SESSION_ID [--profile PROFILE]   (Ctrl+C in its tmux pane, Esc in a background chat)
     python3 -I jump.py --save-settings JSON --by WIDGET [--unless-default]   (settings the widgets share)
@@ -1197,6 +1199,96 @@ def jump(home, extra_dirs, session_id, profile_dir=None):
         name = (entry or {}).get("name") or (job or {}).get("name") or ""
         return jump_job(profile, job_id, job, name if isinstance(name, str) else "", home)
     return False, "Don't know how to open this chat"
+
+
+# ---------------------------------------------------------------- a chat by its id in the jobs file
+#
+# jump.py --job ID: another program (Talpy Den Display, a desk screen) brings up a chat it read in the jobs file
+# (place_jobs: "[<host>:]<profile>/<id>/<kind>[/<more>]"), doing what a click on its row in the widget does. The id
+# comes from outside, so nothing of it becomes a command, an option or a path: it's checked first (JOB_ID_BAD), then
+# only compared with what Talpy Den lists (a profile's name, a host's last answer). What runs is what a click runs,
+# and a question Talpy Den asks first (VS Code on a host) is never answered for you.
+
+JOB_ID_MAX = 300
+JOB_ID_BAD = re.compile(r"""[\s"'\\;|&$`<>]""")
+JOB_KINDS = ("live", "job", "chat")
+JOB_NOT_LISTED = "That chat isn't listed any more"
+JOB_VSCODE_ASKS = "Open it from Talpy Den first: it asks before connecting VS Code"
+
+
+def job_id_ok(job_id):
+    """Whether job_id can be a jobs file's id: printable ASCII, at most JOB_ID_MAX, no blank, quote, backslash or
+    shell character, no "..", not starting with "-", and at least <profile>/<id>/<kind>."""
+    return (isinstance(job_id, str) and 0 < len(job_id) <= JOB_ID_MAX and job_id.isascii() and job_id.isprintable()
+            and not JOB_ID_BAD.search(job_id) and ".." not in job_id and not job_id.startswith("-")
+            and len(job_id.split("/")) >= 3)
+
+
+def shared_extra_dirs(home):
+    """The extra Claude folders the widgets were given (their shared settings' extraConfigDirs), as a click there
+    passes them on with --config-dir."""
+    shared = cs.shared_settings(cs.cache_dir(home)) or {}
+    dirs = (shared.get("values") or {}).get("extraConfigDirs")
+    return [d.strip() for d in dirs.split(",") if d.strip()] if isinstance(dirs, str) else []
+
+
+def listed_host_session(job_id):
+    """(host, session) of the SSH host's or container's chat whose jobs file id is job_id, from the hosts' last
+    answers (only files whose name is a host name); None if none lists it."""
+    import remote
+    try:
+        names = [f.stem for f in (cs.cache_dir(Path.home()) / remote.ANSWERS_DIR).glob("*.json")]
+    except OSError:
+        return None
+    hosts = []
+    for name in names:
+        try:
+            host = remote.check_host(name)
+        except ValueError:
+            continue
+        if job_id.startswith(host + ":"):
+            hosts.append(host)
+    for host, saved in remote.last_answers(hosts).items():
+        result = saved["answer"].get("result")
+        for g in result.get("groups") or [] if isinstance(result, dict) else []:
+            for s in g.get("sessions") or [] if isinstance(g, dict) else []:
+                if isinstance(s, dict) and host + ":" + str(s.get("key") or "") == job_id:
+                    return host, s
+    return None
+
+
+def show_host_session(host, session):
+    """What a click on a host's chat does (the widget's remoteShow): its open command in a terminal (ssh to it),
+    else its VS Code window, else the terminal here with the connection."""
+    import remote
+    folder = session.get("cwd") if isinstance(session.get("cwd"), str) else ""
+    if isinstance(session.get("openCommand"), str) and session["openCommand"]:
+        return remote.open_remote(host, session["openCommand"])
+    if session.get("entrypoint") == "claude-vscode":
+        if not cs.valid_id(session.get("sessionId")):
+            return False, JOB_NOT_LISTED
+        ok, message = jump_remote_vscode(host, session["sessionId"], folder)
+        return (False, JOB_VSCODE_ASKS) if ok is None else (ok, message)
+    term = session.get("vscodeTerminal")
+    term = int(term) if isinstance(term, (int, float)) and not isinstance(term, bool) else None
+    name = session.get("name") if isinstance(session.get("name"), str) else ""
+    return jump_remote_terminal(host, name, term, folder)
+
+
+def jump_job_id(home, extra_dirs, job_id):
+    """jump.py --job: bring up the chat whose jobs file id is job_id, as a click on its row does; (ok, message)."""
+    if not job_id_ok(job_id):
+        return False, "Not a chat id"
+    found = listed_host_session(job_id)
+    if found:
+        return show_host_session(*found)
+    profile, sid, kind, *more = job_id.split("/")
+    if ":" in profile or kind not in JOB_KINDS or more not in ([], ["shared"]) or not cs.valid_id(sid):
+        return False, JOB_NOT_LISTED  # (a host's that none lists, or not an id place_jobs writes)
+    # The profile by its name only (never as a path), as Talpy Den found it.
+    if not any(profile in (p.key, p.dirname) for p in cs.discover_profiles(home, extra_dirs)):
+        return False, JOB_NOT_LISTED
+    return jump(home, extra_dirs, sid, profile)
 
 
 def stop(home, extra_dirs, session_id, profile_dir=None, busy=False):
@@ -2831,6 +2923,7 @@ def delete_item(home, extra_dirs, kind, item, profile_dir=None, describe=False):
 
 
 USAGE = ("usage: jump.py [--stop [--busy] | --interrupt] SESSION_ID [--profile PROFILE] [--config-dir DIR]...\n"
+         "       jump.py --job ID   (a jobs file id: what a click on its row does)\n"
          "       jump.py --save-settings JSON --by WIDGET [--unless-default]\n"
          "       jump.py --new-chat PROFILE_DIRNAME [--cwd FOLDER | --choose-folder] [--vscode | --bg]\n"
          "               [--prompt TEXT] [--plan SLUG [--plan-profile PROFILE]] [--config-dir DIR]...\n"
@@ -2889,6 +2982,12 @@ def main(argv=None):
     if argv is None:
         signal.signal(signal.SIGTERM, stop_on_term)
     args = sys.argv[1:] if argv is None else list(argv)
+    if args[:1] == ["--job"]:  # --job ID, and nothing else: no other option is reachable through it
+        if len(args) != 2:
+            sys.exit(USAGE)
+        ok, message = jump_job_id(Path.home(), shared_extra_dirs(Path.home()), args[1])
+        print(json.dumps({"ok": bool(ok), "message": message}))
+        return
     if args[:1] == ["--place-window"] and len(args) == 3:  # --place-window CAPTION X,Y,W,H
         try:
             x, y, w, h = (int(float(v)) for v in args[2].split(","))

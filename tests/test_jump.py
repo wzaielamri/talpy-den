@@ -1738,6 +1738,134 @@ class VscodeTerminalTests(unittest.TestCase):
         self.assertEqual(calls, [("lab", "fix", 4321, "/p"), ("lab", "fix", None, "")])
 
 
+class JobIdTests(unittest.TestCase):
+    """jump.py --job ID: another program (Talpy Den Display) brings up a chat by its id in the jobs file. Nothing
+    of the id may become a command, an option or a path: it's only compared with what Talpy Den lists."""
+
+    UUID = "0b1c2d3e-aaaa-bbbb-cccc-1234567890ab"
+    NOT_LISTED = "That chat isn't listed any more"
+
+    def setUp(self):
+        import remote
+        self.remote = remote
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = Path(tmp.name) / "home"
+        self.home.mkdir()
+        env = mock.patch.dict(os.environ, {"HOME": str(self.home), "XDG_CACHE_HOME": str(Path(tmp.name) / "cache")})
+        env.start()
+        self.addCleanup(env.stop)
+        self.calls = []
+
+        def record(name, answer=(True, "done")):
+            def call(*args, **kwargs):
+                self.calls.append((name, args))
+                return answer
+            return call
+        for target, name in ((subprocess, "Popen"), (subprocess, "run"), (jump, "open_terminal"),
+                             (jump, "raise_window"), (jump, "jump"), (jump, "jump_remote_terminal"),
+                             (jump, "jump_remote_vscode"), (remote, "open_remote")):
+            p = mock.patch.object(target, name, record(name))
+            p.start()
+            self.addCleanup(p.stop)
+        profiles = mock.patch.object(cs, "discover_profiles", lambda home, extra=(): [
+            mock.Mock(key=".claude-work", dirname=".claude-work")])
+        profiles.start()
+        self.addCleanup(profiles.stop)
+
+    def host_answer(self, host, *sessions):
+        path = self.remote.answer_file(host)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"at": 1, "offset": 0, "answer": {"ok": True, "host": host, "result": {
+            "groups": [{"name": "lab", "sessions": list(sessions)}]}}}))
+
+    def job(self, job_id):
+        return jump.jump_job_id(self.home, [], job_id)
+
+    def test_job_refuses_bad_ids(self):
+        bad = ["a;b/c/live", f".claude-work/$(id)/live", ".claude-work/`id`/live", ".claude-work/a b/live",
+               '.claude-work/"x/live', ".claude-work/x'/live", ".claude-work/x\n/live", "../x/y/live",
+               "-x/y/live", "x" * 301, "lab:../a/b/live", "bad/host:.claude/a/live", "", "a|b/c/live",
+               "a&b/c/live", "a>b/c/live", "a\\b/c/live", ".claude-work/Grüße/live", "only/two"]
+        for job_id in bad:
+            with self.subTest(job_id=job_id):
+                ok, message = self.job(job_id)
+                self.assertFalse(ok)
+                self.assertIn(message, ("Not a chat id", self.NOT_LISTED))
+        self.assertEqual(self.calls, [])
+
+    def test_job_local_does_what_a_click_does(self):
+        self.assertEqual(self.job(f".claude-work/{self.UUID}/live"), (True, "done"))
+        self.assertEqual(self.calls, [("jump", (self.home, [], self.UUID, ".claude-work"))])
+
+    def test_job_local_unknown_profile_or_kind(self):
+        for job_id in (f".claude-other/{self.UUID}/live", f".claude-work/{self.UUID}/plan", f"~/{self.UUID}/live"):
+            with self.subTest(job_id=job_id):
+                self.assertEqual(self.job(job_id), (False, self.NOT_LISTED))
+        self.assertEqual(self.calls, [])
+
+    def test_job_host_open_command(self):
+        self.host_answer("lab", {"key": f".claude/{self.UUID}/job", "name": "Train", "sessionId": self.UUID,
+                                 "openCommand": "cd ~/x && claude attach abc", "entrypoint": "cli"})
+        self.assertEqual(self.job(f"lab:.claude/{self.UUID}/job"), (True, "done"))
+        self.assertEqual(self.calls, [("open_remote", ("lab", "cd ~/x && claude attach abc"))])
+
+    def test_job_host_terminal(self):
+        self.host_answer("lab", {"key": f".claude/{self.UUID}/live", "name": "Train", "sessionId": self.UUID,
+                                 "entrypoint": "cli", "vscodeTerminal": 4242, "cwd": "/home/u/train"})
+        self.assertEqual(self.job(f"lab:.claude/{self.UUID}/live"), (True, "done"))
+        self.assertEqual(self.calls, [("jump_remote_terminal", ("lab", "Train", 4242, "/home/u/train"))])
+
+    def test_job_container_by_its_whole_name(self):
+        self.host_answer("podman:web", {"key": f".claude/{self.UUID}/live", "name": "Site", "sessionId": self.UUID,
+                                        "entrypoint": "cli"})
+        self.assertEqual(self.job(f"podman:web:.claude/{self.UUID}/live"), (True, "done"))
+        self.assertEqual(self.calls, [("jump_remote_terminal", ("podman:web", "Site", None, ""))])
+
+    def test_job_host_vscode_not_allowed(self):
+        self.host_answer("lab", {"key": f".claude/{self.UUID}/live", "name": "Train", "sessionId": self.UUID,
+                                 "entrypoint": "claude-vscode", "cwd": "/home/u/train"})
+        with mock.patch.object(jump, "jump_remote_vscode", lambda *a, **k: (None, "Open VS Code connected to lab?")):
+            self.assertEqual(self.job(f"lab:.claude/{self.UUID}/live"),
+                             (False, "Open it from Talpy Den first: it asks before connecting VS Code"))
+
+    def test_job_unknown_host_id(self):
+        self.assertEqual(self.job(f"nohost:.claude/{self.UUID}/live"), (False, self.NOT_LISTED))
+        self.host_answer("lab", {"key": f".claude/{self.UUID}/live", "name": "Train", "sessionId": self.UUID})
+        self.assertEqual(self.job(f"lab:.claude/{self.UUID}/job"), (False, self.NOT_LISTED))  # (another chat)
+        self.assertEqual(self.calls, [])
+
+    def test_job_host_file_with_a_bad_name_is_never_read(self):
+        folder = self.remote.answer_file("lab").parent
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "-oProxyCommand=x.json").write_text(json.dumps({"at": 1, "answer": {"ok": True, "result": {
+            "groups": [{"sessions": [{"key": f".claude/{self.UUID}/live", "name": "x"}]}]}}}))
+        self.assertEqual(self.job(f"-oProxyCommand=x:.claude/{self.UUID}/live"), (False, "Not a chat id"))
+        self.assertEqual(self.calls, [])
+
+    def test_extra_config_dirs_from_the_shared_settings(self):
+        with mock.patch.object(cs, "shared_settings", lambda root: {"at": 1, "by": "plasma", "values": {
+                "extraConfigDirs": " /data/claude-a, ,/data/claude-b"}}):
+            self.assertEqual(jump.shared_extra_dirs(self.home), ["/data/claude-a", "/data/claude-b"])
+        with mock.patch.object(cs, "shared_settings", lambda root: None):
+            self.assertEqual(jump.shared_extra_dirs(self.home), [])
+
+    def test_main_job_takes_one_argument(self):
+        for bad in (["--job"], ["--job", "x", "--allow-vscode"], ["--job", "a/b/live", "--busy"]):
+            with self.subTest(argv=bad), self.assertRaises(SystemExit):
+                jump.main(bad)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            jump.main(["--job", "a;b/c/live"])
+        self.assertEqual(json.loads(out.getvalue()), {"ok": False, "message": "Not a chat id"})
+        self.assertEqual(self.calls, [])
+
+    def test_attach_line_keeps_a_container_command_one_word(self):
+        line = self.remote.attach_line("podman:web", "claude --resume x; rm -rf ~")
+        self.assertEqual(shlex.split(line)[-1], "claude --resume x; rm -rf ~")
+        self.assertEqual(shlex.split(line)[-3:-1], ["--attach", "podman:web"])
+
+
 if __name__ == "__main__":
     unittest.main()
 
