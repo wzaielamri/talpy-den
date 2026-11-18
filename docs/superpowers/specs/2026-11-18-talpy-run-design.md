@@ -20,7 +20,7 @@ lose (judged boring: the speed-up would mean nothing).
 
 - An endless run on the big Talpy's stage, in the Plasma widget's popup and
   VS Code's main view, from one shared piece of game logic.
-- Click, tap or Space: he jumps. Hold (or ↓): he digs in, under what flies.
+- Click, tap or Space: he jumps at once. Hold ↓ or the right mouse button: he digs in, under what flies.
 - It starts gentle and gets harder: faster, obstacles closer together, new
   kinds of obstacles further on, always possible to clear.
 - One bump ends the run: "212 m · best 340 m" ("New best! 340 m" when it
@@ -71,20 +71,44 @@ lose (judged boring: the speed-up would mean nothing).
 
 ## What gets built
 
+### The stage during a run (the owner's choices)
+
+- **It grows:** the hero stage is about 6 grid units tall and Talpa on his
+  feet already fills about 3.3 of them, so a real jump doesn't fit. When a
+  run starts the stage grows taller (smoothly, about a quarter second; to
+  about 11 grid units, enough for his full jump with the high crows above
+  it), and the chat list below moves down; when the game ends it shrinks
+  back the same way. Same in Plasma (`PetStrip.qml`) and VS Code
+  (`stage.ts`, `pets.css`). Talpa stays full size.
+- **The status fades out:** the headline, the session counts and the ticker
+  (the stage's left part, where he runs) fade out at the start and back at
+  the end; while a run is on, every click on the stage is the game's (no
+  chat opens from it). The stage's mood colour stays. Nothing urgent is
+  missed: a chat that needs you still ends the run at once, and the status
+  is back.
+
 ### Playing
 
 - **Where he is:** Talpa runs in place near the stage's left (about a fifth
   in), on its floor; the ground and everything on it scroll past from the
-  right. The stage's own size is the playfield (`host.stage()`).
-- **Jump:** a click or tap anywhere on the stage, Space or ↑. One height of
-  jump (about 1.6 of his body's height), a smooth arc; no jumping again in
-  the air. A press while he's in the air is kept for the moment he lands
-  (a little forgiving).
-- **Dig:** hold the click, or hold ↓: he dives in up to his eyes (a puff of
-  earth), and pops up when you let go, or by himself after about a second.
-  Digging passes **under what flies**; what stands on the ground still hits
-  him (it's on his ground line). So: jump over things on the ground, dig
-  under things in the air.
+  right. The grown stage is the playfield (`host.stage()`).
+- **Jump:** a press (left click or tap) anywhere on the stage, Space or ↑,
+  jumps **at once** (on press, not release). One height of jump (about 1.6
+  of his body's height), a smooth arc; no jumping again in the air. A press
+  while he's in the air is kept for the moment he lands (a little
+  forgiving).
+- **Dig (the owner's choice: kept):** hold ↓, or hold the **right** mouse
+  button on the stage: he dives in up to his eyes (a puff of earth), and
+  pops up when you let go, or by himself after about a second. On touch, a
+  downward swipe on the stage digs (my call: touch has no right button).
+  While a run is on, the right button on the stage digs and doesn't open
+  the widget's menu (Plasma's own right-click menu on the stage, VS Code's
+  context menu). Digging passes **under what flies**; what stands on the
+  ground still hits him (it's on his ground line). So: jump over things on
+  the ground, dig under things in the air.
+- **Finding the dig:** the start hint says both ("Click to jump · ↓ or
+  right-click to dig"), and the first head-height crow of each run comes a
+  little slower, with "↓ or right-click: dig" over it (my call).
 - **Obstacles** (a garden, Talpy's lines and colours):
   - a pebble (low, short), a stone (taller), a flower pot (tall, narrow),
     later two pebbles together (wide);
@@ -100,8 +124,8 @@ lose (judged boring: the speed-up would mean nothing).
   right-aligned figure.
 - **Hits:** forgiving: an obstacle's hit box is a little smaller than its
   drawing, Talpa's too.
-- **The first 2 s:** a hint under him, "Click to jump · hold to dig"; no
-  obstacle in that time.
+- **The first 2 s:** the hint, "Click to jump · ↓ or right-click to dig";
+  no obstacle in that time.
 
 ### The end of a run
 
@@ -120,15 +144,27 @@ lose (judged boring: the speed-up would mean nothing).
 - **Play with Talpy** offers the games by name: *Peekaboo* and *Run* (both
   hosts' menus). Four quick clicks on Talpy still pick one at random
   (`pickGame`), so the runner turns up there too.
-- Only where Peekaboo plays: the big, lone Talpy on his stage, Playful Talpy
-  on, no cookie out.
+- Only where Peekaboo plays (the big, lone Talpy on his stage, Playful Talpy
+  on, no cookie out), and further (my calls):
+  - **not in a widget placed on the desktop:** there the pets' clock runs at
+    30 fps and each frame redraws the whole desktop (the CPU problem fixed
+    on 2026-11-02); Run is left out of its menu and of the four-click pick,
+    Peekaboo stays;
+  - **not under less motion** (Plasma's animation speed set to Instant, VS
+    Code's reduced motion): Talpy keeps still there (`docs/features.md`),
+    and a runner is nothing but scrolling; left out of the menu and the
+    four-click pick.
 
 ### Best distance
 
-- Kept per app, as the cookie counts are: Plasma in the widget's config (a
-  new key, shared by every Talpy Den widget the way `cookiesEaten` is), VS
-  Code in the extension's own storage. Shown only at a run's end. No reset
-  button (not needed: nothing else shows it).
+- Kept per app. The cookie tally that used to do this was removed on purpose
+  (64bca10c: "nothing counted or kept"); the owner chose a best for this
+  game, so its pattern comes back for it alone, as e4fe11f5 had it: Plasma,
+  a `main.xml` entry listed in `main.qml`'s `sharedKeys` (every Talpy Den
+  widget shares it); VS Code, a `globalState` memento set through a message
+  in `view.ts`. A new best is written as the larger of the stored value and
+  the run's, so a stale copy can't lower it. Shown only at a run's end. No
+  reset button (nothing else shows it).
 
 ### Drawing and speed
 
@@ -172,9 +208,21 @@ lose (judged boring: the speed-up would mean nothing).
 - Talpa's tumble pose (from his existing poses if one fits).
 - Exact menu wording beyond *Peekaboo* and *Run*.
 
+## Decided by the owner
+
+- A real run: the first bump ends it, distance and best at the end.
+- The stage grows taller during a run and shrinks back after.
+- The headline, counts and ticker fade out during a run; every click on the
+  stage is the game's.
+- The dig stays: a press jumps at once; ↓ or the right mouse button digs.
+
 ## Calls I made (the owner may change them)
 
 - Dig only passes under what flies; ground obstacles still hit.
+- On touch, a downward swipe digs.
+- The first head-height crow of each run comes slower, with the dig hint.
+- Not offered in a desktop-placed widget, nor under less motion.
+- The best is kept as the old cookie tally was, the larger value winning.
 - The distance shows while running (small, top right), the best only at
   the end.
 - A run the host ends still counts for the best.
