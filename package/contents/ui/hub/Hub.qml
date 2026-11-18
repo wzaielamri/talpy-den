@@ -136,6 +136,11 @@ QtObject {
     // run to run (--as: what it told the last run is kept in the live folder).
     property var liveWanted: ({})     // copy id -> its live.py command
     property string liveCommand: ""   // the one that runs: the longest-running copy's
+    property string liveOwner: ""     // that copy's id: the one that brings up a chat another program asked for
+    // Another program asked that a chat be brought up (jump.py --job: Talpy Den Display's tap; live.py --opens
+    // offers the request, once): owner, the copy whose live.py runs, takes it (request: its file's name) if it
+    // lists the chat and does what a click on its row does
+    signal openRequested(string owner, string jobId, string request)
     property bool liveRunning: false
     property string liveLine: ""      // what runs (liveCommand --as …)
     property real liveStartedAt: 0
@@ -150,16 +155,18 @@ QtObject {
     }
 
     function pickLive() {
-        let best = "", since = 0
+        let best = "", since = 0, owner = ""
         for (const id in liveWanted) {
             const c = copies[id]
             const at = c ? c.since : Date.now()
             if (!best || at < since) {
                 best = liveWanted[id]
                 since = at
+                owner = id
             }
         }
         liveCommand = best
+        liveOwner = owner
         if (!best)
             liveHealthy = false
         runLive()
@@ -211,6 +218,8 @@ QtObject {
                 hub.checkNow()
             if (answer.live && answer.live.length)
                 hub.live(answer.live)
+            if (typeof answer.open === "string" && answer.open && typeof answer.request === "string")   // (to one copy)
+                hub.openRequested(hub.liveOwner, answer.open, answer.request)
             Qt.callLater(hub.runLive)
         }
     }

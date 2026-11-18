@@ -108,6 +108,7 @@ if sys.version_info >= (3, 8):  # ...but talpy_den.py compiled in the data folde
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I leaves the script dir off sys.path
 import talpy_den as cs  # noqa: E402
 import sharing  # noqa: E402
+import live  # noqa: E402  (the open requests' folder and rules: the widget's live.py --opens takes them)
 
 KWIN_SCRIPT = """\
 const want = %s;
@@ -1210,8 +1211,8 @@ def jump(home, extra_dirs, session_id, profile_dir=None):
 # the jobs file's; then it's only compared with what Talpy Den lists (a profile's name, a host's last answer). What
 # runs is what a click runs, and a question Talpy Den asks first (VS Code on a host) is never answered for you.
 
-JOB_ID_MAX = 300
-JOB_ID = re.compile(r"(?:[A-Za-z0-9_.@][A-Za-z0-9_.@:-]*:)?[A-Za-z0-9_.+-]+/[A-Za-z0-9_.-]+/(?:live|job|chat)(?:/shared)?")
+JOB_ID_MAX = live.JOB_ID_MAX
+JOB_ID = live.JOB_ID   # (one rule: the open requests' taker checks the same)
 JOB_KINDS = ("live", "job", "chat")
 JOB_NOT_LISTED = "That chat isn't listed any more"
 JOB_VSCODE_ASKS = "Open it from Talpy Den first: it asks before connecting VS Code"
@@ -1311,6 +1312,80 @@ def show_host_session(host, session):
     return jump_remote_terminal(host, name, term, folder)
 
 
+# A chat whose Talpy Chat window isn't open: Talpy Den's own front end does what a click on its row does (its
+# Talpy Chat window, or its terminal, as its settings say). --job leaves it a request, a file of its own
+# (live.OPEN_NAME, the id and the time only) in $XDG_RUNTIME_DIR/talpy-den/opens, and waits for it to be taken: the
+# widget (live.py --opens offers it) takes it at once if it lists the chat, VS Code's leading window after 0.8 s
+# when no widget did. Nobody takes it in time: --job takes its own back, so no window pops up later, and does it
+# itself. Without a widget or a VS Code window running, there's no request and no wait.
+OPEN_WAIT_S = 3.0
+OPEN_LOOK_S = 0.05
+TAKER_FRESH_MS = 60_000   # a widget whose last check is older than this (or 3 of its intervals) isn't running
+
+
+def taker_alive(home):
+    """Whether a Talpy Den front end that takes open requests runs: a widget that checked lately (instances.json),
+    or the VS Code window that speaks for all (its leader file names a running process)."""
+    cache, now = cs.cache_dir(home), time.time() * 1000
+    widgets = cs.read_json(cache / "instances.json")
+    for w in widgets.values() if isinstance(widgets, dict) else []:
+        seen, every = (cs.number(w.get("seen")), cs.number(w.get("interval"))) if isinstance(w, dict) else (None, None)
+        if seen is not None and now - seen <= max(TAKER_FRESH_MS, 3 * (every or 0)):
+            return True
+    leader = cs.read_json(cache / "vscode-notify.json")
+    pid = leader.get("pid") if isinstance(leader, dict) else None
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        try:
+            os.kill(pid, 0)   # (no signal: only whether it's there)
+            return True
+        except PermissionError:
+            return True
+        except (OSError, OverflowError):   # (a number no process can have: a broken file)
+            return False
+    return False
+
+
+def request_open(job_id):
+    """Leave a request to bring up job_id: (its folder, its file's name), or None (no private folder for it).
+    Written whole (a new file renamed into place), only you can read it."""
+    folder = live.open_dir()
+    if folder is None:
+        return None
+    name = "req-%s.json" % os.urandom(8).hex()
+    tmp = os.path.join(folder, "tmp-%d-%s.json" % (os.getpid(), os.urandom(4).hex()))
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump({"id": job_id, "at": int(time.time() * 1000)}, f)
+        os.replace(tmp, os.path.join(folder, name))
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return None
+    return folder, name
+
+
+def offer_open(home, job_id):
+    """Whether Talpy Den's front end took the request to bring up job_id in time (it takes it only if it lists that
+    chat, and then does what a click on its row does); False: none did, and this request (only this one) is taken
+    back."""
+    if not taker_alive(home):
+        return False
+    made = request_open(job_id)
+    if made is None:
+        return False
+    folder, name = made
+    deadline = time.time() + OPEN_WAIT_S
+    while time.time() < deadline:
+        if not os.path.lexists(os.path.join(folder, name)):
+            return True
+        time.sleep(OPEN_LOOK_S)
+    taken_back, _ = live.take_open(folder, name, time.time())
+    return not taken_back   # (taken by a front end at the last moment: that one brings it up)
+
+
 def jump_job_id(home, extra_dirs, job_id):
     """jump.py --job: bring up the chat whose jobs file id is job_id, as a click on its row does; (ok, message)."""
     if not job_id_ok(job_id):
@@ -1321,6 +1396,9 @@ def jump_job_id(home, extra_dirs, job_id):
     # Open in its Talpy Chat window: that window, where you read it (not a new terminal on it).
     if raise_talpy_chat(listed[job_id].get("name")):
         return True, "Switched to its Talpy Chat window"
+    # Else what a click on its row in Talpy Den does, done by Talpy Den itself while it runs.
+    if offer_open(home, job_id):
+        return True, "Opened in Talpy Den"
     found = listed_host_session(job_id)
     if found:
         return show_host_session(*found)

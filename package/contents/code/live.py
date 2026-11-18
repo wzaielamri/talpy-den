@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """What changed in your chats, the moment it changes: the widget's watcher.
 
-    python3 -I live.py --wait [--as NAME] [--timeout S] [--config-dir DIR]... [--requests] [--remote]
+    python3 -I live.py --wait [--as NAME] [--timeout S] [--config-dir DIR]... [--requests] [--remote] [--opens]
+    python3 -I live.py --take-open NAME
 
 Waits until a chat changes, prints what changed and exits (the widget runs
 it again at once). It watches two things:
@@ -13,7 +14,7 @@ it again at once). It watches two things:
     live/<session id>.json), with what each chat does now, step by step.
 
     {"ok": true, "at": ms, "sessions": bool, "urgent": bool, "live": [...],
-     "timeout": bool[, "requests": bool, "changed": [session ids]]}
+     "timeout": bool[, "requests": bool, "changed": [session ids]][, "open": jobs file id, "request": NAME]}
 
 sessions: a session file changed (the status is worth checking now);
 urgent: that, or a live file says a turn started or ended, a chat asks for
@@ -31,6 +32,15 @@ comes after the marker line, as every host answer does, the live files
 aren't looked at (nothing there uses them), and it ends as soon as the
 connection that asked is gone (its stdout hangs up), not only at its timeout.
 
+--opens (the Plasma widget's): also another program's request that a chat be
+brought up as a click on its row does (jump.py --job: Talpy Den Display's
+tap), a file of its own in $XDG_RUNTIME_DIR/talpy-den/opens (only you can
+write there). A fresh one naming a jobs file id is offered once, as "open"
+(the id) and "request" (its file's NAME); the widget takes it with
+--take-open NAME, which answers {"ok", "id"}, only if it lists that chat, and
+only then brings the chat up. Anything else is dropped; nothing in a request
+is ever run: the widget only looks the id up among the chats it lists.
+
 NAME: who asks (the Plasma widget's copies in one plasmashell are one
 NAME). What it was told last is kept in the live folder, so what changes
 between two runs isn't missed, and the command line stays the same from
@@ -39,10 +49,13 @@ run to run (Plasma keeps every command's name; hub/Exec.qml).
 Linux (inotify); elsewhere it looks every half second. Standard library
 only, Python 3.7+.
 """
+import errno
 import hashlib
 import json
 import os
+import re
 import select
+import stat
 import sys
 import time
 
@@ -88,6 +101,165 @@ def request_dirs(home):
     if os.path.isdir(old):
         out.append(old)
     return out
+
+
+# Another program's request that a chat be brought up as a click on its row does (jump.py --job writes it:
+# Talpy Den Display's tap): a file of its own each (req-<16 hex>.json: the chat's jobs file id and the time, nothing
+# else) in $XDG_RUNTIME_DIR/talpy-den/opens (in memory, yours alone, gone when you log out). --opens tells the
+# widget of one (an offer: read, not taken), once; the widget takes it (--take-open NAME) only if it lists that
+# chat, and only then brings it up. Taken by renaming it away: of two takers one gets it, and jump.py, whose file
+# it is, takes it back when nobody did, so no window pops up later. Only a fresh request naming a jobs file id
+# (jump.py's JOB_ID) is ever offered; nothing in it is ever run. Its file's name is the one thing that goes on a
+# command line (--take-open NAME) and into a path: jump.py makes it, and it's taken only if it's OPEN_NAME
+# exactly (16 hex digits), checked by live.py, by the widget and again by --take-open: keep it that strict.
+OPENS = "opens"
+OPEN_NAME = re.compile(r"req-[0-9a-f]{16}\.json")
+OPEN_MAX_AGE_S = 10   # a request older than this is dropped (a tap long ago mustn't open a window now)
+OPEN_AHEAD_S = 2      # nor one from the future (more than a clock's slip)
+OPEN_MAX_BYTES = 1024
+OPEN_STALE_S = 60     # a writer's or a taker's file left behind (it was killed in between): swept after this
+JOB_ID_MAX = 300
+JOB_ID = re.compile(r"(?:[A-Za-z0-9_.@][A-Za-z0-9_.@:-]*:)?[A-Za-z0-9_.+-]+/[A-Za-z0-9_.-]+/(?:live|job|chat)(?:/shared)?")
+
+
+def job_id_ok(job_id):
+    """Whether job_id has a jobs file id's shape (the same rule as jump.py's job_id_ok)."""
+    return (isinstance(job_id, str) and len(job_id) <= JOB_ID_MAX and JOB_ID.fullmatch(job_id) is not None
+            and ".." not in job_id and not job_id.startswith("-"))
+
+
+def _private_dir(path):
+    st = os.lstat(path)
+    return stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o077
+
+
+def open_dir():
+    """$XDG_RUNTIME_DIR/talpy-den/opens (made, 0700), or None: no runtime folder, or it or the folders in it aren't
+    folders of yours only you can use (then there are no requests). Leftovers are swept."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime or not os.path.isabs(runtime):
+        return None
+    folder = os.path.join(runtime, "talpy-den", OPENS)
+    try:
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        if not (_private_dir(runtime) and _private_dir(os.path.dirname(folder)) and _private_dir(folder)):
+            return None
+        names = os.listdir(folder)
+    except OSError:
+        return None
+    now = time.time()
+    for name in names:   # (each on its own: a take's or a write's file comes and goes meanwhile)
+        if name.startswith(("tmp-", "taken-")):
+            path = os.path.join(folder, name)
+            try:
+                st = os.lstat(path)
+                if now - st.st_mtime > OPEN_STALE_S and not stat.S_ISDIR(st.st_mode):
+                    os.unlink(path)
+            except OSError:
+                pass
+    return folder
+
+
+def _read_request(path, now):
+    """("ok", id) for a fresh request naming a jobs file id at path; ("drop", None) for one that never will be
+    (stale; not a regular file of yours of at most OPEN_MAX_BYTES, or a link; not a request of the right shape);
+    ("skip", None) for one that can't be told now (unreadable for a moment, or ahead of the clock: its writer
+    takes it back). now: seconds."""
+    data = b""
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    except OSError as exc:
+        return ("drop" if exc.errno == errno.ELOOP else "skip"), None   # (ELOOP: a link, never followed)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_size > OPEN_MAX_BYTES:
+            return "drop", None
+        data = os.read(fd, OPEN_MAX_BYTES + 1)
+    except OSError:
+        return "skip", None
+    finally:
+        os.close(fd)
+    try:
+        asked = json.loads(data.decode("utf-8"))
+    except (ValueError, RecursionError):
+        return "drop", None
+    job, at = (asked.get("id"), asked.get("at")) if isinstance(asked, dict) else (None, None)
+    if not job_id_ok(job) or not isinstance(at, int) or isinstance(at, bool) or at < now * 1000 - OPEN_MAX_AGE_S * 1000:
+        return "drop", None
+    if at > now * 1000 + OPEN_AHEAD_S * 1000:
+        return "skip", None
+    return "ok", job
+
+
+def take_open(folder, name, now):
+    """(taken, id): take the request file name (renamed away, then gone: once). taken False: there's none of that
+    name (another took it); id None: it was taken but isn't a fresh request naming a jobs file id."""
+    if not isinstance(name, str) or not OPEN_NAME.fullmatch(name):
+        return False, None
+    taken = os.path.join(folder, "taken-%d-%s.json" % (os.getpid(), os.urandom(4).hex()))
+    try:
+        os.rename(os.path.join(folder, name), taken)   # (atomic: of two takers one gets it; a link moves as a link)
+    except OSError:
+        return False, None
+    try:
+        verdict, job = _read_request(taken, now)
+        return True, job if verdict == "ok" else None
+    finally:
+        try:
+            os.unlink(taken)
+        except OSError:
+            pass
+
+
+def pending_opens(folder, now):
+    """[(name, id)] of the fresh requests in folder, the oldest first; one that never will be (stale, of a wrong
+    shape, not a file) is taken and dropped, one that can't be told now is left (its writer takes it back)."""
+    out = []
+    try:
+        names = [n for n in os.listdir(folder) if OPEN_NAME.fullmatch(n)]
+    except OSError:
+        return out
+    dated = []
+    for name in names:
+        try:
+            dated.append((os.lstat(os.path.join(folder, name)).st_mtime, name))
+        except OSError:
+            pass
+    for _, name in sorted(dated):
+        verdict, job = _read_request(os.path.join(folder, name), now)
+        if verdict == "ok":
+            out.append((name, job))
+        elif verdict == "drop":
+            take_open(folder, name, now)
+    return out
+
+
+def offered_path(home, name):
+    """What NAME was offered (request names), so it's offered once: the widget runs live.py again at once."""
+    return os.path.join(live_dir(home), ".offered-" + hashlib.sha1(name.encode()).hexdigest()[:12] + ".json")
+
+
+def load_offered(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            offered = json.load(f)
+    except (OSError, ValueError, RecursionError):
+        return {}
+    return offered if isinstance(offered, dict) else {}
+
+
+def save_offered(path, offered):
+    tmp = "%s.%d.%s.tmp" % (path, os.getpid(), os.urandom(4).hex())
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(offered, f, separators=(",", ":"))
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def cache_root(home):
@@ -217,10 +389,10 @@ def save_seen(path, snap, at):
 
 
 def tidy_seen(home, now):
-    """What other NAMEs were told goes after a week without them."""
+    """What other NAMEs were told (and offered) goes after a week without them."""
     folder = live_dir(home)
     try:
-        names = [n for n in os.listdir(folder) if n.startswith(".seen-")]
+        names = [n for n in os.listdir(folder) if n.startswith((".seen-", ".offered-"))]
     except OSError:
         return
     for name in names:
@@ -303,10 +475,12 @@ class Watch:
             self.fd = None
 
 
-def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, requests=False, remote=False, hangup=None):
+def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, requests=False, remote=False, hangup=None,
+         opens=False):
     """The answer of --wait (see the top). requests: the permission hook's
     requests too; remote: no live files; hangup: stdout, whose other end
-    going away ends it (Gone)."""
+    going away ends it (Gone); opens: open requests too (taken, answered as
+    "open")."""
     live = None if remote else live_dir(home)
     try:
         os.makedirs(live_dir(home), mode=0o700, exist_ok=True)   # (also where what NAME was told is kept)
@@ -314,8 +488,10 @@ def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, req
         pass
     sessions = session_dirs(home, extra)
     asks = request_dirs(home) if requests else None
+    opening = open_dir() if opens and not remote else None
+    offers = offered_path(home, name)
     # (watching first: nothing between the look and the wait is missed)
-    watch = Watch(([live] if live else []) + sessions + (asks or []))
+    watch = Watch(([live] if live else []) + sessions + (asks or []) + ([opening] if opening else []))
     path = seen_path(home, name)
     seen = load_seen(path)
     parent = os.getppid()
@@ -326,6 +502,17 @@ def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, req
         if os.getppid() != parent:
             sys.exit(0)  # (the widget is gone)
         now = clock()
+        pending = pending_opens(opening, now) if opening else []
+        if pending:
+            offered = load_offered(offers)
+            new = [(n, j) for n, j in pending if n not in offered]
+            if new:   # (at once, alone: what changed besides is told by the next run)
+                save_offered(offers, dict({n: offered[n] for n, _ in pending if n in offered}, **{new[0][0]: now}))
+                answer = {"ok": True, "at": int(now * 1000), "sessions": False, "urgent": False, "live": [],
+                          "timeout": False, "open": new[0][1], "request": new[0][0]}
+                if requests:
+                    answer.update(requests=False, changed=[])
+                return answer
         snap = snapshot(live, sessions, asks)
         moved, views, asked = changes(seen, snap, live, now)
         urgent = moved or asked or any(v.get("event") in URGENT_EVENTS for v in views)
@@ -362,7 +549,14 @@ def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, req
 
 def main(argv=None):
     args = sys.argv[1:] if argv is None else list(argv)
-    name, timeout, extra, waiting, requests, remote = "default", TIMEOUT_S, [], False, False, False
+    name, timeout, extra, waiting, requests, remote, opens = "default", TIMEOUT_S, [], False, False, False, False
+    if args[:1] == ["--take-open"]:   # --take-open NAME, alone: the widget takes the request it was offered
+        if len(args) != 2:
+            sys.exit(__doc__)
+        folder = open_dir()
+        taken, job = take_open(folder, args[1], time.time()) if folder else (False, None)
+        sys.stdout.write(json.dumps({"ok": bool(taken and job), "id": job or ""}, ensure_ascii=True) + "\n")
+        return
     while args:
         arg = args.pop(0)
         if arg == "--wait":
@@ -371,6 +565,8 @@ def main(argv=None):
             requests = True
         elif arg == "--remote":
             remote = True
+        elif arg == "--opens":
+            opens = True
         elif arg == "--as" and args:
             name = args.pop(0)
         elif arg == "--timeout" and args:
@@ -387,7 +583,7 @@ def main(argv=None):
     os.umask(0o077)
     try:
         answer = wait(os.path.expanduser("~"), extra, name, timeout, requests=requests, remote=remote,
-                      hangup=sys.stdout.fileno() if remote else None)
+                      hangup=sys.stdout.fileno() if remote else None, opens=opens)
     except Gone:
         return  # (nobody reads it: the connection that asked is gone)
     except Exception as exc:  # the widget must always get parseable output

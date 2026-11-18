@@ -56,17 +56,18 @@ NEEDS_PLASMA_QML = unittest.skipUnless(shutil.which("python3") and subprocess.ru
     capture_output=True).returncode == 0, "needs PySide6 and Plasma's and Kirigami's QML modules")
 
 
-def run_hub(body, ms):
+def run_hub(body, ms, live_answer='{"ok": true, "sessions": true}', report=None):
     """Runs hub/Hub.qml offscreen for ms, with body added to an Item (t) whose
-    t.command (a status check) and t.live (a live.py) count their runs; another
-    DataSource holds Plasma's executable engine all along, as in plasmashell.
-    Returns (status answers the copies got, runs of t.command, runs of t.live,
-    answers of the live watcher, stderr)."""
+    t.command (a status check) and t.live (a live.py, answering live_answer)
+    count their runs; another DataSource holds Plasma's executable engine all
+    along, as in plasmashell. Returns (status answers the copies got, runs of
+    t.command, runs of t.live, answers of the live watcher, stderr), and t's
+    property report (a string) last when one is named."""
     import os
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        for name, wait, answer in (("check", "0.15", '{"ok": true}'), ("live", "0.3", '{"ok": true, "sessions": true}')):
+        for name, wait, answer in (("check", "0.15", '{"ok": true}'), ("live", "0.3", live_answer)):
             (tmp / f"{name}.sh").write_text(f"#!/bin/sh\necho x >> {tmp}/{name}.runs\nsleep {wait}\necho '{answer}'\n")
         (tmp / "t.qml").write_text(
             f'import QtQuick\nimport "{(ROOT / "ui/hub").as_uri()}"\nItem {{\n  id: t\n'
@@ -88,14 +89,19 @@ def run_hub(body, ms):
             "r = view.rootObject()\n"
             "QTimer.singleShot(int(sys.argv[2]), app.quit)\n"
             "app.exec()\n"
-            "print(r.property('outputs'), r.property('liveAnswers'))\n")
+            "print(r.property('outputs'), r.property('liveAnswers'))\n"
+            + (f"print('REPORT', r.property({report!r}))\n" if report else ""))
         out = subprocess.run(["python3", "-c", script, str(tmp / "t.qml"), str(ms)], capture_output=True, text=True,
                              timeout=60, env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_FORCE_STDERR_LOGGING="1"))
         runs = [len((tmp / f"{name}.runs").read_text().split()) if (tmp / f"{name}.runs").exists() else 0
                 for name in ("check", "live")]
-    if not out.stdout.split():
+    lines = [line for line in out.stdout.splitlines() if not line.startswith("REPORT ")]
+    if not " ".join(lines).split():
         raise AssertionError(out.stderr[-2000:])
-    outputs, live_answers = (int(n) for n in out.stdout.split()[-2:])
+    outputs, live_answers = (int(n) for n in " ".join(lines).split()[-2:])
+    if report:
+        reported = next((line[len("REPORT "):] for line in out.stdout.splitlines() if line.startswith("REPORT ")), "")
+        return outputs, runs[0], runs[1], live_answers, out.stderr, reported
     return outputs, runs[0], runs[1], live_answers, out.stderr
 
 
@@ -1888,6 +1894,30 @@ class SeveralCopiesTests(unittest.TestCase):
         self.assertGreater(live_runs, 3, stderr[-2000:])
         self.assertLessEqual(live_answers, live_runs)
         self.assertLessEqual(outputs, runs)
+
+    @NEEDS_PLASMA5SUPPORT
+    def test_an_open_request_goes_to_the_copy_whose_watcher_runs(self):
+        # Another program asked that a chat be brought up (live.py --opens offered its request): only the copy
+        # whose live.py runs gets it, so a chat opens once whatever the number of copies
+        answer = ('{"ok": true, "sessions": false, "urgent": false, "live": [], "open": ".claude/a/live", '
+                  '"request": "req-0123456789abcdef.json"}')
+        *_, stderr, got = run_hub(
+            '  property string got: ""\n'
+            '  Connections { target: Hub; function onOpenRequested(owner, jobId, request) '
+            '{ t.got += owner + " " + jobId + " " + request + ";" } }\n'
+            '  Component.onCompleted: { Hub.want("c0", "status", t.command, 60000, true); Hub.wantLive("c0", t.live); '
+            'Hub.want("c1", "status", t.command, 60000, true); Hub.wantLive("c1", t.live) }',
+            1500, live_answer=answer, report="got")
+        events = [e for e in got.split(";") if e]
+        self.assertTrue(events, stderr[-2000:])
+        self.assertEqual(set(events), {"c0 .claude/a/live req-0123456789abcdef.json"})
+        # (an answer without a request's name brings nothing up)
+        *_, stderr, got = run_hub(
+            '  property string got: ""\n'
+            '  Connections { target: Hub; function onOpenRequested(owner, jobId, request) { t.got += "x" } }\n'
+            '  Component.onCompleted: { Hub.want("c0", "status", t.command, 60000, true); Hub.wantLive("c0", t.live) }',
+            1000, live_answer='{"ok": true, "open": ".claude/a/live"}', report="got")
+        self.assertEqual(got, "")
 
     def test_less_motion_calms_the_pets_as_in_vscode(self):
         # VS Code's pets keep still for a desktop that asks for less motion

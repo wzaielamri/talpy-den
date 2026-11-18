@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -1739,6 +1740,7 @@ class VscodeTerminalTests(unittest.TestCase):
 
 
 class JobIdTests(unittest.TestCase):
+    real_taker_alive = staticmethod(jump.taker_alive)
     """jump.py --job ID: another program (Talpy Den Display) brings up a chat by its id in the jobs file. Nothing
     of the id may become a command, an option or a path: it's only compared with what Talpy Den lists."""
 
@@ -1773,6 +1775,126 @@ class JobIdTests(unittest.TestCase):
         profiles.start()
         self.addCleanup(profiles.stop)
         self.kwin()  # (no KWin window search unless a test says so)
+        self.wait_for_taker(0.0, alive=False)  # (and no widget or VS Code to take a request unless a test says so)
+        run = Path(tempfile.mkdtemp(dir=self.home.parent))
+        run.chmod(0o700)
+        env = mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(run)})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("XDG_STATE_HOME", None)
+
+    def wait_for_taker(self, seconds, alive=True):
+        for name, value in (("OPEN_WAIT_S", seconds), ("taker_alive", lambda home: alive)):
+            p = mock.patch.object(jump, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def taker(self, after=0.2, lists=True):
+        """The widget (live.py --opens offers the request; it takes it with --take-open only if it lists the
+        chat): what it took, in a list."""
+        import live
+        took = []
+
+        def take():
+            folder = live.open_dir()
+            for name, job in live.pending_opens(folder, time.time()) if folder else []:
+                if lists:
+                    took.append(live.take_open(folder, name, time.time()))
+        t = threading.Timer(after, take)
+        t.start()
+        self.addCleanup(t.cancel)
+        return took
+
+    def test_job_hands_it_to_talpy_den(self):
+        job_id = f".claude-work/{self.UUID}/job"
+        self.named({job_id: "display chat list ordering"})
+        self.wait_for_taker(2.0)
+        took = self.taker()
+        self.assertEqual(self.job(job_id), (True, "Opened in Talpy Den"))
+        self.assertEqual(took, [(True, job_id)])
+        self.assertEqual(self.calls, [])  # (the widget does what a click on its row does: no terminal here)
+
+    def test_job_falls_back_when_nothing_takes_it(self):
+        import live
+        job_id = f".claude-work/{self.UUID}/live"
+        self.named({job_id: "x"})
+        self.wait_for_taker(0.2)
+        self.assertEqual(self.job(job_id), (True, "done"))
+        self.assertEqual(self.calls, [("jump", (self.home, [], self.UUID, ".claude-work"))])
+        self.assertEqual(os.listdir(live.open_dir()), [])  # (taken back: no window pops up later)
+
+    def test_job_falls_back_when_the_taker_doesnt_list_it(self):
+        import live
+        job_id = f".claude-work/{self.UUID}/live"
+        self.named({job_id: "x"})
+        self.wait_for_taker(0.5)
+        took = self.taker(after=0.1, lists=False)   # (offered, left: not a chat it lists)
+        self.assertEqual(self.job(job_id), (True, "done"))
+        self.assertEqual(took, [])
+        self.assertEqual(self.calls, [("jump", (self.home, [], self.UUID, ".claude-work"))])
+        self.assertEqual(os.listdir(live.open_dir()), [])
+
+    def test_two_offers_at_once_each_take_back_their_own(self):
+        import live
+        self.wait_for_taker(0.3)
+        ids = [f".claude-work/{self.UUID}/live", ".claude-work/1c2d3e4f-aaaa-bbbb-cccc-1234567890ab/job"]
+        got = {}
+        threads = [threading.Thread(target=lambda i=i: got.update({i: jump.offer_open(self.home, i)})) for i in ids]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(got, {ids[0]: False, ids[1]: False})   # (nobody took either: neither says it opened)
+        self.assertEqual(os.listdir(live.open_dir()), [])
+
+    def test_no_request_without_a_taker(self):
+        import live
+        self.wait_for_taker(3.0, alive=False)
+        started = time.time()
+        self.assertFalse(jump.offer_open(self.home, f".claude-work/{self.UUID}/live"))
+        self.assertLess(time.time() - started, 0.5)   # (no wait for nobody)
+        self.assertEqual(os.listdir(live.open_dir()), [])
+
+    def test_taker_alive(self):
+        jump.taker_alive = type(self).real_taker_alive
+        cache = cs.cache_dir(self.home)
+        cache.mkdir(parents=True, exist_ok=True)
+        now = int(time.time() * 1000)
+        self.assertFalse(jump.taker_alive(self.home))
+        (cache / "instances.json").write_text(json.dumps({"53/128": {"since": now - 9e5, "seen": now - 5000, "interval": 6000}}))
+        self.assertTrue(jump.taker_alive(self.home))   # (the widget checked 5 s ago)
+        (cache / "instances.json").write_text(json.dumps({"53/128": {"since": now - 9e5, "seen": now - 600000, "interval": 6000}}))
+        self.assertFalse(jump.taker_alive(self.home))   # (not for 10 minutes: gone)
+        (cache / "vscode-notify.json").write_text(json.dumps({"pid": os.getpid()}))
+        self.assertTrue(jump.taker_alive(self.home))   # (a VS Code window speaks for all)
+        (cache / "vscode-notify.json").write_text(json.dumps({"pid": 2 ** 22 + 12345}))
+        self.assertFalse(jump.taker_alive(self.home))
+        for junk in ("not json", json.dumps([1]), json.dumps({"pid": "1"}), json.dumps({"pid": -1}),
+                     json.dumps({"pid": 2 ** 31}), json.dumps({"pid": 10 ** 30})):
+            (cache / "vscode-notify.json").write_text(junk)
+            self.assertFalse(jump.taker_alive(self.home))
+
+    def test_open_request_is_private_and_holds_only_the_id(self):
+        import live
+        job_id = f".claude-work/{self.UUID}/live"
+        self.named({job_id: "x"})
+        self.wait_for_taker(1.0)
+        seen = {}
+
+        def look():
+            folder = Path(live.open_dir())
+            for path in folder.iterdir():
+                seen.update(name=bool(live.OPEN_NAME.fullmatch(path.name)), mode=oct(path.stat().st_mode & 0o777),
+                            keys=sorted(json.loads(path.read_text())))
+        t = threading.Timer(0.3, look)
+        t.start()
+        self.job(job_id)
+        t.join()
+        self.assertEqual(seen, {"name": True, "mode": "0o600", "keys": ["at", "id"]})
+
+    def test_job_id_rule_is_live_pys(self):
+        import live
+        self.assertEqual((jump.JOB_ID.pattern, jump.JOB_ID_MAX), (live.JOB_ID.pattern, live.JOB_ID_MAX))
 
     def kwin(self, *titles):
         """KWin's window search (its krunner Match over D-Bus) finding windows of these titles; the ids it's asked to

@@ -1454,7 +1454,7 @@ PlasmoidItem {
     onCheckIntervalChanged: Hub.want(instanceId, "status", command, checkInterval, true)
     onLiveCommandChanged: Hub.wantLive(instanceId, liveCommand)
     Component.onDestruction: Hub.drop(instanceId)
-    readonly property string liveCommand: "python3 -I " + shellQuote(codeDir + "live.py") + " --wait" + configDirArgs
+    readonly property string liveCommand: "python3 -I " + shellQuote(codeDir + "live.py") + " --wait --opens" + configDirArgs
 
     // Between checks the clock goes on (the times shown), as it did with a check every pollInterval
     Timer {
@@ -1472,6 +1472,12 @@ PlasmoidItem {
 
     Connections {
         target: Hub
+        // Another program asked that a chat be brought up (jump.py --job: Talpy Den Display's tap): this copy,
+        // if its live.py runs, takes the request when it lists the chat, and does what a click on its row does
+        function onOpenRequested(owner, jobId, request) {
+            if (owner === root.instanceId)
+                root.openJob(jobId, request)
+        }
         function onLive(views) {
             root.noteLive(views)
         }
@@ -4818,6 +4824,52 @@ PlasmoidItem {
     // ---------------------------------------------------------------- opening a chat by its id
     // A chat found by the search, or the one that made a plan: its row when
     // it's listed, else reopened (in a terminal or VS Code, as the switch says)
+
+    // The listed row of a jobs file id (place_jobs: its row's key, "<host>:" before a host's or container's):
+    // {s, host}, or null for any other id. Only compared with the rows' own keys, never used for anything else.
+    function jobRow(jobId) {
+        if (typeof jobId !== "string" || !jobId)
+            return null
+        for (const host of [""].concat(Object.keys(remote || {}))) {
+            if (host && jobId.indexOf(host + ":") !== 0)
+                continue
+            for (const g of hostGroups(host))
+                for (const s of g.sessions || [])
+                    if ((host ? host + ":" : "") + s.key === jobId)
+                        return { s: s, host: host }
+        }
+        return null
+    }
+
+    // An open request offered (live.py --opens): taken (live.py --take-open, its file's name the only word, and
+    // only of the shape jump.py names them) only if the chat is listed here, else left for VS Code or jump.py
+    // itself; once taken (and only if it was this chat's), what a click on its row does (clickChat)
+    property var openTakes: ({})   // the take's command -> {jobId, s, host}
+    function openJob(jobId, request) {
+        const found = jobRow(jobId)
+        if (!found || typeof request !== "string" || !/^req-[0-9a-f]{16}\.json$/.test(request))
+            return false
+        const take = "python3 -I " + shellQuote(codeDir + "live.py") + " --take-open " + shellQuote(request)
+        openTakes[take] = { jobId: jobId, s: found.s, host: found.host }
+        openTaker.connectSource(take)
+        return true
+    }
+
+    Exec {
+        id: openTaker
+        onNewData: (source, data) => {
+            disconnectSource(source)
+            const want = root.openTakes[source]
+            delete root.openTakes[source]
+            let taken = null
+            try {
+                taken = JSON.parse(data["stdout"])
+            } catch (e) {
+            }
+            if (want && taken && taken.ok === true && taken.id === want.jobId)
+                root.clickChat(want.s, want.host)
+        }
+    }
 
     function hostGroups(host) {
         return host ? (remote[host] && remote[host].result ? remote[host].result.groups : []) : (status ? status.groups : [])

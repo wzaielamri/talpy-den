@@ -20,6 +20,7 @@ import { initDocs } from "./doc";
 import { Dashboard } from "./dashboard";
 import { carryOverSettings, settingNames } from "./legacySettings";
 import { noLinks, Notifier } from "./notify";
+import { findJobRef, OpenWatch } from "./openRequests";
 import { PlanReview, planFileOf } from "./planReview";
 import { allGroups, countStates, duration, hiddenCount, type HiddenKind } from "./shared/model";
 import { NEW_CHAT_HERE } from "./chatSurface";
@@ -120,6 +121,21 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(panes.sideBar()); // (Talpy Chat's view in the secondary side bar: talpyDen.chatPlace)
   view.panes = panes;
   notifier.panes = panes;
+  // Another program asked that a chat be brought up (jump.py --job: Talpy Den Display's tap) and no Plasma widget
+  // took it: what a click on its row does here (the view's "open"), in the window that speaks for all, and only
+  // for a chat this window lists (else it's left for jump.py) (openRequests.ts)
+  const jobChat = (jobId: string) => {
+    const state = dash.state();
+    return state.demo || !actions || actions.demoOnly() ? null : findJobRef(state.status, state.hosts, jobId);
+  };
+  const openWatch = new OpenWatch((jobId) => jobChat(jobId) !== null, (jobId) => {
+    const chat = jobChat(jobId);
+    if (!chat || !actions) return;
+    if (settings.clickOpensPane()) panes.open(chat, "chat");
+    else void actions.open(chat);
+  }, () => notifier.isLeader());
+  openWatch.start();
+  context.subscriptions.push(openWatch);
   actions.panes = panes;
   panes.openPermissions = async () => {
     view.showTab("perms");

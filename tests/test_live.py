@@ -357,6 +357,199 @@ class WaitTests(unittest.TestCase):
         self.assertTrue(json.loads(out.stdout)["ok"])
 
 
+class OpenRequestTests(WaitTests):
+    """jump.py --job's request that the widget bring a chat up (Talpy Den Display's tap): live.py --opens offers
+    it, once; the widget takes it (--take-open) only if it lists the chat. Only a request of the right shape,
+    fresh, a file of its own in a private folder, is ever offered or taken."""
+
+    JOB = ".claude-work/0b1c2d3e-aaaa-bbbb-cccc-1234567890ab/live"
+
+    def setUp(self):
+        super().setUp()
+        run = self.home / "run"
+        run.mkdir(mode=0o700)
+        env = mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(run)})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("XDG_STATE_HOME", None)
+
+    def folder(self):
+        folder = live.open_dir()
+        self.assertIsNotNone(folder)
+        return Path(folder)
+
+    def request(self, data, raw=None):
+        name = "req-%s.json" % os.urandom(8).hex()
+        tmp = self.folder() / "tmp-test.json"
+        tmp.write_text(raw if raw is not None else json.dumps(data))
+        os.replace(tmp, self.folder() / name)
+        return name
+
+    def fresh(self, job=None):
+        return {"id": job or self.JOB, "at": int(time.time() * 1000)}
+
+    def test_open_dir_is_private_in_the_runtime_folder(self):
+        folder = self.folder()
+        self.assertEqual(folder, self.home / "run/talpy-den/opens")
+        self.assertEqual(oct(folder.stat().st_mode & 0o777), "0o700")
+
+    def test_open_dir_refuses_a_folder_others_may_use_or_none(self):
+        folder = self.folder()
+        folder.chmod(0o777)
+        self.assertIsNone(live.open_dir())
+        folder.chmod(0o700)
+        folder.parent.chmod(0o755)
+        self.assertIsNone(live.open_dir())
+        folder.parent.chmod(0o700)
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": "relative/run"}):
+            self.assertIsNone(live.open_dir())
+        os.environ.pop("XDG_RUNTIME_DIR")
+        self.assertIsNone(live.open_dir())
+
+    def test_offered_not_taken_then_taken_once(self):
+        name = self.request(self.fresh())
+        folder = str(self.folder())
+        self.assertEqual(live.pending_opens(folder, time.time()), [(name, self.JOB)])
+        self.assertTrue((self.folder() / name).exists())   # (offered, not taken: the widget may not list it)
+        self.assertEqual(live.take_open(folder, name, time.time()), (True, self.JOB))
+        self.assertEqual(live.take_open(folder, name, time.time()), (False, None))   # (once)
+        self.assertEqual(os.listdir(folder), [])
+
+    def test_two_requests_each_their_own(self):
+        first = self.request(self.fresh())
+        other = ".claude-work/1c2d3e4f-aaaa-bbbb-cccc-1234567890ab/job"
+        second = self.request(self.fresh(other))
+        os.utime(self.folder() / first, (time.time() - 1, time.time() - 1))
+        self.assertEqual(live.pending_opens(str(self.folder()), time.time()), [(first, self.JOB), (second, other)])
+
+    def test_bad_requests_are_dropped(self):
+        now = time.time()
+        fresh = int(now * 1000)
+        bad = [{"id": self.JOB, "at": fresh - 11000}, {"id": self.JOB},
+               {"id": 5, "at": fresh}, {"at": fresh}, {"id": ".claude-work/*/live", "at": fresh},
+               {"id": ".claude-work/a b/live", "at": fresh}, {"id": "../x/y/live", "at": fresh},
+               {"id": "-x/y/live", "at": fresh}, {"id": ".claude-work/$(id)/live", "at": fresh},
+               {"id": "x" * 301 + "/a/live", "at": fresh}, {"id": self.JOB, "at": True}, {"id": self.JOB, "at": 1.7e12}]
+        for data in bad:
+            with self.subTest(data=str(data)[:60]):
+                name = self.request(data)
+                self.assertEqual(live.pending_opens(str(self.folder()), now), [])
+                self.assertFalse((self.folder() / name).exists())
+        for raw in ("not json", json.dumps([self.JOB]), json.dumps(dict(self.fresh(), pad="x" * 2000)), "[" * 1000):
+            with self.subTest(raw=raw[:30]):
+                name = self.request(None, raw)
+                self.assertEqual(live.pending_opens(str(self.folder()), now), [])
+                self.assertFalse((self.folder() / name).exists())
+
+    def test_a_request_ahead_of_the_clock_or_unreadable_now_is_left(self):
+        # (dropped, its writer would take it for taken and say it opened: left, the writer takes it back)
+        ahead = self.request({"id": self.JOB, "at": int(time.time() * 1000) + 5000})
+        self.assertEqual(live.pending_opens(str(self.folder()), time.time()), [])
+        self.assertTrue((self.folder() / ahead).exists())
+        (self.folder() / ahead).unlink()
+        name = self.request(self.fresh())
+        real_open = os.open
+
+        def no_more_files(path, *args, **kwargs):
+            if str(path).endswith(name):
+                raise OSError(24, "Too many open files")
+            return real_open(path, *args, **kwargs)
+        with mock.patch.object(live.os, "open", no_more_files):
+            self.assertEqual(live.pending_opens(str(self.folder()), time.time()), [])
+        self.assertTrue((self.folder() / name).exists())
+        self.assertEqual(live.pending_opens(str(self.folder()), time.time()), [(name, self.JOB)])
+
+    def test_open_dir_holds_while_requests_come_and_go(self):
+        folder = self.folder()
+        stop = threading.Event()
+
+        def churn():   # (what takes and writes do: a file there for a moment)
+            i = 0
+            while not stop.is_set():
+                for prefix in ("taken-", "tmp-"):
+                    f = folder / ("%s%d-x.json" % (prefix, i))
+                    f.write_text("{}")
+                    f.unlink()
+                i += 1
+        t = threading.Thread(target=churn)
+        t.start()
+        try:
+            misses = sum(live.open_dir() is None for _ in range(3000))
+        finally:
+            stop.set()
+            t.join()
+        self.assertEqual(misses, 0)
+
+    def test_what_was_offered_is_tidied_too(self):
+        self.wait()
+        old = self.live / (".offered-%s.json" % ("a" * 12))
+        old.write_text("{}")
+        os.utime(old, (time.time() - live.SEEN_KEEP_S - 60, time.time() - live.SEEN_KEEP_S - 60))
+        live.tidy_seen(str(self.home), time.time())
+        self.assertFalse(old.exists())
+
+    def test_a_link_or_a_fifo_is_dropped(self):
+        target = self.home / "elsewhere.json"
+        target.write_text(json.dumps(self.fresh()))
+        link = self.folder() / ("req-%s.json" % ("a" * 16))
+        link.symlink_to(target)
+        fifo = self.folder() / ("req-%s.json" % ("b" * 16))
+        os.mkfifo(fifo)
+        self.assertEqual(live.pending_opens(str(self.folder()), time.time()), [])   # (no hang on the fifo)
+        self.assertTrue(target.exists())   # (a link's target is never touched)
+        self.assertEqual(os.listdir(self.folder()), [])
+
+    def test_take_open_takes_only_a_request_name(self):
+        self.request(self.fresh())
+        folder = str(self.folder())
+        for name in ("../x.json", "request.json", "req-zz.json", "taken-1-ab.json", None):
+            self.assertEqual(live.take_open(folder, name, time.time()), (False, None))
+        self.assertEqual(len(os.listdir(folder)), 1)
+
+    def test_leftovers_are_swept(self):
+        folder = self.folder()
+        old, new = folder / "tmp-1-aa.json", folder / "taken-2-bb.json"
+        old.write_text("{}")
+        new.write_text("{}")
+        os.utime(old, (time.time() - 120, time.time() - 120))
+        live.open_dir()
+        self.assertEqual(sorted(os.listdir(folder)), ["taken-2-bb.json"])
+
+    def test_wait_offers_a_request_once(self):
+        self.wait()
+        self.folder()
+        names = []
+        threading.Timer(0.3, lambda: names.append(self.request(self.fresh()))).start()
+        started = time.time()
+        answer = live.wait(self.home, (), "test", 5, opens=True)
+        self.assertEqual((answer["open"], answer["request"]), (self.JOB, names[0]))
+        self.assertLess(time.time() - started, 1.5)
+        self.assertTrue((self.folder() / names[0]).exists())   # (offered: the widget takes it if it lists it)
+        answer = live.wait(self.home, (), "test", 1, opens=True)
+        self.assertNotIn("open", answer)   # (once: the widget runs it again at once)
+
+    def test_wait_without_opens_leaves_it(self):
+        self.wait()
+        name = self.request(self.fresh())
+        answer = live.wait(self.home, (), "test", 1)
+        self.assertNotIn("open", answer)
+        self.assertTrue((self.folder() / name).exists())
+
+    def run_live(self, *args):
+        out = subprocess.run([sys.executable, "-I", str(ROOT / "package/contents/code/live.py"), *args],
+                             env=dict(os.environ, HOME=str(self.home)), capture_output=True, text=True, timeout=20)
+        return json.loads(out.stdout)
+
+    def test_main_offers_and_takes(self):
+        self.wait()
+        name = self.request(self.fresh())
+        answer = self.run_live("--wait", "--as", "t", "--opens", "--timeout", "2")
+        self.assertEqual((answer["open"], answer["request"]), (self.JOB, name))
+        self.assertEqual(self.run_live("--take-open", name), {"ok": True, "id": self.JOB})
+        self.assertEqual(self.run_live("--take-open", name), {"ok": False, "id": ""})
+        self.assertEqual(self.run_live("--take-open", "../../x.json"), {"ok": False, "id": ""})
+
+
 class HostWatchTests(WaitTests):
     """(2026-11-06) live.py on an SSH host or in a container (remote.py
     --watch): the permission hook's requests too (a prompt shows within a
