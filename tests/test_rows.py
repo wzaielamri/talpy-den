@@ -537,7 +537,7 @@ class HoverButtonTests(unittest.TestCase):
         repo = UI.parent.parent.parent
         css = (repo / "vscode/webview/styles.css").read_text()
         text_btn = css[css.index(".icon-btn.text-btn {"):][:300]
-        self.assertIn("box-shadow: inset 0 0 0 1px var(--cs-tag-border);", text_btn[:text_btn.index("}")])
+        self.assertIn("box-shadow: inset 0 0 0 1px var(--td-tag-border);", text_btn[:text_btn.index("}")])
         handover = css[css.index(".handover {"):][:200]
         self.assertIn("gap: 3px 4px;", handover[:handover.index("}")])
         shrink = css[css.index(".handover > .icon-btn {"):][:200]

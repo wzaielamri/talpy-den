@@ -41,7 +41,7 @@ export const world = {
 export function setDarkAll(dark: boolean): void {
   world.dark = dark;
   for (const s of allStages) {
-    s.root.classList.toggle("cs-dark", dark);
+    s.root.classList.toggle("td-dark", dark);
     s.themeChanged();
   }
 }
@@ -161,13 +161,13 @@ export class Stage implements PetStage, Animator {
     this.hero = hero;
     this.colorKey = colorKey;
     this.cb = cb;
-    this.root = el("div", `cs-stage ${hero ? "cs-stage--hero" : "cs-stage--account"}`);
-    this.root.classList.toggle("cs-dark", world.dark);
-    this.root.classList.toggle("cs-in-editor", editorTab);
-    this.root.classList.add("cs-paused");
+    this.root = el("div", `td-stage ${hero ? "td-stage--hero" : "td-stage--account"}`);
+    this.root.classList.toggle("td-dark", world.dark);
+    this.root.classList.toggle("td-in-editor", editorTab);
+    this.root.classList.add("td-paused");
     container.append(this.root);
 
-    const gu = parseFloat(getComputedStyle(this.root).getPropertyValue("--cs-gu"));
+    const gu = parseFloat(getComputedStyle(this.root).getPropertyValue("--td-gu"));
     this.gu = gu > 0 ? gu : 16;
     this.box = this.gu * (hero ? 5.6 : 3.8);
     this.canvasW = this.box * 1.6;
@@ -180,12 +180,12 @@ export class Stage implements PetStage, Animator {
     this.tagWidth = this.gu * 3.5;
 
     if (hero) {
-      el("div", "cs-stage-light", this.root); // a soft card lit in the dashboard's mood
-      this.starsEl = el("div", "cs-stage-stars", this.root);
+      el("div", "td-stage-light", this.root); // a soft card lit in the dashboard's mood
+      this.starsEl = el("div", "td-stage-stars", this.root);
       this.starsEl.setAttribute("aria-hidden", "true");
       this.starsEl.hidden = true;
       STAR_SPOTS.forEach(([x, y], i) => {
-        const star = el("span", "cs-star", this.starsEl!);
+        const star = el("span", "td-star", this.starsEl!);
         star.textContent = i % 3 === 0 ? "✦" : "·";
         star.style.left = `${x * 100}%`;
         star.style.top = `${y * 100}%`;
@@ -194,8 +194,8 @@ export class Stage implements PetStage, Animator {
       });
       // The headline (what needs you, what works) and the session counts,
       // left of where it stands
-      this.textEl = el("div", "cs-hero-text", this.root);
-      this.headlineEl = el("div", "cs-hero-headline", this.textEl);
+      this.textEl = el("div", "td-hero-text", this.root);
+      this.headlineEl = el("div", "td-hero-headline", this.textEl);
       this.headlineEl.addEventListener("click", () => this.openCalling());
       this.headlineEl.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -203,26 +203,26 @@ export class Stage implements PetStage, Animator {
           this.openCalling();
         }
       });
-      this.countsEl = el("div", "cs-hero-counts", this.textEl);
+      this.countsEl = el("div", "td-hero-counts", this.textEl);
       // what the working chats do right now: the UI puts its ticker here
-      this.tickerEl = el("div", "cs-hero-ticker", this.textEl);
+      this.tickerEl = el("div", "td-hero-ticker", this.textEl);
       // A cookie where you double-click (pet.ts says if that's too close to
       // it); the headline, the ticker and the pet keep their own clicks
       this.root.addEventListener("dblclick", (e) => {
         const target = e.target instanceof Element ? e.target : null;
-        if (target?.closest(".cs-hero-headline.cs-clickable, .cs-hero-ticker, .cs-pet-grab, .cs-cookie")) return;
+        if (target?.closest(".td-hero-headline.td-clickable, .td-hero-ticker, .td-pet-grab, .td-cookie")) return;
         const p = this.local(e);
         this.pets[0]?.placeCookie(p.x, p.y);
       });
     } else {
       // An account's floor; the stage itself is barely there, just a place to stand
-      this.floorEl = el("div", "cs-stage-floor", this.root);
-      this.moreEl = el("div", "cs-stage-more", this.root);
+      this.floorEl = el("div", "td-stage-floor", this.root);
+      this.moreEl = el("div", "td-stage-more", this.root);
       this.moreEl.hidden = true;
     }
-    this.petLayer = el("div", "cs-stage-pets", this.root);
+    this.petLayer = el("div", "td-stage-pets", this.root);
     this.petLayer.setAttribute("aria-hidden", "true");
-    this.bubbleEl = el("div", "cs-bubble", this.root);
+    this.bubbleEl = el("div", "td-bubble", this.root);
     this.bubbleEl.hidden = true;
 
     this.bubbleTimer = new Timer(this.clock, 4500, () => {
@@ -311,7 +311,7 @@ export class Stage implements PetStage, Animator {
     const live = !this.destroyed && this.wantLive && this.onScreen && pageVisible() && this.width > 0;
     if (live === this.live) return;
     this.live = live;
-    this.root.classList.toggle("cs-paused", !live);
+    this.root.classList.toggle("td-paused", !live);
     let offFor = 0;
     if (live) {
       offFor = this.everLive ? performance.now() - this.hiddenSince : Infinity;
@@ -505,14 +505,14 @@ export class Stage implements PetStage, Animator {
     const mood = input.mood || "loading";
     this.root.dataset.light = lightOf(mood);
     // The light pulses while a chat needs you
-    this.root.classList.toggle("cs-glowing", mood === "needs");
+    this.root.classList.toggle("td-glowing", mood === "needs");
     this.updateStars();
 
     const h = this.headlineEl!;
     if (h.textContent !== input.headline) h.textContent = input.headline;
     const calling = input.waiting;
-    h.classList.toggle("cs-calling", mood === "needs");
-    h.classList.toggle("cs-clickable", !!calling);
+    h.classList.toggle("td-calling", mood === "needs");
+    h.classList.toggle("td-clickable", !!calling);
     // "1 chat needs you": click to go there (its tooltip: Open fix parser, then lab · Waiting · 3m)
     const where = [calling?.host && hostLabel(calling.host), input.waitingState].filter(Boolean).join(" · ");
     const title = calling ? `Open ${calling.name}${where ? `\n${where}` : ""}` : "";
@@ -549,11 +549,11 @@ export class Stage implements PetStage, Animator {
     ];
     for (const [state, n, text] of items) {
       if (n <= 0) continue;
-      const item = el("span", "cs-count", box);
-      el("span", `cs-count-dot cs-dot-${state}`, item);
-      el("span", "cs-count-text", item).textContent = text;
+      const item = el("span", "td-count", box);
+      el("span", `td-count-dot td-dot-${state}`, item);
+      el("span", "td-count-text", item).textContent = text;
     }
-    if (!box.childElementCount) el("span", "cs-count-none", box).textContent = "No chats running";
+    if (!box.childElementCount) el("span", "td-count-none", box).textContent = "No chats running";
   }
 
   private openCalling(): void {

@@ -1505,7 +1505,7 @@ console.log(JSON.stringify({ ends, picked }));""")
         stage = (ROOT.parent.parent / "vscode/webview/pets/stage.ts").read_text()
         click = stage[stage.index('addEventListener("dblclick"'):]
         click = click[:click.index("});")]
-        for skipped in (".cs-hero-headline.cs-clickable", ".cs-hero-ticker", ".cs-pet-grab", ".cs-cookie"):
+        for skipped in (".td-hero-headline.td-clickable", ".td-hero-ticker", ".td-pet-grab", ".td-cookie"):
             self.assertIn(skipped, click)
 
     def test_the_cookie_is_drawn_over_talpy_and_pressed_first(self):

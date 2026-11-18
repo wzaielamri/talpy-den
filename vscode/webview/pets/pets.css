@@ -1,10 +1,10 @@
 /* The pets' stages (webview/pets/stage.ts). Pets move with transforms only;
    each Talpy draws itself on its own canvas (pet.ts). */
 
-.cs-stage {
-  --cs-ease-in-out-sine: cubic-bezier(0.37, 0, 0.63, 1);
-  --cs-small-font: calc(var(--vscode-font-size, 13px) * 0.85);
-  --cs-panel-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
+.td-stage {
+  --td-ease-in-out-sine: cubic-bezier(0.37, 0, 0.63, 1);
+  --td-small-font: calc(var(--vscode-font-size, 13px) * 0.85);
+  --td-panel-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
   position: relative;
   width: 100%;
   height: 100%;
@@ -15,110 +15,110 @@
   -webkit-user-select: none;
 }
 
-.cs-stage.cs-in-editor {
-  --cs-panel-bg: var(--vscode-editor-background, #1e1e1e);
+.td-stage.td-in-editor {
+  --td-panel-bg: var(--vscode-editor-background, #1e1e1e);
 }
 
 /* Room for what the pets hold over their heads (signs, bubbles: up to half
    the image above the floor), unless the UI gives the stage its height */
-.cs-stage--hero {
-  min-height: calc(var(--cs-gu, 16px) * 6);
-  border-radius: calc(var(--cs-gu, 16px) * 0.7);
+.td-stage--hero {
+  min-height: calc(var(--td-gu, 16px) * 6);
+  border-radius: calc(var(--td-gu, 16px) * 0.7);
 }
 
-.cs-stage--account {
-  min-height: calc(var(--cs-gu, 16px) * 4.5);
-  border-radius: calc(var(--cs-gu, 16px) * 0.5);
+.td-stage--account {
+  min-height: calc(var(--td-gu, 16px) * 4.5);
+  border-radius: calc(var(--td-gu, 16px) * 0.5);
   background: color-mix(in srgb, var(--vscode-foreground, #888) 3.5%, transparent);
 }
 
 /* A hidden stage: nothing animates */
-.cs-stage.cs-paused,
-.cs-stage.cs-paused *,
-.cs-stage.cs-paused *::after {
+.td-stage.td-paused,
+.td-stage.td-paused *,
+.td-stage.td-paused *::after {
   animation-play-state: paused !important;
 }
 
 /* ------------------------------------------------------------ the hero's light */
 
-.cs-stage--hero[data-light="waiting"] { --cs-mood: var(--cs-waiting); }
-.cs-stage--hero[data-light="working"] { --cs-mood: var(--cs-working); }
-.cs-stage--hero[data-light="idle"] { --cs-mood: var(--cs-idle); }
-.cs-stage--hero[data-light="error"] { --cs-mood: var(--cs-failed); }
-.cs-stage--hero,
-.cs-stage--hero[data-light="night"] { --cs-mood: #5363b8; }
-.cs-stage--hero.cs-dark[data-light="night"] { --cs-mood: #6f7fd0; }
+.td-stage--hero[data-light="waiting"] { --td-mood: var(--td-waiting); }
+.td-stage--hero[data-light="working"] { --td-mood: var(--td-working); }
+.td-stage--hero[data-light="idle"] { --td-mood: var(--td-idle); }
+.td-stage--hero[data-light="error"] { --td-mood: var(--td-failed); }
+.td-stage--hero,
+.td-stage--hero[data-light="night"] { --td-mood: #5363b8; }
+.td-stage--hero.td-dark[data-light="night"] { --td-mood: #6f7fd0; }
 
-.cs-stage-light {
+.td-stage-light {
   position: absolute;
   inset: 0;
   box-sizing: border-box;
   border-radius: inherit;
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--cs-mood) 24%, transparent),
-    color-mix(in srgb, var(--cs-mood) 6%, transparent)
+    color-mix(in srgb, var(--td-mood) 24%, transparent),
+    color-mix(in srgb, var(--td-mood) 6%, transparent)
   );
-  border: 1px solid color-mix(in srgb, var(--cs-mood) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--td-mood) 35%, transparent);
 }
 
 /* It pulses while a chat needs you: a brighter light fades in and out over
    it (only its opacity changes, which needs no repainting) */
-.cs-stage-light::after {
+.td-stage-light::after {
   content: "";
   position: absolute;
   inset: -1px;
   box-sizing: border-box;
   border-radius: inherit;
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--cs-mood) 14%, transparent), transparent 60%);
-  border: 1px solid color-mix(in srgb, var(--cs-mood) 21%, transparent);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--td-mood) 14%, transparent), transparent 60%);
+  border: 1px solid color-mix(in srgb, var(--td-mood) 21%, transparent);
   opacity: 0;
 }
 
-.cs-stage--hero.cs-glowing .cs-stage-light::after {
-  animation: cs-glow 1.8s infinite;
+.td-stage--hero.td-glowing .td-stage-light::after {
+  animation: td-glow 1.8s infinite;
 }
 
-@keyframes cs-glow {
-  0%, 100% { opacity: 0; animation-timing-function: var(--cs-ease-in-out-sine); }
-  50% { opacity: 1; animation-timing-function: var(--cs-ease-in-out-sine); }
+@keyframes td-glow {
+  0%, 100% { opacity: 0; animation-timing-function: var(--td-ease-in-out-sine); }
+  50% { opacity: 1; animation-timing-function: var(--td-ease-in-out-sine); }
 }
 
-.cs-stage-stars {
+.td-stage-stars {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-.cs-star {
+.td-star {
   position: absolute;
   line-height: 1;
   opacity: 0.5;
   color: #5363b8;
 }
 
-.cs-dark .cs-star {
+.td-dark .td-star {
   color: #d4dbff;
 }
 
 /* The headline and the session counts, left of where it stands */
-.cs-hero-text {
+.td-hero-text {
   position: absolute;
-  left: calc(var(--cs-gu, 16px) * 0.8);
-  top: calc(var(--cs-gu, 16px) * 0.55);
+  left: calc(var(--td-gu, 16px) * 0.8);
+  top: calc(var(--td-gu, 16px) * 0.55);
   z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: calc(100% - var(--cs-gu, 16px) * 1.6);
+  max-width: calc(100% - var(--td-gu, 16px) * 1.6);
 }
 
 /* (as wide as its words, as the widget's: a click or a double-click (a
    cookie) beside them is the stage's) */
-.cs-hero-headline {
+.td-hero-headline {
   align-self: flex-start;
   max-width: 100%;
-  font-size: var(--cs-gu, 16px);
+  font-size: var(--td-gu, 16px);
   font-weight: 600;
   line-height: 1.3;
   white-space: nowrap;
@@ -126,119 +126,119 @@
   text-overflow: ellipsis;
 }
 
-.cs-hero-headline.cs-calling {
-  color: var(--cs-waiting);
+.td-hero-headline.td-calling {
+  color: var(--td-waiting);
 }
 
-.cs-hero-headline.cs-clickable {
+.td-hero-headline.td-clickable {
   cursor: pointer;
 }
 
-.cs-hero-headline.cs-clickable:hover {
+.td-hero-headline.td-clickable:hover {
   text-decoration: underline;
 }
 
-.cs-hero-headline:focus-visible {
+.td-hero-headline:focus-visible {
   outline: 1px solid var(--vscode-focusBorder, #0078d4);
   outline-offset: 1px;
 }
 
-.cs-hero-counts {
+.td-hero-counts {
   display: flex;
   flex-wrap: wrap;
   column-gap: 8px;
   row-gap: 2px;
-  font-size: var(--cs-small-font);
+  font-size: var(--td-small-font);
 }
 
-.cs-count {
+.td-count {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   white-space: nowrap;
 }
 
-.cs-count-text {
+.td-count-text {
   opacity: 0.85;
 }
 
-.cs-count-none {
+.td-count-none {
   opacity: 0.7;
 }
 
-.cs-count-dot {
-  width: calc(var(--cs-gu, 16px) * 0.45);
-  height: calc(var(--cs-gu, 16px) * 0.45);
+.td-count-dot {
+  width: calc(var(--td-gu, 16px) * 0.45);
+  height: calc(var(--td-gu, 16px) * 0.45);
   border-radius: 50%;
   flex: none;
 }
 
-.cs-dot-waiting { background: var(--cs-waiting); }
-.cs-dot-working { background: var(--cs-working); }
-.cs-dot-idle,
-.cs-dot-done { background: var(--cs-idle); }
-.cs-dot-limit { background: var(--cs-failed); }
+.td-dot-waiting { background: var(--td-waiting); }
+.td-dot-working { background: var(--td-working); }
+.td-dot-idle,
+.td-dot-done { background: var(--td-idle); }
+.td-dot-limit { background: var(--td-failed); }
 
 /* ------------------------------------------------------------ an account's stage */
 
-.cs-stage-floor {
+.td-stage-floor {
   position: absolute;
-  left: calc(var(--cs-gu, 16px) * 0.6);
-  right: calc(var(--cs-gu, 16px) * 0.6);
+  left: calc(var(--td-gu, 16px) * 0.6);
+  right: calc(var(--td-gu, 16px) * 0.6);
   top: 0;
   height: 1px;
   background: color-mix(in srgb, var(--vscode-foreground, #888) 10%, transparent);
 }
 
 /* More chats than pets */
-.cs-stage-more {
+.td-stage-more {
   position: absolute;
   right: 4px;
   top: 4px;
   z-index: 2;
-  font-size: var(--cs-small-font);
+  font-size: var(--td-small-font);
   opacity: 0.7;
 }
 
 /* ------------------------------------------------------------ pets */
 
-.cs-stage-pets {
+.td-stage-pets {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
 /* The big Talpy walks in front of the headline, not behind it */
-.cs-stage--hero .cs-stage-pets {
+.td-stage--hero .td-stage-pets {
   z-index: 2;
 }
 
-.cs-pet-sheets,
-.cs-pet-sheet,
-.cs-pet-hole,
-.cs-pet-tag,
-.cs-pet-grab {
+.td-pet-sheets,
+.td-pet-sheet,
+.td-pet-hole,
+.td-pet-tag,
+.td-pet-grab {
   position: absolute;
   left: 0;
   top: 0;
 }
 
-.cs-pet-sheets,
-.cs-pet-hole {
+.td-pet-sheets,
+.td-pet-hole {
   will-change: transform;
 }
 
 /* The hole a pet you hold was pulled out of stays where it was */
-.cs-pet-hole[hidden] {
+.td-pet-hole[hidden] {
   display: none;
 }
 
 /* Name tag under its burrow, in the chat's color */
-.cs-pet-tag {
+.td-pet-tag {
   box-sizing: border-box;
   padding: 0 4px;
   border-radius: 999px;
-  font-size: calc(var(--cs-small-font) * 0.95);
+  font-size: calc(var(--td-small-font) * 0.95);
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -247,54 +247,54 @@
   pointer-events: auto;
 }
 
-.cs-pet-tag[hidden] {
+.td-pet-tag[hidden] {
   display: none;
 }
 
 /* Grab area around its body (doesn't flip with it) */
-.cs-pet-grab {
+.td-pet-grab {
   pointer-events: auto;
   touch-action: none;
 }
 
 /* The cookie you gave the hero (grab it: it follows; over the hero, so it
    shows whole as the hero gets there), its shadow on the floor */
-.cs-cookie,
-.cs-cookie-shadow,
-.cs-cookie-puff {
+.td-cookie,
+.td-cookie-shadow,
+.td-cookie-puff {
   position: absolute;
   left: 0;
   top: 0;
   will-change: transform;
 }
 
-.cs-cookie {
+.td-cookie {
   pointer-events: auto;
   touch-action: none;
   cursor: grab;
 }
 
-.cs-cookie.cs-held {
+.td-cookie.td-held {
   cursor: grabbing;
 }
 
-.cs-cookie-shadow {
+.td-cookie-shadow {
   border-radius: 50%;
   background: rgb(20 25 45 / 20%);
 }
 
-.cs-cookie-puff {
+.td-cookie-puff {
   pointer-events: none;
 }
 
-.cs-cookie[hidden],
-.cs-cookie-shadow[hidden],
-.cs-cookie-puff[hidden] {
+.td-cookie[hidden],
+.td-cookie-shadow[hidden],
+.td-cookie-puff[hidden] {
   display: none;
 }
 
 /* Speech bubble above whoever speaks */
-.cs-bubble {
+.td-bubble {
   position: absolute;
   left: 0;
   top: 0;
@@ -303,9 +303,9 @@
   max-width: 100%;
   padding: 2px 4px;
   border-radius: 999px;
-  background: var(--cs-panel-bg);
+  background: var(--td-panel-bg);
   border: 1px solid color-mix(in srgb, var(--vscode-foreground, #888) 30%, transparent);
-  font-size: var(--cs-small-font);
+  font-size: var(--td-small-font);
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -313,12 +313,12 @@
   pointer-events: none;
 }
 
-.cs-bubble[hidden] {
+.td-bubble[hidden] {
   display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cs-stage-light::after {
+  .td-stage-light::after {
     animation: none !important;
   }
 }

@@ -87,7 +87,7 @@ test("the ticker's items: working chats with something to say; a host's from its
 });
 
 test("the sessions folders to watch: each profile's, once", () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "cs-live-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "td-live-"));
   fs.mkdirSync(path.join(home, ".claude-work/sessions"), { recursive: true });
   fs.symlinkSync(path.join(home, ".claude-work"), path.join(home, ".claude"));
   fs.mkdirSync(path.join(home, ".claude-empty"));
@@ -103,7 +103,7 @@ async function next(changes: LiveChange[], n: number, ms = 3000): Promise<void> 
 }
 
 test("the watcher: a session file asks for a check at once, a live file is handed on", async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "cs-live-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "td-live-"));
   const sessions = path.join(home, ".claude-work/sessions");
   fs.mkdirSync(sessions, { recursive: true });
   const cache = path.join(home, ".cache/talpy-den");

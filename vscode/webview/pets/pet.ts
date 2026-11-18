@@ -260,30 +260,30 @@ export class Pet {
         ? { frameMs: 16.7, maxFrames: 32, sheets: 36, tweenMs: 0, restMs: 200, smooth: true, clockMs: 1000 / 60 }
         : { frameMs: 33.3, maxFrames: 32, sheets: 32, tweenMs: 200, tweens: 5, smooth: true, clockMs: 1000 / 60 },
     );
-    this.sheets = div("cs-pet-sheets");
+    this.sheets = div("td-pet-sheets");
     this.view = this.canvas();
-    this.view.className = "cs-pet-sheet";
+    this.view.className = "td-pet-sheet";
     this.sheets.append(this.view);
     this.leftHole = this.canvas();
-    this.leftHole.className = "cs-pet-hole";
+    this.leftHole.className = "td-pet-hole";
     this.leftHole.hidden = true;
-    this.grab = div("cs-pet-grab");
+    this.grab = div("td-pet-grab");
     this.grab.style.width = `${stage.bodyWidth + LARGE}px`;
     this.grab.style.height = `${stage.bodyHeight + LARGE}px`;
     this.tag = null;
     if (this.lone) {
       this.game = this.makeGame();
-      this.cookieShadow = div("cs-cookie-shadow");
+      this.cookieShadow = div("td-cookie-shadow");
       this.cookieShadow.hidden = true;
       this.cookie = this.canvas();
-      this.cookie.className = "cs-cookie";
+      this.cookie.className = "td-cookie";
       this.cookie.hidden = true;
       this.puff = this.canvas();
-      this.puff.className = "cs-cookie-puff";
+      this.puff.className = "td-cookie-puff";
       this.puff.hidden = true;
     }
     if (!this.lone) {
-      this.tag = div("cs-pet-tag");
+      this.tag = div("td-pet-tag");
       this.tag.style.background = PALETTE[colorIndex];
       this.tag.style.color = textOn(PALETTE[colorIndex]);
       this.tag.addEventListener("click", () => this.clicked());
@@ -909,7 +909,7 @@ export class Pet {
       }
       if (!c) {
         c = this.playHoles[i] = this.canvas();
-        c.className = "cs-pet-hole";
+        c.className = "td-pet-hole";
         this.leftHole.after(c);
       }
       if (c.hidden) c.hidden = false;
@@ -1034,7 +1034,7 @@ export class Pet {
     const squash = c.sx !== 1 || c.sy !== 1 ? ` translate(0, ${bottom}px) scale(${r2(c.sx)}, ${r2(c.sy)}) translate(0, ${-bottom}px)` : "";
     this.put(el, "cookie", "transform",
       `translate(${r1(c.x - size / 2)}px, ${r1(c.y - size / 2)}px)${squash} rotate(${r1(c.angle)}deg) scale(${r2(c.scale)})`);
-    el.classList.toggle("cs-held", c.held);
+    el.classList.toggle("td-held", c.held);
     // its shadow on the floor, smaller and lighter the higher it is
     const over = Math.min(1, Math.max(0, this.ground - c.y - c.r) / (this.stage.box * 0.8)),
       w = c.r * 2 * (1 - 0.4 * over) * c.scale;

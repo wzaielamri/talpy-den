@@ -80,7 +80,7 @@ const cookieAt = query.get("cookie");
 if (cookieAt) {
   setTimeout(() => {
     const [x, y] = cookieAt.split(",").map(Number);
-    const stage = document.querySelector(".cs-stage--hero")!;
+    const stage = document.querySelector(".td-stage--hero")!;
     const r = stage.getBoundingClientRect();
     stage.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: r.left + x, clientY: r.top + y }));
   }, 1000);

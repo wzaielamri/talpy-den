@@ -66,7 +66,7 @@ export function AgentTree({ tree, now, rowKey, host, opened, onToggle, onOpenRun
         const key = agentDetailKey(rowKey, a.id);
         const open = !!opened[key];
         return (
-          <li key={a.id} class={`agent ag-${a.status}`} style={{ paddingLeft: `calc(var(--cs-gu) * 0.9 * ${a.depth})` }}>
+          <li key={a.id} class={`agent ag-${a.status}`} style={{ paddingLeft: `calc(var(--td-gu) * 0.9 * ${a.depth})` }}>
             <span class="agent-branch" aria-hidden="true">
               └
             </span>

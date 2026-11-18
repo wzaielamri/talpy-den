@@ -12,7 +12,7 @@ import { sshCommand } from "../src/terminals";
 const posix = process.platform !== "win32";
 
 test("the socket folder is short and only yours", { skip: !posix && "Unix sockets" }, () => {
-  const tmp = fs.mkdtempSync("/tmp/cs-test-");
+  const tmp = fs.mkdtempSync("/tmp/td-test-");
   try {
     const dir = controlDir({ XDG_RUNTIME_DIR: tmp }, "/nonexistent");
     assert.equal(dir, path.join(tmp, "talpy-den-ssh"));
@@ -34,7 +34,7 @@ test("the socket folder is short and only yours", { skip: !posix && "Unix socket
 });
 
 test("the same folder as the widget's remote.py", { skip: !posix && "Unix sockets" }, () => {
-  const tmp = fs.mkdtempSync("/tmp/cs-test-");
+  const tmp = fs.mkdtempSync("/tmp/td-test-");
   try {
     const script = "import sys; sys.path.insert(0, sys.argv[1]); import remote; print(remote.control_dir())";
     const r = spawnSync("python3", ["-I", "-B", "-c", script, path.resolve("vendor/code")], {

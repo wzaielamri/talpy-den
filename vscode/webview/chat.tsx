@@ -598,8 +598,8 @@ function CommandOutput({ of, output, error, more }: { of: string; output: string
       <span class="pane-gutter" aria-hidden="true">⎿</span>
       <div class="pane-command-body">
       <pre>{parts.map((r, i) => {
-        const fg = r.inverse ? (r.bg || "var(--cs-bg, var(--vscode-editor-background))") : r.fg;
-        const bg = r.inverse ? (r.fg || "var(--cs-fg)") : r.bg;
+        const fg = r.inverse ? (r.bg || "var(--td-bg, var(--vscode-editor-background))") : r.fg;
+        const bg = r.inverse ? (r.fg || "var(--td-fg)") : r.bg;
         const style = { color: fg || undefined, background: bg || undefined, fontWeight: r.bold ? 600 : undefined,
                         fontStyle: r.italic ? "italic" : undefined, textDecoration: r.underline ? "underline" : undefined,
                         opacity: r.dim ? 0.6 : undefined };
