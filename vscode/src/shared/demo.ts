@@ -531,7 +531,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     days,
     sum: {
       youMs: total("youMs"), workedMs: total("workedMs"), busyMs: total("busyMs"), waitMs: total("waitMs"),
-      prompts: total("prompts"), cost, tokenTotal: total("tokenTotal"), turns: 212, limits: 2, chats: 23, peakAtOnce: 2, busiestDay: days[3].day,
+      prompts: total("prompts"), cost, tokenTotal: total("tokenTotal"), turns: 212, limits: 2, limitStops: 5, chats: 23, peakAtOnce: 2, busiestDay: days[3].day,
       longestTurn: { workedMs: 48 * MIN, startedAt: days[3].start + 10 * HOUR, name: "Port the date parser", host: "" },
       tokens: { input: 41_200, output: 2_310_000, cacheRead: 612_000_000, cacheWrite5m: 2_100_000, cacheWrite1h: 9_800_000, webSearches: 3 },
     },

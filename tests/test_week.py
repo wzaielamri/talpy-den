@@ -84,11 +84,14 @@ class Transcript:
         return self.add({"type": "user", "timestamp": iso(ms),
                          "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]}})
 
-    def limit(self, ms):
-        return self.add({"type": "assistant", "timestamp": iso(ms), "isApiErrorMessage": True,
-                         "message": {"id": "msg_err%d" % ms, "model": "<synthetic>", "role": "assistant",
-                                     "content": [{"type": "text", "text": "You've hit your session limit · resets 7pm"}],
-                                     "usage": {"input_tokens": 0, "output_tokens": 0}}})
+    def limit(self, ms, text="You've hit your session limit · resets 7pm", resets=None):
+        """A usage limit's error (resets: when Claude Code notes it resets, ms, as its quotaLimits)."""
+        e = {"type": "assistant", "timestamp": iso(ms), "isApiErrorMessage": True,
+             "message": {"id": "msg_err%d" % ms, "model": "<synthetic>", "role": "assistant",
+                         "content": [{"type": "text", "text": text}], "usage": {"input_tokens": 0, "output_tokens": 0}}}
+        if resets:
+            e["quotaLimits"] = {"rateLimitType": "five_hour", "resetsAt": resets // 1000}
+        return self.add(e)
 
     def title(self, text):
         return self.add({"type": "custom-title", "customTitle": text})
@@ -436,12 +439,78 @@ class RecapTests(Home):
         self.assertEqual((r["projects"][0]["name"], r["projects"][0]["host"]), ("job", "gpu"))
 
     def test_limits_hit_by_several_chats_are_one_time(self):
+        # (10:00; the limit resets at 19:00, as the message says: every hit before is the plan out once)
         t0, hour = self.t0, 3600_000
         self.write(Transcript().prompt(t0).limit(t0 + 1000).limit(t0 + 60_000), "chat-a")
         self.write(Transcript().prompt(t0).limit(t0 + 2000).limit(t0 + 5 * hour), "chat-b")
         r = self.recap()
-        self.assertEqual(r["sum"]["limits"], 2)
+        self.assertEqual((r["sum"]["limits"], r["sum"]["limitStops"]), (1, 2))
         self.assertEqual(r["days"][-1]["limits"], [t0 + 1000, t0 + 2000, t0 + 60_000, t0 + 5 * hour])  # (marks on the timeline)
+
+    def test_how_often_the_plan_ran_out(self):
+        # An account's plan is out from a hit until that limit resets: every
+        # chat hitting it until then is that one time; after the reset, a hit
+        # is another time. Another account's plan runs out on its own.
+        t0, hour = self.t0 - 2 * 3600_000, 3600_000  # (08:00)
+        first, second = t0 + 3 * hour, t0 + 8 * hour  # (when the windows reset: 11:00, then 16:00)
+        self.write(Transcript().prompt(t0).limit(t0 + 1000, resets=first).limit(t0 + 2 * hour, resets=first)
+                   .limit(first + hour, resets=second), "chat-a")
+        self.write(Transcript().prompt(t0).limit(t0 + 5 * 60_000, resets=first).limit(first + 2 * hour, resets=second), "chat-b")
+        self.write(Transcript().prompt(t0).limit(t0 + 10 * 60_000, resets=first), "chat-c", "personal")
+        r = self.recap()
+        # work: out at 08:00 (a, b) and at 12:00 (a, b); personal at 08:10 (c)
+        self.assertEqual((r["sum"]["limits"], r["sum"]["limitStops"]), (3, 5))
+        self.assertEqual(len(r["days"][-1]["limits"]), 6)  # (the timeline marks each chat's)
+        tip = next(t for t in r["tips"] if t["key"] == "limits")
+        self.assertEqual(tip["detail"], "your plan ran out 3 times (5 chats stopped) · Keep going after usage limits, or Go on at…")
+        # Claude Code's own note of the reset comes before the message's time
+        self.assertEqual(week.limit_reset({"quotaLimits": {"resetsAt": first // 1000}}, "… · resets 7pm", t0), first)
+
+    def test_without_a_reset_hits_an_hour_apart_are_one_time(self):
+        t0, hour = self.t0, 3600_000
+        out = "You're out of usage credits"  # (no time named)
+        self.write(Transcript().prompt(t0).limit(t0, out).limit(t0 + 50 * 60_000, out).limit(t0 + 100 * 60_000, out)
+                   .limit(t0 + 3 * hour, out), "chat-a")
+        self.assertEqual((self.recap()["sum"]["limits"], self.recap()["sum"]["limitStops"]), (2, 2))
+
+    def test_a_cache_from_before_learns_when_its_limits_reset(self):
+        # a record read before the cache kept them reads them from its
+        # transcript once; one whose transcript is gone keeps what it has
+        t0, hour = self.t0 - 2 * 3600_000, 3600_000
+        first, second = t0 + 3 * hour, t0 + 8 * hour
+        self.write(Transcript().prompt(t0).reply(t0 + 1000, "a").limit(t0 + 2000, resets=first)
+                   .limit(t0 + 2 * hour, resets=first).limit(first + hour, resets=second), "chat-a")
+        gone = self.write(Transcript().prompt(t0).limit(t0 + 3000).limit(t0 + 4 * hour + 60_000), "chat-b")
+        cache = self.scan()
+        for rec in cache["files"].values():  # (as an older copy of this file wrote it)
+            rec["data"].pop("limitResets")
+            rec["data"].pop("limitResetsTo")
+        before = json.loads(json.dumps(cache))
+        gone.unlink()
+        cache = self.scan(cache)
+        recs = {r["chat"]: r for r in cache["files"].values()}
+        self.assertEqual(recs["chat-a"]["data"]["limitResets"],
+                         {str(t0 + 2000): first, str(t0 + 2 * hour): first, str(first + hour): second})
+        self.assertNotIn("limitResets", recs["chat-b"]["data"])
+        self.assertTrue(recs["chat-b"]["gone"])
+        for chat in ("chat-a", "chat-b"):  # (the rest as it was)
+            old = next(r for r in before["files"].values() if r["chat"] == chat)
+            self.assertEqual({k: v for k, v in recs[chat]["data"].items() if not k.startswith("limitResets")}, old["data"])
+        chats = week.chats_between(cache, self.profiles(), self.now - 14 * week.DAY_MS, self.now + week.DAY_MS, self.home)
+        _, accounts = week.account_ids(self.profiles())
+        r = week.recap([{"host": "", "chats": chats, "accounts": accounts}], 0, "", self.now, self.home)
+        # (a: out at 08:00 and at 12:00; b, its resets unknown, stopped in both)
+        self.assertEqual((r["sum"]["limits"], r["sum"]["limitStops"]), (2, 4))
+        # lines an older copy read on, keeping no resets: read for them next time
+        later = second + 30 * 60_000
+        path = self.write(Transcript().prompt(t0).reply(t0 + 1000, "a").limit(t0 + 2000, resets=first)
+                          .limit(t0 + 2 * hour, resets=first).limit(first + hour, resets=second)
+                          .limit(later, resets=later + 5 * hour), "chat-a")
+        rec = next(r for r in cache["files"].values() if r["chat"] == "chat-a")
+        week.read_transcript(path, rec, set())
+        del rec["data"]["limitResets"][str(later)]
+        self.scan(cache)
+        self.assertEqual(rec["data"]["limitResets"][str(later)], later + 5 * hour)
 
     def test_a_days_chats_and_a_projects(self):
         t0 = self.t0

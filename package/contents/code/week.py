@@ -62,6 +62,7 @@ import bisect
 import difflib
 import datetime
 import json
+import mmap
 import os
 import re
 import statistics
@@ -132,8 +133,8 @@ USAGE_LONG_HOURS = 8
 USAGE_TIP_PCT = 10
 TIPS_SHOWN = 5
 WAIT_TIP_MS = 15 * 60_000  # Claude waited this long for your answers in a week: a tip
-LIMIT_TIP = 2  # usage limits hit in a week: a tip
-LIMIT_EPISODE_MS = 60 * 60_000  # hits of a usage limit this close (on one account) are one time you hit it
+LIMIT_TIP = 2  # times the plan ran out in a week: a tip
+LIMIT_EPISODE_MS = 60 * 60_000  # a hit whose reset isn't known holds the plan out this long (plan_run_outs)
 
 # API list prices (https://platform.claude.com/docs/en/about-claude/pricing),
 # in $ per million tokens: input, 5-minute cache write, 1-hour cache write,
@@ -288,8 +289,10 @@ def new_record(kind, st):
             "state": {"turn": None, "timed": False, "tools": {}, "msg": None,
                       "ctx": {"last": None, "ctx": 0, "carried": 0, "first": 0, "start": None, "pending": 0,
                               "large": 0}},
-            "data": {"turns": [], "prompts": [], "limits": [], "hours": {}, "names": {}, "folder": "",
-                     "prompt": "", "startTokens": None}}
+            # (limitResets: {str(a limit hit's ms): when that limit reset, ms}, for the hits that say it,
+            # of the transcript up to limitResetsTo: backfill_limit_resets)
+            "data": {"turns": [], "prompts": [], "limits": [], "limitResets": {}, "limitResetsTo": 0, "hours": {},
+                     "names": {}, "folder": "", "prompt": "", "startTokens": None}}
 
 
 def reply_id(mid):
@@ -357,11 +360,65 @@ def scan(profiles, cache, now_ms, keep=True):
     counted = {i for rec in files.values() for agg in rec["data"]["hours"].values() for i in agg.get("m", [])}
     for key in sorted(found):
         rec = files[key]
+        # (lines read before the cache kept when limits reset, or by an older
+        # copy of this file since: their limits' resets, once)
+        if rec["data"].get("limitResetsTo", 0) < rec["offset"]:
+            backfill_limit_resets(key, rec)
         if rec["offset"] < found[key]["st"].st_size:
             read_transcript(Path(key), rec, counted)
+            rec["data"]["limitResetsTo"] = rec["offset"]
     cache["files"] = files
     cache["scannedAt"] = now_ms
     return cache
+
+
+LIMIT_LINE = b'"isApiErrorMessage":true'
+
+
+def limit_reset(e, text, ts):
+    """When the usage limit a chat hit at ts (the error entry e, its text)
+    resets, in ms: as Claude Code noted it with the error (its quotaLimits),
+    else the time its message names; or None."""
+    quota = e.get("quotaLimits")
+    resets = cs.to_ms(quota.get("resetsAt")) if isinstance(quota, dict) else None
+    return resets if resets and resets > ts else cs.reset_from_text(text, ts)
+
+
+def backfill_limit_resets(path, rec):
+    """The resets of a record's usage limit hits it doesn't have (limitResets):
+    those of the lines of its transcript read before the cache kept them (or
+    read by an older copy of this file since), from limitResetsTo up to what
+    was read; only the lines with an API error's marker are parsed, once. A
+    deleted transcript's record ("gone") can't have them: its hits count as
+    they did."""
+    data = rec["data"]
+    resets = data.setdefault("limitResets", {})
+    lo, hi = data.get("limitResetsTo", 0), rec.get("offset", 0)
+    missing = {t for t in data.get("limits") or () if str(t) not in resets}
+    try:
+        if missing:
+            with open(path, "rb") as f:
+                hi = min(hi, os.fstat(f.fileno()).st_size)
+                if hi > lo:
+                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+                        at = m.find(LIMIT_LINE, lo, hi)
+                        while at >= 0:
+                            start, end = m.rfind(b"\n", 0, at) + 1, m.find(b"\n", at, hi)
+                            if end < 0:
+                                break
+                            try:
+                                e = json.loads(m[start:end])
+                                ts = cs.to_ms(e.get("timestamp"))
+                                if ts in missing:
+                                    reset = limit_reset(e, " ".join(cs.message_text(e.get("message")).split()), ts)
+                                    if reset:
+                                        resets[str(ts)] = reset
+                            except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
+                                pass
+                            at = m.find(LIMIT_LINE, end, hi)
+    except (OSError, ValueError):
+        return  # (tried again next time)
+    data["limitResetsTo"] = rec.get("offset", 0)
 
 
 def read_transcript(path, rec, counted):
@@ -636,6 +693,9 @@ def take_reply(e, ts, rec, counted):
             text = " ".join(cs.message_text(msg).split())
             if text.startswith(cs.LIMIT_STARTS) or text.startswith(cs.OUT_OF_USAGE):
                 data["limits"].append(ts)
+                reset = limit_reset(e, text, ts)
+                if reset:
+                    data.setdefault("limitResets", {})[str(ts)] = reset
         turn_activity(state, ts)
     tools = state["tools"]
     uses = [c for c in blocks if c.get("type") == "tool_use" and isinstance(c.get("id"), str) and isinstance(c.get("name"), str)]
@@ -1097,7 +1157,7 @@ def chats_between(cache, profiles, since, until, home, skip=frozenset()):
         c = chats.get(rec["chat"])
         if c is None:
             c = chats[rec["chat"]] = {"profiles": [], "folder": "", "name": "", "turns": [], "prompts": [],
-                                      "limits": [], "hours": {}, "startTokens": None}
+                                      "limits": [], "limitResets": {}, "hours": {}, "startTokens": None}
         for p in rec.get("profiles", []):
             if p not in c["profiles"]:
                 c["profiles"].append(p)
@@ -1113,6 +1173,9 @@ def chats_between(cache, profiles, since, until, home, skip=frozenset()):
         c["turns"] += [t for t in turns if t[1] >= since and t[0] < until]
         c["prompts"] += [p for p in data["prompts"] if since <= p < until]
         c["limits"] += [p for p in data["limits"] if since <= p < until]
+        for k, reset in (data.get("limitResets") or {}).items():
+            if since <= int(k) < until:
+                c["limitResets"][k] = reset
         names = data.get("names") or {}
         c["name"] = next((names[k] for k, _ in cs.TITLE_KINDS if names.get(k)), c["name"] or data.get("prompt") or "")
         c["folder"] = c["folder"] or data.get("folder") or ""
@@ -1389,7 +1452,8 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
                     turns += 1
                     if longest is None or work > longest["workedMs"]:
                         longest = {"workedMs": int(work), "startedAt": s, "name": chat_label(c), "host": c["host"]}
-            limits += [(",".join(c["accounts"]) or c["key"], t) for t in c["limits"] if lo <= t < hi]
+            resets = c.get("limitResets") or {}
+            limits += [(",".join(c["accounts"]) or c["key"], t, resets.get(str(t)), c["key"]) for t in c["limits"] if lo <= t < hi]
         prompts = [p for c in chats for p in c["prompts"] if near <= p < hi]
         yours = clipped(your_time(prompts + answers, handovers), lo, hi)
         own_prompts = sum(1 for p in prompts if p >= lo)
@@ -1407,7 +1471,8 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
                "tokenTotal": sum(tokens[name] for name in USAGE_KEYS[:TOKEN_KINDS])}
         if not full:
             return out
-        out.update(turns=turns, limits=limit_episodes(limits), tokens=tokens, longestTurn=longest,
+        ran_out, stopped = plan_run_outs(limits)
+        out.update(turns=turns, limits=ran_out, limitStops=stopped, tokens=tokens, longestTurn=longest,
                    chats=sum(1 for c in chats if worked.get(c["key"]) or any(lo <= p < hi for p in c["prompts"])
                              or any(lo <= hour_ms(h) < hi for h in c["hours"])))
         return out, {"stretches": stretches, "waits": waits, "yours": yours, "worked": worked}
@@ -2927,15 +2992,25 @@ def currency_of(code, cache_root, now_s, fetch=None):
     return {"code": code, "rate": rates["rates"][code] / rates["rates"]["USD"], "date": rates["date"], "error": ""}
 
 
-def limit_episodes(hits):
-    """How many times hits [(account, ms)] of usage limits stopped you: the
-    chats hitting one limit, and their tries again, are one time."""
-    n, last = 0, {}
-    for account, t in sorted(hits, key=lambda h: h[1]):
-        if account not in last or t - last[account] > LIMIT_EPISODE_MS:
-            n += 1
-        last[account] = t
-    return n
+def plan_run_outs(hits):
+    """How often the plan ran out, and how many chats that stopped, from the
+    usage limits chats hit [(account, ms, when that limit resets or None,
+    chat)]: an account's plan is out from a hit until that limit resets (the
+    latest reset of the hits since, if one is later: a weekly limit hit while
+    a 5-hour one is out), so every hit on it until then, by any chat, again
+    and again, is the same time; one with no reset known holds it out for
+    LIMIT_EPISODE_MS. A chat stopped counts once each time. (times, chats stopped)"""
+    times, stops, out = 0, 0, {}  # (out: account -> [until when, the chats it stopped])
+    for account, t, resets, chat in sorted(hits, key=lambda h: h[1]):
+        run = out.get(account)
+        if run is None or t >= run[0]:
+            run = out[account] = [t, set()]
+            times += 1
+        run[0] = max(run[0], resets if resets and resets > t else t + LIMIT_EPISODE_MS)
+        if chat not in run[1]:
+            run[1].add(chat)
+            stops += 1
+    return times, stops
 
 
 def join_running(work):
@@ -3046,9 +3121,10 @@ def tips(chats, w0, w1, total, waits):
                     "detail": "it waited {} for your answers, {} times · auto mode, or allow what you always allow"
                               .format(cs.spoken_duration(waited), n), "command": "/permissions"})
     if total.get("limits", 0) >= LIMIT_TIP:
+        stops = total.get("limitStops") or 0
         out.append({"key": "limits", "pct": None, "title": "Let chats go on after a usage limit",
-                    "detail": "chats hit a usage limit {} times · Keep going after usage limits, or Go on at…"
-                              .format(total["limits"]), "command": ""})
+                    "detail": "your plan ran out {} times ({} stopped) · Keep going after usage limits, or Go on at…"
+                              .format(total["limits"], "1 chat" if stops == 1 else "{} chats".format(stops)), "command": ""})
     return out
 
 
@@ -3099,6 +3175,8 @@ def host_chats(host, back, span="week", since=None, until=None):
                           for t in c.get("turns", [])]
             c["prompts"] = [p + shift for p in c.get("prompts", [])]
             c["limits"] = [p + shift for p in c.get("limits", [])]
+            c["limitResets"] = {str(int(k) + shift): v + shift for k, v in (c.get("limitResets") or {}).items()
+                                if str(k).isdigit() and isinstance(v, (int, float))}
             # (its hours too, with the cold resumes and permission prompts in
             # them: their tokens, costs and tools count when its turns do)
             c["hours"] = {hour_key(hour_ms(h) + shift): dict(agg, **{k: [[e[0] + shift] + list(e[1:]) for e in agg.get(k, [])]

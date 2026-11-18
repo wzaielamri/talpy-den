@@ -728,7 +728,7 @@ const MIN = 60000, HOUR = 60 * MIN;
 const weekRecap = (extra = {}) => ({
     back: 0, backMax: 4, from: '2026-10-18', to: '2026-10-24', prices: {asOf: '2026-10-24', guessed: []},
     sum: {youMs: 18 * HOUR, workedMs: 32 * HOUR + 6 * MIN, busyMs: 27 * HOUR, waitMs: 3 * HOUR + 18 * MIN, prompts: 219, cost: 906.4,
-        turns: 253, chats: 67, limits: 2, peakAtOnce: 3, busiestDay: '2026-10-20',
+        turns: 253, chats: 67, limits: 2, limitStops: 5, peakAtOnce: 3, busiestDay: '2026-10-20',
         longestTurn: {workedMs: 73 * MIN, name: 'startup hang'}, tokens: {input: 10, output: 9e6, cacheRead: 2.4e9, cacheWrite5m: 1e7, cacheWrite1h: 3e7},
         tokenTotal: 2449000010},
     previous: {youMs: 13 * HOUR + 16 * MIN, workedMs: 15 * HOUR, prompts: 203, cost: 397, tokenTotal: 1.9e9},
@@ -778,7 +778,8 @@ test("the week's days, tiles and facts", () => {
     const two = [{youMs: 60000, workedMs: 0, prompts: 0, cost: 0}, {youMs: 120000, workedMs: 0, prompts: 0, cost: 0}];
     const soFar = L.weekTiles({...r, sameTime: true, trend: two})[0].tip;
     eq([soFar.includes('\nThe 7 days before, by this time: '), soFar.includes('\nWeek by week, each by this time, these 7 days last: ')], [true, true]);
-    eq(L.weekFactsText(r.sum), 'longest turn 1h 13m (startup hang) · up to 3 chats at once · busiest day Tuesday · usage limits stopped you 2 times');
+    eq(L.weekFactsText(r.sum), 'longest turn 1h 13m (startup hang) · up to 3 chats at once · busiest day Tuesday · your plan ran out 2 times (5 chats stopped)');
+    eq([L.weekRanOutText({limits: 1, limitStops: 1}), L.weekRanOutText({limits: 3})], ['your plan ran out once (1 chat stopped)', 'your plan ran out 3 times']);
     eq(L.weekFootText(r).split('\n')[1], "lab couldn't be read: no answer");
     eq(L.weekArgs(1, 'abc', ['lab', 'gpu'], {lab: {ok: true, result: {}}, gpu: {ok: false, result: null}}, ['--config-dir', '/x']),
         ['--span', 'week', '--back', '1', '--account', 'abc', '--host', 'lab', '--config-dir', '/x']);

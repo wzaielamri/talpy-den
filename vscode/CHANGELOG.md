@@ -28,6 +28,13 @@
 
 ### Fixed
 
+- **How often your plan ran out, not every chat it stopped.** The Recap
+  counted stops within an hour of each other as one, so one full window
+  stopping chats for hours counted several times. Now it counts how often
+  each account's plan ran out (every stop until that limit resets is the
+  same time) and keeps the chats: *your plan ran out 3 times (8 chats
+  stopped)*. The timeline still marks each chat's stop.
+
 - **The Recap's API prices are today's, and a guessed one shows.** The
   prices are the API pricing page's of 18 Nov 2026, with Fable 5.2 and
   Mythos 5.2 (priced as Fable 5.1 before). A model newer than the list is

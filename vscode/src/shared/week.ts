@@ -279,8 +279,15 @@ export function factsText(s: WeekSum): string {
   if (s.longestTurn && s.longestTurn.workedMs >= 60000) parts.push(`longest turn ${hoursText(s.longestTurn.workedMs)} (${s.longestTurn.name || "?"})`);
   if (s.peakAtOnce > 1) parts.push(`up to ${s.peakAtOnce} chats at once`);
   if (s.busiestDay) parts.push(`busiest day ${WEEKDAYS_LONG[localDate(s.busiestDay).getDay()]}`);
-  if (s.limits) parts.push(s.limits === 1 ? "a usage limit stopped you once" : `usage limits stopped you ${s.limits} times`);
+  if (s.limits) parts.push(ranOutText(s));
   return parts.join(" · ");
+}
+
+// How often the plan ran out (one full window, however many chats it
+// stopped, is once; week.py plan_run_outs) and the chats it stopped
+export function ranOutText(s: Pick<WeekSum, "limits" | "limitStops">): string {
+  return (s.limits === 1 ? "your plan ran out once" : `your plan ran out ${s.limits} times`) +
+    (s.limitStops ? ` (${plural(s.limitStops, "%1 chat stopped", "%1 chats stopped")})` : "");
 }
 
 // What went on at ms, on its day's row. px: a pixel's ms, so a mark a pixel

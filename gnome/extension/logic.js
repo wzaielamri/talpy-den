@@ -1759,8 +1759,15 @@ export function weekFactsText(s) {
     if (s.busiestDay)
         parts.push(`busiest day ${WEEKDAYS_LONG[dayDate(s.busiestDay).getDay()]}`);
     if (s.limits)
-        parts.push(s.limits === 1 ? 'a usage limit stopped you once' : `usage limits stopped you ${s.limits} times`);
+        parts.push(weekRanOutText(s));
     return parts.join(' · ');
+}
+
+// How often the plan ran out (one full window, however many chats it
+// stopped, is once; week.py plan_run_outs) and the chats it stopped
+export function weekRanOutText(s) {
+    return (s.limits === 1 ? 'your plan ran out once' : `your plan ran out ${s.limits} times`) +
+        (s.limitStops ? ` (${plural(s.limitStops, '%1 chat stopped', '%1 chats stopped')})` : '');
 }
 
 // What went on at ms, on its day's row. px: a pixel's ms, so a mark a pixel

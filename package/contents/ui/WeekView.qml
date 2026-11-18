@@ -444,8 +444,15 @@ PlasmaComponents3.ScrollView {
         if (sum.busiestDay)
             parts.push(i18n("busiest day %1", Qt.locale().toString(date(sum.busiestDay), "dddd")))
         if (sum.limits)
-            parts.push(i18np("a usage limit stopped you once", "usage limits stopped you %1 times", sum.limits))
+            parts.push(ranOutText())
         return parts.join(" · ")
+    }
+
+    // How often the plan ran out (one full window, however many chats it
+    // stopped, is once; week.py plan_run_outs) and the chats it stopped
+    function ranOutText() {
+        return i18np("your plan ran out once", "your plan ran out %1 times", sum.limits)
+               + (sum.limitStops ? " (" + i18np("%1 chat stopped", "%1 chats stopped", sum.limitStops) + ")" : "")
     }
 
     // Where ms is on its day's row, 0 to 1: by that day's own clock, as the

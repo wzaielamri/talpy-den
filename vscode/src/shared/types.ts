@@ -716,7 +716,8 @@ export interface WeekNumbers {
 
 export interface WeekSum extends WeekNumbers {
   turns: number;
-  limits: number; // times a usage limit stopped you
+  limits: number; // times your plan ran out (one full window, however many chats it stopped)
+  limitStops?: number; // the chats those stopped (one stopped in two of them: twice)
   chats: number;
   peakAtOnce: number;
   busiestDay: string | null;
