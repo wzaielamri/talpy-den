@@ -461,7 +461,7 @@ class RecapTests(Home):
         # work: out at 08:00 (a, b) and at 12:00 (a, b); personal at 08:10 (c)
         self.assertEqual((r["sum"]["limits"], r["sum"]["limitStops"]), (3, 5))
         self.assertEqual(len(r["days"][-1]["limits"]), 6)  # (the timeline marks each chat's)
-        tip = next(t for t in r["tips"] if t["key"] == "limits")
+        tip = next(t for t in week.tips([], t0, t0 + week.DAY_MS, r["sum"], []) if t["key"] == "limits")  # (3 prompts: too little to show)
         self.assertEqual(tip["detail"], "your plan ran out 3 times (5 chats stopped) · Keep going after usage limits, or Go on at…")
         # Claude Code's own note of the reset comes before the message's time
         self.assertEqual(week.limit_reset({"quotaLimits": {"resetsAt": first // 1000}}, "… · resets 7pm", t0), first)
@@ -759,11 +759,48 @@ class TipTests(Home):
     def test_tips_from_transcripts(self):
         t0, tr = self.t0, Transcript()
         tr.prompt(t0).reply(t0 + 1000, "a", effort="max", inp=150_000, read=0)
-        tr.duration(t0 + 2000, 2000)
+        tr.duration(t0 + 3600_000, 3600_000)  # (an hour of Claude's work: enough to stand on)
         self.write(tr)
-        keys = {t["key"] for t in self.recap()["tips"]}
+        r = self.recap()
+        keys = {t["key"] for t in r["tips"]}
         self.assertTrue({"max_effort", "cache_miss", "always_on_context"} <= keys, keys)
         self.assertNotIn("long_context", keys)  # (150k is the limit, not over it)
+        self.assertFalse(r["tooLittle"])
+
+    def test_too_little_for_tips(self):
+        # One prompt and a minute of Claude's work: its one request's habits
+        # would be 100% of the usage; the tab says it's too little instead
+        t0, tr = self.t0, Transcript()
+        tr.prompt(t0).reply(t0 + 1000, "a", effort="max", inp=150_000, read=0).duration(t0 + 60_000, 60_000)
+        self.write(tr)
+        r = self.recap()
+        self.assertEqual((r["tips"], r["tooLittle"]), ([], True))
+        for k in range(1, 20):  # (20 prompts are enough, however short the work)
+            tr.prompt(t0 + 60_000 + k * 1000)
+        self.write(tr)
+        self.assertEqual(self.recap()["tooLittle"], False)
+
+    def test_a_plugins_skill_is_one_tip(self):
+        # A plugin's skill ("plugin:skill") counts in the plugin too, on the
+        # same requests: one tip, the skill's; the plugin's only for the rest
+        h = str(self.t0 // week.HOUR_MS)
+
+        def shown(attrs):
+            chats = [self.chat({h: dict(self.hour(W_ALL=100, N_ALL=10), a=attrs)})]
+            return [(t["key"], t["pct"], t["detail"]) for t in week.tips(chats, self.t0 - week.DAY_MS, self.now, {}, [])]
+        self.assertEqual(shown({"skill:sp:debug": 30, "plugin:sp": 35}), [("skill", 30, "30% of your usage")])
+        self.assertEqual(shown({"skill:sp:debug": 30, "plugin:sp": 50}),
+                         [("skill", 30, "30% of your usage"), ("plugin", 20, "20% of your usage besides /sp:debug")])
+        # (a skill of no plugin, or a plugin's skill under a tenth: different requests, or none told)
+        self.assertEqual([k for k, _, _ in shown({"skill:review": 30, "plugin:sp": 20})], ["skill", "plugin"])
+        self.assertEqual(shown({"skill:sp:debug": 5, "plugin:sp": 35}), [("plugin", 35, "35% of your usage")])
+
+    def test_coming_back_after_the_cache_expired_from_a_tenth(self):
+        cold = {"count": 3, "cost": 12.0, "chats": [{"name": "parser", "resumes": 2}, {"name": "notes", "resumes": 1}]}
+        tips = week.tips([], self.t0 - week.DAY_MS, self.now, {"cost": 100.0}, [], cold)
+        self.assertEqual([(t["key"], t["pct"], t["detail"]) for t in tips],
+                         [("cold", 12, "you came back to chats after their cache had expired 3 times · most in parser (2×), notes (1×)")])
+        self.assertEqual(week.tips([], self.t0 - week.DAY_MS, self.now, {"cost": 130.0}, [], cold), [])  # (9%)
 
 
 class time_zone:

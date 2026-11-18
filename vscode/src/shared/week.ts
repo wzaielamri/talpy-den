@@ -4,7 +4,7 @@
 import { clockText, dayLabel, hostLabel, plural } from "./model";
 import type {
   LimitAccount, LimitChange, LimitEvent, LimitHistory, LimitPeriod, LimitTokens, WeekDay, WeekGrant, WeekModel, WeekNumbers, WeekPlanWindow, WeekRecap,
-  WeekRule, WeekSpan, WeekSum,
+  WeekRule, WeekSpan, WeekSum, WeekTip,
 } from "./types";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -346,8 +346,27 @@ export function tipMeaning(key: string): "tipWaits" | "tipLimits" | "tip" {
 export function tipSource(key: string): string {
   return key === "waits" ? "From Talpy Den: the time Claude waited for your answers"
     : key === "limits" ? "From Talpy Den: the usage limits that stopped your chats"
-      : "From Claude Code's /usage: a habit that took a good share of your usage";
+      : key === "cold" ? "From Talpy Den: coming back to chats after their cache had expired"
+        : "From Claude Code's /usage: a habit that took a good share of your usage";
 }
+
+// A tip's share: of the usage, as /usage weighs it; coming back to chats
+// after their cache expired: of the amount at API prices (what writing their
+// context again cost more than reading it)
+export function tipShareText(t: Pick<WeekTip, "key" | "pct">): string {
+  return t.pct === null ? "" : t.key === "cold" ? `${t.pct}% of the amount` : `${t.pct}% of usage`;
+}
+
+export function tipShareTip(t: Pick<WeekTip, "key" | "pct">, recap: Pick<WeekRecap, "spend" | "currency">): string {
+  if (t.key !== "cold")
+    return `${t.pct}% of the usage shown: of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. ` +
+      "A request can count for several of these.";
+  return `${t.pct}% of the amount at API prices: writing the chats' context again cost ${moneyText(recap.spend?.cold?.cost ?? 0, currencyOf(recap))} ` +
+    "more than reading it from the cache. The cache keeps a chat's context an hour after its last reply.";
+}
+
+// Too little in the period for tips (week.py: tooLittle)
+export const TIPS_TOO_LITTLE = "Too little here to go on: tips need 20 prompts or an hour of Claude's work.";
 
 // What Claude did, in a line: its tool calls, commands, edits, subagents
 export function workText(w: WeekRecap["work"] | undefined): string {
@@ -474,18 +493,6 @@ export function permsHost(host: unknown): string | null {
 export function ruleMeta(r: WeekRule): string {
   return [plural(r.count, "%1 prompt", "%1 prompts"), r.waitMs >= 60000 ? `waited ${hoursText(r.waitMs)} for you` : "", `e.g. ${r.example}`]
     .filter(Boolean).join(" · ");
-}
-
-export function coldText(recap: WeekRecap): string {
-  const cold = recap.spend?.cold;
-  if (!cold || !cold.count) return "";
-  const cur = currencyOf(recap);
-  const most = cold.chats.map((c) => `${c.name} (${c.resumes ?? 0}×, ${moneyText(c.cost, cur)})`).join(", ");
-  return (cold.count === 1
-    ? "You came back to a chat after its cache had expired (an hour without a reply) once: writing its context again cost " +
-      `${moneyText(cold.cost, cur)} more than reading it from the cache.`
-    : `You came back to chats after their cache had expired (an hour without a reply) ${cold.count} times: writing their ` +
-      `context again cost ${moneyText(cold.cost, cur)} more than reading it from the cache.`) + (most ? ` Most in: ${most}.` : "");
 }
 
 export function footText(recap: WeekRecap): string {

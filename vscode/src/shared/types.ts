@@ -760,7 +760,9 @@ export interface WeekModel {
 }
 
 // What would use less of your plan: Claude Code's /usage rules (pct: the
-// share of the week's usage it touches), how long Claude waited for you, the limits hit
+// share of the week's usage it touches), coming back to chats after their
+// cache expired (key "cold", pct: its share of the amount at API prices), how
+// long Claude waited for you, the limits hit
 export interface WeekTip {
   key: string;
   pct: number | null;
@@ -923,6 +925,7 @@ export interface WeekRecap {
   plan: { account: string; name: string; windows: WeekPlanWindow[] }[]; // (this computer's accounts, these 7 days only)
   prompts: { answered: number; refused: number; waitMs: number; byTool: [string, number][]; rules: WeekRule[] };
   tips: WeekTip[];
+  tooLittle?: boolean; // too little in these days for tips (an older week.py sends none)
   prices: { asOf: string; guessed: string[]; guessedCost?: number }; // (guessedCost: how much of the amount is at a guessed price)
   currency?: { code: string; rate: number; date: string; error: string }; // rate: per US dollar
   sources: { host: string; ok: boolean; error: string }[];

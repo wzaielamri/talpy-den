@@ -550,7 +550,8 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     ],
     trend: back >= 3 ? [null, null, week(0.5), week(0.75), week(1)] : [week(0.4), week(0.55), week(0.6), week(0.75), week(1)],
     spend: {
-      cold: { count: 5, cost: 11.4, chats: [{ ...DEMO_CHATS[1], resumes: 3, cost: 7.1 }] },
+      // (a tenth of the amount and more: its tip shows)
+      cold: { count: 5, cost: Math.round(cost * 11) / 100, chats: [{ ...DEMO_CHATS[1], resumes: 3, cost: Math.round(cost * 7) / 100 }] },
     },
     work: {
       toolCalls: 3184, commands: 1410, edits: 699, files: 143, linesAdded: 9412, linesRemoved: 2210, subagents: 21, compactions: 3, webSearches: 6, webFetches: 9,
@@ -578,6 +579,8 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       { key: "long_context", pct: 41, title: "Start fresh when you switch tasks", detail: "812 requests carried over 150k tokens of context", command: "/clear" },
       { key: "max_effort", pct: 22, title: "Save max effort for hard tasks", detail: "22% of your usage ran at max effort", command: "/effort xhigh" },
       { key: "cache_miss", pct: 12, title: "Compact before you step away", detail: "37 requests sent over 100k tokens the cache had let go", command: "/compact" },
+      { key: "cold", pct: 11, title: "Come back within the hour, or start fresh",
+        detail: "you came back to chats after their cache had expired 5 times · most in Release notes for 2.0 (3×)", command: "" },
       { key: "waits", pct: null, title: "Let Claude go on without asking", detail: "it waited 3h 18m for your answers, 9 times · auto mode, or allow what you always allow", command: "/permissions" },
     ],
     prices: { asOf: "2026-11-18", guessed: ["Fable 5.3"], guessedCost: cost * 0.05 },

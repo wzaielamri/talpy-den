@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { hostLabel, plural } from "../../src/shared/model";
 import type { LimitAccount, LimitHistory, WeekChat, WeekDay, WeekPlanWindow, WeekRecap, WeekSpan } from "../../src/shared/types";
 import {
-  coldText,
   currencyOf,
   dayTip,
   fillPaths,
@@ -22,6 +21,9 @@ import {
   rowDay,
   tipMeaning,
   tipSource,
+  tipShareText,
+  tipShareTip,
+  TIPS_TOO_LITTLE,
   dayLanes,
   laneNumbers,
   guessedModelTip,
@@ -714,14 +716,15 @@ function Models({ recap }: { recap: WeekRecap }) {
   );
 }
 
-// What would use less of your plan (Claude Code's /usage rules), and what
-// coming back to chats after their cache expired cost
+// What would use less of your plan (Claude Code's /usage rules, coming back
+// to chats after their cache expired, waits, limits); too little in the
+// period: a dim line instead
 function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onCopy: (text: string) => void }) {
-  const cold = coldText(recap);
   return (
     <section class="week-section">
       <h2>What could use less of your plan</h2>
-      {!recap.tips.length && !cold ? <div class="muted">Nothing stands out: no habit takes a tenth of the usage shown.</div> : null}
+      {recap.tooLittle ? <div class="muted">{TIPS_TOO_LITTLE}</div>
+        : !recap.tips.length ? <div class="muted">Nothing stands out: no habit takes a tenth of the usage shown.</div> : null}
       <ul class="week-tips">
         {recap.tips.map((t) => (
           <li key={t.key} class="week-tip">
@@ -731,10 +734,7 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
               {t.detail ? <span class="small muted">{t.detail}</span> : null}
             </span>
             {t.pct !== null ? (
-              <span class="week-tip-pct small"
-                title={`${t.pct}% of the usage shown: of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. A request can count for several of these.`}>
-                {t.pct}% of usage
-              </span>
+              <span class="week-tip-pct small" title={tipShareTip(t, recap)}>{tipShareText(t)}</span>
             ) : null}
             {t.command ? (
               <button type="button" class="chip code" title={`Copy ${t.command}, to type it in a chat of yours`} onClick={() => onCopy(t.command)}>
@@ -744,7 +744,6 @@ function Tips({ recap, copied, onCopy }: { recap: WeekRecap; copied: string; onC
           </li>
         ))}
       </ul>
-      {cold ? <div class="small muted">{cold}</div> : null}
     </section>
   );
 }

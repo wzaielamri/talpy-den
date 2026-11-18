@@ -22,6 +22,14 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
+- **The Recap's tips stand on something, one per cause.** Coming back to
+  chats after their cache had expired is now a tip like the others (*Come
+  back within the hour, or start fresh*), shown from a tenth of the amount
+  at API prices (*12% of the amount*), and nothing below that. A period
+  with under 20 prompts and under an hour of Claude's work says it's too
+  little to go on instead of tips. A plugin's skill is one tip, the
+  skill's: the plugin's tip only counts the rest of its usage.
+
 - **The Recap says each thing once.** The line of facts under the tiles
   (the timeline shows them), the *Other tools* line under *What Claude did*
   and the sentence about the cache under the models (the Tokens tile says

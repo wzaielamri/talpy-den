@@ -544,7 +544,24 @@ PlasmaComponents3.ScrollView {
     function tipSource(key) {
         return key === "waits" ? i18n("From Talpy Den: the time Claude waited for your answers")
              : key === "limits" ? i18n("From Talpy Den: the usage limits that stopped your chats")
+             : key === "cold" ? i18n("From Talpy Den: coming back to chats after their cache had expired")
              : i18n("From Claude Code's /usage: a habit that took a good share of your usage")
+    }
+    // A tip's share: of the usage, as /usage weighs it; coming back to chats
+    // after their cache expired: of the amount at API prices (what writing
+    // their context again cost more than reading it)
+    function tipShareText(t) {
+        return t.key === "cold" ? i18nc("a tip's share of the amount at API prices", "%1% of the amount", t.pct || 0)
+                                : i18nc("a tip's share of the usage", "%1% of usage", t.pct || 0)
+    }
+    function tipShareMain(t) {
+        return t.key === "cold" ? i18n("%1% of the amount at API prices", t.pct || 0) : i18n("%1% of the usage shown", t.pct || 0)
+    }
+    function tipShareTip(t) {
+        return t.key === "cold"
+             ? i18n("Writing the chats' context again cost %1 more than reading it from the cache. The cache keeps a chat's context an hour after its last reply.",
+                    money(spend && spend.cold ? spend.cold.cost : 0))
+             : i18n("Of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. A request can count for several of these.")
     }
 
     FontMetrics {
@@ -2204,8 +2221,9 @@ PlasmaComponents3.ScrollView {
             }
         }
 
-        // What would use less of your plan (Claude Code's /usage rules), and
-        // what coming back to chats whose cache had expired cost
+        // What would use less of your plan (Claude Code's /usage rules, coming
+        // back to chats whose cache had expired, waits, limits); too little
+        // in these days: a dim line instead (week.py: tooLittle)
         ColumnLayout {
             id: tipsBox
             Layout.fillWidth: true
@@ -2228,10 +2246,11 @@ PlasmaComponents3.ScrollView {
             PlasmaComponents3.Label {
                 textFormat: Text.PlainText
                 Layout.fillWidth: true
-                visible: view.tips.length === 0 && !(view.spend && view.spend.cold.count > 0)
+                visible: view.tips.length === 0
                 wrapMode: Text.Wrap
                 opacity: 0.7
-                text: i18n("Nothing stands out: no habit takes a tenth of the usage shown.")
+                text: view.recap && view.recap.tooLittle ? i18n("Too little here to go on: tips need 20 prompts or an hour of Claude's work.")
+                                                         : i18n("Nothing stands out: no habit takes a tenth of the usage shown.")
             }
             Repeater {
                 model: view.tips.length
@@ -2279,15 +2298,15 @@ PlasmaComponents3.ScrollView {
                         textFormat: Text.PlainText
                         Layout.alignment: Qt.AlignTop
                         visible: tipRow.tip.pct !== null && tipRow.tip.pct !== undefined
-                        text: i18nc("a tip's share of the usage", "%1% of usage", tipRow.tip.pct || 0)
+                        text: view.tipShareText(tipRow.tip)
                         font: Kirigami.Theme.smallFont
                         opacity: 0.8
 
                         PlasmaCore.ToolTipArea {
                             textFormat: Text.PlainText
                             anchors.fill: parent
-                            mainText: i18n("%1% of the usage shown", tipRow.tip.pct || 0)
-                            subText: i18n("Of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. A request can count for several of these.")
+                            mainText: view.tipShareMain(tipRow.tip)
+                            subText: view.tipShareTip(tipRow.tip)
                         }
                     }
                     Item {   // (no command: its room, so the share stands where the others do)
@@ -2314,24 +2333,6 @@ PlasmaComponents3.ScrollView {
                             subText: i18n("Type it in a chat of yours.")
                         }
                     }
-                }
-            }
-            // coming back to chats whose cache had expired: what writing it again cost
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                visible: !!view.spend && view.spend.cold.count > 0
-                wrapMode: Text.Wrap
-                font: Kirigami.Theme.smallFont
-                opacity: 0.7
-                text: {
-                    if (!view.spend || !view.spend.cold.count)
-                        return ""
-                    const cold = view.spend.cold
-                    return i18np("You came back to a chat after its cache had expired (an hour without a reply) once: writing its context again cost %2 more than reading it from the cache.",
-                                 "You came back to chats after their cache had expired (an hour without a reply) %1 times: writing their context again cost %2 more than reading it from the cache.",
-                                 cold.count, view.money(cold.cost))
-                           + (cold.chats.length ? " " + i18n("Most in: %1.", cold.chats.map(c => i18n("%1 (%2×, %3)", c.name, c.resumes, view.money(c.cost))).join(", ")) : "")
                 }
             }
         }

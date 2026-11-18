@@ -130,6 +130,8 @@ USAGE_PARALLEL = 4
 USAGE_LONG_HOURS = 8
 USAGE_TIP_PCT = 10
 TIPS_SHOWN = 5
+TIPS_MIN_PROMPTS = 20  # a period with fewer prompts than this and less of Claude's work than
+TIPS_MIN_WORK_MS = 60 * 60_000  # this is too little for tips
 WAIT_TIP_MS = 15 * 60_000  # Claude waited this long for your answers in a week: a tip
 LIMIT_TIP = 2  # times the plan ran out in a week: a tip
 LIMIT_EPISODE_MS = 60 * 60_000  # a hit whose reset isn't known holds the plan out this long (plan_run_outs)
@@ -1569,6 +1571,10 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
     for m in models.values():
         m["cost"] = round(m["cost"], 4)
         m["share"] = round(m["cost"] / total["cost"], 4) if total["cost"] else 0
+    spend = spending(chats, w0, w1, home)
+    # Tips need something to stand on: under TIPS_MIN_PROMPTS prompts and
+    # TIPS_MIN_WORK_MS of Claude's work, a share of the usage says little
+    too_little = total["prompts"] < TIPS_MIN_PROMPTS and total["workedMs"] < TIPS_MIN_WORK_MS
 
     return {
         "ok": True,
@@ -1591,11 +1597,12 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "projects": sorted(folders.values(), key=lambda f: (-f["workedMs"], -f["cost"]))[:TOP_PROJECTS],
         "chats": sorted(chat_rows, key=lambda r: (-r["workedMs"], -r["cost"]))[:TOP_CHATS],
         "models": sorted(models.values(), key=lambda m: -m["cost"]),
-        "spend": spending(chats, w0, w1, home),
+        "spend": spend,
         "work": claude_did(chats, w0, w1),
         "plan": plan_windows_of(usage or [], account) if back == 0 and span == "day" else [],
         "prompts": permission_prompts(chats, w0, w1, home, added),
-        "tips": tips(chats, w0, w1, total, parts["waits"]),
+        "tips": [] if too_little else tips(chats, w0, w1, total, parts["waits"], spend["cold"]),
+        "tooLittle": too_little,  # (too little in these days for tips: the tab says so instead)
         # (guessedCost: how much of the amount is at a guessed price)
         "prices": {"asOf": PRICES_AS_OF, "guessed": sorted(guessed),
                    "guessedCost": round(sum(m["cost"] for m in models.values() if m["guessed"]), 4)},
@@ -3081,10 +3088,12 @@ def join_running(work):
 # ---------------------------------------------------------------- tips
 
 
-def tips(chats, w0, w1, total, waits):
+def tips(chats, w0, w1, total, waits, cold=None):
     """What would use less of your plan, from the week's usage: Claude Code's
     /usage behaviors (each with its share of the usage, from USAGE_TIP_PCT),
-    then how long Claude waited for you and the usage limits you hit."""
+    then coming back to chats whose cache had expired (cold: spending()'s,
+    its share of the amount, from USAGE_TIP_PCT too), how long Claude waited
+    for you and the usage limits you hit."""
     weight, sums = 0.0, [0.0] * W_SIZE
     heavy = long_running = 0.0
     heavy_n = long_n = 0
@@ -3132,6 +3141,8 @@ def tips(chats, w0, w1, total, waits):
             pct = 100 * w / weight
             if pct >= USAGE_TIP_PCT:
                 out.append({"key": key, "pct": round(pct), "title": title, "detail": detail, "command": command})
+                return True
+            return False
 
         tip("max_effort", sums[W_MAX], "Save max effort for hard tasks",
             "{}% of your usage ran at max effort".format(round(100 * sums[W_MAX] / weight)), "/effort xhigh")
@@ -3151,22 +3162,41 @@ def tips(chats, w0, w1, total, waits):
         tip("high_parallel", parallel, "Run fewer chats at once", "up to {} at once".format(peak))
         tip("long_running", long_running, "Stop chats you no longer need",
             "{} ran for 8 hours or more".format(long_n))
+        told = []  # (the skill and the subagents a tip names, with their usage: a plugin's tip leaves theirs out)
         if not any(t["key"] == "subagent_heavy" for t in out):
             agent = top_attribution(attrs, "agent:")
-            if agent:
-                tip("agent", agent[1], 'Give "{}" subagents a cheaper model'.format(agent[0]),
-                    "{}% of your usage".format(round(100 * agent[1] / weight)))
+            if agent and tip("agent", agent[1], 'Give "{}" subagents a cheaper model'.format(agent[0]),
+                             "{}% of your usage".format(round(100 * agent[1] / weight))):
+                told.append(('"{}" subagents'.format(agent[0]),) + agent)
         skill = top_attribution(attrs, "skill:")
-        if skill:
-            tip("skill", skill[1], "Run /{} on a cheaper model".format(skill[0]),
-                "{}% of your usage".format(round(100 * skill[1] / weight)))
-        for prefix, key, title in (("plugin:", "plugin", 'Review the "{}" plugin'),
-                                   ("mcp:", "mcp_server", "Turn off {} when you don't need it")):
-            found = top_attribution(attrs, prefix)
-            if found:
-                tip(key, found[1], title.format(found[0]), "{}% of your usage".format(round(100 * found[1] / weight)))
+        if skill and tip("skill", skill[1], "Run /{} on a cheaper model".format(skill[0]),
+                         "{}% of your usage".format(round(100 * skill[1] / weight))):
+            told.append(("/" + skill[0],) + skill)
+        plugin = top_attribution(attrs, "plugin:")
+        if plugin:
+            # One tip per cause: a plugin's skill ("plugin:skill") or subagents
+            # count in the plugin too, on the same requests; the plugin's tip
+            # is about the rest of its usage, if that is still a tenth
+            mine = [(what, w) for what, name, w in told if name.startswith(plugin[0] + ":")]
+            rest = plugin[1] - sum(w for _, w in mine)
+            tip("plugin", rest, 'Review the "{}" plugin'.format(plugin[0]), "{}% of your usage{}".format(
+                round(100 * rest / weight), " besides " + " and ".join(what for what, _ in mine) if mine else ""))
+        mcp = top_attribution(attrs, "mcp:")
+        if mcp:
+            tip("mcp_server", mcp[1], "Turn off {} when you don't need it".format(mcp[0]),
+                "{}% of your usage".format(round(100 * mcp[1] / weight)))
         out.sort(key=lambda t: -t["pct"])
         del out[TIPS_SHOWN:]
+    # Coming back to chats after their cache expired: what writing their
+    # context again cost more than reading it, from a tenth of the amount
+    cost = total.get("cost") or 0
+    if cold and cold["count"] and cost > 0 and 100 * cold["cost"] / cost >= USAGE_TIP_PCT:
+        once = cold["count"] == 1
+        where = ", ".join(c["name"] if once else "{} ({}×)".format(c["name"], c["resumes"]) for c in cold["chats"])
+        out.append({"key": "cold", "pct": round(100 * cold["cost"] / cost), "title": "Come back within the hour, or start fresh",
+                    "detail": ("you came back to a chat after its cache had expired once" if once else
+                               "you came back to chats after their cache had expired {} times".format(cold["count"]))
+                              + ((" · in " if once else " · most in ") + where if where else ""), "command": ""})
     waited = covered(clipped(waits, w0, w1))
     if waited >= WAIT_TIP_MS:
         n = sum(1 for f, t in waits if w0 <= f < w1)

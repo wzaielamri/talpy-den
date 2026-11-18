@@ -8,7 +8,7 @@ import { demoLimits, demoPerms, demoState, demoWeek } from "../src/shared/demo";
 import { clockText } from "../src/shared/model";
 import type { WeekDay } from "../src/shared/types";
 import {
-  coldText, currencyOf, dayTip, deltaText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
+  tipShareText, tipShareTip, currencyOf, dayTip, deltaText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
   shareText, tipMeaning, tipSource, guessedCostText, guessedModelTip, modelValue, tokensLabel,
   dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
@@ -132,7 +132,11 @@ test("trend lines, what Claude did, where the money went, the prompts you answer
   assert.equal(workText(recap.work), "3,184 tool calls · 1,410 commands run · 699 edits in 143 files (+9,412 −2,210) · 21 subagents started · 6 web searches · 9 pages fetched · 3 compactions");
   assert.equal(workText({ ...recap.work, toolCalls: 1, commands: 1, edits: 1, files: 1, subagents: 0, webSearches: 0, webFetches: 0, compactions: 0 }),
     "1 tool call · 1 command run · 1 edit in 1 file (+9,412 −2,210)");
-  assert.match(coldText(recap), /^You came back to chats after their cache had expired \(an hour without a reply\) 5 times: .*\$11\.40 more .* Most in: Release notes for 2\.0 \(3×, \$7\.10\)\.$/);
+  // coming back after the cache expired is a tip: its share is of the amount, its tooltip says how much
+  const cold = recap.tips.find((t) => t.key === "cold")!;
+  assert.deepEqual([tipShareText(cold), tipShareText(recap.tips[0])], ["11% of the amount", "41% of usage"]);
+  assert.match(tipShareTip(cold, recap), /^11% of the amount at API prices: writing the chats' context again cost \$37\.\d\d more than reading it/);
+  assert.equal(tipSource("cold").split(":")[0], "From Talpy Den");
   assert.equal(promptsText(recap.prompts), "You answered 148 permission prompts and refused 2 of them. They waited for your answer 3h 18m in all.");
   assert.equal(ruleMeta(recap.prompts.rules[0]), "24 prompts · waited 2h 6m for you · e.g. ~/projects/shared-ui/src/button.tsx");
 });
