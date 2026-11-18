@@ -345,7 +345,7 @@ function Timeline({ recap, onDay }: { recap: WeekRecap; onDay: (day: string) => 
   const pct = (d: WeekDay, ms: number) => `${100 * dayPlace(d, ms)}%`;
   const width = (d: WeekDay, a: number, b: number) => `max(1px, ${Math.max(0, 100 * (dayPlace(d, b) - dayPlace(d, a)))}%)`;
   const limits = recap.days.some((d) => d.limits?.length);
-  const opensDay = recap.span === "week"; // (a day's name: that day alone, a Day; its row unfolds its chats)
+  const opensDay = (recap.span ?? "week") === "week"; // (a day's name: that day alone, a Day; its row unfolds its chats; no span: a week)
   return (
     <section class={"week-section" + (weeks ? " week-weeks" : "")}>
       <div class="week-heading">

@@ -423,9 +423,9 @@ const DEMO_CHATS: WeekChat[] = [
     review: { editedAt: Date.now() - 30 * MIN, tests: null }, weekShare: [{ account: "ba9876543210", pct: 7 }] },
 ];
 
-// A chat a Recap tip names (this computer's, the demo's chat list has it)
-function tipChat(chatId: string, name: string, cwd: string, note: string): WeekTipChat {
-  return { name, chatId, host: "", profileDir: ".claude", folder: cwd.replace("/home/alice", "~"), cwd, note };
+// A chat a Recap tip names (this computer's or build-server's, as the demo's chat list has it)
+function tipChat(chatId: string, name: string, cwd: string, note: string, host = ""): WeekTipChat {
+  return { name, chatId, host, profileDir: ".claude", folder: host ? cwd : cwd.replace("/home/alice", "~"), cwd, note };
 }
 
 // The Recap tab's recap of made-up days: mornings and afternoons of work, a
@@ -451,6 +451,20 @@ function demoLanes(start: number): WeekLane[] {
     lane("demo-2", "Release notes for 2.0", "api-server", [[9.5, 9.8, "w"], [9.8, 9.9, "y"], [9.9, 10.5, "w"], [16, 16.3, "y"]]),
     lane("demo-3", "Train the ranking model", "ranker", [[10, 12.5, "w"], [12.5, 13.5, "p"], [13.5, 17, "w"]], "build-server"),
     lane("demo-4", "Nightly dependency check", "webapp", [[11, 11.3, "w"]]),
+  ];
+}
+
+// Today's Day's Your plan: each account's windows now, how they filled up
+function demoPlanNow(now: number): WeekRecap["plan"] {
+  const fill = (from: number, until: number, top: number): [number, number][] =>
+    Array.from({ length: 13 }, (_, k) => [from + ((Math.min(now, until) - from) * k) / 12, Math.round((top * k) / 12)] as [number, number]);
+  return [
+    { account: "0123456789ab", name: "personal", windows: [
+      { key: "seven_day", label: "7d", resetsAt: now + 2.5 * 86400000, pct: 58, points: fill(now - 4.5 * 86400000, now + 2.5 * 86400000, 58) },
+    ] },
+    { account: "ba9876543210", name: "work", windows: [
+      { key: "five_hour", label: "5h", resetsAt: now + 2 * HOUR, pct: 91, points: fill(now - 3 * HOUR, now + 2 * HOUR, 91) },
+    ] },
   ];
 }
 
@@ -484,8 +498,21 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     // everything: that week and the one before, a row each
     const week = demoWeek(now, span === "day" ? Math.floor(back / 7) : 0, account);
     if (span === "day") {
-      const d = week.days[Math.max(0, week.days.length - 1 - (back % 7))];
+      const i = Math.max(0, week.days.length - 1 - (back % 7));
+      const d = week.days[i];
+      const dayBefore = week.days[i - 1] ?? d;
+      // (the day's own numbers, not the week's: its tiles, projects and models a day's share of the week's)
+      const k = week.sum.cost ? d.cost / week.sum.cost : 0;
+      const numbersOf = (x: WeekDay) => ({ youMs: x.youMs, workedMs: x.workedMs, busyMs: x.busyMs, waitMs: x.waitMs, prompts: x.prompts, cost: x.cost, tokenTotal: x.tokenTotal });
+      const tokens = week.sum.tokens;
       return { ...week, span, back, backMax: 13, first: week.days[0].day, from: d.day, to: d.day, days: [d], trend: week.trend.slice(-5),
+               sum: { ...week.sum, ...numbersOf(d), turns: Math.round(week.sum.turns * k), chats: Math.min(week.sum.chats, 4),
+                      tokens: tokens && { ...tokens, input: Math.round(tokens.input * k), output: Math.round(tokens.output * k), cacheRead: Math.round(tokens.cacheRead * k),
+                                          cacheWrite5m: Math.round(tokens.cacheWrite5m * k), cacheWrite1h: Math.round(tokens.cacheWrite1h * k) } },
+               previous: numbersOf(dayBefore),
+               projects: week.projects.map((p) => ({ ...p, workedMs: p.workedMs * k, cost: p.cost * k, prompts: Math.round(p.prompts * k) })),
+               models: week.models.map((m) => ({ ...m, cost: m.cost * k, tokens: Math.round(m.tokens * k), requests: Math.round(m.requests * k) })),
+               plan: back === 0 ? demoPlanNow(now) : [],
                lanes: demoLanes(d.start), planUse: (week.planUse ?? []).map((u) => ({ ...u, weeks: { seven_day: Math.round((u.weeks.seven_day ?? 0) / 6) },
                  fiveFull: Math.min(1, u.fiveFull), fiveUsed: 2, ranOut: Math.min(1, u.ranOut), stopped: Math.min(2, u.stopped), heldMs: u.heldMs / 2 })) };
     }
@@ -545,11 +572,10 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     youMs: total("youMs") * k, workedMs: total("workedMs") * k, busyMs: total("busyMs") * k, waitMs: total("waitMs") * k,
     prompts: Math.round(total("prompts") * k), cost: cost * k, tokenTotal: total("tokenTotal") * k, start: days[0].start - 7 * 86400000 * Math.round(1 / k),
   });
-  const fill = (from: number, until: number, top: number): [number, number][] =>
-    Array.from({ length: 13 }, (_, k) => [from + ((Math.min(now, until) - from) * k) / 12, Math.round((top * k) / 12)] as [number, number]);
   return {
     ok: true,
     generatedAt: now,
+    span: "week",
     back,
     backMax: 4,
     account,
@@ -611,14 +637,8 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       { account: "ba9876543210", name: "work", plan: "Team", readings: true, since: now - 60 * 86400000, covered: true,
         weeks: { seven_day: 66, seven_day_opus: 23 }, fiveFull: 3, fiveUsed: 12, ranOut: 2, stopped: 5, heldMs: 4 * HOUR + 10 * MIN },
     ],
-    plan: back ? [] : [
-      { account: "0123456789ab", name: "personal", windows: [
-        { key: "seven_day", label: "7d", resetsAt: now + 2.5 * 86400000, pct: 58, points: fill(now - 4.5 * 86400000, now + 2.5 * 86400000, 58) },
-      ] },
-      { account: "ba9876543210", name: "work", windows: [
-        { key: "five_hour", label: "5h", resetsAt: now + 2 * HOUR, pct: 91, points: fill(now - 3 * HOUR, now + 2 * HOUR, 91) },
-      ] },
-    ],
+    // (the windows now: week.py sends them on today's Day only)
+    plan: [],
     prompts: {
       answered: 148, refused: 2, waitMs: 3.3 * HOUR, byTool: [["Bash", 81], ["Edit", 39], ["Read", 24], ["WebFetch", 4]],
       rules: [
@@ -630,22 +650,26 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
           change: "adds Bash(git status *) to permissions.allow in ~/projects/date-parser/.claude/settings.local.json" },
       ],
     },
-    // (the chats the tips act on: the demo's chat list has them, at work, idle or stopped by a limit)
+    // (the chats the tips act on, as the demo's chat list has them: Fix the date parser here, at work or idle
+    // as the phase goes; on build-server Evaluate on the holdout set idle, a usage limit stopped; with
+    // ?stopped=1 Port the importer keeps going)
     tips: [
       { key: "long_context", pct: 41, before: back >= 3 ? null : 52, title: "Start fresh when you switch tasks",
-        detail: "812 requests carried over 150k tokens of context", command: "/clear",
-        chats: [tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "311 requests"),
-                tipChat("demo-4", "Train the ranking model", "/home/alice/experiments/ranking", "204 requests")], more: 3 },
+        detail: "1,812 requests carried over 150k tokens of context", command: "/clear",
+        chats: [tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "1,311 requests"),
+                tipChat("demo-4", "Train the ranking model", "/home/alice/experiments/ranking", "204 requests", "build-server")], more: 3 },
       { key: "max_effort", pct: 22, before: back >= 3 ? null : 39, title: "Save max effort for hard tasks", detail: "", command: "/effort xhigh" },
       { key: "long_running", pct: 18, before: back >= 3 ? null : 11, title: "Stop chats you no longer need", detail: "2 ran for 8 hours or more", command: "",
-        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", "11 hours"),
+        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", "11 hours", "build-server"),
                 tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "9 hours")], more: 0 },
       { key: "cold", pct: 11, before: back >= 3 ? null : 6, title: "Come back within the hour, or start fresh",
         detail: "you came back to chats after their cache had expired 5 times", command: "",
         chats: [tipChat("demo-2", "Release notes for 2.0", "/home/alice/projects/webapp", "3 times")], more: 1 },
       { key: "waits", pct: null, before: null, title: "Let Claude go on without asking", detail: "it waited 3h 18m for your answers, 9 times · auto mode, or allow what you always allow", command: "/permissions" },
       { key: "limits", pct: null, before: null, title: "Let chats go on after a usage limit", detail: "your plan ran out 2 times (5 chats stopped)", command: "",
-        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", "stopped once")], more: 4 },
+        chats: [tipChat("demo-5", "Evaluate on the holdout set", "/home/alice/experiments/ranking", "stopped 2 times", "build-server"),
+                tipChat("demo-1", "Fix the date parser", "/home/alice/projects/webapp", "stopped once"),
+                tipChat("demo-stopped-2", "Port the importer", "/home/alice/projects/webapp", "stopped once")], more: 2 },
     ],
     prices: { asOf: "2026-11-18", guessed: ["Fable 5.3"], guessedCost: cost * 0.05 },
     sources: [{ host: "", ok: true, error: "" }, { host: "build-server", ok: true, error: "" }],
