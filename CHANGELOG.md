@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.22.2 (2026-11-18)
+
+### Highlights
+
+- **What an agent is on stands out:** under each running agent's task, the call it's on reads *▸ Reading week.py* in the working color, and Talpy Chat's strip says the task, then the call, apart (Plasma, Talpy Chat and VS Code).
+- **Remote Control turns on with a hint in the prompt:** a queued message's hint or a suggested reply no longer counts as typed text.
+- **Agents' lines put right:** **Running now** keeps a long command listed until it's back, a failed agent shows its context, and live mode keeps an allowed call's words and *+/−* counts.
 
 ### Every change
 
