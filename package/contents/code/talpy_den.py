@@ -1361,13 +1361,13 @@ def running_calls(recent):
     block of a reply is an entry of its own, with the reply's message id;
     one without an id is a reply of its own), from recent (newest first):
     ([{"line": the call as describe_tool says it, "since": when it was
-    made (ms)}] oldest first, the newest call's block or None)."""
+    made (ms)}] oldest first, the newest call's block or None). Claude runs
+    a reply's calls as they stream in, so a quick call's result can come
+    between the reply's blocks, before a call made earlier is back."""
     done, found, seen, reply = set(), [], False, None
     for e in recent:
         msg, blocks = blocks_of(e)
         if e["type"] == "user":
-            if seen:
-                break
             done.update(c.get("tool_use_id") for c in blocks if c.get("type") == "tool_result")
             continue
         mid = msg.get("id") if isinstance(msg.get("id"), str) and msg.get("id") else None

@@ -917,6 +917,26 @@ class AgentTests(Fixture):
         self.assertEqual(p1["running"], [{"line": "Bash: make test", "since": td.to_ms(bash["timestamp"])}])
         self.assertEqual(p1["context"], 222_703)
 
+    def test_a_call_still_running_while_the_reply_goes_on(self):
+        # Claude runs a reply's calls as they stream in, so a quick one's result can come
+        # between its blocks: the long command started first still runs
+        tool = lambda i, name, inp: {"type": "tool_use", "id": i, "name": name, "input": inp}
+        result = lambda i: self.line("user", [{"type": "tool_result", "tool_use_id": i, "content": "..."}])
+        tests = self.line("assistant", [tool("t1", "Bash", {"command": "make test", "description": "Run the tests"})], "tool_use")
+        read = self.line("assistant", [tool("t2", "Read", {"file_path": "/w/a.py"})], "tool_use")
+        log = self.line("assistant", [tool("t3", "Bash", {"command": "git log -3", "description": "Show the last commits"})], "tool_use")
+        for e in (tests, read, log):
+            e["message"]["id"] = "msg_1"
+        tests["timestamp"] = iso(self.now - 130)
+        self.agent("busy", "p2", [self.line("user", "go"), tests, read, result("t2"), log], description="Parallel")
+        p2 = next(t for t in self.agents_of_busy()[0]["tree"] if t["id"] == "p2")
+        self.assertEqual([r["line"] for r in p2["running"]], ["Bash: make test", "Bash: git log -3"])
+        self.assertEqual(p2["running"][0]["since"], td.to_ms(tests["timestamp"]))
+        # the last one came back too: the line says the one that still runs
+        self.agent("busy", "p2", [self.line("user", "go"), tests, read, result("t2"), log, result("t3")], description="Parallel")
+        p2 = next(t for t in self.agents_of_busy()[0]["tree"] if t["id"] == "p2")
+        self.assertEqual((p2["activity"], [r["line"] for r in p2["running"]]), ("Running the tests", ["Bash: make test"]))
+
     def test_context_of_odd_entries(self):
         # a line whose message isn't an object, a stand-in reply with no tokens: no context, no error
         self.assertIsNone(td.context_size([{"type": "assistant", "message": "x"}]))
