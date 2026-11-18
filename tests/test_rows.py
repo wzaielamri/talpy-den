@@ -105,6 +105,7 @@ Item {
     function formatTokens(n) { return (n / 1e3).toFixed(1) + "k" }
     function agentNumbers(a) { return "5 tool calls" }
     function ranFor(ms) { return "for " + duration(ms) }
+    function stateColor(state) { return state === "working" ? "#3daee9" : "#232629" }
     function toggleAgentRun(key) {}
     function openAgentRun() {}
     function isContainer(host) { return false }
