@@ -305,6 +305,38 @@ class RunTests(unittest.TestCase):
             self.assertTrue(r["sameArray"])                # (one array all run)
             self.assertLessEqual(r["maxThings"], 10)
 
+    def test_every_thing_draws_inside_its_box(self):
+        # drawThing (talpy.mjs) draws each kind in its w × h box, top left at the origin
+        out = run_node("""
+import { drawThing } from %s;
+const KINDS = ['pebble', 'stone', 'pot', 'pebbles', 'crow', 'crowHigh', 'tuft'];
+const result = {};
+for (const kind of KINDS) for (const frame of [0, 1]) {
+    const pts = [], paint = { n: 0 };
+    let depth = 0;
+    const ctx = new Proxy({}, { get: (_, name) => {
+        if (['moveTo', 'lineTo'].indexOf(name) >= 0) return (x, y) => pts.push([x, y]);
+        if (name === 'bezierCurveTo') return (a, b, c, d, x, y) => pts.push([a, b], [c, d], [x, y]);
+        if (name === 'quadraticCurveTo') return (a, b, x, y) => pts.push([a, b], [x, y]);
+        if (name === 'arc') return (x, y, r) => pts.push([x - r, y - r], [x + r, y + r]);
+        if (name === 'fill' || name === 'stroke') return () => { paint.n++; };
+        if (name === 'translate' || name === 'scale' || name === 'rotate' || name === 'setTransform' || name === 'transform')
+            return () => { depth++; };
+        return () => ({ addColorStop() {} });
+    }, set: () => true });
+    drawThing(ctx, { kind: kind, x: 0, y: 0, w: 40, h: 24, frame: frame });
+    const out = pts.filter(p => p[0] < -1.5 || p[0] > 41.5 || p[1] < -1.5 || p[1] > 25.5);
+    result[kind + frame] = { painted: paint.n, points: pts.length, outside: out.length, moved: depth };
+}
+console.log(JSON.stringify(result));
+""" % json.dumps(str(TALPY / "talpy.mjs")))
+        for name, r in out.items():
+            with self.subTest(name):
+                self.assertGreater(r["painted"], 0)
+                self.assertGreater(r["points"], 0)
+                self.assertEqual(r["outside"], 0)
+                self.assertEqual(r["moved"], 0)   # (in its box's own px: no transforms to undo)
+
 
 class HostTests(unittest.TestCase):
     pet = (UI / "Pet.qml").read_text()

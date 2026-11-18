@@ -19,6 +19,7 @@
 // Plain ES2017 (see paths.mjs).
 
 import * as art from './art.mjs';
+import { traceEllipse, traceRoundRect } from './paths.mjs';
 import { ACTIONS, COOKIE, MOODS, PUSH, TUG, TUG_MS, dirt, random } from './actions.mjs';
 
 export const BOX = 64;
@@ -330,6 +331,93 @@ export function drawPuff(ctx, p, flavour) {
     for (let i = 0; i < 5; i++) {
         const a = 1.1 + i * 2 * Math.PI / 5, d = 3 + 11 * out;
         art.ellipse(ctx, Math.cos(a) * d, Math.sin(a) * d * 0.7 + 6 * p * p, 0.9, 0.7, '#8a6a4f', 1 - p);
+    }
+}
+
+// What's on Talpy's way in a run (games.mjs Run's things), in its own w × h
+// box, top left at the context's origin, in px (no transforms): a pebble, a
+// stone, a flower pot, two pebbles, a crow (frame: its wings up or down,
+// crowHigh the same bird higher up), a tuft of grass. Ink outlines and soft
+// fills, as Talpy's own things.
+const THING = { pebble: '#a39d95', pebbleLit: '#c4beb5', stone: '#8d8780', stoneLit: '#aaa49c', pot: '#c8744f',
+                potRim: '#d98a64', leaf: '#6f9a5a', petal: '#e8a0bf', heart: '#f5d36b', crow: '#33303f', beak: '#e0a43a' };
+function blob(ctx, cx, cy, rx, ry, color, lw) {
+    ctx.beginPath();
+    traceEllipse(ctx, cx, cy, rx, ry);
+    art.fill(ctx, color);
+    art.stroke(ctx, art.INK, lw);
+}
+function poly(ctx, pts, color, lw) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2)
+        ctx.lineTo(pts[i], pts[i + 1]);
+    ctx.closePath();
+    art.fill(ctx, color);
+    art.stroke(ctx, art.INK, lw);
+}
+export function drawThing(ctx, thing) {
+    const w = thing.w, h = thing.h, m = Math.min(w, h), lw = Math.max(0.8, m * 0.06), e = lw / 2;
+    switch (thing.kind) {
+    case 'pebble':
+        blob(ctx, w / 2, h * 0.55, w / 2 - e, h * 0.45 - e, THING.pebble, lw);
+        art.ellipse(ctx, w * 0.38, h * 0.42, w * 0.12, h * 0.1, THING.pebbleLit);
+        break;
+    case 'pebbles':
+        blob(ctx, w * 0.27, h * 0.55, w * 0.27 - e, h * 0.45 - e, THING.pebble, lw);
+        blob(ctx, w * 0.72, h * 0.62, w * 0.28 - e, h * 0.38 - e, THING.stone, lw);
+        art.ellipse(ctx, w * 0.2, h * 0.42, w * 0.07, h * 0.1, THING.pebbleLit);
+        break;
+    case 'stone':
+        ctx.beginPath();
+        traceRoundRect(ctx, e, h * 0.08 + e, w - lw, h * 0.92 - lw, m * 0.38);
+        art.fill(ctx, THING.stone);
+        art.stroke(ctx, art.INK, lw);
+        art.ellipse(ctx, w * 0.33, h * 0.3, w * 0.12, h * 0.08, THING.stoneLit);
+        ctx.beginPath();
+        ctx.moveTo(w * 0.62, h * 0.35);
+        ctx.lineTo(w * 0.7, h * 0.55);
+        ctx.lineTo(w * 0.64, h * 0.7);
+        art.stroke(ctx, art.INK, lw * 0.6);
+        break;
+    case 'pot': {
+        const r = m * 0.12, top = h * 0.36;
+        ctx.beginPath();   // its flower
+        ctx.moveTo(w / 2, top);
+        ctx.lineTo(w / 2, r * 2 + e);
+        art.stroke(ctx, THING.leaf, lw);
+        blob(ctx, w / 2, r + e, r, r, THING.petal, lw * 0.7);
+        art.circle(ctx, w / 2, r + e, r * 0.4, THING.heart);
+        poly(ctx, [w * 0.12, top + h * 0.12, w * 0.88, top + h * 0.12, w * 0.76, h - e, w * 0.24, h - e], THING.pot, lw);
+        ctx.beginPath();   // its rim
+        traceRoundRect(ctx, e, top, w - lw, h * 0.14, m * 0.05);
+        art.fill(ctx, THING.potRim);
+        art.stroke(ctx, art.INK, lw);
+        break;
+    }
+    case 'crow':
+    case 'crowHigh': {
+        const up = !thing.frame, hr = m * 0.17;
+        poly(ctx, [w * 0.82, h * 0.5, w - e, h * 0.36, w - e, h * 0.66], THING.crow, lw);   // tail
+        blob(ctx, w * 0.56, h * 0.55, w * 0.3, h * 0.26, THING.crow, lw);
+        poly(ctx, up ? [w * 0.44, h * 0.42, w * 0.72, h * 0.42, w * 0.62, e]
+                     : [w * 0.44, h * 0.6, w * 0.72, h * 0.6, w * 0.6, h - e], THING.crow, lw);   // a wing
+        poly(ctx, [w * 0.16, h * 0.4, w * 0.16, h * 0.52, e, h * 0.47], THING.beak, lw * 0.7);
+        blob(ctx, w * 0.24, h * 0.45, hr, hr, THING.crow, lw);
+        art.circle(ctx, w * 0.21, h * 0.42, hr * 0.32, '#ffffff');
+        art.circle(ctx, w * 0.2, h * 0.42, hr * 0.16, art.INK);
+        break;
+    }
+    case 'tuft':
+        ctx.beginPath();
+        ctx.moveTo(w * 0.3, h);
+        ctx.quadraticCurveTo(w * 0.25, h * 0.5, w * 0.08 + e, h * 0.1 + e);
+        ctx.moveTo(w * 0.5, h);
+        ctx.quadraticCurveTo(w * 0.5, h * 0.4, w * 0.52, e);
+        ctx.moveTo(w * 0.68, h);
+        ctx.quadraticCurveTo(w * 0.75, h * 0.5, w * 0.92 - e, h * 0.2 + e);
+        art.stroke(ctx, THING.leaf, lw);
+        break;
     }
 }
 
