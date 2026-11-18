@@ -167,16 +167,17 @@ function play(o) {
     const t = new Talpy({});
     let now = 1000, px = 200;
     t.tick(now);
-    const said = [], saved = [], grows = [];
+    const said = [], saved = [], grows = [], faced = [];
     const host = {
         stage: () => ({ width: width, height: 176, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: width - 30,
                         ground: o.growing ? Math.min(160, 90 + (now - 1000) / 4) : 160 }),   // (growing: its floor goes down for 280 ms)
         px: () => px, moveTo: x => { px = x; }, say: w => said.push(w), changed: () => {},
-        best: () => best, saveBest: m => saved.push(m), grow: on => grows.push(on),
+        best: () => best, saveBest: m => saved.push(m), grow: on => grows.push(on), face: left => faced.push(left),
     };
+    t.facingLeft = true;   // (he faced the other way before)
     const g = pickGame(t, host, 'run');
     g.start(now);
-    const r = { name: g.name, hintAtStart: g.hint, growAtStart: grows.slice(), things: g.things, sameArray: true, maxThings: 0,
+    const r = { name: g.name, hintAtStart: g.hint, growAtStart: grows.slice(), facedAtStart: faced.slice(), things: g.things, sameArray: true, maxThings: 0,
                 firstThingMs: null, firstCrowM: null, digHint: false, crowsPassed: 0, maxSpeedUp: 0, speedUpAt600: null,
                 overMs: null, overMeters: null, onAtOver: null, hitBy: null, newBest: null, endMs: null, restarted: null };
     let crowNear = false;
@@ -209,10 +210,25 @@ function play(o) {
             r.overMs = now - 1000; r.overMeters = g.meters; r.onAtOver = g.on; r.hitBy = g.hitBy; r.newBest = g.newBest;
             r.savedAtOver = saved.slice(); r.saidAtOver = said.slice();
         }
-        if (o.again && g.state === 'over' && now - 1000 - r.overMs > 500 && r.restarted === null) {
+        // (a press just after the bump, as a late jump: the end stays a moment; one after that runs again)
+        if (o.again && g.state === 'over' && now - 1000 - r.overMs >= 32 && r.tooSoon === undefined) {
+            g.press('jump');
+            r.tooSoon = g.state;
+        }
+        if (o.again && g.state === 'over' && now - 1000 - r.overMs > 700 && r.restarted === null) {
             g.press('jump');
             r.restarted = { state: g.state, meters: g.meters, on: g.on, hint: g.hint };
         }
+        // (↓ pressed in the air and held: he digs in as he lands)
+        if (o.airDig && g.state === 'run' && r.airDigAt === undefined) {
+            g.press('jump');
+            r.airDigAt = now;
+        }
+        if (o.airDig && r.airDigAt !== undefined && now - r.airDigAt === 320) {
+            g.press('dig');
+            r.diggingInAir = g.digging;
+        }
+        if (o.airDig && r.airDigAt !== undefined && now - r.airDigAt === 704) r.diggingAfterLanding = g.digging;
     }
     r.endMs = g.on ? null : now - 1000;
     r.bottoms = g.things.map(th => Math.round(th.y + th.h));   // (ground things and tufts: on the floor)
@@ -231,6 +247,7 @@ console.log(JSON.stringify({
     best: play({ seed: 5, auto: true, autoUntil: 150, best: 120 }),
     again: play({ again: true }), digging: play({ alwaysDig: true }), stopped: play({ stopAt: 5000, best: 0, auto: true }),
     growing: play({ growing: true, until: 2600 }),
+    airDig: play({ airDig: true, until: 3200 }),
     noDig: play({ seed: 2, auto: true, noDig: true }),
 }));
 """ % json.dumps(str(TALPY / "games.mjs"))
@@ -247,6 +264,14 @@ class RunTests(unittest.TestCase):
         self.assertEqual(self.r["games"], ["peekaboo", "run"])
         self.assertEqual(self.r["byName"], ["run", "peekaboo"])
         self.assertEqual(set(self.r["randomNoRun"]), {"peekaboo"})   # (not where it isn't offered)
+
+    def test_he_faces_what_comes(self):
+        self.assertEqual(self.r["idle"]["facedAtStart"], [False])   # (he faced the other way before)
+
+    def test_a_dig_pressed_in_the_air_digs_as_he_lands(self):
+        a = self.r["airDig"]
+        self.assertFalse(a["diggingInAir"])
+        self.assertTrue(a["diggingAfterLanding"])
 
     def test_it_grows_the_stage_and_waits_2_s_before_the_first_obstacle(self):
         idle = self.r["idle"]
@@ -294,6 +319,7 @@ class RunTests(unittest.TestCase):
     def test_the_end_screen_runs_again_or_ends(self):
         again = self.r["again"]["restarted"]
         self.assertEqual((again["state"], again["meters"], again["on"], again["hint"]), ("ready", 0, True, "start"))
+        self.assertEqual(self.r["again"]["tooSoon"], "over")   # (a late jump, just after the bump: the end stays)
         idle = self.r["idle"]
         self.assertGreaterEqual(idle["endMs"] - idle["overMs"], 9000)
         self.assertLessEqual(idle["endMs"] - idle["overMs"], 11000)
@@ -350,6 +376,25 @@ console.log(JSON.stringify(result));
                 self.assertGreater(r["points"], 0)
                 self.assertEqual(r["outside"], 0)
                 self.assertEqual(r["moved"], 0)   # (in its box's own px: no transforms to undo)
+
+    def test_a_crow_shows_on_a_dark_stage(self):
+        # a dark crow with an ink outline vanished on a dark theme's stage: there it has a light outline
+        out = run_node("""
+import { drawThing } from %s;
+const lum = c => { const m = /^#([0-9a-f]{6})$/i.exec(c); if (!m) return null; const n = parseInt(m[1], 16);
+                   return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; };
+const result = {};
+for (const dark of [false, true]) {
+    const strokes = [];
+    const ctx = new Proxy({}, { get: () => () => ({ addColorStop() {} }),
+                                set: (_, name, v) => { if (name === 'strokeStyle') strokes.push(lum(v)); return true; } });
+    drawThing(ctx, { kind: 'crow', x: 0, y: 0, w: 36, h: 21, frame: 0 }, dark);
+    result[dark ? 'dark' : 'light'] = Math.max(...strokes.filter(l => l !== null));
+}
+console.log(JSON.stringify(result));
+""" % json.dumps(str(TALPY / "talpy.mjs")))
+        self.assertLess(out["light"], 0.3)    # (ink on a light stage)
+        self.assertGreater(out["dark"], 0.7)  # (a light outline on a dark one)
 
 
 class HostTests(unittest.TestCase):
@@ -410,7 +455,7 @@ class HostTests(unittest.TestCase):
 
     def test_its_only_ticked_and_drawn_while_on(self):
         self.assertIn("enabled: pet.gameOn && pet.playing", self.pet)
-        self.assertIn("model: pet.gameOn ? 3 : 0", self.pet)
+        self.assertIn("model: pet.gameOn && !pet.runOn ? 3 : 0", self.pet)
         self.assertIn("if (this.play?.on) this.play.tick(now);", self.ts)
 
     def test_play_with_talpy_in_the_menus(self):
@@ -474,7 +519,14 @@ class PlasmaRunTests(unittest.TestCase):
         self.assertIn("forceActiveFocus()", self.strip)
 
     def test_it_draws_the_run(self):
-        self.assertIn("T.drawThing(ctx, th)", self.pet)
+        self.assertIn("T.drawThing(ctx, th, strip.darkTheme)", self.pet)
+        # (built only while a run is on: no run UI in every pet)
+        run_ui = self.pet[self.pet.index("    // Talpy's Run: what's on his way"):][:500]
+        self.assertRegex(run_ui, r"Loader \{\s+active: pet.runOn")
+        self.assertIn("model: pet.gameOn && !pet.runOn ? 3 : 0", self.pet)   # (Peekaboo's holes not made for a run)
+        # (he runs facing what comes: not turned to the mouse meanwhile)
+        self.assertIn("!pet.held && !pet.cookieOn && !pet.gameOn && pet.mood !== \"done\"", self.pet)
+        self.assertIn("face: left => { view.facingLeft = left },\n            // Talpy's Run's", self.pet)
         self.assertIn("visible: pet.runOn", self.pet)
         self.assertIn("- pet.runLift - floorY", self.pet)        # (up in his jump)
         for words in ('i18nc("metres run", "%1 m"', 'i18n("Click to jump · ↓ or right-click to dig")',
@@ -521,9 +573,14 @@ class VsCodeRunTests(unittest.TestCase):
         faded = self.css[self.css.index(".td-running .td-hero-text"):][:300]
         self.assertIn("opacity: 0", faded)
         self.assertIn("pointer-events: none", faded)
+        self.assertIn("touch-action: none", grown)   # (a swipe down digs: not a scroll of the view)
 
     def test_it_draws_the_run(self):
-        self.assertIn("drawThing(ctx, th)", self.ts)
+        self.assertIn("drawThing(ctx, th, world.dark)", self.ts)
+        self.assertIn("ctx && this.runDrawn !== this.runMoves", self.ts)   # (redrawn only when it moved)
+        self.assertIn("this.runMoves++", self.ts)
+        self.assertIn("!this.cookieOn && !this.play?.on && mood !== \"done\"", self.ts)   # (not turned to the mouse in a game)
+        self.assertIn("face: (left) => (this.talpy.facingLeft = left),\n      // Talpy's Run's", self.ts)
         self.assertIn("ground - lift - this.runLift() - s.floorY", self.ts)
         for words in ("m`", "Click to jump · ↓ or right-click to dig", "↓ or right-click: dig", "New best! ", " m · best ",
                       "Click to run again"):

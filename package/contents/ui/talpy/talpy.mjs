@@ -341,22 +341,24 @@ export function drawPuff(ctx, p, flavour) {
 // fills, as Talpy's own things.
 const THING = { pebble: '#a39d95', pebbleLit: '#c4beb5', stone: '#8d8780', stoneLit: '#aaa49c', pot: '#c8744f',
                 potRim: '#d98a64', leaf: '#6f9a5a', petal: '#e8a0bf', heart: '#f5d36b', crow: '#33303f', beak: '#e0a43a' };
-function blob(ctx, cx, cy, rx, ry, color, lw) {
+const DARK_RIM = '#d9d4ec';   // a dark thing's outline on a dark stage (a crow: ink on ink vanished)
+function blob(ctx, cx, cy, rx, ry, color, lw, ink) {
     ctx.beginPath();
     traceEllipse(ctx, cx, cy, rx, ry);
     art.fill(ctx, color);
-    art.stroke(ctx, art.INK, lw);
+    art.stroke(ctx, ink || art.INK, lw);
 }
-function poly(ctx, pts, color, lw) {
+function poly(ctx, pts, color, lw, ink) {
     ctx.beginPath();
     ctx.moveTo(pts[0], pts[1]);
     for (let i = 2; i < pts.length; i += 2)
         ctx.lineTo(pts[i], pts[i + 1]);
     ctx.closePath();
     art.fill(ctx, color);
-    art.stroke(ctx, art.INK, lw);
+    art.stroke(ctx, ink || art.INK, lw);
 }
-export function drawThing(ctx, thing) {
+// dark: the stage is a dark theme's (the crow gets a light outline there)
+export function drawThing(ctx, thing, dark) {
     const w = thing.w, h = thing.h, m = Math.min(w, h), lw = Math.max(0.8, m * 0.06), e = lw / 2;
     switch (thing.kind) {
     case 'pebble':
@@ -397,13 +399,13 @@ export function drawThing(ctx, thing) {
     }
     case 'crow':
     case 'crowHigh': {
-        const up = !thing.frame, hr = m * 0.17;
-        poly(ctx, [w * 0.82, h * 0.5, w - e, h * 0.36, w - e, h * 0.66], THING.crow, lw);   // tail
-        blob(ctx, w * 0.56, h * 0.55, w * 0.3, h * 0.26, THING.crow, lw);
+        const up = !thing.frame, hr = m * 0.17, ink = dark ? DARK_RIM : art.INK;
+        poly(ctx, [w * 0.82, h * 0.5, w - e, h * 0.36, w - e, h * 0.66], THING.crow, lw, ink);   // tail
+        blob(ctx, w * 0.56, h * 0.55, w * 0.3, h * 0.26, THING.crow, lw, ink);
         poly(ctx, up ? [w * 0.44, h * 0.42, w * 0.72, h * 0.42, w * 0.62, e]
-                     : [w * 0.44, h * 0.6, w * 0.72, h * 0.6, w * 0.6, h - e], THING.crow, lw);   // a wing
-        poly(ctx, [w * 0.16, h * 0.4, w * 0.16, h * 0.52, e, h * 0.47], THING.beak, lw * 0.7);
-        blob(ctx, w * 0.24, h * 0.45, hr, hr, THING.crow, lw);
+                     : [w * 0.44, h * 0.6, w * 0.72, h * 0.6, w * 0.6, h - e], THING.crow, lw, ink);   // a wing
+        poly(ctx, [w * 0.16, h * 0.4, w * 0.16, h * 0.52, e, h * 0.47], THING.beak, lw * 0.7, ink);
+        blob(ctx, w * 0.24, h * 0.45, hr, hr, THING.crow, lw, ink);
         art.circle(ctx, w * 0.21, h * 0.42, hr * 0.32, '#ffffff');
         art.circle(ctx, w * 0.2, h * 0.42, hr * 0.16, art.INK);
         break;

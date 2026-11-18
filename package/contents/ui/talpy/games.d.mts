@@ -22,6 +22,7 @@ export interface GameHost {
     saveBest?(meters: number): void;
     grow?(on: boolean): void;
     runOk?(): boolean;
+    face?(left: boolean): void;   // he turns (the run: towards what comes)
 }
 
 export interface GameHole {

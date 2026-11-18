@@ -32,6 +32,7 @@
    faded out and taking no clicks (every press is the game's) */
 .td-stage--hero.td-running {
   min-height: calc(var(--td-gu, 16px) * 11);
+  touch-action: none; /* (a swipe down digs: not a scroll of the view) */
 }
 
 .td-stage--hero .td-hero-text {

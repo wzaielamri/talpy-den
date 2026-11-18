@@ -400,6 +400,7 @@ Item {
             moveTo: x => { pet.px = x },
             say: what => pet.say((said[what] || said.fun)()),
             changed: () => pet.gameMoved(),
+            face: left => { view.facingLeft = left },
             // Talpy's Run's: its best (every widget's), the stage taller (the status faded) or back
             best: () => root.runBest,
             saveBest: m => root.saveRunBest(m),
@@ -845,7 +846,7 @@ Item {
     Timer {
         interval: 350
         repeat: true
-        running: pet.playing && pet.lone && pet.strip.cursorX >= 0 && !pet.held && !pet.cookieOn && pet.mood !== "done"
+        running: pet.playing && pet.lone && pet.strip.cursorX >= 0 && !pet.held && !pet.cookieOn && !pet.gameOn && pet.mood !== "done"
         onTriggered: {
             if (Math.abs(pet.strip.cursorX - pet.px) > pet.bodyWidth * 0.4)
                 view.facingLeft = pet.strip.cursorX < pet.px
@@ -949,7 +950,7 @@ Item {
 
     // A game's holes (talpy/games.mjs), under him: painted again only as they open or close
     Repeater {
-        model: pet.gameOn ? 3 : 0
+        model: pet.gameOn && !pet.runOn ? 3 : 0
         delegate: Canvas {
             required property int index
             readonly property var hole: pet.gameHoles[index] || ({ x: 0, open: 0 })
@@ -993,74 +994,78 @@ Item {
         color: Qt.rgba(0.08, 0.1, 0.18, 0.2 * (1 - 0.6 * over))
     }
 
-    // Talpy's Run: what's on his way (T.drawThing), under him; painted only
-    // while the run is on, and again only when it moved (runFrame)
-    Canvas {
-        id: runCanvas
-        visible: pet.runOn
+    // Talpy's Run: what's on his way (T.drawThing), under him, and its words;
+    // made only while a run is on (not in every pet), painted again only when
+    // it moved (runFrame)
+    Loader {
+        active: pet.runOn
         width: strip.width
         height: strip.height
-        renderStrategy: Canvas.Cooperative
-        onPaint: {
-            const ctx = getContext("2d")
-            ctx.reset()
-            const things = pet.runOn && pet.playGame ? pet.playGame.things : []
-            for (let i = 0; i < things.length; i++) {
-                const th = things[i]
-                ctx.save()
-                ctx.translate(th.x, th.y)
-                T.drawThing(ctx, th)
-                ctx.restore()
+        sourceComponent: Item {
+            Canvas {
+                id: runCanvas
+                anchors.fill: parent
+                renderStrategy: Canvas.Cooperative
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.reset()
+                    const things = pet.runOn && pet.playGame ? pet.playGame.things : []
+                    for (let i = 0; i < things.length; i++) {
+                        const th = things[i]
+                        ctx.save()
+                        ctx.translate(th.x, th.y)
+                        T.drawThing(ctx, th, strip.darkTheme)
+                        ctx.restore()
+                    }
+                }
+                Connections {
+                    target: pet
+                    function onRunFrameChanged() { runCanvas.requestPaint() }
+                }
             }
-        }
-        Connections {
-            target: pet
-            enabled: pet.runOn
-            function onRunFrameChanged() { runCanvas.requestPaint() }
-        }
-        onVisibleChanged: if (!visible) requestPaint()   // (cleared for the next run)
-    }
-    // its words: how far (the top right, one figure), how to play, how it ended
-    PlasmaComponents3.Label {
-        visible: pet.runOn && pet.runState !== "over"
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: Kirigami.Units.smallSpacing
-        textFormat: Text.PlainText
-        horizontalAlignment: Text.AlignRight
-        text: i18nc("metres run", "%1 m", pet.runMeters)
-        opacity: 0.75
-        font.pointSize: Kirigami.Theme.smallFont.pointSize
-    }
-    PlasmaComponents3.Label {
-        visible: pet.runOn && pet.runHint !== ""
-        x: Math.max(Kirigami.Units.smallSpacing, pet.px - width / 2)
-        y: Kirigami.Units.smallSpacing
-        textFormat: Text.PlainText
-        text: pet.runHint === "dig" ? i18n("↓ or right-click: dig") : i18n("Click to jump · ↓ or right-click to dig")
-        font.pointSize: Kirigami.Theme.smallFont.pointSize
-    }
-    Column {
-        visible: pet.runOn && pet.runState === "over"
-        width: strip.width - Kirigami.Units.largeSpacing * 2
-        x: Kirigami.Units.largeSpacing
-        y: Kirigami.Units.smallSpacing
-        PlasmaComponents3.Label {
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            textFormat: Text.PlainText
-            elide: Text.ElideRight
-            text: pet.runNewBest ? i18n("New best! %1 m", pet.runBestNow) : i18n("%1 m · best %2 m", pet.runMeters, pet.runBestNow)
-            font.weight: Font.DemiBold
-        }
-        PlasmaComponents3.Label {
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            textFormat: Text.PlainText
-            elide: Text.ElideRight
-            text: i18n("Click to run again")
-            opacity: 0.7
-            font.pointSize: Kirigami.Theme.smallFont.pointSize
+            // how far (the top right, one figure), how to play, how it ended
+            PlasmaComponents3.Label {
+                visible: pet.runOn && pet.runState !== "over"
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Kirigami.Units.smallSpacing
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignRight
+                text: i18nc("metres run", "%1 m", pet.runMeters)
+                opacity: 0.75
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+            }
+            PlasmaComponents3.Label {
+                visible: pet.runHint !== ""
+                x: Math.max(Kirigami.Units.smallSpacing, pet.px - width / 2)
+                y: Kirigami.Units.smallSpacing
+                textFormat: Text.PlainText
+                text: pet.runHint === "dig" ? i18n("↓ or right-click: dig") : i18n("Click to jump · ↓ or right-click to dig")
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+            }
+            Column {
+                visible: pet.runState === "over"
+                width: parent.width - Kirigami.Units.largeSpacing * 2
+                x: Kirigami.Units.largeSpacing
+                y: Kirigami.Units.smallSpacing
+                PlasmaComponents3.Label {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                    text: pet.runNewBest ? i18n("New best! %1 m", pet.runBestNow) : i18n("%1 m · best %2 m", pet.runMeters, pet.runBestNow)
+                    font.weight: Font.DemiBold
+                }
+                PlasmaComponents3.Label {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                    text: i18n("Click to run again")
+                    opacity: 0.7
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+            }
         }
     }
 

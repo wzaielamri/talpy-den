@@ -176,6 +176,8 @@ export class Pet {
   private runCanvas: HTMLCanvasElement | null = null;
   private runText: { box: HTMLDivElement; meters: HTMLDivElement; hint: HTMLDivElement; end: HTMLDivElement; again: HTMLDivElement } | null = null;
   private runHintW = 0;
+  private runMoves = 0; // (the run moved: gameMoved; its canvas painted for runDrawn)
+  private runDrawn = -1;
   private hadCookie = false; // you gave it one since the view opened (its hint stops)
   private readonly grab: HTMLDivElement;
   private readonly drawn: Record<string, string> = {};
@@ -368,7 +370,7 @@ export class Pet {
     const live = this.stage.live,
       mood = this.mood,
       working = mood === "working" || mood === "agents";
-    this.lookTimer.setRunning(live && this.lone && this.stage.hovering && !this.held && !this.cookieOn && mood !== "done");
+    this.lookTimer.setRunning(live && this.lone && this.stage.hovering && !this.held && !this.cookieOn && !this.play?.on && mood !== "done");
     this.contextTimer.setRunning(live && this.contextFullText !== "" && working && !this.leaving && !this.cookieOn);
     this.usageTimer.setRunning(
       live && this.isMain && (this.stage.heroInput?.highUsageText ?? "") !== "" && mood !== "done" && !this.leaving && !this.cookieOn,
@@ -874,6 +876,7 @@ export class Pet {
       moveTo: (x) => (this.px = x),
       say: (what) => this.say((said[what] ?? said.fun)()),
       changed: () => this.gameMoved(),
+      face: (left) => (this.talpy.facingLeft = left),
       // Talpy's Run's: its best, the stage taller (its status faded) or back, not with reduced motion
       best: () => world.runBest,
       saveBest: (m) => world.saveRunBest(m),
@@ -921,6 +924,7 @@ export class Pet {
       }
     }
     const running = on && this.play?.name === "run";
+    if (running) this.runMoves++; // (its canvas is painted again only when it moved)
     if (running && !this.runListening) this.listenToRun();
     else if (!running && this.runListening) {
       this.runListening();
@@ -1031,14 +1035,16 @@ export class Pet {
       c.height = h;
       c.style.width = `${s.width}px`;
       c.style.height = `${s.height}px`;
+      this.runDrawn = -1; // (a new size: cleared, painted again)
     }
     const ctx = c.getContext("2d");
-    if (ctx) {
+    if (ctx && this.runDrawn !== this.runMoves) {
+      this.runDrawn = this.runMoves;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, w, h);
       for (const th of g.things ?? []) {
         ctx.setTransform(k, 0, 0, k, k * th.x, k * th.y);
-        drawThing(ctx, th);
+        drawThing(ctx, th, world.dark);
       }
     }
     const over = g.state === "over";

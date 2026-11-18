@@ -238,6 +238,7 @@ export class Peekaboo {
 
 const RUN_READY_MS = 2000;     // the hint, and nothing on his way yet
 const RUN_END_MS = 10000;      // the end waits that long for a press
+const RUN_AGAIN_MS = 450;      // ...and takes none so soon after the bump (a jump pressed too late)
 const JUMP_MS = 620;           // up and down again, whatever the speed
 const JUMP_HIGH = 1.6;         // that many of his body's height
 const DIG_MS = 1000;           // up again by himself after that
@@ -301,6 +302,8 @@ export class Run {
         this.s = s;
         this.x = s.minX + (s.maxX - s.minX) * 0.2;
         this.host.moveTo(this.x);
+        if (this.host.face)
+            this.host.face(false);   // (towards what comes)
         this.things.length = 0;
         this.state = 'ready';
         this.since = now;
@@ -314,6 +317,7 @@ export class Run {
         this.jumpAt = -1;
         this.queued = false;
         this.digging = false;
+        this.digPending = false;
         this.crows = 0;
         this.gap = 0;              // px of ground still to go before the next thing
         this.tuftGap = 0;
@@ -341,7 +345,7 @@ export class Run {
         if (!this.on)
             return;
         if (this.state === 'over') {
-            if (what === 'jump')
+            if (what === 'jump' && this.now - this.since >= RUN_AGAIN_MS)
                 this.reset(this.now);
             return;
         }
@@ -349,7 +353,8 @@ export class Run {
             if (this.jumpAt < 0) {
                 this.digging = true;
                 this.digAt = this.now;
-            }
+            } else
+                this.digPending = true;   // (in the air: he digs in as he lands, while it's held)
         } else if (this.jumpAt >= 0)
             this.queued = true;    // (kept for the moment he lands)
         else {
@@ -360,7 +365,7 @@ export class Run {
 
     release(what) {
         if (what === 'dig')
-            this.digging = false;
+            this.digging = this.digPending = false;
     }
 
     hit() {
@@ -390,6 +395,11 @@ export class Run {
                 this.lift = 0;
                 this.jumpAt = this.queued ? now : -1;
                 this.queued = false;
+                if (this.jumpAt < 0 && this.digPending) {   // (↓ pressed in the air, still held)
+                    this.digging = true;
+                    this.digAt = now;
+                }
+                this.digPending = false;
             } else
                 this.lift = 4 * JUMP_HIGH * B * p * (1 - p);
         }
