@@ -1,0 +1,7 @@
+# Commits that only rename things, line for line: `git blame` looks past them
+# (GitHub does on its own; locally: git config blame.ignoreRevsFile .git-blame-ignore-revs).
+
+# The backend's alias for talpy_den: cs -> td
+8d75d04cbe7af83e1e2c99cc6ad00e4de314c50d
+# The webview's class and CSS variable prefix: cs- -> td-
+763bb03c66bfb3fe45bca9d1446230e4856b0c73
