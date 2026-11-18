@@ -2321,3 +2321,16 @@ test("what a chat runs in the background, under its working line: a line each, t
   assert.equal(shellsWaiting(3), "Waiting on 3 background shells");
   assert.equal(shellsMore(2), "and 2 more in the background (the Steps tab lists them)");
 });
+
+test("Remote Control: its page only from a claude.ai/code session, and the switch not while a prompt of Claude's is open", async () => {
+  const { remoteControlPage, remoteSwitchCan, remoteSwitchTitle } = await import("../src/shared/pane");
+  assert.equal(remoteControlPage("https://claude.ai/code/session_01AbC"), "https://claude.ai/code/session_01AbC");
+  for (const bad of ["https://claude.ai/code/cse_01AbC", "https://evil.example/code/session_01AbC", "https://claude.ai/code/session_01 x", null, 42])
+    assert.equal(remoteControlPage(bad), "");
+  // (a chat that waits for your reply has its prompt free; a permission or a question open takes every key)
+  assert.equal(remoteSwitchCan({ waitingFor: "" }), true);
+  assert.equal(remoteSwitchCan({ waitingFor: "permission prompt" }), false);
+  assert.equal(remoteSwitchCan(null), false);
+  assert.match(remoteSwitchTitle(false, true), /^Turn on Remote Control\n/);
+  assert.match(remoteSwitchTitle(true, false), /^Turn off Remote Control\n[\s\S]*Once its prompt is answered/);
+});

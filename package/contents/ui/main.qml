@@ -3897,12 +3897,13 @@ PlasmoidItem {
         return !session ? ""
             : (session.remoteControl ? i18n("Disconnects it from claude.ai/code and the Claude app, as Disconnect in Claude's /remote-control. The chat goes on here.")
                : i18n("Shows this chat on claude.ai/code and in the Claude app, to read and answer it from your phone or a browser; Claude still runs here (Claude's /remote-control). Keep this computer awake."))
-              + (!rcCan(session) ? "\n\n" + i18n("Once you've answered what it asks.") : "")
+              + (!rcCan(session) ? "\n\n" + i18n("Once its prompt is answered: Claude's dialog takes every key till then.") : "")
     }
-    // (also while Claude works: typed, /remote-control runs at once; never while it waits for you, whose
-    // prompt or dialog would take the keys)
+    // (also while Claude works: typed, /remote-control runs at once; and while a chat waits for your reply to
+    // what it asked, its prompt free. Not while a prompt or dialog of Claude's is open (its row's waitingFor:
+    // a permission, a question): that dialog takes every key, Enter would answer it (checked live))
     function rcCan(session) {
-        return !!session && session.state !== "waiting"
+        return !!session && !session.waitingFor
     }
 
     // A background chat no terminal shows (here, on an SSH host, in a

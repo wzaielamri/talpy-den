@@ -438,9 +438,9 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
             <IconButton
               icon={I.remoteControl}
               label={s.remoteControl ? "Turn off Remote Control" : "Turn on Remote Control"}
-              title={remoteSwitchTitle(!!s.remoteControl, remoteSwitchCan(s.state))}
+              title={remoteSwitchTitle(!!s.remoteControl, remoteSwitchCan(s))}
               pressed={!!s.remoteControl}
-              disabled={!remoteSwitchCan(s.state)}
+              disabled={!remoteSwitchCan(s)}
               onClick={() => post({ type: "remoteControl", chat, on: !s.remoteControl })}
             />
           ) : null}

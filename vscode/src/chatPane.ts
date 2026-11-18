@@ -22,7 +22,7 @@ import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } fro
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, defaultGroup, doingText, hostLabel, liveOf, machineStatus, petKeyOf, recentRef, stateText } from "./shared/model";
-import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, remoteControlPage, reviewPending, reviewSeen, sameAsk, shownUpTo, sideAnswerOf, sideKeyOk, sidePartAnswerOf, sidePickOf, sidesOf, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult, type SidePick } from "./shared/pane";
+import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, remoteControlPage, remoteSwitchCan, reviewPending, reviewSeen, sameAsk, shownUpTo, sideAnswerOf, sideKeyOk, sidePartAnswerOf, sidePickOf, sidesOf, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult, type SidePick } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
 import { chatFont } from "./doc";
@@ -741,6 +741,7 @@ class Pane implements vscode.Disposable {
       bgStop: !!session?.bgStop,
       remoteControl: remoteControlPage(session?.remoteControl),
       remoteSwitch: !!session?.remoteSwitch && !!session.pid,
+      remoteCan: remoteSwitchCan(session),
       // (its host's watcher fails: what it asks shows at the host's next check)
       watchTrouble: this.host ? (this.owner.ext.dash.hostWatchTrouble?.(this.host) ?? "") : "",
       activity: session ? doingText(session, this.host ? null : liveOf(session, state.live)) : "",

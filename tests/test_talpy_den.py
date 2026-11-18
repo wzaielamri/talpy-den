@@ -2218,6 +2218,19 @@ class RemoteControlTests(Fixture):
                 self.assertTrue(claude.done.wait(5))
                 self.assertEqual(claude.picked, ["connect"])
 
+    def test_a_chat_that_waits_for_your_reply_too(self):
+        # (its turn ended with a question: its job blocked, the row "waiting", but its session idle, the prompt free)
+        write(self.home / ".claude-work/jobs/job7/state.json", {"state": "working", "tempo": "blocked", "needs": "your reply"})
+        write(self.home / ".claude-work/sessions/17.json", self.entry)
+        (row,) = [s for s in self.group(self.collect(with_tokens=False), "work")["sessions"] if s["sessionId"] == "bgrc"]
+        self.assertEqual((row["state"], row["waitingFor"], row["remoteSwitch"]), ("waiting", "", True))
+        claude = FakeSession(self, self.profile)
+        with self.looks(self.on):
+            self.assertEqual(cs.remote_control_live(self.home, [], self.entry, self.profile, True),
+                             (True, "Remote Control is on", self.LINK))
+        self.assertTrue(claude.done.wait(5))
+        self.assertEqual(claude.picked, ["connect"])
+
     def test_one_at_a_time_a_chat(self):
         # (a second click while the first is on its way types nothing)
         claude = FakeSession(self, self.profile)
@@ -2295,7 +2308,7 @@ class RemoteControlTests(Fixture):
                                 (dict(self.entry, version="2.1.300"), True, "Claude Code 2.1.300"),
                                 (dict(self.entry, version="2.2.0"), True, "Claude Code 2.2.0"),
                                 (dict(self.entry, status="waiting", waitingFor="permission prompt"), True, "answer it first"),
-                                (dict(self.on, status="waiting", waitingFor="dialog open"), False, "answer it first"),
+                                (dict(self.on, status="waiting", waitingFor="dialog open"), False, "close it first"),
                                 (dict(self.entry, pid=os.getppid()), True, "size of its terminal")):
             with self.subTest(entry=entry, on=on):
                 ok, message, _link = cs.remote_control_live(self.home, [], entry, self.profile, on)

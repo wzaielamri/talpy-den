@@ -270,6 +270,7 @@ export interface PaneChat {
   bgStop: boolean; // a background chat Stop can interrupt (its row's: the Claude Code versions that was checked on)
   remoteControl?: string; // its claude.ai/code page while Remote Control is on, else "" (its row's)
   remoteSwitch?: boolean; // Talpy Den can turn its Remote Control on and off (its row's)
+  remoteCan?: boolean; // …now (remoteSwitchCan: no prompt or dialog of Claude's open in it)
   watchTrouble?: string; // an SSH host's chat: why its host's watcher can't watch it now ("check": it couldn't be reached)
   activity: string; // what it does now
   permission: PermissionAsk | null;
@@ -342,16 +343,17 @@ export function remoteControlPage(link: unknown): string {
 }
 export const REMOTE_CONTROL_TAG = "Remote Control";
 export const REMOTE_CONTROL_TIP = "Remote Control is on\nclaude.ai/code and the Claude app show this chat and take your messages for it; it still runs here. Click to open it on claude.ai/code.";
-// (also while Claude works: typed, /remote-control runs at once; never while it waits for you, whose
-// prompt or dialog would take the keys)
-export function remoteSwitchCan(state: string | undefined): boolean {
-  return state !== "waiting";
+// (also while Claude works: typed, /remote-control runs at once; and while a chat waits for your reply to
+// what it asked, its prompt free. Not while a prompt or dialog of Claude's is open (its row's waitingFor:
+// a permission, a question): that dialog takes every key, Enter would answer it (checked live))
+export function remoteSwitchCan(s: { waitingFor?: string | null } | null | undefined): boolean {
+  return !!s && !s.waitingFor;
 }
 export function remoteSwitchTitle(on: boolean, can: boolean): string {
   return (on
     ? "Turn off Remote Control\nDisconnects it from claude.ai/code and the Claude app, as Disconnect in Claude's /remote-control. The chat goes on here."
     : "Turn on Remote Control\nShows this chat on claude.ai/code and in the Claude app, to read and answer it from your phone or a browser; Claude still runs here (Claude's /remote-control). Keep this computer awake.")
-    + (can ? "" : "\n\nOnce you've answered what it asks.");
+    + (can ? "" : "\n\nOnce its prompt is answered: Claude's dialog takes every key till then.");
 }
 
 export function whereTag(where: ChatWhere, terminalApp = "", account = ""): { tag: string; title: string } {

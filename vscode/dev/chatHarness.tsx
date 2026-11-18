@@ -41,6 +41,7 @@ const chat: PaneChat = {
   // ?rc=1|0: Remote Control on (its tag, its switch pressed) or off (the switch), for a background chat
   remoteControl: params.get("rc") === "1" ? "https://claude.ai/code/session_01DemoRemoteControl" : "",
   remoteSwitch: params.get("rc") === "1" || params.get("rc") === "0",
+  remoteCan: !ask,   // (a prompt or question open: Claude's dialog takes the keys)
   activity: "Bash: npm test -- parser",
   permission: ask === "question"
     ? { tool: "AskUserQuestion", line: questions[0].question, command: "", file: "", diff: [], always: "", questions,

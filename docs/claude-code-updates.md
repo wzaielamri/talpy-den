@@ -630,8 +630,8 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   Talpy Den presses ↑ till the last `❯` of what the session shows is on *Disconnect*, then Enter (Esc if it
   never gets there). Before it types, it reads Claude's prompt in the whole screen the attach draws first
   (`\x1b[2J`, then the prompt as `❯\xa0` followed by what's typed and the line under it, `─`): anything typed
-  there would go out with the command, so it types nothing then. Not while the session waits for you.
-  Checked live on 2.1.327: on and off mid-turn and idle, and a typed "hello" left as it was.
+  there would go out with the command, so it types nothing then. Not while a prompt or dialog of Claude's is open (the session's `status` `waiting`: a permission, a question): it replaces the prompt (`❯1. Yes … 4. No`), takes every key, and Enter answers it; a chat whose job is blocked on your reply has its prompt free.
+  Checked live on 2.1.327: on and off mid-turn and idle, a typed "hello" left as it was, and typed into an open permission prompt the keys answered it ("1. Yes") and Remote Control stayed off.
   - Used in: talpy_den.py remote_control_live, remote_control_through_attach, rc_prompt_empty, rc_marked, rc_read,
     attach_session, RC_COMMAND, RC_MARK, RC_DISCONNECT, RC_CONTINUE, RC_TYPE_GAP; pane.py remote_control
     (--remote-control).

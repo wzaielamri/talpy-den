@@ -8779,8 +8779,11 @@ def esc_through_attach(path, key, job_id, size):
 #   this session" (read from what the session shows), then Enter; Esc if it
 #   never gets there, so nothing else is picked. (on, if it was on after
 #   all: the mark on Continue, Enter picks it, nothing changes.)
-# Never while the session waits for you (a prompt or a dialog would take
-# the keys). One at a time a chat (stop_turn, as Stop). Undocumented, as
+# Also while the chat waits for your reply to what it asked (its job
+# blocked, its prompt free). Never while a prompt or dialog of Claude's is
+# open (the session's status waiting: a permission, a question): it takes
+# every key, and Enter answers it (checked live: "1. Yes" picked, Remote
+# Control still off). One at a time a chat (stop_turn, as Stop). Undocumented, as
 # Stop: only on the Claude Code versions it was checked on (bg_stop_known: a
 # row's "remoteSwitch").
 
@@ -8925,8 +8928,9 @@ def remote_control_live(home, extra_dirs, entry, runs_on, on, profile_key=None, 
         which = f"Claude Code {version}" if isinstance(version, str) and version else "this Claude Code"
         return False, (f"Talpy Den can't turn Remote Control {'on' if on else 'off'} in a background chat of {which} yet: "
                        "open it in a terminal and type /remote-control there"), link
-    if entry.get("status") == "waiting":
-        return False, "It's waiting for you: answer it first", link
+    if entry.get("status") == "waiting":   # (a prompt or dialog of Claude's is open: it takes every key, Enter answers it)
+        return False, ("A dialog of Claude's is open in it: close it first (claude attach)" if entry.get("waitingFor") == "dialog open"
+                       else "It waits for your answer to its prompt: answer it first (till then Claude's dialog takes every key)"), link
     size = tty_size(entry.get("pid"))
     if size is None:
         return False, ("Talpy Den can't read the size of its terminal (a terminal that shows it would be resized): "
