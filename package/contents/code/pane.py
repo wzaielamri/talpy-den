@@ -101,6 +101,12 @@ its permission prompt and its review.
         Esc in its terminal: Ctrl+C in its tmux pane, or Esc into a
         background chat through Claude's background service. The chat stays
         where it runs and takes your next message
+  --remote-control CHAT [--off] [--session ID] [--profile P]
+        Remote Control on (or off) in a running background chat: claude.ai/code
+        and the Claude app show it and take your messages for it
+        (talpy_den.remote_control_live: /remote-control typed in through
+        Claude's background service). {"ok", "message", "link": its
+        claude.ai/code page while it's on, else null}
   --set-options CHAT --profile P [--model M] [--effort E]
         the chat's own model and effort, picked in Talpy Chat (/model,
         /effort; "" or "default": Claude's), for it alone, never your
@@ -1682,6 +1688,22 @@ def interrupt(home, extra_dirs, profile_key, chat_id, session_id=None):
     return False, "That chat isn't running any more"
 
 
+def remote_control(home, extra_dirs, profile_key, chat_id, session_id=None, on=True):
+    """Remote Control on or off in a running background chat
+    (cs.remote_control_live), found by the session that has it open
+    (session_id) or its chat id: {"ok", "message", "link": its claude.ai/code
+    page while it's on, else None}."""
+    ids = [i for i in dict.fromkeys((session_id, chat_id)) if cs.valid_id(i or "")]
+    if not ids:
+        return {"ok": False, "message": f"Not a chat: {chat_id}", "link": None}
+    for sid in ids:
+        found = cs.find_chat_live(home, extra_dirs, sid, profile_key)
+        if found is not None:
+            ok, said, link = cs.remote_control_live(home, extra_dirs, found[0], found[1], on, profile_key)
+            return {"ok": ok, "message": said, "link": link}
+    return {"ok": False, "message": "That chat isn't running any more", "link": None}
+
+
 def type_in(home, extra_dirs, profile_key, chat_id, text, session_id=None, copy=True):
     """A command that needs Claude's own panel or dialog (commands.py: kind
     "terminal"), put where Claude's prompt is, for you to press Enter there:
@@ -2727,7 +2749,8 @@ ACTION_MODULES = {
     "--complete": ("commands.py",), "--replies": ("reply_words.py", "replies.py"),
     "--reply-text": ("reply_words.py", "replies.py"), "--hide-reply": ("reply_words.py", "replies.py"),
     "--set-options": ("chatpick.py",),
-    "--send": (), "--start": (), "--answer": (), "--interrupt": (), "--keys": (), "--type-in": (), "--relay": (),
+    "--send": (), "--start": (), "--answer": (), "--interrupt": (), "--remote-control": (), "--keys": (), "--type-in": (),
+    "--relay": (),
     "--live": (), "--review": (), "--undo": (), "--commit": (),
 }
 # A start or a wake there may wait for claude's background service (60 s),
@@ -2771,7 +2794,7 @@ def main(argv=None):
     actions = ("--conversation", "--send", "--answer", "--keys", "--review", "--undo", "--commit", "--reviewed",
                "--relay", "--live", "--oldest", "--shortcuts", "--complete", "--start", "--interrupt", "--replies",
                "--hide-reply", "--type-in", "--reply-text", "--set-options", "--bookmark", "--made",
-               "--side-question", "--trust-folder")
+               "--side-question", "--trust-folder", "--remote-control")
     osd, suggest, no_copy, keep_copy, as_file, made_path, step = False, False, False, False, False, None, None
     cwd, model, effort, mode, plan, plan_profile, key = None, None, None, None, None, None, None
     mark_kind, mark_at, reach = "", 0, None   # (--bookmark's --kind and --at; --conversation's --reach)
@@ -3011,6 +3034,8 @@ def main(argv=None):
         elif action == "--interrupt":
             ok, said = interrupt(home, config_dirs, profile, target, session)
             result = {"ok": ok, "message": said}
+        elif action == "--remote-control":
+            result = remote_control(home, config_dirs, profile, target, session, on=not off)
         elif action == "--set-options":
             import chatpick   # (a module of its own, as replies.py: compiled once and kept)
             prefix = []

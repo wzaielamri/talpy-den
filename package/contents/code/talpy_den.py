@@ -893,6 +893,8 @@ def make_session(profile, home, *, sid, pid, name, cwd, kind, entrypoint, state,
         "shared": None,
         "tmux": False,  # runs in a tmux pane: it can be interrupted (Esc)
         "bgStop": False,  # a live background session Talpy Chat's Stop can interrupt (interrupt_background)
+        "remoteControl": None,  # the claude.ai/code page of a live chat with Remote Control on (remote_control_link)
+        "remoteSwitch": False,  # a live background session Talpy Den can turn Remote Control on and off in
         "hooked": False,  # a background chat whose prompts Talpy Den's permission hook answers (finish_row)
         "terminalApp": None,  # the terminal it runs in otherwise, by name (Konsole, kitty…): terminal_name
         "attached": None,  # a background session shown in a terminal (claude attach): {"in", "app"} (attached_in)
@@ -1023,6 +1025,8 @@ def live_row(entry, profile, holder, home, ctx):
         started_at=number(entry.get("startedAt")))
     row["tmux"] = isinstance(entry.get("tmux"), str) and bool(entry["tmux"])
     row["bgStop"] = row["kind"] == "bg" and job_id is not None and bg_stop_known(entry.get("version"))
+    row["remoteControl"] = remote_control_link(entry)
+    row["remoteSwitch"] = row["bgStop"] and bool(sid)
     if not row["tmux"] and row["entrypoint"] != "claude-vscode" and row["kind"] != "bg":
         row["terminalApp"] = terminal_name(row["pid"]) or None
     return finish_row(row, job, job_id, profile, ctx, alive=True)
@@ -8685,35 +8689,46 @@ def interrupt_background(profile, entry):
     return ok, said
 
 
-def esc_through_attach(path, key, job_id, size):
-    """interrupt_background's attach (path: the service's socket): (ok, message)."""
-    import socket
+def attach_session(s, path, key, job_id, size):
+    """Attach s (a Unix socket) to a background session for a moment, as
+    `claude attach` does (path: the service's socket): (answer, what the
+    session showed with it), or (None, why not). Every byte sent on s after
+    this goes into the session as typed."""
     import uuid
     request = {"proto": DAEMON_PROTO, "op": "attach", "short": job_id, "auth": key, "cols": size[0], "rows": size[1],
                "attachId": str(uuid.uuid4()), "caps": dict(BG_STOP_CAPS)}
+    s.settimeout(BG_STOP_ACK_WAIT)
+    s.connect(str(path))
+    uid = peer_uid(s)  # (only a service of yours: it gets the key)
+    if (os.lstat(str(path)).st_uid if uid is None else uid) != os.getuid():
+        return None, "Claude's background service didn't answer"
+    s.sendall((json.dumps(request) + "\n").encode())
+    data = b""
+    while b"\n" not in data and len(data) < DAEMON_ANSWER_MAX:
+        chunk = s.recv(65536)
+        if not chunk:
+            break
+        data += chunk
+    line, _, shown = data.partition(b"\n")
+    try:
+        answer = json.loads(line.decode("utf-8", "replace"))
+    except ValueError:
+        answer = None
+    if not isinstance(answer, dict) or answer.get("ok") is not True or answer.get("op") != "attach":
+        error = answer.get("error") if isinstance(answer, dict) else None
+        return None, (f"Claude's background service didn't take it: {error}" if isinstance(error, str) and error
+                      else "Claude's background service didn't take it")
+    return answer, shown
+
+
+def esc_through_attach(path, key, job_id, size):
+    """interrupt_background's attach (path: the service's socket): (ok, message)."""
+    import socket
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-            s.settimeout(BG_STOP_ACK_WAIT)
-            s.connect(str(path))
-            uid = peer_uid(s)  # (only a service of yours: it gets the key)
-            if (os.lstat(str(path)).st_uid if uid is None else uid) != os.getuid():
-                return False, "Claude's background service didn't answer"
-            s.sendall((json.dumps(request) + "\n").encode())
-            data = b""
-            while b"\n" not in data and len(data) < DAEMON_ANSWER_MAX:
-                chunk = s.recv(65536)
-                if not chunk:
-                    break
-                data += chunk
-            line, _, shown = data.partition(b"\n")
-            try:
-                answer = json.loads(line.decode("utf-8", "replace"))
-            except ValueError:
-                answer = None
-            if not isinstance(answer, dict) or answer.get("ok") is not True or answer.get("op") != "attach":
-                error = answer.get("error") if isinstance(answer, dict) else None
-                return False, (f"Claude's background service didn't take it: {error}" if isinstance(error, str) and error
-                               else "Claude's background service didn't take it")
+            answer, shown = attach_session(s, path, key, job_id, size)
+            if answer is None:
+                return False, shown
             worker = answer.get("workerCliVersion")
             if worker and not bg_stop_known(worker):
                 return False, f"Talpy Den can't stop a background chat of Claude Code {worker} yet: open it in a terminal and press Esc there"
@@ -8738,6 +8753,170 @@ def esc_through_attach(path, key, job_id, size):
     except OSError:
         return False, "Claude's background service didn't answer"
     return True, "Stopped (Esc in the background chat): it takes your next message"
+
+
+# ---------------------------------------------------------------- Remote Control
+#
+# Claude Code's Remote Control: claude.ai/code and the Claude app show a
+# chat that runs here and take your messages for it. A session that has it
+# on names its claude.ai session in its session file (bridgeSessionId,
+# "session_…"; null once it's off), whose page is REMOTE_CONTROL_URL + that
+# id (Claude 2.1.327, checked live: the link its terminal prints). Talpy Den
+# turns it on or off for a live background session as its terminal would,
+# with /remote-control typed in through the service's reply:
+# - on: that's all (it connects, nothing to answer once you have used
+#   Remote Control before; asked while Claude works, it's queued and runs
+#   as the turn ends);
+# - off: with it on, the same command opens Claude's dialog instead (the
+#   session waits on it): "Disconnect this session", "Show QR code",
+#   "Continue", the mark on Continue. Talpy Den then attaches for a moment,
+#   as Stop does, and presses ↑ till the mark is on "Disconnect this
+#   session" (read from what the session shows), then Enter; Esc if it
+#   never gets there, so nothing else is picked.
+# Undocumented, as Stop: only on the Claude Code versions it was checked on
+# (bg_stop_known: a row's "remoteSwitch").
+
+REMOTE_CONTROL_URL = "https://claude.ai/code/"
+RC_COMMAND = "/remote-control"
+RC_WAIT = 6  # seconds for the session to say it's on or off (or that the dialog shows)
+RC_LOOK = 0.15  # between looks at its session file
+RC_FRAME_QUIET = 0.15  # what the session shows after a key: read till it's this long quiet
+RC_FRAME_MAX = 1.0  # …or this long in all
+RC_UPS = 4  # ↑ pressed at most, looking for Disconnect
+RC_MARK = "❯"  # (❯: the mark on a dialog's choice)
+RC_DISCONNECT = "Disconnect"
+ANSI_CODES = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])")
+
+
+def remote_control_link(entry):
+    """The claude.ai/code page of a live session that has Remote Control on
+    (entry: its session file's), or None."""
+    bridge = entry.get("bridgeSessionId") if isinstance(entry, dict) else None
+    if isinstance(bridge, str) and re.fullmatch(r"session_[A-Za-z0-9_-]{1,100}", bridge):
+        return REMOTE_CONTROL_URL + bridge
+    return None
+
+
+def rc_marked(shown):
+    """Is the mark on Disconnect in what a session showed (bytes: the
+    terminal's output)? Its last mark is the dialog's (the screen is drawn
+    top to bottom, a changed line again)."""
+    text = ANSI_CODES.sub("", shown.decode("utf-8", "replace"))
+    at = text.rfind(RC_MARK)
+    return at >= 0 and re.sub(r"\s+", "", text[at + 1:at + 80]).startswith(RC_DISCONNECT)
+
+
+def rc_read(s, quiet=RC_FRAME_QUIET, most=RC_FRAME_MAX):
+    """What the session shows next on s, read till it's quiet: bytes."""
+    import socket
+    got, end = b"", time.monotonic() + most
+    while time.monotonic() < end:
+        s.settimeout(max(0.01, min(quiet, end - time.monotonic())))
+        try:
+            chunk = s.recv(65536)
+        except socket.timeout:
+            break
+        if not chunk:
+            break
+        got += chunk
+    return got
+
+
+def disconnect_through_attach(path, key, job_id, size):
+    """remote_control_live's Disconnect in Claude's open Remote Control
+    dialog (path: the service's socket): (ok, message)."""
+    import socket
+    unknown = "Claude's Remote Control dialog didn't look as Talpy Den knows it: turn it off in a terminal (claude attach, then /remote-control)"
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            answer, shown = attach_session(s, path, key, job_id, size)
+            if answer is None:
+                return False, shown
+            worker = answer.get("workerCliVersion")
+            if worker and not bg_stop_known(worker):
+                return False, f"Talpy Den can't turn Remote Control off in a background chat of Claude Code {worker} yet: open it in a terminal and type /remote-control there"
+            if answer.get("booting"):
+                return False, "It's starting: try again in a moment"
+            shown += rc_read(s)
+            for _ in range(RC_UPS + 1):
+                if rc_marked(shown):
+                    s.sendall(b"\r")
+                    rc_read(s, most=BG_STOP_LINGER)
+                    return True, "Remote Control is off"
+                s.sendall(b"\x1b[A")
+                shown = rc_read(s)
+            s.sendall(b"\x1b")   # (it never got there: nothing is picked, the dialog closes)
+            rc_read(s, most=BG_STOP_LINGER)
+            return False, unknown
+    except OSError:
+        return False, "Claude's background service didn't answer"
+
+
+def rc_watch(home, extra_dirs, session_id, profile_key, done, wait=RC_WAIT):
+    """The session's entry once done(entry) says so (looked at every RC_LOOK
+    s, for up to wait s), else its last entry (None: it isn't running)."""
+    end, entry = time.monotonic() + wait, None
+    while True:
+        found = find_chat_live(home, extra_dirs, session_id, profile_key)
+        entry = found[0] if found else None
+        if entry is None or done(entry) or time.monotonic() >= end:
+            return entry
+        time.sleep(RC_LOOK)
+
+
+def remote_control_live(home, extra_dirs, entry, runs_on, on, profile_key=None, wait=RC_WAIT):
+    """Turn Remote Control on (on) or off for a live background session
+    (entry: its session file's, runs_on: the profile it runs on), as
+    described above: (ok, message, its claude.ai/code page or None)."""
+    sid, job_id, version = entry.get("sessionId"), entry.get("jobId"), entry.get("version")
+    link = remote_control_link(entry)
+    if on and link:
+        return True, "Remote Control is on", link
+    if not on and not link:
+        return True, "Remote Control is off", None
+    if entry.get("kind") != "bg" or not valid_id(job_id) or not valid_id(sid):
+        return False, (f"Talpy Den turns Remote Control {'on' if on else 'off'} in a background chat: "
+                       "in its terminal, type /remote-control"), link
+    if not bg_stop_known(version):
+        which = f"Claude Code {version}" if isinstance(version, str) and version else "this Claude Code"
+        return False, (f"Talpy Den can't turn Remote Control {'on' if on else 'off'} in a background chat of {which} yet: "
+                       "open it in a terminal and type /remote-control there"), link
+    status = entry.get("status")
+    if status == "waiting":
+        return False, "It's waiting for you: answer it first", link
+    if not on and status != "idle":
+        return False, "It's at work: turn Remote Control off once its turn is over", link
+    if not on and tty_size(entry.get("pid")) is None:
+        return False, ("Talpy Den can't read the size of its terminal (a terminal that shows it would be resized): "
+                       "open it in a terminal and type /remote-control there"), link
+    if not on and not stop_turn(job_id):   # (one key-press at a time a chat, as Stop)
+        return False, "Talpy Den is at it already", link
+    ok, said = reply_to_background(runs_on, job_id, RC_COMMAND)
+    if not ok:
+        if not on:
+            stop_turn(job_id, forget=True)
+        return False, said, link
+    if on:
+        if status != "idle":   # (queued: it runs as the turn ends)
+            return True, "Remote Control goes on as Claude finishes this turn", None
+        now = rc_watch(home, extra_dirs, sid, profile_key, lambda e: remote_control_link(e) is not None, wait)
+        page = remote_control_link(now) if now else None
+        return True, ("Remote Control is on" if page else "Remote Control is turning on"), page
+    # (the dialog shows: the session waits on it)
+    now = rc_watch(home, extra_dirs, sid, profile_key, lambda e: e.get("status") == "waiting", wait)
+    if now is None or now.get("status") != "waiting":
+        stop_turn(job_id, forget=True)
+        return False, "Claude's Remote Control dialog didn't show: try again in a moment", link
+    size = tty_size(now.get("pid"))
+    key, path = daemon_key(runs_on), daemon_socket(runs_on)
+    if size is None or not key or path is None:
+        return False, "Claude's background service can't be asked", link
+    ok, said = disconnect_through_attach(path, key, job_id, size)
+    if not ok:
+        return False, said, link
+    now = rc_watch(home, extra_dirs, sid, profile_key, lambda e: remote_control_link(e) is None, wait)
+    still = remote_control_link(now) if now else None
+    return (True, "Remote Control is off", None) if still is None else (False, "Remote Control is still on", still)
 
 
 def live_background(profiles, chat_id):

@@ -1518,6 +1518,46 @@ class StopTests(SendFixture):
         self.assertEqual(calls, [("bg", "work", "5c1d7a6e"), ("tmux", "ab12cd34-0000-4000-8000-000000000000")])
 
 
+
+class RemoteControlTests(SendFixture):
+    """Remote Control from Talpy Den (pane.py --remote-control, for rows and
+    Talpy Chat alike): the session that has the chat open now, by its own id
+    or the chat's (talpy_den.remote_control_live); --off turns it off; a
+    host's or container's chat's is asked there."""
+
+    LINK = "https://claude.ai/code/session_01AbC"
+
+    def test_it_switches_the_session_that_has_the_chat_open(self):
+        calls = []
+        self.live(kind="bg", status="idle", jobId="5c1d7a6e", version="2.1.327")
+
+        def switch(home, dirs, entry, runs_on, on, profile_key=None):
+            calls.append((entry["sessionId"], runs_on.label, on, profile_key))
+            return (True, "Remote Control is on", self.LINK) if on else (True, "Remote Control is off", None)
+        with mock.patch.object(cs, "remote_control_live", side_effect=switch):
+            self.assertEqual(self.cli("--remote-control", SID, "--profile", ".claude-work"),
+                             {"ok": True, "message": "Remote Control is on", "link": self.LINK})
+            self.assertEqual(self.cli("--remote-control", SID, "--off"),
+                             {"ok": True, "message": "Remote Control is off", "link": None})
+            # (a chat resumed in another session: by that session's id)
+            other = "ab12cd34-0000-4000-8000-000000000000"
+            (self.home / ".claude-work/sessions/30.json").unlink()
+            self.live(sessionId=other, kind="bg", status="idle", jobId="ab12cd34", version="2.1.327")
+            self.assertTrue(self.cli("--remote-control", SID, "--session", other)["ok"])
+            (self.home / ".claude-work/sessions/30.json").unlink()
+            self.assertEqual(self.cli("--remote-control", SID),
+                             {"ok": False, "message": "That chat isn't running any more", "link": None})
+            self.assertFalse(self.cli("--remote-control", "--x")["ok"])
+        self.assertEqual(calls, [(SID, "work", True, ".claude-work"), (SID, "work", False, None), (other, "work", True, None)])
+
+    def test_a_hosts_chat_is_switched_there(self):
+        with mock.patch.object(pane, "forward", return_value={"ok": True, "message": "Remote Control is on", "link": self.LINK}) as forwarded:
+            self.assertEqual(self.cli("--remote-control", SID, "--host", "gpu", "--profile", ".claude-work"),
+                             {"ok": True, "message": "Remote Control is on", "link": self.LINK})
+        host, args, action = forwarded.call_args[0]
+        self.assertEqual((host, action), ("gpu", "--remote-control"))
+        self.assertEqual(args, ["--remote-control", SID, "--profile", ".claude-work"])
+
 class TalpyChatHookTests(SendFixture):
     """Chats Talpy Chat starts, or wakes in the background, get the permission
     hook for themselves (claude --settings), so what they ask is answered in
