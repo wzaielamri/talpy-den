@@ -4,6 +4,18 @@
 
 ### Better
 
+- **Agents say what they do, in words, and how big their context is.** A
+  subagent's line was its raw tool call (*Bash: sed -n 1,25p CHANGELOG.md |
+  cut -c1-400; …*). Now it says the call in Claude's words for its tools
+  (*Reading the top of both CHANGELOG.md files*, *Editing week.ts*,
+  *Searching for tipChatAct*) and ends with its context now (*222.7k
+  tokens*), the number Claude's own agent list shows. Click an agent:
+  **Running now** lists the calls it's on, exactly as Claude ran them, each
+  with how long it has been running; its total reads *tokens processed*. A
+  chat's own line says its call in words too, and a background chat at work
+  shows Claude's own line for what it's on while that line is new. Nothing
+  extra is read for it.
+
 - **The chats a Recap tip names line up.** Their numbers stand in one column
   with the tips' shares and their **Stop** or **Keep going** with the
   commands, whatever their tip has on the right; every row is as tall, and
