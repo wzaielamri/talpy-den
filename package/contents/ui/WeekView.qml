@@ -207,69 +207,72 @@ PlasmaComponents3.ScrollView {
     // (the last answer: while another is on its way, or it's another account's, dimmed)
     readonly property var limitsData: root.limitsData
     readonly property bool limitsDim: !!root.limitsData && (root.limitsBusy || root.limitsAccount !== root.weekAccount)
-    readonly property var limitsShown: limitsData ? limitsData.accounts.filter(a => a.periods.length) : []
+    readonly property var limitsShown: limitsData ? limitsData.accounts.filter(a => a.periods.length || (a.weeks && a.weeks.length)) : []
     readonly property bool limitsCompared: limitsShown.length > 1 && new Set(limitsShown.map(a => a.plan)).size > 1
     readonly property real limitsNow: limitsData ? limitsData.generatedAt : 0
     readonly property real limitsStart: Limits.start(limitsShown, limitsNow)
     readonly property var emptyLimits: ({ id: "", name: "", plan: "", periods: [], windows: [], events: [], changes: {},
                                           now: { fiveHour: null, share: null, fill: null, tokens: null, weeks: {} },
-                                          equivalents: null })
+                                          equivalents: null, eras: [], weeks: [], since: 0 })
+    readonly property var emptyLimitWeek: ({ from: 0, until: 0, pct: 0, ranOutAt: null, fiveFull: 0, fiveUsed: 0, now: false })
 
+    // The windows as Your plan and the Chats tab's bars name them: "5-hour
+    // window", "Week", "Opus week" (a plan's weekly window of one model)
     function limitLabel(key) {
         if (key === "five_hour")
             return i18n("5-hour window")
         if (key === "seven_day")
             return i18n("Week")
         const f = Limits.family(key)
-        return f ? i18nc("a plan's weekly window of one model", "Week · %1", f.charAt(0).toUpperCase() + f.slice(1))
+        return f ? i18nc("a plan's weekly window of one model", "%1 week", f.charAt(0).toUpperCase() + f.slice(1))
                  : String(key).replace(/_/g, " ")
     }
     function limitDay(ms) {
         return Qt.locale().toString(new Date(ms), "d MMM")
     }
-    // "about 5×", "▲ 20%", "▼ 80%", "about the same": how many times what a window held it holds now
-    function factorText(f) {
-        if (f >= 1.5)
-            return i18nc("a window holds this many times what it held", "about %1×", Number(f.toFixed(1)))
-        const pct = Math.round(Math.abs(f - 1) * 100)
-        return pct < 10 ? i18n("about the same") : (f > 1 ? "▲ " : "▼ ") + pct + "%"
+
+    // ---- how full your weeks got
+    // "Ran out in 1 of 4 weeks · 12 of 40 5-hour windows ran full"
+    function limitFitText(a) {
+        const f = Limits.fit(a)
+        const parts = [f.ranOut ? i18n("Ran out in %1 of %2", f.ranOut, i18np("%1 week", "%1 weeks", f.weeks.length))
+                                : i18n("No week ran out; the fullest got to %1%", Math.round(f.fullest))]
+        if (f.fiveUsed)
+            parts.push(i18n("%1 of %2 5-hour windows ran full", f.fiveFull, f.fiveUsed))
+        return parts.join(" · ")
     }
-    function limitChangeText(c) {
-        if (!c)
-            return ""
-        if (c.kind === "change")
-            return i18n("%1 %2% vs the week before", (c.pct || 0) < 0 ? "▼" : "▲", Math.abs(c.pct || 0))
-        if (c.kind === "same")
-            return i18n("about the same as the week before")
-        if (c.kind === "new")
-            return i18n("new this week")
-        if (c.kind === "limits") {
-            const day = c.at ? limitDay(c.at) : ""
-            return c.factor ? i18nc("how a window changed since a day", "%1 since %2", factorText(c.factor), day)
-                            : i18n("your plan changed on %1", day)
-        }
-        if (c.kind === "rough")
-            return i18n("readings too far apart to compare yet")
-        return i18n("too few readings to compare yet")
+    function limitFitTip() {
+        return i18n("How full each week got: the highest reading of your plan's week Talpy Den kept (after a change of your limits in it, since then). It ran out when the readings reached 100%, or when a usage limit stopped a chat until the week reset. A 5-hour window ran full when its readings reached 100%, or when a limit stopped a chat as it ended.")
+               + " " + i18n("These are your plan's own readings: use on claude.ai, other computers and SSH hosts counts too.")
     }
-    // A window's size as the section shows it: one number ("$164", "≈ $820"
-    // before one measured since the limits changed), or, from too few windows
-    // or ones too far apart (rough), their range and how many ("$37–$215 · 5
-    // windows"; a week's: its readings' range), not bold
-    function limitValueText(key, v) {
-        if (!v)
-            return limitMoney(0)
-        if (!v.rough || v.lo === undefined || v.hi === undefined)
-            return (v.scaled ? "≈ " : "") + limitMoney(v.cost)
-        const range = v.hi > v.lo ? i18nc("a size from … to …", "%1–%2", limitMoney(v.lo), limitMoney(v.hi)) : limitMoney(v.cost)
-        return (v.scaled ? "≈ " : "") + range + (key === "five_hour" && v.n ? " · " + i18np("%1 window", "%1 windows", v.n) : "")
+    // A week's days: "3–10 Mar", "24 Feb – 3 Mar"
+    function limitWeekLabel(w) {
+        const a = new Date(w.from), b = new Date(w.until)
+        return a.getMonth() === b.getMonth() ? i18nc("a week's days: 10–17 Nov", "%1–%2", a.getDate(), limitDay(w.until))
+                                             : i18nc("a week's days across months", "%1 – %2", limitDay(w.from), limitDay(w.until))
     }
-    // Why a size is shown as a range
-    function limitRoughTip(key) {
-        return key === "five_hour"
-             ? i18n("Too few windows, or ones too far apart, for one number: use not seen here (claude.ai, your phone, other computers, SSH hosts) fills some windows more than others. No change is told from it.")
-             : i18n("Its readings tell sizes too far apart for one number: use not seen here (claude.ai, your phone, other computers, SSH hosts) counts in some of them. No change is told from it.")
+    function limitWeekPct(w) {
+        return w.now && !w.ranOutAt ? i18nc("a week's use going on", "%1 so far", Math.round(w.pct) + "%") : Math.round(w.pct) + "%"
     }
+    // Under a week's bar: when it ran out, and its 5-hour windows
+    function limitWeekNote(w) {
+        const parts = []
+        if (w.ranOutAt)
+            parts.push(i18n("ran out %1", whenText(w.ranOutAt)))
+        if (w.fiveUsed)
+            parts.push(i18n("%1 of %2 5-hour windows full", w.fiveFull, w.fiveUsed))
+        const text = parts.join(" · ")
+        return text.charAt(0).toUpperCase() + text.slice(1)
+    }
+    function limitWeekTip(w) {
+        return (w.now ? i18n("This week, going on: %1 used so far; it resets %2.", Math.round(w.pct) + "%", whenText(w.until))
+                      : i18n("%1 of the week was used by its reset.", Math.round(w.pct) + "%"))
+               + (w.ranOutAt ? " " + i18n("It ran out on %1: chats waited for the reset, or went on another way.", whenText(w.ranOutAt)) : "")
+               + (w.fiveUsed ? " " + i18np("%2 of the 5-hour window begun in it ran full.", "%2 of the %1 5-hour windows begun in it ran full.",
+                                           w.fiveUsed, w.fiveFull) : "")
+    }
+
+    // ---- changes of your limits
     // "4 Nov 18:52 · your limits grew about 5× · Pro → Max 5×"
     function limitEventText(e) {
         const f = Limits.eventFactor(e)
@@ -288,36 +291,95 @@ PlasmaComponents3.ScrollView {
                            + "\n" + i18n("From your readings at that moment: the same usage read as a different share of the window.")
                          : i18n("Your windows' plan changed between two of them: what they held before and after tells by how much.")
     }
-    function limitShareText(pct, rough) {
-        return pct > 0 ? (rough ? "≈ " : "") + i18n("%1% of the week · about %2 full windows a week", Math.round(pct), Math.max(1, Math.round(100 / pct))) : ""
+    // "No change seen since 12 Mar" (the last change, or the first reading)
+    function limitNoChangeText(a) {
+        const events = a.events || []
+        return events.length ? i18n("No change seen since %1.", limitDay(events[events.length - 1].at))
+                             : i18n("No change seen since %1, when the readings begin.", limitDay(a.since || limitsNow))
     }
+    function limitNoChangeTip() {
+        return i18n("A change shows in the readings: the same use reads as a different share of a window from one reading to the next, with nothing used between (a bigger or smaller plan, or Anthropic's change), or your windows' plan changed between two of them.")
+    }
+
+    // ---- what a window holds (estimates)
+    // A window's size: "≈ $180" (one number when steady; "≈" as every
+    // estimate here), or, from too few windows or ones too far apart
+    // (rough), the range it rests on and how many ("$120–$170 · 5 windows")
+    function limitValueText(key, v) {
+        if (!v)
+            return limitMoney(0)
+        if (!v.rough || v.lo === undefined || v.hi === undefined)
+            return "≈ " + limitMoney(v.cost)
+        const range = v.hi > v.lo ? i18nc("a size from … to …", "%1–%2", limitMoney(v.lo), limitMoney(v.hi)) : limitMoney(v.cost)
+        return range + (key === "five_hour" && v.n ? " · " + i18np("%1 window", "%1 windows", v.n) : "")
+    }
+    // How a size is worked out, in a sentence (and why a range)
+    function limitSizeTip(key, a) {
+        const v = Limits.size(a, key)
+        if (!v)
+            return ""
+        const base = key === "five_hour"
+            ? i18np("What a full 5-hour window holds at API prices: each window's use on this computer by a reading, over the share of the window the reading says was used. Use not seen here only makes a window look smaller, so it's the upper end of the %1 window measured since your limits last changed (the middle of its largest third).",
+                    "What a full 5-hour window holds at API prices: each window's use on this computer by a reading, over the share of the window the reading says was used. Use not seen here only makes a window look smaller, so it's the upper end of the %1 windows measured since your limits last changed (the middle of their largest third).", v.n)
+            : key === "seven_day" && v.how === "share"
+            ? i18n("A full 5-hour window over its share of the week (from the readings): %1 full 5-hour windows.",
+                   a.now.share ? Number((100 / a.now.share.pct).toFixed(1)) : "")
+            : i18np("What a full %2 holds at API prices: your use on this computer by its readings, over the share of it they say was used, from %1 week.",
+                    "What a full %2 holds at API prices: your use on this computer by its readings, over the share of it they say was used, the upper end of %1 weeks.",
+                    v.n || 1, limitLabel(key).toLowerCase()) + (key === "seven_day" ? "" : " " + i18n("Only that model's usage counts."))
+        return base + (v.scaled ? "\n" + i18n("None measured since your limits changed yet: what it held before, times %1.", Number(v.scaled.toFixed(2))) : "")
+               + (v.rough ? "\n" + (key === "five_hour"
+                   ? i18n("Too few windows, or ones too far apart, for one number: use not seen here (claude.ai, your phone, other computers, SSH hosts) fills some windows more than others.")
+                   : i18n("Its readings tell sizes too far apart for one number: use not seen here (claude.ai, your phone, other computers, SSH hosts) counts in some of them.")) : "")
+    }
+    // "A full 5-hour window moves the week 18%: 6 of them fill it"
+    function limitShareText(s) {
+        if (!s || !(s.pct > 0))
+            return ""
+        const n = Math.max(1, Math.round(100 / s.pct))
+        return s.how === "readings" ? i18n("A full 5-hour window moves the week %1%: %2 of them fill it", Math.round(s.pct), n)
+                                    : i18n("A full 5-hour window is ≈ %1% of the week: %2 of them fill it", Math.round(s.pct), n)
+    }
+    function limitShareHow(s) {
+        return !s ? "" : s.how === "readings" ? i18n("from the readings") : i18n("from the sizes")
+    }
+    function limitShareTip(s) {
+        return !s ? "" : s.how === "readings"
+            ? i18np("From the readings themselves: how far the week's reading moved while a 5-hour window filled, in the middle of %1 window. No prices: use not seen here moves both alike.",
+                    "From the readings themselves: how far the week's reading moved while a 5-hour window filled, in the middle of %1 windows. No prices: use not seen here moves both alike.", s.n || 0)
+            : i18n("From the two sizes, the 5-hour window's over the week's: too few windows told it from the readings yet.")
+              + (s.rough ? " " + i18n("One of them is a range, so this is rough.") : "")
+    }
+    // How long a full window lasts at your pace
     function limitFillText(fill) {
         if (!fill)
             return ""
-        return (fill.wallMs <= 5 * 3600000 ? i18n("Full after about %1 at your pace", hours(fill.wallMs))
+        return (fill.wallMs <= 5 * 3600000 ? i18n("A 5-hour window fills in ≈ %1 at your pace", hours(fill.wallMs))
                                            : i18n("At your pace a 5-hour window doesn't fill in its 5 hours"))
                + (fill.workMs >= 60000 ? " · " + i18n("Claude worked %1 in it, across chats", hours(fill.workMs)) : "")
     }
+    function limitFillTip() {
+        return i18n("The middle of the windows measured: from a window's first request to its reading, over the share it says was used, on the clock; Claude's work in it the same way, across the chats that worked at once.")
+    }
+    // "≈ 540M tokens fill a 5-hour window, in your mix"; its tooltip: the
+    // same in one model's output tokens or cache reads
     function limitTokensText(a) {
+        const t = a.now.tokens
+        const n = t ? t.fresh + t.output + t.cacheRead : 0
+        return n > 0 ? i18n("≈ %1 tokens fill a 5-hour window, in your mix", tokens(Math.round(n))) : ""
+    }
+    function limitTokensTip(a) {
         const e = a.equivalents
         const five = e ? e.fiveHour : null, week = e ? e.week : null
-        if (!e || !(five || week))
-            return ""
-        const first = five || week
-        return i18n("%1 output tokens of %2 (or %3 cache reads) fill %4", tokens(first.output), e.model, tokens(first.cacheRead),
-                    five ? i18n("a 5-hour window") : i18n("a week"))
-               + (five && week ? "; " + i18n("%1 a week", tokens(week.output)) : "") + ", " + i18n("at API prices")
+        return i18n("Your mix: the tokens of the windows measured, by kind, scaled to what a window holds.")
+               + (e && five ? "\n" + i18n("In %1 output tokens alone: ≈ %2 a 5-hour window (or ≈ %3 cache reads)", e.model, tokens(five.output), tokens(five.cacheRead))
+                              + (week ? i18n("; ≈ %1 a week", tokens(week.output)) : "") + "." : "")
     }
-    // The legend under what filled a window: a part's words and its share of
-    // the API price, then what that is by count
+    // The legend under what fills a window: a part's words and its share of the API price
     function limitPartText(part) {
         return part.kind === "cacheRead" ? i18n("cache reads %1", shareText(part.share))
              : part.kind === "fresh" ? i18n("new input and cache writes %1", shareText(part.share))
              : i18n("output %1", shareText(part.share))
-    }
-    function limitMixText(m) {
-        return !m.parts.length ? "" : m.tokens > 0 ? i18n("by API price; %1 tokens fill a 5-hour window", tokens(Math.round(m.tokens)))
-                                                   : i18n("by API price")
     }
     function limitPartColor(kind) {
         return kind === "output" ? workColor : kind === "fresh" ? waitColor : youColor
@@ -331,23 +393,26 @@ PlasmaComponents3.ScrollView {
         const text = Number(Math.round(amount)).toLocaleString(Qt.locale(), "f", 0)
         return symbol ? symbol + text : text + " " + currency.code
     }
+    // Over the chart: "Each 5-hour window since 12 Mar: $60–$195 · its line ≈ $180"
+    function limitChartText(a, c) {
+        const eras = a.eras || []
+        const since = eras.length > 1 ? i18n(" since %1", limitDay(eras[eras.length - 1].from)) : ""
+        return i18n("Each 5-hour window%1: %2", since, c.hi > c.lo ? i18nc("a size from … to …", "%1–%2", limitMoney(c.lo), limitMoney(c.hi)) : limitMoney(c.hi))
+               + (c.estimate ? " · " + i18n("its line ≈ %1", limitMoney(c.estimate)) : "")
+    }
+    function limitChartTip(c) {
+        return i18n("What each 5-hour window held by what this computer used (a dot each). Use not seen here makes a window look smaller, so the estimate is the upper end of them (the line).")
+               + (c.older.length ? " " + i18n("Before your limits changed (dimmed), each stretch is drawn on its own scale: %1.",
+                                             c.older.map(e => i18n("until %1, ≈ %2", limitDay(e.until), limitMoney(e.fiveHour.cost))).join(", ")) : "")
+               + (c.marks.length ? " " + i18n("An orange line marks where your limits changed.") : "")
+    }
+    // The section's last line: what it's made from and what it can't see (the SSH hosts the Recap reads, by name)
     function limitFootText(h) {
+        const hosts = recap ? recap.sources.filter(s => s.host).map(s => root.hostLabel(s.host)) : []
         return (h.since ? i18n("Estimated from this computer's chats and the limit readings Talpy Den kept since %1.", limitDay(h.since))
                         : i18n("Estimated from this computer's chats and the limit readings Talpy Den kept.")) + " "
-               + i18n("Use on claude.ai, your phone, other computers or SSH hosts counts toward your limits but isn't seen here, so a limit can look smaller than it is.")
-    }
-    function limitSizeTip(key, a) {
-        const v = key === "five_hour" ? a.now.fiveHour : a.now.weeks[key]
-        const since = (v && v.scaled ? "\n" + i18n("None measured since your limits changed yet: what it held before, times %1.", Number(v.scaled.toFixed(2))) : "")
-                      + (v && v.rough ? "\n" + limitRoughTip(key) : "")
-        if (key === "five_hour") {
-            const f = a.now.fiveHour
-            return f ? i18n("What a full 5-hour window held: the API price of what your chats used by a reading, over the share of the window it said was used.")
-                       + " " + i18np("The middle of %1 window in the newest week", "The middle of %1 windows in the newest week", f.n)
-                       + (f.n > 1 ? " (" + money(f.lo) + " – " + money(f.hi) + ")" : "") + "." + since : ""
-        }
-        return i18n("What a full %1 held: the API price of what your chats used by its readings, over the share of it they said was used.",
-                    limitLabel(key).toLowerCase()) + (key === "seven_day" ? "" : " " + i18n("Only that model's usage counts.")) + since
+               + (hosts.length ? i18n("Use on %1 (SSH hosts), claude.ai, your phone or other computers counts toward your limits but isn't seen here, so a window can look smaller than it is: the estimates go by the larger ones.", hosts.join(", "))
+                               : i18n("Use on claude.ai, your phone, other computers or SSH hosts counts toward your limits but isn't seen here, so a window can look smaller than it is: the estimates go by the larger ones."))
     }
 
     // Wed 14:05
@@ -2475,10 +2540,12 @@ PlasmaComponents3.ScrollView {
 
         // Your plan's limits over time, Overall's last section (it's the same
         // whatever the span; the other spans' Your plan says what the plan
-        // meant for their days): how much a full window of each account's
-        // plan held, week by week, and how that changed. Read only once it
-        // scrolls into view (limitsWant); while its numbers come, a dim line
-        // with room kept (what was read before stays, dimmed)
+        // meant for their days), each account in three parts: how full its
+        // weeks got (does the plan fit you?), the changes of its limits, and
+        // what a window holds (one estimate: the sizes, the share of the
+        // week, the tokens and the chart agree). Read only once it scrolls
+        // into view (limitsWant); while its numbers come, a dim line with
+        // room kept (what was read before stays, dimmed)
         ColumnLayout {
             id: limitsSection
             Layout.fillWidth: true
@@ -2486,33 +2553,8 @@ PlasmaComponents3.ScrollView {
             opacity: view.limitsDim ? 0.6 : 1
             spacing: Math.round(view.gu * 0.2)
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.topMargin: Math.round(view.gu * 0.7)
-                spacing: Math.round(view.gu * 0.35)
-
-                Kirigami.Separator {
-                    Layout.fillWidth: true
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    Kirigami.Heading {
-                        textFormat: Text.PlainText
-                        level: 2
-                        font.weight: Font.Bold
-                        text: i18n("Your plan's limits over time")
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        text: "· " + i18n("estimates")
-                        elide: Text.ElideRight
-                        font: Kirigami.Theme.smallFont
-                        opacity: 0.6
-                    }
-                }
+            SectionTitle {
+                text: i18n("Your plan's limits over time")
             }
             PlasmaComponents3.Label {
                 textFormat: Text.PlainText
@@ -2521,7 +2563,7 @@ PlasmaComponents3.ScrollView {
                 visible: !view.limitsData || root.limitsError !== ""
                 verticalAlignment: Text.AlignTop
                 text: root.limitsError ? i18n("Couldn't work it out: %1", root.limitsError)
-                                       : i18n("Working out how much your plan's windows held, from your chats and the limit readings kept.")
+                                       : i18n("Working out how full your plan's weeks got and how much its windows hold, from your chats and the limit readings kept.")
                 color: root.limitsError ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                 opacity: root.limitsError ? 1 : 0.6
                 wrapMode: Text.Wrap
@@ -2543,7 +2585,7 @@ PlasmaComponents3.ScrollView {
                 rowSpacing: 0
 
                 Repeater {
-                    model: [i18n("Plan"), i18n("5-hour"), i18n("Week"), i18n("5-hour share")]
+                    model: [i18n("Plan"), i18n("5-hour window"), i18n("Week"), i18n("5-hour share")]
                     delegate: PlasmaComponents3.Label {
                         required property var modelData
                         required property int index
@@ -2568,7 +2610,7 @@ PlasmaComponents3.ScrollView {
                         text: column === 0 ? account.name + " · " + (account.plan || "?")
                             : column === 1 ? (account.now.fiveHour ? view.limitValueText("", account.now.fiveHour) : "–")
                             : column === 2 ? (account.now.weeks.seven_day ? view.limitValueText("", account.now.weeks.seven_day) : "–")
-                            : (account.now.share ? Math.round(account.now.share.pct) + "%" : "–")
+                            : (account.now.share ? (account.now.share.how === "readings" ? "" : "≈ ") + Math.round(account.now.share.pct) + "%" : "–")
                     }
                 }
             }
@@ -2578,32 +2620,156 @@ PlasmaComponents3.ScrollView {
                     id: limitsOf
                     required property int index
                     readonly property var account: view.limitsShown[index] || view.emptyLimits
-                    // (every account's chart on one time line: a week is at the same place in each)
+                    readonly property var fit: Limits.fit(account)
+                    // (every account's chart on one time line: a day is at the same place in each)
                     readonly property var chart: Limits.dots(account, view.limitsNow, view.limitsStart)
-                    readonly property var bars: Limits.weekBars(account, view.limitsNow, view.limitsStart)
-                    readonly property real weekTop: Math.max(0, ...bars.map(b => b.cost))
                     readonly property var mix: Limits.mix(account.now.costs, account.now.tokens)
                     // (the sizes' column: as wide as the widest, a range with its count too)
                     readonly property real valueWidth: Math.max(view.gu * 4.5, Math.ceil(Math.max(0, ...Limits.keys(account).map(k =>
-                        textMetrics.advanceWidth(view.limitValueText(k, Limits.now(account, k).value))))) * 1.08 + 1)
+                        textMetrics.advanceWidth(view.limitValueText(k, Limits.size(account, k)))))) * 1.08 + 1)
                     Layout.fillWidth: true
-                    Layout.topMargin: Math.round(view.gu * 0.4)
+                    Layout.topMargin: Math.round(view.gu * 0.2)
                     spacing: Math.round(view.gu * 0.2)
 
-                    component Subtitle: PlasmaComponents3.Label {
+                    component Part: RowLayout {   // (a part's heading: what's in it)
+                        property alias text: partTitle.text
+                        property string note: ""
+                        Layout.fillWidth: true
+                        Layout.topMargin: Math.round(view.gu * 0.35)
+                        spacing: Kirigami.Units.smallSpacing
+
+                        PlasmaComponents3.Label {
+                            id: partTitle
+                            textFormat: Text.PlainText
+                            font.bold: true
+                            opacity: 0.8
+                        }
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            Layout.fillWidth: true
+                            visible: parent.note !== ""
+                            text: "· " + parent.note
+                            elide: Text.ElideRight
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.6
+                        }
+                    }
+                    component Line: PlasmaComponents3.Label {   // (a line of a part, with how it's worked out)
+                        property string tip: ""
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
-                        Layout.topMargin: Math.round(view.gu * 0.3)
-                        font.bold: true
-                        opacity: 0.75
+                        wrapMode: Text.Wrap
+                        visible: text !== ""
+
+                        PlasmaCore.ToolTipArea {
+                            anchors.fill: parent
+                            textFormat: Text.PlainText
+                            active: parent.tip !== ""
+                            mainText: parent.text
+                            subText: parent.tip
+                        }
                     }
 
                     PlasmaComponents3.Label {
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
+                        visible: text !== ""
                         text: (view.limitsShown.length > 1 ? limitsOf.account.name + " · " : "") + (limitsOf.account.plan || "")
                         font.bold: true
                         elide: Text.ElideRight
+                    }
+
+                    // ---- how full your weeks got: a bar per week, newest first
+                    Part {
+                        visible: limitsOf.fit.weeks.length > 0
+                        text: i18n("How full your weeks got")
+                    }
+                    Line {
+                        visible: limitsOf.fit.weeks.length > 0
+                        text: view.limitFitText(limitsOf.account)
+                        tip: view.limitFitTip()
+                    }
+                    Repeater {
+                        model: limitsOf.fit.weeks.length
+                        delegate: Item {
+                            id: weekRow
+                            required property int index
+                            readonly property var week: limitsOf.fit.weeks[index] || view.emptyLimitWeek
+                            Layout.fillWidth: true
+                            implicitHeight: weekCol.implicitHeight
+
+                            ColumnLayout {
+                                id: weekCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                spacing: 0
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Kirigami.Units.smallSpacing
+
+                                    PlasmaComponents3.Label {
+                                        id: weekName
+                                        textFormat: Text.PlainText
+                                        Layout.preferredWidth: view.gu * 5.5
+                                        text: view.limitWeekLabel(weekRow.week)
+                                        font.bold: weekRow.week.now
+                                        elide: Text.ElideRight
+                                    }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(view.gu * 0.4)
+                                        radius: height / 2
+                                        color: view.track
+
+                                        Rectangle {
+                                            width: Math.max(weekRow.week.pct > 0 ? 2 : 0, parent.width * Math.min(1, weekRow.week.pct / 100))
+                                            height: parent.height
+                                            radius: height / 2
+                                            color: view.planColor(weekRow.week.pct)
+                                        }
+                                        Rectangle {   // (it ran out: a red mark, as the timeline's)
+                                            visible: !!weekRow.week.ranOutAt
+                                            x: parent.width - width
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: 2
+                                            height: Math.round(view.gu * 0.8)
+                                            color: view.limitColor
+                                        }
+                                    }
+                                    PlasmaComponents3.Label {
+                                        textFormat: Text.PlainText
+                                        Layout.preferredWidth: view.gu * 4.5
+                                        horizontalAlignment: Text.AlignRight
+                                        text: view.limitWeekPct(weekRow.week)
+                                        font: Kirigami.Theme.smallFont
+                                        color: weekRow.week.pct >= 90 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                                        opacity: weekRow.week.pct >= 90 ? 1 : 0.8
+                                    }
+                                }
+                                PlasmaComponents3.Label {
+                                    textFormat: Text.PlainText
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: weekName.width + Kirigami.Units.smallSpacing
+                                    visible: text !== ""
+                                    text: view.limitWeekNote(weekRow.week)
+                                    font: Kirigami.Theme.smallFont
+                                    opacity: 0.6
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            PlasmaCore.ToolTipArea {
+                                anchors.fill: parent
+                                textFormat: Text.PlainText
+                                mainText: view.limitWeekLabel(weekRow.week)
+                                subText: view.limitWeekTip(weekRow.week)
+                            }
+                        }
+                    }
+
+                    // ---- changes of your limits: each change, then since when none
+                    Part {
+                        text: i18n("Changes of your limits")
                     }
                     Repeater {
                         model: limitsOf.account.events.length
@@ -2619,31 +2785,32 @@ PlasmaComponents3.ScrollView {
                                 Layout.fillHeight: true
                                 color: view.waitColor
                             }
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.fillWidth: true
+                            Line {
                                 text: view.limitEventText(eventLine.event)
+                                tip: view.limitEventTip(eventLine.event)
                                 font: Kirigami.Theme.smallFont
-                                wrapMode: Text.Wrap
-
-                                PlasmaCore.ToolTipArea {
-                                    anchors.fill: parent
-                                    textFormat: Text.PlainText
-                                    mainText: view.limitEventText(eventLine.event)
-                                    subText: view.limitEventTip(eventLine.event)
-                                }
                             }
                         }
                     }
-                    Subtitle {
-                        text: i18n("How your limits changed")
+                    Line {
+                        text: view.limitNoChangeText(limitsOf.account)
+                        tip: view.limitNoChangeTip()
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.7
+                    }
+
+                    // ---- what a window holds: the estimate, its share of the week, how long it lasts, in tokens, the windows
+                    Part {
+                        visible: Limits.keys(limitsOf.account).length > 0
+                        text: i18n("What a window holds")
+                        note: i18n("estimates")
                     }
                     Repeater {
                         model: Limits.keys(limitsOf.account)
                         delegate: Item {
                             id: sizeLine
                             required property var modelData
-                            readonly property var size: Limits.now(limitsOf.account, modelData)
+                            readonly property var size: Limits.size(limitsOf.account, modelData)
                             Layout.fillWidth: true
                             implicitHeight: sizeRow.implicitHeight
 
@@ -2663,17 +2830,11 @@ PlasmaComponents3.ScrollView {
                                     textFormat: Text.PlainText
                                     Layout.preferredWidth: limitsOf.valueWidth
                                     horizontalAlignment: Text.AlignRight
-                                    text: view.limitValueText(sizeLine.modelData, sizeLine.size.value)
-                                    font.bold: !(sizeLine.size.value && sizeLine.size.value.rough)
+                                    text: view.limitValueText(sizeLine.modelData, sizeLine.size)
+                                    font.bold: !(sizeLine.size && sizeLine.size.rough)
                                 }
-                                PlasmaComponents3.Label {
-                                    textFormat: Text.PlainText
+                                Item {
                                     Layout.fillWidth: true
-                                    text: view.limitChangeText(sizeLine.size.change)
-                                    font: Kirigami.Theme.smallFont
-                                    color: Limits.bad(sizeLine.size.change) ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-                                    opacity: Limits.bad(sizeLine.size.change) ? 1 : 0.6
-                                    wrapMode: Text.Wrap
                                 }
                             }
                             PlasmaCore.ToolTipArea {
@@ -2684,206 +2845,20 @@ PlasmaComponents3.ScrollView {
                             }
                         }
                     }
-                    // one chart the section's width: each 5-hour window a dot, the
-                    // weeks as bars under them on the same days
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.topMargin: Math.round(view.gu * 0.2)
-                        visible: limitsOf.chart.dots.length > 0 || limitsOf.bars.length > 0
-                        spacing: 2
-
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            visible: limitsOf.chart.dots.length > 0
-                            text: i18n("Each 5-hour window · %1 to %2", view.limitMoney(limitsOf.chart.lo), view.limitMoney(limitsOf.chart.top))
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.6
-                            elide: Text.ElideRight
-                        }
-                        Canvas {
-                            id: dotsChart
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: Math.round(view.gu * 2.6)
-                            visible: limitsOf.chart.dots.length > 0
-                            onWidthChanged: requestPaint()
-                            Connections {
-                                target: limitsOf
-                                function onChartChanged() {
-                                    dotsChart.requestPaint()
-                                }
-                            }
-                            onPaint: {
-                                const ctx = getContext("2d")
-                                ctx.reset()
-                                const w = width, h = height, c = limitsOf.chart
-                                const y = v => h - 3.5 - v * (h - 7)
-                                ctx.fillStyle = view.grid
-                                ctx.fillRect(0, 0, w, h)
-                                ctx.fillStyle = view.waitColor
-                                for (const x of c.marks)
-                                    ctx.fillRect(Math.round(x * w), 0, 1, h)
-                                ctx.strokeStyle = view.youColor
-                                ctx.lineWidth = 2
-                                for (const m of c.medians) {
-                                    ctx.beginPath()
-                                    ctx.moveTo(m.x1 * w, y(m.y))
-                                    ctx.lineTo(m.x2 * w, y(m.y))
-                                    ctx.stroke()
-                                }
-                                ctx.fillStyle = view.workColor
-                                for (const d of c.dots) {
-                                    ctx.beginPath()
-                                    ctx.arc(Math.max(3.5, Math.min(w - 3.5, d.x * w)), y(d.y), 3.5, 0, 2 * Math.PI)
-                                    ctx.fill()
-                                }
-                            }
-                            PlasmaCore.ToolTipArea {
-                                anchors.fill: parent
-                                textFormat: Text.PlainText
-                                mainText: i18n("5-hour windows")
-                                subText: i18n("How much each 5-hour window held, week by week (a dot each), with each week's middle as a line.")
-                                         + (limitsOf.chart.marks.length ? " " + i18n("An orange line marks where your limits changed.") : "")
-                            }
-                        }
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            Layout.fillWidth: true
-                            visible: limitsOf.bars.length > 0
-                            text: i18n("Each week · up to %1", view.limitMoney(limitsOf.weekTop))
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.6
-                            elide: Text.ElideRight
-                        }
-                        Canvas {
-                            id: weeksChart
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: Math.round(view.gu * 1.5)
-                            visible: limitsOf.bars.length > 0
-                            onWidthChanged: requestPaint()
-                            Connections {
-                                target: limitsOf
-                                function onBarsChanged() {
-                                    weeksChart.requestPaint()
-                                }
-                            }
-                            onPaint: {
-                                const ctx = getContext("2d")
-                                ctx.reset()
-                                const w = width, h = height, bs = limitsOf.bars
-                                ctx.fillStyle = view.grid
-                                ctx.fillRect(0, 0, w, h)
-                                ctx.fillStyle = view.waitColor
-                                for (const x of limitsOf.chart.marks)
-                                    ctx.fillRect(Math.round(x * w), 0, 1, h)
-                                for (let i = 0; i < bs.length; i++) {   // (each on its own days, a pixel apart)
-                                    const bh = Math.max(2, bs[i].h * (h - 2))
-                                    ctx.globalAlpha = bs[i].partial ? 0.5 : 1
-                                    ctx.fillStyle = i === bs.length - 1 ? view.workColor : view.youColor
-                                    ctx.fillRect(bs[i].x1 * w + 1, h - bh, Math.max(1, (bs[i].x2 - bs[i].x1) * w - 2), bh)
-                                }
-                                ctx.globalAlpha = 1
-                            }
-                            PlasmaCore.ToolTipArea {
-                                anchors.fill: parent
-                                textFormat: Text.PlainText
-                                mainText: i18n("Weeks")
-                                subText: limitsOf.bars.map(b => view.limitDay(b.from) + ": " + view.limitMoney(b.cost)
-                                                           + (b.partial ? " " + i18n("(the limit began during it)") : "")).join("\n")
-                            }
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                Layout.fillWidth: true
-                                text: view.limitDay(view.limitsStart)
-                                font: Kirigami.Theme.smallFont
-                                opacity: 0.6
-                            }
-                            PlasmaComponents3.Label {
-                                textFormat: Text.PlainText
-                                text: i18n("today")
-                                font: Kirigami.Theme.smallFont
-                                opacity: 0.6
-                            }
-                        }
+                    Line {   // (a full 5-hour window's share of the week, and where it's from)
+                        text: limitsOf.account.now.share ? view.limitShareText(limitsOf.account.now.share) + " · "
+                                                           + view.limitShareHow(limitsOf.account.now.share) : ""
+                        tip: view.limitShareTip(limitsOf.account.now.share)
                     }
-                    Subtitle {
-                        visible: !!limitsOf.account.now.share
-                        text: i18n("A 5-hour window in the week")
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        visible: !!limitsOf.account.now.share
-                        text: limitsOf.account.now.share ? view.limitShareText(limitsOf.account.now.share.pct, limitsOf.account.now.share.rough) : ""
-                        wrapMode: Text.Wrap
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: !!limitsOf.account.now.share
-                        spacing: Kirigami.Units.smallSpacing
-
-                        PlasmaComponents3.Label {
-                            textFormat: Text.PlainText
-                            text: view.limitChangeText(limitsOf.account.changes.share)
-                            font: Kirigami.Theme.smallFont
-                            opacity: 0.6
-                        }
-                        Row {
-                            id: shareTrend
-                            readonly property var values: limitsOf.account.periods.map(p => p.share ? p.share.pct : null)
-                            readonly property real highest: Math.max(1e-9, ...values.filter(v => v !== null))
-                            spacing: Math.max(1, Math.round(view.gu * 0.12))
-
-                            Repeater {
-                                model: shareTrend.values.length
-                                delegate: Item {
-                                    required property int index
-                                    readonly property var value: shareTrend.values[index]
-                                    width: Math.round(view.gu * 0.5)
-                                    height: Math.round(view.gu * 0.8)
-
-                                    Rectangle {
-                                        anchors.bottom: parent.bottom
-                                        width: parent.width
-                                        height: parent.value === null ? width : Math.max(1, parent.height * parent.value / shareTrend.highest)
-                                        radius: parent.value === null ? width / 2 : 1
-                                        color: parent.index === shareTrend.values.length - 1 ? view.workColor : view.youColor
-                                        opacity: parent.value === null ? 0.3 : 1
-                                    }
-                                }
-                            }
-                        }
-                        Item {
-                            Layout.fillWidth: true
-                        }
-                    }
-                    Subtitle {
-                        visible: !!limitsOf.account.now.fill
-                        text: i18n("How long a window lasts")
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        visible: !!limitsOf.account.now.fill
+                    Line {
                         text: view.limitFillText(limitsOf.account.now.fill)
-                        wrapMode: Text.Wrap
+                        tip: view.limitFillTip()
                     }
-                    Subtitle {
-                        visible: view.limitTokensText(limitsOf.account) !== "" || limitsOf.mix.parts.length > 0
-                        text: i18n("In tokens")
-                    }
-                    PlasmaComponents3.Label {
-                        textFormat: Text.PlainText
-                        Layout.fillWidth: true
-                        visible: text !== ""
+                    Line {
                         text: view.limitTokensText(limitsOf.account)
-                        wrapMode: Text.Wrap
+                        tip: view.limitTokensTip(limitsOf.account)
                     }
-                    // what filled a window, by API price: a bar the chart's width (each
+                    // what fills a window, by API price: a bar the section's width (each
                     // part at least a few pixels, so a small one still shows), its legend under it
                     ColumnLayout {
                         Layout.fillWidth: true
@@ -2936,7 +2911,87 @@ PlasmaComponents3.ScrollView {
                             }
                             PlasmaComponents3.Label {
                                 textFormat: Text.PlainText
-                                text: view.limitMixText(limitsOf.mix)
+                                text: i18n("by API price")
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.6
+                            }
+                        }
+                    }
+                    // the 5-hour windows: a dot each at what it held, the line
+                    // at the estimate, each stretch of the same limits on its own scale
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.topMargin: Math.round(view.gu * 0.2)
+                        visible: limitsOf.chart.dots.length > 0
+                        spacing: 2
+
+                        PlasmaComponents3.Label {
+                            textFormat: Text.PlainText
+                            Layout.fillWidth: true
+                            text: view.limitChartText(limitsOf.account, limitsOf.chart)
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.6
+                            elide: Text.ElideRight
+                        }
+                        Canvas {
+                            id: dotsChart
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Math.round(view.gu * 2.6)
+                            onWidthChanged: requestPaint()
+                            Connections {
+                                target: limitsOf
+                                function onChartChanged() {
+                                    dotsChart.requestPaint()
+                                }
+                            }
+                            onPaint: {
+                                const ctx = getContext("2d")
+                                ctx.reset()
+                                const w = width, h = height, c = limitsOf.chart
+                                const y = v => h - 3.5 - v * (h - 7)
+                                ctx.fillStyle = view.grid
+                                ctx.fillRect(0, 0, w, h)
+                                ctx.fillStyle = view.waitColor
+                                for (const x of c.marks)
+                                    ctx.fillRect(Math.round(x * w), 0, 1, h)
+                                ctx.strokeStyle = view.youColor
+                                ctx.lineWidth = 2
+                                for (const l of c.lines) {
+                                    ctx.globalAlpha = l.dim ? 0.4 : 1
+                                    ctx.beginPath()
+                                    ctx.moveTo(l.x1 * w, y(l.y))
+                                    ctx.lineTo(l.x2 * w, y(l.y))
+                                    ctx.stroke()
+                                }
+                                ctx.fillStyle = view.workColor
+                                for (const d of c.dots) {
+                                    ctx.globalAlpha = d.dim ? 0.35 : 1
+                                    ctx.beginPath()
+                                    ctx.arc(Math.max(3.5, Math.min(w - 3.5, d.x * w)), y(d.y), 3.5, 0, 2 * Math.PI)
+                                    ctx.fill()
+                                }
+                                ctx.globalAlpha = 1
+                            }
+                            PlasmaCore.ToolTipArea {
+                                anchors.fill: parent
+                                textFormat: Text.PlainText
+                                mainText: i18n("5-hour windows")
+                                subText: view.limitChartTip(limitsOf.chart)
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                Layout.fillWidth: true
+                                text: view.limitDay(view.limitsStart)
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.6
+                            }
+                            PlasmaComponents3.Label {
+                                textFormat: Text.PlainText
+                                text: i18n("today")
                                 font: Kirigami.Theme.smallFont
                                 opacity: 0.6
                             }

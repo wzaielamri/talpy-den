@@ -1012,8 +1012,9 @@ export interface WeekRecap {
   sources: { host: string; ok: boolean; error: string }[];
 }
 
-// The Recap's How your limits changed (week.py --limits): how much a full
-// window of each account's plan held, at API prices, week by week
+// The Recap's Your plan's limits over time (week.py --limits): how full each
+// week got, the changes of the limits, and how much a full window of each
+// account's plan holds, at API prices
 export interface LimitChange {
   kind: "change" | "same" | "new" | "few" | "rough" | "limits"; // (few, rough: one of the two weeks too unsure to compare)
   pct?: number; // (change, same) the newest week against the one before, in %
@@ -1045,13 +1046,14 @@ export interface LimitPeriod {
   from: number;
   until: number;
   plan: string | null; // with its tier: "Max 20×", "Team · standard seat"
-  // the median of its 5-hour windows (scaled: none measured since the limits
-  // changed, the one before times the change)
-  // (rough: from fewer than 3 windows, or ones too far apart, for one number: shown as lo–hi)
+  // the upper end of its 5-hour windows (week.py upper_size: lo–hi, the range
+  // it rests on; scaled: none measured since the limits changed, the one
+  // before times the change; rough: from fewer than 3 windows, or ones too
+  // far apart, for one number: shown as lo–hi)
   fiveHour: { cost: number; n: number; lo: number; hi: number; scaled?: number; rough?: boolean } | null;
   // seven_day, seven_day_opus, … (rough: its readings tell sizes from lo to hi, too far apart)
   weeks: Record<string, { cost: number; pct: number; partial?: boolean; countedFrom?: number; scaled?: number; rough?: boolean; lo?: number; hi?: number }>;
-  share: { pct: number; how: "sizes" | "measured"; measured: number | null; rough?: boolean } | null; // a full 5-hour window, in % of the week
+  share: { pct: number; how: "sizes" | "measured"; measured: number | null; rough?: boolean } | null; // a full 5-hour window, in % of the week (a week's)
   fill: { wallMs: number; workMs: number } | null; // a full 5-hour window at your pace: your time, Claude's work
   tokens: { fresh: number; output: number; cacheRead: number } | null; // what filled one
   costs?: { fresh: number; output: number; cacheRead: number } | null; // and those tokens' API price, by kind (an older week.py: none)
@@ -1065,15 +1067,52 @@ export interface LimitAccount {
   windows: { start: number; at: number; pct: number; full: number; plan: string | null; era: number }[]; // each 5-hour window measured
   events: LimitEvent[]; // the changes of its limits, oldest first
   changes: Record<string, LimitChange | null>; // fiveHour, share, seven_day, seven_day_opus, …
+  // what a window holds now: one estimate, from every window since the limits
+  // last changed (the sizes, the share, the tokens and the costs agree)
   now: {
     fiveHour: LimitPeriod["fiveHour"];
-    share: LimitPeriod["share"];
+    share: LimitShare | null;
     fill: LimitPeriod["fill"];
-    tokens: LimitPeriod["tokens"];
+    tokens: LimitPeriod["tokens"]; // (what fills a 5-hour window, in your mix)
     costs?: LimitPeriod["costs"];
-    weeks: Record<string, { cost: number; pct: number; scaled?: number; rough?: boolean; lo?: number; hi?: number } | null>;
+    // (how: "share": the 5-hour window over its share of the week; "readings": from its own weeks)
+    weeks: Record<string, { cost: number; n?: number; pct?: number; scaled?: number; rough?: boolean; lo?: number; hi?: number; how?: "share" | "readings" } | null>;
   };
   equivalents: { model: string; fiveHour: LimitTokens | null; week: LimitTokens | null } | null;
+  eras?: LimitEra[]; // each stretch of the same limits, oldest first (an older week.py sends none)
+  weeks?: LimitWeek[]; // how full each week got, oldest first
+  since?: number; // its first reading kept
+}
+
+// A full 5-hour window's share of the week: from the readings themselves (how
+// far the week's reading moved while one filled: n windows), or from the two sizes
+export interface LimitShare {
+  pct: number;
+  how: "readings" | "sizes" | "measured";
+  n?: number;
+  measured?: number | null;
+  rough?: boolean;
+  scaled?: number;
+}
+
+// A stretch of the same limits, with what a 5-hour window held in it (the chart's scales)
+export interface LimitEra {
+  from: number;
+  until: number;
+  plan: string | null;
+  fiveHour: LimitPeriod["fiveHour"];
+}
+
+// How full a week (the plan's weekly window) got: its readings' highest
+// (100 when it ran out), when it ran out, its 5-hour windows that ran full
+export interface LimitWeek {
+  from: number;
+  until: number;
+  pct: number;
+  ranOutAt: number | null;
+  fiveFull: number;
+  fiveUsed: number;
+  now: boolean;
 }
 
 export interface LimitHistory {

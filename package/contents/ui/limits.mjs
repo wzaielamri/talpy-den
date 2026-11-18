@@ -1,7 +1,7 @@
 // The Recap's plan limits over time (WeekView.qml, week.py --limits): the
-// charts' places and the parts of what filled a window, as VS Code's
-// src/shared/week.ts and GNOME's logic.js work them out. The words are
-// WeekView.qml's (translated there).
+// chart's places and the parts of what fills a window, as VS Code's
+// src/shared/week.ts works them out. The words are WeekView.qml's
+// (translated there).
 
 const ORDER = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"]
 export const FAMILIES = ["fable", "mythos", "opus", "sonnet", "haiku"]
@@ -11,45 +11,40 @@ export function family(key) {
     return FAMILIES.find(f => String(key).includes(f)) || ""
 }
 
-// The dots of the 5-hour windows (x, y: 0 to 1), each week's median and each
-// change of the limits, over the weeks kept; from a little under the
-// smallest to a little over the largest
+// The 5-hour windows' chart (x, y: 0 to 1): a dot each, at what it held
+// over what its limits' estimate is (each stretch of the same limits on its
+// own scale: a size of before a change is never drawn on the scale of
+// after), a line at each estimate, a mark at each change; the older
+// stretches dimmed. now: the newest stretch's dots' range and estimate.
 export function dots(a, now, start = null) {
-    const from = start !== null ? start : a.periods.length ? a.periods[0].from : now
+    const eras = a.eras || []
+    const from = start !== null ? start : eras.length ? eras[0].from : now
     const span = Math.max(1, now - from)
-    const sizes = [...a.windows.map(w => w.full), ...a.periods.map(p => p.fiveHour ? p.fiveHour.cost : NaN)].filter(v => v > 0)
-    const most = sizes.length ? Math.max(...sizes) : 1
-    const least = sizes.length ? Math.min(...sizes) : 0
-    const pad = Math.max((most - least) * 0.15, most * 0.05)
-    const lo = Math.max(0, least - pad)
-    const top = most + pad
     const x = ms => Math.max(0, Math.min(1, (ms - from) / span))
-    const y = v => (v - lo) / (top - lo)
+    const est = k => eras[k] && eras[k].fiveHour ? eras[k].fiveHour.cost : 0
+    const newest = eras.length - 1
+    const shown = a.windows.filter(w => est(w.era) > 0)
+    // (from 0 to a little over the largest, at most 1.6 times an estimate: a wild one sits at the top)
+    const top = Math.min(1.6, Math.max(1.15, ...shown.map(w => w.full / est(w.era) * 1.05)))
+    const y = v => Math.min(1, v / top)
+    const mine = shown.filter(w => w.era === newest).map(w => w.full)
     return {
-        dots: a.windows.map(w => ({ x: x(w.at), y: y(w.full), full: w.full })),
-        medians: a.periods.filter(p => p.fiveHour).map(p => ({ x1: x(p.from), x2: x(Math.min(p.until, now)), y: y(p.fiveHour.cost) })),
+        dots: shown.map(w => ({ x: x(w.at), y: y(w.full / est(w.era)), full: w.full, dim: w.era !== newest })),
+        lines: eras.map((e, k) => ({ x1: x(e.from), x2: x(Math.min(e.until, now)), y: y(1), dim: k !== newest, k }))
+                   .filter(l => est(l.k) > 0 && l.x2 > l.x1),
         marks: (a.events || []).filter(e => e.at > from && e.at <= now).map(e => x(e.at)),
-        lo,
-        top,
+        lo: mine.length ? Math.min(...mine) : 0,
+        hi: mine.length ? Math.max(...mine) : 0,
+        estimate: est(newest),
+        older: eras.slice(0, -1).filter(e => e.fiveHour),
     }
 }
 
-// The weeks' bars (the main weekly window) on the same time line as the
-// dots (x1, x2: 0 to 1, from start to now), height 0 to 1 of the largest
-export function weekBars(a, now, start = null) {
-    const from = start !== null ? start : a.periods.length ? a.periods[0].from : now
-    const span = Math.max(1, now - from)
-    const x = ms => Math.max(0, Math.min(1, (ms - from) / span))
-    const weeks = a.periods.filter(p => p.weeks.seven_day)
-    const top = Math.max(1e-9, ...weeks.map(p => p.weeks.seven_day.cost))
-    return weeks.map(p => ({ from: p.from, cost: p.weeks.seven_day.cost, x1: x(p.from), x2: x(Math.min(p.until, now)),
-                             h: p.weeks.seven_day.cost / top, partial: !!p.weeks.seven_day.partial }))
-}
-
-// Where every account's charts begin: the earliest week any of them has, so
-// a day is at the same place in each
+// Where every account's chart begins: the earliest reading any of them has,
+// so a day is at the same place in each
 export function start(accounts, now) {
-    const starts = accounts.filter(a => a.periods.length).map(a => a.periods[0].from)
+    const starts = accounts.map(a => a.eras && a.eras.length ? a.eras[0].from : a.periods.length ? a.periods[0].from : null)
+                           .filter(v => v !== null)
     return starts.length ? Math.min(...starts) : now
 }
 
@@ -59,9 +54,9 @@ export function keys(a) {
     return found.sort((p, q) => (ORDER.indexOf(p) + 1 || 99) - (ORDER.indexOf(q) + 1 || 99))
 }
 
-// A window's size now ({cost, scaled}) and its change
-export function now(a, key) {
-    return { value: key === "five_hour" ? a.now.fiveHour : a.now.weeks[key], change: a.changes[key === "five_hour" ? "fiveHour" : key] }
+// A window's size now ({cost, scaled, rough, …})
+export function size(a, key) {
+    return key === "five_hour" ? a.now.fiveHour : a.now.weeks[key]
 }
 
 // What filled a window: its parts, shares of their API price (costs: week.py's
@@ -80,7 +75,10 @@ export function eventFactor(e) {
     return fs.length ? fs[Math.floor((fs.length - 1) / 2)] : null
 }
 
-// Is a change one to show as bad (the window holds less)?
-export function bad(c) {
-    return !!c && ((c.kind === "change" && (c.pct || 0) < 0) || (c.kind === "limits" && (c.factor || 1) < 0.9))
+// How full each week got, newest first, and in all: the weeks that ran
+// out, the fullest, the 5-hour windows that ran full of those used
+export function fit(a) {
+    const weeks = (a.weeks || []).slice().reverse()
+    return { weeks, ranOut: weeks.filter(w => w.ranOutAt).length, fullest: Math.max(0, ...weeks.map(w => w.pct)),
+             fiveFull: weeks.reduce((n, w) => n + w.fiveFull, 0), fiveUsed: weeks.reduce((n, w) => n + w.fiveUsed, 0) }
 }

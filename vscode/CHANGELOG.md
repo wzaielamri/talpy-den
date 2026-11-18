@@ -22,6 +22,17 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
+- **Your plan's limits over time, right and to the point.** Overall's last
+  section starts with how full each of your weeks got (a bar per week, a
+  red mark where it ran out, how many of its 5-hour windows ran full),
+  then the changes of your limits (*No change seen since 12 Mar*), then
+  what a window holds as one estimate: the upper end of your windows,
+  since use not seen here only makes one look smaller (*5-hour window
+  ≈ $180*), its share of the week from the readings themselves where
+  there are enough, how long one lasts, one token figure in your mix,
+  and a chart with each stretch of the same limits on its own scale. The
+  sizes, the share, the tokens and the chart agree.
+
 - **Your plan says each week on its own.** Over a month or everything,
   *Your plan* says each weekly window's use (*Weeks: 72% · 100% · 41% so
   far*) instead of adding them up past 100%, and how long chats stood

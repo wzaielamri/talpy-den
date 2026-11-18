@@ -738,16 +738,26 @@ export function demoHostProjects(now: number): HostProjects[] {
   }];
 }
 
-// The Recap's How your limits changed in the demo: six weeks of each account,
-// the Max one's 5-hour window a little smaller in the newest week, the Team
-// one with a weekly limit from its fourth week
+// Your plan's limits over time in the demo: six weeks of each account. The
+// Max one's limits grew about 5× in its third week (Pro before), its share
+// of the week told by the readings, its weeks running full now and then;
+// the Team one has a weekly limit from its fourth week and 5-hour windows
+// too far apart for one number (a range)
 export function demoLimits(now: number, account = ""): LimitHistory {
   const day = 86400000;
   const reset = now + 2 * day;
+  // (the middle of the largest third, of three at least: week.py upper_size)
+  const upper = (sizes: number[], rough = false) => {
+    const s = [...sizes].sort((p, q) => q - p);
+    const top = s.slice(0, Math.max(3, Math.ceil(s.length / 3)));
+    const mid = top.length % 2 ? top[(top.length - 1) / 2] : (top[top.length / 2 - 1] + top[top.length / 2]) / 2;
+    return { cost: Math.round(mid * 100) / 100, n: s.length, lo: top[top.length - 1], hi: top.length >= 3 ? top[1] : top[0], ...(rough ? { rough: true } : {}) };
+  };
   // (changed: the week its limits changed in, from the plan before, which had a fifth of them;
-  // rough: its newest week's 5-hour windows too far apart for one number)
+  // share: a full 5-hour window's share of the week, as the readings tell it, or none;
+  // rough: its windows far apart; fills: how full each week got, ranOut: the weeks that ran out)
   const make = (id: string, name: string, plan: string, five: number[], week: (number | null)[], opus: boolean,
-    changed = -1, before = "", rough = false): LimitAccount => {
+    changed: number, before: string, share: number | null, rough: boolean, fills: number[], ranOut: number[]): LimitAccount => {
     const periods: (LimitPeriod & { era: number })[] = five.map((size, i) => {
       const from = reset - (five.length - i) * 7 * day;
       const old = i < changed;
@@ -763,36 +773,60 @@ export function demoLimits(now: number, account = ""): LimitHistory {
         costs: { fresh: cost * 0.29, output: cost * 0.21, cacheRead: cost * 0.5 }, // (those tokens at Opus 5.5's prices)
       };
     });
+    // (the windows: most read about the size, some lower (use not seen here); far apart, many lower)
+    const spread = rough ? [0.45, 1.6, 0.7, 1, 0.5, 0.8] : [0.94, 1.05, 1, 0.71, 1.03, 0.58];
     const windows = periods.flatMap((p, i) => [0.5, 1.6, 2.7, 3.9, 5.2].slice(0, 3 + (i % 3)).map((d, k) => {
       const start = p.from + d * day;
-      const full = (p.fiveHour?.cost ?? 0) * [0.94, 1.05, 1, 0.97, 1.03][k];
+      const full = Math.round((p.fiveHour?.cost ?? 0) * spread[(k + i) % spread.length] * 100) / 100;
       return { start, at: start + 2 * 3600000, pct: 60 + k * 9, full, plan: p.plan, era: p.era };
     })).filter((w) => w.at < now);
+    const eraCount = changed >= 0 ? 2 : 1;
+    const changeAt = changed >= 0 ? periods[changed].from + 9 * 3600000 : 0;
+    const eras = Array.from({ length: eraCount }, (_, k) => {
+      const mine = windows.filter((w) => w.era === k).map((w) => w.full);
+      return { from: k ? changeAt : periods[0].from, until: k || eraCount === 1 ? now : changeAt, plan: k || changed < 0 ? plan : before,
+        fiveHour: mine.length ? upper(mine, rough && k === eraCount - 1) : null };
+    });
+    const fiveNow = eras[eras.length - 1].fiveHour!;
     const last = periods[periods.length - 1];
     const prev = periods[periods.length - 2];
-    if (rough) {
-      last.fiveHour = { ...last.fiveHour!, lo: Math.round(last.fiveHour!.cost * 0.45), hi: Math.round(last.fiveHour!.cost * 1.6), rough: true };
-      if (last.share) last.share = { ...last.share, rough: true };
-    }
+    const ownWeek = last.weeks.seven_day ? { cost: last.weeks.seven_day.cost, n: 3, how: "readings" as const } : null;
+    const weekNow = share ? { cost: Math.round((fiveNow.cost * 100) / share), n: fiveNow.n, lo: Math.round((fiveNow.lo * 100) / share),
+      hi: Math.round((fiveNow.hi * 100) / share), how: "share" as const, ...(rough ? { rough: true } : {}) } : ownWeek;
+    const k = fiveNow.cost / last.fiveHour!.cost; // (the tokens and costs of the same estimate)
     const pct = Math.round((last.fiveHour!.cost / prev.fiveHour!.cost - 1) * 100);
+    const weeks = fills.map((f, i) => {
+      const from = reset - (fills.length - i) * 7 * day;
+      return { from, until: from + 7 * day, pct: ranOut.includes(i) ? 100 : f, ranOutAt: ranOut.includes(i) ? from + (5.4 - (i % 2)) * day : null,
+        fiveFull: Math.round(f / 25), fiveUsed: 11 + (i % 4), now: i === fills.length - 1 };
+    });
     return {
       id, name, plan, periods, windows,
-      events: changed >= 0 ? [{ at: periods[changed].from + 9 * 3600000, factors: { five_hour: 5.1, seven_day: 4.9 }, from: before, to: plan }] : [],
+      events: changed >= 0 ? [{ at: changeAt, factors: { five_hour: 5.1, seven_day: 4.9 }, from: before, to: plan }] : [],
       changes: {
         fiveHour: rough ? { kind: "rough", against: prev.from } : { kind: Math.abs(pct) >= 10 ? "change" : "same", pct, against: prev.from },
         share: rough ? { kind: "rough", against: prev.from } : { kind: "same", pct: -2, against: prev.from },
         seven_day: week.filter(Boolean).length > 1 ? { kind: "same", pct: -3, against: prev.from } : { kind: "new", against: prev.from },
         ...(opus ? { seven_day_opus: { kind: "same", pct: 1, against: prev.from } } : {}),
       },
-      now: { fiveHour: last.fiveHour, share: last.share, fill: last.fill, tokens: last.tokens, costs: last.costs,
-        weeks: { seven_day: last.weeks.seven_day ?? null, ...(opus ? { seven_day_opus: last.weeks.seven_day_opus ?? null } : {}) } },
-      equivalents: { model: "Opus 5.5", fiveHour: { output: (last.fiveHour!.cost / 20) * 1e6, input: (last.fiveHour!.cost / 4) * 1e6, cacheRead: (last.fiveHour!.cost / 0.2) * 1e6 },
-        week: last.weeks.seven_day ? { output: (last.weeks.seven_day.cost / 20) * 1e6, input: (last.weeks.seven_day.cost / 4) * 1e6, cacheRead: (last.weeks.seven_day.cost / 0.2) * 1e6 } : null },
+      now: {
+        fiveHour: fiveNow,
+        share: share ? { pct: share, how: "readings", n: 9 } : ownWeek ? { pct: Math.round((fiveNow.cost / ownWeek.cost) * 1000) / 10, how: "sizes", rough: true } : null,
+        fill: last.fill,
+        tokens: { fresh: last.tokens!.fresh * k, output: last.tokens!.output * k, cacheRead: last.tokens!.cacheRead * k },
+        costs: { fresh: last.costs!.fresh * k, output: last.costs!.output * k, cacheRead: last.costs!.cacheRead * k },
+        weeks: { seven_day: weekNow, ...(opus ? { seven_day_opus: { cost: (weekNow?.cost ?? 0) * 0.8, n: 3, how: "readings" as const } } : {}) },
+      },
+      equivalents: { model: "Opus 5.5", fiveHour: { output: (fiveNow.cost / 20) * 1e6, input: (fiveNow.cost / 4) * 1e6, cacheRead: (fiveNow.cost / 0.2) * 1e6 },
+        week: weekNow ? { output: (weekNow.cost / 20) * 1e6, input: (weekNow.cost / 4) * 1e6, cacheRead: (weekNow.cost / 0.2) * 1e6 } : null },
+      eras, weeks, since: periods[0].from + 3600000,
     };
   };
   const accounts = [
-    make("0123456789ab", "personal", "Max 5×", [176, 181, 178, 183, 179, 158], [1250, 1240, 1262, 1255, 1248, 1236], true, 2, "Pro"),
-    make("ba9876543210", "work", "Team · standard seat", [51, 50, 52, 49, 50, 49], [null, null, null, 297, 291, 288], false, -1, "", true),
+    make("0123456789ab", "personal", "Max 5×", [176, 181, 178, 183, 179, 158], [1250, 1240, 1262, 1255, 1248, 1236], true, 2, "Pro", 17.4, false,
+      [96, 64, 100, 71, 100, 38], [2, 4]),
+    make("ba9876543210", "work", "Team · standard seat", [51, 50, 52, 49, 50, 49], [null, null, null, 297, 291, 288], false, -1, "", null, true,
+      [41, 58, 77], []),
   ];
   return { ok: true, generatedAt: now, since: reset - 6 * 7 * day, accounts: accounts.filter((a) => !account || a.id === account) };
 }

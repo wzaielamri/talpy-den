@@ -12,8 +12,9 @@ import {
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
   shareText, tipMeaning, tipSource, guessedCostText, guessedModelTip, modelValue, tokensLabel,
   dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
-  limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
-  limitStart, limitWeekBars, limitValueText, doneText, doneTip, commitsShown, workBeforeText, listedChatRef,
+  limitChartText, limitChartTip, limitDots, limitEventText, limitFillText, limitFitText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney,
+  limitNoChangeText, limitShareText, limitShareTip, limitShown, limitSizeTip, limitTokensText, limitTokensTip, limitWeekLabel, limitWeekNote,
+  limitWeekPct, limitStart, limitValueText, doneText, doneTip, commitsShown, workBeforeText, listedChatRef,
   planUseText, planUseTip, planWeeksShown, weekShareShort, weekShareTip,
   daysBack, laneHoverText, laneTicks, mixLabel, mixTip, mixValue, modelRowText, tipChatAct, tipsShown, tipShareShown, tipWas,
 } from "../src/shared/week";
@@ -580,71 +581,87 @@ test("a model's share, a tip's icon and Overall's row tooltip say it as Plasma's
   assert.match(dayTip(row as never), /\n1 prompt · /);
 });
 
-test("advanced analyses: how a plan's limits changed, in words", () => {
+test("your plan's limits over time, in words", () => {
   assert.equal(limitLabel("five_hour"), "5-hour window");
   assert.equal(limitLabel("seven_day"), "Week");
-  assert.equal(limitLabel("seven_day_opus"), "Week · Opus");
+  assert.equal(limitLabel("seven_day_opus"), "Opus week");
   assert.equal(limitLabel("seven_day_something_new"), "seven day something new");
-  assert.equal(limitChangeText({ kind: "change", pct: -14 }), "▼ 14% vs the week before");
-  assert.equal(limitChangeText({ kind: "change", pct: 8 }), "▲ 8% vs the week before");
-  assert.equal(limitChangeText({ kind: "same", pct: 3 }), "about the same as the week before");
-  assert.equal(limitChangeText({ kind: "new" }), "new this week");
-  // an estimate from too few windows, or ones far apart: its range and count, and no change told from it
-  assert.equal(limitChangeText({ kind: "rough" }), "readings too far apart to compare yet");
+  // one estimate, "≈" as every estimate; from too few windows or ones far apart: the range it rests on and how many
+  assert.deepEqual(limitValueText("five_hour", { cost: 180, n: 11, lo: 172, hi: 184 }), { text: "≈ $180", rough: false });
   assert.deepEqual(limitValueText("five_hour", { cost: 120, n: 5, lo: 31, hi: 190, rough: true }), { text: "$31–$190 · 5 windows", rough: true });
   assert.deepEqual(limitValueText("five_hour", { cost: 66, n: 1, lo: 66, hi: 66, rough: true }), { text: "$66 · 1 window", rough: true });
   assert.deepEqual(limitValueText("seven_day", { cost: 700, lo: 520, hi: 990, rough: true }), { text: "$520–$990", rough: true });
-  assert.deepEqual(limitValueText("five_hour", { cost: 42, n: 4, lo: 40, hi: 45, scaled: 5 }), { text: "≈ $42", rough: false });
-  assert.equal(limitShareText(22.1, true), "≈ 22% of the week · about 5 full windows a week");
-  const day = new Date(2026, 10, 4, 18, 52).getTime();
-  assert.equal(limitChangeText({ kind: "limits", factor: 5, at: day }), "about 5× since 4 Nov");
-  assert.equal(limitChangeText({ kind: "limits", factor: 4.71, at: day }), "about 4.7× since 4 Nov");
-  assert.equal(limitChangeText({ kind: "limits", factor: 0.2, at: day }), "▼ 80% since 4 Nov");
-  assert.equal(limitChangeText({ kind: "limits", factor: 1.04, at: day }), "about the same since 4 Nov");
-  assert.equal(limitChangeText({ kind: "limits", factor: null, at: day }), "your plan changed on 4 Nov");
+  assert.deepEqual(limitValueText("five_hour", { cost: 210, n: 4, lo: 200, hi: 225, scaled: 5 }), { text: "≈ $210", rough: false });
+  // a full 5-hour window's share of the week: from the readings, or from the sizes, and the section says which
+  assert.equal(limitShareText({ pct: 17.6, how: "readings", n: 9 }), "A full 5-hour window moves the week 18%: 6 of them fill it · from the readings");
+  assert.equal(limitShareText({ pct: 22.1, how: "sizes", rough: true }), "A full 5-hour window is ≈ 22% of the week: 5 of them fill it · from the sizes");
+  assert.equal(limitShareText({ pct: 0, how: "sizes" }), "");
+  assert.match(limitShareTip({ pct: 17.6, how: "readings", n: 9 }), /^From the readings themselves: .* of 9 windows\. No prices/);
+  const day = new Date(2026, 2, 12, 9, 40).getTime();
   assert.equal(limitEventText({ at: day, factors: { five_hour: 5, seven_day: 4.71 }, from: "Pro", to: "Max 5×" }),
-    `4 Nov ${clockText(day)} · your limits grew about 4.7× · Pro → Max 5×`);
+    `12 Mar ${clockText(day)} · your limits grew about 4.7× · Pro → Max 5×`);
   assert.equal(limitEventText({ at: day, factors: { five_hour: 0.2, seven_day: 0.2 }, from: null, to: "Pro" }),
-    `4 Nov ${clockText(day)} · your limits shrank 80% · now Pro`);
-  assert.equal(limitEventText({ at: day, factors: {}, from: "Pro", to: "Max 5×" }), `4 Nov ${clockText(day)} · your plan changed · Pro → Max 5×`);
-  assert.equal(limitChangeText({ kind: "few" }), "too few readings to compare yet");
-  assert.equal(limitChangeText(null), "");
-  assert.equal(limitShareText(17.2), "17% of the week · about 6 full windows a week");
-  assert.equal(limitShareText(0), "");
+    `12 Mar ${clockText(day)} · your limits shrank 80% · now Pro`);
+  assert.equal(limitEventText({ at: day, factors: {}, from: "Pro", to: "Max 5×" }), `12 Mar ${clockText(day)} · your plan changed · Pro → Max 5×`);
+  // with none since the first reading or the last change, one line says so
+  assert.equal(limitNoChangeText({ events: [{ at: day, factors: {}, from: "Pro", to: "Max 5×" }], since: day - 9 * 86400000 }, NOW), "No change seen since 12 Mar.");
+  assert.equal(limitNoChangeText({ events: [], since: day }, NOW), "No change seen since 12 Mar, when the readings begin.");
   assert.equal(limitMoney(47.6), "$48");
   assert.equal(limitMoney(1180.4), "$1,180");
   assert.equal(limitMoney(4.5), "$4.50");
   assert.equal(limitMoney(47.6, { code: "EUR", rate: 0.9 }), "€43");
-  assert.equal(limitFillText({ wallMs: 97 * MIN, workMs: 155 * MIN }), "Full after about 1h 37m at your pace · Claude worked 2h 35m in it, across chats");
+  assert.equal(limitFillText({ wallMs: 97 * MIN, workMs: 155 * MIN }), "A 5-hour window fills in ≈ 1h 37m at your pace · Claude worked 2h 35m in it, across chats");
   assert.match(limitFillText({ wallMs: 6 * HOUR, workMs: 0 }), /doesn't fill in its 5 hours$/);
-  // what filled a window: shares of its API price (by count, cache reads would be 98% of it)
-  const mix = limitMix({ fresh: 13, output: 8, cacheRead: 22.4 }, { fresh: 2e6, output: 0.4e6, cacheRead: 112e6 });
-  assert.deepEqual(mix.parts.map((p) => p.kind), ["cacheRead", "fresh", "output"]);
+  // what fills a window: shares of its API price (by count, cache reads would be 98% of it)
+  const mix = limitMix({ fresh: 13, output: 8, cacheRead: 22.4 });
   assert.deepEqual(mix.parts.map((p) => p.label), ["cache reads 52%", "new input and cache writes 30%", "output 18%"]);
-  assert.equal(mix.text, "by API price; 114.4M tokens fill a 5-hour window");
-  assert.deepEqual(limitMix(null, { fresh: 2e6, output: 0.4e6, cacheRead: 112e6 }).parts, []); // (an older week.py: no bar)
-  assert.match(limitFootText({ since: NOW }), /since 24 Oct\. Use on claude\.ai/);
+  assert.deepEqual(limitMix(null).parts, []); // (an older week.py: no bar)
+  // what it can't see, the SSH hosts the Recap reads by name
+  assert.match(limitFootText({ since: NOW }), /since 24 Oct\. Use on claude\.ai, your phone, other computers or SSH hosts counts/);
+  assert.match(limitFootText({ since: NOW }, ["build-server"]), /\. Use on build-server \(SSH hosts\), claude\.ai, your phone or other computers counts/);
+  // how full a week got: its days, its percent, when it ran out and its 5-hour windows
+  const w = { from: new Date(2026, 9, 10, 22).getTime(), until: new Date(2026, 9, 17, 22).getTime(), pct: 100,
+    ranOutAt: new Date(2026, 9, 15, 14, 20).getTime(), fiveFull: 4, fiveUsed: 15, now: false };
+  assert.equal(limitWeekLabel(w), "10–17 Oct");
+  assert.equal(limitWeekLabel({ from: new Date(2026, 1, 24).getTime(), until: new Date(2026, 2, 3).getTime() }), "24 Feb – 3 Mar");
+  assert.equal(limitWeekPct(w), "100%");
+  assert.equal(limitWeekPct({ ...w, pct: 41.4, ranOutAt: null, now: true }), "41% so far");
+  assert.equal(limitWeekNote(w), `Ran out Thu ${clockText(w.ranOutAt)} · 4 of 15 5-hour windows full`);
+  assert.equal(limitWeekNote({ ...w, ranOutAt: null, fiveUsed: 0 }), "");
+  assert.equal(limitFitText({ weeks: [w, { ...w, pct: 64, ranOutAt: null }] }), "Ran out in 1 of 2 weeks · 8 of 30 5-hour windows ran full");
+  assert.equal(limitFitText({ weeks: [{ ...w, pct: 64, ranOutAt: null, fiveUsed: 0 }] }), "No week ran out; the fullest got to 64%");
 });
 
-test("advanced analyses: the demo's accounts, their charts and tokens", () => {
+test("your plan's limits over time: the demo's accounts, one estimate everywhere, the chart", () => {
   const { accounts } = demoLimits(NOW);
   const [max, team] = accounts;
   assert.deepEqual(limitKeys(max), ["five_hour", "seven_day", "seven_day_opus"]);
   assert.deepEqual(limitKeys(team), ["five_hour", "seven_day"]);
-  assert.equal(team.changes.seven_day?.kind, "same");
-  // (its newest week's 5-hour windows far apart: their range, no change told from them)
-  assert.deepEqual([limitValueText("five_hour", team.now.fiveHour).text, team.changes.fiveHour?.kind], ["$22–$78 · 6 windows", "rough"]);
+  assert.match(limitFitText(max), /^Ran out in 2 of 6 weeks · \d+ of \d+ 5-hour windows ran full$/);
+  // the week from the 5-hour window and its share of the week (from the readings): they agree
+  const five = max.now.fiveHour!, seven = max.now.weeks.seven_day!;
+  assert.equal(seven.how, "share");
+  assert.ok(Math.abs(seven.cost - (five.cost * 100) / max.now.share!.pct) <= 1);
+  assert.match(limitSizeTip("seven_day", max), /^A full 5-hour window over its share of the week \(from the readings\): 5\.7 full 5-hour windows\.$/);
+  assert.match(limitSizeTip("five_hour", max), /upper end of the \d+ windows measured since your limits last changed/);
+  // (the Team account's windows far apart: a range, and so is the share from the sizes)
+  assert.deepEqual([limitValueText("five_hour", team.now.fiveHour).rough, team.now.share?.how], [true, "sizes"]);
+  // the chart: each stretch of the same limits on its own scale, the older dimmed, its label the newest's range
   const dots = limitDots(max, NOW);
-  assert.ok(dots.dots.length > 10 && dots.dots.every((d) => d.x >= 0 && d.x <= 1 && d.y > 0 && d.y < 1));
-  assert.ok(dots.lo > 0 && dots.top > dots.lo);
-  assert.deepEqual(limitWeekBars(team, NOW).map((b) => b.cost), [297, 291, 288]);
-  // (both accounts on one time line: a week is at the same place in each)
-  const start = limitStart(accounts, NOW);
-  const [maxBars, teamBars] = [limitWeekBars(max, NOW, start), limitWeekBars(team, NOW, start)];
-  assert.equal(maxBars[maxBars.length - 1].x1, teamBars[teamBars.length - 1].x1);
-  assert.ok(teamBars[0].x1 > 0 && maxBars[0].x1 === 0);
-  assert.equal(start, Math.min(max.periods[0].from, team.periods[0].from));
+  assert.ok(dots.dots.length > 10 && dots.dots.every((d) => d.x >= 0 && d.x <= 1 && d.y > 0 && d.y <= 1));
+  assert.ok(dots.dots.some((d) => d.dim) && dots.dots.some((d) => !d.dim));
+  assert.deepEqual(dots.lines.map((l) => l.dim), [true, false]);
+  assert.equal(dots.lines[0].y, dots.lines[1].y); // (each estimate at the same height: its own scale)
+  const mine = max.windows.filter((w) => w.era === 1).map((w) => w.full);
+  assert.deepEqual([dots.lo, dots.hi, dots.estimate], [Math.min(...mine), Math.max(...mine), five.cost]);
+  assert.match(limitChartText(max, dots), /^Each 5-hour window since \d+ \w+: \$\d+–\$\d+ · its line ≈ \$\d+$/);
+  assert.match(limitChartTip(dots), /Before your limits changed \(dimmed\), each stretch is drawn on its own scale: until \d+ \w+, ≈ \$\d+\./);
+  // (both accounts on one time line: a day is at the same place in each)
+  assert.equal(limitStart(accounts, NOW), Math.min(max.eras![0].from, team.eras![0].from));
   assert.equal(limitStart([], NOW), NOW);
-  assert.match(limitTokensText(team), /^2\.5M output tokens of Opus 5\.5 \(or 245\.0M cache reads\) fill a 5-hour window; 14\.4M a week, at API prices$/);
+  // one token figure, in your own mix; the one model's equivalence in its tooltip
+  assert.match(limitTokensText(max), /^≈ [\d.]+M tokens fill a 5-hour window, in your mix$/);
+  assert.match(limitTokensTip(max), /\nIn Opus 5\.5 output tokens alone: ≈ [\d.]+M a 5-hour window \(or ≈ [\d.]+M cache reads\); ≈ [\d.]+M a week\.$/);
+  assert.equal(limitShown({ ok: true, generatedAt: NOW, since: null, accounts }).length, 2);
   assert.equal(demoLimits(NOW, team.id).accounts.length, 1);
 });

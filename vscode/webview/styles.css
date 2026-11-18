@@ -2743,12 +2743,14 @@ body.vscode-high-contrast .top.scrolled {
   font-weight: 600;
 }
 
-/* Your plan's limits over time, Overall's last section: per account its
-   window sizes with how they changed, two small charts (each 5-hour window
-   as a dot with its week's middle as a line; the weeks as bars), then a
-   line each for the 5-hour window's share of the week, how long one lasts,
-   and tokens (what filled one, as a thin bar). Read once it's in sight:
-   till then a dim line, with room kept so what's under it doesn't jump */
+/* Your plan's limits over time, Overall's last section: per account how
+   full each week got (a bar each, in the usage bars' colours, a red mark
+   where it ran out), the changes of its limits, then what a window holds:
+   its sizes, a line each for the 5-hour window's share of the week, how long
+   one lasts and tokens (what fills one, as a thin bar), and a chart of the
+   5-hour windows (a dot each, the estimate as a line, each stretch of the
+   same limits on its own scale). Read once it's in sight: till then a dim
+   line, with room kept so what's under it doesn't jump */
 .week-limits.busy {
   opacity: 0.6;
 }
@@ -2783,11 +2785,48 @@ body.vscode-high-contrast .top.scrolled {
 }
 
 .limits-sizes {
-  grid-template-columns: minmax(0, 8em) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 8em) auto;
 }
 
-.limits-sizes .week-bar-value {
-  text-align: left;
+/* how full each week got: its days, its bar, its percent; under the bar
+   when it ran out and its 5-hour windows */
+.limits-weeks {
+  grid-template-columns: minmax(0, 6.5em) minmax(2em, 1fr) auto;
+}
+
+.limits-weeks li.now .week-bar-name {
+  font-weight: 600;
+}
+
+.limits-weeks .week-bar-meter {
+  position: relative;
+}
+
+.limits-weeks .week-bar-meter span {
+  background: var(--cs-usage-low);
+}
+
+.limits-weeks .week-bar-meter.mid span {
+  background: var(--cs-usage-medium);
+}
+
+.limits-weeks .week-bar-meter.high span {
+  background: var(--cs-usage-high);
+}
+
+/* (it ran out: a red mark at the bar's end, as the timeline's) */
+.limits-weeks .ran-out {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  width: 2px;
+  height: 14px;
+  background: var(--cs-failed);
+}
+
+.limits-week-note {
+  grid-column: 2 / -1;
+  margin-top: -2px;
 }
 
 .limits-value {
@@ -2802,9 +2841,10 @@ body.vscode-high-contrast .top.scrolled {
   font-weight: normal;
 }
 
-/* one chart per account, full width: each 5-hour window as a dot (each week's
-   middle as a line), the weeks as bars under them on the same days, every
-   account on the same time line; a change of the limits a line across both */
+/* one chart per account, full width: each 5-hour window as a dot, at what
+   it held over its limits' estimate (the line), every account on the same
+   time line; a change of the limits a line across it, the stretches before
+   dimmed */
 .limits-chart {
   display: flex;
   flex-direction: column;
@@ -2813,20 +2853,11 @@ body.vscode-high-contrast .top.scrolled {
   margin: 4px 0 0;
 }
 
-.limits-dots,
-.limits-bars {
+.limits-dots {
   position: relative;
+  height: 48px;
   border-radius: 2px;
   background: var(--cs-track);
-}
-
-.limits-dots {
-  height: 48px;
-}
-
-.limits-bars {
-  height: 28px;
-  margin-bottom: 2px;
 }
 
 .limits-dots .dot {
@@ -2840,8 +2871,7 @@ body.vscode-high-contrast .top.scrolled {
 }
 
 /* a change of the plan's limits: a thin line across the chart */
-.limits-dots .mark,
-.limits-bars .mark {
+.limits-dots .mark {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -2862,22 +2892,8 @@ body.vscode-high-contrast .top.scrolled {
   background: color-mix(in srgb, var(--cs-fg) 45%, transparent);
 }
 
-.limits-bars .bar {
-  position: absolute;
-  bottom: 0;
-  box-sizing: border-box;
-  border-left: 1px solid var(--cs-bg);
-  border-right: 1px solid var(--cs-bg);
-  border-radius: 2px 2px 0 0;
-  background: color-mix(in srgb, var(--cs-fg) 40%, transparent);
-}
-
-.limits-bars .bar.now {
-  background: var(--cs-working);
-}
-
-.limits-bars .bar.partial {
-  opacity: 0.5;
+.limits-dots .dim {
+  opacity: 0.35;
 }
 
 .limits-axis {
@@ -2890,10 +2906,6 @@ body.vscode-high-contrast .top.scrolled {
   flex-wrap: wrap;
   align-items: center;
   gap: 2px 8px;
-}
-
-.limits-line .week-trend {
-  margin-top: 0;
 }
 
 /* what filled a window: a bar the chart's width, its legend under it (each

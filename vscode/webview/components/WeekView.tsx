@@ -54,23 +54,36 @@ import {
   dayMoment,
   dayPlace,
   LIMIT_EMPTY,
-  limitChangeText,
+  LIMIT_FILL_TIP,
+  LIMIT_FIT_TIP,
+  LIMIT_NO_CHANGE_TIP,
+  limitChartText,
+  limitChartTip,
   limitDay,
   limitDots,
   limitEventText,
   limitEventTip,
   limitFillText,
+  limitFit,
+  limitFitText,
   limitFootText,
   limitKeys,
   limitLabel,
   limitMix,
   limitMoney,
-  limitValueText,
-  limitStart,
+  limitNoChangeText,
   limitShareText,
+  limitShareTip,
+  limitShown,
   limitSizeTip,
+  limitStart,
   limitTokensText,
-  limitWeekBars,
+  limitTokensTip,
+  limitValueText,
+  limitWeekLabel,
+  limitWeekNote,
+  limitWeekPct,
+  limitWeekTip,
 } from "../../src/shared/week";
 import { reviewPending, testsText } from "../../src/shared/pane";
 import { post } from "../env";
@@ -459,10 +472,13 @@ function Plan({ recap }: { recap: WeekRecap }) {
 }
 
 // Your plan's limits over time (week.py --limits), Overall's last section:
-// asked for only once it scrolls into view, not when the tab opens nor
-// again on a change of span; again on a change of account, at the view's
-// Refresh and the tab's 10-minute read (limitsRound). While its numbers
-// come, a dim line in its place (what was read before stays, dimmed).
+// each account in three parts: how full its weeks got (does the plan fit
+// you?), the changes of its limits, and what a window holds (one estimate:
+// the sizes, the share of the week, the tokens and the chart agree). Asked
+// for only once it scrolls into view, not when the tab opens nor again on a
+// change of span; again on a change of account, at the view's Refresh and
+// the tab's 10-minute read (limitsRound). While its numbers come, a dim
+// line in its place (what was read before stays, dimmed).
 function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
   const answer = useStore(limitsAnswer);
   const round = useStore(limitsRound);
@@ -484,31 +500,30 @@ function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
   const mine = answer && answer.account === account ? answer : null;
   const data: LimitHistory | null = answer?.data ?? null;
   const cur = currencyOf(data ?? recap);
-  const shown = (data?.accounts ?? []).filter((a) => a.periods.length);
+  const shown = limitShown(data);
   const plans = new Set(shown.map((a) => a.plan));
+  const hosts = recap.sources.filter((s) => s.host).map((s) => hostLabel(s.host));
   return (
     <section ref={box} class={"week-section week-limits" + (data && !mine ? " busy" : "")}>
-      <h2>
-        Your plan's limits over time <span class="limits-estimate muted">· estimates</span>
-      </h2>
+      <h2>Your plan's limits over time</h2>
       {mine?.error ? (
         <div class="msg error" role="alert">Couldn't work it out: {mine.error}</div>
       ) : !data ? (
-        <div class="limits-waiting"><Reading text="Working out how much your plan's windows held, from your chats and the limit readings kept." /></div>
+        <div class="limits-waiting"><Reading text="Working out how full your plan's weeks got and how much its windows hold, from your chats and the limit readings kept." /></div>
       ) : !shown.length ? (
         <div class="muted">{LIMIT_EMPTY}</div>
       ) : (
         <>
           {shown.length > 1 && plans.size > 1 ? (
             <table class="limits-compare">
-              <thead><tr><th>Plan</th><th>5-hour</th><th>Week</th><th>5-hour share</th></tr></thead>
+              <thead><tr><th>Plan</th><th>5-hour window</th><th>Week</th><th>5-hour share</th></tr></thead>
               <tbody>
                 {shown.map((a) => (
                   <tr key={a.id}>
                     <td>{a.name} · {a.plan ?? "?"}</td>
                     <td>{a.now.fiveHour ? limitValueText("", a.now.fiveHour, cur).text : "–"}</td>
                     <td>{a.now.weeks.seven_day ? limitValueText("", a.now.weeks.seven_day, cur).text : "–"}</td>
-                    <td>{a.now.share ? `${Math.round(a.now.share.pct)}%` : "–"}</td>
+                    <td>{a.now.share ? `${a.now.share.how === "readings" ? "" : "≈ "}${Math.round(a.now.share.pct)}%` : "–"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -516,7 +531,7 @@ function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
           ) : null}
           {shown.map((a) => <LimitsOf key={a.id} a={a} many={shown.length > 1} cur={cur} now={data.generatedAt}
             start={limitStart(shown, data.generatedAt)} />)}
-          <div class="small muted">{limitFootText(data)}</div>
+          <div class="small muted">{limitFootText(data, hosts)}</div>
         </>
       )}
     </section>
@@ -524,87 +539,59 @@ function Limits({ recap, account }: { recap: WeekRecap; account: string }) {
 }
 
 function LimitsOf({ a, many, cur, now, start }: { a: LimitAccount; many: boolean; cur: Currency; now: number; start: number }) {
-  // (every account's chart on one time line: a week is at the same place in each)
+  // (every account's chart on one time line: a day is at the same place in each)
+  const fit = limitFit(a);
   const dots = limitDots(a, now, start);
-  const bars = limitWeekBars(a, now, start);
-  const weekTop = Math.max(0, ...bars.map((b) => b.cost));
-  const mix = limitMix(a.now.costs, a.now.tokens);
-  const shares = a.periods.map((p) => p.share?.pct ?? null);
+  const mix = limitMix(a.now.costs);
+  const keys = limitKeys(a);
+  const tokens = limitTokensText(a);
   return (
     <div class="limits-account">
-      <div class="limits-plan">{many ? <b>{a.name} · </b> : null}{a.plan ?? ""}</div>
+      {many || a.plan ? <div class="limits-plan">{many ? <b>{a.name} · </b> : null}{a.plan ?? ""}</div> : null}
+      {fit.weeks.length ? (
+        <>
+          <h3>How full your weeks got</h3>
+          <div class="limits-line" title={LIMIT_FIT_TIP}>{limitFitText(a)}</div>
+          <ul class="week-bars limits-weeks">
+            {fit.weeks.map((w) => {
+              const note = limitWeekNote(w);
+              return (
+                <li key={w.from} title={`${limitWeekLabel(w)}\n${limitWeekTip(w)}`} class={w.now ? "now" : ""}>
+                  <span class="week-bar-name">{limitWeekLabel(w)}</span>
+                  <span class={"week-bar-meter" + (w.pct >= 90 ? " high" : w.pct >= 70 ? " mid" : "")}>
+                    <span style={{ width: `${Math.min(100, w.pct)}%` }} />
+                    {w.ranOutAt ? <i class="ran-out" /> : null}
+                  </span>
+                  <span class={"week-bar-value small" + (w.pct >= 90 ? " over" : " muted")}>{limitWeekPct(w)}</span>
+                  {note ? <span class="limits-week-note small muted">{note}</span> : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
+      <h3>Changes of your limits</h3>
       {(a.events ?? []).map((e) => (
         <div key={e.at} class="limits-event small" title={limitEventTip(e)}>{limitEventText(e)}</div>
       ))}
-      <h3>How your limits changed</h3>
-      <ul class="week-bars limits-sizes">
-        {limitKeys(a).map((k) => {
-          const value = limitValueText(k, k === "five_hour" ? a.now.fiveHour : a.now.weeks[k], cur);
-          const change = a.changes[k === "five_hour" ? "fiveHour" : k];
-          return (
-            <li key={k} title={limitSizeTip(k, a, cur)}>
-              <span class="week-bar-name">{limitLabel(k)}</span>
-              <span class={"limits-value" + (value.rough ? " rough" : "")}>{value.text}</span>
-              <span class={"week-bar-value small" + ((change?.kind === "change" && (change.pct ?? 0) < 0) || (change?.kind === "limits" && (change.factor ?? 1) < 0.9) ? " over" : " muted")}>
-                {limitChangeText(change)}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-      {dots.dots.length || bars.length ? (
-        <figure class="limits-chart">
-          {dots.dots.length ? (
-            <>
-              <figcaption class="small muted">Each 5-hour window · {limitMoney(dots.lo, cur)} to {limitMoney(dots.top, cur)}</figcaption>
-              <div class="limits-dots" role="img" aria-label="How much each 5-hour window held, week by week, with each week's middle">
-                {dots.marks.map((x, i) => <span key={"c" + i} class="mark" style={{ left: `${x * 100}%` }} />)}
-                {dots.medians.map((m, i) => (
-                  <span key={"m" + i} class="med" style={{ left: `${m.x1 * 100}%`, width: `${(m.x2 - m.x1) * 100}%`, bottom: `${m.y * 100}%` }} />
-                ))}
-                {dots.dots.map((d, i) => (
-                  <span key={i} class="dot" style={{ left: `${d.x * 100}%`, bottom: `${d.y * 100}%` }}
-                    title={`${limitMoney(d.full, cur)} · ${d.tip}`} />
-                ))}
-              </div>
-            </>
-          ) : null}
-          {bars.length ? (
-            <>
-              <figcaption class="small muted">Each week · up to {limitMoney(weekTop, cur)}</figcaption>
-              <div class="limits-bars" role="img" aria-label="How much each week held, on the same days as the 5-hour windows">
-                {dots.marks.map((x, i) => <span key={"c" + i} class="mark" style={{ left: `${x * 100}%` }} />)}
-                {bars.map((b, i) => (
-                  <span key={b.from} class={"bar" + (i === bars.length - 1 ? " now" : "") + (b.partial ? " partial" : "")}
-                    style={{ left: `${b.x1 * 100}%`, width: `${(b.x2 - b.x1) * 100}%`, height: `max(2px, ${b.h * 100}%)` }}
-                    title={`Week of ${limitDay(b.from)}: ${limitMoney(b.cost, cur)}` + (b.partial ? " (the limit began during it)" : "")} />
-                ))}
-              </div>
-            </>
-          ) : null}
-          <div class="limits-axis small muted"><span>{limitDay(start)}</span><span>today</span></div>
-        </figure>
-      ) : null}
-      {a.now.share ? (
+      <div class="small muted" title={LIMIT_NO_CHANGE_TIP}>{limitNoChangeText(a, now)}</div>
+      {keys.length ? (
         <>
-          <h3>A 5-hour window in the week</h3>
-          <div class="limits-line">
-            <span>{limitShareText(a.now.share.pct, a.now.share.rough)}</span>
-            <span class="small muted">{limitChangeText(a.changes.share)}</span>
-            <Trend values={shares} />
-          </div>
-        </>
-      ) : null}
-      {a.now.fill ? (
-        <>
-          <h3>How long a window lasts</h3>
-          <div class="limits-line">{limitFillText(a.now.fill)}</div>
-        </>
-      ) : null}
-      {a.equivalents || mix.parts.length ? (
-        <>
-          <h3>In tokens</h3>
-          {a.equivalents ? <div class="limits-line">{limitTokensText(a)}</div> : null}
+          <h3>What a window holds <span class="limits-estimate muted">· estimates</span></h3>
+          <ul class="week-bars limits-sizes">
+            {keys.map((k) => {
+              const value = limitValueText(k, k === "five_hour" ? a.now.fiveHour : a.now.weeks[k], cur);
+              return (
+                <li key={k} title={`${limitLabel(k)}\n${limitSizeTip(k, a)}`}>
+                  <span class="week-bar-name">{limitLabel(k)}</span>
+                  <span class={"limits-value" + (value.rough ? " rough" : "")}>{value.text}</span>
+                </li>
+              );
+            })}
+          </ul>
+          {a.now.share ? <div class="limits-line" title={limitShareTip(a.now.share)}>{limitShareText(a.now.share)}</div> : null}
+          {a.now.fill ? <div class="limits-line" title={LIMIT_FILL_TIP}>{limitFillText(a.now.fill)}</div> : null}
+          {tokens ? <div class="limits-line" title={limitTokensTip(a)}>{tokens}</div> : null}
           {mix.parts.length ? (
             <div class="limits-mix-box">
               <span class="limits-mix" aria-hidden="true">
@@ -612,9 +599,25 @@ function LimitsOf({ a, many, cur, now, start }: { a: LimitAccount; many: boolean
               </span>
               <div class="limits-legend small muted">
                 {mix.parts.map((p) => <span key={p.kind}><i class={"key " + p.kind} />{p.label}</span>)}
-                <span>{mix.text}</span>
+                <span>by API price</span>
               </div>
             </div>
+          ) : null}
+          {dots.dots.length ? (
+            <figure class="limits-chart" title={limitChartTip(dots, cur)}>
+              <figcaption class="small muted">{limitChartText(a, dots, cur)}</figcaption>
+              <div class="limits-dots" role="img" aria-label="What each 5-hour window held, a dot each, with the estimate as a line">
+                {dots.marks.map((x, i) => <span key={"c" + i} class="mark" style={{ left: `${x * 100}%` }} />)}
+                {dots.lines.map((l, i) => (
+                  <span key={"m" + i} class={"med" + (l.dim ? " dim" : "")} style={{ left: `${l.x1 * 100}%`, width: `${(l.x2 - l.x1) * 100}%`, bottom: `${l.y * 100}%` }} />
+                ))}
+                {dots.dots.map((d, i) => (
+                  <span key={i} class={"dot" + (d.dim ? " dim" : "")} style={{ left: `${d.x * 100}%`, bottom: `${d.y * 100}%` }}
+                    title={`${limitMoney(d.full, cur)} · ${d.tip}`} />
+                ))}
+              </div>
+              <div class="limits-axis small muted"><span>{limitDay(start)}</span><span>today</span></div>
+            </figure>
           ) : null}
         </>
       ) : null}
