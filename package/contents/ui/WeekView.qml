@@ -236,7 +236,7 @@ PlasmaComponents3.ScrollView {
     // "Ran out in 1 of 4 weeks · 12 of 40 5-hour windows ran full"
     function limitFitText(a) {
         const f = Limits.fit(a)
-        const parts = [f.ranOut ? i18n("Ran out in %1 of %2", f.ranOut, i18np("%1 week", "%1 weeks", f.weeks.length))
+        const parts = [f.ranOut ? i18n("Ran out in %1 of %2", f.ranOut, i18np("%1 week", "%1 weeks", f.counted))
                                 : i18n("No week ran out; the fullest got to %1%", Math.round(f.fullest))]
         if (f.fiveUsed)
             parts.push(i18n("%1 of %2 5-hour windows ran full", f.fiveFull, f.fiveUsed))
@@ -244,6 +244,7 @@ PlasmaComponents3.ScrollView {
     }
     function limitFitTip() {
         return i18n("How full each week got: the highest reading of your plan's week Talpy Den kept (after a change of your limits in it, since then). It ran out when the readings reached 100%, or when a usage limit stopped a chat until the week reset. A 5-hour window ran full when its readings reached 100%, or when a limit stopped a chat as it ended.")
+               + " " + i18n("A week the weekly limit began during (its readings begin later, at 0%) is counted from then, and is one of the weeks that could run out only if it did.")
                + " " + i18n("These are your plan's own readings: use on claude.ai, other computers and SSH hosts counts too.")
     }
     // A week's days: "3–10 Mar", "24 Feb – 3 Mar"
@@ -255,9 +256,12 @@ PlasmaComponents3.ScrollView {
     function limitWeekPct(w) {
         return w.now && !w.ranOutAt ? i18nc("a week's use going on", "%1 so far", Math.round(w.pct) + "%") : Math.round(w.pct) + "%"
     }
-    // Under a week's bar: when it ran out, and its 5-hour windows
+    // Under a week's bar: from when it was counted (the weekly limit began
+    // during it), when it ran out, and its 5-hour windows
     function limitWeekNote(w) {
         const parts = []
+        if (w.countedFrom)
+            parts.push(i18n("counted from %1", Qt.locale().toString(new Date(w.countedFrom), "ddd d MMM")))
         if (w.ranOutAt)
             parts.push(i18n("ran out %1", whenText(w.ranOutAt)))
         if (w.fiveUsed)
@@ -268,6 +272,9 @@ PlasmaComponents3.ScrollView {
     function limitWeekTip(w) {
         return (w.now ? i18n("This week, going on: %1 used so far; it resets %2.", Math.round(w.pct) + "%", whenText(w.until))
                       : i18n("%1 of the week was used by its reset.", Math.round(w.pct) + "%"))
+               + (w.countedFrom ? " " + i18n("Its readings begin at 0% on %1: the weekly limit counted from then, so the days before aren't in its %2.",
+                                             Qt.locale().toString(new Date(w.countedFrom), "ddd d MMM") + " " + root.clockText(w.countedFrom),
+                                             Math.round(w.pct) + "%") : "")
                + (w.ranOutAt ? " " + i18n("It ran out on %1: chats waited for the reset, or went on another way.", whenText(w.ranOutAt)) : "")
                + (w.fiveUsed ? " " + i18np("%2 of the 5-hour window begun in it ran full.", "%2 of the %1 5-hour windows begun in it ran full.",
                                            w.fiveUsed, w.fiveFull) : "")
@@ -2743,6 +2750,8 @@ PlasmaComponents3.ScrollView {
                                             height: parent.height
                                             radius: height / 2
                                             color: view.planColor(weekRow.week.pct)
+                                            // (counted only from when the weekly limit began during it: dimmed, as the chart's older dots)
+                                            opacity: weekRow.week.countedFrom ? 0.35 : 1
                                         }
                                         Rectangle {   // (it ran out: a red mark, as the timeline's)
                                             visible: !!weekRow.week.ranOutAt

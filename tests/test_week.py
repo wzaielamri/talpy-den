@@ -1660,10 +1660,23 @@ class LimitHistoryTests(Home):
         began = reset - 5 * week.DAY_MS - 3600_000  # (after this week's first window: $32 since)
         td.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
             "seven_day": {"resetsAt": reset, "points": [[began, 0], [reset - 4 * week.DAY_MS + 2 * 3600_000, 20]]}}}})
-        weeks = self.of(self.history(), "work")["periods"][1]["weeks"]
+        work = self.of(self.history(), "work")
+        weeks = work["periods"][1]["weeks"]
         self.assertEqual(weeks["seven_day"]["cost"], 160)  # ($32 of two windows since it began)
         self.assertTrue(weeks["seven_day"]["partial"])
         self.assertEqual(weeks["seven_day"]["countedFrom"], began)
+        # how full the week got says so (its 20% is of the days since); its
+        # 5-hour windows stay all of the week's, the one before it began too
+        (w,) = work["weeks"]
+        self.assertEqual((w["pct"], w["countedFrom"], w["fiveUsed"]), (20.0, began, 3))
+        # a week begun with days off: its readings begin later at 0% too, but
+        # nothing was used before them (the first 5-hour window is going on)
+        td.write_json_atomic(self.cache_root / "usage.json", {"version": 1, "groups": {self.gid("work"): {
+            "seven_day": {"resetsAt": reset, "points": [[reset - 6 * week.DAY_MS + 30 * MIN, 0],
+                                                         [reset - 4 * week.DAY_MS + 2 * 3600_000, 20]]}}}})
+        (w,) = self.of(self.history(), "work")["weeks"]
+        self.assertEqual(w["pct"], 20.0)
+        self.assertNotIn("countedFrom", w)
 
     def today(self, five, week_points, seat="team_standard"):
         """$20 used today (10 replies, s to s + 90 min), and the readings of

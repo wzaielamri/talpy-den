@@ -1113,6 +1113,7 @@ export interface LimitWeek {
   fiveFull: number;
   fiveUsed: number;
   now: boolean;
+  countedFrom?: number; // the weekly limit began during it: pct counts from then (its 5-hour windows are all of the week's)
 }
 
 export interface LimitHistory {

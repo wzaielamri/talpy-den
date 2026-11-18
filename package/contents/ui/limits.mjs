@@ -76,9 +76,13 @@ export function eventFactor(e) {
 }
 
 // How full each week got, newest first, and in all: the weeks that ran
-// out, the fullest, the 5-hour windows that ran full of those used
+// out of those that could have (not one counted only from later, unless
+// it ran out), the fullest of those, the 5-hour windows that ran full of
+// those used (all)
 export function fit(a) {
     const weeks = (a.weeks || []).slice().reverse()
-    return { weeks, ranOut: weeks.filter(w => w.ranOutAt).length, fullest: Math.max(0, ...weeks.map(w => w.pct)),
+    const whole = weeks.filter(w => !w.countedFrom || w.ranOutAt)
+    return { weeks, counted: whole.length, ranOut: weeks.filter(w => w.ranOutAt).length,
+             fullest: Math.max(0, ...(whole.length ? whole : weeks).map(w => w.pct)),
              fiveFull: weeks.reduce((n, w) => n + w.fiveFull, 0), fiveUsed: weeks.reduce((n, w) => n + w.fiveUsed, 0) }
 }

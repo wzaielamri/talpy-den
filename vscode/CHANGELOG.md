@@ -67,14 +67,15 @@
   fold in the middle of the tab: it's Overall's last section, worked out
   only once you scroll to it. It starts with how full each of your weeks
   got (a bar per week, a red mark where it ran out, how many of its 5-hour
-  windows ran full), then the changes of your limits (*No change seen
-  since 12 Mar*), then what a window holds as one estimate: the upper end
-  of your windows, since use not seen here only makes one look smaller
-  (*5-hour window ≈ $180*), its share of the week from the readings
-  themselves where there are enough, how long one lasts, one token figure
-  in your mix with a bar of it by API price, and a chart with each stretch
-  of the same limits on its own scale. The sizes, the share, the tokens
-  and the chart agree.
+  windows ran full; a week the weekly limit began during says from when
+  it's counted, its bar dimmed), then the changes of your limits (*No
+  change seen since 12 Mar*), then what a window holds as one estimate:
+  the upper end of your windows, since use not seen here only makes one
+  look smaller (*5-hour window ≈ $180*), its share of the week from the
+  readings themselves where there are enough, how long one lasts, one
+  token figure in your mix with a bar of it by API price, and a chart with
+  each stretch of the same limits on its own scale. The sizes, the share,
+  the tokens and the chart agree.
 
 - **The Day has its hours, and a day's name opens it.** On a Day, the
   chats' timeline has its whole hours, and pointing at it draws a line

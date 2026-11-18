@@ -2850,6 +2850,11 @@ body.vscode-high-contrast .top.scrolled {
   background: var(--td-usage-high);
 }
 
+/* (a week counted only from when the weekly limit began during it: dimmed, as the chart's older dots) */
+.limits-weeks .week-bar-meter.dim span {
+  opacity: 0.35;
+}
+
 /* (it ran out: a red mark at the bar's end, as the timeline's) */
 .limits-weeks .ran-out {
   position: absolute;

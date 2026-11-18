@@ -558,7 +558,7 @@ function LimitsOf({ a, many, cur, now, start }: { a: LimitAccount; many: boolean
               return (
                 <li key={w.from} title={`${limitWeekLabel(w)}\n${limitWeekTip(w)}`} class={w.now ? "now" : ""}>
                   <span class="week-bar-name">{limitWeekLabel(w)}</span>
-                  <span class={"week-bar-meter" + (w.pct >= 90 ? " high" : w.pct >= 70 ? " mid" : "")}>
+                  <span class={"week-bar-meter" + (w.pct >= 90 ? " high" : w.pct >= 70 ? " mid" : "") + (w.countedFrom ? " dim" : "")}>
                     <span style={{ width: `${Math.min(100, w.pct)}%` }} />
                     {w.ranOutAt ? <i class="ran-out" /> : null}
                   </span>

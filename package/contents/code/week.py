@@ -3065,6 +3065,12 @@ def counted_from(points, start):
     return max(start, zero - zero % BUCKET_MS) if zero is not None else start
 
 
+def begun_late(lo, start):
+    """Whether a window counted from lo (counted_from) is partial: the limit
+    began more than a day into it, so its readings tell only that part."""
+    return lo - start > DAY_MS
+
+
 def window_measure(u, key, w, now_ms, weekly=None, span=(0, float("inf"))):
     """A window's size and what goes with it, or None: 5-hour: from its
     fullest reading (LIMIT_FIVE_MIN_PCT or more); weekly: the median of its
@@ -3112,7 +3118,7 @@ def window_measure(u, key, w, now_ms, weekly=None, span=(0, float("inf"))):
     if not sizes:
         return None
     return {"start": start, "cost": statistics.median(sizes), "pct": max(p for _, p in points), "plan": w["plan"],
-            "from": lo, "partial": lo - start > DAY_MS, "lo": min(sizes), "hi": max(sizes)}
+            "from": lo, "partial": begun_late(lo, start), "lo": min(sizes), "hi": max(sizes)}
 
 
 def upper_size(sizes, steady_from=LIMIT_CHANGE_WINDOWS):
@@ -3173,13 +3179,20 @@ def plan_weeks(keys, hits, now_ms):
     when it ran out), "ranOutAt" (when its readings reached 100%, or a usage
     limit stopped a chat until the week's reset: a weekly limit; else None),
     "fiveFull", "fiveUsed" (full_windows: the 5-hour windows begun in it),
-    "now" (going on)}], oldest first. hits: the account's chats' usage
-    limits [(ms, reset or None)]."""
+    "now" (going on), and "countedFrom" when partial: begun_late, its
+    readings begin later at 0% while a 5-hour window of it that ended
+    before then had read LIMIT_FIVE_MIN_PCT or more (the weekly limit began
+    during it; a week begun with days off has its first reading at 0%
+    too, but nothing used before), so pct is the use of only that part of
+    it; its 5-hour windows are all of the week's}], oldest first. hits:
+    the account's chats' usage limits [(ms, reset or None)]."""
+    fives = list((keys.get("five_hour") or {}).values())
     out = []
     for w in sorted((keys.get("seven_day") or {}).values(), key=lambda w: w["resetsAt"]):
         if not w["points"]:
             continue
         start = w["resetsAt"] - WEEK_MS
+        lo = counted_from(sorted(w["points"].items()), start)
         pct, ran_out = week_fill(w)
         if ran_out is None:  # (a 5-hour limit resets within 5 hours: one that holds longer, as the week ends, is the week's)
             ran_out = next((t for t, r in sorted(hits, key=lambda h: h[0]) if start <= t <= w["resetsAt"] and r and r - t > 5 * HOUR_MS
@@ -3187,6 +3200,9 @@ def plan_weeks(keys, hits, now_ms):
         five_full, five_used = full_windows(keys, start, w["resetsAt"], hits)
         out.append({"from": start, "until": w["resetsAt"], "pct": 100.0 if ran_out is not None else round(pct, 1),
                     "ranOutAt": ran_out, "fiveFull": five_full, "fiveUsed": five_used, "now": w["resetsAt"] > now_ms})
+        if begun_late(lo, start) and any(start <= f["resetsAt"] - 5 * HOUR_MS and f["resetsAt"] <= lo
+                                         and max(f["points"].values(), default=0) >= LIMIT_FIVE_MIN_PCT for f in fives):
+            out[-1]["countedFrom"] = lo
     return out
 
 

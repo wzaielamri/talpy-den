@@ -630,6 +630,12 @@ test("your plan's limits over time, in words", () => {
   assert.equal(limitWeekNote({ ...w, ranOutAt: null, fiveUsed: 0 }), "");
   assert.equal(limitFitText({ weeks: [w, { ...w, pct: 64, ranOutAt: null }] }), "Ran out in 1 of 2 weeks · 8 of 30 5-hour windows ran full");
   assert.equal(limitFitText({ weeks: [{ ...w, pct: 64, ranOutAt: null, fiveUsed: 0 }] }), "No week ran out; the fullest got to 64%");
+  // a week the weekly limit began during: counted from then, not one that could have run out unless it did
+  const late = { ...w, pct: 38, ranOutAt: null, fiveFull: 13, fiveUsed: 14, countedFrom: new Date(2026, 9, 16, 10).getTime() };
+  assert.equal(limitWeekNote(late), "Counted from Fri 16 Oct · 13 of 14 5-hour windows full");
+  assert.equal(limitFitText({ weeks: [late, w] }), "Ran out in 1 of 1 week · 17 of 29 5-hour windows ran full");
+  assert.equal(limitFitText({ weeks: [late, { ...w, pct: 64, ranOutAt: null }] }), "No week ran out; the fullest got to 64% · 17 of 29 5-hour windows ran full");
+  assert.equal(limitFitText({ weeks: [{ ...late, pct: 100, ranOutAt: w.ranOutAt }, w] }), "Ran out in 2 of 2 weeks · 17 of 29 5-hour windows ran full");
 });
 
 test("your plan's limits over time: the demo's accounts, one estimate everywhere, the chart", () => {

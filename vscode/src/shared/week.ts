@@ -846,18 +846,21 @@ export function limitDay(ms: number): string {
 
 // ---- how full your weeks got
 
-// The weeks, newest first, and in all: how many ran out, the fullest, the
-// 5-hour windows that ran full of those used
-export function limitFit(a: Pick<LimitAccount, "weeks">): { weeks: LimitWeek[]; ranOut: number; fullest: number; fiveFull: number; fiveUsed: number } {
+// The weeks, newest first, and in all: how many ran out of the weeks that
+// could have (not one counted only from later, unless it ran out), the
+// fullest of those, the 5-hour windows that ran full of those used (all)
+export function limitFit(a: Pick<LimitAccount, "weeks">): { weeks: LimitWeek[]; counted: number; ranOut: number; fullest: number; fiveFull: number; fiveUsed: number } {
   const weeks = [...(a.weeks ?? [])].reverse();
-  return { weeks, ranOut: weeks.filter((w) => w.ranOutAt).length, fullest: Math.max(0, ...weeks.map((w) => w.pct)),
+  const whole = weeks.filter((w) => !w.countedFrom || w.ranOutAt);
+  return { weeks, counted: whole.length, ranOut: weeks.filter((w) => w.ranOutAt).length,
+    fullest: Math.max(0, ...(whole.length ? whole : weeks).map((w) => w.pct)),
     fiveFull: weeks.reduce((n, w) => n + w.fiveFull, 0), fiveUsed: weeks.reduce((n, w) => n + w.fiveUsed, 0) };
 }
 
 // "Ran out in 1 of 4 weeks · 12 of 40 5-hour windows ran full"
 export function limitFitText(a: Pick<LimitAccount, "weeks">): string {
   const f = limitFit(a);
-  const parts = [f.ranOut ? `Ran out in ${f.ranOut} of ${plural(f.weeks.length, "%1 week", "%1 weeks")}`
+  const parts = [f.ranOut ? `Ran out in ${f.ranOut} of ${plural(f.counted, "%1 week", "%1 weeks")}`
     : `No week ran out; the fullest got to ${Math.round(f.fullest)}%`];
   if (f.fiveUsed) parts.push(`${f.fiveFull} of ${f.fiveUsed} 5-hour windows ran full`);
   return parts.join(" · ");
@@ -865,8 +868,9 @@ export function limitFitText(a: Pick<LimitAccount, "weeks">): string {
 
 export const LIMIT_FIT_TIP = "How full each week got: the highest reading of your plan's week Talpy Den kept (after a change of your limits " +
   "in it, since then). It ran out when the readings reached 100%, or when a usage limit stopped a chat until the week reset. A 5-hour " +
-  "window ran full when its readings reached 100%, or when a limit stopped a chat as it ended. These are your plan's own readings: use " +
-  "on claude.ai, other computers and SSH hosts counts too.";
+  "window ran full when its readings reached 100%, or when a limit stopped a chat as it ended. A week the weekly limit began during " +
+  "(its readings begin later, at 0%) is counted from then, and is one of the weeks that could run out only if it did. These are your " +
+  "plan's own readings: use on claude.ai, other computers and SSH hosts counts too.";
 
 // A week's days: "3–10 Mar", "24 Feb – 3 Mar"
 export function limitWeekLabel(w: Pick<LimitWeek, "from" | "until">): string {
@@ -878,9 +882,11 @@ export function limitWeekPct(w: Pick<LimitWeek, "pct" | "now" | "ranOutAt">): st
   return `${Math.round(w.pct)}%${w.now && !w.ranOutAt ? " so far" : ""}`;
 }
 
-// Under a week's bar: when it ran out, and its 5-hour windows
+// Under a week's bar: from when it was counted (the weekly limit began
+// during it), when it ran out, and its 5-hour windows
 export function limitWeekNote(w: LimitWeek): string {
   const parts: string[] = [];
+  if (w.countedFrom) parts.push(`counted from ${WEEKDAYS[new Date(w.countedFrom).getDay()]} ${limitDay(w.countedFrom)}`);
   if (w.ranOutAt) parts.push(`ran out ${whenText(w.ranOutAt)}`);
   if (w.fiveUsed) parts.push(`${w.fiveFull} of ${w.fiveUsed} 5-hour windows full`);
   const text = parts.join(" · ");
@@ -888,8 +894,10 @@ export function limitWeekNote(w: LimitWeek): string {
 }
 
 export function limitWeekTip(w: LimitWeek): string {
+  const from = w.countedFrom ? `${WEEKDAYS[new Date(w.countedFrom).getDay()]} ${limitDay(w.countedFrom)} ${clockText(w.countedFrom)}` : "";
   return (w.now ? `This week, going on: ${Math.round(w.pct)}% used so far; it resets ${whenText(w.until)}.`
     : `${Math.round(w.pct)}% of the week was used by its reset.`) +
+    (from ? ` Its readings begin at 0% on ${from}: the weekly limit counted from then, so the days before aren't in its ${Math.round(w.pct)}%.` : "") +
     (w.ranOutAt ? ` It ran out on ${whenText(w.ranOutAt)}: chats waited for the reset, or went on another way.` : "") +
     (w.fiveUsed ? (w.fiveUsed === 1 ? ` ${w.fiveFull} of the 5-hour window begun in it ran full.`
       : ` ${w.fiveFull} of the ${w.fiveUsed} 5-hour windows begun in it ran full.`) : "");
