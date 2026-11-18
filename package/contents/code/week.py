@@ -3937,19 +3937,19 @@ def usage_tips(m):
                     "shown": pct >= USAGE_TIP_PCT, "attr": attr})
         return pct >= USAGE_TIP_PCT
 
-    # (its share is the Effort max row's in where the usage went: not said again in its detail)
+    # (its share is the Effort max row's in where the usage went: not said again in its detail;
+    # nor a tip's share in any detail: the front ends show it beside the tip)
     tip("max_effort", sums[W_MAX], "Save max effort for hard tasks", "", "/effort xhigh")
-    tip("workflow", sums[W_FLOW], "Save workflows for big tasks",
-        "{}% of your usage was workflow agents".format(round(100 * sums[W_FLOW] / weight)))
+    tip("workflow", sums[W_FLOW], "Save workflows for big tasks", "")
     biggest_start = max(m["starts"]) if m["starts"] else 0
     tip("always_on_context", sums[W_ON], "See what fills your context",
         "chats start with up to {} tokens before your first prompt".format(short_count(biggest_start))
         if biggest_start else "", "/context")
     tip("large_tool_results", sums[W_BIG], *big_result_tip(m["big"]))
     tip("cache_miss", sums[W_MISS], "Compact before you step away",
-        "{} requests sent over 100k tokens the cache had let go".format(int(sums[N_MISS])), "/compact")
+        "{:,} requests sent over 100k tokens the cache had let go".format(int(sums[N_MISS])), "/compact")
     tip("long_context", sums[W_LONG], "Start fresh when you switch tasks",
-        "{} requests carried over 150k tokens of context".format(int(sums[N_LONG])), "/clear")
+        "{:,} requests carried over 150k tokens of context".format(int(sums[N_LONG])), "/clear")
     tip("subagent_heavy", m["heavy"], "Give simple subagents a cheaper model",
         "subagents did most of the work in {} chats".format(m["heavyN"]))
     tip("high_parallel", parallel, "Run fewer chats at once", "up to {} at once".format(peak))
@@ -3959,12 +3959,11 @@ def usage_tips(m):
     told = []  # (the skill and the subagents a tip names, with their usage: a plugin's tip leaves theirs out)
     if not any(t["key"] == "subagent_heavy" and t["shown"] for t in out):
         agent = top_attribution(attrs, "agent:")
-        if agent and tip("agent", agent[1], 'Give "{}" subagents a cheaper model'.format(agent[0]),
-                         "{}% of your usage".format(round(100 * agent[1] / weight)), attr=["agent:" + agent[0], []]):
+        if agent and tip("agent", agent[1], 'Give "{}" subagents a cheaper model'.format(agent[0]), "",
+                         attr=["agent:" + agent[0], []]):
             told.append(('"{}" subagents'.format(agent[0]), "agent:") + agent)
     skill = top_attribution(attrs, "skill:")
-    if skill and tip("skill", skill[1], "Run /{} on a cheaper model".format(skill[0]),
-                     "{}% of your usage".format(round(100 * skill[1] / weight)), attr=["skill:" + skill[0], []]):
+    if skill and tip("skill", skill[1], "Run /{} on a cheaper model".format(skill[0]), "", attr=["skill:" + skill[0], []]):
         told.append(("/" + skill[0], "skill:") + skill)
     plugin = top_attribution(attrs, "plugin:")
     if plugin:
@@ -3973,13 +3972,12 @@ def usage_tips(m):
         # is about the rest of its usage, if that is still a tenth
         mine = [(what, prefix + name, w) for what, prefix, name, w in told if name.startswith(plugin[0] + ":")]
         rest = plugin[1] - sum(w for _, _, w in mine)
-        tip("plugin", rest, 'Review the "{}" plugin'.format(plugin[0]), "{}% of your usage{}".format(
-            round(100 * rest / weight), " besides " + " and ".join(what for what, _, _ in mine) if mine else ""),
+        tip("plugin", rest, 'Review the "{}" plugin'.format(plugin[0]),
+            "its usage besides " + " and ".join(what for what, _, _ in mine) if mine else "",
             attr=["plugin:" + plugin[0], [k for _, k, _ in mine]])
     mcp = top_attribution(attrs, "mcp:")
     if mcp:
-        tip("mcp_server", mcp[1], "Turn off {} when you don't need it".format(mcp[0]),
-            "{}% of your usage".format(round(100 * mcp[1] / weight)), attr=["mcp:" + mcp[0], []])
+        tip("mcp_server", mcp[1], "Turn off {} when you don't need it".format(mcp[0]), "", attr=["mcp:" + mcp[0], []])
     return out
 
 
@@ -4035,9 +4033,10 @@ def tips(chats, w0, w1, total, waits, cold=None, home=None, weighed=None, before
             rows = sorted(m["running"], key=lambda r: (-r[1], r[0]["key"]))
             t["chats"], t["more"] = tip_chats([(c, home, n) for c, n in rows], lambda n: "{} hours".format(n))
         elif t["key"] == "long_context":
-            rows = sorted(m["context"], key=lambda r: (-r[1], r[0]["key"]))
+            # (most such requests first, as each says; of as many, the most usage)
+            rows = sorted(m["context"], key=lambda r: (-r[2], -r[1], r[0]["key"]))
             t["chats"], t["more"] = tip_chats([(c, home, n) for c, _w, n in rows],
-                                              lambda n: "1 request" if n == 1 else "{} requests".format(n))
+                                              lambda n: "1 request" if n == 1 else "{:,} requests".format(n))
     # Coming back to chats after their cache expired: what writing their
     # context again cost more than reading it, from a tenth of the amount
     cost = total.get("cost") or 0

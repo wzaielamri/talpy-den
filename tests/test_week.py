@@ -811,12 +811,13 @@ class TipTests(Home):
         def shown(attrs):
             chats = [self.chat({h: dict(self.hour(W_ALL=100, N_ALL=10), a=attrs)})]
             return [(t["key"], t["pct"], t["detail"]) for t in week.tips(chats, self.t0 - week.DAY_MS, self.now, {}, [])]
-        self.assertEqual(shown({"skill:sp:debug": 30, "plugin:sp": 35}), [("skill", 30, "30% of your usage")])
+        # (a tip's share is beside it, never again in its detail)
+        self.assertEqual(shown({"skill:sp:debug": 30, "plugin:sp": 35}), [("skill", 30, "")])
         self.assertEqual(shown({"skill:sp:debug": 30, "plugin:sp": 50}),
-                         [("skill", 30, "30% of your usage"), ("plugin", 20, "20% of your usage besides /sp:debug")])
+                         [("skill", 30, ""), ("plugin", 20, "its usage besides /sp:debug")])
         # (a skill of no plugin, or a plugin's skill under a tenth: different requests, or none told)
         self.assertEqual([k for k, _, _ in shown({"skill:review": 30, "plugin:sp": 20})], ["skill", "plugin"])
-        self.assertEqual(shown({"skill:sp:debug": 5, "plugin:sp": 35}), [("plugin", 35, "35% of your usage")])
+        self.assertEqual(shown({"skill:sp:debug": 5, "plugin:sp": 35}), [("plugin", 35, "")])
 
     def test_coming_back_after_the_cache_expired_from_a_tenth(self):
         cold = {"count": 3, "cost": 12.0, "chats": [{"name": "parser", "resumes": 2}, {"name": "notes", "resumes": 1}]}
