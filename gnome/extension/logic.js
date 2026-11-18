@@ -1750,26 +1750,6 @@ function weekTokensText(s) {
         `${formatTokens(t.cacheWrite5m + t.cacheWrite1h)} written to the cache and ${formatTokens(t.output)} that Claude wrote.` : '';
 }
 
-export function weekFactsText(s) {
-    const parts = [];
-    if (s.longestTurn && s.longestTurn.workedMs >= 60000)
-        parts.push(`longest turn ${hoursText(s.longestTurn.workedMs)} (${s.longestTurn.name || '?'})`);
-    if (s.peakAtOnce > 1)
-        parts.push(`up to ${s.peakAtOnce} chats at once`);
-    if (s.busiestDay)
-        parts.push(`busiest day ${WEEKDAYS_LONG[dayDate(s.busiestDay).getDay()]}`);
-    if (s.limits)
-        parts.push(weekRanOutText(s));
-    return parts.join(' · ');
-}
-
-// How often the plan ran out (one full window, however many chats it
-// stopped, is once; week.py plan_run_outs) and the chats it stopped
-export function weekRanOutText(s) {
-    return (s.limits === 1 ? 'your plan ran out once' : `your plan ran out ${s.limits} times`) +
-        (s.limitStops ? ` (${plural(s.limitStops, '%1 chat stopped', '%1 chats stopped')})` : '');
-}
-
 // What went on at ms, on its day's row. px: a pixel's ms, so a mark a pixel
 // or two wide can be hit
 export function weekHoverText(d, ms, now, px) {
@@ -1802,15 +1782,6 @@ export function weekDayTip(d, cur = USD) {
         `it waited ${hoursText(d.waitMs)} for you\n${plural(d.prompts, '%1 prompt', '%1 prompts')} · ${formatTokens(d.tokenTotal || 0)} tokens · ` +
         `${moneyText(d.cost, cur)} at API prices` +
         (d.chats && d.chats.length ? '\nClick for its chats' : '')];
-}
-
-export function weekCacheText(recap) {
-    const t = recap.sum.tokens;
-    const input = t.input + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h;
-    if (!t.cacheRead)
-        return '';
-    return `${Math.round(100 * t.cacheRead / Math.max(1, input))}% of the ${formatTokens(input)} input tokens came from the cache: ` +
-        `it saved ${moneyText(recap.cacheSaved, weekCurrency(recap))}. Claude wrote ${formatTokens(t.output)} tokens.`;
 }
 
 // A model's part of the whole: "<1%", ">99%" (not a rounded "100%" beside
@@ -1872,10 +1843,6 @@ export function weekWorkText(w) {
     if (w.compactions)
         parts.push(n(w.compactions, '%1 compaction', '%1 compactions'));
     return parts.join(' · ');
-}
-
-export function weekToolsText(w) {
-    return w && w.tools && w.tools.length ? `Other tools: ${w.tools.map(([name, n]) => `${name} ${grouped(n)}`).join(' · ')}` : '';
 }
 
 // A plan window, from its start (its reset less its length) to its reset

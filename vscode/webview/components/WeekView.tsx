@@ -4,11 +4,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { hostLabel, plural } from "../../src/shared/model";
 import type { LimitAccount, LimitHistory, WeekChat, WeekDay, WeekPlanWindow, WeekRecap, WeekSpan } from "../../src/shared/types";
 import {
-  cacheText,
   coldText,
   currencyOf,
   dayTip,
-  factsText,
   fillPaths,
   footText,
   hoursText,
@@ -24,7 +22,6 @@ import {
   rowDay,
   tipMeaning,
   tipSource,
-  toolsText,
   dayLanes,
   laneNumbers,
   guessedModelTip,
@@ -203,7 +200,6 @@ export function WeekView({ hosts, currency }: { hosts: string[]; currency: strin
               </div>
             ))}
           </div>
-          {factsText(s) ? <div class="week-facts small muted">{factsText(s)}</div> : null}
           {RECAP_SECTIONS.map((k) => <Fragment key={k}>{sections[k]()}</Fragment>)}
           <div class="week-foot small muted">{footText(recap)}</div>
         </>
@@ -693,18 +689,17 @@ function Work({ recap }: { recap: WeekRecap }) {
     <section class="week-section">
       <h2>What Claude did</h2>
       <div>{text}</div>
-      {toolsText(recap.work) ? <div class="small muted">{toolsText(recap.work)}</div> : null}
     </section>
   );
 }
 
-// What it'd cost on the API, by model, and what the cache saved
+// What it'd cost on the API, by model
 function Models({ recap }: { recap: WeekRecap }) {
   if (!recap.models.length) return null;
   const cur = currencyOf(recap);
   return (
     <section class="week-section">
-      <h2>At API prices</h2>
+      <h2>By model</h2>
       <ul class="week-bars">
         {recap.models.map((m) => (
           <li key={m.model} title={`${m.model}: ${moneyText(m.cost, cur)} · ${plural(m.requests, "%1 request", "%1 requests")}` +
@@ -715,7 +710,6 @@ function Models({ recap }: { recap: WeekRecap }) {
           </li>
         ))}
       </ul>
-      {cacheText(recap) ? <div class="small muted">{cacheText(recap)}</div> : null}
     </section>
   );
 }

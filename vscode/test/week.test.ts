@@ -8,9 +8,9 @@ import { demoLimits, demoPerms, demoState, demoWeek } from "../src/shared/demo";
 import { clockText } from "../src/shared/model";
 import type { WeekDay } from "../src/shared/types";
 import {
-  coldText, currencyOf, dayTip, deltaText, factsText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
+  coldText, currencyOf, dayTip, deltaText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
-  shareText, tipMeaning, tipSource, guessedCostText, guessedModelTip, modelValue, tokensLabel, ranOutText,
+  shareText, tipMeaning, tipSource, guessedCostText, guessedModelTip, modelValue, tokensLabel,
   dateText, periodWaiting, rowDay, shortDay, stepText, weekRows, dayLanes, laneNumbers,
   limitChangeText, limitDots, limitEventText, limitFillText, limitFootText, limitKeys, limitLabel, limitMix, limitMoney, limitShareText, limitTokensText,
   limitStart, limitWeekBars, limitValueText,
@@ -35,12 +35,10 @@ test("hours, money and changes against the week before", () => {
   assert.equal(deltaText(219, null, "count"), "");
 });
 
-test("the days shown, and the week's facts", () => {
+test("the days shown, and the week's tiles", () => {
   const recap = demoWeek(NOW);
   assert.equal(periodText(recap), "Last 7 days · 18 Oct – 24 Oct");
   assert.equal(periodText(demoWeek(NOW, 1)), "11 Oct – 17 Oct");
-  assert.match(factsText(recap.sum), /^longest turn 48m \(Port the date parser\) · up to 2 chats at once · busiest day \w+day · your plan ran out 2 times \(5 chats stopped\)$/);
-  assert.equal(ranOutText({ limits: 1, limitStops: 1 }), "your plan ran out once (1 chat stopped)");
   const tiles = weekTiles(recap);
   assert.deepEqual(tiles.map((t) => t.label), ["You were at it", "Claude worked", "Prompts", "Tokens · 98% cache", "At API prices"]);
   assert.match(tiles[1].tip, /On the clock it worked .*, and it waited 3h 18m for your answers\.\nThe 7 days before: /);

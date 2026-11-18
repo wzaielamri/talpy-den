@@ -417,7 +417,7 @@ class RecapTests(Home):
         r = self.recap()
         self.assertEqual(r["days"][-1]["work"], [[t0, t0 + 60_000, 1], [t0 + 60_000, t0 + 120_000, 2],
                                                 [t0 + 120_000, t0 + 180_000, 1]])
-        self.assertEqual((r["sum"]["peakAtOnce"], r["sum"]["busyMs"], r["sum"]["workedMs"]), (2, 180_000, 240_000))
+        self.assertEqual((r["sum"]["busyMs"], r["sum"]["workedMs"]), (180_000, 240_000))
 
     def test_one_account(self):
         t0 = self.t0
@@ -601,7 +601,6 @@ class RecapTests(Home):
                           ("2026-09-27", "2026-10-03", 20_000), ("2026-09-25", "2026-09-26", 0)])
         self.assertEqual((month["sum"]["workedMs"], month["previous"]), (80_000, None))  # (the 30 before: 5 of them kept)
         self.assertEqual(sum(r["workedMs"] for r in month["days"]), month["sum"]["workedMs"])
-        self.assertEqual(month["sum"]["busiestDay"], "2026-10-24")  # (a day, not a row)
         self.assertEqual(month["backMax"], 1)  # (35 days back: one step)
         month = self.recap(span="month", days=80, kept_since=t0 - 70 * week.DAY_MS)
         self.assertEqual(month["previous"]["workedMs"], 30_000)
@@ -1026,9 +1025,6 @@ class WorkTests(Home):
         self.assertEqual((w["toolCalls"], w["commands"], w["edits"], w["files"], w["subagents"], w["compactions"],
                           w["webFetches"]), (7, 1, 3, 2, 1, 1, 1))
         self.assertEqual((w["linesAdded"], w["linesRemoved"]), (2 + 2 + 2, 1 + 0 + 0))
-        self.assertIn(["MCP: github", 1], w["tools"])
-        # (the line above counts the commands, edits, subagents and web fetches: only the other tools are listed)
-        self.assertEqual(sorted(t for t, _ in w["tools"]), ["MCP: github"])
         self.assertEqual(week.edit_lines("Write", {"content": "1\n2\n3"}), (3, 0))
         self.assertEqual(week.edit_lines("MultiEdit", {"edits": [edit, edit]}), (4, 2))
 

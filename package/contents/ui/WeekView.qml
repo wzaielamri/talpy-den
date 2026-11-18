@@ -15,7 +15,7 @@ import "limits.mjs" as Limits
 // worked, your prompts, its tokens, the API prices), what Claude did, when
 // (a day per row on a timeline, your plan's limits over the same days, the
 // day chat by chat), where (by project, the chats it worked on most), then
-// the money (at API prices, and what would make it use less of your plan:
+// the money (by model at API prices, and what would make it use less of your plan:
 // the rules of Claude Code's own /usage). All of it read from the chat
 // transcripts: no tokens, nothing sent.
 PlasmaComponents3.ScrollView {
@@ -454,28 +454,6 @@ PlasmaComponents3.ScrollView {
                     tokens(t.input), tokens(t.cacheRead), tokens(t.cacheWrite5m + t.cacheWrite1h), tokens(t.output))
     }
 
-    function factsText() {
-        if (!sum)
-            return ""
-        const parts = []
-        if (sum.longestTurn && sum.longestTurn.workedMs >= 60000)
-            parts.push(i18n("longest turn %1 (%2)", hours(sum.longestTurn.workedMs), sum.longestTurn.name || "?"))
-        if (sum.peakAtOnce > 1)
-            parts.push(i18n("up to %1 chats at once", sum.peakAtOnce))
-        if (sum.busiestDay)
-            parts.push(i18n("busiest day %1", Qt.locale().toString(date(sum.busiestDay), "dddd")))
-        if (sum.limits)
-            parts.push(ranOutText())
-        return parts.join(" · ")
-    }
-
-    // How often the plan ran out (one full window, however many chats it
-    // stopped, is once; week.py plan_run_outs) and the chats it stopped
-    function ranOutText() {
-        return i18np("your plan ran out once", "your plan ran out %1 times", sum.limits)
-               + (sum.limitStops ? " (" + i18np("%1 chat stopped", "%1 chats stopped", sum.limitStops) + ")" : "")
-    }
-
     // Where ms is on its day's row, 0 to 1: by that day's own clock, as the
     // hours over the rows say, so on a day the clock changes (23 or 25 hours)
     // 18:00 is under the 18 too (its hour that comes twice is drawn twice in
@@ -841,16 +819,6 @@ PlasmaComponents3.ScrollView {
             }
         }
 
-        PlasmaComponents3.Label {
-            textFormat: Text.PlainText
-            Layout.fillWidth: true
-            visible: view.hasData && text !== ""
-            wrapMode: Text.Wrap
-            font: Kirigami.Theme.smallFont
-            opacity: 0.7
-            text: view.factsText()
-        }
-
         // What Claude did: its tool calls, commands, edits, subagents
         ColumnLayout {
             Layout.fillWidth: true
@@ -865,15 +833,6 @@ PlasmaComponents3.ScrollView {
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
                 text: view.workText()
-            }
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                visible: !!view.work && view.work.tools.length > 0
-                wrapMode: Text.Wrap
-                font: Kirigami.Theme.smallFont
-                opacity: 0.7
-                text: !view.work ? "" : i18n("Other tools: %1", view.work.tools.map(t => t[0] + " " + view.count(t[1])).join(" · "))
             }
         }
 
@@ -2185,14 +2144,14 @@ PlasmaComponents3.ScrollView {
             }
         }
 
-        // What it'd cost on the API, by model, and what the cache saved
+        // What it'd cost on the API, by model
         ColumnLayout {
             Layout.fillWidth: true
             visible: view.hasData && view.models.length > 0
             spacing: Math.round(view.gu * 0.2)
 
             SectionTitle {
-                text: i18n("At API prices")
+                text: i18n("By model")
             }
             Repeater {
                 model: view.models.length
@@ -2241,23 +2200,6 @@ PlasmaComponents3.ScrollView {
                             }
                         }
                     }
-                }
-            }
-            PlasmaComponents3.Label {
-                textFormat: Text.PlainText
-                Layout.fillWidth: true
-                visible: !!view.sum && view.sum.tokens.cacheRead > 0
-                wrapMode: Text.Wrap
-                font: Kirigami.Theme.smallFont
-                opacity: 0.7
-                text: {
-                    if (!view.sum)
-                        return ""
-                    const t = view.sum.tokens
-                    const input = t.input + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h
-                    return i18n("%1 of the %2 input tokens came from the cache: it saved %3. Claude wrote %4 tokens.",
-                                Math.round(100 * t.cacheRead / Math.max(1, input)) + "%", root.formatTokens(input),
-                                view.money(view.recap.cacheSaved), root.formatTokens(t.output))
                 }
             }
         }

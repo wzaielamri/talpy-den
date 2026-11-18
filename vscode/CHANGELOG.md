@@ -22,6 +22,12 @@
   works waits 5 s, to be taken back. Enter again in the empty box now sends
   it at once, as **Send now** (or Ctrl+Enter) does.
 
+- **The Recap says each thing once.** The line of facts under the tiles
+  (the timeline shows them), the *Other tools* line under *What Claude did*
+  and the sentence about the cache under the models (the Tokens tile says
+  it) are gone; the limits tip still says how often your plan ran out. The
+  section *At API prices* is now *By model* (the tile keeps its name).
+
 - **The Tokens tile says how much came from the cache.** Its label now
   says the cache reads' share of the total (*Tokens · 98% cache*); the
   tooltip keeps the whole split.

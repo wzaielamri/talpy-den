@@ -105,8 +105,6 @@ USER_TOOLS = ("AskUserQuestion", "ExitPlanMode")  # tools that wait for your ans
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 FILE_TOOLS = ("Read", "Grep", "Glob", "NotebookRead", "LSP")
 SUBAGENT_TOOLS = ("Agent", "Task")
-# (counted in What Claude did's line: its other tools are listed under it)
-COUNTED_TOOLS = ("Bash", "WebSearch", "WebFetch") + EDIT_TOOLS + SUBAGENT_TOOLS
 FILES_KEPT = 100  # edited files a chat's hour remembers (to count them)
 EDIT_DIFF_LINES = 4000  # an edit bigger than this counts its lines without a diff
 COLD_MS = 60 * 60_000  # a reply this long after the chat's last one finds its cache gone (an hour on a plan)
@@ -232,12 +230,6 @@ def request_cost(key, t):
     if "u" in key.partition("|")[2]:
         cost *= US_ONLY
     return cost + t[5] * WEB_SEARCH
-
-
-def cache_saving(key, t):
-    """What the cache reads of t saved: the same tokens as plain input."""
-    p, _ = prices_of(key)
-    return t[2] * (p[0] - p[3]) / 1e6 if p else 0.0
 
 
 # ---------------------------------------------------------------- reading the transcripts
@@ -1430,7 +1422,6 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         """The numbers of [lo, hi): full = with the timeline and the lists."""
         stretches, waits, handovers, answers, turns, limits = [], [], [], [], 0, []
         worked = {}
-        longest = None
         near = lo - IDLE_MS  # (what came just before still joins your time at the start)
         for c in chats:
             for turn in c["turns"]:
@@ -1450,8 +1441,6 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
                 handovers.append(e)
                 if lo <= e < hi:
                     turns += 1
-                    if longest is None or work > longest["workedMs"]:
-                        longest = {"workedMs": int(work), "startedAt": s, "name": chat_label(c), "host": c["host"]}
             resets = c.get("limitResets") or {}
             limits += [(",".join(c["accounts"]) or c["key"], t, resets.get(str(t)), c["key"]) for t in c["limits"] if lo <= t < hi]
         prompts = [p for c in chats for p in c["prompts"] if near <= p < hi]
@@ -1472,7 +1461,7 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         if not full:
             return out
         ran_out, stopped = plan_run_outs(limits)
-        out.update(turns=turns, limits=ran_out, limitStops=stopped, tokens=tokens, longestTurn=longest,
+        out.update(turns=turns, limits=ran_out, limitStops=stopped, tokens=tokens,
                    chats=sum(1 for c in chats if worked.get(c["key"]) or any(lo <= p < hi for p in c["prompts"])
                              or any(lo <= hour_ms(h) < hi for h in c["hours"])))
         return out, {"stretches": stretches, "waits": waits, "yours": yours, "worked": worked}
@@ -1481,7 +1470,6 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
     # (everything has nothing before it; one the Recap doesn't have whole: none)
     previous = period(p0, until(1), False) if span != "all" and kept(p0) else None
     running = at_once([s[:3] for s in clipped(parts["stretches"], w0, w1)])
-    total["peakAtOnce"] = max((n for _, _, n in running), default=0)
 
     # The days or weeks before, for the trend lines (oldest first, these
     # last); one that begins before the first chat's day is unknown (null)
@@ -1531,13 +1519,9 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         if by_week:  # (a row's numbers and chats: no 24 hours to draw)
             row.update(to=(date.fromtimestamp(row_end / 1000) - timedelta(days=1)).isoformat(), you=[], work=[], wait=[])
         day_rows.append(row)
-    # (the day Claude worked most: by its days, also where a row is 7 of them)
-    worked = {day: sum(w * max(0, min(b, de) - max(a, ds)) for a, b, _, w in parts["stretches"])
-              for day, ds, de in days} if span in ("week", "month") else {}
-    total["busiestDay"] = max(worked, key=worked.get) if any(worked.values()) else None
 
     # Where it went: folders (with their chats), chats, models
-    folders, models, guessed, saved = {}, {}, set(), 0.0
+    folders, models, guessed = {}, {}, set()
     chat_rows = []
     for c in chats:
         cost = 0.0
@@ -1545,7 +1529,6 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
             if w0 <= hour_ms(h) < w1:
                 for key, t in agg["t"].items():
                     cost += request_cost(key, t)
-                    saved += cache_saving(key, t)
                     model = key.partition("|")[0]
                     label = (cs.model_label(model) or model) + (" (fast)" if "f" in key.partition("|")[2] else "")
                     m = models.setdefault(label, {"model": label, "cost": 0.0, "tokens": 0, "requests": 0, "guessed": False})
@@ -1608,7 +1591,6 @@ def recap(sources, back, account, now_ms, home, usage=None, added=(), span="week
         "projects": sorted(folders.values(), key=lambda f: (-f["workedMs"], -f["cost"]))[:TOP_PROJECTS],
         "chats": sorted(chat_rows, key=lambda r: (-r["workedMs"], -r["cost"]))[:TOP_CHATS],
         "models": sorted(models.values(), key=lambda m: -m["cost"]),
-        "cacheSaved": round(saved, 2),
         "spend": spending(chats, w0, w1, home),
         "work": claude_did(chats, w0, w1),
         "plan": plan_windows_of(usage or [], account) if back == 0 and span == "day" else [],
@@ -1677,8 +1659,8 @@ def spending(chats, lo, hi, home):
 
 def claude_did(chats, lo, hi):
     """What Claude did: its tool calls, the commands it ran, its edits and the
-    files and lines they changed, the subagents it started, compactions, web
-    searches, and the other tools it used most (an MCP server's tools as one)."""
+    files and lines they changed, the subagents it started, compactions and
+    web searches."""
     tools, files, added, removed, compactions = {}, set(), 0, 0, 0
     searches = 0
     for c in chats:
@@ -1686,8 +1668,7 @@ def claude_did(chats, lo, hi):
             if not lo <= hour_ms(h) < hi:
                 continue
             for name, n in agg.get("u", {}).items():
-                label = "MCP: " + name.split("__")[1] if name.startswith("mcp__") and name.count("__") >= 2 else name
-                tools[label] = tools.get(label, 0) + n
+                tools[name] = tools.get(name, 0) + n
             files.update(agg.get("fe", []))
             added += agg.get("x", [0, 0])[0]
             removed += agg.get("x", [0, 0])[1]
@@ -1695,7 +1676,6 @@ def claude_did(chats, lo, hi):
             searches += sum(t[5] for t in agg["t"].values())
     return {
         "toolCalls": sum(tools.values()),
-        "tools": sorted(([n, c] for n, c in tools.items() if n not in COUNTED_TOOLS), key=lambda nc: (-nc[1], nc[0]))[:8],
         "commands": tools.get("Bash", 0),
         "edits": sum(tools.get(t, 0) for t in EDIT_TOOLS),
         "files": len(files),
@@ -3485,7 +3465,7 @@ def monday_recap(sources, now_ms, home):
     top = (r.get("projects") or [{}])[0] if r.get("projects") else {}
     return {"workedMs": total.get("workedMs") or 0, "youMs": total.get("youMs") or 0, "prompts": total.get("prompts") or 0,
             "chats": total.get("chats") or 0, "tokenTotal": total.get("tokenTotal") or 0, "cost": total.get("cost") or 0,
-            "busiestDay": total.get("busiestDay") or "", "project": top.get("name") or "",
+            "project": top.get("name") or "",
             "promptsBefore": previous.get("prompts") or 0, "workedBefore": previous.get("workedMs") or 0}
 
 

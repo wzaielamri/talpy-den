@@ -447,8 +447,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     const numbers = (k: number): WeekNumbers => ({ youMs: add("youMs") * k, workedMs: add("workedMs") * k, busyMs: add("busyMs") * k,
       waitMs: add("waitMs") * k, prompts: Math.round(add("prompts") * k), cost: add("cost") * k, tokenTotal: Math.round(add("tokenTotal") * k) });
     const week = weeks[weeks.length - 1];
-    const sum = { ...week.sum, ...numbers(1), turns: week.sum.turns * 4, chats: week.sum.chats * 3,
-      busiestDay: days.reduce((b, d) => (d.workedMs > b.workedMs ? d : b), days[0]).day };
+    const sum = { ...week.sum, ...numbers(1), turns: week.sum.turns * 4, chats: week.sum.chats * 3 };
     const start = days[0].start;
     return { ...week, span, back, backMax: 2, first: days[0].day, from: days[0].day, to: days[days.length - 1].day, days: rows, sum,
       previous: numbers(0.86), prices: { ...week.prices, guessedCost: sum.cost * 0.05 },
@@ -531,8 +530,7 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
     days,
     sum: {
       youMs: total("youMs"), workedMs: total("workedMs"), busyMs: total("busyMs"), waitMs: total("waitMs"),
-      prompts: total("prompts"), cost, tokenTotal: total("tokenTotal"), turns: 212, limits: 2, limitStops: 5, chats: 23, peakAtOnce: 2, busiestDay: days[3].day,
-      longestTurn: { workedMs: 48 * MIN, startedAt: days[3].start + 10 * HOUR, name: "Port the date parser", host: "" },
+      prompts: total("prompts"), cost, tokenTotal: total("tokenTotal"), turns: 212, limits: 2, limitStops: 5, chats: 23,
       tokens: { input: 41_200, output: 2_310_000, cacheRead: 612_000_000, cacheWrite5m: 2_100_000, cacheWrite1h: 9_800_000, webSearches: 3 },
     },
     previous: { youMs: total("youMs") * 0.8, workedMs: total("workedMs") * 0.7, busyMs: 0, waitMs: 0, prompts: total("prompts") - 18, cost: cost * 0.75,
@@ -550,14 +548,12 @@ export function demoWeek(now: number, back = 0, account = "", span: WeekSpan = "
       // (a model newer than the price list: priced as its family's newest, marked)
       { model: "Fable 5.3", cost: cost * 0.05, tokens: 30_000_000, requests: 150, share: 0.05, guessed: true, pricedAs: "Fable 5.2" },
     ],
-    cacheSaved: 2290,
     trend: back >= 3 ? [null, null, week(0.5), week(0.75), week(1)] : [week(0.4), week(0.55), week(0.6), week(0.75), week(1)],
     spend: {
       cold: { count: 5, cost: 11.4, chats: [{ ...DEMO_CHATS[1], resumes: 3, cost: 7.1 }] },
     },
     work: {
-      toolCalls: 3184, tools: [["Read", 902], ["Grep", 98], ["Glob", 41], ["MCP: github", 3]], // (the ones not counted above)
-      commands: 1410, edits: 699, files: 143, linesAdded: 9412, linesRemoved: 2210, subagents: 21, compactions: 3, webSearches: 6, webFetches: 9,
+      toolCalls: 3184, commands: 1410, edits: 699, files: 143, linesAdded: 9412, linesRemoved: 2210, subagents: 21, compactions: 3, webSearches: 6, webFetches: 9,
     },
     plan: back ? [] : [
       { account: "0123456789ab", name: "personal", windows: [

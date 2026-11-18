@@ -2,7 +2,7 @@
 // indicator runs only while this tab is open), as a story: how long you were
 // at it and how long Claude worked, what it did, a day per row on a timeline
 // (drawn with Cairo), your plan's limits, where it worked and on which chats,
-// what the same work would cost at API prices, and what would use less of
+// what the same work would cost at API prices by model, and what would use less of
 // your plan (the rules of Claude Code's own /usage). No tokens used: it's
 // all read from the chats' transcripts.
 
@@ -109,9 +109,6 @@ export function buildWeekView(ctx) {
         tiles.add_child(tile);
     }
     view.add_child(tiles);
-    const facts = L.weekFactsText(s);
-    if (facts)
-        view.add_child(paragraph(facts, 'claude-small claude-dim'));
 
     // Then as a story: what Claude did, when (the days, your plan's limits),
     // where, the chats, the money and what could use less of your plan
@@ -120,8 +117,6 @@ export function buildWeekView(ctx) {
         const work = column('claude-week-section', {x_expand: true});
         work.add_child(heading('What Claude did'));
         work.add_child(paragraph(did, ''));
-        if (L.weekToolsText(recap.work))
-            work.add_child(paragraph(L.weekToolsText(recap.work), 'claude-small claude-dim'));
         view.add_child(work);
     }
     view.add_child(buildTimeline(ctx, recap, cur));
@@ -135,15 +130,11 @@ export function buildWeekView(ctx) {
             chats.add_child(chatLine(ctx, c, cur));
         view.add_child(chats);
     }
-    const models = buildBars(ctx, 'At API prices', recap.models.map(m => ({
+    view.add_child(buildBars(ctx, 'By model', recap.models.map(m => ({
         name: m.model, share: m.share, value: L.weekModelValue(m, cur), color: 'none',
         tip: `${m.model}: ${L.moneyText(m.cost, cur)} · ${L.plural(m.requests, '%1 request', '%1 requests')}` +
             (m.guessed ? `\n${L.weekGuessedModelTip(m)}` : ''),
-    })));
-    const cache = L.weekCacheText(recap);
-    if (cache)
-        models.add_child(paragraph(cache, 'claude-small claude-dim'));
-    view.add_child(models);
+    }))));
     view.add_child(buildTips(ctx, recap));
     view.add_child(paragraph(L.weekFootText(recap), 'claude-small claude-dim claude-week-foot'));
     return view;

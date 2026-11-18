@@ -164,7 +164,7 @@ function amountText(v: number, kind: Kind, cur: Currency): string {
 // The Recap's sections under its tiles, top to bottom (the same in every
 // front end): what Claude did; when (the day-by-day graph, your plan's
 // limits now, chat by chat); where (by project, the chats it worked on
-// most); then the money (at API prices, what could use less of your plan).
+// most); then the money (by model at API prices, what could use less of your plan).
 // Right after the limits now, folded: your plan's limits over time.
 export const RECAP_SECTIONS = ["work", "days", "plan", "limits", "lanes", "projects", "chats", "models", "tips"] as const;
 
@@ -274,22 +274,6 @@ function tokensText(t: WeekSum["tokens"]): string {
     `${shortCount(t.cacheWrite5m + t.cacheWrite1h)} written to the cache and ${shortCount(t.output)} that Claude wrote.`;
 }
 
-export function factsText(s: WeekSum): string {
-  const parts: string[] = [];
-  if (s.longestTurn && s.longestTurn.workedMs >= 60000) parts.push(`longest turn ${hoursText(s.longestTurn.workedMs)} (${s.longestTurn.name || "?"})`);
-  if (s.peakAtOnce > 1) parts.push(`up to ${s.peakAtOnce} chats at once`);
-  if (s.busiestDay) parts.push(`busiest day ${WEEKDAYS_LONG[localDate(s.busiestDay).getDay()]}`);
-  if (s.limits) parts.push(ranOutText(s));
-  return parts.join(" · ");
-}
-
-// How often the plan ran out (one full window, however many chats it
-// stopped, is once; week.py plan_run_outs) and the chats it stopped
-export function ranOutText(s: Pick<WeekSum, "limits" | "limitStops">): string {
-  return (s.limits === 1 ? "your plan ran out once" : `your plan ran out ${s.limits} times`) +
-    (s.limitStops ? ` (${plural(s.limitStops, "%1 chat stopped", "%1 chats stopped")})` : "");
-}
-
 // What went on at ms, on its day's row. px: a pixel's ms, so a mark a pixel
 // or two wide can be hit
 export function hoverText(d: WeekDay, ms: number, now: number, px: number): string {
@@ -316,15 +300,6 @@ export function dayTip(d: WeekDay, cur: Currency = USD): string {
     `it waited ${hoursText(d.waitMs)} for you\n${plural(d.prompts, "%1 prompt", "%1 prompts")} · ${shortCount(d.tokenTotal)} tokens · ${moneyText(d.cost, cur)} at API prices` +
     (d.chats?.length ? "\nClick for its chats" : "")
   );
-}
-
-export function cacheText(recap: WeekRecap): string {
-  const t = recap.sum.tokens;
-  const input = t.input + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h;
-  if (!t.cacheRead) return "";
-  const pct = Math.round((100 * t.cacheRead) / Math.max(1, input));
-  return `${pct}% of the ${shortCount(input)} input tokens came from the cache: it saved ${moneyText(recap.cacheSaved, currencyOf(recap))}. ` +
-    `Claude wrote ${shortCount(t.output)} tokens.`;
 }
 
 function shortCount(n: number): string {
@@ -387,10 +362,6 @@ export function workText(w: WeekRecap["work"] | undefined): string {
   if (w.webFetches) parts.push(n(w.webFetches, "%1 page fetched", "%1 pages fetched"));
   if (w.compactions) parts.push(n(w.compactions, "%1 compaction", "%1 compactions"));
   return parts.join(" · ");
-}
-
-export function toolsText(w: WeekRecap["work"] | undefined): string {
-  return w && w.tools.length ? `Other tools: ${w.tools.map(([name, n]) => `${name} ${count(n)}`).join(" · ")}` : "";
 }
 
 // A plan window, from its start (its reset less its length) to its reset

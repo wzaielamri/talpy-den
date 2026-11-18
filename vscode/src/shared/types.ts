@@ -719,9 +719,6 @@ export interface WeekSum extends WeekNumbers {
   limits: number; // times your plan ran out (one full window, however many chats it stopped)
   limitStops?: number; // the chats those stopped (one stopped in two of them: twice)
   chats: number;
-  peakAtOnce: number;
-  busiestDay: string | null;
-  longestTurn: { workedMs: number; startedAt: number; name: string; host: string } | null;
   tokens: { input: number; output: number; cacheRead: number; cacheWrite5m: number; cacheWrite1h: number; webSearches: number };
 }
 
@@ -908,13 +905,11 @@ export interface WeekRecap {
   // The Day view: a lane per chat, its stretches [from, to, w (worked) | y (waited for you) | p (paused)]
   lanes?: WeekLane[];
   models: WeekModel[];
-  cacheSaved: number;
   spend: {
     cold: { count: number; cost: number; chats: WeekChat[] }; // coming back after a chat's cache expired
   };
   work: {
     toolCalls: number;
-    tools: [string, number][];
     commands: number;
     edits: number;
     files: number;

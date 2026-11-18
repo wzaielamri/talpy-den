@@ -728,11 +728,10 @@ const MIN = 60000, HOUR = 60 * MIN;
 const weekRecap = (extra = {}) => ({
     back: 0, backMax: 4, from: '2026-10-18', to: '2026-10-24', prices: {asOf: '2026-10-24', guessed: []},
     sum: {youMs: 18 * HOUR, workedMs: 32 * HOUR + 6 * MIN, busyMs: 27 * HOUR, waitMs: 3 * HOUR + 18 * MIN, prompts: 219, cost: 906.4,
-        turns: 253, chats: 67, limits: 2, limitStops: 5, peakAtOnce: 3, busiestDay: '2026-10-20',
-        longestTurn: {workedMs: 73 * MIN, name: 'startup hang'}, tokens: {input: 10, output: 9e6, cacheRead: 2.4e9, cacheWrite5m: 1e7, cacheWrite1h: 3e7},
-        tokenTotal: 2449000010},
+        turns: 253, chats: 67, limits: 2, limitStops: 5,
+        tokens: {input: 10, output: 9e6, cacheRead: 2.4e9, cacheWrite5m: 1e7, cacheWrite1h: 3e7}, tokenTotal: 2449000010},
     previous: {youMs: 13 * HOUR + 16 * MIN, workedMs: 15 * HOUR, prompts: 203, cost: 397, tokenTotal: 1.9e9},
-    cacheSaved: 9010, sources: [{host: '', ok: true, error: ''}, {host: 'lab', ok: false, error: 'no answer'}], ...extra,
+    sources: [{host: '', ok: true, error: ''}, {host: 'lab', ok: false, error: 'no answer'}], ...extra,
 });
 
 test('the week in hours, money and changes against the week before', () => {
@@ -746,7 +745,7 @@ test('the week in hours, money and changes against the week before', () => {
     eq(L.weekDeltaText(219, null, 'count'), '');
 });
 
-test("the week's days, tiles and facts", () => {
+test("the week's days and tiles", () => {
     const r = weekRecap();
     eq(L.weekPeriodText(r), 'Last 7 days · 18 Oct – 24 Oct');
     eq(L.weekPeriodText({...r, back: 1, from: '2026-10-11', to: '2026-10-17'}), '11 Oct – 17 Oct');
@@ -778,8 +777,6 @@ test("the week's days, tiles and facts", () => {
     const two = [{youMs: 60000, workedMs: 0, prompts: 0, cost: 0}, {youMs: 120000, workedMs: 0, prompts: 0, cost: 0}];
     const soFar = L.weekTiles({...r, sameTime: true, trend: two})[0].tip;
     eq([soFar.includes('\nThe 7 days before, by this time: '), soFar.includes('\nWeek by week, each by this time, these 7 days last: ')], [true, true]);
-    eq(L.weekFactsText(r.sum), 'longest turn 1h 13m (startup hang) · up to 3 chats at once · busiest day Tuesday · your plan ran out 2 times (5 chats stopped)');
-    eq([L.weekRanOutText({limits: 1, limitStops: 1}), L.weekRanOutText({limits: 3})], ['your plan ran out once (1 chat stopped)', 'your plan ran out 3 times']);
     eq(L.weekFootText(r).split('\n')[1], "lab couldn't be read: no answer");
     eq(L.weekArgs(1, 'abc', ['lab', 'gpu'], {lab: {ok: true, result: {}}, gpu: {ok: false, result: null}}, ['--config-dir', '/x']),
         ['--span', 'week', '--back', '1', '--account', 'abc', '--host', 'lab', '--config-dir', '/x']);
@@ -824,9 +821,8 @@ test('trend lines, what Claude did, where the money went, the prompts you answer
     eq(L.weekTiles(r)[1].trend, [null, 2 * HOUR, 4 * HOUR, 6 * HOUR, 8 * HOUR]);
     eq(L.weekTiles(r)[2].tip.split('\n').pop(), 'Week by week, these 7 days last: ? · 10 · 20 · 30 · 40');
     eq(L.weekWorkText({toolCalls: 3184, commands: 1410, edits: 699, files: 143, linesAdded: 9412, linesRemoved: 2210, subagents: 1,
-        webSearches: 0, webFetches: 0, compactions: 2, tools: [['Bash', 1410]]}),
+        webSearches: 0, webFetches: 0, compactions: 2}),
     '3,184 tool calls · 1,410 commands run · 699 edits in 143 files (+9,412 −2,210) · 1 subagent started · 2 compactions');
-    eq(L.weekToolsText({tools: [['Read', 1410], ['Grep', 9]]}), 'Other tools: Read 1,410 · Grep 9');
     eq(['waits', 'limits', 'clear'].map(k => L.weekTipSource(k).split(':')[0]), ['From Talpy Den', 'From Talpy Den', "From Claude Code's /usage"]);
     const spend = {turns: [], chats: [{name: 'a', cost: 12}], cold: {count: 2, cost: 3.5, chats: [{name: 'b', resumes: 2, cost: 3.5}]}};
     eq(L.weekColdText(weekRecap({spend})), 'You came back to chats after their cache had expired (an hour without a reply) 2 times: writing ' +
