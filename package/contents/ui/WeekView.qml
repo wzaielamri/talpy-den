@@ -800,7 +800,10 @@ PlasmaComponents3.ScrollView {
         return (t.key === "cold"
              ? i18n("Writing the chats' context again cost %1 more than reading it from the cache. The cache keeps a chat's context an hour after its last reply.",
                     money(spend && spend.cold ? spend.cold.cost : 0))
-             : i18n("Of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. A request can count for several of these."))
+             : i18n("Of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits.")
+               // (the subagents tip's share isn't the Subagents row's: /usage counts whole chats there)
+               + (t.key === "subagent_heavy" ? " " + i18n("This one is all the usage of the chats where subagents did most of the work, their main chat's requests too; the Subagents row counts only the subagents' own.") : "")
+               + " " + i18n("A request can count for several of these."))
              + (t.before === null || t.before === undefined ? uncomparedText() : beforeText(t.before, "points"))
     }
     // Under a tip's share, how it moved: "was 64%" (none: not compared)

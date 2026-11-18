@@ -369,12 +369,15 @@ export function tipShareText(t: Pick<WeekTip, "key" | "pct">): string {
   return t.pct === null ? "" : t.key === "cold" ? `${t.pct}% of the amount` : `${t.pct}% of usage`;
 }
 
+// (the subagents tip's share isn't the Subagents row's: /usage counts whole chats there)
+const SUBAGENT_HEAVY_HOW = "This one is all the usage of the chats where subagents did most of the work, their main chat's requests too; the Subagents row counts only the subagents' own.";
+
 export function tipShareTip(t: Pick<WeekTip, "key" | "pct" | "before">,
                             recap: Pick<WeekRecap, "spend" | "currency" | "span" | "sameTime" | "beforeKept" | "first">): string {
   const before = beforeLine(recap, t.before === null || t.before === undefined ? null : `${t.before}%`);
   if (t.key !== "cold")
     return `${t.pct}% of the usage shown: of the usage of these days, as Claude Code's /usage weighs it toward your plan's limits. ` +
-      "A request can count for several of these." + before;
+      (t.key === "subagent_heavy" ? SUBAGENT_HEAVY_HOW + " " : "") + "A request can count for several of these." + before;
   return `${t.pct}% of the amount at API prices: writing the chats' context again cost ${moneyText(recap.spend?.cold?.cost ?? 0, currencyOf(recap))} ` +
     "more than reading it from the cache. The cache keeps a chat's context an hour after its last reply." + before;
 }
