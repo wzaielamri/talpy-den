@@ -169,7 +169,8 @@ function play(o) {
     t.tick(now);
     const said = [], saved = [], grows = [];
     const host = {
-        stage: () => ({ width: width, height: 176, ground: 160, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: width - 30 }),
+        stage: () => ({ width: width, height: 176, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: width - 30,
+                        ground: o.growing ? Math.min(160, 90 + (now - 1000) / 4) : 160 }),   // (growing: its floor goes down for 280 ms)
         px: () => px, moveTo: x => { px = x; }, say: w => said.push(w), changed: () => {},
         best: () => best, saveBest: m => saved.push(m), grow: on => grows.push(on),
     };
@@ -185,6 +186,8 @@ function play(o) {
         g.tick(now);
         if (g.things !== r.things) r.sameArray = false;
         r.maxThings = Math.max(r.maxThings, g.things.length);
+        if (o.growing && !r.early && now - 1000 >= 400)   // (just after the stage grew: what it put there meanwhile)
+            r.early = { kinds: g.things.map(th => th.kind), bottoms: g.things.map(th => Math.round(th.y + th.h)) };
         const hitting = g.things.filter(th => th.kind !== 'tuft');
         if (r.firstThingMs === null && hitting.length) r.firstThingMs = now - 1000;
         const crow = hitting.find(th => th.kind === 'crow');
@@ -212,6 +215,8 @@ function play(o) {
         }
     }
     r.endMs = g.on ? null : now - 1000;
+    r.bottoms = g.things.map(th => Math.round(th.y + th.h));   // (ground things and tufts: on the floor)
+    r.kinds = g.things.map(th => th.kind);
     r.meters = g.meters; r.said = said; r.saved = saved; r.grows = grows; r.things = null;
     return r;
 }
@@ -225,6 +230,7 @@ console.log(JSON.stringify({
     wide: play({ seed: 4, width: 900, auto: true, until: 150000 }),
     best: play({ seed: 5, auto: true, autoUntil: 150, best: 120 }),
     again: play({ again: true }), digging: play({ alwaysDig: true }), stopped: play({ stopAt: 5000, best: 0, auto: true }),
+    growing: play({ growing: true, until: 2600 }),
     noDig: play({ seed: 2, auto: true, noDig: true }),
 }));
 """ % json.dumps(str(TALPY / "games.mjs"))
@@ -300,6 +306,14 @@ class RunTests(unittest.TestCase):
         self.assertEqual(s["grows"], [True, False])
         self.assertEqual(s["saved"], [s["metersAtStop"]])   # (it beat a best of 0: it counts)
 
+    def test_its_things_stand_on_the_floor_of_the_grown_stage(self):
+        # the stage grows as it starts (host.grow): a tuft or a pebble put there meanwhile goes down with its floor
+        g = self.r["growing"]["early"]
+        self.assertTrue(g["kinds"])
+        for kind, bottom in zip(g["kinds"], g["bottoms"]):
+            if kind not in ("crow", "crowHigh"):
+                self.assertEqual(bottom, 160, kind)
+
     def test_its_light(self):
         for r in self.r["far"] + [self.r["wide"]]:
             self.assertTrue(r["sameArray"])                # (one array all run)
@@ -358,7 +372,7 @@ class HostTests(unittest.TestCase):
             self.assertRegex(wants, r'mood === "needs"\)? ?\{?\s*\n?\s*(this\.talpy\.)?react\("sign"\)')   # he points at the chat
             self.assertRegex(wants, r'!(root|world)\.playful')                                         # Playful off: only the tickle
             self.assertNotIn('mood === "done" &&', wants)                                              # asleep too (clicks or the menu),
-            self.assertRegex(wants, r'startGame\((this\.)?mood === "done"(, name)?\)')                         # woken up: he yawns first
+            self.assertRegex(wants, r'startGame\((this\.)?mood === "done", name\)')                         # woken up: he yawns first
             self.assertIn("Okay, okay… let's play!", wants)
         # asleep, clicks 1 and 2 "let me sleep", the 3rd "I said let me SLEEP!", the 4th a game
         for text in (self.pet, self.ts):
@@ -412,8 +426,13 @@ class HostTests(unittest.TestCase):
         self.assertNotIn('text: i18n("Play with Talpy")', main)
         pkg = json.loads((ROOT / "vscode/package.json").read_text())
         menus = {m["command"]: m["when"] for m in pkg["contributes"]["menus"]["view/title"]}
-        self.assertIn("config.talpyDen.playfulTalpy", menus["talpyDen.playWithTalpy"])
+        titles = {c["command"]: c["title"] for c in pkg["contributes"]["commands"]}
+        for command, title in (("talpyDen.playPeekaboo", "Play Peekaboo with Talpy"), ("talpyDen.runWithTalpy", "Run with Talpy")):
+            self.assertIn("config.talpyDen.playfulTalpy", menus[command])
+            self.assertEqual(titles[command], title)
+        self.assertNotIn("talpyDen.playWithTalpy", menus)
         self.assertIn('case "playWithTalpy":', (ROOT / "vscode/webview/main.tsx").read_text())
+        self.assertIn("pets.play(msg.game)", (ROOT / "vscode/webview/main.tsx").read_text())
 
 
 class PlasmaRunTests(unittest.TestCase):
@@ -470,6 +489,56 @@ class PlasmaRunTests(unittest.TestCase):
         self.assertIn("pet.wantsToPlay(root.playName)", self.pet)
         self.assertIn('runOn = gameOn && playGame.name === "run"', self.pet)
         self.assertRegex(self.pet, r'if \(gameOn && mood === "needs"\) \{\s+stopGame\(\)')
+
+
+class VsCodeRunTests(unittest.TestCase):
+    """Talpy's Run in VS Code: pet.ts hosts it, stage.ts and pets.css grow the stage, view.ts keeps the best."""
+    ts = (ROOT / "vscode/webview/pets/pet.ts").read_text()
+    stage = (ROOT / "vscode/webview/pets/stage.ts").read_text()
+    css = (ROOT / "vscode/webview/pets/pets.css").read_text()
+    view = (ROOT / "vscode/src/view.ts").read_text()
+
+    def test_keys_and_presses_are_the_games_only_while_running(self):
+        listen = self.ts[self.ts.index("private listenToRun("):][:3200]
+        self.assertIn('document.addEventListener("keydown", key, true)', listen)
+        self.assertIn('document.addEventListener("keyup", key, true)', listen)
+        self.assertIn('document.removeEventListener("keydown", key, true)', listen)
+        self.assertIn("typing(e)", listen)                          # (never a key meant for a text field)
+        self.assertIn('root.addEventListener("contextmenu", noMenu)', listen)
+        self.assertIn('root.addEventListener("pointerdown", press, true)', listen)   # (first: a press on him jumps, isn't a grab)
+        self.assertIn('e.button === 2 ? "dig" : "jump"', listen)
+        self.assertIn('e.pointerType === "touch"', listen)          # (a touch swiped down digs)
+        typing = self.ts[self.ts.index("function typing("):][:500]
+        for kind in ("HTMLInputElement", "HTMLTextAreaElement", "isContentEditable"):
+            self.assertIn(kind, typing)
+
+    def test_the_stage_grows_and_its_status_fades(self):
+        self.assertIn('this.root.classList.toggle("td-running", on)', self.stage)
+        self.assertIn("grow: (on) => this.stage.setRunning(on)", self.ts)
+        grown = self.css[self.css.index(".td-stage--hero.td-running {"):][:300]
+        self.assertIn("min-height: calc(var(--td-gu, 16px) * 11)", grown)
+        self.assertIn("transition: min-height", self.css)
+        faded = self.css[self.css.index(".td-running .td-hero-text"):][:300]
+        self.assertIn("opacity: 0", faded)
+        self.assertIn("pointer-events: none", faded)
+
+    def test_it_draws_the_run(self):
+        self.assertIn("drawThing(ctx, th)", self.ts)
+        self.assertIn("ground - lift - this.runLift() - s.floorY", self.ts)
+        for words in ("m`", "Click to jump · ↓ or right-click to dig", "↓ or right-click: dig", "New best! ", " m · best ",
+                      "Click to run again"):
+            self.assertIn(words, self.ts)
+
+    def test_not_with_reduced_motion(self):
+        self.assertIn("runOk: () => !reducedMotion()", self.ts)
+        self.assertIn('if (name === "run" && reducedMotion())', self.ts)
+        self.assertIn("No running with reduced motion on", self.ts)
+
+    def test_the_best_is_kept_by_the_extension_and_only_grows(self):
+        self.assertIn('const RUN_BEST_KEY = "talpyDen.runBest"', self.view)
+        self.assertIn("nextBest(this.memento?.get(RUN_BEST_KEY), m.best)", self.view)
+        self.assertIn('{ type: "runBest", best: this.runBest() }', self.view)
+        self.assertIn("saveBest: (m) => world.saveRunBest(m)", self.ts)
 
 
 if __name__ == "__main__":

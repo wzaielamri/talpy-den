@@ -1540,6 +1540,14 @@ export function agentContextText(a: Pick<Agent, "context">): string {
   return typeof a.context === "number" && a.context > 0 ? `${formatTokens(a.context)} tokens` : "";
 }
 
+// Talpy's Run: the best run (whole metres) after one that went `run` far,
+// with `stored` the one kept: the larger, so a stale copy never lowers it
+// (0 for what isn't a number)
+export function nextBest(stored: unknown, run: unknown): number {
+  const m = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0);
+  return Math.max(m(stored), m(run));
+}
+
 // How long a call it's on has been running: "for 2m", "for <1m"
 export function ranFor(ms: number): string {
   return `for ${ms < 60_000 ? "<1m" : duration(ms)}`;

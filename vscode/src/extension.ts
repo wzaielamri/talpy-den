@@ -68,7 +68,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   actions = new Actions(backend, dash, terminals, log, account);
   const accounts = new Accounts(backend, dash, terminals, account, log);
-  const view = new ViewHost(context.extensionUri, dash, actions);
+  const view = new ViewHost(context.extensionUri, dash, actions, context.globalState);
   // The Monday recap: once a week, the last 7 days in a few words; Open the
   // Recap shows the view on its Recap tab (week.py marks the week: the widget
   // and other windows don't show it again)
@@ -246,11 +246,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("talpyDen.showHiddenProjects", () => a.showHidden("projects")),
     vscode.commands.registerCommand("talpyDen.setupUsageBars", () => setUpUsageBars(context.extensionUri)),
     vscode.commands.registerCommand("talpyDen.removeUsageBars", () => setUpUsageBars(context.extensionUri, true)),
-    vscode.commands.registerCommand("talpyDen.playWithTalpy", async () => {
-      view.showTab("chats");
-      await vscode.commands.executeCommand("talpyDen.view.focus");
-      view.playWithTalpy();
-    }),
+    // a game with the big Talpy, by name (the view's … menu: one entry a game)
+    ...(["peekaboo", "run"] as const).map((game) =>
+      vscode.commands.registerCommand(game === "run" ? "talpyDen.runWithTalpy" : "talpyDen.playPeekaboo", async () => {
+        view.showTab("chats");
+        await vscode.commands.executeCommand("talpyDen.view.focus");
+        view.playWithTalpy(game);
+      })),
     // Playful Talpy on or off (the view's … menu shows the one that changes it)
     vscode.commands.registerCommand("talpyDen.playfulOn", () =>
       vscode.workspace.getConfiguration("talpyDen").update("playfulTalpy", true, vscode.ConfigurationTarget.Global)),

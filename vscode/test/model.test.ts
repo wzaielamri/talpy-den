@@ -22,6 +22,7 @@ import {
   agentDetailKey,
   agentRunTitle,
   agentSummary,
+  nextBest,
   agentStatusText,
   ranFor,
   agentContextText,
@@ -265,6 +266,14 @@ test("formatting", () => {
   assert.equal(resetText({ ...window, resetsAt: NOW - 1000, reset: true }, NOW), "reset");
   assert.equal(petKeyOf({ chatId: "c", sessionId: "s", key: "k" }, "build-server"), "ssh:build-server|/c");
   assert.equal(petKeyOf({ chatId: "c", sessionId: "s", key: "k", profileDir: ".claude-work" }), ".claude-work/c");
+});
+
+test("Talpy's Run: the best only ever grows, from whole metres", () => {
+  assert.equal(nextBest(120, 340), 340);
+  assert.equal(nextBest(340, 120), 340);
+  assert.equal(nextBest(undefined, 50), 50);
+  assert.equal(nextBest("x", -3), 0);
+  assert.equal(nextBest(12.7, 12.2), 12);
 });
 
 test("an unfolded subagent: its numbers, its open state's key, the run's tooltip", () => {

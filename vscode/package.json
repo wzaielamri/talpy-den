@@ -175,8 +175,13 @@
         "category": "Talpy Den"
       },
       {
-        "command": "talpyDen.playWithTalpy",
-        "title": "Play with Talpy",
+        "command": "talpyDen.playPeekaboo",
+        "title": "Play Peekaboo with Talpy",
+        "category": "Talpy Den"
+      },
+      {
+        "command": "talpyDen.runWithTalpy",
+        "title": "Run with Talpy",
         "category": "Talpy Den"
       },
       {
@@ -650,7 +655,12 @@
           "group": "2_usage@2"
         },
         {
-          "command": "talpyDen.playWithTalpy",
+          "command": "talpyDen.playPeekaboo",
+          "when": "view == talpyDen.view && config.talpyDen.showPet && config.talpyDen.playfulTalpy",
+          "group": "1_view@7"
+        },
+        {
+          "command": "talpyDen.runWithTalpy",
           "when": "view == talpyDen.view && config.talpyDen.showPet && config.talpyDen.playfulTalpy",
           "group": "1_view@7"
         },

@@ -36,6 +36,8 @@ export interface StageCallbacks {
   // An account's stage: how many pets stand on it now (one whose chat left
   // counts until it has waved and dug away)
   petsChanged?(count: number): void;
+  // Talpy's Run: a run went further than the best (metres), to keep
+  saveRunBest?(meters: number): void;
 }
 
 export interface PetStage {
@@ -60,6 +62,9 @@ export interface PetsModule {
   setDark(dark: boolean): void;
   // Playful Talpy (talpyDen.playfulTalpy): off, the pets only show what the chats do
   setPlayful(on: boolean): void;
-  // Play with Talpy: a game with the hero (now, or once his stage shows)
-  play(): void;
+  // Play with Talpy: a game with the hero (now, or once his stage shows), by
+  // name or (none) either
+  play(game?: "peekaboo" | "run"): void;
+  // Talpy's Run: the best run so far (metres), as the extension keeps it
+  setRunBest(best: number): void;
 }

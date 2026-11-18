@@ -23,7 +23,7 @@ import { hostLabel, stateText } from "../../src/shared/model";
 import { CookieGame, type CookieWords } from "../../vendor/talpy/cookie.mjs";
 import { Films } from "../../vendor/talpy/films.mjs";
 import { pickGame, type Game } from "../../vendor/talpy/games.mjs";
-import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide, drawPuff } from "../../vendor/talpy/talpy.mjs";
+import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide, drawPuff, drawThing } from "../../vendor/talpy/talpy.mjs";
 import type { StageChat } from "./api";
 import { PALETTE, textOn } from "./colors";
 import { Spring, Timer, Tween, ease, reducedMotion } from "./motion";
@@ -98,6 +98,14 @@ function div(className: string): HTMLDivElement {
   return el;
 }
 
+// A key meant for a text field (a chat's reply box, the search): never the game's
+function typing(e: Event): boolean {
+  const t = e.target;
+  return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable);
+}
+
+type GameName = "" | "peekaboo" | "run";
+
 export class Pet {
   readonly stage: Stage;
   key: string; // the chat's key ("" for the hero; a chat Claude moved to the background takes its new one: Stage.sync)
@@ -163,6 +171,11 @@ export class Pet {
   private readonly playHoles: HTMLCanvasElement[] = [];
   private playDrawn: string[] = [];
   private playListening: (() => void) | null = null; // (Esc and clicks outside, while it's on)
+  // Talpy's Run: its keys and presses (only while it's on), its things' canvas and its words
+  private runListening: (() => void) | null = null;
+  private runCanvas: HTMLCanvasElement | null = null;
+  private runText: { box: HTMLDivElement; meters: HTMLDivElement; hint: HTMLDivElement; end: HTMLDivElement; again: HTMLDivElement } | null = null;
+  private runHintW = 0;
   private hadCookie = false; // you gave it one since the view opened (its hint stops)
   private readonly grab: HTMLDivElement;
   private readonly drawn: Record<string, string> = {};
@@ -430,7 +443,8 @@ export class Pet {
     if (!this.lone) this.homing.restart();
     if (this.lone && world.playWanted) {
       world.playWanted = false;
-      this.wantsToPlay();
+      this.wantsToPlay(world.playName);
+      world.playName = "";
     }
     // what happened meanwhile, if it's from the last minute (older news is dropped)
     const missed = this.missed;
@@ -821,7 +835,8 @@ export class Pet {
   // the clicks only tickle. While a chat needs you he points at it instead;
   // asleep, he wakes up for it (yawns: after the clicks, once he's grumbled,
   // see petIt)
-  wantsToPlay(): boolean {
+  // name: the game ("peekaboo", "run"), "" either (four quick clicks)
+  wantsToPlay(name: GameName = ""): boolean {
     if (!this.lone || !world.playful || this.play?.on || this.cookieOn || this.held || this.tugging || this.pushing || this.leaving)
       return false;
     if (this.mood === "needs") {
@@ -829,26 +844,42 @@ export class Pet {
       this.say(this.petLine());
       return true;
     }
+    // (the view's menu can't see reduced motion: the run asked for there, he says it's off)
+    if (name === "run" && reducedMotion()) {
+      this.say("No running with reduced motion on");
+      return true;
+    }
     // (on at once, his laugh its first move: the clicks after this one are the game's)
     this.say(this.mood === "done" ? "Okay, okay… let's play!" : "Let's play!");
-    this.startGame(this.mood === "done");
+    this.startGame(this.mood === "done", name);
     return true;
   }
 
-  private startGame(wake = false): void {
+  private startGame(wake = false, name: GameName = ""): void {
     if (this.destroyed || this.play?.on || !this.stage.live || this.mood === "needs" || !world.playful || this.cookieOn || this.held
       || this.tugging || this.pushing) return;
     const s = this.stage;
     this.stride.stop();
     this.travelTo = -1;
+    const said: Record<string, () => string> = {
+      got: () => ["You got me!", "Hehe, found me!", "Again!"][Math.floor(Math.random() * 3)],
+      fun: () => "That was fun!",
+      bump: () => ["Oof!", "Ouch, a bump!", "Whoops!"][Math.floor(Math.random() * 3)],
+      best: () => "New best!",
+    };
     this.play = pickGame(this.talpy, {
-      stage: () => ({ width: s.width, ground: this.ground, unit: s.box / 64, bodyWidth: s.bodyWidth, bodyHeight: s.bodyHeight,
-        minX: this.minX, maxX: this.maxX }),
+      stage: () => ({ width: s.width, height: s.height, ground: this.ground, unit: s.box / 64, bodyWidth: s.bodyWidth,
+        bodyHeight: s.bodyHeight, minX: this.minX, maxX: this.maxX }),
       px: () => this.px,
       moveTo: (x) => (this.px = x),
-      say: (what) => this.say(what === "got" ? ["You got me!", "Hehe, found me!", "Again!"][Math.floor(Math.random() * 3)] : "That was fun!"),
+      say: (what) => this.say((said[what] ?? said.fun)()),
       changed: () => this.gameMoved(),
-    });
+      // Talpy's Run's: its best, the stage taller (its status faded) or back, not with reduced motion
+      best: () => world.runBest,
+      saveBest: (m) => world.saveRunBest(m),
+      grow: (on) => this.stage.setRunning(on),
+      runOk: () => !reducedMotion(),
+    }, name);
     this.play.start(s.clock.now(), wake);
   }
 
@@ -889,7 +920,141 @@ export class Pet {
         if (Date.now() - missed.at < MISSED_MS) this.event(missed.kind, missed.text);
       }
     }
+    const running = on && this.play?.name === "run";
+    if (running && !this.runListening) this.listenToRun();
+    else if (!running && this.runListening) {
+      this.runListening();
+      this.runListening = null;
+    }
     this.changed();
+  }
+
+  // Talpy's Run, only while it's on: Space or ↑ jump and ↓ digs while held
+  // (never a key meant for a text field); a press on the stage is the game's
+  // (left: jump at once, right: dig while held, and no menu; a touch swiped
+  // down digs), not his to grab nor a double-click's cookie
+  private listenToRun(): void {
+    const root = this.stage.root;
+    const game = (): Game | null => (this.play?.on && this.play.name === "run" ? this.play : null);
+    const key = (e: KeyboardEvent): void => {
+      const g = game();
+      if (!g || typing(e) || e.repeat) return;
+      const down = e.type === "keydown";
+      if (e.key === " " || e.key === "ArrowUp") {
+        if (down) g.press?.("jump");
+      } else if (e.key === "ArrowDown") {
+        if (down) g.press?.("dig");
+        else g.release?.("dig");
+      } else return;
+      e.preventDefault();
+    };
+    let swipeFrom = -1,
+      swiped = false;
+    const press = (e: PointerEvent): void => {
+      const g = game();
+      if (!g) return;
+      e.preventDefault();
+      e.stopPropagation();
+      g.press?.(e.button === 2 ? "dig" : "jump");
+      swipeFrom = e.pointerType === "touch" ? e.clientY : -1;
+      swiped = false;
+    };
+    const move = (e: PointerEvent): void => {
+      const g = game();
+      if (!g || swiped || swipeFrom < 0 || e.clientY - swipeFrom <= this.stage.gu * 1.2) return;
+      swiped = true;
+      g.press?.("dig");
+    };
+    const release = (e: PointerEvent): void => {
+      const g = game();
+      if (g && (e.button === 2 || swiped)) g.release?.("dig");
+      swipeFrom = -1;
+      swiped = false;
+    };
+    const noMenu = (e: Event): void => e.preventDefault();
+    const stop = (e: Event): void => e.stopPropagation();
+    document.addEventListener("keydown", key, true);
+    document.addEventListener("keyup", key, true);
+    root.addEventListener("pointerdown", press, true);
+    root.addEventListener("pointermove", move, true);
+    root.addEventListener("pointerup", release, true);
+    root.addEventListener("contextmenu", noMenu);
+    root.addEventListener("dblclick", stop, true);
+    this.runListening = () => {
+      document.removeEventListener("keydown", key, true);
+      document.removeEventListener("keyup", key, true);
+      root.removeEventListener("pointerdown", press, true);
+      root.removeEventListener("pointermove", move, true);
+      root.removeEventListener("pointerup", release, true);
+      root.removeEventListener("contextmenu", noMenu);
+      root.removeEventListener("dblclick", stop, true);
+    };
+  }
+
+  // Talpy's Run: how high he is in his jump (px), 0 when no run is on
+  private runLift(): number {
+    return this.play?.on && this.play.name === "run" ? this.play.lift ?? 0 : 0;
+  }
+
+  // Talpy's Run: its things on one canvas the stage's size, under him, and its
+  // words (the distance top right, the hint, the end); hidden when it's over
+  private renderRun(): void {
+    const g = this.play?.on && this.play.name === "run" ? this.play : null;
+    if (!g) {
+      if (this.runCanvas && !this.runCanvas.hidden) {
+        this.runCanvas.hidden = true;
+        this.runText!.box.hidden = true;
+      }
+      return;
+    }
+    const s = this.stage,
+      k = devicePixelRatio || 1;
+    if (!this.runCanvas || !this.runText) {
+      this.runCanvas = this.canvas();
+      this.runCanvas.className = "td-run-canvas";
+      this.leftHole.after(this.runCanvas); // (under him, as the holes)
+      const box = div("td-run-text");
+      const text = { box, meters: div("td-run-meters"), hint: div("td-run-hint"), end: div("td-run-end"), again: div("td-run-again") };
+      text.again.textContent = "Click to run again";
+      box.append(text.meters, text.hint, text.end, text.again);
+      this.sheets.after(box);
+      this.runText = text;
+    }
+    const c = this.runCanvas,
+      t = this.runText;
+    c.hidden = false;
+    t.box.hidden = false;
+    const w = Math.round(s.width * k),
+      h = Math.round(s.height * k);
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+      c.style.width = `${s.width}px`;
+      c.style.height = `${s.height}px`;
+    }
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      for (const th of g.things ?? []) {
+        ctx.setTransform(k, 0, 0, k, k * th.x, k * th.y);
+        drawThing(ctx, th);
+      }
+    }
+    const over = g.state === "over";
+    const meters = `${g.meters ?? 0} m`;
+    if (t.meters.textContent !== meters) t.meters.textContent = meters;
+    t.meters.hidden = over;
+    const hint = g.hint === "dig" ? "↓ or right-click: dig" : g.hint === "start" ? "Click to jump · ↓ or right-click to dig" : "";
+    t.hint.hidden = !hint;
+    if (t.hint.textContent !== hint) {
+      t.hint.textContent = hint;
+      this.runHintW = hint ? t.hint.offsetWidth : 0; // (measured as its words change, not each frame)
+    }
+    this.put(t.hint, "runHint", "transform", `translate(${Math.round(Math.max(4, this.px - this.runHintW / 2))}px, 4px)`);
+    const end = !over ? "" : g.newBest ? `New best! ${g.best ?? 0} m` : `${g.meters ?? 0} m · best ${g.best ?? 0} m`;
+    if (t.end.textContent !== end) t.end.textContent = end;
+    t.end.hidden = t.again.hidden = !over;
   }
 
   // A game's holes, under him: painted again only as they open or close
@@ -1142,6 +1307,7 @@ export class Pet {
     if (this.game?.on) this.game.tick(now);
     if (this.play?.on) this.play.tick(now);
     if (this.play?.on || this.playHoles.length) this.renderPlayHoles();
+    if (this.play?.on || this.runCanvas) this.renderRun();
     if (this.cookie) this.renderCookie();
     this.spring(now);
     const px = Math.round(this.px * 10) / 10,
@@ -1150,7 +1316,7 @@ export class Pet {
       swing = Math.round(this.tilt.value * 10) / 10;
     this.put(this.sheets, "origin", "transformOrigin", `${s.canvasW / 2}px ${s.floorY - (box * 27) / 64}px`);
     this.put(this.sheets, "sheets", "transform",
-      `translate(${shown - s.canvasW / 2}px, ${ground - lift - s.floorY}px)${swing ? ` rotate(${swing}deg)` : ""}`);
+      `translate(${shown - s.canvasW / 2}px, ${ground - lift - this.runLift() - s.floorY}px)${swing ? ` rotate(${swing}deg)` : ""}`);
     if (this.tag) {
       this.put(this.tag, "tag", "transform", `translate(${px}px, ${ground + (box * 6) / 64}px) translateX(-50%)`);
       this.put(this.tag, "tagWidth", "maxWidth", `${s.tagWidth}px`);

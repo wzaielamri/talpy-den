@@ -9,7 +9,7 @@ import { AGENT_ID } from "./agentRun";
 import type { ChatPanes } from "./chatPane";
 import { setReopenIn, settings } from "./config";
 import type { Dashboard } from "./dashboard";
-import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, shareAccounts } from "./shared/model";
+import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, nextBest, shareAccounts } from "./shared/model";
 import { answersOf, askShownOf } from "./shared/pane";
 import { permsHost, weekAsked, weekRevokeAsked, weekRuleAsked } from "./shared/week";
 import type { ChatRef, Group, HostMessage, Memory, PlanItem, ProjectsData, WebviewMessage } from "./shared/types";
@@ -20,6 +20,8 @@ const PROFILE_DIR = /^[A-Za-z0-9._-]{1,100}$/;
 const TIP_COMMAND = /^\/[a-z][a-z-]{0,30}( [a-z0-9-]{1,30})?$/; // what a Recap tab tip suggests, e.g. "/effort xhigh"
 // (a permission change the page asked for that isn't one: "Nothing changed: …")
 const REFUSED = "that isn't something Talpy Den can change";
+// Where the big Talpy's best run (Talpy's Run, metres) is kept: global state, every window's
+const RUN_BEST_KEY = "talpyDen.runBest";
 
 export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
   static readonly viewId = "talpyDen.view";
@@ -42,6 +44,7 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
     private extensionUri: vscode.Uri,
     private dash: Dashboard,
     private actions: Actions,
+    private memento?: vscode.Memento, // (the big Talpy's best run)
   ) {
     this.badgeTree = vscode.window.createTreeView<never>(ViewHost.badgeId, { treeDataProvider: { getTreeItem: (e) => e, getChildren: () => [] } });
     this.disposables.push(
@@ -175,8 +178,13 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
 
   // Play with Talpy (the view's ⋯ menu): a game with the big Talpy, in the
   // view's page (shown first) and in an editor tab's
-  playWithTalpy(): void {
-    this.broadcast({ type: "playWithTalpy" });
+  playWithTalpy(game?: "peekaboo" | "run"): void {
+    this.broadcast({ type: "playWithTalpy", game });
+  }
+
+  // Talpy's Run: the best run so far (metres), as every window keeps it
+  private runBest(): number {
+    return nextBest(this.memento?.get(RUN_BEST_KEY), 0);
   }
 
   private broadcast(message: HostMessage): void {
@@ -284,6 +292,7 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         void webview.postMessage({ type: "state", state: this.dash.state() } satisfies HostMessage);
         void webview.postMessage({ type: "visible", visible: this.isVisible(webview) } satisfies HostMessage);
         if (this.shownTab) void webview.postMessage({ type: "showTab", tab: this.shownTab } satisfies HostMessage);
+        void webview.postMessage({ type: "runBest", best: this.runBest() } satisfies HostMessage);
         this.shownTab = null;
         break;
       case "open":
@@ -623,6 +632,14 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       case "copy":
         if (typeof m.text === "string" && TIP_COMMAND.test(m.text)) void vscode.env.clipboard.writeText(m.text);
         break;
+      case "runBest": {
+        // (the larger of the kept one and the run's: a stale view never lowers it)
+        const best = nextBest(this.memento?.get(RUN_BEST_KEY), m.best);
+        if (!this.memento || best === this.runBest()) break;
+        void this.memento.update(RUN_BEST_KEY, best);
+        this.broadcast({ type: "runBest", best }); // (the other views know it too)
+        break;
+      }
       case "openUsagePage":
         void vscode.commands.executeCommand("talpyDen.openUsagePage");
         break;

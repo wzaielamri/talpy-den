@@ -91,6 +91,9 @@ class FakeEl {
   addEventListener(kind: string, fn: () => void): void {
     (this.listeners[kind] ??= []).push(fn);
   }
+  removeEventListener(kind: string, fn: () => void): void {
+    this.listeners[kind] = (this.listeners[kind] ?? []).filter((f) => f !== fn);
+  }
   setPointerCapture(): void {}
   getBoundingClientRect() {
     return { left: 0, top: 0, width: 400, height: 80 };
@@ -461,7 +464,7 @@ test("a game's holes show while it's on; the stage hidden or a chat that needs y
   });
   stage.update(input("idle"));
   const hero = stage.pets[0];
-  hero.startGame();
+  hero.startGame(false, "peekaboo");
   assert.equal(hero.play.on, true);
   stage.loop();
   assert.equal(hero.playHoles.length, 3);
@@ -473,13 +476,44 @@ test("a game's holes show while it's on; the stage hidden or a chat that needs y
   t.intersect[0]([{ isIntersecting: true }]);
   stage.loop(); // (seen again: no holes left over)
   assert.ok(hero.playHoles.every((c: Any) => c.hidden));
-  hero.startGame();
+  hero.startGame(false, "peekaboo");
   assert.equal(hero.play.on, true);
   stage.update(input("needs")); // a chat needs you: over, and he shows his sign
   assert.equal(hero.play.on, false);
   assert.equal(hero.talpy.run?.name, "sign");
-  hero.startGame(); // (not while a chat needs you)
+  hero.startGame(false, "peekaboo"); // (not while a chat needs you)
   assert.equal(hero.play.on, false);
+  stage.destroy();
+});
+
+// Talpy's Run: the stage grows while he runs and its things are drawn; a chat
+// that needs you ends it (the stage back, the run's words hidden), a run cut
+// short still counts for the best, and the extension is asked to keep it
+test("Talpy's Run grows the stage while on, and a chat that needs you ends it, counting the run", () => {
+  const t = load();
+  const kept: number[] = [];
+  const stage: Any = new t.Stage(new FakeEl("div"), true, "hero", { open() {}, saveRunBest: (m: number) => kept.push(m) });
+  t.resize[0]([{ contentRect: { width: 400, height: 176 } }]);
+  t.intersect[0]([{ isIntersecting: true }]);
+  const input = (mood: string) => ({
+    mood, headline: "", counts: { waiting: mood === "needs" ? 1 : 0, working: 0, idle: 1, limit: 0, done: 0 }, highUsageText: "",
+    contextFullText: "", maxFiveHour: 0, agentsRunning: 0, waiting: null,
+  });
+  stage.update(input("idle"));
+  const hero = stage.pets[0];
+  hero.startGame(false, "run");
+  assert.equal(hero.play.name, "run");
+  assert.ok(stage.root.classList.contains("td-running"));
+  for (let i = 0; i < 40; i++) stage.loop();
+  assert.equal(hero.runCanvas.hidden, false);
+  assert.equal(hero.runText.hint.hidden, false); // ("Click to jump · …" first)
+  hero.play.meters = 7; // (as if it had run that far)
+  stage.update(input("needs")); // a chat needs you: over
+  assert.equal(hero.play.on, false);
+  assert.ok(!stage.root.classList.contains("td-running"));
+  assert.deepEqual(kept, [7]);
+  stage.loop();
+  assert.equal(hero.runCanvas.hidden, true);
   stage.destroy();
 });
 

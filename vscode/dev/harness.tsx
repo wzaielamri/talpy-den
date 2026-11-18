@@ -17,6 +17,14 @@ function send(message: HostMessage): void {
   window.postMessage(message, "*");
 }
 
+// ?run=1: Talpy's Run starts once the page shows (its best 340 m)
+if (params.get("run") === "1") {
+  setTimeout(() => {
+    send({ type: "runBest", best: 340 });
+    send({ type: "playWithTalpy", game: "run" });
+  }, 600);
+}
+
 function sendState(): void {
   const state = demoState(Date.now(), phase);
   // ?digest=1: the card that sums up what happened while you were away
@@ -113,6 +121,12 @@ function sendState(): void {
   }
   if (params.get("stars") === "1" && params.get("open") === "1" && first)
     for (const fold of ["|chats", "|plans"]) if (!uiState.get().starred[first.id + fold]) toggleStarred(first.id + fold);
+  // ?run=1: no chat needs you (else he shows his sign, not the run)
+  if (params.get("run") === "1")
+    for (const s of groups.flatMap((g) => g.sessions).filter((s) => s.state === "waiting")) {
+      s.state = "idle";
+      s.permission = null;
+    }
   // ?question=1: the chat that waits asks Claude's questions instead of a permission
   const waiting = groups.flatMap((g) => g.sessions).find((s) => s.state === "waiting" && s.permission);
   if (params.get("question") === "1" && waiting?.permission)

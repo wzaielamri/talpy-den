@@ -15,6 +15,9 @@ export const stageCallbacks: StageCallbacks = {
   open(chat: ChatRef) {
     post({ type: "openWindow", chat });
   },
+  saveRunBest(meters: number) {
+    post({ type: "runBest", best: meters });
+  },
 };
 
 export function useViewVisible(): boolean {

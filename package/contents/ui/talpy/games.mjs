@@ -405,6 +405,7 @@ export class Run {
         for (let i = 0; i < this.things.length; i++) {
             const th = this.things[i];
             th.x -= step;
+            th.y = this.s.ground - th.up;
             th.frame = Math.floor(now / 150) % 2;
             if (th.x + th.w > 0) {
                 this.things[n++] = th;
@@ -471,7 +472,9 @@ export class Run {
 
     add(kind) {
         const s = this.s, B = s.bodyHeight, k = KINDS[kind];
-        const th = { kind: kind, x: s.width + B * 0.2, y: s.ground - (k[2] + k[1]) * B, w: k[0] * B, h: k[1] * B, frame: 0 };
+        // (up: its top above the floor, so it stays on the floor as the stage grows)
+        const th = { kind: kind, x: s.width + B * 0.2, y: 0, w: k[0] * B, h: k[1] * B, frame: 0, up: (k[2] + k[1]) * B };
+        th.y = s.ground - th.up;
         this.things.push(th);
         return th;
     }
