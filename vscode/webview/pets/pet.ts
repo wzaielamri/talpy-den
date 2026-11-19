@@ -22,7 +22,7 @@ import type { ChatRef, Session } from "../../src/shared/types";
 import { hostLabel, stateText } from "../../src/shared/model";
 import { CookieGame, type CookieWords } from "../../vendor/talpy/cookie.mjs";
 import { Films } from "../../vendor/talpy/films.mjs";
-import { pickGame, type Game } from "../../vendor/talpy/games.mjs";
+import { pickGame, type Game, type RunThing } from "../../vendor/talpy/games.mjs";
 import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide, drawPuff, drawThing } from "../../vendor/talpy/talpy.mjs";
 import type { StageChat } from "./api";
 import { PALETTE, textOn } from "./colors";
@@ -36,6 +36,9 @@ export const LARGE = 8;
 // Events that happened while a stage was hidden are acted out when it shows
 // again, if they're this recent
 const MISSED_MS = 60000;
+
+// Talpy's Run: px around a thing's picture (runSprite), for its outline's edge
+const SPRITE_PAD = 2;
 
 function holidayGreeting(): string {
   const d = new Date(),
@@ -178,6 +181,7 @@ export class Pet {
   private runHintW = 0;
   private runMoves = 0; // (the run moved: gameMoved; its canvas painted for runDrawn)
   private runDrawn = -1;
+  private readonly runSprites = new Map<string, HTMLCanvasElement>(); // (its things' pictures: runSprite)
   private hadCookie = false; // you gave it one since the view opened (its hint stops)
   private readonly grab: HTMLDivElement;
   private readonly drawn: Record<string, string> = {};
@@ -1008,6 +1012,7 @@ export class Pet {
       if (this.runCanvas && !this.runCanvas.hidden) {
         this.runCanvas.hidden = true;
         this.runText!.box.hidden = true;
+        this.runSprites.clear(); // (drawn again for the next run)
       }
       return;
     }
@@ -1042,10 +1047,8 @@ export class Pet {
       this.runDrawn = this.runMoves;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, w, h);
-      for (const th of g.things ?? []) {
-        ctx.setTransform(k, 0, 0, k, k * th.x, k * th.y);
-        drawThing(ctx, th, world.dark);
-      }
+      // (each thing a picture drawn once, put where it is now: between pixels too, so it glides)
+      for (const th of g.things ?? []) ctx.drawImage(this.runSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD));
     }
     const over = g.state === "over";
     const meters = `${g.meters ?? 0} m`;
@@ -1061,6 +1064,27 @@ export class Pet {
     const end = !over ? "" : g.newBest ? `New best! ${g.best ?? 0} m` : `${g.meters ?? 0} m · best ${g.best ?? 0} m`;
     if (t.end.textContent !== end) t.end.textContent = end;
     t.end.hidden = t.again.hidden = !over;
+  }
+
+  // Talpy's Run: a thing's picture (drawThing), drawn the first time that look
+  // is wanted (its kind, look, wings, size, the theme, the screen's pixels) and
+  // kept for the run; SPRITE_PAD px around it for its outline's edge
+  private runSprite(th: RunThing, k: number): HTMLCanvasElement {
+    const key = `${th.kind} ${th.variant} ${th.frame} ${Math.round(th.w * 8)} ${Math.round(th.h * 8)} ${world.dark ? 1 : 0} ${k}`;
+    let c = this.runSprites.get(key);
+    if (!c) {
+      c = document.createElement("canvas");
+      c.width = Math.ceil((th.w + 2 * SPRITE_PAD) * k);
+      c.height = Math.ceil((th.h + 2 * SPRITE_PAD) * k);
+      const ctx = c.getContext("2d");
+      if (ctx) {
+        ctx.setTransform(k, 0, 0, k, SPRITE_PAD * k, SPRITE_PAD * k);
+        drawThing(ctx, th, world.dark);
+      }
+      if (this.runSprites.size >= 160) this.runSprites.clear(); // (a run's looks are far fewer: sizes or themes changed)
+      this.runSprites.set(key, c);
+    }
+    return c;
   }
 
   // A game's holes, under him: painted again only as they open or close

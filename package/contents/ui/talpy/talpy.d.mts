@@ -23,7 +23,10 @@ export function drawCookie(ctx: unknown, flavour?: string): void;
 // the cookie vanishing (CookieGame.puff), p 0 to 1: drawn as drawCookie, reaching about three times as far
 export function drawPuff(ctx: unknown, p: number, flavour?: string): void;
 // One of a run's things (games.mjs RunThing) in its w × h box, top left at the origin, px
-export function drawThing(ctx: unknown, thing: { kind: string; w: number; h: number; frame?: number }, dark?: boolean): void;
+export function drawThing(ctx: unknown, thing: { kind: string; w: number; h: number; frame?: number; variant?: number },
+    dark?: boolean): void;
+// a bird's pictures a flap (RunThing.frame)
+export const FLAP_FRAMES: number;
 
 // A film's picture of it (Talpy.still), see films.mjs
 export interface Still {

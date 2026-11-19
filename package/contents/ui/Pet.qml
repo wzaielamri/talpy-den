@@ -106,10 +106,12 @@ Item {
     property bool gameOn: false
     property var gameHoles: []          // [{x, open}]: a copy of the game's, for the holes drawn
     // Talpy's Run (the game named "run"): what of it shows, copied at each move
-    // (its things are drawn from the game itself, runFrame says when)
+    // (its things are read from the game itself, runFrame says when: runThing)
     property bool runOn: false
     property real runLift: 0            // px he's up in his jump
     property int runFrame: 0
+    property int runSlots: 0            // the game's slots: a picture for each (its things keep theirs)
+    readonly property real spritePad: 2 // px around a thing's picture, for its outline's edge
     property int runMeters: 0
     property int runBestNow: 0
     property bool runNewBest: false
@@ -431,7 +433,17 @@ Item {
         runNewBest = playGame.newBest
         runState = playGame.state
         runHint = playGame.hint
+        runSlots = playGame.slots
         runFrame = (runFrame + 1) % 1000000
+    }
+
+    // Talpy's Run: the thing in that slot now, or null
+    function runThing(slot) {
+        const things = runOn && playGame ? playGame.things : []
+        for (let i = 0; i < things.length; i++)
+            if (things[i].slot === slot)
+                return things[i]
+        return null
     }
 
     // Talpy's Run: a press on his stage (PetStrip.qml), "jump" or "dig", or a dig let go
@@ -995,32 +1007,76 @@ Item {
     }
 
     // Talpy's Run: what's on his way (T.drawThing), under him, and its words;
-    // made only while a run is on (not in every pet), painted again only when
-    // it moved (runFrame)
+    // made only while a run is on (not in every pet). Each thing is a picture
+    // drawn once and moved where it is at each move (runFrame): a canvas the
+    // stage's size painted every frame cost about as much again as the rest
+    // of the widget, and a frame's picture could show a frame late. A slot of
+    // the game's has one picture (its things keep theirs while they're there);
+    // a bird's has its whole flap side by side, the frame's one shown.
     Loader {
         active: pet.runOn
         width: strip.width
         height: strip.height
         sourceComponent: Item {
-            Canvas {
-                id: runCanvas
-                anchors.fill: parent
-                renderStrategy: Canvas.Cooperative
-                onPaint: {
-                    const ctx = getContext("2d")
-                    ctx.reset()
-                    const things = pet.runOn && pet.playGame ? pet.playGame.things : []
-                    for (let i = 0; i < things.length; i++) {
-                        const th = things[i]
-                        ctx.save()
-                        ctx.translate(th.x, th.y)
-                        T.drawThing(ctx, th, strip.darkTheme)
-                        ctx.restore()
+            clip: true   // (what comes from beyond the stage's edge isn't seen there)
+            Repeater {
+                model: pet.runSlots
+                delegate: Item {
+                    id: slot
+                    required property int index
+                    readonly property var th: { pet.runFrame; return pet.runThing(index) }
+                    visible: th !== null
+                    x: { pet.runFrame; return th ? th.x - pet.spritePad : 0 }
+                    y: { pet.runFrame; return th ? th.y - pet.spritePad : 0 }
+                    width: sprite.cellW
+                    height: sprite.cellH
+                    clip: sprite.frames > 1
+                    Canvas {
+                        id: sprite
+                        // what it shows (relook), painted again only when that changes; kept
+                        // between two things (the slot's empty a moment: no picture lost)
+                        property string look: ""
+                        property var drawn: null   // {kind, w, h, variant, frames, dark}
+                        readonly property int frames: drawn ? drawn.frames : 1
+                        readonly property real cellW: drawn ? drawn.w + 2 * pet.spritePad : 0
+                        readonly property real cellH: drawn ? drawn.h + 2 * pet.spritePad : 0
+                        function relook() {
+                            const th = slot.th
+                            if (!th)
+                                return
+                            const l = [th.kind, th.variant, Math.round(th.w * 8), Math.round(th.h * 8), strip.darkTheme].join(" ")
+                            if (l === look)
+                                return
+                            look = l
+                            drawn = { kind: th.kind, w: th.w, h: th.h, variant: th.variant, dark: strip.darkTheme,
+                                      frames: th.kind === "crow" || th.kind === "crowHigh" ? T.FLAP_FRAMES : 1 }
+                            requestPaint()
+                        }
+                        x: { pet.runFrame; return slot.th ? -(slot.th.frame % frames) * cellW : 0 }
+                        width: cellW * frames
+                        height: cellH
+                        renderStrategy: Canvas.Cooperative
+                        Component.onCompleted: relook()
+                        Connections {
+                            target: slot
+                            function onThChanged() { sprite.relook() }
+                        }
+                        Connections {
+                            target: strip
+                            function onDarkThemeChanged() { sprite.relook() }
+                        }
+                        onPaint: {
+                            const ctx = getContext("2d")
+                            ctx.reset()
+                            const d = drawn
+                            for (let f = 0; d && f < d.frames; f++) {
+                                ctx.save()
+                                ctx.translate(f * cellW + pet.spritePad, pet.spritePad)
+                                T.drawThing(ctx, { kind: d.kind, w: d.w, h: d.h, frame: f, variant: d.variant }, d.dark)
+                                ctx.restore()
+                            }
+                        }
                     }
-                }
-                Connections {
-                    target: pet
-                    function onRunFrameChanged() { runCanvas.requestPaint() }
                 }
             }
             // how far (the top right, one figure), how to play, how it ended

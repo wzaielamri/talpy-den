@@ -335,12 +335,29 @@ export function drawPuff(ctx, p, flavour) {
 }
 
 // What's on Talpy's way in a run (games.mjs Run's things), in its own w × h
-// box, top left at the context's origin, in px (no transforms): a pebble, a
-// stone, a flower pot, two pebbles, a crow (frame: its wings up or down,
-// crowHigh the same bird higher up), a tuft of grass. Ink outlines and soft
-// fills, as Talpy's own things.
-const THING = { pebble: '#a39d95', pebbleLit: '#c4beb5', stone: '#8d8780', stoneLit: '#aaa49c', pot: '#c8744f',
-                potRim: '#d98a64', leaf: '#6f9a5a', petal: '#e8a0bf', heart: '#f5d36b', crow: '#33303f', beak: '#e0a43a' };
+// box, top left at the context's origin, in px (no transforms): a rock, a
+// boulder, a flower pot (variant: its flower's colours), a hedgehog (its
+// quills'), a heap of rocks, a tree stump, a log, a bird (which: a crow, a
+// bluebird, a robin; frame: where its wings are in a flap, 0 to FLAP_FRAMES -
+// 1; crowHigh the same birds higher up), a tuft of grass (its blades, one with
+// a daisy), a cloud. What's in the way has ink outlines and shading, as
+// Talpy's own things; the grass and the clouds go by behind, thin or faint
+// and see-through, never taken for something to jump. Each is drawn once, as
+// a picture the host moves (Pet.qml, pet.ts).
+export const FLAP_FRAMES = 8;
+const ROCK = { base: '#a29b92', lit: '#cbc4ba', shade: '#7f7870', speck: '#6c665f' };
+const POT = { body: '#c96f48', shade: '#a65a3a', rim: '#de8c63', rimLit: '#eba37f' };
+const LEAF = { leaf: '#77a65c', vein: '#557f40', stem: '#5f8f48' };
+const FLOWERS = [['#f08db0', '#f7d154'], ['#f6c945', '#c8742f'], ['#a9b6f2', '#f7d154'], ['#f6f2ea', '#f2c84b']];
+// a crow, a bluebird, a robin: body, near wing, far wing, beak, breast ('' none)
+const BIRDS = [['#2d2a3a', '#4a4560', '#1d1a28', '#f0a83a', ''], ['#4f7fd6', '#3a63b3', '#2c4c8c', '#f0a83a', '#f2efe6'],
+               ['#7a6152', '#5e4a3e', '#45362d', '#f0c03a', '#ee7d45']];
+const HEDGEHOGS = [['#6f5242', '#8d6c58'], ['#76737f', '#94919d']];   // quills, their lit top
+const HEDGEHOG = { face: '#ead2ad', blush: '#f2a0a8' };
+const WOOD = { bark: '#8a5e3c', shade: '#6b472c', line: '#5a3c25', cut: '#e4c28e', ring: '#b98f5a' };
+const GRASS = { light: '#6f9a5a', dark: '#7fae63', daisy: '#ffffff', heart: '#f2c84b' };
+const CLOUD = { light: '#ffffff', lightRim: '#aab6d6', dark: '#cdd3ec' };
+const SHADOW = '#000000';
 const DARK_RIM = '#d9d4ec';   // a dark thing's outline on a dark stage (a crow: ink on ink vanished)
 function blob(ctx, cx, cy, rx, ry, color, lw, ink) {
     ctx.beginPath();
@@ -348,78 +365,373 @@ function blob(ctx, cx, cy, rx, ry, color, lw, ink) {
     art.fill(ctx, color);
     art.stroke(ctx, ink || art.INK, lw);
 }
-function poly(ctx, pts, color, lw, ink) {
+// its shadow on the floor, along the box's bottom
+function shadow(ctx, cx, w, h, alpha) {
+    art.ellipse(ctx, cx, h - Math.max(1, h * 0.05), w / 2, Math.max(1, h * 0.05), SHADOW, alpha);
+}
+// A rock in (x, y, w, h): flat underneath, a lumpy top, lit from the top
+// left, its right side in shade; crack: a crack down its face
+function rock(ctx, x, y, w, h, lw, crack) {
+    const X = f => x + f * w, Y = f => y + f * h;
+    const outline = () => {
+        ctx.beginPath();
+        ctx.moveTo(X(0.05), Y(1));
+        ctx.bezierCurveTo(X(0.0), Y(0.9), X(0.0), Y(0.7), X(0.03), Y(0.52));
+        ctx.bezierCurveTo(X(0.06), Y(0.25), X(0.15), Y(0.06), X(0.36), Y(0.04));
+        ctx.bezierCurveTo(X(0.5), Y(0.02), X(0.6), Y(0.0), X(0.74), Y(0.09));
+        ctx.bezierCurveTo(X(0.9), Y(0.18), X(1.0), Y(0.4), X(0.99), Y(0.62));
+        ctx.bezierCurveTo(X(0.99), Y(0.8), X(0.98), Y(0.94), X(0.95), Y(1));
+        ctx.closePath();
+    };
+    outline();
+    art.fill(ctx, ROCK.base);
+    ctx.save();
+    outline();
+    ctx.clip();
+    art.ellipse(ctx, X(0.95), Y(0.95), w * 0.5, h * 0.62, ROCK.shade);
+    art.ellipse(ctx, X(0.32), Y(0.2), w * 0.3, h * 0.2, ROCK.lit);
+    art.ellipse(ctx, X(0.62), Y(0.55), w * 0.04, h * 0.05, ROCK.speck);
+    art.ellipse(ctx, X(0.38), Y(0.7), w * 0.035, h * 0.04, ROCK.speck);
+    ctx.restore();
+    outline();
+    art.stroke(ctx, art.INK, lw);
+    if (crack) {
+        ctx.beginPath();
+        ctx.moveTo(X(0.6), Y(0.08));
+        ctx.lineTo(X(0.66), Y(0.3));
+        ctx.lineTo(X(0.58), Y(0.45));
+        ctx.lineTo(X(0.65), Y(0.62));
+        art.stroke(ctx, art.INK, lw * 0.7);
+    }
+}
+// A leaf from its stalk (bx, by) to its tip (tx, ty), bulging towards (c1)
+// on one side and (c2) on the other
+function leaf(ctx, bx, by, tx, ty, c1x, c1y, c2x, c2y, lw) {
     ctx.beginPath();
-    ctx.moveTo(pts[0], pts[1]);
-    for (let i = 2; i < pts.length; i += 2)
-        ctx.lineTo(pts[i], pts[i + 1]);
+    ctx.moveTo(bx, by);
+    ctx.quadraticCurveTo(c1x, c1y, tx, ty);
+    ctx.quadraticCurveTo(c2x, c2y, bx, by);
+    art.fill(ctx, LEAF.leaf);
+    art.stroke(ctx, art.INK, lw * 0.7);
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + (tx - bx) * 0.65, by + (ty - by) * 0.65);
+    art.stroke(ctx, LEAF.vein, lw * 0.5);
+}
+// An ellipse turned by an angle (radians) about its centre, as four curves
+// (no transforms: a thing draws in its box's own px)
+function traceTurned(ctx, cx, cy, rx, ry, an) {
+    const c = Math.cos(an), s = Math.sin(an), k = 0.5523;
+    const at = (x, y) => [cx + x * c - y * s, cy + x * s + y * c];
+    const p = [at(rx, 0), at(0, ry), at(-rx, 0), at(0, -ry)];
+    const q = [[at(rx, ry * k), at(rx * k, ry)], [at(-rx * k, ry), at(-rx, ry * k)],
+               [at(-rx, -ry * k), at(-rx * k, -ry)], [at(rx * k, -ry), at(rx, -ry * k)]];
+    ctx.moveTo(p[0][0], p[0][1]);
+    for (let i = 0; i < 4; i++) {
+        const to = p[(i + 1) % 4];
+        ctx.bezierCurveTo(q[i][0][0], q[i][0][1], q[i][1][0], q[i][1][1], to[0], to[1]);
+    }
     ctx.closePath();
+}
+// A bird's wing from its shoulder (sx, sy), up (a = 1) to down (a = -1): a
+// rounded wing, length long, with two feathers drawn on it
+function wing(ctx, sx, sy, a, long, color, lw, ink) {
+    const an = a >= 0 ? -a * 1.25 : -a * 0.95;   // (radians from straight back; up is further than down)
+    const c = Math.cos(an), s = Math.sin(an), rx = long / 2, ry = long * 0.24;
+    const cx = sx + c * rx * 0.9, cy = sy + s * rx * 0.9;
+    ctx.beginPath();
+    traceTurned(ctx, cx, cy, rx, ry, an);
     art.fill(ctx, color);
-    art.stroke(ctx, ink || art.INK, lw);
+    art.stroke(ctx, ink, lw);
+    ctx.beginPath();
+    for (const f of [0.25, -0.3]) {   // (its feathers: lines along it)
+        const ox = -s * ry * f, oy = c * ry * f;
+        ctx.moveTo(cx + ox - c * rx * 0.1, cy + oy - s * rx * 0.1);
+        ctx.lineTo(cx + ox + c * rx * 0.65, cy + oy + s * rx * 0.65);
+    }
+    art.stroke(ctx, ink, lw * 0.5, 0.6);
 }
 // dark: the stage is a dark theme's (the crow gets a light outline there)
 export function drawThing(ctx, thing, dark) {
     const w = thing.w, h = thing.h, m = Math.min(w, h), lw = Math.max(0.8, m * 0.06), e = lw / 2;
     switch (thing.kind) {
     case 'pebble':
-        blob(ctx, w / 2, h * 0.55, w / 2 - e, h * 0.45 - e, THING.pebble, lw);
-        art.ellipse(ctx, w * 0.38, h * 0.42, w * 0.12, h * 0.1, THING.pebbleLit);
-        break;
-    case 'pebbles':
-        blob(ctx, w * 0.27, h * 0.55, w * 0.27 - e, h * 0.45 - e, THING.pebble, lw);
-        blob(ctx, w * 0.72, h * 0.62, w * 0.28 - e, h * 0.38 - e, THING.stone, lw);
-        art.ellipse(ctx, w * 0.2, h * 0.42, w * 0.07, h * 0.1, THING.pebbleLit);
+        shadow(ctx, w / 2, w, h, 0.16);
+        rock(ctx, e + w * 0.03, e, w * 0.94 - lw, h - lw, lw, false);
         break;
     case 'stone':
-        ctx.beginPath();
-        traceRoundRect(ctx, e, h * 0.08 + e, w - lw, h * 0.92 - lw, m * 0.38);
-        art.fill(ctx, THING.stone);
-        art.stroke(ctx, art.INK, lw);
-        art.ellipse(ctx, w * 0.33, h * 0.3, w * 0.12, h * 0.08, THING.stoneLit);
-        ctx.beginPath();
-        ctx.moveTo(w * 0.62, h * 0.35);
-        ctx.lineTo(w * 0.7, h * 0.55);
-        ctx.lineTo(w * 0.64, h * 0.7);
-        art.stroke(ctx, art.INK, lw * 0.6);
+        shadow(ctx, w / 2, w, h, 0.16);
+        rock(ctx, e + w * 0.02, e, w * 0.96 - lw, h - lw, lw, true);
+        break;
+    case 'pebbles':
+        shadow(ctx, w / 2, w, h, 0.16);
+        rock(ctx, w * 0.4, e, w * 0.6 - e, h - lw, lw, false);
+        rock(ctx, e, h * 0.3, w * 0.5, h * 0.7 - e, lw, false);
+        rock(ctx, w * 0.3, h * 0.05, w * 0.24, h * 0.4, lw * 0.9, false);
         break;
     case 'pot': {
-        const r = m * 0.12, top = h * 0.36;
-        ctx.beginPath();   // its flower
-        ctx.moveTo(w / 2, top);
-        ctx.lineTo(w / 2, r * 2 + e);
-        art.stroke(ctx, THING.leaf, lw);
-        blob(ctx, w / 2, r + e, r, r, THING.petal, lw * 0.7);
-        art.circle(ctx, w / 2, r + e, r * 0.4, THING.heart);
-        poly(ctx, [w * 0.12, top + h * 0.12, w * 0.88, top + h * 0.12, w * 0.76, h - e, w * 0.24, h - e], THING.pot, lw);
-        ctx.beginPath();   // its rim
-        traceRoundRect(ctx, e, top, w - lw, h * 0.14, m * 0.05);
-        art.fill(ctx, THING.potRim);
+        const colors = FLOWERS[(thing.variant || 0) % FLOWERS.length];
+        const rimY = h * 0.56, rimH = h * 0.11, cx = w * 0.5, fy = h * 0.22;
+        shadow(ctx, cx, w * 0.8, h, 0.16);
+        ctx.beginPath();   // its stalk
+        ctx.moveTo(cx, rimY + rimH * 0.5);
+        ctx.bezierCurveTo(w * 0.42, h * 0.45, w * 0.58, h * 0.34, cx, fy);
+        art.stroke(ctx, LEAF.stem, Math.max(1.2, w * 0.07));
+        leaf(ctx, w * 0.47, h * 0.5, w * 0.06 + e, h * 0.36, w * 0.2, h * 0.53, w * 0.3, h * 0.33, lw);
+        leaf(ctx, w * 0.53, h * 0.43, w * 0.94 - e, h * 0.3, w * 0.8, h * 0.47, w * 0.68, h * 0.26, lw);
+        // its flower: five round petals and a heart
+        const d = w * 0.15, pr = w * 0.13;
+        for (let i = 0; i < 5; i++) {
+            const an = -Math.PI / 2 + i * 2 * Math.PI / 5;
+            blob(ctx, cx + Math.cos(an) * d, fy + Math.sin(an) * d, pr, pr, colors[0], lw * 0.6);
+        }
+        blob(ctx, cx, fy, w * 0.1, w * 0.1, colors[1], lw * 0.6);
+        // the pot: wider at the top, its right side in shade, a rim
+        const body = () => {
+            ctx.beginPath();
+            ctx.moveTo(w * 0.12, rimY + rimH);
+            ctx.lineTo(w * 0.88, rimY + rimH);
+            ctx.lineTo(w * 0.77, h - e);
+            ctx.lineTo(w * 0.23, h - e);
+            ctx.closePath();
+        };
+        body();
+        art.fill(ctx, POT.body);
+        ctx.save();
+        body();
+        ctx.clip();
+        art.ellipse(ctx, w * 0.95, h * 0.85, w * 0.28, h * 0.3, POT.shade);
+        ctx.restore();
+        body();
         art.stroke(ctx, art.INK, lw);
+        ctx.beginPath();
+        traceRoundRect(ctx, w * 0.05 + e, rimY, w * 0.9 - lw, rimH, m * 0.05);
+        art.fill(ctx, POT.rim);
+        art.stroke(ctx, art.INK, lw);
+        ctx.beginPath();
+        ctx.moveTo(w * 0.14, rimY + rimH * 0.38);
+        ctx.lineTo(w * 0.5, rimY + rimH * 0.38);
+        art.stroke(ctx, POT.rimLit, lw * 0.8);
         break;
     }
     case 'crow':
     case 'crowHigh': {
-        const up = !thing.frame, hr = m * 0.17, ink = dark ? DARK_RIM : art.INK;
-        poly(ctx, [w * 0.82, h * 0.5, w - e, h * 0.36, w - e, h * 0.66], THING.crow, lw, ink);   // tail
-        blob(ctx, w * 0.56, h * 0.55, w * 0.3, h * 0.26, THING.crow, lw, ink);
-        poly(ctx, up ? [w * 0.44, h * 0.42, w * 0.72, h * 0.42, w * 0.62, e]
-                     : [w * 0.44, h * 0.6, w * 0.72, h * 0.6, w * 0.6, h - e], THING.crow, lw, ink);   // a wing
-        poly(ctx, [w * 0.16, h * 0.4, w * 0.16, h * 0.52, e, h * 0.47], THING.beak, lw * 0.7, ink);
-        blob(ctx, w * 0.24, h * 0.45, hr, hr, THING.crow, lw, ink);
-        art.circle(ctx, w * 0.21, h * 0.42, hr * 0.32, '#ffffff');
-        art.circle(ctx, w * 0.2, h * 0.42, hr * 0.16, art.INK);
+        // (facing what it flies to: Talpy; plump, a big head, its wings flapping)
+        const ink = dark ? DARK_RIM : art.INK, bird = BIRDS[(thing.variant || 0) % BIRDS.length];
+        const p = ((thing.frame || 0) % FLAP_FRAMES) / FLAP_FRAMES, a = Math.cos(2 * Math.PI * p);
+        const dy = h * 0.06 * Math.sin(2 * Math.PI * p);   // (lifted by each downstroke)
+        const by = h * 0.56 + dy, long = Math.min(w * 0.4, h * 0.46);
+        wing(ctx, w * 0.56, by - h * 0.12, a * 0.8, long * 0.85, bird[2], lw * 0.8, ink);   // its far wing
+        ctx.beginPath();   // its tail: three feathers fanned
+        ctx.moveTo(w * 0.7, by - h * 0.06);
+        ctx.quadraticCurveTo(w * 0.86, by - h * 0.26, w - e, by - h * 0.2);
+        ctx.quadraticCurveTo(w * 0.92, by - h * 0.06, w - e, by);
+        ctx.quadraticCurveTo(w * 0.92, by + h * 0.06, w * 0.97, by + h * 0.18);
+        ctx.quadraticCurveTo(w * 0.84, by + h * 0.18, w * 0.7, by + h * 0.1);
+        ctx.closePath();
+        art.fill(ctx, bird[0]);
+        art.stroke(ctx, ink, lw);
+        const body = () => {
+            ctx.beginPath();
+            traceEllipse(ctx, w * 0.5, by, w * 0.26, h * 0.26);
+        };
+        body();
+        art.fill(ctx, bird[0]);
+        ctx.save();
+        body();
+        ctx.clip();
+        if (bird[4])   // (its breast)
+            art.ellipse(ctx, w * 0.36, by + h * 0.14, w * 0.2, h * 0.2, bird[4]);
+        art.ellipse(ctx, w * 0.6, by + h * 0.34, w * 0.3, h * 0.14, '#000000', 0.18);   // (its belly in shade)
+        ctx.restore();
+        body();
+        art.stroke(ctx, ink, lw);
+        const hx = w * 0.27, hy = by - h * 0.2, hr = Math.min(w * 0.15, h * 0.24);
+        ctx.beginPath();   // its beak
+        ctx.moveTo(hx - hr * 0.7, hy - hr * 0.3);
+        ctx.quadraticCurveTo(hx - hr * 1.3, hy - hr * 0.1, Math.max(e, hx - hr * 1.75), hy + hr * 0.25);
+        ctx.quadraticCurveTo(hx - hr * 1.2, hy + hr * 0.45, hx - hr * 0.7, hy + hr * 0.4);
+        ctx.closePath();
+        art.fill(ctx, bird[3]);
+        art.stroke(ctx, ink, lw * 0.7);
+        blob(ctx, hx, hy, hr, hr, bird[0], lw, ink);   // its head
+        art.circle(ctx, hx - hr * 0.25, hy - hr * 0.15, hr * 0.42, '#ffffff');
+        art.circle(ctx, hx - hr * 0.38, hy - hr * 0.1, hr * 0.24, art.INK);
+        art.circle(ctx, hx - hr * 0.32, hy - hr * 0.24, hr * 0.09, '#ffffff');
+        wing(ctx, w * 0.5, by - h * 0.06, a, long, bird[1], lw, ink);   // its near wing
         break;
     }
-    case 'tuft':
-        ctx.beginPath();
-        ctx.moveTo(w * 0.3, h);
-        ctx.quadraticCurveTo(w * 0.25, h * 0.5, w * 0.08 + e, h * 0.1 + e);
-        ctx.moveTo(w * 0.5, h);
-        ctx.quadraticCurveTo(w * 0.5, h * 0.4, w * 0.52, e);
-        ctx.moveTo(w * 0.68, h);
-        ctx.quadraticCurveTo(w * 0.75, h * 0.5, w * 0.92 - e, h * 0.2 + e);
-        art.stroke(ctx, THING.leaf, lw);
+    case 'hedgehog': {
+        // (spikes say "don't touch": facing Talpy, its snout and nose to the left)
+        const quills = HEDGEHOGS[(thing.variant || 0) % HEDGEHOGS.length];
+        const cx = w * 0.56, cy = h * 0.66, rx = w * 0.36, ry = h * 0.5, n = 9;
+        shadow(ctx, w / 2, w, h, 0.16);
+        const back = () => {   // a dome of quills, pointed all over
+            ctx.beginPath();
+            ctx.moveTo(w * 0.22, h * 0.9);
+            for (let i = 0; i <= 2 * n; i++) {
+                const an = Math.PI + Math.PI * i / (2 * n), r = i % 2 ? 1.17 : 1;
+                ctx.lineTo(cx + Math.cos(an) * rx * r, cy + Math.sin(an) * ry * r);
+            }
+            ctx.lineTo(w * 0.94, h * 0.9);
+            ctx.closePath();
+        };
+        back();
+        art.fill(ctx, quills[0]);
+        ctx.save();
+        back();
+        ctx.clip();
+        art.ellipse(ctx, cx - rx * 0.15, cy - ry * 0.35, rx * 0.6, ry * 0.42, quills[1]);   // (lit on top)
+        ctx.restore();
+        back();
+        art.stroke(ctx, art.INK, lw);
+        for (const fx of [0.36, 0.76])   // its feet
+            blob(ctx, w * fx, h * 0.9, w * 0.07, h * 0.07, HEDGEHOG.face, lw * 0.7);
+        ctx.beginPath();   // its face: a snout to the left
+        ctx.moveTo(w * 0.4, h * 0.42);
+        ctx.quadraticCurveTo(w * 0.2, h * 0.46, w * 0.05 + e, h * 0.68);
+        ctx.quadraticCurveTo(w * 0.2, h * 0.9, w * 0.44, h * 0.88);
+        ctx.quadraticCurveTo(w * 0.5, h * 0.62, w * 0.4, h * 0.42);
+        ctx.closePath();
+        art.fill(ctx, HEDGEHOG.face);
+        art.stroke(ctx, art.INK, lw);
+        art.circle(ctx, w * 0.06 + e, h * 0.67, Math.max(1, w * 0.045), art.INK);   // its nose
+        art.circle(ctx, w * 0.25, h * 0.58, Math.max(0.9, w * 0.038), art.INK);   // its eye
+        art.circle(ctx, w * 0.24, h * 0.565, Math.max(0.4, w * 0.014), '#ffffff');
+        art.ellipse(ctx, w * 0.31, h * 0.73, w * 0.05, h * 0.04, HEDGEHOG.blush, 0.8);
         break;
+    }
+    case 'stump': {
+        const cutY = h * 0.22, cutR = h * 0.13;
+        shadow(ctx, w / 2, w, h, 0.16);
+        const side = () => {   // its bark, roots spread at the foot
+            ctx.beginPath();
+            ctx.moveTo(w * 0.13, cutY);
+            ctx.lineTo(w * 0.14, h * 0.78);
+            ctx.quadraticCurveTo(w * 0.12, h * 0.94, e, h - e);
+            ctx.lineTo(w - e, h - e);
+            ctx.quadraticCurveTo(w * 0.88, h * 0.94, w * 0.86, h * 0.78);
+            ctx.lineTo(w * 0.87, cutY);
+            ctx.closePath();
+        };
+        side();
+        art.fill(ctx, WOOD.bark);
+        ctx.save();
+        side();
+        ctx.clip();
+        art.ellipse(ctx, w * 0.95, h * 0.7, w * 0.3, h * 0.6, WOOD.shade);
+        ctx.restore();
+        ctx.beginPath();   // the bark's lines
+        ctx.moveTo(w * 0.32, cutY + cutR);
+        ctx.lineTo(w * 0.3, h * 0.82);
+        ctx.moveTo(w * 0.52, cutY + cutR * 1.2);
+        ctx.lineTo(w * 0.54, h * 0.7);
+        ctx.moveTo(w * 0.7, cutY + cutR);
+        ctx.lineTo(w * 0.72, h * 0.86);
+        art.stroke(ctx, WOOD.line, lw * 0.6);
+        side();
+        art.stroke(ctx, art.INK, lw);
+        blob(ctx, w / 2, cutY, w * 0.37, cutR, WOOD.cut, lw);   // its top, cut: rings
+        ctx.beginPath();
+        traceEllipse(ctx, w / 2, cutY, w * 0.24, cutR * 0.6);
+        art.stroke(ctx, WOOD.ring, lw * 0.6);
+        ctx.beginPath();
+        traceEllipse(ctx, w / 2, cutY, w * 0.1, cutR * 0.25);
+        art.stroke(ctx, WOOD.ring, lw * 0.6);
+        // (a sprout on its top)
+        ctx.beginPath();
+        ctx.moveTo(w * 0.3, cutY);
+        ctx.quadraticCurveTo(w * 0.27, cutY * 0.6, w * 0.3, cutY * 0.35);
+        art.stroke(ctx, LEAF.stem, lw * 0.8);
+        leaf(ctx, w * 0.3, cutY * 0.4, w * 0.12, e + h * 0.01, w * 0.14, cutY * 0.5, w * 0.28, e, lw * 0.8);
+        break;
+    }
+    case 'log': {
+        const r = h / 2 - e, endX = w * 0.16;
+        shadow(ctx, w / 2, w, h, 0.16);
+        const side = () => {   // lying down, its round end to the left, the far one rounded off
+            ctx.beginPath();
+            ctx.moveTo(endX, e);
+            ctx.lineTo(w - e - r * 0.6, e);
+            ctx.quadraticCurveTo(w - e, e, w - e, h / 2);
+            ctx.quadraticCurveTo(w - e, h - e, w - e - r * 0.6, h - e);
+            ctx.lineTo(endX, h - e);
+            ctx.closePath();
+        };
+        side();
+        art.fill(ctx, WOOD.bark);
+        ctx.save();
+        side();
+        ctx.clip();
+        art.ellipse(ctx, w * 0.6, h, w * 0.5, h * 0.35, WOOD.shade);
+        ctx.restore();
+        ctx.beginPath();   // the bark's lines
+        ctx.moveTo(w * 0.3, h * 0.3);
+        ctx.lineTo(w * 0.62, h * 0.28);
+        ctx.moveTo(w * 0.45, h * 0.55);
+        ctx.lineTo(w * 0.85, h * 0.52);
+        ctx.moveTo(w * 0.3, h * 0.75);
+        ctx.lineTo(w * 0.55, h * 0.78);
+        art.stroke(ctx, WOOD.line, lw * 0.6);
+        side();
+        art.stroke(ctx, art.INK, lw);
+        const er = Math.min(endX - e, r * 0.55);
+        blob(ctx, endX, h / 2, er, r, WOOD.cut, lw);   // its cut end: rings
+        ctx.beginPath();
+        traceEllipse(ctx, endX, h / 2, er * 0.55, r * 0.55);
+        art.stroke(ctx, WOOD.ring, lw * 0.6);
+        break;
+    }
+    case 'tuft': {
+        // (the ground's: no outline, see-through, thin blades; one has a daisy)
+        const v = (thing.variant || 0) % 3, green = dark ? GRASS.dark : GRASS.light, blade = Math.max(0.8, lw * 0.75);
+        ctx.beginPath();
+        if (v === 1) {
+            ctx.moveTo(w * 0.3, h);
+            ctx.quadraticCurveTo(w * 0.26, h * 0.5, w * 0.1 + e, h * 0.3 + e);
+            ctx.moveTo(w * 0.5, h);
+            ctx.quadraticCurveTo(w * 0.52, h * 0.4, w * 0.6, e);
+            ctx.moveTo(w * 0.66, h);
+            ctx.quadraticCurveTo(w * 0.74, h * 0.55, w * 0.92 - e, h * 0.3);
+        } else {
+            ctx.moveTo(w * 0.22, h);
+            ctx.quadraticCurveTo(w * 0.2, h * 0.55, w * 0.04 + e, h * 0.2 + e);
+            ctx.moveTo(w * 0.42, h);
+            ctx.quadraticCurveTo(w * 0.4, h * 0.45, w * 0.36, e);
+            ctx.moveTo(w * 0.58, h);
+            ctx.quadraticCurveTo(w * 0.62, h * 0.4, w * 0.7, h * 0.1 + e);
+            ctx.moveTo(w * 0.76, h);
+            ctx.quadraticCurveTo(w * 0.82, h * 0.6, w * 0.96 - e, h * 0.4);
+        }
+        art.stroke(ctx, green, blade, 0.55);
+        if (v === 2) {   // (a daisy among the blades)
+            const fx = w * 0.5, fy = h * 0.32, fr = Math.min(w, h) * 0.16;
+            for (let i = 0; i < 5; i++) {
+                const an = -Math.PI / 2 + i * 2 * Math.PI / 5;
+                art.circle(ctx, fx + Math.cos(an) * fr, fy + Math.sin(an) * fr, fr * 0.75, GRASS.daisy, 0.6);
+            }
+            art.circle(ctx, fx, fy, fr * 0.6, GRASS.heart, 0.7);
+        }
+        break;
+    }
+    case 'cloud': {
+        // (far off, behind: puffs on a flat bottom, faint)
+        const puffs = (thing.variant || 0) % 2 ? [[0.3, 0.62, 0.24, 0.36], [0.52, 0.48, 0.24, 0.46], [0.74, 0.64, 0.2, 0.34]]
+                                                : [[0.2, 0.66, 0.16, 0.32], [0.4, 0.46, 0.2, 0.44], [0.62, 0.42, 0.2, 0.4],
+                                                   [0.82, 0.66, 0.15, 0.3]];
+        const cloud = () => {
+            ctx.beginPath();
+            for (const pf of puffs)
+                traceEllipse(ctx, w * pf[0], h * pf[1], w * pf[2], h * pf[3]);
+        };
+        if (!dark) {
+            cloud();
+            art.stroke(ctx, CLOUD.lightRim, lw * 1.4, 0.45);
+        }
+        cloud();
+        art.fill(ctx, dark ? CLOUD.dark : CLOUD.light, dark ? 0.14 : 0.9);
+        break;
+    }
     }
 }
 

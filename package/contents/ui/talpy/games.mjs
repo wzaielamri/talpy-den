@@ -26,6 +26,7 @@
 // Plain ES2017 (see paths.mjs).
 
 import { ACTIONS, COOKIE } from './actions.mjs';
+import { FLAP_FRAMES } from './talpy.mjs';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const int = (a, b) => Math.floor(rnd(a, b + 1));
@@ -231,10 +232,15 @@ export class Peekaboo {
 // there. The first bump ends the run: how far (meters), the best (host.best;
 // a new one host.saveBest, said 'best'), and a press runs again; with no press
 // in RUN_END_MS the game's over. For the host to draw: things (stage px:
-// kind, x, y, w, h, frame; drawThing in talpy.mjs), lift (px he's up), meters,
-// best, newBest, hint ('start', 'dig' or ''), state ('ready', 'run', 'over').
+// kind, x, y, w, h, frame, variant; drawThing in talpy.mjs; slot: a number of
+// its own while it's there, below slots, so a host can keep a picture for it),
+// lift (px he's up), meters, best, newBest, hint ('start', 'dig' or ''),
+// state ('ready', 'run', 'over').
 // A gap between two things is never shorter than a jump at that speed and
-// room to land, so a run can always be cleared.
+// room to land, so a run can always be cleared. What comes changes as he goes
+// (UNLOCKS: more kinds the further he gets, each in its own colours, never
+// the same kind twice in a row), and the ground's grass and the sky's clouds
+// (DECOR: they go by behind, never in his way) keep it from looking the same.
 
 const RUN_READY_MS = 2000;     // the hint, and nothing on his way yet
 const RUN_END_MS = 10000;      // the end waits that long for a press
@@ -249,13 +255,23 @@ const SPEED_UP = 1.1;          // ×, every 100 m
 const SPEED_CAP = 2;           // × the start, at most
 const M_PER_S = 10;            // metres a second at the start
 const CROWS_FROM = 200;        // metres
-const MORE_FROM = 400;         // two pebbles, crows flying high
+// what comes from how far (metres): a rock, a boulder, a flower pot, a
+// hedgehog; a tree stump; birds; a log; a heap of rocks and birds flying high
+const UNLOCKS = [[0, 'pebble', 'stone', 'pot', 'hedgehog'], [100, 'stump'], [CROWS_FROM, 'crow'], [300, 'log'],
+                 [400, 'pebbles', 'crowHigh']];
 const TUFTS = 3;               // grass tufts at a time, at most
+const CLOUDS = 2;              // clouds at a time, at most
+const CLOUD_PACE = 0.35;       // × the ground's speed (far off: slower)
+const FLAP_MS = 50;            // a crow's wings: a picture that long (FLAP_FRAMES a flap)
 // a thing's size by his body's (w × h) and how high its bottom is above the floor
-const KINDS = {
-    pebble: [0.35, 0.25, 0], stone: [0.45, 0.5, 0], pot: [0.35, 0.75, 0], pebbles: [0.9, 0.25, 0],
-    crow: [0.6, 0.35, 0.7], crowHigh: [0.6, 0.35, 1.85], tuft: [0.25, 0.15, 0]
+export const KINDS = {
+    pebble: [0.6, 0.4, 0], stone: [0.6, 0.62, 0], pot: [0.5, 0.82, 0], pebbles: [1, 0.45, 0], hedgehog: [0.7, 0.5, 0],
+    stump: [0.62, 0.55, 0], log: [1, 0.4, 0], crow: [0.75, 0.5, 0.7], crowHigh: [0.75, 0.5, 1.85],
+    tuft: [0.3, 0.22, 0], cloud: [1.4, 0.5, 0]
 };
+// how many looks a kind has (drawThing's variant: a pot's flower, a hedgehog's quills, which bird, the grass)
+export const VARIANTS = { pot: 4, hedgehog: 2, crow: 3, crowHigh: 3, tuft: 3, cloud: 2 };
+export const DECOR = ['tuft', 'cloud'];   // (drawn, never bumped into)
 const SHRINK = 0.15;           // a thing's hit box is that much inside its drawing, each side
 const BODY_W = 0.55, BODY_H = 0.85, DUG_H = 0.3;   // his hit box, by his body's size
 const RUN_POSES = {
@@ -274,6 +290,8 @@ export class Run {
         this.on = false;
         this.holes = [];           // (none of the host's: he digs in his own hole)
         this.things = [];          // one array all along (kept, emptied, filled)
+        this.slots = 0;            // things' slots used so far (a host's pictures for them)
+        this.frameMs = 1000 / 60;  // the host's ticks, as they come (an even step each: tick)
         this.state = '';
         this.lift = 0;
         this.digging = false;
@@ -323,8 +341,11 @@ export class Run {
         this.crows = 0;
         this.gap = 0;              // px of ground still to go before the next thing
         this.tuftGap = 0;
+        this.cloudGap = 0;
+        this.last = '';            // the kind that came last (not the same again)
         this.pose = '';
         this.speeds();
+        this.add('cloud').x = rnd(0.35, 0.75) * this.s.width;   // (a sky with a cloud from the start)
         this.setPose('run');
         this.host.changed();
     }
@@ -379,7 +400,13 @@ export class Run {
     tick(now) {
         if (!this.on)
             return;
-        const dt = Math.min(0.1, Math.max(0, (now - this.now) / 1000));
+        // (a whole number of the host's ticks: what goes by steps the same each
+        // frame, not by when the frame's tick happened to run; one sooner than
+        // half a tick: as it came)
+        const raw = Math.max(0, now - this.now), ticks = Math.round(raw / this.frameMs);
+        if (raw > 4 && raw < 50)
+            this.frameMs += (raw - this.frameMs) * 0.05;
+        const dt = Math.min(0.1, (ticks >= 1 ? ticks * this.frameMs : raw) / 1000);
         this.now = now;
         if (this.state === 'over') {
             if (now - this.since > RUN_END_MS)
@@ -422,9 +449,10 @@ export class Run {
         let n = 0, crowNear = false;
         for (let i = 0; i < this.things.length; i++) {
             const th = this.things[i];
-            th.x -= step;
-            th.y = this.s.ground - th.up;
-            th.frame = Math.floor(now / 150) % 2;
+            th.x -= th.kind === 'cloud' ? step * CLOUD_PACE : step;
+            th.y = th.sky >= 0 ? th.sky : this.s.ground - th.up;
+            if (th.kind === 'crow' || th.kind === 'crowHigh')
+                th.frame = Math.floor((now + th.seed) / FLAP_MS) % FLAP_FRAMES;
             if (th.x + th.w > 0) {
                 this.things[n++] = th;
                 if (th.kind === 'crow' && th.x + th.w > this.x)
@@ -439,7 +467,7 @@ export class Run {
         const hb = this.box();
         for (let i = 0; i < this.things.length; i++) {
             const th = this.things[i];
-            if (th.kind === 'tuft')
+            if (DECOR.indexOf(th.kind) >= 0)
                 continue;
             const dx = th.w * SHRINK, dy = th.h * SHRINK;
             if (th.x + dx < hb[2] && th.x + th.w - dx > hb[0] && th.y + dy < hb[3] && th.y + th.h - dy > hb[1]) {
@@ -461,25 +489,28 @@ export class Run {
         const s = this.s, B = s.bodyHeight;
         this.tuftGap -= step;
         if (this.tuftGap <= 0) {
-            let tufts = 0;
-            for (let i = 0; i < this.things.length; i++)
-                tufts += this.things[i].kind === 'tuft' ? 1 : 0;
-            if (tufts < TUFTS)
+            if (this.count('tuft') < TUFTS)
                 this.add('tuft');
             this.tuftGap = rnd(0.2, 0.5) * s.width;
+        }
+        this.cloudGap -= step * CLOUD_PACE;
+        if (this.cloudGap <= 0) {
+            if (this.count('cloud') < CLOUDS)
+                this.add('cloud');
+            this.cloudGap = rnd(0.5, 1.1) * s.width;
         }
         if (this.state !== 'run')
             return;
         this.gap -= step;
         if (this.gap > 0)
             return;
-        const m = this.meters;
-        const kinds = ['pebble', 'stone', 'pot'];
-        if (m >= CROWS_FROM)
-            kinds.push('crow');
-        if (m >= MORE_FROM)
-            kinds.push('pebbles', 'crowHigh');
-        const kind = kinds[int(0, kinds.length - 1)];
+        const m = this.meters, kinds = [];
+        for (let i = 0; i < UNLOCKS.length && m >= UNLOCKS[i][0]; i++)
+            kinds.push.apply(kinds, UNLOCKS[i].slice(1));
+        let kind = kinds[int(0, kinds.length - 1)];
+        if (kind === this.last)   // (never the same twice in a row)
+            kind = kinds[(kinds.indexOf(kind) + int(1, kinds.length - 1)) % kinds.length];
+        this.last = kind;
         if (kind === 'crow' && this.crows++ === 0)
             this.hint = 'dig';     // (the first one of the run: how to get past it)
         const th = this.add(kind);
@@ -492,10 +523,29 @@ export class Run {
         // (the stage read again as a thing comes: the view may have been widened meanwhile)
         const s = this.s = this.host.stage(), B = s.bodyHeight, k = KINDS[kind];
         // (up: its top above the floor, so it stays on the floor as the stage grows)
-        const th = { kind: kind, x: s.width + B * 0.2, y: 0, w: k[0] * B, h: k[1] * B, frame: 0, up: (k[2] + k[1]) * B };
-        th.y = s.ground - th.up;
+        const th = { kind: kind, x: s.width + B * 0.2, y: 0, w: k[0] * B, h: k[1] * B, frame: 0, up: (k[2] + k[1]) * B,
+                     variant: int(0, (VARIANTS[kind] || 1) - 1), seed: int(0, FLAP_MS * FLAP_FRAMES), slot: this.freeSlot() };
+        if (kind === 'cloud')   // (px from the stage's top, in the sky's top part: not on the floor as it grows)
+            th.sky = rnd(2, Math.max(2, B * 1.2 - th.h));
+        th.y = th.sky >= 0 ? th.sky : s.ground - th.up;
         this.things.push(th);
         return th;
+    }
+
+    count(kind) {
+        let n = 0;
+        for (let i = 0; i < this.things.length; i++)
+            n += this.things[i].kind === kind ? 1 : 0;
+        return n;
+    }
+
+    // the lowest slot no thing has now (slots only grows: a host's pictures for them are kept)
+    freeSlot() {
+        let slot = 0;
+        while (this.things.some(th => th.slot === slot))
+            slot++;
+        this.slots = Math.max(this.slots, slot + 1);
+        return slot;
     }
 
     bump(kind) {

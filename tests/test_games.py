@@ -143,17 +143,17 @@ console.log(JSON.stringify(ms));""" % json.dumps(str(TALPY / "games.mjs")))
 
 
 RUN = """
-import { pickGame, GAMES } from %s;
+import { pickGame, GAMES, DECOR, KINDS, VARIANTS } from %s;
 function seeded(seed) {   // (mulberry32: the same run each time)
     return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
                    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
-const GROUND_KINDS = ['pebble', 'stone', 'pot', 'pebbles'];
+const GROUND_KINDS = Object.keys(KINDS).filter(k => KINDS[k][2] === 0 && DECOR.indexOf(k) < 0);
 // A player who looks ahead: jumps a ground thing so he's at his highest over it, digs under a crow
 function player(g, px, noDig) {
     let next = null;
     for (const th of g.things)
-        if (th.kind !== 'tuft' && th.x + th.w > px - 20 && (!next || th.x < next.x)) next = th;
+        if (DECOR.indexOf(th.kind) < 0 && th.x + th.w > px - 20 && (!next || th.x < next.x)) next = th;
     if (!next || next.kind === 'crowHigh') { if (g.digging) g.release('dig'); return; }
     const ahead = next.x - (px + 16);
     if (GROUND_KINDS.indexOf(next.kind) >= 0) {
@@ -182,6 +182,10 @@ function play(o) {
                 firstThingMs: null, firstCrowM: null, digHint: false, crowsPassed: 0, maxSpeedUp: 0, speedUpAt600: null,
                 overMs: null, overMeters: null, onAtOver: null, hitBy: null, newBest: null, endMs: null, restarted: null };
     let crowNear = false;
+    // (what comes: each thing keeps its own slot, below the game's slots; its look one of its kind's;
+    // the kinds by distance; never the same kind twice in a row; the clouds up in the sky)
+    const slotOf = new Map(), firstAt = {}, came = new Set();
+    let slotsOk = true, variantsOk = true, sameTwice = 0, lastKind = '', cloudBottom = 0;
     while (g.on && now < 1000 + (o.until || 180000)) {
         now += 16;
         t.tick(now);
@@ -190,7 +194,22 @@ function play(o) {
         r.maxThings = Math.max(r.maxThings, g.things.length);
         if (o.growing && !r.early && now - 1000 >= 400)   // (just after the stage grew: what it put there meanwhile)
             r.early = { kinds: g.things.map(th => th.kind), bottoms: g.things.map(th => Math.round(th.y + th.h)) };
-        const hitting = g.things.filter(th => th.kind !== 'tuft');
+        const hitting = g.things.filter(th => DECOR.indexOf(th.kind) < 0);
+        const slots = new Set();
+        for (const th of g.things) {
+            if (slots.has(th.slot) || !(th.slot >= 0 && th.slot < g.slots) || (slotOf.has(th) && slotOf.get(th) !== th.slot)) slotsOk = false;
+            slots.add(th.slot);
+            slotOf.set(th, th.slot);
+            if (!(th.variant >= 0 && th.variant < (VARIANTS[th.kind] || 1))) variantsOk = false;
+            if (th.kind === 'cloud') cloudBottom = Math.max(cloudBottom, th.y + th.h);
+        }
+        for (const th of hitting)
+            if (!came.has(th)) {
+                came.add(th);
+                if (th.kind === lastKind) sameTwice++;
+                lastKind = th.kind;
+                if (firstAt[th.kind] === undefined) firstAt[th.kind] = g.meters;
+            }
         if (r.firstThingMs === null && hitting.length) r.firstThingMs = now - 1000;
         const crow = hitting.find(th => th.kind === 'crow');
         if (crow && r.firstCrowM === null) { r.firstCrowM = g.meters; r.digHint = g.hint === 'dig'; }
@@ -252,6 +271,8 @@ function play(o) {
     r.bottoms = g.things.map(th => Math.round(th.y + th.h));   // (ground things and tufts: on the floor)
     r.kinds = g.things.map(th => th.kind);
     r.meters = g.meters; r.said = said; r.saved = saved; r.grows = grows; r.things = null; r.seen = null;
+    r.slotsOk = slotsOk; r.variantsOk = variantsOk; r.sameTwice = sameTwice; r.firstAt = firstAt; r.cloudBottom = cloudBottom;
+    r.slots = g.slots;
     return r;
 }
 const pick = () => { const t = new Talpy({}); return (name, ok) => pickGame(t, { stage: () => ({}), px: () => 0, moveTo() {}, say() {},
@@ -320,7 +341,7 @@ class RunTests(unittest.TestCase):
         idle = self.r["idle"]
         self.assertGreater(idle["overMeters"], 0)
         self.assertTrue(idle["onAtOver"])                 # (the end screen: the game's still on)
-        self.assertIn(idle["hitBy"], ["pebble", "stone", "pot"])
+        self.assertIn(idle["hitBy"], ["pebble", "stone", "pot", "hedgehog"])   # (what comes from the start)
         self.assertIn("bump", idle["saidAtOver"])
         self.assertEqual(idle["savedAtOver"], [])         # (short of the best of 120 m)
 
@@ -339,7 +360,7 @@ class RunTests(unittest.TestCase):
         digging = self.r["digging"]
         self.assertTrue(digging["dug"])
         self.assertIsNotNone(digging["overMs"])
-        self.assertIn(digging["hitBy"], ["pebble", "stone", "pot"])   # (in up to his eyes, a pot still hits him)
+        self.assertIn(digging["hitBy"], ["pebble", "stone", "pot", "hedgehog"])   # (in up to his eyes, a pot still hits him)
         # a crow at head height can't be run under or jumped: only dug under
         no_dig = self.r["noDig"]
         self.assertFalse(no_dig.get("dug"))
@@ -373,39 +394,64 @@ class RunTests(unittest.TestCase):
         g = self.r["growing"]["early"]
         self.assertTrue(g["kinds"])
         for kind, bottom in zip(g["kinds"], g["bottoms"]):
-            if kind not in ("crow", "crowHigh"):
+            if kind not in ("crow", "crowHigh", "cloud"):
                 self.assertEqual(bottom, 160, kind)
 
     def test_its_light(self):
         for r in self.r["far"] + [self.r["wide"]]:
             self.assertTrue(r["sameArray"])                # (one array all run)
-            self.assertLessEqual(r["maxThings"], 10)
+            self.assertLessEqual(r["maxThings"], 12)
+            self.assertLessEqual(r["slots"], 12)           # (a host's pictures for them: as few)
+
+    def test_what_comes_changes_as_he_goes(self):
+        # more kinds the further he gets, each in its looks, never the same twice in a row; each
+        # keeps its slot (Plasma's picture for it); the clouds go by up in the sky, behind
+        for r in self.r["far"] + [self.r["wide"]]:
+            with self.subTest(seed=r):
+                first = r["firstAt"]
+                self.assertEqual(set(first), {"pebble", "stone", "pot", "hedgehog", "stump", "crow", "log", "pebbles", "crowHigh"})
+                self.assertLess(min(first[kind] for kind in ("pebble", "stone", "pot", "hedgehog")), 50)   # (from the start)
+                for kind, metres in (("stump", 100), ("crow", 200), ("log", 300), ("pebbles", 400), ("crowHigh", 400)):
+                    self.assertGreaterEqual(first[kind], metres, kind)
+                self.assertEqual(r["sameTwice"], 0)
+                self.assertTrue(r["slotsOk"])
+                self.assertTrue(r["variantsOk"])
+                self.assertGreater(r["cloudBottom"], 0)
+                self.assertLessEqual(r["cloudBottom"], 60 * 1.2 + 1)   # (bodyHeight 60: the sky's top part)
 
     def test_every_thing_draws_inside_its_box(self):
-        # drawThing (talpy.mjs) draws each kind in its w × h box, top left at the origin
+        # drawThing (talpy.mjs) draws each kind in its w × h box, top left at the origin, every look
+        # and every picture of a bird's flap (its shading, cut to its own outline by a clip, isn't
+        # counted: the outline is)
         out = run_node("""
-import { drawThing } from %s;
-const KINDS = ['pebble', 'stone', 'pot', 'pebbles', 'crow', 'crowHigh', 'tuft'];
+import { drawThing, FLAP_FRAMES } from %s;
+import { KINDS, VARIANTS } from %s;
 const result = {};
-for (const kind of KINDS) for (const frame of [0, 1]) {
-    const pts = [], paint = { n: 0 };
-    let depth = 0;
+for (const kind of Object.keys(KINDS)) for (let variant = 0; variant < (VARIANTS[kind] || 1); variant++)
+for (const frame of kind.startsWith('crow') ? [...Array(FLAP_FRAMES).keys()] : [0]) {
+    const pts = [], paint = { n: 0 }, saved = [];
+    let depth = 0, clipped = false;
+    const at = (...xy) => { if (!clipped) for (let i = 0; i < xy.length; i += 2) pts.push([xy[i], xy[i + 1]]); };
     const ctx = new Proxy({}, { get: (_, name) => {
-        if (['moveTo', 'lineTo'].indexOf(name) >= 0) return (x, y) => pts.push([x, y]);
-        if (name === 'bezierCurveTo') return (a, b, c, d, x, y) => pts.push([a, b], [c, d], [x, y]);
-        if (name === 'quadraticCurveTo') return (a, b, x, y) => pts.push([a, b], [x, y]);
-        if (name === 'arc') return (x, y, r) => pts.push([x - r, y - r], [x + r, y + r]);
+        if (name === 'save') return () => saved.push(clipped);
+        if (name === 'restore') return () => { clipped = saved.pop(); };
+        if (name === 'clip') return () => { clipped = true; };
+        if (['moveTo', 'lineTo'].indexOf(name) >= 0) return (x, y) => at(x, y);
+        if (name === 'bezierCurveTo') return (a, b, c, d, x, y) => at(a, b, c, d, x, y);
+        if (name === 'quadraticCurveTo') return (a, b, x, y) => at(a, b, x, y);
+        if (name === 'arc') return (x, y, r) => at(x - r, y - r, x + r, y + r);
         if (name === 'fill' || name === 'stroke') return () => { paint.n++; };
         if (name === 'translate' || name === 'scale' || name === 'rotate' || name === 'setTransform' || name === 'transform')
             return () => { depth++; };
         return () => ({ addColorStop() {} });
     }, set: () => true });
-    drawThing(ctx, { kind: kind, x: 0, y: 0, w: 40, h: 24, frame: frame });
-    const out = pts.filter(p => p[0] < -1.5 || p[0] > 41.5 || p[1] < -1.5 || p[1] > 25.5);
-    result[kind + frame] = { painted: paint.n, points: pts.length, outside: out.length, moved: depth };
+    const w = KINDS[kind][0] * 60, h = KINDS[kind][1] * 60;   // (its size by a body 60 px high)
+    drawThing(ctx, { kind: kind, x: 0, y: 0, w: w, h: h, frame: frame, variant: variant });
+    const out = pts.filter(p => p[0] < -1.5 || p[0] > w + 1.5 || p[1] < -1.5 || p[1] > h + 1.5);
+    result[kind + variant + '.' + frame] = { painted: paint.n, points: pts.length, outside: out.length, moved: depth };
 }
 console.log(JSON.stringify(result));
-""" % json.dumps(str(TALPY / "talpy.mjs")))
+""" % (json.dumps(str(TALPY / "talpy.mjs")), json.dumps(str(TALPY / "games.mjs"))))
         for name, r in out.items():
             with self.subTest(name):
                 self.assertGreater(r["painted"], 0)
@@ -560,10 +606,20 @@ class PlasmaRunTests(unittest.TestCase):
         self.assertIn('lastMood === "done" && mood !== "done" && !leaving && !gameOn', self.pet)
 
     def test_it_draws_the_run(self):
-        self.assertIn("T.drawThing(ctx, th, strip.darkTheme)", self.pet)
         # (built only while a run is on: no run UI in every pet)
-        run_ui = self.pet[self.pet.index("    // Talpy's Run: what's on his way"):][:500]
+        run_ui = self.pet[self.pet.index("    // Talpy's Run: what's on his way"):][:4200]
         self.assertRegex(run_ui, r"Loader \{\s+active: pet.runOn")
+        # each thing a picture drawn once, moved each frame: a slot's (the game's), kept between two things,
+        # painted again only when its look changes; no canvas painted every frame
+        self.assertIn("model: pet.runSlots", run_ui)
+        self.assertIn("pet.runThing(index)", run_ui)
+        self.assertIn("x: { pet.runFrame; return th ? th.x - pet.spritePad : 0 }", run_ui)
+        self.assertIn("if (l === look)", run_ui)
+        self.assertIn("T.drawThing(ctx, { kind: d.kind, w: d.w, h: d.h, frame: f, variant: d.variant }, d.dark)", run_ui)
+        self.assertIn("-(slot.th.frame % frames) * cellW", run_ui)   # (a bird's flap: its pictures side by side)
+        self.assertNotIn("onRunFrameChanged", self.pet)
+        self.assertIn("runSlots = playGame.slots", self.pet)
+        self.assertIn("clip: true", run_ui)   # (what comes from beyond the stage's edge isn't seen there)
         self.assertIn("model: pet.gameOn && !pet.runOn ? 3 : 0", self.pet)   # (Peekaboo's holes not made for a run)
         # (he runs facing what comes: not turned to the mouse meanwhile)
         self.assertIn("!pet.held && !pet.cookieOn && !pet.gameOn && pet.mood !== \"done\"", self.pet)
@@ -618,6 +674,9 @@ class VsCodeRunTests(unittest.TestCase):
 
     def test_it_draws_the_run(self):
         self.assertIn("drawThing(ctx, th, world.dark)", self.ts)
+        # (each look a picture drawn once, put where the thing is each frame)
+        self.assertIn("ctx.drawImage(this.runSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD))", self.ts)
+        self.assertIn("let c = this.runSprites.get(key);", self.ts)
         self.assertIn("ctx && this.runDrawn !== this.runMoves", self.ts)   # (redrawn only when it moved)
         self.assertIn("this.runMoves++", self.ts)
         self.assertIn("!this.cookieOn && !this.play?.on && mood !== \"done\"", self.ts)   # (not turned to the mouse in a game)

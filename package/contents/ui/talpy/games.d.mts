@@ -30,17 +30,25 @@ export interface GameHole {
     open: number;   // 0 (shut) to 1
 }
 
-export type RunThingKind = "pebble" | "stone" | "pot" | "pebbles" | "crow" | "crowHigh" | "tuft";
+export type RunThingKind = "pebble" | "stone" | "pot" | "pebbles" | "hedgehog" | "stump" | "log" | "crow" | "crowHigh"
+    | "tuft" | "cloud";
 
-// What's on Talpy's way in a run (a tuft is only grass: it never hits)
+// What's on Talpy's way in a run (DECOR, a tuft of grass and a cloud, never hits)
 export interface RunThing {
     kind: RunThingKind;
-    x: number;      // its left, stage px
-    y: number;      // its top, stage px
+    x: number;        // its left, stage px
+    y: number;        // its top, stage px
     w: number;
     h: number;
-    frame: number;  // 0 or 1 (a crow's wings)
+    frame: number;    // a bird's wings: 0 to FLAP_FRAMES - 1 (talpy.mjs)
+    variant: number;  // its look: 0 to VARIANTS[kind] - 1
+    slot: number;     // its own while it's there (0 to the game's slots - 1)
 }
+
+// [w, h, how high its bottom is] by his body's height
+export const KINDS: Record<RunThingKind, [number, number, number]>;
+export const VARIANTS: Partial<Record<RunThingKind, number>>;
+export const DECOR: RunThingKind[];
 
 export interface Game {
     readonly name: GameName;
@@ -53,6 +61,7 @@ export interface Game {
     stop(): void;
     // the run's (name "run"; Peekaboo has none of these)
     readonly things?: RunThing[];
+    readonly slots?: number;      // the things' slots used so far this game
     readonly lift?: number;       // px he's above the floor
     readonly digging?: boolean;
     readonly meters?: number;

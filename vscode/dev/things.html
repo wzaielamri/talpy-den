@@ -1,0 +1,90 @@
+<!doctype html>
+<!--
+  Talpy's Run's things (talpy.mjs drawThing) at the size they're drawn in the
+  big Talpy's stage, beside him running, and zoomed; light and dark. Serve the
+  repository folder over http and open dev/things.html (?zoom=3, ?gu=18: the
+  Plasma grid unit the sizes come from).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Talpy's Run: its things</title>
+    <style>
+      body { margin: 0; font: 12px system-ui, sans-serif; background: #888; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <script type="module">
+      import { Talpy, BOX, FLOOR, drawThing } from "../../package/contents/ui/talpy/talpy.mjs";
+      import { COOKIE } from "../../package/contents/ui/talpy/actions.mjs";
+      import { KINDS, VARIANTS } from "../../package/contents/ui/talpy/games.mjs";
+
+      const params = new URLSearchParams(location.search);
+      const zoom = Number(params.get("zoom")) || 3;
+      const gu = Number(params.get("gu")) || 18;
+      const box = gu * 5.6, unit = box / BOX, B = box * 31 / 64;   // (PetStrip.qml's hero sizes)
+      const kinds = Object.keys(KINDS);
+      const themes = [{ dark: false, bg: "#f6f6f8", floor: "#d8d8de", text: "#333" },
+                      { dark: true, bg: "#1f2335", floor: "#3a3f55", text: "#ccc" }];
+      const rowH = box * 1.9, W = Number(params.get("width")) || 1500;
+      const c = document.getElementById("c"), k = devicePixelRatio || 1;
+      const H = themes.length * (rowH + rowH * zoom * 0.62);
+      c.width = W * k; c.height = H * k; c.style.width = W + "px"; c.style.height = H + "px";
+      const ctx = c.getContext("2d");
+      ctx.scale(k, k);
+
+      const talpy = new Talpy({});
+      talpy.brainOn = false;
+      talpy.play({ steps: () => [Object.assign(COOKIE.chase.run(), { t: 1e9 })] }, null, false);
+      for (let t = 0; t <= 400; t += 16) talpy.tick(t);
+
+      function thing(kind, variant, frame) {
+        const s = KINDS[kind];
+        return { kind, w: s[0] * B, h: s[1] * B, up: (s[2] + s[1]) * B, frame: frame || 0, variant: variant || 0 };
+      }
+
+      function row(y0, theme, z, withTalpy) {
+        const h = rowH * (z > 1 ? z * 0.62 : 1);
+        ctx.fillStyle = theme.bg;
+        ctx.fillRect(0, y0, W, h);
+        const ground = y0 + h - 14 * Math.max(1, z * 0.5);
+        ctx.fillStyle = theme.floor;
+        ctx.fillRect(0, ground, W, 1);
+        let x = 12;
+        if (withTalpy) {
+          ctx.save();
+          ctx.translate(x, ground - FLOOR * unit);
+          ctx.scale(unit, unit);
+          talpy.draw(ctx);
+          ctx.restore();
+          x += box + 8;
+        }
+        // (every look of each kind; a crow's flap in four of its pictures)
+        const looks = (kind) => kind === "crow" ? [[0, 0], [0, 2], [0, 4], [0, 6], [1, 1], [2, 5]]
+          : Array.from({ length: VARIANTS[kind] || 1 }, (_, v) => [v, 0]);
+        for (const kind of kinds) {
+          for (const [v, f] of looks(kind)) {
+            if (kind === "crowHigh" || (z > 1 && kind === "cloud")) continue;
+            const th = thing(kind, v, f);
+            if (kind === "cloud") th.up = th.h + box * 1.2;
+            const up = z > 1 ? th.h : th.up;   // (zoomed: all on the floor)
+            ctx.save();
+            ctx.translate(x, ground - up * z);
+            ctx.scale(z, z);
+            drawThing(ctx, th, theme.dark);
+            ctx.restore();
+            x += th.w * z + 10;
+          }
+        }
+        return h;
+      }
+      let y = 0;
+      for (const theme of themes) {
+        y += row(y, theme, 1, true);
+        y += row(y, theme, zoom, false);
+      }
+    </script>
+  </body>
+</html>
