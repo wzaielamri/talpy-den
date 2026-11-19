@@ -47,7 +47,7 @@
 
       const talpy = new Talpy({});
       talpy.brainOn = false;
-      talpy.play({ steps: () => [{ depth: "out", hole: 0, arms: "scoop", eyes: "happy", mouth: "open", blush: 1, plume: "bob", tail: "wag", t: 1e9 }] }, null, false);
+      talpy.play({ steps: () => [{ depth: "out", hole: 0, arms: "scoop", eyes: "open", mouth: "open", blush: 1, plume: "bob", tail: "wag", t: 1e9 }] }, null, false);
       for (let t = 0; t <= 400; t += 16) talpy.tick(t);
 
       const thing = (kind, variant, frame, wide) => {

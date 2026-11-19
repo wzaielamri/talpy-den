@@ -940,7 +940,9 @@ class DigTests(unittest.TestCase):
         cls.r = run_node(DIG)
 
     def test_he_is_happy_digging(self):
-        # (the owner: "make talpy happy when digging": happy eyes, an open smile, rosy cheeks)
+        # (the owner: "make talpy happy when digging", then "with happy opening his eyes, not closing
+        # them": open eyes, an open smile, rosy cheeks; and still so after a minute and more: a game's
+        # pose is held as long as the game is on, not 60 s)
         out = run_node("""
 import { pickGame } from %s;
 const t = new Talpy({});
@@ -949,11 +951,16 @@ t.tick(now);
 const g = pickGame(t, { stage: () => ({ width: 500, height: 260, ground: 245, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: 470 }),
     px: () => 200, moveTo() {}, say() {}, changed() {}, best: () => 0, saveBest() {}, grow() {}, runOk: () => true }, 'dig');
 g.start(now);
-for (let i = 0; i < 200; i++) { now += 16; t.tick(now); g.tick(now); }
-console.log(JSON.stringify({ state: g.state, eyes: t.st.eyes, mouth: t.st.mouth, blush: t.st.blush }));
+g.touch = () => false;   // (nothing ends it: a long dig)
+const at = [];
+for (let i = 0; i < 4500; i++) {
+    now += 16; t.tick(now); g.tick(now);
+    if (i === 200 || i === 4400) at.push({ state: g.state, eyes: t.st.eyes, mouth: t.st.mouth, blush: t.st.blush, arms: t.st.arms, depth: t.st.depth });
+}
+console.log(JSON.stringify(at));
 """ % json.dumps(str(TALPY / "games.mjs")))
-        self.assertEqual(out["state"], "run")
-        self.assertEqual((out["eyes"], out["mouth"], out["blush"]), ("happy", "open", "1"))
+        for when in out:   # (3 s in, and 70 s in)
+            self.assertEqual(when, {"state": "run", "eyes": "open", "mouth": "open", "blush": "1", "arms": "scoop", "depth": "out"})
 
     def test_his_words_go_as_play_begins_and_as_a_new_go_starts(self):
         # (the owner: "Oof!" stayed into the new go, "Let's play!" too long: hushed as the game gets

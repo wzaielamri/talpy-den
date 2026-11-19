@@ -73,8 +73,8 @@ const ROCKS = { topsoil: ['pebble', 'stone'], clay: ['pebble', 'bottle', 'stone'
 const LONG = { topsoil: ['root'], clay: ['pipe', 'root'], rock: [] };
 const DECORS = { topsoil: ['speck', 'speck', 'worm'], clay: ['speck', 'worm'], rock: ['speck', 'crystal'] };
 const POSES = {
-    // (happy at it, the owner's wish: happy eyes, an open smile, rosy cheeks)
-    dig: () => ({ depth: 'out', hole: 0, arms: 'scoop', eyes: 'happy', mouth: 'open', blush: 1, plume: 'bob', tail: 'wag' }),
+    // (happy at it, the owner's wish: his eyes open, an open smile, rosy cheeks)
+    dig: () => ({ depth: 'out', hole: 0, arms: 'scoop', eyes: 'open', mouth: 'open', blush: 1, plume: 'bob', tail: 'wag' }),
     bump: () => ({ depth: 'out', hole: 0, body: 'shake', eyes: 'squint', mouth: 'o', plume: 'wild', tail: 'droop',
                    fx: [['sparkle', 26, 14, { dy: -6 }], ['sparkle', 38, 12, { dy: -6, delay: 0.15 }]] })
 };

@@ -24,7 +24,7 @@ export const BONUS = 10;            // metres a cookie is worth
 export const SCORED = ['run', 'dig'];
 export const DECOR = ['tuft', 'cloud', 'plus', 'dust', 'speck', 'worm', 'crystal', 'tunnel', 'clod', 'glow'];   // (drawn, never bumped into)
 export const GRAB = ['cookie'];     // (taken, not bumped into: the one thing that shines)
-const HOLD = 60000;                 // a pose held that long (the game moves him on before)
+const HOLD = 864e5;                  // a pose held as long as the game is on (a day: a dig holds one pose all along)
 const PLUS_MS = 700;                // a "+10" rises and fades that long
 
 export class Scored {
