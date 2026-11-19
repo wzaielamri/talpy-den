@@ -12,7 +12,7 @@ import type { Dashboard } from "./dashboard";
 import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, nextBest, shareAccounts } from "./shared/model";
 import { answersOf, askShownOf } from "./shared/pane";
 import { permsHost, weekAsked, weekRevokeAsked, weekRuleAsked } from "./shared/week";
-import type { ChatRef, Group, HostMessage, Memory, PlanItem, ProjectsData, WebviewMessage } from "./shared/types";
+import type { ChatRef, GameName, Group, HostMessage, Memory, PlanItem, ProjectsData, ScoredGame, WebviewMessage } from "./shared/types";
 import { isDecision } from "./shared/types";
 
 const CHAT_ID = /^[A-Za-z0-9_-]{1,80}$/;
@@ -22,6 +22,9 @@ const TIP_COMMAND = /^\/[a-z][a-z-]{0,30}( [a-z0-9-]{1,30})?$/; // what a Recap 
 const REFUSED = "that isn't something Talpy Den can change";
 // Where the big Talpy's best run (Talpy's Run, metres) is kept: global state, every window's
 const RUN_BEST_KEY = "talpyDen.runBest";
+const DIG_BEST_KEY = "talpyDen.digBest";
+// a scored game's best, by its name (the Run's key as it always was)
+const BEST_KEYS: Record<ScoredGame, string> = { run: RUN_BEST_KEY, dig: DIG_BEST_KEY };
 
 export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
   static readonly viewId = "talpyDen.view";
@@ -178,13 +181,13 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
 
   // Play with Talpy (the view's ⋯ menu): a game with the big Talpy, in the
   // view's page (shown first) and in an editor tab's
-  playWithTalpy(game?: "peekaboo" | "run"): void {
+  playWithTalpy(game?: GameName): void {
     this.broadcast({ type: "playWithTalpy", game });
   }
 
-  // Talpy's Run: the best run so far (metres), as every window keeps it
-  private runBest(): number {
-    return nextBest(this.memento?.get(RUN_BEST_KEY), 0);
+  // A scored game's best so far (metres), as every window keeps it
+  private gameBest(game: ScoredGame): number {
+    return nextBest(this.memento?.get(BEST_KEYS[game]), 0);
   }
 
   private broadcast(message: HostMessage): void {
@@ -292,7 +295,7 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         void webview.postMessage({ type: "state", state: this.dash.state() } satisfies HostMessage);
         void webview.postMessage({ type: "visible", visible: this.isVisible(webview) } satisfies HostMessage);
         if (this.shownTab) void webview.postMessage({ type: "showTab", tab: this.shownTab } satisfies HostMessage);
-        void webview.postMessage({ type: "runBest", best: this.runBest() } satisfies HostMessage);
+        void webview.postMessage({ type: "gameBest", game: "run", best: this.gameBest("run") } satisfies HostMessage);
         this.shownTab = null;
         break;
       case "open":
@@ -632,12 +635,13 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
       case "copy":
         if (typeof m.text === "string" && TIP_COMMAND.test(m.text)) void vscode.env.clipboard.writeText(m.text);
         break;
-      case "runBest": {
-        // (the larger of the kept one and the run's: a stale view never lowers it)
-        const best = nextBest(this.memento?.get(RUN_BEST_KEY), m.best);
-        if (!this.memento || best === this.runBest()) break;
-        void this.memento.update(RUN_BEST_KEY, best);
-        this.broadcast({ type: "runBest", best }); // (the other views know it too)
+      case "gameBest": {
+        if (m.game !== "run" && m.game !== "dig") break;
+        // (the larger of the kept one and the game's: a stale view never lowers it)
+        const best = nextBest(this.memento?.get(BEST_KEYS[m.game]), m.best);
+        if (!this.memento || best === this.gameBest(m.game)) break;
+        void this.memento.update(BEST_KEYS[m.game], best);
+        this.broadcast({ type: "gameBest", game: m.game, best }); // (the other views know it too)
         break;
       }
       case "openUsagePage":

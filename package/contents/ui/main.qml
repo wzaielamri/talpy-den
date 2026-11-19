@@ -384,14 +384,18 @@ PlasmoidItem {
         playWanted = true
     }
     property string playName: ""
-    // Talpy's Run is offered only where it plays well: not on the desktop (the
-    // pets there redraw the whole desktop each frame) and not with less motion
-    // (it's nothing but scrolling)
+    // The scored games (Talpy's Run, Deep Dig) are offered only where they play
+    // well: not on the desktop (the pets there redraw the whole desktop each
+    // frame) and not with less motion (they're nothing but scrolling)
     readonly property bool runOk: !onDesktop && !lessMotion
-    // its best (metres): every widget's (sharedKeys), never lower
-    readonly property int runBest: Plasmoid.configuration.runBest
-    function saveRunBest(meters) {
-        Plasmoid.configuration.runBest = Math.max(Plasmoid.configuration.runBest || 0, Math.floor(meters))
+    // a scored game's best (metres), by its name: every widget's (sharedKeys), never lower
+    readonly property var bestKeys: ({ run: "runBest", dig: "digBest" })
+    function gameBest(name) {
+        return Plasmoid.configuration[bestKeys[name] || "runBest"] || 0
+    }
+    function saveGameBest(name, meters) {
+        const key = bestKeys[name] || "runBest"
+        Plasmoid.configuration[key] = Math.max(Plasmoid.configuration[key] || 0, Math.floor(meters))
     }
     readonly property bool onDesktop: Plasmoid.formFactor === PlasmaCore.Types.Planar && !inTray
     // The dashboard is on screen: the popup is open, or it's shown in place

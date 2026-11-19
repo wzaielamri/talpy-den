@@ -168,12 +168,13 @@ function play(o) {
     const t = new Talpy({});
     let now = 1000, px = 200;
     t.tick(now);
-    const said = [], saved = [], grows = [], faced = [];
+    const said = [], saved = [], grows = [], faced = [], asked = [];
     const host = {
         stage: () => ({ width: width, height: 176, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: width - 30,
                         ground: o.growing ? Math.min(160, 90 + (now - 1000) / 4) : 160 }),   // (growing: its floor goes down for 280 ms)
         px: () => px, moveTo: x => { px = x; }, say: w => said.push(w), changed: () => {},
-        best: () => best, saveBest: m => saved.push(m), grow: on => grows.push(on), face: left => faced.push(left),
+        best: name => { asked.push(name); return best; }, saveBest: (name, m) => { asked.push(name); saved.push(m); },
+        grow: on => grows.push(on), face: left => faced.push(left),
     };
     t.facingLeft = true;   // (he faced the other way before)
     const g = pickGame(t, host, 'run');
@@ -272,7 +273,7 @@ function play(o) {
     r.kinds = g.things.map(th => th.kind);
     r.meters = g.meters; r.said = said; r.saved = saved; r.grows = grows; r.things = null; r.seen = null;
     r.slotsOk = slotsOk; r.variantsOk = variantsOk; r.sameTwice = sameTwice; r.firstAt = firstAt; r.cloudBottom = cloudBottom;
-    r.slots = g.slots;
+    r.slots = g.slots; r.asked = Array.from(new Set(asked));
     return r;
 }
 const pick = () => { const t = new Talpy({}); return (name, ok) => pickGame(t, { stage: () => ({}), px: () => 0, moveTo() {}, say() {},
@@ -365,6 +366,18 @@ class RunTests(unittest.TestCase):
         no_dig = self.r["noDig"]
         self.assertFalse(no_dig.get("dug"))
         self.assertEqual(no_dig["hitBy"], "crow")
+
+    def test_scored_base_is_shared(self):
+        # the Run is a scored game (scored.mjs): the end, its waits and the bonus are shared with Deep Dig
+        out = run_node("""
+import { pickGame } from %s;
+import { Scored, RUN_END_MS, RUN_AGAIN_MS, BONUS } from %s;
+const g = pickGame(new Talpy({}), { stage: () => ({}), px: () => 0, moveTo() {}, say() {}, changed() {}, best: () => 0,
+                                    saveBest() {}, grow() {}, runOk: () => true }, 'run');
+console.log(JSON.stringify({ scored: g instanceof Scored, end: RUN_END_MS, again: RUN_AGAIN_MS, bonus: BONUS, gu: g.stageGu, turn: g.turn }));
+""" % (json.dumps(str(TALPY / "games.mjs")), json.dumps(str(TALPY / "scored.mjs"))))
+        self.assertEqual(out, {"scored": True, "end": 5000, "again": 450, "bonus": 10, "gu": 11, "turn": 0})
+        self.assertEqual(self.r["best"]["asked"], ["run"])   # (its best is the Run's: best('run'), saveBest('run', m))
 
     def test_a_new_best(self):
         b = self.r["best"]
@@ -537,7 +550,7 @@ class HostTests(unittest.TestCase):
 
     def test_its_only_ticked_and_drawn_while_on(self):
         self.assertIn("enabled: pet.gameOn && pet.playing", self.pet)
-        self.assertIn("model: pet.gameOn && !pet.runOn ? 3 : 0", self.pet)
+        self.assertIn("model: pet.gameOn && !pet.scoredOn ? 3 : 0", self.pet)
         self.assertIn("if (this.play?.on) this.play.tick(now);", self.ts)
 
     def test_play_with_talpy_in_the_menus(self):
@@ -572,28 +585,29 @@ class PlasmaRunTests(unittest.TestCase):
         self.assertIn('<entry name="runBest" type="Int">', (UI.parent / "config/main.xml").read_text())
         shared = self.main[self.main.index("readonly property var sharedKeys"):][:900]
         self.assertIn('"runBest"', shared)
-        save = self.main[self.main.index("function saveRunBest("):][:300]
+        save = self.main[self.main.index("function saveGameBest("):][:400]
         self.assertIn("Math.max(", save)
-        self.assertIn("saveBest: m => root.saveRunBest(m)", self.pet)
-        self.assertIn("best: () => root.runBest", self.pet)
+        self.assertIn('readonly property var bestKeys: ({ run: "runBest", dig: "digBest" })', self.main)   # (the Run's key kept)
+        self.assertIn("saveBest: (name, m) => root.saveGameBest(name, m)", self.pet)
+        self.assertIn("best: name => root.gameBest(name)", self.pet)
 
     def test_the_stage_grows_and_its_status_fades_while_running(self):
-        self.assertIn("implicitHeight: (hero ? gu * 6 : gu * 4.5) + (running ? gu * 5 : 0)", self.strip)
+        self.assertIn("implicitHeight: running ? gu * runGu : (hero ? gu * 6 : gu * 4.5)", self.strip)
         self.assertRegex(self.strip, r"Behavior on implicitHeight \{")
         status = self.strip[self.strip.index("// The hero's headline"):][:700]
         self.assertIn("opacity: strip.running ? 0 : 1", status)
         self.assertIn("enabled: !strip.running", status)          # (its clicks: the game's meanwhile)
-        self.assertIn("grow: on => { strip.running = on }", self.pet)
+        self.assertIn("grow: on => { strip.runGu = playGame.stageGu; strip.running = on }", self.pet)   # (its height: the game's)
         self.assertIn("height: strip.height", self.pet)          # (the grown stage, for the run)
 
     def test_presses_and_keys_are_the_games_only_while_running(self):
-        overlay = self.strip[self.strip.index("// Talpy's Run: every press on the stage"):][:2200]
+        overlay = self.strip[self.strip.index("// A scored game: every press on the stage"):][:2400]
         self.assertIn("enabled: strip.running", overlay)
         self.assertIn("acceptedButtons: Qt.LeftButton | Qt.RightButton", overlay)
-        self.assertIn('runPress(mouse.button === Qt.RightButton ? "dig" : "jump")', overlay)
-        self.assertIn('runRelease("dig")', overlay)
+        self.assertIn('gamePress(mouse.button === Qt.RightButton ? "dig" : "jump")', overlay)
+        self.assertIn('gameRelease("dig")', overlay)
         self.assertIn("swiped", overlay)                          # (touch: a swipe down digs)
-        keys = self.strip[self.strip.index("// Talpy's Run: its keys"):][:1600]
+        keys = self.strip[self.strip.index("// A scored game: its keys"):][:1800]
         self.assertIn("focus: strip.running", keys)
         for key in ("Qt.Key_Space", "Qt.Key_Up", "Qt.Key_Down"):
             self.assertIn(key, keys)
@@ -607,36 +621,46 @@ class PlasmaRunTests(unittest.TestCase):
 
     def test_it_draws_the_run(self):
         # (built only while a run is on: no run UI in every pet)
-        run_ui = self.pet[self.pet.index("    // Talpy's Run: what's on his way"):][:4200]
-        self.assertRegex(run_ui, r"Loader \{\s+active: pet.runOn")
+        run_ui = self.pet[self.pet.index("    // A scored game's things (Talpy's Run, Deep Dig)"):][:4400]
+        self.assertRegex(run_ui, r"Loader \{\s+active: pet.scoredOn")
         # each thing a picture drawn once, moved each frame: a slot's (the game's), kept between two things,
         # painted again only when its look changes; no canvas painted every frame
-        self.assertIn("model: pet.runSlots", run_ui)
-        self.assertIn("pet.runThing(index)", run_ui)
-        self.assertIn("x: { pet.runFrame; return th ? th.x - pet.spritePad : 0 }", run_ui)
+        self.assertIn("model: pet.gameSlots", run_ui)
+        self.assertIn("pet.gameThing(index)", run_ui)
+        self.assertIn("x: { pet.gameFrame; return th ? th.x - pet.spritePad : 0 }", run_ui)
         self.assertIn("if (l === look)", run_ui)
         self.assertIn("T.drawThing(ctx, { kind: d.kind, w: d.w, h: d.h, frame: f, variant: d.variant }, d.dark)", run_ui)
         self.assertIn("-(slot.th.frame % frames) * cellW", run_ui)   # (a bird's flap: its pictures side by side)
         self.assertNotIn("onRunFrameChanged", self.pet)
-        self.assertIn("runSlots = playGame.slots", self.pet)
+        self.assertIn("gameSlots = playGame.slots", self.pet)
         self.assertIn("clip: true", run_ui)   # (what comes from beyond the stage's edge isn't seen there)
-        self.assertIn("model: pet.gameOn && !pet.runOn ? 3 : 0", self.pet)   # (Peekaboo's holes not made for a run)
+        self.assertIn("model: pet.gameOn && !pet.scoredOn ? 3 : 0", self.pet)   # (Peekaboo's holes not made for a run)
         # (he runs facing what comes: not turned to the mouse meanwhile)
         self.assertIn("!pet.held && !pet.cookieOn && !pet.gameOn && pet.mood !== \"done\"", self.pet)
-        self.assertIn("face: left => { view.facingLeft = left },\n            // Talpy's Run's", self.pet)
-        self.assertIn("visible: pet.runOn", self.pet)
-        self.assertIn("- pet.runLift - floorY", self.pet)        # (up in his jump)
+        self.assertIn("face: left => { view.facingLeft = left },\n            // a scored game's", self.pet)
+        self.assertIn("visible: pet.scoredOn", self.pet)
+        self.assertIn("- pet.gameLift - floorY", self.pet)        # (up in his jump)
+        # (a game may turn him: Deep Dig head-down, about his body's middle)
+        self.assertIn("angle: pet.gameTurn !== 0 ? pet.gameTurn : (pet.upright ? 0 : pet.tilt)", self.pet)
+        self.assertIn("pet.gameTurn !== 0 ? view.boxY + pet.box * 37 / 64 : view.boxY + pet.box * 30 / 64", self.pet)
         for words in ('i18nc("metres run", "%1 m"', 'i18n("Click to jump · ↓ or right-click to dig")',
                       'i18n("↓ or right-click: dig")', 'i18n("New best! %1 m"', 'i18n("%1 m · best %2 m"',
                       'i18n("Click to run again")'):
             self.assertIn(words, self.pet)
+
+    def test_pictures_follow_the_theme(self):
+        # (Review Focus: the theme switched mid-game: every thing's picture drawn again for it)
+        self.assertIn("function onDarkThemeChanged() { sprite.relook() }", self.pet)
+        ts = (ROOT / "vscode/webview/pets/pet.ts").read_text()
+        sprite = ts[ts.index("private thingSprite("):][:400]
+        self.assertIn("world.dark ? 1 : 0", sprite)
 
     def test_it_starts_by_name_and_ends_when_a_chat_needs_you(self):
         self.assertIn("G.pickGame(talpy, {", self.pet)
         self.assertIn("}, name || \"\")", self.pet)
         self.assertIn("runOk: () => root.runOk", self.pet)
         self.assertIn("pet.wantsToPlay(root.playName)", self.pet)
-        self.assertIn('runOn = gameOn && playGame.name === "run"', self.pet)
+        self.assertIn("scoredOn = gameOn && G.SCORED.indexOf(playGame.name) >= 0", self.pet)
         self.assertRegex(self.pet, r'if \(gameOn && mood === "needs"\) \{\s+stopGame\(\)')
 
 
@@ -648,7 +672,7 @@ class VsCodeRunTests(unittest.TestCase):
     view = (ROOT / "vscode/src/view.ts").read_text()
 
     def test_keys_and_presses_are_the_games_only_while_running(self):
-        listen = self.ts[self.ts.index("private listenToRun("):][:3200]
+        listen = self.ts[self.ts.index("private listenToGame("):][:3600]
         self.assertIn('document.addEventListener("keydown", key, true)', listen)
         self.assertIn('document.addEventListener("keyup", key, true)', listen)
         self.assertIn('document.removeEventListener("keydown", key, true)', listen)
@@ -663,9 +687,10 @@ class VsCodeRunTests(unittest.TestCase):
 
     def test_the_stage_grows_and_its_status_fades(self):
         self.assertIn('this.root.classList.toggle("td-running", on)', self.stage)
-        self.assertIn("grow: (on) => this.stage.setRunning(on)", self.ts)
+        self.assertIn("grow: (on) => this.stage.setRunning(on, this.play?.stageGu ?? 11)", self.ts)
+        self.assertIn('this.root.style.setProperty("--td-run-gu", String(gu))', self.stage)
         grown = self.css[self.css.index(".td-stage--hero.td-running {"):][:300]
-        self.assertIn("min-height: calc(var(--td-gu, 16px) * 11)", grown)
+        self.assertIn("min-height: calc(var(--td-gu, 16px) * var(--td-run-gu, 11))", grown)
         self.assertIn("transition: min-height", self.css)
         faded = self.css[self.css.index(".td-running .td-hero-text"):][:300]
         self.assertIn("opacity: 0", faded)
@@ -675,13 +700,14 @@ class VsCodeRunTests(unittest.TestCase):
     def test_it_draws_the_run(self):
         self.assertIn("drawThing(ctx, th, world.dark)", self.ts)
         # (each look a picture drawn once, put where the thing is each frame)
-        self.assertIn("ctx.drawImage(this.runSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD))", self.ts)
-        self.assertIn("let c = this.runSprites.get(key);", self.ts)
-        self.assertIn("ctx && this.runDrawn !== this.runMoves", self.ts)   # (redrawn only when it moved)
-        self.assertIn("this.runMoves++", self.ts)
+        self.assertIn("ctx.drawImage(this.thingSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD))", self.ts)
+        self.assertIn("let c = this.thingSprites.get(key);", self.ts)
+        self.assertIn("ctx && this.gameDrawn !== this.gameMoves", self.ts)   # (redrawn only when it moved)
+        self.assertIn("this.gameMoves++", self.ts)
         self.assertIn("!this.cookieOn && !this.play?.on && mood !== \"done\"", self.ts)   # (not turned to the mouse in a game)
-        self.assertIn("face: (left) => (this.talpy.facingLeft = left),\n      // Talpy's Run's", self.ts)
-        self.assertIn("ground - lift - this.runLift() - s.floorY", self.ts)
+        self.assertIn("face: (left) => (this.talpy.facingLeft = left),\n      // a scored game's", self.ts)
+        self.assertIn("ground - lift - this.gameLift() - s.floorY", self.ts)
+        self.assertIn("const turn = this.gameTurn();", self.ts)   # (a game may turn him: Deep Dig head-down)
         for words in ("m`", "Click to jump · ↓ or right-click to dig", "↓ or right-click: dig", "New best! ", " m · best ",
                       "Click to run again"):
             self.assertIn(words, self.ts)
@@ -696,9 +722,11 @@ class VsCodeRunTests(unittest.TestCase):
 
     def test_the_best_is_kept_by_the_extension_and_only_grows(self):
         self.assertIn('const RUN_BEST_KEY = "talpyDen.runBest"', self.view)
-        self.assertIn("nextBest(this.memento?.get(RUN_BEST_KEY), m.best)", self.view)
-        self.assertIn('{ type: "runBest", best: this.runBest() }', self.view)
-        self.assertIn("saveBest: (m) => world.saveRunBest(m)", self.ts)
+        self.assertIn("nextBest(this.memento?.get(BEST_KEYS[m.game]), m.best)", self.view)
+        self.assertIn('run: RUN_BEST_KEY', self.view)
+        self.assertIn('{ type: "gameBest", game: "run", best: this.gameBest("run") }', self.view)
+        self.assertIn("saveBest: (name, m) => world.saveBest(name, m)", self.ts)
+        self.assertIn("best: (name) => world.best[name]", self.ts)
 
 
 if __name__ == "__main__":

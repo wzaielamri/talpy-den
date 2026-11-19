@@ -29,8 +29,8 @@ window.addEventListener("message", (event: MessageEvent) => {
     case "playWithTalpy":
       pets.play(msg.game);
       break;
-    case "runBest":
-      pets.setRunBest(msg.best);
+    case "gameBest":
+      pets.setBest(msg.game, msg.best);
       break;
     case "visible":
       hostVisible.set(!!msg.visible);

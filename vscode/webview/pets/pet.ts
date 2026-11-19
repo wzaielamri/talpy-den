@@ -18,11 +18,11 @@
 // ground when the chat shows up and digs away when it leaves the list, and
 // opens the chat when clicked (drag it for fun: it digs back to its spot).
 
-import type { ChatRef, Session } from "../../src/shared/types";
+import type { ChatRef, GameName as Games, Session } from "../../src/shared/types";
 import { hostLabel, stateText } from "../../src/shared/model";
 import { CookieGame, type CookieWords } from "../../vendor/talpy/cookie.mjs";
 import { Films } from "../../vendor/talpy/films.mjs";
-import { pickGame, type Game, type RunThing } from "../../vendor/talpy/games.mjs";
+import { SCORED, pickGame, type Game, type RunThing } from "../../vendor/talpy/games.mjs";
 import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide, drawPuff, drawThing } from "../../vendor/talpy/talpy.mjs";
 import type { StageChat } from "./api";
 import { PALETTE, textOn } from "./colors";
@@ -37,7 +37,7 @@ export const LARGE = 8;
 // again, if they're this recent
 const MISSED_MS = 60000;
 
-// Talpy's Run: px around a thing's picture (runSprite), for its outline's edge
+// Talpy's Run: px around a thing's picture (thingSprite), for its outline's edge
 const SPRITE_PAD = 2;
 
 function holidayGreeting(): string {
@@ -107,7 +107,7 @@ function typing(e: Event): boolean {
   return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable);
 }
 
-type GameName = "" | "peekaboo" | "run";
+type GameName = "" | Games;
 
 export class Pet {
   readonly stage: Stage;
@@ -175,13 +175,13 @@ export class Pet {
   private playDrawn: string[] = [];
   private playListening: (() => void) | null = null; // (Esc and clicks outside, while it's on)
   // Talpy's Run: its keys and presses (only while it's on), its things' canvas and its words
-  private runListening: (() => void) | null = null;
-  private runCanvas: HTMLCanvasElement | null = null;
-  private runText: { box: HTMLDivElement; meters: HTMLDivElement; hint: HTMLDivElement; end: HTMLDivElement; again: HTMLDivElement } | null = null;
-  private runHintW = 0;
-  private runMoves = 0; // (the run moved: gameMoved; its canvas painted for runDrawn)
-  private runDrawn = -1;
-  private readonly runSprites = new Map<string, HTMLCanvasElement>(); // (its things' pictures: runSprite)
+  private gameListening: (() => void) | null = null;
+  private gameCanvas: HTMLCanvasElement | null = null;
+  private gameText: { box: HTMLDivElement; meters: HTMLDivElement; hint: HTMLDivElement; end: HTMLDivElement; again: HTMLDivElement } | null = null;
+  private gameHintW = 0;
+  private gameMoves = 0; // (the run moved: gameMoved; its canvas painted for gameDrawn)
+  private gameDrawn = -1;
+  private readonly thingSprites = new Map<string, HTMLCanvasElement>(); // (its things' pictures: thingSprite)
   private hadCookie = false; // you gave it one since the view opened (its hint stops)
   private readonly grab: HTMLDivElement;
   private readonly drawn: Record<string, string> = {};
@@ -881,10 +881,10 @@ export class Pet {
       say: (what) => this.say((said[what] ?? said.fun)()),
       changed: () => this.gameMoved(),
       face: (left) => (this.talpy.facingLeft = left),
-      // Talpy's Run's: its best, the stage taller (its status faded) or back, not with reduced motion
-      best: () => world.runBest,
-      saveBest: (m) => world.saveRunBest(m),
-      grow: (on) => this.stage.setRunning(on),
+      // a scored game's: its best, the stage taller (its status faded) or back, not with reduced motion
+      best: (name) => world.best[name],
+      saveBest: (name, m) => world.saveBest(name, m),
+      grow: (on) => this.stage.setRunning(on, this.play?.stageGu ?? 11),
       runOk: () => !reducedMotion(),
     }, name);
     this.play.start(s.clock.now(), wake);
@@ -927,12 +927,12 @@ export class Pet {
         if (Date.now() - missed.at < MISSED_MS) this.event(missed.kind, missed.text);
       }
     }
-    const running = on && this.play?.name === "run";
-    if (running) this.runMoves++; // (its canvas is painted again only when it moved)
-    if (running && !this.runListening) this.listenToRun();
-    else if (!running && this.runListening) {
-      this.runListening();
-      this.runListening = null;
+    const running = on && this.scored() !== null;
+    if (running) this.gameMoves++; // (its canvas is painted again only when it moved)
+    if (running && !this.gameListening) this.listenToGame();
+    else if (!running && this.gameListening) {
+      this.gameListening();
+      this.gameListening = null;
     }
     this.changed();
   }
@@ -941,9 +941,9 @@ export class Pet {
   // (never a key meant for a text field); a press on the stage is the game's
   // (left: jump at once, right: dig while held, and no menu; a touch swiped
   // down digs), not his to grab nor a double-click's cookie
-  private listenToRun(): void {
+  private listenToGame(): void {
     const root = this.stage.root;
-    const game = (): Game | null => (this.play?.on && this.play.name === "run" ? this.play : null);
+    const game = (): Game | null => this.scored();
     const key = (e: KeyboardEvent): void => {
       const g = game();
       if (!g || typing(e) || e.repeat) return;
@@ -988,7 +988,7 @@ export class Pet {
     root.addEventListener("pointerup", release, true);
     root.addEventListener("contextmenu", noMenu);
     root.addEventListener("dblclick", stop, true);
-    this.runListening = () => {
+    this.gameListening = () => {
       document.removeEventListener("keydown", key, true);
       document.removeEventListener("keyup", key, true);
       root.removeEventListener("pointerdown", press, true);
@@ -999,38 +999,48 @@ export class Pet {
     };
   }
 
-  // Talpy's Run: how high he is in his jump (px), 0 when no run is on
-  private runLift(): number {
-    return this.play?.on && this.play.name === "run" ? this.play.lift ?? 0 : 0;
+  // A scored game while it's on (the Run, Deep Dig), else null
+  private scored(): Game | null {
+    return this.play?.on && SCORED.includes(this.play.name) ? this.play : null;
   }
 
-  // Talpy's Run: its things on one canvas the stage's size, under him, and its
+  // A scored game: how high he is above his floor (px: the Run's jump), 0 when none is on
+  private gameLift(): number {
+    return this.scored()?.lift ?? 0;
+  }
+
+  // A scored game: how far it turns him (degrees, 0 upright: Deep Dig's head-down), 0 when none is on
+  private gameTurn(): number {
+    return this.scored()?.turn ?? 0;
+  }
+
+  // A scored game: its things on one canvas the stage's size, under him, and its
   // words (the distance top right, the hint, the end); hidden when it's over
-  private renderRun(): void {
-    const g = this.play?.on && this.play.name === "run" ? this.play : null;
+  private renderScored(): void {
+    const g = this.scored();
     if (!g) {
-      if (this.runCanvas && !this.runCanvas.hidden) {
-        this.runCanvas.hidden = true;
-        this.runText!.box.hidden = true;
-        this.runSprites.clear(); // (drawn again for the next run)
+      if (this.gameCanvas && !this.gameCanvas.hidden) {
+        this.gameCanvas.hidden = true;
+        this.gameText!.box.hidden = true;
+        this.thingSprites.clear(); // (drawn again for the next run)
       }
       return;
     }
     const s = this.stage,
       k = devicePixelRatio || 1;
-    if (!this.runCanvas || !this.runText) {
-      this.runCanvas = this.canvas();
-      this.runCanvas.className = "td-run-canvas";
-      this.leftHole.after(this.runCanvas); // (under him, as the holes)
+    if (!this.gameCanvas || !this.gameText) {
+      this.gameCanvas = this.canvas();
+      this.gameCanvas.className = "td-run-canvas";
+      this.leftHole.after(this.gameCanvas); // (under him, as the holes)
       const box = div("td-run-text");
       const text = { box, meters: div("td-run-meters"), hint: div("td-run-hint"), end: div("td-run-end"), again: div("td-run-again") };
       text.again.textContent = "Click to run again";
       box.append(text.meters, text.hint, text.end, text.again);
       this.sheets.after(box);
-      this.runText = text;
+      this.gameText = text;
     }
-    const c = this.runCanvas,
-      t = this.runText;
+    const c = this.gameCanvas,
+      t = this.gameText;
     c.hidden = false;
     t.box.hidden = false;
     const w = Math.round(s.width * k),
@@ -1040,15 +1050,15 @@ export class Pet {
       c.height = h;
       c.style.width = `${s.width}px`;
       c.style.height = `${s.height}px`;
-      this.runDrawn = -1; // (a new size: cleared, painted again)
+      this.gameDrawn = -1; // (a new size: cleared, painted again)
     }
     const ctx = c.getContext("2d");
-    if (ctx && this.runDrawn !== this.runMoves) {
-      this.runDrawn = this.runMoves;
+    if (ctx && this.gameDrawn !== this.gameMoves) {
+      this.gameDrawn = this.gameMoves;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, w, h);
       // (each thing a picture drawn once, put where it is now: between pixels too, so it glides)
-      for (const th of g.things ?? []) ctx.drawImage(this.runSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD));
+      for (const th of g.things ?? []) ctx.drawImage(this.thingSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD));
     }
     const over = g.state === "over";
     const meters = `${g.meters ?? 0} m`;
@@ -1058,9 +1068,9 @@ export class Pet {
     t.hint.hidden = !hint;
     if (t.hint.textContent !== hint) {
       t.hint.textContent = hint;
-      this.runHintW = hint ? t.hint.offsetWidth : 0; // (measured as its words change, not each frame)
+      this.gameHintW = hint ? t.hint.offsetWidth : 0; // (measured as its words change, not each frame)
     }
-    this.put(t.hint, "runHint", "transform", `translate(${Math.round(Math.max(4, this.px - this.runHintW / 2))}px, 4px)`);
+    this.put(t.hint, "runHint", "transform", `translate(${Math.round(Math.max(4, this.px - this.gameHintW / 2))}px, 4px)`);
     const end = !over ? "" : g.newBest ? `New best! ${g.best ?? 0} m` : `${g.meters ?? 0} m · best ${g.best ?? 0} m`;
     if (t.end.textContent !== end) t.end.textContent = end;
     t.end.hidden = t.again.hidden = !over;
@@ -1069,9 +1079,9 @@ export class Pet {
   // Talpy's Run: a thing's picture (drawThing), drawn the first time that look
   // is wanted (its kind, look, wings, size, the theme, the screen's pixels) and
   // kept for the run; SPRITE_PAD px around it for its outline's edge
-  private runSprite(th: RunThing, k: number): HTMLCanvasElement {
+  private thingSprite(th: RunThing, k: number): HTMLCanvasElement {
     const key = `${th.kind} ${th.variant} ${th.frame} ${Math.round(th.w * 8)} ${Math.round(th.h * 8)} ${world.dark ? 1 : 0} ${k}`;
-    let c = this.runSprites.get(key);
+    let c = this.thingSprites.get(key);
     if (!c) {
       c = document.createElement("canvas");
       c.width = Math.ceil((th.w + 2 * SPRITE_PAD) * k);
@@ -1081,8 +1091,8 @@ export class Pet {
         ctx.setTransform(k, 0, 0, k, SPRITE_PAD * k, SPRITE_PAD * k);
         drawThing(ctx, th, world.dark);
       }
-      if (this.runSprites.size >= 160) this.runSprites.clear(); // (a run's looks are far fewer: sizes or themes changed)
-      this.runSprites.set(key, c);
+      if (this.thingSprites.size >= 160) this.thingSprites.clear(); // (a run's looks are far fewer: sizes or themes changed)
+      this.thingSprites.set(key, c);
     }
     return c;
   }
@@ -1337,16 +1347,19 @@ export class Pet {
     if (this.game?.on) this.game.tick(now);
     if (this.play?.on) this.play.tick(now);
     if (this.play?.on || this.playHoles.length) this.renderPlayHoles();
-    if (this.play?.on || this.runCanvas) this.renderRun();
+    if (this.play?.on || this.gameCanvas) this.renderScored();
     if (this.cookie) this.renderCookie();
     this.spring(now);
     const px = Math.round(this.px * 10) / 10,
       shown = Math.round(this.shown.value * 10) / 10,
       lift = Math.round(this.lift * this.pop * 10) / 10,
       swing = Math.round(this.tilt.value * 10) / 10;
-    this.put(this.sheets, "origin", "transformOrigin", `${s.canvasW / 2}px ${s.floorY - (box * 27) / 64}px`);
+    // (where you hold him; a game turns him about his body's middle)
+    const turn = this.gameTurn();
+    const angle = turn ? Math.round(turn * 10) / 10 : swing;
+    this.put(this.sheets, "origin", "transformOrigin", `${s.canvasW / 2}px ${s.floorY - (box * (turn ? 20 : 27)) / 64}px`);
     this.put(this.sheets, "sheets", "transform",
-      `translate(${shown - s.canvasW / 2}px, ${ground - lift - this.runLift() - s.floorY}px)${swing ? ` rotate(${swing}deg)` : ""}`);
+      `translate(${shown - s.canvasW / 2}px, ${ground - lift - this.gameLift() - s.floorY}px)${angle ? ` rotate(${angle}deg)` : ""}`);
     if (this.tag) {
       this.put(this.tag, "tag", "transform", `translate(${px}px, ${ground + (box * 6) / 64}px) translateX(-50%)`);
       this.put(this.tag, "tagWidth", "maxWidth", `${s.tagWidth}px`);

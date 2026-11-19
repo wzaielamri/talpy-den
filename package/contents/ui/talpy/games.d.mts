@@ -4,7 +4,8 @@ import type { Talpy } from "./talpy.mjs";
 import type { CookieStage } from "./cookie.mjs";
 
 export type GameWords = "got" | "fun" | "bump" | "best";
-export type GameName = "peekaboo" | "run";
+export type ScoredName = "run" | "dig";
+export type GameName = "peekaboo" | ScoredName;
 
 export interface GameStage extends CookieStage {
     height?: number;   // the stage's height, px (the run's: grown)
@@ -16,10 +17,11 @@ export interface GameHost {
     moveTo(x: number): void;
     say(what: GameWords): void;
     changed(): void;
-    // the run's (Talpy's Run): the best so far (metres), a new best, the
-    // stage taller for it (its status faded) or back, and where it isn't offered
-    best?(): number;
-    saveBest?(meters: number): void;
+    // a scored game's (Talpy's Run, Deep Dig; scored.mjs): its best so far
+    // (metres), a new best, the stage taller for it (game.stageGu grid units,
+    // its status faded) or back, and where they aren't offered
+    best?(name: ScoredName): number;
+    saveBest?(name: ScoredName, meters: number): void;
     grow?(on: boolean): void;
     runOk?(): boolean;
     face?(left: boolean): void;   // he turns (the run: towards what comes)
@@ -49,6 +51,8 @@ export interface RunThing {
 export const KINDS: Record<RunThingKind, [number, number, number]>;
 export const VARIANTS: Partial<Record<RunThingKind, number>>;
 export const DECOR: RunThingKind[];
+export const GRAB: RunThingKind[];
+export const SCORED: string[];   // the games with a score (scored.mjs): "run", "dig"
 
 export interface Game {
     readonly name: GameName;
@@ -59,7 +63,9 @@ export interface Game {
     tick(now: number): void;
     hit(): boolean;
     stop(): void;
-    // the run's (name "run"; Peekaboo has none of these)
+    // a scored game's (Talpy's Run, Deep Dig; Peekaboo has none of these)
+    readonly stageGu?: number;    // the stage's whole height while it's on, grid units
+    readonly turn?: number;       // degrees he's turned (0 upright)
     readonly things?: RunThing[];
     readonly slots?: number;      // the things' slots used so far this game
     readonly lift?: number;       // px he's above the floor

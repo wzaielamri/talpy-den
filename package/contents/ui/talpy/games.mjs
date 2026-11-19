@@ -20,13 +20,17 @@
 //   px(): where Talpy is (his centre); moveTo(x): he's there now (underground: no digging across);
 //   say(what): his words for 'got' (you caught him), 'fun' (the game's over), 'bump', 'best' (the run's);
 //   changed(): what shows changed (on, the holes; a run: every tick it moves);
-//   the run's: best(): metres; saveBest(m): a new best; grow(on): the stage taller (the
-//   status faded) for the run, or back; runOk(): false where the run isn't offered }
+//   the scored games' (scored.mjs): best(name): metres; saveBest(name, m): a new best; grow(on): the
+//   stage taller (game.stageGu grid units, the status faded) for the game, or back; runOk(): false
+//   where the Run and Deep Dig aren't offered }
 //
 // Plain ES2017 (see paths.mjs).
 
 import { ACTIONS, COOKIE } from './actions.mjs';
 import { FLAP_FRAMES } from './talpy.mjs';
+import { Scored, DECOR, GRAB, SCORED } from './scored.mjs';
+
+export { DECOR, GRAB, SCORED };
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const int = (a, b) => Math.floor(rnd(a, b + 1));
@@ -36,7 +40,7 @@ export const GAMES = ['peekaboo', 'run'];
 
 // A game by name, else at random; never the run where the host can't have it
 export function pickGame(talpy, host, name) {
-    const can = GAMES.filter(g => g !== 'run' || !host.runOk || host.runOk());
+    const can = GAMES.filter(g => SCORED.indexOf(g) < 0 || !host.runOk || host.runOk());
     const which = can.indexOf(name) >= 0 ? name : can[Math.floor(Math.random() * can.length)];
     return which === 'run' ? new Run(talpy, host) : new Peekaboo(talpy, host);
 }
@@ -229,13 +233,8 @@ export class Peekaboo {
 // together the further he gets. A press (press('jump')) and he jumps over it,
 // at once; held ↓ or the right button (press('dig'), release('dig')) he digs
 // in up to his eyes, under a crow; what stands on the ground still hits him
-// there. The first bump ends the run: how far (meters), the best (host.best;
-// a new one host.saveBest, said 'best'), and a press runs again; with no press
-// in RUN_END_MS the game's over. For the host to draw: things (stage px:
-// kind, x, y, w, h, frame, variant; drawThing in talpy.mjs; slot: a number of
-// its own while it's there, below slots, so a host can keep a picture for it),
-// lift (px he's up), meters, best, newBest, hint ('start', 'dig' or ''),
-// state ('ready', 'run', 'over').
+// there. The first bump ends the run (Scored, scored.mjs: how far, the best,
+// a press runs again, the end); hint 'start', 'dig' or ''.
 // A gap between two things is never shorter than a jump at that speed and
 // room to land, so a run can always be cleared. What comes changes as he goes
 // (UNLOCKS: more kinds the further he gets, each in its own colours, never
@@ -243,8 +242,6 @@ export class Peekaboo {
 // (DECOR: they go by behind, never in his way) keep it from looking the same.
 
 const RUN_READY_MS = 2000;     // the hint, and nothing on his way yet
-const RUN_END_MS = 5000;       // the end waits that long for a press (then back to work)
-const RUN_AGAIN_MS = 450;      // ...and takes none so soon after the bump (a jump pressed too late)
 const JUMP_MS = 620;           // up and down again, whatever the speed
 const JUMP_KEEP_MS = 150;      // a press this close to his landing is kept for it (not a double-click's)
 const FALL = 8;                // bumped in the air, he comes down at that many of his body's height a second
@@ -271,7 +268,6 @@ export const KINDS = {
 };
 // how many looks a kind has (drawThing's variant: a pot's flower, a hedgehog's quills, which bird, the grass)
 export const VARIANTS = { pot: 4, hedgehog: 2, crow: 3, crowHigh: 3, tuft: 3, cloud: 2 };
-export const DECOR = ['tuft', 'cloud'];   // (drawn, never bumped into)
 const SHRINK = 0.15;           // a thing's hit box is that much inside its drawing, each side
 const BODY_W = 0.55, BODY_H = 0.85, DUG_H = 0.3;   // his hit box, by his body's size
 const RUN_POSES = {
@@ -282,39 +278,13 @@ const RUN_POSES = {
                    fx: [['sparkle', 26, 14, { dy: -6 }], ['sparkle', 38, 12, { dy: -6, delay: 0.15 }]] })
 };
 
-export class Run {
+export class Run extends Scored {
     constructor(talpy, host) {
-        this.name = 'run';
-        this.talpy = talpy;
-        this.host = host;
-        this.on = false;
-        this.holes = [];           // (none of the host's: he digs in his own hole)
-        this.things = [];          // one array all along (kept, emptied, filled)
-        this.slots = 0;            // things' slots used so far (a host's pictures for them)
-        this.frameMs = 1000 / 60;  // the host's ticks, as they come (an even step each: tick)
-        this.state = '';
-        this.lift = 0;
+        super(talpy, host, 'run', 11);   // (11 grid units: room for his jump and the high crows over it)
+        this.poses = RUN_POSES;
         this.digging = false;
-        this.meters = 0;
-        this.best = 0;
-        this.newBest = false;
-        this.hint = '';
-        this.hitBy = '';
         this.speed = 0;            // px a second
         this.speedUp = 1;          // × the start
-        this.now = 0;
-        this.brain = true;
-    }
-
-    start(now) {
-        const t = this.talpy;
-        this.on = true;
-        this.brain = t.brainOn;
-        t.brainOn = false;
-        t.cancel();
-        this.host.grow(true);
-        this.best = Math.max(0, Math.floor(Number(this.host.best()) || 0));
-        this.reset(now);
     }
 
     reset(now) {
@@ -324,16 +294,7 @@ export class Run {
         this.host.moveTo(this.x);
         if (this.host.face)
             this.host.face(false);   // (towards what comes)
-        this.things.length = 0;
-        this.state = 'ready';
-        this.since = now;
-        this.now = now;
-        this.dist = 0;             // metres, not rounded
-        this.meters = 0;
-        this.newBest = false;
         this.hint = 'start';
-        this.hitBy = '';
-        this.lift = 0;
         this.jumpAt = -1;
         this.queued = false;
         this.digging = false;
@@ -343,11 +304,9 @@ export class Run {
         this.tuftGap = 0;
         this.cloudGap = 0;
         this.last = '';            // the kind that came last (not the same again)
-        this.pose = '';
         this.speeds();
         this.add('cloud').x = rnd(0.35, 0.75) * this.s.width;   // (a sky with a cloud from the start)
         this.setPose('run');
-        this.host.changed();
     }
 
     speeds() {
@@ -355,21 +314,12 @@ export class Run {
         this.speed = SPEED0 * this.s.unit * this.speedUp;
     }
 
-    setPose(name) {
-        if (this.pose === name)
-            return;
-        this.pose = name;
-        const step = RUN_POSES[name]();
-        step.t = HOLD;
-        this.talpy.play({ steps: () => [step] }, null, false);
-    }
-
     press(what) {
         if (!this.on)
             return;
         if (this.state === 'over') {
-            if (what === 'jump' && this.now - this.since >= RUN_AGAIN_MS)
-                this.reset(this.now);
+            if (what === 'jump')
+                this.again();
             return;
         }
         if (what === 'dig') {
@@ -393,30 +343,15 @@ export class Run {
             this.digging = this.digPending = false;
     }
 
-    hit() {
-        return this.on;            // (a click on him is the game's: no petting meanwhile)
+    // bumped in the air: he comes down
+    overTick(now, dt) {
+        if (this.lift <= 0)
+            return false;
+        this.lift = Math.max(0, this.lift - FALL * this.s.bodyHeight * dt);
+        return true;
     }
 
-    tick(now) {
-        if (!this.on)
-            return;
-        // (a whole number of the host's ticks: what goes by steps the same each
-        // frame, not by when the frame's tick happened to run; one sooner than
-        // half a tick: as it came)
-        const raw = Math.max(0, now - this.now), ticks = Math.round(raw / this.frameMs);
-        if (raw > 4 && raw < 50)
-            this.frameMs += (raw - this.frameMs) * 0.05;
-        const dt = Math.min(0.1, (ticks >= 1 ? ticks * this.frameMs : raw) / 1000);
-        this.now = now;
-        if (this.state === 'over') {
-            if (now - this.since > RUN_END_MS)
-                this.end();
-            else if (this.lift > 0) {   // (bumped in the air: he comes down)
-                this.lift = Math.max(0, this.lift - FALL * this.s.bodyHeight * dt);
-                this.host.changed();
-            }
-            return;
-        }
+    tickGame(now, dt) {
         if (this.state === 'ready' && now - this.since >= RUN_READY_MS) {
             this.state = 'run';
             this.hint = '';
@@ -444,7 +379,7 @@ export class Run {
         // the ground goes by
         const step = this.speed * dt;
         this.dist += M_PER_S * this.speedUp * dt;
-        this.meters = Math.floor(this.dist);
+        this.score();
         this.speeds();
         let n = 0, crowNear = false;
         for (let i = 0; i < this.things.length; i++) {
@@ -471,11 +406,10 @@ export class Run {
                 continue;
             const dx = th.w * SHRINK, dy = th.h * SHRINK;
             if (th.x + dx < hb[2] && th.x + th.w - dx > hb[0] && th.y + dy < hb[3] && th.y + th.h - dy > hb[1]) {
-                this.bump(th.kind);
+                this.over(th.kind);
                 return;
             }
         }
-        this.host.changed();
     }
 
     // his hit box: [left, top, right, bottom], stage px
@@ -504,7 +438,7 @@ export class Run {
         this.gap -= step;
         if (this.gap > 0)
             return;
-        const m = this.meters, kinds = [];
+        const m = this.dist, kinds = [];
         for (let i = 0; i < UNLOCKS.length && m >= UNLOCKS[i][0]; i++)
             kinds.push.apply(kinds, UNLOCKS[i].slice(1));
         let kind = kinds[int(0, kinds.length - 1)];
@@ -532,65 +466,13 @@ export class Run {
         return th;
     }
 
-    count(kind) {
-        let n = 0;
-        for (let i = 0; i < this.things.length; i++)
-            n += this.things[i].kind === kind ? 1 : 0;
-        return n;
-    }
-
-    // the lowest slot no thing has now (slots only grows: a host's pictures for them are kept)
-    freeSlot() {
-        let slot = 0;
-        while (this.things.some(th => th.slot === slot))
-            slot++;
-        this.slots = Math.max(this.slots, slot + 1);
-        return slot;
-    }
-
-    bump(kind) {
-        this.state = 'over';
-        this.since = this.now;
-        this.hitBy = kind;
-        this.jumpAt = -1;   // (in the air, he comes down from where he was hit: tick)
+    bumped() {
+        this.jumpAt = -1;   // (in the air, he comes down from where he was hit: overTick)
         this.digging = false;
-        this.hint = '';
         this.setPose('bump');
-        if (this.meters > this.best) {
-            this.newBest = true;
-            this.best = this.meters;
-            this.host.saveBest(this.meters);
-            this.host.say('best');
-        } else
-            this.host.say('bump');
-        this.host.changed();
     }
 
-    // Over (by itself, or at once: stop): he comes up where he is, his own doings back
-    end() {
-        if (!this.on)
-            return;
-        this.on = false;
-        this.state = '';
-        this.things.length = 0;
-        this.lift = 0;
+    ended() {
         this.digging = false;
-        this.hint = '';
-        const t = this.talpy;
-        t.brainOn = this.brain;
-        t.cancel();
-        t.apply({});
-        this.host.grow(false);
-        this.host.changed();
-    }
-
-    // At once (Esc, a click outside, a chat that needs you, out of sight): a run
-    // cut short still counts for the best
-    stop() {
-        if (this.on && this.state !== 'over' && this.meters > this.best) {
-            this.best = this.meters;
-            this.host.saveBest(this.meters);
-        }
-        this.end();
     }
 }

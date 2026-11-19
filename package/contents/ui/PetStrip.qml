@@ -129,20 +129,22 @@ Item {
     }
 
     // Room for what the pets hold over their heads (signs, bubbles: up to
-    // half the image above the floor); taller while the big Talpy runs (Talpy's
-    // Run: room for his jump and the crows over it), the list below moving down
-    implicitHeight: (hero ? gu * 6 : gu * 4.5) + (running ? gu * 5 : 0)
+    // half the image above the floor); taller while the big Talpy plays a
+    // scored game (its stageGu grid units: the Run's room for his jump and the
+    // crows over it, Deep Dig's to see what comes), the list below moving down
+    implicitHeight: running ? gu * runGu : (hero ? gu * 6 : gu * 4.5)
     Behavior on implicitHeight { NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad } }
     clip: true
-    // the hero runs (Talpy's Run, games.mjs): set by his game (Pet.qml's host grow)
+    // the hero plays a scored game (the Run, Deep Dig): set by his game (Pet.qml's host grow), as tall as it says
     property bool running: false
+    property real runGu: 11
     // (the stage takes the keys for the run, and gives them back after: the
     // search field you were typing in, say)
     property Item focusBefore: null
     onRunningChanged: {
         if (running) {
             focusBefore = Window.activeFocusItem
-            runKeys.forceActiveFocus()
+            gameKeys.forceActiveFocus()
         } else if (focusBefore) {
             const f = focusBefore
             focusBefore = null
@@ -406,9 +408,9 @@ Item {
     }
 
     // The hero's headline (what needs you, what works) and the session counts,
-    // left of where he stands; faded out while he runs (Talpy's Run: he runs
-    // there, and every press on the stage is the game's; a chat that needs
-    // you ends the run and they're back)
+    // left of where he stands; faded out while he plays a scored game (he runs
+    // or digs there, and every press on the stage is the game's; a chat that
+    // needs you ends the game and they're back)
     ColumnLayout {
         visible: strip.hero && opacity > 0
         opacity: strip.running ? 0 : 1
@@ -544,12 +546,12 @@ Item {
         }
     }
 
-    // Talpy's Run: every press on the stage is the game's while he runs (over
-    // him and everything else): the left button (or a touch) jumps at once,
-    // the right one digs while held, as does a touch swiped down; the
+    // A scored game: every press on the stage is the game's while it's on
+    // (over him and everything else): the Run's left button (or a touch) jumps
+    // at once, the right one digs while held, as does a touch swiped down; the
     // widget's own menu doesn't open meanwhile. Off otherwise: nothing changes
     MouseArea {
-        id: runPresses
+        id: gamePresses
         anchors.fill: parent
         z: 5
         enabled: strip.running
@@ -562,7 +564,7 @@ Item {
             swiped = false
             const hero = strip.petFor("")
             if (hero)
-                hero.runPress(mouse.button === Qt.RightButton ? "dig" : "jump")
+                hero.gamePress(mouse.button === Qt.RightButton ? "dig" : "jump")
         }
         onPositionChanged: mouse => {
             // (a touch can't press the right button: swiped down, it digs)
@@ -570,29 +572,29 @@ Item {
                 swiped = true
                 const hero = strip.petFor("")
                 if (hero)
-                    hero.runPress("dig")
+                    hero.gamePress("dig")
             }
         }
         onReleased: mouse => {
             const hero = strip.petFor("")
             if (hero && (mouse.button === Qt.RightButton || swiped))
-                hero.runRelease("dig")
+                hero.gameRelease("dig")
             swiped = false
         }
     }
-    // Talpy's Run: its keys, while he runs (the stage takes the focus as the
-    // run starts): Space or ↑ jump, ↓ digs while held; Esc ends it (Pet.qml)
+    // A scored game: its keys, while it's on (the stage takes the focus as it
+    // starts): the Run's Space or ↑ jump, ↓ digs while held; Esc ends it (Pet.qml)
     Item {
-        id: runKeys
+        id: gameKeys
         focus: strip.running
         Keys.onPressed: event => {
             const hero = strip.petFor("")
             if (!strip.running || !hero || event.isAutoRepeat)
                 return
             if (event.key === Qt.Key_Space || event.key === Qt.Key_Up)
-                hero.runPress("jump")
+                hero.gamePress("jump")
             else if (event.key === Qt.Key_Down)
-                hero.runPress("dig")
+                hero.gamePress("dig")
             else
                 return
             event.accepted = true
@@ -601,7 +603,7 @@ Item {
             const hero = strip.petFor("")
             if (!strip.running || !hero || event.isAutoRepeat || event.key !== Qt.Key_Down)
                 return
-            hero.runRelease("dig")
+            hero.gameRelease("dig")
             event.accepted = true
         }
     }

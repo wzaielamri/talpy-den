@@ -21,7 +21,7 @@ import { editorTab, isDark } from "../env";
 import { hostLabel, petKeyOf, plural } from "../../src/shared/model";
 import type { TalpyTheme } from "../../vendor/talpy/talpy.mjs";
 import type { AccountInput, HeroInput, PetStage, StageCallbacks, StageChat } from "./api";
-import type { ChatRef, Counts } from "../../src/shared/types";
+import type { ChatRef, Counts, GameName, ScoredGame } from "../../src/shared/types";
 import { PALETTE, allPetColors, freeColor, setPetColors } from "./colors";
 import { BOX, FLOOR } from "../../vendor/talpy/talpy.mjs";
 import { Clock, Timer, Tween, cssEase, onReducedMotionChange, reducedMotion, type Animator } from "./motion";
@@ -33,20 +33,20 @@ export const world = {
   dark: isDark(),
   playful: true, // Playful Talpy (setPlayfulAll)
   playWanted: false, // Play with Talpy (playAll): the hero starts a game once his stage shows
-  playName: "" as "" | "peekaboo" | "run", // (which one; "" either)
+  playName: "" as "" | GameName, // (which one; "" any)
   shownOnce: false, // pets have been on screen: from now on the hero digs its way up too
-  runBest: 0, // Talpy's Run: the best run (metres), as the extension keeps it (setRunBestAll)
-  // a run went further: keep it here, and have the extension keep it (the hero stage's callback)
-  saveRunBest: (meters: number): void => {
-    world.runBest = Math.max(world.runBest, Math.floor(meters));
-    for (const s of allStages) if (s.hero) s.keepRunBest(meters);
+  best: { run: 0, dig: 0 } as Record<ScoredGame, number>, // a scored game's best (metres), as the extension keeps it (setBestAll)
+  // a scored game went further: keep it here, and have the extension keep it (the hero stage's callback)
+  saveBest: (game: ScoredGame, meters: number): void => {
+    world.best[game] = Math.max(world.best[game], Math.floor(meters));
+    for (const s of allStages) if (s.hero) s.keepBest(game, meters);
   },
 };
 
-// Talpy's Run: the best run, as the extension keeps it (when the page is
-// ready, and when another view's run beat it)
-export function setRunBestAll(best: number): void {
-  world.runBest = Math.max(0, Math.floor(best) || 0);
+// A scored game's best, as the extension keeps it (when the page is ready,
+// and when another view's game beat it)
+export function setBestAll(game: ScoredGame, best: number): void {
+  if (game in world.best) world.best[game] = Math.max(0, Math.floor(best) || 0);
 }
 
 // The theme changed (or may have): the pets' words and particles take its
@@ -61,7 +61,7 @@ export function setDarkAll(dark: boolean): void {
 
 // Play with Talpy (the view's menu): the hero starts a game (by name, or
 // either) now if his stage shows, else once it does
-export function playAll(game?: "peekaboo" | "run"): void {
+export function playAll(game?: GameName): void {
   const hero = [...allStages].find((s) => s.hero && s.live && s.pets.length);
   if (hero) hero.pets[0].wantsToPlay(game ?? "");
   else {
@@ -294,15 +294,17 @@ export class Stage implements PetStage, Animator {
     this.sync();
   }
 
-  // Talpy's Run (the hero's): the stage taller for it (the view below moves
-  // down) and its headline, counts and ticker faded out (pets.css), or back
-  setRunning(on: boolean): void {
+  // A scored game (the hero's: Talpy's Run, Deep Dig): the stage taller for
+  // it, gu grid units (the view below moves down), and its headline, counts
+  // and ticker faded out (pets.css), or back
+  setRunning(on: boolean, gu: number): void {
+    this.root.style.setProperty("--td-run-gu", String(gu));
     this.root.classList.toggle("td-running", on);
   }
 
-  // Talpy's Run: a new best, for the extension to keep
-  keepRunBest(meters: number): void {
-    this.cb.saveRunBest?.(meters);
+  // A scored game: a new best, for the extension to keep
+  keepBest(game: ScoredGame, meters: number): void {
+    this.cb.saveBest?.(game, meters);
   }
 
   setLive(live: boolean): void {

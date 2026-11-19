@@ -20,7 +20,7 @@ function send(message: HostMessage): void {
 // ?run=1: Talpy's Run starts once the page shows (its best 340 m)
 if (params.get("run") === "1") {
   setTimeout(() => {
-    send({ type: "runBest", best: 340 });
+    send({ type: "gameBest", game: "run", best: 340 });
     send({ type: "playWithTalpy", game: "run" });
   }, 600);
 }

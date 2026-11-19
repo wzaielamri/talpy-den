@@ -105,18 +105,20 @@ Item {
     property var playGame: null
     property bool gameOn: false
     property var gameHoles: []          // [{x, open}]: a copy of the game's, for the holes drawn
-    // Talpy's Run (the game named "run"): what of it shows, copied at each move
-    // (its things are read from the game itself, runFrame says when: runThing)
-    property bool runOn: false
-    property real runLift: 0            // px he's up in his jump
-    property int runFrame: 0
-    property int runSlots: 0            // the game's slots: a picture for each (its things keep theirs)
+    // A scored game (G.SCORED: Talpy's Run, Deep Dig): what of it shows, copied
+    // at each move (its things are read from the game itself, gameFrame says
+    // when: gameThing)
+    property bool scoredOn: false
+    property real gameLift: 0            // px he's above his floor (the Run: in his jump)
+    property real gameTurn: 0            // degrees he's turned (0 upright; Deep Dig: head-down)
+    property int gameFrame: 0
+    property int gameSlots: 0            // the game's slots: a picture for each (its things keep theirs)
     readonly property real spritePad: 2 // px around a thing's picture, for its outline's edge
-    property int runMeters: 0
-    property int runBestNow: 0
-    property bool runNewBest: false
-    property string runState: ""        // ready, run, over
-    property string runHint: ""         // start, dig, ""
+    property int gameMeters: 0
+    property int gameBestNow: 0
+    property bool gameNewBest: false
+    property string gameState: ""        // ready, run, over
+    property string gameHint: ""         // the game's (the Run: start, dig), ""
     property real pop: 1                // popping out into your hand: 0 in its burrow, 1 where you hold it
     property bool landing: false        // picked up, until it has landed and dug in: drawn live
     property bool arriving: false
@@ -403,10 +405,10 @@ Item {
             say: what => pet.say((said[what] || said.fun)()),
             changed: () => pet.gameMoved(),
             face: left => { view.facingLeft = left },
-            // Talpy's Run's: its best (every widget's), the stage taller (the status faded) or back
-            best: () => root.runBest,
-            saveBest: m => root.saveRunBest(m),
-            grow: on => { strip.running = on },
+            // a scored game's: its best (every widget's), the stage taller (the status faded) or back
+            best: name => root.gameBest(name),
+            saveBest: (name, m) => root.saveGameBest(name, m),
+            grow: on => { strip.runGu = playGame.stageGu; strip.running = on },
             runOk: () => root.runOk
         }, name || "")
         playGame.start(talpy.now, !!wake)
@@ -420,40 +422,47 @@ Item {
 
     function gameMoved() {
         gameOn = playGame.on
-        runOn = gameOn && playGame.name === "run"
+        scoredOn = gameOn && G.SCORED.indexOf(playGame.name) >= 0
         root.gameStage = gameOn ? strip : null
-        if (playGame.name !== "run") {
+        if (G.SCORED.indexOf(playGame.name) < 0) {
             gameHoles = playGame.holes.map(h => ({ x: h.x, open: h.open }))
             return
         }
-        // (every frame of a run: only numbers copied, its things drawn from the game itself)
-        runLift = runOn ? playGame.lift : 0
-        runMeters = playGame.meters
-        runBestNow = playGame.best
-        runNewBest = playGame.newBest
-        runState = playGame.state
-        runHint = playGame.hint
-        runSlots = playGame.slots
-        runFrame = (runFrame + 1) % 1000000
+        // (every frame of a scored game: only numbers copied, its things drawn from the game itself)
+        gameLift = scoredOn ? playGame.lift : 0
+        gameTurn = scoredOn ? playGame.turn : 0
+        gameMeters = playGame.meters
+        gameBestNow = playGame.best
+        gameNewBest = playGame.newBest
+        gameState = playGame.state
+        gameHint = playGame.hint
+        gameSlots = playGame.slots
+        gameFrame = (gameFrame + 1) % 1000000
     }
 
-    // Talpy's Run: the thing in that slot now, or null
-    function runThing(slot) {
-        const things = runOn && playGame ? playGame.things : []
+    // A scored game: the thing in that slot now, or null
+    function gameThing(slot) {
+        const things = scoredOn && playGame ? playGame.things : []
         for (let i = 0; i < things.length; i++)
             if (things[i].slot === slot)
                 return things[i]
         return null
     }
 
-    // Talpy's Run: a press on his stage (PetStrip.qml), "jump" or "dig", or a dig let go
-    function runPress(what) {
-        if (runOn)
+    // A scored game: a press on his stage or a key (PetStrip.qml): the Run's
+    // "jump" or "dig", Deep Dig's "left" or "right" (and "jump" on the end), or
+    // one let go; and where the pointer is over the stage (Deep Dig steers by it)
+    function gamePress(what) {
+        if (scoredOn)
             playGame.press(what)
     }
-    function runRelease(what) {
-        if (runOn)
+    function gameRelease(what) {
+        if (scoredOn)
             playGame.release(what)
+    }
+    function gameAim(x) {
+        if (scoredOn && playGame.aim)
+            playGame.aim(x)
     }
 
     Connections {
@@ -962,7 +971,7 @@ Item {
 
     // A game's holes (talpy/games.mjs), under him: painted again only as they open or close
     Repeater {
-        model: pet.gameOn && !pet.runOn ? 3 : 0
+        model: pet.gameOn && !pet.scoredOn ? 3 : 0
         delegate: Canvas {
             required property int index
             readonly property var hole: pet.gameHoles[index] || ({ x: 0, open: 0 })
@@ -1006,28 +1015,29 @@ Item {
         color: Qt.rgba(0.08, 0.1, 0.18, 0.2 * (1 - 0.6 * over))
     }
 
-    // Talpy's Run: what's on his way (T.drawThing), under him, and its words;
-    // made only while a run is on (not in every pet). Each thing is a picture
-    // drawn once and moved where it is at each move (runFrame): a canvas the
+    // A scored game's things (Talpy's Run, Deep Dig): what's on his way
+    // (T.drawThing), under him, and its words; made only while one is on (not
+    // in every pet). Each thing is a picture
+    // drawn once and moved where it is at each move (gameFrame): a canvas the
     // stage's size painted every frame cost about as much again as the rest
     // of the widget, and a frame's picture could show a frame late. A slot of
     // the game's has one picture (its things keep theirs while they're there);
     // a bird's has its whole flap side by side, the frame's one shown.
     Loader {
-        active: pet.runOn
+        active: pet.scoredOn
         width: strip.width
         height: strip.height
         sourceComponent: Item {
             clip: true   // (what comes from beyond the stage's edge isn't seen there)
             Repeater {
-                model: pet.runSlots
+                model: pet.gameSlots
                 delegate: Item {
                     id: slot
                     required property int index
-                    readonly property var th: { pet.runFrame; return pet.runThing(index) }
+                    readonly property var th: { pet.gameFrame; return pet.gameThing(index) }
                     visible: th !== null
-                    x: { pet.runFrame; return th ? th.x - pet.spritePad : 0 }
-                    y: { pet.runFrame; return th ? th.y - pet.spritePad : 0 }
+                    x: { pet.gameFrame; return th ? th.x - pet.spritePad : 0 }
+                    y: { pet.gameFrame; return th ? th.y - pet.spritePad : 0 }
                     width: sprite.cellW
                     height: sprite.cellH
                     clip: sprite.frames > 1
@@ -1052,7 +1062,7 @@ Item {
                                       frames: th.kind === "crow" || th.kind === "crowHigh" ? T.FLAP_FRAMES : 1 }
                             requestPaint()
                         }
-                        x: { pet.runFrame; return slot.th ? -(slot.th.frame % frames) * cellW : 0 }
+                        x: { pet.gameFrame; return slot.th ? -(slot.th.frame % frames) * cellW : 0 }
                         width: cellW * frames
                         height: cellH
                         renderStrategy: Canvas.Cooperative
@@ -1081,26 +1091,26 @@ Item {
             }
             // how far (the top right, one figure), how to play, how it ended
             PlasmaComponents3.Label {
-                visible: pet.runOn && pet.runState !== "over"
+                visible: pet.scoredOn && pet.gameState !== "over"
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.margins: Kirigami.Units.smallSpacing
                 textFormat: Text.PlainText
                 horizontalAlignment: Text.AlignRight
-                text: i18nc("metres run", "%1 m", pet.runMeters)
+                text: i18nc("metres run", "%1 m", pet.gameMeters)
                 opacity: 0.75
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
             }
             PlasmaComponents3.Label {
-                visible: pet.runHint !== ""
+                visible: pet.gameHint !== ""
                 x: Math.max(Kirigami.Units.smallSpacing, pet.px - width / 2)
                 y: Kirigami.Units.smallSpacing
                 textFormat: Text.PlainText
-                text: pet.runHint === "dig" ? i18n("↓ or right-click: dig") : i18n("Click to jump · ↓ or right-click to dig")
+                text: pet.gameHint === "dig" ? i18n("↓ or right-click: dig") : i18n("Click to jump · ↓ or right-click to dig")
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
             }
             Column {
-                visible: pet.runState === "over"
+                visible: pet.gameState === "over"
                 width: parent.width - Kirigami.Units.largeSpacing * 2
                 x: Kirigami.Units.largeSpacing
                 y: Kirigami.Units.smallSpacing
@@ -1109,7 +1119,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
-                    text: pet.runNewBest ? i18n("New best! %1 m", pet.runBestNow) : i18n("%1 m · best %2 m", pet.runMeters, pet.runBestNow)
+                    text: pet.gameNewBest ? i18n("New best! %1 m", pet.gameBestNow) : i18n("%1 m · best %2 m", pet.gameMeters, pet.gameBestNow)
                     font.weight: Font.DemiBold
                 }
                 PlasmaComponents3.Label {
@@ -1130,11 +1140,12 @@ Item {
         visible: !pet.departed   // (dug away: not even back up for the moment before it's removed)
         box: pet.box
         x: pet.shownX - boxX - pet.box / 2
-        y: pet.ground - pet.lift * pet.pop - pet.runLift - floorY
+        y: pet.ground - pet.lift * pet.pop - pet.gameLift - floorY
         transform: Rotation {
             origin.x: view.boxX + pet.box / 2
-            origin.y: view.boxY + pet.box * 30 / 64   // (where you hold it)
-            angle: pet.upright ? 0 : pet.tilt
+            // (where you hold it; a game turns him about his body's middle)
+            origin.y: pet.gameTurn !== 0 ? view.boxY + pet.box * 37 / 64 : view.boxY + pet.box * 30 / 64
+            angle: pet.gameTurn !== 0 ? pet.gameTurn : (pet.upright ? 0 : pet.tilt)
         }
         playing: pet.playing
         travels: pet.lone && !root.lessMotion   // (no digging about with less motion)
@@ -1223,7 +1234,7 @@ Item {
         property point lastAt           // where your hand is (pull, popOut)
         property bool dragging: false
         x: pet.px - width / 2
-        y: pet.ground - pet.lift * pet.pop - pet.runLift - height
+        y: pet.ground - pet.lift * pet.pop - pet.gameLift - height
         width: pet.bodyWidth + Kirigami.Units.largeSpacing
         height: pet.bodyHeight + Kirigami.Units.largeSpacing
         visible: !pet.departed

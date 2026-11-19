@@ -7,7 +7,7 @@
 
 import type { PetsModule } from "./api";
 import { onColorsChanged, petColor } from "./colors";
-import { Stage, allStages, playAll, setDarkAll, setPlayfulAll, setRunBestAll } from "./stage";
+import { Stage, allStages, playAll, setBestAll, setDarkAll, setPlayfulAll } from "./stage";
 
 export const pets: PetsModule = {
   createHeroStage: (el, cb) => new Stage(el, true, "hero", cb),
@@ -20,5 +20,5 @@ export const pets: PetsModule = {
   setDark: setDarkAll,
   setPlayful: setPlayfulAll,
   play: playAll,
-  setRunBest: setRunBestAll,
+  setBest: setBestAll,
 };

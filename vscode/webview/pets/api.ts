@@ -3,7 +3,7 @@
 // stages: the hero (big Talpy with the headline and counts) and one stage per
 // account (a pet per chat). Ported from the widget's PetStrip.qml + Pet.qml.
 
-import type { ChatRef, Counts, Session } from "../../src/shared/types";
+import type { ChatRef, Counts, GameName, ScoredGame, Session } from "../../src/shared/types";
 
 // A chat that may get a pet on its account's stage
 export interface StageChat {
@@ -36,8 +36,8 @@ export interface StageCallbacks {
   // An account's stage: how many pets stand on it now (one whose chat left
   // counts until it has waved and dug away)
   petsChanged?(count: number): void;
-  // Talpy's Run: a run went further than the best (metres), to keep
-  saveRunBest?(meters: number): void;
+  // A scored game (Talpy's Run, Deep Dig) went further than its best (metres), to keep
+  saveBest?(game: ScoredGame, meters: number): void;
 }
 
 export interface PetStage {
@@ -64,7 +64,7 @@ export interface PetsModule {
   setPlayful(on: boolean): void;
   // Play with Talpy: a game with the hero (now, or once his stage shows), by
   // name or (none) either
-  play(game?: "peekaboo" | "run"): void;
-  // Talpy's Run: the best run so far (metres), as the extension keeps it
-  setRunBest(best: number): void;
+  play(game?: GameName): void;
+  // A scored game's best so far (metres), as the extension keeps it
+  setBest(game: ScoredGame, best: number): void;
 }

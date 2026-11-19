@@ -39,7 +39,7 @@ function bundle(): string {
 class FakeEl {
   children: FakeEl[] = [];
   parent: FakeEl | null = null;
-  style: Record<string, unknown> = { setProperty() {} };
+  style: Record<string, unknown> = { setProperty(this: Record<string, unknown>, k: string, v: unknown) { this[k] = v; } };
   dataset: Record<string, string> = {};
   attrs: Record<string, string> = {};
   classes = new Set<string>();
@@ -492,7 +492,8 @@ test("a game's holes show while it's on; the stage hidden or a chat that needs y
 test("Talpy's Run grows the stage while on, and a chat that needs you ends it, counting the run", () => {
   const t = load();
   const kept: number[] = [];
-  const stage: Any = new t.Stage(new FakeEl("div"), true, "hero", { open() {}, saveRunBest: (m: number) => kept.push(m) });
+  const games: string[] = [];
+  const stage: Any = new t.Stage(new FakeEl("div"), true, "hero", { open() {}, saveBest: (g: string, m: number) => (games.push(g), kept.push(m)) });
   t.resize[0]([{ contentRect: { width: 400, height: 176 } }]);
   t.intersect[0]([{ isIntersecting: true }]);
   const input = (mood: string) => ({
@@ -505,15 +506,17 @@ test("Talpy's Run grows the stage while on, and a chat that needs you ends it, c
   assert.equal(hero.play.name, "run");
   assert.ok(stage.root.classList.contains("td-running"));
   for (let i = 0; i < 40; i++) stage.loop();
-  assert.equal(hero.runCanvas.hidden, false);
-  assert.equal(hero.runText.hint.hidden, false); // ("Click to jump · …" first)
+  assert.equal(hero.gameCanvas.hidden, false);
+  assert.equal(hero.gameText.hint.hidden, false); // ("Click to jump · …" first)
+  assert.equal(stage.root.style["--td-run-gu"], "11"); // (the Run's height)
   hero.play.meters = 7; // (as if it had run that far)
   stage.update(input("needs")); // a chat needs you: over
   assert.equal(hero.play.on, false);
   assert.ok(!stage.root.classList.contains("td-running"));
   assert.deepEqual(kept, [7]);
+  assert.deepEqual(games, ["run"]); // (the Run's best)
   stage.loop();
-  assert.equal(hero.runCanvas.hidden, true);
+  assert.equal(hero.gameCanvas.hidden, true);
   stage.destroy();
 });
 

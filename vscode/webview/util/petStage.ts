@@ -15,8 +15,8 @@ export const stageCallbacks: StageCallbacks = {
   open(chat: ChatRef) {
     post({ type: "openWindow", chat });
   },
-  saveRunBest(meters: number) {
-    post({ type: "runBest", best: meters });
+  saveBest(game, meters) {
+    post({ type: "gameBest", game, best: meters });
   },
 };
 

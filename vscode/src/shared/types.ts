@@ -1254,7 +1254,11 @@ export type WebviewMessage =
   | { type: "recentMore"; groupId: string; host?: string; count: number } // an account's first count recent chats, past the status
   | { type: "newChatIn"; path: string; short?: string; profileDir: string; host?: string } // + of a project: a new chat there, on the account of its newest chat (short: its folder from ~, week.py's; host: an SSH host's project)
   | { type: "copy"; text: string } // a tip's command, to the clipboard
-  | { type: "runBest"; best: number }; // Talpy's Run: a run went further than the best (metres)
+  | { type: "gameBest"; game: ScoredGame; best: number }; // a scored game went further than its best (metres)
+
+// The big Talpy's games (vendor/talpy/games.mjs): the scored ones keep a best
+export type ScoredGame = "run" | "dig";
+export type GameName = "peekaboo" | ScoredGame;
 
 // extension -> webview
 export type HostMessage =
@@ -1262,8 +1266,8 @@ export type HostMessage =
   | { type: "showTab"; tab: "chats" | "week" | "perms" } // (the Monday recap's Open the Recap)
   | { type: "readAgain"; recap?: boolean } // (Refresh: the Recap, Permissions or Projects tab shown reads again; recap: only the Recap, as the plan usage Refresh fetched came in)
   | { type: "petEvent"; kind: PetEventKind; text: string; key: string }
-  | { type: "playWithTalpy"; game?: "peekaboo" | "run" } // a game with the big Talpy (now, or once his stage shows); none: either
-  | { type: "runBest"; best: number } // the big Talpy's best run, metres (as the page is ready, and when it grew)
+  | { type: "playWithTalpy"; game?: GameName } // a game with the big Talpy (now, or once his stage shows); none: any
+  | { type: "gameBest"; game: ScoredGame; best: number } // the big Talpy's best in a scored game, metres (as the page is ready, and when it grew)
   | { type: "visible"; visible: boolean }
   | { type: "live"; live: Record<string, LiveView> }
   | { type: "week"; back: number; account: string; span: WeekSpan; recap: WeekRecap | null; error: string }
