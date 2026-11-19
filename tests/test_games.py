@@ -1143,6 +1143,7 @@ class PlasmaDigTests(unittest.TestCase):
         overlay = self.strip[self.strip.index("// A scored game: every press on the stage"):][:2600]
         self.assertIn("hoverEnabled: strip.running", overlay)
         self.assertIn("hero.gameAim(mouse.x)", overlay)
+        self.assertEqual(overlay.count("hero.gameAim(mouse.x)"), 2)   # (moving, and a tap or click)
         keys = self.strip[self.strip.index("// A scored game: its keys"):][:2200]
         self.assertIn('event.key === Qt.Key_Left ? "left" : "right"', keys)
         self.assertIn("hero.gameRelease(event.key === Qt.Key_Left", keys)
@@ -1242,7 +1243,8 @@ class VsCodeDigTests(unittest.TestCase):
 
     def test_the_pointer_and_keys_steer_him(self):
         listen = self.ts[self.ts.index("private listenToGame("):][:4200]
-        self.assertIn("g.aim?.(e.clientX - root.getBoundingClientRect().left)", listen)
+        self.assertEqual(listen.count("g.aim?.(e.clientX - root.getBoundingClientRect().left)"), 2)   # (moving, and a tap or click)
+        self.assertIn("while (this.thingSprites.size >= 160) this.thingSprites.delete(", self.ts)   # (the oldest go, not all at once)
         self.assertIn('e.key === "ArrowLeft" || e.key === "ArrowRight"', listen)
         self.assertIn('if ((name === "run" || name === "dig") && reducedMotion())', self.ts)
 

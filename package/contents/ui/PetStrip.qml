@@ -564,8 +564,10 @@ Item {
             pressY = mouse.y
             swiped = false
             const hero = strip.petFor("")
-            if (hero)
+            if (hero) {
+                hero.gameAim(mouse.x)   // (Deep Dig: a tap or click steers him there too)
                 hero.gamePress(mouse.button === Qt.RightButton ? "dig" : "jump")
+            }
         }
         onPositionChanged: mouse => {
             const hero = strip.petFor("")

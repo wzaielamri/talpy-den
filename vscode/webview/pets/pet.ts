@@ -973,6 +973,7 @@ export class Pet {
       if (!g) return;
       e.preventDefault();
       e.stopPropagation();
+      g.aim?.(e.clientX - root.getBoundingClientRect().left); // (Deep Dig: a tap or click steers him there too)
       g.press?.(e.button === 2 ? "dig" : "jump");
       swipeFrom = e.pointerType === "touch" ? e.clientY : -1;
       swiped = false;
@@ -1108,7 +1109,10 @@ export class Pet {
   private thingSprite(th: RunThing, k: number, dark: boolean): HTMLCanvasElement {
     const key = `${th.kind} ${th.variant} ${th.frame} ${Math.round(th.w * 8)} ${Math.round(th.h * 8)} ${dark ? 1 : 0} ${k}`;
     let c = this.thingSprites.get(key);
-    if (!c) {
+    if (c) {
+      this.thingSprites.delete(key); // (used: to the end, the last to go)
+      this.thingSprites.set(key, c);
+    } else {
       c = document.createElement("canvas");
       c.width = Math.ceil((th.w + 2 * SPRITE_PAD) * k);
       c.height = Math.ceil((th.h + 2 * SPRITE_PAD) * k);
@@ -1117,7 +1121,8 @@ export class Pet {
         ctx.setTransform(k, 0, 0, k, SPRITE_PAD * k, SPRITE_PAD * k);
         drawThing(ctx, th, dark);
       }
-      if (this.thingSprites.size >= 160) this.thingSprites.clear(); // (a run's looks are far fewer: sizes or themes changed)
+      // (the ones not used for longest go: a dig's roots and pipes each have their own length)
+      while (this.thingSprites.size >= 160) this.thingSprites.delete(this.thingSprites.keys().next().value!);
       this.thingSprites.set(key, c);
     }
     return c;
