@@ -1,0 +1,130 @@
+<!doctype html>
+<!--
+  Deep Dig's look: its three layers of earth (topsoil, clay from 100 m, rock
+  from 300 m) with what's buried in each, at the size they're drawn in the big
+  Talpy's stage; Talpy head-down digging (straight, leaning left, leaning
+  right) with his tunnel above him, his lamp's light and clods flying; then
+  every thing zoomed. Serve the repository folder over http and open
+  dev/dig.html (?zoom=3, ?gu=18: the Plasma grid unit the sizes come from).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deep Dig: its look</title>
+    <style>
+      body { margin: 0; font: 12px system-ui, sans-serif; background: #555; color: #eee; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <script type="module">
+      import { Talpy, BOX, drawThing, soilAt, FRAMES } from "../../package/contents/ui/talpy/talpy.mjs";
+      import { DIG_KINDS, DIG_VARIANTS } from "../../package/contents/ui/talpy/dig.mjs";
+
+      const params = new URLSearchParams(location.search);
+      const zoom = Number(params.get("zoom")) || 3;
+      const gu = Number(params.get("gu")) || 18;
+      const box = gu * 5.6, unit = box / BOX, B = box * 31 / 64, BW = box * 38 / 64;   // (PetStrip.qml's hero sizes)
+      const W = Number(params.get("width")) || 1500;
+      const bandH = gu * 16 * 0.62;
+      const LAYERS = [
+        { name: "topsoil (0 m)", at: 0, things: [["root", 0, 0, 1.6], ["pebble"], ["root", 1, 0, 2.2], ["stone"], ["cookie", 0], ["root", 2, 0, 1.3]],
+          decor: [["speck", 0], ["worm", 0, 1], ["speck", 1], ["worm", 0, 3]] },
+        { name: "clay (100 m)", at: 160, things: [["pipe", 0, 0, 3.2], ["bottle"], ["root", 1, 0, 1.6], ["cookie", 3], ["pipe", 1, 0, 2.4], ["bottle"]],
+          decor: [["speck", 1], ["worm", 0, 2], ["speck", 0]] },
+        { name: "deep rock (300 m)", at: 400, things: [["boulder"], ["beetle", 1, 1], ["stone"], ["cookie", 5], ["boulder"], ["beetle", 0, 2]],
+          decor: [["crystal", 0], ["speck", 0], ["crystal", 1], ["crystal", 0]] },
+      ];
+      const lum = (c) => { const n = parseInt(c.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; };
+      const zoomH = Math.max(...Object.entries(DIG_KINDS).filter(([kind]) => kind !== "glow").map(([, k]) => k[1])) * B * zoom + 24;
+      const H = LAYERS.length * (bandH + zoomH);
+      const c = document.getElementById("c"), k = devicePixelRatio || 1;
+      c.width = W * k; c.height = H * k; c.style.width = W + "px"; c.style.height = H + "px";
+      const ctx = c.getContext("2d");
+      ctx.scale(k, k);
+
+      const talpy = new Talpy({});
+      talpy.brainOn = false;
+      talpy.play({ steps: () => [{ depth: "out", hole: 0, arms: "flail", eyes: "wide", mouth: "open", plume: "bob", tail: "wag", t: 1e9 }] }, null, false);
+      for (let t = 0; t <= 400; t += 16) talpy.tick(t);
+
+      const thing = (kind, variant, frame, wide) => {
+        const s = DIG_KINDS[kind];
+        return { kind, w: (wide || s[0]) * B, h: s[1] * B, frame: frame || 0, variant: variant || 0 };
+      };
+      const put = (th, x, y, dark, z) => {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(z || 1, z || 1);
+        drawThing(ctx, th, dark);
+        ctx.restore();
+      };
+      // Talpy head-down, his body's middle at (x, y), turned 180° less his lean (+: leaning right, going right)
+      function digger(x, y, lean, dark, soil) {
+        // his tunnel above him: pieces along a curve to where he is
+        for (let i = 12; i >= 1; i--) {
+          const ty = y - i * B * 0.16, tx = x - Math.sin(i * 0.25) * lean * 1.2;
+          const t = thing("tunnel");
+          t.w = BW * 0.95;
+          put(t, tx - t.w / 2, ty - t.h / 2, dark);
+        }
+        const glow = thing("glow");
+        put(glow, x - glow.w / 2 + lean * 0.6, y + B * 0.55 - glow.h / 2, dark);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(((180 - lean) * Math.PI) / 180);
+        ctx.translate(-32 * unit, -37 * unit);   // (his body's middle, in the box)
+        ctx.scale(unit, unit);
+        talpy.draw(ctx);
+        ctx.restore();
+        // clods off his paws (up and to the sides: his paws are above him, head-down)
+        for (const [dx, dy, v] of [[-0.55, -0.55, 0], [0.6, -0.7, 1], [-0.75, -0.95, 2], [0.4, -1.05, 0]]) {
+          const cl = thing("clod", v);
+          put(cl, x + dx * BW, y + dy * B, dark);
+        }
+      }
+
+      let y0 = 0;
+      for (const layer of LAYERS) {
+        const soil = soilAt(layer.at), dark = lum(soil) < 0.35;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, y0, W, bandH + zoomH);
+        ctx.clip();   // (each layer in its band: his tunnel doesn't spill into the one above)
+        ctx.fillStyle = soil;
+        ctx.fillRect(0, y0, W, bandH + zoomH);
+        ctx.fillStyle = dark ? "#ddd" : "#fff";
+        ctx.font = "12px system-ui";
+        ctx.fillText(layer.name + "  " + soil, 8, y0 + 14);
+        // decoration, faint, here and there
+        layer.decor.forEach(([kind, v, f], i) => put(thing(kind, v, f), 40 + i * 130 + (i % 2) * 40, y0 + bandH * (0.3 + 0.4 * (i % 2)), dark));
+        // Talpy digging: straight, leaning left, leaning right
+        [[0, 110], [-20, 250], [20, 390]].forEach(([lean, x]) => digger(x, y0 + bandH * 0.5, lean, dark, soil));
+        // what's buried here, at its size
+        let x = 480;
+        for (const [kind, v, f, wide] of layer.things) {
+          const th = thing(kind, v, f, wide);
+          put(th, x, y0 + bandH * 0.62 - th.h / 2, dark);
+          x += th.w + 22;
+        }
+        // zoomed: every look of this layer's kinds
+        x = 10;
+        const kinds = [...new Set(layer.things.map((t) => t[0]).concat(layer.decor.map((t) => t[0]), ["clod", "tunnel"]))];
+        for (const kind of kinds) {
+          for (let v = 0; v < (DIG_VARIANTS[kind] || 1); v++) {
+            for (let f = 0; f < (kind === "worm" || kind === "beetle" ? FRAMES[kind] : 1); f++) {
+              if (kind === "cookie" && v > 0) continue;
+              const th = thing(kind, v, f, kind === "pipe" ? 1.6 : kind === "root" ? 1.2 : 0);
+              if (x + th.w * zoom > W) continue;
+              put(th, x, y0 + bandH + zoomH - th.h * zoom - 12, dark, zoom);
+              x += th.w * zoom + 12;
+            }
+          }
+        }
+        ctx.restore();
+        y0 += bandH + zoomH;
+      }
+    </script>
+  </body>
+</html>

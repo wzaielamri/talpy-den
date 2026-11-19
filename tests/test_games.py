@@ -536,11 +536,13 @@ console.log(JSON.stringify({ scored: g instanceof Scored, end: RUN_END_MS, again
         # and every picture of a bird's flap (its shading, cut to its own outline by a clip, isn't
         # counted: the outline is)
         out = run_node("""
-import { drawThing, FLAP_FRAMES } from %s;
-import { KINDS, VARIANTS } from %s;
+import { drawThing, FRAMES } from %s;
+import { KINDS as RUN_KINDS, VARIANTS as RUN_VARIANTS } from %s;
+import { DIG_KINDS, DIG_VARIANTS } from %s;
+const KINDS = Object.assign({}, RUN_KINDS, DIG_KINDS), VARIANTS = Object.assign({}, RUN_VARIANTS, DIG_VARIANTS);
 const result = {};
 for (const kind of Object.keys(KINDS)) for (let variant = 0; variant < (VARIANTS[kind] || 1); variant++)
-for (const frame of kind.startsWith('crow') ? [...Array(FLAP_FRAMES).keys()] : [0]) {
+for (let frame = 0; frame < (FRAMES[kind] || 1); frame++) for (const dark of [false, true]) {
     const pts = [], paint = { n: 0 }, saved = [];
     let depth = 0, clipped = false, open = 0, moved = false;
     // (points under a transform kept inside save/restore, as drawCookie's scaled cookie, aren't in box px: not counted)
@@ -559,18 +561,39 @@ for (const frame of kind.startsWith('crow') ? [...Array(FLAP_FRAMES).keys()] : [
         return () => ({ addColorStop() {} });
     }, set: () => true });
     const w = KINDS[kind][0] * 60, h = KINDS[kind][1] * 60;   // (its size by a body 60 px high)
-    drawThing(ctx, { kind: kind, x: 0, y: 0, w: w, h: h, frame: frame, variant: variant });
+    drawThing(ctx, { kind: kind, x: 0, y: 0, w: w, h: h, frame: frame, variant: variant }, dark);
     const out = pts.filter(p => p[0] < -1.5 || p[0] > w + 1.5 || p[1] < -1.5 || p[1] > h + 1.5);
-    result[kind + variant + '.' + frame] = { painted: paint.n, points: pts.length, outside: out.length, moved: depth };
+    result[kind + variant + '.' + frame + (dark ? 'd' : '')] = { painted: paint.n, points: pts.length, outside: out.length, moved: depth };
 }
 console.log(JSON.stringify(result));
-""" % (json.dumps(str(TALPY / "talpy.mjs")), json.dumps(str(TALPY / "games.mjs"))))
+""" % (json.dumps(str(TALPY / "talpy.mjs")), json.dumps(str(TALPY / "games.mjs")), json.dumps(str(TALPY / "dig.mjs"))))
+        for kind in ("root", "pipe", "bottle", "boulder", "beetle", "speck", "worm", "crystal", "tunnel", "clod", "glow"):
+            self.assertIn(kind + "0.0", out)   # (Deep Dig's things, every one drawn)
         for name, r in out.items():
             with self.subTest(name):
                 self.assertGreater(r["painted"], 0)
                 self.assertGreater(r["points"], 0)
                 self.assertEqual(r["outside"], 0)
                 self.assertEqual(r["moved"], 0)   # (in its box's own px: no transforms to undo)
+
+    def test_soil_shifts_smoothly(self):
+        # Deep Dig's earth: topsoil, clay from 100 m, rock from 300 m, each blended into over 30 m
+        out = run_node("""
+import { soilAt, SOIL } from %s;
+const rgb = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+let most = 0, prev = rgb(soilAt(0));
+for (let m = 0.5; m <= 400; m += 0.5) {
+    const now = rgb(soilAt(m));
+    most = Math.max(most, ...now.map((v, i) => Math.abs(v - prev[i]) * 2));   // (per metre)
+    prev = now;
+}
+console.log(JSON.stringify({ at0: soilAt(0), at130: soilAt(130), at330: soilAt(330), at1000: soilAt(1000), soil: SOIL, most: most }));
+""" % json.dumps(str(TALPY / "talpy.mjs")))
+        self.assertEqual(out["at0"], out["soil"]["topsoil"])
+        self.assertEqual(out["at130"], out["soil"]["clay"])
+        self.assertEqual(out["at330"], out["soil"]["rock"])
+        self.assertEqual(out["at1000"], out["soil"]["rock"])
+        self.assertLessEqual(out["most"], 6)
 
     def test_a_crow_shows_on_a_dark_stage(self):
         # a dark crow with an ink outline vanished on a dark theme's stage: there it has a light outline

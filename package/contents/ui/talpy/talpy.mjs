@@ -346,7 +346,7 @@ export function drawPuff(ctx, p, flavour) {
 // a picture the host moves (Pet.qml, pet.ts).
 export const FLAP_FRAMES = 8;
 // how many pictures a kind has (its frame: 0 to that − 1; a host keeps them all)
-export const FRAMES = { crow: FLAP_FRAMES, crowHigh: FLAP_FRAMES, dust: 4 };
+export const FRAMES = { crow: FLAP_FRAMES, crowHigh: FLAP_FRAMES, dust: 4, beetle: 4, worm: 4 };
 const COOKIE_FLAVOURS = Object.keys(FLAVOURS).map(f => f === 'choc' ? '' : f);   // (a cookie's variant: its flavour)
 const CLAIM = '#f2c84b';   // a cookie's glow and its "+10": you get it
 const ROCK = { base: '#a29b92', lit: '#cbc4ba', shade: '#7f7870', speck: '#6c665f' };
@@ -361,6 +361,35 @@ const HEDGEHOG = { face: '#ead2ad', blush: '#f2a0a8' };
 const WOOD = { bark: '#8a5e3c', shade: '#6b472c', line: '#5a3c25', cut: '#e4c28e', ring: '#b98f5a' };
 const GRASS = { light: '#6f9a5a', dark: '#7fae63', daisy: '#ffffff', heart: '#f2c84b' };
 const CLOUD = { light: '#ffffff', lightRim: '#aab6d6', dark: '#cdd3ec' };
+// Deep Dig's buried things: a root (pale wood on the earth), a pipe, a bottle, a beetle; and what's
+// only in the earth: specks, worms, crystals, clods
+const ROOT = { wood: '#c39a6b', shade: '#9b7449', line: '#8a6a45', grain: '#dcbb8f' };
+const PIPE = { steel: '#7f8c94', lit: '#a9b6bd', shade: '#5f6b72', ring: '#909ca3', rust: '#b0643a', inside: '#26221f' };
+const BOTTLE = { glass: '#4f9a66', shine: '#cdeed6', shade: '#2f6b44', cork: '#c9a06b' };
+const BEETLE = { shell: '#2f6a5a', lit: '#5ea58f', head: '#22302c' };
+const SPECK = { stone: '#cfc6b8', shell: '#e6d7b8' };
+const WORM = { skin: '#e8909f', band: '#cc6c7e' };
+const CRYSTALS = [['#8ee0ef', '#3d97a8'], ['#c4a0f2', '#7a55b0']];
+const CLOD = { earth: '#5b402b', lit: '#80603f' };
+// Deep Dig's earth by depth: topsoil, clay from 100 m, rock from 300 m, each blended into over SOIL_BLEND m
+export const SOIL = { topsoil: '#7a5634', clay: '#9a5a3c', rock: '#3c3443' };
+const SOIL_AT = [[0, 'topsoil'], [100, 'clay'], [300, 'rock']];
+const SOIL_BLEND = 30;
+export function soilAt(m) {
+    let i = 0;
+    while (i + 1 < SOIL_AT.length && m >= SOIL_AT[i + 1][0])
+        i++;
+    const to = SOIL[SOIL_AT[i][1]];
+    if (i === 0 || m >= SOIL_AT[i][0] + SOIL_BLEND)
+        return to;
+    const from = SOIL[SOIL_AT[i - 1][1]], p = 0.5 - 0.5 * Math.cos(Math.PI * (m - SOIL_AT[i][0]) / SOIL_BLEND);
+    let out = '#';
+    for (let c = 1; c < 7; c += 2) {
+        const a = parseInt(from.slice(c, c + 2), 16), b = parseInt(to.slice(c, c + 2), 16);
+        out += ('0' + Math.round(a + (b - a) * p).toString(16)).slice(-2);
+    }
+    return out;
+}
 const SHADOW = '#000000';
 const DARK_RIM = '#d9d4ec';   // a dark thing's outline on a dark stage (a crow: ink on ink vanished)
 function blob(ctx, cx, cy, rx, ry, color, lw, ink) {
@@ -368,6 +397,12 @@ function blob(ctx, cx, cy, rx, ry, color, lw, ink) {
     traceEllipse(ctx, cx, cy, rx, ry);
     art.fill(ctx, color);
     art.stroke(ctx, ink || art.INK, lw);
+}
+// a rounded box filled (alpha: its opacity)
+function patch(ctx, x, y, w, h, r, color, alpha) {
+    ctx.beginPath();
+    traceRoundRect(ctx, x, y, w, h, r);
+    art.fill(ctx, color, alpha);
 }
 // its shadow on the floor, along the box's bottom
 function shadow(ctx, cx, w, h, alpha) {
@@ -756,6 +791,258 @@ export function drawThing(ctx, thing, dark) {
             const r = Math.min(w * pf[2], h * 0.45) * grow;
             art.ellipse(ctx, w * pf[0], Math.min(h - r * 0.7, h * pf[1]), r, r * 0.7, PUFF_DUST[0], fade);
         }
+        break;
+    }
+    case 'root': {
+        // (a root across the way: a wavy woody tube, thick where it comes from,
+        // tapering, knobbly, rootlets curling off; variant: its curl)
+        const v = (thing.variant || 0) % 3, n = 18, amp = h * [0.16, 0.22, 0.12][v], lam = [1.1, 0.8, 1.4][v];
+        const t0 = h * 0.62, top = [], bot = [];
+        for (let i = 0; i <= n; i++) {
+            const p = i / n, x = e + (w - lw) * p;
+            const knob = 1 + 0.12 * Math.sin(p * Math.PI * 7 + v);
+            const t = Math.max(h * 0.1, t0 * (1 - 0.82 * p) * knob) / 2;
+            const y = h / 2 + amp * Math.sin(p * Math.PI * 2 / lam + v) * (0.4 + 0.6 * p);
+            top.push([x, Math.max(e, y - t)]);
+            bot.push([x, Math.min(h - e, y + t)]);
+        }
+        const rootPath = () => {   // (smooth: through the midpoints)
+            const pts = top.concat(bot.slice().reverse());
+            ctx.beginPath();
+            ctx.moveTo((pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2);
+            for (let i = 1; i < pts.length; i++) {
+                const a = pts[i], b = pts[(i + 1) % pts.length];
+                ctx.quadraticCurveTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+            }
+            ctx.closePath();
+        };
+        // its rootlets first (under it), thin and curling
+        ctx.beginPath();
+        const lets = v === 1 ? [0.28, 0.62] : v === 2 ? [0.4, 0.78] : [0.2, 0.48, 0.72];
+        for (let i = 0; i < lets.length; i++) {
+            const j = Math.round(lets[i] * n), up = i % 2 === 1, from = up ? top[j] : bot[j];
+            const reach = Math.min(h * 0.45, up ? from[1] - e : h - e - from[1]);
+            ctx.moveTo(from[0], from[1]);
+            ctx.quadraticCurveTo(from[0] + h * 0.25, from[1] + (up ? -reach : reach), from[0] + h * 0.6, from[1] + (up ? -reach * 0.7 : reach * 0.7));
+        }
+        art.stroke(ctx, ROOT.line, Math.max(0.8, lw * 0.8));
+        rootPath();
+        art.fill(ctx, ROOT.wood);
+        ctx.save();
+        rootPath();
+        ctx.clip();
+        ctx.beginPath();   // (its underside in shade)
+        for (let i = 0; i <= n; i++)
+            ctx[i ? 'lineTo' : 'moveTo'](bot[i][0], bot[i][1] - (bot[i][1] - top[i][1]) * 0.35);
+        for (let i = n; i >= 0; i--)
+            ctx.lineTo(bot[i][0], h);
+        ctx.closePath();
+        art.fill(ctx, ROOT.shade);
+        ctx.restore();
+        rootPath();
+        art.stroke(ctx, art.INK, lw);
+        ctx.beginPath();   // (its grain, along the top)
+        for (let i = 1; i < n * 0.7; i++) {
+            const y = top[i][1] + (bot[i][1] - top[i][1]) * 0.3;
+            ctx[i > 1 ? 'lineTo' : 'moveTo'](top[i][0], y);
+        }
+        art.stroke(ctx, ROOT.grain, lw * 0.5, 0.8);
+        break;
+    }
+    case 'pipe': {
+        // (an old pipe buried across the way: steel, rings along it, rust; its
+        // open end towards the middle, variant 0 to the right, 1 to the left)
+        const right = ((thing.variant || 0) % 2) === 0, bodyH = h * 0.78, top = (h - bodyH) / 2, endR = bodyH / 2;
+        const tube = () => {
+            ctx.beginPath();
+            traceRoundRect(ctx, e, top, w - lw, bodyH, Math.min(endR, w / 4));
+        };
+        tube();
+        art.fill(ctx, PIPE.steel);
+        ctx.save();
+        tube();
+        ctx.clip();
+        art.rrect(ctx, e, top, w - lw, bodyH * 0.32, endR * 0.5, PIPE.lit);
+        art.rrect(ctx, e, top + bodyH * 0.7, w - lw, bodyH * 0.3, 0, PIPE.shade);
+        for (let x = w * 0.18; x < w - h; x += h * 1.7)   // (rust)
+            art.ellipse(ctx, x + h * 0.6, top + bodyH * 0.6, h * 0.22, bodyH * 0.16, PIPE.rust, 0.85);
+        ctx.restore();
+        tube();
+        art.stroke(ctx, art.INK, lw);
+        const ring = x => {   // (a ring round it, a little proud of it)
+            ctx.beginPath();
+            traceRoundRect(ctx, x, e, Math.max(lw * 2, h * 0.22), h - lw, h * 0.06);
+            art.fill(ctx, PIPE.ring);
+            art.stroke(ctx, art.INK, lw);
+        };
+        for (let x = h * 0.6; x < w - h * 0.8; x += h * 2.6)
+            ring(right ? x : w - x - h * 0.22);
+        // its open end: dark inside
+        const ex = right ? w - e - endR * 0.55 : e + endR * 0.55;
+        blob(ctx, ex, h / 2, endR * 0.5, endR - lw, PIPE.ring, lw);
+        art.ellipse(ctx, ex, h / 2, endR * 0.3, endR * 0.62, PIPE.inside);
+        break;
+    }
+    case 'bottle': {
+        // (an old glass bottle stuck in the earth: green, a cork, a shine)
+        const neckW = w * 0.36, neckTop = h * 0.08, shoulder = h * 0.38;
+        const glass = () => {
+            ctx.beginPath();
+            ctx.moveTo(w / 2 - neckW / 2, neckTop + h * 0.06);
+            ctx.lineTo(w / 2 - neckW / 2, shoulder - h * 0.06);
+            ctx.quadraticCurveTo(e, shoulder, e, shoulder + h * 0.12);
+            ctx.lineTo(e, h - h * 0.06 - e);
+            ctx.quadraticCurveTo(e, h - e, w * 0.2, h - e);
+            ctx.lineTo(w * 0.8, h - e);
+            ctx.quadraticCurveTo(w - e, h - e, w - e, h - h * 0.06 - e);
+            ctx.lineTo(w - e, shoulder + h * 0.12);
+            ctx.quadraticCurveTo(w - e, shoulder, w / 2 + neckW / 2, shoulder - h * 0.06);
+            ctx.lineTo(w / 2 + neckW / 2, neckTop + h * 0.06);
+            ctx.closePath();
+        };
+        glass();
+        art.fill(ctx, BOTTLE.glass, 0.92);
+        ctx.save();
+        glass();
+        ctx.clip();
+        patch(ctx, w * 0.2, shoulder, w * 0.14, h * 0.5, w * 0.07, BOTTLE.shine, 0.75);
+        patch(ctx, w * 0.62, shoulder, w * 0.4, h, 0, BOTTLE.shade, 0.5);
+        ctx.restore();
+        glass();
+        art.stroke(ctx, art.INK, lw);
+        ctx.beginPath();   // its cork
+        traceRoundRect(ctx, w / 2 - neckW * 0.6, e, neckW * 1.2, h * 0.13, w * 0.06);
+        art.fill(ctx, BOTTLE.cork);
+        art.stroke(ctx, art.INK, lw * 0.8);
+        break;
+    }
+    case 'boulder':
+        shadow(ctx, w / 2, w, h, 0.16);
+        rock(ctx, e + w * 0.02, e, w * 0.96 - lw, h - lw, lw, true);
+        art.ellipse(ctx, w * 0.7, h * 0.28, w * 0.06, h * 0.05, ROCK.speck);
+        break;
+    case 'beetle': {
+        // (it crawls sideways: its shell, its head the way it goes, six legs
+        // stepping by frame; variant 0 to the left, 1 to the right)
+        const ink = dark ? DARK_RIM : art.INK, left = ((thing.variant || 0) % 2) === 0, f = (thing.frame || 0) % FRAMES.beetle;
+        const X = x => left ? x : w - x;
+        const sx = w * 0.55, sy = h * 0.46, rx = w * 0.32, ry = h * 0.36;
+        ctx.beginPath();   // its legs, under it
+        for (let i = 0; i < 3; i++) {
+            const lx = w * (0.38 + i * 0.16), swing = ((i + f) % 2 ? 1 : -1) * w * 0.05;
+            ctx.moveTo(X(lx), sy + ry * 0.6);
+            ctx.lineTo(X(lx + swing - w * 0.04), h * 0.8);
+            ctx.lineTo(X(lx + swing - w * 0.08), h - e);
+        }
+        art.stroke(ctx, ink, Math.max(0.8, lw * 0.9));
+        ctx.beginPath();   // its antennae
+        ctx.moveTo(X(w * 0.18), sy - h * 0.05);
+        ctx.quadraticCurveTo(X(w * 0.08), h * 0.12, X(e + w * 0.02), h * 0.1 + e);
+        ctx.moveTo(X(w * 0.2), sy - h * 0.08);
+        ctx.quadraticCurveTo(X(w * 0.14), h * 0.02 + e, X(w * 0.06), e);
+        art.stroke(ctx, ink, Math.max(0.7, lw * 0.6));
+        blob(ctx, X(w * 0.22), sy + h * 0.04, w * 0.11, h * 0.2, BEETLE.head, lw, ink);   // its head
+        const shell = () => {
+            ctx.beginPath();
+            traceEllipse(ctx, X(sx), sy, rx, ry);
+        };
+        shell();
+        art.fill(ctx, BEETLE.shell);
+        ctx.save();
+        shell();
+        ctx.clip();
+        art.ellipse(ctx, X(sx - rx * 0.3), sy - ry * 0.45, rx * 0.5, ry * 0.32, BEETLE.lit);
+        ctx.restore();
+        shell();
+        art.stroke(ctx, ink, lw);
+        ctx.beginPath();   // where its wing cases meet
+        ctx.moveTo(X(sx - rx * 0.92), sy);
+        ctx.lineTo(X(sx + rx * 0.92), sy);
+        art.stroke(ctx, ink, lw * 0.6);
+        art.circle(ctx, X(w * 0.16), sy, Math.max(0.6, h * 0.05), '#ffffff');   // its eye
+        break;
+    }
+    case 'speck': {
+        // (in the earth, faint: a few small stones, or an old shell)
+        if (((thing.variant || 0) % 2) === 0) {
+            art.ellipse(ctx, w * 0.25, h * 0.6, w * 0.16, h * 0.3, SPECK.stone, 0.5);
+            art.ellipse(ctx, w * 0.62, h * 0.45, w * 0.12, h * 0.24, SPECK.stone, 0.45);
+            art.ellipse(ctx, w * 0.82, h * 0.72, w * 0.08, h * 0.18, SPECK.stone, 0.4);
+        } else {
+            ctx.beginPath();   // (a spiral shell)
+            const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - e;
+            ctx.moveTo(cx + r, cy);
+            for (let i = 1; i <= 24; i++) {
+                const a = i / 24 * Math.PI * 3.6, rr = r * (1 - i / 30);
+                ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.9);
+            }
+            art.stroke(ctx, SPECK.shell, Math.max(0.8, lw * 0.7), 0.55);
+        }
+        break;
+    }
+    case 'worm': {
+        // (a worm wriggling by, pink: frame its wave)
+        const f = (thing.frame || 0) % FRAMES.worm, ph = f / FRAMES.worm * Math.PI * 2, thick = h * 0.5;
+        ctx.beginPath();
+        for (let i = 0; i <= 16; i++) {
+            const x = thick / 2 + (w - thick) * i / 16, y = h / 2 + Math.sin(i / 16 * Math.PI * 2 + ph) * (h / 2 - thick / 2);
+            if (i === 0)
+                ctx.moveTo(x, y);
+            else
+                ctx.lineTo(x, y);
+        }
+        art.stroke(ctx, WORM.skin, thick, 0.85);
+        const bx = w * 0.3, by = h / 2 + Math.sin(0.3 * Math.PI * 2 + ph) * (h / 2 - thick / 2);
+        art.circle(ctx, bx, by, thick * 0.45, WORM.band, 0.85);
+        break;
+    }
+    case 'crystal': {
+        // (in the deep rock, faint, part of its wall: three points of crystal)
+        const c = CRYSTALS[(thing.variant || 0) % CRYSTALS.length];
+        art.circle(ctx, w / 2, h * 0.6, Math.min(w, h) * 0.45, c[0], 0.14);
+        const point = (x, wd, top) => {
+            ctx.beginPath();
+            ctx.moveTo(x - wd / 2, h - e);
+            ctx.lineTo(x - wd / 2, top + wd * 0.6);
+            ctx.lineTo(x, top);
+            ctx.lineTo(x + wd / 2, top + wd * 0.6);
+            ctx.lineTo(x + wd / 2, h - e);
+            ctx.closePath();
+            art.fill(ctx, c[0], 0.7);
+            art.stroke(ctx, c[1], lw * 0.7, 0.8);
+            ctx.beginPath();
+            ctx.moveTo(x, top + wd * 0.2);
+            ctx.lineTo(x, h - e);
+            art.stroke(ctx, '#ffffff', lw * 0.5, 0.45);
+        };
+        point(w * 0.3, w * 0.22, h * 0.3);
+        point(w * 0.72, w * 0.2, h * 0.42);
+        point(w * 0.5, w * 0.26, e);
+        break;
+    }
+    case 'tunnel':
+        // (a piece of his tunnel: the earth he dug through, darker; drawn faint, the pieces overlap)
+        art.ellipse(ctx, w / 2, h / 2, w / 2, h / 2, '#000000', 0.12);
+        art.ellipse(ctx, w / 2, h / 2, w * 0.42, h * 0.36, '#000000', 0.12);
+        break;
+    case 'clod': {
+        // (a crumb of earth flung off his paws)
+        const v = (thing.variant || 0) % 3;
+        art.ellipse(ctx, w / 2, h / 2, w / 2 - (v === 1 ? w * 0.1 : 0), h / 2 - (v === 2 ? h * 0.12 : 0), CLOD.earth);
+        art.ellipse(ctx, w * 0.42, h * 0.38, w * 0.22, h * 0.18, CLOD.lit);
+        break;
+    }
+    case 'glow': {
+        // (his lamp's light ahead of him, soft, fading out)
+        const r = Math.min(w, h) / 2;
+        const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, r);
+        g.addColorStop(0, 'rgba(255, 228, 150, 0.36)');
+        g.addColorStop(0.55, 'rgba(255, 220, 140, 0.14)');
+        g.addColorStop(1, 'rgba(255, 220, 140, 0)');
+        ctx.beginPath();
+        traceEllipse(ctx, w / 2, h / 2, r, r);
+        ctx.fillStyle = g;
+        ctx.fill();
         break;
     }
     case 'cloud': {
