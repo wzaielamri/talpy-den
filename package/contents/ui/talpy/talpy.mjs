@@ -34,7 +34,7 @@ const DEPTH = { out: -0.5, high: 6, half: 10, low: 13, peek: 19, hidden: 42, gon
 const ARMS = { rest: [16, -16], up: [150, -150], hold: [16, 35], sip: [16, 62], both: [-50, 50], chin: [16, 60], scratch: [16, -165],
                ear: [16, 153], scope: [16, -164], sign: [16, -150], balloon: [150, -16], cover: [-101, 101], juggle: [-20, 20],
                type: [-38, 38], held: [60, -60], wave: [16, -145], waveboth: [145, -145], dance: [90, -90], flail: [70, -70], throw: [16, -140],
-               selfie: [16, -152], rim: [44, -44], horn: [16, 75] };
+               selfie: [16, -152], rim: [44, -44], horn: [16, 75], scoop: [10, -10] };
 const BLINKING = { open: 1, wide: 1, sad: 1, tired: 1, wink: 1 };
 // How often a picture is worth drawing (frameMs): quick moves want 25 a
 // second, slow ones 12; at rest (breathing, the lamp's glow) 5 show it all.
@@ -216,6 +216,10 @@ function armMove(name, ms) {
     case 'juggle': return [lerp(-20, -6, alt(ms, 375)), lerp(20, 6, alt(ms + 190, 375)), -2 * alt(ms, 375), -2 * alt(ms + 190, 375)];
     case 'dance': return [lerp(30, 145, alt(ms, 500)), lerp(-145, -30, alt(ms, 500)), 0, 0];
     case 'flail': return [lerp(50, 95, alt(ms, 180)), lerp(-50, -95, alt(ms, 180)), 0, 0];
+    case 'scoop': {   // (digging down: each paw from under him out to the side, one out as the other comes in)
+        const l = alt(ms, 170), r = alt(ms + 170, 170);
+        return [lerp(-20, 40, l), lerp(20, -40, r), -1.2 * l, -1.2 * r];
+    }
     case 'scratch': return [16, lerp(-158, -172, alt(ms, 160)), 0, 0];
     case 'throw': return [16, kf(Math.min(1, ms / 550), [[0, -16], [0.35, 30], [0.75, -175], [1, -140]]), 0, 0];
     default: return null;
@@ -248,7 +252,7 @@ function plumeAngle(name, ms, it) {
 // of the burrow, its hole opening or closing; stillKey() is '' until it's over
 // and what flew off meanwhile has landed, and the host draws it live.
 const BEAT_MS = 140;
-const ARM_BEATS = { wave: 380, waveboth: 340, sign: 500, type: 130, juggle: 375, dance: 500, flail: 180, scratch: 160 };
+const ARM_BEATS = { wave: 380, waveboth: 340, sign: 500, type: 130, juggle: 375, dance: 500, flail: 180, scratch: 160, scoop: 170 };
 const BODY_BEATS = { bounce: 210, bob: 230, wiggle: 180, shake: 90, sway: 500, shiver: 70, nod: 1200, float: 1400 };
 const PLUME_BEATS = { bob: 550, wild: 160 };
 const PROP_BEATS = { phone: 78, juggle: 250 };   // (its prop's own motion)
@@ -346,7 +350,7 @@ export function drawPuff(ctx, p, flavour) {
 // a picture the host moves (Pet.qml, pet.ts).
 export const FLAP_FRAMES = 8;
 // how many pictures a kind has (its frame: 0 to that − 1; a host keeps them all)
-export const FRAMES = { crow: FLAP_FRAMES, crowHigh: FLAP_FRAMES, dust: 4, beetle: 4, worm: 4 };
+export const FRAMES = { crow: FLAP_FRAMES, crowHigh: FLAP_FRAMES, dust: 4, beetle: 4, worm: 4, cookie: 4 };
 const COOKIE_FLAVOURS = Object.keys(FLAVOURS).map(f => f === 'choc' ? '' : f);   // (a cookie's variant: its flavour)
 const CLAIM = '#f2c84b';   // a cookie's glow and its "+10": you get it
 const ROCK = { base: '#a29b92', lit: '#cbc4ba', shade: '#7f7870', speck: '#6c665f' };
@@ -397,6 +401,31 @@ function blob(ctx, cx, cy, rx, ry, color, lw, ink) {
     traceEllipse(ctx, cx, cy, rx, ry);
     art.fill(ctx, color);
     art.stroke(ctx, ink || art.INK, lw);
+}
+// A cookie's shine: a soft glow round it and four
+// little stars about it, twinkling by frame (0 to 3): one bright, one fading
+function shine(ctx, w, h, f, color) {
+    const r = Math.min(w, h) / 2;
+    art.circle(ctx, w / 2, h / 2, r * 0.74, color, 0.26 + 0.08 * (f % 2));
+    art.circle(ctx, w / 2, h / 2, r * 0.5, '#ffffff', 0.14);
+    const spots = [[0.14, 0.2], [0.86, 0.3], [0.8, 0.86], [0.18, 0.78]];
+    for (let i = 0; i < spots.length; i++) {
+        const k = [1, 0.45, 0, 0.45][(i + f) % 4];   // (each in turn bright)
+        if (k <= 0)
+            continue;
+        const sx = w * spots[i][0], sy = h * spots[i][1], sr = r * 0.2 * (0.6 + 0.4 * k);
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - sr);
+        ctx.lineTo(sx + sr * 0.28, sy - sr * 0.28);
+        ctx.lineTo(sx + sr, sy);
+        ctx.lineTo(sx + sr * 0.28, sy + sr * 0.28);
+        ctx.lineTo(sx, sy + sr);
+        ctx.lineTo(sx - sr * 0.28, sy + sr * 0.28);
+        ctx.lineTo(sx - sr, sy);
+        ctx.lineTo(sx - sr * 0.28, sy - sr * 0.28);
+        ctx.closePath();
+        art.fill(ctx, '#fff6cf', 0.55 + 0.45 * k);
+    }
 }
 // a rounded box filled (alpha: its opacity)
 function patch(ctx, x, y, w, h, r, color, alpha) {
@@ -754,11 +783,12 @@ export function drawThing(ctx, thing, dark) {
         break;
     }
     case 'cookie': {
-        // (the one thing to take: Talpy's own cookie, a warm glow round it)
-        art.circle(ctx, w / 2, h / 2, Math.min(w, h) / 2 - e, CLAIM, 0.3);
-        const sc = (Math.min(w, h) * 0.78) / 11.2;   // (drawCookie: 5.6 box units round)
+        // (the one thing to take: Talpy's own cookie, bobbing a little in a warm glow, twinkling)
+        const f = (thing.frame || 0) % FRAMES.cookie, bob = Math.sin(f / FRAMES.cookie * Math.PI * 2) * h * 0.03;
+        shine(ctx, w, h, f, CLAIM);
+        const sc = (Math.min(w, h) * 0.56) / 11.2;   // (drawCookie: 5.6 box units round)
         ctx.save();
-        ctx.translate(w / 2, h / 2);
+        ctx.translate(w / 2, h / 2 + bob);
         ctx.scale(sc, sc);
         drawCookie(ctx, COOKIE_FLAVOURS[(thing.variant || 0) % COOKIE_FLAVOURS.length]);
         ctx.restore();
@@ -997,9 +1027,9 @@ export function drawThing(ctx, thing, dark) {
         break;
     }
     case 'crystal': {
-        // (in the deep rock, faint, part of its wall: three points of crystal)
+        // (in the deep rock's wall, faint and still: three points of crystal, no
+        // shine, no outline: neither a treasure nor something in the way)
         const c = CRYSTALS[(thing.variant || 0) % CRYSTALS.length];
-        art.circle(ctx, w / 2, h * 0.6, Math.min(w, h) * 0.45, c[0], 0.14);
         const point = (x, wd, top) => {
             ctx.beginPath();
             ctx.moveTo(x - wd / 2, h - e);
@@ -1008,12 +1038,8 @@ export function drawThing(ctx, thing, dark) {
             ctx.lineTo(x + wd / 2, top + wd * 0.6);
             ctx.lineTo(x + wd / 2, h - e);
             ctx.closePath();
-            art.fill(ctx, c[0], 0.7);
-            art.stroke(ctx, c[1], lw * 0.7, 0.8);
-            ctx.beginPath();
-            ctx.moveTo(x, top + wd * 0.2);
-            ctx.lineTo(x, h - e);
-            art.stroke(ctx, '#ffffff', lw * 0.5, 0.45);
+            art.fill(ctx, c[0], 0.32);
+            art.stroke(ctx, c[1], lw * 0.6, 0.35);
         };
         point(w * 0.3, w * 0.22, h * 0.3);
         point(w * 0.72, w * 0.2, h * 0.42);

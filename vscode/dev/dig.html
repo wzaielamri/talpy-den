@@ -2,9 +2,10 @@
 <!--
   Deep Dig's look: its three layers of earth (topsoil, clay from 100 m, rock
   from 300 m) with what's buried in each, at the size they're drawn in the big
-  Talpy's stage; Talpy head-down digging (straight, leaning left, leaning
-  right) with his tunnel above him, his lamp's light and clods flying; then
-  every thing zoomed. Serve the repository folder over http and open
+  Talpy's stage; Talpy digging down, upright, his paws scooping (straight,
+  leaning left, leaning right) with his tunnel above him, his lamp's light and
+  clods flying; the cookies twinkling (the one thing to take; the deep
+  rock's crystals stay faint, in its wall); then every thing zoomed. Serve the repository folder over http and open
   dev/dig.html (?zoom=3, ?gu=18: the Plasma grid unit the sizes come from).
 -->
 <html lang="en">
@@ -33,7 +34,7 @@
           decor: [["speck", 0], ["worm", 0, 1], ["speck", 1], ["worm", 0, 3]] },
         { name: "clay (100 m)", at: 160, things: [["pipe", 0, 0, 3.2], ["bottle"], ["root", 1, 0, 1.6], ["cookie", 3], ["pipe", 1, 0, 2.4], ["bottle"]],
           decor: [["speck", 1], ["worm", 0, 2], ["speck", 0]] },
-        { name: "deep rock (300 m)", at: 400, things: [["boulder"], ["beetle", 1, 1], ["stone"], ["cookie", 5], ["boulder"], ["beetle", 0, 2]],
+        { name: "deep rock (300 m)", at: 400, things: [["boulder"], ["beetle", 1, 1], ["stone"], ["cookie", 5, 2], ["boulder"], ["beetle", 0, 2]],
           decor: [["crystal", 0], ["speck", 0], ["crystal", 1], ["crystal", 0]] },
       ];
       const lum = (c) => { const n = parseInt(c.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; };
@@ -46,7 +47,7 @@
 
       const talpy = new Talpy({});
       talpy.brainOn = false;
-      talpy.play({ steps: () => [{ depth: "out", hole: 0, arms: "flail", eyes: "wide", mouth: "open", plume: "bob", tail: "wag", t: 1e9 }] }, null, false);
+      talpy.play({ steps: () => [{ depth: "out", hole: 0, arms: "scoop", eyes: "squint", mouth: "smile", plume: "bob", tail: "wag", t: 1e9 }] }, null, false);
       for (let t = 0; t <= 400; t += 16) talpy.tick(t);
 
       const thing = (kind, variant, frame, wide) => {
@@ -60,7 +61,7 @@
         drawThing(ctx, th, dark);
         ctx.restore();
       };
-      // Talpy head-down, his body's middle at (x, y), turned 180° less his lean (+: leaning right, going right)
+      // Talpy digging down, upright, his body's middle at (x, y), his paws leading where he goes (+: going right)
       function digger(x, y, lean, dark, soil) {
         // his tunnel above him: pieces along a curve to where he is
         for (let i = 12; i >= 1; i--) {
@@ -70,16 +71,16 @@
           put(t, tx - t.w / 2, ty - t.h / 2, dark);
         }
         const glow = thing("glow");
-        put(glow, x - glow.w / 2 + lean * 0.6, y + B * 0.55 - glow.h / 2, dark);
+        put(glow, x - glow.w / 2 - lean * 0.6, y - B * 0.55 - glow.h / 2, dark);   // (round his lamp, on his head)
         ctx.save();
         ctx.translate(x, y);
-        ctx.rotate(((180 - lean) * Math.PI) / 180);
+        ctx.rotate((-lean * Math.PI) / 180);   // (going right: his paws lead, his head tilts back left)
         ctx.translate(-32 * unit, -37 * unit);   // (his body's middle, in the box)
         ctx.scale(unit, unit);
         talpy.draw(ctx);
         ctx.restore();
-        // clods off his paws (up and to the sides: his paws are above him, head-down)
-        for (const [dx, dy, v] of [[-0.55, -0.55, 0], [0.6, -0.7, 1], [-0.75, -0.95, 2], [0.4, -1.05, 0]]) {
+        // clods off his paws, flung up and out past him
+        for (const [dx, dy, v] of [[-0.62, 0.1, 0], [0.66, -0.05, 1], [-0.82, -0.4, 2], [0.75, -0.55, 0], [-0.55, -0.85, 1]]) {
           const cl = thing("clod", v);
           put(cl, x + dx * BW, y + dy * B, dark);
         }

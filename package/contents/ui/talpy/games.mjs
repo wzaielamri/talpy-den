@@ -258,6 +258,7 @@ const WALKS = [500, 420, 350, 290, 250];
 // bodies' widths and the cookie), else now and then one over a ground thing, where his body's
 // middle is at his jump's top (a jump that clears it takes it)
 const COOKIE_GROUND = 0.15, COOKIE_AIR = 0.1, COOKIE_ABOVE = 0.42;
+const TWINKLE_MS = 140;        // a treasure's shine: a picture that long (FRAMES.cookie of them)
 const DIG_MS = 1000;           // up again by himself after that
 const SPEED0 = 110;            // box units a second at the start
 const SPEED_UP = 1.1;          // ×, every 100 m
@@ -276,7 +277,7 @@ const FLAP_MS = 50;            // a crow's wings: a picture that long (FLAP_FRAM
 export const KINDS = {
     pebble: [0.6, 0.4, 0], stone: [0.6, 0.62, 0], pot: [0.5, 0.82, 0], pebbles: [1, 0.45, 0], hedgehog: [0.7, 0.5, 0],
     stump: [0.62, 0.55, 0], log: [1, 0.4, 0], crow: [0.75, 0.5, 0.7], crowHigh: [0.75, 0.5, 1.85],
-    tuft: [0.3, 0.22, 0], cloud: [1.4, 0.5, 0], cookie: [0.42, 0.42, 0.12], plus: [0.7, 0.35, 0], dust: [0.9, 0.3, 0]
+    tuft: [0.3, 0.22, 0], cloud: [1.4, 0.5, 0], cookie: [0.6, 0.6, 0.05], plus: [0.7, 0.35, 0], dust: [0.9, 0.3, 0]
 };
 // how many looks a kind has (drawThing's variant: a pot's flower, a hedgehog's quills, which bird, the grass)
 export const VARIANTS = { pot: 4, hedgehog: 2, crow: 3, crowHigh: 3, tuft: 3, cloud: 2, cookie: 8 };
@@ -411,6 +412,8 @@ export class Run extends Scored {
                 th.frame = Math.floor((now + th.seed) / FLAP_MS) % FLAP_FRAMES;
             else if (th.kind === 'dust')
                 th.frame = Math.floor((now - th.born) / DUST_MS);
+            else if (th.kind === 'cookie')
+                th.frame = Math.floor((now + th.seed) / TWINKLE_MS) % FRAMES.cookie;
             if (th.x + th.w > 0 && !(th.kind === 'dust' && th.frame >= FRAMES.dust)) {
                 this.things[n++] = th;
                 if (th.kind === 'crow' && th.x + th.w > this.x)

@@ -192,6 +192,7 @@ function play(o) {
     const cookieSeen = new Set(), plusSeen = new Set();
     let pluses = 0, cookieGaps = [], airCookies = [], walks = [], walkOk = true, lastWalk = 999, hopAt = -1, wasUp = false;
     let walkMoves = true;
+    const cookieFrames = new Set();   // (a cookie twinkles: its pictures change)
     while (g.on && now < 1000 + (o.until || 180000)) {
         now += 16;
         t.tick(now);
@@ -203,6 +204,7 @@ function play(o) {
         const hitting = g.things.filter(solid);
         for (const th of g.things) {
             if (th.kind === 'plus' && !plusSeen.has(th)) { plusSeen.add(th); pluses++; }
+            if (th.kind === 'cookie') cookieFrames.add(th.frame);
             if (th.kind !== 'cookie' || cookieSeen.has(th) || th.x + th.w / 2 > px + 60) continue;
             cookieSeen.add(th);   // (a body's width before him, before it's taken: what's around it then)
             const mid = th.x + th.w / 2;
@@ -322,7 +324,7 @@ function play(o) {
     r.slotsOk = slotsOk; r.variantsOk = variantsOk; r.sameTwice = sameTwice; r.firstAt = firstAt; r.cloudBottom = cloudBottom;
     r.slots = g.slots; r.asked = Array.from(new Set(asked));
     r.grabbed = g.grabbed; r.dist = g.dist; r.pluses = pluses; r.cookieGaps = cookieGaps; r.airCookies = airCookies;
-    r.walks = walks; r.walkOk = walkOk; r.walkMoves = walkMoves;
+    r.walks = walks; r.walkOk = walkOk; r.walkMoves = walkMoves; r.cookieFrames = Array.from(cookieFrames).sort();
     return r;
 }
 const pick = () => { const t = new Talpy({}); return (name, ok) => pickGame(t, { stage: () => ({}), px: () => 0, moveTo() {}, say() {},
@@ -377,6 +379,7 @@ class RunTests(unittest.TestCase):
                 self.assertGreater(r["grabbed"], 0)
                 self.assertEqual(r["meters"], int(r["dist"]) + 10 * r["grabbed"])
                 self.assertEqual(r["pluses"], r["grabbed"])   # (a "+10" rising from each)
+                self.assertEqual(r["cookieFrames"], [0, 1, 2, 3])   # (it twinkles: not a bug or a stone)
 
     def test_cookies_never_lure_into_a_bump(self):
         # on the ground: in a gap, at least his body's width from both sides; in the air: over a thing
@@ -575,6 +578,24 @@ console.log(JSON.stringify(result));
                 self.assertGreater(r["points"], 0)
                 self.assertEqual(r["outside"], 0)
                 self.assertEqual(r["moved"], 0)   # (in its box's own px: no transforms to undo)
+
+    def test_he_scoops_earth_with_both_paws(self):
+        # Deep Dig: upright, his paws reach down and scoop, one out as the other comes in, quickly
+        out = run_node("""
+const t = new Talpy({});
+t.brainOn = false;
+t.play({ steps: () => [{ depth: 'out', hole: 0, arms: 'scoop', t: 1e9 }] }, null, false);
+const ls = [], rs = [];
+for (let now = 0; now <= 1200; now += 16) { t.tick(now); if (now > 600) { ls.push(t.v.armL); rs.push(t.v.armR); } }
+console.log(JSON.stringify({ l: [Math.min(...ls), Math.max(...ls)], r: [Math.min(...rs), Math.max(...rs)],
+                             beat: (t.moves().find(m => m[0] === 'arms') || [])[1] }));
+""")
+        self.assertGreaterEqual(out["l"][0], -30)
+        self.assertLessEqual(out["l"][1], 50)
+        self.assertGreater(out["l"][1] - out["l"][0], 30)     # (a real scoop, not a twitch)
+        self.assertGreaterEqual(out["r"][0], -50)
+        self.assertLessEqual(out["r"][1], 30)
+        self.assertLessEqual(out["beat"], 200)                # (quick: he digs)
 
     def test_soil_shifts_smoothly(self):
         # Deep Dig's earth: topsoil, clay from 100 m, rock from 300 m, each blended into over 30 m

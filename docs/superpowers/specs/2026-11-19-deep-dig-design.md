@@ -128,9 +128,10 @@ polished look are the point, not extras.
 - **Lean:** he tilts with his sideways speed (towards where he's going, up
   to about 20°), eased so it never flips or snaps, and swings back upright
   as he stops (a little settle, no wobble that keeps going).
-- **Facing:** he's head-down, digging, his lamp shining ahead of him, down
-  into the ground (my call; the gallery shows it first, below). His paws
-  paddle; the lean adds to his head-down turn.
+- **Facing (the owner, after the gallery: head-down "doesn't look good"):**
+  he's upright, digging down with his paws scooping below him (Talpy's
+  `scoop` arms), his lamp glowing on his head; going right his paws lead
+  right and his head tilts back left (`turn` = −lean).
 - **Digging feel:** small clods of earth fly off his paws, more when he
   turns; a slight bob as he digs.
 - **The tunnel:** behind him (above, scrolling up with the ground), along the
@@ -146,14 +147,17 @@ polished look are the point, not extras.
 - **100–300 m, clay:** reddish earth; buried pipes (long, across part of the
   stage, with a gap), old bottles, roots still.
 - **300 m on, deep rock:** dark earth; big boulders; glowing crystals as
-  decoration; now and then a **beetle** crawling sideways (it moves: dodge
+  decoration (faint and still, in the wall: the owner, so they're taken for
+  neither a treasure nor an obstacle); now and then a **beetle** crawling sideways (it moves: dodge
   it). Beetles only in rows of their own (nothing else to dodge at that
   moment), so a way past always exists.
 - The soil's colour shifts smoothly from one layer to the next as he gets
   there (no hard cut).
 - **Decoration** (never in the way, faint or small, clearly not solid):
   worms wriggling, small specks and stones in the earth, the crystals' glow.
-- **Cookies:** buried in the ways through (always reachable); grabbed, it
+- **Cookies:** the one thing that shines (the owner: so nobody takes them
+  for a bug or an obstacle): a warm glow and little stars twinkling round
+  them, a slight bob, in both games. Buried in the ways through (always reachable); grabbed, it
   pops with a little "+10" floating up and 10 m are added to the score (the
   owner's choice: 1, bonus depth). They're the only things to grab, drawn as
   Talpy's cookies (`drawCookie`, its flavours).
@@ -248,8 +252,7 @@ polished look are the point, not extras.
 
 ## Calls I made (the owner may change them)
 
-- He's head-down, his lamp shining down ahead of him (shown in the gallery
-  first).
+- (Head-down was my call; the owner turned it down after the gallery: upright, paws scooping.)
 - The spring-and-limits movement model; lean up to about 20°.
 - The tunnel as a darker band along his path.
 - Rows from below; the gap rule's numbers (1.6 body widths, the reach with a
