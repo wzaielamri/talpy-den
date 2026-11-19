@@ -825,11 +825,13 @@ export function drawThing(ctx, thing, dark) {
     }
     case 'root': {
         // (a root across the way: a wavy woody tube, thick where it comes from,
-        // tapering, knobbly, rootlets curling off; variant: its curl)
-        const v = (thing.variant || 0) % 3, n = 18, amp = h * [0.16, 0.22, 0.12][v], lam = [1.1, 0.8, 1.4][v];
+        // tapering, knobbly, rootlets curling off; variant: its curl, 0 to 2
+        // from the left, 3 to 5 the same from the right)
+        const v = (thing.variant || 0) % 3, flip = ((thing.variant || 0) % 6) >= 3, side = flip ? -1 : 1;
+        const n = 18, amp = h * [0.16, 0.22, 0.12][v], lam = [1.1, 0.8, 1.4][v];
         const t0 = h * 0.62, top = [], bot = [];
         for (let i = 0; i <= n; i++) {
-            const p = i / n, x = e + (w - lw) * p;
+            const p = i / n, x = flip ? w - e - (w - lw) * p : e + (w - lw) * p;
             const knob = 1 + 0.12 * Math.sin(p * Math.PI * 7 + v);
             const t = Math.max(h * 0.1, t0 * (1 - 0.82 * p) * knob) / 2;
             const y = h / 2 + amp * Math.sin(p * Math.PI * 2 / lam + v) * (0.4 + 0.6 * p);
@@ -853,7 +855,8 @@ export function drawThing(ctx, thing, dark) {
             const j = Math.round(lets[i] * n), up = i % 2 === 1, from = up ? top[j] : bot[j];
             const reach = Math.min(h * 0.45, up ? from[1] - e : h - e - from[1]);
             ctx.moveTo(from[0], from[1]);
-            ctx.quadraticCurveTo(from[0] + h * 0.25, from[1] + (up ? -reach : reach), from[0] + h * 0.6, from[1] + (up ? -reach * 0.7 : reach * 0.7));
+            ctx.quadraticCurveTo(from[0] + side * h * 0.25, from[1] + (up ? -reach : reach), from[0] + side * h * 0.6,
+                                 from[1] + (up ? -reach * 0.7 : reach * 0.7));
         }
         art.stroke(ctx, ROOT.line, Math.max(0.8, lw * 0.8));
         rootPath();

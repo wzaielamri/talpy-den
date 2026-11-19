@@ -132,7 +132,7 @@ function load() {
       visibilityState: "visible",
       body: new FakeEl("body"),
     },
-    window: { TALPY_DEN: { editorTab: false }, addEventListener() {} },
+    window: { TALPY_DEN: { editorTab: false }, addEventListener() {}, removeEventListener() {} },
     acquireVsCodeApi: () => ({ postMessage: (m: unknown) => void posted.push(m), getState: () => undefined, setState() {} }),
     ResizeObserver: class {
       constructor(cb: (entries: unknown[]) => void) {

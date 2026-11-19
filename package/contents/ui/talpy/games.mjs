@@ -339,6 +339,8 @@ export class Run extends Scored {
                 this.again();
             return;
         }
+        if (what !== 'jump' && what !== 'dig')
+            return;   // (another game's keys: ← and → steer Deep Dig, nothing here)
         if (what === 'dig') {
             if (this.jumpAt < 0) {
                 this.digging = true;

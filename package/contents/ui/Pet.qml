@@ -440,7 +440,8 @@ Item {
         gameNewBest = playGame.newBest
         gameState = playGame.state
         gameHint = playGame.hint
-        gameSlots = playGame.slots
+        // (in steps: a Repeater given a number builds every one of its pictures again as it changes)
+        gameSlots = Math.ceil(playGame.slots / 32) * 32
         gameSoil = playGame.soil || ""
         gameFrame = (gameFrame + 1) % 1000000
     }
@@ -1054,7 +1055,8 @@ Item {
                             th = t
                             z = t && G.DECOR.indexOf(t.kind) >= 0 ? 0 : 1   // (decoration and his tunnel behind)
                         }
-                        visible = t !== null
+                        // (shown once its picture is painted: never a frame of the one it had before)
+                        visible = t !== null && sprite.paintedLook === sprite.look
                         if (!t)
                             return
                         x = t.x - pet.spritePad
@@ -1072,6 +1074,7 @@ Item {
                         // what it shows (relook), painted again only when that changes; kept
                         // between two things (the slot's empty a moment: no picture lost)
                         property string look: ""
+                        property string paintedLook: ""   // (what its picture shows now: look once painted)
                         property var drawn: null   // {kind, w, h, variant, frames, dark}
                         readonly property int frames: drawn ? drawn.frames : 1
                         readonly property real cellW: drawn ? drawn.w + 2 * pet.spritePad : 0
@@ -1092,6 +1095,10 @@ Item {
                         height: cellH
                         renderStrategy: Canvas.Cooperative
                         Component.onCompleted: relook()
+                        onPainted: {
+                            paintedLook = look
+                            slot.place()
+                        }
                         Connections {
                             target: slot
                             function onThChanged() { sprite.relook() }
@@ -1116,7 +1123,7 @@ Item {
             }
             // how far (the top right, one figure), how to play, how it ended
             PlasmaComponents3.Label {
-                visible: pet.scoredOn && pet.gameState !== "over"
+                visible: pet.scoredOn && pet.gameState === "run"
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.margins: Kirigami.Units.smallSpacing
@@ -1129,7 +1136,7 @@ Item {
             }
             PlasmaComponents3.Label {
                 visible: pet.gameHint !== ""
-                x: Math.max(Kirigami.Units.smallSpacing, pet.px - width / 2)
+                x: Math.min(Math.max(Kirigami.Units.smallSpacing, pet.px - width / 2), parent.width - width - Kirigami.Units.smallSpacing)
                 y: Kirigami.Units.smallSpacing
                 textFormat: Text.PlainText
                 text: pet.gameHint === "steer" ? i18n("Move the mouse to steer") + " · " + i18n("← → to steer")

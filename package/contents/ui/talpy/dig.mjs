@@ -38,9 +38,9 @@ export const DIG_KINDS = {
     boulder: [1.25, 0.85], beetle: [0.8, 0.46], cookie: [0.6, 0.6], plus: [0.7, 0.35],
     speck: [0.32, 0.2], worm: [0.62, 0.2], crystal: [0.5, 0.46], tunnel: [1, 0.5], clod: [0.13, 0.11], glow: [1.8, 1.8]
 };
-// how many looks a kind has (drawThing's variant: a root's curl, which way a pipe's open end or a
+// how many looks a kind has (drawThing's variant: a root's curl and side, which way a pipe's open end or a
 // beetle faces, a speck's, a crystal's colour, a clod's, a cookie's flavour)
-export const DIG_VARIANTS = { root: 3, pipe: 2, beetle: 2, speck: 2, crystal: 2, clod: 3, cookie: 8 };
+export const DIG_VARIANTS = { root: 6, pipe: 2, beetle: 2, speck: 2, crystal: 2, clod: 3, cookie: 8 };
 // how he moves: the spring (ω, a second), his top speed (his body's widths a second) and
 // acceleration (widths a second²), his lean at the top speed (degrees) and how quickly it
 // follows (a second), ←/→ moving where he goes at that much of his top speed
@@ -61,7 +61,7 @@ const REACH = 0.7;             // of what his top speed covers meanwhile: the ne
 const SPACING = 0.35;          // body widths between two things side by side, at most (less than he is: a wall)
 const BEETLE_FROM = 300, BEETLE_EVERY = 1 / 6, BEETLE_PACE = 1.5;   // metres; a row in…; his widths a second
 const COOKIE_EVERY = 1 / 3;    // rows with a cookie in their way through
-const TUNNEL_EVERY = 0.3;      // body heights dug between two pieces of his tunnel (each half a body high: overlapping)
+const TUNNEL_STEP = 0.6;       // of a piece's size, his way from one piece of his tunnel to the next (overlapping)
 const STEP_PX = 4;             // a move's step, at most
 const CLODS = 6, CLOD_MS = 600, CLOD_FALL = 9;   // a second (twice that turning hard); how long; body heights a second²
 const BOB = 0.015;             // his bob as he digs, of his body's height
@@ -117,7 +117,7 @@ export class Dig extends Scored {
         this.lastBottom = null;    // (the last row's bottom, stage px, on the stage or not)
         this.nextRow = 0;          // (px of earth to go before the next row: set as the dig starts)
         this.decorDue = 0;
-        this.tunnelDue = 0;
+        this.lastTunnel = null;
         this.clodDue = 0;
         this.hint = 'steer';
         this.speeds();
@@ -137,14 +137,20 @@ export class Dig extends Scored {
         this.soil = soilAt(this.dist);
     }
 
+    // (a new go: he rises to his place from where he is, the floor or where the last dig ended)
+    begin(now) {
+        this.riseFrom = this.lift;
+        super.begin(now);
+    }
+
     // his place up and down: a quarter down the stage (rising there as a dig starts), bobbing
     place(now) {
         const s = this.s, u = s.unit;
         this.cy = s.height * TALPY_AT;
-        const up = s.ground - this.cy - MIDDLE * u;
+        const up = s.ground - this.cy - MIDDLE * u, from = this.riseFrom || 0;
         const p = this.state === 'ready' ? Math.min(1, (now - this.since) / RISE_MS) : 1;
         const bob = this.state === 'run' ? Math.sin(2 * Math.PI * now / BOB_MS) * BOB * s.bodyHeight : 0;
-        this.lift = up * (0.5 - 0.5 * Math.cos(Math.PI * p)) + bob;
+        this.lift = from + (up - from) * (0.5 - 0.5 * Math.cos(Math.PI * p)) + bob;
     }
 
     aim(x) {
@@ -165,8 +171,12 @@ export class Dig extends Scored {
     }
 
     release(what) {
-        if ((what === 'left' && this.keyDir < 0) || (what === 'right' && this.keyDir > 0))
+        if ((what === 'left' && this.keyDir < 0) || (what === 'right' && this.keyDir > 0)) {
             this.keyDir = 0;
+            // (where he'd stop braking as hard as he can: not on to where the key had taken his aim)
+            const accel = MOVE.accel * this.s.bodyWidth;
+            this.aimX = this.x + Math.sign(this.vx) * this.vx * this.vx / (2 * accel);
+        }
     }
 
     tickGame(now, dt) {
@@ -198,7 +208,9 @@ export class Dig extends Scored {
         }
     }
 
-    // His x for h seconds: eased to where you point (keys move it), never past it, braking in time
+    // His x for h seconds: eased to where you point (keys move it), braking in time, his speed
+    // changing no more than his acceleration allows (if where you point jumps nearer than he can
+    // stop, he goes a little past it and comes back, as a body would)
     steer(h) {
         const s = this.s, top = MOVE.top * s.bodyWidth, accel = MOVE.accel * s.bodyWidth, w = MOVE.omega;
         if (this.keyDir !== 0)
@@ -207,14 +219,15 @@ export class Dig extends Scored {
             this.aimX = clamp(this.aimX, s.minX, s.maxX);
         this.x = clamp(this.x, s.minX, s.maxX);
         const target = this.aimX === null ? this.x : this.aimX, d = target - this.x;
-        let v = this.vx + clamp(w * w * d - 2 * w * this.vx, -accel, accel) * h;
+        let want = this.vx + (w * w * d - 2 * w * this.vx) * h;
         const brake = Math.sqrt(2 * accel * Math.abs(d)) * 0.98;   // (as fast as can still stop there)
-        if (v * d > 0 && Math.abs(v) > brake)
-            v = Math.sign(d) * brake;
-        v = clamp(v, -top, top);
+        if (want * d > 0 && Math.abs(want) > brake)
+            want = Math.sign(d) * brake;
+        want = clamp(want, -top, top);
+        let v = clamp(want, this.vx - accel * h, this.vx + accel * h);
         let x = this.x + v * h;
-        if ((target - this.x) * (target - x) < 0 || (Math.abs(target - x) < 1 && Math.abs(v) < 20)) {
-            x = target;   // (never past it; there, he's there: not creeping on in a spring's tail)
+        if ((Math.abs(target - x) < 1 && Math.abs(v) < 20) || ((target - this.x) * (target - x) < 0 && Math.abs(v) <= accel * h * 1.5)) {
+            x = target;   // (there, he's there: not creeping on in a spring's tail)
             v = 0;
         }
         if (x <= s.minX || x >= s.maxX) {   // (the stage's side: up to it, no bounce)
@@ -283,14 +296,17 @@ export class Dig extends Scored {
         }
         if (!run)
             return;
-        // his tunnel, where he is
-        this.tunnelDue -= step;
-        if (this.tunnelDue <= 0) {
-            const t = this.add('tunnel', 0, 0);
-            t.w = s.bodyWidth * 0.95;
-            t.x = this.x - t.w / 2;
-            t.y = this.cy - t.h / 2;
-            this.tunnelDue += TUNNEL_EVERY * B;
+        // his tunnel, along the path he takes: a piece each time he's moved on from the last one
+        // (it went up with the earth), as many between as a quick move takes
+        let last = this.lastTunnel;
+        if (!last)
+            last = this.lastTunnel = this.tunnelAt(this.x, this.cy);
+        for (;;) {
+            const lx = last.x + last.w / 2, ly = last.y + last.h / 2, dx = this.x - lx, dy = this.cy - ly;
+            const far = Math.hypot(dx / (TUNNEL_STEP * last.w), dy / (TUNNEL_STEP * last.h));
+            if (far < 1)
+                break;
+            last = this.lastTunnel = this.tunnelAt(lx + dx / far, ly + dy / far);
         }
         // clods off his paws
         const top = MOVE.top * s.bodyWidth;
@@ -334,7 +350,8 @@ export class Dig extends Scored {
                                           BOX_H * B + (W / 2 - s.minX) * this.speed * 1.05 / (MOVE.top * bw * REACH));
             return;
         }
-        // its way through: within reach of the last one
+        // its way through: within reach of the last one (brought inside the stage first: it may have narrowed)
+        this.lastGap = clamp(this.lastGap, s.minX, s.maxX);
         const reach = MOVE.top * bw * Math.max(0, clear - BOX_H * B) / this.speed * REACH;
         const gw = (GAP + rnd(0, GAP_MORE)) * bw;
         const mid = this.lastBeetle ? W / 2 : clamp(rnd(this.lastGap - reach, this.lastGap + reach),
@@ -350,6 +367,8 @@ export class Dig extends Scored {
                 th.w = b - a;
                 if (kind === 'pipe')
                     th.variant = left ? 0 : 1;   // (its open end towards the way through)
+                else if (kind === 'root')
+                    th.variant = int(0, 2) + (left ? 0 : 3);   // (thick where it comes from: its side)
                 th.row = id;
                 bottom = Math.max(bottom, top + th.h);
                 return;
@@ -383,6 +402,15 @@ export class Dig extends Scored {
         this.nextRow = bottom - top + rnd(CLEAR[0], CLEAR[1]) * B;
     }
 
+    // a piece of his tunnel, its middle at (x, y)
+    tunnelAt(x, y) {
+        const t = this.add('tunnel', 0, 0);
+        t.w = this.s.bodyWidth * 0.95;
+        t.x = x - t.w / 2;
+        t.y = y - t.h / 2;
+        return t;
+    }
+
     add(kind, x, y) {
         const B = this.s.bodyHeight, k = DIG_KINDS[kind];
         const th = { kind: kind, x: x, y: y, w: k[0] * B, h: k[1] * B, frame: 0, variant: int(0, (DIG_VARIANTS[kind] || 1) - 1),
@@ -413,8 +441,8 @@ export class Dig extends Scored {
                     this.grab(th);
                 continue;
             }
-            const dx = th.w * SHRINK, dy = th.h * SHRINK;
-            if (th.x + dx < box[2] && th.x + th.w - dx > box[0] && th.y + dy < box[3] && th.y + th.h - dy > box[1]) {
+            const sh = Math.min(th.w, th.h) * SHRINK;   // (a root's or a pipe's ends: where they're drawn)
+            if (th.x + sh < box[2] && th.x + th.w - sh > box[0] && th.y + sh < box[3] && th.y + th.h - sh > box[1]) {
                 this.over(th.kind);
                 return true;
             }

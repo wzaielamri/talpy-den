@@ -593,6 +593,15 @@ Item {
     Item {
         id: gameKeys
         focus: strip.running
+        // (the focus gone elsewhere, a key held meanwhile is let go: its release won't come here)
+        onActiveFocusChanged: {
+            const hero = strip.petFor("")
+            if (!activeFocus && hero) {
+                hero.gameRelease("left")
+                hero.gameRelease("right")
+                hero.gameRelease("dig")
+            }
+        }
         Keys.onPressed: event => {
             const hero = strip.petFor("")
             if (!strip.running || !hero || event.isAutoRepeat)

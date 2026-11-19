@@ -858,7 +858,7 @@ export class Pet {
     }
     // (the view's menu can't see reduced motion: the run asked for there, he says it's off)
     if ((name === "run" || name === "dig") && reducedMotion()) {
-      this.say("No running with reduced motion on");
+      this.say(name === "dig" ? "No digging with reduced motion on" : "No running with reduced motion on");
       return true;
     }
     // (on at once, his laugh its first move: the clicks after this one are the game's)
@@ -994,6 +994,12 @@ export class Pet {
     };
     const noMenu = (e: Event): void => e.preventDefault();
     const stop = (e: Event): void => e.stopPropagation();
+    // (the view's window left while a key is held: its release won't come here, so it's let go)
+    const letGo = (): void => {
+      const g = game();
+      for (const what of ["left", "right", "dig"] as const) g?.release?.(what);
+    };
+    window.addEventListener("blur", letGo);
     document.addEventListener("keydown", key, true);
     document.addEventListener("keyup", key, true);
     root.addEventListener("pointerdown", press, true);
@@ -1002,6 +1008,7 @@ export class Pet {
     root.addEventListener("contextmenu", noMenu);
     root.addEventListener("dblclick", stop, true);
     this.gameListening = () => {
+      window.removeEventListener("blur", letGo);
       document.removeEventListener("keydown", key, true);
       document.removeEventListener("keyup", key, true);
       root.removeEventListener("pointerdown", press, true);
@@ -1087,7 +1094,7 @@ export class Pet {
     const over = g.state === "over";
     const meters = `${g.meters ?? 0} m`;
     if (t.meters.textContent !== meters) t.meters.textContent = meters;
-    t.meters.hidden = over;
+    t.meters.hidden = g.state !== "run"; // (once it's on: not under the hint, nor the end)
     const hint = g.hint === "steer" ? "Move the mouse to steer · ← → to steer" : g.hint === "dig" ? "↓ or right-click: dig"
       : g.hint === "start" ? "Click to jump · ↓ or right-click to dig" : "";
     t.hint.hidden = !hint;
@@ -1095,7 +1102,8 @@ export class Pet {
       t.hint.textContent = hint;
       this.gameHintW = hint ? t.hint.offsetWidth : 0; // (measured as its words change, not each frame)
     }
-    this.put(t.hint, "runHint", "transform", `translate(${Math.round(Math.max(4, this.px - this.gameHintW / 2))}px, 4px)`);
+    this.put(t.hint, "runHint", "transform",
+      `translate(${Math.round(Math.min(Math.max(4, this.px - this.gameHintW / 2), this.stage.width - this.gameHintW - 4))}px, 4px)`);
     const end = !over ? "" : g.newBest ? `New best! ${g.best ?? 0} m` : `${g.meters ?? 0} m · best ${g.best ?? 0} m`;
     if (t.end.textContent !== end) t.end.textContent = end;
     t.end.hidden = t.again.hidden = !over;

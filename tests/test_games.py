@@ -685,7 +685,7 @@ function steer(g, W) {
         }
         let best = null, late = null;
         for (let c = 30; c <= W - 30; c += 5) {
-            if (c + box > lo - 4 && c - box < hi + 4) continue;   // (it'll be there)
+            if (c + box > lo - 8 && c - box < hi + 8) continue;   // (it'll be there)
             if (Math.abs(c - g.x) / top + 0.12 <= t0) {
                 if (best === null || Math.abs(c - g.x) < Math.abs(best - g.x)) best = c;
             } else if (late === null || Math.abs(c - g.x) < Math.abs(late - g.x)) late = c;
@@ -696,17 +696,22 @@ function steer(g, W) {
 // (the physics on their own: nothing comes)
 const calm = g => { g.nextRow = 1e9; };
 function far(o) {
-    const s = start(o), g = s.g, r = { overMs: null, layersAt: {}, rows: [], cookies: 0, meters: 0 };
+    const s = start(o), g = s.g, r = { overMs: null, layersAt: {}, rows: [], cookies: 0, meters: 0, rootsSided: true, after: [] };
     const seen = new Set();
     while (g.on && g.dist < 1000 && s.now() < 1000 + 400000) {
         s.tick();
+        if (o.narrowTo && g.dist >= o.narrowAfter && g.lastGap > 600 && s.state.width !== o.narrowTo) { s.state.width = o.narrowTo; r.narrowedAt = g.dist; }
+        if (o.narrowTo && r.narrowedAt !== undefined && g.dist > r.narrowedAt + 200) break;
         if (g.state === 'run') steer(g, s.state.width);
+        for (const th of g.things)   // (a root grows from its side: thick at the wall)
+            if (th.kind === 'root' && th.variant !== undefined && (th.x > 1) !== (th.variant >= 3)) r.rootsSided = false;
         if (!(g.layer in r.layersAt)) r.layersAt[g.layer] = Math.round(g.dist);
         if (g.dist >= 50 && r.soil50 === undefined) r.soil50 = g.soil;
         if (g.dist >= 400 && r.soil400 === undefined) r.soil400 = g.soil;
         for (const row of g.rows)
             if (!seen.has(row)) { seen.add(row); r.rows.push({ gapL: row.gapL, gapR: row.gapR, beetle: row.beetle, alone: row.alone,
-                                                                clear: row.clear, speed: g.speed, mid: (row.gapL + row.gapR) / 2 }); }
+                                                                clear: row.clear, speed: g.speed, mid: (row.gapL + row.gapR) / 2 });
+                                  if (r.narrowedAt !== undefined && !row.beetle) r.after.push((row.gapL + row.gapR) / 2); }
         if (g.state === 'over') { r.overMs = s.now(); r.hitBy = g.hitBy; r.overAt = g.dist; break; }
     }
     r.meters = g.meters; r.dist = g.dist; r.grabbed = g.grabbed; r.vmax = MOVE.top * BW; r.boxH = BH * 0.9;
@@ -824,6 +829,102 @@ for (const width of [380, 500, 900]) for (const seed of [1, 2, 3]) out.far.push(
     while (g.on && s.now() < o2 + 8000) s.tick();
     out.end.endedAfter = s.now() - o2;
 }
+// (the review's: the Run's ← and → do nothing)
+{
+    const t = new Talpy({});
+    const state = { width: 500, px: 200, said: [], saved: [], grows: [], faced: [], asked: [] };
+    let now = 1000;
+    t.tick(now);
+    const g = pickGame(t, Object.assign(host({}, state), { stage: () => ({ width: 500, height: 176, ground: 160, unit: 1.5,
+        bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: 470 }) }), 'run');
+    g.start(now);
+    while (g.state !== 'run') { now += 16; t.tick(now); g.tick(now); }
+    g.press('left'); g.press('right');
+    now += 16; t.tick(now); g.tick(now);
+    out.runKeys = { lift: g.lift, jumpAt: g.jumpAt };
+}
+// (narrowed mid-dig, the last way through far right: what comes after has its way through inside)
+{
+    const s = start({ seed: 8, width: 900 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    const rows = [];
+    for (let i = 0; i < 6; i++) {
+        g.lastGap = 850; g.lastBottom = g.s.height; g.nextRow = 0; s.state.width = 450;
+        s.tick();
+        const row = g.rows[g.rows.length - 1];
+        const blocking = g.things.filter(th => th.row === row.id && th.kind !== 'cookie')
+            .filter(th => th.x < row.gapR && th.x + th.w > row.gapL);
+        rows.push({ mid: (row.gapL + row.gapR) / 2, wide: row.gapR - row.gapL, blocking: blocking.length });
+        g.nextRow = 1e9;
+    }
+    out.narrowed = rows;
+}
+// (dig again: he rises from where he is, no jump to the floor)
+{
+    const s = start({ seed: 9 }), g = s.g;
+    while (g.state !== 'over' && s.now() < 60000) s.tick();
+    for (let i = 0; i < 40; i++) s.tick();
+    const before = g.lift;
+    g.press('jump');
+    const lifts = [before];
+    for (let i = 0; i < 50; i++) { s.tick(); lifts.push(g.lift); }
+    out.again = { state: g.state, lifts };
+}
+// (a pipe's end: hit where it's drawn, not well inside it)
+{
+    const s = start({ seed: 10, width: 380 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    g.things.length = 0;
+    g.x = 188; g.aim(188); g.vx = 0;
+    g.things.push({ kind: 'pipe', x: 0, y: g.cy + BH * 0.45 - 5, w: 180, h: BH * 0.42, frame: 0, variant: 0, slot: 0 });
+    s.tick();
+    out.pipeEnd = { state: g.state, hitBy: g.hitBy };
+}
+// (a quick sideways move: his tunnel stays one band)
+{
+    const s = start({ seed: 11, width: 900 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    const seen = new Set(g.things.filter(th => th.kind === 'tunnel')), laid = [];
+    for (const aim of [860, 40, 860]) {
+        g.aim(aim);
+        for (let i = 0; i < 90; i++) {
+            s.tick();
+            for (const th of g.things) if (th.kind === 'tunnel' && !seen.has(th)) { seen.add(th); laid.push(th); }
+        }
+    }
+    // (each piece and the one laid before it, where they are now: both went up with the earth alike)
+    out.tunnelGaps = laid.slice(1).map((th, i) => {
+        const a = laid[i];
+        return Math.hypot((th.x + th.w / 2 - a.x - a.w / 2) / (0.6 * th.w), (th.y + th.h / 2 - a.y - a.h / 2) / (0.6 * th.h));
+    });
+}
+// (where you point comes back towards him at his top speed: he brakes within his acceleration, then settles there)
+{
+    const s = start({ seed: 12, width: 900 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    g.aim(860);
+    while (Math.abs(g.vx) < MOVE.top * BW - 1) s.tick();
+    const aim = g.x + 15, vs = [g.vx];
+    g.aim(aim);
+    for (let i = 0; i < 70; i++) { s.tick(); vs.push(g.vx); }
+    out.brake = { vs, amax: MOVE.accel * BW, end: g.x, aim };
+}
+// (let go of → at speed: he stops as a body would, not running on to where the key had taken his aim)
+{
+    const s = start({ seed: 13, width: 900 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    g.press('right');
+    for (let i = 0; i < 40; i++) s.tick();
+    const x0 = g.x, v0 = g.vx;
+    g.release('right');
+    for (let i = 0; i < 60; i++) s.tick();
+    out.keyStop = { run: g.x - x0, v0, amax: MOVE.accel * BW };
+}
 const pick = (ok) => { const t = new Talpy({}); return pickGame(t, { stage: () => ({}), px: () => 0, moveTo() {}, say() {}, changed() {},
     best: () => 0, saveBest() {}, grow() {}, runOk: () => ok }, '').name; };
 out.randomNoDig = []; for (let i = 0; i < 100; i++) out.randomNoDig.push(pick(false));
@@ -937,6 +1038,47 @@ class DigTests(unittest.TestCase):
 
     def test_resized_mid_dig_he_stays_inside(self):
         self.assertLessEqual(self.r["resized"]["x"], self.r["resized"]["limit"] + 1e-6)
+
+    def test_the_runs_keys_left_and_right_do_nothing(self):
+        self.assertEqual(self.r["runKeys"], {"lift": 0, "jumpAt": -1})
+
+    def test_narrowed_mid_dig_what_comes_after_can_be_passed(self):
+        for row in self.r["narrowed"]:
+            self.assertGreaterEqual(row["mid"], 30)
+            self.assertLessEqual(row["mid"], 450 - 30)                       # (inside the narrower stage)
+            self.assertGreaterEqual(row["wide"], 1.6 * 60 - 1e-6)
+            self.assertEqual(row["blocking"], 0)                              # (nothing in it)
+
+    def test_dig_again_he_rises_from_where_he_is(self):
+        a = self.r["again"]
+        self.assertEqual(a["state"], "ready")
+        lifts = a["lifts"]
+        for x, y in zip(lifts, lifts[1:]):
+            self.assertLess(abs(y - x), 12)          # (no jump to the floor and back)
+
+    def test_a_pipe_hits_where_its_drawn(self):
+        self.assertEqual(self.r["pipeEnd"], {"state": "over", "hitBy": "pipe"})
+
+    def test_a_quick_sideways_move_leaves_one_tunnel(self):
+        gaps = self.r["tunnelGaps"]
+        self.assertGreater(len(gaps), 20)
+        self.assertLessEqual(max(gaps), 1.05)
+
+    def test_he_brakes_within_his_acceleration(self):
+        b = self.r["brake"]
+        for a, c in zip(b["vs"], b["vs"][1:]):
+            self.assertLessEqual(abs(c - a), b["amax"] * 0.016 * 1.05 + 1)   # (no hard stop)
+        self.assertAlmostEqual(b["end"], b["aim"], delta=0.5)                 # (then there)
+
+    def test_let_go_of_a_key_he_stops_as_a_body_would(self):
+        k = self.r["keyStop"]
+        self.assertGreater(k["v0"], 200)
+        self.assertLessEqual(k["run"], k["v0"] ** 2 / (2 * k["amax"]) * 1.3 + 2)
+
+    def test_a_root_grows_from_its_side(self):
+        for r in self.r["far"]:
+            with self.subTest(width=r["width"], seed=r["seed"]):
+                self.assertTrue(r["rootsSided"])
 
     def test_a_bump_ends_it_the_run_way(self):
         e = self.r["end"]
@@ -1090,7 +1232,7 @@ class PlasmaRunTests(unittest.TestCase):
         self.assertIn("T.drawThing(ctx, { kind: d.kind, w: d.w, h: d.h, frame: f, variant: d.variant }, d.dark)", run_ui)
         self.assertIn("sprite.x = -(t.frame % sprite.frames) * sprite.cellW", run_ui)   # (a bird's flap: its pictures side by side)
         self.assertNotIn("onRunFrameChanged", self.pet)
-        self.assertIn("gameSlots = playGame.slots", self.pet)
+        self.assertIn("gameSlots = Math.ceil(playGame.slots / 32) * 32", self.pet)
         self.assertIn("clip: true", run_ui)   # (what comes from beyond the stage's edge isn't seen there)
         self.assertIn("model: pet.gameOn && !pet.scoredOn ? 3 : 0", self.pet)   # (Peekaboo's holes not made for a run)
         # (he runs facing what comes: not turned to the mouse meanwhile)
@@ -1147,6 +1289,22 @@ class PlasmaDigTests(unittest.TestCase):
         keys = self.strip[self.strip.index("// A scored game: its keys"):][:2200]
         self.assertIn('event.key === Qt.Key_Left ? "left" : "right"', keys)
         self.assertIn("hero.gameRelease(event.key === Qt.Key_Left", keys)
+
+    def test_pictures_are_kept_and_never_stale(self):
+        # (the slots' model grows in steps: a Repeater given a number builds every delegate again as it changes)
+        self.assertIn("gameSlots = Math.ceil(playGame.slots / 32) * 32", self.pet)
+        ui = self.pet[self.pet.index("    // A scored game's things (Talpy's Run, Deep Dig)"):][:7000]
+        self.assertIn("paintedLook = look", ui)                       # (a slot shown once its picture is painted:
+        self.assertIn("sprite.paintedLook === sprite.look", ui)       # never a frame of the one before)
+
+    def test_its_words_stay_inside_the_stage(self):
+        ui = self.pet[self.pet.index("    // A scored game's things (Talpy's Run, Deep Dig)"):][:7000]
+        self.assertIn("x: Math.min(Math.max(Kirigami.Units.smallSpacing, pet.px - width / 2), parent.width - width - Kirigami.Units.smallSpacing)", ui)
+        self.assertIn('visible: pet.scoredOn && pet.gameState === "run"', ui)   # (the distance once it's on: not under the hint)
+
+    def test_a_key_let_go_elsewhere_isnt_held(self):
+        keys = self.strip[self.strip.index("// A scored game: its keys"):][:2600]
+        self.assertIn("onActiveFocusChanged:", keys)
 
     def test_the_earth_its_words_and_whats_behind(self):
         ui = self.pet[self.pet.index("    // A scored game's things (Talpy's Run, Deep Dig)"):][:6000]
@@ -1247,6 +1405,12 @@ class VsCodeDigTests(unittest.TestCase):
         self.assertIn("while (this.thingSprites.size >= 160) this.thingSprites.delete(", self.ts)   # (the oldest go, not all at once)
         self.assertIn('e.key === "ArrowLeft" || e.key === "ArrowRight"', listen)
         self.assertIn('if ((name === "run" || name === "dig") && reducedMotion())', self.ts)
+
+    def test_its_words_and_keys(self):
+        self.assertIn("Math.min(Math.max(4, this.px - this.gameHintW / 2), this.stage.width - this.gameHintW - 4)", self.ts)
+        self.assertIn('t.meters.hidden = g.state !== "run";', self.ts)
+        self.assertIn('window.addEventListener("blur", letGo)', self.ts)   # (a key let go elsewhere isn't held)
+        self.assertIn("No digging with reduced motion on", self.ts)
 
     def test_the_earth_its_words_and_whats_behind(self):
         self.assertIn('this.put(c, "soil", "background", g.soil ?? "")', self.ts)   # (the earth's colour)
