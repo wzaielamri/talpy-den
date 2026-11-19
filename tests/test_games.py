@@ -356,7 +356,7 @@ class RunTests(unittest.TestCase):
         cls.r = run_node(RUN)
 
     def test_games_by_name_and_at_random(self):
-        self.assertEqual(self.r["games"], ["peekaboo", "run"])
+        self.assertEqual(self.r["games"], ["peekaboo", "run", "dig"])
         self.assertEqual(self.r["byName"], ["run", "peekaboo"])
         self.assertEqual(set(self.r["randomNoRun"]), {"peekaboo"})   # (not where it isn't offered)
 
@@ -634,6 +634,319 @@ console.log(JSON.stringify(result));
 """ % json.dumps(str(TALPY / "talpy.mjs")))
         self.assertLess(out["light"], 0.3)    # (ink on a light stage)
         self.assertGreater(out["dark"], 0.7)  # (a light outline on a dark one)
+
+
+DIG = """
+import { pickGame, GAMES, DECOR, GRAB } from %s;
+import { Dig, MOVE, LAYERS } from %s;
+function seeded(seed) {   // (mulberry32: the same dig each time)
+    return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+                   t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+const BW = 60, BH = 60;   // (his body: 60 × 60 px; the stage 16 grid units: 260 px)
+function host(o, state) {
+    return {
+        stage: () => ({ width: state.width, height: 260, ground: 245, unit: 1.5, bodyWidth: BW, bodyHeight: BH,
+                        minX: 30, maxX: state.width - 30 }),
+        px: () => state.px, moveTo: x => { state.px = x; }, say: w => state.said.push(w), changed: () => {},
+        best: name => { state.asked.push(name); return o.best || 0; }, saveBest: (name, m) => { state.asked.push(name); state.saved.push(m); },
+        grow: on => state.grows.push(on), face: left => state.faced.push(left), runOk: () => true,
+    };
+}
+function start(o) {
+    Math.random = seeded(o.seed || 1);
+    const t = new Talpy({});
+    const state = { width: o.width || 500, px: 200, said: [], saved: [], grows: [], faced: [], asked: [] };
+    let now = 1000;
+    t.tick(now);
+    const g = pickGame(t, host(o, state), 'dig');
+    g.start(now);
+    return { t, g, state, tick: (ms) => { now += ms || 16; t.tick(now); g.tick(now); return now; }, now: () => now };
+}
+// The player: in the next row's way through (the one nearest below him); a beetle's row: the
+// side it won't be on as it gets to him (where it'll be then, turning at the sides)
+function steer(g, W) {
+    const top = g.cy - BH * 0.45;
+    let next = null;
+    for (const r of g.rows)
+        if (r.bottom > top && (!next || r.top < next.top)) next = r;
+    if (!next) return;
+    if (next.beetle) {
+        // (the nearest place he can get to before its row does that it won't cross while it goes by)
+        const b = g.things.find(th => th.kind === 'beetle' && th.row === next.id);
+        if (!b) return;
+        const box = BW * 0.3, t0 = Math.max(0, (next.top - (g.cy + BH * 0.45)) / g.speed);
+        const t1 = (next.bottom - (g.cy - BH * 0.45)) / g.speed, pace = 1.5 * BW, top = 7 * BW;
+        let x = b.x, dir = b.dir, lo = 1e9, hi = -1e9;
+        for (let t = 0; t <= t1; t += 0.01) {
+            if (t >= t0) { lo = Math.min(lo, x); hi = Math.max(hi, x + b.w); }
+            x += dir * pace * 0.01;
+            if (x < 0 || x + b.w > W) { x = Math.max(0, Math.min(W - b.w, x)); dir = -dir; }
+        }
+        let best = null, late = null;
+        for (let c = 30; c <= W - 30; c += 5) {
+            if (c + box > lo - 4 && c - box < hi + 4) continue;   // (it'll be there)
+            if (Math.abs(c - g.x) / top + 0.12 <= t0) {
+                if (best === null || Math.abs(c - g.x) < Math.abs(best - g.x)) best = c;
+            } else if (late === null || Math.abs(c - g.x) < Math.abs(late - g.x)) late = c;
+        }
+        if (best !== null || late !== null) g.aim(best !== null ? best : late);
+    } else g.aim((next.gapL + next.gapR) / 2);
+}
+// (the physics on their own: nothing comes)
+const calm = g => { g.nextRow = 1e9; };
+function far(o) {
+    const s = start(o), g = s.g, r = { overMs: null, layersAt: {}, rows: [], cookies: 0, meters: 0 };
+    const seen = new Set();
+    while (g.on && g.dist < 1000 && s.now() < 1000 + 400000) {
+        s.tick();
+        if (g.state === 'run') steer(g, s.state.width);
+        if (!(g.layer in r.layersAt)) r.layersAt[g.layer] = Math.round(g.dist);
+        if (g.dist >= 50 && r.soil50 === undefined) r.soil50 = g.soil;
+        if (g.dist >= 400 && r.soil400 === undefined) r.soil400 = g.soil;
+        for (const row of g.rows)
+            if (!seen.has(row)) { seen.add(row); r.rows.push({ gapL: row.gapL, gapR: row.gapR, beetle: row.beetle, alone: row.alone,
+                                                                clear: row.clear, speed: g.speed, mid: (row.gapL + row.gapR) / 2 }); }
+        if (g.state === 'over') { r.overMs = s.now(); r.hitBy = g.hitBy; r.overAt = g.dist; break; }
+    }
+    r.meters = g.meters; r.dist = g.dist; r.grabbed = g.grabbed; r.vmax = MOVE.top * BW; r.boxH = BH * 0.9;
+    return r;
+}
+const out = { games: GAMES, layers: LAYERS };
+// (he eases to where you point: never a jump, never past it, settled in a second)
+{
+    const s = start({}), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    const x0 = g.x, aim = s.state.width - 60, xs = [], vs = [];
+    g.aim(aim);
+    for (let i = 0; i < 90; i++) { s.tick(); xs.push(g.x); vs.push(g.vx); }
+    out.ease = { x0, aim, xs, vs, vmax: MOVE.top * BW, amax: MOVE.accel * BW, ok: g.state };
+    // (lean: + going right, back to upright as he stops)
+    const turns = [];
+    g.aim(60);
+    for (let i = 0; i < 120; i++) { s.tick(); turns.push([g.vx, g.turn]); }
+    out.lean = turns;
+}
+// (no aim: he stays; ← held: the same physics)
+{
+    const s = start({ seed: 2 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    const x0 = g.x;
+    for (let i = 0; i < 30; i++) s.tick();
+    out.keys = { still: Math.abs(g.x - x0) };
+    g.press('left');
+    const xs = [];
+    for (let i = 0; i < 60; i++) { s.tick(); xs.push(g.x); }
+    g.release('left');
+    out.keys.xs = xs;
+    // (into the wall: up to it, no bounce)
+    g.aim(10000);
+    const wall = [];
+    for (let i = 0; i < 120; i++) { s.tick(); wall.push([g.x, g.vx]); }
+    out.wall = { xs: wall, limit: s.state.width - 30 };
+}
+// (clods: thrown up, falling back, gone; more when he turns hard)
+{
+    const s = start({ seed: 3 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    const clods = new Map(), count = { still: 0, turning: 0 };
+    const watch = (key, ticks) => {
+        for (let i = 0; i < ticks; i++) {
+            s.tick();
+            for (const th of g.things)
+                if (th.kind === 'clod') {
+                    if (!clods.has(th)) { clods.set(th, { born: s.now(), vys: [] }); count[key]++; }
+                    clods.get(th).vys.push(th.vy);
+                }
+            for (const [th, c] of clods) if (c.gone === undefined && g.things.indexOf(th) < 0) c.gone = s.now() - c.born;
+        }
+    };
+    watch('still', 62);                       // (a second, steady)
+    for (let i = 0; i < 4; i++) { g.aim(i %% 2 ? 60 : s.state.width - 60); watch('turning', 16); }   // (a second, turning hard)
+    out.clods = { count, list: Array.from(clods.values()).slice(0, 12) };
+}
+// (his tunnel: where he was, going up with the earth)
+{
+    const s = start({ seed: 4 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    const laid = [];
+    const known = new Set(g.things.filter(th => th.kind === 'tunnel'));
+    g.aim(s.state.width - 80);
+    for (let i = 0; i < 80; i++) {
+        s.tick();
+        for (const th of g.things)
+            if (th.kind === 'tunnel' && !known.has(th)) { known.add(th); laid.push({ off: th.x + th.w / 2 - g.x, y: th.y }); }
+    }
+    out.tunnel = laid;
+}
+// (far, at any width; the rows fair; cookies; the end, the Run's way)
+out.far = [];
+for (const width of [380, 500, 900]) for (const seed of [1, 2, 3]) out.far.push(Object.assign({ width, seed }, far({ seed, width })));
+// (a long frame at the top speed: a pipe right under him still hits him)
+{
+    const s = start({ seed: 5 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    g.dist = 900;   // (twice the start's speed)
+    s.tick();
+    g.things.length = 0;
+    g.rows.length = 0;
+    const p = { kind: 'pipe', x: 0, y: g.cy + BH * 0.5, w: s.state.width, h: BH * 0.42, frame: 0, variant: 0, slot: 0 };
+    g.things.push(p);
+    s.tick(100);
+    out.long = { state: g.state, hitBy: g.hitBy };
+}
+// (resized mid-dig: he and his aim inside at once)
+{
+    const s = start({ seed: 6, width: 900 }), g = s.g;
+    while (g.state !== 'run') s.tick();
+    calm(g);
+    g.aim(860);
+    for (let i = 0; i < 60; i++) s.tick();
+    s.state.width = 400;
+    s.tick();
+    out.resized = { x: g.x, limit: 400 - 30 };
+}
+// (the end: 5 s, again after 450 ms, its own best)
+{
+    const s = start({ seed: 7, best: 0 }), g = s.g;
+    while (g.state !== 'over' && s.now() < 60000) s.tick();
+    const overAt = s.now();
+    s.tick(32); g.press('jump'); const tooSoon = g.state;
+    let again = null;
+    for (let i = 0; i < 40 && again === null; i++) { s.tick(); if (s.now() - overAt > 500) { g.press('jump'); again = g.state; } }
+    out.end = { tooSoon, again, asked: Array.from(new Set(s.state.asked)), saved: s.state.saved, grows: s.state.grows.slice() };
+    while (g.state !== 'over' && s.now() < 200000) s.tick();
+    const o2 = s.now();
+    while (g.on && s.now() < o2 + 8000) s.tick();
+    out.end.endedAfter = s.now() - o2;
+}
+const pick = (ok) => { const t = new Talpy({}); return pickGame(t, { stage: () => ({}), px: () => 0, moveTo() {}, say() {}, changed() {},
+    best: () => 0, saveBest() {}, grow() {}, runOk: () => ok }, '').name; };
+out.randomNoDig = []; for (let i = 0; i < 100; i++) out.randomNoDig.push(pick(false));
+console.log(JSON.stringify(out));
+""" % (json.dumps(str(TALPY / "games.mjs")), json.dumps(str(TALPY / "dig.mjs")))
+
+
+class DigTests(unittest.TestCase):
+    """Deep Dig (dig.mjs Dig): he digs down, what's buried comes up, you steer him round it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.r = run_node(DIG)
+
+    def test_it_is_a_game_not_where_scored_games_arent(self):
+        self.assertEqual(self.r["games"], ["peekaboo", "run", "dig"])
+        self.assertEqual(set(self.r["randomNoDig"]), {"peekaboo"})
+        self.assertEqual([l[0] for l in self.r["layers"]], [0, 100, 300])
+
+    def test_he_eases_to_where_you_point(self):
+        e = self.r["ease"]
+        xs, vs, dt = [e["x0"]] + e["xs"], [0] + e["vs"], 0.016
+        for a, b in zip(xs, xs[1:]):
+            self.assertLessEqual(abs(b - a), e["vmax"] * dt + 0.5)          # (never a jump)
+        for a, b in zip(vs, vs[1:]):
+            self.assertLessEqual(abs(b - a), e["amax"] * dt * 1.05 + 1)     # (no kick: limited acceleration)
+        self.assertTrue(all(x <= e["aim"] + 1e-6 for x in xs))             # (never past where you point)
+        settled = next(i for i, x in enumerate(xs) if abs(x - e["aim"]) < 0.5)
+        self.assertLess(settled * 16, 1000 * abs(e["aim"] - e["x0"]) / e["vmax"] + 400)   # (as quick as his top speed allows)
+        self.assertEqual(xs[-1], e["aim"])                                                # (there: not creeping on)
+
+    def test_he_leans_into_turns_and_back(self):
+        turns = self.r["lean"]
+        for vx, turn in turns:
+            self.assertLessEqual(abs(turn), 20.01)
+            if vx < -30:
+                self.assertGreater(turn, 0)          # (going left: his paws lead left, his head tilts right)
+        signs = [1 if t > 0.01 else -1 if t < -0.01 else 0 for vx, t in turns if abs(vx) > 1]
+        self.assertTrue(all(s >= 0 for s in signs) or all(s <= 0 for s in signs))   # (no flip while going one way)
+        self.assertLess(abs(turns[-1][1]), 0.5)       # (upright again as he stops)
+        tail = [t for vx, t in turns[-40:]]
+        self.assertTrue(all(t >= -0.01 for t in tail))   # (no swing past upright)
+
+    def test_keys_steer_with_the_same_physics(self):
+        k = self.r["keys"]
+        self.assertLess(k["still"], 0.01)              # (no aim: he stays where he is)
+        xs = k["xs"]
+        self.assertLess(xs[-1], xs[0] - 40)            # (← held: he goes left)
+        for a, b in zip(xs, xs[1:]):
+            self.assertLessEqual(a - b, 7 * 60 * 0.016 + 0.5)
+
+    def test_into_a_wall_he_slows_never_bounces(self):
+        w = self.r["wall"]
+        self.assertAlmostEqual(w["xs"][-1][0], w["limit"], delta=0.5)
+        self.assertTrue(all(vx >= -1e-6 for x, vx in w["xs"]))   # (never back off it)
+        self.assertTrue(all(x <= w["limit"] + 1e-6 for x, vx in w["xs"]))
+
+    def test_clods_fly_and_fall(self):
+        c = self.r["clods"]
+        self.assertGreater(c["count"]["still"], 2)
+        self.assertGreater(c["count"]["turning"], c["count"]["still"])   # (more as he turns hard)
+        for clod in c["list"]:
+            vys = clod["vys"]
+            self.assertLess(vys[0], 0)                                     # (thrown up)
+            for a, b in zip(vys, vys[1:]):
+                self.assertGreater(b, a)                                   # (gravity: down faster and faster)
+            self.assertLessEqual(clod.get("gone", 0), 600 + 16)
+
+    def test_the_tunnel_follows_his_path(self):
+        laid = self.r["tunnel"]
+        self.assertGreater(len(laid), 10)
+        for t in laid:
+            self.assertLess(abs(t["off"]), 0.5 + 7 * 60 * 0.016)   # (where he is as it's laid: at most a tick's move behind)
+
+    def test_every_row_has_a_reachable_way(self):
+        for r in self.r["far"]:
+            with self.subTest(width=r["width"], seed=r["seed"]):
+                rows = [x for x in r["rows"]]
+                self.assertGreater(len(rows), 20)
+                prev, beetle = None, False
+                for row in rows:
+                    if row["beetle"]:
+                        self.assertTrue(row["alone"])                      # (a beetle has its row to itself)
+                        beetle = True
+                        continue
+                    self.assertGreaterEqual(row["gapR"] - row["gapL"], 1.6 * 60 - 1e-6)
+                    reach = r["vmax"] * max(0, row["clear"] - r["boxH"]) / row["speed"] * 0.7
+                    if beetle:   # (he may be anywhere after dodging a beetle: reachable from either side)
+                        self.assertLessEqual(max(row["mid"] - 30, r["width"] - 30 - row["mid"]), reach + 1)
+                    elif prev is not None:
+                        self.assertLessEqual(abs(row["mid"] - prev), reach + 1)
+                    prev, beetle = row["mid"], False
+
+    def test_a_steering_player_digs_far_at_any_width(self):
+        for r in self.r["far"]:
+            with self.subTest(width=r["width"], seed=r["seed"]):
+                self.assertIsNone(r["overMs"], f"bumped into {r.get('hitBy')} at {r.get('overAt')} m")
+                self.assertGreaterEqual(r["dist"], 1000)
+                self.assertEqual(r["layersAt"], {"topsoil": 0, "clay": 100, "rock": 300})
+                self.assertEqual(r["soil50"], "#7a5634")
+                self.assertEqual(r["soil400"], "#3c3443")
+
+    def test_cookies_add_10_m_each(self):
+        for r in self.r["far"]:
+            with self.subTest(width=r["width"], seed=r["seed"]):
+                self.assertGreater(r["grabbed"], 0)
+                self.assertEqual(r["meters"], int(r["dist"]) + 10 * r["grabbed"])
+
+    def test_a_long_frame_still_hits_a_thin_thing(self):
+        self.assertEqual(self.r["long"], {"state": "over", "hitBy": "pipe"})
+
+    def test_resized_mid_dig_he_stays_inside(self):
+        self.assertLessEqual(self.r["resized"]["x"], self.r["resized"]["limit"] + 1e-6)
+
+    def test_a_bump_ends_it_the_run_way(self):
+        e = self.r["end"]
+        self.assertEqual(e["tooSoon"], "over")
+        self.assertEqual(e["again"], "ready")
+        self.assertEqual(e["asked"], ["dig"])
+        self.assertTrue(e["saved"])
+        self.assertEqual(e["grows"], [True])
+        self.assertGreaterEqual(e["endedAfter"], 5000 - 16)
+        self.assertLessEqual(e["endedAfter"], 5000 + 32)
 
 
 class HostTests(unittest.TestCase):

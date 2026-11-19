@@ -30,6 +30,7 @@ import { ACTIONS, COOKIE } from './actions.mjs';
 import { FLAP_FRAMES } from './talpy.mjs';
 import { Scored, DECOR, GRAB, SCORED } from './scored.mjs';
 import { FRAMES } from './talpy.mjs';
+import { Dig } from './dig.mjs';
 
 export { DECOR, GRAB, SCORED };
 
@@ -37,13 +38,13 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 const int = (a, b) => Math.floor(rnd(a, b + 1));
 const sine = p => 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, p)));
 
-export const GAMES = ['peekaboo', 'run'];
+export const GAMES = ['peekaboo', 'run', 'dig'];
 
 // A game by name, else at random; never the run where the host can't have it
 export function pickGame(talpy, host, name) {
     const can = GAMES.filter(g => SCORED.indexOf(g) < 0 || !host.runOk || host.runOk());
     const which = can.indexOf(name) >= 0 ? name : can[Math.floor(Math.random() * can.length)];
-    return which === 'run' ? new Run(talpy, host) : new Peekaboo(talpy, host);
+    return which === 'run' ? new Run(talpy, host) : which === 'dig' ? new Dig(talpy, host) : new Peekaboo(talpy, host);
 }
 
 const OPEN_MS = 320;         // holes open (and close) that long
