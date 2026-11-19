@@ -4,18 +4,28 @@
 
 ### New
 
+- **Deep Dig, a game of steering.** *Dig with Talpy* in the view's **⋯** menu
+  (`talpyDen.digWithTalpy`; four quick clicks on him may pick it): his stage
+  fills with earth and he digs straight down while roots, rocks, buried
+  pipes, bottles, boulders and beetles come up at him. He goes where the
+  pointer is over his stage (← and → too; a drag on touch), easing there and
+  leaning into his way, through the way each row leaves (always one he can
+  reach in time). The earth changes as he goes deeper; a twinkling cookie is
+  worth 10 m. The first bump ends it with how deep he got and your best,
+  kept by the extension. Not with reduced motion.
 - **Talpy's Run, a game you can lose.** *Run with Talpy* in the view's **⋯**
   menu (or four quick clicks on him, which may pick it beside Peekaboo):
   his stage grows taller, its headline and counts fade out, and he runs
   while rocks, flower pots, hedgehogs, stumps, logs and birds come at
   him, more kinds the further he gets, with grass and clouds going by
-  behind. Click, tap, Space or ↑ to jump; hold ↓ or the right mouse button
-  (swipe down on a touch screen) to dig in under a bird. It gets faster as
-  he goes, and the first bump ends the run with how far he got and your
-  best (*New best!*); a click runs again (with none in 5 s, the view is
-  back to your chats). Your best is kept by the extension, in every window.
-  Not offered with reduced motion. *Play with Talpy* is now *Play Peekaboo
-  with Talpy* and *Run with Talpy*.
+  behind, and now and then a twinkling cookie worth 10 m. He falls, lands
+  and steps as a body would. Click, tap, Space or ↑ to jump; hold ↓ or the
+  right mouse button (swipe down on a touch screen) to dig in under a bird.
+  It gets faster as he goes, and the first bump ends the run with how far
+  he got and your best (*New best!*); a click runs again (with none in 5 s,
+  the view is back to your chats). Your best is kept by the extension, in
+  every window. Not offered with reduced motion. *Play with Talpy* is now
+  *Play Peekaboo with Talpy*, *Run with Talpy* and *Dig with Talpy*.
 
 ## 1.22.2
 

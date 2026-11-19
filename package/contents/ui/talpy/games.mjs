@@ -28,11 +28,14 @@
 
 import { ACTIONS, COOKIE } from './actions.mjs';
 import { FLAP_FRAMES } from './talpy.mjs';
-import { Scored, DECOR, GRAB, SCORED } from './scored.mjs';
+import { Scored, DECOR as SCORED_DECOR, GRAB as SCORED_GRAB, SCORED as SCORED_GAMES } from './scored.mjs';
 import { FRAMES } from './talpy.mjs';
 import { Dig } from './dig.mjs';
 
-export { DECOR, GRAB, SCORED };
+// (scored.mjs's, for the hosts that import this one: an export per line, GNOME 43's port can't re-export)
+export const DECOR = SCORED_DECOR;
+export const GRAB = SCORED_GRAB;
+export const SCORED = SCORED_GAMES;
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const int = (a, b) => Math.floor(rnd(a, b + 1));

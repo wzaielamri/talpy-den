@@ -228,7 +228,7 @@ All in the Command Palette under **Talpy Den:**; the view's title bar and **⋯*
 | Delete the Recap's Saved History… | | The Recap starts again from the chats Claude still has; your plan's windows that ended go too |
 | Old Chats | | Who deletes old chats (`talpyDen.oldChats`), what Talpy Den's next run would delete here, and each place's last run |
 | Send Feedback to Claude | | In a plan's preview: sends your comments and changes to the chat that made it |
-| Play Peekaboo with Talpy / Run with Talpy / Turn On Playful Talpy / Turn Off Playful Talpy | | A game with the big Talpy (Talpy's Run: not with reduced motion); Playful Talpy (his tricks and props, jokes, cookies and games) on or off (`talpyDen.playfulTalpy`) |
+| Play Peekaboo with Talpy / Run with Talpy / Dig with Talpy / Turn On Playful Talpy / Turn Off Playful Talpy | | A game with the big Talpy (Talpy's Run and Deep Dig: not with reduced motion); Playful Talpy (his tricks and props, jokes, cookies and games) on or off (`talpyDen.playfulTalpy`) |
 | Refresh | | Checks the chats and the plan usage again; on the Recap, Permissions or Projects tab it reads that tab again too (they have no button of their own for it), and the Recap once more when the plan usage it fetched has come in |
 | Open Usage Page on claude.ai, Open Settings, Show Log, Toggle Demo Data | | |
 
