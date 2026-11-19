@@ -378,8 +378,8 @@ class RunTests(unittest.TestCase):
         self.assertEqual((again["state"], again["meters"], again["on"], again["hint"]), ("ready", 0, True, "start"))
         self.assertEqual(self.r["again"]["tooSoon"], "over")   # (a late jump, just after the bump: the end stays)
         idle = self.r["idle"]
-        self.assertGreaterEqual(idle["endMs"] - idle["overMs"], 9000)
-        self.assertLessEqual(idle["endMs"] - idle["overMs"], 11000)
+        self.assertGreaterEqual(idle["endMs"] - idle["overMs"], 4500)   # (5 s for another run, then back to work)
+        self.assertLessEqual(idle["endMs"] - idle["overMs"], 5500)
         self.assertEqual(idle["grows"][-1], False)        # (the stage back to its size)
 
     def test_stopped_its_over_at_once_and_counts(self):

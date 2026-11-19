@@ -9,11 +9,11 @@
   his stage grows taller, its headline and counts fade out, and he runs
   while rocks, flower pots, hedgehogs, stumps, logs and birds come at
   him, more kinds the further he gets, with grass and clouds going by
-  behind. Click, tap,
-  Space or ↑ to jump; hold ↓ or the right mouse button (swipe down on a
-  touch screen) to dig in under a crow. It gets faster as he goes, and the
-  first bump ends the run with how far he got and your best (*New best!*);
-  a click runs again. Your best is kept by the extension, in every window.
+  behind. Click, tap, Space or ↑ to jump; hold ↓ or the right mouse button
+  (swipe down on a touch screen) to dig in under a bird. It gets faster as
+  he goes, and the first bump ends the run with how far he got and your
+  best (*New best!*); a click runs again (with none in 5 s, the view is
+  back to your chats). Your best is kept by the extension, in every window.
   Not offered with reduced motion. *Play with Talpy* is now *Play Peekaboo
   with Talpy* and *Run with Talpy*.
 

@@ -243,7 +243,7 @@ export class Peekaboo {
 // (DECOR: they go by behind, never in his way) keep it from looking the same.
 
 const RUN_READY_MS = 2000;     // the hint, and nothing on his way yet
-const RUN_END_MS = 10000;      // the end waits that long for a press
+const RUN_END_MS = 5000;       // the end waits that long for a press (then back to work)
 const RUN_AGAIN_MS = 450;      // ...and takes none so soon after the bump (a jump pressed too late)
 const JUMP_MS = 620;           // up and down again, whatever the speed
 const JUMP_KEEP_MS = 150;      // a press this close to his landing is kept for it (not a double-click's)
