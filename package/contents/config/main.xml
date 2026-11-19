@@ -242,5 +242,10 @@
       <default>0</default>
       <min>0</min>
     </entry>
+    <entry name="digBest" type="Int">
+      <label>The big Talpy's best dig in Deep Dig, in metres (the game's only number kept)</label>
+      <default>0</default>
+      <min>0</min>
+    </entry>
   </group>
 </kcfg>

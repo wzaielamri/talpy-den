@@ -894,7 +894,7 @@ class DigTests(unittest.TestCase):
 
     def test_the_tunnel_follows_his_path(self):
         laid = self.r["tunnel"]
-        self.assertGreater(len(laid), 10)
+        self.assertGreater(len(laid), 4)   # (a piece every 0.3 of his height, each half his height: overlapping)
         for t in laid:
             self.assertLess(abs(t["off"]), 0.5 + 7 * 60 * 0.016)   # (where he is as it's laid: at most a tick's move behind)
 
@@ -1078,16 +1078,17 @@ class PlasmaRunTests(unittest.TestCase):
 
     def test_it_draws_the_run(self):
         # (built only while a run is on: no run UI in every pet)
-        run_ui = self.pet[self.pet.index("    // A scored game's things (Talpy's Run, Deep Dig)"):][:4400]
+        run_ui = self.pet[self.pet.index("    // A scored game's things (Talpy's Run, Deep Dig)"):][:5600]
         self.assertRegex(run_ui, r"Loader \{\s+active: pet.scoredOn")
         # each thing a picture drawn once, moved each frame: a slot's (the game's), kept between two things,
         # painted again only when its look changes; no canvas painted every frame
         self.assertIn("model: pet.gameSlots", run_ui)
         self.assertIn("pet.gameThing(index)", run_ui)
-        self.assertIn("x: { pet.gameFrame; return th ? th.x - pet.spritePad : 0 }", run_ui)
+        self.assertIn("function onGameFrameChanged() { slot.place() }", run_ui)   # (set once a move: no bindings each frame)
+        self.assertIn("x = t.x - pet.spritePad", run_ui)
         self.assertIn("if (l === look)", run_ui)
         self.assertIn("T.drawThing(ctx, { kind: d.kind, w: d.w, h: d.h, frame: f, variant: d.variant }, d.dark)", run_ui)
-        self.assertIn("-(slot.th.frame % frames) * cellW", run_ui)   # (a bird's flap: its pictures side by side)
+        self.assertIn("sprite.x = -(t.frame % sprite.frames) * sprite.cellW", run_ui)   # (a bird's flap: its pictures side by side)
         self.assertNotIn("onRunFrameChanged", self.pet)
         self.assertIn("gameSlots = playGame.slots", self.pet)
         self.assertIn("clip: true", run_ui)   # (what comes from beyond the stage's edge isn't seen there)
@@ -1107,7 +1108,8 @@ class PlasmaRunTests(unittest.TestCase):
 
     def test_pictures_follow_the_theme(self):
         # (Review Focus: the theme switched mid-game: every thing's picture drawn again for it)
-        self.assertIn("function onDarkThemeChanged() { sprite.relook() }", self.pet)
+        self.assertIn("function onGameDarkChanged() { sprite.relook() }", self.pet)   # (the theme's, or Deep Dig's earth)
+        self.assertIn(": strip.darkTheme", self.pet[self.pet.index("readonly property bool gameDark:"):][:200])
         ts = (ROOT / "vscode/webview/pets/pet.ts").read_text()
         sprite = ts[ts.index("private thingSprite("):][:400]
         self.assertIn("world.dark ? 1 : 0", sprite)
@@ -1119,6 +1121,40 @@ class PlasmaRunTests(unittest.TestCase):
         self.assertIn("pet.wantsToPlay(root.playName)", self.pet)
         self.assertIn("scoredOn = gameOn && G.SCORED.indexOf(playGame.name) >= 0", self.pet)
         self.assertRegex(self.pet, r'if \(gameOn && mood === "needs"\) \{\s+stopGame\(\)')
+
+
+class PlasmaDigTests(unittest.TestCase):
+    """Deep Dig in the Plasma widget: its menu entry, its best, the earth, the pointer and ←/→ steering."""
+    pet = (UI / "Pet.qml").read_text()
+    strip = (UI / "PetStrip.qml").read_text()
+    main = (UI / "main.qml").read_text()
+
+    def test_its_menu_entry_and_best(self):
+        dig = self.main[self.main.index('text: i18n("Dig with Talpy")') - 100:][:500]
+        self.assertIn('root.playWithTalpy("dig")', dig)
+        self.assertIn("visible: Plasmoid.configuration.showPet && root.playful && root.runOk", dig)
+        self.assertIn('<entry name="digBest" type="Int">', (UI.parent / "config/main.xml").read_text())
+        shared = self.main[self.main.index("readonly property var sharedKeys"):][:1400]
+        self.assertLess(shared.index('"digBest"'), shared.index('"suggestReplies"'))
+        self.assertIn("property var cfg_digBest", (UI / "ConfigPage.qml").read_text())
+
+    def test_the_pointer_and_keys_steer_him(self):
+        overlay = self.strip[self.strip.index("// A scored game: every press on the stage"):][:2600]
+        self.assertIn("hoverEnabled: strip.running", overlay)
+        self.assertIn("hero.gameAim(mouse.x)", overlay)
+        keys = self.strip[self.strip.index("// A scored game: its keys"):][:2200]
+        self.assertIn('event.key === Qt.Key_Left ? "left" : "right"', keys)
+        self.assertIn("hero.gameRelease(event.key === Qt.Key_Left", keys)
+
+    def test_the_earth_its_words_and_whats_behind(self):
+        ui = self.pet[self.pet.index("    // A scored game's things (Talpy's Run, Deep Dig)"):][:6000]
+        self.assertIn("color: pet.gameSoil", ui)                # (the earth's colour, as deep as he is)
+        self.assertIn('visible: pet.gameSoil !== ""', ui)
+        self.assertIn("z = t && G.DECOR.indexOf(t.kind) >= 0 ? 0 : 1", ui)   # (decoration and his tunnel behind)
+        self.assertIn("pet.gameDark", ui)                       # (outlines for the earth's colour, not the theme's)
+        for words in ('i18n("Move the mouse to steer")', 'i18n("← → to steer")'):
+            self.assertIn(words, self.pet)
+        self.assertIn("gameSoil = playGame.soil || \"\"", self.pet)
 
 
 class VsCodeRunTests(unittest.TestCase):

@@ -114,11 +114,15 @@ Item {
     property int gameFrame: 0
     property int gameSlots: 0            // the game's slots: a picture for each (its things keep theirs)
     readonly property real spritePad: 2 // px around a thing's picture, for its outline's edge
+    readonly property color earthText: "#f6efe2"   // (words over Deep Dig's earth: light, whatever the theme)
     property int gameMeters: 0
     property int gameBestNow: 0
     property bool gameNewBest: false
     property string gameState: ""        // ready, run, over
-    property string gameHint: ""         // the game's (the Run: start, dig), ""
+    property string gameHint: ""         // the game's (the Run: start, dig; Deep Dig: steer), ""
+    property string gameSoil: ""         // Deep Dig's earth, its colour as deep as he is ("" none)
+    // a scored game's things drawn for a dark ground: the theme's for the Run, the earth's for Deep Dig
+    readonly property bool gameDark: gameSoil !== "" ? Qt.color(gameSoil).hslLightness < 0.3 : strip.darkTheme
     property real pop: 1                // popping out into your hand: 0 in its burrow, 1 where you hold it
     property bool landing: false        // picked up, until it has landed and dug in: drawn live
     property bool arriving: false
@@ -437,16 +441,13 @@ Item {
         gameState = playGame.state
         gameHint = playGame.hint
         gameSlots = playGame.slots
+        gameSoil = playGame.soil || ""
         gameFrame = (gameFrame + 1) % 1000000
     }
 
-    // A scored game: the thing in that slot now, or null
+    // A scored game: the thing in that slot now, or null (the game's index, built once a tick)
     function gameThing(slot) {
-        const things = scoredOn && playGame ? playGame.things : []
-        for (let i = 0; i < things.length; i++)
-            if (things[i].slot === slot)
-                return things[i]
-        return null
+        return scoredOn && playGame && playGame.bySlot ? (playGame.bySlot[slot] || null) : null
     }
 
     // A scored game: a press on his stage or a key (PetStrip.qml): the Run's
@@ -1029,19 +1030,43 @@ Item {
         height: strip.height
         sourceComponent: Item {
             clip: true   // (what comes from beyond the stage's edge isn't seen there)
+            // Deep Dig: the earth he digs through, its colour as deep as he is (the card's shape)
+            Rectangle {
+                anchors.fill: parent
+                visible: pet.gameSoil !== ""
+                color: pet.gameSoil
+                radius: strip.gu * 0.7
+            }
             Repeater {
                 model: pet.gameSlots
                 delegate: Item {
                     id: slot
                     required property int index
-                    readonly property var th: { pet.gameFrame; return pet.gameThing(index) }
-                    visible: th !== null
-                    x: { pet.gameFrame; return th ? th.x - pet.spritePad : 0 }
-                    y: { pet.gameFrame; return th ? th.y - pet.spritePad : 0 }
+                    // where it is, set once a move (place: no bindings to re-evaluate each frame)
+                    property var th: null
+                    visible: false
                     width: sprite.cellW
                     height: sprite.cellH
                     clip: sprite.frames > 1
-                    opacity: { pet.gameFrame; return th && th.alpha !== undefined ? th.alpha : 1 }   // (a "+10" fading)
+                    function place() {
+                        const t = pet.gameThing(index)
+                        if (t !== th) {
+                            th = t
+                            z = t && G.DECOR.indexOf(t.kind) >= 0 ? 0 : 1   // (decoration and his tunnel behind)
+                        }
+                        visible = t !== null
+                        if (!t)
+                            return
+                        x = t.x - pet.spritePad
+                        y = t.y - pet.spritePad
+                        opacity = t.alpha !== undefined ? t.alpha : 1   // (a "+10" fading)
+                        sprite.x = -(t.frame % sprite.frames) * sprite.cellW
+                    }
+                    Component.onCompleted: place()
+                    Connections {
+                        target: pet
+                        function onGameFrameChanged() { slot.place() }
+                    }
                     Canvas {
                         id: sprite
                         // what it shows (relook), painted again only when that changes; kept
@@ -1055,15 +1080,14 @@ Item {
                             const th = slot.th
                             if (!th)
                                 return
-                            const l = [th.kind, th.variant, Math.round(th.w * 8), Math.round(th.h * 8), strip.darkTheme].join(" ")
+                            const l = [th.kind, th.variant, Math.round(th.w * 8), Math.round(th.h * 8), pet.gameDark].join(" ")
                             if (l === look)
                                 return
                             look = l
-                            drawn = { kind: th.kind, w: th.w, h: th.h, variant: th.variant, dark: strip.darkTheme,
+                            drawn = { kind: th.kind, w: th.w, h: th.h, variant: th.variant, dark: pet.gameDark,
                                       frames: T.FRAMES[th.kind] || 1 }
                             requestPaint()
                         }
-                        x: { pet.gameFrame; return slot.th ? -(slot.th.frame % frames) * cellW : 0 }
                         width: cellW * frames
                         height: cellH
                         renderStrategy: Canvas.Cooperative
@@ -1073,8 +1097,8 @@ Item {
                             function onThChanged() { sprite.relook() }
                         }
                         Connections {
-                            target: strip
-                            function onDarkThemeChanged() { sprite.relook() }
+                            target: pet
+                            function onGameDarkChanged() { sprite.relook() }
                         }
                         onPaint: {
                             const ctx = getContext("2d")
@@ -1099,6 +1123,7 @@ Item {
                 textFormat: Text.PlainText
                 horizontalAlignment: Text.AlignRight
                 text: i18nc("metres run", "%1 m", pet.gameMeters)
+                color: pet.gameSoil !== "" ? pet.earthText : Kirigami.Theme.textColor
                 opacity: 0.75
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
             }
@@ -1107,7 +1132,9 @@ Item {
                 x: Math.max(Kirigami.Units.smallSpacing, pet.px - width / 2)
                 y: Kirigami.Units.smallSpacing
                 textFormat: Text.PlainText
-                text: pet.gameHint === "dig" ? i18n("↓ or right-click: dig") : i18n("Click to jump · ↓ or right-click to dig")
+                text: pet.gameHint === "steer" ? i18n("Move the mouse to steer") + " · " + i18n("← → to steer")
+                    : pet.gameHint === "dig" ? i18n("↓ or right-click: dig") : i18n("Click to jump · ↓ or right-click to dig")
+                color: pet.gameSoil !== "" ? pet.earthText : Kirigami.Theme.textColor
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
             }
             Column {
@@ -1121,6 +1148,7 @@ Item {
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                     text: pet.gameNewBest ? i18n("New best! %1 m", pet.gameBestNow) : i18n("%1 m · best %2 m", pet.gameMeters, pet.gameBestNow)
+                    color: pet.gameSoil !== "" ? pet.earthText : Kirigami.Theme.textColor
                     font.weight: Font.DemiBold
                 }
                 PlasmaComponents3.Label {
@@ -1128,7 +1156,8 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
-                    text: i18n("Click to run again")
+                    text: pet.playGame && pet.playGame.name === "dig" ? i18n("Click to dig again") : i18n("Click to run again")
+                    color: pet.gameSoil !== "" ? pet.earthText : Kirigami.Theme.textColor
                     opacity: 0.7
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                 }

@@ -372,7 +372,7 @@ PlasmoidItem {
     property bool playWanted: false
     property bool gameStopWanted: false
     property Item gameStage: null
-    // name: "peekaboo", "run", "" (any: as four quick clicks)
+    // name: "peekaboo", "run", "dig", "" (any: as four quick clicks)
     function playWithTalpy(name) {
         if (!Plasmoid.configuration.showPet)
             return
@@ -558,7 +558,7 @@ PlasmoidItem {
         "openChatsIn", "newChatInVscode", "iconBlink", "awayDigest", "awayMinutes", "phoneWhileAway", "phoneFinished", "phoneDevice",
         "markdownApp", "newChatModel", "newChatEffort", "newChatMode", "usageCap", "usageRefreshMinutes", "recapRules", "clickOpensPane",
         "mondayRecap", "recapCurrency", "diffSideBySide", "paneTextPercent", "paneFont", "paneTerminalFont", "dictateLanguage",
-        "sideQuestionModel", "sideQuestionsOpen", "runBest", "suggestReplies"]
+        "sideQuestionModel", "sideQuestionsOpen", "runBest", "digBest", "suggestReplies"]
     property real settingsSeenAt: 0     // the newest shared settings this copy has seen
     property string settingsSeen: ""    // its own settings as of the last check (to see changes)
 
@@ -1025,6 +1025,12 @@ PlasmoidItem {
             icon.name: Icons.plasma.play
             visible: Plasmoid.configuration.showPet && root.playful && root.runOk
             onTriggered: root.playWithTalpy("run")
+        },
+        PlasmaCore.Action {
+            text: i18n("Dig with Talpy")
+            icon.name: Icons.plasma.play
+            visible: Plasmoid.configuration.showPet && root.playful && root.runOk
+            onTriggered: root.playWithTalpy("dig")
         },
         // Talpy plays (tricks, props, jokes, cookies, games), or only shows what the chats do
         PlasmaCore.Action {

@@ -211,4 +211,6 @@ KCM.SimpleKCM {
     property var cfg_usageRefreshMinutesDefault
     property var cfg_runBest
     property var cfg_runBestDefault
+    property var cfg_digBest
+    property var cfg_digBestDefault
 }

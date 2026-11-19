@@ -557,6 +557,7 @@ Item {
         enabled: strip.running
         visible: enabled
         acceptedButtons: Qt.LeftButton | Qt.RightButton
+        hoverEnabled: strip.running   // (Deep Dig steers by where the pointer is over the stage)
         property real pressY: 0
         property bool swiped: false
         onPressed: mouse => {
@@ -567,10 +568,12 @@ Item {
                 hero.gamePress(mouse.button === Qt.RightButton ? "dig" : "jump")
         }
         onPositionChanged: mouse => {
+            const hero = strip.petFor("")
+            if (hero)
+                hero.gameAim(mouse.x)   // (Deep Dig: he goes where it is; a drag too, on touch)
             // (a touch can't press the right button: swiped down, it digs)
             if (!swiped && (mouse.buttons & Qt.LeftButton) && mouse.y - pressY > strip.gu * 1.2) {
                 swiped = true
-                const hero = strip.petFor("")
                 if (hero)
                     hero.gamePress("dig")
             }
@@ -583,7 +586,8 @@ Item {
         }
     }
     // A scored game: its keys, while it's on (the stage takes the focus as it
-    // starts): the Run's Space or ↑ jump, ↓ digs while held; Esc ends it (Pet.qml)
+    // starts): the Run's Space or ↑ jump, ↓ digs while held; Deep Dig's ← and →
+    // steer while held (Space on the end digs again); Esc ends it (Pet.qml)
     Item {
         id: gameKeys
         focus: strip.running
@@ -595,15 +599,22 @@ Item {
                 hero.gamePress("jump")
             else if (event.key === Qt.Key_Down)
                 hero.gamePress("dig")
+            else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right)
+                hero.gamePress(event.key === Qt.Key_Left ? "left" : "right")
             else
                 return
             event.accepted = true
         }
         Keys.onReleased: event => {
             const hero = strip.petFor("")
-            if (!strip.running || !hero || event.isAutoRepeat || event.key !== Qt.Key_Down)
+            if (!strip.running || !hero || event.isAutoRepeat)
                 return
-            hero.gameRelease("dig")
+            if (event.key === Qt.Key_Down)
+                hero.gameRelease("dig")
+            else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right)
+                hero.gameRelease(event.key === Qt.Key_Left ? "left" : "right")
+            else
+                return
             event.accepted = true
         }
     }

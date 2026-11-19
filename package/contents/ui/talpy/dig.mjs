@@ -36,7 +36,7 @@ import { FRAMES, soilAt } from './talpy.mjs';
 export const DIG_KINDS = {
     root: [1.6, 0.34], pebble: [0.6, 0.4], stone: [0.6, 0.62], pipe: [2.2, 0.42], bottle: [0.32, 0.72],
     boulder: [1.25, 0.85], beetle: [0.8, 0.46], cookie: [0.6, 0.6], plus: [0.7, 0.35],
-    speck: [0.32, 0.2], worm: [0.62, 0.2], crystal: [0.5, 0.46], tunnel: [1, 0.34], clod: [0.13, 0.11], glow: [1.8, 1.8]
+    speck: [0.32, 0.2], worm: [0.62, 0.2], crystal: [0.5, 0.46], tunnel: [1, 0.5], clod: [0.13, 0.11], glow: [1.8, 1.8]
 };
 // how many looks a kind has (drawThing's variant: a root's curl, which way a pipe's open end or a
 // beetle faces, a speck's, a crystal's colour, a clod's, a cookie's flavour)
@@ -61,7 +61,7 @@ const REACH = 0.7;             // of what his top speed covers meanwhile: the ne
 const SPACING = 0.35;          // body widths between two things side by side, at most (less than he is: a wall)
 const BEETLE_FROM = 300, BEETLE_EVERY = 1 / 6, BEETLE_PACE = 1.5;   // metres; a row in…; his widths a second
 const COOKIE_EVERY = 1 / 3;    // rows with a cookie in their way through
-const TUNNEL_EVERY = 0.12;     // body heights dug between two pieces of his tunnel
+const TUNNEL_EVERY = 0.3;      // body heights dug between two pieces of his tunnel (each half a body high: overlapping)
 const STEP_PX = 4;             // a move's step, at most
 const CLODS = 6, CLOD_MS = 600, CLOD_FALL = 9;   // a second (twice that turning hard); how long; body heights a second²
 const BOB = 0.015;             // his bob as he digs, of his body's height

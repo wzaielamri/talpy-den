@@ -37,6 +37,7 @@ export class Scored {
         this.holes = [];           // (none of the host's)
         this.things = [];          // one array all along (kept, emptied, filled)
         this.slots = 0;            // things' slots used so far (a host's pictures for them)
+        this.bySlot = [];          // the thing in each slot now, or null (index(): once a tick, for a host)
         this.frameMs = 1000 / 60;  // the host's ticks, as they come (an even step each: step)
         this.state = '';
         this.since = 0;
@@ -83,6 +84,7 @@ export class Scored {
         this.turn = 0;
         this.pose = '';
         this.reset(now);
+        this.index();
         this.host.changed();
     }
 
@@ -131,8 +133,19 @@ export class Scored {
             return;
         }
         this.tickGame(now, dt);
+        this.index();
         if (this.state !== 'over')
             this.host.changed();
+    }
+
+    // which thing is in which slot now (one array all along: a host reads it, not searching)
+    index() {
+        const by = this.bySlot;
+        by.length = this.slots;
+        for (let i = 0; i < by.length; i++)
+            by[i] = null;
+        for (let i = 0; i < this.things.length; i++)
+            by[this.things[i].slot] = this.things[i];
     }
 
     // one step on the end (true: something moved); the game's own, if any
@@ -168,6 +181,7 @@ export class Scored {
         this.hitBy = kind;
         this.hint = '';
         this.bumped();
+        this.index();
         if (this.meters > this.best) {
             this.newBest = true;
             this.best = this.meters;
