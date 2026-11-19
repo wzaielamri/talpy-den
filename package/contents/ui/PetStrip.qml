@@ -664,6 +664,14 @@ Item {
         onTriggered: bubble.text = ""
     }
 
+    // That pet's words gone at once (a game's: as play begins, as a new go starts)
+    function hush(pet) {
+        if (bubbleBox.owner === pet) {
+            bubbleTimer.stop()
+            bubble.text = ""
+        }
+    }
+
     // Speech bubble above whoever speaks, or beside him when there's no room above
     Rectangle {
         id: bubbleBox

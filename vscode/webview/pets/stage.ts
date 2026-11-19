@@ -650,6 +650,15 @@ export class Stage implements PetStage, Animator {
     this.invalidate();
   }
 
+  // That pet's words gone at once (a game's: as play begins, as a new go starts)
+  hush(pet: Pet): void {
+    if (this.bubbleOwner !== pet) return;
+    this.bubbleTimer.stop();
+    this.bubbleOwner = null;
+    this.bubbleEl.hidden = true;
+    this.invalidate();
+  }
+
   // ------------------------------------------------------------ frames
 
   animate(t: Tween): void {

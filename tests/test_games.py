@@ -939,6 +939,64 @@ class DigTests(unittest.TestCase):
     def setUpClass(cls):
         cls.r = run_node(DIG)
 
+    def test_he_is_happy_digging(self):
+        # (the owner: "make talpy happy when digging": happy eyes, an open smile, rosy cheeks)
+        out = run_node("""
+import { pickGame } from %s;
+const t = new Talpy({});
+let now = 1000;
+t.tick(now);
+const g = pickGame(t, { stage: () => ({ width: 500, height: 260, ground: 245, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: 470 }),
+    px: () => 200, moveTo() {}, say() {}, changed() {}, best: () => 0, saveBest() {}, grow() {}, runOk: () => true }, 'dig');
+g.start(now);
+for (let i = 0; i < 200; i++) { now += 16; t.tick(now); g.tick(now); }
+console.log(JSON.stringify({ state: g.state, eyes: t.st.eyes, mouth: t.st.mouth, blush: t.st.blush }));
+""" % json.dumps(str(TALPY / "games.mjs")))
+        self.assertEqual(out["state"], "run")
+        self.assertEqual((out["eyes"], out["mouth"], out["blush"]), ("happy", "open", "1"))
+
+    def test_his_words_go_as_play_begins_and_as_a_new_go_starts(self):
+        # (the owner: "Oof!" stayed into the new go, "Let's play!" too long: hushed as the game gets
+        # going, and as a new go starts after a bump)
+        out = run_node("""
+import { pickGame } from %s;
+const result = {};
+for (const name of ['run', 'dig']) {
+    const t = new Talpy({});
+    let now = 1000;
+    t.tick(now);
+    const log = [];
+    const g = pickGame(t, { stage: () => ({ width: 500, height: 260, ground: 245, unit: 1.5, bodyWidth: 60, bodyHeight: 60, minX: 30, maxX: 470 }),
+        px: () => 200, moveTo() {}, say: w => log.push('say ' + w), hush: () => log.push('hush ' + g.state), changed() {},
+        best: () => 0, saveBest() {}, grow() {}, runOk: () => true }, name);
+    g.start(now);
+    log.push('started');
+    while (g.state !== 'over' && now < 60000) { now += 16; t.tick(now); g.tick(now); }
+    for (let i = 0; i < 40; i++) { now += 16; t.tick(now); g.tick(now); }
+    log.push('again');
+    g.press('jump');
+    for (let i = 0; i < 160; i++) { now += 16; t.tick(now); g.tick(now); }
+    result[name] = log;
+}
+console.log(JSON.stringify(result));
+""" % json.dumps(str(TALPY / "games.mjs")))
+        for name in ("run", "dig"):
+            with self.subTest(game=name):
+                log = out[name]
+                started, again = log.index("started"), log.index("again")
+                self.assertNotIn("hush ready", log[:started])           # (not as it starts: "Let's play!" shows)
+                self.assertEqual(log[started + 1], "hush run")           # (gone as play begins)
+                self.assertEqual(log[again + 1], "hush ready")           # (a new go: the bump's "Oof!" gone at once)
+                self.assertEqual(log[-1], "hush run")
+
+    def test_its_module_and_types_are_tidy(self):
+        games = (TALPY / "games.mjs").read_text()
+        self.assertEqual(games.count("from './talpy.mjs'"), 1)   # (one import of it)
+        types = (TALPY / "games.d.mts").read_text()
+        kinds = types[types.index("export type RunThingKind"):][:400]
+        for kind in ("root", "pipe", "bottle", "boulder", "beetle", "speck", "worm", "crystal", "tunnel", "clod", "glow"):
+            self.assertIn('"%s"' % kind, kinds)
+
     def test_it_is_a_game_not_where_scored_games_arent(self):
         self.assertEqual(self.r["games"], ["peekaboo", "run", "dig"])
         self.assertEqual(set(self.r["randomNoDig"]), {"peekaboo"})
@@ -1297,10 +1355,26 @@ class PlasmaDigTests(unittest.TestCase):
         self.assertIn("paintedLook = look", ui)                       # (a slot shown once its picture is painted:
         self.assertIn("sprite.paintedLook === sprite.look", ui)       # never a frame of the one before)
 
+    def test_his_words_can_be_hushed(self):
+        self.assertIn("hush: () => strip.hush(pet)", self.pet)
+        hush = self.strip[self.strip.index("function hush(pet)"):][:300]
+        self.assertIn("bubbleTimer.stop()", hush)
+
     def test_its_words_stay_inside_the_stage(self):
         ui = self.pet[self.pet.index("    // A scored game's things (Talpy's Run, Deep Dig)"):][:7000]
         self.assertIn("x: Math.min(Math.max(Kirigami.Units.smallSpacing, pet.px - width / 2), parent.width - width - Kirigami.Units.smallSpacing)", ui)
         self.assertIn('visible: pet.scoredOn && pet.gameState === "run"', ui)   # (the distance once it's on: not under the hint)
+
+    def test_he_settles_back_as_a_game_ends(self):
+        # (no snap to the floor, nor upright in a frame, as a dig ends: eased back while the stage shrinks)
+        for prop in ("gameLift", "gameTurn"):
+            block = self.pet[self.pet.index("Behavior on " + prop + " {"):][:240]
+            self.assertIn("enabled: !pet.scoredOn", block)
+            self.assertIn("NumberAnimation", block)
+
+    def test_the_earth_is_dark_the_same_way_in_both_apps(self):
+        # (luminance under 0.3, as VS Code's earthDark)
+        self.assertIn("0.299 * c.r + 0.587 * c.g + 0.114 * c.b < 0.3", self.pet)
 
     def test_a_key_let_go_elsewhere_isnt_held(self):
         keys = self.strip[self.strip.index("// A scored game: its keys"):][:2600]
@@ -1401,10 +1475,28 @@ class VsCodeDigTests(unittest.TestCase):
 
     def test_the_pointer_and_keys_steer_him(self):
         listen = self.ts[self.ts.index("private listenToGame("):][:4200]
-        self.assertEqual(listen.count("g.aim?.(e.clientX - root.getBoundingClientRect().left)"), 2)   # (moving, and a tap or click)
+        self.assertEqual(listen.count("g.aim?.(e.clientX - left)"), 2)   # (moving, and a tap or click)
         self.assertIn("while (this.thingSprites.size >= 160) this.thingSprites.delete(", self.ts)   # (the oldest go, not all at once)
         self.assertIn('e.key === "ArrowLeft" || e.key === "ArrowRight"', listen)
         self.assertIn('if ((name === "run" || name === "dig") && reducedMotion())', self.ts)
+
+    def test_he_settles_back_as_a_game_ends(self):
+        self.assertIn("this.liftSettler.run(this.lastLift, 0, 250, ease.inOutSine)", self.ts)
+        self.assertIn("this.turnSettler.run(this.lastTurn, 0, 250, ease.inOutSine)", self.ts)
+        self.assertIn("return g ? g.lift ?? 0 : this.settleLift;", self.ts)
+
+    def test_the_pointer_is_measured_once_not_each_move(self):
+        listen = self.ts[self.ts.index("private listenToGame("):][:4600]
+        self.assertNotIn("getBoundingClientRect().left)", listen.replace("let left = root.getBoundingClientRect().left", ""))
+        self.assertEqual(listen.count("g.aim?.(e.clientX - left)"), 2)
+        self.assertIn('root.addEventListener("pointerenter", measure)', listen)
+        self.assertIn('window.addEventListener("resize", measure)', listen)
+
+    def test_his_words_can_be_hushed(self):
+        self.assertIn("hush: () => this.stage.hush(this)", self.ts)
+        stage = (ROOT / "vscode/webview/pets/stage.ts").read_text()
+        hush = stage[stage.index("  hush(pet: Pet): void {"):][:400]
+        self.assertIn("this.bubbleTimer.stop()", hush)
 
     def test_its_words_and_keys(self):
         self.assertIn("Math.min(Math.max(4, this.px - this.gameHintW / 2), this.stage.width - this.gameHintW - 4)", self.ts)

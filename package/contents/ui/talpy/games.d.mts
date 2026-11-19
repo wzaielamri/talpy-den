@@ -21,6 +21,7 @@ export interface GameHost {
     // (metres), a new best, the stage taller for it (game.stageGu grid units,
     // its status faded) or back, and where they aren't offered
     best?(name: ScoredName): number;
+    hush?(): void;   // his words gone at once (a scored game's: as play begins, as a new go starts)
     saveBest?(name: ScoredName, meters: number): void;
     grow?(on: boolean): void;
     runOk?(): boolean;
@@ -33,7 +34,9 @@ export interface GameHole {
 }
 
 export type RunThingKind = "pebble" | "stone" | "pot" | "pebbles" | "hedgehog" | "stump" | "log" | "crow" | "crowHigh"
-    | "tuft" | "cloud" | "cookie" | "plus" | "dust";
+    | "tuft" | "cloud" | "cookie" | "plus" | "dust"
+    // Deep Dig's (dig.mjs)
+    | "root" | "pipe" | "bottle" | "boulder" | "beetle" | "speck" | "worm" | "crystal" | "tunnel" | "clod" | "glow";
 
 // What's on Talpy's way in a run (DECOR, a tuft of grass and a cloud, never hits)
 export interface RunThing {

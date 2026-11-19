@@ -27,9 +27,8 @@
 // Plain ES2017 (see paths.mjs).
 
 import { ACTIONS, COOKIE } from './actions.mjs';
-import { FLAP_FRAMES } from './talpy.mjs';
+import { FLAP_FRAMES, FRAMES } from './talpy.mjs';
 import { Scored, DECOR as SCORED_DECOR, GRAB as SCORED_GRAB, SCORED as SCORED_GAMES } from './scored.mjs';
-import { FRAMES } from './talpy.mjs';
 import { Dig } from './dig.mjs';
 
 // (scored.mjs's, for the hosts that import this one: an export per line, GNOME 43's port can't re-export)
@@ -379,6 +378,7 @@ export class Run extends Scored {
         if (this.state === 'ready' && now - this.since >= RUN_READY_MS) {
             this.state = 'run';
             this.hint = '';
+            this.hush();   // ("Let's play!" gone as play begins)
         } else if (this.state === 'ready')
             this.s = this.host.stage();   // (it grows meanwhile: his floor goes down with it)
         const B = this.s.bodyHeight;

@@ -97,13 +97,22 @@ export class Scored {
         this.talpy.play({ steps: () => [step] }, null, false);
     }
 
-    // A press on the end, past RUN_AGAIN_MS: again (true: it was taken)
+    // A press on the end, past RUN_AGAIN_MS: again (true: it was taken); what he said as he
+    // bumped goes at once (not into the new go)
     again() {
         if (this.state !== 'over')
             return false;
-        if (this.now - this.since >= RUN_AGAIN_MS)
+        if (this.now - this.since >= RUN_AGAIN_MS) {
             this.begin(this.now);
+            this.hush();
+        }
         return true;
+    }
+
+    // His words gone ("Let's play!" as play begins, "Oof!" as a new go starts): the host's bubble
+    hush() {
+        if (this.host.hush)
+            this.host.hush();
     }
 
     hit() {

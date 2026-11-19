@@ -110,7 +110,16 @@ Item {
     // when: gameThing)
     property bool scoredOn: false
     property real gameLift: 0            // px he's above his floor (the Run: in his jump)
-    property real gameTurn: 0            // degrees he's turned (0 upright; Deep Dig: head-down)
+    property real gameTurn: 0            // degrees he's turned (0 upright; Deep Dig: leaning into his way)
+    // (a game over, he settles back to his floor and upright as the stage shrinks: no snap in a frame)
+    Behavior on gameLift {
+        enabled: !pet.scoredOn
+        NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad }
+    }
+    Behavior on gameTurn {
+        enabled: !pet.scoredOn
+        NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad }
+    }
     property int gameFrame: 0
     property int gameSlots: 0            // the game's slots: a picture for each (its things keep theirs)
     readonly property real spritePad: 2 // px around a thing's picture, for its outline's edge
@@ -122,7 +131,10 @@ Item {
     property string gameHint: ""         // the game's (the Run: start, dig; Deep Dig: steer), ""
     property string gameSoil: ""         // Deep Dig's earth, its colour as deep as he is ("" none)
     // a scored game's things drawn for a dark ground: the theme's for the Run, the earth's for Deep Dig
-    readonly property bool gameDark: gameSoil !== "" ? Qt.color(gameSoil).hslLightness < 0.3 : strip.darkTheme
+    readonly property bool gameDark: gameSoil !== "" ? earthDark(Qt.color(gameSoil)) : strip.darkTheme
+    function earthDark(c) {   // (its luminance, as VS Code's earthDark)
+        return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b < 0.3
+    }
     property real pop: 1                // popping out into your hand: 0 in its burrow, 1 where you hold it
     property bool landing: false        // picked up, until it has landed and dug in: drawn live
     property bool arriving: false
@@ -407,6 +419,7 @@ Item {
             px: () => pet.px,
             moveTo: x => { pet.px = x },
             say: what => pet.say((said[what] || said.fun)()),
+            hush: () => strip.hush(pet),
             changed: () => pet.gameMoved(),
             face: left => { view.facingLeft = left },
             // a scored game's: its best (every widget's), the stage taller (the status faded) or back

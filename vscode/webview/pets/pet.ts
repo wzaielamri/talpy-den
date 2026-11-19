@@ -195,6 +195,13 @@ export class Pet {
   private readonly stride: Tween;
   private readonly faller: Tween;
   private readonly popper: Tween;
+  // A scored game over: his height and lean eased back (no snap to the floor or upright in a frame)
+  private readonly liftSettler: Tween;
+  private readonly turnSettler: Tween;
+  private settleLift = 0;
+  private settleTurn = 0;
+  private lastLift = 0;
+  private lastTurn = 0;
   private readonly lookTimer: Timer;
   private readonly tickleTimer: Timer;
   private readonly contextTimer: Timer;
@@ -236,6 +243,8 @@ export class Pet {
     this.stride = new Tween(stage, (v) => (this.px = v));
     this.faller = new Tween(stage, (v) => (this.lift = v));
     this.popper = new Tween(stage, (v) => (this.pop = v));
+    this.liftSettler = new Tween(stage, (v) => (this.settleLift = v));
+    this.turnSettler = new Tween(stage, (v) => (this.settleTurn = v));
     this.fill = new Tween(stage, (v) => (this.leftOpen = v));
     // The hero turns towards the mouse while it hovers the stage
     this.lookTimer = new Timer(clock, 350, () => {
@@ -885,6 +894,7 @@ export class Pet {
       px: () => this.px,
       moveTo: (x) => (this.px = x),
       say: (what) => this.say((said[what] ?? said.fun)()),
+      hush: () => this.stage.hush(this),
       changed: () => this.gameMoved(),
       face: (left) => (this.talpy.facingLeft = left),
       // a scored game's: its best, the stage taller (its status faded) or back, not with reduced motion
@@ -934,11 +944,18 @@ export class Pet {
       }
     }
     const running = on && this.scored() !== null;
-    if (running) this.gameMoves++; // (its canvas is painted again only when it moved)
+    if (running) {
+      this.gameMoves++; // (its canvas is painted again only when it moved)
+      this.lastLift = this.play?.lift ?? 0;
+      this.lastTurn = this.play?.turn ?? 0;
+    }
     if (running && !this.gameListening) this.listenToGame();
     else if (!running && this.gameListening) {
       this.gameListening();
       this.gameListening = null;
+      // (back to his floor and upright, eased as the stage shrinks)
+      this.liftSettler.run(this.lastLift, 0, 250, ease.inOutSine);
+      this.turnSettler.run(this.lastTurn, 0, 250, ease.inOutSine);
     }
     this.changed();
   }
@@ -973,15 +990,20 @@ export class Pet {
       if (!g) return;
       e.preventDefault();
       e.stopPropagation();
-      g.aim?.(e.clientX - root.getBoundingClientRect().left); // (Deep Dig: a tap or click steers him there too)
+      g.aim?.(e.clientX - left); // (Deep Dig: a tap or click steers him there too)
       g.press?.(e.button === 2 ? "dig" : "jump");
       swipeFrom = e.pointerType === "touch" ? e.clientY : -1;
       swiped = false;
     };
+    // (where the stage is across the view, measured as the pointer comes in or the window changes: not each move)
+    let left = root.getBoundingClientRect().left;
+    const measure = (): void => {
+      left = root.getBoundingClientRect().left;
+    };
     const move = (e: PointerEvent): void => {
       const g = game();
       if (!g) return;
-      g.aim?.(e.clientX - root.getBoundingClientRect().left); // (Deep Dig: he goes where it is; a drag too)
+      g.aim?.(e.clientX - left); // (Deep Dig: he goes where it is; a drag too)
       if (swiped || swipeFrom < 0 || e.clientY - swipeFrom <= this.stage.gu * 1.2) return;
       swiped = true;
       g.press?.("dig");
@@ -1000,6 +1022,8 @@ export class Pet {
       for (const what of ["left", "right", "dig"] as const) g?.release?.(what);
     };
     window.addEventListener("blur", letGo);
+    window.addEventListener("resize", measure);
+    root.addEventListener("pointerenter", measure);
     document.addEventListener("keydown", key, true);
     document.addEventListener("keyup", key, true);
     root.addEventListener("pointerdown", press, true);
@@ -1009,6 +1033,8 @@ export class Pet {
     root.addEventListener("dblclick", stop, true);
     this.gameListening = () => {
       window.removeEventListener("blur", letGo);
+      window.removeEventListener("resize", measure);
+      root.removeEventListener("pointerenter", measure);
       document.removeEventListener("keydown", key, true);
       document.removeEventListener("keyup", key, true);
       root.removeEventListener("pointerdown", press, true);
@@ -1026,12 +1052,14 @@ export class Pet {
 
   // A scored game: how high he is above his floor (px: the Run's jump), 0 when none is on
   private gameLift(): number {
-    return this.scored()?.lift ?? 0;
+    const g = this.scored();
+    return g ? g.lift ?? 0 : this.settleLift;
   }
 
   // A scored game: how far it turns him (degrees, 0 upright: Deep Dig's head-down), 0 when none is on
   private gameTurn(): number {
-    return this.scored()?.turn ?? 0;
+    const g = this.scored();
+    return g ? g.turn ?? 0 : this.settleTurn;
   }
 
   // A scored game: its things on one canvas the stage's size, under him, and its
