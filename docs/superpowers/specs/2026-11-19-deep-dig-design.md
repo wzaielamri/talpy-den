@@ -38,8 +38,8 @@ polished look are the point, not extras.
 - GNOME (not at parity: kept from breaking only), the desktop pets, the small
   Talpys on rows, Talpy Chat's window.
 - A window or view of its own.
-- Changing how the Run plays or looks (its code is shared, its behaviour
-  stays).
+- Changing the Run's controls, its obstacles or its fairness rules (it gets
+  cookies and better physics, below; the rest stays as it plays now).
 
 ## Anti-goals (a failure even if it works)
 
@@ -191,6 +191,22 @@ polished look are the point, not extras.
 - Offered where the Run is: not in a widget on the desktop, not with less
   motion (Plasma's animation speed Instant, VS Code's reduced motion).
 
+### The Run gets what Deep Dig brings (the owner, 2026-11-19: "if also the run can be nicer based on the findings of this game, like physics and cookies")
+
+- **Cookies:** now and then a cookie on his way, worth 10 m with the same
+  "+10" floating up (one score, as Deep Dig). Some sit on the ground in a gap
+  between two things (run through it); some float over a ground thing at the
+  top of his jump (a well-timed jump over it grabs it). Never one that lures
+  him into a bump: only in a gap, or on the arc of a jump that clears.
+- **Physics:**
+  - Bumped in the air, he falls with the same gravity his jump has
+    (speeding up as he falls), not at a constant speed.
+  - He stretches a little as he takes off and squashes as he lands, quickly
+    eased back (Talpy's own squash and stretch).
+  - A small puff of dust where he lands.
+  - His steps keep pace with the ground: the faster it goes, the quicker
+    his feet, so they never slide over it.
+
 ### What becomes shared with the Run (approach 1)
 
 - In `games.mjs`: the slots (`freeSlot`), the end and its waits
@@ -227,6 +243,7 @@ polished look are the point, not extras.
   a drag at a top speed; layers by depth with their things; beetles from 300
   m; decoration never in the way; fair rows; the Run's end and best rules).
 - Physics that look right and a nice design are the bar.
+- The Run gets cookies and the physics too.
 - Built without agents.
 
 ## Calls I made (the owner may change them)
@@ -239,6 +256,9 @@ polished look are the point, not extras.
   margin).
 - Beetles only in rows of their own.
 - The hint words; Space also digs again on the end screen.
+- The Run's cookies: on the ground in gaps, or over a ground thing at his
+  jump's top; its physics: gravity for the fall, squash and stretch, a dust
+  puff, steps in pace with the ground.
 - A gallery page (like `vscode/dev/things.html`) with every buried thing,
   the layers and Talpa head-down, approved by the owner before the hosts are
   built.
