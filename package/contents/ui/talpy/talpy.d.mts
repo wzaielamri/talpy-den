@@ -27,6 +27,8 @@ export function drawThing(ctx: unknown, thing: { kind: string; w: number; h: num
     dark?: boolean): void;
 // a bird's pictures a flap (RunThing.frame)
 export const FLAP_FRAMES: number;
+// how many pictures a kind has (RunThing.frame), 1 when it isn't listed
+export const FRAMES: Record<string, number>;
 
 // A film's picture of it (Talpy.still), see films.mjs
 export interface Still {

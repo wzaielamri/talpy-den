@@ -45,6 +45,7 @@ export class Scored {
         this.turn = 0;
         this.dist = 0;             // metres, not rounded
         this.bonus = 0;            // metres the cookies were worth
+        this.grabbed = 0;          // cookies taken this go
         this.meters = 0;
         this.best = 0;
         this.newBest = false;
@@ -74,6 +75,7 @@ export class Scored {
         this.now = now;
         this.dist = 0;
         this.bonus = 0;
+        this.grabbed = 0;
         this.meters = 0;
         this.newBest = false;
         this.hitBy = '';
@@ -182,16 +184,18 @@ export class Scored {
 
     // He took a cookie: BONUS metres, a "+10" rising from it
     grab(th) {
+        this.grabbed++;
         this.bonus += BONUS;
         this.score();
         const i = this.things.indexOf(th);
         if (i >= 0)
             this.things.splice(i, 1);
-        this.things.push({ kind: 'plus', x: th.x + th.w / 2 - th.h * 0.6, y: th.y, w: th.h * 1.2, h: th.h * 0.6,
+        this.things.push({ kind: 'plus', x: th.x + th.w / 2 - th.h * 0.6, y: th.y, sky: th.y, w: th.h * 1.2, h: th.h * 0.6,
                            frame: 0, variant: 0, slot: this.freeSlot(), alpha: 1, born: this.now, up: 0 });
     }
 
-    // the "+10"s: up and fading, then gone (each tick, from the game's own)
+    // the "+10"s: up and fading, then gone (each tick, from the game's own; sky:
+    // px from the stage's top, so the game's own moves leave its height alone)
     lifts(dt) {
         let n = 0;
         for (let i = 0; i < this.things.length; i++) {
@@ -200,7 +204,8 @@ export class Scored {
                 const p = (this.now - th.born) / PLUS_MS;
                 if (p >= 1)
                     continue;
-                th.y -= th.h * 2 * dt;
+                th.sky -= th.h * 2 * dt;
+                th.y = th.sky;
                 th.alpha = 1 - p * p;
             }
             this.things[n++] = th;

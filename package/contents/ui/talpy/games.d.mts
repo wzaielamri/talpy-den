@@ -33,7 +33,7 @@ export interface GameHole {
 }
 
 export type RunThingKind = "pebble" | "stone" | "pot" | "pebbles" | "hedgehog" | "stump" | "log" | "crow" | "crowHigh"
-    | "tuft" | "cloud";
+    | "tuft" | "cloud" | "cookie" | "plus" | "dust";
 
 // What's on Talpy's way in a run (DECOR, a tuft of grass and a cloud, never hits)
 export interface RunThing {
@@ -42,7 +42,9 @@ export interface RunThing {
     y: number;        // its top, stage px
     w: number;
     h: number;
-    frame: number;    // a bird's wings: 0 to FLAP_FRAMES - 1 (talpy.mjs)
+    frame: number;    // its picture, 0 to FRAMES[kind] - 1 (talpy.mjs: a bird's wings, a landing's puff)
+    alpha?: number;   // drawn at that opacity (a "+10" fading), 1 when none
+    air?: boolean;    // a cookie up where his jump takes him
     variant: number;  // its look: 0 to VARIANTS[kind] - 1
     slot: number;     // its own while it's there (0 to the game's slots - 1)
 }

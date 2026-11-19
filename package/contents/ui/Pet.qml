@@ -1022,7 +1022,7 @@ Item {
     // stage's size painted every frame cost about as much again as the rest
     // of the widget, and a frame's picture could show a frame late. A slot of
     // the game's has one picture (its things keep theirs while they're there);
-    // a bird's has its whole flap side by side, the frame's one shown.
+    // a kind with frames (a bird's flap, a landing's puff: T.FRAMES) has them side by side, the frame's one shown.
     Loader {
         active: pet.scoredOn
         width: strip.width
@@ -1041,6 +1041,7 @@ Item {
                     width: sprite.cellW
                     height: sprite.cellH
                     clip: sprite.frames > 1
+                    opacity: { pet.gameFrame; return th && th.alpha !== undefined ? th.alpha : 1 }   // (a "+10" fading)
                     Canvas {
                         id: sprite
                         // what it shows (relook), painted again only when that changes; kept
@@ -1059,7 +1060,7 @@ Item {
                                 return
                             look = l
                             drawn = { kind: th.kind, w: th.w, h: th.h, variant: th.variant, dark: strip.darkTheme,
-                                      frames: th.kind === "crow" || th.kind === "crowHigh" ? T.FLAP_FRAMES : 1 }
+                                      frames: T.FRAMES[th.kind] || 1 }
                             requestPaint()
                         }
                         x: { pet.gameFrame; return slot.th ? -(slot.th.frame % frames) * cellW : 0 }

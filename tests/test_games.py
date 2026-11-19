@@ -143,17 +143,18 @@ console.log(JSON.stringify(ms));""" % json.dumps(str(TALPY / "games.mjs")))
 
 
 RUN = """
-import { pickGame, GAMES, DECOR, KINDS, VARIANTS } from %s;
+import { pickGame, GAMES, DECOR, GRAB, KINDS, VARIANTS } from %s;
 function seeded(seed) {   // (mulberry32: the same run each time)
     return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
                    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
-const GROUND_KINDS = Object.keys(KINDS).filter(k => KINDS[k][2] === 0 && DECOR.indexOf(k) < 0);
+const GROUND_KINDS = Object.keys(KINDS).filter(k => KINDS[k][2] === 0 && DECOR.indexOf(k) < 0 && GRAB.indexOf(k) < 0);
+const solid = th => DECOR.indexOf(th.kind) < 0 && GRAB.indexOf(th.kind) < 0;
 // A player who looks ahead: jumps a ground thing so he's at his highest over it, digs under a crow
 function player(g, px, noDig) {
     let next = null;
     for (const th of g.things)
-        if (DECOR.indexOf(th.kind) < 0 && th.x + th.w > px - 20 && (!next || th.x < next.x)) next = th;
+        if (solid(th) && th.x + th.w > px - 20 && (!next || th.x < next.x)) next = th;
     if (!next || next.kind === 'crowHigh') { if (g.digging) g.release('dig'); return; }
     const ahead = next.x - (px + 16);
     if (GROUND_KINDS.indexOf(next.kind) >= 0) {
@@ -187,6 +188,10 @@ function play(o) {
     // the kinds by distance; never the same kind twice in a row; the clouds up in the sky)
     const slotOf = new Map(), firstAt = {}, came = new Set();
     let slotsOk = true, variantsOk = true, sameTwice = 0, lastKind = '', cloudBottom = 0;
+    // (cookies: where each is as it reaches him; the "+10"s; his steps' pace; a jump's stretch and squash)
+    const cookieSeen = new Set(), plusSeen = new Set();
+    let pluses = 0, cookieGaps = [], airCookies = [], walks = [], walkOk = true, lastWalk = 999, hopAt = -1, wasUp = false;
+    let walkMoves = true;
     while (g.on && now < 1000 + (o.until || 180000)) {
         now += 16;
         t.tick(now);
@@ -195,7 +200,32 @@ function play(o) {
         r.maxThings = Math.max(r.maxThings, g.things.length);
         if (o.growing && !r.early && now - 1000 >= 400)   // (just after the stage grew: what it put there meanwhile)
             r.early = { kinds: g.things.map(th => th.kind), bottoms: g.things.map(th => Math.round(th.y + th.h)) };
-        const hitting = g.things.filter(th => DECOR.indexOf(th.kind) < 0);
+        const hitting = g.things.filter(solid);
+        for (const th of g.things) {
+            if (th.kind === 'plus' && !plusSeen.has(th)) { plusSeen.add(th); pluses++; }
+            if (th.kind !== 'cookie' || cookieSeen.has(th) || th.x + th.w / 2 > px + 60) continue;
+            cookieSeen.add(th);   // (a body's width before him, before it's taken: what's around it then)
+            const mid = th.x + th.w / 2;
+            if (th.air) {
+                const under = hitting.find(o => Math.abs(o.x + o.w / 2 - mid) < 1);
+                airCookies.push({ over: under ? under.kind : '', high: 160 - (th.y + th.h / 2) });
+            } else {
+                let left = 1e9, right = 1e9;
+                for (const o of hitting) {
+                    if (o.x + o.w <= th.x) left = Math.min(left, th.x - (o.x + o.w));
+                    else if (o.x >= th.x + th.w) right = Math.min(right, o.x - (th.x + th.w));
+                    else left = right = -1;   // (in a thing)
+                }
+                cookieGaps.push(Math.min(left, right));
+            }
+        }
+        if (g.state === 'run') {
+            const w = t.walkMs;
+            if ([500, 420, 350, 290, 250].indexOf(w) < 0 || w > lastWalk) walkOk = false;
+            lastWalk = w;
+            if (!walks.length || walks[walks.length - 1][1] !== w) walks.push([Math.round(g.speedUp * 100) / 100, w]);
+            if (g.lift === 0 && !g.digging && !t.moves().some(m => m[0] === 'walk' && m[1] === w / 2)) walkMoves = false;
+        }
         const slots = new Set();
         for (const th of g.things) {
             if (slots.has(th.slot) || !(th.slot >= 0 && th.slot < g.slots) || (slotOf.has(th) && slotOf.get(th) !== th.slot)) slotsOk = false;
@@ -255,7 +285,7 @@ function play(o) {
         if (o.widen && now - 1000 > o.widen) {
             r.seen = r.seen || new Set(g.things);
             for (const th of g.things)
-                if (!r.seen.has(th)) { r.seen.add(th); r.newX = Math.min(r.newX === undefined ? 1e9 : r.newX, th.x); }
+                if (!r.seen.has(th) && solid(th)) { r.seen.add(th); r.newX = Math.min(r.newX === undefined ? 1e9 : r.newX, th.x); }
         } else if (o.widen) r.seen = new Set(g.things);
         // (a second press: one long before landing, a double-click, isn't kept; one just before is)
         if (o.secondPress && g.state === 'run' && r.jumpAt === undefined && g.lift === 0) { g.press('jump'); r.jumpAt = now; }
@@ -267,6 +297,23 @@ function play(o) {
             g.things.push({ kind: 'crow', x: px - 20, y: 0, w: 36, h: 21, frame: 0, up: 63 });   // (at head height, where he is)
         if (o.airBump && g.state === 'over' && r.liftAtBump === undefined) { r.liftAtBump = g.lift; r.bumpOverAt = now; }
         if (o.airBump && r.bumpOverAt !== undefined && now - r.bumpOverAt === 608) r.liftLater = g.lift;
+        if (o.airBump && r.bumpOverAt !== undefined) {   // (each tick's drop while he falls, and when he's down)
+            r.lifts = r.lifts || [r.liftAtBump];
+            if (r.lifts[r.lifts.length - 1] > 0) { r.lifts.push(g.lift); if (g.lift === 0) r.downMs = now - r.bumpOverAt; }
+        }
+        // (one jump, nothing near: he stretches as he takes off, squashes as he lands, a puff of dust there)
+        if (o.hop && g.state === 'run' && hopAt < 0 && now - 1000 > 3000) {
+            g.press('jump'); hopAt = now; r.stretchAtTakeoff = t.stretch;
+        }
+        if (o.hop && hopAt > 0) {
+            if (g.lift > 0) wasUp = true;
+            else if (wasUp && r.squashAtLanding === undefined) {
+                r.squashAtLanding = t.squash; r.landedAt = now;
+                r.dust = g.things.filter(th => th.kind === 'dust').map(th => ({ mid: th.x + th.w / 2 - px, bottom: th.y + th.h }));
+            }
+            if (r.landedAt !== undefined && now - r.landedAt === 400) { r.stretchLater = t.stretch; r.squashLater = t.squash; }
+            if (r.landedAt !== undefined && now - r.landedAt === 608) { r.stretchEnd = t.stretch; r.squashEnd = t.squash; }
+        }
     }
     r.endMs = g.on ? null : now - 1000;
     r.bottoms = g.things.map(th => Math.round(th.y + th.h));   // (ground things and tufts: on the floor)
@@ -274,6 +321,8 @@ function play(o) {
     r.meters = g.meters; r.said = said; r.saved = saved; r.grows = grows; r.things = null; r.seen = null;
     r.slotsOk = slotsOk; r.variantsOk = variantsOk; r.sameTwice = sameTwice; r.firstAt = firstAt; r.cloudBottom = cloudBottom;
     r.slots = g.slots; r.asked = Array.from(new Set(asked));
+    r.grabbed = g.grabbed; r.dist = g.dist; r.pluses = pluses; r.cookieGaps = cookieGaps; r.airCookies = airCookies;
+    r.walks = walks; r.walkOk = walkOk; r.walkMoves = walkMoves;
     return r;
 }
 const pick = () => { const t = new Talpy({}); return (name, ok) => pickGame(t, { stage: () => ({}), px: () => 0, moveTo() {}, say() {},
@@ -291,6 +340,7 @@ console.log(JSON.stringify({
     widen: play({ seed: 6, auto: true, widen: 6000, until: 14000 }),
     early: play({ secondPress: 96, until: 3400 }), late: play({ secondPress: 512, until: 3400 }),
     airBump: play({ airBump: true, until: 3600 }),
+    hop: play({ hop: true, until: 4600 }),
     noDig: play({ seed: 2, auto: true, noDig: true }),
 }));
 """ % json.dumps(str(TALPY / "games.mjs"))
@@ -320,6 +370,55 @@ class RunTests(unittest.TestCase):
         w = self.r["widen"]
         self.assertIsNone(w["overMs"])
         self.assertGreater(w["newX"], 790)              # (beyond 800 px, less a frame's step)
+
+    def test_cookies_are_worth_10_m(self):
+        for r in self.r["far"] + [self.r["wide"]]:
+            with self.subTest(seed=r):
+                self.assertGreater(r["grabbed"], 0)
+                self.assertEqual(r["meters"], int(r["dist"]) + 10 * r["grabbed"])
+                self.assertEqual(r["pluses"], r["grabbed"])   # (a "+10" rising from each)
+
+    def test_cookies_never_lure_into_a_bump(self):
+        # on the ground: in a gap, at least his body's width from both sides; in the air: over a thing
+        # on the ground, at the height of his body's middle at his jump's top (a jump that clears it grabs it)
+        for r in self.r["far"] + [self.r["wide"]]:
+            with self.subTest(seed=r):
+                self.assertTrue(r["cookieGaps"])
+                self.assertTrue(r["airCookies"])
+                for gap in r["cookieGaps"]:
+                    self.assertGreaterEqual(gap, 60)     # (bodyWidth 60)
+                for c in r["airCookies"]:
+                    self.assertTrue(c["over"])
+                    self.assertAlmostEqual(c["high"], (1.6 + 0.42) * 60, delta=6)
+                self.assertIsNone(r["overMs"])           # (the player who grabs them never bumps)
+
+    def test_bumped_in_the_air_he_falls_with_gravity(self):
+        lifts = self.r["airBump"]["lifts"]
+        drops = [a - b for a, b in zip(lifts, lifts[1:])][:-1]   # (the last one: clamped at the floor)
+        self.assertGreater(len(drops), 2)
+        for a, b in zip(drops, drops[1:]):
+            self.assertGreater(b, a)                    # (faster and faster: gravity, not a steady speed)
+        self.assertLessEqual(self.r["airBump"]["downMs"], 310 + 16)   # (JUMP_MS / 2 and a frame)
+
+    def test_he_stretches_up_and_squashes_down(self):
+        h = self.r["hop"]
+        self.assertGreater(h["stretchAtTakeoff"], 0.3)
+        self.assertGreater(h["squashAtLanding"], 0.3)
+        self.assertLess(h["stretchLater"], 0.01)
+        self.assertLess(h["squashLater"], 0.01)
+        self.assertEqual((h["stretchEnd"], h["squashEnd"]), (0, 0))
+        self.assertEqual(len(h["dust"]), 1)               # (a puff where he landed, on the floor)
+        self.assertLess(abs(h["dust"][0]["mid"]), 30)
+        self.assertAlmostEqual(h["dust"][0]["bottom"], 160, delta=1)
+
+    def test_his_steps_keep_pace_with_the_ground(self):
+        for r in self.r["far"]:
+            with self.subTest(seed=r):
+                self.assertTrue(r["walkOk"])             # (from the set, never slower as he speeds up)
+                self.assertEqual(r["walks"][0][1], 500)
+                self.assertEqual(r["walks"][-1][1], 250)       # (the quickest steps, from about 1.85 × the start)
+                self.assertGreaterEqual(r["walks"][-1][0], 1.8)
+                self.assertTrue(r["walkMoves"])          # (his pictures step at that pace: the walk is a move)
 
     def test_a_double_click_is_one_jump(self):
         self.assertEqual(self.r["early"]["liftAfterLanding"], 0)   # (a second press long before landing: dropped)
@@ -443,11 +542,12 @@ const result = {};
 for (const kind of Object.keys(KINDS)) for (let variant = 0; variant < (VARIANTS[kind] || 1); variant++)
 for (const frame of kind.startsWith('crow') ? [...Array(FLAP_FRAMES).keys()] : [0]) {
     const pts = [], paint = { n: 0 }, saved = [];
-    let depth = 0, clipped = false;
-    const at = (...xy) => { if (!clipped) for (let i = 0; i < xy.length; i += 2) pts.push([xy[i], xy[i + 1]]); };
+    let depth = 0, clipped = false, open = 0, moved = false;
+    // (points under a transform kept inside save/restore, as drawCookie's scaled cookie, aren't in box px: not counted)
+    const at = (...xy) => { if (!clipped && !moved) for (let i = 0; i < xy.length; i += 2) pts.push([xy[i], xy[i + 1]]); };
     const ctx = new Proxy({}, { get: (_, name) => {
-        if (name === 'save') return () => saved.push(clipped);
-        if (name === 'restore') return () => { clipped = saved.pop(); };
+        if (name === 'save') return () => { saved.push([clipped, moved]); open++; };
+        if (name === 'restore') return () => { const was = saved.pop(); clipped = was[0]; moved = was[1]; open--; };
         if (name === 'clip') return () => { clipped = true; };
         if (['moveTo', 'lineTo'].indexOf(name) >= 0) return (x, y) => at(x, y);
         if (name === 'bezierCurveTo') return (a, b, c, d, x, y) => at(a, b, c, d, x, y);
@@ -455,7 +555,7 @@ for (const frame of kind.startsWith('crow') ? [...Array(FLAP_FRAMES).keys()] : [
         if (name === 'arc') return (x, y, r) => at(x - r, y - r, x + r, y + r);
         if (name === 'fill' || name === 'stroke') return () => { paint.n++; };
         if (name === 'translate' || name === 'scale' || name === 'rotate' || name === 'setTransform' || name === 'transform')
-            return () => { depth++; };
+            return () => { if (open > 0) moved = true; else depth++; };   // (one left on the context: not allowed)
         return () => ({ addColorStop() {} });
     }, set: () => true });
     const w = KINDS[kind][0] * 60, h = KINDS[kind][1] * 60;   // (its size by a body 60 px high)

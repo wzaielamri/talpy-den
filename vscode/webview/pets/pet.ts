@@ -1058,7 +1058,11 @@ export class Pet {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, w, h);
       // (each thing a picture drawn once, put where it is now: between pixels too, so it glides)
-      for (const th of g.things ?? []) ctx.drawImage(this.thingSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD));
+      for (const th of g.things ?? []) {
+        ctx.globalAlpha = th.alpha ?? 1; // (a "+10" fading)
+        ctx.drawImage(this.thingSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD));
+      }
+      ctx.globalAlpha = 1;
     }
     const over = g.state === "over";
     const meters = `${g.meters ?? 0} m`;

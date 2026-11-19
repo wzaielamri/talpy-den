@@ -29,6 +29,7 @@
 import { ACTIONS, COOKIE } from './actions.mjs';
 import { FLAP_FRAMES } from './talpy.mjs';
 import { Scored, DECOR, GRAB, SCORED } from './scored.mjs';
+import { FRAMES } from './talpy.mjs';
 
 export { DECOR, GRAB, SCORED };
 
@@ -244,8 +245,19 @@ export class Peekaboo {
 const RUN_READY_MS = 2000;     // the hint, and nothing on his way yet
 const JUMP_MS = 620;           // up and down again, whatever the speed
 const JUMP_KEEP_MS = 150;      // a press this close to his landing is kept for it (not a double-click's)
-const FALL = 8;                // bumped in the air, he comes down at that many of his body's height a second
 const JUMP_HIGH = 1.6;         // that many of his body's height
+// his jump's own gravity (its arc, 4 h p (1 − p), is a throw up under it), in body heights a second²:
+// bumped in the air, he falls with it
+const GRAVITY = 8 * JUMP_HIGH / Math.pow(JUMP_MS / 1000, 2);
+const STRETCH = 0.6, SQUASH = 0.7;   // as he takes off, as he lands (Talpy eases them back)
+const DUST_MS = 70;            // a landing's puff: a picture that long (FRAMES.dust of them)
+// his steps' length (ms, both feet) by how fast the ground goes: 500 at the start, 250 at twice it;
+// a few, so his pictures are kept (the nearest to 500 / the speed-up)
+const WALKS = [500, 420, 350, 290, 250];
+// cookies: about one gap in four has one, on the ground in its middle (a gap of at least two
+// bodies' widths and the cookie), else now and then one over a ground thing, where his body's
+// middle is at his jump's top (a jump that clears it takes it)
+const COOKIE_GROUND = 0.15, COOKIE_AIR = 0.1, COOKIE_ABOVE = 0.42;
 const DIG_MS = 1000;           // up again by himself after that
 const SPEED0 = 110;            // box units a second at the start
 const SPEED_UP = 1.1;          // ×, every 100 m
@@ -264,10 +276,10 @@ const FLAP_MS = 50;            // a crow's wings: a picture that long (FLAP_FRAM
 export const KINDS = {
     pebble: [0.6, 0.4, 0], stone: [0.6, 0.62, 0], pot: [0.5, 0.82, 0], pebbles: [1, 0.45, 0], hedgehog: [0.7, 0.5, 0],
     stump: [0.62, 0.55, 0], log: [1, 0.4, 0], crow: [0.75, 0.5, 0.7], crowHigh: [0.75, 0.5, 1.85],
-    tuft: [0.3, 0.22, 0], cloud: [1.4, 0.5, 0]
+    tuft: [0.3, 0.22, 0], cloud: [1.4, 0.5, 0], cookie: [0.42, 0.42, 0.12], plus: [0.7, 0.35, 0], dust: [0.9, 0.3, 0]
 };
 // how many looks a kind has (drawThing's variant: a pot's flower, a hedgehog's quills, which bird, the grass)
-export const VARIANTS = { pot: 4, hedgehog: 2, crow: 3, crowHigh: 3, tuft: 3, cloud: 2 };
+export const VARIANTS = { pot: 4, hedgehog: 2, crow: 3, crowHigh: 3, tuft: 3, cloud: 2, cookie: 8 };
 const SHRINK = 0.15;           // a thing's hit box is that much inside its drawing, each side
 const BODY_W = 0.55, BODY_H = 0.85, DUG_H = 0.3;   // his hit box, by his body's size
 const RUN_POSES = {
@@ -332,10 +344,14 @@ export class Run extends Scored {
             if (this.now - this.jumpAt >= JUMP_MS - JUMP_KEEP_MS)
                 this.queued = true;    // (just before he lands: kept for that moment)
         }
-        else {
-            this.digging = false;
-            this.jumpAt = this.now;
-        }
+        else
+            this.takeOff(this.now);
+    }
+
+    takeOff(now) {
+        this.digging = false;
+        this.jumpAt = now;
+        this.talpy.stretch = STRETCH;   // (drawn out as he springs up)
     }
 
     release(what) {
@@ -343,11 +359,12 @@ export class Run extends Scored {
             this.digging = this.digPending = false;
     }
 
-    // bumped in the air: he comes down
+    // bumped in the air: he falls, faster and faster (his jump's gravity)
     overTick(now, dt) {
         if (this.lift <= 0)
             return false;
-        this.lift = Math.max(0, this.lift - FALL * this.s.bodyHeight * dt);
+        this.fallV += GRAVITY * this.s.bodyHeight * dt;
+        this.lift = Math.max(0, this.lift - this.fallV * dt);
         return true;
     }
 
@@ -363,7 +380,10 @@ export class Run extends Scored {
             const p = (now - this.jumpAt) / JUMP_MS;
             if (p >= 1) {
                 this.lift = 0;
-                this.jumpAt = this.queued ? now : -1;
+                this.land(now);
+                this.jumpAt = -1;
+                if (this.queued)
+                    this.takeOff(now);
                 this.queued = false;
                 if (this.jumpAt < 0 && this.digPending) {   // (↓ pressed in the air, still held)
                     this.digging = true;
@@ -376,6 +396,7 @@ export class Run extends Scored {
         if (this.digging && now - this.digAt > DIG_MS)
             this.digging = false;
         this.setPose(this.jumpAt >= 0 ? 'jump' : this.digging ? 'dig' : 'run');
+        this.talpy.walkMs = this.walkMs();
         // the ground goes by
         const step = this.speed * dt;
         this.dist += M_PER_S * this.speedUp * dt;
@@ -388,7 +409,9 @@ export class Run extends Scored {
             th.y = th.sky >= 0 ? th.sky : this.s.ground - th.up;
             if (th.kind === 'crow' || th.kind === 'crowHigh')
                 th.frame = Math.floor((now + th.seed) / FLAP_MS) % FLAP_FRAMES;
-            if (th.x + th.w > 0) {
+            else if (th.kind === 'dust')
+                th.frame = Math.floor((now - th.born) / DUST_MS);
+            if (th.x + th.w > 0 && !(th.kind === 'dust' && th.frame >= FRAMES.dust)) {
                 this.things[n++] = th;
                 if (th.kind === 'crow' && th.x + th.w > this.x)
                     crowNear = true;
@@ -397,12 +420,19 @@ export class Run extends Scored {
         this.things.length = n;
         if (this.hint === 'dig' && !crowNear)
             this.hint = '';
+        this.lifts(dt);
         this.spawn(step);
-        // a bump?
+        // a cookie taken? (his whole box: generous)
         const hb = this.box();
+        for (let i = this.things.length - 1; i >= 0; i--) {
+            const th = this.things[i];
+            if (GRAB.indexOf(th.kind) >= 0 && th.x < hb[2] && th.x + th.w > hb[0] && th.y < hb[3] && th.y + th.h > hb[1])
+                this.grab(th);
+        }
+        // a bump?
         for (let i = 0; i < this.things.length; i++) {
             const th = this.things[i];
-            if (DECOR.indexOf(th.kind) >= 0)
+            if (DECOR.indexOf(th.kind) >= 0 || GRAB.indexOf(th.kind) >= 0)
                 continue;
             const dx = th.w * SHRINK, dy = th.h * SHRINK;
             if (th.x + dx < hb[2] && th.x + th.w - dx > hb[0] && th.y + dy < hb[3] && th.y + th.h - dy > hb[1]) {
@@ -410,6 +440,25 @@ export class Run extends Scored {
                 return;
             }
         }
+    }
+
+    // he lands: squashed a moment, a puff of dust at his feet
+    land(now) {
+        this.talpy.squash = SQUASH;
+        const d = this.add('dust');
+        d.x = this.x - d.w / 2;
+        d.born = now;
+    }
+
+    // his steps' length now: the nearest of WALKS to 500 at the start's speed
+    walkMs() {
+        const want = 500 / this.speedUp;
+        let best = WALKS[0];
+        for (let i = 1; i < WALKS.length; i++) {
+            if (Math.abs(WALKS[i] - want) < Math.abs(best - want))
+                best = WALKS[i];
+        }
+        return best;
     }
 
     // his hit box: [left, top, right, bottom], stage px
@@ -451,6 +500,24 @@ export class Run extends Scored {
         // never shorter than a jump at this speed and room to land after it
         const least = this.speed * JUMP_MS / 1000 + s.bodyWidth + B * 0.3;
         this.gap = th.w + least * rnd(1, 2.2);
+        this.cookieFor(th);
+    }
+
+    // now and then a cookie with the thing that just came: in the gap after
+    // it, or over it at his jump's top (never where it would lure him into it)
+    cookieFor(th) {
+        const s = this.s, B = s.bodyHeight, k = KINDS.cookie, cw = k[0] * B, r = Math.random();
+        const free = this.gap - th.w;
+        if (r < COOKIE_AIR && KINDS[th.kind][2] === 0) {
+            const c = this.add('cookie');
+            c.air = true;
+            c.x = th.x + th.w / 2 - c.w / 2;
+            c.up = (JUMP_HIGH + COOKIE_ABOVE) * B + c.h / 2;   // (its middle where his is at his jump's top)
+            c.y = s.ground - c.up;
+        } else if (r < COOKIE_AIR + COOKIE_GROUND && free >= 2 * s.bodyWidth + cw) {
+            const c = this.add('cookie');
+            c.x = th.x + th.w + (free - cw) / 2;
+        }
     }
 
     add(kind) {
@@ -467,12 +534,14 @@ export class Run extends Scored {
     }
 
     bumped() {
-        this.jumpAt = -1;   // (in the air, he comes down from where he was hit: overTick)
+        this.jumpAt = -1;   // (in the air, he falls from where he was hit: overTick)
+        this.fallV = 0;
         this.digging = false;
         this.setPose('bump');
     }
 
     ended() {
         this.digging = false;
+        this.talpy.walkMs = 500;
     }
 }

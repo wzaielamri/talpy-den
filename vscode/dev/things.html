@@ -62,7 +62,7 @@
           x += box + 8;
         }
         // (every look of each kind; a crow's flap in four of its pictures)
-        const looks = (kind) => kind === "crow" ? [[0, 0], [0, 2], [0, 4], [0, 6], [1, 1], [2, 5]]
+        const looks = (kind) => kind === "crow" ? [[0, 0], [0, 2], [0, 4], [0, 6], [1, 1], [2, 5]] : kind === "dust" ? [[0, 0], [0, 1], [0, 2], [0, 3]]
           : Array.from({ length: VARIANTS[kind] || 1 }, (_, v) => [v, 0]);
         for (const kind of kinds) {
           for (const [v, f] of looks(kind)) {

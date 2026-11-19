@@ -20,7 +20,7 @@
 
 import * as art from './art.mjs';
 import { traceEllipse, traceRoundRect } from './paths.mjs';
-import { ACTIONS, COOKIE, MOODS, PUSH, TUG, TUG_MS, dirt, random } from './actions.mjs';
+import { ACTIONS, COOKIE, FLAVOURS, MOODS, PUSH, TUG, TUG_MS, dirt, random } from './actions.mjs';
 
 export const BOX = 64;
 export const FLOOR = 57;     // where the stage's floor is, in the box
@@ -345,6 +345,10 @@ export function drawPuff(ctx, p, flavour) {
 // and see-through, never taken for something to jump. Each is drawn once, as
 // a picture the host moves (Pet.qml, pet.ts).
 export const FLAP_FRAMES = 8;
+// how many pictures a kind has (its frame: 0 to that − 1; a host keeps them all)
+export const FRAMES = { crow: FLAP_FRAMES, crowHigh: FLAP_FRAMES, dust: 4 };
+const COOKIE_FLAVOURS = Object.keys(FLAVOURS).map(f => f === 'choc' ? '' : f);   // (a cookie's variant: its flavour)
+const CLAIM = '#f2c84b';   // a cookie's glow and its "+10": you get it
 const ROCK = { base: '#a29b92', lit: '#cbc4ba', shade: '#7f7870', speck: '#6c665f' };
 const POT = { body: '#c96f48', shade: '#a65a3a', rim: '#de8c63', rimLit: '#eba37f' };
 const LEAF = { leaf: '#77a65c', vein: '#557f40', stem: '#5f8f48' };
@@ -714,6 +718,46 @@ export function drawThing(ctx, thing, dark) {
         }
         break;
     }
+    case 'cookie': {
+        // (the one thing to take: Talpy's own cookie, a warm glow round it)
+        art.circle(ctx, w / 2, h / 2, Math.min(w, h) / 2 - e, CLAIM, 0.3);
+        const sc = (Math.min(w, h) * 0.78) / 11.2;   // (drawCookie: 5.6 box units round)
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        ctx.scale(sc, sc);
+        drawCookie(ctx, COOKIE_FLAVOURS[(thing.variant || 0) % COOKIE_FLAVOURS.length]);
+        ctx.restore();
+        break;
+    }
+    case 'plus': {
+        // ("+10" rising from a cookie taken: the plus drawn, the figures written)
+        const cy = h / 2, arm = h * 0.28, px = h * 0.38;
+        ctx.beginPath();
+        ctx.moveTo(px - arm, cy);
+        ctx.lineTo(px + arm, cy);
+        ctx.moveTo(px, cy - arm);
+        ctx.lineTo(px, cy + arm);
+        art.stroke(ctx, dark ? DARK_RIM : art.INK, lw * 2.6);
+        art.stroke(ctx, CLAIM, lw * 1.4);
+        ctx.font = 'bold ' + Math.max(6, Math.round(h * 0.9)) + 'px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = lw * 1.6;
+        ctx.strokeStyle = dark ? DARK_RIM : art.INK;
+        ctx.strokeText('10', px + arm + h * 0.08, cy);
+        ctx.fillStyle = CLAIM;
+        ctx.fillText('10', px + arm + h * 0.08, cy);
+        break;
+    }
+    case 'dust': {
+        // (a puff where he landed: frame 0 to 3, swelling and fading)
+        const f = (thing.frame || 0) % FRAMES.dust, grow = 0.55 + 0.15 * f, fade = 0.55 * (1 - f / FRAMES.dust);
+        for (const pf of [[0.25, 0.7, 0.18], [0.5, 0.6, 0.24], [0.75, 0.7, 0.18]]) {
+            const r = Math.min(w * pf[2], h * 0.45) * grow;
+            art.ellipse(ctx, w * pf[0], Math.min(h - r * 0.7, h * pf[1]), r, r * 0.7, PUFF_DUST[0], fade);
+        }
+        break;
+    }
     case 'cloud': {
         // (far off, behind: puffs on a flat bottom, faint)
         const puffs = (thing.variant || 0) % 2 ? [[0.3, 0.62, 0.24, 0.36], [0.52, 0.48, 0.24, 0.46], [0.74, 0.64, 0.2, 0.34]]
@@ -781,6 +825,8 @@ export class Talpy {
         this.chasing = false;     // after a cookie (chase): on its feet, the host moves it
         this.chased = '';         // how (chaseAs)
         this.frameMs = 40;        // see tick()
+        this.walkMs = 500;        // a step's length, both feet (a game's: as quick as the ground goes)
+        this.walkT = -1;          // (a film's picture: its time in the step, placeMoves)
         this.stepAt = 0;          // when the pose shown began
         this.big = false;         // a big move is under way (see stills), since bigAt
         this.bigAt = 0;
@@ -1422,6 +1468,8 @@ export class Talpy {
             s.v.plume = plumeAngle(st.plume, at(PLUME_BEATS[st.plume]), 1);
         // (a move that happens once shows as done)
         s.since.body = s.now - (BODY_BEATS[st.body] !== undefined ? at(BODY_BEATS[st.body]) : 1e7);
+        s.walkMs = this.walkMs;
+        s.walkT = st.walk === '1' ? at(this.walkMs / 2) : -1;
     }
 
     // ------------------------------------------------------------ films (see films.mjs)
@@ -1439,6 +1487,8 @@ export class Talpy {
             out.push(['prop', PROP_BEATS[st.prop]]);
         if (st.tunnel === '1')
             out.push(['tunnel', TUNNEL_BEAT]);
+        if (st.walk === '1')   // (a step each half: his feet in its pictures as they go)
+            out.push(['walk', this.walkMs / 2]);
         return out;
     }
 
@@ -1630,8 +1680,9 @@ export class Talpy {
         // the whole creature: hops, sways, tumbles
         ctx.save();
         ctx.translate(move.wx || 0, move.wy || 0);
+        const W = this.walkMs, wt = this.walkT >= 0 ? this.walkT : now;   // (a picture's own time in its step: posed)
         if (st.walk === '1')
-            ctx.translate(0, -1.3 * alt(now, 250));
+            ctx.translate(0, -1.3 * alt(wt, W / 2));
         if (move.wr)
             art.about(ctx, move.ox || 32, move.oy || 57, move.wr);
         if (st.depth === 'out')
@@ -1640,7 +1691,7 @@ export class Talpy {
         if (st.held === '1')
             feet = [lerp(-18, 18, alt(now, 450)), lerp(-18, 18, alt(now + 225, 450)), 0, 0];
         else if (st.walk === '1')
-            feet = [0, 0, kf((now % 500) / 500, [[0, 0], [0.25, -2.4], [0.5, 0], [1, 0]]), kf(((now + 250) % 500) / 500, [[0, 0], [0.25, -2.4], [0.5, 0], [1, 0]])];
+            feet = [0, 0, kf((wt % W) / W, [[0, 0], [0.25, -2.4], [0.5, 0], [1, 0]]), kf(((wt + W / 2) % W) / W, [[0, 0], [0.25, -2.4], [0.5, 0], [1, 0]])];
         // feet stand on the ground: over its hole they'd hang in it (unless it jumps clear)
         if (st.tunnel === '1' || v.hole <= 0.02 || (move.wy || 0) < -3)
             art.feet(ctx, pal, feet);
