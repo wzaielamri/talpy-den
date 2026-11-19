@@ -22,7 +22,7 @@ import type { ChatRef, GameName as Games, Session } from "../../src/shared/types
 import { hostLabel, stateText } from "../../src/shared/model";
 import { CookieGame, type CookieWords } from "../../vendor/talpy/cookie.mjs";
 import { Films } from "../../vendor/talpy/films.mjs";
-import { SCORED, pickGame, type Game, type RunThing } from "../../vendor/talpy/games.mjs";
+import { DECOR, SCORED, pickGame, type Game, type RunThing } from "../../vendor/talpy/games.mjs";
 import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide, drawPuff, drawThing } from "../../vendor/talpy/talpy.mjs";
 import type { StageChat } from "./api";
 import { PALETTE, textOn } from "./colors";
@@ -37,8 +37,14 @@ export const LARGE = 8;
 // again, if they're this recent
 const MISSED_MS = 60000;
 
-// Talpy's Run: px around a thing's picture (thingSprite), for its outline's edge
+// A scored game: px around a thing's picture (thingSprite), for its outline's edge
 const SPRITE_PAD = 2;
+
+// Deep Dig: is the earth (#rrggbb) dark, so things drawn on it want light outlines
+function earthDark(soil: string): boolean {
+  const n = parseInt(soil.slice(1), 16);
+  return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 < 0.3;
+}
 
 function holidayGreeting(): string {
   const d = new Date(),
@@ -851,7 +857,7 @@ export class Pet {
       return true;
     }
     // (the view's menu can't see reduced motion: the run asked for there, he says it's off)
-    if (name === "run" && reducedMotion()) {
+    if ((name === "run" || name === "dig") && reducedMotion()) {
       this.say("No running with reduced motion on");
       return true;
     }
@@ -953,6 +959,10 @@ export class Pet {
       } else if (e.key === "ArrowDown") {
         if (down) g.press?.("dig");
         else g.release?.("dig");
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const way = e.key === "ArrowLeft" ? "left" : "right"; // (Deep Dig: steering while held)
+        if (down) g.press?.(way);
+        else g.release?.(way);
       } else return;
       e.preventDefault();
     };
@@ -969,7 +979,9 @@ export class Pet {
     };
     const move = (e: PointerEvent): void => {
       const g = game();
-      if (!g || swiped || swipeFrom < 0 || e.clientY - swipeFrom <= this.stage.gu * 1.2) return;
+      if (!g) return;
+      g.aim?.(e.clientX - root.getBoundingClientRect().left); // (Deep Dig: he goes where it is; a drag too)
+      if (swiped || swipeFrom < 0 || e.clientY - swipeFrom <= this.stage.gu * 1.2) return;
       swiped = true;
       g.press?.("dig");
     };
@@ -1052,23 +1064,31 @@ export class Pet {
       c.style.height = `${s.height}px`;
       this.gameDrawn = -1; // (a new size: cleared, painted again)
     }
+    // (Deep Dig: the earth he digs through, as deep as he is; its words light on it)
+    this.put(c, "soil", "background", g.soil ?? "");
+    t.box.classList.toggle("td-run-text--earth", !!g.soil);
+    const dark = g.soil ? earthDark(g.soil) : world.dark; // (outlines for what's under them)
     const ctx = c.getContext("2d");
     if (ctx && this.gameDrawn !== this.gameMoves) {
       this.gameDrawn = this.gameMoves;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, w, h);
-      // (each thing a picture drawn once, put where it is now: between pixels too, so it glides)
-      for (const th of g.things ?? []) {
-        ctx.globalAlpha = th.alpha ?? 1; // (a "+10" fading)
-        ctx.drawImage(this.thingSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD));
-      }
+      // (each thing a picture drawn once, put where it is now: between pixels too, so it glides;
+      // decoration and his tunnel first, behind the rest)
+      for (const back of [true, false])
+        for (const th of g.things ?? []) {
+          if (DECOR.includes(th.kind) !== back) continue;
+          ctx.globalAlpha = th.alpha ?? 1; // (a "+10" fading)
+          ctx.drawImage(this.thingSprite(th, k, dark), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD));
+        }
       ctx.globalAlpha = 1;
     }
     const over = g.state === "over";
     const meters = `${g.meters ?? 0} m`;
     if (t.meters.textContent !== meters) t.meters.textContent = meters;
     t.meters.hidden = over;
-    const hint = g.hint === "dig" ? "↓ or right-click: dig" : g.hint === "start" ? "Click to jump · ↓ or right-click to dig" : "";
+    const hint = g.hint === "steer" ? "Move the mouse to steer · ← → to steer" : g.hint === "dig" ? "↓ or right-click: dig"
+      : g.hint === "start" ? "Click to jump · ↓ or right-click to dig" : "";
     t.hint.hidden = !hint;
     if (t.hint.textContent !== hint) {
       t.hint.textContent = hint;
@@ -1078,13 +1098,15 @@ export class Pet {
     const end = !over ? "" : g.newBest ? `New best! ${g.best ?? 0} m` : `${g.meters ?? 0} m · best ${g.best ?? 0} m`;
     if (t.end.textContent !== end) t.end.textContent = end;
     t.end.hidden = t.again.hidden = !over;
+    const again = g.name === "dig" ? "Click to dig again" : "Click to run again";
+    if (t.again.textContent !== again) t.again.textContent = again;
   }
 
   // Talpy's Run: a thing's picture (drawThing), drawn the first time that look
   // is wanted (its kind, look, wings, size, the theme, the screen's pixels) and
   // kept for the run; SPRITE_PAD px around it for its outline's edge
-  private thingSprite(th: RunThing, k: number): HTMLCanvasElement {
-    const key = `${th.kind} ${th.variant} ${th.frame} ${Math.round(th.w * 8)} ${Math.round(th.h * 8)} ${world.dark ? 1 : 0} ${k}`;
+  private thingSprite(th: RunThing, k: number, dark: boolean): HTMLCanvasElement {
+    const key = `${th.kind} ${th.variant} ${th.frame} ${Math.round(th.w * 8)} ${Math.round(th.h * 8)} ${dark ? 1 : 0} ${k}`;
     let c = this.thingSprites.get(key);
     if (!c) {
       c = document.createElement("canvas");
@@ -1093,7 +1115,7 @@ export class Pet {
       const ctx = c.getContext("2d");
       if (ctx) {
         ctx.setTransform(k, 0, 0, k, SPRITE_PAD * k, SPRITE_PAD * k);
-        drawThing(ctx, th, world.dark);
+        drawThing(ctx, th, dark);
       }
       if (this.thingSprites.size >= 160) this.thingSprites.clear(); // (a run's looks are far fewer: sizes or themes changed)
       this.thingSprites.set(key, c);
@@ -1334,7 +1356,7 @@ export class Pet {
 
   // ------------------------------------------------------------ drawing
 
-  private put(el: HTMLElement, name: string, prop: "transform" | "transformOrigin" | "cursor" | "maxWidth" | "width" | "height" | "opacity",
+  private put(el: HTMLElement, name: string, prop: "transform" | "transformOrigin" | "cursor" | "maxWidth" | "width" | "height" | "opacity" | "background",
     value: string): void {
     if (this.drawn[name] === value) return;
     this.drawn[name] = value;

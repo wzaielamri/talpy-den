@@ -17,11 +17,17 @@ function send(message: HostMessage): void {
   window.postMessage(message, "*");
 }
 
-// ?run=1: Talpy's Run starts once the page shows (its best 340 m)
+// ?run=1: Talpy's Run starts once the page shows (its best 340 m); ?dig=1: Deep Dig (its best 212 m)
 if (params.get("run") === "1") {
   setTimeout(() => {
     send({ type: "gameBest", game: "run", best: 340 });
     send({ type: "playWithTalpy", game: "run" });
+  }, 600);
+}
+if (params.get("dig") === "1") {
+  setTimeout(() => {
+    send({ type: "gameBest", game: "dig", best: 212 });
+    send({ type: "playWithTalpy", game: "dig" });
   }, 600);
 }
 
@@ -121,8 +127,8 @@ function sendState(): void {
   }
   if (params.get("stars") === "1" && params.get("open") === "1" && first)
     for (const fold of ["|chats", "|plans"]) if (!uiState.get().starred[first.id + fold]) toggleStarred(first.id + fold);
-  // ?run=1: no chat needs you (else he shows his sign, not the run)
-  if (params.get("run") === "1")
+  // ?run=1, ?dig=1: no chat needs you (else he shows his sign, not the game)
+  if (params.get("run") === "1" || params.get("dig") === "1")
     for (const s of groups.flatMap((g) => g.sessions).filter((s) => s.state === "waiting")) {
       s.state = "idle";
       s.permission = null;

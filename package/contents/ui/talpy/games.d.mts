@@ -75,9 +75,11 @@ export interface Game {
     readonly meters?: number;
     readonly best?: number;
     readonly newBest?: boolean;
-    readonly hint?: "" | "start" | "dig";
-    press?(what: "jump" | "dig"): void;
-    release?(what: "dig"): void;
+    readonly hint?: "" | "start" | "dig" | "steer";
+    press?(what: "jump" | "dig" | "left" | "right"): void;
+    release?(what: "dig" | "left" | "right"): void;
+    aim?(x: number): void;        // Deep Dig: where the pointer is over the stage (he goes there)
+    readonly soil?: string;       // Deep Dig: the earth's colour as deep as he is
 }
 
 export const GAMES: GameName[];

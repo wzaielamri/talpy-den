@@ -296,6 +296,7 @@ export class ViewHost implements vscode.WebviewViewProvider, vscode.Disposable {
         void webview.postMessage({ type: "visible", visible: this.isVisible(webview) } satisfies HostMessage);
         if (this.shownTab) void webview.postMessage({ type: "showTab", tab: this.shownTab } satisfies HostMessage);
         void webview.postMessage({ type: "gameBest", game: "run", best: this.gameBest("run") } satisfies HostMessage);
+        void webview.postMessage({ type: "gameBest", game: "dig", best: this.gameBest("dig") } satisfies HostMessage);
         this.shownTab = null;
         break;
       case "open":

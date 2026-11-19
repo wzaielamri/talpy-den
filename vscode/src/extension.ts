@@ -249,7 +249,8 @@ export function activate(context: vscode.ExtensionContext): void {
     // a game with the big Talpy, by name (the view's … menu: one entry a game);
     // the old id (before there were two) still starts either, so a keybinding
     // to it goes on working (not in the menus)
-    ...([["talpyDen.runWithTalpy", "run"], ["talpyDen.playPeekaboo", "peekaboo"], ["talpyDen.playWithTalpy", undefined]] as const).map(
+    ...([["talpyDen.runWithTalpy", "run"], ["talpyDen.digWithTalpy", "dig"], ["talpyDen.playPeekaboo", "peekaboo"],
+      ["talpyDen.playWithTalpy", undefined]] as const).map(
       ([id, game]) =>
         vscode.commands.registerCommand(id, async () => {
           view.showTab("chats");

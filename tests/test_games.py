@@ -1112,7 +1112,8 @@ class PlasmaRunTests(unittest.TestCase):
         self.assertIn(": strip.darkTheme", self.pet[self.pet.index("readonly property bool gameDark:"):][:200])
         ts = (ROOT / "vscode/webview/pets/pet.ts").read_text()
         sprite = ts[ts.index("private thingSprite("):][:400]
-        self.assertIn("world.dark ? 1 : 0", sprite)
+        self.assertIn("${dark ? 1 : 0}", sprite)
+        self.assertIn("const dark = g.soil ? earthDark(g.soil) : world.dark;", ts)   # (the theme's, or Deep Dig's earth)
 
     def test_it_starts_by_name_and_ends_when_a_chat_needs_you(self):
         self.assertIn("G.pickGame(talpy, {", self.pet)
@@ -1191,9 +1192,9 @@ class VsCodeRunTests(unittest.TestCase):
         self.assertIn("touch-action: none", grown)   # (a swipe down digs: not a scroll of the view)
 
     def test_it_draws_the_run(self):
-        self.assertIn("drawThing(ctx, th, world.dark)", self.ts)
+        self.assertIn("drawThing(ctx, th, dark)", self.ts)
         # (each look a picture drawn once, put where the thing is each frame)
-        self.assertIn("ctx.drawImage(this.thingSprite(th, k), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD))", self.ts)
+        self.assertIn("ctx.drawImage(this.thingSprite(th, k, dark), k * (th.x - SPRITE_PAD), k * (th.y - SPRITE_PAD))", self.ts)
         self.assertIn("let c = this.thingSprites.get(key);", self.ts)
         self.assertIn("ctx && this.gameDrawn !== this.gameMoves", self.ts)   # (redrawn only when it moved)
         self.assertIn("this.gameMoves++", self.ts)
@@ -1210,7 +1211,7 @@ class VsCodeRunTests(unittest.TestCase):
         self.assertIn('this.lastMood === "done" && mood !== "done" && !this.leaving && !this.play?.on', self.ts)
         # (the old command id still starts a game, either: keybindings to it go on working)
         self.assertIn('["talpyDen.playWithTalpy", undefined]', (ROOT / "vscode/src/extension.ts").read_text())
-        self.assertIn('if (name === "run" && reducedMotion())', self.ts)
+        self.assertIn('if ((name === "run" || name === "dig") && reducedMotion())', self.ts)
         self.assertIn("No running with reduced motion on", self.ts)
 
     def test_the_best_is_kept_by_the_extension_and_only_grows(self):
@@ -1220,6 +1221,37 @@ class VsCodeRunTests(unittest.TestCase):
         self.assertIn('{ type: "gameBest", game: "run", best: this.gameBest("run") }', self.view)
         self.assertIn("saveBest: (name, m) => world.saveBest(name, m)", self.ts)
         self.assertIn("best: (name) => world.best[name]", self.ts)
+
+
+
+class VsCodeDigTests(unittest.TestCase):
+    """Deep Dig in VS Code: its command, its best, the pointer and ←/→ steering, the earth."""
+    ts = (ROOT / "vscode/webview/pets/pet.ts").read_text()
+    view = (ROOT / "vscode/src/view.ts").read_text()
+    css = (ROOT / "vscode/webview/pets/pets.css").read_text()
+
+    def test_its_command_menu_entry_and_best(self):
+        pkg = json.loads((ROOT / "vscode/package.json").read_text())
+        titles = {c["command"]: c["title"] for c in pkg["contributes"]["commands"]}
+        menus = {m["command"]: m for m in pkg["contributes"]["menus"]["view/title"]}
+        self.assertEqual(titles["talpyDen.digWithTalpy"], "Dig with Talpy")
+        self.assertEqual(menus["talpyDen.digWithTalpy"]["when"], menus["talpyDen.runWithTalpy"]["when"])
+        self.assertIn('["talpyDen.digWithTalpy", "dig"]', (ROOT / "vscode/src/extension.ts").read_text())
+        self.assertIn('const DIG_BEST_KEY = "talpyDen.digBest"', self.view)
+        self.assertIn('{ type: "gameBest", game: "dig", best: this.gameBest("dig") }', self.view)
+
+    def test_the_pointer_and_keys_steer_him(self):
+        listen = self.ts[self.ts.index("private listenToGame("):][:4200]
+        self.assertIn("g.aim?.(e.clientX - root.getBoundingClientRect().left)", listen)
+        self.assertIn('e.key === "ArrowLeft" || e.key === "ArrowRight"', listen)
+        self.assertIn('if ((name === "run" || name === "dig") && reducedMotion())', self.ts)
+
+    def test_the_earth_its_words_and_whats_behind(self):
+        self.assertIn('this.put(c, "soil", "background", g.soil ?? "")', self.ts)   # (the earth's colour)
+        self.assertIn("for (const back of [true, false])", self.ts)   # (decoration and his tunnel drawn first: behind)
+        self.assertIn("Move the mouse to steer · ← → to steer", self.ts)
+        self.assertIn("Click to dig again", self.ts)
+        self.assertIn(".td-run-text--earth", self.css)
 
 
 if __name__ == "__main__":

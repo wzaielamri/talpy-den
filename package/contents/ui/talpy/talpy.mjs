@@ -1011,7 +1011,7 @@ export function drawThing(ctx, thing, dark) {
         break;
     }
     case 'worm': {
-        // (a worm wriggling by, pink: frame its wave)
+        // (a worm wriggling by, faint (only in the earth: never in his way): frame its wave)
         const f = (thing.frame || 0) % FRAMES.worm, ph = f / FRAMES.worm * Math.PI * 2, thick = h * 0.5;
         ctx.beginPath();
         for (let i = 0; i <= 16; i++) {
@@ -1021,9 +1021,9 @@ export function drawThing(ctx, thing, dark) {
             else
                 ctx.lineTo(x, y);
         }
-        art.stroke(ctx, WORM.skin, thick, 0.85);
+        art.stroke(ctx, WORM.skin, thick, 0.45);
         const bx = w * 0.3, by = h / 2 + Math.sin(0.3 * Math.PI * 2 + ph) * (h / 2 - thick / 2);
-        art.circle(ctx, bx, by, thick * 0.45, WORM.band, 0.85);
+        art.circle(ctx, bx, by, thick * 0.45, WORM.band, 0.45);
         break;
     }
     case 'crystal': {
