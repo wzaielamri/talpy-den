@@ -22,6 +22,24 @@ test("a disposed listener hears nothing", () => {
   assert.deepEqual(heard, [1]);
 });
 
+test("a listener that throws doesn't stop the others", () => {
+  const e = new Emitter<number>();
+  const heard: string[] = [];
+  e.event((v) => heard.push(`a${v}`));
+  e.event(() => { throw new Error("boom"); });
+  e.event((v) => heard.push(`c${v}`));
+  const original = console.error;
+  const reported: unknown[][] = [];
+  console.error = (...args: unknown[]) => { reported.push(args); };
+  try {
+    assert.doesNotThrow(() => e.fire(1));
+  } finally {
+    console.error = original;
+  }
+  assert.deepEqual(heard, ["a1", "c1"]);
+  assert.equal(reported.length, 1);
+});
+
 test("dispose() drops every listener", () => {
   const e = new Emitter<number>();
   let calls = 0;

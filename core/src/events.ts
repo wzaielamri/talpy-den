@@ -14,9 +14,16 @@ export class Emitter<T> {
   };
 
   // Calls the listeners in the order they subscribed. (A copy is walked, so a
-  // listener may unsubscribe itself while it runs.)
+  // listener may unsubscribe itself while it runs.) A listener that throws is
+  // reported and doesn't stop the rest, as in vscode.EventEmitter.
   fire(value: T): void {
-    for (const listener of [...this.listeners]) listener(value);
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(value);
+      } catch (err) {
+        console.error("Error in an event listener:", err);
+      }
+    }
   }
 
   dispose(): void {
