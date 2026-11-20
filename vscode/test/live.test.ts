@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import "./useHost";
+import { host } from "./useHost";
 import { Dashboard } from "../src/dashboard";
 import { LiveWatch, sessionDirs, type LiveChange } from "../../core/src/agents/claudeCode/live";
 import { demoState } from "../../core/src/shared/demo";
@@ -169,7 +169,7 @@ test("a chat that changes while a check runs is checked again once that's done",
   };
   const notifier = { handle() {}, isLeader: () => true };
   const log = { warn() {}, info() {}, error() {} };
-  const dash = new Dashboard(backend as never, notifier as never, log as never);
+  const dash = new Dashboard(backend as never, notifier as never, log as never, host);
   const first = dash.refresh();
   await dash.refresh(); // (a check running: not doubled)
   assert.equal(calls, 1);

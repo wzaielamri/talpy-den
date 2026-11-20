@@ -6,10 +6,10 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import * as vscode from "vscode";
-import "./useHost";
+import { host } from "./useHost";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { Dashboard } from "../src/dashboard";
-import type { Notifier } from "../src/notify";
+import type { Notifier } from "../../core/src/notify";
 import { demoState } from "../../core/src/shared/demo";
 import { Terminals } from "../src/terminals";
 import { asPaste } from "../../core/src/terminal";
@@ -69,7 +69,7 @@ test("the dashboard knows when a check of a host that answered started", async (
   let answer: unknown = { ok: false, error: "no answer" };
   const backend = { hostStatus: async () => answer } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   try {
     (dash as unknown as { hosts: Map<string, unknown> }).hosts.set("lab", { name: "lab", loading: false, ok: false, error: "", result: null, updatedAt: 0, current: true });
     await dash.pollHost("lab");

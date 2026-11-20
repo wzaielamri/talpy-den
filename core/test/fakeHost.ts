@@ -39,9 +39,11 @@ export class FakeHost implements HostServices {
 
   private settingsChanged = new Emitter<string[]>();
   private focusChanged = new Emitter<boolean>();
+  private useChanged = new Emitter<boolean>();
   private foldersChanged = new Emitter<void>();
   private watchers: { keys: readonly string[]; changed: Emitter<string[]> }[] = [];
   private isFocused = false;
+  private isActive: boolean | undefined; // set: the window is in use whatever its focus (VS Code's `active`)
 
   // Sets a talpyDen setting, as the user would, and tells the listeners
   set(key: string, value: unknown): void {
@@ -61,6 +63,13 @@ export class FakeHost implements HostServices {
   setFocused(focused: boolean): void {
     this.isFocused = focused;
     this.focusChanged.fire(focused);
+    this.useChanged.fire(this.isActive ?? focused);
+  }
+
+  // The window is in use or not, as VS Code's `active` says (the focus unchanged)
+  setActive(active: boolean): void {
+    this.isActive = active;
+    this.useChanged.fire(active);
   }
 
   // Changes the open folders and tells the listeners
@@ -125,6 +134,8 @@ export class FakeHost implements HostServices {
   readonly focus = ((self: FakeHost) => ({
     get focused() { return self.isFocused; },
     onDidChange: self.focusChanged.event,
+    get inUse() { return self.isActive ?? self.isFocused; },
+    onDidChangeUse: self.useChanged.event,
   }))(this);
 
   readonly clipboard = {

@@ -10,7 +10,7 @@ import type { AccountSwitch } from "./accountSwitch";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { configDirArgs } from "../../core/src/settings";
 import type { Dashboard } from "./dashboard";
-import { noLinks } from "./notify";
+import { noLinks } from "../../core/src/notify";
 import { accountNameProblem, containerOf, hostLabel, machineStatus } from "../../core/src/shared/model";
 import type { Group } from "../../core/src/shared/types";
 import type { Terminals } from "./terminals";

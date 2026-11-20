@@ -19,7 +19,7 @@ import { markdownLinkFile, openAgentRunFile } from "./agentRun";
 import { initDocs } from "./doc";
 import { Dashboard } from "./dashboard";
 import { carryOverSettings, settingNames } from "./legacySettings";
-import { noLinks, Notifier } from "./notify";
+import { noLinks, Notifier } from "../../core/src/notify";
 import { findJobRef, OpenWatch } from "../../core/src/openRequests";
 import { PlanReview, planFileOf } from "./planReview";
 import { allGroups, countStates, duration, hiddenCount, type HiddenKind } from "../../core/src/shared/model";
@@ -57,8 +57,8 @@ export function activate(context: vscode.ExtensionContext): void {
   initDocs(context.extensionUri); // (plans, runs and memories open in Talpy Den's own tab)
   // Notifications open chats through the actions, which need the dashboard
   let actions: Actions | undefined;
-  const notifier = new Notifier(backend, (chat) => void actions?.open(chat));
-  const dash = new Dashboard(backend, notifier, log);
+  const notifier = new Notifier(host, backend, (chat) => void actions?.open(chat));
+  const dash = new Dashboard(backend, notifier, log, host);
   const terminals = new Terminals((host, since) => dash.hostCheckedSince(host, since), (host, command) => backend.attachLine(host, command));
   const statusBar = new StatusBar(); // (Talpy Den's one status bar item; the account it names comes from account)
   const account = new AccountSwitch(dash, backend);

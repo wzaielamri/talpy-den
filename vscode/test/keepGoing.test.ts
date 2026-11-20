@@ -8,12 +8,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import type * as vscode from "vscode";
-import "./useHost";
+import { host } from "./useHost";
 import { chatOptionsText } from "../src/actions";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { chatOptionArgs } from "../../core/src/settings";
 import { Dashboard } from "../src/dashboard";
-import type { Notifier } from "../src/notify";
+import type { Notifier } from "../../core/src/notify";
 import { demoState } from "../../core/src/shared/demo";
 import { clockText, findChatRef, findPlan, keptChat, keptTitle, limitReset, resetAtText, toLocalClock, unseenHostItems } from "../../core/src/shared/model";
 import type { Group, KeptChat, QueuedTask } from "../../core/src/shared/types";
@@ -146,7 +146,7 @@ test("this computer's check has the usage cap, and the window that notifies look
   let leader = true;
   const notifier = { handle() {}, isLeader: () => leader } as unknown as Notifier;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, notifier, log);
+  const dash = new Dashboard(backend, notifier, log, host);
   try {
     await dash.refresh();
     assert.ok(calls[0].includes("--keep-going"));

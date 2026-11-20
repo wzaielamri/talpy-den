@@ -8,18 +8,19 @@
 // watching: every pollInterval (10 s hidden). Hosts every remotePollSeconds.
 
 import * as vscode from "vscode";
-import { AwayWatch } from "./away";
+import type { HostServices } from "../../core/src/host";
+import { AwayWatch } from "../../core/src/away";
 import type { Backend, HostContainers, SshHost } from "../../core/src/agents/claudeCode/backend";
 import { claudePanelAvailable, localPanelProfileKey } from "./claudePanel";
 import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSettings } from "../../core/src/settings";
 import { HostWatch, watchName, type WatchAnswer } from "../../core/src/agents/claudeCode/hostWatch";
 import { LiveWatch } from "../../core/src/agents/claudeCode/live";
-import type { Notifier } from "./notify";
+import type { Notifier } from "../../core/src/notify";
 import { containerFromAuthority, hostFromAuthority, portFromAuthority, sshPort } from "../../core/src/agents/claudeCode/remoteHost";
 import { currentRemoteAuthority } from "./remoteHost";
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../../core/src/shared/demo";
 import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "../../core/src/shared/model";
-import { chatRef, noLinks } from "./notify";
+import { chatRef, noLinks } from "../../core/src/notify";
 import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "../../core/src/agents/claudeCode/oldChats";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "../../core/src/shared/types";
 import type { WeekRuleAsk } from "../../core/src/shared/week";
@@ -114,10 +115,11 @@ export class Dashboard implements vscode.Disposable {
     private backend: Backend,
     private notifier: Notifier,
     private log: vscode.LogOutputChannel,
+    host: HostServices,
   ) {
     this.windowHost = this.windowHostNow();
     this.polledWith = this.pollSettings();
-    this.away = new AwayWatch((now, lastUse) => this.cameBack(now, lastUse));
+    this.away = new AwayWatch(host, (now, lastUse) => this.cameBack(now, lastUse));
     this.live = new LiveWatch(
       ({ urgent, views }) => {
         if (views.length) this.noteLive(views);

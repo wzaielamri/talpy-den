@@ -5,7 +5,7 @@
 
 import * as vscode from "vscode";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
-import { noLinks } from "./notify";
+import { noLinks } from "../../core/src/notify";
 
 type Model = { name: string; mb: number; note: string; installed: boolean; deletable: boolean; used: boolean };
 type Item = vscode.QuickPickItem & { run?: string[]; busy?: string; model?: Model; ask?: string };

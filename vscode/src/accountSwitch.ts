@@ -15,7 +15,7 @@ import { panelConfigDir, profileKey } from "../../core/src/agents/claudeCode/cla
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { configDirArgs } from "../../core/src/settings";
 import type { Dashboard } from "./dashboard";
-import { noLinks } from "./notify";
+import { noLinks } from "../../core/src/notify";
 import { hostLabel, machineStatus } from "../../core/src/shared/model";
 import type { Group, ViewState } from "../../core/src/shared/types";
 import { profileDirs } from "../../core/src/agents/claudeCode/profiles";

@@ -49,7 +49,12 @@ export interface HostServices {
   progress<R>(options: { where: "window" | "notification"; title: string }, task: () => Promise<R>): Promise<R>;
   statusMessage(text: string, ms: number): void;
   readonly settings: HostSettings;
-  readonly focus: { readonly focused: boolean; readonly onDidChange: Event<boolean> };
+  // inUse: interacted with recently, else focused (VS Code's window `active`, else `focused`); it can change
+  // without the focus doing so, hence onDidChangeUse (away's AwayWatch)
+  readonly focus: {
+    readonly focused: boolean; readonly onDidChange: Event<boolean>;
+    readonly inUse: boolean; readonly onDidChangeUse: Event<boolean>;
+  };
   readonly clipboard: { read(): Promise<string>; write(text: string): Promise<void> };
   openExternal(url: string): Promise<boolean>;
   openFile(path: string): Promise<void>; // VS Code: "vscode.open"

@@ -11,7 +11,7 @@ import * as crypto from "node:crypto";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { noLinks } from "./notify";
+import { noLinks } from "../../core/src/notify";
 import { textScale } from "../../core/src/shared/pane";
 
 let extensionUri: vscode.Uri | undefined;

@@ -16,7 +16,7 @@ import * as vscode from "vscode";
 import { runProcess } from "../../core/src/agents/claudeCode/backend";
 import { profileDirs } from "../../core/src/agents/claudeCode/profiles";
 import { expandHome } from "../../core/src/settings";
-import { noLinks } from "./notify";
+import { noLinks } from "../../core/src/notify";
 import { shellQuote } from "../../core/src/shared/model";
 
 export const MARK_START = "# >>> talpy-den >>>";

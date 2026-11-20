@@ -18,7 +18,7 @@ import { isAgentRunFile, openAgentRunFile, showMarkdown } from "./agentRun";
 import type { Dashboard } from "./dashboard";
 import { canRaiseWindows, isGnome } from "../../core/src/platform/linux/desktop";
 import { allShown, foundLines, showAll } from "../../core/src/agents/claudeCode/found";
-import { chatRef, noLinks } from "./notify";
+import { chatRef, noLinks } from "../../core/src/notify";
 import {
   ago,
   allGroups,

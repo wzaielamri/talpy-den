@@ -5,10 +5,10 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import type * as vscode from "vscode";
-import "./useHost";
+import { host } from "./useHost";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { Dashboard } from "../src/dashboard";
-import type { Notifier } from "../src/notify";
+import type { Notifier } from "../../core/src/notify";
 import { demoState } from "../../core/src/shared/demo";
 import { chatRefOf, petKeyOf } from "../../core/src/shared/model";
 import type { Session, Status } from "../../core/src/shared/types";
@@ -20,7 +20,7 @@ const NOW = 1_800_000_000_000;
 // one its tab showed, one a limit broke off, or one that works again, doesn't
 test("a finished chat stays on the focus view until you open it", () => {
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard({} as unknown as Backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard({} as unknown as Backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   const priv = dash as unknown as { status: Status; noteUnseen(c: unknown): void };
   try {
     const status = structuredClone(demoState(NOW).status!);
@@ -59,7 +59,7 @@ test("a reply after a host chat's turn waits while the host's check fails", () =
   const actions: string[][] = [];
   const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   const priv = dash as unknown as { hosts: Map<string, unknown>; startDueTasks(s: Status): void; starting: Set<string> };
   try {
     const result = structuredClone(demoState(NOW).hosts[0].result!);
@@ -88,7 +88,7 @@ test("a reply after a chat's turn waits for its account's usage limit to reset, 
   const actions: string[][] = [];
   const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   const priv = dash as unknown as { startDueTasks(s: Status): void; starting: Set<string> };
   try {
     const status = withFiveHour(100);
@@ -118,7 +118,7 @@ test("a queued reply that couldn't be sent is notified while the view is hidden"
   window.showErrorMessage = async (m: string) => (shown.push(m), undefined);
   const backend = { action: async () => ({ ok: false, message: "its terminal is gone" }), status: async () => ({ status: null }) } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   try {
     await dash.startQueued({ id: "q5", afterTurn: true, chat: "e3de1242", name: "fix", host: "", profile: ".claude-work", account: "work", prompt: "then run the tests" } as never);
     assert.deepEqual(shown, ["Couldn't send your reply to fix: then run the tests — its terminal is gone"]);
@@ -136,7 +136,7 @@ test("a due task waits for its account's usage limit by another machine's newer 
   const actions: string[][] = [];
   const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   const priv = dash as unknown as { hosts: Map<string, unknown>; startDueTasks(s: Status): void; starting: Set<string> };
   try {
     const status = withFiveHour(20);
@@ -170,7 +170,7 @@ test("a go-on that waits for a chat's background commands is told once, and when
   const answers: Record<string, unknown>[] = [];
   const backend = { action: async () => answers.shift(), status: async () => ({ status: null }) } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   const task = { id: "q3", chat: "e3de1242", name: "Fix it", host: "", profile: ".claude-work", account: "work", prompt: "" } as never;
   const waits = "Waits for its background command “npm run dev” to finish before it goes on; at 01:55 it ends it";
   try {
@@ -203,7 +203,7 @@ test("the status keeps updating after a reaction to a limit reset throws", async
   const notifier = { handle() {}, isLeader: () => true } as unknown as Notifier;
   const errors: string[] = [];
   const log = { warn() {}, info() {}, error: (m: string) => errors.push(m) } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, notifier, log);
+  const dash = new Dashboard(backend, notifier, log, host);
   const resets: string[] = [];
   dash.onPetEvent((e) => {
     resets.push(e.kind);
@@ -233,7 +233,7 @@ test("opening the view doesn't cancel the next try of a Python that didn't work"
       status: async () => ({ status: demoState(NOW).status! }),
     } as unknown as Backend;
     const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-    const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+    const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
     await dash.start();
     dash.setVisible(true); // polls right away (its timer used to be the retry's too)
     mock.timers.tick(30000);
@@ -256,7 +256,7 @@ test("a slow pollInterval isn't made faster while the view is hidden", async () 
       status: async () => (polls++, { status: demoState(NOW).status! }),
     } as unknown as Backend;
     const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-    const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+    const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
     await dash.start();
     mock.timers.tick(0);
     await new Promise((resolve) => setImmediate(resolve));
@@ -287,7 +287,7 @@ test("a host that isn't shown is checked while something of it keeps going or is
     hostStatus: async (host: string) => (asked.push(host), host.startsWith("docker:") ? { ok: false, error: "web is stopped.", stopped: true } : { ok: false, error: "x" }),
   } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   const priv = dash as unknown as { status: Status; scheduleHosts(delay?: number): void };
   const tick = async (ms: number) => {
     mock.timers.tick(ms);
@@ -327,7 +327,7 @@ test("a host listed twice in the settings is one host", async () => {
 test("with Show containers off, a Dev Containers window's own container isn't shown or checked either", async () => {
   const { overrides } = await import("./vscode-stub");
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard({} as unknown as Backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard({} as unknown as Backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   (dash as unknown as { windowHost: string }).windowHost = "docker:web";
   overrides.set("sshHosts", ["lab"]);
   try {
@@ -352,7 +352,7 @@ test("the Claude Code extension starting after this one is found without a reloa
   try {
     const backend = { checkPython: async () => "", status: async () => ({ status: demoState(NOW).status! }) } as unknown as Backend;
     const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-    const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+    const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
     dash.setVisible(true);
     await dash.start();
     await settle();
@@ -374,7 +374,7 @@ test("a setting checks again only what it changes: the chat tab's text size or a
   const { changeSettings, overrides } = await import("./vscode-stub");
   const backend = { status: async () => ({ status: demoState(NOW).status! }), hostStatus: async () => ({ ok: false, error: "x" }) } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   const checks: string[] = [];
   const d = dash as unknown as { scheduleLocal(delay?: number): void; scheduleHosts(delay?: number): void };
   d.scheduleLocal = (delay?: number) => void checks.push(`here ${delay ?? "at its pace"}`);
@@ -421,7 +421,7 @@ test("a host is watched only while Talpy Chat wants it; what changes there check
   } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
   let leader = false;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => leader } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => leader } as unknown as Notifier, log, host);
   const d = dash as unknown as { hosts: Map<string, unknown>; status: Status | null; pollHost(h: string): Promise<void>;
                                  hostChanged(h: string, a: object): void; updateWatches(): void };
   d.pollHost = async (h: string) => void polls.push(h);
@@ -466,7 +466,7 @@ test("a host taken off the list forgets Talpy Chat's hook there, and says when i
   const asked: string[][] = [];
   const backend = { pane: async (args: string[]) => (asked.push(args), { ok: true, kept: 1, message: "1 chat Talpy Chat started there still runs: its permission hook stays there for them" }) } as unknown as Backend;
   const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log);
+  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
   const d = dash as unknown as { hosts: Map<string, unknown>; syncHosts(): void; actionInfo: string; status: Status | null };
   overrides.set("sshHosts", []);
   try {

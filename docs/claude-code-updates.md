@@ -312,7 +312,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   `claude agents --all`. The front ends key colour, pose, sound and notification text on `failed` and
   `stopped`.
   - Used in: talpy_den.py session_state, parked_job_state, job_finished, FINISHED_JOB_STATES, KNOWN_VALUES,
-    live_row, parked_row, finish_row; vscode/src/away.ts; FocusLine.qml, Pet.qml, SessionRow.qml,
+    live_row, parked_row, finish_row; core/src/away.ts; FocusLine.qml, Pet.qml, SessionRow.qml,
     SearchResults.qml, main.qml; gnome/extension/logic.js, notifier.js, ui/pets.js, ui/sessionRow.js.
   - Check: start a throwaway background chat with 'run sleep 5, then say done'. Run
     `watch -n0.5 "jq -c '{state,tempo,needs,detail,updatedAt}' $C/jobs/$SHORT/state.json"` and compare with
@@ -2417,7 +2417,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   and don't ask again" and "Yes, allow all edits during this session" (and Always allow's "Allow all edits"),
   the question dialog's "Type something.", and the Deny note's "What should Claude do instead?".
   - Used in: PermissionAsk.qml (pressKey, tooltips), QuestionForm.qml; core/src/shared/pane.ts answerText;
-    vscode/src/notify.ts; talpy_den.py ALWAYS_LABELS.
+    core/src/notify.ts; talpy_den.py ALWAYS_LABELS.
   - Check: `has 'Type something.' 'What should Claude do instead?'`. In the scratch folder, run a chat with
     `--permission-mode plan`, ask for a small plan, and read the dialog's options and order. Ask for a Bash
     command and an AskUserQuestion too.

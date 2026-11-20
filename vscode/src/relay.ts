@@ -10,7 +10,7 @@ import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { configDirArgs } from "../../core/src/settings";
 import { hostLabel } from "../../core/src/shared/model";
 import type { Dashboard } from "./dashboard";
-import { noLinks } from "./notify";
+import { noLinks } from "../../core/src/notify";
 
 export async function answerPermissionsHere(backend: Backend, dash: Dashboard): Promise<void> {
   const status = await backend.pane(["--relay", "status", ...configDirArgs()], 30000);

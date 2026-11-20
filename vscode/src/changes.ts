@@ -9,7 +9,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { cacheDir } from "../../core/src/settings";
 import { inside, isComparison, type Comparison } from "../../core/src/comparisons";
-import { noLinks } from "./notify";
+import { noLinks } from "../../core/src/notify";
 
 const ONE_BY_ONE = 25; // diffs opened one by one where the changes view is missing
 

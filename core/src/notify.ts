@@ -4,15 +4,16 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as vscode from "vscode";
-import type { Backend } from "../../core/src/agents/claudeCode/backend";
-import type { ChatPanes } from "./chatPane";
-import { cacheDir, settings } from "../../core/src/settings";
-import { gnomeSoundTheme } from "../../core/src/platform/linux/desktop";
+import type { Backend } from "./agents/claudeCode/backend";
+import { Disposable } from "./events";
+import type { HostServices, PickItem } from "./host";
+import type { ChatPanesPort } from "./ports";
+import { cacheDir, settings } from "./settings";
+import { gnomeSoundTheme } from "./platform/linux/desktop";
 import type { Digest } from "./away";
-import { oneChoice, questionsOf, shownAsk } from "../../core/src/shared/pane";
-import type { Answers, AskShown, ChatRef, Question, Session } from "../../core/src/shared/types";
-import { askHead, type Changes } from "../../core/src/transitions";
+import { oneChoice, questionsOf, shownAsk } from "./shared/pane";
+import type { Answers, AskShown, ChatRef, Question, Session } from "./shared/types";
+import { askHead, type Changes } from "./transitions";
 
 export function chatRef(s: Session, host?: string): ChatRef {
   return {
@@ -52,18 +53,21 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-export class Notifier implements vscode.Disposable {
+type Shower = (text: string, ...actions: string[]) => Promise<string | undefined>;
+
+export class Notifier implements Disposable {
   private leaderFile = path.join(cacheDir(), "vscode-notify.json");
-  private subscription: vscode.Disposable;
-  panes?: ChatPanes; // the chats' tabs: replies and answers go through them (set once they're there)
+  private subscription: Disposable;
+  panes?: ChatPanesPort; // the chats' tabs: replies and answers go through them (set once they're there)
 
   constructor(
+    private host: HostServices,
     private backend: Backend,
     private open: (chat: ChatRef) => void,
   ) {
-    if (vscode.window.state.focused) this.claim();
-    this.subscription = vscode.window.onDidChangeWindowState((s) => {
-      if (s.focused) this.claim();
+    if (host.focus.focused) this.claim();
+    this.subscription = host.focus.onDidChange((focused) => {
+      if (focused) this.claim();
     });
   }
 
@@ -99,7 +103,7 @@ export class Notifier implements vscode.Disposable {
     if (!notices.length || !this.isLeader()) return;
     for (const n of notices) {
       const text = noLinks(`${n.title} — ${n.body}`);
-      const show = n.kind === "done" || n.kind === "reset" ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
+      const show = this.shower(n.kind === "done" || n.kind === "reset" ? "info" : "warning");
       const chat = chatRef(n.session, n.host);
       const p = n.kind === "waiting" ? n.session.permission : null;
       const asks = !!p && (p.answer === "hook" || p.answer === "keys") && !!this.panes;
@@ -118,7 +122,7 @@ export class Notifier implements vscode.Disposable {
           if (choice === "Approve, accept edits") this.told(chat, await panes.answer(chat, "approve-edits", shown));
           else if (choice === "Approve") this.told(chat, await panes.answer(chat, "approve", shown));
           else if (choice === "Keep planning…") {
-            const note = await vscode.window.showInputBox({ title: `Keep planning: ${n.session.name}`, prompt: "What should change in the plan? (optional)", ignoreFocusOut: true });
+            const note = await this.host.input({ title: `Keep planning: ${n.session.name}`, prompt: "What should change in the plan? (optional)", ignoreFocusOut: true });
             if (note !== undefined) this.told(chat, await panes.answer(chat, "keep", shown, note.trim()));
           } else if (choice === "Open") this.openChat(chat);
         });
@@ -144,10 +148,10 @@ export class Notifier implements vscode.Disposable {
         } else if (panes && (choice === "Allow once" || choice === alwaysButton || choice === "Deny")) {
           this.told(chat, await panes.answer(chat, choice === "Allow once" ? "allow" : choice === alwaysButton ? "always" : "deny", shown));
         } else if (panes && choice === "Deny with a note…") {
-          const note = await vscode.window.showInputBox({ title: `Deny ${n.session.name}`, prompt: "What should Claude do instead? (optional)", ignoreFocusOut: true });
+          const note = await this.host.input({ title: `Deny ${n.session.name}`, prompt: "What should Claude do instead? (optional)", ignoreFocusOut: true });
           if (note !== undefined) this.told(chat, await panes.answer(chat, "deny", shown, note.trim()));
         } else if (panes && choice === "Reply…") {
-          const reply = await vscode.window.showInputBox({ title: `Reply to ${n.session.name}`, prompt: "Sent the way the chat takes it", ignoreFocusOut: true });
+          const reply = await this.host.input({ title: `Reply to ${n.session.name}`, prompt: "Sent the way the chat takes it", ignoreFocusOut: true });
           if (reply?.trim()) this.notSent(chat, reply, await panes.reply(chat, reply));
         }
       });
@@ -163,17 +167,18 @@ export class Notifier implements vscode.Disposable {
   // Claude's questions: one with one answer has a button per option, then
   // Other… (your own words); else Answer… goes through them one by one
   // (VS Code's pickers); Open shows the chat
-  private askQuestions(text: string, show: typeof vscode.window.showWarningMessage, chat: ChatRef, s: Session, shown: AskShown | null): void {
+  private askQuestions(text: string, show: Shower, chat: ChatRef, s: Session, shown: AskShown | null): void {
     const choices = oneChoice(s.permission);
-    const items: (vscode.MessageItem & { run: () => Promise<Answers | null | "open"> })[] = [
+    const items: { title: string; run: () => Promise<Answers | null | "open"> }[] = [
       ...choices.map((o) => ({ title: o.label, run: async () => ({ [questionsOf(s.permission)[0].question]: [o.label] }) })),
       choices.length
         ? { title: "Other…", run: () => this.ownWords(s, questionsOf(s.permission)[0]) }
         : { title: "Answer…", run: () => this.pickAnswers(s, questionsOf(s.permission)) },
       { title: "Open", run: async () => "open" as const },
     ];
-    void show(text, ...items).then(async (item) => {
+    void show(text, ...items.map((i) => i.title)).then(async (title) => {
       const panes = this.panes;
+      const item = items.find((i) => i.title === title);
       const answer = item ? await item.run() : null;
       if (!panes || !answer) return;
       if (answer === "open") {
@@ -187,7 +192,7 @@ export class Notifier implements vscode.Disposable {
   // something else now, or the helper failed): said, with the chat to open
   private told(chat: ChatRef, answer: { ok: boolean; message: string }): void {
     if (answer.ok) return;
-    void vscode.window.showWarningMessage(noLinks(`Talpy Den: couldn't answer ${chat.name}: ${answer.message}`), "Open").then((choice) => {
+    void this.host.message("warning", noLinks(`Talpy Den: couldn't answer ${chat.name}: ${answer.message}`), undefined, "Open").then((choice) => {
       if (choice !== "Open") return;
       if (this.panes && settings.clickOpensPane()) this.panes.open(chat, "chat");
       else this.open(chat);
@@ -198,14 +203,14 @@ export class Notifier implements vscode.Disposable {
   // chat's tab with it as the unsent reply (the box it was typed in is gone)
   private notSent(chat: ChatRef, text: string, answer: { ok: boolean; message: string }): void {
     if (answer.ok) return;
-    void vscode.window.showWarningMessage(noLinks(`Talpy Den: couldn't send your message to ${chat.name}: ${answer.message}`), "Open").then((choice) => {
+    void this.host.message("warning", noLinks(`Talpy Den: couldn't send your message to ${chat.name}: ${answer.message}`), undefined, "Open").then((choice) => {
       if (choice === "Open") this.panes?.draft(chat, text);
     });
   }
 
   // A question answered in your own words (null: you closed the box)
   private async ownWords(s: Session, q: Question): Promise<Answers | null> {
-    const text = await vscode.window.showInputBox({ title: `${s.name}: ${q.header || "your answer"}`, prompt: q.question, ignoreFocusOut: true });
+    const text = await this.host.input({ title: `${s.name}: ${q.header || "your answer"}`, prompt: q.question, ignoreFocusOut: true });
     return text?.trim() ? { [q.question]: [text.trim()] } : null;
   }
 
@@ -214,15 +219,15 @@ export class Notifier implements vscode.Disposable {
   private async pickAnswers(s: Session, questions: Question[]): Promise<Answers | null> {
     const answers: Answers = {};
     for (const [i, q] of questions.entries()) {
-      const items: (vscode.QuickPickItem & { own?: boolean })[] = [
+      const items: (PickItem & { own?: boolean })[] = [
         ...q.options.map((o) => ({ label: o.label, detail: o.description || undefined })),
         { label: "Other…", description: "answer in your own words", own: true },
       ];
       const title = `${s.name}: ${q.header || "question"}${questions.length > 1 ? ` (${i + 1}/${questions.length})` : ""}`;
       const opts = { title, placeHolder: q.question, ignoreFocusOut: true, matchOnDetail: true };
       const picked = q.multiSelect
-        ? await vscode.window.showQuickPick(items, { ...opts, canPickMany: true })
-        : await vscode.window.showQuickPick(items, opts).then((one) => (one ? [one] : undefined));
+        ? await this.host.pickMany(items, opts)
+        : await this.host.pick(items, opts).then((one) => (one ? [one] : undefined));
       if (!picked?.length) return null;
       const values = picked.filter((it) => !it.own).map((it) => it.label);
       if (picked.some((it) => it.own)) {
@@ -233,6 +238,11 @@ export class Notifier implements vscode.Disposable {
       answers[q.question] = values;
     }
     return answers;
+  }
+
+  // The host's message at a level, as a function of the text and its buttons
+  private shower(level: "info" | "warning"): Shower {
+    return (text, ...actions) => this.host.message(level, text, undefined, ...actions);
   }
 
   // A notification's Open: the chat's tab when clicks open it (as a row's
@@ -246,7 +256,7 @@ export class Notifier implements vscode.Disposable {
   digest(d: Digest, showView: () => void): void {
     if (!this.isLeader()) return;
     const action = d.first ? `Open ${d.first.session.name}` : "Show Chats";
-    void vscode.window.showInformationMessage(noLinks(d.message), action).then((choice) => {
+    void this.host.message("info", noLinks(d.message), undefined, action).then((choice) => {
       if (choice !== action) return;
       if (d.first) this.openChat(chatRef(d.first.session, d.first.host));
       else showView();

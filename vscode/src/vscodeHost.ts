@@ -5,10 +5,16 @@ import type {
 } from "../../core/src/host";
 import { currentRemoteAuthority } from "./remoteHost";
 
+// In use: interacted with recently (VS Code's `active`, newer than the typings), else focused
+function inUse(state: vscode.WindowState): boolean {
+  return (state as { active?: boolean }).active ?? state.focused;
+}
+
 // HostServices over the VS Code API: the one place paths and vscode.Uri turn into each other
 export class VsCodeHost implements HostServices {
   private settingsChanged = new Emitter<string[]>();
   private focusChanged = new Emitter<boolean>();
+  private useChanged = new Emitter<boolean>();
   private foldersChanged = new Emitter<void>();
   private subscriptions: vscode.Disposable[];
 
@@ -20,7 +26,10 @@ export class VsCodeHost implements HostServices {
         const keys = this.settingKeys.filter((k) => e.affectsConfiguration(`talpyDen.${k}`));
         if (keys.length) this.settingsChanged.fire(keys);
       }),
-      vscode.window.onDidChangeWindowState((s) => this.focusChanged.fire(s.focused)),
+      vscode.window.onDidChangeWindowState((s) => {
+        this.focusChanged.fire(s.focused);
+        this.useChanged.fire(inUse(s));
+      }),
       vscode.workspace.onDidChangeWorkspaceFolders(() => this.foldersChanged.fire(undefined)),
     ];
   }
@@ -29,6 +38,7 @@ export class VsCodeHost implements HostServices {
     for (const s of this.subscriptions) s.dispose();
     this.settingsChanged.dispose();
     this.focusChanged.dispose();
+    this.useChanged.dispose();
     this.foldersChanged.dispose();
   }
 
@@ -113,6 +123,8 @@ export class VsCodeHost implements HostServices {
   readonly focus = {
     get focused() { return vscode.window.state.focused; },
     onDidChange: this.focusChanged.event,
+    get inUse() { return inUse(vscode.window.state); },
+    onDidChangeUse: this.useChanged.event,
   };
 
   readonly clipboard = {

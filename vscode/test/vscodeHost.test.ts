@@ -174,6 +174,20 @@ test("focus mirrors window state and fires on change", () => {
   assert.deepEqual(got, [true, false]);
 });
 
+test("inUse is the window's `active` when VS Code says it, else its focus, and fires on every window state", () => {
+  const host = make();
+  stub.setWindowFocused(false);
+  const got: boolean[] = [];
+  host.focus.onDidChangeUse((u) => got.push(u));
+  assert.equal(host.focus.inUse, false);
+  stub.setWindowFocused(true);
+  assert.equal(host.focus.inUse, true, "no `active`: the focus");
+  (stub.window.state as { active?: boolean }).active = false;
+  assert.equal(host.focus.inUse, false, "focused but not used lately");
+  delete (stub.window.state as { active?: boolean }).active;
+  assert.deepEqual(got, [true]);
+});
+
 test("workspaceFolders lists names and paths and tells of changes", () => {
   const host = make();
   assert.deepEqual(host.workspaceFolders(), []);

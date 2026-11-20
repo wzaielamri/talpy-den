@@ -7,11 +7,12 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as vscode from "vscode";
-import { cacheDir } from "../../core/src/settings";
-import { duration, hostLabel } from "../../core/src/shared/model";
-import type { Group, Session } from "../../core/src/shared/types";
-import type { Changes, PetEvent } from "../../core/src/transitions";
+import { Disposable } from "./events";
+import type { HostServices } from "./host";
+import { cacheDir } from "./settings";
+import { duration, hostLabel } from "./shared/model";
+import type { Group, Session } from "./shared/types";
+import type { Changes, PetEvent } from "./transitions";
 
 const MARK_EVERY_MS = 15000; // a window in use notes it this often
 const LISTED = 4; // chats named per line, then "+N" (as Plasma's and GNOME's summary)
@@ -112,24 +113,19 @@ export class AwayTracker {
   }
 }
 
-// In use: interacted with recently (VS Code's `active`), else focused
-function inUse(state: vscode.WindowState): boolean {
-  return (state as { active?: boolean }).active ?? state.focused;
-}
-
 // Follows this window's use and tells onBack when you come back to it
-export class AwayWatch implements vscode.Disposable {
+export class AwayWatch implements Disposable {
   readonly tracker = new AwayTracker();
   private markFile = path.join(cacheDir(), "vscode-active.json");
   private timer?: NodeJS.Timeout;
-  private subscription: vscode.Disposable;
+  private subscription: Disposable;
 
-  constructor(private onBack: (now: number, lastUse: number) => void) {
+  constructor(host: HostServices, private onBack: (now: number, lastUse: number) => void) {
     // Started in the background (unfocused) isn't being away from it: you
     // haven't used this window yet, so there's nothing to sum up later
-    if (inUse(vscode.window.state)) this.inUse();
-    this.subscription = vscode.window.onDidChangeWindowState((s) => {
-      if (inUse(s)) {
+    if (host.focus.inUse) this.inUse();
+    this.subscription = host.focus.onDidChangeUse((inUse) => {
+      if (inUse) {
         if (this.tracker.since === null) {
           if (!this.timer) this.inUse(); // the first use of this window
           return;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import "./useHost";
-import { AwayTracker } from "../src/away";
+import { host } from "./useHost";
+import { AwayTracker } from "../../core/src/away";
 import { demoState } from "../../core/src/shared/demo";
 import type { Group, Session } from "../../core/src/shared/types";
 import { TransitionTracker } from "../../core/src/transitions";
@@ -85,10 +85,10 @@ test("while you're away, finished chats wait for the digest; chats that need you
   const path = await import("node:path");
   const vscode = (await import("vscode")) as unknown as typeof import("./vscode-stub");
   process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-away-"));
-  const { Notifier } = await import("../src/notify");
+  const { Notifier } = await import("../../core/src/notify");
   const sounds: string[] = [];
   const backend = { sound: (s: string) => sounds.push(s) } as never;
-  const notifier = new Notifier(backend, () => undefined);
+  const notifier = new Notifier(host, backend, () => undefined);
   const g = groups([{ name: "parser", state: "idle" }, { name: "deploy", state: "waiting" }]);
   const notice = (kind: "done" | "waiting" | "stopped", s: Session) => ({ key: s.key, kind, title: `${s.name} ${kind}`, body: "", session: s });
   const changes = {
