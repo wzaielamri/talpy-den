@@ -156,6 +156,20 @@ The owner's condition: **the shell stays replaceable.** The UI and the core
 talk only through Talpy Den's own connection, never through Electron APIs, so
 the shell could become Tauri later without touching either.
 
+And **the UI stays replaceable too**: it holds no logic of its own. It draws
+what the core sends and sends back what the user did; what a chat's state
+means, what to notify, what an action does, all of it is decided in the core.
+If Talpy Den later becomes an editor in Zed's league and the web UI isn't
+enough (the owner asked, 2026-11-20), a native front end (GPUI, say) is one
+more client of the same core: only the UI is written again, never the agents,
+the harness, the adapters or the connection. GPUI was weighed now and left for
+then: it would cost the whole UI before anything ships, give up the UI shared
+with VS Code (which shows only web UIs) and the Plasma desktop widget, and it's
+young outside Zed; an agentic coding app (editor, terminals, diffs, many
+agents) is what VS Code and its forks already build on Electron (Monaco,
+xterm.js). A shortcut to "Talpy Den in Zed": Talpy Den's harness can itself
+speak ACP as an agent, and then runs inside Zed and the other ACP editors.
+
 ## The design
 
 ### Overview
