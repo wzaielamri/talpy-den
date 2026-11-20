@@ -25,7 +25,7 @@ import type { AccountInput, HeroInput, PetStage, StageCallbacks, StageChat } fro
 import type { ChatRef, Counts, GameName, ScoredGame } from "../../src/shared/types";
 import { PALETTE, allPetColors, freeColor, setPetColors } from "./colors";
 import { BOX, FLOOR } from "../../vendor/talpy/talpy.mjs";
-import { BEAT_MS, FRAME_MS, cancelBeat, nextBeat } from "./beat";
+import { BEAT_MS, beatInterval, cancelBeat, nextBeat, screenFrame } from "./beat";
 import { Clock, Timer, Tween, ease, onReducedMotionChange, reducedMotion, type Animator } from "./motion";
 import { Pet, SMALL } from "./pet";
 
@@ -163,7 +163,8 @@ export class Stage implements PetStage, Animator {
   private destroyed = false;
   private frame = 0; // its wish for the next beat (nextBeat)
   private frameQuick = false; // (that wish: the next frame)
-  pace = BEAT_MS; // how far apart its ticks come now: BEAT_MS, or FRAME_MS while you play with a pet
+  pace = BEAT_MS; // how far apart its ticks come now: the beat's, or the screen's frame while you play with a pet
+  private paceQuick = false; // (that's the screen's frame)
   private renderQueued = false;
   private rendering = false; // (hidden: what changes while it draws is in that drawing)
   private readonly tweens = new Set<Tween>();
@@ -727,8 +728,12 @@ export class Stage implements PetStage, Animator {
   private readonly loop = (): void => {
     this.frame = 0;
     if (!this.live || this.destroyed) return;
-    const pace = this.pets.some((p) => p.quick()) ? FRAME_MS : BEAT_MS;
-    if (pace !== this.pace) {
+    // (as measured: the beat is 40 ms on a 75 Hz screen, a frame 6.9 ms on a
+    // 144 Hz one; the films go by it, not by the 33.3 ms they're told at first)
+    const quick = this.pets.some((p) => p.quick());
+    const pace = quick ? screenFrame() : beatInterval();
+    if (quick !== this.paceQuick || Math.abs(pace - this.pace) > 0.03 * this.pace) {
+      this.paceQuick = quick;
       this.pace = pace;
       for (const p of this.pets) p.paceChanged(pace);
     }

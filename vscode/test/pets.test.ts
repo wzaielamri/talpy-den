@@ -21,7 +21,8 @@ function bundle(): string {
     bundled = buildSync({
       stdin: {
         contents: 'export { Stage, setDarkAll, setPlayfulAll } from "./webview/pets/stage";\nexport { petFields, stageCallbacks } from "./webview/util/petStage";\n' +
-          'export { ACTIONS, MOODS } from "./vendor/talpy/actions.mjs";\nexport { Spring } from "./webview/pets/motion";\n',
+          'export { ACTIONS, MOODS } from "./vendor/talpy/actions.mjs";\nexport { Spring } from "./webview/pets/motion";\n' +
+          'export { tick as beatTick } from "./webview/pets/beat";\n',
         resolveDir: repo,
         loader: "ts",
       },
@@ -179,6 +180,7 @@ function load() {
     frame,
     Stage: exports.Stage as Any, petFields: exports.petFields as Any, ACTIONS: exports.ACTIONS as Any,
     MOODS: exports.MOODS as Any, stageCallbacks: exports.stageCallbacks as Any, resize, intersect, frames, posted,
+    beatTick: exports.beatTick as (now: number) => void,
     setDarkAll: exports.setDarkAll as Any, setPlayfulAll: exports.setPlayfulAll as Any, css, Spring: exports.Spring as Any, micro,
   };
 }
@@ -360,6 +362,27 @@ test("while you play with a pet its stage ticks every frame, its film counting t
   stage.loop();
   assert.equal(pet.film.clockMs, 1000 / 30);
   stage.destroy();
+});
+
+test("on a 75 Hz screen (a beat every 40 ms) the pets' films count 40 ms, not 33.3, so moves keep their speed", () => {
+  // (counting 33.3 ms ticks that came 40 ms apart, a wave played 17% slow; on a
+  // 144 Hz screen, its frame nearest each beat 34.7 ms apart, 4% slow)
+  const { stage, t, lay, show, give } = account();
+  give([chat("p/1")]);
+  lay();
+  show();
+  const hero = new t.Stage(new FakeEl("div"), true, "hero", { open() {} });
+  t.resize[1]([{ contentRect: { width: 400, height: 96 } }]);
+  t.intersect[1]([{ isIntersecting: true }]);
+  hero.update(heroInput("idle"));
+  const at = performance.now() + 1000;
+  for (let i = 0; i < 6; i++) t.beatTick(at + 40 * i); // (the frames of a 75 Hz screen nearest each beat)
+  for (const pet of [stage.petFor("p/1"), hero.pets[0]]) {
+    assert.ok(Math.abs(pet.film.clockMs - 40) < 0.01, String(pet.film.clockMs));
+    assert.ok(Math.abs(pet.film.frameMs - 40) < 0.01, String(pet.film.frameMs)); // (a picture a tick)
+  }
+  stage.destroy();
+  hero.destroy();
 });
 
 test("the hero's pictures come once a tick: 30 a second on the beat, every frame while you play with him", () => {

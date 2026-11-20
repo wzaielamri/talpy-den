@@ -37,19 +37,20 @@ function bundle(): string {
   return bundled;
 }
 
-const VSYNC = 1000 / 60;
-
-// A page on a 60 Hz screen. A frame asked for comes at the screen's next
-// refresh; asked for after a while without frames, Chromium hands over the
-// one of its last refresh at once (handsLast), as it did here.
-function page(handsLast = true) {
+// A page on a screen of hz (60 unless said). A frame asked for comes at the
+// screen's next refresh; asked for after a while without frames, Chromium
+// hands over the one of its last refresh at once (handsLast), as it did here.
+// hidden: the page starts hidden. What a follower throws is reported (reported).
+function page(handsLast = true, { hz = 60, hidden = false } = {}) {
+  const VSYNC = 1000 / hz;
   let now = 1000;
   let lastFrameAt = -Infinity; // (when the page last had a frame)
   let timers: { at: number; fn: () => void; id: number }[] = [];
   let frames: { fn: (t: number) => void; id: number; at: number }[] = [];
   let ids = 0;
   const seen = { frames: 0, wakes: 0 };
-  const visibility = { state: "visible", listeners: [] as (() => void)[] };
+  const reported: unknown[] = [];
+  const visibility = { state: hidden ? "hidden" : "visible", listeners: [] as (() => void)[] };
   const sandbox: Record<string, unknown> = {
     performance: { now: () => now },
     setTimeout: (fn: () => void, ms: number) => {
@@ -73,6 +74,7 @@ function page(handsLast = true) {
       addEventListener: (_kind: string, fn: () => void) => visibility.listeners.push(fn),
     },
     matchMedia: () => ({ matches: false, addEventListener() {} }),
+    reportError: (e: unknown) => void reported.push(e),
     module: { exports: {} },
   };
   vm.runInNewContext(bundle(), sandbox);
@@ -104,7 +106,7 @@ function page(handsLast = true) {
     visibility.state = hidden ? "hidden" : "visible";
     for (const fn of visibility.listeners) fn();
   };
-  return { beat, run, seen, hide, pending: () => ({ timers: timers.length, frames: frames.length }), time: () => now };
+  return { beat, run, seen, hide, reported, pending: () => ({ timers: timers.length, frames: frames.length }), time: () => now };
 }
 
 // Something that moves on every count-th beat as long as it lives: the times it moved
@@ -119,6 +121,11 @@ function mover(beat: Any, count = 1, quick = () => false) {
   };
   step();
   return { at, stop: () => beat.cancelBeat(wish) };
+}
+
+// The intervals under 200 ms of setInterval calls in source
+function quickTimers(source: string): number[] {
+  return [...source.matchAll(/setInterval\(([\s\S]{0,400}?),\s*(\d+)\s*\)/g)].map((m) => Number(m[2])).filter((ms) => ms < 200);
 }
 
 const gaps = (at: number[]) => at.slice(1).map((t, i) => Math.round(t - at[i]));
@@ -182,6 +189,75 @@ test("a change that can wait (the turn's clock) comes with the glyph's next pict
   p.beat.withNextBeat((t: number) => came.push(t));
   p.run(50);
   assert.equal(came.length, 6);
+});
+
+test("a follower that throws doesn't stop the others", () => {
+  // (each takes its next beat from inside its own callback: one that threw
+  // took the rest of its beat with it, and they all stood still)
+  const p = page();
+  let once = true;
+  const bad = (): void => {
+    p.beat.nextBeat(() => {
+      if (once) {
+        once = false;
+        throw new Error("drawn wrong");
+      }
+      bad();
+    });
+  };
+  bad();
+  const good = mover(p.beat);
+  const glyph = mover(p.beat, 3);
+  p.run(1000);
+  assert.equal(p.reported.length, 1, "the error isn't reported");
+  assert.equal(String(p.reported[0]), "Error: drawn wrong");
+  const n = good.at.length;
+  const m = glyph.at.length;
+  p.run(1000);
+  assert.ok(good.at.length - n >= 29, `${good.at.length - n} beats a second after it threw`);
+  assert.ok(glyph.at.length - m >= 9, `${glyph.at.length - m} glyph pictures a second after it threw`);
+  good.stop();
+  glyph.stop();
+});
+
+test("the beat keeps its pace on a 75 Hz and a 144 Hz screen: the frame nearest each beat", () => {
+  // (with a fixed 8 ms of slack the beats came 26.7 and 27.8 ms apart there,
+  // 37 and 36 a second, and the pets' films, counting 33.3 ms, played fast)
+  for (const [hz, apart] of [[75, 40], [144, 35], [120, 33], [60, 33]] as const) {
+    const p = page(true, { hz });
+    const pets = mover(p.beat);
+    p.run(2000);
+    assert.deepEqual(new Set(gaps(pets.at.slice(-20))), new Set([apart]), `${hz} Hz`);
+    assert.ok(Math.abs(p.beat.beatInterval() - 1000 / hz * Math.round(apart / (1000 / hz))) < 0.5, `${hz} Hz: ${p.beat.beatInterval()}`);
+    pets.stop();
+  }
+});
+
+test("a page hidden from the start gets no beat till it shows", () => {
+  const p = page(true, { hidden: true });
+  const pets = mover(p.beat);
+  p.run(1000);
+  assert.equal(pets.at.length, 0);
+  assert.deepEqual(p.pending(), { timers: 0, frames: 0 });
+  p.hide(false);
+  p.run(1000);
+  assert.ok(pets.at.length >= 29, `${pets.at.length} beats`);
+  pets.stop();
+});
+
+test("a wish made while the page is hidden comes true once it shows", () => {
+  const p = page();
+  p.run(100);
+  p.hide(true);
+  const came: number[] = [];
+  p.beat.nextBeat((t: number) => came.push(t));
+  p.beat.nextBeat((t: number) => came.push(t), true);
+  p.run(1000);
+  assert.deepEqual(came, []);
+  assert.deepEqual(p.pending(), { timers: 0, frames: 0 });
+  p.hide(false);
+  p.run(50);
+  assert.equal(came.length, 2);
 });
 
 test("with nothing that moves, the beat asks for no timer and no frame", () => {
@@ -252,6 +328,9 @@ test("nothing on the pages animates forever on the compositor's clock", () => {
       if (!/\.tsx?$/.test(f)) continue;
       const source = readFileSync(path.join(repo, dir, f), "utf8");
       assert.ok(!/iterations:\s*Infinity/.test(source), `${dir}/${f} animates forever`);
-      assert.ok(!/setInterval\([^)]*,\s*(\d{1,2}|1\d\d)\)/.test(source), `${dir}/${f} has a timer of its own for what moves`);
+      assert.deepEqual(quickTimers(source), [], `${dir}/${f} has a timer of its own for what moves`);
     }
+  // (the check sees past a callback's own parentheses)
+  assert.deepEqual(quickTimers("setInterval(() => draw(), 80); setInterval(draw, 40); setInterval(() => { a(); b(); }, 120)"), [80, 40, 120]);
+  assert.deepEqual(quickTimers("setInterval(() => post({ type: \"projects\" }), 600000);"), []);
 });

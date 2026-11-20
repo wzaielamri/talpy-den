@@ -26,7 +26,7 @@ import { DECOR, SCORED, pickGame, type Game, type RunThing } from "../../vendor/
 import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide, drawPuff, drawThing } from "../../vendor/talpy/talpy.mjs";
 import type { StageChat } from "./api";
 import { PALETTE, textOn } from "./colors";
-import { BEAT_MS } from "./beat";
+import { BEAT_MS, FRAME_MS } from "./beat";
 import { Spring, Timer, Tween, ease, reducedMotion } from "./motion";
 import { world, type Stage } from "./stage";
 
@@ -37,6 +37,15 @@ export const LARGE = 8;
 // Events that happened while a stage was hidden are acted out when it shows
 // again, if they're this recent
 const MISSED_MS = 60000;
+
+// How far apart a Talpy's pictures come on ticks pace ms apart: a whole number
+// of ticks (a film counts its pictures in ticks: any other number plays its
+// moves too fast or too slow), as near as that gets to a picture every frame of
+// a 60 Hz screen for the big Talpy (every tick on the beat, every frame while
+// you play with him) and 30 a second for a chat's pet
+function picturesEvery(pace: number, lone: boolean): number {
+  return pace * Math.max(1, Math.round((lone ? FRAME_MS : BEAT_MS) / pace));
+}
 
 // A scored game: px around a thing's picture (thingSprite), for its outline's edge
 const SPRITE_PAD = 2;
@@ -294,8 +303,8 @@ export class Pet {
     this.film = new Films(
       this.talpy,
       this.lone
-        ? { frameMs: stage.pace, maxFrames: 32, sheets: 36, tweenMs: 0, restMs: 200, smooth: true, clockMs: stage.pace }
-        : { frameMs: BEAT_MS, maxFrames: 32, sheets: 32, tweenMs: 200, tweens: 5, smooth: true, clockMs: stage.pace },
+        ? { frameMs: picturesEvery(stage.pace, this.lone), maxFrames: 32, sheets: 36, tweenMs: 0, restMs: 200, smooth: true, clockMs: stage.pace }
+        : { frameMs: picturesEvery(stage.pace, this.lone), maxFrames: 32, sheets: 32, tweenMs: 200, tweens: 5, smooth: true, clockMs: stage.pace },
     );
     this.sheets = div("td-pet-sheets");
     this.view = this.canvas();
@@ -412,11 +421,11 @@ export class Pet {
     return this.held || this.landing || this.tugging || this.pushing || this.dragging || !!this.play?.on || !!this.game?.on;
   }
 
-  // The stage's ticks come pace ms apart from now on (every frame, or the
-  // beat's): the film counts them again, and the hero's pictures come once a
-  // tick, as before (every frame while you play with him)
+  // The stage's ticks come pace ms apart from now on (the screen's frame, or
+  // the beat's): the film counts them again, its pictures a whole number of
+  // them apart (picturesEvery)
   paceChanged(pace: number): void {
-    this.film.setPace(pace, this.lone ? pace : undefined);
+    this.film.setPace(pace, picturesEvery(pace, this.lone));
     this.changed();
   }
 
