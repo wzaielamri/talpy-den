@@ -40,9 +40,11 @@ def run_qml(body, ms):
             "app.exec()\n"
             "print('REPORT', r.property('report') if r else '')\n")
         own_bus = ["dbus-run-session", "--"] if shutil.which("dbus-run-session") else []
+        # (rendered on a thread of its own, as plasmashell renders its windows:
+        # how often a window is drawn depends on it)
         out = subprocess.run(own_bus + ["python3", "-c", script, str(qml), str(ms)], capture_output=True, text=True, timeout=60,
                              env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
-                                      QT_FORCE_STDERR_LOGGING="1"))
+                                      QSG_RENDER_LOOP="threaded", QT_FORCE_STDERR_LOGGING="1"))
     report = next((line[len("REPORT "):] for line in out.stdout.splitlines() if line.startswith("REPORT ")), "")
     if not report:
         raise AssertionError(out.stderr[-3000:])
@@ -107,6 +109,27 @@ Item {
 }""", 200)
         # 1 down to 0.25 in 600 ms and back, eased in and out (Easing.InOutSine), and on round
         self.assertEqual(got, [1, 0.89, 0.625, 0.25, 0.625, 1, 0.625, 1])
+
+    def test_a_glyph_that_moves_draws_its_window_once_a_picture(self):
+        # A canvas painted Canvas.Cooperative shows its new picture a frame
+        # later, so each picture of a moving glyph drew the whole window twice
+        # (the panel: 25 frames a second for 12.5 pictures; measured live, and
+        # here 24.7 for 12.3)
+        got = run_qml("""
+Item {
+    id: t
+    width: 120; height: 60
+    property int paints: 0
+    property int frames: 0
+    property bool counting: false
+    property string report: ""
+    TalpyIcon { id: a; width: 48; height: 48; mode: "working"; onPaint: if (t.counting) t.paints++ }
+    Connections { target: t.Window.window; function onFrameSwapped() { if (t.counting) t.frames++ } }
+    Timer { interval: 500; running: true; onTriggered: t.counting = true }
+    Timer { interval: 2500; running: true; onTriggered: { t.counting = false; t.report = JSON.stringify({ paints: t.paints, frames: t.frames }) } }
+}""", 2700)
+        self.assertGreaterEqual(got["paints"], 15, got)       # ~25 in 2 s
+        self.assertLessEqual(got["frames"], got["paints"] * 1.2 + 2, got)
 
 
 def plasma_dbus_qml():

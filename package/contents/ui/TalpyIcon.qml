@@ -12,7 +12,11 @@ Canvas {
     property string mode: "none"      // root.overall: waiting working idle none
     property bool moving: true        // false: holds still (e.g. under a window)
 
-    renderStrategy: Canvas.Cooperative
+    // Painted at once, in the frame that asks for it: painted Cooperative (on
+    // the render thread), its picture showed a frame later, so each picture
+    // of a moving glyph drew its whole window twice. (A glyph is small: a
+    // picture costs nothing to speak of on the main thread.)
+    renderStrategy: Canvas.Immediate
     onColorChanged: requestPaint()
     onModeChanged: requestPaint()
     onWidthChanged: requestPaint()
