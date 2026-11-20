@@ -272,6 +272,7 @@ export enum UIKind {
 
 export const env = {
   remoteName: undefined as string | undefined,
+  sessionId: undefined as string | undefined, // (none unless a test sets one)
   uiKind: UIKind.Desktop,
   openExternal: async (uri: unknown) => call("openExternal", [uri], true),
   clipboard: { writeText: async (text: string) => void clipboardWrites.push(text), readText: async () => clipboardWrites.at(-1) ?? "" },

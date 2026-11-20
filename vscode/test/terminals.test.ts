@@ -8,11 +8,12 @@ import { mock, test } from "node:test";
 import * as vscode from "vscode";
 import { host } from "./useHost";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
-import { Dashboard } from "../src/dashboard";
+import { Dashboard } from "../../core/src/dashboard";
 import type { Notifier } from "../../core/src/notify";
 import { demoState } from "../../core/src/shared/demo";
 import { Terminals } from "../src/terminals";
 import { asPaste } from "../../core/src/terminal";
+import { VsCodeEditor } from "../src/vscodeEditor";
 
 const stub = vscode as unknown as typeof import("./vscode-stub");
 const NOW = 1_800_000_000_000;
@@ -68,8 +69,7 @@ test("the dashboard knows when a check of a host that answered started", async (
   mock.timers.enable({ apis: ["Date"], now: NOW });
   let answer: unknown = { ok: false, error: "no answer" };
   const backend = { hostStatus: async () => answer } as unknown as Backend;
-  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, { handle() {}, isLeader: () => true } as unknown as Notifier, log, host);
+  const dash = new Dashboard(host, new VsCodeEditor(), backend, { handle() {}, isLeader: () => true } as unknown as Notifier);
   try {
     (dash as unknown as { hosts: Map<string, unknown> }).hosts.set("lab", { name: "lab", loading: false, ok: false, error: "", result: null, updatedAt: 0, current: true });
     await dash.pollHost("lab");

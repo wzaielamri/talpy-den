@@ -1732,7 +1732,7 @@ class GoOnWaitsTests(TaskFixture):
         self.assertIn("            startQueued(t)\n", main)
         self.assertIn('post({ type: "startQueued", id: t.id, now: true })',
                       (repo / "vscode/webview/components/QueuedTasks.tsx").read_text())
-        self.assertIn('...(now ? ["--now"] : [])', (repo / "vscode/src/dashboard.ts").read_text())
+        self.assertIn('...(now ? ["--now"] : [])', (repo / "core/src/dashboard.ts").read_text())
 
     def test_a_go_on_with_nothing_in_the_background_is_as_ever(self):
         self.session_file.unlink()

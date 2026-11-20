@@ -162,10 +162,11 @@ export class VsCodeHost implements HostServices {
 
   readonly onDidChangeWorkspaceFolders = this.foldersChanged.event;
 
-  get environment(): { readonly remoteName?: string; readonly remoteAuthority?: string; readonly web: boolean } {
+  get environment(): { readonly remoteName?: string; readonly remoteAuthority?: string; readonly web: boolean; readonly sessionId: string } {
     return {
       remoteName: vscode.env.remoteName,
       web: vscode.env.uiKind === vscode.UIKind.Web,
+      sessionId: vscode.env.sessionId ?? "",
       // (looked up only when asked: it walks the open folders and editors)
       get remoteAuthority() { return currentRemoteAuthority(vscode); },
     };

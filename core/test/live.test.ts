@@ -7,14 +7,18 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { host } from "./useHost";
+import { LiveWatch, sessionDirs, type LiveChange } from "../src/agents/claudeCode/live";
 import { Dashboard } from "../src/dashboard";
-import { LiveWatch, sessionDirs, type LiveChange } from "../../core/src/agents/claudeCode/live";
-import { demoState } from "../../core/src/shared/demo";
-import { doingText, liveFromRows, liveOf, peekLine, tickerItems, TickerTurns, withLive, type TickerItem } from "../../core/src/shared/model";
-import type { Group, LiveView, Session } from "../../core/src/shared/types";
+import type { EditorPort } from "../src/ports";
+import { useSettingsHost } from "../src/settings";
+import { demoState } from "../src/shared/demo";
+import { doingText, liveFromRows, liveOf, peekLine, tickerItems, TickerTurns, withLive, type TickerItem } from "../src/shared/model";
+import type { Group, LiveView, Session } from "../src/shared/types";
+import { FakeHost } from "./fakeHost";
 
 const NOW = 1_800_000_000_000;
+const host = new FakeHost(); // (the settings, as their defaults)
+useSettingsHost(host);
 
 function chat(partial: Partial<Session>): Session {
   return { ...demoState(NOW).status!.groups[0].sessions[0], peek: null, tasks: null, changes: null, stats: null, detail: "", ...partial };
@@ -168,8 +172,8 @@ test("a chat that changes while a check runs is checked again once that's done",
     },
   };
   const notifier = { handle() {}, isLeader: () => true };
-  const log = { warn() {}, info() {}, error() {} };
-  const dash = new Dashboard(backend as never, notifier as never, log as never, host);
+  const editor = { claudePanelAvailable: async () => false, onDidChangeClaudePanel: () => ({ dispose() {} }) } as unknown as EditorPort;
+  const dash = new Dashboard(host, editor, backend as never, notifier as never);
   const first = dash.refresh();
   await dash.refresh(); // (a check running: not doubled)
   assert.equal(calls, 1);

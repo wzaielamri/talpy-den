@@ -1139,7 +1139,7 @@ class OneRefreshTests(unittest.TestCase):
         self.assertIn('case "readAgain": {\n      const store = msg.recap ? recapAgain : readAgain;\n      store.set(store.get() + 1);',
                       (vs / "webview/main.tsx").read_text())
         # (and the Recap once more, when the plan usage Refresh fetched came in)
-        dash = (vs / "src/dashboard.ts").read_text()
+        dash = (ROOT / "core/src/dashboard.ts").read_text()
         self.assertIn("this.usageWait();", self.body(r"\n  async fetchUsage\(\): Promise<void> \{(.*?)\n  \}", dash))
         self.assertIn("this.onUsageCameInEmitter.fire();", self.body(r"\n  private usageWait\(\): void \{(.*?)\n  \}", dash))
         self.assertIn('dash.onUsageCameIn(() => this.broadcast({ type: "readAgain", recap: true }))', (vs / "src/view.ts").read_text())

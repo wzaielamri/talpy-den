@@ -6,34 +6,35 @@
 // mode, whose hook hands on each step as it happens, every 6 s at most
 // often; while no chat works, every idlePollInterval (20 s). Without the
 // watching: every pollInterval (10 s hidden). Hosts every remotePollSeconds.
+// What it asks of the window (its focus, settings, folders, dialogs) goes through the host; Claude Code's
+// panel, through the editor port.
 
-import * as vscode from "vscode";
-import type { HostServices } from "../../core/src/host";
-import { AwayWatch } from "../../core/src/away";
-import type { Backend, HostContainers, SshHost } from "../../core/src/agents/claudeCode/backend";
-import { claudePanelAvailable, localPanelProfileKey } from "./claudePanel";
-import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSettings } from "../../core/src/settings";
-import { HostWatch, watchName, type WatchAnswer } from "../../core/src/agents/claudeCode/hostWatch";
-import { LiveWatch } from "../../core/src/agents/claudeCode/live";
-import type { Notifier } from "../../core/src/notify";
-import { containerFromAuthority, hostFromAuthority, portFromAuthority, sshPort } from "../../core/src/agents/claudeCode/remoteHost";
-import { currentRemoteAuthority } from "./remoteHost";
-import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../../core/src/shared/demo";
-import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "../../core/src/shared/model";
-import { chatRef, noLinks } from "../../core/src/notify";
-import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "../../core/src/agents/claudeCode/oldChats";
-import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "../../core/src/shared/types";
-import type { WeekRuleAsk } from "../../core/src/shared/week";
-import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "../../core/src/transitions";
+import { CLAUDE_CODE } from "./agents";
+import { AwayWatch } from "./away";
+import type { Backend, HostContainers, SshHost } from "./agents/claudeCode/backend";
+import { Emitter, type Disposable } from "./events";
+import type { HostServices } from "./host";
+import type { EditorPort } from "./ports";
+import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSettings } from "./settings";
+import { HostWatch, watchName, type WatchAnswer } from "./agents/claudeCode/hostWatch";
+import { LiveWatch } from "./agents/claudeCode/live";
+import type { Notifier } from "./notify";
+import { containerFromAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./agents/claudeCode/remoteHost";
+import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
+import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { chatRef, noLinks } from "./notify";
+import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "./agents/claudeCode/oldChats";
+import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
+import type { WeekRuleAsk } from "./shared/week";
+import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
 
 const HIDDEN_POLL_MS = 10000;
 const LIVE_WORKING_MS = 6000; // watched, a chat works, live mode (or the window isn't focused)
-const VIEW_ID = "talpyDen.view";
 const DIGEST_SHOWN_MS = 60 * 60000; // the away card stays this long, unless closed
 const DEMO_STEP_MS = 8000;
 const MESSAGE_MS = { error: 10000, info: 12000 };
 
-export class Dashboard implements vscode.Disposable {
+export class Dashboard implements Disposable {
   private status: Status | null = null;
   private errorText = "";
   private hosts = new Map<string, HostState>();
@@ -65,7 +66,7 @@ export class Dashboard implements vscode.Disposable {
   private hostProjectsReads = new Map<string, Promise<void>>();
   private moreRecent = new Map<string, RecentMore>(); // "host|account id": its recent chats as a bigger check listed them
   private tracker = new TransitionTracker();
-  private disposables: vscode.Disposable[] = [];
+  private disposables: Disposable[] = [];
   private disposed = false;
   private windowHost: string | undefined;
   private claudeCodeAvailable = false;
@@ -79,19 +80,19 @@ export class Dashboard implements vscode.Disposable {
   lookingAt: (id: string) => boolean = () => false; // (a chat's tab shows it: ChatPanes)
   private away: AwayWatch;
   private digest: DigestCard | null = null;
-  private readonly onStateEmitter = new vscode.EventEmitter<ViewState>();
-  private readonly onUnseenEmitter = new vscode.EventEmitter<void>();
+  private readonly onStateEmitter = new Emitter<ViewState>();
+  private readonly onUnseenEmitter = new Emitter<void>();
   // (what finished unseen changed: the Activity Bar badge's count)
   readonly onUnseen = this.onUnseenEmitter.event;
-  private readonly onPetEventEmitter = new vscode.EventEmitter<PetEvent>();
-  private readonly onLiveEmitter = new vscode.EventEmitter<{ live: Record<string, LiveView>; changed: string[] }>();
+  private readonly onPetEventEmitter = new Emitter<PetEvent>();
+  private readonly onLiveEmitter = new Emitter<{ live: Record<string, LiveView>; changed: string[] }>();
   readonly onState = this.onStateEmitter.event;
   readonly onPetEvent = this.onPetEventEmitter.event;
   // What this computer's running chats do now, between checks (live mode);
   // changed: the session ids whose view is new
   readonly onLive = this.onLiveEmitter.event;
   // The plan usage Refresh fetched came in (fetchUsage): the Recap reads again
-  private readonly onUsageCameInEmitter = new vscode.EventEmitter<void>();
+  private readonly onUsageCameInEmitter = new Emitter<void>();
   readonly onUsageCameIn = this.onUsageCameInEmitter.event;
   private usageAskedAt = 0; // when Refresh asked for it, until its numbers come
   private usageTimer: ReturnType<typeof setTimeout> | undefined;
@@ -104,19 +105,21 @@ export class Dashboard implements vscode.Disposable {
   private paneHosts = new Set<string>();
   private hostPolledAt = new Map<string, number>(); // host -> when its check was last asked for
   private hostPollDue = new Map<string, NodeJS.Timeout>(); // a check held back by the 2 s between two
-  private readonly watchAs = watchName(vscode.env.sessionId ?? "");
-  private readonly onHostChangedEmitter = new vscode.EventEmitter<{ host: string; changed: string[]; requests: boolean }>();
+  private readonly watchAs: string; // (this window's name on the hosts it watches: watchName)
+  private readonly onHostChangedEmitter = new Emitter<{ host: string; changed: string[]; requests: boolean }>();
   // A host's watcher answered: the chats there whose session files or requests changed (a tab of one
   // reads it at once)
   readonly onHostChanged = this.onHostChangedEmitter.event;
   private again = false; // a chat changed while a check ran: check again once it's done
 
+  // host: the window (its focus, settings, folders, dialogs, log); editor: Claude Code's panel in it
   constructor(
+    private host: HostServices,
+    private editor: EditorPort,
     private backend: Backend,
     private notifier: Notifier,
-    private log: vscode.LogOutputChannel,
-    host: HostServices,
   ) {
+    this.watchAs = watchName(host.environment.sessionId);
     this.windowHost = this.windowHostNow();
     this.polledWith = this.pollSettings();
     this.away = new AwayWatch(host, (now, lastUse) => this.cameBack(now, lastUse));
@@ -124,7 +127,7 @@ export class Dashboard implements vscode.Disposable {
       ({ urgent, views }) => {
         if (views.length) this.noteLive(views);
         // (a window nobody looks at that doesn't notify: its next check is soon enough)
-        if (urgent && (this.visible || vscode.window.state.focused || this.notifier.isLeader()))
+        if (urgent && (this.visible || this.host.focus.focused || this.notifier.isLeader()))
           void this.refresh(true).then(() => this.scheduleLocal()); // (the next check counts from this one)
       },
       () => extraConfigDirs(),
@@ -134,11 +137,14 @@ export class Dashboard implements vscode.Disposable {
       this.away,
       this.live,
       this.onLiveEmitter,
-      // looking at the view: what finished is seen
-      vscode.window.onDidChangeWindowState((s) => {
-        if (s.focused && this.visible) this.clearUnseen();
+      // looking at the view: what finished is seen. (Each change of the window's state, its focus or its
+      // use, as VS Code's window state tells both: heard after away's, as before; the window that notifies
+      // claims the lead on the focus, before either)
+      host.focus.onDidChangeUse(() => {
+        const focused = this.host.focus.focused;
+        if (focused && this.visible) this.clearUnseen();
         // (the old-chats settings follow a choice made on Plasma or GNOME meanwhile: once a minute at most)
-        if (s.focused && Date.now() - this.oldChatsSyncedAt > 60000) {
+        if (focused && Date.now() - this.oldChatsSyncedAt > 60000) {
           this.oldChatsSyncedAt = Date.now();
           void this.syncOldChats();
         }
@@ -148,16 +154,15 @@ export class Dashboard implements vscode.Disposable {
       this.onPetEventEmitter,
       this.onUsageCameInEmitter,
       { dispose: () => clearTimeout(this.usageTimer) },
-      vscode.workspace.onDidChangeConfiguration((e) => {
-        if (!e.affectsConfiguration("talpyDen")) return;
-        if (e.affectsConfiguration("talpyDen.recapHistory")) void this.setRecapHistory(settings.recapHistory());
-        if (e.affectsConfiguration("talpyDen.oldChats") || e.affectsConfiguration("talpyDen.oldChatsDays"))
-          this.oldChatsChanged(e.affectsConfiguration("talpyDen.oldChats"));
+      // (the talpyDen keys that changed: oldChats isn't oldChatsDays)
+      host.settings.onDidChange((keys) => {
+        if (keys.includes("recapHistory")) void this.setRecapHistory(settings.recapHistory());
+        if (keys.includes("oldChats") || keys.includes("oldChatsDays")) this.oldChatsChanged(keys.includes("oldChats"));
         this.settingsChanged();
       }),
       // the Claude Code extension installed, removed or (in a new folder) enabled
-      vscode.extensions.onDidChange(() => void this.checkClaudeCode()),
-      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      editor.onDidChangeClaudePanel(() => void this.checkClaudeCode()),
+      host.onDidChangeWorkspaceFolders(() => {
         void this.checkClaudeCode();
         const host = this.windowHostNow();
         if (host !== this.windowHost) {
@@ -180,10 +185,10 @@ export class Dashboard implements vscode.Disposable {
   // check another sshd, so its host isn't added by itself; that's said once
   private windowHostOff = false;
   private windowHostNow(): string | undefined {
-    const authority = currentRemoteAuthority(vscode);
+    const authority = this.host.environment.remoteAuthority;
     // a Dev Containers window: its container (named as its listing names it)
     const container = containerFromAuthority(authority, [...this.containersHere, ...Object.values(this.hostContainers).flatMap((h) => h.containers ?? [])],
-      vscode.workspace.getConfiguration("dev.containers").get<string>("dockerPath", "docker"));
+      this.host.settings.other<string>("dev.containers", "dockerPath", "docker"));
     if (container !== undefined) return container || undefined;
     const host = hostFromAuthority(authority);
     const port = portFromAuthority(authority);
@@ -191,8 +196,8 @@ export class Dashboard implements vscode.Disposable {
     const off = !!host && !!port && sshTo !== port;
     if (off && (!this.windowHostOff || host !== this.windowHost)) {
       const why = `this window reached ${host} on port ${port}, and ssh ${host} goes to ${sshTo ? `port ${sshTo}` : "another port"}, so Talpy Den doesn't list its chats. A Host entry for it with Port ${port} in ~/.ssh/config lets it.`;
-      this.log.warn(why);
-      void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${why}`));
+      this.host.log.warn(why);
+      void this.host.message("info", noLinks(`Talpy Den: ${why}`));
     }
     this.windowHostOff = off;
     return host;
@@ -211,7 +216,7 @@ export class Dashboard implements vscode.Disposable {
     if (this.disposed) return;
     if (problem) {
       this.errorText = problem;
-      this.log.error(problem);
+      this.host.log.error(problem);
       this.emit();
       // try again later: the setting may get fixed
       clearTimeout(this.retryTimer);
@@ -270,7 +275,7 @@ export class Dashboard implements vscode.Disposable {
     if (!this.status || !this.status.counts.working) return this.liveHook ? settings.idlePollInterval() : Math.max(poll, settings.idlePollInterval());
     if (this.liveHook) return this.visible ? LIVE_WORKING_MS : HIDDEN_POLL_MS;
     if (!this.visible) return Math.max(HIDDEN_POLL_MS, poll);
-    if (!vscode.window.state.focused) return Math.max(poll, LIVE_WORKING_MS);
+    if (!this.host.focus.focused) return Math.max(poll, LIVE_WORKING_MS);
     return poll;
   }
 
@@ -370,7 +375,7 @@ export class Dashboard implements vscode.Disposable {
   // commands are registered wherever it runs)
   private async checkClaudeCode(): Promise<void> {
     this.claudeCodeCheckedAt = Date.now();
-    const available = await claudePanelAvailable();
+    const available = await this.editor.claudePanelAvailable();
     if (available === this.claudeCodeAvailable || this.disposed) return;
     this.claudeCodeAvailable = available;
     this.emit();
@@ -378,7 +383,7 @@ export class Dashboard implements vscode.Disposable {
 
   // The Claude Code extension here, and the account it runs this computer's chats on
   claudeCodeInfo(): ClaudeCodeInfo {
-    return { available: this.claudeCodeAvailable, profileKey: this.claudeCodeAvailable ? localPanelProfileKey() : null };
+    return { available: this.claudeCodeAvailable, profileKey: this.claudeCodeAvailable ? this.editor.localPanelProfileKey() : null };
   }
 
   setVisible(visible: boolean): void {
@@ -386,7 +391,7 @@ export class Dashboard implements vscode.Disposable {
     this.visible = visible;
     // Just opened: show fresh numbers now, then poll at the faster pace
     if (visible) this.scheduleLocal(0);
-    if (visible && vscode.window.state.focused) this.clearUnseen();
+    if (visible && this.host.focus.focused) this.clearUnseen();
   }
 
   isVisible(): boolean {
@@ -516,7 +521,7 @@ export class Dashboard implements vscode.Disposable {
       const answer = await this.backend.hostStatus(host, statusArgs());
       if (!answer.ok && (answer.stopped || answer.gone)) this.unseenIdle.add(host);
     } catch (e) {
-      this.log.warn(`${host}: ${(e as Error).message}`);
+      this.host.log.warn(`${host}: ${(e as Error).message}`);
     } finally {
       this.unseenBusy.delete(host);
     }
@@ -558,7 +563,7 @@ export class Dashboard implements vscode.Disposable {
         this.usageWait();
       } else {
         this.errorText = error ?? "Status unavailable";
-        this.log.warn(this.errorText);
+        this.host.log.warn(this.errorText);
       }
     } finally {
       this.localBusy = false;
@@ -625,7 +630,7 @@ export class Dashboard implements vscode.Disposable {
     try {
       list = await this.backend.hostList(this.containerArgs());
     } catch (e) {
-      this.log.warn(`The hosts and containers couldn't be listed: ${(e as Error).message}`);
+      this.host.log.warn(`The hosts and containers couldn't be listed: ${(e as Error).message}`);
       return;
     }
     if (!list || this.disposed) return;
@@ -643,7 +648,7 @@ export class Dashboard implements vscode.Disposable {
     try {
       answer = await this.backend.hostContainers(host, this.containerArgs());
     } catch (e) {
-      this.log.warn(`${host}'s containers couldn't be listed: ${(e as Error).message}`);
+      this.host.log.warn(`${host}'s containers couldn't be listed: ${(e as Error).message}`);
       return;
     }
     if (this.disposed) return;
@@ -714,7 +719,7 @@ export class Dashboard implements vscode.Disposable {
       } else {
         // keep the last answer to show (dimmed) with the error
         Object.assign(now, { loading: false, ok: false, error: answer.error || "no answer", login: !!answer.login, loggedIn: false, stopped: !!answer.stopped, gone: !!answer.gone, cached: false });
-        this.log.warn(`${host}: ${now.error}`);
+        this.host.log.warn(`${host}: ${now.error}`);
       }
     } finally {
       this.hostBusy.delete(host);
@@ -790,18 +795,18 @@ export class Dashboard implements vscode.Disposable {
       if (t.afterTurn) {
         // your reply, sent as the chat's turn ended
         if (answer.ok && answer.message && settings.notifyDone() && this.notifier.isLeader() && !this.holdingBack() && !this.visible)
-          void vscode.window.showInformationMessage(noLinks(`Sent to ${t.name || "the chat"}: ${t.prompt} — ${answer.message}`));
+          void this.host.message("info", noLinks(`Sent to ${t.name || "the chat"}: ${t.prompt} — ${answer.message}`));
         else if (!answer.ok) {
           this.setActionError(`Couldn't send your reply to ${t.name || "the chat"}: ${answer.message}`);
           if (this.notifier.isLeader() && !this.visible)
-            void vscode.window.showErrorMessage(noLinks(`Couldn't send your reply to ${t.name || "the chat"}: ${t.prompt} — ${answer.message}`));
+            void this.host.message("error", noLinks(`Couldn't send your reply to ${t.name || "the chat"}: ${t.prompt} — ${answer.message}`));
         }
       } else if (answer.waits !== undefined) {
         // a chat's go-on waits for its background commands (the queue says
         // so): told once, as it starts waiting, as the widget does
         if (answer.notify) {
           this.setActionInfo(answer.message);
-          if (this.notifier.isLeader() && !this.visible) void vscode.window.showWarningMessage(noLinks(answer.message));
+          if (this.notifier.isLeader() && !this.visible) void this.host.message("warning", noLinks(answer.message));
         }
       } else if (answer.ok && answer.message) {
         // ("": another window, or the widget, started it)
@@ -809,12 +814,12 @@ export class Dashboard implements vscode.Disposable {
         if (answer.ended !== undefined) {
           // (it ended the background commands it waited for: told whatever the settings, as it began to wait)
           this.setActionInfo(answer.message);
-          if (this.notifier.isLeader() && !this.visible) void vscode.window.showInformationMessage(noLinks(answer.message));
+          if (this.notifier.isLeader() && !this.visible) void this.host.message("info", noLinks(answer.message));
         } else if (settings.notifyDone() && this.notifier.isLeader() && !this.holdingBack())
-          void vscode.window.showInformationMessage(noLinks(`Started on ${t.account}: ${what} — ${answer.message}${t.host ? ` · ${hostLabel(t.host)}` : ""}`));
+          void this.host.message("info", noLinks(`Started on ${t.account}: ${what} — ${answer.message}${t.host ? ` · ${hostLabel(t.host)}` : ""}`));
       } else if (!answer.ok) {
         this.setActionError(`Couldn't start the queued task: ${answer.message}`);
-        if (!this.visible) void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't start the queued task “${what}”: ${answer.message}`));
+        if (!this.visible) void this.host.message("error", noLinks(`Talpy Den: couldn't start the queued task “${what}”: ${answer.message}`));
       }
     } finally {
       this.starting.delete(t.id);
@@ -860,7 +865,7 @@ export class Dashboard implements vscode.Disposable {
       this.noteUnseen(changes);
       if (!this.demo) this.notifier.handle(changes, { holdDone: this.holdingBack(now) });
     } catch (e) {
-      this.log.error(`A reaction to the new status failed: ${e instanceof Error ? e.message : String(e)}`);
+      this.host.log.error(`A reaction to the new status failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -879,7 +884,7 @@ export class Dashboard implements vscode.Disposable {
       if (f.stop) this.finishedUnopened.delete(f.id);
       else if (f.took >= min && !this.lookingAt(f.id)) this.finishedUnopened.set(f.id, f.at);
     }
-    if (!(this.visible && vscode.window.state.focused))
+    if (!(this.visible && this.host.focus.focused))
       for (const f of changes.finished) if (!f.stop && f.took >= min) this.unseen.set(f.id, f.at);
     if (changes.finished.length) this.onUnseenEmitter.fire();
   }
@@ -948,7 +953,7 @@ export class Dashboard implements vscode.Disposable {
     // a card in the view; a notification too, unless notifications are off
     this.digest = { title: digest.title, lines: digest.lines, at: now, first: digest.first ? chatRef(digest.first.session, digest.first.host) : null };
     if (settings.notifyWaiting() || settings.notifyDone())
-      this.notifier.digest(digest, () => void vscode.commands.executeCommand(`${VIEW_ID}.focus`));
+      this.notifier.digest(digest, () => void this.host.showView());
     this.emit();
   }
 
@@ -1056,7 +1061,7 @@ export class Dashboard implements vscode.Disposable {
   // deleted (it starts again from the transcripts Claude still has)
   async setRecapHistory(keep: boolean): Promise<void> {
     // (the window it was changed in: every window hears of the change)
-    if (this.demoPhase !== null || !vscode.window.state.focused) return;
+    if (this.demoPhase !== null || !this.host.focus.focused) return;
     const now = await this.backend.historyStatus();
     if (now && now.keep === keep) return; // (the setting caught up with week.py's choice: syncRecapHistory)
     // off forgets the numbers of the chats Claude has deleted and the plan's windows that ended: asked
@@ -1065,18 +1070,18 @@ export class Dashboard implements vscode.Disposable {
       const n = now.deletedChats;
       const chats = n > 0 ? `the numbers of the ${n} ${n === 1 ? "chat" : "chats"} Claude has deleted` : "";
       const windows = now.planWindows > 0 ? "your plan's windows that ended" : "";
-      const pick = await vscode.window.showWarningMessage("Stop keeping the history?", {
+      const pick = await this.host.message("warning", "Stop keeping the history?", {
         modal: true,
         detail: `The Recap forgets ${chats && windows ? `${chats}, and ${windows}` : chats || windows}, for good.`,
       }, "Stop Keeping It");
       if (pick !== "Stop Keeping It") {
-        await vscode.workspace.getConfiguration("talpyDen").update("recapHistory", true, vscode.ConfigurationTarget.Global);
+        await this.host.settings.update("recapHistory", true, "global");
         return;
       }
     }
     const { ok, message } = await this.backend.action("week.py", ["--history", keep ? "on" : "off"]);
-    if (ok) void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${message}.`));
-    else void vscode.window.showWarningMessage(noLinks(`Talpy Den: the Recap's history didn't change: ${message}`));
+    if (ok) void this.host.message("info", noLinks(`Talpy Den: ${message}.`));
+    else void this.host.message("warning", noLinks(`Talpy Den: the Recap's history didn't change: ${message}`));
   }
 
   // The setting shows the choice week.py keeps (Talpy Den's settings on
@@ -1086,7 +1091,7 @@ export class Dashboard implements vscode.Disposable {
     try {
       const now = await this.backend.historyStatus();
       if (now && now.keep !== settings.recapHistory())
-        await vscode.workspace.getConfiguration("talpyDen").update("recapHistory", now.keep, vscode.ConfigurationTarget.Global);
+        await this.host.settings.update("recapHistory", now.keep, "global");
     } catch {
       // (no answer: the setting stays as it is)
     }
@@ -1107,7 +1112,7 @@ export class Dashboard implements vscode.Disposable {
   // choice: the choice itself changed (else only the days: they never switch it, whatever the
   // setting says, which another window or Plasma may have left behind)
   async setOldChats(choice = true): Promise<void> {
-    if (this.demoPhase !== null || !vscode.window.state.focused) return;
+    if (this.demoPhase !== null || !this.host.focus.focused) return;
     const days = settings.oldChatsDays(), dirs = configDirArgs();
     const now = await this.backend.cleanupSetting(); // (only the choice: a run's preview only when it's asked)
     if (!now) return;
@@ -1119,7 +1124,7 @@ export class Dashboard implements vscode.Disposable {
       // it would delete what Talpy Den keeps (starred, queued…): asked first
       const risk = (await this.backend.cleanupStatus(dirs))?.claudeRisk;
       if (risk && risk.chats + risk.plans > 0) {
-        const pick = await vscode.window.showWarningMessage("Let Claude Code delete old chats again?", {
+        const pick = await this.host.message("warning", "Let Claude Code delete old chats again?", {
           modal: true,
           detail: `When it next starts, Claude Code deletes what's older than ${risk.days} ${risk.days === 1 ? "day" : "days"}, ` +
             `starred or not, for good: here that's ${riskText(risk)}.`,
@@ -1131,7 +1136,7 @@ export class Dashboard implements vscode.Disposable {
       if (now.mode === "talpy" && now.days === days) return;
       if (now.mode !== "talpy" || days < now.days) {
         const preview = await this.backend.cleanupStatus(dirs, days);
-        const pick = await vscode.window.showWarningMessage(
+        const pick = await this.host.message("warning",
           `Delete chats you haven't used for ${days} ${days === 1 ? "day" : "days"}?`, {
             modal: true,
             detail: `Talpy Den's first run deletes ${preview ? cleanupText(preview.preview) : "what's that old"} here, then once a day ` +
@@ -1144,8 +1149,8 @@ export class Dashboard implements vscode.Disposable {
       args = ["--set", "talpy", String(days)];
     }
     const { ok, message } = await this.backend.action("cleanup.py", [...args, ...dirs], 120000);
-    if (ok) void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${message}.`));
-    else void vscode.window.showWarningMessage(noLinks(`Talpy Den: old chats: ${message}`));
+    if (ok) void this.host.message("info", noLinks(`Talpy Den: ${message}.`));
+    else void this.host.message("warning", noLinks(`Talpy Den: old chats: ${message}`));
     void this.syncOldChats();
   }
 
@@ -1159,13 +1164,12 @@ export class Dashboard implements vscode.Disposable {
       // (no answer: the settings stay as they are)
     }
     if (!now) return;
-    const config = vscode.workspace.getConfiguration("talpyDen");
     this.oldChatsSyncing = true;
     try { // (the days first: a change of the choice read with the days of before could set those)
       if (now.mode === "talpy" && now.days !== settings.oldChatsDays())
-        await config.update("oldChatsDays", now.days, vscode.ConfigurationTarget.Global);
+        await this.host.settings.update("oldChatsDays", now.days, "global");
       if (SETTING_OF[now.mode] !== settings.oldChats())
-        await config.update("oldChats", SETTING_OF[now.mode], vscode.ConfigurationTarget.Global);
+        await this.host.settings.update("oldChats", SETTING_OF[now.mode], "global");
     } catch {
       // (it can't be written: the settings stay as they are)
     } finally {
@@ -1177,25 +1181,25 @@ export class Dashboard implements vscode.Disposable {
   async showOldChats(): Promise<void> {
     const now = this.demoPhase !== null ? null : await this.backend.cleanupStatus(configDirArgs());
     if (!now) {
-      void vscode.window.showWarningMessage("Talpy Den: couldn't ask about old chats.");
+      void this.host.message("warning", "Talpy Den: couldn't ask about old chats.");
       return;
     }
     const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-    const pick = await vscode.window.showInformationMessage(
+    const pick = await this.host.message("info",
       now.mode === "talpy" ? "Talpy Den deletes old chats, keeping what you starred" : "Claude Code deletes old chats",
       { modal: true, detail: oldChatsDetail(now, when) }, "Settings");
-    if (pick === "Settings") void vscode.commands.executeCommand("workbench.action.openSettings", "talpyDen.oldChats");
+    if (pick === "Settings") void this.host.openSettings("talpyDen.oldChats");
   }
 
   async forgetRecapHistory(): Promise<void> {
-    const pick = await vscode.window.showWarningMessage("Delete the Recap's saved history and your plan's windows that ended?", {
+    const pick = await this.host.message("warning", "Delete the Recap's saved history and your plan's windows that ended?", {
       modal: true,
       detail: "It starts again from the chats Claude still has (Claude Code keeps them 30 days by default).",
     }, "Delete");
     if (pick !== "Delete" || this.demoPhase !== null) return;
     const { ok, message } = await this.backend.action("week.py", ["--forget"]);
-    if (ok) void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${message}.`));
-    else void vscode.window.showWarningMessage(noLinks(`Talpy Den: nothing was deleted: ${message}`));
+    if (ok) void this.host.message("info", noLinks(`Talpy Den: ${message}.`));
+    else void this.host.message("warning", noLinks(`Talpy Den: nothing was deleted: ${message}`));
   }
 
   // The Projects tab's projects (kept: a click on one of its chats, plans
@@ -1304,11 +1308,11 @@ export class Dashboard implements vscode.Disposable {
     const now = Date.now();
     if (this.demoPhase !== null) {
       const demo = demoState(now, this.demoPhase);
-      return { ...demo, ...shareUsage(demo.status, demo.hosts, settings.sshUsage()), settings: viewSettings(), actionError: this.actionError, actionInfo: this.actionInfo };
+      return withAgent({ ...demo, ...shareUsage(demo.status, demo.hosts, settings.sshUsage()), settings: viewSettings(), actionError: this.actionError, actionInfo: this.actionInfo });
     }
     // (an account's plan usage once: shareUsage; the notifications see each machine's own)
     const hosts = this.shownHosts().map((name) => this.hosts.get(name)).filter((h): h is HostState => !!h);
-    return {
+    return withAgent({
       ...shareUsage(this.status, hosts, settings.sshUsage()),
       errorText: this.errorText,
       settings: viewSettings(),
@@ -1326,10 +1330,20 @@ export class Dashboard implements vscode.Disposable {
       now,
       live: this.liveViews,
       finished: this.finishedNow(this.status, hosts),
-    };
+    });
   }
 
   emit(): void {
     if (!this.disposed) this.onStateEmitter.fire(this.state());
   }
+}
+
+// Each account and chat of the state names its agent: Claude Code's, the only one so far (the backend names
+// none). Set in place where it's missing, so what the checks read keeps its identity; the view reads nothing new
+function withAgent<T extends { status: Status | null; hosts: HostState[] }>(state: T): T {
+  for (const g of [...(state.status?.groups ?? []), ...state.hosts.flatMap((h) => h.result?.groups ?? [])]) {
+    g.agent ??= CLAUDE_CODE.id;
+    for (const s of g.sessions ?? []) s.agent ??= CLAUDE_CODE.id;
+  }
+  return state;
 }

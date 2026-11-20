@@ -19,6 +19,7 @@ beforeEach(() => {
   stub.overrides.clear();
   stub.setWorkspaceFolders(undefined);
   stub.env.remoteName = undefined;
+  stub.env.sessionId = undefined;
   stub.env.uiKind = stub.UIKind.Desktop;
   logLines.length = 0;
 });
@@ -215,6 +216,14 @@ test("environment mirrors remoteName and web", () => {
   stub.env.uiKind = stub.UIKind.Web;
   assert.equal(host.environment.remoteName, "ssh-remote");
   assert.equal(host.environment.web, true);
+});
+
+test("environment's sessionId is this window's own (VS Code's env.sessionId)", () => {
+  const host = make();
+  stub.env.sessionId = "5c0d1a2b-window";
+  assert.equal(host.environment.sessionId, "5c0d1a2b-window");
+  stub.env.sessionId = undefined;
+  assert.equal(host.environment.sessionId, "", "none: empty, as the dashboard took it");
 });
 
 test("environment's remoteAuthority is the remote the window has open, read anew each time", () => {

@@ -36,7 +36,7 @@ export class FakeHost implements HostServices {
   others = new Map<string, unknown>(); // "section.key" -> value
   clip = "";
   folders: { name: string; path: string }[] = [];
-  environment: { remoteName?: string; remoteAuthority?: string; web: boolean } = { web: false };
+  environment: { remoteName?: string; remoteAuthority?: string; web: boolean; sessionId: string } = { web: false, sessionId: "fake-window" };
 
   private settingsChanged = new Emitter<string[]>();
   private focusChanged = new Emitter<boolean>();

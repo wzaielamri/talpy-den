@@ -12,7 +12,7 @@ import "./useHost";
 import type { AccountSwitch } from "../src/accountSwitch";
 import { Actions } from "../src/actions";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
-import type { Dashboard } from "../src/dashboard";
+import type { Dashboard } from "../../core/src/dashboard";
 import type { ChatRef } from "../../core/src/shared/types";
 import type { Terminals } from "../src/terminals";
 import { attachClients } from "../../core/src/terminal";

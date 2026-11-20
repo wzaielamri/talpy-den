@@ -7,16 +7,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import type * as vscode from "vscode";
 import { host } from "./useHost";
 import { chatOptionsText } from "../src/actions";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { chatOptionArgs } from "../../core/src/settings";
-import { Dashboard } from "../src/dashboard";
+import { Dashboard } from "../../core/src/dashboard";
 import type { Notifier } from "../../core/src/notify";
 import { demoState } from "../../core/src/shared/demo";
 import { clockText, findChatRef, findPlan, keptChat, keptTitle, limitReset, resetAtText, toLocalClock, unseenHostItems } from "../../core/src/shared/model";
 import type { Group, KeptChat, QueuedTask } from "../../core/src/shared/types";
+import { VsCodeEditor } from "../src/vscodeEditor";
 
 const NOW = new Date(2026, 9, 24, 10, 0).getTime();
 
@@ -75,7 +75,7 @@ test("an SSH host's and a container's chats keep going too, each found under its
   assert.match(actions, /"--keep-off", id, \.\.\.host,/);
   assert.match(actions, /\["--end", chat\.host, .*\.\.\.off\]/);
   assert.match(src("src/view.ts"), /if \(chat\) void this\.actions\.keepGoing\(chat, m\.on === true\);/);
-  assert.match(src("src/dashboard.ts"), /kept: \(chat: string\) => !!keptChat\(this\.status, chat, host\)/);
+  assert.match(src("../core/src/dashboard.ts"), /kept: \(chat: string\) => !!keptChat\(this\.status, chat, host\)/);
 });
 
 test("chats that keep going and tasks queued on hosts that aren't shown are listed where the hosts go", () => {
@@ -145,8 +145,7 @@ test("this computer's check has the usage cap, and the window that notifies look
   const backend = { status: async (args: string[]) => (calls.push(args), { status: demoState(NOW).status! }) } as unknown as Backend;
   let leader = true;
   const notifier = { handle() {}, isLeader: () => leader } as unknown as Notifier;
-  const log = { warn() {}, info() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const dash = new Dashboard(backend, notifier, log, host);
+  const dash = new Dashboard(host, new VsCodeEditor(), backend, notifier);
   try {
     await dash.refresh();
     assert.ok(calls[0].includes("--keep-going"));

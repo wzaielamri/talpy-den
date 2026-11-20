@@ -2257,7 +2257,8 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   (sessionId = undefined, prompt) to open a new tab with the prompt typed in but not sent. It also checks the
   extension id `anthropic.claude-code` with getExtension.
   - Used in: vscode/src/claudePanel.ts NEW_CHAT_TAB, claudePanelAvailable, openPanelChat; actions.ts
-    panelChoice, panelChat; dashboard.ts checkClaudeCode, claudeCodeInfo; accountSwitch.ts switch.
+    panelChoice, panelChat; accountSwitch.ts switch; core/src/dashboard.ts checkClaudeCode, claudeCodeInfo
+    (through vscodeEditor.ts).
   - Check:
 
     ```bash
@@ -2571,8 +2572,8 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
   writes its Claude files into this computer's `~/.claude*`, and its hook's copy and requests would be this
   computer's too. Talpy Den tells such a container by `homeId` (the boot id plus the home folder's device and
   inode, home_id), and Talpy Chat doesn't open its chats ("home"): they show among this computer's.
-  - Used in: talpy_den.py home_id (status `homeId`); core/src/shared/model.ts talpyPlace, dashboard.ts;
-    main.qml.
+  - Used in: talpy_den.py home_id (status `homeId`); core/src/shared/model.ts talpyPlace;
+    core/src/dashboard.ts; main.qml.
   - Check:
 
     ```bash

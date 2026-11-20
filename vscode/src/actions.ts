@@ -15,7 +15,7 @@ import { openComparison } from "./changes";
 import { claudePanelAvailable, localPanelConfigDir, localPanelProfileKey, openPanelChat } from "./claudePanel";
 import { filedUnder } from "../../core/src/agents/claudeCode/claudePanel";
 import { isAgentRunFile, openAgentRunFile, showMarkdown } from "./agentRun";
-import type { Dashboard } from "./dashboard";
+import type { Dashboard } from "../../core/src/dashboard";
 import { canRaiseWindows, isGnome } from "../../core/src/platform/linux/desktop";
 import { allShown, foundLines, showAll } from "../../core/src/agents/claudeCode/found";
 import { chatRef, noLinks } from "../../core/src/notify";

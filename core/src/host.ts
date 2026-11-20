@@ -66,7 +66,8 @@ export interface HostServices {
   workspaceFolders(): readonly { name: string; path: string }[];
   readonly onDidChangeWorkspaceFolders: Event<void>;
   // remoteAuthority: the remote the window has open ("ssh-remote+lab", "dev-container+…"), as it is at
-  // each read (dashboard: which host or container the window is on)
-  readonly environment: { readonly remoteName?: string; readonly remoteAuthority?: string; readonly web: boolean };
+  // each read (dashboard: which host or container the window is on); sessionId: this window's own id, new
+  // each time it starts (VS Code's env.sessionId; dashboard: the name its host watchers go by, watchName)
+  readonly environment: { readonly remoteName?: string; readonly remoteAuthority?: string; readonly web: boolean; readonly sessionId: string };
   readonly log: { info(m: string): void; warn(m: string): void; error(m: string): void };
 }

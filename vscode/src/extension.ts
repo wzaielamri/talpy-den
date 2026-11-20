@@ -14,10 +14,11 @@ import { CHAT_KEYS, ChatPanes } from "./chatPane";
 import { dictationModels } from "./dictation";
 import { answerPermissionsHere, liveModeHere } from "./relay";
 import { configDirArgs, extraConfigDirs, settings, useSettingsHost } from "../../core/src/settings";
+import { VsCodeEditor } from "./vscodeEditor";
 import { VsCodeHost } from "./vscodeHost";
 import { markdownLinkFile, openAgentRunFile } from "./agentRun";
 import { initDocs } from "./doc";
-import { Dashboard } from "./dashboard";
+import { Dashboard } from "../../core/src/dashboard";
 import { carryOverSettings, settingNames } from "./legacySettings";
 import { noLinks, Notifier } from "../../core/src/notify";
 import { findJobRef, OpenWatch } from "../../core/src/openRequests";
@@ -58,7 +59,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // Notifications open chats through the actions, which need the dashboard
   let actions: Actions | undefined;
   const notifier = new Notifier(host, backend, (chat) => void actions?.open(chat));
-  const dash = new Dashboard(backend, notifier, log, host);
+  const editor = new VsCodeEditor(); // (VS Code's own UI as the core asks for it: the dashboard, Claude Code's panel)
+  const dash = new Dashboard(host, editor, backend, notifier);
   const terminals = new Terminals((host, since) => dash.hostCheckedSince(host, since), (host, command) => backend.attachLine(host, command));
   const statusBar = new StatusBar(); // (Talpy Den's one status bar item; the account it names comes from account)
   const account = new AccountSwitch(dash, backend);

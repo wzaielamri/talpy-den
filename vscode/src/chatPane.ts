@@ -19,7 +19,7 @@ import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { openComparison } from "./changes";
 import { CHAT_VIEW, CHAT_VIEW_CONTEXT, emptyView, sideBarSupported, ViewSurface, windowFolders } from "./chatSurface";
 import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } from "../../core/src/settings";
-import type { Dashboard } from "./dashboard";
+import type { Dashboard } from "../../core/src/dashboard";
 import { noLinks } from "../../core/src/notify";
 import { chatRefOf, defaultGroup, doingText, hostLabel, liveOf, machineStatus, petKeyOf, recentRef, stateText } from "../../core/src/shared/model";
 import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, remoteControlPage, remoteSwitchCan, reviewPending, reviewSeen, sameAsk, shownUpTo, sideAnswerOf, sideKeyOk, sidePartAnswerOf, sidePickOf, sidesOf, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult, type SidePick } from "../../core/src/shared/pane";

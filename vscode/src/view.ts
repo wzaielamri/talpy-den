@@ -8,7 +8,7 @@ import type { Actions } from "./actions";
 import { AGENT_ID } from "./agentRun";
 import type { ChatPanes } from "./chatPane";
 import { setReopenIn, settings } from "../../core/src/settings";
-import type { Dashboard } from "./dashboard";
+import type { Dashboard } from "../../core/src/dashboard";
 import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, nextBest, shareAccounts } from "../../core/src/shared/model";
 import { answersOf, askShownOf } from "../../core/src/shared/pane";
 import { permsHost, weekAsked, weekRevokeAsked, weekRuleAsked } from "../../core/src/shared/week";
