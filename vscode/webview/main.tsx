@@ -8,6 +8,7 @@ import { gotDeleteAsk } from "./components/DeleteAsk";
 import { gotMoveAsk } from "./components/MoveAsk";
 import { isDark, post } from "./env";
 import { pets } from "./pets";
+import { beatShown } from "./pets/beat";
 import { hostVisible, limitsAnswer, liveViews, pageVisible, permsAnswer, projectsAnswer, petColorsVersion, readAgain, recapAgain, viewState, weekAnswer, weekRevokeAnswer, weekRuleAnswer } from "./util/stores";
 
 // Listen before saying "ready": the first state comes right after it
@@ -34,6 +35,7 @@ window.addEventListener("message", (event: MessageEvent) => {
       break;
     case "visible":
       hostVisible.set(!!msg.visible);
+      beatShown(!!msg.visible); // (nothing moves while another view is in front)
       break;
     case "showTab":
       setTab(msg.tab);

@@ -606,6 +606,33 @@ console.log(JSON.stringify({ first: live.slice(0, 12), last: live.slice(-10) }))
         self.assertEqual(result["first"], [1] * 12)   # 200 ms: still on its way, every frame drawn
         self.assertEqual(result["last"], [0] * 10)    # settled: its picture
 
+    def test_a_host_that_ticks_quicker_for_a_while_keeps_a_move_where_it_is(self):
+        # VS Code's stages tick on the page's beat (30 a second) and every
+        # frame while you play with Talpy (setPace): his pictures come every
+        # tick either way, and a quick move goes on where it was in its round
+        result = run_node(NULL_CANVAS + """
+let now = 1e12;
+const film = () => { const t = new Talpy({ brain: false }); t.tick(now); t.pose({ arms: 'wave', depth: 'high', eyes: 'happy' });
+    return { t: t, f: new Films(t, { frameMs: 1000 / 30, maxFrames: 32, sheets: 60, tweenMs: 0, clockMs: 1000 / 30 }) }; };
+const a = film(), b = film();   // a ticks 30 times a second throughout, b 60 times for 2 s
+const tick = (x) => { x.t.tick(now); x.f.tick(now); for (const s of x.f.sheets) if (s.paint) x.f.paint(s, ctx); };
+const phase = (x) => x.f.front.d ? x.f.front.d.phase : -1;
+const apart = { slow: 0, quick: 0, back: 0 };
+let shown = 0;
+for (let i = 0; i < 240; i++) {
+    const stage = i < 60 ? 'slow' : i < 120 ? 'quick' : 'back';
+    if (i === 60) b.f.setPace(1000 / 60, 1000 / 60);
+    if (i === 120) b.f.setPace(1000 / 30, 1000 / 30);
+    if (stage === 'quick') { now += 1000 / 60; tick(b); now += 1000 / 60; } else now += 1000 / 30;
+    tick(a); tick(b);
+    if (phase(a) >= 0) shown++;
+    apart[stage] = Math.max(apart[stage], Math.abs(phase(a) - phase(b)));
+}
+console.log(JSON.stringify({ apart: apart, shown: shown }));""")
+        self.assertGreater(result["shown"], 200)                    # (pictures of the wave, not drawn live)
+        for stage, apart in result["apart"].items():
+            self.assertLessEqual(apart, 0.05, stage)                # where it is in its round: a picture at most
+
     def test_a_move_that_happens_once_plays_out(self):
         # A yawn's stretch, a throw, a twirl of the lamp have no pictures: a
         # film showed them done at once (cut short); they're drawn live

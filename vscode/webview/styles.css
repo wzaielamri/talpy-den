@@ -4243,19 +4243,14 @@ body.vscode-high-contrast-light .pane-side {
   background: var(--td-failed);
 }
 
+/* (it blinks while it's going or waits for your answer: BlinkDot.tsx, on the page's beat) */
 .pane-tool.asking .pane-dot {
   background: var(--td-waiting);
-  animation: pane-blink 1.2s ease-in-out infinite;
 }
 
+.pane-tool.asking .pane-dot,
 .pane-tool.going .pane-dot {
-  animation: pane-blink 1.2s ease-in-out infinite;
-}
-
-@keyframes pane-blink {
-  50% {
-    opacity: 0.25;
-  }
+  will-change: opacity;
 }
 
 .pane-tool-body {

@@ -19,6 +19,8 @@ import { MadeLine } from "./components/MadeLine";
 import { SidePanel } from "./components/SidePanel";
 import { Tag, TestsTag } from "./components/Tag";
 import { TalpyIcon } from "./components/TalpyIcon";
+import { BlinkDot } from "./components/BlinkDot";
+import { beatShown, cancelBeat, withNextBeat } from "./pets/beat";
 import { I, Icon, T } from "./util/icons";
 import { Markdown } from "./util/markdown";
 import { ribbonCss } from "./util/ribbons";
@@ -50,19 +52,27 @@ function plural(n: number, one: string, many = one + "s"): string {
 }
 
 // Claude's turn so far, at the working line's end ("8m 12s · 58 steps"): its clock ticks each
-// second (turnTickIn), only while Claude works (it's made only then) and the tab is in front
+// second (turnTickIn), only while Claude works (it's made only then) and the tab is in front,
+// on the working Talpy's next beat (withNextBeat: no frame of its own)
 function TurnMeta({ turn, shown }: { turn: TurnSoFar; shown: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!shown) return;
     let timer = 0;
+    let wish = 0;
+    let stopped = false;
     const tick = () => {
+      if (stopped) return;
       const t = Date.now();
       setNow(t);
-      timer = window.setTimeout(tick, turnTickIn(turn, t) + 20);
+      timer = window.setTimeout(() => (wish = withNextBeat(tick)), turnTickIn(turn, t) + 20);
     };
     tick();
-    return () => window.clearTimeout(timer);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      cancelBeat(wish);
+    };
   }, [turn.startedAt, shown]);
   return <span class="pane-working-meta" title={turnHint(turn, now)}>{turnText(turn, now)}</span>;
 }
@@ -424,7 +434,7 @@ function ToolLine({ item, open, outWhole, onOut, onToggle, asking, going, gap, s
     <div data-key={item.key} class={`pane-item pane-tool ${tone} ${gap}`}>
       <button type="button" class="pane-tool-line" aria-expanded={open} title="Click for what it ran and what came back" onClick={onToggle}>
         <span class="pane-gutter" aria-hidden="true">
-          <span class="pane-dot" />
+          <BlinkDot on={tone === "asking" || tone === "going"} />
         </span>
         <span class="pane-tool-body">
           <span class="pane-tool-call">
@@ -1110,6 +1120,7 @@ function ChatApp() {
       else if (m.type === "font") setFont(m.family);
       else if (m.type === "visible") {
         setShown(m.visible);
+        beatShown(m.visible);   // (nothing moves while another tab is in front)
         if (!m.visible) setAway(null);   // (shown again: what it did meanwhile, asked again)
       }
       else if (m.type === "away") setAway(m.away);

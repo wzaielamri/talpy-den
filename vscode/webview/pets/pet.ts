@@ -26,6 +26,7 @@ import { DECOR, SCORED, pickGame, type Game, type RunThing } from "../../vendor/
 import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide, drawPuff, drawThing } from "../../vendor/talpy/talpy.mjs";
 import type { StageChat } from "./api";
 import { PALETTE, textOn } from "./colors";
+import { BEAT_MS } from "./beat";
 import { Spring, Timer, Tween, ease, reducedMotion } from "./motion";
 import { world, type Stage } from "./stage";
 
@@ -284,15 +285,17 @@ export class Pet {
 
     // Drawing: Talpy on its sheets (with room around it for what it throws
     // and holds up), its name tag, and a grab area around its body
-    // The hero: every frame, live until a new pose has settled, breathing at
-    // rest; a chat's pet: 30 pictures a second, pictures in between poses,
-    // still at rest; both: a move too slow for a picture every frame is drawn
-    // live (as in the widget, where such moves stepped)
+    // The hero: a picture every tick of its stage (the page's beat, 30 a
+    // second; every frame while you play with him), live until a new pose
+    // has settled, breathing at rest; a chat's pet: 30 pictures a second,
+    // pictures in between poses, still at rest; both: a move too slow for a
+    // picture every tick is drawn live (as in the widget, where such moves
+    // stepped). paceChanged: the ticks come quicker or slower.
     this.film = new Films(
       this.talpy,
       this.lone
-        ? { frameMs: 16.7, maxFrames: 32, sheets: 36, tweenMs: 0, restMs: 200, smooth: true, clockMs: 1000 / 60 }
-        : { frameMs: 33.3, maxFrames: 32, sheets: 32, tweenMs: 200, tweens: 5, smooth: true, clockMs: 1000 / 60 },
+        ? { frameMs: stage.pace, maxFrames: 32, sheets: 36, tweenMs: 0, restMs: 200, smooth: true, clockMs: stage.pace }
+        : { frameMs: BEAT_MS, maxFrames: 32, sheets: 32, tweenMs: 200, tweens: 5, smooth: true, clockMs: stage.pace },
     );
     this.sheets = div("td-pet-sheets");
     this.view = this.canvas();
@@ -400,6 +403,21 @@ export class Pet {
     if (this.destroyed) return;
     this.updateTimers();
     this.stage.invalidate();
+  }
+
+  // You play with it: it's in your hand (till it has landed), pulled at or
+  // pushed down, or a game or the hero's cookie is on. Its stage ticks every
+  // frame then, as it follows your hand or the game
+  quick(): boolean {
+    return this.held || this.landing || this.tugging || this.pushing || this.dragging || !!this.play?.on || !!this.game?.on;
+  }
+
+  // The stage's ticks come pace ms apart from now on (every frame, or the
+  // beat's): the film counts them again, and the hero's pictures come once a
+  // tick, as before (every frame while you play with him)
+  paceChanged(pace: number): void {
+    this.film.setPace(pace, this.lone ? pace : undefined);
+    this.changed();
   }
 
   // ------------------------------------------------------------ from the stage

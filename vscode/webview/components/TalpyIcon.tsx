@@ -1,11 +1,15 @@
 import { useEffect, useRef } from "preact/hooks";
 import { drawGlyph, glyphMoves } from "../../vendor/talpy/glyph.mjs";
+import { cancelBeat, nextBeat } from "../pets/beat";
 
 // Talpy peeking up out of the ground (the widget's panel icon,
 // talpy/glyph.mjs), in the state's color. It pops up when a chat needs you,
 // glances around while Claude works, smiles when it's your turn and sleeps
-// when nothing runs (thinking: a chat's working line): a few frames a second,
-// cheap for hours. Its size is the CSS's (.talpy-icon: 16 px).
+// when nothing runs (thinking: a chat's working line): ten pictures a second
+// on the page's beat (pets/beat.ts: every third, in step with the pets, one
+// frame for both), cheap for hours. Its size is the CSS's (.talpy-icon: 16 px).
+export const GLYPH_BEATS = 3;
+
 export function TalpyIcon({ state, moving }: { state: string; moving: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -25,10 +29,20 @@ export function TalpyIcon({ state, moving }: { state: string; moving: boolean })
     // (the theme changed: its colors too)
     const theme = new MutationObserver(draw);
     theme.observe(document.body, { attributes: true, attributeFilter: ["class"] });
-    const timer = moving && glyphMoves(state) ? setInterval(draw, 80) : undefined;
+    let wish = 0;
+    let stopped = false;
+    const step = (): void => {
+      wish = nextBeat(() => {
+        if (stopped) return;
+        draw();
+        step();
+      }, false, GLYPH_BEATS);
+    };
+    if (moving && glyphMoves(state)) step();
     return () => {
+      stopped = true;
       theme.disconnect();
-      clearInterval(timer);
+      cancelBeat(wish);
     };
   }, [state, moving]);
   return <canvas class={`talpy-icon ov-${state}`} ref={ref} width={16} height={16} aria-hidden="true" />;

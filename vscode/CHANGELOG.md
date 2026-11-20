@@ -13,6 +13,19 @@
   whenever they are shown.
   The shortcut does what the line does.
 
+- **Lighter while the pets move and Claude works: one beat for what keeps
+  moving.** The view drew its pets on every frame of the screen (the big
+  Talpy 60 pictures a second), its light and stars pulsed on animations of
+  their own, each Talpy glyph had a timer of its own and Talpy Chat's
+  blinking ● ran at the screen's rate. Each of those has Electron draw the
+  whole window again. Now all of it moves on one beat, 30 times a second in
+  step with the screen: the chats' pets keep their 30 pictures a second, the
+  big Talpy has 30 (every frame while you hold a pet or play a game), the
+  glyphs and the dot 10. Nothing moves while the view or tab is hidden.
+  Measured with the demo pages (% of one core): the view with its pets
+  52 → 37, a working chat's tab 8.2 → 5.9 (its Steps tab 21 → 6.3), ten
+  working chats 79 → 55. What they draw is the same.
+
 - **Faster on SSH hosts and containers over a slow connection.** Nothing is
   installed on a host, so Talpy Den sends its code with every check (about
   920 KB to read a chat, 630 KB for each check of a host). Through a jump

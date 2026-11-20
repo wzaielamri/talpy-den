@@ -120,7 +120,7 @@ class FakeEl {
 function load() {
   const resize: ((entries: unknown[]) => void)[] = [];
   const intersect: ((entries: unknown[]) => void)[] = [];
-  const frames = { asked: 0 };
+  const frames = { asked: 0, pending: new Map<number, (t: number) => void>() };
   const posted: Any[] = [];
   const css = { color: "rgb(204, 204, 204)" }; // the theme's text color
   const micro = { queued: 0 }; // (more than 1000 in a row: endless, the page would hang)
@@ -148,8 +148,11 @@ function load() {
       observe() {}
       disconnect() {}
     },
-    requestAnimationFrame: () => ++frames.asked,
-    cancelAnimationFrame() {},
+    requestAnimationFrame: (fn: (t: number) => void) => {
+      frames.pending.set(++frames.asked, fn);
+      return frames.asked;
+    },
+    cancelAnimationFrame: (id: number) => void frames.pending.delete(id),
     getComputedStyle: () => ({ getPropertyValue: () => "", color: css.color }),
     devicePixelRatio: 2,
     queueMicrotask: (fn: () => void) => {
@@ -166,7 +169,14 @@ function load() {
   };
   vm.runInNewContext(bundle(), sandbox);
   const exports = (sandbox.module as { exports: Any }).exports;
+  // The frame asked for comes (the page's beat, pets/beat.ts)
+  const frame = (): void => {
+    const due = [...frames.pending.values()];
+    frames.pending.clear();
+    for (const fn of due) fn(performance.now());
+  };
   return {
+    frame,
     Stage: exports.Stage as Any, petFields: exports.petFields as Any, ACTIONS: exports.ACTIONS as Any,
     MOODS: exports.MOODS as Any, stageCallbacks: exports.stageCallbacks as Any, resize, intersect, frames, posted,
     setDarkAll: exports.setDarkAll as Any, setPlayfulAll: exports.setPlayfulAll as Any, css, Spring: exports.Spring as Any, micro,
@@ -192,10 +202,19 @@ function account(maxPets = 3) {
     counts,
     t,
     frames: t.frames,
+    frame: t.frame,
     lay: (width = 400) => t.resize[0]([{ contentRect: { width, height: 80 } }]),
     show: (on = true) => t.intersect[0]([{ isIntersecting: on }]),
     // (in the order of the account's list)
     give: (chats: Any[]) => stage.update({ chats: chats.map((c, i) => ({ order: i, ...c })), maxPets, fiveHour: 0 }),
+  };
+}
+
+// The hero's input in a mood (nothing else going on)
+function heroInput(mood: string) {
+  return {
+    mood, headline: "", counts: { waiting: 0, working: 0, idle: 1, limit: 0, done: 0 }, highUsageText: "", contextFullText: "",
+    maxFiveHour: 0, agentsRunning: 0, waiting: null,
   };
 }
 
@@ -299,18 +318,99 @@ test("a chat's pet draws a picture only when what it shows changes", async () =>
   stage.destroy();
 });
 
-test("a stage in view with pets keeps drawing them; a hidden one asks for no frames", () => {
-  const { stage, frames, lay, show, give } = account();
+test("a stage in view with pets keeps drawing them on the page's beat; a hidden one asks for none", () => {
+  const { stage, frames, frame, lay, show, give } = account();
   give([chat("p/1")]);
   lay();
   assert.equal(frames.asked, 0, "frames for a stage nobody sees");
   show();
-  assert.equal(frames.asked, 1);
-  stage.loop(); // a frame: nothing walks, but Talpy is always up to something
-  assert.equal(frames.asked, 2);
+  assert.equal(frames.pending.size, 1); // (the beat was idle: the next frame)
+  const drawn = stage.petFor("p/1").view.drawn.length;
+  frame(); // a beat: nothing walks, but Talpy is always up to something
+  assert.ok(stage.petFor("p/1").view.drawn.length > drawn, "not drawn on the beat");
+  assert.ok(stage.frame, "no wish for the next beat");
+  assert.equal(frames.pending.size, 0, "a frame of its own before the next beat");
   show(false);
+  assert.equal(stage.frame, 0);
   stage.loop();
-  assert.equal(frames.asked, 2);
+  assert.equal(stage.frame, 0);
+  assert.equal(frames.pending.size, 0);
+  stage.destroy();
+});
+
+test("while you play with a pet its stage ticks every frame, its film counting those ticks; then the beat again", () => {
+  const { stage, frames, frame, lay, show, give } = account();
+  give([chat("p/1")]);
+  lay();
+  show();
+  const pet = stage.petFor("p/1");
+  frame();
+  assert.equal(pet.film.clockMs, 1000 / 30);
+  assert.equal(pet.film.frameMs, 1000 / 30); // (a chat's pet: 30 pictures a second, as before)
+  const asked = frames.asked;
+  pet.held = true; // in your hand
+  pet.changed();
+  assert.equal(frames.asked, asked + 1, "not the next frame");
+  assert.equal(stage.frameQuick, true);
+  stage.loop();
+  assert.equal(pet.film.clockMs, 1000 / 60);
+  assert.equal(pet.film.frameMs, 1000 / 30);
+  pet.held = false; // put down, landed
+  pet.landing = false;
+  stage.loop();
+  assert.equal(pet.film.clockMs, 1000 / 30);
+  stage.destroy();
+});
+
+test("the hero's pictures come once a tick: 30 a second on the beat, every frame while you play with him", () => {
+  const t = load();
+  const stage: Any = new t.Stage(new FakeEl("div"), true, "hero", { open() {} });
+  t.resize[0]([{ contentRect: { width: 400, height: 96 } }]);
+  t.intersect[0]([{ isIntersecting: true }]);
+  stage.update(heroInput("idle"));
+  const hero = stage.pets[0];
+  assert.equal(hero.film.frameMs, 1000 / 30);
+  hero.held = true;
+  stage.loop();
+  assert.equal(hero.film.frameMs, 1000 / 60);
+  assert.equal(hero.film.clockMs, 1000 / 60);
+  hero.held = false;
+  hero.landing = false;
+  stage.loop();
+  assert.equal(hero.film.frameMs, 1000 / 30);
+  stage.destroy();
+});
+
+test("the hero's light pulses and the night's stars twinkle on the beat, not on animations of their own", () => {
+  // (FakeEl has no animate(): a Web Animation would fail here)
+  const t = load();
+  const stage: Any = new t.Stage(new FakeEl("div"), true, "hero", { open() {} });
+  t.resize[0]([{ contentRect: { width: 400, height: 96 } }]);
+  t.intersect[0]([{ isIntersecting: true }]);
+  stage.update(heroInput("needs"));
+  assert.ok(stage.root.classes.has("td-glowing"));
+  const glow = () => Number(stage.lightEl.style["--td-glow"]);
+  stage.clock.base += 450 - (stage.clock.now() - stage.glowSince); // a quarter of the way: half lit
+  stage.loop();
+  assert.ok(Math.abs(glow() - 0.5) < 0.02, String(glow()));
+  stage.clock.base += 450;
+  stage.loop();
+  assert.ok(Math.abs(glow() - 1) < 0.02, String(glow()));
+  stage.update(heroInput("done")); // all done: a starry night
+  assert.equal(stage.root.classes.has("td-glowing"), false);
+  assert.equal(stage.lightEl.style["--td-glow"], "");
+  assert.equal(stage.starsEl.hidden, false);
+  stage.loop();
+  const twinkle = () => stage.stars.map((s: Any) => Number(s.style.opacity));
+  const before = twinkle();
+  for (const o of before) assert.ok(o >= 0.15 && o <= 0.9, String(o));
+  stage.clock.base += 700;
+  stage.loop();
+  assert.notDeepEqual(twinkle(), before, "the stars don't twinkle");
+  assert.ok(stage.frame, "no beat for the stars");
+  stage.update(heroInput("idle"));
+  assert.equal(stage.starsEl.hidden, true);
+  assert.equal(stage.stars[0].style.opacity, "");
   stage.destroy();
 });
 

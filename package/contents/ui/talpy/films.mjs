@@ -68,6 +68,19 @@ export class Films {
         this.tween = null;
     }
 
+    // The host's ticks come about clockMs apart from now on (a host that
+    // ticks quicker while you play with Talpy), and given frameMs, its
+    // pictures at least that far apart: measured again from there, every
+    // picture drawn again, a quick move going on where it is in its round
+    setPace(clockMs, frameMs) {
+        this.clockMs = clockMs;
+        if (frameMs)
+            this.frameMs = frameMs;
+        this.gaps = [];
+        this.move = { id: '', at: 0 };
+        this.reset();
+    }
+
     // How far apart the ticks come: clockMs, unless they come at another
     // pace (the median of the last ones), and how many make ms
     clock() {
