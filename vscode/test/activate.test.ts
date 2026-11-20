@@ -1,6 +1,6 @@
 // The whole extension, activated outside VS Code against a made-up home with
 // one live chat: every command and the view get registered, the first poll
-// reaches the status bar.
+// reaches the status bar. (No ./useHost here, on purpose: activate itself must set the settings host.)
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -9,7 +9,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import * as vscode from "vscode";
-import "./useHost";
 import { activate } from "../src/extension";
 
 const stub = vscode as unknown as typeof import("./vscode-stub");
