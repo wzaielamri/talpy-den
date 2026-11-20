@@ -44,7 +44,7 @@ export interface EditorPort {
   openComparison(c: Comparison): Promise<string>;
   // A Markdown file (a plan, a subagent's run, a memory) in Talpy Den's doc tab; the error to report, or "".
   // onWindowHost: a file of the host the window is connected to (Remote-SSH), else this computer's
-  // (actions' openPlan and openMemory; agentRun's openAgentRunFile)
+  // (actions' openPlan, openMemory and openAgentRun; the extension's /markdown links)
   showDoc(path: string, options?: { onWindowHost?: boolean }): Promise<string>;
   // The file in an editor tab, to change it; throws when it can't open (actions' openPlan and openMemory, edit)
   editFile(path: string, options?: { onWindowHost?: boolean }): Promise<void>;
@@ -69,6 +69,13 @@ export interface EditorPort {
   localPanelProfileKey(): string;
   // A new chat in the panel; prompt: typed into its input, for you to send (actions' panelChat)
   openPanelChat(prompt?: string): Promise<void>;
+}
+
+// What actions calls of the account switch (VS Code: accountSwitch.ts), until that moves to the core (Task 10,
+// which removes this). switchHost: Claude Code on this window's SSH host runs on the group's account from now on
+// (actions' panelChat, for a chat tab on another account than Claude Code's there); false: it couldn't (said)
+export interface AccountSwitch {
+  switchHost(group: Group): Promise<boolean>;
 }
 
 // Talpy Chat's panes, as notify.ts and actions.ts use them (VS Code: chatPane.ts ChatPanes)

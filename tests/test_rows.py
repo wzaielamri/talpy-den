@@ -290,7 +290,7 @@ class RowButtonsTests(unittest.TestCase):
             self.assertRegex(text, r'onClick=\{\(\) => askDelete\([^,]+, \{ kind: "%s"' % kind, name)
             self.assertIn("<DeleteAsk itemKey=", text, name)
             self.assertNotIn('post({ type: "delete"', text, name)
-        actions = (repo / "vscode/src/actions.ts").read_text()
+        actions = (repo / "core/src/actions.ts").read_text()
         self.assertNotIn('{ modal: true }, "Delete"', actions)
 
     def test_a_projects_dots_stand_top_right_and_its_buttons_cover_its_folder_line(self):

@@ -517,7 +517,7 @@ test("the Recap's card is copied from a folder of its own, removed after; a fail
   const fs = await import("node:fs");
   const os = await import("node:os");
   const path = await import("node:path");
-  const { Actions } = await import("../src/actions");
+  const { Actions } = await import("../../core/src/actions");
   const { recorded } = await import("./vscode-stub");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-cards-"));
   const saved = process.env.TMPDIR;
@@ -528,7 +528,8 @@ test("the Recap's card is copied from a folder of its own, removed after; a fail
     const copied: { file: string; bytes: string }[] = [];
     let answer = { ok: true, message: "Copied" };
     const backend = { copyImage: async (file: string) => (copied.push({ file, bytes: fs.readFileSync(file, "utf8") }), answer) };
-    const actions = new Actions(backend as never, {} as never, {} as never, { warn() {} } as never, {} as never);
+    const { host } = await import("./useHost");
+    const actions = new Actions(host, {} as never, {} as never, backend as never, {} as never, {} as never);
     const png = Buffer.from("PNG!").toString("base64");
     await actions.shareCard("copy", name, png);
     assert.equal(copied[0].bytes, "PNG!");

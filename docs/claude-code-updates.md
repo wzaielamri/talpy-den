@@ -187,7 +187,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   `interactive` for ending a chat.
   - Used in: talpy_den.py SESSION_KINDS, live_row, find_chat_live, live_background, end_for_handover,
     background_work, wake_settle; chatpick.py set_now; core/src/shared/model.ts canEndChat, core/src/shared/pane.ts
-    chatWhere, replyAnswers, chatPane.ts windowTerminal, actions.ts stop; SessionRow.qml, ChatPane.qml,
+    chatWhere, replyAnswers, vscode/src/chatPane.ts windowTerminal, core/src/actions.ts stop; SessionRow.qml, ChatPane.qml,
     main.qml; gnome/extension/ui/sessionRow.js, logic.js openHint.
   - Check: with a throwaway background chat running and `claude attach $SHORT` open,
     `jq -c '{kind,spare,parkedJobId,jobId}' $C/sessions/*.json; has parkedJobId`.
@@ -204,7 +204,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   find or type into, opens through the extension's link, can be stopped (its tab survives), can't be moved to
   the panel, isn't ended by a go-on or hand-over, and is tagged "Claude Code panel".
   - Used in: talpy_den.py reply_route, stop_chat, end_for_handover, background_work, kept_step, live_row,
-    add_remote_commands; vscode/src/actions.ts open, openSystem, stop, sendPlanFeedback; chatPane.ts
+    add_remote_commands; core/src/actions.ts open, openSystem, stop, sendPlanFeedback; vscode/src/chatPane.ts
     windowTerminal; core/src/shared/pane.ts chatWhere; core/src/shared/model.ts canMoveToClaudeCode, handoverTarget, goOnAt;
     accountSwitch.ts switchTo; main.qml, SessionRow.qml, ChatPane.qml; gnome/extension/logic.js openHint,
     stopTip, stopQuestion, indicator.js remoteShow.
@@ -827,7 +827,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   - Used in: talpy_den.py chat_options, EFFORT_LEVELS, ULTRACODE, PERMISSION_MODES, GO_ON_MODES,
     go_on_options, picture_options, go_on_with; chatpick.py pick_value, label, MODEL_ALIASES; pane.py
     start_chat; core/src/shared/pane.ts CHAT_MODELS, CHAT_EFFORTS, CHAT_MODES, ULTRACODE, modelKey,
-    withPick, pickerItems, nowText; vscode/src/actions.ts MODELS, EFFORTS, MODES; ChatPane.qml,
+    withPick, pickerItems, nowText; core/src/actions.ts MODELS, EFFORTS, MODES; ChatPane.qml,
     NewChatOptions.qml, NewChatBox.qml.
   - Check: `claude --help | grep -A4 -E -- '--(model|effort|permission-mode|allowedTools)'`; `has ultracode`;
     `jq -r 'select(.type=="assistant").message.model' $C/projects/*/*.jsonl 2>/dev/null | sort -u | tail`
@@ -869,7 +869,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   only while the chat works. The transcript notes `[Request interrupted`. VS Code terminals run the chat as
   `trap : INT; <command>; exec $SHELL`, so the shell stays after Claude exits.
   - Used in: talpy_den.py interrupt_chat, interrupt_chat_by_id; jump.py interrupt; pane.py interrupt;
-    vscode/src/actions.ts stop, chatPane.ts interrupt, terminals.ts run.
+    core/src/actions.ts stop; vscode/src/chatPane.ts interrupt, terminals.ts run.
   - Check: in a throwaway chat in tmux, ask 'run: for i in $(seq 100); do sleep 1; done'. Then
     `tmux send-keys -t <pane> C-c`, `grep -c '\[Request interrupted' "$T"`, and
     `tmux display -pt <pane> '#{pane_current_command}'` should still say claude.
@@ -883,7 +883,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   Claude's prompt takes the paste as one message and runs no keys; type-in leaves out the Enter. While a
   dialog shows, typed text would answer the dialog, so Talpy Den refuses then.
   - Used in: pane.py tmux_type, as_typed, send_now, type_in, answer_with_keys; jump.py tmux_paste;
-    core/src/terminal.ts asPaste, chatPane.ts sendNow, typeIn, actions.ts sendPlanFeedback.
+    core/src/terminal.ts asPaste, actions.ts sendPlanFeedback; vscode/src/chatPane.ts sendNow, typeIn.
   - Check: in a throwaway chat in tmux,
     `tmux send-keys -t <pane> -l $'\e[200~line 1\nline 2\e[201~'; sleep 0.3; tmux send-keys -t <pane> Enter`.
     The transcript's last prompt should hold both lines as one message.
@@ -1017,7 +1017,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   transcript's first `cwd` only if its mangled form is the folder's name. Claude's own shortening of very long
   paths is not modelled.
   - Used in: talpy_den.py mangle, start_folder, memory_folder, project_folder_of, usage_refresh_command;
-    core/src/agents/claudeCode/claudePanel.ts filedUnder, actions.ts windowHasChat.
+    core/src/agents/claudeCode/claudePanel.ts filedUnder, core/src/actions.ts windowHasChat.
   - Check: after a throwaway chat, `ls $C/projects | grep -Fx -- "$M"`. For long paths, start a throwaway chat
     in a folder whose path is over 200 characters and compare the folder name with the sed output.
   - Breaks: a chat's start folder becomes unknown, chats are filed under the wrong project and reopen in the
@@ -1428,8 +1428,8 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   `^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$` (random words like calm-red-owl). VS Code's Send Feedback is enabled by
   the `when` regex `\.claude[^/]*\/plans\/[^/]+\.md$`.
   - Used in: talpy_den.py peek_from, transcript_slug (SLUG_LINE), SlugCache, PLAN_SLUG;
-    vscode/src/planReview.ts SLUG, planPath, planFileOf, agentRun.ts markdownLinkFile, extension.ts
-    planFolders, sendFeedback; vscode/package.json (when clause).
+    vscode/src/planReview.ts SLUG, planPath, planFileOf, extension.ts planFolders, sendFeedback;
+    core/src/agentRun.ts markdownLinkFile; vscode/package.json (when clause).
   - Check: let a throwaway plan-mode chat (`--permission-mode plan`) write a plan, then
     `grep -o '"slug":"[^"]*"' "$T" | sort -u` and find its file in `$C/plans/`.
     `ls ~/.claude*/plans/*.md | xargs -n1 basename | grep -vE '^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.md$'` should
@@ -2235,7 +2235,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   this prefix.
   - Used in: jump.py CLAUDE_CODE_LINK, VSCODE_NEW_CHAT, link_query, vscode_chat_link, vscode_task_link,
     jump_vscode, open_in_vscode, open_vscode_link, VSCODE_LINK_MAX; pane.py vscode_prompt_link,
-    host_vscode_link; vscode/src/actions.ts CHAT_LINK, chatPane.ts sendNow, typeIn; main.qml openVscodeLink.
+    host_vscode_link; core/src/actions.ts CHAT_LINK; vscode/src/chatPane.ts sendNow, typeIn; main.qml openVscodeLink.
   - Check: `grep -c registerUriHandler "$main"; grep -oE 'get\("(session|prompt)"\)' "$main" | sort -u`. Then
     `code --open-url 'vscode://anthropic.claude-code/open?prompt=a%2526b%252Bc'`: the input should read
     `a&b+c` and not be sent. With `session=<id of a throwaway panel chat>`, its tab should come up, and a
@@ -2256,8 +2256,8 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   (onStartupFinished), and not in an untrusted folder. Talpy Den calls it with the positional arguments
   (sessionId = undefined, prompt) to open a new tab with the prompt typed in but not sent. It also checks the
   extension id `anthropic.claude-code` with getExtension.
-  - Used in: vscode/src/claudePanel.ts NEW_CHAT_TAB, claudePanelAvailable, openPanelChat; actions.ts
-    panelChoice, panelChat; accountSwitch.ts switch; core/src/dashboard.ts checkClaudeCode, claudeCodeInfo
+  - Used in: vscode/src/claudePanel.ts NEW_CHAT_TAB, claudePanelAvailable, openPanelChat; accountSwitch.ts
+    switch; core/src/actions.ts panelChoice, panelChat, dashboard.ts checkClaudeCode, claudeCodeInfo
     (through vscodeEditor.ts).
   - Check:
 
@@ -2280,8 +2280,8 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   from a remote window lands there, and new chats use it within about a second, with no reload (Talpy Den
   waits 1.5 s). The status bar's usage follows the panel's account.
   - Used in: core/src/agents/claudeCode/claudePanel.ts panelConfigDir; vscode/src/claudePanel.ts localPanelConfigDir, localPanelProfileKey;
-    vscodeAccount.ts withConfigDir; accountSwitch.ts switchTo, switchHost, panelDir; actions.ts panelChat;
-    statusBar.ts; accounts.py make_default, set_vscode, vscode_value, vscode_setting; talpy_den.py
+    vscodeAccount.ts withConfigDir; accountSwitch.ts switchTo, switchHost, panelDir; statusBar.ts;
+    core/src/actions.ts panelChat; accounts.py make_default, set_vscode, vscode_value, vscode_setting; talpy_den.py
     config_dir_in_settings, vscode_server_settings, set_vscode_user_config_dir, set_vscode_server_config_dir,
     vscode_running_config_dir, VSCODE_SERVERS.
   - Check:
@@ -2311,8 +2311,8 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   behind, and Talpy Den ends them. A go-on or hand-over must never end a panel chat that has a pid, and a
   window reload stops a working panel chat.
   - Used in: talpy_den.py stop_chat, end_leftovers, end_for_handover; jump.py stop, jump; accounts.py
-    vscode_chats; core/src/shared/model.ts canEndChat, handoverTarget, goOnAt; actions.ts stop;
-    accountSwitch.ts switchTo (refuses while a panel chat works or waits); main.qml; gnome/extension/logic.js
+    vscode_chats; core/src/shared/model.ts canEndChat, handoverTarget, goOnAt; core/src/actions.ts stop;
+    vscode/src/accountSwitch.ts switchTo (refuses while a panel chat works or waits); main.qml; gnome/extension/logic.js
     stopTip, stopQuestion.
   - Check: in an idle throwaway panel chat,
     `kill -INT $(jq -r 'select(.entrypoint=="claude-vscode").pid' $C/sessions/*.json | head -1)`. The tab
@@ -2428,7 +2428,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   "Manual" as the name of the default mode (2.1.312), ↑ taking back a queued message, Esc stopping a
   background chat, and Shift+Tab changing the mode. A background chat can start in auto or bypass mode only
   once you turned it on in a terminal, and `--bg` only works in folders Claude already trusts.
-  - Used in: core/src/shared/pane.ts THINKING_TIP, HOLD_MS, stopOf; actions.ts MODES;
+  - Used in: core/src/shared/pane.ts THINKING_TIP, HOLD_MS, stopOf; core/src/actions.ts MODES;
     vscode/webview/chat.tsx; ChatPane.qml; NewChatBox.qml, NewChatOptions.qml, keys.mjs.
   - Check: in a throwaway chat, Shift+Tab cycles the modes and shows "Manual" for the default. Type during a
     turn and press ↑ to pull it back, and look for `∴` with thinking shown as updates. Run
@@ -2666,7 +2666,7 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
   Code opens a memory only if its path matches `/projects/<key>/memory/<name>.md` or ends in `/CLAUDE.md`.
   - Used in: talpy_den.py memory_head, MEMORY_FIELD, account_memories, project_folder_of, memory_folder,
     memory_key, memory_file, find_more; sharing.py memory_to_delete, unindex_memory, delete; week.py projects;
-    vscode/src/actions.ts openMemory.
+    core/src/actions.ts openMemory.
   - Check: after a throwaway chat saved a memory ('remember that I like tabs'),
     `head -6 $C/projects/$M/memory/*.md; cat $C/projects/$M/memory/MEMORY.md; has MEMORY.md`.
   - Breaks: memories show without name, description or type, or under the wrong folder. Delete leaves the

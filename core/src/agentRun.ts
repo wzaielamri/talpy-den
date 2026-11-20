@@ -1,15 +1,13 @@
-// A subagent's whole run, in Talpy Den's tab for Markdown (doc.ts). Claude Code can't
-// open a subagent from outside, so the widget's backend renders its
-// transcript as Markdown into the cache (jump.py --agent-run; remote.py
-// --agent-run fetches one from an SSH host) and this opens that file.
+// A subagent's whole run, in Talpy Den's tab for Markdown (EditorPort.showDoc; VS Code: doc.ts). Claude
+// Code can't open a subagent from outside, so the widget's backend renders its transcript as Markdown into
+// the cache (jump.py --agent-run; remote.py --agent-run fetches one from an SSH host) and the host's
+// showDoc opens that file (this computer's: in a Remote-SSH window too, no onWindowHost).
 
 import * as os from "node:os";
 import * as path from "node:path";
-import * as vscode from "vscode";
-import { inside } from "../../core/src/comparisons";
-import { cacheDir } from "../../core/src/settings";
-import { showDoc } from "./doc";
-import type { ChatRef } from "../../core/src/shared/types";
+import { inside } from "./comparisons";
+import { cacheDir } from "./settings";
+import type { ChatRef } from "./shared/types";
 
 // A subagent's id as a webview may ask for its run (the main view's rows, a chat tab's strip)
 export const AGENT_ID = /^[A-Za-z0-9_-]{1,100}$/;
@@ -55,18 +53,4 @@ export function markdownLinkFile(
   const config = path.dirname(folder);
   const ownName = path.dirname(config) === home && /^\.claude(-[^/]+)?$/.test(path.basename(config));
   return ownName || configDirs.includes(config) ? file : null;
-}
-
-// Opens it in Talpy Den's tab for Markdown; the error to report, or "" when it opened
-export async function openAgentRunFile(file: string): Promise<string> {
-  // a file of this computer: file:, in a Remote-SSH window too (this
-  // extension runs here, where VS Code maps no file: to vscode-local)
-  return showMarkdown(vscode.Uri.file(file));
-}
-
-// A Markdown file (a plan, a run, a memory) rendered in Talpy Den's tab
-// (doc.ts), not VS Code's Markdown preview, which loads the web pictures it
-// names; its Open as text edits it. The error to report, or ""
-export async function showMarkdown(uri: vscode.Uri): Promise<string> {
-  return showDoc(uri);
 }

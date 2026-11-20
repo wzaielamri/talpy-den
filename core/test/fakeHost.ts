@@ -3,8 +3,68 @@
 
 import { Emitter } from "../src/events";
 import type {
-  ChooseOptions, HostServices, HostSettings, InputOptions, MessageLevel, MessageOptions, PickItem, PickOptions, SettingScope,
+  ChooseOptions, HostServices, HostSettings, InputOptions, MessageLevel, MessageOptions, PickButton, PickItem, PickOptions, QuickPick,
+  QuickPickOptions, SettingScope, WindowFolder,
 } from "../src/host";
+
+// A pick list a test drives as a user would: types in it, presses a title bar button, ticks items, accepts or
+// closes it; what the caller set on it stays readable (items, buttons, busy…)
+export class FakeQuickPick<T extends PickItem> implements QuickPick<T> {
+  items: readonly T[] = [];
+  activeItems: readonly T[] = [];
+  selectedItems: readonly T[] = [];
+  buttons: readonly PickButton[] = [];
+  busy = false;
+  keepScrollPosition = false;
+  shown = false;
+  disposed = false;
+  private valueChanged = new Emitter<string>();
+  private selectionChanged = new Emitter<readonly T[]>();
+  private buttonPressed = new Emitter<PickButton>();
+  private accepted = new Emitter<void>();
+  private hidden = new Emitter<void>();
+  readonly onDidChangeValue = this.valueChanged.event;
+  readonly onDidChangeSelection = this.selectionChanged.event;
+  readonly onDidTriggerButton = this.buttonPressed.event;
+  readonly onDidAccept = this.accepted.event;
+  readonly onDidHide = this.hidden.event;
+
+  constructor(readonly options: QuickPickOptions) {}
+
+  show(): void {
+    this.shown = true;
+  }
+
+  hide(): void {
+    if (!this.shown) return;
+    this.shown = false;
+    this.hidden.fire(undefined);
+  }
+
+  dispose(): void {
+    this.hide();
+    this.disposed = true;
+  }
+
+  type(value: string): void {
+    this.valueChanged.fire(value);
+  }
+
+  press(button: PickButton): void {
+    this.buttonPressed.fire(button);
+  }
+
+  select(items: readonly T[]): void {
+    this.selectedItems = items;
+    this.selectionChanged.fire(items);
+  }
+
+  // Enter, on item when given (picked: the selection)
+  accept(item?: T): void {
+    if (item) this.selectedItems = [item];
+    this.accepted.fire(undefined);
+  }
+}
 
 export class FakeHost implements HostServices {
   recorded = {
@@ -12,6 +72,7 @@ export class FakeHost implements HostServices {
     picks: [] as { items: readonly PickItem[]; options?: PickOptions }[],
     inputs: [] as InputOptions[],
     choices: [] as ChooseOptions[],
+    quickPicks: [] as FakeQuickPick<PickItem>[],
     external: [] as string[],
     files: [] as string[],
     revealed: [] as string[],
@@ -35,7 +96,7 @@ export class FakeHost implements HostServices {
   values = new Map<string, unknown>(); // talpyDen.<key> -> value
   others = new Map<string, unknown>(); // "section.key" -> value
   clip = "";
-  folders: { name: string; path: string }[] = [];
+  folders: WindowFolder[] = [];
   environment: { remoteName?: string; remoteAuthority?: string; web: boolean; sessionId: string } = { web: false, sessionId: "fake-window" };
 
   private settingsChanged = new Emitter<string[]>();
@@ -74,7 +135,7 @@ export class FakeHost implements HostServices {
   }
 
   // Changes the open folders and tells the listeners
-  setFolders(folders: { name: string; path: string }[]): void {
+  setFolders(folders: WindowFolder[]): void {
     this.folders = folders;
     this.foldersChanged.fire(undefined);
   }
@@ -94,6 +155,12 @@ export class FakeHost implements HostServices {
   async pickMany<T extends PickItem>(items: readonly T[], options?: PickOptions): Promise<T[] | undefined> {
     this.recorded.picks.push({ items, options });
     return this.answer.pickMany?.(items) as T[] | undefined;
+  }
+
+  quickPick<T extends PickItem>(options: QuickPickOptions): QuickPick<T> {
+    const qp = new FakeQuickPick<T>(options);
+    this.recorded.quickPicks.push(qp as unknown as FakeQuickPick<PickItem>);
+    return qp;
   }
 
   async input(options: InputOptions = {}): Promise<string | undefined> {
@@ -171,7 +238,7 @@ export class FakeHost implements HostServices {
     this.recorded.contexts.set(key, value);
   }
 
-  workspaceFolders(): readonly { name: string; path: string }[] {
+  workspaceFolders(): readonly WindowFolder[] {
     return this.folders;
   }
 

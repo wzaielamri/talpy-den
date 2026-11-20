@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
-import { Emitter } from "../../core/src/events";
+import { Emitter, type Event } from "../../core/src/events";
 import type {
-  ChooseOptions, HostServices, HostSettings, InputOptions, MessageLevel, MessageOptions, PickItem, PickOptions,
+  ChooseOptions, HostServices, HostSettings, InputOptions, MessageLevel, MessageOptions, PickButton, PickItem, PickOptions, QuickPick,
+  QuickPickOptions, WindowFolder,
 } from "../../core/src/host";
 import { currentRemoteAuthority } from "./remoteHost";
 
@@ -60,6 +61,18 @@ export class VsCodeHost implements HostServices {
     const rows = quickItems(items);
     const chosen = await vscode.window.showQuickPick(rows.map((r) => r.item), { ...options, canPickMany: true });
     return chosen && rows.filter((r) => chosen.includes(r.item)).map((r) => r.source);
+  }
+
+  quickPick<T extends PickItem>(options: QuickPickOptions): QuickPick<T> {
+    const qp = vscode.window.createQuickPick<vscode.QuickPickItem>();
+    if (options.title !== undefined) qp.title = options.title;
+    if (options.placeHolder !== undefined) qp.placeholder = options.placeHolder;
+    if (options.many !== undefined) qp.canSelectMany = options.many;
+    if (options.matchOnDescription !== undefined) qp.matchOnDescription = options.matchOnDescription;
+    if (options.matchOnDetail !== undefined) qp.matchOnDetail = options.matchOnDetail;
+    // (settable, though not in the 1.90 types)
+    if (options.sortByLabel !== undefined) (qp as vscode.QuickPick<vscode.QuickPickItem> & { sortByLabel: boolean }).sortByLabel = options.sortByLabel;
+    return new VsCodeQuickPick<T>(qp);
   }
 
   input(options?: InputOptions): Promise<string | undefined> {
@@ -156,8 +169,12 @@ export class VsCodeHost implements HostServices {
     void vscode.commands.executeCommand("setContext", key, value);
   }
 
-  workspaceFolders(): readonly { name: string; path: string }[] {
-    return (vscode.workspace.workspaceFolders ?? []).map((f) => ({ name: f.name, path: f.uri.fsPath }));
+  // (a folder of the window's host: its URI's path there; this computer's: a file: URI's fsPath)
+  workspaceFolders(): readonly WindowFolder[] {
+    return (vscode.workspace.workspaceFolders ?? []).map((f) => {
+      const remote = f.uri.scheme !== "file";
+      return { name: f.name, path: remote ? f.uri.path : f.uri.fsPath, remote, uri: f.uri.toString() };
+    });
   }
 
   readonly onDidChangeWorkspaceFolders = this.foldersChanged.event;
@@ -177,6 +194,104 @@ export class VsCodeHost implements HostServices {
     warn: (m: string) => this.output.warn(m),
     error: (m: string) => this.output.error(m),
   };
+}
+
+// A VS Code QuickPick showing a caller's items and buttons: each one set turns into VS Code's, and what VS Code
+// hands back (the selection, the active item, a button pressed) turns back into the caller's own, also one of
+// an earlier set (as the caller's own objects came back when they went to VS Code themselves)
+class VsCodeQuickPick<T extends PickItem> implements QuickPick<T> {
+  private shownItems: readonly T[] = [];
+  private rowOf = new Map<T, vscode.QuickPickItem>(); // (the rows now shown)
+  private sourceOf = new WeakMap<vscode.QuickPickItem, T>(); // (every row shown)
+  private shownButtons: readonly PickButton[] = [];
+  private buttonOf = new Map<PickButton, vscode.QuickInputButton>(); // (the same VS Code button for a caller's, each time)
+  private buttonSource = new Map<vscode.QuickInputButton, PickButton>();
+
+  constructor(private readonly qp: vscode.QuickPick<vscode.QuickPickItem>) {}
+
+  get items(): readonly T[] {
+    return this.shownItems;
+  }
+  set items(items: readonly T[]) {
+    const rows = quickItems(items);
+    this.shownItems = rows.map((r) => r.source);
+    this.rowOf = new Map(rows.map((r) => [r.source, r.item]));
+    for (const r of rows) this.sourceOf.set(r.item, r.source);
+    this.qp.items = rows.map((r) => r.item);
+  }
+  get activeItems(): readonly T[] {
+    return this.sources(this.qp.activeItems);
+  }
+  set activeItems(items: readonly T[]) {
+    this.qp.activeItems = this.shown(items);
+  }
+  get selectedItems(): readonly T[] {
+    return this.sources(this.qp.selectedItems);
+  }
+  set selectedItems(items: readonly T[]) {
+    this.qp.selectedItems = this.shown(items);
+  }
+  get buttons(): readonly PickButton[] {
+    return this.shownButtons;
+  }
+  set buttons(buttons: readonly PickButton[]) {
+    this.shownButtons = buttons.slice();
+    this.qp.buttons = buttons.map((source) => {
+      let button = this.buttonOf.get(source);
+      if (!button) {
+        button = { iconPath: new vscode.ThemeIcon(source.icon), tooltip: source.tooltip };
+        this.buttonOf.set(source, button);
+        this.buttonSource.set(button, source);
+      }
+      return button;
+    });
+  }
+  get busy(): boolean {
+    return this.qp.busy;
+  }
+  set busy(busy: boolean) {
+    this.qp.busy = busy;
+  }
+  get keepScrollPosition(): boolean {
+    return !!this.qp.keepScrollPosition;
+  }
+  set keepScrollPosition(keep: boolean) {
+    this.qp.keepScrollPosition = keep;
+  }
+
+  readonly onDidChangeValue: Event<string> = (listener) => this.qp.onDidChangeValue(listener);
+  readonly onDidChangeSelection: Event<readonly T[]> = (listener) => this.qp.onDidChangeSelection((items) => listener(this.sources(items)));
+  readonly onDidTriggerButton: Event<PickButton> = (listener) =>
+    this.qp.onDidTriggerButton((button) => {
+      const source = this.buttonSource.get(button);
+      if (source) listener(source);
+    });
+  readonly onDidAccept: Event<void> = (listener) => this.qp.onDidAccept(() => listener(undefined));
+  readonly onDidHide: Event<void> = (listener) => this.qp.onDidHide(() => listener(undefined));
+
+  show(): void {
+    this.qp.show();
+  }
+  hide(): void {
+    this.qp.hide();
+  }
+  dispose(): void {
+    this.qp.dispose();
+  }
+
+  // VS Code's rows back to the caller's items, and the caller's (of those now shown) to VS Code's
+  private sources(items: readonly vscode.QuickPickItem[]): T[] {
+    return items.flatMap((item) => {
+      const source = this.sourceOf.get(item);
+      return source ? [source] : [];
+    });
+  }
+  private shown(items: readonly T[]): vscode.QuickPickItem[] {
+    return items.flatMap((source) => {
+      const item = this.rowOf.get(source);
+      return item ? [item] : [];
+    });
+  }
 }
 
 // The rows VS Code shows for a caller's items, each with the item it stands for

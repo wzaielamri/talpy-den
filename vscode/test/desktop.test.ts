@@ -3,15 +3,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import type * as vscode from "vscode";
-import "./useHost";
+import { host } from "./useHost";
 import type { AccountSwitch } from "../src/accountSwitch";
-import { Actions } from "../src/actions";
+import { Actions } from "../../core/src/actions";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import type { Dashboard } from "../../core/src/dashboard";
 import { canRaiseWindows, gnomeRaiserRunning, isGnome, isKde } from "../../core/src/platform/linux/desktop";
 import type { ChatRef } from "../../core/src/shared/types";
 import type { Terminals } from "../src/terminals";
+import { VsCodeEditor } from "../src/vscodeEditor";
 
 const on = (desktop: string) => ({ XDG_CURRENT_DESKTOP: desktop });
 
@@ -94,10 +94,11 @@ test("on GNOME without the GNOME Shell extension, a chat in another window says 
   const errors: string[] = [];
   const dash = { opened() {}, demo: false, currentHost: undefined, setActionError: (m: string) => errors.push(m), isVisible: () => true };
   const actions = new Actions(
+    host,
+    { find: async () => undefined } as unknown as Terminals,
+    new VsCodeEditor(),
     { action: async (_script: string, args: string[]) => (helpers.push(args), { ok: true, message: "" }) } as unknown as Backend,
     dash as unknown as Dashboard,
-    { find: async () => undefined } as unknown as Terminals,
-    { warn: () => undefined } as unknown as vscode.LogOutputChannel,
     {} as AccountSwitch,
   );
   const desktop = process.env.XDG_CURRENT_DESKTOP;

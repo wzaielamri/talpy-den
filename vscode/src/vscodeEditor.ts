@@ -13,12 +13,15 @@ import type { PlanReview } from "./planReview";
 import { windowHostFile } from "./remoteHost";
 
 export class VsCodeEditor implements EditorPort {
-  planReview?: PlanReview; // your comments on plans (set once it's there)
+  // planReview: your comments on plans (extension.ts's, whose comment commands add them); none: no comments
+  constructor(private readonly planReview?: PlanReview) {}
 
   openComparison(c: Comparison): Promise<string> {
     return openComparison(c);
   }
 
+  // (rendered in Talpy Den's tab, not VS Code's Markdown preview, which loads the web pictures it names; its
+  // Open as text edits the file)
   showDoc(path: string, options?: { onWindowHost?: boolean }): Promise<string> {
     return showDoc(fileUri(path, options));
   }

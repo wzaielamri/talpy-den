@@ -27,12 +27,13 @@ import {
 } from "../../core/src/shared/model";
 import type { Group, PlanItem } from "../../core/src/shared/types";
 import * as vscode from "vscode";
-import "./useHost";
+import { host } from "./useHost";
 import type { AccountSwitch } from "../src/accountSwitch";
-import { Actions, typedFolder } from "../src/actions";
+import { Actions, typedFolder } from "../../core/src/actions";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import type { Dashboard } from "../../core/src/dashboard";
 import type { Terminals } from "../src/terminals";
+import { VsCodeEditor } from "../src/vscodeEditor";
 
 const chat = { kind: "interactive", entrypoint: "cli", state: "idle", pid: 42 };
 
@@ -163,8 +164,8 @@ test("New Chat… on an SSH host offers Talpy Chat in its folders, or says why n
       state: () => ({ status: { groups: [group("")], cli: { installed: true } },
                       hosts: [{ name: "build-server", current: true, ok: answered, result: { groups: [group("build-server")], cli: { installed: true } } }] }),
       setActionError: () => undefined, isVisible: () => true };
-    const actions = new Actions({ action: async () => ({ ok: true, message: "" }) } as unknown as Backend, dash as unknown as Dashboard,
-      {} as unknown as Terminals, { warn: () => undefined } as unknown as vscode.LogOutputChannel, {} as AccountSwitch);
+    const actions = new Actions(host, {} as unknown as Terminals, new VsCodeEditor(),
+      { action: async () => ({ ok: true, message: "" }) } as unknown as Backend, dash as unknown as Dashboard, {} as AccountSwitch);
     const workspace = stub.workspace as unknown as Record<string, unknown>;
     workspace.workspaceFolders = [{ uri: { path: "/srv/web" } }];   // (this Remote-SSH window has ~/web open)
     try {
@@ -220,9 +221,8 @@ test("New Chat… lists the folder this window has open first, also one no chat 
     const dash = { opened() {}, demo: false, currentHost: undefined, setActionError: () => undefined, setActionInfo: () => undefined, isVisible: () => true,
       state: () => ({ status: { groups: [group("personal"), group("work", { defaultHere: true })], cli: { installed: true } }, hosts: [] }) };
     const runs: string[] = [];
-    const actions = new Actions(backend as unknown as Backend, dash as unknown as Dashboard,
-      { run: async (_k: string, _n: string, command: string) => void runs.push(command) } as unknown as Terminals,
-      { warn: () => undefined } as unknown as vscode.LogOutputChannel, {} as AccountSwitch);
+    const actions = new Actions(host, { run: async (_k: string, _n: string, command: string) => void runs.push(command) } as unknown as Terminals,
+      new VsCodeEditor(), backend as unknown as Backend, dash as unknown as Dashboard, {} as AccountSwitch);
     const opened: [string, string][] = [];
     actions.panes = { openNew: (g: Group, where: { path: string }) => void opened.push([g.id, where.path]) } as never;
 
@@ -295,10 +295,11 @@ test("a plan's chat reopens in a Claude Code panel only when Claude Code is on t
       isVisible: () => true,
     };
     const actions = new Actions(
+      host,
+      { run: async (_key: string, _name: string, command: string) => void runs.push(command) } as unknown as Terminals,
+      new VsCodeEditor(),
       { action: async (_script: string, args: string[]) => (helpers.push(args), { ok: false, message: "Claude Code isn't on personal" }) } as unknown as Backend,
       dash as unknown as Dashboard,
-      { run: async (_key: string, _name: string, command: string) => void runs.push(command) } as unknown as Terminals,
-      { warn: () => undefined } as unknown as vscode.LogOutputChannel,
       {} as AccountSwitch,
     );
     await actions.continuePlanChat(plan, work);
@@ -334,10 +335,11 @@ test("a recent chat reopens in this window when it has the chat's project open",
   try {
     const helpers: string[][] = [];
     const actions = new Actions(
+      host,
+      {} as Terminals,
+      new VsCodeEditor(),
       { action: async (_script: string, args: string[]) => (helpers.push(args), { ok: true, message: "" }) } as unknown as Backend,
       { demo: false, currentHost: undefined } as unknown as Dashboard,
-      {} as Terminals,
-      { warn: () => undefined } as unknown as vscode.LogOutputChannel,
       {} as AccountSwitch,
     );
     const reopen = (id: string, cwd: string) => actions.openInClaudeCode({ key: id, sessionId: id, profileDir: ".claude-work", name: id, cwd });
@@ -386,14 +388,15 @@ function actionsHere(answers: { ok: boolean; message: string; command?: string }
     refresh: async () => undefined,
   };
   const actions = new Actions(
+    host,
+    { run: async (_key: string, _name: string, command: string) => void runs.push(command), find: async () => undefined } as unknown as Terminals,
+    new VsCodeEditor(),
     {
       action: async (_script: string, args: string[]) => (
         helpers.push(args.filter((a, i) => a !== "--config-dir" && args[i - 1] !== "--config-dir")), answers.shift() ?? { ok: true, message: "" }
       ),
     } as unknown as Backend,
     dash as unknown as Dashboard,
-    { run: async (_key: string, _name: string, command: string) => void runs.push(command), find: async () => undefined } as unknown as Terminals,
-    { warn: () => undefined } as unknown as vscode.LogOutputChannel,
     {} as AccountSwitch,
   );
   return { actions, helpers, runs, failures };
@@ -554,7 +557,8 @@ test("with openIn system, a new chat on an SSH host opens in the desktop's termi
   const window = stub.window as unknown as Record<string, unknown>;
   stub.overrides.set("openIn", "system");
   const pickFolder = window.showQuickPick;
-  window.showQuickPick = async (items: { folder?: { path: string } }[]) => items.find((i) => i.folder?.path === "/srv/app");
+  // (~/app in a terminal: the list's rows are VS Code's, which carry their labels)
+  window.showQuickPick = async (items: { label: string }[]) => items.find((i) => i.label === "$(folder) ~/app");
   try {
     const lab = {
       id: "l", title: "work", chatProfile: ".claude", profileKeys: [".claude"], sessions: [], homeChatCommand: "cd /home/me 2>/dev/null; claude",
@@ -569,10 +573,11 @@ test("with openIn system, a new chat on an SSH host opens in the desktop's termi
       isVisible: () => true,
     };
     const actions = new Actions(
+      host,
+      { run: async (_key: string, _name: string, command: string) => void runs.push(command) } as unknown as Terminals,
+      new VsCodeEditor(),
       { action: async (script: string, args: string[]) => (helpers.push([script, args]), { ok: true, message: "" }) } as unknown as Backend,
       dash as unknown as Dashboard,
-      { run: async (_key: string, _name: string, command: string) => void runs.push(command) } as unknown as Terminals,
-      { warn: () => undefined } as unknown as vscode.LogOutputChannel,
       {} as AccountSwitch,
     );
     await actions.newChat("l", "lab");

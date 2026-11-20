@@ -3,14 +3,20 @@
 // extension shows it today.
 
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
 import { beforeEach, test } from "node:test";
 import * as vscode from "vscode";
 import * as stub from "./vscode-stub";
-import "./useHost";
+import { host } from "./useHost";
+import type { AccountSwitch } from "../src/accountSwitch";
 import { initDocs } from "../src/doc";
-import type { PlanReview } from "../src/planReview";
+import { PlanReview } from "../src/planReview";
 import { VsCodeEditor } from "../src/vscodeEditor";
+import { Actions } from "../../core/src/actions";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import type { Comparison } from "../../core/src/comparisons";
+import type { Dashboard } from "../../core/src/dashboard";
+import type { TerminalPort } from "../../core/src/ports";
 
 const last = () => stub.calls[stub.calls.length - 1];
 const named = (u: vscode.Uri) => `${u.scheme}:${u.authority}:${u.path}`;
@@ -108,12 +114,43 @@ test("plan feedback: an editor's unsaved changes are saved, the plan review's co
   // no plan review yet: no comments, nothing to clear
   assert.deepEqual(await editor.planComments("/p/a.md"), []);
   editor.clearPlanComments("/p/a.md");
+  // with the plan review it's given (extension.ts's)
   const comment = { from: 3, to: 4, quote: "- step two", text: "Do this first" };
   const cleared: string[] = [];
-  editor.planReview = { comments: async (f: string) => (f === "/p/a.md" ? [comment] : []), clear: (f: string) => void cleared.push(f) } as unknown as PlanReview;
-  assert.deepEqual(await editor.planComments("/p/a.md"), [comment]);
-  editor.clearPlanComments("/p/a.md");
+  const reviewing = new VsCodeEditor({ comments: async (f: string) => (f === "/p/a.md" ? [comment] : []), clear: (f: string) => void cleared.push(f) } as unknown as PlanReview);
+  assert.deepEqual(await reviewing.planComments("/p/a.md"), [comment]);
+  reviewing.clearPlanComments("/p/a.md");
   assert.deepEqual(cleared, ["/p/a.md"]);
+});
+
+// Send Feedback (actions' sendPlanFeedback in the core) reads your comments through the editor, which has the plan
+// review extension.ts makes: they go to Claude with the feedback (jump.py --comments), and once sent they're gone
+test("plan feedback through the actions carries your comments on the plan's lines to Claude, then clears them", async () => {
+  const plan = "/home/me/.claude/plans/calm-red-owl.md";
+  stub.stubFiles.set(plan, "# Plan\n\n1. Parse the file\n2. Ship it\n");
+  const review = new PlanReview(() => []);
+  let disposed = 0;
+  const thread = { uri: vscode.Uri.file(plan), range: new vscode.Range(2, 0, 3, 0), comments: [] as vscode.Comment[], dispose: () => void disposed++ };
+  review.add({ thread, text: "Run the tests before shipping" } as unknown as vscode.CommentReply);
+  const helpers: string[][] = [];
+  const backend = { action: async (_script: string, args: string[]) => (helpers.push(args), { ok: true, message: "Sent your feedback" }) };
+  const dash = { demo: false, setActionInfo() {}, refresh: async () => undefined };
+  const actions = new Actions(host, {} as TerminalPort, new VsCodeEditor(review), backend as unknown as Backend, dash as unknown as Dashboard, {} as AccountSwitch);
+  try {
+    await actions.sendPlanFeedback({ slug: "calm-red-owl", path: plan, profileDir: ".claude", chatId: "c1", title: "Plan" });
+    const args = helpers[0];
+    assert.deepEqual(args.slice(0, 7), ["--plan-feedback", "calm-red-owl", "--profile", ".claude", "--chat", "c1", "--comments"]);
+    assert.deepEqual(JSON.parse(args[7]), [{ from: 3, to: 4, quote: "1. Parse the file\n2. Ship it", text: "Run the tests before shipping" }]);
+    assert.equal(disposed, 1, "sent: the comment is gone");
+    assert.deepEqual(await review.comments(plan), []);
+    // (the extension's one editor, which the actions get, has the review whose comment commands add them)
+    const activate = fs.readFileSync("src/extension.ts", "utf8");
+    assert.match(activate, /const review = new PlanReview\(.*\);[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*const editor = new VsCodeEditor\(review\);/);
+    assert.match(activate, /new Actions\(host, terminals, editor, /);
+  } finally {
+    stub.stubFiles.delete(plan);
+    review.dispose();
+  }
 });
 
 test("Claude Code's panel: whether it's here, the account it runs on, a new chat in it, a change of extensions", async () => {

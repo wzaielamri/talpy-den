@@ -16,6 +16,39 @@ export interface InputOptions {
   title?: string; prompt?: string; placeHolder?: string; value?: string; password?: boolean; ignoreFocusOut?: boolean;
   validateInput?: (value: string) => string | undefined | null;
 }
+// A button in a pick list's title bar; icon: a codicon id
+export interface PickButton { icon: string; tooltip: string }
+// many: several can be picked; sortByLabel false: the items keep the order given while you type, headings
+// too (VS Code otherwise sorts them by how well they match, and drops the separators)
+export interface QuickPickOptions {
+  title?: string; placeHolder?: string; many?: boolean; matchOnDescription?: boolean; matchOnDetail?: boolean; sortByLabel?: boolean;
+}
+// A pick list that stays open while its caller changes it (VS Code's QuickPick: actions' findChat searches as
+// you type and folds headings, pickHosts reloads its hosts). Its items and buttons are the caller's own, and
+// the same objects come back; activeItems: the one the cursor is on; hide(): closed as Escape closes it
+// (onDidHide fires); dispose(): gone
+export interface QuickPick<T extends PickItem> {
+  items: readonly T[];
+  activeItems: readonly T[];
+  selectedItems: readonly T[];
+  buttons: readonly PickButton[];
+  busy: boolean;
+  keepScrollPosition: boolean;
+  readonly onDidChangeValue: Event<string>;
+  readonly onDidChangeSelection: Event<readonly T[]>;
+  readonly onDidTriggerButton: Event<PickButton>;
+  readonly onDidAccept: Event<void>;
+  readonly onDidHide: Event<void>;
+  show(): void;
+  hide(): void;
+  dispose(): void;
+}
+
+// A folder the window has open. path: where it is on its machine; remote: that machine is the host the window
+// is connected to (Remote-SSH, Dev Containers), not this computer; uri: the host's own name for the folder
+// (VS Code: its URI, which Talpy Chat's empty view hands back for "New chat in <folder>")
+export interface WindowFolder { name: string; path: string; remote: boolean; uri: string }
+
 // onRemote: the window's remote file system (Remote-SSH), not this computer's; localOnly: keep only this
 // computer's files (a Remote window's dialog can also pick the remote's)
 export interface ChooseOptions {
@@ -45,6 +78,7 @@ export interface HostServices {
   // The caller's own item comes back (the same object), or undefined on Escape
   pick<T extends PickItem>(items: readonly T[], options?: PickOptions): Promise<T | undefined>;
   pickMany<T extends PickItem>(items: readonly T[], options?: PickOptions): Promise<T[] | undefined>;
+  quickPick<T extends PickItem>(options: QuickPickOptions): QuickPick<T>; // (shown once show() is called)
   input(options?: InputOptions): Promise<string | undefined>;
   choose(options: ChooseOptions): Promise<string[] | undefined>;
   progress<R>(options: { where: "window" | "notification"; title: string }, task: () => Promise<R>): Promise<R>;
@@ -63,7 +97,7 @@ export interface HostServices {
   openSettings(query: string): Promise<void>; // VS Code: "workbench.action.openSettings"
   showView(): Promise<void>; // VS Code: "talpyDen.view.focus"
   setContext(key: string, value: unknown): void; // VS Code: "setContext"
-  workspaceFolders(): readonly { name: string; path: string }[];
+  workspaceFolders(): readonly WindowFolder[];
   readonly onDidChangeWorkspaceFolders: Event<void>;
   // remoteAuthority: the remote the window has open ("ssh-remote+lab", "dev-container+…"), as it is at
   // each read (dashboard: which host or container the window is on); sessionId: this window's own id, new

@@ -14,6 +14,7 @@ export const recorded = {
   statusBarItems: [] as { text: string; tooltip: unknown; backgroundColor: unknown; show(): void; dispose(): void }[],
   messages: [] as string[],
   panels: [] as { sent: unknown[]; receive(m: unknown): void; show(visible: boolean): void; activate(on: boolean): void; dispose(): void; readonly disposed: boolean }[],
+  quickPicks: [] as StubQuickPick[],
 };
 
 // Listeners of a kind of event, each with a disposable that takes it off
@@ -68,6 +69,22 @@ export const workspace = {
   onDidChangeConfiguration: configChanges.on,
   onDidChangeWorkspaceFolders: folderChanges.on,
   registerTextDocumentContentProvider: disposable,
+  // a file of a test's own (stubFiles) as a document: its lines, and the text of a range of them
+  openTextDocument: async (u: { path: string }) => {
+    if (!stubFiles.has(u.path)) throw new Error(`no file ${u.path}`);
+    const lines = stubFiles.get(u.path)!.split("\n");
+    return {
+      uri: u,
+      lineCount: lines.length,
+      lineAt: (i: number) => ({ text: lines[i] }),
+      getText: (r: Range) => {
+        const part = lines.slice(r.start.line, r.end.line + 1);
+        part[part.length - 1] = part[part.length - 1].slice(0, r.end.character);
+        part[0] = part[0].slice(r.start.character);
+        return part.join("\n");
+      },
+    };
+  },
   // files: a test's own (stubFiles, by path)
   fs: { readFile: async (u: { path: string }) => {
     if (!stubFiles.has(u.path)) throw new Error(`no file ${u.path}`);
@@ -107,6 +124,62 @@ const logChannel = () => ({
   appendLine() {},
   dispose() {},
 });
+
+// A pick list that stays open (createQuickPick): what the extension set on it, kept as set, and what a user does
+// to it (type, press a title bar button, tick items, accept); hide() closes it as VS Code's does (onDidHide)
+type QuickRow = { label: string; kind?: number; iconPath?: unknown; description?: string; detail?: string; alwaysShow?: boolean; picked?: boolean };
+type QuickButton = { iconPath: unknown; tooltip?: string };
+export class StubQuickPick {
+  title: string | undefined;
+  placeholder: string | undefined;
+  canSelectMany = false;
+  matchOnDescription = false;
+  matchOnDetail = false;
+  sortByLabel = true;
+  keepScrollPosition = false;
+  busy = false;
+  items: readonly QuickRow[] = [];
+  activeItems: readonly QuickRow[] = [];
+  selectedItems: readonly QuickRow[] = [];
+  buttons: readonly QuickButton[] = [];
+  visible = false;
+  disposed = false;
+  private changedValue = listeners<string>();
+  private changedSelection = listeners<readonly QuickRow[]>();
+  private pressed = listeners<QuickButton>();
+  private accepted = listeners<void>();
+  private hidden = listeners<void>();
+  onDidChangeValue = this.changedValue.on;
+  onDidChangeSelection = this.changedSelection.on;
+  onDidTriggerButton = this.pressed.on;
+  onDidAccept = this.accepted.on;
+  onDidHide = this.hidden.on;
+  show() {
+    this.visible = true;
+  }
+  hide() {
+    if (!this.visible) return;
+    this.visible = false;
+    this.hidden.fire(undefined);
+  }
+  dispose() {
+    this.hide();
+    this.disposed = true;
+  }
+  type(value: string) {
+    this.changedValue.fire(value);
+  }
+  press(button: QuickButton) {
+    this.pressed.fire(button);
+  }
+  select(items: readonly QuickRow[]) {
+    this.selectedItems = items;
+    this.changedSelection.fire(items);
+  }
+  accept() {
+    this.accepted.fire(undefined);
+  }
+}
 
 const windowStates = listeners<{ focused: boolean }>();
 // The window gains or loses the focus
@@ -218,6 +291,11 @@ export const window = {
   showWarningMessage: async (m: string, ...rest: unknown[]) => (recorded.messages.push(m), call("showWarningMessage", [m, ...rest])),
   showErrorMessage: async (m: string, ...rest: unknown[]) => (recorded.messages.push(m), call("showErrorMessage", [m, ...rest])),
   showQuickPick: async (...args: unknown[]) => call("showQuickPick", args),
+  createQuickPick: () => {
+    const qp = new StubQuickPick();
+    recorded.quickPicks.push(qp);
+    return qp;
+  },
   showInputBox: async (...args: unknown[]) => call("showInputBox", args),
   showOpenDialog: async (...args: unknown[]) => call("showOpenDialog", args),
   setStatusBarMessage: (m: string, ms?: number) => (recorded.messages.push(m), call("setStatusBarMessage", [m, ms]), disposable()),
@@ -303,6 +381,19 @@ export enum StatusBarAlignment {
 
 export class ThemeIcon {
   constructor(public id: string) {}
+}
+
+export class Position {
+  constructor(public line: number, public character: number) {}
+}
+
+export class Range {
+  start: Position;
+  end: Position;
+  constructor(startLine: number, startCharacter: number, endLine: number, endCharacter: number) {
+    this.start = new Position(startLine, startCharacter);
+    this.end = new Position(endLine, endCharacter);
+  }
 }
 
 export class ThemeColor {

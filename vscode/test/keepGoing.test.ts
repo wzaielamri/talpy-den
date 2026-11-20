@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { host } from "./useHost";
-import { chatOptionsText } from "../src/actions";
+import { chatOptionsText } from "../../core/src/actions";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { chatOptionArgs } from "../../core/src/settings";
 import { Dashboard } from "../../core/src/dashboard";
@@ -70,7 +70,7 @@ test("an SSH host's and a container's chats keep going too, each found under its
   assert.match(recent, /const kept = keptChat\(view\.status, c\.sessionId, group\.host\);/);
   assert.match(recent, /const canKeep = !kept && !goingOn && goOn > 0;/);
   assert.match(src("webview/components/QueuedTasks.tsx"), /keptChat\(view\.status, t\.chat, t\.host\)/);
-  const actions = src("src/actions.ts");
+  const actions = src("../core/src/actions.ts");
   assert.match(actions, /\.\.\.\(keep \? \["--keep"\] : \[\]\)/);
   assert.match(actions, /"--keep-off", id, \.\.\.host,/);
   assert.match(actions, /\["--end", chat\.host, .*\.\.\.off\]/);

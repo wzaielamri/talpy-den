@@ -6,7 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import "./useHost";
-import { markdownLinkFile } from "../src/agentRun";
+import { markdownLinkFile } from "../../core/src/agentRun";
 import { demoState } from "../../core/src/shared/demo";
 import { findMemory, goOnAt, laterAt, laterDays, limitReset, onItsRow, overlapText, queuedChat, queuedFor, queuedWhat, startText } from "../../core/src/shared/model";
 import type { Group, QueuedTask, Session } from "../../core/src/shared/types";

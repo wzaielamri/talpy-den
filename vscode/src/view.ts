@@ -4,8 +4,8 @@
 
 import * as crypto from "node:crypto";
 import * as vscode from "vscode";
-import type { Actions } from "./actions";
-import { AGENT_ID } from "./agentRun";
+import type { Actions } from "../../core/src/actions";
+import { AGENT_ID } from "../../core/src/agentRun";
 import type { ChatPanes } from "./chatPane";
 import { setReopenIn, settings } from "../../core/src/settings";
 import type { Dashboard } from "../../core/src/dashboard";

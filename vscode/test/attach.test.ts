@@ -7,15 +7,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import type * as vscode from "vscode";
-import "./useHost";
+import { host } from "./useHost";
 import type { AccountSwitch } from "../src/accountSwitch";
-import { Actions } from "../src/actions";
+import { Actions } from "../../core/src/actions";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import type { Dashboard } from "../../core/src/dashboard";
 import type { ChatRef } from "../../core/src/shared/types";
 import type { Terminals } from "../src/terminals";
 import { attachClients } from "../../core/src/terminal";
+import { VsCodeEditor } from "../src/vscodeEditor";
 
 const JOB = "c0ffee12";
 
@@ -61,13 +61,14 @@ test("a background job a terminal shows already comes up there, not attached twi
     const errors: string[] = [];
     let shown = 0;
     const actions = new Actions(
-      { action: async (_script: string, args: string[]) => (helpers.push(args), { ok: true, message: "" }) } as unknown as Backend,
-      { demo: false, currentHost: undefined, opened() {}, setActionError: (m: string) => errors.push(m), isVisible: () => true } as unknown as Dashboard,
+      host,
       {
         find: async (ancestors: Set<number>) => (inThisWindow && ancestors.has(client.pid!) ? { show: () => shown++ } : undefined),
         run: async (_key: string, _name: string, command: string) => void runs.push(command),
       } as unknown as Terminals,
-      { warn: () => undefined } as unknown as vscode.LogOutputChannel,
+      new VsCodeEditor(),
+      { action: async (_script: string, args: string[]) => (helpers.push(args), { ok: true, message: "" }) } as unknown as Backend,
+      { demo: false, currentHost: undefined, opened() {}, setActionError: (m: string) => errors.push(m), isVisible: () => true } as unknown as Dashboard,
       {} as AccountSwitch,
     );
 

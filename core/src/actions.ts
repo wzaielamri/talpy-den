@@ -2,23 +2,23 @@
 // pick SSH hosts. Opening happens in VS Code's terminal by default (on the
 // machine the chat is on); talpyDen.openIn = "system" keeps the widget's
 // way (jump.py / remote.py: your desktop's terminal app; window raising on
-// KDE, and on GNOME with the widget's GNOME Shell extension).
+// KDE, and on GNOME with the widget's GNOME Shell extension). What it shows
+// and asks goes through the host (HostServices) and its ports: terminals,
+// the editor's own UI (VS Code: its changes view, Talpy Den's doc tab, the
+// plan review, Claude Code's panel) and Talpy Chat's panes.
 
 import * as fs from "node:fs";
 import * as os from "node:os";
-import * as vscode from "vscode";
-import type { AccountSwitch } from "./accountSwitch";
-import type { Answer, Backend, FindAnswer } from "../../core/src/agents/claudeCode/backend";
-import { chatOptionArgs, configDirArgs, setChatOptions, setSshHosts, settings } from "../../core/src/settings";
-import { agentRunArgs } from "./agentRun";
-import { openComparison } from "./changes";
-import { claudePanelAvailable, localPanelConfigDir, localPanelProfileKey, openPanelChat } from "./claudePanel";
-import { filedUnder } from "../../core/src/agents/claudeCode/claudePanel";
-import { isAgentRunFile, openAgentRunFile, showMarkdown } from "./agentRun";
-import type { Dashboard } from "../../core/src/dashboard";
-import { canRaiseWindows, isGnome } from "../../core/src/platform/linux/desktop";
-import { allShown, foundLines, showAll } from "../../core/src/agents/claudeCode/found";
-import { chatRef, noLinks } from "../../core/src/notify";
+import { agentRunArgs, isAgentRunFile } from "./agentRun";
+import type { Answer, Backend, FindAnswer } from "./agents/claudeCode/backend";
+import { filedUnder } from "./agents/claudeCode/claudePanel";
+import { allShown, foundLines, showAll } from "./agents/claudeCode/found";
+import type { Dashboard } from "./dashboard";
+import type { HostServices, PickButton, PickItem, WindowFolder } from "./host";
+import { chatRef, noLinks } from "./notify";
+import { canRaiseWindows, isGnome } from "./platform/linux/desktop";
+import type { AccountSwitch, ChatPanesPort, EditorPort, TerminalHandle, TerminalPort } from "./ports";
+import { chatOptionArgs, configDirArgs, setChatOptions, setSshHosts, settings } from "./settings";
 import {
   ago,
   allGroups,
@@ -51,16 +51,10 @@ import {
   talpyChatHere,
   talpyChatOff,
   talpyPlace,
-} from "../../core/src/shared/model";
-import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "../../core/src/shared/types";
-import { remoteControlPage } from "../../core/src/shared/pane";
-import type { Terminals } from "./terminals";
-import { asPaste, attachClients, localAncestors, type Place } from "../../core/src/terminal";
-import type { TerminalHandle } from "../../core/src/ports";
-import type { PlanReview } from "./planReview";
-import type { ChatPanes } from "./chatPane";
-import { windowFolders } from "./chatSurface";
-import { windowHostFile } from "./remoteHost";
+} from "./shared/model";
+import { remoteControlPage } from "./shared/pane";
+import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "./shared/types";
+import { asPaste, attachClients, localAncestors, type Place } from "./terminal";
 
 const CHAT_LINK = "vscode://anthropic.claude-code/open?session=";
 
@@ -121,6 +115,13 @@ export function typedFolder(typed: string, home: string | null): string | null {
   return null;
 }
 
+// The folders this window has open on that machine, with each one's path there: this computer's (no host) in a
+// window of its own, a host's or a container's in a Remote-SSH or Dev Containers window on it (currentHost)
+function windowFolders(open: readonly WindowFolder[], host: string | undefined, currentHost: string | undefined): WindowFolder[] {
+  if (!host) return open.filter((f) => !f.remote);
+  return host === currentHost ? open.filter((f) => f.remote) : [];
+}
+
 const AGAIN_MS = 30000; // pressing the shortcut again this soon goes on to the next chat
 
 // Why a chat in another window can't be brought up: on GNOME, the extension
@@ -134,15 +135,15 @@ export class Actions {
   private visited = new Set<string>(); // chats the shortcut went to in this round
 
   constructor(
+    private host: HostServices,
+    private terminals: TerminalPort,
+    private editor: EditorPort,
     private backend: Backend,
     private dash: Dashboard,
-    private terminals: Terminals,
-    private log: vscode.LogOutputChannel,
     private account: AccountSwitch,
   ) {}
 
-  planReview?: PlanReview; // your comments on plans (set once it's there)
-  panes?: ChatPanes; // Talpy Chat's tabs (set once they're there)
+  panes?: ChatPanesPort; // Talpy Chat's tabs (set once they're there)
 
   private place(host?: string): Place {
     if (!host) return { kind: "local" };
@@ -150,9 +151,9 @@ export class Actions {
   }
 
   private fail(message: string): void {
-    this.log.warn(message);
+    this.host.log.warn(message);
     this.dash.setActionError(message);
-    if (!this.dash.isVisible()) void vscode.window.showErrorMessage(noLinks(message));
+    if (!this.dash.isVisible()) void this.host.message("error", noLinks(message));
   }
 
   private report(answer: Answer, failurePrefix: string): boolean {
@@ -165,7 +166,7 @@ export class Actions {
   // (also for what the view's tabs do with a chat: its tab, an answer, a queued task)
   demoOnly(): boolean {
     if (!this.dash.demo) return false;
-    void vscode.window.showInformationMessage("Demo mode: these chats are made up. Run “Talpy Den: Toggle Demo Data” to go back.");
+    void this.host.message("info", "Demo mode: these chats are made up. Run “Talpy Den: Toggle Demo Data” to go back.");
     return true;
   }
 
@@ -196,9 +197,9 @@ export class Actions {
     }
     // A chat in the Claude Code extension: its link reveals it
     if (chat.entrypoint === "claude-vscode" && chat.pid !== null) {
-      const thisWindow = host ? onWindowHost : !vscode.env.remoteName;
+      const thisWindow = host ? onWindowHost : !this.host.environment.remoteName;
       if (!thisWindow && (await canRaiseWindows())) return this.openSystem(chat); // raises the window it's in
-      await vscode.env.openExternal(vscode.Uri.parse(CHAT_LINK + encodeURIComponent(chat.sessionId)));
+      await this.host.openExternal(CHAT_LINK + encodeURIComponent(chat.sessionId));
       return;
     }
     // A background job a terminal shows already (`claude attach`): that one,
@@ -258,7 +259,7 @@ export class Actions {
       if (answer.ask === "vscode") {
         const open = "Open in VS Code";
         const terminal = "Open in a terminal instead";
-        const choice = await vscode.window.showWarningMessage(answer.message, { modal: true }, open, terminal);
+        const choice = await this.host.message("warning", answer.message, { modal: true }, open, terminal);
         if (choice === open) return this.openSystem(chat, true);
         if (choice === terminal) {
           if (!chat.terminalCommand) return this.fail(`This chat runs in a terminal on ${hostLabel(host)}; Talpy Den can't bring it here.`);
@@ -285,9 +286,9 @@ export class Actions {
     if (this.demoOnly()) return;
     const id = chat.chatId || chat.sessionId;
     const host = chat.host;
-    const here = host ? true : chat.profileDir === localPanelProfileKey();
+    const here = host ? true : chat.profileDir === this.editor.localPanelProfileKey();
     if (here && chat.cwd && this.windowHasChat(chat.cwd, id, host)) {
-      await vscode.env.openExternal(vscode.Uri.parse(CHAT_LINK + encodeURIComponent(id)));
+      await this.host.openExternal(CHAT_LINK + encodeURIComponent(id));
       return;
     }
     const answer = host
@@ -323,7 +324,7 @@ export class Actions {
           ? "It's waiting for you, so it's stopped first, without your answer. Then the chat reopens in a Claude Code panel, where you go on with it. Its terminal stays open."
           : "Claude quits in its terminal (the terminal stays open) and the chat reopens in a Claude Code panel.";
     const go = busy ? "Stop and Move" : "Move";
-    const choice = await vscode.window.showWarningMessage(`Move “${chat.name}” to a Claude Code panel?`, { modal: true, detail }, go);
+    const choice = await this.host.message("warning", `Move “${chat.name}” to a Claude Code panel?`, { modal: true, detail }, go);
     if (choice !== go) return;
     const flags = busy ? ["--busy"] : [];
     const answer = chat.host
@@ -338,13 +339,13 @@ export class Actions {
   // to) and has its folder open: the chat's folder, one it's in (Claude's
   // `cd`s take a chat into subfolders), or here the one it started in
   private windowHasChat(folder: string, chatId: string, host?: string): boolean {
-    const sameMachine = host ? host === this.dash.currentHost : !vscode.env.remoteName;
+    const sameMachine = host ? host === this.dash.currentHost : !this.host.environment.remoteName;
     const want = folder.replace(/\/+$/, "");
-    const configDir = host ? "" : localPanelConfigDir();
+    const configDir = host ? "" : this.editor.localPanelConfigDir();
     return (
       sameMachine &&
-      (vscode.workspace.workspaceFolders ?? []).some((f) => {
-        const open = f.uri.path.replace(/\/+$/, "");
+      this.host.workspaceFolders().some((f) => {
+        const open = f.path.replace(/\/+$/, "");
         return want === open || want.startsWith(open + "/") || (!!configDir && filedUnder(configDir, open, chatId));
       })
     );
@@ -407,7 +408,8 @@ export class Actions {
     // (one that keeps going: Stop leaves Keep going on, for the next limit, or turns it off too)
     const kept = keptChat(this.dash.state().status, chat.chatId || chat.sessionId, chat.host);
     const keepOff = "Stop and turn Keep going off";
-    const choice = await vscode.window.showWarningMessage(
+    const choice = await this.host.message(
+      "warning",
       interruptible ? `Interrupt or stop “${chat.name}”?` : `Stop “${chat.name}”?`,
       { modal: true, detail: kept ? `${detail}\n\nIt keeps going after usage limits.` : detail },
       ...(interruptible ? ["Interrupt", "Stop"] : ["Stop"]),
@@ -482,7 +484,7 @@ export class Actions {
         this.dash.setActionInfo(`No ${noun[0]} was hidden`);
         return;
       }
-      const pick = items.length > 1 ? await vscode.window.showQuickPick(items, { placeHolder: `Show hidden ${noun[1]} again on…` }) : items[0];
+      const pick = items.length > 1 ? await this.host.pick(items, { placeHolder: `Show hidden ${noun[1]} again on…` }) : items[0];
       if (!pick) return;
       host = pick.host;
     }
@@ -504,7 +506,7 @@ export class Actions {
     const items = (Object.keys(HIDDEN_NOUNS) as HiddenKind[]).map((kind) => ({ kind, n: hiddenCount(result, kind) }))
       .filter((i) => i.n > 0).map((i) => ({ hidden: i.kind, label: `Show Hidden ${HIDDEN_NOUNS[i.kind][2]} Again (${i.n})` }));
     if (!items.length) return this.dash.setActionInfo(`Nothing ${hostWhere(host)} is hidden`);
-    const pick = items.length > 1 ? await vscode.window.showQuickPick(items, { placeHolder: `Show hidden ones again ${hostWhere(host)}` }) : items[0];
+    const pick = items.length > 1 ? await this.host.pick(items, { placeHolder: `Show hidden ones again ${hostWhere(host)}` }) : items[0];
     if (pick) await this.showHidden(pick.hidden, host);
   }
 
@@ -581,7 +583,7 @@ export class Actions {
     const host = chat.host;
     const accounts = shareAccounts(machineStatus(this.dash.state(), host));
     const here = accounts.find((g) => g.profileKeys.includes(chat.profileDir));
-    type Item = vscode.QuickPickItem & { kind2?: "continue" | "share" | "keeponly"; group?: Group };
+    type Item = PickItem & { kind2?: "continue" | "share" | "keeponly"; group?: Group };
     const items: Item[] = [];
     for (const g of accounts) {
       if (g === here) continue;
@@ -589,14 +591,15 @@ export class Actions {
     }
     if (!chat.shared) items.push({ label: "Share with all accounts", kind2: "share" });
     else {
-      items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
+      items.push({ label: "", separator: true });
       for (const g of accounts) items.push({ label: `Keep only on ${g.title}…`, kind2: "keeponly", group: g });
     }
-    const pick = await vscode.window.showQuickPick(items, { placeHolder: host ? `${chat.name} ${hostWhere(host)}` : chat.name });
+    const pick = await this.host.pick(items, { placeHolder: host ? `${chat.name} ${hostWhere(host)}` : chat.name });
     if (!pick?.kind2) return;
     if (pick.kind2 === "keeponly") {
       const others = accounts.filter((g) => g !== pick.group).map((g) => g.title).join(", ");
-      const ok = await vscode.window.showWarningMessage(
+      const ok = await this.host.message(
+        "warning",
         `Keep “${chat.name}” only on ${pick.group!.title}?`,
         { modal: true, detail: `It leaves the chat lists of ${others || "the other accounts"}; the conversation stays on ${pick.group!.title}. It can't be open in Claude meanwhile.` },
         `Keep Only on ${pick.group!.title}`,
@@ -654,21 +657,21 @@ export class Actions {
       const answer = await this.backend.action("remote.py", ["--plan", host, plan.slug, plan.profileDir, "--no-open"]);
       if (!this.report(answer, "Couldn't open the plan")) return;
       if (!isAgentRunFile(answer.file)) return this.fail("Couldn't open the plan: the helper saved it somewhere unexpected");
-      const error = await openAgentRunFile(answer.file);
+      const error = await this.editor.showDoc(answer.file);
       if (error) this.fail(`Couldn't open the plan: ${error}`);
       return;
     }
     // (a file of the window's host, or of this computer: file:, in any window)
-    const uri = (host && windowHostFile(vscode, plan.path)) || vscode.Uri.file(plan.path);
+    const where = { onWindowHost: !!host };
     if (edit) {
       try {
-        await vscode.window.showTextDocument(uri, { preview: false });
+        await this.editor.editFile(plan.path, where);
       } catch (e) {
         this.fail(`Couldn't open the plan: ${e instanceof Error ? e.message : String(e)}`);
       }
       return;
     }
-    const error = await showMarkdown(uri);
+    const error = await this.editor.showDoc(plan.path, where);
     if (error) this.fail(`Couldn't open the plan: ${error}`);
   }
 
@@ -680,16 +683,14 @@ export class Actions {
   // else it goes to the clipboard and the chat comes up, to paste it there.
   async sendPlanFeedback(plan: { slug: string; path: string; profileDir: string; chatId?: string | null; title?: string }): Promise<void> {
     if (this.demoOnly()) return;
-    const uri = vscode.Uri.file(plan.path);
-    const doc =vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
-    if (doc?.isDirty) await doc.save(); // (what you changed and didn't save yet counts)
-    const comments = (await this.planReview?.comments(plan.path)) ?? [];
+    await this.editor.saveEdits(plan.path); // (what you changed and didn't save yet counts)
+    const comments = await this.editor.planComments(plan.path);
     const answer = await this.backend.action("jump.py", [
       "--plan-feedback", plan.slug, "--profile", plan.profileDir, "--chat", plan.chatId || "-",
       ...(comments.length ? ["--comments", JSON.stringify(comments)] : []), "--print-command", ...configDirArgs(),
     ]);
     if (!this.report(answer, "Couldn't send your feedback")) return;
-    this.planReview?.clear(plan.path);
+    this.editor.clearPlanComments(plan.path);
     const text = typeof answer.text === "string" ? answer.text : "";
     if (answer.how === "resumed" && answer.command) {
       await this.terminals.run(`feedback|${plan.chatId ?? plan.slug}`, plan.title || "plan feedback", answer.command, this.place());
@@ -709,9 +710,9 @@ export class Actions {
           return this.refresh();
         }
       }
-      await vscode.env.clipboard.writeText(text);
+      await this.host.clipboard.write(text);
       if (chat) await this.open(chat);
-      void vscode.window.showInformationMessage(noLinks(`Your feedback is in the clipboard. ${answer.message}.`));
+      void this.host.message("info", noLinks(`Your feedback is in the clipboard. ${answer.message}.`));
     } else if (answer.message) {
       this.dash.setActionInfo(answer.message);
     }
@@ -725,14 +726,14 @@ export class Actions {
     if (this.demoOnly()) return;
     if (host && host !== this.dash.currentHost) return this.fail(`That memory is ${hostWhere(host)}: open it from a VS Code window connected to ${hostLabel(host)}.`);
     if (!/(\/projects\/[^/]+\/memory\/[^/]+\.md|\/CLAUDE\.md)$/.test(memory.path)) return this.fail("That isn't one of Claude's memories.");
-    const uri = (host && windowHostFile(vscode, memory.path)) || vscode.Uri.file(memory.path);
+    const where = { onWindowHost: !!host };
     if (!edit) {
-      const error = await showMarkdown(uri);
+      const error = await this.editor.showDoc(memory.path, where);
       if (error) this.fail(`Couldn't open the memory: ${error}`);
       return;
     }
     try {
-      await vscode.window.showTextDocument(uri, { preview: false });
+      await this.editor.editFile(memory.path, where);
     } catch (e) {
       this.fail(`Couldn't open the memory: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -781,15 +782,15 @@ export class Actions {
     const host = group.host;
     const accounts = shareAccounts(machineStatus(this.dash.state(), host));
     const here = accounts.find((g) => g.profileKeys.includes(plan.profileDir));
-    type Item = vscode.QuickPickItem & { to?: string; keep?: string };
+    type Item = PickItem & { to?: string; keep?: string };
     const items: Item[] = [];
     for (const g of accounts) if (g !== here && g.shareProfile) items.push({ label: `Share with ${g.title}`, to: g.shareProfile });
     if (accounts.length > 2) items.push({ label: "Share with all accounts", to: "" });
     if (plan.shared) {
-      items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
+      items.push({ label: "", separator: true });
       for (const g of accounts) if (g.shareProfile) items.push({ label: `Keep only on ${g.title}`, keep: g.shareProfile });
     }
-    const pick = await vscode.window.showQuickPick(items, { placeHolder: host ? `${plan.title} ${hostWhere(host)}` : plan.title });
+    const pick = await this.host.pick(items, { placeHolder: host ? `${plan.title} ${hostWhere(host)}` : plan.title });
     if (!pick || (pick.to === undefined && pick.keep === undefined)) return;
     const answer =
       pick.keep !== undefined
@@ -811,7 +812,7 @@ export class Actions {
   // Each kind of thing found folds under its heading (found.ts: foundLines).
   async findChat(): Promise<void> {
     if (this.demoOnly()) return;
-    type Item = vscode.QuickPickItem & {
+    type Item = PickItem & {
       found?: FoundChat;
       project?: FoundProject;
       plan?: FoundPlan;
@@ -820,17 +821,18 @@ export class Actions {
       fold?: string; // a heading: picking it folds or unfolds what's under it
       open?: boolean;
     };
-    const qp = vscode.window.createQuickPick<Item>();
-    qp.title = "Find a Chat";
-    qp.placeholder = "Words in a chat's name, folder or your prompts; a project folder, a plan or a memory";
-    qp.matchOnDescription = true;
-    qp.matchOnDetail = true;
-    // In the order given, headings included: by default VS Code sorts the
-    // lines by how well their names match what you type and drops the
-    // headings (settable, though not in the 1.90 types)
-    (qp as vscode.QuickPick<Item> & { sortByLabel: boolean }).sortByLabel = false;
-    const unfoldAll: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("expand-all"), tooltip: "Unfold all" };
-    const foldAll: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("collapse-all"), tooltip: "Fold all" };
+    const qp = this.host.quickPick<Item>({
+      title: "Find a Chat",
+      placeHolder: "Words in a chat's name, folder or your prompts; a project folder, a plan or a memory",
+      matchOnDescription: true,
+      matchOnDetail: true,
+      // In the order given, headings included: by default VS Code sorts the
+      // lines by how well their names match what you type and drops the
+      // headings
+      sortByLabel: false,
+    });
+    const unfoldAll: PickButton = { icon: "expand-all", tooltip: "Unfold all" };
+    const foldAll: PickButton = { icon: "collapse-all", tooltip: "Fold all" };
     let asked = 0;
     let closed = false;
     let timer: NodeJS.Timeout | undefined;
@@ -1010,7 +1012,7 @@ export class Actions {
         groups.length === 1
           ? groups[0]
           : (
-              await vscode.window.showQuickPick(
+              await this.host.pick(
                 groups.map((g) => ({ label: groupLabel(g), description: g.plan ?? "", group: g })),
                 { placeHolder: "New chat on which account?" },
               )
@@ -1020,7 +1022,7 @@ export class Actions {
     host = group.host;
     const where = host ? `${group.title} ${hostWhere(host)}` : group.title;
     if (plan && task === undefined) {
-      task = await vscode.window.showInputBox({
+      task = await this.host.input({
         title: `Carry out “${plan.title}” on ${where}`,
         prompt: "The plan is the chat's first message. Anything to add? (optional)",
         placeHolder: "e.g. Only steps 1 and 2 for now",
@@ -1044,7 +1046,7 @@ export class Actions {
     if (host && !folders.some((f) => f.short === "~")) folders.push({ path: "", short: "~", newChatCommand: home, trusted: false });
     // (this computer's, or a Remote-SSH or Dev Containers window's own host's; one no chat ran in yet isn't
     // the account's: whether Claude trusts it is asked once it's picked, where that's needed)
-    const open = windowFolders(host, this.dash.currentHost).map((f) => f.path);
+    const open = windowFolders(this.host.workspaceFolders(), host, this.dash.currentHost).map((f) => f.path);
     const unknown = new Set<string>();
     if (open.length) {
       const homeDir = host ? folderOf(home) : os.homedir();
@@ -1066,7 +1068,7 @@ export class Actions {
     // (check: one whose trust isn't known, this computer's: asked when it's picked; a host's isn't offered where it's needed)
     const check = (f: Project) => (unknown.has(f.path) ? { choose: "check" as const } : {});
     const canTrust = (f: Project) => f.trusted !== false && !!f.path && !(host && unknown.has(f.path));
-    type Item = vscode.QuickPickItem & { start?: "talpy" | "terminal" | "background" | "queue" | "schedule" | "panel" | "task" | "options"; folder?: Project; choose?: "dialog" | "type" | "check" };
+    type Item = PickItem & { start?: "talpy" | "terminal" | "background" | "queue" | "schedule" | "panel" | "task" | "options"; folder?: Project; choose?: "dialog" | "type" | "check" };
     const canBrowse = !host || host === this.dash.currentHost;
     const items: Item[] = [];
     if (cli && !hasTask)
@@ -1081,7 +1083,7 @@ export class Actions {
     // container (a folder Claude doesn't trust yet opens in a terminal: a background chat can't ask;
     // a host's or a container's own folders only)
     if (talpyChatHere(talpyPlace(state, host), host, false)) {
-      items.push({ label: "In Talpy Chat", kind: vscode.QuickPickItemKind.Separator });
+      items.push({ label: "In Talpy Chat", separator: true });
       for (const f of folders.filter((f) => f.path))
         items.push(!canTrust(f)
           ? { label: label(f), description: `in a terminal: Claude ${f.trusted === false ? "doesn't trust it" : "may not trust it"} yet`, start: "terminal", folder: f }
@@ -1094,16 +1096,16 @@ export class Actions {
       // Not offered here (not connected, hooks off…): a line in its place says so and why
       const off = talpyChatOff(talpyPlace(state, host), host);
       if (off)
-        items.push({ label: "In Talpy Chat", kind: vscode.QuickPickItemKind.Separator },
+        items.push({ label: "In Talpy Chat", separator: true },
                    { label: `$(info) Talpy Chat: ${off.title[0].toLowerCase()}${off.title.slice(1)}`, description: off.why });
     }
     if (cli) {
-      items.push({ label: "In a terminal", kind: vscode.QuickPickItemKind.Separator });
+      items.push({ label: "In a terminal", separator: true });
       for (const f of folders) items.push({ label: label(f), start: "terminal", folder: f });
       items.push(canBrowse ? { label: "$(folder-opened) Choose folder…", start: "terminal", choose: "dialog" } : { label: "$(edit) Type a folder…", start: "terminal", choose: "type" });
     }
     if (cli && hasTask) {
-      items.push({ label: "In the background", kind: vscode.QuickPickItemKind.Separator });
+      items.push({ label: "In the background", separator: true });
       const trusted = folders.filter(canTrust);
       for (const f of trusted) items.push({ label: label(f), description: "no window: listed right away", start: "background", folder: f, ...check(f) });
       if (!host) items.push({ label: "$(folder-opened) Choose folder…", description: "one Claude trusts already", start: "background", choose: "dialog" });
@@ -1113,15 +1115,15 @@ export class Actions {
       const reset = limitReset(group, Date.now());
       if (reset && (trusted.length || !host)) {
         const at = new Date(reset.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        items.push({ label: `After the limit resets (in ${duration(reset.at - Date.now())}, at ${at})`, kind: vscode.QuickPickItemKind.Separator });
+        items.push({ label: `After the limit resets (in ${duration(reset.at - Date.now())}, at ${at})`, separator: true });
         for (const f of trusted) items.push({ label: label(f), description: "waits for the limit, then starts in the background", start: "queue", folder: f, ...check(f) });
         if (!host) items.push({ label: "$(folder-opened) Choose folder…", description: "one Claude trusts already", start: "queue", choose: "dialog" });
       }
     }
-    if (!cli) items.push({ label: "In a terminal", kind: vscode.QuickPickItemKind.Separator }, { label: "$(warning) No claude command", description: host ? hostWhere(host) : "on this computer" });
+    if (!cli) items.push({ label: "In a terminal", separator: true }, { label: "$(warning) No claude command", description: host ? hostWhere(host) : "on this computer" });
     items.push(...panel.map((p) => ({ ...p, start: p.panel ? ("panel" as const) : undefined })));
     const at = (start: Item["start"]) => (here ? items.find((i) => i.start === start && i.folder?.path === here) : undefined);
-    let pick = at("talpy") ?? at("terminal") ?? await vscode.window.showQuickPick(items, {
+    let pick = at("talpy") ?? at("terminal") ?? await this.host.pick(items, {
       title: plan ? `Carry out “${plan.title}” on ${where}` : task ? `“${task.length > 60 ? task.slice(0, 59) + "…" : task}” on ${where}` : undefined,
       placeHolder: plan || task ? "Start it in…" : `New chat on ${where} in…`,
     });
@@ -1133,7 +1135,7 @@ export class Actions {
     const opts = chatOptionArgs();
     if (pick.start === "task") {
       // (kept when you click elsewhere, and offered again when a later question was cancelled)
-      const text = await vscode.window.showInputBox({
+      const text = await this.host.input({
         title: `New chat on ${where}`,
         prompt: "What should Claude do? The chat starts with it.",
         placeHolder: "e.g. Fix the flaky test in tests/test_jump.py",
@@ -1149,9 +1151,9 @@ export class Actions {
       if (pick.choose === "dialog" || pick.choose === "check") {
         let chosen = pick.folder?.path ?? "";
         if (pick.choose === "dialog") {
-          const picked = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, defaultUri: vscode.Uri.file(os.homedir()), openLabel: "Start Chat Here" });
+          const picked = await this.host.choose({ kind: "folder", defaultPath: os.homedir(), openLabel: "Start Chat Here" });
           if (!picked?.length) return;
-          chosen = picked[0].fsPath;
+          chosen = picked[0];
         }
         const checked = await this.checkTrust(group, chosen, "Trust It, Open in Talpy Chat");
         if (!checked) return;
@@ -1171,14 +1173,14 @@ export class Actions {
     if (pick.start === "panel") return this.panelChat(group, hasTask ? await this.taskText(task ?? "", plan, host) : undefined);
     if (pick.start === "schedule") {
       // when (a day, then a time), then where (a folder Claude trusts)
-      const day = await vscode.window.showQuickPick(
+      const day = await this.host.pick(
         laterDays(new Date()).map((label, i) => ({ label, day: i })),
         { title: "Start it later, on…", placeHolder: "the day it starts" },
       );
       if (!day) return;
       const next = new Date();
       next.setHours(next.getHours() + 1, 0, 0, 0);
-      const clock = await vscode.window.showInputBox({
+      const clock = await this.host.input({
         title: `Start it later: ${day.label}, at…`,
         prompt: "The time it starts, e.g. 14:30. It starts in the background then (or as soon as VS Code or Talpy Den runs again).",
         value: day.day === 0 && next.getDate() === new Date().getDate() ? `${String(next.getHours()).padStart(2, "0")}:00` : "09:00",
@@ -1186,8 +1188,8 @@ export class Actions {
       });
       if (!clock) return;
       const trusted = folders.filter(canTrust);
-      type Where = vscode.QuickPickItem & { folder?: Project; choose?: boolean };
-      const where = await vscode.window.showQuickPick<Where>(
+      type Where = PickItem & { folder?: Project; choose?: boolean };
+      const where = await this.host.pick<Where>(
         [...trusted.map((f) => ({ label: label(f), folder: f })), ...(host ? [] : [{ label: "$(folder-opened) Choose folder…", description: "one Claude trusts already", choose: true }])],
         { title: `Start it ${day.day === 0 ? "today" : day.day === 1 ? "tomorrow" : `on ${day.label}`} at ${clock.trim()}, in…`, placeHolder: "the folder it starts in (one Claude trusts already)" },
       );
@@ -1195,9 +1197,9 @@ export class Actions {
       let folder = where.folder?.path ?? "";
       if (unknown.has(folder) && !(await this.trustedToQueue(group, folder))) return;
       if (where.choose) {
-        const picked = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, defaultUri: vscode.Uri.file(os.homedir()), openLabel: "Queue It Here" });
+        const picked = await this.host.choose({ kind: "folder", defaultPath: os.homedir(), openLabel: "Queue It Here" });
         if (!picked?.length) return;
-        folder = picked[0].fsPath;
+        folder = picked[0];
       }
       const at = laterAt(day.day, clock, new Date());
       if (!at) return this.fail("That time has passed: pick one still to come.");
@@ -1223,19 +1225,15 @@ export class Actions {
     }
     let folder = pick.folder?.path ?? "";
     if (pick.choose === "dialog") {
-      const remoteHome = host ? folderOf(home) : null;
-      const defaultUri = host
-        ? remoteHome && vscode.workspace.workspaceFolders?.[0]
-          ? vscode.workspace.workspaceFolders[0].uri.with({ path: remoteHome })
-          : undefined
-        : vscode.Uri.file(os.homedir());
+      // (a host's is offered only for the window's own, canBrowse: the dialog browses the host from its home folder)
+      const defaultPath = host ? folderOf(home) : os.homedir();
       const openLabel = pick.start === "queue" ? "Queue It Here" : "Start Chat Here";
-      const picked = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, defaultUri, openLabel });
+      const picked = await this.host.choose({ kind: "folder", onRemote: !!host, ...(defaultPath ? { defaultPath } : {}), openLabel });
       if (!picked?.length) return;
-      folder = host ? picked[0].path : picked[0].fsPath;
+      folder = picked[0];
     } else if (pick.choose === "type") {
       const remoteHome = folderOf(home);
-      const typed = await vscode.window.showInputBox({
+      const typed = await this.host.input({
         prompt: `Folder ${hostWhere(host ?? "")}`,
         placeHolder: "/home/you/project",
         validateInput: (v) => (!v.trim() || typedFolder(v, remoteHome) ? null : "The folder's full path, e.g. /home/you/project or ~/project"),
@@ -1291,8 +1289,8 @@ export class Actions {
   // first one without it): on the default account of the machine it's on, at once (newChat's here)
   async newChatHere(uri?: string): Promise<void> {
     const host = this.dash.currentHost;
-    const open = windowFolders(host, host);
-    const folder = uri ? open.find((f) => f.folder.uri.toString() === uri) : open[0];
+    const open = windowFolders(this.host.workspaceFolders(), host, host);
+    const folder = uri ? open.find((f) => f.uri === uri) : open[0];
     const group = defaultGroup(machineStatus(this.dash.state(), host)?.groups ?? []);
     if (!folder || !group) return this.newChat();
     return this.newChat(group.id, host, undefined, undefined, undefined, folder.path);
@@ -1310,7 +1308,7 @@ export class Actions {
     let trusted = answer.trusted === true;
     if (!trusted && typeof answer.trustQuestion === "string" && answer.trustQuestion) {
       const inTerminal = "Open in a Terminal";
-      const choice = await vscode.window.showWarningMessage(`Trust ${where.short}?`, { modal: true, detail: answer.trustQuestion }, yes, ...(terminal ? [inTerminal] : []));
+      const choice = await this.host.message("warning", `Trust ${where.short}?`, { modal: true, detail: answer.trustQuestion }, yes, ...(terminal ? [inTerminal] : []));
       if (!choice) return;
       if (choice === yes) {
         const done = await this.backend.action("jump.py", ["--trust-folder", group.chatProfile, "--cwd", where.path, ...configDirArgs()]);
@@ -1331,17 +1329,17 @@ export class Actions {
 
   // The model, effort and permission mode new chats start with: picked, and kept for the next ones
   private async pickChatOptions(): Promise<void> {
-    const model = await vscode.window.showQuickPick(
+    const model = await this.host.pick(
       MODELS.map(([value, label]) => ({ label, value, description: value === settings.newChatModel() ? "now" : "" })),
       { title: "New chats start with the model…", placeHolder: "the model (claude --model; /model changes it in the chat)" },
     );
     if (!model) return;
-    const effort = await vscode.window.showQuickPick(
+    const effort = await this.host.pick(
       EFFORTS.map(([value, label]) => ({ label, value, description: value === settings.newChatEffort() ? "now" : "" })),
       { title: `…${model.label}, with the reasoning effort…`, placeHolder: "how hard it thinks (claude --effort; /effort changes it in the chat)" },
     );
     if (!effort) return;
-    const mode = await vscode.window.showQuickPick(
+    const mode = await this.host.pick(
       MODES.map(([value, label, detail]) => ({ label, value, detail, description: value === settings.newChatMode() ? "now" : "" })),
       {
         title: `…${model.label} and ${effort.label.toLowerCase()}${effort.value ? " effort" : ""}, in the permission mode…`,
@@ -1381,7 +1379,7 @@ export class Actions {
   // Its page on claude.ai/code (only a claude.ai/code session's: remoteControlPage)
   async openRemoteControl(chat: ChatRef): Promise<void> {
     const page = remoteControlPage(chat.remoteControl);
-    if (page) await vscode.env.openExternal(vscode.Uri.parse(page));
+    if (page) await this.host.openExternal(page);
   }
 
   // A chat keeps going until it's done (after each usage limit, on by itself
@@ -1483,11 +1481,11 @@ export class Actions {
   // The Claude Code extension's chat, offered for an account on this window's
   // machine: it starts in the window's folder, on the account its own
   // settings give it, which the menu names when it isn't the one picked.
-  private async panelChoice(group: Group): Promise<(vscode.QuickPickItem & { panel?: true })[]> {
+  private async panelChoice(group: Group): Promise<(PickItem & { panel?: true })[]> {
     const host = group.host;
-    const sameMachine = host ? host === this.dash.currentHost : !vscode.env.remoteName;
-    if (!sameMachine || !(await claudePanelAvailable())) return [];
-    const folder = vscode.workspace.workspaceFolders?.[0]?.name;
+    const sameMachine = host ? host === this.dash.currentHost : !this.host.environment.remoteName;
+    if (!sameMachine || !(await this.editor.claudePanelAvailable())) return [];
+    const folder = this.host.workspaceFolders()[0]?.name;
     let note = folder ? `in ${folder}` : "in this window";
     if (host) {
       // (its other account: Claude Code there switches to it, panelChat)
@@ -1495,14 +1493,14 @@ export class Actions {
         ? ` · the account Claude Code has ${hostWhere(host)}`
         : ` · switches Claude Code ${hostWhere(host)} to ${group.title}`;
     } else {
-      const key = localPanelProfileKey();
+      const key = this.editor.localPanelProfileKey();
       if (!group.profileKeys.includes(key)) {
         const other = (this.dash.state().status?.groups ?? []).find((g) => g.profileKeys.includes(key));
         note += ` · it uses ${other ? other.title : key}, not ${group.title}`;
       }
     }
     return [
-      { label: "In VS Code", kind: vscode.QuickPickItemKind.Separator },
+      { label: "In VS Code", separator: true },
       { label: "$(comment-discussion) Claude Code chat tab", description: note, panel: true },
     ];
   }
@@ -1516,7 +1514,7 @@ export class Actions {
       await new Promise((r) => setTimeout(r, 1500)); // (the Claude extension follows the setting within a second)
     }
     try {
-      await openPanelChat(prompt);
+      await this.editor.openPanelChat(prompt);
     } catch (e) {
       this.fail(`Couldn't open a Claude Code chat: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -1550,25 +1548,26 @@ export class Actions {
   // It shows the last lists at once; this computer's is read again as it
   // opens, and Reload reads every connected host's too.
   async pickHosts(): Promise<void> {
-    type Item = vscode.QuickPickItem & { host?: string };
-    const qp = vscode.window.createQuickPick<Item>();
-    qp.canSelectMany = true;
-    qp.matchOnDescription = true;
+    type Item = PickItem & { host?: string };
     const containers = settings.showContainers();
-    qp.title = containers ? "Show Claude on SSH hosts and in containers" : "Show Claude on SSH hosts";
-    qp.placeholder = "Key-based login and python3 needed there; nothing is installed";
-    const reload: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("refresh"), tooltip: "Reload" };
+    const qp = this.host.quickPick<Item>({
+      many: true,
+      matchOnDescription: true,
+      title: containers ? "Show Claude on SSH hosts and in containers" : "Show Claude on SSH hosts",
+      placeHolder: "Key-based login and python3 needed there; nothing is installed",
+    });
+    const reload: PickButton = { icon: "refresh", tooltip: "Reload" };
     qp.buttons = [reload];
     let chosen = new Set(settings.sshHosts());
     const build = () => {
       const current = this.dash.currentHost;
-      const items: Item[] = [{ label: "SSH hosts", kind: vscode.QuickPickItemKind.Separator }];
+      const items: Item[] = [{ label: "SSH hosts", separator: true }];
       const known = this.dash.sshHostList;
       for (const h of known) {
         const target = (h.user ? h.user + "@" : "") + (h.hostname || h.name) + (h.jump ? ` via ${h.jump}` : "");
         items.push({
           label: h.name,
-          iconPath: new vscode.ThemeIcon("server"),
+          icon: "server",
           description: [target !== h.name ? target : "", h.name === current ? "this window's host" : ""].filter(Boolean).join(" · "),
           host: h.name,
         });
@@ -1579,9 +1578,9 @@ export class Actions {
         const places = containerPlaces(this.dash.containersHere, this.dash.containerNotes, this.dash.hostContainers,
           this.dash.connectedHosts(), [...chosen], settings.containerDays(), Date.now());
         for (const place of places) {
-          items.push({ label: place.title, kind: vscode.QuickPickItemKind.Separator });
+          items.push({ label: place.title, separator: true });
           for (const c of place.items) {
-            items.push({ label: c.label, iconPath: new vscode.ThemeIcon("package"), description: [c.description, c.id === current ? "this window's container" : ""].filter(Boolean).join(" · "), host: c.id });
+            items.push({ label: c.label, icon: "package", description: [c.description, c.id === current ? "this window's container" : ""].filter(Boolean).join(" · "), host: c.id });
           }
           for (const note of [...place.notes, ...(place.empty ? [place.empty] : [])]) items.push({ label: note, description: "" });
         }
@@ -1645,7 +1644,7 @@ export class Actions {
     const i = nextChatIndex(list, this.lastNext, now, AGAIN_MS);
     if (i < 0) {
       this.lastNext = null;
-      await vscode.commands.executeCommand("talpyDen.view.focus");
+      await this.host.showView();
       return;
     }
     const spot = list[i];
@@ -1658,7 +1657,7 @@ export class Actions {
   // ---------------------------------------------------------------- what a chat changed
 
   // Side by side in VS Code's changes view: each file as it was before the
-  // chat (or before its last turn) and now (src/changes.ts)
+  // chat (or before its last turn) and now (EditorPort.openComparison; VS Code: changes.ts)
   async compareChanges(chat: ChatRef, turn: boolean): Promise<void> {
     if (this.demoOnly()) return;
     if (chat.host) {
@@ -1672,21 +1671,21 @@ export class Actions {
       else this.fail(`Couldn't compare ${chat.name}'s changes: ${answer.message}`);
       return;
     }
-    const error = await openComparison(answer.comparison);
+    const error = await this.editor.openComparison(answer.comparison);
     if (error) this.fail(`Couldn't show ${chat.name}'s changes: ${error}`);
   }
 
   // ---------------------------------------------------------------- a subagent's run
 
   // Its task, every step and its report, in Talpy Den's tab for Markdown
-  // (src/agentRun.ts); an SSH host's is fetched over ssh
+  // (agentRun.ts); an SSH host's is fetched over ssh
   async openAgentRun(chat: ChatRef, agentId: string): Promise<void> {
     if (this.demoOnly()) return;
     const [script, args] = agentRunArgs(chat, agentId, chat.host ? [] : configDirArgs());
     const answer = await this.backend.action(script, args);
     if (!answer.ok) return this.fail(`Couldn't open the subagent's run: ${answer.message}`);
     if (!isAgentRunFile(answer.file)) return this.fail("Couldn't open the subagent's run: the helper saved it somewhere unexpected");
-    const error = await openAgentRunFile(answer.file);
+    const error = await this.editor.showDoc(answer.file);
     if (error) this.fail(`Couldn't open the subagent's run: ${error}`);
   }
 
@@ -1695,7 +1694,7 @@ export class Actions {
     const picked = settings.sshHosts();
     if (!picked.includes(host)) await setSshHosts([...picked, host]);
     if (containerOf(host) && !settings.showContainers())
-      await vscode.workspace.getConfiguration("talpyDen").update("showContainers", true, vscode.ConfigurationTarget.Global);
+      await this.host.settings.update("showContainers", true, "global");
   }
 
   // A chat of a host that isn't shown doesn't keep going any more (it has no row to do it from)
@@ -1709,7 +1708,8 @@ export class Actions {
     const picked = settings.sshHosts();
     if (picked.includes(host)) await setSshHosts(picked.filter((h) => h !== host));
     if (host === this.dash.currentHost && settings.includeCurrentRemote()) {
-      void vscode.window.showInformationMessage(
+      void this.host.message(
+        "info",
         noLinks(`${hostLabel(host)} is this window's ${containerOf(host) ? "container" : "host"}, so it stays shown. Turn off “Talpy Den: Include Current Remote” to hide it.`),
       );
     }
@@ -1727,10 +1727,10 @@ export class Actions {
       const file = path.join(folder, name);
       try {
         await fs.writeFile(file, data);
-        const choice = await vscode.window.showInformationMessage(noLinks(`Saved: ${file}`), "Show It");
-        if (choice === "Show It") await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(file));
+        const choice = await this.host.message("info", noLinks(`Saved: ${file}`), undefined, "Show It");
+        if (choice === "Show It") await this.host.revealFile(file);
       } catch (e) {
-        void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't save the card: ${(e as Error).message}`));
+        void this.host.message("error", noLinks(`Talpy Den: couldn't save the card: ${(e as Error).message}`));
       }
       return;
     }
@@ -1742,10 +1742,10 @@ export class Actions {
       const file = path.join(folder, name);
       await fs.writeFile(file, data, { mode: 0o600 });
       const r = await this.backend.copyImage(file);
-      if (r.ok) void vscode.window.setStatusBarMessage("$(check) The card is copied: paste it anywhere", 5000);
-      else void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't copy the card: ${r.message}`));
+      if (r.ok) this.host.statusMessage("$(check) The card is copied: paste it anywhere", 5000);
+      else void this.host.message("error", noLinks(`Talpy Den: couldn't copy the card: ${r.message}`));
     } catch (e) {
-      void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't copy the card: ${(e as Error).message}`));
+      void this.host.message("error", noLinks(`Talpy Den: couldn't copy the card: ${(e as Error).message}`));
     } finally {
       if (folder) await fs.rm(folder, { recursive: true, force: true }).catch(() => undefined);
     }

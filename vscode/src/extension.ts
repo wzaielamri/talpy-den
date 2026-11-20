@@ -7,7 +7,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { Accounts } from "./accounts";
 import { AccountSwitch } from "./accountSwitch";
-import { Actions } from "./actions";
+import { Actions } from "../../core/src/actions";
 import { Backend } from "../../core/src/agents/claudeCode/backend";
 import { openChangesLink } from "./changes";
 import { CHAT_KEYS, ChatPanes } from "./chatPane";
@@ -16,7 +16,7 @@ import { answerPermissionsHere, liveModeHere } from "./relay";
 import { configDirArgs, extraConfigDirs, settings, useSettingsHost } from "../../core/src/settings";
 import { VsCodeEditor } from "./vscodeEditor";
 import { VsCodeHost } from "./vscodeHost";
-import { markdownLinkFile, openAgentRunFile } from "./agentRun";
+import { markdownLinkFile } from "../../core/src/agentRun";
 import { initDocs } from "./doc";
 import { Dashboard } from "../../core/src/dashboard";
 import { carryOverSettings, settingNames } from "./legacySettings";
@@ -59,7 +59,16 @@ export function activate(context: vscode.ExtensionContext): void {
   // Notifications open chats through the actions, which need the dashboard
   let actions: Actions | undefined;
   const notifier = new Notifier(host, backend, (chat) => void actions?.open(chat));
-  const editor = new VsCodeEditor(); // (VS Code's own UI as the core asks for it: the dashboard, Claude Code's panel)
+  // (the plans in projects' own plans folders the view lists: their files take comments and feedback too)
+  const projectPlans = (): Set<string> => {
+    const groups = dash.state().status?.groups ?? [];
+    return new Set([...groups.flatMap((g) => [...(g.plans ?? []), ...(g.starredPlans ?? [])]), ...(dash.projectsRead()?.projects ?? []).flatMap((p) => p.plans)]
+      .filter((p) => p.inProject).map((p) => p.path));
+  };
+  const review = new PlanReview(extraConfigDirs, projectPlans); // (your comments on plans: plan feedback sends them)
+  // VS Code's own UI as the core asks for it: the dashboard and the actions (Claude Code's panel, the doc tab,
+  // the changes view, the plan review's comments)
+  const editor = new VsCodeEditor(review);
   const dash = new Dashboard(host, editor, backend, notifier);
   const terminals = new Terminals((host, since) => dash.hostCheckedSince(host, since), (host, command) => backend.attachLine(host, command));
   const statusBar = new StatusBar(); // (Talpy Den's one status bar item; the account it names comes from account)
@@ -71,7 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
     else void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${message || "Couldn't answer"}`));
     dash.refreshAll();
   };
-  actions = new Actions(backend, dash, terminals, log, account);
+  actions = new Actions(host, terminals, editor, backend, dash, account);
   const accounts = new Accounts(backend, dash, terminals, account, log);
   const view = new ViewHost(context.extensionUri, dash, actions, context.globalState);
   // The Monday recap: once a week, the last 7 days in a few words; Open the
@@ -101,14 +110,6 @@ export function activate(context: vscode.ExtensionContext): void {
   const a = actions;
   const hiddenShown = new Map<HiddenKind, number>(); // (what the context keys say)
   let needsYouShown = false;
-  // (the plans in projects' own plans folders the view lists: their files take comments and feedback too)
-  const projectPlans = (): Set<string> => {
-    const groups = dash.state().status?.groups ?? [];
-    return new Set([...groups.flatMap((g) => [...(g.plans ?? []), ...(g.starredPlans ?? [])]), ...(dash.projectsRead()?.projects ?? []).flatMap((p) => p.plans)]
-      .filter((p) => p.inProject).map((p) => p.path));
-  };
-  const review = new PlanReview(extraConfigDirs, projectPlans);
-  a.planReview = review;
   // (Send Feedback's button: plans in ~/.claude*, in talpyDen.extraConfigDirs' folders and in the projects' plans folders listed)
   let planFoldersSet: string | null = null;   // (what the context key says: set the first time, then on a change)
   const planFolders = () => {
@@ -225,7 +226,7 @@ export function activate(context: vscode.ExtensionContext): void {
             log.warn(`Ignored a link that isn't a plan or a run of Talpy Den's: ${uri.toString()}`);
             return;
           }
-          const error = await openAgentRunFile(file);
+          const error = await editor.showDoc(file);
           if (error) void vscode.window.showErrorMessage(noLinks(`Talpy Den: couldn't show ${file}: ${error}`));
           return;
         }

