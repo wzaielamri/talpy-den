@@ -6,8 +6,8 @@ chat's row in the popup or the view (AgentTree.qml, AgentTree.tsx: what each
 does now, the running ones first, click one for its task, steps and report).
 The line unfolds only the tasks (without a task list, where the line is about
 the subagents, only them); the header's Agents tag unfolds only the subagents.
-With both shown, a muted "Subagents" heading sits over the subagents' tree, so
-it doesn't look like part of the task list. Hidden without either; what's
+With a task list, a muted "Subagents" heading sits over the subagents' tree
+whenever it is shown, so it doesn't look like part of the task line or list. Hidden without either; what's
 unfolded is made only then, so the window opens as quickly."""
 import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import re
@@ -77,7 +77,7 @@ class PlasmaStripTests(unittest.TestCase):
         strip = self.strip()
         heading = strip[strip.index("// its subagents, as under its row"):strip.index("AgentTree {")]
         self.assertIn('text: i18n("Subagents")', heading)
-        self.assertIn("visible: pane.tasksOpen && pane.tasks !== null && pane.agentsOpen && pane.agents !== null", heading)
+        self.assertIn("visible: pane.tasks !== null && pane.agentsOpen && pane.agents !== null", heading)
         self.assertIn("color: pane.mutedColor", heading)
         self.assertIn("Layout.topMargin", heading)
         self.assertIn("Layout.topMargin: pane.tasksOpen && pane.tasks ? Kirigami.Units.smallSpacing : 0", strip)
@@ -139,7 +139,7 @@ class VsCodeStripTests(unittest.TestCase):
 
     def test_with_both_shown_a_muted_subagents_heading_parts_them(self):
         strip = self.strip()
-        self.assertIn('{open.tasks && tasks && open.agents && agents ? <div class="pane-tasks-sub">Subagents</div> : null}', strip)
+        self.assertIn('{tasks && open.agents && agents ? <div class="pane-tasks-sub">Subagents</div> : null}', strip)
         self.assertIn(".pane-tasks-sub {", (ROOT / "vscode/webview/styles.css").read_text())
 
     def test_the_headers_agents_tag_unfolds_its_subagents(self):

@@ -3538,7 +3538,7 @@ Window {
             // ▸ the one it's on, ○ to do) and its subagents as under its row in the popup (AgentTree.qml:
             // what each does now, the running ones first; click one for more), made only then (the
             // window opens as quickly). The line unfolds only the tasks (without a task list, the subagents);
-            // the header's Agents tag unfolds only its subagents. With both shown, a heading parts them.
+            // the header's Agents tag unfolds only its subagents. With a task list, a heading parts the subagents from it.
             ColumnLayout {
                 visible: pane.tasks !== null || pane.agents !== null
                 Layout.fillWidth: true
@@ -3648,11 +3648,11 @@ Window {
                                 }
                             }
                             // its subagents, as under its row in the popup, under a heading
-                            // when the tasks are shown above them
+                            // when it has a task list (its line is about the tasks, not them)
                             PlasmaComponents3.Label {
                                 Layout.fillWidth: true
                                 Layout.topMargin: Kirigami.Units.smallSpacing
-                                visible: pane.tasksOpen && pane.tasks !== null && pane.agentsOpen && pane.agents !== null
+                                visible: pane.tasks !== null && pane.agentsOpen && pane.agents !== null
                                 text: i18n("Subagents")
                                 textFormat: Text.PlainText
                                 color: pane.mutedColor

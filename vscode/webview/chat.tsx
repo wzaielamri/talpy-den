@@ -451,7 +451,7 @@ function ToolLine({ item, open, outWhole, onOut, onToggle, asking, going, gap, s
 // subagents as under its row (AgentTree.tsx: what each does now, the running
 // ones first; click one for more), made only then. Its line unfolds or folds
 // the tasks only (open.tasks; without a task list, the subagents); the header's Agents tag
-// unfolds only its subagents (open.agents). With both shown, a heading parts them.
+// unfolds only its subagents (open.agents). With a task list, a heading parts the subagents from it.
 export interface StripOpen {
   tasks: boolean;
   agents: boolean;
@@ -492,7 +492,7 @@ function TaskStrip({ tasks, agents, open, setOpen, host }: {
               ))}
             </ul>
           ) : null}
-          {open.tasks && tasks && open.agents && agents ? <div class="pane-tasks-sub">Subagents</div> : null}
+          {tasks && open.agents && agents ? <div class="pane-tasks-sub">Subagents</div> : null}
           {open.agents && agents ? (
             <AgentTree tree={agentsRunningFirst(agents.tree)} now={Date.now()} rowKey="pane" host={host || undefined} opened={details}
               onToggle={(key) => setDetails((was) => ({ ...was, [key]: !was[key] }))}

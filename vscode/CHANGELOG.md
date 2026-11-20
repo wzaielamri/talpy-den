@@ -9,7 +9,8 @@
   subagents together, so the subagents looked like part of the task list. Now
   it opens and folds only the tasks (a chat without a task list: its
   subagents, as its line says), the header's Agents tag only the subagents,
-  and with both shown a small "Subagents" heading sits over the subagents.
+  and with a task list a small "Subagents" heading sits over the subagents
+  whenever they are shown.
   The shortcut does what the line does.
 
 - **Faster on SSH hosts and containers over a slow connection.** Nothing is
