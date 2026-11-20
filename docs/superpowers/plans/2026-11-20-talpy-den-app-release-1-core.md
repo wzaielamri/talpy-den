@@ -17,8 +17,9 @@ plan so new chats can follow up"). A new chat resumes from here: read this
 section, then the next open task.
 
 - **Execution:** subagent-driven (owner, 2026-11-20). A fresh agent implements each task, a fresh reviewer checks it before the next one, and the whole branch is reviewed at the end.
-- **Branch:** set when execution starts (from `main`, after the VS Code UI animation work is merged).
-- **Before Task 1:** the VS Code webview animation fix (a separate branch, worked on by an agent on 2026-11-20) must be reviewed and merged into `main`. Status: running.
+- **Branch:** `worktree-app-core-r1`, in the worktree `.claude/worktrees/app-core-r1` (from `main` f90282e9; commit a140142c ignores `.superpowers/`).
+- **Execution ledger:** `.superpowers/sdd/2026-11-20-talpy-den-app-release-1-core/progress.md` in that worktree (git-ignored scratch). It holds the pre-flight scan and its rulings: R1, `live.test.ts` moves in Task 8; R2, Task 4's `cacheDir` test names the rule `cacheDir()` follows today; R3, VS Code-side subscriptions adapt to the core's single-argument `Event`; R4, Task 12 Step 4 waits for the owner's go-ahead.
+- **Before Task 1:** the VS Code webview animation fix (an agent's branch `worktree-agent-…` in `.claude/worktrees/agent-…`, started 2026-11-20) must be reviewed and merged into `main`, then `main` merged into `worktree-app-core-r1`. Status: the agent is still running. **If this chat ends first:** check `git worktree list` and the agent's branch for commits; review them (tests: `cd vscode && npm run check && npm test`, `python3 -m unittest discover -s tests`); merge when they're good; then start Task 1.
 
 | Task | Status | Commits | Review | Notes |
 |---|---|---|---|---|
