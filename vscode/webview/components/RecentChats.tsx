@@ -1,6 +1,6 @@
 import { useEffect } from "preact/hooks";
-import { pagedTitle, pageSizeOf, recentPage } from "../../src/shared/model";
-import type { Group, ReopenIn } from "../../src/shared/types";
+import { pagedTitle, pageSizeOf, recentPage } from "../../../core/src/shared/model";
+import type { Group, ReopenIn } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { groupKeyOf } from "../util/chat";
 import { I, Icon, type IconName, TalpyChatLogo } from "../util/icons";

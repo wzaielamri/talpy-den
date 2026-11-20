@@ -24,8 +24,8 @@ import {
   talpyPlace,
   terminalReopenHint,
   thisWindowFirst,
-} from "../src/shared/model";
-import type { Group, PlanItem } from "../src/shared/types";
+} from "../../core/src/shared/model";
+import type { Group, PlanItem } from "../../core/src/shared/types";
 import * as vscode from "vscode";
 import type { AccountSwitch } from "../src/accountSwitch";
 import { Actions, typedFolder } from "../src/actions";

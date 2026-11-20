@@ -1,7 +1,7 @@
-import { hostLabel } from "../../src/shared/model";
+import { hostLabel } from "../../../core/src/shared/model";
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { PermsData, WeekGrant, WeekRule } from "../../src/shared/types";
-import { GRANTED_FEW, grantedIntro, grantMeaning, grantMeta, promptsText, ruleMeaning, ruleMeta } from "../../src/shared/week";
+import type { PermsData, WeekGrant, WeekRule } from "../../../core/src/shared/types";
+import { GRANTED_FEW, grantedIntro, grantMeaning, grantMeta, promptsText, ruleMeaning, ruleMeta } from "../../../core/src/shared/week";
 import { I, Icon, T } from "../util/icons";
 import { post } from "../env";
 import { useViewVisible } from "../util/petStage";

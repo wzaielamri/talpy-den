@@ -9,7 +9,7 @@ import { Actions } from "../src/actions";
 import type { Backend } from "../src/backend";
 import type { Dashboard } from "../src/dashboard";
 import { canRaiseWindows, gnomeRaiserRunning, isGnome, isKde } from "../src/desktop";
-import type { ChatRef } from "../src/shared/types";
+import type { ChatRef } from "../../core/src/shared/types";
 import type { Terminals } from "../src/terminals";
 
 const on = (desktop: string) => ({ XDG_CURRENT_DESKTOP: desktop });

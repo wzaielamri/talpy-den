@@ -50,9 +50,9 @@ import {
   talpyChatHere,
   talpyChatOff,
   talpyPlace,
-} from "./shared/model";
-import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "./shared/types";
-import { remoteControlPage } from "./shared/pane";
+} from "../../core/src/shared/model";
+import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "../../core/src/shared/types";
+import { remoteControlPage } from "../../core/src/shared/pane";
 import { asPaste, attachClients, localAncestors, type Place, type Terminals } from "./terminals";
 import type { PlanReview } from "./planReview";
 import type { ChatPanes } from "./chatPane";

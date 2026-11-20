@@ -9,7 +9,7 @@ import * as vscode from "vscode";
 import type { Backend } from "../src/backend";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";
-import { demoState } from "../src/shared/demo";
+import { demoState } from "../../core/src/shared/demo";
 import { asPaste, Terminals } from "../src/terminals";
 
 const stub = vscode as unknown as typeof import("./vscode-stub");

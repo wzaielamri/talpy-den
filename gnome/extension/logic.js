@@ -1526,7 +1526,7 @@ export function chatRecapTooltip(stats, costUsd, now) {
 
 // ---------------------------------------------------------------- the week
 // The Recap tab (ui/weekView.js), from the recap of week.py; as the Plasma
-// widget's WeekView.qml and the VS Code extension's src/shared/week.ts say it.
+// widget's WeekView.qml and the core's core/src/shared/week.ts say it.
 
 const WEEKDAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
@@ -1919,7 +1919,7 @@ export function weekArgs(back, account, shownHosts, remote, configDirArgs, curre
 
 // ---------------------------------------------------------------- advanced analyses: how your limits changed
 // (the Recap's folded section, week.py --limits; the same words as VS Code's
-// src/shared/week.ts and Plasma's WeekView.qml)
+// core/src/shared/week.ts and Plasma's WeekView.qml)
 
 // week.py --limits' arguments: an account's or all, in the Recap's currency
 export function limitsArgs(account, configDirArgs, currency = 'USD') {

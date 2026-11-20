@@ -2,7 +2,7 @@
 // input when it changed, and animations only while someone can see them.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { ChatRef, Session } from "../../src/shared/types";
+import type { ChatRef, Session } from "../../../core/src/shared/types";
 import { post } from "../env";
 import type { AccountInput, HeroInput, PetStage, StageCallbacks } from "../pets/api";
 import { useStore } from "./store";

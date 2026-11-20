@@ -3,7 +3,7 @@
 // resets.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { demoState } from "../src/shared/demo";
+import { demoState } from "../../core/src/shared/demo";
 import {
   countStates,
   findPlan,
@@ -16,8 +16,8 @@ import {
   stopText,
   summaryText,
   toLocalClock,
-} from "../src/shared/model";
-import type { Group, Session, Status, Stop } from "../src/shared/types";
+} from "../../core/src/shared/model";
+import type { Group, Session, Status, Stop } from "../../core/src/shared/types";
 import { mergeChanges, TransitionTracker } from "../src/transitions";
 
 const NOW = 1_800_000_000_000;

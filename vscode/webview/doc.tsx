@@ -8,7 +8,7 @@
 
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { clipboardCode } from "../src/shared/pane";
+import { clipboardCode } from "../../core/src/shared/pane";
 import { Markdown } from "./util/markdown";
 
 declare global {

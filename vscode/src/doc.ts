@@ -12,7 +12,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { noLinks } from "./notify";
-import { textScale } from "./shared/pane";
+import { textScale } from "../../core/src/shared/pane";
 
 let extensionUri: vscode.Uri | undefined;
 

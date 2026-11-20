@@ -1,5 +1,5 @@
-import { hostLabel, summaryText, tooltipLines } from "../../src/shared/model";
-import type { Counts, Group, HostState, Overall } from "../../src/shared/types";
+import { hostLabel, summaryText, tooltipLines } from "../../../core/src/shared/model";
+import type { Counts, Group, HostState, Overall } from "../../../core/src/shared/types";
 import { editorTab, post } from "../env";
 import { useViewVisible } from "../util/petStage";
 import { useStore } from "../util/store";

@@ -1,6 +1,6 @@
 // The Recap's plan limits over time (WeekView.qml, week.py --limits): the
-// chart's places and the parts of what fills a window, as VS Code's
-// src/shared/week.ts works them out. The words are WeekView.qml's
+// chart's places and the parts of what fills a window, as the core's
+// core/src/shared/week.ts works them out. The words are WeekView.qml's
 // (translated there).
 
 const ORDER = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"]

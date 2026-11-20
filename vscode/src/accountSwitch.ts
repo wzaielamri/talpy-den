@@ -15,8 +15,8 @@ import type { Backend } from "./backend";
 import { configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
-import { hostLabel, machineStatus } from "./shared/model";
-import type { Group, ViewState } from "./shared/types";
+import { hostLabel, machineStatus } from "../../core/src/shared/model";
+import type { Group, ViewState } from "../../core/src/shared/types";
 import { profileDirs } from "./statusline";
 import { configDirFor, withConfigDir } from "./vscodeAccount";
 

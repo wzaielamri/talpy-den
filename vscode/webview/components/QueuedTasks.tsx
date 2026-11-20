@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
-import { duration, hostLabel, keptChat, machineStatus, onItsRow, queuedFor, queuedWhat, startText } from "../../src/shared/model";
-import type { Group, QueuedTask } from "../../src/shared/types";
+import { duration, hostLabel, keptChat, machineStatus, onItsRow, queuedFor, queuedWhat, startText } from "../../../core/src/shared/model";
+import type { Group, QueuedTask } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { Icon, I, T } from "../util/icons";
 import { useWoken } from "../util/lazy";

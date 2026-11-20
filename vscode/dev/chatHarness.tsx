@@ -2,7 +2,7 @@
 // chat, its conversation, and its review when the page asks for it.
 
 import "../webview/chat";
-import { entryOf, unhookedText, type Asks, type Bookmark, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type ReviewAnswer, type Side, type UsualReplies } from "../src/shared/pane";
+import { entryOf, unhookedText, type Asks, type Bookmark, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type ReviewAnswer, type Side, type UsualReplies } from "../../core/src/shared/pane";
 
 const params = new URLSearchParams(location.search);
 const now = Date.now();

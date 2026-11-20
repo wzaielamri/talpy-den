@@ -16,7 +16,7 @@ import * as vscode from "vscode";
 import { runProcess } from "./backend";
 import { expandHome, extraConfigDirs } from "./config";
 import { noLinks } from "./notify";
-import { shellQuote } from "./shared/model";
+import { shellQuote } from "../../core/src/shared/model";
 
 export const MARK_START = "# >>> talpy-den >>>";
 // (an older copy of it is named claude-widget, after the first name)

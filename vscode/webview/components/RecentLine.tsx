@@ -1,6 +1,6 @@
-import { ago, claudeCodeHere, claudeCodeReopenHint, cliInstalled, folderIn, goOnAt, hostLabel, keptChat, keptTitle, machineStatus, openChatsIn, queuedChat, startText, stopText, talpyChatHere, talpyChatHint, talpyChatTitle, talpyPlace, terminalReopenHint } from "../../src/shared/model";
-import { reviewPending, testsText } from "../../src/shared/pane";
-import type { Group, RecentChat, ViewState } from "../../src/shared/types";
+import { ago, claudeCodeHere, claudeCodeReopenHint, cliInstalled, folderIn, goOnAt, hostLabel, keptChat, keptTitle, machineStatus, openChatsIn, queuedChat, startText, stopText, talpyChatHere, talpyChatHint, talpyChatTitle, talpyPlace, terminalReopenHint } from "../../../core/src/shared/model";
+import { reviewPending, testsText } from "../../../core/src/shared/pane";
+import type { Group, RecentChat, ViewState } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { canShareRecent, deleteHint, recentRef, shareTitle } from "../util/chat";
 import { useWoken } from "../util/lazy";

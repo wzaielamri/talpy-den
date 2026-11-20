@@ -14,8 +14,8 @@
 // onto a project of its own machine.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Group, HostProjects, ProjectRow, Session } from "../../src/shared/types";
-import { containerOf, duration, folderIn, groupOfProfile, hiddenCount, hostLabel, listedChats, openChatsByProject, pagedTitle, pageSizeOf, projectLists, stateText } from "../../src/shared/model";
+import type { Group, HostProjects, ProjectRow, Session } from "../../../core/src/shared/types";
+import { containerOf, duration, folderIn, groupOfProfile, hiddenCount, hostLabel, listedChats, openChatsByProject, pagedTitle, pageSizeOf, projectLists, stateText } from "../../../core/src/shared/model";
 import { post } from "../env";
 import { hideHint } from "../util/chat";
 import { I, Icon } from "../util/icons";

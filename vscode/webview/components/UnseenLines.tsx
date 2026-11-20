@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { containerOf, hostLabel, startText, unseenHostItems, type UnseenItem } from "../../src/shared/model";
+import { containerOf, hostLabel, startText, unseenHostItems, type UnseenItem } from "../../../core/src/shared/model";
 import { post } from "../env";
 import { Icon, I, T } from "../util/icons";
 import { useView } from "./context";

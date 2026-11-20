@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { containerOf, shellQuote } from "./shared/model";
+import { containerOf, shellQuote } from "../../core/src/shared/model";
 import { controlOptions } from "./sshControl";
 
 export type Place = { kind: "local" } | { kind: "windowHost" } | { kind: "ssh"; host: string };

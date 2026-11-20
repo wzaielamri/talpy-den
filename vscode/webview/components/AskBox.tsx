@@ -3,7 +3,7 @@
 // chat tab (a change it asks for as CodeView.tsx draws it).
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Answers, Decision, PermissionAsk, Question } from "../../src/shared/types";
+import type { Answers, Decision, PermissionAsk, Question } from "../../../core/src/shared/types";
 import { I, Icon, T } from "../util/icons";
 import { Markdown } from "../util/markdown";
 import { Diff } from "./CodeView";

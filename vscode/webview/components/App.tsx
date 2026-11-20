@@ -10,9 +10,9 @@ import {
   overallState,
   stateText,
   thisWindowFirst,
-} from "../../src/shared/model";
+} from "../../../core/src/shared/model";
 import { Component, type ComponentChildren } from "preact";
-import type { HostState, ViewState } from "../../src/shared/types";
+import type { HostState, ViewState } from "../../../core/src/shared/types";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { editorTab } from "../env";
 import { pets } from "../pets";

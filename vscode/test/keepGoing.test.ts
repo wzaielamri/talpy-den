@@ -13,9 +13,9 @@ import type { Backend } from "../src/backend";
 import { chatOptionArgs } from "../src/config";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";
-import { demoState } from "../src/shared/demo";
-import { clockText, findChatRef, findPlan, keptChat, keptTitle, limitReset, resetAtText, toLocalClock, unseenHostItems } from "../src/shared/model";
-import type { Group, KeptChat, QueuedTask } from "../src/shared/types";
+import { demoState } from "../../core/src/shared/demo";
+import { clockText, findChatRef, findPlan, keptChat, keptTitle, limitReset, resetAtText, toLocalClock, unseenHostItems } from "../../core/src/shared/model";
+import type { Group, KeptChat, QueuedTask } from "../../core/src/shared/types";
 
 const NOW = new Date(2026, 9, 24, 10, 0).getTime();
 

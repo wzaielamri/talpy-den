@@ -2,7 +2,7 @@
 
 import { followMovedRows, gotRecentMore, setTab } from "./util/ui";
 import { render } from "preact";
-import type { HostMessage } from "../src/shared/types";
+import type { HostMessage } from "../../core/src/shared/types";
 import { App } from "./components/App";
 import { gotDeleteAsk } from "./components/DeleteAsk";
 import { gotMoveAsk } from "./components/MoveAsk";

@@ -362,14 +362,6 @@ test("a new account's name: the backend's rule, and not one there already", () =
   for (const bad of ["", "1st", "a b", "../x", "x".repeat(33)]) assert.notEqual(accountNameProblem(bad, folders), "", bad);
 });
 
-test("a row's open details stay open when its chat changes kind (a background session ends: live → job)", async () => {
-  const { rowKeyOf } = await import("../webview/util/chat");
-  const live = { key: ".claude-work/s1/live", profileDir: ".claude-work", sessionId: "s1", chatId: "c1" };
-  assert.equal(rowKeyOf(live, "lab"), rowKeyOf({ ...live, key: ".claude-work/s1/job" }, "lab"));
-  assert.equal(rowKeyOf(live, "lab"), "lab|.claude-work/c1");
-  assert.equal(rowKeyOf({ ...live, chatId: "" }), ".claude-work/s1");
-});
-
 test("an account's plan usage line and token line read as in the widget", () => {
   const limits = (ago: number) => ({ updatedAt: NOW - ago, windows: [] }) as unknown as Parameters<typeof planUsageText>[0];
   assert.equal(planUsageText(limits(20_000), "", NOW), "Plan usage updated just now");

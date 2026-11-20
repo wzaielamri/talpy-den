@@ -8,9 +8,9 @@ import type * as vscode from "vscode";
 import type { Backend } from "../src/backend";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";
-import { demoState } from "../src/shared/demo";
-import { chatRefOf, petKeyOf } from "../src/shared/model";
-import type { Session, Status } from "../src/shared/types";
+import { demoState } from "../../core/src/shared/demo";
+import { chatRefOf, petKeyOf } from "../../core/src/shared/model";
+import type { Session, Status } from "../../core/src/shared/types";
 
 const NOW = 1_800_000_000_000;
 

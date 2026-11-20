@@ -1,6 +1,6 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
-import type { ViewState } from "../../src/shared/types";
+import type { ViewState } from "../../../core/src/shared/types";
 
 // The latest state from the extension, for the components deep in the list
 export const ViewContext = createContext<ViewState | null>(null);

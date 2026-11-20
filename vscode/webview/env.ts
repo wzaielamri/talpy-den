@@ -1,6 +1,6 @@
 // What the extension hands the webview, and the way back to it.
 
-import type { WebviewMessage } from "../src/shared/types";
+import type { WebviewMessage } from "../../core/src/shared/types";
 
 interface VsCodeApi {
   postMessage(message: unknown): void;

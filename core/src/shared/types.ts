@@ -1,6 +1,8 @@
 // What vendor/code/talpy_den.py prints (its collect(), plus the --remote
 // additions), and the messages between the extension and its webview.
 
+import type { AgentId } from "../agents";
+
 export type SessionState = "waiting" | "working" | "idle" | "done";
 
 export interface Agent {
@@ -221,6 +223,7 @@ export interface Session {
   sessionId: string;
   chatId: string;
   starred?: boolean; // you starred it: once it isn't listed, it stays under Starred
+  agent?: AgentId; // which coding agent; absent means "claude-code"
   pid: number | null;
   name: string;
   cwd: string;
@@ -496,6 +499,7 @@ export interface SharedPointer {
 
 export interface Group {
   id: string;
+  agent?: AgentId; // which coding agent this account is of; absent means "claude-code"
   name: string;
   plan: string | null;
   title: string;

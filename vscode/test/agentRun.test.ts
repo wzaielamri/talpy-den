@@ -14,8 +14,8 @@ import { cacheDir } from "../src/config";
 import { docHtml, docTitle, initDocs } from "../src/doc";
 import { planFileOf } from "../src/planReview";
 import { windowHostFile } from "../src/remoteHost";
-import { agentsNow, agentsRunningFirst } from "../src/shared/model";
-import type { Agent } from "../src/shared/types";
+import { agentsNow, agentsRunningFirst } from "../../core/src/shared/model";
+import type { Agent } from "../../core/src/shared/types";
 
 test("the run is saved by jump.py here and by remote.py for an SSH host", () => {
   const chat = { sessionId: "s1", chatId: "c1", profileDir: ".claude-work" };

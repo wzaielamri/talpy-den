@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { reducedMotion } from "../pets/motion";
-import { chatRefOf, hostLabel, type TickerItem, tickerItems, TickerTurns } from "../../src/shared/model";
-import type { Group } from "../../src/shared/types";
+import { chatRefOf, hostLabel, type TickerItem, tickerItems, TickerTurns } from "../../../core/src/shared/model";
+import type { Group } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { useStore } from "../util/store";
 import { hostVisible, liveViews, pageVisible } from "../util/stores";

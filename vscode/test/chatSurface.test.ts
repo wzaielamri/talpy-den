@@ -7,8 +7,8 @@ import { test } from "node:test";
 import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
 import { emptyHtml, emptyView, sideBarSupported, ViewSurface } from "../src/chatSurface";
-import { demoState } from "../src/shared/demo";
-import { chatRefOf } from "../src/shared/model";
+import { demoState } from "../../core/src/shared/demo";
+import { chatRefOf } from "../../core/src/shared/model";
 import { changeSettings, overrides, recorded, setVersion } from "./vscode-stub";
 
 const NOW = 1_800_000_000_000;

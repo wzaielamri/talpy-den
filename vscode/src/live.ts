@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { LiveView } from "./shared/types";
+import type { LiveView } from "../../core/src/shared/types";
 
 // what a live file's last event must be to ask for a check now (live.py's URGENT_EVENTS)
 const URGENT_EVENTS = new Set(["UserPromptSubmit", "Stop", "StopFailure", "PermissionRequest", "Notification", "SessionStart",

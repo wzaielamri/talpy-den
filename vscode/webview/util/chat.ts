@@ -2,8 +2,8 @@
 // extension does the work (open, stop, share, menus); the webview only says
 // which chat, as a ChatRef.
 
-import { canEndChat, HIDDEN_NOUNS, type HiddenKind, petKeyOf, shareAccounts, containerOf, hostLabel } from "../../src/shared/model";
-import type { ChatRef, Group, RecentChat, Session, SharedPointer, Status } from "../../src/shared/types";
+import { canEndChat, HIDDEN_NOUNS, type HiddenKind, petKeyOf, shareAccounts, containerOf, hostLabel } from "../../../core/src/shared/model";
+import type { ChatRef, Group, RecentChat, Session, SharedPointer, Status } from "../../../core/src/shared/types";
 import type { StageChat } from "../pets/api";
 
 // An account's key: ids are only unique per machine
@@ -18,7 +18,7 @@ export function rowKeyOf(s: Pick<Session, "key" | "profileDir" | "sessionId" | "
 }
 
 // (built where the extension can rebuild them from its own state: model.ts)
-export { chatRefOf, recentRef, sharedRef } from "../../src/shared/model";
+export { chatRefOf, recentRef, sharedRef } from "../../../core/src/shared/model";
 
 // The account's chats for its pet stage: the ones that need you or work
 // first, one per conversation (a chat can have a running and a finished row)

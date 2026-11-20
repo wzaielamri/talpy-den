@@ -191,7 +191,7 @@ PlasmaComponents3.ScrollView {
 
     // ---------------------------------------------------------------- your plan's limits over time
     // Overall's last section (week.py --limits, main.qml: loadLimits): the
-    // same words as VS Code's src/shared/week.ts and GNOME's logic.js; the
+    // same words as the core's core/src/shared/week.ts and GNOME's logic.js; the
     // charts' places from limits.mjs. Its numbers are asked for only once it
     // scrolls into view (the view's place against the section's: no timer),
     // again for another account and after a Refresh or the tab's 10-minute
@@ -662,7 +662,7 @@ PlasmaComponents3.ScrollView {
     // ---------------------------------------------------------------- your plan
     // What the days shown meant for each account's plan (week.py plan_use),
     // and a project's, chat's or day's share of its week: the same words as
-    // VS Code's src/shared/week.ts
+    // the core's core/src/shared/week.ts
     readonly property var planUse: recap && recap.planUse ? recap.planUse : []
     // (its accounts: those with a line, then any with windows now and none)
     readonly property var planIds: planUse.map(u => u.account)
@@ -843,7 +843,7 @@ PlasmaComponents3.ScrollView {
     }
 
     // ---------------------------------------------------------------- what a tip offers a chat
-    // (the same rules as VS Code's src/shared/week.ts tipChatAct): the chat
+    // (the same rules as the core's core/src/shared/week.ts tipChatAct): the chat
     // as the chat list has it now ({row, group}: a row, else a recent chat),
     // or null
     function listedOf(c) {
@@ -916,7 +916,7 @@ PlasmaComponents3.ScrollView {
     // ---------------------------------------------------------------- where the usage went
     // (week.py usage_mix: by subagents, over 150k of context, by effort
     // level, weighed as /usage weighs it; the same words as VS Code's
-    // src/shared/week.ts)
+    // core/src/shared/week.ts)
     readonly property var usageMix: recap && recap.usageMix ? recap.usageMix : []
     function mixLabel(key) {
         return key === "subagents" ? i18n("Subagents") : key === "long_context" ? i18n("Context over 150k")

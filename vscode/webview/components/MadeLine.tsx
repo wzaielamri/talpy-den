@@ -5,7 +5,7 @@
 // extension: pane.py --made, a picture as a data: URL), again at each unfold (the file as it
 // is now; a picture Claude read: what it saw, from the transcript)
 import { useEffect, useRef, useState } from "preact/hooks";
-import { madeAsk, madeLine, type PaneHostMessage, type PaneItem, type PaneMessage } from "../../src/shared/pane";
+import { madeAsk, madeLine, type PaneHostMessage, type PaneItem, type PaneMessage } from "../../../core/src/shared/pane";
 import { I, Icon } from "../util/icons";
 import { Markdown } from "../util/markdown";
 

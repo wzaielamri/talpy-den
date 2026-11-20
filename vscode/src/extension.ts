@@ -22,7 +22,7 @@ import { carryOverSettings, settingNames } from "./legacySettings";
 import { noLinks, Notifier } from "./notify";
 import { findJobRef, OpenWatch } from "./openRequests";
 import { PlanReview, planFileOf } from "./planReview";
-import { allGroups, countStates, duration, hiddenCount, type HiddenKind } from "./shared/model";
+import { allGroups, countStates, duration, hiddenCount, type HiddenKind } from "../../core/src/shared/model";
 import { NEW_CHAT_HERE } from "./chatSurface";
 import { StatusBar } from "./statusBar";
 import { registerPreview, setUpUsageBars } from "./statusline";

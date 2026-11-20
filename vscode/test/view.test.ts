@@ -5,9 +5,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
-import { demoProjects, demoState } from "../src/shared/demo";
-import { badgeOf, chatRefOf, findProjectChat, recentRef } from "../src/shared/model";
-import type { ProjectsData, RecentChat, ViewState } from "../src/shared/types";
+import { demoProjects, demoState } from "../../core/src/shared/demo";
+import { badgeOf, chatRefOf, findProjectChat, recentRef } from "../../core/src/shared/model";
+import type { ProjectsData, RecentChat, ViewState } from "../../core/src/shared/types";
 import { ViewHost } from "../src/view";
 import { recorded } from "./vscode-stub";
 

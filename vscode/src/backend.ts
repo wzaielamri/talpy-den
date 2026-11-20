@@ -7,8 +7,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isComparison, type Comparison } from "./changes";
 import { cleanupSettingOf, cleanupStatusOf, type CleanupSetting, type CleanupStatus } from "./oldChats";
-import { hostLabel, shellQuote } from "./shared/model";
-import type { ContainerInfo, ContainerNote, FoundChat, FoundMemory, FoundPlan, FoundProject, HostProjects, LimitHistory, PermsData, ProjectRow, ProjectsData, Status, WeekRecap } from "./shared/types";
+import { hostLabel, shellQuote } from "../../core/src/shared/model";
+import type { ContainerInfo, ContainerNote, FoundChat, FoundMemory, FoundPlan, FoundProject, HostProjects, LimitHistory, PermsData, ProjectRow, ProjectsData, Status, WeekRecap } from "../../core/src/shared/types";
 
 export const REMOTE_MARK = "@@talpy-den@@";
 const KILL_GRACE_MS = 3000;

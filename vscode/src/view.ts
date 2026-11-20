@@ -1,6 +1,6 @@
 // The webview: in the Activity Bar view, and optionally as an editor tab.
 // Both get the same page and the same state; the page only talks to the
-// extension through messages (src/shared/types.ts), never to the network.
+// extension through messages (core/src/shared/types.ts), never to the network.
 
 import * as crypto from "node:crypto";
 import * as vscode from "vscode";
@@ -9,11 +9,11 @@ import { AGENT_ID } from "./agentRun";
 import type { ChatPanes } from "./chatPane";
 import { setReopenIn, settings } from "./config";
 import type { Dashboard } from "./dashboard";
-import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, nextBest, shareAccounts } from "./shared/model";
-import { answersOf, askShownOf } from "./shared/pane";
-import { permsHost, weekAsked, weekRevokeAsked, weekRuleAsked } from "./shared/week";
-import type { ChatRef, GameName, Group, HostMessage, Memory, PlanItem, ProjectsData, ScoredGame, WebviewMessage } from "./shared/types";
-import { isDecision } from "./shared/types";
+import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, nextBest, shareAccounts } from "../../core/src/shared/model";
+import { answersOf, askShownOf } from "../../core/src/shared/pane";
+import { permsHost, weekAsked, weekRevokeAsked, weekRuleAsked } from "../../core/src/shared/week";
+import type { ChatRef, GameName, Group, HostMessage, Memory, PlanItem, ProjectsData, ScoredGame, WebviewMessage } from "../../core/src/shared/types";
+import { isDecision } from "../../core/src/shared/types";
 
 const CHAT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const PROFILE_DIR = /^[A-Za-z0-9._-]{1,100}$/;

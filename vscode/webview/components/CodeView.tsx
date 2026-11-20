@@ -8,7 +8,7 @@
 import type { ComponentChildren } from "preact";
 import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { changed, diffRows, highlight, language, pairs, readLines, splitRows, type DiffRow } from "../../vendor/codeview.mjs";
-import type { PaneItem } from "../../src/shared/pane";
+import type { PaneItem } from "../../../core/src/shared/pane";
 import { I, Icon } from "../util/icons";
 
 const TAB = "    ";

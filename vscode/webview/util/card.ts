@@ -5,7 +5,7 @@
 // fixed colors: it's a picture, not part of the theme.
 
 import { BOX, LILAC, Talpy } from "../../vendor/talpy/talpy.mjs";
-import type { WeekRecap } from "../../src/shared/types";
+import type { WeekRecap } from "../../../core/src/shared/types";
 
 export const CARD_W = 1200;
 export const CARD_H = 630;

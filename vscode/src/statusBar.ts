@@ -12,8 +12,8 @@
 import * as vscode from "vscode";
 import type { AccountShown } from "./accountSwitch";
 import { settings } from "./config";
-import { allGroups, claudeCodeGroup, countStates, overallState, panelWindow, tooltipLines } from "./shared/model";
-import type { ViewState } from "./shared/types";
+import { allGroups, claudeCodeGroup, countStates, overallState, panelWindow, tooltipLines } from "../../core/src/shared/model";
+import type { ViewState } from "../../core/src/shared/types";
 
 export class StatusBar implements vscode.Disposable {
   private item = vscode.window.createStatusBarItem("talpyDen.status", vscode.StatusBarAlignment.Right, 100);

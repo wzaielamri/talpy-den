@@ -7,8 +7,8 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { test } from "node:test";
-import { demoState } from "../src/shared/demo";
-import type { Group, Overall, SessionState, ViewState } from "../src/shared/types";
+import { demoState } from "../../core/src/shared/demo";
+import type { Group, Overall, SessionState, ViewState } from "../../core/src/shared/types";
 import { StatusBar } from "../src/statusBar";
 import { recorded } from "./vscode-stub";
 

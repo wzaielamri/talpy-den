@@ -10,7 +10,7 @@
 // has the keyboard, so Enter never moves it.
 
 import { useEffect, useRef } from "preact/hooks";
-import type { MoveAnswer, MoveTarget } from "../../src/shared/types";
+import type { MoveAnswer, MoveTarget } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { I, Icon } from "../util/icons";
 import { useStore } from "../util/store";

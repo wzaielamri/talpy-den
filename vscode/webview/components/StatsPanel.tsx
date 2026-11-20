@@ -1,5 +1,5 @@
-import { dayTitle, formatTokens, modelShares, plural, statsSummary, weekdayLetter } from "../../src/shared/model";
-import type { UsageStats } from "../../src/shared/types";
+import { dayTitle, formatTokens, modelShares, plural, statsSummary, weekdayLetter } from "../../../core/src/shared/model";
+import type { UsageStats } from "../../../core/src/shared/types";
 
 // An account's last days, unfolded from its token line: tokens per day as
 // bars (today's in the accent color, its weekday's letter bold), the totals, the busiest folders and

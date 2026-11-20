@@ -1,5 +1,5 @@
-import { agentContextText, agentDetailKey, agentRunTitle, agentStatusText, agentSummary, ranFor } from "../../src/shared/model";
-import type { Agent } from "../../src/shared/types";
+import { agentContextText, agentDetailKey, agentRunTitle, agentStatusText, agentSummary, ranFor } from "../../../core/src/shared/model";
+import type { Agent } from "../../../core/src/shared/types";
 import { I, Icon } from "../util/icons";
 
 // Unfolded under a subagent (click it): what it was asked, the calls it's on

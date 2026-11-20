@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { AwayTracker } from "../src/away";
-import { demoState } from "../src/shared/demo";
-import type { Group, Session } from "../src/shared/types";
+import { demoState } from "../../core/src/shared/demo";
+import type { Group, Session } from "../../core/src/shared/types";
 import { TransitionTracker } from "../src/transitions";
 
 const NOW = 1_800_000_000_000;

@@ -3,7 +3,7 @@
 // stages: the hero (big Talpy with the headline and counts) and one stage per
 // account (a pet per chat). Ported from the widget's PetStrip.qml + Pet.qml.
 
-import type { ChatRef, Counts, GameName, ScoredGame, Session } from "../../src/shared/types";
+import type { ChatRef, Counts, GameName, ScoredGame, Session } from "../../../core/src/shared/types";
 
 // A chat that may get a pet on its account's stage
 export interface StageChat {

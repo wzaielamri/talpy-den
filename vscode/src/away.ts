@@ -9,8 +9,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { cacheDir } from "./config";
-import { duration, hostLabel } from "./shared/model";
-import type { Group, Session } from "./shared/types";
+import { duration, hostLabel } from "../../core/src/shared/model";
+import type { Group, Session } from "../../core/src/shared/types";
 import type { Changes, PetEvent } from "./transitions";
 
 const MARK_EVERY_MS = 15000; // a window in use notes it this often

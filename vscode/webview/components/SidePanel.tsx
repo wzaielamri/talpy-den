@@ -16,7 +16,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { foldedLine, SIDE_ACTIONS, SIDE_AGAIN, SIDE_FOLD_TIP, SIDE_FROM_SHOW, SIDE_UNFOLD_TIP, SIDE_ASK_WHOLE, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS,
          SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TITLE, SIDE_WHOLE, SIDE_WHOLE_TIP, sideModelLabel, sidePickLabel, sideSaw, sideState, timeText,
-         type ShownSide, type SidePick } from "../../src/shared/pane";
+         type ShownSide, type SidePick } from "../../../core/src/shared/pane";
 import { I, Icon, T } from "../util/icons";
 import { Markdown } from "../util/markdown";
 import { IconButton } from "./IconButton";

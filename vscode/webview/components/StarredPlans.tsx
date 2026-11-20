@@ -1,5 +1,5 @@
-import { pagedTitle, pageSizeOf } from "../../src/shared/model";
-import type { Group } from "../../src/shared/types";
+import { pagedTitle, pageSizeOf } from "../../../core/src/shared/model";
+import type { Group } from "../../../core/src/shared/types";
 import { groupKeyOf } from "../util/chat";
 import { I, Icon } from "../util/icons";
 import { useStore } from "../util/store";

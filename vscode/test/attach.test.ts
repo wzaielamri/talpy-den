@@ -12,7 +12,7 @@ import type { AccountSwitch } from "../src/accountSwitch";
 import { Actions } from "../src/actions";
 import type { Backend } from "../src/backend";
 import type { Dashboard } from "../src/dashboard";
-import type { ChatRef } from "../src/shared/types";
+import type { ChatRef } from "../../core/src/shared/types";
 import { attachClients, type Terminals } from "../src/terminals";
 
 const JOB = "c0ffee12";

@@ -111,7 +111,7 @@ class VsCodeStripTests(unittest.TestCase):
     def test_the_tab_gets_the_rows_tasks(self):
         pane_ts = (ROOT / "vscode/src/chatPane.ts").read_text()
         self.assertIn("tasks: session?.tasks && session.tasks.total > 0 ? session.tasks : null", pane_ts)
-        self.assertIn('tasks: Session["tasks"];', (ROOT / "vscode/src/shared/pane.ts").read_text())
+        self.assertIn('tasks: Session["tasks"];', (ROOT / "core/src/shared/pane.ts").read_text())
 
     def test_it_shows_with_a_task_list_or_subagents_and_lists_only_when_unfolded(self):
         self.assertIn("{chat?.tasks || (chat?.agents && chat.agents.total > 0) ? (", CHAT)

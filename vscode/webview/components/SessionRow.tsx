@@ -30,9 +30,9 @@ import {
   stateText,
   tasksTitle,
   usageLevel,
-} from "../../src/shared/model";
-import { attachedTag, chatWhere, remoteControlPage, remoteSwitchCan, remoteSwitchTitle, REMOTE_CONTROL_TAG, REMOTE_CONTROL_TIP, reviewPending, shownAsk, testsText, whereTag } from "../../src/shared/pane";
-import type { Group, Session } from "../../src/shared/types";
+} from "../../../core/src/shared/model";
+import { attachedTag, chatWhere, remoteControlPage, remoteSwitchCan, remoteSwitchTitle, REMOTE_CONTROL_TAG, REMOTE_CONTROL_TIP, reviewPending, shownAsk, testsText, whereTag } from "../../../core/src/shared/pane";
+import type { Group, Session } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { pets } from "../pets";
 import { canHide, canRemove, canShare, canStop, chatRefOf, deleteHint, hideHint, isBackground, openHint, rowKeyOf, sharedTagTitle, shareTitle } from "../util/chat";

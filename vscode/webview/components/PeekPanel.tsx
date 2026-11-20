@@ -1,5 +1,5 @@
-import { hostLabel, plural, recapText, recapTitle, taskMark } from "../../src/shared/model";
-import type { ChatRef, Session } from "../../src/shared/types";
+import { hostLabel, plural, recapText, recapTitle, taskMark } from "../../../core/src/shared/model";
+import type { ChatRef, Session } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { useView } from "./context";
 

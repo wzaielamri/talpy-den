@@ -3,8 +3,8 @@
 // projects and stats are open. Kept by row and account key, since every poll
 // brings new objects.
 
-import { allGroups, type RecentMore } from "../../src/shared/model";
-import type { Group, RecentChat, ViewState } from "../../src/shared/types";
+import { allGroups, type RecentMore } from "../../../core/src/shared/model";
+import type { Group, RecentChat, ViewState } from "../../../core/src/shared/types";
 import { post, savedState, saveState } from "../env";
 import { groupKeyOf, rowKeyOf } from "./chat";
 import { createStore } from "./store";
@@ -158,7 +158,7 @@ export const projectToShow = createStore("");
 // ---------------------------------------------------------------- lists a page at a time
 // How many pages past its first a list shows (by its key: an account's key
 // + "|recent", "|chats" or "|plans", a project's projectListKey), while the
-// view is open (src/shared/model.ts: recentPage, projectLists)
+// view is open (core/src/shared/model.ts: recentPage, projectLists)
 export const pages = createStore<Record<string, number>>({});
 
 export const PROJECT_LISTS = ["chats", "plans", "memories"] as const;

@@ -11,5 +11,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["./**/*.ts", "./**/*.tsx", "../src/shared/**/*.ts", "../dev/**/*.ts", "../dev/**/*.tsx"]
+  "include": ["./**/*.ts", "./**/*.tsx", "../../core/src/shared/**/*.ts", "../dev/**/*.ts", "../dev/**/*.tsx"]
 }

@@ -5,8 +5,8 @@
 
 import { clockText, formatTokens, hostLabel } from "./model";
 import type { Answers, AskShown, Decision, PermissionAsk, Question, QueuedTask, RecentChat, Review, Session, SessionState, Status } from "./types";
-import type { Bookmark } from "../../vendor/bookmarks.mjs";
-import { costNote, fromNote, SIDE_COST_TIP, SIDE_FROM_TIP, sideWarm, type Side, type SidePart } from "../../vendor/sides.mjs";
+import type { Bookmark } from "../../../vscode/vendor/bookmarks.mjs";
+import { costNote, fromNote, SIDE_COST_TIP, SIDE_FROM_TIP, sideWarm, type Side, type SidePart } from "../../../vscode/vendor/sides.mjs";
 
 // What came of a message (or a new chat's start) sent from Talpy Chat: went, to the chat itself;
 // ask: its terminal takes no text, you choose; warn: it went, but message says what's wrong
@@ -1220,15 +1220,15 @@ export function lastReply(items: readonly PaneItem[]): PaneItem | null {
 
 // Search (Ctrl+F) and folding (Show more / Show less, Ctrl+O): the widget's find.mjs, so Plasma's
 // Talpy Chat counts the same matches and folds the same texts (see there)
-export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, plainOf, type FindHit, type Fold } from "../../vendor/find.mjs";
+export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, plainOf, type FindHit, type Fold } from "../../../vscode/vendor/find.mjs";
 
 // Bookmarks (Ctrl+D, the list, Alt+↑ / Alt+↓): the widget's bookmarks.mjs, so Plasma's Talpy Chat
 // bookmarks the same messages and goes to the same one (see there)
 // Quote in reply (a selection's "Reply to this", the right-click menu): the widget's quote.mjs, as Plasma's
-export { QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote } from "../../vendor/quote.mjs";
-export { adoptable, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, oneLine, SNIPPET_CHARS, snippetOf, stateOf, staysOpen, step as bookmarkStep, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, type BookmarkStep } from "../../vendor/bookmarks.mjs";
+export { QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote } from "../../../vscode/vendor/quote.mjs";
+export { adoptable, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, oneLine, SNIPPET_CHARS, snippetOf, stateOf, staysOpen, step as bookmarkStep, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, type BookmarkStep } from "../../../vscode/vendor/bookmarks.mjs";
 // Side questions (the side panel, "Explain this"): the widget's sides.mjs, as Plasma's
-export { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, pickLabel as sidePickLabel, SIDE_ACTIONS, SIDE_AGAIN, SIDE_BUTTON, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_COST_TIP, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS, SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TIP, SIDE_TITLE, sideModelLabel, sideState, sideWarm, tokensText, WARM_MS, SIDE_FROM_MENU, SIDE_FROM_TIP, SIDE_FROM_LINE, SIDE_FROM_SHOW, SIDE_FOLD_TIP, SIDE_UNFOLD_TIP, foldedLine, SIDE_WHOLE, SIDE_WHOLE_TIP, SIDE_ASK_WHOLE, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, fromNote, sideSaw, type Side, type SidePart } from "../../vendor/sides.mjs";
+export { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, pickLabel as sidePickLabel, SIDE_ACTIONS, SIDE_AGAIN, SIDE_BUTTON, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_COST_TIP, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS, SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TIP, SIDE_TITLE, sideModelLabel, sideState, sideWarm, tokensText, WARM_MS, SIDE_FROM_MENU, SIDE_FROM_TIP, SIDE_FROM_LINE, SIDE_FROM_SHOW, SIDE_FOLD_TIP, SIDE_UNFOLD_TIP, foldedLine, SIDE_WHOLE, SIDE_WHOLE_TIP, SIDE_ASK_WHOLE, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, fromNote, sideSaw, type Side, type SidePart } from "../../../vscode/vendor/sides.mjs";
 
 // The panel sits beside the chat in a view at least this wide (px); narrower, it covers the chat
 // under the tabs

@@ -4,7 +4,7 @@
 // so it reaches that host with its own ssh, like any other picked host.
 
 import { spawnSync } from "node:child_process";
-import { containerOf } from "./shared/model";
+import { containerOf } from "../../core/src/shared/model";
 
 // The host names remote.py accepts (its HOST_NAME)
 export const HOST_NAME = /^[A-Za-z0-9_.@][A-Za-z0-9_.@:-]*$/;

@@ -1,5 +1,5 @@
-import { ago, folderIn, hostLabel, machineStatus, shareAccounts } from "../../src/shared/model";
-import type { Group, PlanItem } from "../../src/shared/types";
+import { ago, folderIn, hostLabel, machineStatus, shareAccounts } from "../../../core/src/shared/model";
+import type { Group, PlanItem } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { deleteHint, hideHint } from "../util/chat";
 import { I, Icon, T } from "../util/icons";

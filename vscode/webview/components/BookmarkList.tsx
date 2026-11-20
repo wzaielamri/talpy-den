@@ -8,7 +8,7 @@
 // copied; × takes the bookmark away.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { stateOf, staysOpen, timeText, type Bookmark, type BookmarkState } from "../../src/shared/pane";
+import { stateOf, staysOpen, timeText, type Bookmark, type BookmarkState } from "../../../core/src/shared/pane";
 import { keyText } from "../../vendor/keys.mjs";
 import { I, Icon, T } from "../util/icons";
 import { IconButton } from "./IconButton";

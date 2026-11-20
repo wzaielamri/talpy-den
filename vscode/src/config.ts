@@ -4,7 +4,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import type { ReopenIn, SshUsage, ViewSettings } from "./shared/types";
+import type { ReopenIn, SshUsage, ViewSettings } from "../../core/src/shared/types";
 
 function cfg() {
   return vscode.workspace.getConfiguration("talpyDen");

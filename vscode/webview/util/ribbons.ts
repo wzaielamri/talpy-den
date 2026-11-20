@@ -5,7 +5,7 @@
 // again, it's only drawn again. One rule for them all (each row's gutter is matched against it once,
 // as rows are drawn), made again only when the bookmarks change; nothing is added to the rows.
 
-import type { Bookmark } from "../../src/shared/pane";
+import type { Bookmark } from "../../../core/src/shared/pane";
 
 export function ribbonCss(list: readonly Bookmark[]): string {
   if (!list.length) return "";

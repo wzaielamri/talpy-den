@@ -1,12 +1,12 @@
-// The Recap tab: its words and numbers (src/shared/week.ts), and what the
+// The Recap tab: its words and numbers (core/src/shared/week.ts), and what the
 // extension takes from the page's Week messages.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
-import { demoLimits, demoPerms, demoState, demoWeek } from "../src/shared/demo";
-import { clockText } from "../src/shared/model";
-import type { Session, Status, Stop, WeekDay, WeekLane } from "../src/shared/types";
+import { demoLimits, demoPerms, demoState, demoWeek } from "../../core/src/shared/demo";
+import { clockText } from "../../core/src/shared/model";
+import type { Session, Status, Stop, WeekDay, WeekLane } from "../../core/src/shared/types";
 import {
   tipShareText, tipShareTip, currencyOf, dayTip, deltaText, fillPaths, footText, hoursText, hoverText, moneyText, periodText, planText, promptsText, ruleMeta,
   weekAsked, weekRevokeAsked, weekRuleAsked, weekTiles, RECAP_SECTIONS, windowSpan, workText, grantMeta, grantedIntro, ruleMeaning,
@@ -17,7 +17,7 @@ import {
   limitWeekPct, limitStart, limitValueText, doneText, doneTip, commitsShown, workBeforeText, listedChatRef,
   planUseText, planUseTip, planWeeksShown, weekShareShort, weekShareTip,
   daysBack, laneHoverText, laneTicks, mixLabel, mixTip, mixValue, modelRowText, tipChatAct, tipChatFigure, tipsShown, tipShareShown, tipWas,
-} from "../src/shared/week";
+} from "../../core/src/shared/week";
 import { ViewHost } from "../src/view";
 
 const MIN = 60000;
@@ -485,7 +485,7 @@ test("a week's chat opens only with an id and account folder that are ones; a ti
 
 test("the Recap's card draws the period shown, the projects named only when asked", async () => {
   const { drawCard, CARD_W } = await import("../webview/util/card");
-  const { demoWeek } = await import("../src/shared/demo");
+  const { demoWeek } = await import("../../core/src/shared/demo");
   const texts: string[] = [];
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
     get: (t, k) => (k in t ? t[k] : k === "createLinearGradient" || k === "createRadialGradient" ? () => ({ addColorStop() {} })
@@ -552,7 +552,7 @@ test("the Recap's card is copied from a folder of its own, removed after; a fail
 });
 
 test("a day the clock changes on draws its times by its own clock: 18:00 under the 18 over the rows", async () => {
-  const { dayMoment, dayPlace } = await import("../src/shared/week");
+  const { dayMoment, dayPlace } = await import("../../core/src/shared/week");
   const was = process.env.TZ;
   try {
     for (const [tz, y, m, d, hours] of [["Europe/Berlin", 2026, 9, 25, 25], ["Europe/Berlin", 2026, 2, 29, 23], ["America/New_York", 2026, 2, 8, 23], ["UTC", 2026, 9, 25, 24]] as const) {

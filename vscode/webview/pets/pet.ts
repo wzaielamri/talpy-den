@@ -18,8 +18,8 @@
 // ground when the chat shows up and digs away when it leaves the list, and
 // opens the chat when clicked (drag it for fun: it digs back to its spot).
 
-import type { ChatRef, GameName as Games, Session } from "../../src/shared/types";
-import { hostLabel, stateText } from "../../src/shared/model";
+import type { ChatRef, GameName as Games, Session } from "../../../core/src/shared/types";
+import { hostLabel, stateText } from "../../../core/src/shared/model";
 import { CookieGame, type CookieWords } from "../../vendor/talpy/cookie.mjs";
 import { Films } from "../../vendor/talpy/films.mjs";
 import { DECOR, SCORED, pickGame, type Game, type RunThing } from "../../vendor/talpy/games.mjs";

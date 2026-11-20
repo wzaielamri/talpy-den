@@ -1,4 +1,4 @@
-import { moreText, moreTitle } from "../../src/shared/model";
+import { moreText, moreTitle } from "../../../core/src/shared/model";
 import { I, Icon } from "../util/icons";
 
 // "Show N more" under a list that shows a page at a time (Recent chats,

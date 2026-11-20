@@ -1,6 +1,6 @@
 import { useRef } from "preact/hooks";
-import { fetchingUsage, formatTokens, hostLabel, planUsageText, stateText, tokensText } from "../../src/shared/model";
-import type { Group, TokenTotals, Tokens } from "../../src/shared/types";
+import { fetchingUsage, formatTokens, hostLabel, planUsageText, stateText, tokensText } from "../../../core/src/shared/model";
+import type { Group, TokenTotals, Tokens } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { fiveHourOf, groupKeyOf, sharedRef, stageChats } from "../util/chat";
 import { I, Icon } from "../util/icons";

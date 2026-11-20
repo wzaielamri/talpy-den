@@ -122,7 +122,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   `respawnFlags`, and the job's state.json has its own `bridgeSessionId` (`cse_…`, not read). Checked live on
   2.1.327.
   - Used in: talpy_den.py remote_control_link, REMOTE_CONTROL_URL, live_row ("remoteControl"); main.qml
-    remoteControlPage; vscode/src/shared/pane.ts remoteControlPage.
+    remoteControlPage; core/src/shared/pane.ts remoteControlPage.
   - Check: `has bridgeSessionId`. Start a throwaway background chat with `--remote-control` as its first
     option (`claude --bg --remote-control --model haiku 'say hi'`: a word right after it is taken as its
     name), then `jq .bridgeSessionId $C/sessions/*.json`. It should be `session_…`, and `claude logs <short>`
@@ -186,7 +186,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   `claude stop`, a reply that answers what the chat asks, and Talpy Chat as the chat's window; on
   `interactive` for ending a chat.
   - Used in: talpy_den.py SESSION_KINDS, live_row, find_chat_live, live_background, end_for_handover,
-    background_work, wake_settle; chatpick.py set_now; vscode/src/shared/model.ts canEndChat, shared/pane.ts
+    background_work, wake_settle; chatpick.py set_now; core/src/shared/model.ts canEndChat, core/src/shared/pane.ts
     chatWhere, replyAnswers, chatPane.ts windowTerminal, actions.ts stop; SessionRow.qml, ChatPane.qml,
     main.qml; gnome/extension/ui/sessionRow.js, logic.js openHint.
   - Check: with a throwaway background chat running and `claude attach $SHORT` open,
@@ -205,7 +205,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   the panel, isn't ended by a go-on or hand-over, and is tagged "Claude Code panel".
   - Used in: talpy_den.py reply_route, stop_chat, end_for_handover, background_work, kept_step, live_row,
     add_remote_commands; vscode/src/actions.ts open, openSystem, stop, sendPlanFeedback; chatPane.ts
-    windowTerminal; shared/pane.ts chatWhere; shared/model.ts canMoveToClaudeCode, handoverTarget, goOnAt;
+    windowTerminal; core/src/shared/pane.ts chatWhere; core/src/shared/model.ts canMoveToClaudeCode, handoverTarget, goOnAt;
     accountSwitch.ts switchTo; main.qml, SessionRow.qml, ChatPane.qml; gnome/extension/logic.js openHint,
     stopTip, stopQuestion, indicator.js remoteShow.
   - Check: with a throwaway chat in VS Code's Claude panel and one in a terminal,
@@ -223,7 +223,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   message then).
   - Used in: jump.py jump, find_session, jump_job, jump_terminal, tmux_client_pids, tmux_pane_of; pane.py
     send_now, type_in, tmux_base; talpy_den.py live_row, reply_route, interrupt_chat, tmux_socket,
-    interrupt_background, find_chat_live; vscode/src/shared/pane.ts chatWhere, stopOf, chatPane.ts
+    interrupt_background, find_chat_live; core/src/shared/pane.ts chatWhere, stopOf, chatPane.ts
     windowTerminal; ChatPane.qml where, canStop; SessionRow.qml bgInterrupt.
   - Check: in a throwaway chat inside tmux, compare `jq .tmux $C/sessions/<pid>.json` with
     `tmux display -p '#{session_name}:#{window_id}.#{pane_id}'`. Then read
@@ -826,7 +826,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   be one word, `--allowedTools=RULE`: a separate RULE would swallow the prompt.
   - Used in: talpy_den.py chat_options, EFFORT_LEVELS, ULTRACODE, PERMISSION_MODES, GO_ON_MODES,
     go_on_options, picture_options, go_on_with; chatpick.py pick_value, label, MODEL_ALIASES; pane.py
-    start_chat; vscode/src/shared/pane.ts CHAT_MODELS, CHAT_EFFORTS, CHAT_MODES, ULTRACODE, modelKey,
+    start_chat; core/src/shared/pane.ts CHAT_MODELS, CHAT_EFFORTS, CHAT_MODES, ULTRACODE, modelKey,
     withPick, pickerItems, nowText; vscode/src/actions.ts MODELS, EFFORTS, MODES; ChatPane.qml,
     NewChatOptions.qml, NewChatBox.qml.
   - Check: `claude --help | grep -A4 -E -- '--(model|effort|permission-mode|allowedTools)'`; `has ultracode`;
@@ -895,7 +895,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
 - [ ] **`!` shell mode.** In a running chat's prompt, `!cmd` runs in the shell. `claude --resume` and a new
   `--bg` chat read it as a plain message. A `!cmd` queued while Claude works sits in Claude's queue without
   its `!`.
-  - Used in: vscode/src/shared/pane.ts commandRun, pendingTaken, clipboardCode; ChatPane.qml commandRun;
+  - Used in: core/src/shared/pane.ts commandRun, pendingTaken, clipboardCode; ChatPane.qml commandRun;
     markdown.mjs (copy).
   - Check: send `!echo hi` from Talpy Chat to a working throwaway background chat.
     `grep '"queue-operation"' "$T" | tail -2 | jq -c .` should show content `echo hi`.
@@ -915,7 +915,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   a `!` line there is read as a message. /context run that way leaves the job at running/active while the
   session is idle.
   - Used in: commands.py BUILTIN_COMMANDS, TYPED, PANELS, AUTO, RUNS, builtin_offers, typed_kinds; pane.py
-    --complete, --type-in; vscode/src/shared/pane.ts commandRun; ChatPane.qml commandRun.
+    --complete, --type-in; core/src/shared/pane.ts commandRun; ChatPane.qml commandRun.
   - Check: in a throwaway chat in tmux, type `/` and compare the list with BUILTIN_COMMANDS, TYPED and PANELS.
     Send each "here" command to a throwaway background chat from Talpy Chat: it should print into the
     transcript (`grep -c local-command-stdout "$T"`), not leave the chat waiting in a panel nobody sees. Never
@@ -1174,7 +1174,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   key `<message id>/thinking`), dimmed in italics after `∴`; replies.py leaves it out of chips. Otherwise
   thinking blocks have no text.
   - Used in: pane.py conversation_items, THOUGHT; replies.py TurnEnd.assistant, whole_text, REPLY_WORDS;
-    vscode/src/shared/pane.ts THINKING_TIP; vscode/webview/chat.tsx; ChatPane.qml.
+    core/src/shared/pane.ts THINKING_TIP; vscode/webview/chat.tsx; ChatPane.qml.
   - Check: `has thinkingDisplay`. On a background chat's transcript,
     `grep -c '"thinkingDisplay":"updates"' "$T"` and:
 
@@ -1293,7 +1293,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   the chat.
   - Used in: talpy_den.py LinkCache.moved_from, LinkCache.copied, chat_moves, moved_chat, continuation,
     follow_moved, note_moved, go_on_with, list_kept, look_after_kept, bookmarks_moved; vscode/src/chatPane.ts
-    findPaneRow, ChatPanes.open, sendNow, typeIn; shared/model.ts handoverTarget, goOnAt; main.qml,
+    findPaneRow, ChatPanes.open, sendNow, typeIn; core/src/shared/model.ts handoverTarget, goOnAt; main.qml,
     ChatPane.qml.
   - Check: in a throwaway terminal chat, send one prompt and close the terminal window.
     `ls -t $C/projects/$M/ | head -2`, `head -3 <newest>.jsonl | jq -c '{sessionId,session_id,uuid}'`, and
@@ -1780,7 +1780,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   are joined with `, `, and an option containing `, ` or a quote is JSON-quoted, as Claude's own dialog writes
   it. A typed answer replaces the options. Declining is a deny with a message and `interrupt: true`.
   - Used in: pane.py answer_text, question_answers, decision_of, answer_request; talpy_den.py question_view,
-    ASK_TOOL; vscode/src/shared/pane.ts oneChoice, joinAnswer, answerText, answerKind, answersOf, chipsOf;
+    ASK_TOOL; core/src/shared/pane.ts oneChoice, joinAnswer, answerText, answerKind, answersOf, chipsOf;
     QuestionForm.qml, PermissionAsk.qml; vscode/webview/chat.tsx.
   - Check: with the relay on, tell a throwaway chat 'Use AskUserQuestion to ask me two questions, one
     multiSelect'. Answer with
@@ -1943,7 +1943,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   Before the command list has loaded, the front ends send `/model` and `/effort` to that picker, and `/config`
   to the terminal.
   - Used in: commands.py BUILTIN_COMMANDS ("picker"); chatpick.py; pane.py --set-options;
-    vscode/src/shared/pane.ts commandRun, commandHint; ChatPane.qml commandRun, send.
+    core/src/shared/pane.ts commandRun, commandHint; ChatPane.qml commandRun, send.
   - Check (a read, never in a chat):
     `has 'and saved as your default for new sessions' '(saved as your default for new sessions)'` (2 and 2 on
     2.1.322; 4 for the first on 2.1.318). 2.1.322 also has a "(this session only)" wording next to them: if
@@ -2183,7 +2183,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   keys are undocumented. The front ends key on the names: `five_hour` for the status bar and the 90% warnings,
   and spans and labels like "Week · Opus" in Recap.
   - Used in: talpy_den.py plan_limits, limit_window, with_ended_windows, limits_read_at, cache_ttl_ms,
-    WINDOW_LABELS, WINDOW_ORDER, WINDOW_HOURS; vscode/src/shared/model.ts, shared/week.ts (WINDOW_MS,
+    WINDOW_LABELS, WINDOW_ORDER, WINDOW_HOURS; core/src/shared/model.ts, core/src/shared/week.ts (WINDOW_MS,
     limitLabel, FAMILIES), webview/components/WeekView.tsx; main.qml, WeekView.qml, limits.mjs;
     gnome/extension/logic.js.
   - Check:
@@ -2310,7 +2310,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   behind, and Talpy Den ends them. A go-on or hand-over must never end a panel chat that has a pid, and a
   window reload stops a working panel chat.
   - Used in: talpy_den.py stop_chat, end_leftovers, end_for_handover; jump.py stop, jump; accounts.py
-    vscode_chats; vscode/src/shared/model.ts canEndChat, handoverTarget, goOnAt; actions.ts stop;
+    vscode_chats; core/src/shared/model.ts canEndChat, handoverTarget, goOnAt; actions.ts stop;
     accountSwitch.ts switchTo (refuses while a panel chat works or waits); main.qml; gnome/extension/logic.js
     stopTip, stopQuestion.
   - Check: in an idle throwaway panel chat,
@@ -2416,7 +2416,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   edits, Approve, Keep planning (the decisions approve-edits, approve, keep). The permission dialog's "Yes,
   and don't ask again" and "Yes, allow all edits during this session" (and Always allow's "Allow all edits"),
   the question dialog's "Type something.", and the Deny note's "What should Claude do instead?".
-  - Used in: PermissionAsk.qml (pressKey, tooltips), QuestionForm.qml; vscode/src/shared/pane.ts answerText;
+  - Used in: PermissionAsk.qml (pressKey, tooltips), QuestionForm.qml; core/src/shared/pane.ts answerText;
     vscode/src/notify.ts; talpy_den.py ALWAYS_LABELS.
   - Check: `has 'Type something.' 'What should Claude do instead?'`. In the scratch folder, run a chat with
     `--permission-mode plan`, ask for a small plan, and read the dialog's options and order. Ask for a Bash
@@ -2427,7 +2427,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   "Manual" as the name of the default mode (2.1.312), ↑ taking back a queued message, Esc stopping a
   background chat, and Shift+Tab changing the mode. A background chat can start in auto or bypass mode only
   once you turned it on in a terminal, and `--bg` only works in folders Claude already trusts.
-  - Used in: vscode/src/shared/pane.ts THINKING_TIP, HOLD_MS, stopOf; actions.ts MODES;
+  - Used in: core/src/shared/pane.ts THINKING_TIP, HOLD_MS, stopOf; actions.ts MODES;
     vscode/webview/chat.tsx; ChatPane.qml; NewChatBox.qml, NewChatOptions.qml, keys.mjs.
   - Check: in a throwaway chat, Shift+Tab cycles the modes and shows "Manual" for the default. Type during a
     turn and press ↑ to pull it back, and look for `∴` with thinking shown as updates. Run
@@ -2438,7 +2438,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
 - [ ] **Command names in tooltips.** Tooltips name claude attach, claude stop, claude --resume, claude --bg,
   `--model`/`--effort`/`--permission-mode`, claude auth login/logout, /login, /compact and /usage, plus where
   claude is looked for.
-  - Used in: vscode/src/shared/model.ts stopText, shared/pane.ts whereTag, attachedTag, contextHint,
+  - Used in: core/src/shared/model.ts stopText, core/src/shared/pane.ts whereTag, attachedTag, contextHint,
     accounts.ts; SessionRow.qml, ChatPane.qml, PermissionAsk.qml, main.qml; gnome/extension/logic.js openHint,
     stopTip, prefs.js.
   - Check: `claude --help` and `claude attach --help`, `claude stop --help`, `claude auth --help`. /login,
@@ -2571,7 +2571,7 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
   writes its Claude files into this computer's `~/.claude*`, and its hook's copy and requests would be this
   computer's too. Talpy Den tells such a container by `homeId` (the boot id plus the home folder's device and
   inode, home_id), and Talpy Chat doesn't open its chats ("home"): they show among this computer's.
-  - Used in: talpy_den.py home_id (status `homeId`); vscode/src/shared/model.ts talpyPlace, dashboard.ts;
+  - Used in: talpy_den.py home_id (status `homeId`); core/src/shared/model.ts talpyPlace, dashboard.ts;
     main.qml.
   - Check:
 
@@ -2716,7 +2716,7 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
   terminal's claude asks first), and nobody trusts Talpy Den's pictures folder.
   Talpy Chat shows such names as `[Image #1]`, `[Image #2]`…, as Claude's terminal does. The types are png,
   jpeg, webp and gif.
-  - Used in: vscode/src/shared/pane.ts picturesIn, withoutPicture, numberedPictures, PICTURE_TYPES;
+  - Used in: core/src/shared/pane.ts picturesIn, withoutPicture, numberedPictures, PICTURE_TYPES;
     vscode/webview/chat.tsx; ChatPane.qml, NewChatBox.qml, PictureStrip.qml; talpy_den.py picture_options.
   - Check:
 
@@ -2752,7 +2752,7 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
   (`state.json` `fan`) lists `{"id", "kind": "shell", "label", "startedAt"}` while one runs; it also lists a
   command that runs long in the foreground, and a subagent's shells. Checked on 2.1.326.
   - Used in: shells.py (START, NOTE, STOPS, started, ended, running); pane.py chat_conversation "shells";
-    ShellLines.qml, ChatPane.qml; vscode/src/shared/pane.ts BackgroundShell, vscode/webview/chat.tsx
+    ShellLines.qml, ChatPane.qml; core/src/shared/pane.ts BackgroundShell, vscode/webview/chat.tsx
     ShellLines.
   - Check: in a throwaway chat, have Claude run `sleep 120` in the background; then
     `grep -c backgroundTaskId $C/projects/*/<chat id>.jsonl`, and the job's `jq .fan $C/jobs/<id8>/state.json`
@@ -2772,7 +2772,7 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
     here).
 - [ ] **File mentions.** `@path`, or `@"path with spaces"` quoted, attaches a file. Dropped and completed
   files are put in that way.
-  - Used in: vscode/src/shared/pane.ts fileMention, suggestFor; vscode/webview/chat.tsx;
+  - Used in: core/src/shared/pane.ts fileMention, suggestFor; vscode/webview/chat.tsx;
     vscode/src/chatPane.ts.
   - Check: `d=$(mktemp -d); echo 'the word is plum' > "$d/a b.txt"`. In a throwaway chat in `$d`, send
     `What word is in @"a b.txt"?`. It should answer plum without searching.

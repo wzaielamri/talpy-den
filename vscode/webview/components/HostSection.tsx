@@ -1,5 +1,5 @@
-import { containerOf, duration, hiddenCount, hostLabel } from "../../src/shared/model";
-import type { Group, HostState } from "../../src/shared/types";
+import { containerOf, duration, hiddenCount, hostLabel } from "../../../core/src/shared/model";
+import type { Group, HostState } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { groupKeyOf } from "../util/chat";
 import { I, Icon } from "../util/icons";

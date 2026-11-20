@@ -2149,7 +2149,7 @@ class NewChatTests(unittest.TestCase):
         pill = (ROOT / "ui/ContextPill.qml").read_text()
         self.assertIn('ctx && (ctx.near || usedPct >= 90) ? "high" : usedPct >= 70 ? "medium" : "low"', pill)
         self.assertIn('return c.near || used >= 90 ? "high" : used >= 70 ? "medium" : "low";',
-                      (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text())
+                      (ROOT.parent.parent / "core/src/shared/pane.ts").read_text())
         meta = (ROOT / "ui/WorkingMeta.qml").read_text()
         self.assertIn("running: meta.visible && pane.shown && pane.conversationTab", meta)
         self.assertIn("interval: 1000 - meta.ms % 1000 + 20", meta)
@@ -2157,7 +2157,7 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('"%1m %2s", m, s % 60)', meta)
         self.assertIn('"%1h %2m %3s", Math.floor(m / 60), m % 60, s % 60)', meta)
         self.assertIn("property bool caution: false", (ROOT / "ui/Tag.qml").read_text())
-        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        shared = (ROOT.parent.parent / "core/src/shared/pane.ts").read_text()
         for words in ("Context %1% used", "tokens of context are used. Claude compacts the chat on its own at about %3: it sums up the conversation so far and goes on from that.",
                       "That's soon: run /compact now to say what it keeps, if you'd rather choose."):
             self.assertIn(words, pane + (ROOT / "ui/ContextPill.qml").read_text())
@@ -2220,7 +2220,7 @@ class NewChatTests(unittest.TestCase):
         tools = (ROOT / "ui/MessageTools.qml").read_text()
         self.assertNotIn("MouseArea {", tools)
         self.assertIn("pane.copyItem(tools.row.key, tools.row.text, true)", tools)
-        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        shared = (ROOT.parent.parent / "core/src/shared/pane.ts").read_text()
         chat = (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text()
         for words in ("Copy this reply, as Markdown", "Copy your message, as you wrote it"):
             self.assertIn(words, tools)
@@ -2312,7 +2312,7 @@ class NewChatTests(unittest.TestCase):
         # watcher waits for it, so it doesn't move what that read is asked against
         pane = (ROOT / "ui/ChatPane.qml").read_text()
         line = (ROOT / "ui/AwayLine.qml").read_text()
-        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        shared = (ROOT.parent.parent / "core/src/shared/pane.ts").read_text()
         self.assertIn('source: active ? "AwayLine.qml" : ""', pane)
         self.assertIn("active: pane.away !== null && pane.conversationTab", pane)
         delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
@@ -2342,7 +2342,7 @@ class NewChatTests(unittest.TestCase):
         pane = (ROOT / "ui/ChatPane.qml").read_text()
         menu = (ROOT / "ui/CompactMenu.qml").read_text()
         main = (ROOT / "ui/main.qml").read_text()
-        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        shared = (ROOT.parent.parent / "core/src/shared/pane.ts").read_text()
         chat = (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text()
         self.assertIn('source: active ? "CompactMenu.qml" : ""', pane)
         self.assertIn("onClicked: pane.toggleCompactMenu()", pane)
@@ -2365,7 +2365,7 @@ class NewChatTests(unittest.TestCase):
         # Its Recap (Claude's /recap, only on a click) and Claude's recap under the line, in both front ends
         pane = (ROOT / "ui/ChatPane.qml").read_text()
         line = (ROOT / "ui/AwayLine.qml").read_text()
-        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        shared = (ROOT.parent.parent / "core/src/shared/pane.ts").read_text()
         for words in ("Recap", "Recapping…", "Claude's recap:", "Claude's recap of what happened (its /recap): one small request on your plan"):
             self.assertIn(words, line + pane)
             self.assertIn(words, shared + (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text())
@@ -2416,7 +2416,7 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("y: pane.sideBeside ? 0 : mainColumn.y + tabLine.y + tabLine.height\n", panel)
         self.assertIn("anchors.rightMargin: Kirigami.Units.largeSpacing + (pane.sideBeside ? pane.sideWidth : 0)", pane)
         self.assertIn("readonly property real sideWidth: Math.round(Math.max(280, Math.min(520, width * 0.38)))", pane)
-        wide = re.search(r"export const SIDE_WIDE = (\d+);", (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text())
+        wide = re.search(r"export const SIDE_WIDE = (\d+);", (ROOT.parent.parent / "core/src/shared/pane.ts").read_text())
         self.assertIn(f"readonly property int sideWideMin: {wide.group(1)}\n", pane)
         # (beside only where the chat keeps room for the send buttons it can show: they don't shrink)
         self.assertIn("readonly property bool sideWide: width >= sideWideMin && width - sideWidth >= sendRoom", pane)
@@ -2798,7 +2798,7 @@ class NewChatTests(unittest.TestCase):
         self.assertNotIn("function chipsOf(", pane)   # (compiled with every window: in ReplyChips.qml)
         chips = (ROOT / "ui/ReplyChips.qml").read_text()
         ghost = (ROOT / "ui/ReplyGhost.qml").read_text()
-        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        shared = (ROOT.parent.parent / "core/src/shared/pane.ts").read_text()
         for words in ("Shift+click: put it in the box first, to add to it.", "Claude recommends this one.",
                       "Right-click: don't suggest it again."):
             self.assertIn(words, chips)
@@ -2835,7 +2835,7 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('"--type-in " + root.shellQuote(chatId)', pane)
         self.assertIn('if (run === "terminal" && route === "vscode")', pane)
         self.assertIn('enabled: replyBox.text.trim() !== "" && commandRun !== "off"', pane)
-        shared = (ROOT.parent.parent / "vscode/src/shared/pane.ts").read_text()
+        shared = (ROOT.parent.parent / "core/src/shared/pane.ts").read_text()
         for words in ("A chat that isn't running reads ! as a message, not as a shell command: open it in its terminal to run it there.",
                       "A new chat starts in the background, where Claude reads ! as a message: start it first, then run the command in its terminal.",
                       "Enter opens Talpy Den's Permissions tab: what Claude may do without asking, in every chat.",

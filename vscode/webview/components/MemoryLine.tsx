@@ -1,5 +1,5 @@
-import { ago, folderIn, hostLabel } from "../../src/shared/model";
-import type { Group, Memory } from "../../src/shared/types";
+import { ago, folderIn, hostLabel } from "../../../core/src/shared/model";
+import type { Group, Memory } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { deleteHint, hideHint } from "../util/chat";
 import { I, Icon, T, memoryIcon } from "../util/icons";

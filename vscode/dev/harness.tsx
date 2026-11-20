@@ -2,12 +2,12 @@
 // "ready", then a new one every few seconds with the story moved on.
 
 import "../webview/main";
-import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../src/shared/demo";
+import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../../core/src/shared/demo";
 import { limitsAsked } from "../webview/util/stores";
-import type { HostMessage } from "../src/shared/types";
+import type { HostMessage } from "../../core/src/shared/types";
 import { projectKey, setFocus, setTab, toggleAgentDetail, toggleAgents, toggleProject, toggleRecent, toggleStarred, uiState } from "../webview/util/ui";
 import { rowKeyOf } from "../webview/util/chat";
-import { agentDetailKey } from "../src/shared/model";
+import { agentDetailKey } from "../../core/src/shared/model";
 import { askMove } from "../webview/components/MoveAsk";
 
 const params = new URLSearchParams(location.search);

@@ -8,11 +8,11 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
-import { demoState } from "../src/shared/demo";
-import { chatRefOf, clockText } from "../src/shared/model";
-import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../src/shared/pane";
-import { type BackgroundShell, SHELL_FOLD, shellFold, shellLine, shellsMore, shellsWaiting, costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side, fromKeyOk, fromNote, SIDE_COST_TIP, SIDE_FROM_TIP, sideKeyOk, sideLine, sidePartAnswerOf, sidePartOf, sideSaw } from "../src/shared/pane";
-import type { ViewState } from "../src/shared/types";
+import { demoState } from "../../core/src/shared/demo";
+import { chatRefOf, clockText } from "../../core/src/shared/model";
+import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../../core/src/shared/pane";
+import { type BackgroundShell, SHELL_FOLD, shellFold, shellLine, shellsMore, shellsWaiting, costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side, fromKeyOk, fromNote, SIDE_COST_TIP, SIDE_FROM_TIP, sideKeyOk, sideLine, sidePartAnswerOf, sidePartOf, sideSaw } from "../../core/src/shared/pane";
+import type { ViewState } from "../../core/src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
 import { inline, Markdown } from "../webview/util/markdown";
@@ -784,7 +784,7 @@ test("the pictures a reply names, each once, and taking one out", () => {
 });
 
 test("a file dropped on a reply is named as Claude's prompt names it; a drop's links are its paths", async () => {
-  const { droppedPaths, fileMention } = await import("../src/shared/pane");
+  const { droppedPaths, fileMention } = await import("../../core/src/shared/pane");
   assert.equal(fileMention("/home/me/src/app.py"), "@/home/me/src/app.py");
   assert.equal(fileMention("/home/me/My Notes/todo.md"), '@"/home/me/My Notes/todo.md"');
   assert.deepEqual(droppedPaths("file:///home/me/a%20b.txt\r\nhttps://example.com/x\n# a comment\nfile:///tmp/c.png"),
@@ -793,7 +793,7 @@ test("a file dropped on a reply is named as Claude's prompt names it; a drop's l
 });
 
 test("the reply box offers commands at the start and files after @, best first", async () => {
-  const { suggestFor } = await import("../src/shared/pane");
+  const { suggestFor } = await import("../../core/src/shared/pane");
   const offers = {
     commands: [{ name: "/compact", about: "Free up context", kind: "Claude" }, { name: "/ship", about: "Ship it", kind: "yours" },
                { name: "/git:compare", about: "Compare", kind: "project" }],
@@ -889,7 +889,7 @@ test("an answer goes to the prompt that was shown, never to one the chat asks af
 });
 
 test("what a page says it showed is taken only in its shape; the chat tab's answer carries it", async () => {
-  const { askShownOf } = await import("../src/shared/pane");
+  const { askShownOf } = await import("../../core/src/shared/pane");
   assert.deepEqual(askShownOf({ request: "1-a", toolUse: null, line: "Bash: make" }), { request: "1-a", toolUse: null, line: "Bash: make" });
   for (const bad of [null, "x", [], { request: 1, toolUse: null, line: "" }, { request: null, toolUse: "", line: "" },
                      { request: null, toolUse: null }, { request: "x".repeat(201), toolUse: null, line: "" }])
@@ -2323,7 +2323,7 @@ test("what a chat runs in the background, under its working line: a line each, t
 });
 
 test("Remote Control: its page only from a claude.ai/code session, and the switch not while a prompt of Claude's is open", async () => {
-  const { remoteControlPage, remoteSwitchCan, remoteSwitchTitle } = await import("../src/shared/pane");
+  const { remoteControlPage, remoteSwitchCan, remoteSwitchTitle } = await import("../../core/src/shared/pane");
   assert.equal(remoteControlPage("https://claude.ai/code/session_01AbC"), "https://claude.ai/code/session_01AbC");
   for (const bad of ["https://claude.ai/code/cse_01AbC", "https://evil.example/code/session_01AbC", "https://claude.ai/code/session_01 x", null, 42])
     assert.equal(remoteControlPage(bad), "");

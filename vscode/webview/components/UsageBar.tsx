@@ -1,5 +1,5 @@
-import { forecastTitle, forecastWarning, resetAtText, resetText, usageLevel } from "../../src/shared/model";
-import type { LimitWindow } from "../../src/shared/types";
+import { forecastTitle, forecastWarning, resetAtText, resetText, usageLevel } from "../../../core/src/shared/model";
+import type { LimitWindow } from "../../../core/src/shared/types";
 import { useGlide } from "../util/motion";
 
 // One plan limit: label, bar, percent, when it resets. Its four cells sit in

@@ -9,7 +9,7 @@ import * as vscode from "vscode";
 import { inside } from "./changes";
 import { cacheDir } from "./config";
 import { showDoc } from "./doc";
-import type { ChatRef } from "./shared/types";
+import type { ChatRef } from "../../core/src/shared/types";
 
 // A subagent's id as a webview may ask for its run (the main view's rows, a chat tab's strip)
 export const AGENT_ID = /^[A-Za-z0-9_-]{1,100}$/;

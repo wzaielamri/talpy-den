@@ -10,8 +10,8 @@ import type { ChatPanes } from "./chatPane";
 import { cacheDir, settings } from "./config";
 import { gnomeSoundTheme } from "./desktop";
 import type { Digest } from "./away";
-import { oneChoice, questionsOf, shownAsk } from "./shared/pane";
-import type { Answers, AskShown, ChatRef, Question, Session } from "./shared/types";
+import { oneChoice, questionsOf, shownAsk } from "../../core/src/shared/pane";
+import type { Answers, AskShown, ChatRef, Question, Session } from "../../core/src/shared/types";
 import { askHead, type Changes } from "./transitions";
 
 export function chatRef(s: Session, host?: string): ChatRef {

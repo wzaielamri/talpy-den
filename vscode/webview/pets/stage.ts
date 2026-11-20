@@ -18,10 +18,10 @@
 // paused CSS animations.
 
 import { editorTab, isDark } from "../env";
-import { hostLabel, petKeyOf, plural } from "../../src/shared/model";
+import { hostLabel, petKeyOf, plural } from "../../../core/src/shared/model";
 import type { TalpyTheme } from "../../vendor/talpy/talpy.mjs";
 import type { AccountInput, HeroInput, PetStage, StageCallbacks, StageChat } from "./api";
-import type { ChatRef, Counts, GameName, ScoredGame } from "../../src/shared/types";
+import type { ChatRef, Counts, GameName, ScoredGame } from "../../../core/src/shared/types";
 import { PALETTE, allPetColors, freeColor, setPetColors } from "./colors";
 import { BOX, FLOOR } from "../../vendor/talpy/talpy.mjs";
 import { Clock, Timer, Tween, cssEase, onReducedMotionChange, reducedMotion, type Animator } from "./motion";

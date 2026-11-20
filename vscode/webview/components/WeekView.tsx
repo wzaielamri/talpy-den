@@ -1,8 +1,8 @@
 import { drawCard } from "../util/card";
 import { Fragment, type JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { hostLabel, plural } from "../../src/shared/model";
-import type { LimitAccount, LimitHistory, WeekChat, WeekDay, WeekPlanWindow, WeekRecap, WeekSpan, WeekTip, WeekTipChat } from "../../src/shared/types";
+import { hostLabel, plural } from "../../../core/src/shared/model";
+import type { LimitAccount, LimitHistory, WeekChat, WeekDay, WeekPlanWindow, WeekRecap, WeekSpan, WeekTip, WeekTipChat } from "../../../core/src/shared/types";
 import {
   currencyOf,
   dayTip,
@@ -86,8 +86,8 @@ import {
   limitWeekNote,
   limitWeekPct,
   limitWeekTip,
-} from "../../src/shared/week";
-import { reviewPending, testsText } from "../../src/shared/pane";
+} from "../../../core/src/shared/week";
+import { reviewPending, testsText } from "../../../core/src/shared/pane";
 import { post } from "../env";
 import { I, Icon } from "../util/icons";
 import { useView } from "./context";

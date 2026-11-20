@@ -16,12 +16,12 @@ import { HostWatch, watchName, type WatchAnswer } from "./hostWatch";
 import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";
 import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
-import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
-import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../../core/src/shared/demo";
+import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "../../core/src/shared/model";
 import { chatRef, noLinks } from "./notify";
 import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "./oldChats";
-import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
-import type { WeekRuleAsk } from "./shared/week";
+import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "../../core/src/shared/types";
+import type { WeekRuleAsk } from "../../core/src/shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
 
 const HIDDEN_POLL_MS = 10000;

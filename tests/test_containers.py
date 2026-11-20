@@ -668,7 +668,7 @@ class FrontEndTests(unittest.TestCase):
     def test_the_same_ids_everywhere(self):
         self.assertEqual(JS_CONTAINER, "/" + remote.CONTAINER.pattern + "/")
         for path in ("package/contents/ui/main.qml", "package/contents/ui/configAccounts.qml", "gnome/extension/logic.js",
-                     "vscode/src/shared/model.ts"):
+                     "core/src/shared/model.ts"):
             self.assertIn(JS_CONTAINER, (REPO / path).read_text(), path)
 
     def test_the_settings_are_shared(self):

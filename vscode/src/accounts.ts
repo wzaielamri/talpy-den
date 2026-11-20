@@ -11,8 +11,8 @@ import type { Backend } from "./backend";
 import { configDirArgs } from "./config";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
-import { accountNameProblem, containerOf, hostLabel, machineStatus } from "./shared/model";
-import type { Group } from "./shared/types";
+import { accountNameProblem, containerOf, hostLabel, machineStatus } from "../../core/src/shared/model";
+import type { Group } from "../../core/src/shared/types";
 import type { Place, Terminals } from "./terminals";
 
 // One account, as accounts.py --list says

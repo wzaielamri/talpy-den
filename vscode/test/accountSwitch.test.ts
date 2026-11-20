@@ -8,7 +8,7 @@ import * as vscode from "vscode";
 import { AccountSwitch } from "../src/accountSwitch";
 import type { Backend } from "../src/backend";
 import type { Dashboard } from "../src/dashboard";
-import type { Group, ViewState } from "../src/shared/types";
+import type { Group, ViewState } from "../../core/src/shared/types";
 
 const stub = vscode as unknown as typeof import("./vscode-stub");
 

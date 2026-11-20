@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import * as vscode from "vscode";
 import { ChatPanes } from "../src/chatPane";
-import { demoState } from "../src/shared/demo";
-import { findParts, madeAsk, madeLine, madeOf, madeSize, newBelow, showsOn, type PaneItem } from "../src/shared/pane";
+import { demoState } from "../../core/src/shared/demo";
+import { findParts, madeAsk, madeLine, madeOf, madeSize, newBelow, showsOn, type PaneItem } from "../../core/src/shared/pane";
 import { recorded } from "./vscode-stub";
 
 const NOW = 1_800_000_000_000;

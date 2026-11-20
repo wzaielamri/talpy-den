@@ -9,9 +9,9 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { Dashboard } from "../src/dashboard";
 import { LiveWatch, sessionDirs, type LiveChange } from "../src/live";
-import { demoState } from "../src/shared/demo";
-import { doingText, liveFromRows, liveOf, peekLine, tickerItems, TickerTurns, withLive, type TickerItem } from "../src/shared/model";
-import type { Group, LiveView, Session } from "../src/shared/types";
+import { demoState } from "../../core/src/shared/demo";
+import { doingText, liveFromRows, liveOf, peekLine, tickerItems, TickerTurns, withLive, type TickerItem } from "../../core/src/shared/model";
+import type { Group, LiveView, Session } from "../../core/src/shared/types";
 
 const NOW = 1_800_000_000_000;
 

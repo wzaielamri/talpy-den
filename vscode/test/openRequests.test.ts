@@ -10,7 +10,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { findJobRef, jobIdOk, JOB_ID, openDir, OpenWatch, pendingOpens, takeOpen } from "../src/openRequests";
-import { demoState } from "../src/shared/demo";
+import { demoState } from "../../core/src/shared/demo";
 
 const JOB = ".claude-work/0b1c2d3e-aaaa-bbbb-cccc-1234567890ab/live";
 

@@ -1,6 +1,7 @@
 // The dashboard's derived values, shared by the extension (status bar,
 // notifications) and the webview. Ported from the widget's main.qml.
 
+import { CLAUDE_CODE, type AgentId, type Capabilities } from "../agents";
 import type { Agent, ChangeSummary, ChatRef, ChatStats, ClaudeCodeInfo, ContainerInfo, ContainerNote, Counts, Group, HostState, KeptChat, Limits, LimitWindow, LiveView, Memory, Overall, Overlap, PlanItem, ProjectRow, ProjectsData, QueuedTask, RecentChat, ReopenIn, Session, SharedPointer, SshUsage, StatsDay, Status, Stop, TaskProgress, Tokens, UsageStats, ViewState } from "./types";
 
 // This computer's accounts and the hosts', for the counts, the badge and
@@ -1600,4 +1601,16 @@ export function recapTitle(st: ChatStats, now: number): string {
       `cache read ${formatTokens(t.cacheRead)} · cache write ${formatTokens(t.cacheWrite)}`,
   );
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------- the agent behind a chat or account
+
+// Which coding agent a chat is of (the backend names none for Claude Code's).
+export function agentOf(chat: Pick<Session, "agent">): AgentId {
+  return chat.agent ?? CLAUDE_CODE.id;
+}
+
+// What the account's agent can do, for hiding what it can't.
+export function capabilitiesOf(group: Pick<Group, "agent">): Capabilities {
+  return CLAUDE_CODE.capabilities;
 }

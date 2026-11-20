@@ -1,6 +1,6 @@
 // What the extension last sent, and whether anyone can see the view.
 
-import type { DeleteTarget, HostMessage, LiveView, MoveAnswer, MoveTarget, ViewState } from "../../src/shared/types";
+import type { DeleteTarget, HostMessage, LiveView, MoveAnswer, MoveTarget, ViewState } from "../../../core/src/shared/types";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { createStore } from "./store";
 

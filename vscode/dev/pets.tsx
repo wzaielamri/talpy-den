@@ -1,4 +1,4 @@
-// The pets on their own, fed with the made-up demo data (src/shared/demo.ts):
+// The pets on their own, fed with the made-up demo data (core/src/shared/demo.ts):
 // the hero, one stage per account, a list with each chat's pet color, and
 // buttons that fire pet events. See dev/pets.html for how to run it.
 //
@@ -10,7 +10,7 @@
 import "../webview/styles.css";
 import { pets } from "../webview/pets";
 import type { AccountInput, HeroInput, PetStage, StageChat } from "../webview/pets/api";
-import { demoState } from "../src/shared/demo";
+import { demoState } from "../../core/src/shared/demo";
 import {
   agentsRunning,
   allGroups,
@@ -23,8 +23,8 @@ import {
   overallState,
   petKeyOf,
   stateText,
-} from "../src/shared/model";
-import type { ChatRef, Group, Session, ViewState } from "../src/shared/types";
+} from "../../core/src/shared/model";
+import type { ChatRef, Group, Session, ViewState } from "../../core/src/shared/types";
 
 const query = new URLSearchParams(location.search);
 const forcedMood = query.get("mood") ?? "";

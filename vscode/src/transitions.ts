@@ -3,9 +3,9 @@
 // source is "" for this computer and "ssh:<host>" for an SSH host; each keeps
 // its own memory, so one poll never decides for another.
 
-import { duration, hostLabel, petKeyOf, plural, reasonText, stopOf } from "./shared/model";
-import { sameAsk, shownAsk } from "./shared/pane";
-import type { AskShown, Group, PermissionAsk, PetEventKind, Session, SessionState, Stop } from "./shared/types";
+import { duration, hostLabel, petKeyOf, plural, reasonText, stopOf } from "../../core/src/shared/model";
+import { sameAsk, shownAsk } from "../../core/src/shared/pane";
+import type { AskShown, Group, PermissionAsk, PetEventKind, Session, SessionState, Stop } from "../../core/src/shared/types";
 
 export interface Notice {
   key: string; // the row: one notification per row at a time

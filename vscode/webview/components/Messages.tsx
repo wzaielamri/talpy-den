@@ -1,4 +1,4 @@
-import type { ViewState } from "../../src/shared/types";
+import type { ViewState } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { IconButton } from "./IconButton";
 import { I } from "../util/icons";

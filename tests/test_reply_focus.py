@@ -50,7 +50,7 @@ class ReplyFocusTests(unittest.TestCase):
         self.assertIn("m.asking", handler)   # (it asks you something: out of the box)
         self.assertIn(".blur()", handler)
         self.assertIn("reply.current?.focus()", handler)
-        types = (VSCODE / "src/shared/pane.ts").read_text()
+        types = (REPO / "core/src/shared/pane.ts").read_text()
         self.assertIn('| { type: "focusReply"; asking: boolean }', types)
 
 

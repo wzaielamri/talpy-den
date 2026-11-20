@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { Group } from "../../src/shared/types";
+import type { Group } from "../../../core/src/shared/types";
 import { pets } from "../pets";
 import type { HeroInput } from "../pets/api";
 import { stageCallbacks, usePetStage } from "../util/petStage";

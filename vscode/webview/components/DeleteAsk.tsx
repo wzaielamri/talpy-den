@@ -4,7 +4,7 @@
 // (open in a chat, gone, the account's CLAUDE.md). As Plasma's DeleteAsk.qml
 // and every other question: the question in orange, its buttons beside it.
 
-import type { DeleteTarget } from "../../src/shared/types";
+import type { DeleteTarget } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { I, Icon, T } from "../util/icons";
 import { deleteAsk } from "../util/stores";

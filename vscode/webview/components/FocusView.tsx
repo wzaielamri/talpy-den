@@ -1,5 +1,5 @@
-import { chatRefOf, doingText, duration, focusLists, hostLabel, liveMatch, petKeyOf, stateText } from "../../src/shared/model";
-import type { Group } from "../../src/shared/types";
+import { chatRefOf, doingText, duration, focusLists, hostLabel, liveMatch, petKeyOf, stateText } from "../../../core/src/shared/model";
+import type { Group } from "../../../core/src/shared/types";
 import { post } from "../env";
 import { pets } from "../pets";
 import { rowKeyOf } from "../util/chat";
@@ -8,7 +8,7 @@ import { setFocus } from "../util/ui";
 import { I, Icon } from "../util/icons";
 import { useView } from "./context";
 import { dotClass, SessionRow } from "./SessionRow";
-import type { FocusItem } from "../../src/shared/model";
+import type { FocusItem } from "../../../core/src/shared/model";
 
 // The focus view (the header's filter button): only what needs you, as full
 // rows (their questions, Allow / Deny), the chats that finished a turn you

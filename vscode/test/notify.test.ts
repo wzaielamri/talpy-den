@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { demoState } from "../src/shared/demo";
-import type { PermissionAsk, Session } from "../src/shared/types";
+import { demoState } from "../../core/src/shared/demo";
+import type { PermissionAsk, Session } from "../../core/src/shared/types";
 
 // A permission prompt's notification: its buttons in Claude's own order
 // (Yes, Yes and don't ask again, No), as in its row and its tab
